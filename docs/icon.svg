@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Lanes">
+  <title>Lanes</title>
+  <!-- Two lanes converging into one: the product's one sentence. Two agents
+       declare the same work in different words and end up in the same lane
+       before the duplicate effort happens.
+
+       It carries its own tile, and that is a decision rather than decoration.
+       Three earlier versions failed on contrast:
+
+       1. `currentColor` looked right inline and rendered BLACK through <img>,
+          because an external SVG gets its own document context.
+       2. A prefers-color-scheme block fixed that, but keys off the OS setting
+          rather than the surface behind it — a light-mode browser showing a dark
+          page still drew dark-on-dark.
+       3. A favicon has no say in what sits behind it: browser chrome, a tab
+          strip, a bookmark bar, someone's dark theme. The only way to guarantee
+          contrast on a surface you do not control is to bring your own.
+
+       Colours are the board's own tokens converted from OKLCH, not approximations:
+       the tile is bg-0, the lanes are fg, and the junction is --accent (hue 262),
+       which the palette defines as "structure: this view, this lane". The live
+       green (hue 158) would have been wrong — it means "an agent is alive", and
+       a junction is an event about work, not a heartbeat.
+
+       Fading one lane to suggest depth was also tried and reverted — it read as
+       a drop shadow, which inverts the meaning. Both lanes carry equal weight
+       because neither agent is subordinate. -->
+  <rect width="32" height="32" rx="7.5" fill="#131518"/>
+  <g fill="none" stroke="#dcdee2" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.5 9.5 h4.5 l5 6.5"/>
+    <path d="M6.5 22.5 h4.5 l5 -6.5"/>
+    <path d="M16 16 h9.5"/>
+  </g>
+  <!-- The junction: where two become one. The only coloured element, because it
+       is the only part that is an event rather than a state. -->
+  <circle cx="16" cy="16" r="2.9" fill="#83a7ea"/>
+</svg>

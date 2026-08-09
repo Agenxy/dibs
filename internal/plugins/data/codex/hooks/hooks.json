@@ -1,0 +1,125 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "lanes",
+            "tool": "hook_session",
+            "input": {
+              "session_id": "${session_id}",
+              "event": "${hook_event_name}",
+              "cwd": "${cwd}",
+              "transcript_path": "${transcript_path}",
+              "model": "${model}"
+            },
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "lanes",
+            "tool": "hook_blocked",
+            "input": {
+              "session_id": "${session_id}",
+              "event": "${hook_event_name}",
+              "cwd": "${cwd}",
+              "tool_name": "${tool_name}",
+              "turn_id": "${turn_id}"
+            },
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "lanes",
+            "tool": "hook_session",
+            "input": {
+              "session_id": "${session_id}",
+              "event": "${hook_event_name}",
+              "cwd": "${cwd}",
+              "agent_id": "${agent_id}",
+              "agent_type": "${agent_type}"
+            },
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "lanes",
+            "tool": "hook_session",
+            "input": {
+              "session_id": "${session_id}",
+              "event": "${hook_event_name}",
+              "cwd": "${cwd}",
+              "agent_id": "${agent_id}"
+            },
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "lanes",
+            "tool": "hook_session",
+            "input": {
+              "session_id": "${session_id}",
+              "event": "${hook_event_name}",
+              "cwd": "${cwd}"
+            },
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "lanes",
+            "tool": "hook_session",
+            "input": {
+              "session_id": "${session_id}",
+              "event": "${hook_event_name}",
+              "cwd": "${cwd}"
+            },
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|shell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "out=$(lanes hook-spawn 2>/dev/null) && case \"$out\" in \"{\"*) printf %s \"$out\";; esac; exit 0",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

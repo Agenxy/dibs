@@ -1,0 +1,8 @@
+# Review is requested automatically from the owner of the code a change touches.
+* @0xaef
+
+# The specs are the reasoning behind the code, and a change to one is a change
+# to the contract rather than to an implementation detail.
+/SPEC*.md      @0xaef
+/PHILOSOPHY.md @0xaef
+/SECURITY.md   @0xaef

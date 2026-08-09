@@ -1,0 +1,11 @@
+# Normalise line endings so a checkout on another platform is not a diff.
+* text=auto eol=lf
+
+*.png binary
+*.webp binary
+*.ico binary
+
+# Generated or vendored files: excluded from language stats and collapsed in
+# review, so a diff shows the change rather than the noise around it.
+internal/mcp/e2e/bun.lock linguist-generated=true
+docs/board.webp           linguist-documentation=true

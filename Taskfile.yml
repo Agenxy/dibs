@@ -1,0 +1,282 @@
+version: "3"
+
+tasks:
+  default:
+    desc: List tasks
+    cmds: [task --list]
+    silent: true
+
+  presence:
+    desc: >-
+      Compile the Touch ID presence helper (macOS only). Separate from `build`
+      because Lanes ships CGO_ENABLED=0 and cross-compiles to four targets —
+      linking LocalAuthentication into the daemon would break every non-macOS
+      build. The daemon execs this and degrades to the admin password when it is
+      absent, so a platform without it loses one affordance, not the product.
+    platforms: [darwin]
+    sources:
+      - internal/humanauth/presence_darwin.swift
+    generates:
+      - bin/lanes-presence
+    cmds:
+      - swiftc -O -o bin/lanes-presence internal/humanauth/presence_darwin.swift
+
+  build:
+    desc: Build both binaries
+    cmds:
+      - go build -o bin/lanesd ./cmd/lanesd
+      - go build -o bin/lanes ./cmd/lanes
+      - task: presence
+
+  install:
+    desc: Install both binaries to ~/.local/bin (replaces, never overwrites)
+    deps: [build]
+    vars:
+      DEST: '{{.DEST | default (printf "%s/.local/bin" .HOME)}}'
+    cmds:
+      # rm before cp, deliberately.
+      #
+      # macOS caches a binary's code-signature validation against its INODE.
+      # `cp` over an existing executable reuses the inode with new content, the
+      # kernel sees a CDHash that no longer matches, and every later run is
+      # SIGKILLed — exit 137, no message, from a file that is byte-identical to
+      # a working one and whose signature verifies. It looks like a corrupt
+      # download. Replacing the file gives a fresh inode and no cached verdict.
+      - mkdir -p {{.DEST}}
+      - rm -f {{.DEST}}/lanes {{.DEST}}/lanesd {{.DEST}}/lanes-presence
+      - cp bin/lanes bin/lanesd {{.DEST}}/
+      - task: install:presence
+        vars: { DEST: '{{.DEST}}' }
+      - '{{.DEST}}/lanes version'
+      - |
+        echo "installed to {{.DEST}}"
+        echo "a running lanesd keeps the old code until you restart it:"
+        echo "  pkill lanesd && lanesd &"
+
+  install:presence:
+    # Beside the daemon, because humanauth looks beside its own executable rather
+    # than on PATH: substituting the binary that answers "is a human here" would
+    # defeat the whole mechanism. macOS only — elsewhere there is nothing to copy
+    # and the daemon correctly falls back to the admin password.
+    platforms: [darwin]
+    internal: true
+    cmds:
+      - cp bin/lanes-presence {{.DEST}}/
+
+  test:
+    desc: Full test suite with race detector
+    cmds:
+      - go test -race ./...
+
+  test:dev:
+    desc: The lanesdev-tagged code, which the default build excludes
+    # `go test ./...` never compiles anything behind the lanesdev tag, so the
+    # presence mock and its tests would rot silently — and the thing that rots
+    # is a security switch. Running both configurations means a change that
+    # breaks the mock fails the gate, and, more importantly, that the release
+    # half is exercised too: the assertion that an environment variable cannot
+    # claim a human is present lives in the UNTAGGED build and runs above, in
+    # `test`.
+    cmds:
+      - go build -tags lanesdev ./...
+      - go test -race -tags lanesdev ./internal/humanauth/ ./internal/mcp/
+
+  test:minimal:
+    desc: The stripped diagnostic panel — a serving mode the default suite never enters
+    # LANES_PANEL_MINIMAL is a real mode: it serves 483 bytes so a person can tell
+    # whether a blank board is the panel's fault or the host's. Nothing ran in it,
+    # so the package was simply RED there — three full-panel structural tests
+    # asserting a template that mode does not serve. A diagnostic you cannot trust
+    # is worse than none, because it is reached for at the exact moment somebody
+    # is already confused about which layer is broken.
+    env:
+      LANES_PANEL_MINIMAL: "1"
+    cmds:
+      - go test -count=1 ./internal/mcp/
+
+  test:human:
+    desc: The panel's human actions, end to end — needs a dev daemon, not a finger
+    deps: [build]
+    env:
+      LANES_ALLOW_PARALLEL: "1"
+    cmds:
+      # The dev daemon is built here rather than by `build`, so it never lands in
+      # bin/ during an ordinary build and cannot be picked up by anything that
+      # globs for a binary. It is the only lanesd on this machine that will
+      # answer a presence check from an environment variable.
+      - go build -tags lanesdev -o bin/lanesd-dev ./cmd/lanesd
+      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - bun internal/mcp/e2e/human_e2e.ts
+
+  test:panel:
+    env:
+      # These suites spawn several daemons at once by design. The
+      # host-wide guard exists to stop a fleet being silently split
+      # across two boards, which is not what an isolated test dir is.
+      LANES_ALLOW_PARALLEL: "1"
+    desc: Board panel end-to-end — real Chrome, real AppBridge, real daemon
+    deps: [build]
+    cmds:
+      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - LANESD=$PWD/bin/lanesd bun internal/mcp/e2e/panel_e2e.ts
+
+  panel:inspect:
+    desc: >-
+      Look at the board panel as it renders RIGHT NOW against the live daemon,
+      and print what it drew as text. --drop meta|structured|content reproduces
+      a host that withholds a carrier, which is how panel blankness gets
+      diagnosed instead of guessed at. --unlock clicks the human lock and
+      re-reads, which needs a daemon built with -tags lanesdev unless you want a
+      real fingerprint prompt (see CONTRIBUTING.md).
+    cmds:
+      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - bun internal/mcp/e2e/panel_inspect.ts {{.CLI_ARGS}}
+
+  test:web:
+    env:
+      # These suites spawn several daemons at once by design. The
+      # host-wide guard exists to stop a fleet being silently split
+      # across two boards, which is not what an isolated test dir is.
+      LANES_ALLOW_PARALLEL: "1"
+    desc: Web board end-to-end, including the admin gate
+    deps: [build]
+    cmds:
+      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - LANESD=$PWD/bin/lanesd LANES=$PWD/bin/lanes bun internal/mcp/e2e/web_e2e.ts
+
+  test:guard:
+    env:
+      # These suites spawn several daemons at once by design. The
+      # host-wide guard exists to stop a fleet being silently split
+      # across two boards, which is not what an isolated test dir is.
+      LANES_ALLOW_PARALLEL: "1"
+    desc: Claim guard end-to-end — the real stdio bridge and the real opencode plugin
+    deps: [build]
+    cmds:
+      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - LANESD=$PWD/bin/lanesd LANES=$PWD/bin/lanes bun internal/mcp/e2e/guard_e2e.ts
+
+  test:channel:
+    env:
+      # These suites spawn several daemons at once by design. The
+      # host-wide guard exists to stop a fleet being silently split
+      # across two boards, which is not what an isolated test dir is.
+      LANES_ALLOW_PARALLEL: "1"
+    desc: Channels end-to-end — auto-join, exclusivity, announcements, over real HTTP
+    deps: [build]
+    cmds:
+      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - LANESD=$PWD/bin/lanesd LANES=$PWD/bin/lanes MATCH_REPO=$PWD bun internal/mcp/e2e/channel_e2e.ts
+
+  test:sidecar:
+    desc: Embedding sidecar contract check — no model, no repository needed
+    cmds:
+      - python3 contrib/embed-sidecar/lanes_embed.py --self-test
+
+  fleet:
+    desc: "Real harnesses + real models + a human on one board (costs model calls)"
+    # Not in `ci`: it spends money and depends on provider availability. It is
+    # the only test that answers "does a REAL harness, with a real model deciding
+    # what to call, actually coordinate" — everything else drives Lanes through
+    # its own client code.
+    cmds:
+      - task: build
+      - ./internal/mcp/e2e/fleet_scenario.py
+
+  calibrate:compare:
+    desc: "Tier 0 vs an embeddings service, same cases (needs EMBED_URL, EMBED_MODEL)"
+    # Deliberately NOT a dependency of `ci`. Lanes runs fully on tier 0 with
+    # nothing installed, and tier 2 accepts any OpenAI-compatible service —
+    # Ollama, vLLM, TEI, LM Studio, llama.cpp, hosted. Pinning one of them in
+    # the manifest would pick a winner for the operator on an optional feature.
+    # What this DOES fix is reproducibility: the published tier-2 numbers were
+    # measured by hand, which meant nobody else could check them.
+    vars:
+      EMBED_URL: '{{.EMBED_URL | default "http://127.0.0.1:11434"}}'
+      EMBED_MODEL: '{{.EMBED_MODEL | default "qwen3-embedding:0.6b"}}'
+      N: '{{.N | default "40"}}'
+    cmds:
+      - task: build
+      - |
+        if ! curl -sf -m 3 {{.EMBED_URL}}/v1/embeddings -H 'content-type: application/json' \
+             -d '{"model":"{{.EMBED_MODEL}}","input":["probe"]}' >/dev/null 2>&1; then
+          echo "no embeddings service at {{.EMBED_URL}}"
+          echo "  ollama:  brew install ollama && ollama serve && ollama pull {{.EMBED_MODEL}}"
+          echo "  or set EMBED_URL/EMBED_MODEL to any OpenAI-compatible endpoint"
+          exit 1
+        fi
+      - echo "═══ tier 0 ═══"
+      - ./bin/lanes calibrate -n {{.N}}
+      - echo "═══ tier 2 — {{.EMBED_MODEL}} ═══"
+      - ./bin/lanes calibrate -n {{.N}} -embed-url {{.EMBED_URL}} -embed-model {{.EMBED_MODEL}}
+
+  calibrate:
+    desc: Measure work-overlap scoring against this repo's history
+    deps: [build]
+    cmds:
+      - ./bin/lanes calibrate
+
+  cover:
+    desc: Coverage on core + ledger — SPEC §17 floor of 85%, enforced
+    cmds:
+      - go test -race -covermode=atomic -coverprofile=coverage.out ./internal/core/ ./internal/ledger/
+      - go tool cover -func=coverage.out | tail -3
+      # Enforced, not printed. This step exited 0 whatever the number said, so
+      # the §17 floor was a sentence in a document while coverage sat six tenths
+      # of a point above it.
+      - go run ./tools/covergate -profile coverage.out -min 85
+
+  lint:
+    desc: golangci-lint v2, zero warnings
+    cmds:
+      - golangci-lint run
+
+  fmt:
+    desc: Format (gofumpt via golangci-lint)
+    cmds:
+      - golangci-lint fmt
+
+  vet:
+    cmds: [go vet ./...]
+
+  vuln:
+    desc: govulncheck (call-graph-aware)
+    cmds:
+      - go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+
+  dev:
+    desc: Run the daemon in the foreground on a dev data dir
+    env:
+      LANES_DIR: '{{.HOME}}/.lanes-dev'
+    cmds:
+      - go run ./cmd/lanesd --dir $HOME/.lanes-dev
+
+  crosscompile:
+    desc: Build every release target, so a portability break fails here not at tag time
+    # In `ci` because CONTRIBUTING.md promises it is, and because the failure it
+    # catches is invisible on the host: Lanes ships CGO_ENABLED=0 to four targets,
+    # and a Linux-only build break stays hidden on a Mac until the release runs.
+    cmds:
+      - GOOS=linux  GOARCH=amd64 go build ./...
+      - GOOS=linux  GOARCH=arm64 go build ./...
+      - GOOS=darwin GOARCH=arm64 go build ./...
+      - GOOS=darwin GOARCH=amd64 go build ./...
+
+  ci:
+    desc: The full local gate chain (mirrors CI)
+    cmds:
+      - task: vet
+      - task: lint
+      - task: test
+      - task: test:dev
+      - task: build
+      - task: test:panel
+      - task: test:web
+      - task: test:guard
+      - task: test:channel
+      - task: test:sidecar
+      - task: test:human
+      - task: test:minimal
+      - task: cover
+      - task: crosscompile
+      - task: vuln

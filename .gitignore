@@ -1,0 +1,26 @@
+bin/
+dist/
+coverage.out
+.dev-lanes/
+.claude/
+
+# local design-preview scratch (regenerated from the live template)
+.panel-*.html
+
+# never again: a data dir under Desktop triggers macOS TCC prompts on every rebuild
+.dev-lanes/
+
+# e2e harness deps (bun.lock is committed; the tree is not)
+node_modules/
+
+# The embedding sidecar's local venv — created by the operator, never committed.
+contrib/embed-sidecar/.venv/
+__pycache__/
+
+# go-task fingerprint cache
+.task/
+
+# Build artifact: the coverage gate is run with `go run ./tools/covergate`,
+# never as a checked-in binary — one was committed once and it embedded the
+# builder's home directory in every path the Go toolchain bakes in.
+/covergate

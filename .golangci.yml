@@ -1,0 +1,113 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    # Correctness
+    - govet
+    - staticcheck
+    - errcheck
+    - errorlint
+    - gocritic
+    - exhaustive
+    - unparam
+    - unconvert
+    - copyloopvar
+    - bodyclose
+    - nilerr
+    # Security
+    - gosec
+    # Complexity budgets (SPEC §17 — ceilings, not targets)
+    - cyclop
+    - gocognit
+    - funlen
+    - lll
+    # Style
+    - revive
+    - misspell
+    - nolintlint
+    - forbidigo
+  settings:
+    cyclop:
+      max-complexity: 15
+    gocognit:
+      min-complexity: 20
+    funlen:
+      lines: 512
+      statements: 300
+    lll:
+      line-length: 120
+    revive:
+      rules:
+        - name: exported
+        - name: file-length-limit
+          arguments:
+            - max: 2000
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    forbidigo:
+      forbid:
+        - pattern: time\.Sleep
+          msg: "no sleeps in tests — use testing/synctest or event-driven waits"
+        - pattern: fmt\.Print(|f|ln)
+          msg: "no prints outside cmd/ — use log/slog"
+    exhaustive:
+      default-signifies-exhaustive: true
+  exclusions:
+    rules:
+      - path: cmd/
+        linters: [forbidigo]
+      - path: _test\.go
+        linters: [funlen, gocognit, cyclop, lll, gosec]
+
+      # Dispatch tables. These functions are a single flat switch over an op
+      # kind, a tool name, an HTTP method or a CLI verb: the complexity score
+      # counts branches, and a dispatch table is nothing BUT branches.
+      #
+      # Splitting them is not a refactor, it is a regression. `Apply` is the
+      # state machine's one mutation path (SPEC §2) and being able to read every
+      # op kind it accepts in one place is what makes it auditable; fragmenting
+      # it across helpers would hide exactly the exhaustiveness a reader needs to
+      # check. The same holds for the MCP tool switch and the CLI command switch.
+      - path: internal/mcp/mcp\.go
+        text: "function (run|dispatch|ServeHTTP)"
+        linters: [cyclop]
+      - path: cmd/lanes/main\.go
+        text: "function main"
+        linters: [cyclop]
+      - path: cmd/lanesd/main\.go
+        text: "function run"
+        linters: [cyclop]
+
+      # Long-lived loop bodies: a CLI command that sets up, polls, and tears
+      # down, or an HTTP middleware chain. The branches are sequential guard
+      # clauses rather than nested logic, and each one is already commented with
+      # why it exists. Carved into helpers they would read as indirection with
+      # no independent meaning.
+      #
+      # NOT a blanket exemption: gocognit still fires everywhere else, and the
+      # ceiling caught four functions in the channels work that genuinely did
+      # need splitting.
+      - path: cmd/lanes/(await|watch|monitor|mcpstdio_identity|mcpstdio_session)\.go
+        linters: [gocognit, cyclop]
+      - path: cmd/lanesd/guard\.go
+        linters: [gocognit, cyclop]
+      - path: internal/web/web\.go
+        linters: [gocognit, cyclop]
+
+      # The pure state machine's time-based lifecycles and the ledger replay
+      # loop. Each is one pass with a documented decision per branch, and every
+      # branch is covered by the randomized replay-equivalence gate (SPEC §17),
+      # which is a stronger correctness argument than a complexity score.
+      - path: internal/core/(sweep|apply|blobs)\.go
+        linters: [gocognit, cyclop]
+      - path: internal/ledger/ledger\.go
+        linters: [gocognit, cyclop]
+      - path: internal/engine/engine\.go
+        linters: [gocognit, cyclop]
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
