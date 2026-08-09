@@ -1,0 +1,44 @@
+name: Feature request
+description: Something Lanes should do and doesn't
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Worth knowing before you write: Lanes is a **service agents pull from**,
+        never something that drives a harness. It reports and does not act — it
+        will tell a parent its subagent is stuck and hand back the command to
+        resume it, but it will not run that command. Requests that ask Lanes to
+        take an action on an agent's behalf will usually be declined on those
+        grounds rather than on merit, so it is worth framing the need instead of
+        the mechanism.
+
+        `PHILOSOPHY.md` has the rest of that boundary.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What goes wrong today
+      description: >
+        The situation, not the solution. What were you doing, how many agents
+        were involved, and what did it cost you when it went wrong?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you think should happen
+      description: Optional. A clear problem is more useful than a guessed fix.
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried instead
+      description: >
+        Including "I did it by hand" or "I used claims for it, badly" — knowing
+        the workaround tells us how much the gap actually hurts.
+    validations:
+      required: false

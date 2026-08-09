@@ -1,0 +1,25 @@
+# Keeps whitespace consistent regardless of which editor — or which agent —
+# touched the file last.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.go]
+indent_style = tab
+
+[*.{py,ts,js}]
+indent_size = 4
+
+[*.md]
+# Trailing spaces are a hard line break in Markdown, so stripping them silently
+# reflows prose that was deliberately broken.
+trim_trailing_whitespace = false
+
+[Makefile]
+indent_style = tab

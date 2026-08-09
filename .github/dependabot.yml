@@ -1,0 +1,31 @@
+# Keep dependencies current without anyone having to remember to look.
+#
+# Grouped rather than one pull request per bump: a maintainer reviewing eight
+# separate patch bumps reviews none of them, and a wall of open PRs is how a
+# repository starts looking abandoned.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      go-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # The browser end-to-end suites.
+  - package-ecosystem: npm
+    directory: "/internal/mcp/e2e"
+    schedule:
+      interval: weekly
+    groups:
+      e2e:
+        patterns: ["*"]

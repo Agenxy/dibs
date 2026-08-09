@@ -1,0 +1,13 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/agenxy/lanes/security/advisories/new
+    about: >
+      Please do not open a public issue. Report privately here; SECURITY.md has
+      the process and what is in scope.
+  - name: Question or idea
+    url: https://github.com/agenxy/lanes/discussions
+    about: >
+      "How do I…", "should Lanes…", or thinking out loud. Discussions are a
+      better home for these than the issue tracker, and nobody will tell you off
+      for posting in the wrong place.

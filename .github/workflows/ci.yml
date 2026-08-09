@@ -1,0 +1,71 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# Third-party actions are pinned to full commit SHAs, not tags.
+#
+# A tag is mutable: whoever controls the action's repository can move v7 to
+# different code, and this workflow holds `contents: write` and `id-token: write`
+# for keyless signing — so a moved tag could sign and publish artifacts nobody
+# wrote. The project already pins its Go toolchain, its linter, GoReleaser, syft
+# and cosign for weaker reasons than that. The trailing comment is the human
+# readable version; the SHA is what is enforced.
+
+jobs:
+  gate:
+    # macOS only, deliberately, and this is narrower than it was.
+    #
+    # internal/liveness inspects other processes by shelling out to `ps`, and
+    # the flags it needs — `ps eww -p` for a process's environment, `ps -axo`
+    # for the table — are BSD spellings whose GNU equivalents differ. None of
+    # that has been verified on a GNU userland. Running the suite on Linux
+    # anyway would not have made it work; it would only have made the badge
+    # report a platform nobody had tested, and a red badge on an untouched
+    # repository teaches a passer-by that the project is broken rather than
+    # that it is honest about its scope.
+    #
+    # The cross-compile step below still builds every target, so "it compiles
+    # for Linux" stays proven on every push. What is not claimed is that it
+    # BEHAVES there. CONTRIBUTING.md says what evidence a patch would need.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # ONE step, because the alternative drifted.
+      #
+      # This workflow used to list its own subset — vet, lint, race, panel, web,
+      # and a coverage number that was printed and never compared. Meanwhile
+      # README and CONTRIBUTING both said `task ci` is "the same set CI runs".
+      # It was not: guard, channel, sidecar, human-flow, minimal and the
+      # alternate lanesdev build never ran here, and the coverage floor was
+      # never enforced, so a tag could ship code that had passed a third of the
+      # project's own gate.
+      #
+      # Running the task directly makes that sentence true by construction and
+      # keeps it true — a suite added to the Taskfile is a suite CI runs, with
+      # nobody having to remember this file exists.
+      # The action, not `curl https://mise.run | sh`.
+      #
+      # Piping a mutable URL into a shell in a job that holds `contents: write`
+      # and `id-token: write` undoes the pinning three lines above it: whoever
+      # controls that host can run anything, with those permissions, and no
+      # version or digest was recorded. The action is pinned to a SHA like
+      # everything else here, and it handles trust + install itself.
+      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+        with:
+          version: 2026.7.7
+          experimental: true
+      - name: Playwright browser
+        run: cd internal/mcp/e2e && bun install --frozen-lockfile && bunx playwright install --with-deps chromium
+      - name: task ci
+        env:
+          PW_CHANNEL: ""
+        run: mise exec -- task ci
+      # govulncheck and the cross-compile matrix used to live here. They are
+      # inside `task ci` now, which is what CONTRIBUTING.md always claimed, so
+      # running them again would only double the slowest part of the job.

@@ -1,0 +1,75 @@
+name: Bug report
+description: Something behaved differently from what it said it would
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before anything else, please run `lanes doctor` and paste it below.
+
+        It is built for exactly this moment: it names what is broken and the fix,
+        it redirects cleanly to a file, and it very often answers the question
+        without either of us spending a round trip. A surprising share of reports
+        turn out to be a stale harness secret or matching that was never turned
+        on, and doctor says so in one line.
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`lanes doctor` output"
+      description: Redirected output is fine — it drops colour automatically.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected instead
+      description: >
+        If an agent did something surprising, its own words are useful — what it
+        was told, what it called, and what came back.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce it
+      description: >
+        The exact commands, if you have them. "It happened once during a long
+        session" is still worth filing — say so rather than not reporting it.
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`lanes version`"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      description: >
+        Lanes is verified on macOS. Linux reports are welcome and useful — they
+        are not a waste of anyone's time — but see README §Platform for what is
+        known to be unverified there.
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: harnesses
+    attributes:
+      label: Which agent harnesses were involved
+      description: "e.g. Claude Code, Codex, opencode, pi — and roughly how many were running."
+    validations:
+      required: false

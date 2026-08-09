@@ -1,0 +1,136 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:lanes:lanes",
+            "tool": "hook_poll",
+            "input": {
+              "session_id": "${session_id}",
+              "event": "${hook_event_name}",
+              "cwd": "${cwd}"
+            },
+            "timeout": 10,
+            "statusMessage": "Checking Lanes"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:lanes:lanes",
+            "tool": "hook_session",
+            "input": {
+              "session_id": "${session_id}",
+              "event": "${hook_event_name}",
+              "cwd": "${cwd}",
+              "transcript_path": "${transcript_path}"
+            },
+            "timeout": 10,
+            "statusMessage": "Reporting to Lanes"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:lanes:lanes",
+            "tool": "hook_poll",
+            "input": {
+              "session_id": "${session_id}",
+              "event": "${hook_event_name}",
+              "cwd": "${cwd}"
+            },
+            "timeout": 10,
+            "statusMessage": "Checking Lanes"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:lanes:lanes",
+            "tool": "hook_session",
+            "input": {
+              "session_id": "${session_id}",
+              "event": "${hook_event_name}",
+              "cwd": "${cwd}"
+            },
+            "timeout": 10,
+            "statusMessage": "Reporting to Lanes"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:lanes:lanes",
+            "tool": "hook_poll",
+            "input": {
+              "session_id": "${session_id}",
+              "event": "${hook_event_name}",
+              "cwd": "${cwd}"
+            },
+            "timeout": 10,
+            "statusMessage": "Checking Lanes"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:lanes:lanes",
+            "tool": "hook_session",
+            "input": {
+              "session_id": "${session_id}",
+              "event": "${hook_event_name}",
+              "cwd": "${cwd}"
+            },
+            "timeout": 10,
+            "statusMessage": "Reporting to Lanes"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|shell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "out=$(lanes hook-spawn 2>/dev/null) && case \"$out\" in \"{\"*) printf %s \"$out\";; esac; exit 0",
+            "timeout": 5
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:lanes:lanes",
+            "tool": "guard_path",
+            "input": {
+              "session_id": "${session_id}",
+              "path": "${tool_input.file_path}",
+              "cwd": "${cwd}"
+            },
+            "timeout": 5,
+            "statusMessage": "Checking Lanes claims"
+          }
+        ]
+      }
+    ]
+  }
+}

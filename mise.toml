@@ -1,0 +1,45 @@
+[tools]
+go = "1.26.5"
+# Pinned for the same reason Go is: `task ci` runs `golangci-lint run`, and an
+# unpinned linter means the gate passes on one machine and fails on another for
+# reasons unrelated to the code. Without this line a clean checkout cannot run
+# the chain at all — mise has no version to resolve and the lint task exits 1.
+golangci-lint = "2.12.2"
+# Task runs the chain, so it needs pinning before anything the chain contains.
+# It was missing, and the effect was the worst possible one for a project people
+# are meant to clone: `task build` is the FIRST command in the README quick
+# start, and on a fresh checkout it failed with "No version is set for shim:
+# task". The whole comment above about a clean checkout not being able to run
+# the chain applied to the runner itself.
+task = "3.52.0"
+# The end-to-end suites are Bun + Playwright against a real daemon and real
+# Chrome; pinning keeps them reproducible alongside the Go half. "latest" was
+# not pinning — it is the one line in this file that could change the gate
+# overnight with nobody touching the repository, which is the exact failure
+# every other line here exists to prevent.
+bun = "1.3.14"
+# The release pipeline's own tools, pinned for the same reason as the linter.
+# GoReleaser shells out to syft for the SBOM and cosign for signatures, and
+# neither was pinned — so `goreleaser release` built all four platforms, archived
+# them, and then died at the SBOM step with "No version is set for shim: syft".
+# A release chain that has never been run is a claim, not a guarantee, and the
+# README advertises reproducible builds + cosign + SBOM as facts.
+goreleaser = "2.17.1"
+syft = "1.50.0"
+# Cosign 3, matching the --bundle signing config in .goreleaser.yml.
+#
+# This was briefly pinned to 2.x, which had it backwards: the config was old, so
+# the tool was held back to suit it. Holding a security tool at a previous major
+# to avoid editing six lines of YAML is how a supply chain quietly ages.
+cosign = "3.1.3"
+
+# Reproducible, system-isolated Go toolchain (the "uv for Go"):
+#  - mise installs+pins go 1.26.5 under ~/.local/share/mise, never the system Go
+#  - GOTOOLCHAIN pins the exact build toolchain; combined with go.mod's
+#    `toolchain go1.26.5`, any `go` invocation resolves to exactly 1.26.5
+#    (auto-downloading it if absent), independent of whatever Go is on PATH.
+#  - go.sum + the content-addressed, hash-verified module cache make deps
+#    reproducible without a per-project cache (Go's cache is already hermetic,
+#    unlike Python site-packages — so no .venv equivalent is needed).
+[env]
+GOTOOLCHAIN = "go1.26.5"

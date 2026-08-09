@@ -1,0 +1,303 @@
+/* ═══════════════════════════════════════════════════════════════
+   LANES — SIGNAL
+
+   How the board shows that something is ALIVE.
+
+   board.css is the substrate: colour, type, geometry, spacing,
+   motion. This file is one layer above it and has one job — the
+   visual language of state. A lane that is coordinating right now,
+   a lane that has gone quiet, an announcement nobody can answer, a
+   claim somebody else holds.
+
+   It is a separate file because it is the part that must feel
+   ALIVE, and because both surfaces load it: an agent's liveness
+   cannot look like one thing in the MCP panel and another on the
+   operator board when they are the same fact about the same agent.
+
+   Rules:
+     - Every value comes from a board.css token. No literal colour,
+       no literal size. The drift audit enforces this.
+     - Motion encodes state or it does not exist. A pulse whose rate
+       is arbitrary is decoration; a pulse whose rate is recency is
+       an instrument.
+     - Nothing here may be the ONLY carrier of meaning — under
+       prefers-reduced-motion, and for a reader who cannot see
+       colour, the same fact must still be legible.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── The signal aperture ─────────────────────────────────────────
+   The roster mark is an aperture, not a decorative LED. Recency controls how
+   much of that aperture is open, and only the bucket meaning "mid-exchange"
+   moves:
+
+     immediate  full aperture + radiating ring — coordinating right now
+     recent     full aperture + fixed ring      — working, between exchanges
+     aging      half aperture                   — quiet, not stale
+     unknown    empty neutral aperture          — no recency claim
+     stale      diamond + cut                   — contact was interrupted
+
+   Fill and silhouette carry the same distinctions when motion or hue cannot. */
+.entry .pip {
+  width: var(--s2);
+  height: var(--s2);
+  border: 1px solid var(--fg-3);
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--bg);
+}
+
+.entry.active .pip {
+  border-color: var(--live);
+  background: var(--live);
+  box-shadow:
+    inset 0 0 0 1px var(--bg),
+    0 0 0 1px var(--live);
+}
+
+.entry.active .pip::after {
+  content: none;
+  animation: none;
+}
+
+.entry:not(.stale)[data-recency="immediate"] .pip,
+.entry:not(.stale)[data-recency="recent"] .pip {
+  border-color: var(--live);
+  background: var(--live);
+  box-shadow:
+    inset 0 0 0 1px var(--bg),
+    0 0 0 1px var(--live);
+}
+
+.entry:not(.stale)[data-recency="immediate"] .pip::after {
+  content: "";
+  position: absolute;
+  inset: calc(var(--s1) * -0.75);
+  border: 1px solid var(--live);
+  border-radius: 50%;
+  animation: signal-immediate 1.8s var(--ease) infinite;
+}
+
+.entry:not(.stale)[data-recency="aging"] .pip {
+  border-color: var(--live);
+  background:
+    linear-gradient(
+      to top,
+      var(--live) 0 50%,
+      var(--bg) 50% 100%
+    );
+  box-shadow: inset 0 0 0 1px var(--bg);
+}
+
+.entry:not(.stale)[data-recency="unknown"] .pip {
+  border-color: var(--fg-3);
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--bg);
+}
+
+@keyframes signal-immediate {
+  0% {
+    opacity: 1;
+    transform: scale(0.65);
+  }
+  75%,
+  100% {
+    opacity: 0;
+    transform: scale(1.45);
+  }
+}
+
+.entry.stale .pip {
+  border-radius: 0;
+  border-color: var(--warn);
+  background: var(--bg);
+  transform: rotate(45deg);
+}
+
+.entry.stale .pip::after {
+  content: "";
+  position: absolute;
+  inset: calc(var(--s1) * -0.5);
+  border-top: 1px solid var(--warn);
+  transform: rotate(-45deg);
+}
+
+/* The age is the calibrated readout adjacent to the aperture. Shape carries
+   the category; the existing text remains the exact fallback for motion,
+   colour, and any recency resolution the signal cannot honestly express. */
+.entry.active .age {
+  color: var(--fg-2);
+  font-variant-numeric: tabular-nums;
+  text-decoration: underline;
+  text-decoration-color: var(--live-dim);
+  text-underline-offset: calc(var(--s1) * 0.5);
+}
+
+/* Out of touch marks the reading as UNCERTAIN, never as void.
+ *
+ * This was a strikethrough, and a strikethrough on a timestamp says the value
+ * has been cancelled — that it no longer applies and can be skipped. On a lane
+ * nobody has heard from, the age is the opposite of skippable: how long the
+ * silence has run is the single number that decides whether somebody
+ * investigates. The rows that most needed reading were the only rows drawn as
+ * struck out, and at this size the rule ran straight through the digits, so the
+ * figure was harder to read exactly where it mattered most.
+ *
+ * A dotted underline keeps the parallel with .entry.active .age, where an
+ * underline in the live colour means "this is the recency reading". Same
+ * decoration, same role; the colour carries the category and the dots carry the
+ * doubt. The fact in question is not that the time is wrong — it is right — but
+ * that what it implies about the agent being there no longer holds. */
+.entry.stale .age {
+  color: var(--warn);
+  text-decoration: underline dotted;
+  text-decoration-color: var(--warn);
+  text-decoration-thickness: 1px;
+  text-underline-offset: calc(var(--s1) * 0.5);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Declared work: a bus with a live contact ───────────────────
+   A claim is not a badge. It is a connection between an agent and the work
+   beneath it, so every declared task plugs into one continuous accent bus.
+   The square contact distinguishes it without relying on the accent hue. */
+.entry:has(.task) {
+  position: relative;
+}
+
+.entry:has(.task)::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--s1) * 0.5);
+  top: var(--s3);
+  bottom: var(--s3);
+  width: 1px;
+  background: var(--accent);
+}
+
+.entry .task {
+  position: relative;
+  border-left-color: var(--accent);
+}
+
+.entry .task::before {
+  content: "";
+  position: absolute;
+  width: var(--s1);
+  height: var(--s1);
+  left: calc(var(--s3) * -1);
+  top: calc(var(--s2) * 0.5);
+  border: 1px solid var(--accent);
+  background: var(--bg);
+  border-radius: 0;
+}
+
+/* ── State vocabulary ───────────────────────────────────────────
+   These marks share a control-room grammar rather than a generic pill:
+
+     exclusive    mechanically locked: double edge + square key
+     blocked      interrupted path: dashed edge + open center
+     abandoned    terminated circuit: filled stop
+     coordinator  authority rail: doubled lower edge
+
+   Their written labels remain present. Borders, fill, and silhouette provide
+   the second channel when hues are indistinguishable. */
+.pill,
+.badge.role {
+  corner-shape: superellipse(0.65);
+}
+
+.channel.exclusive {
+  position: relative;
+  border-inline-start: calc(var(--s1) * 0.5) double var(--warn);
+  padding-inline-start: var(--s3);
+}
+
+.channel.exclusive .channel-id {
+  text-decoration: underline double;
+  text-decoration-color: var(--warn);
+  text-underline-offset: calc(var(--s1) * 0.5);
+}
+
+.pill.warn {
+  border-style: double;
+  border-width: calc(var(--s1) * 0.5);
+  border-radius: var(--r);
+  color: var(--warn);
+  background: var(--bg);
+}
+
+.pill.warn::before {
+  content: "◆";
+  margin-inline-end: var(--s1);
+}
+
+.pill.blocked {
+  border-radius: var(--r);
+  border-style: dashed;
+  border-width: 1px;
+  color: var(--warn);
+  background:
+    repeating-linear-gradient(
+      135deg,
+      var(--bg) 0,
+      var(--bg) var(--s1),
+      var(--line) var(--s1),
+      var(--line) calc(var(--s1) * 2)
+    );
+}
+
+.pill.blocked::before {
+  content: "Ⅱ";
+  margin-inline-end: var(--s1);
+}
+
+.pill.abandoned {
+  border-radius: 0;
+  border-style: solid;
+  box-shadow: inset 0 0 0 1px var(--bg);
+}
+
+.pill.abandoned::before {
+  content: "■";
+  margin-inline-end: var(--s1);
+}
+
+.badge.role {
+  border-radius: var(--r);
+  border-bottom-style: double;
+  border-bottom-width: calc(var(--s1) * 0.5);
+  background: var(--bg);
+}
+
+.badge.role::before {
+  content: "⌁";
+  margin-inline-end: var(--s1);
+}
+
+/* Staleness propagates into channel membership as an interrupted enclosure,
+   matching the cut roster aperture rather than merely lowering opacity. */
+.member.gone {
+  opacity: 1;
+  border-style: dashed;
+  text-decoration: line-through;
+  text-decoration-color: var(--warn);
+}
+
+.member-tag.gone {
+  border-inline-start: 1px solid var(--warn);
+  padding-inline-start: var(--s1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .entry .pip,
+  .entry .pip::after,
+  .pill,
+  .badge {
+    animation: none;
+    transition: none;
+  }
+
+  .entry:not(.stale)[data-recency="immediate"] .pip::after {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

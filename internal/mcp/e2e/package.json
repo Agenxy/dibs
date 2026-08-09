@@ -1,0 +1,12 @@
+{
+  "name": "lanes-panel-e2e",
+  "private": true,
+  "description": "Headless end-to-end test for the MCP Apps board panel.",
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.7.5",
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.0"
+  }
+}

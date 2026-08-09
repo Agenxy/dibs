@@ -1,0 +1,662 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Lanes — coordination board</title>
+  <link rel="icon" type="image/svg+xml" href="/icon.svg">
+<style>{{styles}}</style>
+</head>
+
+<!--
+  The operator's god view: every lane, every claim, all mail, the ledger.
+
+  This is NOT the same page as the MCP Apps panel and must not become one. The
+  panel is a single lane's own board and mailbox, authenticated by that lane's
+  token; this is the whole fleet behind the admin password, and it reads mail
+  the panel never sees. What the two share is what a lane, a message and an
+  event LOOK like — so both inline internal/assets/board.js and compose their
+  own page from it.
+
+  No framework and no build step. This replaced 53 KB of vendored htmx that
+  existed to swap server-rendered fragments; the server now streams the same
+  board data the panel receives and the shared components render it. One
+  renderer, two transports.
+-->
+<!-- The surface names itself. The panel has always been `.panel`; the operator
+     board was anonymous, so rules meant only for it had to be scoped by
+     component (`.compose .act`) — and the panel uses .compose too, so that
+     scoping still reached it. A surface-only rule needs a surface selector. -->
+<body class="board">
+<div class="surface" aria-hidden="true"></div>
+
+<div class="sheet">
+  <header class="masthead">
+    <div class="mark">
+      <!-- Connection state was pixels only: the ring changed and a title said
+           "connection", which names the topic and not the state. Somebody who
+           cannot see the ring had no way to know the board had stopped being
+           live — the one fact that invalidates everything else on the page. -->
+      <!-- Decorative. The sr-only sentence below IS the status; giving the mark
+           role="img" + aria-labelledby announced it a second time, so a screen
+           reader heard "connecting connecting". help.html:369 renders the same
+           component this way. -->
+      <span class="status-mark" id="mark" aria-hidden="true">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke-width="1.1">
+          <circle class="ring" cx="8" cy="8" r="6" stroke-dasharray="3 3.4" />
+          <circle class="core" cx="8" cy="8" r="1.6" stroke="none" fill="currentColor" opacity=".45" />
+        </svg>
+      </span>
+      <span class="sr-only" id="mark-state">connecting</span>
+      <span class="wordmark">Lanes</span>
+    </div>
+    <nav class="views" role="tablist" aria-label="Board views">
+      <button data-view="board" role="tab" aria-selected="true" aria-controls="pane-board" id="tab-board">Board</button>
+      <button data-view="lanes" role="tab" aria-selected="false" aria-controls="pane-lanes" id="tab-lanes" tabindex="-1">Lanes<span class="tally zero" id="tally-lanes">0</span></button>
+      <button data-view="mail" role="tab" aria-selected="false" aria-controls="pane-mail" id="tab-mail" tabindex="-1">Mail<span class="tally zero" id="tally-mail">0</span></button>
+      <button data-view="activity" role="tab" aria-selected="false" aria-controls="pane-activity" id="tab-activity" tabindex="-1">Activity<span class="tally zero" id="tally-act">0</span></button>
+    </nav>
+    <!-- Protocol sits OUTSIDE the tablist. A tablist owns tabs and nothing else:
+         as a fifth child it was invisible to the arrow-key logic while assistive
+         technology counted it as part of the composite, so "tab 5 of 4" and a
+         destination the keyboard could not reach the same way as its neighbours.
+         Same row, same look, different thing. -->
+    <a class="proto" href="/help">Protocol</a>
+  </header>
+  <div class="hairline"></div>
+
+  <!-- No separator ELEMENTS. A standalone "·" is its own flex item, so a wrap
+       can orphan one at the end of a line — which it did at 375px, reading as a
+       truncation. As a pseudo-element it belongs to the item before it and
+       cannot be separated from it. -->
+  <div class="context">
+    <span class="lane-id" id="ctx-node">connecting</span>
+    <span class="granted">operator view · all mail</span>
+    <span class="lane-id" id="ctx-you">…</span>
+  </div>
+
+  <div class="summary" id="summary"></div>
+  <div class="flash" id="flash" role="status" aria-live="polite"></div>
+  <!-- The board changes UNDER the reader — an agent goes quiet, mail arrives, a
+       lane forms — and a screen reader was told none of it. Announcing the whole
+       board on every frame would be unusable, so this announces the DELTA and
+       only when it is material. See announceChange(). -->
+  <p class="sr-only" id="live" role="status" aria-live="polite" aria-atomic="true"></p>
+
+  <main>
+    <!-- help.html puts its h1 inside <main> as a sentence and leaves the
+         masthead wordmark a span; this surface does the same. A page with no h1
+         gives a screen-reader user nothing to jump to, and the four panes below
+         were four unlabelled regions. -->
+    <h1 class="sr-only">Lanes board</h1>
+    <section class="view" id="pane-board" role="tabpanel" aria-labelledby="tab-board" tabindex="0"></section>
+    <section class="view hide" id="pane-lanes" role="tabpanel" aria-labelledby="tab-lanes" tabindex="0"></section>
+    <section class="view hide" id="pane-mail" role="tabpanel" aria-labelledby="tab-mail" tabindex="0"></section>
+    <section class="view hide" id="pane-activity" role="tabpanel" aria-labelledby="tab-activity" tabindex="0"></section>
+  </main>
+
+  <footer class="foot">
+    <span id="foot-node">—</span>
+    <span class="dot">·</span>
+    <span>verify: lanes verify</span>
+    <span class="dot">·</span>
+    <span>lanes {{.Version}}</span>
+  </footer>
+</div>
+
+<script>{{boardJS}}</script>
+
+<script>
+// ── the web board's transport ────────────────────────────────
+// The panel receives its data as `structuredContent` over postMessage from an
+// MCP host. Here the server streams the same shape down an EventSource. That is
+// the whole difference between the two surfaces' plumbing; the rendering below
+// is the shared library, unmodified.
+
+// ── the human as a participant ───────────────────────────────────────────
+// The operator is a participant, not a special kind of actor: they get an AGENT
+// identity and every button below sends the SAME op an agent would. They have no
+// channel of their own — they join the lanes agents open. See internal/web/act.go.
+let me = null
+// Why the Lanes tab is empty, in the operator's own words. An empty board with
+// matching switched off is indistinguishable from a quiet fleet unless it says.
+let matchingHint = ""
+async function whyEmpty() {
+  try {
+    const st = await (await fetch("/api/matching")).json()
+    matchingHint = st.phase === "ready" ? "" : (st.hint || "")
+  } catch { matchingHint = "" }
+}
+
+// Re-ask while it is still indexing. The fetch used to run once at load, so a
+// board opened during a first index kept telling the operator to wait long after
+// matching was ready — advice that had quietly become false.
+async function whyEmptyUntilReady() {
+  for (let i = 0; i < 60 && matchingHint; i++) {
+    await new Promise((r) => setTimeout(r, 5000))
+    await whyEmpty()
+    draw()
+  }
+}
+async function whoAmI() {
+  try { me = (await (await fetch("/api/me")).json()).agent } catch { me = null }
+}
+// Every human action goes through here, so this is where the two things that go
+// wrong on a network get handled ONCE.
+//
+// It had neither. A dropped request — laptop lid, daemon restart, wifi — became
+// an unhandled rejection: no flash, no live announcement, nothing in the
+// interface at all, and the operator learns their announcement never sent by
+// noticing later that nobody answered it. And a double click, or Enter twice,
+// issued the request twice: two identical posts, two lanes, two messages.
+// What is currently in flight, keyed by action + target.
+//
+// Disabling the CONTROL is not enough on this page and codex caught it: the
+// board redraws on every SSE frame, which replaces that control with a fresh
+// enabled one mid-request. The guard survived exactly as long as no fleet event
+// arrived, which on a live board is not long. State that must outlive a redraw
+// cannot live in the DOM the redraw replaces.
+const inFlight = new Set()
+
+async function act(what, payload, control) {
+  // Keyed by what is being done to what, so two different lanes can act at once
+  // while the same action on the same target cannot double-fire.
+  const key = what + ":" + JSON.stringify(payload || {})
+  if (inFlight.has(key)) return null
+  inFlight.add(key)
+  // The control is disabled as well as guarded — the guard prevents the second
+  // request, and the disabled state is what tells a person why nothing happened.
+  if (control) {
+    control.disabled = true
+    control.setAttribute("aria-busy", "true")
+  }
+  try {
+    const res = await fetch("/api/act/" + what, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload || {}),
+    })
+    const out = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      // A 401 here is the admin session expiring, not a request going wrong.
+      // This board is left open all day, and "request failed: 401" told the
+      // reader nothing about what to do — while the guard's own 401 body is
+      // plain text, so it did not even survive the JSON parse above.
+      if (res.status === 401) {
+        flash("this board's session has expired — run `lanes web` for a fresh link", true)
+        return null
+      }
+      // The engine writes its errors for an actor to act on — they name the
+      // remedy — so show them rather than flattening to "failed".
+      flash(out.error || ("request failed: " + res.status), true)
+      return null
+    }
+    return out
+  } catch (err) {
+    // Transport failure is not the same as a refusal, and saying "failed" for
+    // both would tell the operator to fix the wrong thing. This one means the
+    // request may never have reached the daemon.
+    flash("could not reach Lanes — nothing was sent. " + String(err && err.message || err), true)
+    return null
+  } finally {
+    inFlight.delete(key)
+    // The control may have been replaced by a redraw while this was in flight;
+    // re-enabling a detached node is harmless, and the replacement arrives
+    // enabled anyway.
+    if (control) {
+      control.disabled = false
+      control.removeAttribute("aria-busy")
+    }
+  }
+}
+function flash(msg, bad) {
+  const el = document.getElementById("flash")
+  el.textContent = msg
+  el.className = "flash" + (bad ? " bad" : "")
+  clearTimeout(flash._t)
+  flash._t = setTimeout(() => { el.textContent = ""; el.className = "flash" }, 6000)
+}
+
+let state = { board: {{.BoardJSON}}, messages: {{.MessagesJSON}}, events: {{.EventsJSON}} }
+
+function drawSummary() {
+  const lanes = state.board?.lanes || []
+  const live = lanes.filter((l) => l.status === "active").length
+  const stale = lanes.filter((l) => l.status === "stale").length
+  const working = lanes.filter((l) => (l.slots || []).length > 0).length
+  const open = state.messages.filter((m) => !Board.TERMINAL.has(m.state)).length
+
+  announceChange({ open, stale, lanes: (state.board?.channels || []).length })
+
+  // A row of four zeros is not a summary, it is furniture — and on a board where
+  // nothing has happened it is the loudest thing on the page. The terminal
+  // surface has always dropped zero figures; this makes the web agree.
+  const summary = document.getElementById("summary")
+  if (!lanes.length && !open) { summary.innerHTML = ""; return }
+
+  summary.innerHTML = Board.summaryHTML([
+    { figure: `${live}<span class="of">/${lanes.length}</span>`, label: "live", tone: live ? "good" : "" },
+    { figure: String(open), label: "in flight", tone: open ? "attn" : "" },
+    { figure: String(working), label: "declared" },
+    { figure: String(stale), label: "out of touch", tone: stale ? "attn" : "" },
+  ])
+}
+
+// A redraw must not eat what a person is in the middle of typing.
+//
+// Every board event calls draw(), and draw() replaces whole panes with
+// innerHTML — which destroys the composer inputs, their contents, the focus and
+// the caret. In a live fleet an event arrives whenever ANY agent does anything,
+// so a human writing a message to a lane loses it mid-sentence, repeatedly, in
+// the one feature that exists to let them take part.
+//
+// Found because a test that filled an input and then clicked post failed under
+// load: the redraw landed between the two. That is the same race a person hits,
+// just narrower.
+// A redraw must not eat what a person is in the middle of saying.
+//
+// This used to wrap ONE pane and look only for `.compose input[type=text]`
+// inside `[data-lane]`. The mail pane was replaced directly, its reply
+// composers are keyed by `[data-serial]` rather than `[data-lane]`, and the
+// message-type <select> was not preserved at all — so an operator composing a
+// message lost the body, the type they had chosen, their focus and their caret
+// the moment ANY fleet event arrived. On a live board that is every few seconds.
+//
+// Found by codex in cross-review, and the browser suite had missed it because it
+// only ever exercised the channel composer.
+//
+// So: one pass around the WHOLE redraw, every kind of field, keyed by whatever
+// identity the element actually has.
+function keepingDrafts(render) {
+  // The identity of a field has to survive its element being destroyed. In
+  // order of reliability: an explicit id, the lane it belongs to, the message
+  // serial it replies to.
+  const keyOf = (el) => {
+    if (!el) return null
+    if (el.id) return "id:" + el.id
+    const lane = el.closest("[data-lane]")
+    if (lane) return "lane:" + lane.dataset.lane + ":" + el.tagName + ":" + (el.type || "")
+    const msg = el.closest("[data-serial]")
+    if (msg) return "msg:" + msg.dataset.serial + ":" + el.tagName + ":" + (el.type || "")
+    return null
+  }
+  const FIELDS = '.compose input[type="text"], .compose textarea, .compose select'
+
+  const active = document.activeElement
+  const focus = active && active.matches && active.matches(FIELDS)
+    ? { key: keyOf(active), start: active.selectionStart, end: active.selectionEnd }
+    : null
+
+  // Every non-empty draft, not just the focused one: a person may fill one
+  // lane's box, look at another, and come back. A <select> is captured whatever
+  // its value, because "I deliberately chose notify" is a draft too.
+  const drafts = []
+  document.querySelectorAll(FIELDS).forEach((el) => {
+    const key = keyOf(el)
+    if (!key) return
+    if (el.tagName === "SELECT" || el.value) drafts.push({ key, value: el.value })
+  })
+
+  render()
+
+  const byKey = new Map()
+  document.querySelectorAll(FIELDS).forEach((el) => {
+    const key = keyOf(el)
+    if (key && !byKey.has(key)) byKey.set(key, el)
+  })
+  for (const d of drafts) {
+    const el = byKey.get(d.key)
+    if (el && !el.disabled) el.value = d.value
+  }
+  if (focus) {
+    const el = byKey.get(focus.key)
+    if (el && !el.disabled) {
+      el.focus()
+      // Not every field has a caret; a <select> throws on setSelectionRange.
+      try { el.setSelectionRange(focus.start, focus.end) } catch (_) { /* no caret */ }
+    }
+  }
+}
+
+// One preservation pass around the WHOLE redraw, not one pane of it. Every
+// destructive innerHTML on this page is inside here.
+function draw() { keepingDrafts(drawPanes) }
+
+function drawPanes() {
+  drawSummary()
+  const b = state.board
+  const where = b ? `node ${b.node} · ledger ${b.serial ?? "—"}` : "connecting"
+  document.getElementById("ctx-node").textContent = where
+  document.getElementById("foot-node").textContent = where
+
+  const boardEl = document.getElementById("pane-board")
+  // selfId is null: on a god view no lane is "this one", and marking one would
+  // be a lie. The shared component takes it as a parameter precisely so this
+  // surface can decline to answer the question.
+  boardEl.innerHTML = Board.rosterHTML(b?.lanes, {
+    selfId: null,
+    // The cadence trace is drawn from the event feed the board already has —
+    // no new endpoint, no new poll, and the same events the Activity pane shows.
+    events: state.events,
+    // Never registered anything is a different fact from everything having
+    // gone quiet, and only one of them is answered by a command.
+    empty: (state.board?.serial || 0) === 0
+      ? Board.firstRunHTML()
+      : Board.emptyHTML("No agents right now",
+          "Every lane has closed or aged out. They reappear the moment one registers."),
+  })
+
+  // Channels of work. selfId stays null for the same reason the roster's does:
+  // on an operator view no agent is "you", and marking one would be a lie.
+  const chans = b?.channels || []
+  const chEl = document.getElementById("pane-lanes")
+  chEl.innerHTML = (chans.length
+    ? chans.map((c) => {
+        const mine = (c.members || []).some((m) => m.agent === me)
+        return Board.channelHTML(c, { selfId: me, agents: b?.lanes }) + `
+          <div class="compose" data-lane="${Board.esc(c.id)}">
+            <button class="act ${mine ? "leave" : "join"}">${mine ? "leave" : "join"}</button>
+            <input type="text" placeholder="${mine ? "say something to this lane…" : "join to speak here"}"
+                   ${mine ? "" : "disabled"} aria-label="message ${Board.esc(c.id)}">
+            <button class="act post" ${mine ? "" : "disabled"} data-why="everyone sees it; nobody must reply">post<span class="sr-only"> — everyone sees it; nobody must reply</span></button>
+            <button class="act announce" ${mine ? "" : "disabled"} data-why="every member must acknowledge">announce<span class="sr-only"> — every member must acknowledge</span></button>
+          </div>`
+      }).join("")
+    // The daemon was asked WHY matching is off and the answer was thrown away,
+    // while this sentence promised the very thing that is switched off — so an
+    // operator watched an empty board waiting for a match that could never
+    // arrive. Keep the clause that is always true; say the rest only when it is.
+    : Board.emptyHTML("No lanes", matchingHint
+        ? "Lanes appear when an agent opens one. " + matchingHint
+        : "Lanes appear when an agent opens one, or when two agents are matched into the same work.")
+    ) + `
+    <div class="compose new-lane">
+      <input type="text" id="new-lane-id" placeholder="new lane id (e.g. auth-refactor)" aria-label="new lane id">
+      <input type="text" id="new-lane-topic" placeholder="what the work is" aria-label="new lane topic">
+      <button class="act open">open lane</button>
+    </div>`
+  const tl = document.getElementById("tally-lanes")
+  tl.textContent = chans.length
+  tl.classList.toggle("zero", chans.length === 0)
+
+  const mailEl = document.getElementById("pane-mail")
+  // No actionsHTML: the operator watches. Answering as somebody else's lane is
+  // not something this view may do — only the panel holds a lane token.
+  // Messages addressed to the human get a reply box. Everything else is still
+  // read-only: answering as somebody else's lane is not something this view may
+  // do, and the operator holds exactly one token — their own.
+  mailEl.innerHTML = `
+    <div class="compose new-msg">
+      <input type="text" id="msg-to" placeholder="agent id" aria-label="recipient">
+      <select id="msg-type" aria-label="message type">
+        <option value="notify">notify</option>
+        <option value="question">question</option>
+        <option value="request">request</option>
+        <option value="handoff">handoff</option>
+      </select>
+      <input type="text" id="msg-body" placeholder="message…" aria-label="message body">
+      <button class="act send">send</button>
+    </div>` + (state.messages.length
+    ? state.messages.map((m) => {
+        const forMe = me && m.to === me && !Board.TERMINAL.has(m.state)
+        return Board.messageHTML(m, { selfId: me }) + (forMe ? `
+          <div class="compose reply" data-serial="${m.serial}">
+            <input type="text" placeholder="reply to ${Board.esc(m.from)}…" aria-label="reply">
+            <button class="act respond">answer</button>
+            <button class="act ackmsg" data-why="acknowledge without answering">ack<span class="sr-only"> — acknowledge without answering</span></button>
+          </div>` : "")
+      }).join("")
+    : Board.emptyHTML("No mail", "Messages between agents appear here as they are sent."))
+
+  const actEl = document.getElementById("pane-activity")
+  actEl.innerHTML = state.events.length
+    ? state.events.map(Board.eventHTML).join("")
+    : Board.emptyHTML("Nothing yet", "Registrations, claims and messages appear here in ledger order.")
+
+  const tm = document.getElementById("tally-mail")
+  tm.textContent = state.messages.length
+  tm.classList.toggle("zero", state.messages.length === 0)
+  const ta = document.getElementById("tally-act")
+  ta.textContent = state.events.length
+  ta.classList.toggle("zero", state.events.length === 0)
+}
+
+// ── views ────────────────────────────────────────────────────
+const NAV = [...document.querySelectorAll(".views button")]
+function tab(which, { focus = false } = {}) {
+  // Semantics first, and synchronously. Routing the whole switch through the
+  // transition made aria-selected, the roving tabindex and FOCUS land a frame
+  // late — so End-then-Arrow raced, and a keyboard user's focus moved after
+  // the keystroke that moved it. A view transition is decoration; what a
+  // screen reader is told and where the focus is are not, and they must never
+  // wait on an animation.
+  const from = NAV.findIndex((b) => b.getAttribute("aria-selected") === "true")
+  const to = NAV.findIndex((b) => b.dataset.view === which)
+  for (const btn of NAV) {
+    const on = btn.dataset.view === which
+    btn.setAttribute("aria-selected", String(on))
+    // Roving tabindex: a tablist is ONE stop in the tab order, and you move
+    // between tabs with the arrow keys. Four separate stops is the default
+    // browser behaviour and it is wrong — it makes a four-item switch cost four
+    // presses to walk past.
+    btn.tabIndex = on ? 0 : -1
+    if (on && focus) btn.focus()
+  }
+
+  // Only the visible swap is carried. Direction matters: a view moving left is
+  // a different fact from one moving right. Same runner, same tokens and same
+  // reduced-motion guard as the panel — Board.transition.
+  Board.transition(to >= from ? "tab-forward" : "tab-back", () => {
+    for (const btn of NAV)
+      document.getElementById("pane-" + btn.dataset.view)
+        .classList.toggle("hide", btn.dataset.view !== which)
+    // Restart the entry animation so a switched-to pane arrives rather than
+    // simply being there. The stagger itself is CSS (sibling-index()).
+    const pane = document.getElementById("pane-" + which)
+    if (pane && !document.documentElement.dataset.transition) {
+      for (const c of pane.children) { c.style.animation = "none"; void c.offsetWidth; c.style.animation = "" }
+    }
+  })
+}
+
+for (const btn of NAV) btn.onclick = () => tab(btn.dataset.view)
+
+// Arrow keys move between tabs, Home/End jump to the ends — the pattern every
+// screen-reader user expects from role="tablist" and will try first.
+document.querySelector(".views").addEventListener("keydown", (ev) => {
+  const i = NAV.findIndex((b) => b.getAttribute("aria-selected") === "true")
+  if (i < 0) return
+  const to =
+    ev.key === "ArrowRight" || ev.key === "ArrowDown" ? (i + 1) % NAV.length :
+    ev.key === "ArrowLeft"  || ev.key === "ArrowUp"   ? (i - 1 + NAV.length) % NAV.length :
+    ev.key === "Home" ? 0 :
+    ev.key === "End"  ? NAV.length - 1 : -1
+  if (to < 0) return
+  ev.preventDefault()
+  tab(NAV[to].dataset.view, { focus: true })
+})
+
+// ── announcing what changed ──────────────────────────────────
+//
+// The board redraws several times a second and a screen reader was told none of
+// it: an agent goes quiet, mail arrives, a lane forms, and the page silently
+// becomes a different page. Announcing the board on every frame would be worse
+// than silence, so this announces the DELTA, and only the parts that mean
+// somebody has to do something.
+let lastAnnounced = null
+function announceChange(now) {
+  const live = document.getElementById("live")
+  if (!live) return
+  if (lastAnnounced === null) {
+    // First paint is not news. Recorded so a test can ask whether the first
+    // draw stayed silent, rather than reading the region seconds later and
+    // racing a genuine change.
+    window.__firstDrawAnnounced = false
+    lastAnnounced = now
+    return
+  }
+  // BOTH DIRECTIONS. This announced arrivals and never departures — new mail,
+  // agents going quiet, lanes opening — so a reader was told about every
+  // problem and about none of the resolutions. They would hear "1 new message
+  // awaiting a reply" and never learn it had been answered, which leaves them
+  // holding a to-do list that only ever grows. A reader who is told about the
+  // problem is owed the outcome.
+  const said = []
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`
+
+  if (now.open > lastAnnounced.open) {
+    said.push(plural(now.open - lastAnnounced.open, "new message", "new messages") + " awaiting a reply")
+  } else if (now.open < lastAnnounced.open) {
+    const n = lastAnnounced.open - now.open
+    said.push(now.open === 0
+      ? "all messages answered"
+      : plural(n, "message", "messages") + " answered")
+  }
+
+  if (now.stale > lastAnnounced.stale) {
+    said.push(plural(now.stale - lastAnnounced.stale, "agent", "agents") + " out of touch")
+  } else if (now.stale < lastAnnounced.stale) {
+    const n = lastAnnounced.stale - now.stale
+    said.push(now.stale === 0
+      ? "every agent is back in touch"
+      : plural(n, "agent", "agents") + " back in touch")
+  }
+
+  if (now.lanes > lastAnnounced.lanes) {
+    said.push(plural(now.lanes - lastAnnounced.lanes, "new lane of work", "new lanes of work") + " opened")
+  } else if (now.lanes < lastAnnounced.lanes) {
+    // A lane ends when its last member leaves and nothing is outstanding, so
+    // this is work FINISHING — the most useful thing a coordination board can
+    // tell you and the one it was staying silent about.
+    said.push(plural(lastAnnounced.lanes - now.lanes, "lane of work", "lanes of work") + " closed")
+  }
+
+  lastAnnounced = now
+  if (said.length) live.textContent = said.join("; ")
+}
+
+// ── the human acts ───────────────────────────────────────────
+// One delegated listener rather than per-element handlers: the panes are
+// re-rendered wholesale on every board update, so bound handlers would be
+// discarded and re-created several times a second.
+document.addEventListener("click", async (ev) => {
+  const btn = ev.target.closest(".act")
+  if (!btn) return
+  const box = btn.closest(".compose")
+  const input = box?.querySelector('input[type="text"]')
+  const lane = box?.dataset.lane
+  const serial = box?.dataset.serial ? Number(box.dataset.serial) : 0
+
+  // Any action mints the identity server-side, so re-ask afterwards: the page
+  // needs to know who it became in order to mark its own memberships.
+  const wasAnon = !me
+  if (btn.classList.contains("join"))     { if (await act("join", { lane }, btn)) flash("joined " + lane) }
+  else if (btn.classList.contains("leave")) { if (await act("leave", { lane }, btn)) flash("left " + lane) }
+  else if (btn.classList.contains("post") || btn.classList.contains("announce")) {
+    const body = input?.value.trim()
+    if (!body) return flash("nothing to say", true)
+    const what = btn.classList.contains("post") ? "post" : "announce"
+    if (await act(what, { lane, body }, btn)) { input.value = ""; flash(what + "ed to " + lane) }
+  } else if (btn.classList.contains("open")) {
+    const id = document.getElementById("new-lane-id").value.trim()
+    const topic = document.getElementById("new-lane-topic").value.trim()
+    if (!id || !topic) return flash("a lane needs an id and a topic", true)
+    if (await act("open", { lane: id, body: topic }, btn)) {
+      document.getElementById("new-lane-id").value = ""
+      document.getElementById("new-lane-topic").value = ""
+      flash("opened " + id)
+    }
+  } else if (btn.classList.contains("send")) {
+    const to = document.getElementById("msg-to").value.trim()
+    const body = document.getElementById("msg-body").value.trim()
+    const type = document.getElementById("msg-type").value
+    if (!to || !body) return flash("a message needs a recipient and a body", true)
+    if (await act("send", { to, body, type }, btn)) {
+      document.getElementById("msg-body").value = ""
+      flash("sent to " + to)
+    }
+  } else if (btn.classList.contains("respond")) {
+    const body = input?.value.trim()
+    if (!body) return flash("nothing to say", true)
+    if (await act("respond", { serial, body, disposition: "answer" }, btn)) { input.value = ""; flash("answered") }
+  } else if (btn.classList.contains("ackmsg")) {
+    if (await act("ack", { serial }, btn)) flash("acknowledged")
+  }
+  if (wasAnon) {
+    await whoAmI()
+    document.getElementById("ctx-you").textContent = me ? "you are " + me : "observing"
+    draw()
+  }
+})
+
+// Enter submits the nearest primary action, because a compose box that needs a
+// mouse is a compose box nobody uses mid-thought.
+document.addEventListener("keydown", (ev) => {
+  if (ev.key !== "Enter") return
+  const box = ev.target.closest?.(".compose")
+  if (!box) return
+  const primary = box.querySelector(".act.post, .act.respond, .act.send, .act.open")
+  if (primary) { ev.preventDefault(); primary.click() }
+})
+
+// ── live ─────────────────────────────────────────────────────
+// EventSource reconnects on its own and resumes from Last-Event-ID, which the
+// server honours — a dropped connection catches up rather than losing the
+// board. The status mark is live only while genuinely connected, so a stalled
+// stream is visible rather than looking like a quiet fleet.
+const mark = document.getElementById("mark")
+const es = new EventSource("/events")
+// Announced on TRANSITION, never on every heartbeat: a live region that fires
+// each time the stream breathes is a region people turn off.
+let wasLive = null
+function setLive(live) {
+  mark.classList.toggle("live", live)
+  const label = document.getElementById("mark-state")
+  if (label) label.textContent = live ? "connected, board is live" : "disconnected, board may be stale"
+  if (wasLive !== null && wasLive !== live) {
+    const region = document.getElementById("live")
+    if (region) {
+      region.textContent = live
+        ? "reconnected — the board is live again"
+        : "disconnected — what you are looking at may be out of date"
+    }
+  }
+  wasLive = live
+}
+es.addEventListener("open", () => setLive(true))
+es.addEventListener("error", () => setLive(false))
+es.addEventListener("board", (e) => {
+  try {
+    const d = JSON.parse(e.data)
+    if (d.board) state.board = d.board
+    if (d.messages) state.messages = d.messages
+    if (d.events) state.events = d.events
+    draw()
+  } catch (_) { /* keep the last good view rather than blanking it */ }
+})
+
+// Paint from the server-rendered bootstrap immediately, so the board is on
+// screen before the stream delivers anything.
+// Not top-level await: this is a classic <script>, where that is a syntax
+// error that kills the whole file — including the renderer, so the board came
+// up blank rather than merely un-personalised. Paint first, then personalise.
+// Marks explain themselves to anyone, not only to a mouse: one popover in the
+// top layer, re-anchored as the reader moves. Installed once, before the first
+// paint, so it is live for the board that is already on screen.
+Board.explainer()
+// Ages and recency decay with no event to announce them, and the board only
+// redraws on change — so without this a quiet fleet reads as a busy one.
+Board.ticker()
+
+draw()
+tab("board")
+Promise.all([whoAmI(), whyEmpty()]).then(() => {
+  // "observing" until the operator does something. Watching is a legitimate
+  // posture, not a degraded one, so it is not called "read-only".
+  document.getElementById("ctx-you").textContent = me ? "you are " + me : "observing"
+  draw() // re-render now that "which of these is me" has an answer
+  void whyEmptyUntilReady() // stop saying "still indexing" once it is not
+})
+</script>
+</body>
+</html>

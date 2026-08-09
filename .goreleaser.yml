@@ -1,0 +1,142 @@
+version: 2
+
+project_name: lanes
+
+builds:
+  - id: lanesd
+    main: ./cmd/lanesd
+    binary: lanesd
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X github.com/agenxy/lanes/internal/build.Version={{.Version}}"]
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+  - id: lanes
+    main: ./cmd/lanes
+    binary: lanes
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X github.com/agenxy/lanes/internal/build.Version={{.Version}}"]
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+
+archives:
+  - formats: [tar.gz]
+    # Normalise the ownership recorded in the tar headers.
+    #
+    # Without this the archive carries whoever built it — a local dry run
+    # produced tar headers naming the builder's own account and group, which
+    # puts that name inside every published tarball. GitHub-hosted runs would say
+    # `runner` instead, so the leak only appears when a release is cut or
+    # repaired from a workstation, which is exactly when nobody is looking for
+    # it.
+    #
+    # Ownership only, despite the mtime below. GoReleaser 2.17.1 applies
+    # owner/group/mode from here to the compiled binaries but not `mtime`, so a
+    # binary's header keeps its build time and two archives built from identical
+    # bytes still hash differently. The mtime IS applied to the doc files listed
+    # further down. The BINARIES are byte-for-byte reproducible — verified by
+    # building twice and comparing hashes — and that is what the README claims;
+    # the tar wrapper around them is not, and this comment will not pretend
+    # otherwise.
+    builds_info:
+      owner: root
+      group: root
+      mode: 0755
+      mtime: "{{ .CommitDate }}"
+    # The doc files too. builds_info covers only the compiled binaries, so
+    # naming these explicitly is what stops LICENSE/README/CHANGELOG carrying
+    # the builder's account. Listing them also replaces GoReleaser's implicit
+    # default set, which is the whole point — the default is what had no `info`.
+    files:
+      - src: LICENSE
+        info: &archive_file_info
+          owner: root
+          group: root
+          mode: 0644
+          mtime: "{{ .CommitDate }}"
+      - src: README.md
+        info: *archive_file_info
+      - src: CHANGELOG.md
+        info: *archive_file_info
+
+checksum:
+  name_template: checksums.txt
+
+sboms:
+  - artifacts: archive
+
+signs:
+  # cosign 3. `sign-blob` dropped --output-signature/--output-certificate in
+  # favour of a single Sigstore bundle carrying the signature, the certificate
+  # and the transparency-log entry together — so verification needs one file
+  # instead of three that can be separated in transit.
+  - cmd: cosign
+    signature: "${artifact}.bundle"
+    args: ["sign-blob", "--yes", "--bundle", "${signature}", "${artifact}"]
+    artifacts: checksum
+
+release:
+  draft: true
+
+# `brews` (Formulas) is deprecated: GoReleaser generated hand-rolled formulas to
+# install pre-compiled binaries, and Casks are the supported way to do that now.
+# https://goreleaser.com/deprecations#brews
+homebrew_casks:
+  - repository:
+      owner: agenxy
+      name: homebrew-lanes
+      # Pushed over SSH with a DEPLOY KEY, not an account token.
+      #
+      # A token here is necessarily broader than the job needs: the default
+      # GITHUB_TOKEN cannot reach another repository at all, so the alternative
+      # is a personal token, and the smallest personal token still belongs to a
+      # human and outlives this workflow. A deploy key belongs to one
+      # repository, grants exactly write-to-the-tap, is revocable from the tap's
+      # own settings without touching anybody's account, and cannot be used to
+      # read or write anything else in the org.
+      #
+      # The key exists only in CI, so a local `goreleaser release --snapshot`
+      # stops here with "map has no entry for key HOMEBREW_TAP_DEPLOY_KEY".
+      # That is the config working. Add --skip=homebrew locally.
+      git:
+        url: git@github.com:Agenxy/homebrew-lanes.git
+        private_key: "{{ .Env.HOMEBREW_TAP_DEPLOY_KEY }}"
+      # Explicit, because the default is GITHUB_TOKEN and that is scoped to THIS
+      # repository — it cannot commit to the tap. Relying on the default makes
+      # the release succeed while the cask silently is not published: every
+      # artifact present, and `brew upgrade` simply never sees the new version.
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Casks
+    homepage: https://github.com/agenxy/lanes
+    description: "Coordination and situational-awareness board for AI agents on one machine"
+    license: MIT
+    # BOTH binaries. The default links only the project name, which generated a
+    # cask installing `lanes` and not `lanesd` — a CLI with no daemon, so
+    # `brew install` produced something that cannot work at all. The archive
+    # always contained both; only the linking was wrong, which is the kind of
+    # thing that looks fine right up until somebody installs it.
+    binaries:
+      - lanes
+      - lanesd
+    hooks:
+      post:
+        # Clear the quarantine attribute Homebrew puts on downloaded artifacts.
+        # These binaries are cosign-signed for provenance but NOT Apple-notarised,
+        # so without this macOS refuses to run them — "cannot be opened because
+        # the developer cannot be verified", AFTER a successful install, which
+        # reads as a broken product rather than an unsigned one.
+        install: |
+          system_command "/usr/bin/xattr",
+                         args:         ["-dr", "com.apple.quarantine", staged_path.to_s],
+                         must_succeed: false
+    caveats: |
+      Start the daemon and point your agents at it:
+
+        lanesd &                  # 127.0.0.1:4777, data in ~/.lanes
+        lanes mcp-config          # MCP config to add to your harness
+        lanes admin set-password  # once, before `lanes web`
+        lanes doctor              # what is quietly broken, and how to fix it
+
+      Signed for provenance with cosign, but not notarised by Apple, so this
+      cask clears the quarantine flag on install.

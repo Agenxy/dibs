@@ -1,0 +1,17 @@
+pre-commit:
+  parallel: true
+  commands:
+    fmt:
+      glob: "*.go"
+      run: golangci-lint fmt --diff || (echo "run: task fmt" && exit 1)
+    vet:
+      glob: "*.go"
+      run: go vet ./...
+    lint-fast:
+      glob: "*.go"
+      run: golangci-lint run --fast-only
+
+pre-push:
+  commands:
+    test:
+      run: go test -race ./...

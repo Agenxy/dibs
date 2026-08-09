@@ -1,0 +1,14 @@
+{
+  "name": "lanes",
+  "owner": { "name": "Agenxy" },
+  "metadata": {
+    "description": "Machine-local AI-agent coordination: shared lanes, typed mailboxes, and directory claims, with mail delivered into your session."
+  },
+  "plugins": [
+    {
+      "name": "lanes",
+      "source": "./plugins/claude-code",
+      "description": "Machine-local AI-agent coordination via the Lanes board, with mail auto-delivered into your session."
+    }
+  ]
+}
