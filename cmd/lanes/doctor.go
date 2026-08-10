@@ -61,7 +61,7 @@ func doctor(args []string) error {
 		bad("no local secret at "+secretPath,
 			"the daemon has never run here. Start it: `lanesd`")
 		fmt.Println("\nnothing else can be checked until the daemon has started.")
-		return nil
+		return earlyDoctorResult(probs, warns)
 	default:
 		ok("local secret present")
 	}
@@ -77,13 +77,13 @@ func doctor(args []string) error {
 		bad("daemon unreachable at "+addr()+" ("+err.Error()+")",
 			"start it with `lanesd`, or set LANES_ADDR if it listens elsewhere")
 		fmt.Println("\nnothing else can be checked while the daemon is down.")
-		return nil
+		return earlyDoctorResult(probs, warns)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusUnauthorized {
 		bad("daemon rejected our own secret (401)",
 			"the data dir was recreated under a running daemon. Restart `lanesd`")
-		return nil
+		return earlyDoctorResult(probs, warns)
 	}
 	ok("daemon answering on " + addr())
 
@@ -119,12 +119,35 @@ func doctor(args []string) error {
 			{Label: "problem(s)", N: probs, Tone: "alarm", Always: true},
 			{Label: "warning(s)", N: warns, Tone: "attn"},
 		}))
-		return fmt.Errorf("%d problem(s) found", probs)
 	case warns > 0:
 		fmt.Println(ui.Good("no problems") + ui.Dim("; ") +
 			ui.Attn(fmt.Sprintf("%d warning(s)", warns)) + ui.Dim(" — all optional features"))
 	default:
 		fmt.Println(ui.Good("no problems found"))
+	}
+	return doctorResult(probs, warns)
+}
+
+// doctorResult is the machine-readable half of the report. Warnings describe
+// optional features and are deliberately status-neutral; any problem means the
+// install cannot be trusted as healthy by a script or monitoring probe.
+func doctorResult(problems, _ int) error {
+	if problems > 0 {
+		return fmt.Errorf("%d problem(s) found", problems)
+	}
+	return nil
+}
+
+// earlyDoctorError tells main that doctor already printed the whole diagnosis.
+// The status must fail, but repeating it as "lanes: N problem(s) found" would
+// change the deliberately human-written early output for the sake of scripts.
+type earlyDoctorError struct{ error }
+
+func (earlyDoctorError) exitOnly() {}
+
+func earlyDoctorResult(problems, warnings int) error {
+	if err := doctorResult(problems, warnings); err != nil {
+		return earlyDoctorError{error: err}
 	}
 	return nil
 }
