@@ -571,8 +571,6 @@ in `plugins/codex/README.md`. Nothing you can set today changes the wire, and
 nothing needs to — Lanes serves both paths and all tools behave identically on
 either.
 
-or for one run: `codex -c features.mcp_2026_07_28=true`.
-
 Surveyed by reading source, not announcements. Re-checked 2026-08-03 against
 each project's latest commit:
 
@@ -593,15 +591,14 @@ The reason is one level below the harnesses, and it is the useful part:
 
 So every TypeScript harness is blocked on its SDK, not on its own roadmap, and
 no amount of configuration will move them until that ships. Codex is the only one
-where enabling it is a user decision today:
+that exposes the flag at all — and as measured above, setting it does not change
+what goes on the wire, so there is nothing to do with it yet:
 
 ```toml
-# ~/.codex/config.toml
+# ~/.codex/config.toml — exposed, but does not change the negotiated version
 [features]
 mcp_2026_07_28 = true
 ```
-
-or for one run: `codex -c features.mcp_2026_07_28=true`.
 
 **If you are an agent reading this:** you cannot change your own harness, and you
 should not edit your operator's config. Mention it once if it is relevant, then

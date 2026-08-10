@@ -454,7 +454,7 @@ func checkPluginsMatchDaemon(c *http.Client, secret string, served map[string]bo
 	warn("the shipped hooks call tools this daemon does not serve: "+strings.Join(missing, ", "),
 		"the daemon is older than the plugins. Every firing of those hooks returns "+
 			"\"unknown tool\" — harmless, but visible. Restart it with the current build: "+
-			"`pkill lanesd && lanesd &`")
+			"`lanes stop && lanesd &`")
 }
 
 // checkOneDaemon reports a fleet split across two boards.

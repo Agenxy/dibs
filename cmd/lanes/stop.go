@@ -40,6 +40,43 @@ func selectDaemon(live []paths.Daemon, dir string) (mine *paths.Daemon, others i
 	}
 }
 
+// stop is the verb. It exists separately from stopDaemon so that arguments are
+// inspected BEFORE anything is signalled.
+//
+// `lanes stop --help` stopped the daemon and exited 0. The dispatch ignored
+// os.Args[2:] entirely, so asking a destructive command what it does performed
+// it — and this is the second time in this CLI: configure.go carries a comment
+// about `lanes configure --help` being taken as a directory named "--help".
+// Once is a slip; twice is a pattern, so this one refuses anything it does not
+// understand rather than assuming an unrecognised argument is harmless.
+func stop(args []string) error {
+	for _, a := range args {
+		switch a {
+		case "-h", "--help", "help":
+			fmt.Print(stopHelp)
+			return nil
+		default:
+			return fmt.Errorf("`lanes stop` takes no arguments, and %q is not one — "+
+				"it stops the daemon for the data directory in LANES_DIR (or ~/.lanes) "+
+				"and nothing else. Refusing rather than guessing, because this is not "+
+				"an action to perform on a directory you did not mean", a)
+		}
+	}
+	return stopDaemon(paths.DataDir())
+}
+
+const stopHelp = `lanes stop — stop the daemon serving this data directory
+
+  Stops ONLY the daemon registered against LANES_DIR (default ~/.lanes).
+  Other daemons on this machine are left running: Lanes is built so several
+  isolated fleets can coexist, and "pkill lanesd" ends all of them.
+
+  Sends SIGTERM, so the ledger closes cleanly and claims are released, then
+  waits for the process to exit so a replacement can start immediately.
+
+  Stopping something that is not running is not an error.
+`
+
 // stopDaemon stops the daemon serving THIS data directory, and only that one.
 //
 // The documentation used to say `pkill lanesd`, which is wrong in a product

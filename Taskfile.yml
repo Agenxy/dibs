@@ -51,7 +51,7 @@ tasks:
       - |
         echo "installed to {{.DEST}}"
         echo "a running lanesd keeps the old code until you restart it:"
-        echo "  pkill lanesd && lanesd &"
+        echo "  lanes stop && lanesd &"
 
   install:presence:
     # Beside the daemon, because humanauth looks beside its own executable rather

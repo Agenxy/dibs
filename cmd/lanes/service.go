@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/xml"
 	"fmt"
 	"os"
 	"os/exec"
@@ -63,8 +64,22 @@ func daemonPath() (string, error) {
 	return found, nil
 }
 
+// xmlText escapes a value for a plist <string>. Paths were concatenated into
+// the XML directly, so a perfectly ordinary directory — "~/Fleet & Review" —
+// produced a plist that launchd refuses to parse ("unknown ampersand-escape
+// sequence"). The service then simply never starts, and the failure surfaces
+// far from its cause.
+func xmlText(v string) string {
+	var b strings.Builder
+	if err := xml.EscapeText(&b, []byte(v)); err != nil {
+		return v // EscapeText to a strings.Builder cannot fail
+	}
+	return b.String()
+}
+
 func writeLaunchAgent(daemon, dir string) error {
 	target := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "dev.agenxy.lanes.plist")
+	logPath := filepath.Join(dir, "lanesd.log")
 	plist := `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -72,15 +87,15 @@ func writeLaunchAgent(daemon, dir string) error {
   <key>Label</key><string>dev.agenxy.lanes</string>
   <key>ProgramArguments</key>
   <array>
-    <string>` + daemon + `</string>
+    <string>` + xmlText(daemon) + `</string>
     <string>-dir</string>
-    <string>` + dir + `</string>
+    <string>` + xmlText(dir) + `</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key>
   <dict><key>SuccessfulExit</key><false/></dict>
-  <key>StandardOutPath</key><string>` + filepath.Join(dir, "lanesd.log") + `</string>
-  <key>StandardErrorPath</key><string>` + filepath.Join(dir, "lanesd.log") + `</string>
+  <key>StandardOutPath</key><string>` + xmlText(logPath) + `</string>
+  <key>StandardErrorPath</key><string>` + xmlText(logPath) + `</string>
   <key>ProcessType</key><string>Background</string>
 </dict>
 </plist>
@@ -91,7 +106,7 @@ func writeLaunchAgent(daemon, dir string) error {
 	fmt.Printf("wrote %s\n\nLoad it:\n  launchctl load -w %s\n\n"+
 		"KeepAlive restarts it on a crash but not after a clean `lanes stop`, so\n"+
 		"stopping it stays stopped until you start it again.\nLogs: %s\n",
-		target, target, filepath.Join(dir, "lanesd.log"))
+		target, target, logPath)
 	return nil
 }
 

@@ -1,6 +1,10 @@
 package main
 
 import (
+	"bytes"
+	"encoding/xml"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,4 +59,59 @@ func TestServiceUnitsAreWrittenSafely(t *testing.T) {
 			t.Errorf("configHome() = %q, want ~/.config when XDG is unset", got)
 		}
 	})
+}
+
+// Paths go into the plist as XML text. A perfectly ordinary directory name
+// containing "&" produced a plist launchd refuses to parse, so the service
+// silently never started and the failure surfaced far from its cause.
+func TestTheWrittenPlistParsesWithAwkwardPaths(t *testing.T) {
+	// The unit test below covers xmlText. This covers the thing that actually
+	// ships: reverting writeLaunchAgent to concatenate a raw path left xmlText
+	// perfectly correct and never called, which is this codebase's most repeated
+	// defect — a helper that is right and unwired.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, "Fleet & Review")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeLaunchAgent(filepath.Join(home, "bin", "lanesd"), dir); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(home, "Library", "LaunchAgents", "dev.agenxy.lanes.plist"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// launchd will not load a plist it cannot parse, and says so nowhere the
+	// operator is looking — the service simply never starts.
+	dec := xml.NewDecoder(bytes.NewReader(body))
+	for {
+		_, err := dec.Token()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("the generated plist is not well-formed XML: %v\n%s", err, body)
+		}
+	}
+	if !bytes.Contains(body, []byte("Fleet &amp; Review")) {
+		t.Errorf("the ampersand was not escaped in the written unit:\n%s", body)
+	}
+}
+
+func TestServiceUnitEscapesPathsForXML(t *testing.T) {
+	for _, in := range []string{
+		`/Users/x/Fleet & Review`,
+		`/Users/x/<odd>`,
+		`/Users/x/quote"dir`,
+	} {
+		got := xmlText(in)
+		if strings.ContainsAny(strings.NewReplacer("&amp;", "", "&lt;", "", "&gt;", "",
+			"&#34;", "", "&#39;", "").Replace(got), `&<>`) {
+			t.Errorf("xmlText(%q) = %q — still contains raw markup", in, got)
+		}
+	}
+	if got := xmlText("/plain/path"); got != "/plain/path" {
+		t.Errorf("xmlText mangled an ordinary path: %q", got)
+	}
 }

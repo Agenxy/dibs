@@ -129,7 +129,7 @@ func main() {
 	case "verify":
 		err = verify()
 	case "stop":
-		err = stopDaemon(paths.DataDir())
+		err = stop(os.Args[2:])
 	case "doctor":
 		err = doctor(os.Args[2:])
 	case "calibrate":

@@ -45,7 +45,7 @@ func printVersion() {
 		fmt.Println()
 		fmt.Println("  restart it to pick up the installed build:")
 		fmt.Println()
-		fmt.Println("      pkill lanesd && lanesd &")
+		fmt.Println("      lanes stop && lanesd &")
 		return
 	}
 	fmt.Printf("lanesd  %s  started %s\n", info.Version, humanAge(info.StartedAt))
@@ -69,7 +69,7 @@ func printVersion() {
 		fmt.Println("  process started. It is still serving the older code, and nothing")
 		fmt.Println("  else will say so — restart it to pick the new build up:")
 		fmt.Println()
-		fmt.Println("      pkill lanesd && lanesd &")
+		fmt.Println("      lanes stop && lanesd &")
 	}
 }
 
