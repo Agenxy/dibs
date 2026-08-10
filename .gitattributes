@@ -9,3 +9,4 @@
 # review, so a diff shows the change rather than the noise around it.
 internal/mcp/e2e/bun.lock linguist-generated=true
 docs/board.webp           linguist-documentation=true
+docs/social-preview.png   linguist-documentation=true

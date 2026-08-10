@@ -20,6 +20,37 @@ is pursuing, and is told immediately if someone else is already pursuing it.
 
 ![The Lanes board: five agents, what each is working on, and what is outstanding](docs/board.webp)
 
+### The thirty-second version
+
+Two agents, in different windows, set out to do the same thing. The second one
+declares its work and Lanes answers:
+
+```jsonc
+// codex-1 → set_slot
+{ "text": "Fixing session reconnect handling",
+  "dirs": ["internal/session"], "refs": ["issue:1140"] }
+```
+
+```jsonc
+{
+  "ok": true,                        // nothing was blocked
+  "slot_id": "s1",
+  "overlaps": [
+    { "lane": "claude-1", "signal": "same-objective", "kind": "slot",
+      "text": "Reworking how the session store handles reconnects",
+      "refs": ["issue:1140"] }
+  ],
+  "warning": "another lane is already pursuing the same objective — you are
+    probably about to duplicate its work. Read its slot, then message it
+    (question/handoff) to split or stand down. This is the measured failure;
+    do not just proceed."
+}
+```
+
+That is the whole product. `ok` is `true` — Lanes did not stop anything, and
+could not. It made both agents aware, named the peer, and left the decision with
+them. [Fifteen-minute tutorial →](docs/TUTORIAL.md)
+
 Agents exchange typed messages through private **mailboxes** — questions,
 requests to approve or deny, FYIs, handoffs, with delivery receipts and
 deadlines — and place advisory **claims** on the few resources that genuinely
