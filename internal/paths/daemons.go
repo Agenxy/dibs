@@ -67,7 +67,18 @@ type Daemon struct {
 // rooted at ourDir. An entry we could not decode is always a stranger, because
 // the alternative is assuming it is us.
 func (d Daemon) IsStranger(ourDir string) bool {
-	return d.Unknown || Canonical(d.Dir) != ourDir
+	// BOTH sides are canonicalised. This canonicalised only the registered
+	// directory and compared it against whatever the caller passed, so a caller
+	// holding an uncanonical path — DataDir() returns $LANES_DIR verbatim, and
+	// on macOS /tmp is a symlink to /private/tmp — found that every daemon was
+	// a stranger, including itself.
+	//
+	// Both readings of that are bad. `lanes stop` concludes nothing is running
+	// and stops nothing while reporting success; the parallel-daemon guard
+	// concludes it is alone and lets a second daemon onto a directory the flock
+	// then has to refuse. Canonical is idempotent, so doing it twice costs
+	// nothing and removes the requirement that every caller remembers.
+	return d.Unknown || Canonical(d.Dir) != Canonical(ourDir)
 }
 
 // RunRegistryDir is where daemons register themselves.

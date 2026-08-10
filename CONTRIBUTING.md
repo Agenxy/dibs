@@ -7,9 +7,36 @@ at the top of each file), so there is something specific to argue with.
 
 ## Getting a change to build
 
+**First, once per clone.** The toolchain — Go, the linter, Task itself, Bun,
+and the release tools — is pinned with [mise](https://mise.jdx.dev) so the gate
+behaves the same everywhere. mise will not read a config file it has not been
+told to trust, so a fresh clone needs:
+
+```bash
+mise trust && mise install
+```
+
+Skip it and `task ci` fails with `No version is set for shim: task`, which reads
+like a broken install rather than an untrusted config file.
+
+Then the gate itself:
+
 ```bash
 task ci
 ```
+
+It takes a few minutes and needs two things beyond Go:
+
+- **Chromium**, downloaded on first run by `bunx playwright install` — the panel
+  and web-board suites drive a real browser, because a DOM shim has no layout and
+  the size assertions it made were vacuous.
+- **Xcode command line tools** (macOS), for the Swift presence helper. Without
+  them `task install` skips it and Touch ID falls back to the admin password;
+  nothing else is affected.
+
+Working on one area? The gate splits: `task test` (Go only, seconds),
+`task test:panel`, `task test:web`, `task test:channel`, `task test:guard`.
+Run the whole chain before opening a pull request.
 
 That is the whole gate: vet, lint, `go test -race` in both build
 configurations, the browser end-to-end suites, the human-flow suite, the

@@ -4,6 +4,15 @@ go 1.26
 
 toolchain go1.26.5
 
+// v0.0.0 was published, cached by the Go module proxy, and then the tag was
+// moved to a later commit. The proxy and sum.golang.org are append-only, so the
+// checksum they recorded can never agree with the tag again: `go install
+// ...@v0.0.0` with GOPROXY=direct fails with a SECURITY ERROR, and through the
+// default proxy it silently serves the older tree. Neither is acceptable, and
+// neither is fixable — a moved tag is permanent. Use v0.0.1, which is the same
+// source plus this notice.
+retract v0.0.0
+
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/charmbracelet/lipgloss v1.1.0

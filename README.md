@@ -2,6 +2,11 @@
 
 # Lanes
 
+[![CI](https://github.com/agenxy/lanes/actions/workflows/ci.yml/badge.svg)](https://github.com/agenxy/lanes/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/agenxy/lanes?sort=semver)](https://github.com/agenxy/lanes/releases/latest)
+[![Go Reference](https://pkg.go.dev/badge/github.com/agenxy/lanes.svg)](https://pkg.go.dev/github.com/agenxy/lanes)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 **Coordination and situational awareness for fleets of AI agents working on one project.**
 
 You have three agents open. One is refactoring the session store. Another, in a
@@ -94,6 +99,53 @@ lanes web                 # print the live board URL
 lanes board               # the same board, in the terminal
 lanes doctor              # what is quietly broken, and how to fix it
 ```
+
+### Keeping it running
+
+`lanesd &` ties the daemon to the shell that started it: close the terminal or
+reboot and the fleet loses its board. For anything beyond a first look, run it
+under your init system.
+
+**macOS (launchd)** — writes a user agent that starts at login and restarts on
+crash:
+
+```sh
+lanes configure --service     # writes ~/Library/LaunchAgents/dev.agenxy.lanes.plist
+launchctl load -w ~/Library/LaunchAgents/dev.agenxy.lanes.plist
+```
+
+**Linux (systemd user unit)**:
+
+```sh
+lanes configure --service     # writes ~/.config/systemd/user/lanes.service
+systemctl --user enable --now lanes
+```
+
+To stop the daemon for this data directory — and only that one:
+
+```sh
+lanes stop
+```
+
+Not `pkill lanesd`. Lanes is built to let several isolated daemons coexist on a
+machine, and a kill by name takes down whichever fleets happen to share the
+name.
+
+### Verifying what you downloaded
+
+Release artifacts are signed with [cosign](https://docs.sigstore.dev) in the
+Sigstore bundle format — signature, certificate and transparency-log entry in
+one file — and every archive ships an SPDX SBOM.
+
+```sh
+cosign verify-blob checksums.txt \
+  --bundle checksums.txt.bundle \
+  --certificate-identity 'https://github.com/Agenxy/lanes/.github/workflows/release.yml@refs/tags/v0.0.1' \
+  --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
+```
+
+`Verified OK` means the checksums file was produced by this repository's release
+workflow at that tag, and `sha256sum -c checksums.txt` then covers the archives.
 
 `admin set-password` is a prerequisite for `lanes web`, not optional hardening.
 The browser board shows decrypted mail and can act as you, so it is gated on
@@ -495,7 +547,7 @@ each project's latest commit:
 
 | harness | speaks | why |
 |---|---|---|
-| Codex | 2025-11-25 | flag `mcp_2026_07_28` exists but is stage `UnderDevelopment`, default off |
+| Codex | 2025-11-25 (negotiates **2025-06-18**) | flag `mcp_2026_07_28` exists but is stage `UnderDevelopment`, default off. Its SDK supports 2025-11-25; what it actually sends in `initialize` is 2025-06-18 — measured, see [plugins/codex](plugins/codex/) |
 | opencode | 2025-11-25 | bound by the TypeScript SDK (1.29.0) |
 | pi-mono | 2025-11-25 | bound by the TypeScript SDK (^1.25.2) |
 | Gemini CLI | 2025-06-18 | — |

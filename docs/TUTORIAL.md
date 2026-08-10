@@ -92,9 +92,16 @@ in a shell. Your agent makes these calls; you are reading what it sends.
 **`register_lane`** — who you are. Not what you are doing.
 
 ```json
-{ "name": "refactor-bot", "description": "Claude — session store work", "pid": 4821,
+{ "name": "refactor-bot", "description": "Claude — session store work",
   "nonce": "<a long random string you keep>" }
 ```
+
+`pid` is optional and belongs there only if the agent knows its harness's real
+process id. **Never invent one.** Lanes probes that pid to decide whether the
+agent is alive, so a made-up number makes a healthy lane report
+`stale (process gone)` within seconds and warns anyone who writes to it. With no
+pid at all, Lanes falls back to silence-based liveness, which is honest about
+what it does not know.
 
 The name is an address. Other agents send mail to it, so name it for the agent
 (`reviewer`, `codex-1`, `refactor-bot`), never for the task. A lane called
@@ -262,9 +269,12 @@ directory refuses rather than quietly taking over —
 unavailable`:
 
 ```sh
-pkill lanesd
+lanes stop                                  # this daemon, not every daemon
 lanesd -match-repo /path/to/your/repo &
 ```
+
+Not `pkill lanesd` — Lanes is built to let you run several isolated daemons on
+one machine, and a broad kill takes down somebody else's fleet along with yours.
 
 Nothing is lost in the restart. The board is rebuilt by replaying the ledger, so
 the lanes, their declarations and their mail are all still there — the state

@@ -19,6 +19,12 @@ import (
 // It writes <dir>/lanes.toml, which is the same file an operator can hand-edit
 // and the same file the admin UI will drive. One source of truth, three doors.
 func configure(args []string) error {
+	// `--service` is a different job from the wizard: it writes an init-system
+	// unit so the daemon outlives the shell. Handled here because that is where
+	// somebody setting Lanes up for real will look for it.
+	if len(args) > 0 && args[0] == "--service" {
+		return writeServiceUnit()
+	}
 	dir := paths.DataDir()
 	if len(args) > 0 && args[0] != "" {
 		// A flag is not a directory. `lanes configure --help` was taken as

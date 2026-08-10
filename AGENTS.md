@@ -40,10 +40,20 @@ change it when reality disagrees, and record why).
 
 ## Working here
 
+**Once per clone**, before anything else — `task` itself is pinned by mise, so a
+fresh checkout has no runner until this has run:
+
+```bash
+mise trust && mise install
+```
+
+Then:
+
 ```bash
 task ci                   # THE gate: vet, lint, -race, build, 4 e2e suites + the
                           # sidecar contract, and the SPEC §17 coverage floor.
-                          # Cross-compilation is release.yml's job, not this one.
+                          # Includes cross-compilation to all four release
+                          # targets and govulncheck.
 go build ./...            # quick build
 go test -race ./internal/...
 gofmt -w <files>          # always

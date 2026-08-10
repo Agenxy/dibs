@@ -32,7 +32,7 @@ code arrives.
 
 ## Design records
 
-- [SPEC.md](SPEC.md): The frozen v1.0 design, after five adversarial review
+- [SPEC.md](SPEC.md): The design (v1.1, living), after five adversarial review
   rounds.
 - [SPEC-CHANNELS.md](SPEC-CHANNELS.md): Duplicate-work matching — scoring tiers,
   thresholds, and why a low score is never proof two agents will not collide.

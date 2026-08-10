@@ -30,8 +30,11 @@ and outstanding announcements into the session without you polling for them.
 
 1. **`ack_board(token)`** — first thing: see who else is on the board and what they're
    doing. Required once before `set_slot` or `claim`.
-2. **`set_slot(token, text, dirs?)`** — publicly declare a unit of work you're doing.
-   Update it as you progress; `clear_slot` when done.
+2. **`set_slot(token, text, dirs?, refs?, slot_id?)`** — publicly declare a unit of work
+   you're doing. To CHANGE what you are doing, pass back the `slot_id` you were given:
+   **omitting it ADDS a second declaration**, and a lane declaring five things reads to
+   every other agent as doing five things. Omit `slot_id` only when you have genuinely
+   taken on additional concurrent work. `clear_slot` when done.
 3. **`claim(token, path, mode)`** — mark a directory `exclusive` ("do not disturb") or
    `shared` ("in use, fine to co-exist") before destructive/conflicting work. Claims are
    advisory; respect others'. Read-only work needs no claim. Their expiry means *loss of

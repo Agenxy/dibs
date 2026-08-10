@@ -59,6 +59,14 @@ is not a mystery):
 
 setup:
   lanes configure          first-run wizard — picks secure defaults for you
+  lanes configure --service write a launchd/systemd unit so the daemon survives a
+                           closed terminal and a reboot; prints the load command
+                           rather than running it
+  lanes stop               stop the daemon serving THIS data directory, and only
+                           that one — not "pkill lanesd", which also kills the
+                           isolated daemons other fleets are running. SIGTERM, so
+                           the ledger closes and claims are released; waits for
+                           the process to go, so you can start a replacement
 
 human/admin (interactive terminal; the god-view needs the admin password):
   lanes messages           ALL mail, decrypted — prompts admin password
@@ -120,6 +128,8 @@ func main() {
 		err = logCmd(os.Args[2:])
 	case "verify":
 		err = verify()
+	case "stop":
+		err = stopDaemon(paths.DataDir())
 	case "doctor":
 		err = doctor(os.Args[2:])
 	case "calibrate":
