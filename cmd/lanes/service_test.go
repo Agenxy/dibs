@@ -78,7 +78,7 @@ func TestTheWrittenPlistParsesWithAwkwardPaths(t *testing.T) {
 	if err := writeLaunchAgent(filepath.Join(home, "bin", "lanesd"), dir); err != nil {
 		t.Fatal(err)
 	}
-	body, err := os.ReadFile(filepath.Join(home, "Library", "LaunchAgents", "dev.agenxy.lanes.plist"))
+	body, err := os.ReadFile(filepath.Join(home, "Library", "LaunchAgents", "com.agenxy.lanes.plist"))
 	if err != nil {
 		t.Fatal(err)
 	}

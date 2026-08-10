@@ -141,8 +141,8 @@ under your init system.
 crash:
 
 ```sh
-lanes configure --service     # writes ~/Library/LaunchAgents/dev.agenxy.lanes.plist
-launchctl load -w ~/Library/LaunchAgents/dev.agenxy.lanes.plist
+lanes configure --service     # writes ~/Library/LaunchAgents/com.agenxy.lanes.plist
+launchctl load -w ~/Library/LaunchAgents/com.agenxy.lanes.plist
 ```
 
 **Linux (systemd user unit)**:
