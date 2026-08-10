@@ -78,13 +78,13 @@ func xmlText(v string) string {
 }
 
 func writeLaunchAgent(daemon, dir string) error {
-	target := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "com.agenxy.lanes.plist")
+	target := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "org.agenxy.lanes.plist")
 	logPath := filepath.Join(dir, "lanesd.log")
 	plist := `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.agenxy.lanes</string>
+  <key>Label</key><string>org.agenxy.lanes</string>
   <key>ProgramArguments</key>
   <array>
     <string>` + xmlText(daemon) + `</string>
