@@ -19,41 +19,70 @@ import (
 )
 
 // Version is what every surface reports. Overwritten at link time by
-// -X github.com/agenxy/lanes/internal/build.Version=<tag>; the value below is
-// what a `go build` from a working tree honestly is.
-var Version = devVersion
+// -X github.com/agenxy/lanes/internal/build.Version=<tag>; anything else is
+// worked out below from what the toolchain knows.
+var Version = unstamped
 
-// devVersion is the honest answer when nothing stamped the binary.
-const devVersion = "0.0.0-dev"
-
-// A `go install github.com/agenxy/lanes/cmd/lanes@latest` build carries no
-// ldflags, so it reported 0.0.0-dev — a version string that says "somebody's
-// working tree" for a binary the module proxy built from a tag. The README
-// documents `go install` as an install route, so that is a supported build
-// telling every surface, and every agent on connect, something false about
-// itself.
+// unstamped is the sentinel meaning "the linker told us nothing". It is not a
+// version number, deliberately.
 //
-// Go already knows: the module version is in the build info the toolchain
-// embeds. Read it when the linker did not tell us, and leave a genuine local
-// build saying -dev, which is what it is.
+// It used to be "0.0.0-dev", which stated a release that exists — and, once
+// v0.0.1 shipped, one that is OLDER than what people are running. A build from
+// a tree four commits ahead of the release announced itself as 0.0.0 and read
+// as stale. That is the same confusion `lanes version` was written to end: a
+// daemon serving old code while everything else insisted the fix was in.
+//
+// So the fallback says what is true — this binary was not built from a release —
+// and never a number that could be compared against one.
+const unstamped = "devel"
+
 func init() {
+	if Version != unstamped {
+		return // stamped by the release build; that value wins
+	}
 	if info, ok := debug.ReadBuildInfo(); ok {
-		Version = resolve(Version, info.Main.Version)
+		Version = resolve(info)
 	}
 }
 
-// resolve picks the version to report, given whatever the linker stamped and
-// whatever the module system knows. Split out from init so it can be tested:
-// the interesting cases are all about which source wins, and a rule about
-// precedence that nothing exercises is a rule that quietly inverts.
-func resolve(stamped, moduleVersion string) string {
-	if stamped != devVersion {
-		return stamped // the release build said so; it wins
-	}
-	switch moduleVersion {
+// resolve picks the most specific truthful version available.
+//
+// Split out from init and taking the whole BuildInfo so it can be tested: the
+// interesting part is which source wins, and a precedence rule that nothing
+// exercises is a rule that quietly inverts.
+func resolve(info *debug.BuildInfo) string {
+	// `go install pkg@v1.2.3` records the real module version. Best answer.
+	switch v := info.Main.Version; v {
 	case "", "(devel)":
-		return devVersion // a local build inside the module, honestly
+		// Nothing from the module system; fall through to VCS below.
 	default:
-		return strings.TrimPrefix(moduleVersion, "v")
+		return strings.TrimPrefix(v, "v")
 	}
+
+	// A local build. Go embeds the revision even when it has no version, and
+	// that is exactly what somebody asking "is what is running what I last
+	// built" needs — far more than a word saying "development".
+	var rev string
+	var dirty bool
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			rev = s.Value
+		case "vcs.modified":
+			dirty = s.Value == "true"
+		}
+	}
+	if rev == "" {
+		return unstamped // go run, or -buildvcs=false, or no repository
+	}
+	if len(rev) > 12 {
+		rev = rev[:12]
+	}
+	out := unstamped + "+" + rev
+	if dirty {
+		// Uncommitted changes mean the revision does not describe the binary.
+		// Saying so is the difference between a useful answer and a wrong one.
+		out += ".dirty"
+	}
+	return out
 }

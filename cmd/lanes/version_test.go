@@ -10,7 +10,7 @@ import (
 // `lanes` and `lanesd` are separate processes and installing a binary does not
 // restart the one already serving, so a fix can be built, installed, and absent
 // from every answer the board gives with no error anywhere — both sides even
-// report the same version string, because in development both are 0.0.0-dev.
+// report the same version string, because in development both read `devel`.
 // A daemon predating a panel fix served the old template for hours that way, and
 // the only symptom was a screenshot that looked wrong.
 func TestStaleDaemonComparesBuildTimeAgainstStartTime(t *testing.T) {

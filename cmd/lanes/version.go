@@ -17,7 +17,7 @@ import (
 // new binary does not restart the one already serving, so a fix can be built,
 // installed, and completely absent from every answer the board gives — with no
 // error anywhere, and both sides reporting the same version string, because in
-// development they are both `0.0.0-dev`.
+// development they are both `devel` (or the same pseudo-version).
 //
 // That is not hypothetical. A daemon predating a panel fix kept serving the old
 // template for hours while the repository, the tests, and the freshly installed

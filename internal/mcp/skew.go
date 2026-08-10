@@ -10,7 +10,7 @@ import (
 // daemonStarted is when this process began serving.
 //
 // It exists because the version string cannot answer the question people
-// actually have. In development both sides read `0.0.0-dev`, so comparing them
+// actually have. In development both sides read `devel`, so comparing them
 // says nothing, and the failure that keeps happening is not a version mismatch
 // at all: it is a daemon that is still running code from before the last build.
 // `lanes` and `lanesd` are separate processes, and installing a new binary does
