@@ -7,24 +7,34 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.0.2] - 2026-08-11
 
+### Changed
+
+- **Lanes is now Apache 2.0**, relicensed from MIT. Both are permissive; Apache
+  grants patent rights from contributors explicitly, terminates the licence of
+  anyone who sues over the covered code, and states that no trademark rights come
+  with it. `NOTICE` retains the MIT notice for the contributions made under it.
+- `lanes doctor` exits nonzero when it finds a problem, so a script can act on it
+  rather than parsing the output. Thanks to @arunsathiya (#6).
+- The Homebrew tap moved from `agenxy/homebrew-lanes` to `agenxy/homebrew-tap`,
+  so the install line is `brew install agenxy/tap/lanes` rather than repeating
+  the project name. GitHub keeps a redirect, so the old form still works and
+  nobody who already tapped needs to act.
+- The README leads with a worked example of a collision being caught, and the
+  documentation says `lanes stop` wherever it used to say `pkill lanesd`.
+
 ### Added
 
 - Two standards are now checked rather than remembered. `internal/hygiene`
   fails the build on a shell script entering the tracked tree, by extension or
-  by shebang, and on an em dash in prose. En dashes are flagged only when spaced,
+  by shebang, and on an em dash in prose. The shebang is read the way `env`
+  reads it, quoting included, and anything that cannot be shown to be shell-free
+  is treated as shell. En dashes are flagged only when spaced,
   since a numeric range is correct typography.
 - The board says which project each agent is in. A machine usually has more
   than one repository open, and agents in three of them all reported branch
   `main`, so the rows were indistinguishable. The project is resolved from the
   agent's working directory once, at registration, and recorded, so it names the
   project even when the agent is several directories inside it.
-
-### Changed
-
-- The Homebrew tap moved from `agenxy/homebrew-lanes` to `agenxy/homebrew-tap`,
-  so the install line is `brew install agenxy/tap/lanes` rather than repeating
-  the project name. GitHub keeps a redirect, so the old form still works and
-  nobody who already tapped needs to act.
 
 ### Fixed
 
@@ -34,10 +44,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   --graft` (identity is read with replacement objects disabled), and
   `url.*.insteadOf` (the effective remote is resolved instead of the configured
   string).
-- Repository identity now records the root commits as well as the common
-  directory and the remote. Without them, a clone whose origin had been removed
-  was indistinguishable from an unrelated local repository, so scoping refs had
-  to pick which of the two to get wrong. Shared history tells them apart.
+- Repository identity is decided by shared history first and the remote only
+  when history cannot answer. A remote string is a NAME for a repository and one
+  repository answers to several: GitHub paths are case-insensitive, and a renamed
+  repository keeps serving its old path, so clones of one project compared as
+  strangers and a real collision went unreported. Objects cannot be renamed.
+  A consequence worth knowing: two forks share a root commit and are therefore
+  treated as one project, which is usually right, since a fork's references
+  normally name the upstream tracker.
 - A ref such as `issue:42` matched across repositories, so two agents in two
   projects were told they were pursuing the same objective: the strongest signal
   Lanes emits, telling each to stop work nothing else was doing. Refs are
