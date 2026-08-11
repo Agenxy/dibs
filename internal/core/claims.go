@@ -71,23 +71,29 @@ func (o SlotOverlap) Strong() bool { return o.Signal == SignalSameObjective }
 // that nothing else is doing. Paths need no such gate: a claim is an absolute
 // path, so two projects cannot collide on one.
 //
-// Deliberately stricter than paths.SameRepo, which calls two identified
-// repositories with different common directories UNKNOWN unless both remotes
-// are known and unequal. SameRepo is right to be cautious: it weighs evidence
-// for the matcher, and its warning is about inferring identity from a basename
-// or a cwd prefix. The common directory is not that kind of guess. Every linked
-// worktree of one repository shares it, and a clone gets a remote from the act
-// of cloning, so two different common directories with no shared remote are two
-// repositories.
+// Three facts are consulted, in order, because two of them leave a case the
+// third settles.
 //
-// The tradeoff, stated because it is a real one: two clones of one upstream
-// where somebody has removed origin will no longer warn about a shared ref.
-// That configuration is rare and has to be made deliberately. The behaviour it
-// replaces was not rare at all, since one locally created repository, which is
-// how most scratch and personal projects start, collided with every other
-// project on the machine. A strong signal that fires constantly is not a strong
-// signal for long, and this one exists to say "stop, someone else is already
-// doing that".
+//  1. The Git common directory. Every linked worktree of one repository shares
+//     it, so an equal one is proof of sameness.
+//  2. The primary remote. Two clones of one upstream are one project and share
+//     its issue numbers; two different remotes are two projects, including two
+//     forks, whose issue 42 are genuinely different issues.
+//  3. The root commits. A clone whose origin has been removed and a repository
+//     created locally with `git init` present identically on the first two
+//     facts, and one is the same project while the other is a stranger. Only
+//     history separates them, and it does so cleanly: clones share a root
+//     commit however the remote has been edited since, and two independent
+//     histories never do, because a root commit hashes its own tree, author and
+//     timestamp.
+//
+// Getting to three was not an aesthetic choice. With two, this had to pick which
+// case to be wrong about, and it picked the wrong one: an adversarial review
+// showed a removed origin silently losing a real same-repository collision,
+// which is the expensive failure. Reverting to "warn unless both remotes are
+// known and different" would have restored the opposite fault, where one locally
+// created repository, which is how most scratch projects start, collided with
+// every other project on the machine. Recording history removes the choice.
 func differentProjects(a, b *Lane) bool {
 	if a == nil || b == nil || a.Agent == nil || b.Agent == nil {
 		return false
@@ -102,9 +108,41 @@ func differentProjects(a, b *Lane) bool {
 	if x.RepoDir == y.RepoDir {
 		return false // one repository, possibly through two linked worktrees
 	}
-	// Different common directories. The only way two of those are one project
-	// is a shared upstream, so that is the single exemption.
-	return x.RepoRemote == "" || x.RepoRemote != y.RepoRemote
+	if x.RepoRemote != "" && y.RepoRemote != "" {
+		return x.RepoRemote != y.RepoRemote
+	}
+	// At least one has no remote to compare. Fall back to shared history.
+	if x.RepoRoots == "" || y.RepoRoots == "" {
+		return false // an unborn repository has no history to share; say nothing
+	}
+	return !shareARootCommit(x.RepoRoots, y.RepoRoots)
+}
+
+// shareARootCommit reports whether two space-joined root commit lists intersect.
+//
+// Known limit, in the safe direction: a root commit hashes its tree, author,
+// committer, message and timestamps, so two repositories bootstrapped with an
+// identical EMPTY initial commit in the same second by the same person really do
+// share one. They are then treated as one project and may warn about a shared
+// ref that is a coincidence. That costs a warning, not a silence, and it takes a
+// deliberate empty commit to arrange; the fixtures in the end-to-end probe hit it
+// by accident, which is how it came to be written down.
+//
+// Intersection rather than equality, because a repository can have more than one
+// parentless commit (grafted history, an absorbed subtree), and two clones can
+// legitimately disagree about the full set while still plainly being one
+// project. Any commit in common is proof enough.
+func shareARootCommit(a, b string) bool {
+	mine := make(map[string]bool)
+	for _, id := range strings.Fields(a) {
+		mine[id] = true
+	}
+	for _, id := range strings.Fields(b) {
+		if mine[id] {
+			return true
+		}
+	}
+	return false
 }
 
 // overlapsFor finds other lanes related to a declaration. Objectives (shared

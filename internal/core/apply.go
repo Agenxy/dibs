@@ -76,7 +76,7 @@ func Admit(op *Op, lim Limits) error {
 		// already in a ledger becomes inadmissible.
 		for field, v := range map[string]string{
 			"agent.cwd": a.CWD, "agent.repo_dir": a.RepoDir,
-			"agent.repo_remote": a.RepoRemote,
+			"agent.repo_remote": a.RepoRemote, "agent.repo_roots": a.RepoRoots,
 		} {
 			if len(v) > lim.MaxPathBytes {
 				return errTooLarge(field, lim.MaxPathBytes)

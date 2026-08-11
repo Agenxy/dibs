@@ -32,6 +32,7 @@ type RepoID struct {
 
 	commonDir  string
 	remote     string
+	roots      string // space-joined, sorted root commit ids
 	repository bool
 }
 
@@ -94,8 +95,8 @@ func SameRepo(a, b RepoID) (same, known bool) {
 // remotes are evidence of SEPARATION, whereas one absent remote is merely an
 // absence of evidence, and collapsing those into one string loses the
 // distinction that keeps a missing fact from reading as a difference.
-func (r RepoID) Identity() (commonDir, remote string, ok bool) {
-	return r.commonDir, r.remote, r.repository
+func (r RepoID) Identity() (commonDir, remote, roots string, ok bool) {
+	return r.commonDir, r.remote, r.roots, r.repository
 }
 
 func identifyRepo(dir string) RepoID {
@@ -120,8 +121,37 @@ func identifyRepo(dir string) RepoID {
 		WorktreeID: worktree,
 		commonDir:  commonDir,
 		remote:     primaryRemote(ctx, git, worktree),
+		roots:      rootCommits(ctx, git, worktree),
 		repository: true,
 	}
+}
+
+// rootCommits returns the parentless commits of a repository, sorted and space
+// joined, or "" when there are none to report.
+//
+// This is the only fact that separates two cases nothing else can tell apart: a
+// clone whose origin has been removed, and a repository created locally with
+// `git init`. Both present as "a common directory of their own, with no remote",
+// and one is the same project while the other is a stranger. Two clones share a
+// root commit however the remote has been edited since; two independent
+// histories do not, because a root commit hashes its own tree, author and time.
+//
+// Empty for a repository with no commits yet, which is honest: an unborn HEAD
+// has no history to share. Note also that a shallow clone reports its shallow
+// boundary rather than the true root, so two shallow clones cut at different
+// depths disagree. They are clones, so they carry a remote, and the remote is
+// consulted first.
+func rootCommits(ctx context.Context, git, worktree string) string {
+	out, err := gitOutput(ctx, git, worktree, "rev-list", "--max-parents=0", "HEAD")
+	if err != nil {
+		return ""
+	}
+	ids := strings.Fields(out)
+	if len(ids) == 0 {
+		return ""
+	}
+	sort.Strings(ids)
+	return strings.Join(ids, " ")
 }
 
 func gitOutput(ctx context.Context, git, dir string, args ...string) (string, error) {

@@ -15,6 +15,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Repository identity now records the root commits as well as the common
+  directory and the remote. Without them, a clone whose origin had been removed
+  was indistinguishable from an unrelated local repository, so scoping refs had
+  to pick which of the two to get wrong. Shared history tells them apart.
 - A ref such as `issue:42` matched across repositories, so two agents in two
   projects were told they were pursuing the same objective: the strongest signal
   Lanes emits, telling each to stop work nothing else was doing. Refs are

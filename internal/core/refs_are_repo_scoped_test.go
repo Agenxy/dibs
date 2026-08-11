@@ -34,8 +34,8 @@ func TestRefsOnlyCollideInsideOneRepository(t *testing.T) {
 		},
 		{
 			what:      "two local repositories, neither with a remote",
-			a:         &AgentInfo{CWD: "/w/one", RepoDir: "/w/one/.git"},
-			b:         &AgentInfo{CWD: "/w/two", RepoDir: "/w/two/.git"},
+			a:         &AgentInfo{CWD: "/w/one", RepoDir: "/w/one/.git", RepoRoots: "aaa111"},
+			b:         &AgentInfo{CWD: "/w/two", RepoDir: "/w/two/.git", RepoRoots: "zzz999"},
 			wantAlarm: false,
 			why:       "with no upstream to share, different common directories cannot be one project",
 		},
@@ -48,8 +48,8 @@ func TestRefsOnlyCollideInsideOneRepository(t *testing.T) {
 		},
 		{
 			what:      "two linked worktrees of one repository",
-			a:         &AgentInfo{CWD: "/w/api", RepoDir: "/w/api/.git"},
-			b:         &AgentInfo{CWD: "/w/api-hotfix", RepoDir: "/w/api/.git"},
+			a:         &AgentInfo{CWD: "/w/api", RepoDir: "/w/api/.git", RepoRoots: "aaa111"},
+			b:         &AgentInfo{CWD: "/w/api-hotfix", RepoDir: "/w/api/.git", RepoRoots: "aaa111"},
 			wantAlarm: true,
 			why:       "a linked worktree shares the common directory: same repository, same issue 42",
 		},
@@ -75,15 +75,47 @@ func TestRefsOnlyCollideInsideOneRepository(t *testing.T) {
 			why:       "an unidentifiable directory could be anywhere, including inside the same project",
 		},
 		{
+			// The case an adversarial review found, and the expensive direction:
+			// a MISSED collision inside one project. Both facts that usually
+			// decide this say "different", and only the shared history says
+			// otherwise. It is right and the other two are blind here.
+			what:      "two clones of one upstream, one with origin removed",
+			a:         &AgentInfo{CWD: "/w/api", RepoDir: "/w/api/.git", RepoRemote: "github.com/acme/api", RepoRoots: "aaa111"},
+			b:         &AgentInfo{CWD: "/w/api-copy", RepoDir: "/w/api-copy/.git", RepoRoots: "aaa111"},
+			wantAlarm: true,
+			why:       "a clone keeps its history when it loses its remote, and issue 42 is still issue 42",
+		},
+		{
 			// Found by running the real daemon rather than by reasoning about
 			// it. Treating this as unknown looked careful and produced a false
 			// alarm between every locally created repository and every other
 			// project on the machine, which is most machines.
-			what:      "one has a remote, the other does not",
-			a:         &AgentInfo{CWD: "/w/api", RepoDir: "/w/api/.git", RepoRemote: "github.com/acme/api"},
-			b:         &AgentInfo{CWD: "/w/scratch", RepoDir: "/w/scratch/.git"},
+			what:      "one has a remote, the other is an unrelated local repository",
+			a:         &AgentInfo{CWD: "/w/api", RepoDir: "/w/api/.git", RepoRemote: "github.com/acme/api", RepoRoots: "aaa111"},
+			b:         &AgentInfo{CWD: "/w/scratch", RepoDir: "/w/scratch/.git", RepoRoots: "zzz999"},
 			wantAlarm: false,
-			why:       "a repository with no remote was created, not cloned, so it is a clone of nothing",
+			why:       "separate histories are separate projects, whatever their remotes say",
+		},
+		{
+			what:      "two local repositories that share a root commit",
+			a:         &AgentInfo{CWD: "/w/one", RepoDir: "/w/one/.git", RepoRoots: "aaa111 bbb222"},
+			b:         &AgentInfo{CWD: "/w/two", RepoDir: "/w/two/.git", RepoRoots: "bbb222 ccc333"},
+			wantAlarm: true,
+			why:       "one root commit in common is proof of shared history; a repository can have several",
+		},
+		{
+			what:      "an unborn repository with no commits yet",
+			a:         &AgentInfo{CWD: "/w/api", RepoDir: "/w/api/.git", RepoRoots: "aaa111"},
+			b:         &AgentInfo{CWD: "/w/fresh", RepoDir: "/w/fresh/.git"},
+			wantAlarm: true,
+			why:       "no history is not evidence of different history, and a miss costs more than a warning",
+		},
+		{
+			what:      "two forks of one upstream, which share history but not issues",
+			a:         &AgentInfo{CWD: "/w/api", RepoDir: "/w/api/.git", RepoRemote: "github.com/acme/api", RepoRoots: "aaa111"},
+			b:         &AgentInfo{CWD: "/w/fork", RepoDir: "/w/fork/.git", RepoRemote: "github.com/kim/api", RepoRoots: "aaa111"},
+			wantAlarm: false,
+			why:       "a fork has its own issue numbers, so the remote outranks the shared history",
 		},
 	} {
 		t.Run(tc.what, func(t *testing.T) {
