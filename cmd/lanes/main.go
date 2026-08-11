@@ -186,6 +186,10 @@ func main() {
 		if errors.Is(err, flag.ErrHelp) {
 			return
 		}
+		var exitOnly interface{ exitOnly() }
+		if errors.As(err, &exitOnly) {
+			os.Exit(1)
+		}
 		fmt.Fprintln(os.Stderr, "lanes:", err)
 		os.Exit(1)
 	}

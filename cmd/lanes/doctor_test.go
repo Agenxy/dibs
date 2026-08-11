@@ -4,11 +4,77 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// Problem-tier checks are the machine-readable half of doctor. The prose
+// already says these states are broken; returning success makes a monitoring
+// script disagree with the diagnosis it just printed.
+func TestDoctorFailsWhenTheInstallCannotBeChecked(t *testing.T) {
+	t.Run("no local secret", func(t *testing.T) {
+		t.Setenv("LANES_DIR", t.TempDir())
+		if err := doctor(nil); err == nil {
+			t.Fatal("doctor reported a missing local secret but returned success")
+		}
+	})
+
+	t.Run("daemon unreachable", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("secret\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("LANES_DIR", dir)
+		// Port 1 on loopback is reserved and used elsewhere in this package as
+		// the deterministic "nothing is listening" endpoint.
+		t.Setenv("LANES_ADDR", "127.0.0.1:1")
+		if err := doctor(nil); err == nil {
+			t.Fatal("doctor reported an unreachable daemon but returned success")
+		}
+	})
+
+	t.Run("daemon rejects the local secret", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("stale-secret\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+		}))
+		defer daemon.Close()
+		t.Setenv("LANES_DIR", dir)
+		t.Setenv("LANES_ADDR", strings.TrimPrefix(daemon.URL, "http://"))
+		if err := doctor(nil); err == nil {
+			t.Fatal("doctor reported a rejected local secret but returned success")
+		}
+	})
+}
+
+func TestDoctorStatusFollowsTheProblemTier(t *testing.T) {
+	tests := []struct {
+		name               string
+		problems, warnings int
+		wantFailure        bool
+	}{
+		{name: "healthy", problems: 0, warnings: 0},
+		{name: "warnings only", problems: 0, warnings: 3},
+		{name: "one problem", problems: 1, warnings: 0, wantFailure: true},
+		{name: "problems and warnings", problems: 2, warnings: 4, wantFailure: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := doctorResult(tt.problems, tt.warnings)
+			if (err != nil) != tt.wantFailure {
+				t.Fatalf("doctorResult(%d, %d) error = %v, want failure %v",
+					tt.problems, tt.warnings, err, tt.wantFailure)
+			}
+		})
+	}
+}
 
 // Doctor flagged the operator's real, working ~/.codex/config.toml as having a
 // STALE secret, purely because it was run against a second daemon. The fix it
