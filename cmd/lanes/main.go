@@ -1102,7 +1102,7 @@ func ledgerPath() string { return filepath.Join(paths.DataDir(), "ledger.jsonl")
 // two surfaces disagreeing.
 func ago(t time.Time) string {
 	if t.IsZero() {
-		return ", "
+		return "never"
 	}
 	d := time.Since(t)
 	switch {

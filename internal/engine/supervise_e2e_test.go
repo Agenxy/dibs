@@ -76,7 +76,7 @@ func TestAStalledAgentReachesTheLaneThatSpawnedIt(t *testing.T) {
 			child.Process.Pid, fake+" exec")
 	}
 	if mine.Owner != "builder" || mine.Via != "env" {
-		t.Fatalf("discovered but attributed owner=%q via=%q, want builder via env , \n"+
+		t.Fatalf("discovered but attributed owner=%q via=%q, want builder via env:\n"+
 			"  the stamp is the deterministic rung and this is the round trip that proves it",
 			mine.Owner, mine.Via)
 	}

@@ -325,7 +325,7 @@ function draw() { keepingDrafts(drawPanes) }
 function drawPanes() {
   drawSummary()
   const b = state.board
-  const where = b ? `node ${b.node} · ledger ${b.serial ?? ", "}` : "connecting"
+  const where = b ? `node ${b.node} · ledger ${b.serial ?? "unknown"}` : "connecting"
   document.getElementById("ctx-node").textContent = where
   document.getElementById("foot-node").textContent = where
 

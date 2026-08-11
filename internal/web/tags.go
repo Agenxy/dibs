@@ -9,7 +9,7 @@ import (
 // humanAgo renders durations the way a person says them.
 func humanAgo(t time.Time) string {
 	if t.IsZero() {
-		return ", "
+		return "never"
 	}
 	d := time.Since(t)
 	switch {

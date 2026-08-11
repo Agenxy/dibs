@@ -100,8 +100,39 @@ func usableInAUnitFile(v string) error {
 			return fmt.Errorf("path contains the control character %q, which cannot be "+
 				"written to a service unit without changing it: %q", r, v)
 		}
+		if !xmlRepresentable(r) {
+			return fmt.Errorf("path contains %U, which XML cannot represent and the "+
+				"encoder replaces with U+FFFD, producing a service that starts on a "+
+				"different directory: %q", r, v)
+		}
 	}
 	return nil
+}
+
+// xmlRepresentable reports whether a rune survives XML 1.0 serialization
+// unchanged. The ranges are the Char production from the XML specification.
+//
+// The C0 check above is not enough. U+FFFE and U+FFFF are ordinary runes in a Go
+// string and a legal filename on macOS, and they sit just outside XML's range,
+// so Go's encoder silently substitutes U+FFFD. A validator that accepted them
+// wrote a plist naming a directory that was one byte-sequence different from the
+// one asked for: the service starts, on the wrong state, saying nothing. This is
+// the same class as the control-character case and was missed because C0 is
+// where one expects the problem to be.
+func xmlRepresentable(r rune) bool {
+	switch {
+	case r == 0x09, r == 0x0a, r == 0x0d:
+		return true
+	case r >= 0x20 && r <= 0xd7ff:
+		return true
+	case r >= 0xe000 && r <= 0xfffd:
+		return true
+	case r >= 0x10000 && r <= 0x10ffff:
+		// Plane-local noncharacters (U+1FFFE, U+2FFFE, ...) are inside Char and
+		// do round-trip, so they are not this function's business.
+		return true
+	}
+	return false
 }
 
 // systemdArg quotes one ExecStart argument.
@@ -113,11 +144,29 @@ func usableInAUnitFile(v string) error {
 // to the unit name, and a newline let the rest of the path inject
 // `Environment=` into the unit. Double-quoting handles the first, doubling `%`
 // the second, and usableInAUnitFile refuses the third.
+//
+// `$` is the fourth, and was missed on the first pass. systemd expands `$VAR`
+// and `${VAR}` inside this command syntax even though it is not a shell, so
+// `/opt/$LANES_BIN/lanesd` starts whatever the environment says, or nothing at
+// all when the variable is unset. A literal dollar is `$$`.
 func systemdArg(v string) string {
 	v = strings.ReplaceAll(v, `\`, `\\`)
 	v = strings.ReplaceAll(v, `"`, `\"`)
 	v = strings.ReplaceAll(v, "%", "%%")
+	v = strings.ReplaceAll(v, "$", "$$")
 	return `"` + v + `"`
+}
+
+// shellArg quotes a value for a command a human will paste into a shell.
+//
+// The refusal below prints `launchctl unload -w <path>` and `rm <path>`. With a
+// space in the path those are not runnable as printed, and with a backtick or a
+// `$(...)` in one they are worse than not runnable. Single quotes suppress every
+// expansion a shell performs; the only character that needs care inside them is
+// the single quote itself, which cannot be escaped and must be closed, escaped
+// and reopened.
+func shellArg(v string) string {
+	return "'" + strings.ReplaceAll(v, "'", `'\''`) + "'"
 }
 
 // xmlText escapes a value for a plist <string>. Paths were concatenated into
@@ -162,7 +211,7 @@ func refuseIfLegacyUnitExists(agentsDir string) error {
 			"  Remove the old one first:\n"+
 			"    launchctl unload -w %s\n"+
 			"    rm %s\n"+
-			"  then run this again", old, old, old)
+			"  then run this again", old, shellArg(old), shellArg(old))
 	}
 	return nil
 }

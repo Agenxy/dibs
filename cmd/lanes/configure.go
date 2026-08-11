@@ -39,16 +39,23 @@ const serviceHelp = `lanes configure --service: keep the daemon running
 // `configure --service --help` used to write a LaunchAgent and report success,
 // which is the same shape as `lanes stop --help` stopping the daemon.
 func serviceCommand(rest []string) error {
+	// Every argument is read before anything is decided, including help. See the
+	// note on stop(): honouring help on sight made an unknown flag pass or fail
+	// depending on where the user put it.
+	help := false
 	for _, a := range rest {
 		switch a {
 		case "-h", "--help", "help":
-			fmt.Print(serviceHelp)
-			return nil
+			help = true
 		default:
 			return fmt.Errorf("`lanes configure --service` takes no further arguments, "+
 				"and %q is not one. It writes a unit for the data directory in LANES_DIR "+
 				"(or ~/.lanes) and nothing else", a)
 		}
+	}
+	if help {
+		fmt.Print(serviceHelp)
+		return nil
 	}
 	return writeServiceUnit()
 }
@@ -126,7 +133,7 @@ Where will agents connect from?
 	}
 
 	var b strings.Builder
-	b.WriteString("# Lanes configuration. Every field is optional , \n")
+	b.WriteString("# Lanes configuration. Every field is optional;\n")
 	b.WriteString("# deleting this file returns Lanes to its defaults.\n\n")
 	fmt.Fprintf(&b, "addr = %q\n", addr)
 	b.WriteString("\n# tls_cert = \"/path/cert.pem\"   # bring your own certificate\n")

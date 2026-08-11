@@ -15,6 +15,30 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A ref such as `issue:42` matched across repositories, so two agents in two
+  projects were told they were pursuing the same objective: the strongest signal
+  Lanes emits, telling each to stop work nothing else was doing. Refs are
+  repository-scoped now, using an identity recorded at registration. The
+  same-repository case, including two linked worktrees and two clones of one
+  upstream, still reports as before.
+- `systemd` expands `$VAR` inside `ExecStart` even though it is not a shell, so
+  a daemon path containing a dollar sign started whatever the environment said.
+  Literal dollars are escaped.
+- A path containing U+FFFE or U+FFFF passed validation and was then silently
+  rewritten by the XML encoder, producing a LaunchAgent pointing at a different
+  data directory. Characters XML cannot represent are refused.
+- The corrective commands printed when an older service unit is found were not
+  shell-quoted, so a path containing a space was not runnable as shown.
+- `lanes stop --help --force` printed help and exited 0, while `--force --help`
+  refused: an unknown argument is now refused whichever side of help it sits.
+- The em-dash removal replaced placeholder glyphs with commas in places that are
+  not prose: a zero timestamp rendered as `seen , ` in the CLI and on the board,
+  table cells meaning "not applicable" became `, `, and several comments and
+  error strings were left starting mid-sentence.
+- Documentation promised automatic subagent stamping everywhere. The
+  `PreToolUse` stamp exists only where a harness offers a hook Lanes can use
+  without spawning a subprocess, which today means Claude Code. `lanes doctor`,
+  the README, `SKILLS.md` and `SPEC-SUPERVISION.md` now say so.
 - An agent whose working directory exceeded 128 bytes could not register at all.
   A cwd was bounded as if it were a name; it is a path. Any checkout a few levels
   inside a home directory hit it, and the refusal was of the whole
@@ -154,8 +178,8 @@ of changes from something earlier: there is no earlier.
   process liveness, CPU duty cycle and transcript growth.
 - Elapsed time is measured on a monotonic clock, so a sleeping machine does not
   read as a stalled fleet.
-- Attribution survives detaching, daemonisation and reparenting: a `PreToolUse`
-  hook stamps a spawned command with its parent's lane.
+- Attribution survives detaching, daemonisation and reparenting: in Claude
+  Code, a `PreToolUse` hook stamps a spawned command with its parent's lane.
 - Reports and never acts: it hands back the command to resume a stalled child
   rather than running it.
 

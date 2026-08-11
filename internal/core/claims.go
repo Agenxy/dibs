@@ -59,10 +59,59 @@ type SlotOverlap struct {
 // Strong reports whether this overlap likely means duplicated effort.
 func (o SlotOverlap) Strong() bool { return o.Signal == SignalSameObjective }
 
+// differentProjects reports POSITIVE evidence that two lanes are in different
+// repositories. Absence of evidence is not difference: it returns false when it
+// cannot tell, so an unidentifiable lane keeps reporting exactly as before.
+//
+// This gates shared REFS, and only refs. A ref is repository-scoped by nature:
+// "issue:42" and "pr:7" name something inside one project and nothing at all
+// outside it, so two agents in different repositories declaring "issue:42" are
+// not duplicating effort, they are using the same number. Reporting that as
+// same-objective, the STRONGEST signal Lanes emits, tells an agent to stop work
+// that nothing else is doing. Paths need no such gate: a claim is an absolute
+// path, so two projects cannot collide on one.
+//
+// Deliberately stricter than paths.SameRepo, which calls two identified
+// repositories with different common directories UNKNOWN unless both remotes
+// are known and unequal. SameRepo is right to be cautious: it weighs evidence
+// for the matcher, and its warning is about inferring identity from a basename
+// or a cwd prefix. The common directory is not that kind of guess. Every linked
+// worktree of one repository shares it, and a clone gets a remote from the act
+// of cloning, so two different common directories with no shared remote are two
+// repositories.
+//
+// The tradeoff, stated because it is a real one: two clones of one upstream
+// where somebody has removed origin will no longer warn about a shared ref.
+// That configuration is rare and has to be made deliberately. The behaviour it
+// replaces was not rare at all, since one locally created repository, which is
+// how most scratch and personal projects start, collided with every other
+// project on the machine. A strong signal that fires constantly is not a strong
+// signal for long, and this one exists to say "stop, someone else is already
+// doing that".
+func differentProjects(a, b *Lane) bool {
+	if a == nil || b == nil || a.Agent == nil || b.Agent == nil {
+		return false
+	}
+	x, y := a.Agent, b.Agent
+	// One of them is not in a checkout, or never said where it is. That is an
+	// absence of evidence, and an unidentified directory could be anywhere,
+	// including inside the other's project. Report, and let the human judge.
+	if x.RepoDir == "" || y.RepoDir == "" {
+		return false
+	}
+	if x.RepoDir == y.RepoDir {
+		return false // one repository, possibly through two linked worktrees
+	}
+	// Different common directories. The only way two of those are one project
+	// is a shared upstream, so that is the single exemption.
+	return x.RepoRemote == "" || x.RepoRemote != y.RepoRemote
+}
+
 // overlapsFor finds other lanes related to a declaration. Objectives (shared
 // refs like "pr:1186", "gate:typos", "issue:1140") are the primary key; paths
 // are a weak secondary hint; claims are surfaced because someone asked.
 func (s *State) overlapsFor(refs, dirs []string, excludeLane string) []SlotOverlap {
+	me := s.Lanes[excludeLane]
 	var out []SlotOverlap
 	seen := map[string]bool{}
 	add := func(o SlotOverlap) {
@@ -82,20 +131,8 @@ func (s *State) overlapsFor(refs, dirs []string, excludeLane string) []SlotOverl
 		if l.ID == excludeLane || l.Status == StatusClosed || l.Status == StatusArchived {
 			continue
 		}
-		for _, sl := range l.Slots {
-			if shared := sharedRefs(want, sl.Refs); len(shared) > 0 {
-				add(SlotOverlap{
-					Lane: l.ID, Signal: SignalSameObjective, Kind: "slot",
-					Text: sl.Text, Refs: shared,
-				})
-				continue // strong signal already reported for this slot
-			}
-			if p := firstOverlappingPath(dirs, sl.Dirs); p != "" {
-				add(SlotOverlap{
-					Lane: l.ID, Signal: SignalSamePaths, Kind: "slot",
-					Text: sl.Text, Refs: sl.Refs, Path: p,
-				})
-			}
+		for _, o := range slotOverlaps(me, l, want, dirs) {
+			add(o)
 		}
 	}
 	for _, d := range dirs {
@@ -107,6 +144,30 @@ func (s *State) overlapsFor(refs, dirs []string, excludeLane string) []SlotOverl
 		}
 	}
 	sortOverlaps(out)
+	return out
+}
+
+// slotOverlaps is one other lane's contribution: at most one overlap per slot,
+// strongest first. Lifted out of overlapsFor so that the ref gate, the path
+// fallback and the collector are each legible on their own.
+func slotOverlaps(me, them *Lane, want map[string]bool, dirs []string) []SlotOverlap {
+	scoped := !differentProjects(me, them)
+	var out []SlotOverlap
+	for _, sl := range them.Slots {
+		if shared := sharedRefs(want, sl.Refs); len(shared) > 0 && scoped {
+			out = append(out, SlotOverlap{
+				Lane: them.ID, Signal: SignalSameObjective, Kind: "slot",
+				Text: sl.Text, Refs: shared,
+			})
+			continue // strong signal already reported for this slot
+		}
+		if p := firstOverlappingPath(dirs, sl.Dirs); p != "" {
+			out = append(out, SlotOverlap{
+				Lane: them.ID, Signal: SignalSamePaths, Kind: "slot",
+				Text: sl.Text, Refs: sl.Refs, Path: p,
+			})
+		}
+	}
 	return out
 }
 

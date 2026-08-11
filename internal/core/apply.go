@@ -74,8 +74,13 @@ func Admit(op *Op, lim Limits) error {
 		// ALL, over a descriptive field. Relaxing an admission bound is safe in
 		// the direction that matters: Admit runs only on ingress, so nothing
 		// already in a ledger becomes inadmissible.
-		if len(a.CWD) > lim.MaxPathBytes {
-			return errTooLarge("agent.cwd", lim.MaxPathBytes)
+		for field, v := range map[string]string{
+			"agent.cwd": a.CWD, "agent.repo_dir": a.RepoDir,
+			"agent.repo_remote": a.RepoRemote,
+		} {
+			if len(v) > lim.MaxPathBytes {
+				return errTooLarge(field, lim.MaxPathBytes)
+			}
 		}
 	}
 	switch op.Kind {

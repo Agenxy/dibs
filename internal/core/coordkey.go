@@ -59,9 +59,9 @@ func isCoordKey(ref string) bool {
 // is, through a lineage the parent actually vouched for.
 //
 // This is the entire security of the mechanism, and it is deliberately not a
-// lookup of "has this key ever existed". An agent that learns another lane's key
-// , from a message, from a log, from a panel, must not be able to declare it
-// and be treated as coordinating. Issued AND held, or it is just a string.
+// lookup of "has this key ever existed". An agent that learns another lane's
+// key from a message, from a log, or from a panel must not be able to declare
+// it and be treated as coordinating. Issued AND held, or it is just a string.
 //
 // Inherited holding is not a loosening; it is the case that makes the key worth
 // having. Membership alone would confine the key to agents already in one lane,

@@ -43,7 +43,7 @@ func TestSetPasswordRefusesADirectoryTheAddressedDaemonDisowns(t *testing.T) {
 
 	err := confirmDirIsTheAddressedDaemon()
 	if err == nil {
-		t.Fatal("wrote a password into a directory the addressed daemon disowns , \n" +
+		t.Fatal("wrote a password into a directory the addressed daemon disowns:\n" +
 			"  this is the check that stops `LANES_ADDR=other lanes admin set-password`\n" +
 			"  from rewriting the credentials of the install you are NOT looking at")
 	}

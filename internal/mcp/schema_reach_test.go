@@ -60,13 +60,13 @@ func TestEveryDeclaredParameterIsReadByAHandler(t *testing.T) {
 			}
 			f, declared := field[param]
 			if !declared {
-				t.Errorf("%s advertises %q, but toolArgs has no field with that json tag , \n"+
+				t.Errorf("%s advertises %q, but toolArgs has no field with that json tag:\n"+
 					"  the decoder discards it, so an agent that supplies it is silently ignored",
 					name, param)
 				continue
 			}
 			if !read[f] {
-				t.Errorf("%s advertises %q and toolArgs.%s is decoded, but nothing reads it , \n"+
+				t.Errorf("%s advertises %q and toolArgs.%s is decoded, but nothing reads it:\n"+
 					"  the parameter is documented, accepted, and has no effect. Either wire it\n"+
 					"  through or stop advertising it; leaving it is a promise to the agent that\n"+
 					"  it has no way to discover is false", name, param, f)

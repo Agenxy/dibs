@@ -1259,7 +1259,7 @@ function drawContext() {
   caps.className = granted.length ? "granted" : ""
 
   document.getElementById("foot-node").textContent =
-    b ? `node ${b.node} · serial ${b.serial ?? ", "}` : ", "
+    b ? `node ${b.node} · serial ${b.serial ?? "unknown"}` : "connecting"
   document.getElementById("foot-host").textContent =
     host.name ? `${host.name}${host.version ? " " + host.version : ""}` : "unattached"
   const mark = document.getElementById("mark")

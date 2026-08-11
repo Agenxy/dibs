@@ -154,9 +154,11 @@ be warned about.
   evidence contradicted. Do not edit your operator's global config to do
   it: pass it on the command you are already running.
 
-Lanes will also watch the child for you: a `PreToolUse` hook stamps the spawned
-command with your lane, so when it stalls the report comes to *you* rather than
-to nobody.
+In Claude Code, Lanes will also watch the child for you: a `PreToolUse` hook
+stamps the spawned command with your lane, so when it stalls the report comes
+to *you* rather than to nobody. Other harnesses have no hook Lanes can use
+without driving them, so there the lineage has to come from you: `vouch_child`,
+then have the child register with the nonce.
 
 ## Waiting without burning tokens
 

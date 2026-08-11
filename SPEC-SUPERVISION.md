@@ -311,7 +311,7 @@ other agents, and those are the ones this section is about.
 | harness | stamp mechanism | stamp | announces itself | transcript readable |
 |---|---|---|---|---|
 | Claude Code | `PreToolUse` → `updatedInput` | **built** | yes | yes |
-| Codex | `PreToolUse` → `updatedInput` | **built** | yes | yes |
+| Codex | none usable (§6) | **not built** | yes | yes |
 | opencode | `shell.env`, the env map, directly | **built** | **yes** | **yes** (reports its own) |
 | pi | `tool_call` → mutate `event.input` | **built** | no | **yes** |
 

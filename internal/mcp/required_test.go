@@ -137,7 +137,7 @@ func TestShippedHooksSatisfyTheSchemasTheyCall(t *testing.T) {
 					t.Errorf("%s calls %s but the schema rejects it: %v", where, tool, err)
 				}
 				if _, known := knownParams[tool]; !known {
-					t.Errorf("%s calls %q, which is not a tool this server serves , \n"+
+					t.Errorf("%s calls %q, which is not a tool this server serves:\n"+
 						"  a hook wired to a tool that does not exist fails silently at runtime,\n"+
 						"  which is indistinguishable from the hook never having been written",
 						where, tool)

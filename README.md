@@ -343,7 +343,7 @@ rather than printing a number and hoping.
 | hermes-agent | 310 | 0.214 → **0.362** | 0.319 |
 | opencode | 261 | 0.141 → **0.246** | 0.178 |
 | pi-mono | 281 | 0.176 → **0.336** | 0.230 |
-| codex | 203 | 0.124 → **0.196** |, |
+| codex | 203 | 0.124 → **0.196** | not measured |
 
 *(before → after the history index, tier 0, no model involved. Reproduce with
 `lanes calibrate --repo <path> -n 60 -skip 5`; the punitive column is
@@ -473,10 +473,13 @@ pid 48620: stuck: alive 7h40m and has used 100ms of CPU in all of it
 
 Or be told. `lanesd` sweeps every 20 seconds and sends the lane that spawned a
 subagent a notice when it stalls, delivered on that agent's next `ack_board`
-without it having to ask. Attribution happens at spawn time: a `PreToolUse` hook
-stamps the command with its parent's lane, and the OS carries that into every
-descendant: through detaching, daemonisation and reparenting, which is where
-process ancestry gives up.
+without it having to ask. Attribution happens at spawn time, where the harness
+allows it: in Claude Code a `PreToolUse` hook stamps the command with its
+parent's lane, and the OS carries that into every descendant, through
+detaching, daemonisation and reparenting, which is where process ancestry
+gives up. Codex has no hook Lanes can use without spawning a subprocess, which
+it will not do, so there a child should call `vouch_child` and register with
+the nonce instead.
 
 **It reports and never acts.** `codex exec resume` exists and Lanes will not call
 it: the parent knows what the child was for and whether re-running it is safe. A
@@ -608,7 +611,7 @@ each project's latest commit:
 | Codex | 2025-11-25 (negotiates **2025-06-18**) | flag `mcp_2026_07_28` exists but is stage `UnderDevelopment`, default off. Its SDK supports 2025-11-25; what it actually sends in `initialize` is 2025-06-18, measured, see [plugins/codex](plugins/codex/) |
 | opencode | 2025-11-25 | bound by the TypeScript SDK (1.29.0) |
 | pi-mono | 2025-11-25 | bound by the TypeScript SDK (^1.25.2) |
-| Gemini CLI | 2025-06-18 |, |
+| Gemini CLI | 2025-06-18 | not stated |
 | Hermes | 2025-03-26 | pins `mcp==1.28.1`; no stateless-path code |
 
 The reason is one level below the harnesses, and it is the useful part:
