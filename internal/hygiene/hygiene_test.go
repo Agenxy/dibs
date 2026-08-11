@@ -130,9 +130,22 @@ func shebangIsShell(abs string) bool {
 		return false
 	}
 	defer func() { _ = f.Close() }()
-	head := make([]byte, 64)
+	// The whole first line, not a fixed 64 bytes. A review padded a shebang past
+	// the window with an environment assignment, `env -S PAD=xxxx... bash`, and
+	// macOS ran it under Bash while the truncated read saw no interpreter at all.
+	// A limit that silently changes the input is a limit that decides the answer.
+	head := make([]byte, 8192)
 	n, _ := f.Read(head)
-	first, _, _ := strings.Cut(string(head[:n]), "\n")
+	first, complete := "", false
+	if i := strings.IndexByte(string(head[:n]), '\n'); i >= 0 {
+		first, complete = string(head[:i]), true
+	} else {
+		first = string(head[:n])
+	}
+	// A first line longer than the buffer is not something to guess about.
+	if !complete && n == len(head) {
+		return true
+	}
 	if !strings.HasPrefix(first, "#!") {
 		return false
 	}

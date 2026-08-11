@@ -26,11 +26,11 @@ func TestRefsOnlyCollideInsideOneRepository(t *testing.T) {
 		why       string
 	}{
 		{
-			what:      "two projects with different remotes",
-			a:         &AgentInfo{CWD: "/w/api", RepoDir: "/w/api/.git", RepoRemote: "github.com/acme/api"},
-			b:         &AgentInfo{CWD: "/w/site", RepoDir: "/w/site/.git", RepoRemote: "github.com/acme/site"},
+			what:      "two projects with different remotes and different histories",
+			a:         &AgentInfo{CWD: "/w/api", RepoDir: "/w/api/.git", RepoRemote: "github.com/acme/api", RepoRoots: "aaa111"},
+			b:         &AgentInfo{CWD: "/w/site", RepoDir: "/w/site/.git", RepoRemote: "github.com/acme/site", RepoRoots: "zzz999"},
 			wantAlarm: false,
-			why:       "unequal remotes are the clearest evidence of separation there is",
+			why:       "nothing links them: different upstreams and no commit in common",
 		},
 		{
 			what:      "two local repositories, neither with a remote",
@@ -97,11 +97,36 @@ func TestRefsOnlyCollideInsideOneRepository(t *testing.T) {
 			why:       "separate histories are separate projects, whatever their remotes say",
 		},
 		{
-			what:      "two local repositories that share a root commit",
-			a:         &AgentInfo{CWD: "/w/one", RepoDir: "/w/one/.git", RepoRoots: "aaa111 bbb222"},
-			b:         &AgentInfo{CWD: "/w/two", RepoDir: "/w/two/.git", RepoRoots: "bbb222 ccc333"},
+			// This was asserted the other way round and it was wrong. Reported by
+			// a review that ran real `git subtree add` operations: importing a
+			// dependency brings its whole history, so two unrelated projects that
+			// vendored the same thing each carry their own root plus the shared
+			// one. Any-commit-in-common fused them and fired the strongest signal
+			// Lanes has between strangers, which is how a signal stops being
+			// believed.
+			what:      "two unrelated projects that vendored the same dependency by subtree",
+			a:         &AgentInfo{CWD: "/w/one", RepoDir: "/w/one/.git", RepoRemote: "github.com/acme/one", RepoRoots: "aaa111 vendor22"},
+			b:         &AgentInfo{CWD: "/w/two", RepoDir: "/w/two/.git", RepoRemote: "github.com/acme/two", RepoRoots: "ccc333 vendor22"},
+			wantAlarm: false,
+			why:       "a shared import is not a shared project; each still has its own root",
+		},
+		{
+			// A `--single-branch` clone of an orphan branch shares no commit with
+			// its sibling, and a history rewritten by filter-repo shares none
+			// with the original. Both are one project, and both were missed while
+			// history outranked the remote.
+			what:      "one upstream, two clones whose histories have nothing in common",
+			a:         &AgentInfo{CWD: "/w/a", RepoDir: "/w/a/.git", RepoRemote: "github.com/acme/api", RepoRoots: "aaa111"},
+			b:         &AgentInfo{CWD: "/w/b", RepoDir: "/w/b/.git", RepoRemote: "github.com/acme/api", RepoRoots: "zzz999"},
 			wantAlarm: true,
-			why:       "one root commit in common is proof of shared history; a repository can have several",
+			why:       "the configured upstream is the same, which outranks a history that legitimately diverged",
+		},
+		{
+			what:      "a shallow clone whose sibling renamed its remote",
+			a:         &AgentInfo{CWD: "/w/a", RepoDir: "/w/a/.git", RepoRemote: "github.com/agenxy/homebrew-lanes"},
+			b:         &AgentInfo{CWD: "/w/b", RepoDir: "/w/b/.git", RepoRemote: "github.com/agenxy/homebrew-tap"},
+			wantAlarm: true,
+			why:       "no roots to compare and remotes that cannot be reconciled locally: unknown, so warn",
 		},
 		{
 			what:      "an unborn repository with no commits yet",

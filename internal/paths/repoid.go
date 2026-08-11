@@ -275,7 +275,16 @@ func joinRemoteIdentity(host, remotePath string) string {
 	if host == "" || remotePath == "" || remotePath == "." {
 		return ""
 	}
-	return host + "/" + remotePath
+	// The PATH is lowercased too, not just the host. Every forge people
+	// actually use treats it case-insensitively: `git ls-remote` returns the
+	// same HEAD for Agenxy/Lanes and agenxy/lanes, so two clones of one
+	// repository can spell their origin differently and are not two projects.
+	//
+	// The cost is a self-hosted server with case-sensitive paths serving both
+	// `team/Api` and `team/api` as different repositories, where this would call
+	// them one. That is a warning somebody dismisses. The other direction lost a
+	// real collision, which is the expensive half.
+	return host + "/" + strings.ToLower(remotePath)
 }
 
 func splitSCPRemote(remote string) (host, remotePath string, ok bool) {

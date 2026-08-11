@@ -14,7 +14,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   anyone who sues over the covered code, and states that no trademark rights come
   with it. `NOTICE` retains the MIT notice for the contributions made under it.
 - `lanes doctor` exits nonzero when it finds a problem, so a script can act on it
-  rather than parsing the output. Thanks to @arunsathiya (#6).
+  rather than parsing the output. Thanks to @floze-the-genius (#6).
 - The Homebrew tap moved from `agenxy/homebrew-lanes` to `agenxy/homebrew-tap`,
   so the install line is `brew install agenxy/tap/lanes` rather than repeating
   the project name. GitHub keeps a redirect, so the old form still works and
@@ -44,14 +44,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   --graft` (identity is read with replacement objects disabled), and
   `url.*.insteadOf` (the effective remote is resolved instead of the configured
   string).
-- Repository identity is decided by shared history first and the remote only
-  when history cannot answer. A remote string is a NAME for a repository and one
-  repository answers to several: GitHub paths are case-insensitive, and a renamed
-  repository keeps serving its old path, so clones of one project compared as
-  strangers and a real collision went unreported. Objects cannot be renamed.
-  A consequence worth knowing: two forks share a root commit and are therefore
-  treated as one project, which is usually right, since a fork's references
-  normally name the upstream tracker.
+- Repository identity is decided by positive evidence in three forms: the same
+  Git common directory, the same canonicalised remote, or equal root-commit sets.
+  Anything else known on both sides and unequal means different projects, and
+  anything unknown warns.
+  - Remotes are compared case-insensitively, because every forge people use
+    serves `Acme/Api` and `acme/api` as one repository.
+  - Roots are compared for EQUALITY rather than overlap. `git subtree add`
+    imports a dependency's whole history, so two unrelated projects that vendored
+    the same library share a root commit, and treating that as proof fired the
+    strongest signal Lanes has between strangers.
+  - The remote outranks history, because history can legitimately differ inside
+    one project: a `--single-branch` clone of an orphan branch, or a history
+    rewritten by filter-repo, shares no commit with its sibling.
+  - A consequence worth knowing: two forks have equal root sets and are treated
+    as one project, which is usually right, since a fork's references normally
+    name the upstream tracker.
 - A ref such as `issue:42` matched across repositories, so two agents in two
   projects were told they were pursuing the same objective: the strongest signal
   Lanes emits, telling each to stop work nothing else was doing. Refs are
