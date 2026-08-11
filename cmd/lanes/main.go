@@ -62,6 +62,9 @@ setup:
   lanes configure --service write a launchd/systemd unit so the daemon survives a
                            closed terminal and a reboot; prints the load command
                            rather than running it
+  lanes man                print this manual as an mdoc(7) page, generated from
+                           this very help text; releases run it to ship lanes.1
+                           (--out FILE writes it, --date D pins the page date)
   lanes stop               stop the daemon serving THIS data directory, and only
                            that one, not "pkill lanesd", which also kills the
                            isolated daemons other fleets are running. SIGTERM, so
@@ -71,7 +74,7 @@ setup:
 human/admin (interactive terminal; the god-view needs the admin password):
   lanes messages           ALL mail, decrypted: prompts admin password
   lanes web                open the board: prompts admin password, one-time link
-  lanes admin set-password set/replace the admin password that gates the board
+  lanes admin set-password  set/replace the admin password that gates the board
   lanes mcp-config         print MCP host config (contains the local secret)
 
 env: LANES_ADDR (default 127.0.0.1:4777), LANES_DIR, LANES_TOKEN,
@@ -146,6 +149,8 @@ func main() {
 		err = probe(os.Args[2:])
 	case "watch":
 		err = watch(os.Args[2:])
+	case "man":
+		err = man(os.Args[2:])
 	case "configure":
 		err = configure(os.Args[2:])
 	case "monitor":
@@ -227,7 +232,7 @@ func parseFlags(fs *flag.FlagSet, args []string) error {
 // out of this file, so a verb added there and forgotten here is visible.
 var commands = []string{
 	"await", "probe", "watch", "monitor", "board", "log", "verify", "doctor",
-	"calibrate", "version", "help", "configure", "messages", "web", "admin",
+	"calibrate", "version", "help", "man", "configure", "messages", "web", "admin",
 	"mcp-config", "mcp-stdio", "hook-spawn",
 }
 
