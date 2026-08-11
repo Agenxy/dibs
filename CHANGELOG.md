@@ -51,6 +51,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   --graft` (identity is read with replacement objects disabled), and
   `url.*.insteadOf` (the effective remote is resolved instead of the configured
   string).
+- Repository identity is re-read when a directory becomes a repository. A path
+  observed before `git init` was remembered as not-a-repository for the life of
+  the daemon, so an agent there was filed as being nowhere: no project on the
+  board, and no identity for anything else to reason with.
 - Repository identity is re-read when a checkout path is reused. It was memoised
   by path with no expiry, so after `rm -rf project && git clone something-else
   project` a long-running daemon went on describing the repository that used to
