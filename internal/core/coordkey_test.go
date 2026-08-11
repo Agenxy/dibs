@@ -38,13 +38,13 @@ func TestOpeningALaneIssuesAKeyToItsOpener(t *testing.T) {
 	// be able to reconstruct the key from them.
 	for _, guessable := range []string{"auth-work", "the work", a["alpha"].ID} {
 		if strings.Contains(key, guessable) {
-			t.Errorf("key %q leaks %q — a guessable key is a forgeable one", key, guessable)
+			t.Errorf("key %q leaks %q: a guessable key is a forgeable one", key, guessable)
 		}
 	}
 }
 
-// The whole security of the mechanism. An agent that has SEEN a key — from a
-// message, a log, the board panel — must not be able to declare it and be
+// The whole security of the mechanism. An agent that has SEEN a key: from a
+// message, a log, the board panel: must not be able to declare it and be
 // treated as having coordinated. Issued is not enough; it must be held.
 func TestAKeyYouDoNotHoldIsStruckOut(t *testing.T) {
 	s, a := chState(t, "alpha", "beta")
@@ -74,8 +74,8 @@ func TestAKeyYouDoNotHoldIsStruckOut(t *testing.T) {
 	}
 
 	// A key of the right SHAPE that was never issued at all. Shape is the only
-	// thing an attacker controls for free — the namespace and twenty hex
-	// characters are trivial to type — so "looks like a key" must never be a step
+	// thing an attacker controls for free: the namespace and twenty hex
+	// characters are trivial to type, so "looks like a key" must never be a step
 	// towards being treated as one, even for the agent that opened the lane.
 	invented := coordKeyNS + ":00000000000000000000"
 	for _, who := range []string{a["alpha"].ID, a["beta"].ID, ""} {
@@ -114,7 +114,7 @@ func TestJoiningALaneGrantsItsKey(t *testing.T) {
 }
 
 // Two boards must not issue the same key, and one board must not issue it
-// twice — "globally unambiguous on that board" is the property that lets a key
+// twice. "globally unambiguous on that board" is the property that lets a key
 // stand in for identity at all.
 func TestKeysAreUniquePerLaneAndPerBoard(t *testing.T) {
 	seen := map[string]bool{}
@@ -130,11 +130,11 @@ func TestKeysAreUniquePerLaneAndPerBoard(t *testing.T) {
 	// Pinned to a literal, which is stronger than asserting determinism against
 	// itself: the derivation is part of the ON-DISK contract. Change the hash,
 	// the truncation, or the separator and every key in an existing ledger
-	// replays to a different value — lanes silently stop recognising the keys
+	// replays to a different value: lanes silently stop recognising the keys
 	// their own members are declaring. If this line must change, it is a
 	// migration, not a refactor.
 	if got := coordKey("node-a", 7); got != "key:8c2ded975dade5962f5c" {
-		t.Fatalf("coordKey derivation changed: %q — existing ledgers replay to different keys", got)
+		t.Fatalf("coordKey derivation changed: %q: existing ledgers replay to different keys", got)
 	}
 }
 
@@ -142,7 +142,7 @@ func TestKeysAreUniquePerLaneAndPerBoard(t *testing.T) {
 // string in the hands of an agent that never coordinated produces nothing.
 //
 // Both halves have to be one test. Exactness alone is the feature working, and
-// exactness alone is also what a laundered guess looks like — the difference
+// exactness alone is also what a laundered guess looks like: the difference
 // between them IS the mechanism, so measuring either by itself measures nothing.
 func TestAHeldKeyMatchesExactlyAndAForgedOneDoesNot(t *testing.T) {
 	s, a := chState(t, "alpha", "beta", "mallory")
@@ -168,7 +168,7 @@ func TestAHeldKeyMatchesExactlyAndAForgedOneDoesNot(t *testing.T) {
 		t.Fatal("two agents holding one coordination key did not match at all")
 	}
 	if got[0].Relation != RelationSameItem {
-		t.Errorf("held key gave relation %v, want %v — the exact path is still unreachable",
+		t.Errorf("held key gave relation %v, want %v: the exact path is still unreachable",
 			got[0].Relation, RelationSameItem)
 	}
 	if len(got[0].Evidence.Identity) == 0 {
@@ -176,13 +176,13 @@ func TestAHeldKeyMatchesExactlyAndAForgedOneDoesNot(t *testing.T) {
 	}
 
 	// Mallory declares the identical string, having coordinated with nobody.
-	// The lane may still surface on other evidence — that is discovery doing its
-	// job — but never as the same work item, and never citing the key.
+	// The lane may still surface on other evidence: that is discovery doing its
+	// job, but never as the same work item, and never citing the key.
 	forged := s.MatchLanesEvidence(a["mallory"].ID,
 		Slot{Text: "unrelated work", Refs: []string{key}}, cwd, cwd, nil, nil, 5)
 	for _, m := range forged {
 		if m.Relation == RelationSameItem {
-			t.Error("a forged key produced an exact match — the key laundered a guess")
+			t.Error("a forged key produced an exact match: the key laundered a guess")
 		}
 		for _, id := range m.Evidence.Identity {
 			if id == key {
@@ -200,7 +200,7 @@ func TestAHeldKeyMatchesExactlyAndAForgedOneDoesNot(t *testing.T) {
 // The case the key actually exists for, and the one a live probe proved was
 // missing when holding meant bare membership.
 //
-// Matching never proposes a lane you are already in — correctly, since you are
+// Matching never proposes a lane you are already in: correctly, since you are
 // there. So a key only members could hold would fire precisely where it changed
 // nothing, which is what "the join path is decorative" meant. The path that
 // matters is delegation: a parent opens a lane, fans out subagents, and each
@@ -219,7 +219,7 @@ func TestAVouchedChildHoldsItsParentsKeyWithoutJoiningAnything(t *testing.T) {
 		t.Fatal("the child joined the lane; this test is then about nothing")
 	}
 	if !s.holdsCoordKey(childID, key) {
-		t.Fatal("a vouched child does not hold its parent's key — delegation carries nothing")
+		t.Fatal("a vouched child does not hold its parent's key: delegation carries nothing")
 	}
 
 	// An UNVOUCHED claim of the same parent inherits nothing. Lineage is proven
@@ -271,7 +271,7 @@ func TestAChildsWorkMatchesItsParentsLaneOnTheKeyAlone(t *testing.T) {
 		t.Fatal("the child's work did not reach its parent's lane at all")
 	}
 	if found.Relation != RelationSameItem {
-		t.Errorf("relation %v, want %v — the key did not carry the decision",
+		t.Errorf("relation %v, want %v: the key did not carry the decision",
 			found.Relation, RelationSameItem)
 	}
 	if len(found.SharedIDs) == 0 {
@@ -282,7 +282,7 @@ func TestAChildsWorkMatchesItsParentsLaneOnTheKeyAlone(t *testing.T) {
 // The key must reach the agents it was issued to and nobody else.
 //
 // It is checked on use, so a leaked key is not immediately a forged
-// coordination — holdsCoordKey still asks whether the declarer is entitled to
+// coordination: holdsCoordKey still asks whether the declarer is entitled to
 // it. But the board is read by every agent on the machine, and a key visible
 // there is a key any of them can copy into `refs` the moment membership shifts,
 // or that a subscriber can hold without ever having joined. The mechanism's
@@ -290,7 +290,7 @@ func TestAChildsWorkMatchesItsParentsLaneOnTheKeyAlone(t *testing.T) {
 // mean nothing.
 //
 // Asserted against the whole serialized board rather than a field list, because
-// the failure this guards against is somebody ADDING a field — an allowlist
+// the failure this guards against is somebody ADDING a field: an allowlist
 // checked field by field would be updated in the same edit that broke it.
 func TestTheBoardNeverShowsACoordinationKey(t *testing.T) {
 	s, a := chState(t, "alpha", "beta")
@@ -320,8 +320,8 @@ func TestTheBoardNeverShowsACoordinationKey(t *testing.T) {
 
 // An AUTOMATIC join grants the key too, not just an explicit one.
 //
-// Two routes reach membership — asking with lane_join, and being matched by
-// set_slot — and only asking returned the key. That left the agent which got
+// Two routes reach membership: asking with lane_join, and being matched by
+// set_slot, and only asking returned the key. That left the agent which got
 // there by BEING GUESSED AT as the one with no way to stop being guessed at: the
 // key is precisely what it would declare in `refs` next time to be matched by
 // identity rather than by wording. Its only recovery was calling lane_join on a
@@ -329,7 +329,7 @@ func TestTheBoardNeverShowsACoordinationKey(t *testing.T) {
 // and nothing told it to.
 //
 // Asserted here rather than in the channel e2e because an automatic join needs a
-// specific board state — a shared identifying ref and no stronger match — and in
+// specific board state (a shared identifying ref and no stronger match) and in
 // a suite with accumulated lanes the second agent matched something else
 // entirely. A test that has to win a scoring contest to reach its assertion is
 // not testing what it claims; this constructs the state directly.
@@ -349,7 +349,7 @@ func TestAnAutomaticJoinGrantsTheKeyAsWell(t *testing.T) {
 	}
 	got, _ := res["key"].(string)
 	if got != key {
-		t.Errorf("an automatic join returned key %q, want the lane's own %q — the agent "+
+		t.Errorf("an automatic join returned key %q, want the lane's own %q: the agent "+
 			"is a member of a lane it cannot name exactly, which is the one thing the "+
 			"key exists to fix", got, key)
 	}

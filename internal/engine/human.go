@@ -13,7 +13,7 @@ import (
 // The human as a participant.
 //
 // Until now the board was a window: the human could watch the fleet and could
-// not speak to it. Every affordance — join a lane, post, answer a question —
+// not speak to it. Every affordance: join a lane, post, answer a question,
 // existed for agents only, and the web board's own test asserted "the operator
 // view offers no actions". That is a coherent design for a monitoring tool and
 // the wrong one for a coordination service, because the human is the one
@@ -21,7 +21,7 @@ import (
 //
 // THE DESIGN CHOICE, and it is the whole of this file: the human is not a new
 // kind of actor with a parallel permission surface. **The human gets an AGENT
-// identity** — a participant, exactly like any other — and every action goes
+// identity**, a participant, exactly like any other, and every action goes
 // through the same tools with the same token. Nothing in internal/core learns
 // that humans exist.
 //
@@ -34,8 +34,8 @@ import (
 // authorization path into the state machine, unledgered by construction unless
 // each one remembered to ledger, and invisible to `lanes verify`. Routing the
 // human through an ordinary lane means their messages are ordinary messages,
-// their memberships replay like anyone's, and an agent cannot tell — or need to
-// tell — whether it is talking to a person.
+// their memberships replay like anyone's, and an agent cannot tell, or need to
+// tell: whether it is talking to a person.
 //
 // AUTHENTICATION is inherited, not invented. The web board already sits behind
 // a session cookie that can only be minted by proving the admin password
@@ -51,7 +51,7 @@ type humanState struct {
 //
 // Reading the board must not make you a participant. An operator who opens the
 // page to see what the fleet is doing has joined nothing, declared nothing and
-// owes nobody an acknowledgement — registering them on page load would put a
+// owes nobody an acknowledgement: registering them on page load would put a
 // permanent agent on the roster, count them in the fleet, and subject them to
 // liveness sweeps, all for looking.
 //
@@ -71,19 +71,19 @@ func (e *Engine) HumanIdentity() string {
 
 // HumanAgent returns the human's AGENT id and token, creating it on first use.
 //
-// Called only from an ACTION — joining a lane, posting, sending a message. The
+// Called only from an ACTION: joining a lane, posting, sending a message. The
 // identity comes into being the moment the operator first does something, and
 // not before.
 //
 // An agent, not a lane. In SPEC-CHANNELS.md's vocabulary an agent is a
-// participant — an identity, a mailbox, a token — and a lane is a channel of
+// participant, an identity, a mailbox, a token, and a lane is a channel of
 // work. The human needs the former and emphatically not the latter: they
 // monitor and join the channels agents create, and a channel of their own would
 // be a room with one person in it.
 //
 // (The Go type is still `core.Lane` because the ledger's wire name for a
 // participant is frozen as `lane`. That collision is documented at the top of
-// internal/core/channel.go, and it is easy to fall into — this function was
+// internal/core/channel.go, and it is easy to fall into: this function was
 // called HumanLane until a reader pointed out it reads as "the human gets a
 // channel", which is the opposite of what it does.)
 //
@@ -127,7 +127,7 @@ func (e *Engine) HumanAgent(ctx context.Context) (agent, token string, err error
 	// The awareness gate applies to the human exactly as it does to an agent
 	// (SPEC §6): you may not declare work before acknowledging what others are
 	// doing. Doing it here rather than making the UI do it keeps the rule in one
-	// place — and the human HAS just looked at the board, which is the point of
+	// place, and the human HAS just looked at the board, which is the point of
 	// the gate.
 	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
 		return "", "", err
@@ -139,7 +139,7 @@ func (e *Engine) HumanAgent(ctx context.Context) (agent, token string, err error
 // HumanTouch refreshes the human's liveness without writing anything.
 //
 // A person reading the board is present in every sense that matters, but they
-// produce no ops while reading — so without this the sweep would eventually mark
+// produce no ops while reading, so without this the sweep would eventually mark
 // them stale and release any lane they own out from under them mid-read.
 func (e *Engine) HumanTouch(ctx context.Context) {
 	e.human.mu.Lock()

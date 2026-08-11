@@ -6,7 +6,7 @@ import (
 )
 
 // An agent that walks out of a lane and is put straight back has not been
-// coordinated with — it has been overruled.
+// coordinated with: it has been overruled.
 //
 // Reported from a live fleet by an agent that left a lane it did not belong in
 // and posted its reasons on the way out: "my very next set_slot auto-joined me

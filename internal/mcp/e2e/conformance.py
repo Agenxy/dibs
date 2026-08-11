@@ -8,7 +8,7 @@
 Everything Lanes' 2026-07-28 support has been checked against so far was written
 by the same person who wrote the server, which is the weakest possible evidence:
 a shared misreading of the spec passes both sides. The reference SDK is the
-independent check — it ships the discover/fallback probe and the caching model
+independent check: it ships the discover/fallback probe and the caching model
 as the spec authors implemented them.
 
 Usage: conformance.py <url> <secret>
@@ -70,7 +70,7 @@ async def main() -> int:
             if version == "2026-07-28":
                 ok("the official client settled on the STATELESS core")
             else:
-                no(f"fell back to {version} — Lanes' discover was not accepted as modern")
+                no(f"fell back to {version}. Lanes' discover was not accepted as modern")
 
             tools = await client.list_tools()
             names = {t.name for t in tools.tools}

@@ -3,8 +3,8 @@ package core
 import "testing"
 
 // lens is a stand-in for Git's answer. The point of these tests is the ADOPTION
-// — that core asks, believes a known answer, and correctly does not treat
-// silence as a denial — so a real repository here would only be testing
+// that core asks, believes a known answer, and correctly does not treat
+// silence as a denial, so a real repository here would only be testing
 // internal/paths a second time.
 type lens struct{ same, known bool }
 
@@ -12,13 +12,13 @@ func (l lens) SameRepo(_, _ string) (bool, bool) { return l.same, l.known }
 
 // Everything sameRepo can do without Git is inference from the SHAPE of two
 // paths, and shape gets both interesting cases wrong. A linked worktree lives
-// wherever it was created — routinely outside its checkout — and is the same
+// wherever it was created (routinely outside its checkout) and is the same
 // repository; two clones of unrelated projects sit side by side under one
 // parent and are not. Git knows; the prefix test guesses.
 func TestGitOutranksPathShape(t *testing.T) {
 	// Two directories with nothing in common as strings, in one repository.
 	// Without a lens this is the "different paths outside any known root" case,
-	// which declines to commit — so an identifier could never act on it.
+	// which declines to commit, so an identifier could never act on it.
 	same, known := sameRepo("/Users/x/proj", "/tmp/wt/feature", "", lens{true, true})
 	if !same || !known {
 		t.Errorf("linked worktree: got (%v,%v), want (true,true)", same, known)
@@ -29,7 +29,7 @@ func TestGitOutranksPathShape(t *testing.T) {
 	// a clone of something else.
 	same, known = sameRepo("/work/outer/vendor/dep", "/work/outer", "", lens{false, true})
 	if same || !known {
-		t.Errorf("nested clone: got (%v,%v), want (false,true) — a veto", same, known)
+		t.Errorf("nested clone: got (%v,%v), want (false,true): a veto", same, known)
 	}
 }
 

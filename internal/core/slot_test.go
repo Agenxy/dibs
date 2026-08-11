@@ -8,7 +8,7 @@ import (
 // A cleared slot must not make the next declaration overwrite a live one.
 //
 // Ids were generated as "s" + (len+1). With s1, s2, s3 and s2 cleared, len is 2
-// and the next id is "s3" — which already exists, so a new declaration silently
+// and the next id is "s3", which already exists, so a new declaration silently
 // replaced a different piece of work, and the per-lane limit check waved it
 // through because the id was not new. Nothing errored and nothing was logged:
 // an agent declared what it was doing and quietly erased what it had been.
@@ -28,7 +28,7 @@ func TestClearingASlotDoesNotMakeTheNextOneOverwriteAnother(t *testing.T) {
 		t.Fatalf("expected 3 slots after three sets, a clear and a set; got %d: %v", len(slots), slots)
 	}
 	if got := slots["s3"].Text; got != "third" {
-		t.Errorf("s3 now reads %q — the new declaration took an id that was still in use\n"+
+		t.Errorf("s3 now reads %q: the new declaration took an id that was still in use\n"+
 			"  and overwrote live work rather than picking a free one", got)
 	}
 	found := false
@@ -43,7 +43,7 @@ func TestClearingASlotDoesNotMakeTheNextOneOverwriteAnother(t *testing.T) {
 }
 
 // An agent updating its focus calls set_slot again with new text, which is
-// exactly what the tool's own description invites — and that MINTS a slot every
+// exactly what the tool's own description invites, and that MINTS a slot every
 // time, so a lane that is simply working stacks declarations until it hits the
 // cap and starts erroring.
 //
@@ -63,7 +63,7 @@ func TestAddingASecondSlotSaysSo(t *testing.T) {
 	res = mustApply(t, s, &Op{Kind: OpSetSlot, Token: "tokB", Text: "second"}, t0)
 	note, _ := res["note"].(string)
 	if !strings.Contains(note, "slot_id") {
-		t.Errorf("adding a second slot said %q — an agent updating its focus has no way\n"+
+		t.Errorf("adding a second slot said %q: an agent updating its focus has no way\n"+
 			"  to learn it is stacking declarations rather than replacing one", note)
 	}
 

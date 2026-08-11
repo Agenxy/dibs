@@ -32,7 +32,7 @@ func (c *clock) sample(cpu time.Duration, bytes, tokens int64) Sample {
 // The measurement this package exists because of.
 //
 // Taken from a live `codex exec` at 15-second intervals: the middle window
-// produced no bytes and no tokens, and the agent was entirely healthy — it was
+// produced no bytes and no tokens, and the agent was entirely healthy: it was
 // waiting on a model response. A detector that calls that "stuck" fires on
 // every turn boundary, and a detector that cries wolf gets turned off.
 func TestAHealthyAgentBetweenTurnsIsNotStuck(t *testing.T) {
@@ -45,7 +45,7 @@ func TestAHealthyAgentBetweenTurnsIsNotStuck(t *testing.T) {
 
 	if v := Classify(h, DefaultConfig()); v.State != Working {
 		t.Errorf("a real healthy agent was classified %q: %s\n"+
-			"  this is the exact sample the package was built from — a flat 15s window\n"+
+			"  this is the exact sample the package was built from: a flat 15s window\n"+
 			"  mid-turn. Calling it anything but healthy makes the detector noise.",
 			v.State, v.Why)
 	}
@@ -58,7 +58,7 @@ func TestOutputFlatButCPUBurningIsThinking(t *testing.T) {
 	h := []Sample{c.sample(10*time.Second, 1000, 500)}
 	cpu := 10 * time.Second
 	// Deliberately PAST the Frozen threshold. An earlier version of this test
-	// ran for four minutes, under the five-minute default — so it passed with
+	// ran for four minutes, under the five-minute default, so it passed with
 	// the CPU signal deleted entirely, because the "not yet frozen" branch
 	// caught it. It was testing the clock, not the thing it was named for.
 	// Found by deleting the CPU check and watching the suite stay green.
@@ -71,7 +71,7 @@ func TestOutputFlatButCPUBurningIsThinking(t *testing.T) {
 	if v.State != Thinking {
 		t.Errorf("got %q, want thinking: %s\n"+
 			"  ten minutes without output but with CPU climbing is a long turn, not a\n"+
-			"  stall — and CPU is the ONLY signal that separates them", v.State, v.Why)
+			"  stall, and CPU is the ONLY signal that separates them", v.State, v.Why)
 	}
 	if v.Silent < 9*time.Minute {
 		t.Errorf("silence should reflect the whole flat run, got %s", v.Silent)
@@ -99,7 +99,7 @@ func TestAliveButProducingAndConsumingNothingIsStuck(t *testing.T) {
 // The failure this was written for.
 //
 // The lid closes, every subagent suspends, and on waking the parent sees forty
-// minutes of nothing. Wall-clock silence says stuck. It was not stuck — it was
+// minutes of nothing. Wall-clock silence says stuck. It was not stuck: it was
 // not running, and killing it would destroy healthy work.
 func TestASleepingMachineIsNotAStuckAgent(t *testing.T) {
 	c := newClock()
@@ -120,13 +120,13 @@ func TestASleepingMachineIsNotAStuckAgent(t *testing.T) {
 		t.Errorf("the sleep should be measured and reported, got %s", v.Slept)
 	}
 	if v.Silent > time.Minute {
-		t.Errorf("silence must be AWAKE time (~20s), got %s — the sleep leaked into it", v.Silent)
+		t.Errorf("silence must be AWAKE time (~20s), got %s: the sleep leaked into it", v.Silent)
 	}
 }
 
 // And the reverse: sleep must not launder a genuine stall. An agent that was
 // already frozen before the lid closed, and is still frozen well after it
-// opened, is stuck — the sleep in the middle changes nothing about that.
+// opened, is stuck: the sleep in the middle changes nothing about that.
 func TestSleepDoesNotHideAGenuineStall(t *testing.T) {
 	c := newClock()
 	h := []Sample{c.sample(10*time.Second, 1000, 500)}
@@ -141,7 +141,7 @@ func TestSleepDoesNotHideAGenuineStall(t *testing.T) {
 	}
 	v := Classify(h, DefaultConfig())
 	if v.State != Stuck {
-		t.Errorf("got %q, want stuck — seven AWAKE minutes of nothing is a stall "+
+		t.Errorf("got %q, want stuck: seven AWAKE minutes of nothing is a stall "+
 			"whether or not the machine slept in the middle: %s", v.State, v.Why)
 	}
 	if v.Slept < 29*time.Minute {
@@ -196,7 +196,7 @@ func TestTokensAreTrustedOverBytes(t *testing.T) {
 		h = append(h, c.sample(10*time.Second, bytes, 500))
 	}
 	if v := Classify(h, DefaultConfig()); v.State != Stuck {
-		t.Errorf("got %q, want stuck — the file grew but the model produced nothing: %s",
+		t.Errorf("got %q, want stuck: the file grew but the model produced nothing: %s",
 			v.State, v.Why)
 	}
 }
@@ -255,7 +255,7 @@ func TestALifetimeOfIdlenessIsConvictableAtAGlance(t *testing.T) {
 	if v.State != Stuck {
 		t.Errorf("a process alive 7h39m on 0.11s of CPU was reported %q: %s\n"+
 			"  this check existed, was unit-tested directly, and was never called from\n"+
-			"  Classify — so the package could convict and the command could not", v.State, v.Why)
+			"  Classify, so the package could convict and the command could not", v.State, v.Why)
 	}
 
 	healthy := c.sample(19600*time.Millisecond, 100, 50)
@@ -276,7 +276,7 @@ func TestALifetimeOfIdlenessIsConvictableAtAGlance(t *testing.T) {
 // An "unknown" verdict must say what would settle it.
 //
 // Found on a cold install, following the README as a stranger would: a stalled
-// stand-in spawned seconds earlier, probed, and answered "unknown — watched for
+// stand-in spawned seconds earlier, probed, and answered "unknown: watched for
 // only 9s". Correct, and a dead end. Somebody evaluating this stops there and
 // concludes the feature does not work, because nothing told them the process
 // was too young to judge or how long that lasts.
@@ -301,7 +301,7 @@ func TestAnUnknownVerdictNamesWhatWouldSettleIt(t *testing.T) {
 	}
 
 	// Past the minimum age, silence is about the WATCH, and the advice changes
-	// to match — naming --frozen rather than --min-age.
+	// to match: naming --frozen rather than --min-age.
 	old := c.sample(0, 0, 0)
 	old.Elapsed = time.Hour
 	older := c.sample(0, 0, 0)

@@ -18,7 +18,7 @@ func fp(paths ...string) []PredFile {
 //
 // Reported from a live fleet: an agent working on CLI, docs and JS dependencies
 // was auto-joined to a runtime/CI lane at 0.196 on evidence that was four-fifths
-// repo-root files — runtime/CMakeLists.txt, llms-full.txt, ci.yml, Justfile —
+// repo-root files: runtime/CMakeLists.txt, llms-full.txt, ci.yml, Justfile,
 // none of which it had declared and none of which it had written. Its own
 // diagnosis: "we match mainly because we are both in the same repo."
 func TestUbiquitousFilesDoNotCarryTheMatch(t *testing.T) {
@@ -31,7 +31,7 @@ func TestUbiquitousFilesDoNotCarryTheMatch(t *testing.T) {
 	// wrong: with two distinctive files per lane the generic ones were 60% of
 	// every footprint, which no real declaration looks like. A real footprint is
 	// tens of files with a handful of shared build files among them, so that is
-	// what this builds — otherwise the fixture, not the code, decides the result.
+	// what this builds: otherwise the fixture, not the code, decides the result.
 	common := []string{"Justfile", ".github/workflows/ci.yml", "llms-full.txt"}
 	spread := func(prefix string, n int) []string {
 		out := make([]string, 0, n)
@@ -59,7 +59,7 @@ func TestUbiquitousFilesDoNotCarryTheMatch(t *testing.T) {
 	for _, m := range got {
 		byLane[m.Lane] = m.Score
 	}
-	// The right lane still wins, and by a clear margin — that is the part the
+	// The right lane still wins, and by a clear margin: that is the part the
 	// discount must not break.
 	if byLane["cli"] <= byLane["runtime"] {
 		t.Fatalf("the genuinely-matching lane must rank first: cli=%.3f runtime=%.3f",
@@ -112,7 +112,7 @@ func TestSingleLaneIsNotDiscounted(t *testing.T) {
 //
 // Fixtures used to set Channel.Predicted with no members at all. That stopped
 // being a valid state when scoring moved from the merged footprint to the
-// members' own live declarations — a channel with a footprint and nobody in it
+// members' own live declarations: a channel with a footprint and nobody in it
 // cannot reach the code under test, and five tests kept passing against a code
 // path that no longer decided anything.
 func lane(t *testing.T, s *State, id, topic string, files []string) {

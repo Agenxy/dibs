@@ -19,8 +19,8 @@ import (
 func selectDaemon(live []paths.Daemon, dir string) (mine *paths.Daemon, others int, err error) {
 	var found []paths.Daemon
 	for _, d := range live {
-		// An entry we could not decode is always a stranger — IsStranger says so
-		// — but check Unknown explicitly too: signalling a pid we could not
+		// An entry we could not decode is always a stranger. IsStranger says so
+		// but check Unknown explicitly too: signalling a pid we could not
 		// attribute is exactly the mistake this function exists to prevent.
 		if d.Unknown || d.IsStranger(dir) {
 			others++
@@ -36,7 +36,7 @@ func selectDaemon(live []paths.Daemon, dir string) (mine *paths.Daemon, others i
 	default:
 		// The flock makes this impossible; say so rather than picking one.
 		return nil, others, fmt.Errorf("%d daemons claim %s, which the directory lock should "+
-			"prevent — stop them by pid and report this", len(found), dir)
+			"prevent: stop them by pid and report this", len(found), dir)
 	}
 }
 
@@ -45,7 +45,7 @@ func selectDaemon(live []paths.Daemon, dir string) (mine *paths.Daemon, others i
 //
 // `lanes stop --help` stopped the daemon and exited 0. The dispatch ignored
 // os.Args[2:] entirely, so asking a destructive command what it does performed
-// it — and this is the second time in this CLI: configure.go carries a comment
+// it, and this is the second time in this CLI: configure.go carries a comment
 // about `lanes configure --help` being taken as a directory named "--help".
 // Once is a slip; twice is a pattern, so this one refuses anything it does not
 // understand rather than assuming an unrecognised argument is harmless.
@@ -56,7 +56,7 @@ func stop(args []string) error {
 			fmt.Print(stopHelp)
 			return nil
 		default:
-			return fmt.Errorf("`lanes stop` takes no arguments, and %q is not one — "+
+			return fmt.Errorf("`lanes stop` takes no arguments, and %q is not one. "+
 				"it stops the daemon for the data directory in LANES_DIR (or ~/.lanes) "+
 				"and nothing else. Refusing rather than guessing, because this is not "+
 				"an action to perform on a directory you did not mean", a)
@@ -65,7 +65,7 @@ func stop(args []string) error {
 	return stopDaemon(paths.DataDir())
 }
 
-const stopHelp = `lanes stop — stop the daemon serving this data directory
+const stopHelp = `lanes stop: stop the daemon serving this data directory
 
   Stops ONLY the daemon registered against LANES_DIR (default ~/.lanes).
   Other daemons on this machine are left running: Lanes is built so several
@@ -85,8 +85,8 @@ const stopHelp = `lanes stop — stop the daemon serving this data directory
 // daemon somebody is mid-debug on, and reports success either way. Running
 // agents lose their coordination and nothing tells them why.
 //
-// The registry already knows which process holds which directory — it is how a
-// second daemon is refused — so a precise stop needs no new bookkeeping.
+// The registry already knows which process holds which directory: it is how a
+// second daemon is refused, so a precise stop needs no new bookkeeping.
 func stopDaemon(dir string) error {
 	live, err := paths.LiveDaemons()
 	if err != nil {
@@ -122,11 +122,11 @@ func stopDaemon(dir string) error {
 
 	// Wait, so the caller can start a replacement immediately. Without this,
 	// `lanes stop && lanesd &` races the outgoing process for the flock and the
-	// new daemon refuses to start — which reads as a broken command.
+	// new daemon refuses to start, which reads as a broken command.
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		// Signal 0 tests for existence. An error here means the process is GONE,
-		// which is the success we are waiting for — hence returning nil on a
+		// which is the success we are waiting for: hence returning nil on a
 		// non-nil error, which reads backwards and is why it is spelled out.
 		//nolint:nilerr // an error from signal 0 means the process is GONE, which
 		// is the success this loop waits for. nilerr sees `err != nil` followed by

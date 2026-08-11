@@ -142,7 +142,7 @@ func TestReconcileDropsOrphans(t *testing.T) {
 
 // TestReconcileSkipsInFlight is the P0 regression guard: a blob whose bytes are
 // staged but not yet registered (held in-flight) must survive a Reconcile that
-// snapshots a live set NOT yet containing it — otherwise a concurrent reconcile
+// snapshots a live set NOT yet containing it: otherwise a concurrent reconcile
 // would turn a live put into a permanent registry-without-bytes.
 func TestReconcileSkipsInFlight(t *testing.T) {
 	s, _ := newStore(t)
@@ -184,7 +184,7 @@ func TestConcurrentPutVsReconcile(t *testing.T) {
 			case <-stop:
 				return
 			default:
-				_, _ = s.Reconcile(map[string]bool{}) // nothing "live" — worst case
+				_, _ = s.Reconcile(map[string]bool{}) // nothing "live": worst case
 			}
 		}
 	}()

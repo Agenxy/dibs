@@ -12,9 +12,9 @@ import (
 // A process killed between the temp write and the rename leaves a .tmp-* file,
 // and nothing ever removed one.
 //
-// Reconcile must skip them — at runtime it cannot distinguish an abandoned temp
+// Reconcile must skip them: at runtime it cannot distinguish an abandoned temp
 // from a Put that is midway through, because the names are random and cannot be
-// matched against the in-flight set — so they accumulated for the life of the
+// matched against the in-flight set, so they accumulated for the life of the
 // directory. out/ was therefore not bounded by the blob store, as
 // SPEC-ATTACHMENTS claims, and a materialization temp holds PLAINTEXT: it
 // outlived the eviction of the encrypted blob it came from, which is the exact
@@ -62,7 +62,7 @@ func TestAbandonedTempsAreReapedAtStartup(t *testing.T) {
 	}
 	for _, p := range debris {
 		if _, err := os.Stat(p); err != nil {
-			t.Fatalf("Reconcile removed %s — it must not, a live write looks the same", p)
+			t.Fatalf("Reconcile removed %s: it must not, a live write looks the same", p)
 		}
 	}
 
@@ -72,7 +72,7 @@ func TestAbandonedTempsAreReapedAtStartup(t *testing.T) {
 	}
 	for _, p := range debris {
 		if _, err := os.Stat(p); !os.IsNotExist(err) {
-			t.Errorf("%s survived a restart — plaintext debris accumulates forever "+
+			t.Errorf("%s survived a restart: plaintext debris accumulates forever "+
 				"and outlives the blob it came from", p)
 		}
 	}
@@ -122,7 +122,7 @@ func TestTheTempSweepIsExact(t *testing.T) {
 
 	// A shard created AFTER the store was first opened. The sweep enumerates
 	// shards at open time, so a shard that appeared since must still be swept
-	// on the next start — this is the ordinary case, not an exotic one: shards
+	// on the next start: this is the ordinary case, not an exotic one: shards
 	// are created as blobs arrive.
 	lateShard := filepath.Join(root, "blobs", "zz")
 	if err := os.MkdirAll(lateShard, 0o700); err != nil {
@@ -134,7 +134,7 @@ func TestTheTempSweepIsExact(t *testing.T) {
 	}
 
 	// A symlink named like a temp. Removing it must unlink the SYMLINK and
-	// leave whatever it points at — following it would let a stale link in the
+	// leave whatever it points at: following it would let a stale link in the
 	// blob directory delete an arbitrary file the daemon can write.
 	target := filepath.Join(root, "precious.txt")
 	if err := os.WriteFile(target, []byte("must survive"), 0o600); err != nil {
@@ -159,7 +159,7 @@ func TestTheTempSweepIsExact(t *testing.T) {
 	}
 
 	// A temp whose mode denies writing. Unlink permission belongs to the
-	// DIRECTORY, not the file, so this is removable — and it is the realistic
+	// DIRECTORY, not the file, so this is removable, and it is the realistic
 	// stale-file case.
 	readonly := filepath.Join(root, "out", tmpPrefix+"readonly")
 	if err := os.WriteFile(readonly, []byte("plain"), 0o400); err != nil {
@@ -217,7 +217,7 @@ func TestADirectoryTheSweepCannotWriteDoesNotBlockBoot(t *testing.T) {
 		t.Fatalf("an undeletable temp must not stop the daemon booting: %v", err)
 	}
 	if _, err := os.Stat(blocked); err != nil {
-		t.Fatalf("precondition: the temp should still be there — the probe did not "+
+		t.Fatalf("precondition: the temp should still be there: the probe did not "+
 			"actually block deletion: %v", err)
 	}
 

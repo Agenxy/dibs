@@ -7,7 +7,7 @@ import (
 
 // There was no way out of an exclusive lane's queue.
 //
-// lane_leave checked membership, found none, and answered "not a member" — true
+// lane_leave checked membership, found none, and answered "not a member": true
 // and useless, because the agent was in the queue and stayed there. An
 // exclusive lane admits from its queue whenever it frees, so an agent that
 // queued, changed its mind, and was told it had left, was joined to the lane
@@ -66,7 +66,7 @@ func TestAQueuedAgentCanActuallyLeaveTheQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, in := ch.Members["quitter"]; in {
-		t.Error("an agent that left the queue was admitted to the lane anyway — " +
+		t.Error("an agent that left the queue was admitted to the lane anyway. " +
 			"with the coordination key and every announcement it now owes")
 	}
 	if _, in := ch.Members["stayer"]; !in {

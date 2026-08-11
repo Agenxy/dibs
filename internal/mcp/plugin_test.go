@@ -9,7 +9,7 @@ import (
 //
 // The agent block is optional and descriptive, so most registrations arrive
 // without one. The first version of the hint read op.Agent.Harness
-// unconditionally and panicked on a nil pointer inside an HTTP handler — every
+// unconditionally and panicked on a nil pointer inside an HTTP handler: every
 // plain register_lane would have killed the connection, and the feature that
 // caused it is a nicety the caller never asked for.
 func TestAHarnesslessRegistrationGetsNoHintAndDoesNotPanic(t *testing.T) {
@@ -17,7 +17,7 @@ func TestAHarnesslessRegistrationGetsNoHintAndDoesNotPanic(t *testing.T) {
 		t.Errorf("hint = %v, want nil for an unknown harness", hint)
 	}
 	if hint := pluginHint("emacs", false, false); hint != nil {
-		t.Errorf("hint = %v, want nil — inventing a plugin for a harness we do not "+
+		t.Errorf("hint = %v, want nil: inventing a plugin for a harness we do not "+
 			"support is worse than saying nothing", hint)
 	}
 }
@@ -52,7 +52,7 @@ func TestAnAlreadyHookedSessionIsToldItIsDone(t *testing.T) {
 	// session is genuinely present and genuinely inert until the next one.
 	// Checked by what the sentence CLAIMS, not by which words appear in it. An
 	// earlier version of this test searched for "missing" and failed on the very
-	// hedge it was meant to require — "that is not proof the plugin is missing" —
+	// hedge it was meant to require. "that is not proof the plugin is missing",
 	// which is the same category of error as the code it guards: matching a token
 	// instead of reading the assertion.
 	status, _ := dark["status"].(string)
@@ -72,7 +72,7 @@ func TestAnAlreadyHookedSessionIsToldItIsDone(t *testing.T) {
 // once becomes noise that gets filtered out every time after.
 func TestTheHintIsNotRepeatedOnReattach(t *testing.T) {
 	if hint := pluginHint("claude-code", false, false); hint == nil {
-		t.Fatal("a fresh claude-code registration got no hint — the one moment the " +
+		t.Fatal("a fresh claude-code registration got no hint: the one moment the " +
 			"agent has just told us its harness is the one moment this is news")
 	}
 	if hint := pluginHint("claude-code", true, false); hint != nil {
@@ -81,11 +81,11 @@ func TestTheHintIsNotRepeatedOnReattach(t *testing.T) {
 }
 
 // The resource must be renderable, carry the files, and never claim the plugin
-// is missing — the daemon cannot see that.
+// is missing: the daemon cannot see that.
 func TestThePluginDocIsServableAndHonest(t *testing.T) {
 	doc := pluginDoc()
 	if len(doc) < 200 {
-		t.Fatalf("plugin doc is %d bytes — it should carry the files", len(doc))
+		t.Fatalf("plugin doc is %d bytes: it should carry the files", len(doc))
 	}
 	for _, want := range []string{"hooks/hooks.json", "setup", "check", "claude-code"} {
 		if !strings.Contains(doc, want) {
@@ -119,7 +119,7 @@ func TestAHarnessWithNoWakePathIsNotToldToStopPolling(t *testing.T) {
 		t.Errorf("codex was not told mail is pull-only there: %q", note)
 	}
 
-	// And the harness that DOES deliver still says so — the fix must not flatten
+	// And the harness that DOES deliver still says so: the fix must not flatten
 	// both into the same cautious sentence, which would waste the one thing
 	// installing the plugin buys.
 	cc := pluginHint("claude-code", false, true)

@@ -11,7 +11,7 @@ import (
 // retries). It is kept so it can be READ later, not so it can be enforced.
 //
 // Posts used to be stored nowhere. lane_post appended the text to an event and
-// returned a serial, and that event was the only copy — so an agent that was
+// returned a serial, and that event was the only copy, so an agent that was
 // not polling at that moment never saw it, a restart lost it, and lane_read,
 // the tool whose whole job is "read the lane", did not return posts at all. It
 // looked like it worked only because the event reached everybody, including
@@ -50,8 +50,8 @@ func (s *State) PostHistory(ch *Channel, limit int) []Result {
 // carryPosts moves the source lane's remarks into the destination, because the
 // source is deleted immediately afterwards and anything left behind is gone.
 //
-// This codebase has dropped a sibling collection on a destructive op twice —
-// merge and evict silently discarded queues, then announcements — and each time
+// This codebase has dropped a sibling collection on a destructive op twice,
+// merge and evict silently discarded queues, then announcements, and each time
 // the surviving lane looked correct while the history it should have absorbed
 // had simply ceased to exist. A merge is supposed to combine two lanes, so the
 // members who arrive should still be able to read what they were discussing.

@@ -58,7 +58,7 @@ func TestSendToSupersededLaneWarnsAndNamesTheLiveOne(t *testing.T) {
 
 // A dormant lane with NO live sibling is a standing role asleep between
 // activations. That is what persistent lanes are for, so this must not be
-// refused — but the sender still deserves to know nothing is owed to it.
+// refused, but the sender still deserves to know nothing is owed to it.
 func TestSendToDormantLaneDeliversWithNotice(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	t0 := time.Now()

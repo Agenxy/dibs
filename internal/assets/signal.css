@@ -1,10 +1,10 @@
 /* ═══════════════════════════════════════════════════════════════
-   LANES — SIGNAL
+   LANES. SIGNAL
 
    How the board shows that something is ALIVE.
 
    board.css is the substrate: colour, type, geometry, spacing,
-   motion. This file is one layer above it and has one job — the
+   motion. This file is one layer above it and has one job: the
    visual language of state. A lane that is coordinating right now,
    a lane that has gone quiet, an announcement nobody can answer, a
    claim somebody else holds.
@@ -20,7 +20,7 @@
      - Motion encodes state or it does not exist. A pulse whose rate
        is arbitrary is decoration; a pulse whose rate is recency is
        an instrument.
-     - Nothing here may be the ONLY carrier of meaning — under
+     - Nothing here may be the ONLY carrier of meaning: under
        prefers-reduced-motion, and for a reader who cannot see
        colour, the same fact must still be legible.
    ═══════════════════════════════════════════════════════════════ */
@@ -30,11 +30,11 @@
    much of that aperture is open, and only the bucket meaning "mid-exchange"
    moves:
 
-     immediate  full aperture + radiating ring — coordinating right now
-     recent     full aperture + fixed ring      — working, between exchanges
-     aging      half aperture                   — quiet, not stale
-     unknown    empty neutral aperture          — no recency claim
-     stale      diamond + cut                   — contact was interrupted
+     immediate  full aperture + radiating ring: coordinating right now
+     recent     full aperture + fixed ring     : working, between exchanges
+     aging      half aperture                  : quiet, not stale
+     unknown    empty neutral aperture         : no recency claim
+     stale      diamond + cut                  : contact was interrupted
 
    Fill and silhouette carry the same distinctions when motion or hue cannot. */
 .entry .pip {
@@ -134,7 +134,7 @@
 /* Out of touch marks the reading as UNCERTAIN, never as void.
  *
  * This was a strikethrough, and a strikethrough on a timestamp says the value
- * has been cancelled — that it no longer applies and can be skipped. On a lane
+ * has been cancelled: that it no longer applies and can be skipped. On a lane
  * nobody has heard from, the age is the opposite of skippable: how long the
  * silence has run is the single number that decides whether somebody
  * investigates. The rows that most needed reading were the only rows drawn as
@@ -144,7 +144,7 @@
  * A dotted underline keeps the parallel with .entry.active .age, where an
  * underline in the live colour means "this is the recency reading". Same
  * decoration, same role; the colour carries the category and the dots carry the
- * doubt. The fact in question is not that the time is wrong — it is right — but
+ * doubt. The fact in question is not that the time is wrong (it is right) but
  * that what it implies about the agent being there no longer holds. */
 .entry.stale .age {
   color: var(--warn);

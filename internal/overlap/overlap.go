@@ -1,7 +1,7 @@
 // Package overlap answers one question: are two agents doing the same work?
 //
-// Directory claims answer a narrower one — are two agents naming the same path
-// — and that is the collision which is cheap to detect rather than the one that
+// Directory claims answer a narrower one: are two agents naming the same path
+// and that is the collision which is cheap to detect rather than the one that
 // hurts. Two agents refactoring the same concept in different languages never
 // name the same path and wreck each other anyway. See SPEC-CHANNELS.md §0.
 //
@@ -17,7 +17,7 @@
 // part that varies, against ground truth that already exists: git history.
 //
 // Nothing here may be called during ledger replay. Every value this package
-// produces is impure — it reads the filesystem and, at higher tiers, a model —
+// produces is impure: it reads the filesystem and, at higher tiers, a model,
 // so scores are computed at the edge and RECORDED in the op, exactly as
 // liveness probe verdicts are (SPEC §2, §7; SPEC-CHANNELS.md §4.3).
 package overlap
@@ -68,7 +68,7 @@ type Scorer interface {
 // Overlap scores two predictions against each other, in [0,1].
 //
 // This is a weighted Jaccard: the shared weight over the total weight. Plain
-// set Jaccard was tried first and is wrong here for a specific reason — it
+// set Jaccard was tried first and is wrong here for a specific reason: it
 // counts a weak tail hit exactly as much as the one file both agents are about
 // to rewrite, so two agents sharing nothing but `go.mod` and a test helper
 // score the same as two agents sharing the package they are both editing.
@@ -115,7 +115,7 @@ func Overlap(a, b Prediction) float64 {
 //
 // This is the evidence half of a verdict. A score with no evidence is not
 // explainable, and SPEC-CHANNELS.md §10.3 requires every auto-join to be
-// explainable on demand — so the thing that produced the number has to hand
+// explainable on demand, so the thing that produced the number has to hand
 // back the reasons at the same time, not on request later when the index has
 // moved on.
 func Shared(a, b Prediction, limit int) []File {
@@ -146,7 +146,7 @@ func Shared(a, b Prediction, limit int) []File {
 // topN truncates to the n heaviest files, renormalising so the best is 1.0.
 //
 // Renormalisation keeps scores comparable across scorers whose raw magnitudes
-// differ by orders of magnitude — a tier-0 token count and a tier-2 cosine have
+// differ by orders of magnitude: a tier-0 token count and a tier-2 cosine have
 // no common unit, and thresholds are configured once for all of them.
 func topN(files []File, n int) []File {
 	sort.SliceStable(files, func(i, j int) bool {

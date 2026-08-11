@@ -26,7 +26,7 @@ func registerLogsAPI(mux *http.ServeMux, ring *logs.Ring) {
 
 // registerAdminAPI exposes actions only a human may take. It sits on a god-view
 // path, so the auth gate requires BOTH the local secret (same-user) and the
-// admin password — which is precisely why a lane can never promote itself or
+// admin password, which is precisely why a lane can never promote itself or
 // another: no lane token reaches this handler.
 func registerAdminAPI(mux *http.ServeMux, eng *engine.Engine) {
 	mux.HandleFunc("POST /api/admin/role", func(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +50,7 @@ func registerAdminAPI(mux *http.ServeMux, eng *engine.Engine) {
 	})
 
 	// Closing another lane is a human's call: a crashed lane cannot close itself,
-	// and no agent should be able to evict a peer. Same gate as role granting —
+	// and no agent should be able to evict a peer. Same gate as role granting,
 	// local secret AND admin password, and no lane token reaches here.
 	mux.HandleFunc("POST /api/admin/prune", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {

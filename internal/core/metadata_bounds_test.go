@@ -32,7 +32,7 @@ func TestReplayedMetadataIsBounded(t *testing.T) {
 		{"an oversized agent.harness", &Op{Kind: OpRegisterLane, Agent: &AgentInfo{Harness: longName}}},
 	} {
 		if err := Admit(tc.op, lim); err == nil {
-			t.Errorf("%s was admitted — it would sit in the ledger forever", tc.what)
+			t.Errorf("%s was admitted: it would sit in the ledger forever", tc.what)
 		}
 	}
 
@@ -75,7 +75,7 @@ func TestTheNewBoundsDoNotBindHistory(t *testing.T) {
 		t.Fatal("precondition: Admit should reject this")
 	}
 	if _, _, err := st.Apply(oversized, t0); err != nil {
-		t.Fatalf("Apply refused an op a previous version accepted — every daemon "+
+		t.Fatalf("Apply refused an op a previous version accepted: every daemon "+
 			"with one in its ledger now fails to start: %v", err)
 	}
 }

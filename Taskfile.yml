@@ -9,7 +9,7 @@ tasks:
   presence:
     desc: >-
       Compile the Touch ID presence helper (macOS only). Separate from `build`
-      because Lanes ships CGO_ENABLED=0 and cross-compiles to four targets —
+      because Lanes ships CGO_ENABLED=0 and cross-compiles to four targets,
       linking LocalAuthentication into the daemon would break every non-macOS
       build. The daemon execs this and degrades to the admin password when it is
       absent, so a platform without it loses one affordance, not the product.
@@ -39,7 +39,7 @@ tasks:
       # macOS caches a binary's code-signature validation against its INODE.
       # `cp` over an existing executable reuses the inode with new content, the
       # kernel sees a CDHash that no longer matches, and every later run is
-      # SIGKILLed — exit 137, no message, from a file that is byte-identical to
+      # SIGKILLed: exit 137, no message, from a file that is byte-identical to
       # a working one and whose signature verifies. It looks like a corrupt
       # download. Replacing the file gives a fresh inode and no cached verdict.
       - mkdir -p {{.DEST}}
@@ -56,7 +56,7 @@ tasks:
   install:presence:
     # Beside the daemon, because humanauth looks beside its own executable rather
     # than on PATH: substituting the binary that answers "is a human here" would
-    # defeat the whole mechanism. macOS only — elsewhere there is nothing to copy
+    # defeat the whole mechanism. macOS only: elsewhere there is nothing to copy
     # and the daemon correctly falls back to the admin password.
     platforms: [darwin]
     internal: true
@@ -71,7 +71,7 @@ tasks:
   test:dev:
     desc: The lanesdev-tagged code, which the default build excludes
     # `go test ./...` never compiles anything behind the lanesdev tag, so the
-    # presence mock and its tests would rot silently — and the thing that rots
+    # presence mock and its tests would rot silently, and the thing that rots
     # is a security switch. Running both configurations means a change that
     # breaks the mock fails the gate, and, more importantly, that the release
     # half is exercised too: the assertion that an environment variable cannot
@@ -82,10 +82,10 @@ tasks:
       - go test -race -tags lanesdev ./internal/humanauth/ ./internal/mcp/
 
   test:minimal:
-    desc: The stripped diagnostic panel — a serving mode the default suite never enters
+    desc: "The stripped diagnostic panel: a serving mode the default suite never enters"
     # LANES_PANEL_MINIMAL is a real mode: it serves 483 bytes so a person can tell
     # whether a blank board is the panel's fault or the host's. Nothing ran in it,
-    # so the package was simply RED there — three full-panel structural tests
+    # so the package was simply RED there: three full-panel structural tests
     # asserting a template that mode does not serve. A diagnostic you cannot trust
     # is worse than none, because it is reached for at the exact moment somebody
     # is already confused about which layer is broken.
@@ -95,7 +95,7 @@ tasks:
       - go test -count=1 ./internal/mcp/
 
   test:human:
-    desc: The panel's human actions, end to end — needs a dev daemon, not a finger
+    desc: "The panel's human actions, end to end: needs a dev daemon, not a finger"
     deps: [build]
     env:
       LANES_ALLOW_PARALLEL: "1"
@@ -114,7 +114,7 @@ tasks:
       # host-wide guard exists to stop a fleet being silently split
       # across two boards, which is not what an isolated test dir is.
       LANES_ALLOW_PARALLEL: "1"
-    desc: Board panel end-to-end — real Chrome, real AppBridge, real daemon
+    desc: "Board panel end-to-end: real Chrome, real AppBridge, real daemon"
     deps: [build]
     cmds:
       - cd internal/mcp/e2e && bun install --frozen-lockfile
@@ -150,7 +150,7 @@ tasks:
       # host-wide guard exists to stop a fleet being silently split
       # across two boards, which is not what an isolated test dir is.
       LANES_ALLOW_PARALLEL: "1"
-    desc: Claim guard end-to-end — the real stdio bridge and the real opencode plugin
+    desc: "Claim guard end-to-end: the real stdio bridge and the real opencode plugin"
     deps: [build]
     cmds:
       - cd internal/mcp/e2e && bun install --frozen-lockfile
@@ -162,14 +162,14 @@ tasks:
       # host-wide guard exists to stop a fleet being silently split
       # across two boards, which is not what an isolated test dir is.
       LANES_ALLOW_PARALLEL: "1"
-    desc: Channels end-to-end — auto-join, exclusivity, announcements, over real HTTP
+    desc: "Channels end-to-end: auto-join, exclusivity, announcements, over real HTTP"
     deps: [build]
     cmds:
       - cd internal/mcp/e2e && bun install --frozen-lockfile
       - LANESD=$PWD/bin/lanesd LANES=$PWD/bin/lanes MATCH_REPO=$PWD bun internal/mcp/e2e/channel_e2e.ts
 
   test:sidecar:
-    desc: Embedding sidecar contract check — no model, no repository needed
+    desc: "Embedding sidecar contract check: no model, no repository needed"
     cmds:
       - python3 contrib/embed-sidecar/lanes_embed.py --self-test
 
@@ -177,7 +177,7 @@ tasks:
     desc: "Real harnesses + real models + a human on one board (costs model calls)"
     # Not in `ci`: it spends money and depends on provider availability. It is
     # the only test that answers "does a REAL harness, with a real model deciding
-    # what to call, actually coordinate" — everything else drives Lanes through
+    # what to call, actually coordinate": everything else drives Lanes through
     # its own client code.
     cmds:
       - task: build
@@ -186,7 +186,7 @@ tasks:
   calibrate:compare:
     desc: "Tier 0 vs an embeddings service, same cases (needs EMBED_URL, EMBED_MODEL)"
     # Deliberately NOT a dependency of `ci`. Lanes runs fully on tier 0 with
-    # nothing installed, and tier 2 accepts any OpenAI-compatible service —
+    # nothing installed, and tier 2 accepts any OpenAI-compatible service,
     # Ollama, vLLM, TEI, LM Studio, llama.cpp, hosted. Pinning one of them in
     # the manifest would pick a winner for the operator on an optional feature.
     # What this DOES fix is reproducibility: the published tier-2 numbers were
@@ -207,7 +207,7 @@ tasks:
         fi
       - echo "═══ tier 0 ═══"
       - ./bin/lanes calibrate -n {{.N}}
-      - echo "═══ tier 2 — {{.EMBED_MODEL}} ═══"
+      - echo "═══ tier 2. {{.EMBED_MODEL}} ═══"
       - ./bin/lanes calibrate -n {{.N}} -embed-url {{.EMBED_URL}} -embed-model {{.EMBED_MODEL}}
 
   calibrate:
@@ -217,7 +217,7 @@ tasks:
       - ./bin/lanes calibrate
 
   cover:
-    desc: Coverage on core + ledger — SPEC §17 floor of 85%, enforced
+    desc: Coverage on core + ledger. SPEC §17 floor of 85%, enforced
     cmds:
       - go test -race -covermode=atomic -coverprofile=coverage.out ./internal/core/ ./internal/ledger/
       - go tool cover -func=coverage.out | tail -3

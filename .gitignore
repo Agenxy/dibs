@@ -13,7 +13,7 @@ coverage.out
 # e2e harness deps (bun.lock is committed; the tree is not)
 node_modules/
 
-# The embedding sidecar's local venv — created by the operator, never committed.
+# The embedding sidecar's local venv: created by the operator, never committed.
 contrib/embed-sidecar/.venv/
 __pycache__/
 
@@ -21,6 +21,6 @@ __pycache__/
 .task/
 
 # Build artifact: the coverage gate is run with `go run ./tools/covergate`,
-# never as a checked-in binary — one was committed once and it embedded the
+# never as a checked-in binary: one was committed once and it embedded the
 # builder's home directory in every path the Go toolchain bakes in.
 /covergate

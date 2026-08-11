@@ -19,7 +19,7 @@ import (
 // other.
 //
 // Measured, the single score was right about one time in three on real agent
-// declarations — while the calibration that set the bar reported healthy numbers,
+// declarations: while the calibration that set the bar reported healthy numbers,
 // because it was scoring a different question (commit message → files) than
 // production asks (declaration → will these collide).
 //
@@ -29,7 +29,7 @@ import (
 //
 // # The three kinds, in descending strength
 //
-//	IDENTITY   both agents named the same thing that exists — pr:1231, issue:88.
+//	IDENTITY   both agents named the same thing that exists: pr:1231, issue:88.
 //	           Not a similarity. Two agents holding one identifier are on one piece
 //	           of work by construction, and this is the only kind strong enough to
 //	           act on without asking anybody.
@@ -40,7 +40,7 @@ import (
 //	           the golden set because both happen.
 //
 //	SEMANTIC   their prose looks alike to a scorer. The weakest, and the source of
-//	           every false positive a live fleet reported — a path-token scorer
+//	           every false positive a live fleet reported: a path-token scorer
 //	           turns ordinary shared words (CI, gates, docs, runtime) into
 //	           "evidence" neither agent ever wrote.
 //
@@ -50,14 +50,14 @@ import (
 type Evidence struct {
 	// Identity: shared refs that name something. See identifyingRef.
 	Identity []string `json:"identity,omitempty"`
-	// Contradictory holds identifying refs the two sides gave that DISAGREE —
+	// Contradictory holds identifying refs the two sides gave that DISAGREE,
 	// issue:100 against issue:200. Evidence that they are working on different
 	// things, and it demotes a duplicate-work claim without silencing a surface
 	// collision: two agents can be on different tickets and still edit the same
 	// file, which is the most expensive collision there is.
 	Contradictory []string `json:"contradictory,omitempty"`
 	// Complementary records that the two agents named different ROLES on the same
-	// work — implement against review. A shared identifier is then the process
+	// work: implement against review. A shared identifier is then the process
 	// working, not a duplication, and telling the reviewer to stand down would be
 	// exactly wrong.
 	Complementary bool `json:"complementary,omitempty"`
@@ -68,7 +68,7 @@ type Evidence struct {
 	Labels []string `json:"labels,omitempty"`
 	// SurfaceDeclared are paths BOTH agents named themselves.
 	SurfaceDeclared []string `json:"surface_declared,omitempty"`
-	// SurfaceBroad records that the only shared territory is a COARSE directory —
+	// SurfaceBroad records that the only shared territory is a COARSE directory,
 	// a package root or the repository itself, inside which two agents can work
 	// for days without meeting.
 	//
@@ -81,7 +81,7 @@ type Evidence struct {
 	// Kept apart from the declared ones because their strength is not comparable
 	// and a reader must be able to see which is which.
 	SurfaceInferred []string `json:"surface_inferred,omitempty"`
-	// Contended are exclusive host resources both agents need — a port, a lock, a
+	// Contended are exclusive host resources both agents need: a port, a lock, a
 	// GPU. Not repository surface, and not a similarity: two agents that both bind
 	// :8080 WILL fail, and the second one gets "address already in use" with no
 	// idea why. See Slot.Holds.
@@ -99,7 +99,7 @@ type Evidence struct {
 	// pr:42 in one project has nothing to do with pr:42 in another, so an exact
 	// identifier is only exact once you know both agents are in the same tree.
 	// Without that, two agents in unrelated repositories that both write pr:42
-	// auto-join — which the first version of this did.
+	// auto-join, which the first version of this did.
 	RepoKnown bool `json:"repo_known"`
 }
 
@@ -111,7 +111,7 @@ type Relation string
 const (
 	// RelationSameItem means both agents named the same durable work item. Act.
 	RelationSameItem Relation = "same_work_item"
-	// RelationSameSurface means their DECLARED territory overlaps — the same
+	// RelationSameSurface means their DECLARED territory overlaps: the same
 	// directory, or one inside the other. Worth telling both, because it is the
 	// collision neither can see coming.
 	//
@@ -120,7 +120,7 @@ const (
 	// in territory and never touch each other. Attributable concurrent writes to
 	// one FILE would be stronger evidence and Lanes does not observe them.
 	RelationSameSurface Relation = "same_surface"
-	// RelationContended means they need the same exclusive host resource — a port,
+	// RelationContended means they need the same exclusive host resource: a port,
 	// a lock, a GPU. Independent of whether the work is related: two unrelated
 	// agents binding the same port still break each other, and the failure looks
 	// like a bug rather than a collision.
@@ -135,7 +135,7 @@ const (
 //
 // A cascade rather than a sum, so that no accumulation of weak evidence can ever
 // reach the strength of an exact identifier. Each branch answers a different
-// question, and the first one that answers YES wins — later branches cannot
+// question, and the first one that answers YES wins: later branches cannot
 // upgrade or downgrade it.
 func (e Evidence) Classify() Relation {
 	// Different repositories is a veto, not a weak signal. The only files two
@@ -144,7 +144,7 @@ func (e Evidence) Classify() Relation {
 	if !e.SameRepo {
 		return RelationNone
 	}
-	// A shared identifier means one piece of work — but not necessarily one JOB.
+	// A shared identifier means one piece of work, but not necessarily one JOB.
 	// An implementer and a reviewer on pr:1231 are the process working, and
 	// classifying that as duplication tells the reviewer to stop reviewing.
 	// A contended host resource outranks everything except an exact identity,
@@ -158,7 +158,7 @@ func (e Evidence) Classify() Relation {
 		// Complementary does NOT change the relation, and an earlier version that
 		// demoted it to "possible" was wrong: it threw away the exact identity in
 		// order to avoid the wrong wording. An implementer and a reviewer on
-		// pr:1231 ARE on the same work item — that is a fact, and it is exactly
+		// pr:1231 ARE on the same work item: that is a fact, and it is exactly
 		// what should put them in one lane to talk. What must change is the ACTION
 		// and the sentence, not the classification, so Complementary stays on the
 		// evidence for the policy to read.
@@ -168,12 +168,12 @@ func (e Evidence) Classify() Relation {
 		return RelationContended
 	}
 	// DECLARED surface only. An inferred overlap is a scorer's guess about files
-	// neither agent mentioned, and guesses do not get to raise an alarm — they
+	// neither agent mentioned, and guesses do not get to raise an alarm: they
 	// get to suggest, below.
 	//
 	// Contradictory identifiers do NOT suppress this. Two agents on different
 	// tickets editing the same file is not a duplicate, and it is still the
-	// collision most worth knowing about — one deleting what the other is editing
+	// collision most worth knowing about: one deleting what the other is editing
 	// is in the golden set precisely because differing refs must not veto it.
 	if len(e.SurfaceDeclared) > 0 {
 		return RelationSameSurface
@@ -196,7 +196,7 @@ func (e Evidence) Strongest() string {
 // assumption.
 //
 // SameRepo is false only on POSITIVE evidence of different trees, so "unknown"
-// reads as true — deliberately, because treating it as foreign would disable
+// reads as true: deliberately, because treating it as foreign would disable
 // matching for every client that reports no cwd. The cost is that the one line an
 // agent acts on looked identical whether the shared repository was established or
 // merely not disproved.
@@ -205,7 +205,7 @@ func (e Evidence) Strongest() string {
 // be indexed against a DIFFERENT project. It was shown predicted files from that
 // other repository as shared evidence, with same_repo true and repo_known false
 // side by side in the payload, and reasonably read the pair as a contradiction.
-// Everything under this line — refs, paths, identifiers — is repository-scoped:
+// Everything under this line, refs, paths, identifiers, is repository-scoped:
 // pr:42 in one project has nothing to do with pr:42 in another. So when the
 // scoping is unverified, the sentence has to say so rather than leaving it to a
 // boolean further down.
@@ -213,7 +213,7 @@ func (e Evidence) qualifyUnknownRepo(s string) string {
 	if e.RepoKnown || s == "" || s == "different repositories" {
 		return s
 	}
-	return s + " — but neither of you reported a working directory, so it is " +
+	return s + ", but neither of you reported a working directory, so it is " +
 		"unverified that you are even in the same repository; refs and paths only " +
 		"mean the same thing inside one tree"
 }
@@ -224,32 +224,32 @@ func (e Evidence) strongest() string {
 		return "different repositories"
 	case len(e.Contended) > 0:
 		return "you both need " + strings.Join(e.Contended, ", ") +
-			" — an exclusive host resource; whoever is second fails"
+			": an exclusive host resource; whoever is second fails"
 	case len(e.Identity) > 0 && e.Complementary:
 		return "both named " + strings.Join(e.Identity, ", ") +
-			", in different roles — coordinate, do not stand down"
+			", in different roles: coordinate, do not stand down"
 	case len(e.Identity) > 0:
 		return "both named " + strings.Join(e.Identity, ", ")
 	case len(e.SurfaceDeclared) > 0 && e.SurfaceBroad:
 		return "you both declared " + strings.Join(e.SurfaceDeclared, ", ") +
-			" — but that is a whole area, not a file. Two agents work in it for days " +
+			", but that is a whole area, not a file. Two agents work in it for days " +
 			"without meeting, so treat this as awareness rather than a conflict"
 	case len(e.SurfaceDeclared) > 0:
 		return "you both declared " + strings.Join(e.SurfaceDeclared, ", ") +
-			" — overlapping territory, which may or may not be the same files"
+			": overlapping territory, which may or may not be the same files"
 	case len(e.SurfaceInferred) > 0:
 		return "predicted to touch " + strings.Join(e.SurfaceInferred, ", ") +
-			" — predicted, not declared by either of you"
+			": predicted, not declared by either of you"
 	case len(e.Labels) > 0:
 		return "both pursuing " + strings.Join(e.Labels, ", ") +
-			" — a shared objective is not a shared task"
+			": a shared objective is not a shared task"
 	case e.Semantic > 0:
 		return "the declarations read similarly"
 	}
 	return ""
 }
 
-// EvidenceBetween compares two live declarations — slot against slot, not
+// EvidenceBetween compares two live declarations: slot against slot, not
 // declaration against a lane's accumulated union.
 func EvidenceBetween(
 	a, b Slot, aCWD, bCWD, repo string, discount map[string]float64, lens RepoLens,
@@ -304,7 +304,7 @@ func EvidenceBetween(
 // `git rev-parse` behind a one-second timeout would stall every agent on the
 // board while one lane is matched. The engine resolves identities off the loop
 // and hands the answers in here as data, which keeps this package a pure
-// function of what it was given — the same property that lets the ledger replay.
+// function of what it was given: the same property that lets the ledger replay.
 //
 // A nil lens is the honest default, not a degraded one: it means nobody has
 // looked, and sameRepo falls back to reasoning about path shape.
@@ -325,7 +325,7 @@ type RepoLens interface {
 //
 // The first version returned a bare bool from `under(a,repo) == under(b,repo)`,
 // which calls two positively DIFFERENT repositories "the same" whenever neither
-// is the configured one — /work/a and /work/b are both not-under /repo, so the
+// is the configured one. /work/a and /work/b are both not-under /repo, so the
 // equality held. With no repo configured it did the opposite, calling /repo/cli
 // and /repo/docs different because the strings differ, when they are two
 // directories in one checkout.
@@ -368,8 +368,8 @@ func sameRepo(aCWD, bCWD, repo string, lens RepoLens) (same, known bool) {
 	if aCWD == bCWD {
 		return true, true
 	}
-	// Different paths outside any known root. One may contain the other — a
-	// worktree beneath a checkout — and otherwise we genuinely cannot tell two
+	// Different paths outside any known root. One may contain the other: a
+	// worktree beneath a checkout, and otherwise we genuinely cannot tell two
 	// sibling directories in one repo from two separate clones without asking git.
 	if under(aCWD, bCWD) || under(bCWD, aCWD) {
 		return true, true
@@ -420,7 +420,7 @@ func refKind(ref string) string {
 // Deliberately does NOT downgrade the relation. Two agents in one package still
 // overlap and still deserve to know; what changes is how loudly it is said, since
 // an alarm that fires on half the fleet's declarations is one agents learn to
-// ignore — and then miss the real one.
+// ignore, and then miss the real one.
 func allBroad(shared []string) bool {
 	if len(shared) == 0 {
 		return false

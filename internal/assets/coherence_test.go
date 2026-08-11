@@ -9,8 +9,8 @@ import (
 	"testing"
 )
 
-// read pulls a surface off disk. The surfaces are not embedded here — they
-// belong to internal/mcp and internal/web — and this test is about whether they
+// read pulls a surface off disk. The surfaces are not embedded here: they
+// belong to internal/mcp and internal/web, and this test is about whether they
 // honour THIS package's design system, so it reaches for them by path rather
 // than inverting the dependency to suit a test.
 func read(t *testing.T, path string) string {
@@ -25,7 +25,7 @@ func read(t *testing.T, path string) string {
 // The three surfaces must stay ONE product, and that cannot be maintained by
 // looking at them.
 //
-// Drift here is never a decision — nobody sets out to make the panel a
+// Drift here is never a decision: nobody sets out to make the panel a
 // different shade of green. It happens one hurried rule at a time: a hex typed
 // inline because the token name was not to hand, a font-size in px because the
 // scale was two files away. Each is invisible alone and the sum is two products
@@ -40,7 +40,7 @@ func TestSurfacesDoNotDriftFromTheDesignSystem(t *testing.T) {
 	style := regexp.MustCompile(`(?s)<style[^>]*>(.*?)</style>`)
 	fontPx := regexp.MustCompile(`font-size:\s*[0-9.]+px`)
 	// Not just hex. The palette moved to OKLCH, so a surface can now drift by
-	// writing a colour function inline just as easily as by typing a hex — and
+	// writing a colour function inline just as easily as by typing a hex: and
 	// the check that only knew about `#` would have waved it through.
 	rawColour := regexp.MustCompile(`#[0-9a-fA-F]{3,8}\b|\b(?:oklch|oklab|lch|lab|rgba?|hsla?|color)\(`)
 	// A surface redefining a palette token is the drift that matters most: it
@@ -55,7 +55,7 @@ func TestSurfacesDoNotDriftFromTheDesignSystem(t *testing.T) {
 			css := block[1]
 			if m := fontPx.FindAllString(css, -1); len(m) > 0 {
 				t.Errorf("%s sets type in px, bypassing the scale: %v\n"+
-					"  use --t-micro/meta/fine/sm/body/lg/title — a px size also ignores\n"+
+					"  use --t-micro/meta/fine/sm/body/lg/title: a px size also ignores\n"+
 					"  the reader who raised their browser font because they need it",
 					s.name, m)
 			}
@@ -75,7 +75,7 @@ func TestSurfacesDoNotDriftFromTheDesignSystem(t *testing.T) {
 // Every colour the system renders must clear WCAG AA for BODY text.
 //
 // The palette carried --fg-3 at 3.66:1 (dark) and 3.25:1 (light). Both clear
-// 3.0 — which is the LARGE-text allowance, 18pt or 14pt bold — while fg-3 is
+// 3.0, which is the LARGE-text allowance, 18pt or 14pt bold, while fg-3 is
 // what the system puts on 9px and 10px type: pills, badges, ages, counts,
 // bands. The lowest contrast in the system on the smallest type in it.
 //
@@ -125,7 +125,7 @@ func palette(t *testing.T) map[string]map[string]rgb {
 	for _, theme := range []string{"dark", "light"} {
 		for _, need := range []string{"bg", "bg-1", "bg-2", "fg", "fg-2", "fg-3", "accent", "live", "warn"} {
 			if _, ok := out[theme][need]; !ok {
-				t.Fatalf("board.css declares no --%s for the %s theme — either the palette "+
+				t.Fatalf("board.css declares no --%s for the %s theme: either the palette "+
 					"lost a token or it stopped using light-dark(), and this audit went blind "+
 					"rather than failing", need, theme)
 			}
@@ -207,7 +207,7 @@ func contrast(a, b rgb) float64 {
 //
 // --bg-2 is the selected tab, the hovered control, the raised card. Dark moved
 // it 4.9 lightness away from the page; light moved it 1.1, because the page
-// was already at 97.6 and there is nothing above it — so in the light theme
+// was already at 97.6 and there is nothing above it, so in the light theme
 // the board simply did not say which tab you were on. Both themes passed every
 // contrast check in this file, because contrast checks measure TEXT against
 // its background and this is a background against a background.
@@ -220,7 +220,7 @@ func TestTheEmphasisSurfaceIsVisibleAgainstThePage(t *testing.T) {
 	pal := palette(t)
 	for _, theme := range []string{"dark", "light"} {
 		if r := contrast(pal[theme]["bg-2"], pal[theme]["bg"]); r < leastPerceptible {
-			t.Errorf("%s --bg-2 is %.3f:1 against --bg — the selected tab, the hovered\n"+
+			t.Errorf("%s --bg-2 is %.3f:1 against --bg: the selected tab, the hovered\n"+
 				"  control and the raised card are all invisible at that step. Light marks\n"+
 				"  emphasis by going DOWN in lightness; there is no room above the page.",
 				theme, r)
@@ -234,7 +234,7 @@ func TestTheEmphasisSurfaceIsVisibleAgainstThePage(t *testing.T) {
 // where most text sits and is not where the important marks sit. The alarm pill
 // is text on --warn; the live badge is text on --live-dim. A palette can pass
 // colour-by-colour and still put 2.98:1 on the one mark that means somebody has
-// to do something — which is exactly what happened here, and what the
+// to do something, which is exactly what happened here, and what the
 // colour-by-colour check did not see. Found by codex.
 //
 // The pairs are named by TOKEN now, not by hex. Spelling them as hexes meant
@@ -265,13 +265,13 @@ func TestFilledMarksClearAABodyAgainstTheirOwnBackground(t *testing.T) {
 // A literal colour in the SHARED sheet is drift too.
 //
 // The surface check caught hexes in the two HTML surfaces and never looked at
-// board.css itself — where a mangled edit of mine left `.pill.abandoned {
+// board.css itself: where a mangled edit of mine left `.pill.abandoned {
 // color: #fff }` in global scope, overriding the dark theme and putting white
 // on amber at 2.98:1 on the one mark meaning "nothing resolves this without a
 // person". A drift test with a blind spot over the design system is not a
 // drift test.
 func TestOnlyThePaletteDeclaresLiteralColour(t *testing.T) {
-	// Hexes are legitimate where the palette is DEFINED — inside :root blocks
+	// Hexes are legitimate where the palette is DEFINED: inside :root blocks
 	// and the prefers-color-scheme override. Everywhere else is a decision that
 	// escaped the system.
 	body := boardCSS
@@ -286,7 +286,7 @@ func TestOnlyThePaletteDeclaresLiteralColour(t *testing.T) {
 			body = body[:i] + strings.Repeat(" ", end+2) + body[i+end+2:]
 		}
 	}
-	// Comments are prose, and the prose here explains the very bug this catches —
+	// Comments are prose, and the prose here explains the very bug this catches,
 	// stripping them is not leniency, it is scanning the stylesheet rather than
 	// its documentation.
 	body = regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(body, "")
@@ -299,7 +299,7 @@ func TestOnlyThePaletteDeclaresLiteralColour(t *testing.T) {
 // And the shared sheet itself must hold the line it asks the surfaces to hold.
 func TestTheDesignSystemUsesItsOwnScale(t *testing.T) {
 	if m := regexp.MustCompile(`font-size:\s*[0-9.]+px`).FindAllString(boardCSS, -1); len(m) > 0 {
-		t.Errorf("board.css sets type in px: %v — the scale exists to end exactly this", m)
+		t.Errorf("board.css sets type in px: %v: the scale exists to end exactly this", m)
 	}
 	for _, tok := range []string{"--t-micro", "--t-meta", "--t-fine", "--t-sm", "--t-body", "--t-lg", "--t-title"} {
 		if !strings.Contains(boardCSS, tok+":") {
@@ -314,7 +314,7 @@ func TestTheDesignSystemUsesItsOwnScale(t *testing.T) {
 	}
 	// Both themes reachable without an explicit attribute. The mechanism is now
 	// `color-scheme: light dark` plus light-dark() rather than a media query
-	// carrying a second copy of the palette — so this asserts the guarantee and
+	// carrying a second copy of the palette, so this asserts the guarantee and
 	// names both halves, since either alone silently gives you one theme.
 	if !strings.Contains(boardCSS, "color-scheme: light dark") ||
 		!strings.Contains(boardCSS, "light-dark(") {
@@ -325,7 +325,7 @@ func TestTheDesignSystemUsesItsOwnScale(t *testing.T) {
 // Motion drifts exactly the way colour does.
 //
 // The panel had view transitions, a reduced-motion guard and a feature check.
-// The web board — same components, same design system, same product — replaced
+// The web board, same components, same design system, same product, replaced
 // its HTML with no continuity at all. Nobody decided that; one surface simply
 // got the work. Two surfaces wearing one name, which is the whole thing this
 // file exists to prevent, and it is as true of how the product MOVES as of
@@ -340,14 +340,14 @@ func TestNeitherSurfaceRunsItsOwnMotion(t *testing.T) {
 	} {
 		if strings.Contains(s.src, "document.startViewTransition") {
 			t.Errorf("%s starts its own view transition\n"+
-				"  use Board.transition(kind, update) — a second copy is how the\n"+
+				"  use Board.transition(kind, update): a second copy is how the\n"+
 				"  reduced-motion guard ends up on one surface and not the other", s.name)
 		}
 	}
 	// And the shared runner has to actually carry the guard it is trusted with.
 	for _, need := range []string{"prefers-reduced-motion", "startViewTransition", "data.transition"} {
 		if !strings.Contains(boardJS, strings.ReplaceAll(need, "data.transition", "dataset.transition")) {
-			t.Errorf("the shared runner is missing %q — every surface now depends on it", need)
+			t.Errorf("the shared runner is missing %q: every surface now depends on it", need)
 		}
 	}
 }
@@ -357,7 +357,7 @@ func TestNeitherSurfaceRunsItsOwnMotion(t *testing.T) {
 // Every mark that means something the reader cannot derive carries a `why`,
 // and for a long time that `why` was a `title` attribute: mouse only, hover
 // only, after a delay, absent on touch, and announced inconsistently. The text
-// was written with care and most people could never get at it — the same shape
+// was written with care and most people could never get at it: the same shape
 // as a documented feature nothing ever calls.
 //
 // It now goes through Board.explained/data-why into one anchored popover. This
@@ -372,14 +372,14 @@ func TestNoMarkExplainsItselfOnlyToAMouse(t *testing.T) {
 	} {
 		if m := regexp.MustCompile("title=[\"`']").FindAllString(s.src, -1); len(m) > 0 {
 			t.Errorf("%s delivers %d explanation(s) by title attribute\n"+
-				"  title reaches only a reader with a mouse who waits — no touch, no\n"+
+				"  title reaches only a reader with a mouse who waits: no touch, no\n"+
 				"  keyboard, no reliable announcement. Use explained(cls, label, why),\n"+
 				"  or data-why + tabindex for a mark built by hand", s.name, len(m))
 		}
 	}
 	// And the mechanism it moved TO must actually be installed, on both
 	// surfaces. data-why with nothing reading it is a silent regression to no
-	// explanation at all — which is worse than the title it replaced.
+	// explanation at all, which is worse than the title it replaced.
 	for _, s := range []struct{ name, src string }{
 		{"the MCP App panel", read(t, "../mcp/board_app.html")},
 		{"the web board", read(t, "../web/templates/index.html")},
@@ -393,7 +393,7 @@ func TestNoMarkExplainsItselfOnlyToAMouse(t *testing.T) {
 // The first screen has to say what to do next.
 //
 // A person who has just started the daemon does not need to be told the board is
-// empty — they can see that. They need the next command. This was "No lanes", a
+// empty: they can see that. They need the next command. This was "No lanes", a
 // sentence, and a row of four zeros: all true, none of it a way forward, on the
 // one screen where somebody decides whether the thing is real.
 //
@@ -415,7 +415,7 @@ func TestTheFirstScreenGivesTheNextCommand(t *testing.T) {
 	// And the honest caveat: matching is off until it is configured, which is
 	// the single thing most likely to make somebody think the product is broken.
 	if !strings.Contains(body, "lanes calibrate") {
-		t.Error("the first screen must say matching needs calibrating — " +
+		t.Error("the first screen must say matching needs calibrating. " +
 			"a board that silently never matches reads as a broken product")
 	}
 	// Nothing here is a problem, so nothing here is coloured.
@@ -437,33 +437,33 @@ func TestTheFirstScreenGivesTheNextCommand(t *testing.T) {
 // Text colour may not be thinned with transparency.
 //
 // The palette's dimmest foreground, --fg-3, measures about 4.79:1 on the page
-// background — deliberately just above the 4.5:1 AA floor, because it is the
+// background: deliberately just above the 4.5:1 AA floor, because it is the
 // quietest thing the system is willing to say. Mixing ANY of it toward
 // transparent therefore lands below AA by construction, and does so invisibly:
 // the declaration still names a palette token, so every existing guard here
 // passes while the rendered text drops under the line.
 //
-// This is not hypothetical. A rule added to make a zero reading recede —
-// `color: color-mix(in oklch, var(--fg-3) 72%, transparent)` — measured 3.03:1
+// This is not hypothetical. A rule added to make a zero reading recede,
+// `color: color-mix(in oklch, var(--fg-3) 72%, transparent)`: measured 3.03:1
 // in dark and 2.83:1 in light and shipped through a full green gate, because the
 // palette check only ever sees the TOKEN and never the mix. It was dimmest on
 // exactly the readings a low-vision reader has to work hardest to find.
 //
 // De-emphasis is still allowed; it just has to come from somewhere other than
 // the contrast budget. Step down to a quieter token, drop a glow, reduce weight,
-// or lower the SIZE — all of which recede without making the glyphs harder to
+// or lower the SIZE: all of which recede without making the glyphs harder to
 // separate from the background.
 //
 // Backgrounds, borders and shadows are untouched by this: they are not text, and
 // mixing them toward transparent is how the whole system builds depth.
 func TestNoTextColourIsThinnedWithTransparency(t *testing.T) {
 	style := regexp.MustCompile(`(?s)<style[^>]*>(.*?)</style>`)
-	// `color:` only — not background-color, border-color, text-decoration-color,
+	// `color:` only, not background-color, border-color, text-decoration-color,
 	// or any of the box properties. The property boundary is what keeps this
 	// from banning the technique everywhere it is correct.
 	// Any color-mix in a TEXT colour, not merely one naming `transparent`.
 	//
-	// Matching the literal word was evadable in one line — assigning transparent
+	// Matching the literal word was evadable in one line: assigning transparent
 	// to a custom property and mixing with that produced the identical below-AA
 	// glyph and passed. Since no text colour in this system legitimately uses
 	// color-mix at all (verified: zero occurrences across all four surfaces),
@@ -489,7 +489,7 @@ func TestNoTextColourIsThinnedWithTransparency(t *testing.T) {
 			t.Errorf("%s builds a TEXT colour with color-mix: %v\n"+
 				"  --fg-3 already sits at ~4.79:1, just above the 4.5:1 AA floor, so any\n"+
 				"  mix that dilutes it renders below AA while still naming a palette\n"+
-				"  token — which is why every other check here passes. The rule covers\n"+
+				"  token, which is why every other check here passes. The rule covers\n"+
 				"  ALL color-mix on text, not just the ones spelling out `transparent`,\n"+
 				"  because hiding that word behind a custom property evaded the earlier\n"+
 				"  version in a single line.\n"+

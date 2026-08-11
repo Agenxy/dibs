@@ -11,7 +11,7 @@ import (
 )
 
 // Notices exist because a silent state change is the bug. So the thing that
-// must be tested is not that the mechanism CAN deliver — it is that every event
+// must be tested is not that the mechanism CAN deliver: it is that every event
 // meaning "somebody did this to you" actually produces text, and that the text
 // says what changed and what to do about it.
 //
@@ -103,7 +103,7 @@ func TestEveryEventDoneToAnAgentProducesANotice(t *testing.T) {
 // repeating them as notices trains agents to ignore the channel.
 func TestSelfCausedChangesProduceNoNotice(t *testing.T) {
 	for _, ev := range []core.Event{
-		// Joined a lane by itself — no admitted_by, no from_queue, no merge.
+		// Joined a lane by itself: no admitted_by, no from_queue, no merge.
 		{Type: "lane.joined", Lane: "worker", Data: map[string]any{"lane_id": "auth"}},
 		// Took exclusivity itself.
 		{Type: "lane.exclusive", Lane: "worker", Data: map[string]any{"lane_id": "auth", "owner": "worker"}},
@@ -119,7 +119,7 @@ func TestSelfCausedChangesProduceNoNotice(t *testing.T) {
 }
 
 // An agent that never polls must not grow without bound, and what survives must
-// be the newest — being told you were admitted and not that you were later
+// be the newest: being told you were admitted and not that you were later
 // evicted is worse than being told nothing.
 func TestNoticesAreBoundedAndKeepTheNewest(t *testing.T) {
 	e := &Engine{}
@@ -150,14 +150,14 @@ func TestNoticesAreBoundedAndKeepTheNewest(t *testing.T) {
 
 // A peer must not be able to affect what a lane is told. At all.
 //
-// hook_poll is token-less by necessity — a harness lifecycle hook has no token —
+// hook_poll is token-less by necessity: a harness lifecycle hook has no token,
 // so it resolves a lane by session id, and any holder of the shared coordination
 // secret can name somebody else's session. Two designs failed here before this
 // one:
 //
 //  1. DELETE on read. A peer consumed the victim's one-shot notices outright.
 //  2. THROTTLE on read. A peer polling faster than the window won every
-//     eligibility point and starved the victim indefinitely. Slower, not fixed —
+//     eligibility point and starved the victim indefinitely. Slower, not fixed,
 //     and worse, it looked fixed.
 //
 // Both failed for the same reason: they let an unidentifiable caller SPEND
@@ -196,7 +196,7 @@ func TestTheTokenLessWakePathCannotSpendAnything(t *testing.T) {
 
 // An obligation you can only be PUSHED is an obligation you can lose.
 //
-// Announcements used to reach an agent through exactly one path — the wake
+// Announcements used to reach an agent through exactly one path: the wake
 // injection in hook_poll. An agent whose harness has no plugin installed never
 // saw them; one that lost its context could not ask what it owed; and because
 // redelivery is rate-limited and consumed on read, a digest that arrived at a
@@ -237,7 +237,7 @@ func TestAnnouncementsCanBePulled(t *testing.T) {
 	if owed[0]["serial"] != serial || owed[0]["body"] != "FREEZE auth/retry.go" {
 		t.Fatalf("the pull must carry the body, not just a count: %v", owed[0])
 	}
-	// It has to say what to DO — a serial with no instruction is a puzzle.
+	// It has to say what to DO: a serial with no instruction is a puzzle.
 	if act, _ := owed[0]["action"].(string); !strings.Contains(act, "lane_ack") ||
 		!strings.Contains(act, fmt.Sprint(serial)) {
 		t.Fatalf("the pull must name the call and the serial that clears it, got %q", act)
@@ -259,7 +259,7 @@ func TestAnnouncementsCanBePulled(t *testing.T) {
 	}
 }
 
-// ack_board is the documented checkpoint after context loss — the call an agent
+// ack_board is the documented checkpoint after context loss: the call an agent
 // makes when it has forgotten everything. If what it OWES is not in that
 // answer, the recovery path is incomplete by exactly the obligation the agent
 // is least able to reconstruct.
@@ -299,13 +299,13 @@ func TestAckBoardCarriesWhatYouOwe(t *testing.T) {
 // hook_poll is authenticated by NOTHING.
 //
 // It takes a session id and a cwd off the wire with no lane token, because a
-// harness lifecycle hook does not have one — that is the whole reason the
+// harness lifecycle hook does not have one: that is the whole reason the
 // endpoint exists. So the caller cannot prove it is the agent it names, and
 // must not receive anything private on the strength of that name.
 //
 // It used to include 240 characters of the message body. Verified against a
-// running daemon: any holder of the coordination secret — which is every agent
-// configured on the machine — could pass a peer's session id, OR omit the
+// running daemon: any holder of the coordination secret, which is every agent
+// configured on the machine: could pass a peer's session id, OR omit the
 // session id and pass the peer's working directory, and read the peer's private
 // message text. Both routes. "Mail between other agents is private to them" is
 // a promise this surface broke.
@@ -357,7 +357,7 @@ func TestTheWakePathNamesWhatIsWaitingWithoutQuotingIt(t *testing.T) {
 //
 // Notices are cleared on token-authenticated calls, which is what keeps a peer
 // on the token-less wake path from consuming them. ack_board was taught to
-// return them first. Inbox cleared them and returned nothing — so an ordinary
+// return them first. Inbox cleared them and returned nothing, so an ordinary
 // inbox read permanently destroyed notices the agent had never seen.
 //
 // That is worse than the peer-DoS it was part of fixing: the agent did it to
@@ -384,7 +384,7 @@ func TestEveryPathThatClearsANoticeDeliversItFirst(t *testing.T) {
 	// And the guard against the next caller that clears without delivering.
 	//
 	// Exactly ONE production site may call AckNotices: the ack_board branch in
-	// engine.go, which delivers first. Two owners is how this went wrong twice —
+	// engine.go, which delivers first. Two owners is how this went wrong twice,
 	// first Inbox cleared without returning anything, destroying unseen notices
 	// on an ordinary read; then, once it returned them too, whichever of inbox
 	// and ack_board an agent happened to call first silently decided which
@@ -404,7 +404,7 @@ func TestEveryPathThatClearsANoticeDeliversItFirst(t *testing.T) {
 	}
 	if sites != 1 {
 		t.Errorf("AckNotices is called from %d places, want exactly 1 (the ack_board "+
-			"branch, which delivers first) — every extra caller is a place a notice "+
+			"branch, which delivers first): every extra caller is a place a notice "+
 			"can be consumed without being shown", sites)
 	}
 }
@@ -416,7 +416,7 @@ func TestEveryPathThatClearsANoticeDeliversItFirst(t *testing.T) {
 // identical work reuses one; lanes are now reclaimed automatically when their
 // last member leaves; and the footprint cache was keyed by that id and never
 // pruned. A reclaimed lane's footprint would therefore be handed to whatever
-// opened the id next — matching the new lane on the OLD lane's files — and the
+// opened the id next, matching the new lane on the OLD lane's files, and the
 // "already backfilled" guard meant it never got its own. It also grew forever.
 func TestTheFootprintCacheForgetsReclaimedLanes(t *testing.T) {
 	e := &Engine{footprints: map[string][]core.PredFile{
@@ -439,9 +439,9 @@ func TestTheFootprintCacheForgetsReclaimedLanes(t *testing.T) {
 // The case the test above does NOT cover, and the reason the first fix failed.
 //
 // Pruning against the live set only works if the id is absent when the prune
-// runs. Reclaim an id and reopen it before the next matching pass — which is the
+// runs. Reclaim an id and reopen it before the next matching pass, which is the
 // ordinary case, because ids come from the declaration and identical work reuses
-// them — and the id is live again, so the sweep sees nothing to clean and the
+// them, and the id is live again, so the sweep sees nothing to clean and the
 // successor inherits the dead lane's files. Reproduced against an unrelated
 // successor at score 1.0.
 //
@@ -463,7 +463,7 @@ func TestAReopenedLaneIdDoesNotInheritTheOldFootprint(t *testing.T) {
 	e.forgetDeadFootprints(map[string]bool{"shared-id": true})
 
 	if fp, stale := e.footprints["shared-id"]; stale {
-		t.Errorf("a reopened id inherited the reclaimed lane's footprint %v — its "+
+		t.Errorf("a reopened id inherited the reclaimed lane's footprint %v: its "+
 			"successor is matched on files it has nothing to do with", fp)
 	}
 }
@@ -486,7 +486,7 @@ func TestAMergedAwayLaneAlsoLosesItsFootprint(t *testing.T) {
 
 // A lane is named for the WORK, not for the sentence describing it.
 //
-// Ids are slugified topics, and the topic was the whole declaration — so an
+// Ids are slugified topics, and the topic was the whole declaration, so an
 // agent writing "I am fixing the retry loop when tokens fail to refresh" created
 // a lane called i-am-fixing-the-retry-loop-when-tokens-fail-to-refresh. That id
 // is what another agent passes to lane_join, what a human reads on the board,
@@ -505,7 +505,7 @@ func TestALaneIsNamedForTheWorkNotTheSentence(t *testing.T) {
 	}
 
 	// A declaration that is ALL filler is still a declaration. Naming a lane ""
-	// would be worse than naming it badly — cleanID would reject it and the
+	// would be worse than naming it badly: cleanID would reject it and the
 	// lane would never open, silently.
 	if got := laneName("I am just working on it"); got == "" {
 		t.Error("an all-filler declaration must still yield a name, or the lane never opens")
@@ -515,7 +515,7 @@ func TestALaneIsNamedForTheWorkNotTheSentence(t *testing.T) {
 // An agent's SECOND task is the normal case, not an edge one.
 //
 // Suppression counted any membership at any score, so a faint accidental overlap
-// with a lane the agent was still in — one shared file is enough — stopped it
+// with a lane the agent was still in (one shared file is enough) stopped it
 // opening a lane for genuinely different work, and told it "you are not working
 // alone" about work it had stopped doing. The bar for "you already coordinate on
 // this" must be the bar used for "this is worth mentioning at all".

@@ -11,7 +11,7 @@ import (
 // The op column's width is a guess at the longest ledgered op name, and the guess
 // has been wrong twice. At 18 it collided with activity_checkpoint. At 19 it
 // padded that op to exactly zero characters and the lane was concatenated
-// straight onto it — "activity_checkpointorchestrator" — which is what a reviewer
+// straight onto it ("activity_checkpointorchestrator") which is what a reviewer
 // reported reading in `lanes log`.
 //
 // So this pins the property rather than the width: whatever the longest op grows

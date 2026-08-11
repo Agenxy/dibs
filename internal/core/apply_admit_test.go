@@ -8,8 +8,8 @@ import (
 
 // Apply is the FOLD. Whatever it has ever accepted, it must accept forever.
 //
-// This exists because a validation rule was added to Apply — announcements must
-// not be empty — and Apply is what replays the ledger. A daemon holding
+// This exists because a validation rule was added to Apply: announcements must
+// not be empty, and Apply is what replays the ledger. A daemon holding
 // announcements that were legal when written then refused to start: "replay
 // apply serial 12: E_EMPTY_BODY", rejecting data it had itself written, fsynced
 // and acknowledged to a caller. The state was not corrupt; the reader had
@@ -31,7 +31,7 @@ func TestApplyFoldsWhateverAdmitRejects(t *testing.T) {
 
 	for _, proto := range rejected {
 		if err := Admit(proto, DefaultLimits()); err == nil {
-			t.Errorf("%s with body %q: expected Admit to reject it — if this rule "+
+			t.Errorf("%s with body %q: expected Admit to reject it: if this rule "+
 				"was removed, remove it from this list too", proto.Kind, proto.Body)
 			continue
 		}

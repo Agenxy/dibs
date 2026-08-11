@@ -10,13 +10,13 @@ import (
 //
 // The shipped hold-out removes the query's own commit, which stops the query
 // retrieving itself. A hostile reviewer's next question is the right one: what
-// about NEAR-duplicates — reverts, follow-ups, a squashed series, "fix typo"
+// about NEAR-duplicates: reverts, follow-ups, a squashed series, "fix typo"
 // twice? On these repositories 51-66% of queries have some other commit sharing
 // two or more significant terms, so if that were the whole effect the gain would
 // be leakage wearing a hold-out.
 //
 // So this removes the query's commit AND every commit sharing two or more terms
-// with it — deleting roughly half the corpus — and asserts the gain survives.
+// with it (deleting roughly half the corpus) and asserts the gain survives.
 // It does, smaller: on this evidence the improvement is generalisation, and
 // near-duplicates contribute to it rather than being it.
 //
@@ -29,7 +29,7 @@ func TestHistoryGainSurvivesAPunitiveHoldout(t *testing.T) {
 	// Deliberately a literal relative path and not an environment variable: the
 	// functions under test shell out to git, so a path arriving from the
 	// environment makes every one of those call sites a tainted sink and the
-	// security linter — correctly — objects. The paths were absolute and
+	// security linter (correctly) objects. The paths were absolute and
 	// personal before, which skipped for everyone but their author; this skips
 	// for everyone without one, which is the same outcome without the name.
 	for _, repo := range []string{
@@ -87,7 +87,7 @@ func TestHistoryGainSurvivesAPunitiveHoldout(t *testing.T) {
 		t.Logf("%-13s recall@5  none %.3f | held-out %.3f | punitive %.3f  (%d of %d commits removed)",
 			repo[len(repo)-12:], a.RecallAt[5], b.RecallAt[5], c.RecallAt[5], len(strict), len(cc.Messages))
 		if c.RecallAt[5] <= a.RecallAt[5] {
-			t.Errorf("%s: history gave no gain under a punitive hold-out (%.3f vs %.3f) — "+
+			t.Errorf("%s: history gave no gain under a punitive hold-out (%.3f vs %.3f). "+
 				"the published improvement would be near-duplicate leakage",
 				repo, c.RecallAt[5], a.RecallAt[5])
 		}

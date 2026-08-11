@@ -1,12 +1,12 @@
 // Package liveness answers how an agent process is doing, from outside it.
 //
-// The coarse question — is the process alive? — is Poller, and the engine's
+// The coarse question (is the process alive?) is Poller, and the engine's
 // sweep already uses it to mark a lane whose PID has gone. This file is the
 // finer one, and it is the question a parent agent cannot answer for itself:
 // the subagent is still alive, so is it working, thinking, or stuck?
 //
-// A parent that spawns an out-of-process subagent — `codex exec`, another
-// `claude`, an opencode run — gets exactly one signal back today, and it
+// A parent that spawns an out-of-process subagent. `codex exec`, another
+// `claude`, an opencode run: gets exactly one signal back today, and it
 // arrives at the end: an exit code. Everything before that is silence, and
 // silence is ambiguous. The subagent may be mid-reasoning-turn, may be blocked
 // on a socket that will never answer, may have been suspended when the lid
@@ -22,7 +22,7 @@
 //	12:07:30  bytes=703752  tokens=2684439  cpu=8.50s   both advanced
 //
 // The middle sample is the whole problem in one line. That agent was perfectly
-// healthy — it was waiting on a model response — and for that window it emitted
+// healthy (it was waiting on a model response) and for that window it emitted
 // nothing at all. Any detector that calls a flat sample "stuck" will cry wolf
 // on every turn boundary, and a detector that cries wolf gets ignored, which is
 // worse than not having one.
@@ -47,7 +47,7 @@
 //
 // So elapsed time is measured on a monotonic clock, which does not advance
 // while the machine is asleep. On the machine this was developed on, 8.45 of
-// the 80.3 hours since boot were sleep — a naive wall-clock detector would have
+// the 80.3 hours since boot were sleep: a naive wall-clock detector would have
 // reported every agent alive during those hours as hung.
 //
 // The correction is explicit rather than inherited from the runtime: a Sample
@@ -77,7 +77,7 @@ const (
 	// stdin nobody will answer.
 	Stuck State = "stuck"
 	// Exited means the process is gone. Whether that is success or failure is not
-	// this package's business — the exit code is, and the caller has it.
+	// this package's business: the exit code is, and the caller has it.
 	Exited State = "exited"
 	// Unknown means not enough has been seen to say anything. Deliberately distinct
 	// from Working; a watchdog that assumes health before it has evidence is
@@ -96,7 +96,7 @@ var States = []State{Working, Thinking, Stuck, Exited, Unknown}
 // Nothing else in the tree converts string to State, and that is deliberate: an
 // unrecognised value is not lenient input, it is a value no verdict can ever
 // equal. `lanes probe --until exit` (for "exited") waited six hours in silence
-// for a state that cannot occur, which is the worst shape a mistake can take —
+// for a state that cannot occur, which is the worst shape a mistake can take,
 // indistinguishable from the tool working and the agent simply never finishing.
 func ParseState(s string) (State, bool) {
 	for _, k := range States {
@@ -129,7 +129,7 @@ type Sample struct {
 	Bytes int64
 	// Elapsed is how long the process has been alive. Known from a SINGLE
 	// observation, which makes it the only signal that can convict without a
-	// history — see the duty-cycle check in Classify.
+	// history: see the duty-cycle check in Classify.
 	Elapsed time.Duration
 	// Tokens is the agent's own cumulative token count, when the transcript
 	// reports one, and 0 when it does not. The most semantically meaningful
@@ -146,7 +146,7 @@ func Awake(a, b Sample) time.Duration { return b.Mono - a.Mono }
 //
 // Floored at a second. The two clocks are read a few instructions apart, so
 // they always disagree slightly, and reporting that as sleep produced "the
-// machine slept 0s" under a rounded print — a true statement that reads like a
+// machine slept 0s" under a rounded print: a true statement that reads like a
 // bug and costs the reader their trust in the number beside it. Real sleep is
 // never sub-second.
 func Slept(a, b Sample) time.Duration {
@@ -173,8 +173,8 @@ func progressed(a, b Sample) bool {
 // for its whole life.
 //
 // Deliberately conservative, and it must stay that way: the cost of a false
-// "stuck" is a parent killing healthy work. The gap it exploits is enormous —
-// measured, 0.0004% against 1.5% — so the threshold sits far from both, and the
+// "stuck" is a parent killing healthy work. The gap it exploits is enormous,
+// measured, 0.0004% against 1.5%, so the threshold sits far from both, and the
 // minimum age keeps it away from a young process that has genuinely not started
 // yet. It returns "not sure" rather than "healthy": everything below still runs.
 func convictedByDutyCycle(s Sample, cfg Config) (Verdict, bool) {
@@ -188,7 +188,7 @@ func convictedByDutyCycle(s Sample, cfg Config) (Verdict, bool) {
 	return Verdict{
 		State:  Stuck,
 		Silent: s.Elapsed,
-		Why: fmt.Sprintf("alive %s and has used %s of CPU in all of it (%.4f%% busy) — "+
+		Why: fmt.Sprintf("alive %s and has used %s of CPU in all of it (%.4f%% busy). "+
 			"it has done nothing since it started",
 			round(s.Elapsed), round(s.CPU), duty*100),
 	}, true
@@ -204,7 +204,7 @@ func convictedByDutyCycle(s Sample, cfg Config) (Verdict, bool) {
 // minutes of waiting.
 type Config struct {
 	// Quiet is how long output may stay flat before the agent is no longer
-	// called Working. Reaching it does not mean Stuck — only that the evidence
+	// called Working. Reaching it does not mean Stuck: only that the evidence
 	// for Working has expired.
 	Quiet time.Duration
 	// Frozen is how long BOTH output and CPU may stay flat, in awake time,
@@ -249,8 +249,8 @@ type Verdict struct {
 //
 // history must be in time order, oldest first. It is a pure function of what
 // was observed: it reads no clock and touches no process, so the awkward cases
-// — a machine that slept, a process that died between samples, a burst of
-// output followed by a long wait — are all reachable in a test.
+// a machine that slept, a process that died between samples, a burst of
+// output followed by a long wait: are all reachable in a test.
 func Classify(history []Sample, cfg Config) Verdict {
 	if len(history) == 0 {
 		return Verdict{State: Unknown, Why: "nothing has been observed yet"}
@@ -267,14 +267,14 @@ func Classify(history []Sample, cfg Config) Verdict {
 	// started, and that is visible the instant you look.
 	//
 	// Not a refinement. A real stalled `codex exec` on this machine had been up
-	// 7h39m on 0.11s of CPU — a duty cycle of 0.0004%. A healthy one alongside
+	// 7h39m on 0.11s of CPU: a duty cycle of 0.0004%. A healthy one alongside
 	// it ran at 1.5%, three orders of magnitude away. Without this, the honest
 	// answer to "is my subagent stuck" was "wait five minutes and ask again",
 	// which is the wrong thing to say to somebody who has already waited seven
 	// hours.
 	// Demonstrated progress beats a lifetime average, so this is checked BEFORE
 	// the duty cycle. A process that idled for hours and has now started working
-	// is working — convicting it on the strength of the hours would be exactly
+	// is working: convicting it on the strength of the hours would be exactly
 	// wrong, and it is not hypothetical: a child that reports its own counter
 	// (opencode) can show movement while its whole-life CPU share is still
 	// negligible.
@@ -287,7 +287,7 @@ func Classify(history []Sample, cfg Config) Verdict {
 	if len(history) < 2 {
 		return Verdict{
 			State: Unknown,
-			Why:   "only one observation so far — progress is a difference, and there is nothing yet to differ from",
+			Why:   "only one observation so far: progress is a difference, and there is nothing yet to differ from",
 		}
 	}
 
@@ -317,7 +317,7 @@ func Classify(history []Sample, cfg Config) Verdict {
 	// about the window, not about the agent's whole life.
 	//
 	// But burning CPU is POSITIVE evidence, not an absence of it, and an earlier
-	// version checked the window before the CPU — so a healthy agent watched for
+	// version checked the window before the CPU, so a healthy agent watched for
 	// twenty seconds between turns came back "unknown" while visibly consuming
 	// processor time. Correct, useless, and the most common way anybody will run
 	// this: a parent asking once, now.
@@ -331,8 +331,8 @@ func Classify(history []Sample, cfg Config) Verdict {
 	return verdictFor(silent, slept, burning, cfg)
 }
 
-// verdictFor turns the two measured facts — how long the agent has been silent,
-// and whether it is still burning CPU — into the answer. Split out of Classify
+// verdictFor turns the two measured facts: how long the agent has been silent,
+// and whether it is still burning CPU: into the answer. Split out of Classify
 // because that function had grown to hold both the evidence-gathering and the
 // judgement, and the judgement is the part worth reading on its own.
 func verdictFor(silent, slept time.Duration, burning bool, cfg Config) Verdict {
@@ -346,7 +346,7 @@ func verdictFor(silent, slept time.Duration, burning bool, cfg Config) Verdict {
 	case burning:
 		return Verdict{
 			State: Thinking, Silent: silent, Slept: slept,
-			Why: fmt.Sprintf("no output for %s, but still consuming CPU — a turn in progress, not a stall",
+			Why: fmt.Sprintf("no output for %s, but still consuming CPU: a turn in progress, not a stall",
 				round(silent)),
 		}
 	case silent < cfg.Frozen:
@@ -356,7 +356,7 @@ func verdictFor(silent, slept time.Duration, burning bool, cfg Config) Verdict {
 				"so not called stuck until %s", round(silent), round(cfg.Frozen)),
 		}
 	default:
-		why := fmt.Sprintf("no output and no CPU for %s — alive, but not doing anything",
+		why := fmt.Sprintf("no output and no CPU for %s: alive, but not doing anything",
 			round(silent))
 		if slept > 0 {
 			why += fmt.Sprintf(" (the machine also slept %s, which is NOT counted in that)", round(slept))
@@ -370,14 +370,14 @@ func verdictFor(silent, slept time.Duration, burning bool, cfg Config) Verdict {
 // Split out to keep Classify inside its complexity budget, and worth its own
 // function anyway: a verdict of "unknown" with no route forward is where
 // somebody testing this stops and concludes the feature does not work. Found on
-// a cold install — a genuinely stalled stand-in, spawned seconds earlier,
+// a cold install: a genuinely stalled stand-in, spawned seconds earlier,
 // correctly unjudgeable and unhelpfully so.
 func tooEarly(silent, elapsed time.Duration, cfg Config) string {
-	why := fmt.Sprintf("watched for only %s, with no output and no CPU — too early to "+
+	why := fmt.Sprintf("watched for only %s, with no output and no CPU: too early to "+
 		"distinguish a model turn from a stall", round(silent))
 	if elapsed > 0 && elapsed < cfg.MinAge {
 		return why + fmt.Sprintf(". This process is only %s old; a whole life of idleness is "+
-			"convicted after %s — set [supervise] min_age in lanes.toml, or pass --min-age",
+			"convicted after %s: set [supervise] min_age in lanes.toml, or pass --min-age",
 			round(elapsed), round(cfg.MinAge))
 	}
 	return why + fmt.Sprintf(". Keep watching: %s of continued silence makes it stuck "+

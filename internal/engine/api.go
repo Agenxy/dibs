@@ -51,7 +51,7 @@ func (e *Engine) authRead(token string, now time.Time) (*core.Lane, core.Result)
 }
 
 // SubscribeInfo resolves what a subscriptions/listen (SEP-2575) request needs:
-// the current serial to stream from, and — if a lane token is supplied — the
+// the current serial to stream from, and (if a lane token is supplied) the
 // authenticated lane id so an inbox subscription can be scoped to it. An empty
 // token is allowed (board-only subscription); a bad token errors.
 func (e *Engine) SubscribeInfo(ctx context.Context, token string) (laneID string, since uint64, err error) {
@@ -83,7 +83,7 @@ func (e *Engine) InboxFor(ctx context.Context, token string) (core.Result, error
 	return e.Inbox(ctx, token)
 }
 
-// EventsSince returns buffered events after serial. Metadata only — never
+// EventsSince returns buffered events after serial. Metadata only: never
 // marks delivery (SPEC §8). all=true is the human observer path (no token).
 func (e *Engine) EventsSince(ctx context.Context, token string, serial uint64, all bool) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
@@ -165,7 +165,7 @@ func (e *Engine) Inbox(ctx context.Context, token string) (core.Result, error) {
 			"announcements":           e.state.UnackedFor(l.ID),
 		}
 		// The same mail under both names, because the two tools that return it
-		// disagreed about what to call it — and each used the OTHER one's name.
+		// disagreed about what to call it, and each used the OTHER one's name.
 		//
 		// inbox returned `messages`; ack_board returned `inbox`. So an agent that
 		// called the inbox tool and read the inbox key got an empty list while its
@@ -177,7 +177,7 @@ func (e *Engine) Inbox(ctx context.Context, token string) (core.Result, error) {
 		// returned and something will be reading it.
 		res["inbox"] = mail
 		// Surfaced here, but NOT cleared here. Exactly one call consumes a
-		// notice — ack_board, the documented checkpoint — because two owners of
+		// notice, ack_board, the documented checkpoint, because two owners of
 		// a clear is how the first version of this went wrong twice over: it
 		// cleared without returning anything (destroying unseen notices on an
 		// ordinary read), and once that was fixed, whichever of inbox and
@@ -208,13 +208,13 @@ func (e *Engine) LaneRead(ctx context.Context, token, lane string, limit int) (c
 		ch, err := e.state.ReaderChannel(l, lane)
 		if err != nil {
 			// Hand the error to the loop, which turns res["error"] into a real
-			// Go error — do NOT flatten it into a payload here.
+			// Go error: do NOT flatten it into a payload here.
 			//
 			// This built {code, message, hint} by hand and returned no error, so
 			// the MCP layer never set isError: "not a member of this lane" and
 			// "that lane does not exist" arrived as SUCCESSFUL tool calls
 			// carrying a refusal in their text. A client that trusts the
-			// protocol's own error signal — which is the point of having one —
+			// protocol's own error signal, which is the point of having one,
 			// reads that as a lane snapshot and skips the hint telling it to
 			// join or subscribe.
 			//
@@ -234,7 +234,7 @@ func (e *Engine) LaneRead(ctx context.Context, token, lane string, limit int) (c
 		}
 		// The coordination key goes to MEMBERS only. An agent that lost its
 		// context lost the key with it, and a key it cannot recover is a key it
-		// stops declaring — which quietly returns the fleet to guessing. But a
+		// stops declaring, which quietly returns the fleet to guessing. But a
 		// subscriber is not a member: it watches the lane without holding the
 		// key, and handing it one would let it claim a membership it does not
 		// have.
@@ -259,7 +259,7 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 		if !ok || (m.From != l.ID && m.To != l.ID) {
 			// An ANNOUNCEMENT serial is the overwhelmingly likely mistake here,
 			// because the wake nudge hands the agent a serial and says to go
-			// read it — and a serial in hand makes get_message the obvious call.
+			// read it, and a serial in hand makes get_message the obvious call.
 			//
 			// Answering "no message N addressed to you" for a thing that plainly
 			// exists is the failure this codebase keeps producing: a confident,
@@ -349,7 +349,7 @@ func maxSerial(evs []core.Event, fallback uint64) uint64 {
 
 // clampCursor treats 0 as "from wherever the ring starts".
 //
-// 0 is the only cursor an agent can pick without having seen the board first —
+// 0 is the only cursor an agent can pick without having seen the board first,
 // it is the obvious "give me everything" value, and every agent reaches for it.
 // Erroring on it means the first call an agent makes is the one that fails, and
 // the error is about ring-buffer internals it has no way to know. A real lost

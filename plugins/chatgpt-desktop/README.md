@@ -6,12 +6,12 @@ inside one application, on every plan.
 
 **This matters for Lanes because the ChatGPT desktop app, Codex CLI and the IDE
 extension share one MCP configuration.** Configure Lanes once and all three see
-it — so this folder is deliberately thin and defers to
+it, so this folder is deliberately thin and defers to
 [../codex/README.md](../codex/README.md).
 
 ## Install
 
-Exactly the Codex configuration — `~/.codex/config.toml`:
+Exactly the Codex configuration. `~/.codex/config.toml`:
 
 ```toml
 [mcp_servers.lanes]
@@ -28,7 +28,7 @@ Everything measured for Codex applies: every tool reachable, `protocolVersion
 feature flag that does **not** change the wire.
 
 **Wake is pull-only**, for the same reason: `HookHandlerConfig` offers `command`,
-`prompt`, `agent`, and only `command` reaches outward — as a subprocess, which
+`prompt`, `agent`, and only `command` reaches outward: as a subprocess, which
 Lanes does not do. See [PHILOSOPHY.md](https://github.com/agenxy/lanes/blob/main/PHILOSOPHY.md).
 
 ## Developer mode is the one thing that differs
@@ -36,7 +36,7 @@ Lanes does not do. See [PHILOSOPHY.md](https://github.com/agenxy/lanes/blob/main
 ChatGPT has a **developer mode** for building and testing MCP apps
 (Settings → Connectors → Advanced; for workspaces, Workspace Settings →
 Connected Data). That is the surface where Lanes' MCP Apps board panel
-([SPEC-APPS.md](https://github.com/agenxy/lanes/blob/main/SPEC-APPS.md)) would render inside ChatGPT — the panel is
+([SPEC-APPS.md](https://github.com/agenxy/lanes/blob/main/SPEC-APPS.md)) would render inside ChatGPT: the panel is
 already implemented and spec-correct.
 
 ## Not verified

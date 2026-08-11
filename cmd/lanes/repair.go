@@ -18,14 +18,14 @@ import (
 //
 // State IS the ledger here, so a line that will not apply means every line after
 // it describes a board that can no longer be reconstructed, and the daemon
-// correctly refuses to start. Correctly — and, until now, terminally: the
+// correctly refuses to start. Correctly: and, until now, terminally: the
 // operator got one wrapped Go error and no next step, on the one failure where
 // the entire product is unavailable until it is resolved. A real board hit
 // exactly this (`replay apply serial 416: E_LANE_CLOSED`) and there was nothing
 // to type.
 //
 // The recovery is the only one the hash chain permits. Each record hashes its
-// predecessor, so a bad line in the middle cannot be excised — everything after
+// predecessor, so a bad line in the middle cannot be excised: everything after
 // it is chained to it. What CAN be kept is the prefix that still applies, which
 // is what the torn-tail path already does for a crash mid-write. This is the
 // same operation, made explicit and deliberate because the cause is different:
@@ -35,8 +35,8 @@ import (
 // So it never runs by itself and never runs silently. It replays into a scratch
 // state to find the last serial that applies, prints exactly what it would
 // discard, and requires the operator to say yes. The original is archived beside
-// the ledger rather than overwritten — the same `.archived-<stamp>` convention
-// the data directory already uses — so this is reversible with a `mv`.
+// the ledger rather than overwritten: the same `.archived-<stamp>` convention
+// the data directory already uses, so this is reversible with a `mv`.
 func repairLedger(args []string) error {
 	yes := false
 	for _, a := range args {
@@ -54,7 +54,7 @@ func repairLedger(args []string) error {
 		return err
 	}
 	if applyErr == nil {
-		fmt.Printf("%s\n", ui.Good("this ledger replays cleanly — nothing to repair"))
+		fmt.Printf("%s\n", ui.Good("this ledger replays cleanly: nothing to repair"))
 		fmt.Printf("  %d records, all of them apply\n", total)
 		return nil
 	}
@@ -68,7 +68,7 @@ func repairLedger(args []string) error {
 	}
 	fmt.Printf("\n  The original is archived beside the ledger, so this is reversible.\n")
 	if !yes {
-		fmt.Printf("\n%s\n", ui.Dim("nothing has been changed — rerun with --yes to do it"))
+		fmt.Printf("\n%s\n", ui.Dim("nothing has been changed: rerun with --yes to do it"))
 		return nil
 	}
 
@@ -91,7 +91,7 @@ func repairLedger(args []string) error {
 // reports where it stopped.
 //
 // Through ledger.Replay itself rather than a hand-rolled fold, and that is not
-// tidiness — a second implementation gets a different answer, which here means
+// tidiness: a second implementation gets a different answer, which here means
 // discarding the wrong records. The first version of this walked the file with
 // its own loop and reported record 8 failing on E_BAD_NONCE where the daemon
 // failed at 416: it never decrypted the ops (so every nonce was ciphertext) and

@@ -1,14 +1,14 @@
-# AGENTS.md — orientation for agents working on Lanes
+# AGENTS.md: orientation for agents working on Lanes
 
 Read `PHILOSOPHY.md` first; it is the decision procedure. This file is the map.
-`docs/ARCHITECTURE.md` is the territory — how it fits together, and the four bug
+`docs/ARCHITECTURE.md` is the territory: how it fits together, and the four bug
 classes that keep recurring here. If you are an agent *using* Lanes rather than
 changing it, you want `SKILLS.md` (also served over MCP as `lanes://skills`).
 
 ## What this repo is
 
 A Go daemon (`lanesd`) + CLI (`lanes`) implementing a local coordination service for
-fleets of AI agents. Agents connect over **MCP**. See `SPEC.md` (living, not frozen —
+fleets of AI agents. Agents connect over **MCP**. See `SPEC.md` (living, not frozen,
 change it when reality disagrees, and record why).
 
 ## Layout
@@ -34,13 +34,13 @@ change it when reality disagrees, and record why).
 4. **Advisory, not coercive.** Declaring work never fails. Don't add blocking semantics.
 5. **Don't drive harnesses.** No shelling out to agents, no prompt injection, no session
    management. Lanes is pulled from, not a driver. (We built and deleted a shell-hook
-   version — see `WAKE-MECHANISMS.md` for why.)
+   version: see `WAKE-MECHANISMS.md` for why.)
 6. **Honesty in errors.** Every error carries a `hint` that tells a drifted agent the
    corrective call.
 
 ## Working here
 
-**Once per clone**, before anything else — `task` itself is pinned by mise, so a
+**Once per clone**, before anything else. `task` itself is pinned by mise, so a
 fresh checkout has no runner until this has run:
 
 ```bash
@@ -60,7 +60,7 @@ gofmt -w <files>          # always
 ```
 
 **Check the exit status of `task ci`, not its output.** Grepping for "checks
-passed" and concluding green is a mistake already made in this repository — one
+passed" and concluding green is a mistake already made in this repository: one
 suite printed a failure line that did not match the pattern, and a red run was
 reported as green.
 
@@ -69,7 +69,7 @@ Lint alone: `mise exec golangci-lint@2.12.2 -- golangci-lint run`
 Use **bun**, never npm, for any JS/TS work.
 
 **No shell scripts.** Not for build steps, task running, hooks or test
-harnesses — see `CONTRIBUTING.md` for why. Python with a `uv` shebang and PEP 723
+harnesses: see `CONTRIBUTING.md` for why. Python with a `uv` shebang and PEP 723
 inline dependencies, or Go, or the existing runner.
 
 ## Easy to miss
@@ -82,12 +82,12 @@ Things that have cost real time here, none of which are visible in the diff:
 - **`e.query()` sends on `e.ops`, which is nil on a zero-value `Engine`.** A test
   that builds `&Engine{}` and calls an exported wrapper **blocks forever** rather
   than failing. That is why the decision is split from the wrapper (`noteChild`,
-  `reportStallLocked`) — test the decision.
+  `reportStallLocked`): test the decision.
 - **A parameter you declare but never read is invisible from outside.** The call
   succeeds and the effect silently does not happen; the schema is the only thing
   an agent can see. `TestEveryDeclaredParameterIsReadByAHandler` enforces this.
 - **`light-dark()` takes colours only.** Using it for a number or a keyword is
-  invalid at substitution and falls back to `initial` — silently. This shipped a
+  invalid at substitution and falls back to `initial`: silently. This shipped a
   completely unreadable board past 155 passing browser checks.
 - **The channel e2e scores against this repo's own git history**, which changes
   with every commit. It measures its bar at runtime. Never assert an absolute
@@ -96,7 +96,7 @@ Things that have cost real time here, none of which are visible in the diff:
   cannot reach above its package. The root file is canonical;
   `skills_embed_test.go` fails if they drift. Edit the root one and copy.
 - **A failing probe is usually a broken probe.** Before concluding the product is
-  broken, check that your measurement is sound — assert your setup steps
+  broken, check that your measurement is sound: assert your setup steps
   succeeded. Three false alarms in one session came from this.
 
 ## Where the reasoning lives
@@ -115,6 +115,6 @@ Things that have cost real time here, none of which are visible in the diff:
 
 Behavioural tests, not coverage theatre. Every guarantee in `SPEC.md` that can be tested
 should have a test that fails if it regresses. Replay determinism, advisory-not-coercive
-semantics, and the honesty rules are the ones that matter most — see
+semantics, and the honesty rules are the ones that matter most: see
 `TestRedundantObjectiveIsCaught` and `TestConcurrentFileWorkIsNotAnAlarm` for the
 shape: each encodes a *decision*, with the reasoning in the comment.

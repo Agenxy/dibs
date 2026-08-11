@@ -35,9 +35,9 @@ func main() {
 	if err := run(); err != nil {
 		// Multi-line failures go to stderr as themselves.
 		//
-		// slog escapes newlines into \n, so an explanation written to be read —
+		// slog escapes newlines into \n, so an explanation written to be read,
 		// what went wrong, why it matters, and the one command that resolves
-		// it — arrives as a single unreadable blob at exactly the moment
+		// it: arrives as a single unreadable blob at exactly the moment
 		// somebody needs to read it. Structured logging is right for the running
 		// daemon's stream and wrong for its dying words.
 		if msg := err.Error(); strings.Contains(msg, "\n") {
@@ -58,9 +58,9 @@ func run() error {
 		// case where you genuinely want it.
 		allowParallel = flag.Bool("allow-parallel", false,
 			"permit a second lanesd on this machine (splits the fleet across two boards; "+
-				"intended for isolating agents you do not trust — see SECURITY.md)")
+				"intended for isolating agents you do not trust: see SECURITY.md)")
 		addr = flag.String("addr", "",
-			"listen address (override; default 127.0.0.1:4777 — set a tailnet/LAN IP to serve "+
+			"listen address (override; default 127.0.0.1:4777: set a tailnet/LAN IP to serve "+
 				"remote agents. TLS is handled automatically; see <dir>/lanes.toml to tune anything)")
 	)
 	scorer := registerScorerFlags()
@@ -84,7 +84,7 @@ func run() error {
 	}
 	// LANES_ADDR sits between the flag and the config file, because the CLI
 	// already honours it and a daemon that ignored it silently bound the
-	// default instead — on a machine already running one, that is a collision
+	// default instead: on a machine already running one, that is a collision
 	// reported as "address already in use" for an address the operator never
 	// named. Every other Lanes binary reads this variable; this one not doing so
 	// was an inconsistency, not a design.
@@ -131,7 +131,7 @@ func run() error {
 	// writer allocated a serial it never appended. Say so once per gap, at WARN,
 	// so the trail exists the next time somebody asks why serials skip.
 	led.OnSerialGap = func(state, ledger uint64) {
-		slog.Warn("ledger serial gap — a serial was allocated but never written; "+
+		slog.Warn("ledger serial gap: a serial was allocated but never written; "+
 			"resyncing and continuing (the hash chain is intact)",
 			"state", state, "ledger", ledger)
 	}
@@ -140,7 +140,7 @@ func run() error {
 	// anyway, because a repeat means writes are being lost for some other
 	// reason and the only evidence is this line.
 	led.OnTornTail = func(bytes int, at int64) {
-		slog.Warn("discarded a partial final ledger record — the previous run was "+
+		slog.Warn("discarded a partial final ledger record: the previous run was "+
 			"interrupted mid-write; the op it described was never acknowledged to "+
 			"anyone and the hash chain is intact",
 			"bytes", bytes, "offset", at)
@@ -150,13 +150,13 @@ func run() error {
 		// A record the fold refuses is the one failure this daemon cannot shrug
 		// off: state IS the ledger, so a line that will not apply means every
 		// line after it describes a board that can no longer be reconstructed.
-		// Refusing to start is right — continuing would serve a board that
+		// Refusing to start is right: continuing would serve a board that
 		// silently disagrees with its own history.
 		//
 		// What was wrong was saying so in one wrapped Go error and exiting 1. A
 		// real board did this (an op accepted live that replay rejected) and the
 		// operator was left with `replay: replay apply serial 416: E_LANE_CLOSED`
-		// and no next step at all — a fault with no corrective action, on the one
+		// and no next step at all: a fault with no corrective action, on the one
 		// surface where the whole product is unavailable until it is resolved.
 		return fmt.Errorf("%w\n\n"+
 			"  This board cannot be rebuilt from its own ledger: one record will not\n"+
@@ -194,7 +194,7 @@ func run() error {
 	// the lane that spawned them. Its own goroutine: it forks ps, and the
 	// writer loop must never wait on a process scan. It reports and never acts.
 	// Roles the operator declared. On the admin path, because the daemon IS the
-	// admin path — an agent still cannot promote itself.
+	// admin path: an agent still cannot promote itself.
 	keepDeclaredRolesApplied(ctx, eng, cfg.Roles)
 	startSupervision(ctx, eng, cfg.Supervise)
 	// Indexing shells out to git across thousands of commits; the daemon must be
@@ -235,7 +235,7 @@ func run() error {
 	// BIND FIRST, announce second.
 	//
 	// ListenAndServe binds and serves in one call, so "lanesd up" was logged
-	// before anything had been bound — and a port collision then printed a
+	// before anything had been bound, and a port collision then printed a
 	// confident success line immediately followed by the failure. That is not
 	// cosmetic: it fooled this project's own setup checks twice, which grepped
 	// for "lanesd up", found it, and proceeded to talk to a DIFFERENT daemon

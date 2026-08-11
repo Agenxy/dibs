@@ -11,12 +11,12 @@ import (
 //
 // This is the situation Lanes will actually be in for the foreseeable future,
 // and it is not hypothetical: as of August 2026 no shipping host negotiates
-// 2026-07-28, so the moment one does, a fleet becomes mixed — one agent arriving
+// 2026-07-28, so the moment one does, a fleet becomes mixed: one agent arriving
 // through the stateless core with no handshake, another through the legacy
 // initialize exchange, both expecting to see each other.
 //
 // A dual-version server can fail this in a way that looks fine from either side.
-// Each agent registers, each gets a board, each sees itself — and the two are
+// Each agent registers, each gets a board, each sees itself, and the two are
 // partitioned. Every call succeeds. That is the same silent-partition shape as
 // two daemons, arrived at through the protocol instead of the process table, and
 // it removes the one guarantee the product exists to provide.
@@ -40,16 +40,16 @@ func TestAgentsOnDifferentProtocolVersionsShareOneBoard(t *testing.T) {
 	}
 	legacy := registerOn(t, srv, "2025-11-25", "agent-legacy")
 
-	// Visibility, both directions. ack_board is the agent's board — show_board
+	// Visibility, both directions. ack_board is the agent's board: show_board
 	// is the panel's, and reaching for it here once cost an hour chasing a
 	// "missing claims" bug that was a wrong tool, not a wrong server.
 	modernBoard := ackOn(t, srv, "2026-07-28", modern)
 	legacyBoard := ackOn(t, srv, "2025-11-25", legacy)
 	if !mentions(modernBoard, "agent-legacy") {
-		t.Errorf("the 2026 agent cannot see the 2025 agent — the fleet is partitioned by protocol")
+		t.Errorf("the 2026 agent cannot see the 2025 agent: the fleet is partitioned by protocol")
 	}
 	if !mentions(legacyBoard, "agent-modern") {
-		t.Errorf("the 2025 agent cannot see the 2026 agent — the fleet is partitioned by protocol")
+		t.Errorf("the 2025 agent cannot see the 2026 agent: the fleet is partitioned by protocol")
 	}
 
 	// Mail across the boundary, both directions.
@@ -75,8 +75,8 @@ func TestAgentsOnDifferentProtocolVersionsShareOneBoard(t *testing.T) {
 	// they checked.
 	// Absolute, because a claim path must be: the daemon's working directory is
 	// not the agent's, so a relative one names a directory neither meant. That is
-	// incidental here — this test is about whether the two protocols see one
-	// board — but a refused claim would make it pass for the wrong reason.
+	// incidental here: this test is about whether the two protocols see one
+	// board, but a refused claim would make it pass for the wrong reason.
 	toolCallOn(t, srv, "2026-07-28", "claim", map[string]any{
 		"token": modern, "path": "/tmp/lanes-interop/internal/core", "mode": "exclusive",
 	})
@@ -183,7 +183,7 @@ func sameOrder(a, b []float64) bool {
 // see it.
 //
 // Found by driving Lanes with the official MCP Python SDK, which rejected
-// tools/list outright: "ListToolsResult: resultType — Field required". Every
+// tools/list outright: "ListToolsResult: resultType. Field required". Every
 // hand-rolled check had passed, because both sides of them were written from one
 // reading of the spec. That is why this test exists and why it asserts BOTH
 // directions.
@@ -198,7 +198,7 @@ func TestResultTypeIsPresentOnlyOnTheStatelessCore(t *testing.T) {
 	modern := rpc(t, srv, "2026-07-28", "tools/list", map[string]any{})
 	got, _ := modern["result"].(map[string]any)["resultType"].(string)
 	if got != "complete" {
-		t.Errorf("2026-07-28 tools/list resultType = %q, want \"complete\" — the reference "+
+		t.Errorf("2026-07-28 tools/list resultType = %q, want \"complete\": the reference "+
 			"client refuses to parse a modern result without it", got)
 	}
 

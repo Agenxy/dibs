@@ -3,7 +3,7 @@ go = "1.26.5"
 # Pinned for the same reason Go is: `task ci` runs `golangci-lint run`, and an
 # unpinned linter means the gate passes on one machine and fails on another for
 # reasons unrelated to the code. Without this line a clean checkout cannot run
-# the chain at all — mise has no version to resolve and the lint task exits 1.
+# the chain at all: mise has no version to resolve and the lint task exits 1.
 golangci-lint = "2.12.2"
 # Task runs the chain, so it needs pinning before anything the chain contains.
 # It was missing, and the effect was the worst possible one for a project people
@@ -14,13 +14,13 @@ golangci-lint = "2.12.2"
 task = "3.52.0"
 # The end-to-end suites are Bun + Playwright against a real daemon and real
 # Chrome; pinning keeps them reproducible alongside the Go half. "latest" was
-# not pinning — it is the one line in this file that could change the gate
+# not pinning: it is the one line in this file that could change the gate
 # overnight with nobody touching the repository, which is the exact failure
 # every other line here exists to prevent.
 bun = "1.3.14"
 # The release pipeline's own tools, pinned for the same reason as the linter.
 # GoReleaser shells out to syft for the SBOM and cosign for signatures, and
-# neither was pinned — so `goreleaser release` built all four platforms, archived
+# neither was pinned, so `goreleaser release` built all four platforms, archived
 # them, and then died at the SBOM step with "No version is set for shim: syft".
 # A release chain that has never been run is a claim, not a guarantee, and the
 # README advertises reproducible builds + cosign + SBOM as facts.
@@ -40,6 +40,6 @@ cosign = "3.1.3"
 #    (auto-downloading it if absent), independent of whatever Go is on PATH.
 #  - go.sum + the content-addressed, hash-verified module cache make deps
 #    reproducible without a per-project cache (Go's cache is already hermetic,
-#    unlike Python site-packages — so no .venv equivalent is needed).
+#    unlike Python site-packages, so no .venv equivalent is needed).
 [env]
 GOTOOLCHAIN = "go1.26.5"

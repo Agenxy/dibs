@@ -13,7 +13,7 @@ import (
 // The three verdicts are not severities, they are different sentences to say to
 // a person: Verified acts, Declined says nothing was sent, and Unavailable sends
 // them to `lanes web`. Collapsing Unavailable into Declined would tell somebody
-// on a Mac with no sensor to try their finger again — advice that cannot work,
+// on a Mac with no sensor to try their finger again: advice that cannot work,
 // which is this project's named failure mode.
 func TestAMissingHelperIsUnavailableNotDeclined(t *testing.T) {
 	// findHelper looks beside the running executable; the test binary lives in a
@@ -26,7 +26,7 @@ func TestAMissingHelperIsUnavailableNotDeclined(t *testing.T) {
 		t.Errorf("verdict = %v, want Unavailable", verdict)
 	}
 	if !errors.Is(err, ErrNoHelper) {
-		t.Errorf("err = %v, want ErrNoHelper — the caller needs to tell a missing "+
+		t.Errorf("err = %v, want ErrNoHelper: the caller needs to tell a missing "+
 			"helper from a machine with no sensor", err)
 	}
 }
@@ -48,7 +48,7 @@ func TestTheHelperIsNotTakenFromPATH(t *testing.T) {
 
 	found, err := findHelper()
 	if err == nil && found == planted {
-		t.Fatal("the helper was taken from PATH — anything on PATH could then " +
+		t.Fatal("the helper was taken from PATH: anything on PATH could then " +
 			"answer 'a human is present'")
 	}
 }
@@ -56,7 +56,7 @@ func TestTheHelperIsNotTakenFromPATH(t *testing.T) {
 // A cancelled CALLER is not a human declining.
 //
 // Both surface as ctx.Err() on the derived context, and Check used to map either
-// to Declined — so a client that disconnected, or a daemon shutting down, was
+// to Declined, so a client that disconnected, or a daemon shutting down, was
 // recorded as a person who was asked and said no. The panel answers Declined with
 // "press the button again when you want to act", which tells somebody they
 // changed their mind about a prompt they may never have seen. In the one package
@@ -77,7 +77,7 @@ func TestACancelledCallerIsAbandonedNotDeclined(t *testing.T) {
 		t.Fatal("a cancelled check reported a verified human")
 	}
 	if verdict == Declined {
-		t.Error("a cancelled caller was reported as a human decline — nobody was asked, " +
+		t.Error("a cancelled caller was reported as a human decline: nobody was asked, " +
 			"so nothing can be said about what they wanted")
 	}
 	if verdict != Abandoned {
@@ -93,7 +93,7 @@ func TestACancelledCallerIsAbandonedNotDeclined(t *testing.T) {
 // true and insufficient: it constrained WHERE the answerer is found, not WHAT
 // gets to answer.
 //
-// This narrows the cheapest substitution, not all of them — replacing the file
+// This narrows the cheapest substitution, not all of them: replacing the file
 // in place still works, because the install directory belongs to the user. See
 // findHelper's comment for what that does and does not buy.
 func TestASymlinkIsNotAcceptedAsTheHelper(t *testing.T) {
@@ -107,9 +107,9 @@ func TestASymlinkIsNotAcceptedAsTheHelper(t *testing.T) {
 	}
 	// helperIn is the PRODUCTION rule. An earlier version of this test ran its
 	// own os.Lstat and asserted on the result, so it passed just as happily with
-	// os.Stat back in the daemon — it was testing the standard library.
+	// os.Stat back in the daemon: it was testing the standard library.
 	if got, err := helperIn(dir); err == nil {
-		t.Errorf("helperIn accepted a symlink at %s — a link named like the helper "+
+		t.Errorf("helperIn accepted a symlink at %s: a link named like the helper "+
 			"and pointed at anything that exits 0 would answer 'a human is present'", got)
 	}
 }
@@ -122,7 +122,7 @@ func TestARealHelperIsStillAccepted(t *testing.T) {
 		t.Fatalf("write helper: %v", err)
 	}
 	if _, err := helperIn(dir); err != nil {
-		t.Errorf("helperIn rejected a real executable helper: %v — the symlink rule "+
+		t.Errorf("helperIn rejected a real executable helper: %v: the symlink rule "+
 			"must not have made the helper unfindable", err)
 	}
 }

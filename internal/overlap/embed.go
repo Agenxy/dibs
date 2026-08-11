@@ -28,7 +28,7 @@ import (
 // THE BOUNDARY, and why it moved here.
 //
 // The first version put the repository index inside a sidecar we shipped, and
-// asked it a bespoke question — "given this declaration, which files?" — over an
+// asked it a bespoke question, "given this declaration, which files?", over an
 // endpoint we invented. That was incoherent in a way worth recording, because
 // the shape is tempting:
 //
@@ -42,7 +42,7 @@ import (
 //
 // The split that actually holds: LANES OWNS THE INDEX, the chunking, and the
 // similarity maths. The only thing it cannot do in-process is turn text into a
-// vector — that needs a model, and a model needs a runtime we will not link.
+// vector: that needs a model, and a model needs a runtime we will not link.
 //
 // So the external contract shrinks to the one operation that is genuinely
 // foreign, and that operation already has a universal API:
@@ -87,7 +87,7 @@ const embedBatch = 64
 
 // NewEmbed builds a scorer over an OpenAI-compatible embeddings endpoint.
 //
-// base is the API root, with or without the /v1 suffix — "http://localhost:11434"
+// base is the API root, with or without the /v1 suffix. "http://localhost:11434"
 // and "http://localhost:11434/v1" both work, because getting that wrong is the
 // single most likely configuration mistake and it costs nothing to accept both.
 func NewEmbed(base, model, key string, timeout time.Duration) *Embed {
@@ -103,7 +103,7 @@ func NewEmbed(base, model, key string, timeout time.Duration) *Embed {
 		// cannot see how much work was asked for. A one-item probe and a
 		// 64-chunk batch are not the same request, and one flat value either
 		// strangles the batch or lets a hung probe sit. The deadline is set per
-		// call instead, scaled by batch size — see encode.
+		// call instead, scaled by batch size: see encode.
 		client: &http.Client{},
 	}
 }
@@ -131,7 +131,7 @@ func (e *Embed) Version() string {
 	// to satisfy both halves: different indexes get different versions, and the
 	// SAME index gets the same version.
 	//
-	// Two earlier attempts each satisfied one half. A timestamp alone collided —
+	// Two earlier attempts each satisfied one half. A timestamp alone collided,
 	// a second-resolution clock cannot tell two rebuilds of a small repository
 	// apart. Adding chunk count and width still collided, because two builds a
 	// moment apart over edited files share both. Adding a content digest fixed
@@ -180,7 +180,7 @@ type embedResp struct {
 //
 // A 4B model encoding 64 chunks is not the same request as a one-word probe,
 // and a flat timeout treats them identically. Measured: the two 4B models both
-// failed on chunk 0 of 449 — the very first batch — with the client timeout
+// failed on chunk 0 of 449 (the very first batch) with the client timeout
 // exceeded, while the same models had succeeded at the same batch size on an
 // otherwise idle machine. A production box under load would hit this and the
 // operator would see "context deadline exceeded" with nothing actionable in it.
@@ -189,7 +189,7 @@ func (e *Embed) deadlineFor(n int) time.Duration {
 	if base <= 0 {
 		// A zero here used to be harmless: net/http reads it as "no timeout". As
 		// a context deadline it means "already expired", so every request fails
-		// instantly with a message about slow models — which is the opposite of
+		// instantly with a message about slow models, which is the opposite of
 		// the truth. Anything constructing Embed directly rather than through
 		// NewEmbed lands here.
 		base = defaultEncodeTimeout
@@ -199,7 +199,7 @@ func (e *Embed) deadlineFor(n int) time.Duration {
 	}
 	// The base covers connection and model warm-up; the per-item allowance
 	// covers the actual encoding. Generous on purpose: being slow is a
-	// performance problem, and timing out mid-index is a correctness one —
+	// performance problem, and timing out mid-index is a correctness one,
 	// a half-built index silently matches nothing.
 	d := base + time.Duration(n)*perItemAllowance
 	if d > maxEncodeDeadline {
@@ -224,7 +224,7 @@ const (
 // instruction on the query side only.
 //
 // We sent raw text for both. The model therefore embedded a task description
-// and a code chunk into the same undifferentiated space — which still RANKS
+// and a code chunk into the same undifferentiated space, which still RANKS
 // tolerably, because similar topics are still similar, but it collapses the
 // margin between related and unrelated work. That is exactly the symptom
 // measured on this repository: recall improved with a bigger model while
@@ -233,14 +233,14 @@ const (
 //
 // Detected from the model name, because an operator should not have to know
 // each family's convention. Overridable with SetAffixes, because a model family
-// Lanes has never heard of still has a convention and its operator knows it —
+// Lanes has never heard of still has a convention and its operator knows it,
 // and without an override that operator silently gets half the separation with
 // nothing on screen to explain it.
 // affixes are the retrieval markers for one model family.
 //
 // known is carried EXPLICITLY rather than inferred from the strings being
 // non-empty, because "recognised, and the convention is no marker" is a real
-// answer — bge-m3 documents exactly that — and it is not the same answer as
+// answer (bge-m3 documents exactly that) and it is not the same answer as
 // "never heard of this model". Inferring it from emptiness collapsed the two
 // and made a correctly-configured model warn.
 type affixes struct {
@@ -271,7 +271,7 @@ func affixesFor(model string) affixes {
 	case strings.Contains(m, "bge-code"), strings.Contains(m, "bge-multilingual-gemma"),
 		strings.Contains(m, "bge-en-icl"):
 		// The instruct generation of BGE. All three cards specify the same
-		// shape — "<instruct>{instruction}\n<query>{query}" — with documents
+		// shape ("<instruct>{instruction}\n<query>{query}") with documents
 		// left bare.
 		// https://huggingface.co/BAAI/bge-code-v1
 		// https://huggingface.co/BAAI/bge-multilingual-gemma2
@@ -280,7 +280,7 @@ func affixesFor(model string) affixes {
 		// bge-en-icl was briefly excluded here on the grounds that its
 		// convention is few-shot and Lanes has no examples to supply. That was
 		// wrong: its card gives the ZERO-SHOT form explicitly, and it is this
-		// one. Few-shot appends worked <response> examples on top — an
+		// one. Few-shot appends worked <response> examples on top: an
 		// enhancement to a documented format, not a precondition for it.
 		return affixes{known: true, query: "<instruct>Given a description of a software task, " +
 			"retrieve the source files that task would change\n<query>"}
@@ -306,19 +306,19 @@ func affixesFor(model string) affixes {
 		// https://huggingface.co/BAAI/bge-large-en-v1.5
 		return affixes{known: true, query: "Represent this sentence for searching relevant passages: "}
 	case strings.Contains(m, "arctic-embed") && (strings.Contains(m, "v2") || strings.Contains(m, "embed2")):
-		// v2 only. "use the query prefix below (just on the query)" — documents
+		// v2 only. "use the query prefix below (just on the query)": documents
 		// are UNPREFIXED.
 		// https://huggingface.co/Snowflake/snowflake-arctic-embed-m-v2.0
 		return affixes{known: true, query: "query: "}
 	case strings.Contains(m, "arctic-embed"):
-		// v1 is a DIFFERENT prefix — the legacy BGE-style instruction, which is
+		// v1 is a DIFFERENT prefix: the legacy BGE-style instruction, which is
 		// what v1 was trained with. Same family, same vendor, one version apart,
 		// and the strings share nothing.
 		// https://huggingface.co/Snowflake/snowflake-arctic-embed-l
 		return affixes{known: true, query: "Represent this sentence for searching relevant passages: "}
 	case strings.Contains(m, "e5-mistral"), strings.Contains(m, "e5") && strings.Contains(m, "instruct"):
 		// The instruct member of the e5 family: "Instruct: {task}\nQuery: {query}",
-		// and explicitly "No need to add instruction for retrieval documents" —
+		// and explicitly "No need to add instruction for retrieval documents",
 		// so it marks ONE side, unlike the rest of e5, which marks both.
 		// https://huggingface.co/intfloat/e5-mistral-7b-instruct
 		return affixes{known: true, query: "Instruct: Given a description of a software task, " +
@@ -333,7 +333,7 @@ func affixesFor(model string) affixes {
 	// gte-large-en-v1.5, and the only instruction-tuned member of that family is
 	// a different model (gte-Qwen*-instruct). Guessing one for the whole family
 	// installed a marker the model was never trained on AND suppressed the
-	// unknown-model warning — worse than doing nothing, because it was silent.
+	// unknown-model warning: worse than doing nothing, because it was silent.
 	//
 	// The rule this encodes: only claim a convention that a model card states.
 	// An unrecognised model warns, which is recoverable; a wrongly-marked one
@@ -355,7 +355,7 @@ func (e *Embed) SetAffixes(query, doc string) {
 func (e *Embed) Affixes() (query, doc string) { return e.affix.query, e.affix.doc }
 
 // Recognised reports whether the model name matched a known convention. An
-// unrecognised model is not an error — it may genuinely be symmetric — but it
+// unrecognised model is not an error (it may genuinely be symmetric) but it
 // is worth telling somebody about, because the most likely explanation is a
 // family we have not listed and the cost is roughly half the separation.
 func (e *Embed) Recognised() bool { return affixesFor(e.model).known }
@@ -380,7 +380,7 @@ func (e *Embed) encodeAs(ctx context.Context, texts []string, isQuery bool) ([][
 // checkVectors rejects a reply that cannot be compared with the index.
 //
 // dot() walked min(len(a), len(b)), so a query embedded at a different width
-// than the index was silently scored over a PREFIX of both — plausible numbers
+// than the index was silently scored over a PREFIX of both: plausible numbers
 // from incompatible vector spaces, and auto-joins made from them. That happens
 // for real: a model alias repointed, an endpoint swapped, a service upgraded
 // between Build and Predict. Nothing errored, the scores just quietly stopped
@@ -392,13 +392,13 @@ func (e *Embed) encodeAs(ctx context.Context, texts []string, isQuery bool) ([][
 func checkVectors(vs [][]float32, want int) error {
 	for i, v := range vs {
 		if len(v) == 0 {
-			return fmt.Errorf("embedding %d is empty — the service returned no vector, "+
+			return fmt.Errorf("embedding %d is empty: the service returned no vector, "+
 				"which scores zero against everything and is indistinguishable from a "+
 				"scorer with no opinion", i)
 		}
 		if want > 0 && len(v) != want {
 			return fmt.Errorf("embedding %d has %d dimensions but the index was built with "+
-				"%d — the model or endpoint changed since indexing. Comparing them comes to "+
+				"%d: the model or endpoint changed since indexing. Comparing them comes to "+
 				"a number, and that number means nothing. Rebuild the index, or point "+
 				"-match-embed-model back at what built it", i, len(v), want)
 		}
@@ -434,7 +434,7 @@ func (e *Embed) encode(ctx context.Context, texts []string) ([][]float32, error)
 		// busier machine hits first.
 		if errors.Is(err, context.DeadlineExceeded) {
 			return nil, fmt.Errorf(
-				"embeddings service did not answer within %s for a batch of %d — "+
+				"embeddings service did not answer within %s for a batch of %d. "+
 					"a larger model on a busy machine needs longer: raise -match-deadline "+
 					"(daemon) or use a smaller model: %w",
 				e.deadlineFor(len(texts)), len(texts), err,
@@ -460,7 +460,7 @@ func (e *Embed) encode(ctx context.Context, texts []string) ([][]float32, error)
 // decodeEmbeddings maps a response back onto the inputs that produced it.
 //
 // Count and order are load-bearing: Lanes matches vector i to chunk i, so a
-// service returning fewer vectors — or reordering them — would shift every
+// service returning fewer vectors (or reordering them) would shift every
 // later vector onto the wrong file and corrupt the whole index silently. Both
 // are checked rather than trusted.
 func decodeEmbeddings(raw []byte, want int) ([][]float32, error) {
@@ -512,7 +512,7 @@ func normalise(v []float32) []float32 {
 
 var skipBinary = regexp.MustCompile(`(?i)\.(png|jpe?g|gif|ico|pdf|zip|gz|woff2?|ttf|mp4|wasm|bin|lock|sum)$`)
 
-// Build indexes the repository. Slow by nature — it embeds every chunk — so
+// Build indexes the repository. Slow by nature (it embeds every chunk) so
 // callers run it off the request path.
 //
 // The chunking deliberately matches what produced the published measurements:
@@ -531,7 +531,7 @@ func (e *Embed) Build(ctx context.Context, repo string) error {
 
 	// An index that silently covers less than the repository is an index that
 	// silently fails to match. Recorded so Build can report it and Evidence can
-	// carry it — and recorded UNCONDITIONALLY, because the assignment used to be
+	// carry it, and recorded UNCONDITIONALLY, because the assignment used to be
 	// guarded on there being something to record, which meant a build that fixed
 	// the problem left the previous run's warning standing. A stale warning is a
 	// worse failure than a missing one: it names files that are fine, so the
@@ -584,7 +584,7 @@ func (e *Embed) Build(ctx context.Context, repo string) error {
 // only if they would answer a query identically, which is exactly the identity
 // a provenance field needs.
 //
-// Vector bytes rather than file contents, deliberately — the same source
+// Vector bytes rather than file contents, deliberately: the same source
 // re-embedded by a different model, or by the same model with different
 // retrieval markers, is a DIFFERENT index for retrieval purposes, and hashing
 // the source would call those two the same.
@@ -613,7 +613,7 @@ func indexDigest(owners []string, vecs [][]float32) string {
 // chunkRepo splits every readable tracked file into embeddable chunks, and
 // reports the ones it could not read.
 //
-// Skipping an unreadable file is right — a broken symlink or a file removed
+// Skipping an unreadable file is right: a broken symlink or a file removed
 // between `git ls-files` and the read is not an error worth failing a whole
 // index over. Skipping it SILENTLY is not: the scorer then reports READY over
 // an index that can never match work touching those files.
@@ -657,7 +657,7 @@ func (e *Embed) evidence(chunks, files int) []string {
 	e.mu.RUnlock()
 	if missing > 0 {
 		out = append(out, fmt.Sprintf(
-			"%d tracked file(s) could not be read and are NOT in this index (e.g. %s) — "+
+			"%d tracked file(s) could not be read and are NOT in this index (e.g. %s). "+
 				"work touching them cannot match", missing, first,
 		))
 	}
@@ -699,11 +699,11 @@ func (e *Embed) Predict(ctx context.Context, declaration string, limit int) (Pre
 
 	// Cosine similarity has a HIGH FLOOR. Two unrelated English texts embed
 	// around 0.3–0.7 with a modern model; nothing lands near zero. So the raw
-	// value is not the signal — "how much better than typical" is.
+	// value is not the signal. "how much better than typical" is.
 	//
 	// This matters because topN renormalises against the maximum, mapping
 	// [0, max] onto [0, 1]. For tier 0 that is right: a file sharing no terms
-	// genuinely scores 0. For embeddings it is a disaster — chunks at 0.70 and
+	// genuinely scores 0. For embeddings it is a disaster: chunks at 0.70 and
 	// 0.83 become 0.84 and 1.00, and the discrimination is gone. Measured on a
 	// three-file fixture: "writing release notes for the changelog" scored
 	// 0.729 against an authentication lane, comfortably above any sane join
@@ -757,7 +757,7 @@ func (e *Embed) Predict(ctx context.Context, declaration string, limit int) (Pre
 // The median was tried first and is too aggressive: it assumes at most half the
 // corpus relates to any query, which holds for a real repository and fails on a
 // small one, where a query genuinely touching two files in three has its true
-// matches zeroed. The 25th percentile assumes at most three quarters relate —
+// matches zeroed. The 25th percentile assumes at most three quarters relate,
 // safe on a large index, survivable on a tiny one. Tuned by measurement on both
 // (see the fleet scenario's semantic-separation probes), not by taste.
 var baselinePct = 25
@@ -766,7 +766,7 @@ var baselinePct = 25
 //
 // The floor is the MEDIAN similarity, not the minimum: a minimum is one
 // outlier and moves with the corpus, while the median answers "what does this
-// query score against a chunk it has nothing to do with" — which is exactly
+// query score against a chunk it has nothing to do with", which is exactly
 // the baseline that must map to zero.
 func distributionFloor(sims []float64) (baseline, top float64) {
 	if len(sims) == 0 {

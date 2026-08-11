@@ -8,7 +8,7 @@ import (
 // Evidence gathered without a known repository says so.
 //
 // SameRepo is false only on POSITIVE evidence of different trees, so unknown
-// reads as true — deliberately, since treating it as foreign would disable
+// reads as true: deliberately, since treating it as foreign would disable
 // matching for every client that reports no cwd. The cost was that the one line
 // an agent acts on looked identical whether the shared repository was established
 // or merely not disproved.
@@ -32,7 +32,7 @@ func TestUnverifiedRepositoryIsSaidOutLoud(t *testing.T) {
 		t.Errorf("the qualifier replaced the evidence instead of qualifying it: %q", got)
 	}
 
-	// A KNOWN shared repository must stay clean — a caveat on every line would
+	// A KNOWN shared repository must stay clean: a caveat on every line would
 	// be noise, and noise is how a real caveat stops being read.
 	known := Evidence{
 		SameRepo: true, RepoKnown: true,

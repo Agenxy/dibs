@@ -42,8 +42,8 @@ type Config struct {
 type LimitsConfig struct {
 	// LaneTTL is how long an agent may go silent before it is treated as
 	// crashed. It matters more than it looks: a stale owner YIELDS its
-	// exclusive lanes, so an agent that is merely busy — a long build, a slow
-	// tool call, a big test run makes no Lanes calls for its duration — can be
+	// exclusive lanes, so an agent that is merely busy: a long build, a slow
+	// tool call, a big test run makes no Lanes calls for its duration: can be
 	// declared dead and lose a lane it is still working in.
 	//
 	// The default of 5m suits chatty agents. Fleets that run long silent steps
@@ -80,7 +80,7 @@ type LimitsConfig struct {
 // Every field is optional and a flag always wins, so an operator can override
 // one setting for one run without editing anything.
 type MatchConfig struct {
-	// Repo enables matching. Empty means off — an index built from the wrong
+	// Repo enables matching. Empty means off: an index built from the wrong
 	// repository is worse than none, so this is never inferred.
 	Repo string `toml:"repo"`
 	// Join is the auto-join threshold. 0 means suggest only. There is no safe
@@ -110,7 +110,7 @@ type MatchConfig struct {
 	//
 	// Retrieval models are asymmetric and every family marks its two sides
 	// differently. Lanes knows the common conventions, but a model it has not
-	// heard of gets none — and measured on this repository, a model addressed
+	// heard of gets none, and measured on this repository, a model addressed
 	// without its markers separates related from unrelated work about half as
 	// well. Set these when you know the convention Lanes does not.
 	EmbedQueryPrefix string `toml:"embed_query_prefix"`
@@ -122,8 +122,8 @@ type MatchConfig struct {
 	// AutoJoin: "declared" (default), "always", or "never".
 	//
 	// Who decides whether a match becomes a membership. The default lets Lanes
-	// join you only on DECLARED overlap — both agents named the same ref, which is
-	// a fact rather than a similarity score — and offers everything else as a
+	// join you only on DECLARED overlap: both agents named the same ref, which is
+	// a fact rather than a similarity score, and offers everything else as a
 	// proposal for the agent to judge. See engine.MatchConfig.AutoJoin for why
 	// that turned out to be the right split.
 	AutoJoin string `toml:"auto_join"`
@@ -149,7 +149,7 @@ func (c LimitsConfig) apply(base core.Limits) (core.Limits, error) {
 //
 // A bad value is an ERROR, never a silent fallback, and the floor is enforced
 // for the same reason: agents renew at half the TTL, so anything shorter marks
-// healthy agents crashed between their own keepalives — a fleet-wide phantom
+// healthy agents crashed between their own keepalives: a fleet-wide phantom
 // outage produced by a setting that looked accepted.
 func applyTTL(key, raw string, dst *time.Duration) error {
 	if raw == "" {
@@ -158,13 +158,13 @@ func applyTTL(key, raw string, dst *time.Duration) error {
 	d, err := time.ParseDuration(raw)
 	if err != nil {
 		return fmt.Errorf(
-			"[limits] %s = %q is not a duration — write it like \"5m\", \"90s\" or \"1h\": %w",
+			"[limits] %s = %q is not a duration: write it like \"5m\", \"90s\" or \"1h\": %w",
 			key, raw, err,
 		)
 	}
 	if d < minLaneTTL {
 		return fmt.Errorf(
-			"[limits] %s = %q is below the %s floor — agents renew their lease at "+
+			"[limits] %s = %q is below the %s floor: agents renew their lease at "+
 				"half the TTL, so anything shorter marks healthy agents crashed between "+
 				"their own keepalives", key, raw, minLaneTTL,
 		)
@@ -174,7 +174,7 @@ func applyTTL(key, raw string, dst *time.Duration) error {
 }
 
 // applyBlobCap folds blob_store_bytes over the default, refusing anything that
-// could not hold a single maximum-sized blob — a store smaller than one item
+// could not hold a single maximum-sized blob: a store smaller than one item
 // evicts everything the moment it is used, which looks like attachments simply
 // not working.
 func (c LimitsConfig) applyBlobCap(base *core.Limits) error {
@@ -183,7 +183,7 @@ func (c LimitsConfig) applyBlobCap(base *core.Limits) error {
 	}
 	if min := int64(base.MaxBlobSize); c.BlobStoreBytes < min {
 		return fmt.Errorf(
-			"[limits] blob_store_bytes = %d is smaller than one maximum blob (%d) — "+
+			"[limits] blob_store_bytes = %d is smaller than one maximum blob (%d). "+
 				"a store that cannot hold a single attachment evicts everything as soon as "+
 				"it is used, which looks like attachments being broken rather than a cap",
 			c.BlobStoreBytes, min,
@@ -196,7 +196,7 @@ func (c LimitsConfig) applyBlobCap(base *core.Limits) error {
 // minLaneTTL is the floor below which crash detection stops meaning anything.
 const minLaneTTL = 5 * time.Second
 
-// loadConfig reads <dir>/lanes.toml if present. A missing file is not an error —
+// loadConfig reads <dir>/lanes.toml if present. A missing file is not an error,
 // zero config is the supported default, not a degraded mode.
 func loadConfig(dir string) (Config, error) {
 	var c Config
@@ -227,7 +227,7 @@ func loadConfig(dir string) (Config, error) {
 			keys = append(keys, k.String())
 		}
 		return c, fmt.Errorf(
-			"unknown setting(s) in lanes.toml: %s — check the spelling and the table "+
+			"unknown setting(s) in lanes.toml: %s: check the spelling and the table "+
 				"they are under ([match], [limits]); nothing here took effect",
 			strings.Join(keys, ", "),
 		)
@@ -255,10 +255,10 @@ func resolveTransport(dir, addr string, c Config) (transport, error) {
 		return transport{c.TLSCert, c.TLSKey, "TLS (certificate from config)"}, nil
 	}
 	if isLoopbackAddr(addr) {
-		return transport{why: "plaintext (loopback — unreachable from other hosts)"}, nil
+		return transport{why: "plaintext (loopback: unreachable from other hosts)"}, nil
 	}
 	if c.InsecurePlaintext {
-		return transport{why: "plaintext (insecure_plaintext set in config — you accepted this)"}, nil
+		return transport{why: "plaintext (insecure_plaintext set in config: you accepted this)"}, nil
 	}
 	cert, key, err := ensureSelfSignedCert(dir, addr)
 	if err != nil {
@@ -330,7 +330,7 @@ func writePEM(path, blockType string, der []byte, mode os.FileMode) error {
 // superviseSettings turns the [supervise] table into what the engine wants.
 //
 // The overlay lives in internal/liveness so `lanes probe` applies the SAME file
-// the daemon does — the two used to diverge, with the CLI reachable only by
+// the daemon does: the two used to diverge, with the CLI reachable only by
 // flags.
 func superviseSettings(c liveness.Settings) engine.SuperviseSettings {
 	return engine.SuperviseSettings{

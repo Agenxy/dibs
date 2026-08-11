@@ -184,7 +184,7 @@ func TestEmbedIndexesARepoAndRetrievesFromIt(t *testing.T) {
 	if len(pred.Files) == 0 {
 		t.Fatal("a declaration in this repo's own vocabulary should retrieve something")
 	}
-	// Provenance names the MODEL, and the version identifies the index build —
+	// Provenance names the MODEL, and the version identifies the index build,
 	// both are recorded in the join op and must not be empty.
 	if !strings.Contains(pred.ScorerID, "m") || pred.Version == "0" {
 		t.Fatalf("provenance incomplete: %q / %q", pred.ScorerID, pred.Version)
@@ -233,11 +233,11 @@ func TestEmbedScoresAFileByItsBestChunk(t *testing.T) {
 // counts (a file sharing no terms genuinely scores 0) and catastrophic here:
 // chunks at 0.70 and 0.83 become 0.84 and 1.00. Measured on a three-file
 // fixture before the fix, "writing release notes for the changelog" scored
-// 0.729 against an authentication lane — a false positive confident enough to
+// 0.729 against an authentication lane: a false positive confident enough to
 // put every agent in one lane.
 func TestEmbedRescalesAgainstTheQuerysOwnDistribution(t *testing.T) {
 	// Four chunks. The query is strongly about the first, mildly about the
-	// second, and unrelated to the rest — but every raw cosine is high, as real
+	// second, and unrelated to the rest, but every raw cosine is high, as real
 	// ones are.
 	e := &Embed{
 		built: true,
@@ -268,7 +268,7 @@ func TestEmbedRescalesAgainstTheQuerysOwnDistribution(t *testing.T) {
 		t.Fatalf("the strongly-related chunk must survive: %+v", pred.Files)
 	}
 	// The unrelated ones sit at or below the query's own typical similarity and
-	// must be dropped outright — weak evidence here is no evidence.
+	// must be dropped outright: weak evidence here is no evidence.
 	for _, p := range []string{"style.css", "notes.md"} {
 		if w, ok := got[p]; ok {
 			t.Errorf("%s is unrelated and must not be predicted at all, got %.3f", p, w)
@@ -304,8 +304,8 @@ func TestEmbedReturnsNothingWhenEveryChunkIsEquallySimilar(t *testing.T) {
 // A deadline must scale with how much work was asked for.
 //
 // One flat timeout treats a one-word probe and a 64-chunk batch as the same
-// request. Measured: both 4B models failed on chunk 0 of 449 — the very first
-// batch — with the client timeout exceeded, having succeeded at the same batch
+// request. Measured: both 4B models failed on chunk 0 of 449: the very first
+// batch: with the client timeout exceeded, having succeeded at the same batch
 // size on an idle machine. A production box under load hits this first, and
 // "context deadline exceeded" names no knob.
 func TestEmbedDeadlineScalesWithBatchSize(t *testing.T) {

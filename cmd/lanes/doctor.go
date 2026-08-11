@@ -28,7 +28,7 @@ import (
 // anywhere the person or the agent could see it.
 //
 // The output names the FIX, not the fault. "Stale secret" leaves you exactly as
-// stuck; "the secret in ~/.codex/config.toml no longer matches — run `lanes
+// stuck; "the secret in ~/.codex/config.toml no longer matches: run `lanes
 // mcp-config` and re-copy it" does not.
 func doctor(args []string) error {
 	verbose := len(args) > 0 && (args[0] == "-v" || args[0] == "--verbose")
@@ -36,8 +36,8 @@ func doctor(args []string) error {
 	var probs, warns int
 
 	// Through the shared vocabulary rather than raw escape codes. The inline
-	// version wrote colour unconditionally, so `lanes doctor > report.txt` —
-	// which is exactly what somebody does before opening an issue — produced a
+	// version wrote colour unconditionally, so `lanes doctor > report.txt`,
+	// which is exactly what somebody does before opening an issue: produced a
 	// file full of escape sequences, and NO_COLOR did nothing at all.
 	ok := func(what string) { fmt.Println(ui.OK(what)) }
 	bad := func(what, fix string) {
@@ -51,7 +51,7 @@ func doctor(args []string) error {
 		fmt.Println(ui.Fix(fix))
 	}
 
-	fmt.Println(ui.Bold("lanes doctor") + ui.Dim(" — data dir "+ui.Path(dir)) + "\n")
+	fmt.Println(ui.Bold("lanes doctor") + ui.Dim(": data dir "+ui.Path(dir)) + "\n")
 
 	// ── the daemon ───────────────────────────────────────────────────────
 	secretPath := filepath.Join(dir, "local.secret")
@@ -121,7 +121,7 @@ func doctor(args []string) error {
 		}))
 	case warns > 0:
 		fmt.Println(ui.Good("no problems") + ui.Dim("; ") +
-			ui.Attn(fmt.Sprintf("%d warning(s)", warns)) + ui.Dim(" — all optional features"))
+			ui.Attn(fmt.Sprintf("%d warning(s)", warns)) + ui.Dim(": all optional features"))
 	default:
 		fmt.Println(ui.Good("no problems found"))
 	}
@@ -177,7 +177,7 @@ var structuralKeys = map[string]bool{
 //
 // Anchored on the server block that NAMES lanes, because these configs hold
 // many servers and listing all their URLs buries the one address the reader
-// needs — the first version of this message named five Google and OpenAI
+// needs: the first version of this message named five Google and OpenAI
 // endpoints first. Anchoring on the secret is not enough either: a config can
 // hold several 64-hex strings and only one is ours, which is exactly the
 // situation this branch exists for. Nor is a plain lookback window: a server
@@ -264,7 +264,7 @@ func checkHarnessConfigs(sec, addr string, ok reportFn, warn, bad fixFn) {
 		// from disk and embeds none, so "mentions lanes but does not contain the
 		// current secret" flags every stdio-configured harness as broken. That
 		// false positive fired on the first real run of this tool, against a
-		// perfectly healthy Claude Desktop config — and a diagnostic that cries
+		// perfectly healthy Claude Desktop config, and a diagnostic that cries
 		// wolf is one people learn to ignore.
 		found := secretPattern.FindAllString(string(body), -1)
 		switch {
@@ -274,14 +274,14 @@ func checkHarnessConfigs(sec, addr string, ok reportFn, warn, bad fixFn) {
 			ok(c.name + " config carries the current secret")
 		case !targetsDaemon(string(body), addr):
 			// A config for ANOTHER daemon is not a stale config, and calling it
-			// one is worse than saying nothing: the fix offered — re-copy the
-			// block from `lanes mcp-config` — would repoint a working global
+			// one is worse than saying nothing: the fix offered: re-copy the
+			// block from `lanes mcp-config`: would repoint a working global
 			// setup at whichever daemon doctor happened to be run against.
 			// Anyone running a per-project daemon alongside their usual one sees
 			// this, and the advice actively breaks them.
 			warn(c.name+" config points at a different daemon ("+c.path+")",
 				"its secret does not match this one because it is not for this "+
-					"daemon — it names "+strings.Join(lanesTargets(string(body)), ", ")+
+					"daemon: it names "+strings.Join(lanesTargets(string(body)), ", ")+
 					" and you are checking "+addr+". Nothing to fix unless you meant "+
 					"to point it here; re-run with LANES_ADDR set to that daemon to check it")
 		default:
@@ -298,7 +298,7 @@ func checkMatching(client *http.Client, sec string, ok reportFn, warn fixFn) {
 	case "off":
 		warn("work-overlap matching is off", st.Hint)
 	case "indexing":
-		warn("still indexing — declarations made now will not be matched", st.Hint)
+		warn("still indexing: declarations made now will not be matched", st.Hint)
 	case "degraded":
 		warn("matching degraded to the built-in scorer", st.Hint)
 	case "suggest-only":
@@ -311,7 +311,7 @@ func checkMatching(client *http.Client, sec string, ok reportFn, warn fixFn) {
 		// the daemon indexes one repository for the whole machine. A board
 		// configured for one project while somebody works in another reports
 		// exactly this, then matches their declarations against a stranger's file
-		// layout — a reviewer was shown another project's paths as evidence of
+		// layout: a reviewer was shown another project's paths as evidence of
 		// shared work and had no way, from any Lanes surface, to find out why.
 		//
 		// The counts made it worse by looking like health: four thousand files is
@@ -324,12 +324,12 @@ func checkMatching(client *http.Client, sec string, ok reportFn, warn fixFn) {
 			st.Scorer, st.Files, st.Commits, where))
 		if st.Repo != "" {
 			// And say so when that is not where this command was run. Matching is
-			// machine-wide by design — one daemon, one index — so working elsewhere
+			// machine-wide by design, one daemon, one index, so working elsewhere
 			// is not an error. It is just the single fact that explains every
 			// puzzling match, and nothing else surfaces it.
 			if cwd, err := os.Getwd(); err == nil && !underDir(cwd, st.Repo) {
 				warn("you are working in "+cwd+", which is not the indexed repository",
-					"matching compares declarations against "+st.Repo+" — work outside it "+
+					"matching compares declarations against "+st.Repo+": work outside it "+
 						"is matched against a stranger's file layout. Point [match] repo at "+
 						"this tree in lanes.toml and restart, or expect suggestions to be "+
 						"about the other project")
@@ -346,7 +346,7 @@ func checkMatching(client *http.Client, sec string, ok reportFn, warn fixFn) {
 // It fails open when it cannot resolve the caller, which is correct and makes a
 // misconfigured guard indistinguishable from a board where nothing is claimed.
 // The daemon sees every call and whether it resolved, so it is the only party
-// that can tell — and this is the failure that cost a day.
+// that can tell, and this is the failure that cost a day.
 func checkHooks(client *http.Client, sec string, ok reportFn, bad, warn fixFn) {
 	var h struct {
 		GuardResolved   int64  `json:"guard_resolved"`
@@ -379,7 +379,7 @@ func checkHooks(client *http.Client, sec string, ok reportFn, bad, warn fixFn) {
 		warn("no harness has ever called this daemon's hooks", h.Hint)
 	case "never-resolved", "guard-unresolved":
 		// A problem, not a warning: the guard is running and protecting nothing.
-		bad("hooks are reaching Lanes but resolving to NO agent — the guard is inert", h.Hint)
+		bad("hooks are reaching Lanes but resolving to NO agent: the guard is inert", h.Hint)
 	case "guard-mostly-unresolved":
 		bad(fmt.Sprintf("%d of %d guard calls did not resolve to an agent",
 			h.GuardUnresolved, h.GuardUnresolved+h.GuardResolved), h.Hint)
@@ -391,19 +391,19 @@ func checkLedgerAndBoard(dir string, ok reportFn, bad, warn fixFn) {
 	switch {
 	case err != nil:
 		bad("ledger does not verify: "+err.Error(),
-			"do NOT delete it. Copy it somewhere safe and open an issue — "+
+			"do NOT delete it. Copy it somewhere safe and open an issue. "+
 				"the chain is the record of what every agent agreed")
 	case res.Torn:
 		// Not damage: a crash between write and fsync leaves a partial final
 		// record, for an op that was never acknowledged. The daemon discards it
-		// on replay. Worth showing — it says a daemon died mid-write — but
+		// on replay. Worth showing (it says a daemon died mid-write) but
 		// reporting it as a problem sends the operator hunting a breach they do
 		// not have.
 		ok(fmt.Sprintf("ledger chain intact (%d lines)", res.Lines))
 		warn("the ledger's final record is incomplete",
 			"a write interrupted by a crash or a kill, not damage. The op was never "+
 				"acknowledged to the agent that sent it and the daemon discards the partial "+
-				"record on its next replay — nothing to repair, but something did die mid-write")
+				"record on its next replay: nothing to repair, but something did die mid-write")
 	default:
 		ok(fmt.Sprintf("ledger chain intact (%d lines)", res.Lines))
 	}
@@ -411,7 +411,7 @@ func checkLedgerAndBoard(dir string, ok reportFn, bad, warn fixFn) {
 		warn("no admin password set, so the web board cannot be opened",
 			"run `lanes admin set-password`")
 	} else {
-		ok("admin password set — `lanes web` will open the board")
+		ok("admin password set. `lanes web` will open the board")
 	}
 }
 
@@ -427,7 +427,7 @@ func checkLedgerAndBoard(dir string, ok reportFn, bad, warn fixFn) {
 // checkPluginsMatchDaemon catches a plugin newer than the daemon it talks to.
 //
 // A shipped hook calls a tool by name. If the running daemon predates that tool
-// — the normal state of an install upgraded halfway — every firing of that hook
+// (the normal state of an install upgraded halfway) every firing of that hook
 // returns "unknown tool", visibly, at session start. Nothing is corrupted and
 // nothing is blocked, but a person watching sees errors from software that is
 // working as designed, which at a demo is indistinguishable from broken.
@@ -476,14 +476,14 @@ func checkPluginsMatchDaemon(c *http.Client, secret string, served map[string]bo
 	sort.Strings(missing)
 	warn("the shipped hooks call tools this daemon does not serve: "+strings.Join(missing, ", "),
 		"the daemon is older than the plugins. Every firing of those hooks returns "+
-			"\"unknown tool\" — harmless, but visible. Restart it with the current build: "+
+			"\"unknown tool\": harmless, but visible. Restart it with the current build: "+
 			"`lanes stop && lanesd &`")
 }
 
 // checkOneDaemon reports a fleet split across two boards.
 //
 // lanesd refuses a second daemon by default, so reaching this state takes
-// -allow-parallel or LANES_ALLOW_PARALLEL — which is a legitimate thing to do
+// -allow-parallel or LANES_ALLOW_PARALLEL, which is a legitimate thing to do
 // for isolating agents you do not trust. It is also exactly how somebody ends up
 // wondering why half their fleet is invisible, six hours later, having forgotten
 // they set it. The guard prevents the accident; this names the deliberate case
@@ -497,7 +497,7 @@ func checkOneDaemon(verbose bool, ok reportFn, warn fixFn) {
 	}
 	if len(running) <= 1 {
 		if verbose {
-			ok("one daemon on this machine — the whole fleet shares one board")
+			ok("one daemon on this machine: the whole fleet shares one board")
 		}
 		return
 	}
@@ -519,12 +519,12 @@ func checkSupervision(verbose bool, ok reportFn, warn fixFn) {
 				"`lanes hook-spawn`, so without it on PATH nothing is stamped and stalled "+
 				"subagents are attributed by inference or not at all")
 	} else if verbose {
-		ok("`lanes` on PATH — spawned subagents will be stamped with their parent")
+		ok("`lanes` on PATH: spawned subagents will be stamped with their parent")
 	}
 
 	// The session-path rung reads a directory layout that is Claude Desktop's
 	// private business, not a documented interface. If it changes, that rung
-	// stops matching and attribution quietly falls to a weaker one — no error,
+	// stops matching and attribution quietly falls to a weaker one: no error,
 	// no log, just fewer subagents attributed. So it is checked against a live
 	// process rather than assumed, and reported as informational: the rung is a
 	// FALLBACK below the deterministic stamp, so losing it is a degradation and
@@ -544,9 +544,9 @@ func checkSupervision(verbose bool, ok reportFn, warn fixFn) {
 	if !strings.Contains(liveness.EnvironOf(os.Getpid()), "PATH=") {
 		warn("this machine does not expose process environments to `ps`",
 			"stall reports will still work, but a stalled subagent will be attributed "+
-				"to its parent by weaker signals — see SPEC-SUPERVISION.md §5")
+				"to its parent by weaker signals: see SPEC-SUPERVISION.md §5")
 	} else if verbose {
-		ok("process environments are readable — subagent attribution is exact")
+		ok("process environments are readable: subagent attribution is exact")
 	}
 }
 
@@ -565,7 +565,7 @@ type matchStatusJSON struct {
 	Commits int    `json:"commits"`
 	// Repo is which tree those files came from. The daemon has always sent it and
 	// this struct dropped it on the floor, so `doctor` reported four thousand
-	// indexed files without ever saying whose — which is the one fact that
+	// indexed files without ever saying whose, which is the one fact that
 	// explains a matcher suggesting another project's paths.
 	Repo string `json:"repo"`
 	Hint string `json:"hint"`
@@ -603,7 +603,7 @@ func fetchMatchStatus(c *http.Client, secret string) matchStatusJSON {
 // named a template it had never seen, that host issued zero resources/read. It
 // fetches the panel once per client session and never again.
 //
-// So the daemon cannot fix a stale panel and — importantly — cannot DETECT one
+// So the daemon cannot fix a stale panel and (importantly) cannot DETECT one
 // either. A client holding the current build and a client holding a stale one
 // look the same from here; both simply stop asking. Guessing would flag every
 // correctly-cached client, which is worse than saying nothing.
@@ -617,7 +617,7 @@ func checkPanelBuild(c *http.Client, secret string, ok reportFn, warn fixFn) {
 	uri := fetchPanelURI(c, secret)
 	if uri == "" {
 		warn("could not read the board panel's resource",
-			"the daemon is up but did not list a `ui://lanes/board/…` resource — "+
+			"the daemon is up but did not list a `ui://lanes/board/…` resource. "+
 				"rebuild and reinstall with `task install`, then restart `lanesd`")
 		return
 	}
@@ -628,7 +628,7 @@ func checkPanelBuild(c *http.Client, secret string, ok reportFn, warn fixFn) {
 	ok("board panel served: build " + build)
 	fmt.Println(ui.Fix("if the panel is blank or reads \"awaiting board\": look at the " +
 		"build in its footer. Different, or no build line at all, means your client " +
-		"cached an older panel — it fetches one per session, so restart the client. " +
+		"cached an older panel: it fetches one per session, so restart the client. " +
 		"Matching, and still blank, is a server-side fault worth reporting."))
 }
 
@@ -672,7 +672,7 @@ func fetchPanelURI(c *http.Client, secret string) string {
 //
 // Deliberately called with empty arguments. Every tool worth probing here
 // requires at least one, so the call is rejected by argument validation before
-// it can do anything — the probe cannot register a session, fire a hook, or
+// it can do anything: the probe cannot register a session, fire a hook, or
 // touch the ledger. Only a name the dispatcher does not know produces "unknown
 // tool", which is precisely the distinction being drawn.
 func servesTool(c *http.Client, secret, name string) bool {
@@ -700,7 +700,7 @@ func servesTool(c *http.Client, secret, name string) bool {
 	}
 	// Matching the PHRASE and the name separately, not a quoted form. The
 	// refusal is a JSON error nested inside a content string, so the quotes
-	// around the name arrive triple-escaped — a literal `unknown tool \"name\"`
+	// around the name arrive triple-escaped: a literal `unknown tool \"name\"`
 	// looks right and matches nothing. A served tool's argument-validation error
 	// names the tool too, but never says "unknown tool".
 	refusal := string(raw)

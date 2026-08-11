@@ -19,7 +19,7 @@ var claimsOfSolitude = []string{
 // in it.
 //
 // The honest wording deliberately contains these phrases inside their own
-// negations — "a miss is not proof you are alone" is the sentence we want — so a
+// negations, "a miss is not proof you are alone" is the sentence we want, so a
 // bare substring scan flagged the fix as the bug. That is the third time in this
 // codebase a guard has matched a token instead of reading the claim, which is the
 // same mistake as the code it polices. Negated clauses are dropped first; what
@@ -50,7 +50,7 @@ func mustNotClaimSolitude(t *testing.T, where, s string) {
 // Recall at tier 0 is about 0.3: for two thirds of declarations the right lane is
 // not in the top five, so a miss is the COMMON case rather than evidence of
 // anything. SKILLS.md tells agents in as many words never to conclude from
-// silence that they are alone — and the API then said exactly that, with more
+// silence that they are alone, and the API then said exactly that, with more
 // authority than the document, because a tool result reads as a measurement while
 // a document reads as advice.
 //

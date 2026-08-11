@@ -6,7 +6,7 @@
 > advisory claims. Lanes reports and never acts: no agent can drive another
 > through it. Local-first, MCP-native, two static binaries, no database.
 
-Lanes solves *redundant effort* — two agents chasing one goal — not file
+Lanes solves *redundant effort* (two agents chasing one goal) not file
 conflicts, which version control already handles. It also detects when a spawned
 subagent has stalled, which is otherwise invisible to the parent until an exit
 code arrives.
@@ -22,7 +22,7 @@ code arrives.
 
 ## If you are an agent or human working ON Lanes
 
-- [AGENTS.md](AGENTS.md): Orientation for changing this codebase — layout, the
+- [AGENTS.md](AGENTS.md): Orientation for changing this codebase: layout, the
   rules you must not break, and what a good change looks like here.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): How it is put together and why.
   Single-writer loop over a pure state machine, hash-chained ledger, where
@@ -34,7 +34,7 @@ code arrives.
 
 - [SPEC.md](SPEC.md): The design (v1.1, living), after five adversarial review
   rounds.
-- [SPEC-CHANNELS.md](SPEC-CHANNELS.md): Duplicate-work matching — scoring tiers,
+- [SPEC-CHANNELS.md](SPEC-CHANNELS.md): Duplicate-work matching: scoring tiers,
   thresholds, and why a low score is never proof two agents will not collide.
 - [SPEC-SUPERVISION.md](SPEC-SUPERVISION.md): Detecting a stalled subagent, with
   the measurements behind the thresholds.

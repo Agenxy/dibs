@@ -12,7 +12,7 @@ import (
 //
 // So an agent that called inbox and read the inbox key got an empty list while
 // its mail sat one key away, with nothing anywhere saying so. Found from the
-// outside on a day spent fixing ways mail goes missing — it cost a debugging
+// outside on a day spent fixing ways mail goes missing: it cost a debugging
 // cycle to diagnose, and an agent would simply have read "no mail" and moved on.
 //
 // Both names now carry the same mail everywhere. Aliased rather than renamed:
@@ -45,7 +45,7 @@ func TestBothMailKeysCarryTheMail(t *testing.T) {
 		t.Errorf(`ack_board["inbox"] = %d, want 1`, n)
 	}
 	if n := under("messages"); n != 1 {
-		t.Errorf(`ack_board["messages"] = %d, want 1 — the inbox tool's name for the same thing`, n)
+		t.Errorf(`ack_board["messages"] = %d, want 1: the inbox tool's name for the same thing`, n)
 	}
 }
 
@@ -54,8 +54,8 @@ func TestBothMailKeysCarryTheMail(t *testing.T) {
 // waiting. Asked for by an agent reached mid-restart: "put delivered_at and
 // read_at in the envelope and the gap answers it."
 //
-// DeliveredTime IS the read time — a message becomes delivered when its
-// recipient pulls it — so the gap from SentAt is exactly how long it waited.
+// DeliveredTime IS the read time: a message becomes delivered when its
+// recipient pulls it, so the gap from SentAt is exactly how long it waited.
 func TestEnvelopeCarriesSentAndDeliveredTimes(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	t0 := time.Now()

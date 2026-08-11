@@ -4,8 +4,8 @@
  * The web board is gated behind an admin password, which is why it went
  * unverified for a long stretch: checking it appeared to need the operator's
  * own secret. It does not. A scratch data directory with a password this test
- * sets itself exercises the whole path — set-password, the single-use link,
- * the redirect that trades it for a session cookie, and the rendered board —
+ * sets itself exercises the whole path: set-password, the single-use link,
+ * the redirect that trades it for a session cookie, and the rendered board,
  * without touching a real board or knowing anything private.
  *
  * It also guards the shared font contract from the other side. Both surfaces
@@ -17,7 +17,7 @@
  */
 // node:fs and node:os only for mkdtemp/rm/tmpdir, which Bun has no native
 // equivalent for. These specifiers are the cross-runtime standard and Bun
-// implements them natively — they do not pull in Node.
+// implements them natively: they do not pull in Node.
 import { chromium, type Browser } from "playwright"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -32,7 +32,7 @@ let checks = 0
 function check(name: string, cond: boolean, detail = "") {
   checks++
   if (cond) console.log(`  [32m✓[0m ${name}`)
-  else { failures++; console.log(`  [31m✗[0m ${name}${detail ? " — " + detail : ""}`) }
+  else { failures++; console.log(`  [31m✗[0m ${name}${detail ? ". " + detail : ""}`) }
 }
 
 const dir = mkdtempSync(join(tmpdir(), "lanes-web-e2e-"))
@@ -79,7 +79,7 @@ const tool = async (name: string, args: unknown) => {
 
 /**
  * show_board is the one tool whose `content` is a prose summary for the model
- * and whose panel data lives in tool-result metadata — the MCP Apps private
+ * and whose panel data lives in tool-result metadata: the MCP Apps private
  * backchannel. Parsing content[0].text as JSON fails on
  * "Lanes board: 3 lane(s)…".
  */
@@ -99,18 +99,18 @@ const boardOf = async (token: string) => {
  * Wait for an EFFECT to appear on the board, rather than for a UI toast.
  *
  * The board's flash message clears itself after six seconds, so any assertion
- * that waits for it is racing a timer — measured at roughly one failure in
+ * that waits for it is racing a timer: measured at roughly one failure in
  * three. A flaky gate is worse than a failing one: it teaches you to re-run
  * instead of to look.
  *
- * The budget is a CEILING, not a delay — the poll returns the moment the event
+ * The budget is a CEILING, not a delay: the poll returns the moment the event
  * lands, so a large number costs nothing when things work.
  *
  * It was raised to 20s after a `task ci` failure that looked like load. It was
  * not: the post genuinely never happened, because a redraw landed between
  * filling the composer and clicking post and replaced both. Raising a timeout
  * was the wrong answer to a real bug, and the only reason it was found is that
- * 20s is far too long for an event that should be instant — a number that large
+ * 20s is far too long for an event that should be instant: a number that large
  * timing out is evidence of a fault, not of a busy machine.
  */
 async function expectEvent(token: string, type: string, match: (e: any) => boolean, budgetMs = 20000) {
@@ -165,8 +165,8 @@ try {
 
   // An agent that CRASHED, so the board has to draw the state a fleet actually
   // spends its time in. The board used to render this identically to a working
-  // agent — "out of touch" beside a last-contact time of "now", which reads as
-  // a broken board rather than a dead agent — and its lane listed it as a plain
+  // agent. "out of touch" beside a last-contact time of "now", which reads as
+  // a broken board rather than a dead agent, and its lane listed it as a plain
   // member, so "who is on this lane" was answered wrongly.
   //
   // A real death: a process that existed and exited, detected by the sweep's
@@ -209,8 +209,8 @@ try {
   // A snapshot frame has to advertise the serial it REPRESENTS. The initial
   // frame and the 30-second refresh both sent the connect-time `since`, so on
   // an idle board a client's Last-Event-ID never advanced and on a busy one it
-  // was reset backwards every 30 seconds. The board itself was never wrong —
-  // every frame is a full snapshot — but the id was useless as the one thing it
+  // was reset backwards every 30 seconds. The board itself was never wrong,
+  // every frame is a full snapshot, but the id was useless as the one thing it
   // is for, and a reconnect from a stale point replays into a 256-slot channel
   // whose overflow is dropped without a word.
   {
@@ -282,7 +282,7 @@ try {
   page.on("pageerror", (e) => pageErrors.push(String(e)))
   page.on("console", (m) => { if (m.type() === "error") pageErrors.push(m.text()) })
   // One test deliberately aborts a request to prove the transport-failure path.
-  // Chrome logs that abort as a console error, which is Chrome being correct —
+  // Chrome logs that abort as a console error, which is Chrome being correct,
   // so the injected one is named and excluded, rather than the whole assertion
   // being loosened to /net::/ and quietly permitting real network faults.
   const injected = (e: string) => /net::ERR_FAILED/.test(e)
@@ -294,7 +294,7 @@ try {
   check("the board renders lanes in a real browser",
     rendered.includes("builder") && rendered.includes("checker"), rendered.join(","))
   check("it uses the shared roster grouping", (await page.locator(".band").count()) >= 1)
-  // The design system is applied — in WHICHEVER theme the system asked for.
+  // The design system is applied: in WHICHEVER theme the system asked for.
   //
   // This pinned the dark background, which made it a theme test wearing a
   // design-system test's name: the moment the board started honouring
@@ -307,7 +307,7 @@ try {
   // It reads the PAINTED PIXEL, not the computed string. The palette is
   // declared in OKLCH now, so `backgroundColor` serialises as `oklch(...)` and
   // an equality check against `rgb(14, 15, 17)` failed a page that was
-  // rendering perfectly — the test was pinning a serialisation format, which is
+  // rendering perfectly: the test was pinning a serialisation format, which is
   // not a promise anybody made. Painting it and reading the pixel back also
   // survives the browser clipping a wide-gamut colour into sRGB, which a string
   // comparison cannot see at all.
@@ -340,7 +340,7 @@ try {
   //
   // light-dark() takes colours. The palette used it for `--grain: .045` (a
   // number) and `--grain-blend: multiply` (a keyword) as well, which parses
-  // and stores fine — custom properties hold token streams. The damage lands
+  // and stores fine: custom properties hold token streams. The damage lands
   // at substitution: the declaration goes invalid at computed-value time and
   // the property silently falls back to its INITIAL value. `opacity:
   // var(--grain)` became 1 and `mix-blend-mode: var(--grain-blend)` became
@@ -349,7 +349,7 @@ try {
   //
   // Every check in this file passed. So did all 71 in the panel suite. A page
   // can be structurally perfect, correctly labelled, keyboard complete, AA
-  // compliant — and completely unusable, because none of that is looking.
+  // compliant, and completely unusable, because none of that is looking.
   const misused = await page.evaluate(() => {
     const bad: string[] = []
     for (const sheet of Array.from(document.styleSheets)) {
@@ -381,7 +381,7 @@ try {
   const texture = await page.evaluate(() => {
     const el = document.querySelector(".surface")
     if (!el) return null
-    // The grain is on the pseudo-element, not the layer that carries it —
+    // The grain is on the pseudo-element, not the layer that carries it,
     // reading .surface itself gives opacity 1 for a texture that is fine.
     const s = getComputedStyle(el, "::before")
     return { opacity: parseFloat(s.opacity), blend: s.mixBlendMode }
@@ -392,8 +392,8 @@ try {
 
   // The cadence trace: how much a lane actually did, minute by minute.
   //
-  // The board could always say what an agent IS — a state derived from a
-  // timeout — and that cannot tell a healthy agent between turns from one that
+  // The board could always say what an agent IS: a state derived from a
+  // timeout, and that cannot tell a healthy agent between turns from one that
   // stopped eight minutes ago and still claims to be working.
   const cadence = await page.evaluate(() => {
     const el = document.querySelector(".cadence")
@@ -411,7 +411,7 @@ try {
     }
   })
   check("a lane carries a cadence trace", !!cadence && cadence.bins > 8, JSON.stringify(cadence))
-  // Not "the element exists" — whether it DREW anything. The first two versions
+  // Not "the element exists": whether it DREW anything. The first two versions
   // of this rendered every event into the same one-pixel column, so a busy lane
   // and a dead one looked identical. Every check passed; only rendering it and
   // looking caught it.
@@ -499,12 +499,12 @@ try {
     String(await page.locator('section[role="tabpanel"][aria-labelledby]').count()))
 
   // The live region exists, is in the accessibility tree, and is silent on first
-  // paint — announcing the whole board every frame would be worse than nothing.
+  // paint: announcing the whole board every frame would be worse than nothing.
   const liveRegion = page.locator("#live")
   check("there is a polite live region for changes",
     (await liveRegion.getAttribute("aria-live")) === "polite",
     String(await liveRegion.getAttribute("aria-live")))
-  // "Silent on first paint" is a claim about ONE MOMENT — the first draw — and
+  // "Silent on first paint" is a claim about ONE MOMENT (the first draw) and
   // asserting it later is a race: this suite runs long enough that an agent can
   // genuinely go stale in between, at which point the region is correctly
   // speaking and the check fails for the right behaviour. It did.
@@ -512,7 +512,7 @@ try {
   // So ask the page directly whether the first draw announced anything, rather
   // than inferring it from a reading taken some seconds afterwards.
   const spokeOnArrival = await page.evaluate(() => (window as any).__firstDrawAnnounced === true)
-  check("nothing is announced on first paint — arriving is not a change",
+  check("nothing is announced on first paint: arriving is not a change",
     spokeOnArrival === false, String(spokeOnArrival))
   check("the live region is for readers, not for the eye",
     await liveRegion.evaluate((el) => getComputedStyle(el).position === "absolute"
@@ -521,7 +521,7 @@ try {
   // ── a redraw must not eat what somebody is saying ────────────────────────
   //
   // The existing draft check exercised only the channel composer, so it passed
-  // while the MAIL pane was replaced wholesale on every SSE frame — losing the
+  // while the MAIL pane was replaced wholesale on every SSE frame: losing the
   // body, the chosen type, focus and caret of anyone composing a message. On a
   // live board that is every few seconds. A test that covers one composer and
   // is read as covering composers is how that survived.
@@ -531,7 +531,7 @@ try {
   await page.locator("#msg-body").fill("half a thought that must survive")
   await page.locator("#msg-body").focus()
 
-  // Force a real redraw the way the fleet does — a genuine board event.
+  // Force a real redraw the way the fleet does: a genuine board event.
   await tool("set_slot", { token: a.token, text: "something new, to force a redraw" })
   await page.waitForTimeout(600)
 
@@ -551,7 +551,7 @@ try {
 
   // ── the two things that go wrong on a network ────────────────────────────
   //
-  // act() had neither guard. A dropped request became an unhandled rejection —
+  // act() had neither guard. A dropped request became an unhandled rejection,
   // nothing in the interface at all, and the operator learns their announcement
   // never sent by noticing later that nobody answered it. A double click issued
   // it twice.
@@ -601,8 +601,8 @@ try {
 
   // ── every mark explains itself to everyone ───────────────────────────────
   //
-  // The reason behind each mark — why an agent is stale, what "blocked" means,
-  // what an auto-join scored and on what evidence — lived only in `title`.
+  // The reason behind each mark: why an agent is stale, what "blocked" means,
+  // what an auto-join scored and on what evidence: lived only in `title`.
   // title does not exist on touch, keyboards cannot summon it, and screen-reader
   // support is inconsistent. SPEC-CHANNELS §10.3 asks the board to explain its
   // marks; they were explainable only to somebody holding a mouse.
@@ -633,7 +633,7 @@ try {
   await page.locator('.views button[data-view="board"]').click()
 
   // Motion must not describe something that is not happening. An open message
-  // animates a light along the wire — "on its way" — and a message whose
+  // animates a light along the wire ("on its way") and a message whose
   // deadline passed is not on its way. Rendered from a real overdue message
   // rather than by poking CSS, so this proves the whole path.
   const overdueMsg = await page.evaluate(() => {
@@ -648,7 +648,7 @@ try {
   })
   if (overdueMsg) {
     check("an overdue message is labelled rather than left looking live", overdueMsg.labelled)
-    check("and it stops animating — motion must not depict progress that stopped",
+    check("and it stops animating: motion must not depict progress that stopped",
       overdueMsg.still, JSON.stringify(overdueMsg))
   }
 
@@ -664,8 +664,8 @@ try {
   // The labels must claim only what Lanes knows. It knows an agent has SPOKEN;
   // it does not know what that agent is doing. "Working" was a claim about work
   // applied to every active lane, including ones that had declared nothing, and
-  // "Idle" made a dormant standing reviewer — exactly where it belongs between
-  // activations — look like a problem.
+  // "Idle" made a dormant standing reviewer: exactly where it belongs between
+  // activations: look like a problem.
   check("the roster claims coordination state, not what an agent is doing",
     !bandOrder.includes("Working") && !bandOrder.includes("Idle"),
     bandOrder.join(" | "))
@@ -676,7 +676,7 @@ try {
     (await page.locator('section.band-group[aria-labelledby] > h2.band').count()) === bandOrder.length,
     `${await page.locator('section.band-group > h2.band').count()} of ${bandOrder.length}`)
 
-  // Focus must be VISIBLE — and it must be reached the way a keyboard user
+  // Focus must be VISIBLE, and it must be reached the way a keyboard user
   // reaches it. `:focus-visible` deliberately does NOT match after a mouse
   // interaction, so a programmatic .focus() following a click tests nothing and
   // fails for the wrong reason. Tab is the real path.
@@ -691,7 +691,7 @@ try {
   check("tabbing to a control gives it a real focus ring",
     !!ring && ring.style !== "none" && ring.width >= 1, JSON.stringify(ring))
 
-  // A god view has no "this lane" — marking one would be a lie, and the shared
+  // A god view has no "this lane": marking one would be a lie, and the shared
   // component takes selfId as a parameter precisely so this page can pass null.
   check("no lane is marked as the viewer's own",
     (await page.locator(".entry.self").count()) === 0)
@@ -699,7 +699,7 @@ try {
   // ── a dead agent must LOOK dead ─────────────────────────────────────────
   // The reason a lane stopped counting as live was computed by the sweep and
   // put only into the `lane.stale` event, so the board showed "out of touch"
-  // and nothing else — beside a last-contact time of "now", which reads as a
+  // and nothing else: beside a last-contact time of "now", which reads as a
   // broken board rather than a dead agent. And the three cases are not
   // interchangeable: an exited process is definitive, a lapsed lease may be a
   // long build, and a lane that never gave a pid has said nothing at all.
@@ -755,8 +755,8 @@ try {
   // The operator watches; only the panel holds a lane token and may answer.
   // This assertion used to read "the operator view offers no actions", which
   // was true and was the problem: a coordination service whose human can only
-  // watch is a monitoring tool. The human is now a PARTICIPANT — an agent
-  // identity, not a lane of their own — and everything below drives the real
+  // watch is a monitoring tool. The human is now a PARTICIPANT: an agent
+  // identity, not a lane of their own, and everything below drives the real
   // browser through the same ops an agent sends.
   check("the operator can act", (await page.locator(".act").count()) > 0)
 
@@ -793,7 +793,7 @@ try {
     // A redraw must not eat what a person is in the middle of typing.
     //
     // Every board event calls draw(), which replaces whole panes with
-    // innerHTML — destroying the composer, its contents, the focus and the
+    // innerHTML: destroying the composer, its contents, the focus and the
     // caret. In a live fleet an event arrives whenever ANY agent does anything,
     // so a human writing to a lane loses it mid-sentence. This is how it was
     // found: a fill() followed by a click() failed under load because the
@@ -810,7 +810,7 @@ try {
 
     await page.locator('.compose[data-lane="web-render"] .act.post').click()
     // NOT the flash: it clears itself after six seconds, so waiting on it is a
-    // race that fails about one run in three. Assert the EFFECT instead — which
+    // race that fails about one run in three. Assert the EFFECT instead, which
     // is the better test anyway, since it checks what happened rather than what
     // was announced.
     // The event announces that a post happened and deliberately does NOT carry
@@ -821,7 +821,7 @@ try {
 
     const seen = await tool("events_since", { token: a.token, since_serial: 0 })
     const posts = (seen.events ?? []).filter((e: any) => e.type === "lane.post")
-    check("the event carries no body — only members and subscribers may read one",
+    check("the event carries no body: only members and subscribers may read one",
       !JSON.stringify(posts).includes("humans are here too"),
       JSON.stringify(posts).slice(0, 200))
 
@@ -853,7 +853,7 @@ try {
 
     // The agent must be able to READ the answer, not merely see it delivered.
     // By serial, not from the inbox: an inbox holds mail addressed TO you, and
-    // the asker is the sender — its answer arrives on the message it sent.
+    // the asker is the sender: its answer arrives on the message it sent.
     const got = await tool("get_message", { token: b.token, msg_serial: asked.msg_serial })
     const answer = got.message?.response ?? got.response ?? ""
     check("the agent receives the human's answer",
@@ -905,7 +905,7 @@ try {
     const rtext = (await roster.textContent()) ?? ""
     check("a subagent is marked with its parent", /↳\s*builder/.test(rtext), rtext.slice(0, 220))
     check("a coordinator is marked as one", /coordinator/i.test(rtext), rtext.slice(0, 220))
-    // Not "the attribute is present" — whether a person can actually GET to the
+    // Not "the attribute is present": whether a person can actually GET to the
     // explanation. It used to be a `title`, which meant: mouse only, hover only,
     // after a delay, and never on a phone. The text was written and most readers
     // could not reach it. So this drives it the way a keyboard user does.
@@ -933,7 +933,7 @@ try {
       placed.h > 0 && placed.dx < 200, JSON.stringify(placed))
 
     // A coordination board redraws whenever ANY agent does anything, and it
-    // redraws by replacing its HTML — so the mark being read is destroyed and
+    // redraws by replacing its HTML, so the mark being read is destroyed and
     // rebuilt as a different node several times a minute. The first version of
     // the explainer closed on that, which meant the explanation was pulled away
     // mid-sentence every time the fleet moved, on the one screen whose whole
@@ -972,7 +972,7 @@ try {
 
   check("the live stream connected", await page.locator(".status-mark.live").count() > 0)
   check("no uncaught errors in the page", realErrors().length === 0, realErrors().slice(0, 2).join(" | "))
-  // And the injection really did happen — otherwise the exclusion above is
+  // And the injection really did happen: otherwise the exclusion above is
   // hiding nothing and the transport test proved nothing.
   check("the deliberate transport failure was actually injected",
     pageErrors.some(injected), pageErrors.slice(0, 3).join(" | "))

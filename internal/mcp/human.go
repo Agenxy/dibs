@@ -15,7 +15,7 @@ import (
 // the transport cannot tell the two apart: "the human clicked Broadcast" and "an
 // agent called the tool" arrive on one connection with one credential. So an
 // unforgeable proof has to come from outside the transport, and Touch ID is the
-// only one available — an agent confined to that transport cannot produce a
+// only one available: an agent confined to that transport cannot produce a
 // fingerprint, and one that tried would raise the system sheet on the human's
 // own Mac, where they would decline it. The failure mode is a visible prompt
 // rather than a silent escalation. (The bound is the transport, not the machine:
@@ -23,8 +23,8 @@ import (
 // do.)
 //
 // What comes back is deliberately NOT a new capability. It is the same token
-// internal/engine/human.go already mints for the web board — the human's own
-// agent identity — so every action the panel then takes is an ORDINARY tool call
+// internal/engine/human.go already mints for the web board: the human's own
+// agent identity, so every action the panel then takes is an ORDINARY tool call
 // that an agent could have made. That constraint is the whole point of that
 // file: a parallel set of privileged human write paths would be a second
 // authorization surface into the state machine, unledgered unless each one
@@ -47,8 +47,8 @@ func (s *Server) humanUnlock(ctx context.Context, a *toolArgs) (core.Result, err
 
 	// A dev build answering from a script says so, in the result, every time.
 	// Silence here would make a mocked unlock indistinguishable from a real one
-	// in exactly the artefacts used to argue the feature works — the transcript
-	// and the panel — and the whole value of the check is that it cannot be
+	// in exactly the artefacts used to argue the feature works: the transcript
+	// and the panel, and the whole value of the check is that it cannot be
 	// asserted, only demonstrated.
 	stamp := func(res core.Result) (core.Result, error) {
 		if humanauth.Mocked() {
@@ -84,7 +84,7 @@ func (s *Server) humanUnlock(ctx context.Context, a *toolArgs) (core.Result, err
 		return stamp(core.Result{
 			"unlocked": false,
 			"reason":   "abandoned",
-			"hint": "the request was cancelled before it could be answered — nothing was " +
+			"hint": "the request was cancelled before it could be answered: nothing was " +
 				"sent, and nobody was asked",
 		})
 
@@ -95,7 +95,7 @@ func (s *Server) humanUnlock(ctx context.Context, a *toolArgs) (core.Result, err
 		return stamp(core.Result{
 			"unlocked": false,
 			"reason":   "declined",
-			"hint":     "nothing was sent — press the button again when you want to act",
+			"hint":     "nothing was sent: press the button again when you want to act",
 		})
 
 	default:
@@ -103,10 +103,10 @@ func (s *Server) humanUnlock(ctx context.Context, a *toolArgs) (core.Result, err
 		// to try their finger again on a machine with no sensor is the kind of
 		// advice this project treats as a defect.
 		hint := "this Mac cannot check a fingerprint, so open the board with `lanes web` " +
-			"and act there — it asks for the admin password instead"
+			"and act there: it asks for the admin password instead"
 		if errors.Is(err, humanauth.ErrNoHelper) {
 			hint = "this build ships without the presence helper, so open the board with " +
-				"`lanes web` and act there — it asks for the admin password instead"
+				"`lanes web` and act there: it asks for the admin password instead"
 		}
 		return stamp(core.Result{
 			"unlocked": false,

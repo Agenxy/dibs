@@ -1,14 +1,14 @@
 # Contributing
 
 Criticism is welcome, including the kind that says the design is wrong. If you
-think a decision here is a mistake, open an issue and say so plainly — the
+think a decision here is a mistake, open an issue and say so plainly: the
 reasoning behind most of them is written down (see `SPEC-*.md` and the comments
 at the top of each file), so there is something specific to argue with.
 
 ## Getting a change to build
 
-**First, once per clone.** The toolchain — Go, the linter, Task itself, Bun,
-and the release tools — is pinned with [mise](https://mise.jdx.dev) so the gate
+**First, once per clone.** The toolchain, Go, the linter, Task itself, Bun,
+and the release tools, is pinned with [mise](https://mise.jdx.dev) so the gate
 behaves the same everywhere. mise will not read a config file it has not been
 told to trust, so a fresh clone needs:
 
@@ -27,7 +27,7 @@ task ci
 
 It takes a few minutes and needs two things beyond Go:
 
-- **Chromium**, downloaded on first run by `bunx playwright install` — the panel
+- **Chromium**, downloaded on first run by `bunx playwright install`: the panel
   and web-board suites drive a real browser, because a DOM shim has no layout and
   the size assertions it made were vacuous.
 - **Xcode command line tools** (macOS), for the Swift presence helper. Without
@@ -57,7 +57,7 @@ go build -tags lanesdev -o bin/lanesd-dev ./cmd/lanesd
 ```
 
 Run it with `LANES_PRESENCE_MOCK` set to `verified`, `declined`, or
-`unavailable`. Use the last two — they are the branches a working sensor hides,
+`unavailable`. Use the last two: they are the branches a working sensor hides,
 and the panel has to say something different and correct for each.
 
 Two things about that variable are deliberate and worth knowing before you reach
@@ -74,7 +74,7 @@ the reasoning, the measurement, or the wrong turn that led to the current shape.
 A patch that changes behaviour without changing the comment that justified the
 old behaviour will be sent back.
 
-**Bring the test that fails first.** Not as ceremony — this codebase has shipped
+**Bring the test that fails first.** Not as ceremony: this codebase has shipped
 tests that passed with the signal deleted, coverage that counted operations it
 never exercised, and a "fix" for a rendering bug that did not exist. If you have
 not watched your test fail for the reason you think it fails, you do not yet
@@ -89,7 +89,7 @@ shapes. Adding one for a shape it cannot yet catch is a genuinely valuable patch
 **No shell scripts.** Not for build steps, task running, install, hooks or test
 harnesses. Shell is untyped, continues past failures unless every script
 remembers `set -euo pipefail`, quotes wrong under whitespace, and cannot be
-tested or type-checked — so it is the format things rot in. Reach for the
+tested or type-checked, so it is the format things rot in. Reach for the
 project's runner (`task`), Go, or Python with a `uv` shebang and PEP 723 inline
 dependencies. The fleet scenario used to be 600 lines of bash that shelled out to
 `python3` seven times to parse its own JSON, which is what that rot looks like
@@ -102,8 +102,8 @@ Developed and verified on macOS. The process-inspection layer in
 userlands, so the parts that read another process's environment and CPU time are
 the most likely to need work elsewhere. See the README for what is verified.
 
-Patches that make it correct on Linux are wanted. Please include the evidence —
-which command you ran, on which distribution, and what it printed — rather than
+Patches that make it correct on Linux are wanted. Please include the evidence,
+which command you ran, on which distribution, and what it printed: rather than
 only that the tests passed, because most of those tests skip when they cannot
 find what they need.
 

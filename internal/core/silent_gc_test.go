@@ -9,7 +9,7 @@ import (
 // A sweep that only DELETES must still be ledgered.
 //
 // gc removes consumed mail and expired dedup records without emitting an event,
-// which is right — nobody needs telling that a message the sender already read
+// which is right: nobody needs telling that a message the sender already read
 // has aged out. But applySweep tested "did we emit anything", so a sweep whose
 // only work was those deletions reported changed:false, was never written to the
 // ledger, and did not advance the serial.
@@ -38,7 +38,7 @@ func TestASweepThatOnlyDeletesIsStillRecorded(t *testing.T) {
 	}
 	changed, _ := res["changed"].(bool)
 	if !changed {
-		t.Error("a sweep that deleted a message reported changed:false — the op is not " +
+		t.Error("a sweep that deleted a message reported changed:false: the op is not " +
 			"ledgered, the serial does not advance, and replay resurrects the mail")
 	}
 	if len(evs) == 0 {
@@ -63,7 +63,7 @@ func TestExpiredDedupRecordsAreRecordedToo(t *testing.T) {
 		t.Fatal("setup: the record was not expired")
 	}
 	if changed, _ := res["changed"].(bool); !changed {
-		t.Error("expiring a dedup record reported changed:false — on replay the record " +
+		t.Error("expiring a dedup record reported changed:false: on replay the record " +
 			"survives, so a retry that was deduplicated live is accepted again")
 	}
 }
@@ -72,7 +72,7 @@ func TestExpiredDedupRecordsAreRecordedToo(t *testing.T) {
 //
 // Dedup records come out of a map, so ties left them in random order and the cap
 // preserved a different set live than on replay. Which retry deduplicates then
-// depends on map iteration — idempotency that is only sometimes idempotent,
+// depends on map iteration: idempotency that is only sometimes idempotent,
 // which is worse than none because the caller was told the retry was safe.
 func TestDedupEvictionIsDeterministicWhenTimestampsTie(t *testing.T) {
 	build := func() *State {

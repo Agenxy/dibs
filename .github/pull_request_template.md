@@ -1,5 +1,5 @@
 <!--
-Thanks for sending this. Nothing below is a hoop — each line is something that
+Thanks for sending this. Nothing below is a hoop: each line is something that
 has actually caught a bug in this repository, and the last two catch the ones
 that get through review.
 -->
@@ -21,7 +21,7 @@ Which command you ran and what it printed. "task ci is green" is fine.
 
 ## The two that catch what review doesn't
 
-- [ ] **I watched my test fail first.** Not as ceremony — this repository has
+- [ ] **I watched my test fail first.** Not as ceremony: this repository has
       shipped tests that passed with the signal deleted, a coverage gate that
       counted operations it never ran, and a fix for a rendering bug that did not
       exist. If you have not seen your test go red for the reason you think it
@@ -36,7 +36,7 @@ Which command you ran and what it printed. "task ci is green" is fine.
 ## Anything you're unsure about
 
 <!--
-Genuinely useful — say so rather than hoping it goes unnoticed. A patch that
+Genuinely useful: say so rather than hoping it goes unnoticed. A patch that
 says "I could not work out how to test this part" gets help; one that hides it
 gets found out later by somebody with less context.
 -->

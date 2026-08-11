@@ -27,7 +27,7 @@ func TestRingIsBounded(t *testing.T) {
 
 // TestSensitiveAttrsAreRedactedAtCapture: the ledger encrypts tokens and message
 // bodies. A debug log that printed them would quietly undo that, so redaction
-// happens when the record is captured — no copy ever holds the real value.
+// happens when the record is captured: no copy ever holds the real value.
 func TestSensitiveAttrsAreRedactedAtCapture(t *testing.T) {
 	r := NewRing(8)
 	h := NewHandler(slog.NewTextHandler(discard{}, nil), r)
@@ -53,7 +53,7 @@ func TestSensitiveAttrsAreRedactedAtCapture(t *testing.T) {
 		t.Fatalf("token should be redacted, got %v", all[0].Attrs["token"])
 	}
 	if all[0].Attrs["lane"] != "alpha" {
-		t.Fatal("non-sensitive attrs must survive — a log nobody can read is useless")
+		t.Fatal("non-sensitive attrs must survive: a log nobody can read is useless")
 	}
 	if all[2].Attrs["local_secret"] != "[redacted]" {
 		t.Fatal("attrs attached via With() must be redacted too")

@@ -1,5 +1,5 @@
 /**
- * End-to-end test for the claim guard — the thing that makes a claim hold
+ * End-to-end test for the claim guard: the thing that makes a claim hold
  * rather than merely inform.
  *
  * WHY THIS TEST EXISTS, in the exact shape it has:
@@ -10,12 +10,12 @@
  * call the session: the `lanes mcp-stdio` bridge registered the lane under an
  * id it invented for itself, while opencode's plugin asked about opencode's own
  * session id. The daemon could not match them, failed open exactly as designed,
- * and the file was clobbered. No test on either side could see it — the bug
+ * and the file was clobbered. No test on either side could see it: the bug
  * lived precisely in the gap between them.
  *
  * So this test spans the gap. It spawns the REAL bridge as a child of itself,
  * lets it register a lane with no session id at all, and then asks the guard
- * questions as the REAL plugin — the actual module opencode loads, imported and
+ * questions as the REAL plugin: the actual module opencode loads, imported and
  * invoked with the argument shape opencode passes it. The bridge names the
  * session after its parent process; the plugin names it after its own. This
  * test IS that parent and that process, so if the two ever stop agreeing, the
@@ -36,7 +36,7 @@ let checks = 0
 function check(name: string, cond: boolean, detail = "") {
   checks++
   if (cond) console.log(`  \x1b[32m✓\x1b[0m ${name}`)
-  else { failures++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? " — " + detail : ""}`) }
+  else { failures++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ". " + detail : ""}`) }
 }
 
 const home = process.env.HOME
@@ -141,7 +141,7 @@ check("bridge registered a lane", !!intruderToken)
 // one this process computes, the plugin below is speaking for a different lane.
 const asIntruder = await call("guard_path", { session_id: EXPECTED, path: join(project, "f.txt"), cwd: project })
 check(`bridge session id is ${EXPECTED}`, asIntruder.decision === "deny",
-  `guard answered "${asIntruder.decision}" — the bridge named the session something else`)
+  `guard answered "${asIntruder.decision}": the bridge named the session something else`)
 
 // ── the plugin: the real module opencode loads ───────────────────────────
 const { LanesPlugin } = await import("../../../plugins/opencode/lanes.ts")
@@ -178,7 +178,7 @@ check("plugin allows when the tool call carries no path",
 // project through a symlink must still be stopped: on macOS /tmp and /var ARE
 // symlinks, so this is the ordinary case, not an exotic one. Before the guard
 // canonicalised paths whose last component does not exist yet, this check
-// passed silently as an allow — a claim that stopped nobody.
+// passed silently as an allow: a claim that stopped nobody.
 const alias = join(dir, "alias")
 symlinkSync(project, alias)
 const viaAlias = await call("guard_path", { session_id: EXPECTED, path: join(alias, "protected.txt"), cwd: alias })
@@ -197,7 +197,7 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
 
 // ── an allow must say WHICH allow it is ──────────────────────────────────
 // "nothing claims this path" is the guard working. "I could not tell which
-// agent you are" is the guard failing open — correctly, since blocking every
+// agent you are" is the guard failing open: correctly, since blocking every
 // editor it cannot identify would be a broken editor. But the two were
 // indistinguishable in the reply, so a mismatched session id made the guard
 // silently inert and looked exactly like a clean board. That happened: the
@@ -223,7 +223,7 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
 }
 
 // ── doctor must not cry wolf ────────────────────────────────────────────
-// A stdio-bridge config embeds no secret at all — it reads one from disk — so
+// A stdio-bridge config embeds no secret at all (it reads one from disk) so
 // "mentions lanes but lacks the current secret" flags every healthy stdio setup
 // as broken. That false positive fired on this tool's first real run against a
 // working Claude Desktop config. A diagnostic people learn to ignore is worse
@@ -257,7 +257,7 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
   }
 
   // Stale means: this config is FOR this daemon and carries the wrong secret.
-  // The fixture has to name this daemon's address, or it is not testing that —
+  // The fixture has to name this daemon's address, or it is not testing that,
   // it was written with a placeholder host, so the old check could not tell a
   // stale config from one belonging to somebody else's daemon at all.
   write(".codex/config.toml",
@@ -269,7 +269,7 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
 
   // And the case that made this matter: doctor flagged the operator's real,
   // working config as STALE purely because it was run against a second daemon,
-  // and told them to re-copy the block — which would have repointed a working
+  // and told them to re-copy the block, which would have repointed a working
   // global setup at whichever scratch daemon happened to be running.
   write(".codex/config.toml",
     `[mcp_servers.lanes]\nurl = "http://127.0.0.1:59999/mcp"\nhttp_headers = { "X-Lanes-Local" = "${"d".repeat(64)}" }\n`)
@@ -284,7 +284,7 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
 }
 
 // ── is the guard actually protecting anything? ───────────────────────────
-// The guard fails open when it cannot resolve the caller — correct, and it makes
+// The guard fails open when it cannot resolve the caller: correct, and it makes
 // a misconfigured guard indistinguishable from a board where nothing is claimed.
 // The daemon sees every call and whether it resolved, so it is the only party
 // that can tell. This is the failure that cost a day: opencode's plugin sent its
@@ -296,7 +296,7 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
     return await res.json() as any
   }
   // Calls above already resolved (EXPECTED names a real lane), so this board is
-  // healthy — and must say so rather than warning about a working setup.
+  // healthy, and must say so rather than warning about a working setup.
   const good = await health()
   check("a resolving guard reports ok", good.verdict === "ok", JSON.stringify(good).slice(0, 200))
   check("and counts what actually resolved", good.guard_resolved > 0, String(good.guard_resolved))
@@ -338,13 +338,13 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
 // ── a subagent is its parent's work, not a third party to it ─────────────
 // The ordinary delegation pattern is: claim the area, spawn a subagent to edit
 // it. Without lineage the guard DENIED that subagent on its own parent's claim
-// — and because the guard is an enforcement path rather than advice, the
+// and because the guard is an enforcement path rather than advice, the
 // harness then refused the edit outright. The exclusive claim locked out the
 // very work it was taken for.
 {
   // Vouched, because `parent` alone is a claim anybody can make. An agent that
   // merely declared parent:"holder" used to inherit the holder's memberships,
-  // skip an exclusive lane's queue, and be exempt from its claims right here —
+  // skip an exclusive lane's queue, and be exempt from its claims right here,
   // so the parent proves it with a one-time nonce only it can issue.
   await call("vouch_child", { token: holder.token, nonce: "child-nonce-0123456789abcdef" })
   const child = await call("register_lane", {
@@ -360,7 +360,7 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
   for (const [who, session] of [["child", "child-session"], ["grandchild", "grandchild-session"]]) {
     const v = await call("guard_path", { session_id: session, path: target, cwd: project })
     check(`a ${who} of the claim holder may edit inside its claim`,
-      v.decision === "allow", `${v.decision} — ${String(v.reason).slice(0, 90)}`)
+      v.decision === "allow", `${v.decision}. ${String(v.reason).slice(0, 90)}`)
   }
   // The point of the claim survives: an unrelated agent is still stopped.
   const third = await call("guard_path", { session_id: EXPECTED, path: target, cwd: project })
@@ -377,7 +377,7 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
     session_id: "impostor-session", path: join(project, "protected.txt"), cwd: project,
   })
   check("but merely CLAIMING a parent buys no exemption",
-    faked.decision === "deny", `${faked.decision} — ${String(faked.reason).slice(0, 80)}`)
+    faked.decision === "deny", `${faked.decision}. ${String(faked.reason).slice(0, 80)}`)
 
   // Only that direction. A parent editing inside its SUBAGENT's claim is still
   // stopped: the child asked not to be disturbed, and force_release is how a
@@ -414,7 +414,7 @@ check("a closed holder's claim stops blocking", afterClose.decision === "allow",
 // opencode is the only harness of the four that can do this natively. Claude
 // Code and Codex expose a shell tool with no environment argument, so their
 // plugins prefix an assignment onto the command STRING and must refuse every
-// shape a prefix would change — subshells, leading redirects, `cd /x && …`.
+// shape a prefix would change: subshells, leading redirects, `cd /x && …`.
 // `shell.env` hands over the map, so there is nothing to parse and nothing to
 // refuse.
 //
@@ -442,7 +442,7 @@ check("a closed holder's claim stops blocking", afterClose.decision === "allow",
 // opencode keeps sessions in SQLite, where byte growth measures WAL churn, and
 // its only append-only file is a single log SHARED by every run on the machine.
 // So the plugin counts its own turns and reports them; without that, an
-// opencode child is judged on CPU alone — a hard stall is caught and a slow one
+// opencode child is judged on CPU alone: a hard stall is caught and a slow one
 // is not.
 {
   const chat = hooks["chat.message"]

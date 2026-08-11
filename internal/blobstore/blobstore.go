@@ -1,13 +1,13 @@
 // Package blobstore is the content-addressed side store for attachment bytes
 // (SPEC-ATTACHMENTS A3). It lives beside the ledger but outside the replay
 // model: the ledger records which blobs *should* exist (the core registry), and
-// this store holds the encrypted bytes. All byte work — hashing, sealing,
-// reading, decrypting, materializing — runs OFF the single-writer event loop,
+// this store holds the encrypted bytes. All byte work: hashing, sealing,
+// reading, decrypting, materializing: runs OFF the single-writer event loop,
 // so a large or hostile input can never stall coordination (fixes P0-2).
 //
 // Durability discipline (fixes P0-1/P2-1): Put writes the sealed file, fsyncs
 // it, renames it into place, and fsyncs the directory BEFORE the caller ledgers
-// the registry entry — git's object-before-ref order. A crash between the two
+// the registry entry: git's object-before-ref order. A crash between the two
 // leaves a harmless orphan file (no registry entry), never a registry entry
 // with no bytes. Reconcile deletes orphans (and evicted files) by diffing the
 // filesystem against the live registry.
@@ -72,10 +72,10 @@ func New(root string, box *ledger.Box) (*Store, error) {
 // sweepAbandonedTemps deletes leftover .tmp-* files at startup.
 //
 // atomicWrite stages through a temp file and removes it on every error path,
-// but a process killed between the write and the rename leaves one behind — and
+// but a process killed between the write and the rename leaves one behind: and
 // Reconcile is required to skip .tmp-* forever, because at runtime it cannot
 // tell an abandoned temp from a write that is happening right now. Its comment
-// said "active/abandoned temp write — never an orphan to reap", which described
+// said "active/abandoned temp write: never an orphan to reap", which described
 // the abandoned half as intentional; nothing ever reaped them.
 //
 // Two consequences, and the second is the serious one. They accumulate without
@@ -87,7 +87,7 @@ func New(root string, box *ledger.Box) (*Store, error) {
 //
 // Startup is the one moment this is unambiguous. The daemon holds the directory
 // lock and has just started, so no write can be in flight and every temp
-// present is by definition abandoned — no age heuristic, no race with a
+// present is by definition abandoned: no age heuristic, no race with a
 // concurrent Put. Best-effort: a temp we cannot delete is not a reason to
 // refuse to boot.
 func (s *Store) sweepAbandonedTemps() {
@@ -234,7 +234,7 @@ func (s *Store) PutFile(path string, maxSize int) (id string, size int64, err er
 }
 
 // atomicWrite writes to a temp file, fsyncs it, renames into place, and fsyncs
-// the parent dir — so the bytes are durable before the caller ledgers the ref.
+// the parent dir, so the bytes are durable before the caller ledgers the ref.
 func (s *Store) atomicWrite(dst string, data []byte) error {
 	dir := filepath.Dir(dst)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -295,7 +295,7 @@ func (s *Store) Read(id string) ([]byte, error) {
 }
 
 // Materialize writes a blob's decrypted bytes to out/<id> (0600) and returns
-// the path — the context-hygiene delivery for large blobs (A8.1). The file is
+// the path: the context-hygiene delivery for large blobs (A8.1). The file is
 // mode-locked and reconciled/evicted with its blob; it is never a 0644 leak.
 func (s *Store) Materialize(id string) (string, error) {
 	p, err := s.outPath(id)
@@ -315,7 +315,7 @@ func (s *Store) Materialize(id string) (string, error) {
 	return p, nil
 }
 
-// Reconcile deletes any file under blobs/ or out/ whose id is not in live —
+// Reconcile deletes any file under blobs/ or out/ whose id is not in live,
 // evicted blobs and crash orphans alike (fixes P0-1/P2-1). Returns the count
 // removed. Runs off-thread; the caller supplies a snapshot of live ids.
 func (s *Store) Reconcile(live map[string]bool) (int, error) {
@@ -329,14 +329,14 @@ func (s *Store) Reconcile(live map[string]bool) (int, error) {
 			removed += s.pruneDir(filepath.Join(s.blobsDir, shard.Name()), live)
 		}
 	}
-	// out/<hex> — a materialized copy must never outlive its blob.
+	// out/<hex>: a materialized copy must never outlive its blob.
 	removed += s.pruneDir(s.outDir, live)
 	return removed, nil
 }
 
 // pruneDir removes files in dir whose id is neither live nor being staged;
 // returns the count removed. It never touches an in-progress temp file (tmpPrefix)
-// nor an id currently in-flight — the two ways a file can legitimately exist
+// nor an id currently in-flight: the two ways a file can legitimately exist
 // before it is registered in the live set.
 func (s *Store) pruneDir(dir string, live map[string]bool) int {
 	files, err := os.ReadDir(dir)

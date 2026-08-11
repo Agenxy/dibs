@@ -22,7 +22,7 @@ func (s *State) applyLaneLeave(l *Lane, op *Op, now time.Time) (Result, []Event,
 		// and this returned "not a member" and left the agent exactly where it
 		// was. An exclusive lane admits from the queue whenever it frees, so an
 		// agent that queued, changed its mind, and was told it had left, was
-		// joined to the lane anyway minutes later — handed a coordination key
+		// joined to the lane anyway minutes later: handed a coordination key
 		// and an obligation to acknowledge announcements in work it had
 		// explicitly declined. There was no way out of a queue at all: no tool
 		// removed an entry from it except promotion.
@@ -39,14 +39,14 @@ func (s *State) applyLaneLeave(l *Lane, op *Op, now time.Time) (Result, []Event,
 			s.finish(&evs, now)
 			return Result{
 				"lane_id": ch.ID, "left": true, "was": "queued",
-				"note": "you were waiting for this lane, not in it — you are out of the " +
+				"note": "you were waiting for this lane, not in it: you are out of the " +
 					"queue and will not be admitted; lane_join if you change your mind",
 			}, evs, nil
 		}
 		return Result{"lane_id": ch.ID, "left": false, "reason": "not a member"}, nil, nil
 	}
 	evs := s.departChannel(ch, l.ID)
-	// Deliberate, so it sticks. See Channel.Declined — this is set HERE rather
+	// Deliberate, so it sticks. See Channel.Declined: this is set HERE rather
 	// than in departChannel because departChannel is shared with eviction and with
 	// the sweep, and neither of those is a decision this agent made.
 	if ch.Declined == nil {
@@ -56,14 +56,14 @@ func (s *State) applyLaneLeave(l *Lane, op *Op, now time.Time) (Result, []Event,
 	s.finish(&evs, now)
 	return Result{
 		"lane_id": ch.ID, "left": true,
-		"note": "you will not be auto-joined here again — lane_join if you change your mind",
+		"note": "you will not be auto-joined here again: lane_join if you change your mind",
 	}, evs, nil
 }
 
 // departChannel removes an agent and repairs everything that depended on it.
 //
 // Shared with the sweep, because an agent that crashed must free its lane
-// exactly as one that left politely does — a fleet wedged behind a dead owner
+// exactly as one that left politely does: a fleet wedged behind a dead owner
 // is the failure mode that makes people turn coordination off.
 func (s *State) departChannel(ch *Channel, agent string) []Event {
 	delete(ch.Members, agent)
@@ -72,7 +72,7 @@ func (s *State) departChannel(ch *Channel, agent string) []Event {
 	// Only a full close dropped them, so lane_leave and lane_evict removed the
 	// membership and left the announcement still owed: `Unacked` kept
 	// redelivering it, and the board kept reporting a healthy wait on somebody
-	// who was no longer there. Eviction is the sharpest version — it tells the
+	// who was no longer there. Eviction is the sharpest version: it tells the
 	// agent to stop work and coordinate before resuming, while still nagging it
 	// to acknowledge that lane's traffic.
 	//
@@ -100,7 +100,7 @@ func (s *State) departChannel(ch *Channel, agent string) []Event {
 	}
 	// Promote the first agent that can actually take it.
 	//
-	// This used to promote ch.Queue[0] unless it was CLOSED — but an agent that
+	// This used to promote ch.Queue[0] unless it was CLOSED, but an agent that
 	// crashed is `stale`, not closed, and one that is asleep is `dormant`.
 	// Neither is closed, so a dead agent was handed exclusive ownership and every
 	// healthy agent behind it waited on a corpse. Observed exactly: the sweep
@@ -108,7 +108,7 @@ func (s *State) departChannel(ch *Channel, agent string) []Event {
 	// crashed agent while a live waiter sat in the queue.
 	//
 	// Whoever is skipped KEEPS their place, because going stale has never evicted
-	// an agent from a lane and must not evict it from a queue either — a
+	// an agent from a lane and must not evict it from a queue either: a
 	// persistent agent that wakes finds itself still in line.
 	for i, next := range ch.Queue {
 		if !s.Lanes[next].CanHoldExclusive() {

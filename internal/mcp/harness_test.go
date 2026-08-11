@@ -7,7 +7,7 @@ import (
 
 // A client that announces its SDK rather than itself must not be labelled with
 // the SDK's name. hermes uses the official Python SDK and arrives as
-// {"name":"mcp","version":"0.1.0"}, which read as `harness: mcp` on the board —
+// {"name":"mcp","version":"0.1.0"}, which read as `harness: mcp` on the board,
 // useless on a mixed fleet, and identical for every Python-SDK client.
 func TestGenericClientNameFallsBackToTheDeclaredHarness(t *testing.T) {
 	params := json.RawMessage(`{"clientInfo":{"name":"mcp","version":"0.1.0"}}`)
@@ -58,7 +58,7 @@ func TestNoUsableIdentityLeavesHarnessEmpty(t *testing.T) {
 }
 
 // A harness that connects over plain HTTP sends clientInfo only on the
-// handshake — the stateless tools/call that follows carries none. Without the
+// handshake: the stateless tools/call that follows carries none. Without the
 // session remembering it, every such agent registers anonymously: a live codex
 // run showed up on the board as `harness: null`, indistinguishable from a
 // hand-rolled script.

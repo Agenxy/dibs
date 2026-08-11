@@ -9,7 +9,7 @@ import (
 // The embedded playbook must be the one in the repository root.
 //
 // There are two copies because go:embed cannot reach above its own package, and
-// the binary has to answer lanes://skills without the repository — an agent that
+// the binary has to answer lanes://skills without the repository: an agent that
 // installed a release has no SKILLS.md to open. So the root file is canonical
 // and this pins the copy to it.
 //
@@ -39,7 +39,7 @@ func TestEmbeddedSkillsMatchesTheCanonicalFile(t *testing.T) {
 // A resource nobody can find is a resource that does not exist.
 //
 // The point of serving the playbook over MCP is that an agent meets it without
-// being told to look — so it has to be in resources/list, not merely readable if
+// being told to look, so it has to be in resources/list, not merely readable if
 // you already know the URI.
 func TestSkillsIsDiscoverableAndAdvertised(t *testing.T) {
 	if len(skillsDoc) < 500 {

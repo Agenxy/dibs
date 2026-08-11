@@ -7,8 +7,8 @@ import (
 )
 
 // The whole-state comparison in TestRandomizedReplayEquivalence is only worth
-// anything if it can fail. A comparison that silently marshals to "{}" — a
-// MarshalJSON somewhere, an unexported field, a nil map — passes every run and
+// anything if it can fail. A comparison that silently marshals to "{}": a
+// MarshalJSON somewhere, an unexported field, a nil map: passes every run and
 // reads exactly like a proof of correctness.
 func TestStateDiffIsNotVacuous(t *testing.T) {
 	_, path := newLedger(t)
@@ -19,7 +19,7 @@ func TestStateDiffIsNotVacuous(t *testing.T) {
 	}
 	st2.Serial = 999
 	if stateDiff(st, st2) == "" {
-		t.Fatal("stateDiff sees no difference between serial 0 and serial 999 — it compares nothing")
+		t.Fatal("stateDiff sees no difference between serial 0 and serial 999: it compares nothing")
 	}
 	st2 = reopen(t, path)
 	st2.Channels["ghost"] = &core.Channel{ID: "ghost", Members: map[string]*core.Membership{}, Subs: map[string]bool{}}

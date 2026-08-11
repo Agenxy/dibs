@@ -1,9 +1,9 @@
 /**
- * Panel inspector — see what an MCP App actually renders, without a screenshot.
+ * Panel inspector: see what an MCP App actually renders, without a screenshot.
  *
  * The panel e2e proves the panel works. It cannot tell you what the panel LOOKS
  * like right now, against the board you actually have, on a host that behaves
- * the way yours does — and that gap is expensive. A regression that blanked the
+ * the way yours does, and that gap is expensive. A regression that blanked the
  * board panel survived a green suite and three rounds of reasoning because the
  * only instrument anyone had was a human describing what they saw.
  *
@@ -11,11 +11,11 @@
  * daemon with resources/read, so it is the artifact that ships) inside the real
  * AppBridge from @modelcontextprotocol/ext-apps, in a real browser, against your
  * real board. Then it mirrors what the panel drew into the TOP document as plain
- * text, so it can be read by anything that can read a page — including an agent
+ * text, so it can be read by anything that can read a page: including an agent
  * with no eyes.
  *
  * The carrier switches are the point. A tool result reaches an app by three
- * routes — _meta, structuredContent, and ordinary content — and hosts disagree
+ * routes, _meta, structuredContent, and ordinary content, and hosts disagree
  * about which they forward. Dropping them here reproduces a specific host's
  * behaviour on purpose, which is how you find out that a panel depends on a
  * carrier the host does not send.
@@ -74,7 +74,7 @@ secret = (await Bun.file(join(LANES_DIR, "local.secret")).text()).trim()
 
 // A token to look at the board WITH. Reusing one you already hold shows you
 // exactly what that agent's panel shows; otherwise register an inspector lane,
-// which is honest — it really is another agent on this machine, and it will
+// which is honest: it really is another agent on this machine, and it will
 // appear on the board it is inspecting.
 let token = argOf("--token", "")
 if (!token) {
@@ -82,7 +82,7 @@ if (!token) {
     name: "register_lane",
     arguments: {
       name: "panel-inspect",
-      description: "Looking at the board panel — an instrument, not a worker",
+      description: "Looking at the board panel: an instrument, not a worker",
       session_id: "panel-inspect",
     },
   })
@@ -158,7 +158,7 @@ function dump() {
   // Present is not the same as visible, and the difference is the whole reason
   // this instrument exists. "human: locked" was reported as healthy from an
   // element that measured 0x0 on screen, so the dump agreed with the code and
-  // disagreed with the person looking at the panel — which is the exact failure
+  // disagreed with the person looking at the panel, which is the exact failure
   // a text instrument is supposed to make impossible. Measure it.
   let lockGeom = ""
   if (lock) {
@@ -169,21 +169,21 @@ function dump() {
     lockGeom = painted
       ? " [" + Math.round(r.width) + "x" + Math.round(r.height) +
         " at " + Math.round(r.x) + "," + Math.round(r.y) + "]"
-      : " [NOT PAINTED — " + Math.round(r.width) + "x" + Math.round(r.height) +
+      : " [NOT PAINTED. " + Math.round(r.width) + "x" + Math.round(r.height) +
         ", display:" + cs.display + " visibility:" + cs.visibility +
         " opacity:" + cs.opacity + "]"
   }
   lines.push("human:    " + (lock
-    ? (lock.getAttribute("data-state") || "?") + " — " + text("#human-lock-label") + lockGeom
+    ? (lock.getAttribute("data-state") || "?") + ". " + text("#human-lock-label") + lockGeom
     : "(no affordance in this build)"))
   // WHICH BUILD of the panel is on screen. Hosts cache the template by URI, so
-  // a stale panel and a server that never shipped the fix look identical — this
+  // a stale panel and a server that never shipped the fix look identical: this
   // is the line that tells them apart, here and in any screenshot.
-  lines.push("build:    " + (text("#foot-build") || "(none — a pre-build-id panel)")
+  lines.push("build:    " + (text("#foot-build") || "(none: a pre-build-id panel)")
     + "   node " + text("#foot-node") + "   host " + text("#foot-host"))
-  // The four figures a person reads first. The selector here was ".stat,
-  // .tally"; ".stat" matches nothing in the shipping panel, so this only ever
-  // printed the three tab tallies — and a panel drawing "0/8 live" beside eight
+  // The four figures a person reads first. The selector here was ".stat,.
+  // tally"; ".stat" matches nothing in the shipping panel, so this only ever
+  // printed the three tab tallies, and a panel drawing "0/8 live" beside eight
   // entries would have looked correct in this dump.
   const summary = [...doc.querySelectorAll("#pane-summary .metric, .metric")]
     .map((n) => n.textContent.trim().replace(/\\s+/g, " "))
@@ -211,7 +211,7 @@ function dump() {
   lines.push("")
   lines.push("── the panel's own calls back to Lanes ────────────")
   lines.push(JSON.stringify(window.__probe.toolCalls.map((c) => c.name)) +
-    (window.__probe.toolCalls.length ? "" : "  (none — it asked for nothing)"))
+    (window.__probe.toolCalls.length ? "" : "  (none: it asked for nothing)"))
   lines.push("")
   lines.push("── page errors ────────────────────────────────────")
   lines.push(window.__probe.errors.length ? window.__probe.errors.join("\\n") : "(none)")
@@ -298,7 +298,7 @@ await page.waitForFunction(
   "document.getElementById('dump').textContent !== 'loading…'", null, { timeout: 20000 })
 
 // Print the dump to stdout too, so the instrument is useful without a browser
-// pane at all — this is the form an agent reads.
+// pane at all: this is the form an agent reads.
 console.log(await page.textContent("#dump"))
 
 // --unlock drives the human lock and re-reads the panel.
@@ -306,8 +306,8 @@ console.log(await page.textContent("#dump"))
 // Every other affordance here can be reached by delivering a tool result, but
 // the human actions cannot: they are gated behind a fingerprint, so until now
 // the only way to see the unlocked panel was for a person to put their finger on
-// a sensor while somebody watched. That made the whole surface — the composers,
-// the join-first state, the two refusal sentences — unobservable to anything
+// a sensor while somebody watched. That made the whole surface: the composers,
+// the join-first state, the two refusal sentences: unobservable to anything
 // that reads text.
 //
 // Point this at a daemon built with `-tags lanesdev` and LANES_PRESENCE_MOCK
@@ -338,8 +338,8 @@ if (argv.includes("--unlock")) {
 //
 // The text dump is the right instrument for "is the data there", and it is the
 // wrong one for "does this look designed". Reading a board as one paragraph of
-// run-together text says nothing about hierarchy, density, rhythm or weight —
-// the things a person actually reacts to — so design work on this panel was
+// run-together text says nothing about hierarchy, density, rhythm or weight,
+// the things a person actually reacts to, so design work on this panel was
 // being done blind, against a description of the page rather than the page.
 if (argv.includes("--shot")) {
   const out = argOf("--shot", "panel.png")
@@ -351,5 +351,5 @@ if (argv.includes("--shot")) {
 console.log(`\ninspector: http://127.0.0.1:${PORT}/   (drops: ${drops.join(",") || "none"})`)
 
 if (argv.includes("--once")) process.exit(0)
-console.log("staying up — ctrl-c to stop")
+console.log("staying up: ctrl-c to stop")
 await new Promise(() => {})

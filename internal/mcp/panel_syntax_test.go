@@ -10,14 +10,14 @@ import (
 
 // A syntax error in the embedded panel script fails silently: the browser runs
 // nothing, the static shell still renders, and the human sees a panel with no
-// content — indistinguishable from the host-side rendering bugs we spent hours
+// content: indistinguishable from the host-side rendering bugs we spent hours
 // chasing. That shipped once, when splicing out a block took a closing brace
 // with it.
 //
-// The check shells out to bun — this project's JS toolchain — rather than
+// The check shells out to bun (this project's JS toolchain) rather than
 // hand-rolling a parser.
 // An earlier attempt counted braces and was defeated immediately by a regex
-// literal (`/[&<>"']/g`) whose brackets and quotes are not delimiters at all —
+// literal (`/[&<>"']/g`) whose brackets and quotes are not delimiters at all,
 // writing a JS tokenizer in order to test JS is how you get two bugs.
 func TestPanelScriptParses(t *testing.T) {
 	requireFullPanel(t)
@@ -25,7 +25,7 @@ func TestPanelScriptParses(t *testing.T) {
 	if err != nil {
 		t.Skip("bun not available; cannot parse-check the panel script")
 	}
-	// Parse the ASSEMBLED panel, concatenated in document order — the shared
+	// Parse the ASSEMBLED panel, concatenated in document order: the shared
 	// component library and the panel's own script are separate <script> blocks
 	// and share a scope at runtime, so checking either alone would miss a break
 	// in the other. Taking the span from the first <script> to the last would
@@ -59,6 +59,6 @@ func TestPanelScriptParses(t *testing.T) {
 	out, err := exec.Command(bun, "build", f, "--target=browser",
 		"--outfile="+filepath.Join(t.TempDir(), "out.js")).CombinedOutput()
 	if err != nil {
-		t.Fatalf("panel script does not parse — it would run as nothing:\n%s", out)
+		t.Fatalf("panel script does not parse: it would run as nothing:\n%s", out)
 	}
 }

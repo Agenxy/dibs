@@ -10,7 +10,7 @@ import (
 //
 // A coordination tool gets piped into grep, teed into a log, run in CI, and
 // redirected into an issue report. Before there was a ui package, `doctor`
-// wrote raw ANSI escapes unconditionally — so `lanes doctor > report.txt`
+// wrote raw ANSI escapes unconditionally, so `lanes doctor > report.txt`
 // produced a file of escape sequences, and NO_COLOR did nothing at all.
 //
 // Rendering to a plain buffer is exactly the not-a-terminal case, so this is
@@ -32,7 +32,7 @@ func TestStyledOutputIsPlainWhenNotATerminal(t *testing.T) {
 	}
 
 	// And the text itself survives, or `lanes board | grep builder` stops
-	// working — which is how people actually use this.
+	// working, which is how people actually use this.
 	if !strings.Contains(Accent("builder"), "builder") {
 		t.Error("styling must never alter the text it wraps")
 	}
@@ -58,7 +58,7 @@ func TestMarksAreDistinguishableWithoutColour(t *testing.T) {
 			t.Errorf("%s has no symbol, so it is colour-only", name)
 		}
 		if prev, dup := seen[sym]; dup {
-			t.Errorf("%s and %s share the symbol %q — indistinguishable without colour",
+			t.Errorf("%s and %s share the symbol %q: indistinguishable without colour",
 				name, prev, sym)
 		}
 		seen[sym] = name
@@ -66,7 +66,7 @@ func TestMarksAreDistinguishableWithoutColour(t *testing.T) {
 }
 
 // Pad and Elide count DISPLAY width, not bytes. Agent names come from whatever
-// the operator typed, and %-Ns counts bytes — so one non-ASCII name knocks
+// the operator typed, and %-Ns counts bytes, so one non-ASCII name knocks
 // every column out of alignment for the rest of the board.
 func TestWidthIsMeasuredInColumnsNotBytes(t *testing.T) {
 	var buf bytes.Buffer
@@ -84,7 +84,7 @@ func TestWidthIsMeasuredInColumnsNotBytes(t *testing.T) {
 }
 
 // Elide keeps BOTH ends: the head says where something lives and the tail says
-// what it is. Truncating either alone leaves a line the reader cannot act on —
+// what it is. Truncating either alone leaves a line the reader cannot act on,
 // a claim path elided to its prefix names a temp directory and nothing else.
 func TestElideKeepsBothEndsOfAPath(t *testing.T) {
 	long := "/private/tmp/very/long/scratch/dir/with/many/segments/project/internal/auth"
@@ -104,7 +104,7 @@ func TestElideKeepsBothEndsOfAPath(t *testing.T) {
 	}
 }
 
-// A row of zeroes is noise that hides the one number that is not zero — except
+// A row of zeroes is noise that hides the one number that is not zero: except
 // for the figure that is alarming AT zero, which is why Always exists.
 func TestTallyDropsZeroesButKeepsTheOneThatMattersAtZero(t *testing.T) {
 	var buf bytes.Buffer

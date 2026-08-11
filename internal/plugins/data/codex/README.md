@@ -1,6 +1,6 @@
 # Lanes for Codex
 
-Codex reaches Lanes as a plain MCP server over HTTP — no bridge, no adapter.
+Codex reaches Lanes as a plain MCP server over HTTP: no bridge, no adapter.
 
 ## Install
 
@@ -21,14 +21,14 @@ Codex suddenly sees zero tools.
 - Codex sees **every advertised Lanes tool** and calls them. (The count is not
   written here on purpose: it has been wrong twice, and a number in prose drifts
   the moment a tool is added. `tools/list` is the answer.)
-- It negotiates **`protocolVersion: 2025-06-18`** — older than any other harness.
+- It negotiates **`protocolVersion: 2025-06-18`**: older than any other harness.
   Lanes echoes that exact version back (see `negotiateLegacy` in
   `internal/mcp/mcp.go`); replying with a different one entitles a strict client
   to disconnect.
 - `resources/list` is never sent, so **Lanes resources are invisible to Codex**.
   Only tools reach it. Codex does register `list_mcp_resources` /
   `read_mcp_resource` as model-facing tools, so resources are reachable if the
-  model chooses to look — pull, never push.
+  model chooses to look: pull, never push.
 
 ### The 2026 flag does not do what its name suggests
 
@@ -42,34 +42,34 @@ the flag resolved `true` via `codex features list`:
 | `server/discover` sent | 0 |
 | `subscriptions/listen` sent | 0 |
 
-Codex marks it "under development" — it gates unfinished work, not a protocol
+Codex marks it "under development": it gates unfinished work, not a protocol
 switch. Do not assume 2026 support from the flag's presence.
 
 ## Waking an agent: not possible here without a subprocess
 
-Codex has lifecycle hooks and they **do** support `additionalContext` injection —
+Codex has lifecycle hooks and they **do** support `additionalContext` injection,
 the same mechanism Lanes uses in Claude Code. But `HookHandlerConfig`
 (`codex-rs/config/src/hook_config.rs:149`) has exactly three variants:
 
 | Variant | Reaches Lanes? |
 |---|---|
-| `command` | yes — but it is a **subprocess**, which Lanes does not do |
-| `prompt` | no — empty struct; injects a prompt, calls nothing out |
-| `agent` | no — empty struct; spawns an agent, calls nothing out |
+| `command` | yes, but it is a **subprocess**, which Lanes does not do |
+| `prompt` | no, empty struct; injects a prompt, calls nothing out |
+| `agent` | no, empty struct; spawns an agent, calls nothing out |
 
 There is **no `mcp_tool` and no `http` variant**, so unlike Claude Code there is no
 way for a Codex hook to call Lanes over the connection the model already holds.
 
 We will not close this with a `command` hook. A CLI reformatting mail into the
-harness's continuation protocol is Lanes driving the agent — a harness, not a
+harness's continuation protocol is Lanes driving the agent: a harness, not a
 service. See [PHILOSOPHY.md](https://github.com/agenxy/lanes/blob/main/PHILOSOPHY.md).
 
 **So in Codex, mail is pull-only:** `await_events` / `inbox`, at the agent's
 choosing. That is the honest floor, and it works today.
 
-Re-check `HookHandlerConfig` when upgrading Codex — one new variant flips this.
+Re-check `HookHandlerConfig` when upgrading Codex, one new variant flips this.
 
-### Plugins do not change this — but they are not the whole surface
+### Plugins do not change this, but they are not the whole surface
 
 A Codex **plugin** (`codex-rs/plugin/src/manifest.rs`) declares four resource
 types: `skills`, `mcp_servers`, `apps`, `hooks`. Its `hooks` are the same
@@ -93,7 +93,7 @@ There is no dynamic loader. Data flows extension → MCP server
 So a third party cannot reach it. **The only route is upstream**: a `codex-lanes`
 ext crate contributing a `WorldStateContributor` that renders unread-mail counts
 into per-turn model-visible state. That is a genuine contribution opportunity,
-not a Lanes-side feature — recorded here so the option is not rediscovered later.
+not a Lanes-side feature: recorded here so the option is not rediscovered later.
 
 
 ## Running Codex on a non-OpenAI provider
@@ -103,7 +103,7 @@ streamable HTTP and enumerates every tool into an `mcp__lanes` namespace,
 confirmed from a captured request payload.
 
 Driving Codex against **OpenRouter** is a different matter, and the obstacles
-are all Codex↔provider — none of them involve Lanes. Recorded here because the
+are all Codex↔provider: none of them involve Lanes. Recorded here because the
 next person will hit them in this order:
 
 1. **`wire_api = "chat"` is gone.** Codex now requires
@@ -115,7 +115,7 @@ next person will hit them in this order:
 
 3. **`namespace`-typed tools are rejected too.** Codex groups MCP tools into
    `{type:"namespace", name:"mcp__lanes", tools:[…]}`, an OpenAI Responses-API
-   type OpenRouter does not accept. Codex does this **unconditionally** —
+   type OpenRouter does not accept. Codex does this **unconditionally**,
    `codex-rs/core/src/tools/spec_plan.rs` has no flag to flatten it.
 
    Flattening them in a proxy into plain functions named `mcp__lanes__<tool>`
@@ -147,7 +147,7 @@ endpoint and cannot be disabled."* Set `model_reasoning_effort` to `medium`.
 agent reports its own state, and the agent that spawned it can be told when that
 state stops changing.
 
-Codex loads hooks from `<plugin>/hooks/hooks.json` — the same layout and shape
+Codex loads hooks from `<plugin>/hooks/hooks.json`: the same layout and shape
 as Claude Code, deliberately: Codex's own feature flag calls them "Claude-style
 lifecycle hooks". One plugin shape serves both harnesses.
 
@@ -158,6 +158,6 @@ lifecycle hooks". One plugin shape serves both harnesses.
 | `SubagentStart` / `SubagentStop` | `hook_session` | Codex models nested agents natively |
 | `Stop` / `SessionEnd` | `hook_session` | a finished child, distinguished from a dead one |
 
-Hooks cannot report a hang — a wedged harness runs nothing — so they are half of
+Hooks cannot report a hang (a wedged harness runs nothing) so they are half of
 the answer. `lanes probe --pid N` is the other half, and works with no
 cooperation from the child at all. See SPEC-SUPERVISION.md.

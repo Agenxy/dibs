@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
-<title>Lanes — coordination board</title>
+<title>Lanes: coordination board</title>
   <link rel="icon" type="image/svg+xml" href="/icon.svg">
 <style>{{styles}}</style>
 </head>
@@ -16,7 +16,7 @@
   panel is a single lane's own board and mailbox, authenticated by that lane's
   token; this is the whole fleet behind the admin password, and it reads mail
   the panel never sees. What the two share is what a lane, a message and an
-  event LOOK like — so both inline internal/assets/board.js and compose their
+  event LOOK like, so both inline internal/assets/board.js and compose their
   own page from it.
 
   No framework and no build step. This replaced 53 KB of vendored htmx that
@@ -26,7 +26,7 @@
 -->
 <!-- The surface names itself. The panel has always been `.panel`; the operator
      board was anonymous, so rules meant only for it had to be scoped by
-     component (`.compose .act`) — and the panel uses .compose too, so that
+     component (`.compose .act`), and the panel uses .compose too, so that
      scoping still reached it. A surface-only rule needs a surface selector. -->
 <body class="board">
 <div class="surface" aria-hidden="true"></div>
@@ -37,7 +37,7 @@
       <!-- Connection state was pixels only: the ring changed and a title said
            "connection", which names the topic and not the state. Somebody who
            cannot see the ring had no way to know the board had stopped being
-           live — the one fact that invalidates everything else on the page. -->
+           live: the one fact that invalidates everything else on the page. -->
       <!-- Decorative. The sr-only sentence below IS the status; giving the mark
            role="img" + aria-labelledby announced it a second time, so a screen
            reader heard "connecting connecting". help.html:369 renders the same
@@ -67,7 +67,7 @@
   <div class="hairline"></div>
 
   <!-- No separator ELEMENTS. A standalone "·" is its own flex item, so a wrap
-       can orphan one at the end of a line — which it did at 375px, reading as a
+       can orphan one at the end of a line, which it did at 375px, reading as a
        truncation. As a pseudo-element it belongs to the item before it and
        cannot be separated from it. -->
   <div class="context">
@@ -78,8 +78,8 @@
 
   <div class="summary" id="summary"></div>
   <div class="flash" id="flash" role="status" aria-live="polite"></div>
-  <!-- The board changes UNDER the reader — an agent goes quiet, mail arrives, a
-       lane forms — and a screen reader was told none of it. Announcing the whole
+  <!-- The board changes UNDER the reader: an agent goes quiet, mail arrives, a
+       lane forms, and a screen reader was told none of it. Announcing the whole
        board on every frame would be unusable, so this announces the DELTA and
        only when it is material. See announceChange(). -->
   <p class="sr-only" id="live" role="status" aria-live="polite" aria-atomic="true"></p>
@@ -97,7 +97,7 @@
   </main>
 
   <footer class="foot">
-    <span id="foot-node">—</span>
+    <span id="foot-node">, </span>
     <span class="dot">·</span>
     <span>verify: lanes verify</span>
     <span class="dot">·</span>
@@ -117,7 +117,7 @@
 // ── the human as a participant ───────────────────────────────────────────
 // The operator is a participant, not a special kind of actor: they get an AGENT
 // identity and every button below sends the SAME op an agent would. They have no
-// channel of their own — they join the lanes agents open. See internal/web/act.go.
+// channel of their own: they join the lanes agents open. See internal/web/act.go.
 let me = null
 // Why the Lanes tab is empty, in the operator's own words. An empty board with
 // matching switched off is indistinguishable from a quiet fleet unless it says.
@@ -131,7 +131,7 @@ async function whyEmpty() {
 
 // Re-ask while it is still indexing. The fetch used to run once at load, so a
 // board opened during a first index kept telling the operator to wait long after
-// matching was ready — advice that had quietly become false.
+// matching was ready: advice that had quietly become false.
 async function whyEmptyUntilReady() {
   for (let i = 0; i < 60 && matchingHint; i++) {
     await new Promise((r) => setTimeout(r, 5000))
@@ -145,7 +145,7 @@ async function whoAmI() {
 // Every human action goes through here, so this is where the two things that go
 // wrong on a network get handled ONCE.
 //
-// It had neither. A dropped request — laptop lid, daemon restart, wifi — became
+// It had neither. A dropped request, laptop lid, daemon restart, wifi, became
 // an unhandled rejection: no flash, no live announcement, nothing in the
 // interface at all, and the operator learns their announcement never sent by
 // noticing later that nobody answered it. And a double click, or Enter twice,
@@ -165,7 +165,7 @@ async function act(what, payload, control) {
   const key = what + ":" + JSON.stringify(payload || {})
   if (inFlight.has(key)) return null
   inFlight.add(key)
-  // The control is disabled as well as guarded — the guard prevents the second
+  // The control is disabled as well as guarded: the guard prevents the second
   // request, and the disabled state is what tells a person why nothing happened.
   if (control) {
     control.disabled = true
@@ -180,14 +180,14 @@ async function act(what, payload, control) {
     if (!res.ok) {
       // A 401 here is the admin session expiring, not a request going wrong.
       // This board is left open all day, and "request failed: 401" told the
-      // reader nothing about what to do — while the guard's own 401 body is
+      // reader nothing about what to do: while the guard's own 401 body is
       // plain text, so it did not even survive the JSON parse above.
       if (res.status === 401) {
-        flash("this board's session has expired — run `lanes web` for a fresh link", true)
+        flash("this board's session has expired: run `lanes web` for a fresh link", true)
         return null
       }
-      // The engine writes its errors for an actor to act on — they name the
-      // remedy — so show them rather than flattening to "failed".
+      // The engine writes its errors for an actor to act on: they name the
+      // remedy, so show them rather than flattening to "failed".
       flash(out.error || ("request failed: " + res.status), true)
       return null
     }
@@ -196,7 +196,7 @@ async function act(what, payload, control) {
     // Transport failure is not the same as a refusal, and saying "failed" for
     // both would tell the operator to fix the wrong thing. This one means the
     // request may never have reached the daemon.
-    flash("could not reach Lanes — nothing was sent. " + String(err && err.message || err), true)
+    flash("could not reach Lanes: nothing was sent. " + String(err && err.message || err), true)
     return null
   } finally {
     inFlight.delete(key)
@@ -228,7 +228,7 @@ function drawSummary() {
 
   announceChange({ open, stale, lanes: (state.board?.channels || []).length })
 
-  // A row of four zeros is not a summary, it is furniture — and on a board where
+  // A row of four zeros is not a summary, it is furniture, and on a board where
   // nothing has happened it is the loudest thing on the page. The terminal
   // surface has always dropped zero figures; this makes the web agree.
   const summary = document.getElementById("summary")
@@ -245,7 +245,7 @@ function drawSummary() {
 // A redraw must not eat what a person is in the middle of typing.
 //
 // Every board event calls draw(), and draw() replaces whole panes with
-// innerHTML — which destroys the composer inputs, their contents, the focus and
+// innerHTML, which destroys the composer inputs, their contents, the focus and
 // the caret. In a live fleet an event arrives whenever ANY agent does anything,
 // so a human writing a message to a lane loses it mid-sentence, repeatedly, in
 // the one feature that exists to let them take part.
@@ -258,7 +258,7 @@ function drawSummary() {
 // This used to wrap ONE pane and look only for `.compose input[type=text]`
 // inside `[data-lane]`. The mail pane was replaced directly, its reply
 // composers are keyed by `[data-serial]` rather than `[data-lane]`, and the
-// message-type <select> was not preserved at all — so an operator composing a
+// message-type <select> was not preserved at all, so an operator composing a
 // message lost the body, the type they had chosen, their focus and their caret
 // the moment ANY fleet event arrived. On a live board that is every few seconds.
 //
@@ -325,7 +325,7 @@ function draw() { keepingDrafts(drawPanes) }
 function drawPanes() {
   drawSummary()
   const b = state.board
-  const where = b ? `node ${b.node} · ledger ${b.serial ?? "—"}` : "connecting"
+  const where = b ? `node ${b.node} · ledger ${b.serial ?? ", "}` : "connecting"
   document.getElementById("ctx-node").textContent = where
   document.getElementById("foot-node").textContent = where
 
@@ -335,7 +335,7 @@ function drawPanes() {
   // surface can decline to answer the question.
   boardEl.innerHTML = Board.rosterHTML(b?.lanes, {
     selfId: null,
-    // The cadence trace is drawn from the event feed the board already has —
+    // The cadence trace is drawn from the event feed the board already has,
     // no new endpoint, no new poll, and the same events the Activity pane shows.
     events: state.events,
     // Never registered anything is a different fact from everything having
@@ -358,12 +358,12 @@ function drawPanes() {
             <button class="act ${mine ? "leave" : "join"}">${mine ? "leave" : "join"}</button>
             <input type="text" placeholder="${mine ? "say something to this lane…" : "join to speak here"}"
                    ${mine ? "" : "disabled"} aria-label="message ${Board.esc(c.id)}">
-            <button class="act post" ${mine ? "" : "disabled"} data-why="everyone sees it; nobody must reply">post<span class="sr-only"> — everyone sees it; nobody must reply</span></button>
-            <button class="act announce" ${mine ? "" : "disabled"} data-why="every member must acknowledge">announce<span class="sr-only"> — every member must acknowledge</span></button>
+            <button class="act post" ${mine ? "" : "disabled"} data-why="everyone sees it; nobody must reply">post<span class="sr-only">: everyone sees it; nobody must reply</span></button>
+            <button class="act announce" ${mine ? "" : "disabled"} data-why="every member must acknowledge">announce<span class="sr-only">: every member must acknowledge</span></button>
           </div>`
       }).join("")
     // The daemon was asked WHY matching is off and the answer was thrown away,
-    // while this sentence promised the very thing that is switched off — so an
+    // while this sentence promised the very thing that is switched off, so an
     // operator watched an empty board waiting for a match that could never
     // arrive. Keep the clause that is always true; say the rest only when it is.
     : Board.emptyHTML("No lanes", matchingHint
@@ -381,10 +381,10 @@ function drawPanes() {
 
   const mailEl = document.getElementById("pane-mail")
   // No actionsHTML: the operator watches. Answering as somebody else's lane is
-  // not something this view may do — only the panel holds a lane token.
+  // not something this view may do: only the panel holds a lane token.
   // Messages addressed to the human get a reply box. Everything else is still
   // read-only: answering as somebody else's lane is not something this view may
-  // do, and the operator holds exactly one token — their own.
+  // do, and the operator holds exactly one token: their own.
   mailEl.innerHTML = `
     <div class="compose new-msg">
       <input type="text" id="msg-to" placeholder="agent id" aria-label="recipient">
@@ -403,7 +403,7 @@ function drawPanes() {
           <div class="compose reply" data-serial="${m.serial}">
             <input type="text" placeholder="reply to ${Board.esc(m.from)}…" aria-label="reply">
             <button class="act respond">answer</button>
-            <button class="act ackmsg" data-why="acknowledge without answering">ack<span class="sr-only"> — acknowledge without answering</span></button>
+            <button class="act ackmsg" data-why="acknowledge without answering">ack<span class="sr-only">: acknowledge without answering</span></button>
           </div>` : "")
       }).join("")
     : Board.emptyHTML("No mail", "Messages between agents appear here as they are sent."))
@@ -426,7 +426,7 @@ const NAV = [...document.querySelectorAll(".views button")]
 function tab(which, { focus = false } = {}) {
   // Semantics first, and synchronously. Routing the whole switch through the
   // transition made aria-selected, the roving tabindex and FOCUS land a frame
-  // late — so End-then-Arrow raced, and a keyboard user's focus moved after
+  // late, so End-then-Arrow raced, and a keyboard user's focus moved after
   // the keystroke that moved it. A view transition is decoration; what a
   // screen reader is told and where the focus is are not, and they must never
   // wait on an animation.
@@ -437,7 +437,7 @@ function tab(which, { focus = false } = {}) {
     btn.setAttribute("aria-selected", String(on))
     // Roving tabindex: a tablist is ONE stop in the tab order, and you move
     // between tabs with the arrow keys. Four separate stops is the default
-    // browser behaviour and it is wrong — it makes a four-item switch cost four
+    // browser behaviour and it is wrong: it makes a four-item switch cost four
     // presses to walk past.
     btn.tabIndex = on ? 0 : -1
     if (on && focus) btn.focus()
@@ -445,7 +445,7 @@ function tab(which, { focus = false } = {}) {
 
   // Only the visible swap is carried. Direction matters: a view moving left is
   // a different fact from one moving right. Same runner, same tokens and same
-  // reduced-motion guard as the panel — Board.transition.
+  // reduced-motion guard as the panel. Board.transition.
   Board.transition(to >= from ? "tab-forward" : "tab-back", () => {
     for (const btn of NAV)
       document.getElementById("pane-" + btn.dataset.view)
@@ -461,7 +461,7 @@ function tab(which, { focus = false } = {}) {
 
 for (const btn of NAV) btn.onclick = () => tab(btn.dataset.view)
 
-// Arrow keys move between tabs, Home/End jump to the ends — the pattern every
+// Arrow keys move between tabs, Home/End jump to the ends: the pattern every
 // screen-reader user expects from role="tablist" and will try first.
 document.querySelector(".views").addEventListener("keydown", (ev) => {
   const i = NAV.findIndex((b) => b.getAttribute("aria-selected") === "true")
@@ -495,8 +495,8 @@ function announceChange(now) {
     lastAnnounced = now
     return
   }
-  // BOTH DIRECTIONS. This announced arrivals and never departures — new mail,
-  // agents going quiet, lanes opening — so a reader was told about every
+  // BOTH DIRECTIONS. This announced arrivals and never departures: new mail,
+  // agents going quiet, lanes opening, so a reader was told about every
   // problem and about none of the resolutions. They would hear "1 new message
   // awaiting a reply" and never learn it had been answered, which leaves them
   // holding a to-do list that only ever grows. A reader who is told about the
@@ -526,7 +526,7 @@ function announceChange(now) {
     said.push(plural(now.lanes - lastAnnounced.lanes, "new lane of work", "new lanes of work") + " opened")
   } else if (now.lanes < lastAnnounced.lanes) {
     // A lane ends when its last member leaves and nothing is outstanding, so
-    // this is work FINISHING — the most useful thing a coordination board can
+    // this is work FINISHING: the most useful thing a coordination board can
     // tell you and the one it was staying silent about.
     said.push(plural(lastAnnounced.lanes - now.lanes, "lane of work", "lanes of work") + " closed")
   }
@@ -601,7 +601,7 @@ document.addEventListener("keydown", (ev) => {
 
 // ── live ─────────────────────────────────────────────────────
 // EventSource reconnects on its own and resumes from Last-Event-ID, which the
-// server honours — a dropped connection catches up rather than losing the
+// server honours: a dropped connection catches up rather than losing the
 // board. The status mark is live only while genuinely connected, so a stalled
 // stream is visible rather than looking like a quiet fleet.
 const mark = document.getElementById("mark")
@@ -617,8 +617,8 @@ function setLive(live) {
     const region = document.getElementById("live")
     if (region) {
       region.textContent = live
-        ? "reconnected — the board is live again"
-        : "disconnected — what you are looking at may be out of date"
+        ? "reconnected: the board is live again"
+        : "disconnected: what you are looking at may be out of date"
     }
   }
   wasLive = live
@@ -638,14 +638,14 @@ es.addEventListener("board", (e) => {
 // Paint from the server-rendered bootstrap immediately, so the board is on
 // screen before the stream delivers anything.
 // Not top-level await: this is a classic <script>, where that is a syntax
-// error that kills the whole file — including the renderer, so the board came
+// error that kills the whole file: including the renderer, so the board came
 // up blank rather than merely un-personalised. Paint first, then personalise.
 // Marks explain themselves to anyone, not only to a mouse: one popover in the
 // top layer, re-anchored as the reader moves. Installed once, before the first
 // paint, so it is live for the board that is already on screen.
 Board.explainer()
 // Ages and recency decay with no event to announce them, and the board only
-// redraws on change — so without this a quiet fleet reads as a busy one.
+// redraws on change, so without this a quiet fleet reads as a busy one.
 Board.ticker()
 
 draw()

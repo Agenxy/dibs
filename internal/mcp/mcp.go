@@ -1,5 +1,5 @@
 // Package mcp implements the MCP server surface (SPEC §12): primary contract
-// MCP 2026-07-28 (stateless — server/discover, per-request _meta validation),
+// MCP 2026-07-28 (stateless: server/discover, per-request _meta validation),
 // with the SEP-sanctioned legacy 2025-11-25 path (initialize/ping) retained
 // for pre-2026 hosts. Lane tokens ride as tool arguments (normative);
 // Authorization: Bearer is the alternative for custom clients.
@@ -23,7 +23,7 @@ import (
 )
 
 // logRPC enables per-request method logging (LANES_LOG_RPC=1). Useful for
-// observing exactly which MCP methods a given host actually calls — e.g.
+// observing exactly which MCP methods a given host actually calls: e.g.
 // whether it opens a subscriptions/listen stream. Never logs params, which
 // carry lane tokens and message bodies.
 var logRPC = os.Getenv("LANES_LOG_RPC") != ""
@@ -39,11 +39,11 @@ const maxRequestBytes = 96 << 20
 // 2026-07-28 RETIRED the initialize handshake: it is a stateless per-request
 // envelope, discovered with server/discover. So it is not a version the
 // handshake can negotiate, and the reference SDKs encode exactly that
-// distinction — mcp_types.version has HANDSHAKE_PROTOCOL_VERSIONS topping out
+// distinction: mcp_types.version has HANDSHAKE_PROTOCOL_VERSIONS topping out
 // at 2025-11-25 and MODERN_PROTOCOL_VERSIONS holding 2026-07-28 alone.
 //
 // Lanes had one flat list, so `initialize` with protocolVersion 2026-07-28 was
-// echoed straight back — the server agreeing to speak a stateless contract over
+// echoed straight back: the server agreeing to speak a stateless contract over
 // the very handshake that contract removed. A client doing that is confused, and
 // the correct answer is a counter-offer of the newest version the handshake CAN
 // carry, not agreement.
@@ -96,14 +96,14 @@ func drained(dec *json.Decoder) error {
 //
 // `jsonrpc` is not ceremony. It is the only in-band signal that the peer speaks
 // this protocol at all, and accepting a request without it means accepting
-// whatever some other protocol's framing happens to decode into this struct —
+// whatever some other protocol's framing happens to decode into this struct,
 // which is how a wrong-endpoint POST turns into a silent no-op instead of an
 // error the caller can act on.
 //
 // `params` by-position is legal JSON-RPC and illegal MCP: every method here
 // takes named arguments, so an array unmarshals into an empty struct and the
 // call proceeds with every field at its zero value. That is worse than a
-// rejection — register_lane with no name looked like a request to reject on
+// rejection: register_lane with no name looked like a request to reject on
 // its merits rather than a caller sending the wrong shape.
 func validEnvelope(req *rpcRequest) *rpcError {
 	if req.JSONRPC != "2.0" {
@@ -119,7 +119,7 @@ func validEnvelope(req *rpcRequest) *rpcError {
 	if p := bytes.TrimSpace(req.Params); len(p) > 0 && p[0] == '[' {
 		return &rpcError{
 			Code:    -32602,
-			Message: "invalid params: MCP methods take named arguments, not an array — send params as an object",
+			Message: "invalid params: MCP methods take named arguments, not an array: send params as an object",
 		}
 	}
 	return nil
@@ -173,7 +173,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// subscriptions/listen (SEP-2575) hijacks the response into a long-lived SSE
-	// stream rather than a single JSON reply — handle it before normal dispatch.
+	// stream rather than a single JSON reply: handle it before normal dispatch.
 	if req.Method == "subscriptions/listen" {
 		s.serveSubscription(w, r, &req)
 		return
@@ -220,13 +220,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 //
 // 2026-07-28 requires it, and the reference client ENFORCES it: the official
 // Python SDK rejected Lanes' tools/list outright with "ListToolsResult:
-// resultType — Field required". Every hand-rolled check had passed, because
+// resultType. Field required". Every hand-rolled check had passed, because
 // both sides of them were written from the same reading of the spec. A real
 // conformant client was the only thing that could find this.
 //
 // "complete" is the tag for a final result. The other core value,
 // "input_required", belongs to multi-round-trip requests, which Lanes does not
-// use — nothing it answers needs more input to finish.
+// use: nothing it answers needs more input to finish.
 //
 // Applied ONLY on the modern path, and that restriction is load-bearing rather
 // than cautious: deployed TypeScript and Rust SDKs strict-validate results and
@@ -304,7 +304,7 @@ func metaVersion(params json.RawMessage) string {
 
 // negotiateLegacy picks the version to echo on the legacy `initialize` path.
 // The spec requires that when we support what the client asked for, we reply
-// with that exact version — not merely with something we like. Codex asks for
+// with that exact version, not merely with something we like. Codex asks for
 // 2025-06-18; replying 2025-11-25 entitles a strict client to disconnect.
 // Unsupported request ⇒ offer our best legacy version and let the client decide.
 func negotiateLegacy(params json.RawMessage) string {
@@ -314,7 +314,7 @@ func negotiateLegacy(params json.RawMessage) string {
 	if json.Unmarshal(params, &p) == nil {
 		// Only versions the handshake can actually carry. Offering a modern
 		// version here is a client error, and the spec's answer to a version the
-		// server will not speak on this path is a counter-offer — so fall
+		// server will not speak on this path is a counter-offer, so fall
 		// through to the newest handshake version rather than agreeing.
 		for _, v := range handshakeVersions {
 			if v == p.ProtocolVersion {
@@ -355,7 +355,7 @@ func writeRPC(w http.ResponseWriter, status int, id json.RawMessage, result any,
 // whether it did.
 //
 // Kept out of ServeHTTP because these need the Mcp-Session-Id header that
-// dispatch never sees — the same reason subscriptions/listen is special-cased —
+// dispatch never sees: the same reason subscriptions/listen is special-cased,
 // and because ServeHTTP is a transport decision table that the complexity
 // ceiling keeps honest.
 func (s *Server) handledLegacySubscription(w http.ResponseWriter, r *http.Request, req *rpcRequest) bool {
@@ -376,7 +376,7 @@ func (s *Server) handledLegacySubscription(w http.ResponseWriter, r *http.Reques
 // logRequest emits one line per RPC when LANES_LOG_RPC is set.
 //
 // Extracted from ServeHTTP because it is the bulk of that function's branching
-// and none of its decisions — a transport entry point should read as the order
+// and none of its decisions: a transport entry point should read as the order
 // things happen in, not as a logging format.
 func (s *Server) logRequest(r *http.Request, req *rpcRequest) {
 	if !logRPC {
@@ -447,7 +447,7 @@ func (s *Server) dispatch(
 				"tools": map[string]any{},
 				// Advertise subscribe on the LEGACY path too: measured against real
 				// hosts (Claude Code 2.1.219, Codex 0.146.0-alpha.7), every client
-				// still takes this handshake — none speak 2026 yet — so advertising
+				// still takes this handshake (none speak 2026 yet) so advertising
 				// subscriptions only on server/discover would hide them entirely.
 				"resources": map[string]any{"subscribe": true, "listChanged": true},
 			},
@@ -468,7 +468,7 @@ func (s *Server) dispatch(
 				"mimeType": "application/json",
 			},
 			{
-				"uri": "lanes://inbox", "name": "inbox", "description": "Your lane's mailbox — subscribe via " +
+				"uri": "lanes://inbox", "name": "inbox", "description": "Your lane's mailbox: subscribe via " +
 					"subscriptions/listen to be notified of new mail (requires a lane token in _meta['" +
 					metaTokenKey + "'])",
 				"mimeType": "application/json",
@@ -477,13 +477,13 @@ func (s *Server) dispatch(
 				"uri": "lanes://skills", "name": "skills",
 				"description": "How to work with Lanes well: the counterintuitive parts, the " +
 					"mistakes that look like success, and the defaults that are not what you would " +
-					"guess. Read this once on your first connection — it is short, and it is the " +
+					"guess. Read this once on your first connection: it is short, and it is the " +
 					"difference between using the protocol and using it correctly.",
 				"mimeType": "text/markdown",
 			},
 			{
 				"uri": "lanes://plugin", "name": "plugin",
-				"description": "The Lanes plugin for YOUR harness — the actual files, plus " +
+				"description": "The Lanes plugin for YOUR harness: the actual files, plus " +
 					"an ordered setup procedure where every step carries its own check. " +
 					"Read it once on your first connection: on some harnesses it turns mail " +
 					"from something you must remember to poll for into something that " +
@@ -493,12 +493,12 @@ func (s *Server) dispatch(
 			uiResourceDescriptor(),
 		}}, ttlStatic, scopePublic), nil
 	case "resources/templates/list":
-		// Lanes has no templated resources — every URI it serves is concrete.
+		// Lanes has no templated resources: every URI it serves is concrete.
 		//
 		// An empty list rather than method-not-found, because Lanes ADVERTISES
 		// the resources capability, and a client that takes that at its word is
 		// right to ask. Codex does, on every connection, and a -32601 surfaced
-		// to the model as "MCP server 'lanes' was not ready for this step" —
+		// to the model as "MCP server 'lanes' was not ready for this step",
 		// which reads as a broken server, mid-task, for a question that has a
 		// perfectly good empty answer.
 		return cacheable(map[string]any{"resourceTemplates": []map[string]any{}},
@@ -530,8 +530,8 @@ func (s *Server) dispatch(
 				return nil, &rpcError{Code: -32603, Message: err.Error()}
 			}
 			text, _ := json.MarshalIndent(board, "", "  ")
-			// The board is public by construction — it is what every agent is
-			// allowed to see — but it changes on every event.
+			// The board is public by construction: it is what every agent is
+			// allowed to see, but it changes on every event.
 			return cacheable(map[string]any{"contents": []map[string]any{
 				{"uri": p.URI, "mimeType": "application/json", "text": string(text)},
 			}}, ttlLive, scopePublic), nil
@@ -560,7 +560,7 @@ func (s *Server) dispatch(
 			// panel cannot be served from a host's cache, and the cost of that
 			// is a window where a host asks for the version it cached. Answering
 			// "unknown resource" there would replace a stale panel with no panel
-			// — a worse outcome than the staleness the hash exists to end.
+			// a worse outcome than the staleness the hash exists to end.
 			if strings.HasPrefix(p.URI, uiBoardBase) {
 				return readUIBoard(), nil
 			}
@@ -642,7 +642,7 @@ type toolArgs struct {
 // argErr turns a json decode failure into something an agent can act on.
 //
 // encoding/json reports "json: cannot unmarshal string into Go struct field
-// toolArgs.pid of type int" — which names our internal struct, leaks the Go
+// toolArgs.pid of type int", which names our internal struct, leaks the Go
 // type system at an agent, and buries the one useful word. A live glm-4.6 run
 // hit exactly this by sending `"pid": "$$"`; it recovered, but only by shelling
 // out to echo the value.
@@ -712,7 +712,7 @@ func (s *Server) callTool(
 		return map[string]any{"content": blobContent(res)}, nil
 	}
 	// Any call that already carries board/mailbox state renders the panel, so
-	// the human sees the board as a side effect of the agent coordinating —
+	// the human sees the board as a side effect of the agent coordinating,
 	// never as a second manual step.
 	if view, ok := panelTools[call.Name]; ok {
 		// Either carrier counts: the stdio bridge injects _meta, a direct HTTP
@@ -721,10 +721,10 @@ func (s *Server) callTool(
 		if call.Name == "show_board" {
 			// show_board exists only to show the human. On a host with no
 			// renderer it can show nothing, so say that rather than returning a
-			// payload nobody will look at — an agent that is told plainly will
+			// payload nobody will look at: an agent that is told plainly will
 			// reach for ack_board or inbox instead of calling this again.
 			// show_board is the ONE tool whose detail the model genuinely does not
-			// need — the human is looking at it — so it gets a summary line, unlike
+			// need (the human is looking at it) so it gets a summary line, unlike
 			// ack_board/inbox which must keep their full result because the agent
 			// reads the board out of them.
 			//
@@ -937,14 +937,14 @@ func (s *Server) run(
 	// agents are skipped: the engine reports that, and repeating an install
 	// prompt to somebody who already decided is how a hint becomes noise.
 	// op.Agent is nil whenever the caller sent no agent block, which is most
-	// registrations — the field is descriptive and optional. Dereferencing it
+	// registrations: the field is descriptive and optional. Dereferencing it
 	// here took the daemon down on an ordinary register_lane.
 	harness := ""
 	if op.Agent != nil {
 		harness = op.Agent.Harness
 	}
 	reattached, _ := res["reattached"].(bool)
-	// Whether this session's lifecycle hooks are actually live — observed, not
+	// Whether this session's lifecycle hooks are actually live: observed, not
 	// asked about. SessionStart fires before the agent's first turn, so this is
 	// already known by the time it registers.
 	hooksLive := s.eng.HookTrafficSeen(ctx, a.SessionID)
@@ -955,11 +955,11 @@ func (s *Server) run(
 //
 // Exempt from the line-length rule on purpose: this is a PROTOCOL PAYLOAD, not
 // source. Its line breaks are what the model sees, so reflowing it to satisfy a
-// linter would silently rewrite the instructions the whole fleet works from — a
+// linter would silently rewrite the instructions the whole fleet works from: a
 // mechanical wrap of this block did exactly that once, splitting a sentence
 // mid-parenthesis before it was caught by diffing against HEAD.
 //
-// serverInstructions is what every agent reads on connect — and, on at least one
+// serverInstructions is what every agent reads on connect: and, on at least one
 // client, forty times over.
 //
 // It was 3412 characters of protocol manual. Codex renders each tool with the
@@ -971,7 +971,7 @@ func (s *Server) run(
 // the rule already enforced on tool descriptions, applied to the place the rule
 // came from: orientation belongs in ONE payload, and this one is charged on every
 // connection while lanes://skills is charged once, when read. Everything removed
-// here is in skills — verified section by section before deleting, including the
+// here is in skills: verified section by section before deleting, including the
 // two-routes warning, which lives under a heading that does not use those words.
 //
 // What stays is only what an agent needs BEFORE its first call, and specifically
@@ -980,7 +980,7 @@ func (s *Server) run(
 // restart loses the mailbox).
 //
 // The length target is not arbitrary. Codex truncates its per-tool prefix at 994
-// characters, so anything at or above that costs the full 994 forty times over —
+// characters, so anything at or above that costs the full 994 forty times over,
 // a first cut to 964 was a 72% reduction in the canonical text and saved that
 // client almost nothing. Below the threshold the saving becomes proportional.
 // The two-routes warning went to skills for this reason, where it already had a
@@ -990,8 +990,8 @@ func (s *Server) run(
 //nolint:lll // agent-facing text; line breaks are semantic
 const serverInstructions = `Lanes coordinates the agents on this machine: who is working, on what, and where they are about to collide.
 
-A lane is an AGENT, not a task. Name it for who you are ('reviewer', 'codex-1') — that name is your address; what you are DOING goes in set_slot.
+A lane is an AGENT, not a task. Name it for who you are ('reviewer', 'codex-1'): that name is your address; what you are DOING goes in set_slot.
 
-Start: register_lane(name, description, pid, nonce) — keep the token, and invent a nonce: it is the only credential that survives a restart. Then ack_board() at the start of every activation, before you act.
+Start: register_lane(name, description, pid, nonce): keep the token, and invent a nonce: it is the only credential that survives a restart. Then ack_board() at the start of every activation, before you act.
 
-Read lanes://skills once — short, and it is the mistakes that look like success. lanes://plugin says if your harness can deliver mail instead of you polling.`
+Read lanes://skills once: short, and it is the mistakes that look like success. lanes://plugin says if your harness can deliver mail instead of you polling.`

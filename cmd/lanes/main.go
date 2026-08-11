@@ -23,24 +23,24 @@ import (
 	"github.com/agenxy/lanes/internal/ui"
 )
 
-const usage = `lanes — window into the agent coordination board
+const usage = `lanes: window into the agent coordination board
 
 agent-safe (lane-scoped or public, fine to run from any agent):
   lanes await              block until events arrive for YOUR lane, then exit 0
-                           (token from LANES_TOKEN; --since N, --timeout 30m —
+                           (token from LANES_TOKEN; --since N, --timeout 30m,
                            run as a background task and your harness wakes you)
   lanes probe --pid N      is a subagent you spawned working, thinking or stuck?
-                           (--until stuck,exited blocks and exits when it is —
+                           (--until stuck,exited blocks and exits when it is,
                            run as a background task and your harness wakes you)
   lanes watch --exec CMD   stay running; run CMD on each message for YOUR lane
                            (--types notify,question,... ; --once ; the summoner)
   lanes monitor --lane N   own+watch a persistent lane; print a line per message
-                           (generic tail for humans/scripts — Lanes itself never
+                           (generic tail for humans/scripts. Lanes itself never
                            wires this into a harness; agents use await_events)
   lanes board              public board: lanes, slots, claims
   lanes log [--follow]     public event stream (private bodies stay encrypted)
   lanes verify [path]      verify ledger hash chain
-  lanes doctor             find what is quietly broken — stale harness secrets,
+  lanes doctor             find what is quietly broken: stale harness secrets,
                            matching that is off or still indexing, a ledger that
                            will not replay. Names the fix, not just the fault
   lanes calibrate          measure work-overlap scoring against THIS repo's git
@@ -58,24 +58,24 @@ is not a mystery):
                            something to rewrite
 
 setup:
-  lanes configure          first-run wizard — picks secure defaults for you
+  lanes configure          first-run wizard: picks secure defaults for you
   lanes configure --service write a launchd/systemd unit so the daemon survives a
                            closed terminal and a reboot; prints the load command
                            rather than running it
   lanes stop               stop the daemon serving THIS data directory, and only
-                           that one — not "pkill lanesd", which also kills the
+                           that one, not "pkill lanesd", which also kills the
                            isolated daemons other fleets are running. SIGTERM, so
                            the ledger closes and claims are released; waits for
                            the process to go, so you can start a replacement
 
 human/admin (interactive terminal; the god-view needs the admin password):
-  lanes messages           ALL mail, decrypted — prompts admin password
-  lanes web                open the board — prompts admin password, one-time link
+  lanes messages           ALL mail, decrypted: prompts admin password
+  lanes web                open the board: prompts admin password, one-time link
   lanes admin set-password set/replace the admin password that gates the board
   lanes mcp-config         print MCP host config (contains the local secret)
 
 env: LANES_ADDR (default 127.0.0.1:4777), LANES_DIR, LANES_TOKEN,
-     LANES_ADMIN=1 (bypass the terminal check — for humans scripting)`
+     LANES_ADMIN=1 (bypass the terminal check: for humans scripting)`
 
 var version = build.Version
 
@@ -169,7 +169,7 @@ func main() {
 		// This used to print the whole usage to STDOUT and exit 2, which has two
 		// costs. `lanes borad 2>/dev/null` was byte-identical to `lanes --help`,
 		// so a typo in a script looked like success. And telling a reader to go
-		// and find the verb they believe they just typed is not help — the same
+		// and find the verb they believe they just typed is not help: the same
 		// reasoning as nearestLanesHint, which answers a misaddressed message
 		// with the closest live lane rather than the whole board.
 		fmt.Fprintf(os.Stderr, "lanes: unknown command %q\n", os.Args[1])
@@ -198,7 +198,7 @@ func main() {
 // parseFlags is the one place a subcommand's flags are parsed.
 //
 // Three separate wrongs met here, each wrong differently. `--help` came back as
-// flag.ErrHelp and was printed as `lanes: flag: help requested` with exit 1 — a
+// flag.ErrHelp and was printed as `lanes: flag: help requested` with exit 1: a
 // Go internals string, reporting a question as a failure. A mistyped flag was
 // printed TWICE, once by flag's own output and once by main's `lanes:` printer.
 // And both went to stderr, so `lanes await --help | less` showed a blank screen.
@@ -238,7 +238,7 @@ var commands = []string{
 // somebody to read the wrong page, and the reader cannot tell a guess from a
 // correction. Substring either way catches the common slips (`lanes boar`,
 // `lanes verif`), and one transposition or one wrong letter catches `borad` and
-// `verifu` — beyond that, silence and a pointer to `lanes help`.
+// `verifu`: beyond that, silence and a pointer to `lanes help`.
 func nearestCommand(typed string) string {
 	w := strings.ToLower(typed)
 	for _, c := range commands {
@@ -338,9 +338,9 @@ func getGodView(path, adminPass string, v any) error {
 func mcpConfig() error {
 	s, err := localSecret()
 	if err != nil {
-		return fmt.Errorf("no local secret yet — start lanesd once first: %w", err)
+		return fmt.Errorf("no local secret yet: start lanesd once first: %w", err)
 	}
-	// If the daemon generated a certificate, it is serving HTTPS — say so, and
+	// If the daemon generated a certificate, it is serving HTTPS: say so, and
 	// hand over the certificate path. A self-signed cert that clients cannot
 	// find is the difference between "works" and "mysteriously refuses".
 	scheme, certPath := "http", ""
@@ -359,16 +359,16 @@ func mcpConfig() error {
 		},
 	}
 	out, _ := json.MarshalIndent(cfg, "", "  ")
-	fmt.Println("# Claude Code and JSON-config hosts — add to .mcp.json:")
+	fmt.Println("# Claude Code and JSON-config hosts: add to .mcp.json:")
 	fmt.Println(string(out))
 	fmt.Printf(`
-# Codex / ChatGPT desktop — add to ~/.codex/config.toml:
+# Codex / ChatGPT desktop: add to ~/.codex/config.toml:
 [mcp_servers.lanes]
 url = %q
 http_headers = { "X-Lanes-Local" = %q }
 
 # The secret is also accepted as: Authorization: Bearer %s
-# Running agent sessions do not hot-load MCP config — start a new session after adding.
+# Running agent sessions do not hot-load MCP config: start a new session after adding.
 `, url, s, s[:16]+"…")
 
 	if certPath != "" {
@@ -394,7 +394,7 @@ func fileExists(p string) bool {
 func webURL() error {
 	s, err := localSecret()
 	if err != nil {
-		return fmt.Errorf("no local secret yet — start lanesd once first: %w", err)
+		return fmt.Errorf("no local secret yet: start lanesd once first: %w", err)
 	}
 	adminPass, err := promptAdminForGodView()
 	if err != nil {
@@ -429,7 +429,7 @@ func webURL() error {
 }
 
 // The shapes `lanes board` reads. Named rather than anonymous so each section
-// can be rendered by its own function — a single board() that drew all three
+// can be rendered by its own function: a single board() that drew all three
 // scored 78 on the complexity gate, which is a fair reading of how much it was
 // doing.
 type (
@@ -458,7 +458,7 @@ type (
 	// boardChannel is the semantic half of coordination, and the whole of what
 	// v1.2 added. It was missing from this surface entirely: an operator
 	// without a browser could see claims and slots but not a single lane of
-	// work, nor an announcement waiting on somebody — the state that most needs
+	// work, nor an announcement waiting on somebody: the state that most needs
 	// a person.
 	boardChannel struct {
 		ID, Topic, Owner string
@@ -515,7 +515,7 @@ func board() error {
 		fmt.Println(t)
 	}
 	if len(b.Lanes) == 0 {
-		fmt.Println("\n" + ui.Dim("no lanes registered — agents appear here the moment they call register_lane"))
+		fmt.Println("\n" + ui.Dim("no lanes registered: agents appear here the moment they call register_lane"))
 	}
 	printAgents(b.Lanes)
 	printLanesOfWork(b.Channels)
@@ -558,7 +558,7 @@ func messages() error {
 // logLine renders one ledger row.
 //
 // Three defects met on this line. The stamp was a clock with no date, so on a
-// ledger spanning days serial 306 read 15:12:15 and serial 307 read 13:01:04 —
+// ledger spanning days serial 306 read 15:12:15 and serial 307 read 13:01:04,
 // an append-only, hash-chained log appearing to run backwards, which is exactly
 // the alarm `verify` exists to stop somebody raising. The op column was 18 wide
 // and its widest member, activity_checkpoint, is 19, so that op ran straight
@@ -575,7 +575,7 @@ func logLine(serial uint64, t time.Time, op, lane, to string) string {
 	//
 	// The width is a guess at the longest op name, and the guess has now been
 	// wrong twice: at 18 it collided with activity_checkpoint, and at 19 it padded
-	// that op to exactly zero and ran it into the lane anyway —
+	// that op to exactly zero and ran it into the lane anyway,
 	// "activity_checkpointorchestrator". Alignment is what the width is for;
 	// separation must not depend on it, or the next op name longer than this
 	// constant reintroduces the same unreadable line.
@@ -591,13 +591,13 @@ func logCmd(args []string) error {
 	// -f as well as --follow, because that is how tail, docker logs, kubectl logs
 	// and journalctl all spell it. The mode used to be sniffed positionally
 	// (`os.Args[2] == "--follow"`), so `lanes log -f` dumped the entire ledger and
-	// exited 0 with nothing on screen saying the flag had not been understood —
+	// exited 0 with nothing on screen saying the flag had not been understood,
 	// and `lanes log --folow` did the same.
 	follow := fs.Bool("follow", false, "stay attached and print events as they arrive")
 	fs.BoolVar(follow, "f", false, "shorthand for --follow")
 	// A tail by default, like every other log tool.
 	//
-	// Bare `lanes log` printed the entire ledger — 568 lines on a board a few days
+	// Bare `lanes log` printed the entire ledger. 568 lines on a board a few days
 	// old, and it only grows, because the ledger is the persistence rather than a
 	// rotating file. Somebody running it to see what just happened had to scroll
 	// past every registration since the daemon was first started. tail, journalctl
@@ -612,7 +612,7 @@ func logCmd(args []string) error {
 		return err
 	}
 	if rest := fs.Args(); len(rest) > 0 {
-		return fmt.Errorf("`lanes log` takes no arguments, got %q — did you mean `lanes log --follow`?", rest[0])
+		return fmt.Errorf("`lanes log` takes no arguments, got %q: did you mean `lanes log --follow`?", rest[0])
 	}
 	if !*follow {
 		// One-shot: read the ledger file directly (public fields).
@@ -655,7 +655,7 @@ func logCmd(args []string) error {
 // followLedger tails the ledger file, printing records as they are appended.
 //
 // Split out of logCmd because that function had grown past the complexity the
-// linter allows once this stopped being four lines of SSE — but the split is
+// linter allows once this stopped being four lines of SSE, but the split is
 // also honest: reading a file until interrupted has nothing to do with parsing
 // flags, and the two failure modes below are subtle enough to deserve their own
 // frame.
@@ -665,7 +665,7 @@ func logCmd(args []string) error {
 // This used to GET /events with the local secret. /events is a god-view route
 // behind the admin password, so the daemon answered 401, the body carried no
 // `id:` lines, the scanner reached EOF, and the command printed "following
-// live events (^C to stop)…" and exited 0 — having attached to nothing. The
+// live events (^C to stop)…" and exited 0: having attached to nothing. The
 // failure was indistinguishable from a fleet where nothing was happening,
 // which is the exact reading somebody uses this command to obtain.
 //
@@ -706,7 +706,7 @@ func followLedger(path string) error {
 	// Holding the partial bytes in a buffer and gluing the rest on later looked
 	// equivalent and is not: if the file is TRUNCATED between the two reads, the
 	// held fragment fuses with the beginning of a different record into
-	// syntactically valid JSON. Measured — a torn `"e":"tor` merged with a fresh
+	// syntactically valid JSON. Measured: a torn `"e":"tor` merged with a fresh
 	// `register_lane` and the follower printed event `torister_lane`, a record
 	// that never existed. Losing a line is bad; inventing one in an audit trail is
 	// worse, and nothing downstream can tell it apart from a real one.
@@ -748,12 +748,12 @@ func followLedger(path string) error {
 			// that truncates a torn tail and immediately appends can be past the
 			// old offset again before the next look, so the shrink is never
 			// observable and the next read lands mid-record. Detecting the
-			// SYMPTOM instead of the race is what makes this robust — however we
+			// SYMPTOM instead of the race is what makes this robust: however we
 			// got mis-positioned, malformed input at a record boundary says so.
 			last = resync(f, rd, last)
 			continue
 		}
-		// A gap says records went past unseen — the same mis-positioning, caught
+		// A gap says records went past unseen: the same mis-positioning, caught
 		// even when the bytes happened to parse.
 		if last != 0 && rec.S > last+1 {
 			last = resync(f, rd, last)
@@ -769,7 +769,7 @@ func followLedger(path string) error {
 // Two different situations reach here and they need opposite moves. If the file
 // SHRANK, the daemon repaired a torn tail and everything up to the new end is
 // already seen, so resume at the end. Otherwise a record is simply mid-write, and
-// the offset must go BACK to its first byte so the next pass reads it whole —
+// the offset must go BACK to its first byte so the next pass reads it whole,
 // never forward, or the record is skipped.
 //
 // Split out because followLedger had grown past the complexity limit, and the
@@ -829,8 +829,8 @@ func resync(f *os.File, rd *bufio.Reader, last uint64) uint64 {
 // truncated reports whether the file is now shorter than where we are reading.
 //
 // Called only at EOF, where the buffered reader is drained and the file offset
-// therefore equals our logical position. A shrinking file raises no error — the
-// reads simply return data from the wrong place — so this comparison is the only
+// therefore equals our logical position. A shrinking file raises no error: the
+// reads simply return data from the wrong place, so this comparison is the only
 // signal that a daemon repaired a torn tail underneath us.
 func truncated(f *os.File) bool {
 	st, err := f.Stat()
@@ -849,10 +849,10 @@ func verify() error {
 	path := ledgerPath()
 	if len(os.Args) > 2 {
 		// A flag is not a path. `lanes verify --help` reached os.Open and came
-		// back as INTEGRITY FAILURE on a ledger named "--help" — an alarm about
+		// back as INTEGRITY FAILURE on a ledger named "--help": an alarm about
 		// the one thing this command exists to reassure you about.
 		if strings.HasPrefix(os.Args[2], "-") {
-			return fmt.Errorf("`lanes verify` takes a ledger path, not %q — "+
+			return fmt.Errorf("`lanes verify` takes a ledger path, not %q. "+
 				"run it bare to check this board's own ledger", os.Args[2])
 		}
 		path = os.Args[2]
@@ -861,7 +861,7 @@ func verify() error {
 	if err != nil {
 		// A ledger that cannot be READ is not a ledger that is CORRUPT, and
 		// saying INTEGRITY FAILURE at a missing file sends an operator hunting a
-		// breach they do not have — the exact alarm internal/verify.go's own
+		// breach they do not have: the exact alarm internal/verify.go's own
 		// comment was written to prevent, reintroduced one layer up.
 		//
 		// Splitting on *fs.PathError rather than fs.ErrNotExist covers the
@@ -871,7 +871,7 @@ func verify() error {
 		var pe *fs.PathError
 		if errors.As(err, &pe) {
 			return fmt.Errorf("cannot read the ledger at %s: %w\n"+
-				"  a board that has never run has no ledger yet — start `lanesd` once,\n"+
+				"  a board that has never run has no ledger yet: start `lanesd` once,\n"+
 				"  or pass the path to the one you meant to check", path, pe.Err)
 		}
 		return fmt.Errorf("INTEGRITY FAILURE after %d valid lines: %w", res.Lines, err)
@@ -884,7 +884,7 @@ func verify() error {
 		// replay. Reporting it as damage sends an operator hunting a breach
 		// they do not have.
 		fmt.Fprintln(os.Stderr,
-			"\nnote: the final record is incomplete — a write interrupted by a crash or a\n"+
+			"\nnote: the final record is incomplete: a write interrupted by a crash or a\n"+
 				"kill, not damage to the chain. The op it would have recorded was never\n"+
 				"acknowledged to the agent that sent it, and the daemon discards the partial\n"+
 				"record when it next replays this ledger. Nothing to repair.")
@@ -924,7 +924,7 @@ func printAgents(lanes []boardLane) {
 				// ui.Path, because these are the same coordination paths the
 				// claims rows carry and those rows already shorten them. Grepping
 				// a board for a directory found the claim and silently missed the
-				// slot on that same directory, or the reverse — one board, two
+				// slot on that same directory, or the reverse: one board, two
 				// spellings of one path.
 				short := make([]string, 0, len(sl.Dirs))
 				for _, d := range sl.Dirs {
@@ -940,7 +940,7 @@ func printAgents(lanes []boardLane) {
 // agentLabel is what a human should read to know who this is.
 //
 // Usually the id. But an id is an ADDRESS and must be ASCII, so an agent named
-// in a non-Latin script gets `lane` — and a fleet of them reads `lane`,
+// in a non-Latin script gets `lane`: and a fleet of them reads `lane`,
 // `lane-2`, `lane-3`: correct addresses that identify nobody. Where the name
 // could not become the id, show both.
 func agentLabel(l boardLane) string {
@@ -997,7 +997,7 @@ func printLanesOfWork(chans []boardChannel) {
 }
 
 // laneRoster names who is in a lane, carrying the score that put an
-// auto-matched agent there — §10.3 wants every auto-join explainable without a
+// auto-matched agent there. §10.3 wants every auto-join explainable without a
 // second call.
 func laneRoster(members []boardMember) string {
 	if len(members) == 0 {
@@ -1029,7 +1029,7 @@ func announceNotes(c boardChannel) string {
 	}
 	if c.Abandoned > 0 {
 		notes = append(notes, ui.Alarm(fmt.Sprintf("%d UNANSWERED", c.Abandoned))+
-			ui.Dim(" — needs a person"))
+			ui.Dim(": needs a person"))
 	}
 	if c.Departed > 0 {
 		notes = append(notes, ui.Dim(fmt.Sprintf("%d left unread", c.Departed)))
@@ -1056,7 +1056,7 @@ func printClaims(claims []boardClaim) {
 // opStyle weights an op by what it DID, so a log somebody is scrolling through
 // surfaces the handful of entries that changed somebody else's world.
 //
-// A ledger is mostly registrations and acks — necessary, and not what a person
+// A ledger is mostly registrations and acks: necessary, and not what a person
 // scanning for "what happened here" is looking for. The ops that take something
 // away from another agent, or oblige it to answer, are the ones worth finding
 // at a glance.
@@ -1089,7 +1089,7 @@ func ledgerPath() string { return filepath.Join(paths.DataDir(), "ledger.jsonl")
 // ago renders a timestamp the way a person says it.
 //
 // This printed Go's own duration string, so a board read "seen 60h37m29s ago"
-// and an agent stalled overnight read "11h24m0s" — figures nobody converts in
+// and an agent stalled overnight read "11h24m0s": figures nobody converts in
 // their head, in the column a human scans first to decide whether anything is
 // wrong. The web board answered the same question with "2d ago" from the start;
 // the CLI simply never got the rule.
@@ -1098,11 +1098,11 @@ func ledgerPath() string { return filepath.Join(paths.DataDir(), "ledger.jsonl")
 // the same reasoning internal/ui gives for restating board.css's palette: these
 // are two renderings of one editorial decision, and a package boundary between
 // cmd/ and internal/web would be a dependency in the wrong direction. If the
-// rule changes, both change — and the coherence tests already exist to notice
+// rule changes, both change, and the coherence tests already exist to notice
 // two surfaces disagreeing.
 func ago(t time.Time) string {
 	if t.IsZero() {
-		return "—"
+		return ", "
 	}
 	d := time.Since(t)
 	switch {
@@ -1123,7 +1123,7 @@ func ago(t time.Time) string {
 
 // adminOnly gates human/admin commands behind an interactive terminal. This
 // is a lane-keeper, not a wall: same-user shell access can read the data dir
-// regardless (SPEC §5) — the gate prevents honest agents from *drifting* into
+// regardless (SPEC §5): the gate prevents honest agents from *drifting* into
 // admin surfaces, exactly like the awareness gate prevents drift on the board.
 func adminOnly(name string, fn func() error) error {
 	if os.Getenv("LANES_ADMIN") == "1" {
@@ -1134,7 +1134,7 @@ func adminOnly(name string, fn func() error) error {
 		return fn()
 	}
 	return fmt.Errorf(`"lanes %s" is a human/admin command and needs an interactive terminal.
-Lanes: use your MCP tools instead — inbox/get_message for mail, the board resource for state.
+Lanes: use your MCP tools instead: inbox/get_message for mail, the board resource for state.
 Lane-safe CLI: lanes await | probe | board | log | verify.
 (Humans scripting: set LANES_ADMIN=1.)`, name)
 }
@@ -1144,15 +1144,15 @@ Lane-safe CLI: lanes await | probe | board | log | verify.
 //
 // `lanes log` reads the ledger FILE out of LANES_DIR; `lanes log --follow`
 // attaches to the daemon at LANES_ADDR. Two halves of one command, and with only
-// the address set — which is the natural thing to do when you are pointed at a
-// second daemon — they answer about two different installs, with nothing on
+// the address set, which is the natural thing to do when you are pointed at a
+// second daemon: they answer about two different installs, with nothing on
 // screen saying so. `lanes verify` has the same shape: it checks the directory's
 // chain and says nothing about the daemon you were thinking of.
 //
 // admin.go already found this the expensive way, where `set-password` rewrote
 // the credentials of an install the operator was not addressing. The check there
 // REFUSES, because writing to the wrong install is unrecoverable. Reading is not,
-// so this only says which one it read — a command that refused to show you a
+// so this only says which one it read: a command that refused to show you a
 // ledger because an environment variable disagreed would be worse than the
 // confusion it prevents.
 //
@@ -1189,7 +1189,7 @@ func warnIfDirIsNotTheAddressedDaemon(what string) {
 // printTail shows the recent end and says so when it trimmed.
 //
 // Extracted because logCmd had grown past the complexity the linter allows, and
-// the tail is a separate decision from reading the ledger — but the reason it is
+// the tail is a separate decision from reading the ledger, but the reason it is
 // SAID rather than silent is the part worth keeping together: a log that quietly
 // hides history is worse than one that prints too much, because the second is
 // annoying and the first is misleading. The notice goes before the output so a
@@ -1199,7 +1199,7 @@ func printTail(lines []string, limit int) {
 	shown := lines
 	if limit > 0 && len(lines) > limit {
 		shown = lines[len(lines)-limit:]
-		fmt.Printf("showing the last %d of %d events — `lanes log --limit 0` for all\n",
+		fmt.Printf("showing the last %d of %d events. `lanes log --limit 0` for all\n",
 			len(shown), len(lines))
 	}
 	for _, l := range shown {

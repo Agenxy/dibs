@@ -26,10 +26,10 @@ func TestTheMockProducesEachVerdict(t *testing.T) {
 				t.Errorf("verdict = %v, want %v", got, tc.want)
 			}
 			if err != nil {
-				t.Errorf("err = %v, want nil — a scripted verdict is not a failure", err)
+				t.Errorf("err = %v, want nil: a scripted verdict is not a failure", err)
 			}
 			if !Mocked() {
-				t.Error("Mocked() is false while a mock verdict is in force — callers " +
+				t.Error("Mocked() is false while a mock verdict is in force: callers " +
 					"would present this as a real check")
 			}
 		})
@@ -42,7 +42,7 @@ func TestTheMockProducesEachVerdict(t *testing.T) {
 // value a developer wants nine times out of ten. It does not: an unrecognised
 // value falls through to the real sensor. Otherwise LANES_PRESENCE_MOCK=ture
 // would silently assert that somebody was sitting there, which is the failure
-// this whole package is built to prevent — arriving, of all ways, by
+// this whole package is built to prevent: arriving, of all ways, by
 // misspelling.
 func TestAnUnrecognisedMockValueIsNotAVerification(t *testing.T) {
 	t.Setenv(mockEnv, "ture")
@@ -59,7 +59,7 @@ func TestAnUnrecognisedMockValueIsNotAVerification(t *testing.T) {
 func TestAnUnsetVariableLeavesTheRealPathAlone(t *testing.T) {
 	t.Setenv(mockEnv, "")
 	if Mocked() {
-		t.Fatal("the mock engaged with no value set — merely building with the dev " +
+		t.Fatal("the mock engaged with no value set: merely building with the dev " +
 			"tag would then stop checking anybody")
 	}
 }

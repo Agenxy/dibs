@@ -11,8 +11,8 @@ import (
 // A 2025-11-25 client must get real push, not just the promise of it.
 //
 // Lanes advertised resources.subscribe on the legacy handshake and implemented
-// only the 2026-07-28 method behind it, so every shipping client — which is all
-// of them — saw a capability it could not use and fell back to polling. The
+// only the 2026-07-28 method behind it, so every shipping client, which is all
+// of them: saw a capability it could not use and fell back to polling. The
 // advertisement was true and useless, which is worse than absent: a client that
 // believes it will be told does not ask.
 //
@@ -34,7 +34,7 @@ func TestLegacyClientReceivesPushWithoutPolling(t *testing.T) {
 
 // Subscribing to another lane's mailbox must require that lane's token.
 //
-// lanes://inbox is private, and the GET that opens the stream carries no body —
+// lanes://inbox is private, and the GET that opens the stream carries no body,
 // so the token is proven once, at subscribe time, and remembered. If that check
 // were missing, any session could open a channel onto somebody else's mail.
 func TestLegacyInboxSubscriptionRequiresTheLanesToken(t *testing.T) {

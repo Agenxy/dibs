@@ -10,7 +10,7 @@ import (
 //
 // Precedence resolved `-match-embed-query-prefix ""` correctly and the embedder
 // construction then dropped it, because the guard tested the VALUES rather than
-// whether they were given — so the model's inferred marker came back on the
+// whether they were given, so the model's inferred marker came back on the
 // wire. SetAffixes documents both-empty as "disable markers, do not detect
 // again", which is a real configuration: it is what you pass for a model whose
 // card states it needs none, and therefore exactly when an operator reaches

@@ -19,7 +19,7 @@ import (
 func mcpStdio(_ []string) error {
 	secret, err := localSecret()
 	if err != nil {
-		return fmt.Errorf("no local secret yet — start lanesd once first: %w", err)
+		return fmt.Errorf("no local secret yet: start lanesd once first: %w", err)
 	}
 	url := "http://" + addr() + "/mcp"
 	client := &http.Client{Timeout: 75 * time.Second}

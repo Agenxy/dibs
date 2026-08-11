@@ -17,7 +17,7 @@ body:
     id: doctor
     attributes:
       label: "`lanes doctor` output"
-      description: Redirected output is fine — it drops colour automatically.
+      description: "Redirected output is fine: it drops colour automatically."
       render: text
     validations:
       required: true
@@ -27,7 +27,7 @@ body:
     attributes:
       label: What happened, and what you expected instead
       description: >
-        If an agent did something surprising, its own words are useful — what it
+        If an agent did something surprising, its own words are useful: what it
         was told, what it called, and what came back.
     validations:
       required: true
@@ -38,7 +38,7 @@ body:
       label: How to reproduce it
       description: >
         The exact commands, if you have them. "It happened once during a long
-        session" is still worth filing — say so rather than not reporting it.
+        session" is still worth filing: say so rather than not reporting it.
     validations:
       required: false
 
@@ -55,8 +55,8 @@ body:
     attributes:
       label: Platform
       description: >
-        Lanes is verified on macOS. Linux reports are welcome and useful — they
-        are not a waste of anyone's time — but see README §Platform for what is
+        Lanes is verified on macOS. Linux reports are welcome and useful: they
+        are not a waste of anyone's time, but see README §Platform for what is
         known to be unverified there.
       options:
         - macOS (Apple Silicon)
@@ -70,6 +70,6 @@ body:
     id: harnesses
     attributes:
       label: Which agent harnesses were involved
-      description: "e.g. Claude Code, Codex, opencode, pi — and roughly how many were running."
+      description: "e.g. Claude Code, Codex, opencode, pi, and roughly how many were running."
     validations:
       required: false

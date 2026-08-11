@@ -11,49 +11,92 @@ import (
 	"github.com/agenxy/lanes/internal/paths"
 )
 
-// configure is the first-run wizard. It exists because the alternative — making
-// people discover flags to get a secure setup — is a UX failure, not a feature.
+// configure is the first-run wizard. It exists because the alternative: making
+// people discover flags to get a secure setup: is a UX failure, not a feature.
 // Every question has a safe default; pressing Enter through the whole thing
 // produces a correct single-machine configuration.
 //
 // It writes <dir>/lanes.toml, which is the same file an operator can hand-edit
 // and the same file the admin UI will drive. One source of truth, three doors.
+const serviceHelp = `lanes configure --service: keep the daemon running
+
+  Writes an init-system unit for the data directory in LANES_DIR (default
+  ~/.lanes), so the daemon survives a closed terminal and a reboot:
+
+    macOS   ~/Library/LaunchAgents/org.agenxy.lanes.plist
+    Linux   $XDG_CONFIG_HOME/systemd/user/lanes.service
+
+  It writes the file and prints the command to load it. Registering a job that
+  starts at login is a change to your machine, so you make it, not Lanes.
+
+  Refuses to overwrite an existing unit: edit it in place, or delete it first.
+`
+
+// serviceCommand handles `lanes configure --service`.
+//
+// Separate from the wizard because it is a separate command that happens to
+// share a verb, and because it reads EVERY argument before writing anything:
+// `configure --service --help` used to write a LaunchAgent and report success,
+// which is the same shape as `lanes stop --help` stopping the daemon.
+func serviceCommand(rest []string) error {
+	for _, a := range rest {
+		switch a {
+		case "-h", "--help", "help":
+			fmt.Print(serviceHelp)
+			return nil
+		default:
+			return fmt.Errorf("`lanes configure --service` takes no further arguments, "+
+				"and %q is not one. It writes a unit for the data directory in LANES_DIR "+
+				"(or ~/.lanes) and nothing else", a)
+		}
+	}
+	return writeServiceUnit()
+}
+
 func configure(args []string) error {
 	// `--service` is a different job from the wizard: it writes an init-system
 	// unit so the daemon outlives the shell. Handled here because that is where
 	// somebody setting Lanes up for real will look for it.
+	//
+	// The WHOLE argument vector is inspected, not just args[0]. Looking at the
+	// first element alone meant `configure --service --help` wrote a LaunchAgent
+	// and exited 0: the identical bug that `lanes stop --help` had, one dispatch
+	// layer away, in the form that mutates the operator's machine rather than
+	// Lanes' own state. That is three instances of this shape; the rule now is
+	// that a command which writes outside the data directory reads every
+	// argument before doing anything.
 	if len(args) > 0 && args[0] == "--service" {
-		return writeServiceUnit()
+		return serviceCommand(args[1:])
 	}
 	dir := paths.DataDir()
 	if len(args) > 0 && args[0] != "" {
 		// A flag is not a directory. `lanes configure --help` was taken as
 		// dir="--help": on a terminal the wizard created a directory literally
 		// named "--help", wrote lanes.toml into it, printed a tick and told you
-		// to run `lanesd` — which reads ~/.lanes and had never heard of it. Off a
+		// to run `lanesd`: which reads ~/.lanes and had never heard of it. Off a
 		// terminal it advised writing "--help/lanes.toml", a corrective action
 		// that cannot work.
 		if strings.HasPrefix(args[0], "-") {
-			return fmt.Errorf("`lanes configure` takes a data directory, not %q — "+
+			return fmt.Errorf("`lanes configure` takes a data directory, not %q. "+
 				"run it bare to configure %s", args[0], paths.DataDir())
 		}
 		dir = args[0]
 	}
 	if !interactive() {
 		return fmt.Errorf(`"lanes configure" needs an interactive terminal.
-Non-interactive setup: write %s directly — every field is optional.
+Non-interactive setup: write %s directly: every field is optional.
 Example:
   addr = "0.0.0.0:4777"   # serve agents on other machines (TLS is automatic)`,
 			filepath.Join(dir, "lanes.toml"))
 	}
 	// The path is the operator's own data dir, given by them on their own
-	// machine — it is an argument, not untrusted input.
+	// machine: it is an argument, not untrusted input.
 	if err := os.MkdirAll(dir, 0o700); err != nil { //nolint:gosec // G703: operator-supplied path is the feature
 		return err
 	}
 	cfgPath := filepath.Join(dir, "lanes.toml")
 
-	fmt.Println("\nLanes — setup")
+	fmt.Println("\nLanes: setup")
 	fmt.Println("─────────────")
 	if _, err := os.Stat(cfgPath); err == nil { //nolint:gosec // G703: see above
 		fmt.Printf("\n%s already exists. Continuing will overwrite it.\n", cfgPath)
@@ -66,14 +109,14 @@ Example:
 	fmt.Println(`
 Where will agents connect from?
 
-  1. This machine only            (default — nothing else can reach it)
+  1. This machine only            (default: nothing else can reach it)
   2. This machine and others       (LAN or private network)
   3. Others across the internet`)
 	addr := "127.0.0.1:4777"
 	switch ask("Choice [1]", "1") {
 	case "2":
 		addr = defaultLANAddr()
-		fmt.Printf("\n  Serving on %s — Lanes will generate a TLS certificate automatically.\n", addr)
+		fmt.Printf("\n  Serving on %s. Lanes will generate a TLS certificate automatically.\n", addr)
 	case "3":
 		addr = "0.0.0.0:4777"
 		fmt.Println(`
@@ -83,7 +126,7 @@ Where will agents connect from?
 	}
 
 	var b strings.Builder
-	b.WriteString("# Lanes configuration. Every field is optional —\n")
+	b.WriteString("# Lanes configuration. Every field is optional , \n")
 	b.WriteString("# deleting this file returns Lanes to its defaults.\n\n")
 	fmt.Fprintf(&b, "addr = %q\n", addr)
 	b.WriteString("\n# tls_cert = \"/path/cert.pem\"   # bring your own certificate\n")

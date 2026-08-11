@@ -9,7 +9,7 @@ import (
 
 // A stranded report is pointed at the one address that always exists.
 //
-// An agent that finishes work can find its recipient gone — lanes get reaped,
+// An agent that finishes work can find its recipient gone: lanes get reaped,
 // and the agent that asked for the work may be the one that ended. A reviewer hit
 // this exactly: its report was addressed to a reaped lane, the refusal listed
 // live lanes, and it concluded there was no durable delivery path. It then tried
@@ -17,7 +17,7 @@ import (
 // survived only in its own stdout.
 //
 // The path existed and nothing pointed at it. The operator's lane is persistent,
-// outlives every agent, and belongs to the participant who always wants to know —
+// outlives every agent, and belongs to the participant who always wants to know,
 // and it was already in that list, spelled like any other agent.
 func TestAMissingRecipientPointsAtTheOperator(t *testing.T) {
 	s := NewState("n1", DefaultLimits())

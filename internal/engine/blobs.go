@@ -16,7 +16,7 @@ const inlineThreshold = 256 * 1024
 func (e *Engine) SetBlobs(bs Store) { e.blobs = bs }
 
 // PutBlob stages bytes durably OFF the event loop, then registers the resulting
-// content id ON the loop — the object-before-ref ordering of A4.1. Exactly one
+// content id ON the loop: the object-before-ref ordering of A4.1. Exactly one
 // rate token is spent, in the pre-auth: a throttled or unauthenticated caller
 // is rejected BEFORE any bytes are hashed/sealed/written, and a caller that
 // passes pre-auth will not then be re-throttled at registration (the register
@@ -150,7 +150,7 @@ func (e *Engine) authOnly(ctx context.Context, token string) (string, error) {
 }
 
 // reconcileBlobs deletes on-disk blob/out files whose ids are no longer live in
-// the registry — evicted blobs and crash orphans (A4.1/A5). The live-id
+// the registry: evicted blobs and crash orphans (A4.1/A5). The live-id
 // snapshot is taken ON the loop; the filesystem sweep runs OFF it.
 func (e *Engine) reconcileBlobs() {
 	if e.blobs == nil {

@@ -37,7 +37,7 @@ func chState(t *testing.T, names ...string) (*State, map[string]*Lane) {
 
 // spawnChild registers a subagent the way a real one must: the parent vouches
 // with a one-time secret, and the child presents it. Parent alone is a claim
-// anybody can make — it grants nothing without this.
+// anybody can make: it grants nothing without this.
 func spawnChild(t *testing.T, s *State, parentTok, parentID, nonce string) Result {
 	t.Helper()
 	do(t, s, &Op{Kind: OpVouchChild, Token: parentTok, Nonce: nonce})
@@ -266,7 +266,7 @@ func TestAnnounceRequiresAckFromEveryMemberButTheSender(t *testing.T) {
 	}
 }
 
-// An announcement into an empty room is already settled — otherwise it parks in
+// An announcement into an empty room is already settled: otherwise it parks in
 // the unresolved column forever and trains people to ignore that column.
 func TestAnnounceWithNoOtherMembersIsSettledImmediately(t *testing.T) {
 	s, a := chState(t, "alpha")
@@ -278,12 +278,12 @@ func TestAnnounceWithNoOtherMembersIsSettledImmediately(t *testing.T) {
 }
 
 // Waiting on the dead is how an unresolved column fills with things nobody can
-// act on — so a departing member's requirement is dropped and the announcement
+// act on, so a departing member's requirement is dropped and the announcement
 // stops being open. But it must not then claim to have been READ.
 //
 // Dropping the requirement silently settled it as `acked`, and the extreme case
-// shows why that is indefensible: an announcement with acked=[] — nobody at all
-// — recorded as acknowledged, and invisible on the board. A sender that checks
+// shows why that is indefensible: an announcement with acked=[]: nobody at all
+// recorded as acknowledged, and invisible on the board. A sender that checks
 // later is told its freeze notice landed when zero agents saw it.
 //
 // Settling is right; the terminal state has to be the honest one. `unacked`
@@ -313,7 +313,7 @@ func TestClosingAnAgentSettlesTheAckItOwedWithoutClaimingItRead(t *testing.T) {
 }
 
 // The common case is NOT the extreme one, and must not cry wolf: if the
-// announcement did reach the lane — somebody read it — a later departure
+// announcement did reach the lane (somebody read it) a later departure
 // settles it as acked, with the departure recorded rather than alarmed about.
 // Filling the board with red marks after every prune is how people learn to
 // ignore the column that matters.
@@ -352,7 +352,7 @@ func TestOnlyMembersMaySpeak(t *testing.T) {
 		t.Fatal("should be subscribed")
 	}
 	if _, ok := s.Channels["auth"].Members["outsider"]; ok {
-		t.Fatal("subscribing must not create membership — only membership collides")
+		t.Fatal("subscribing must not create membership: only membership collides")
 	}
 	_ = mustFail(t, s, &Op{Kind: OpLanePost, Token: a["outsider"].Token, Channel: "auth", Body: "hi"})
 }
@@ -389,7 +389,7 @@ func TestChannelOpsRespectTheAwarenessGate(t *testing.T) {
 //
 // When redelivery gives up, the announcement must NOT be deleted and must NOT
 // be treated as settled. It becomes `unacked` and stays on the board naming who
-// never answered — "three agents ignored this" is precisely what a human needs
+// never answered. "three agents ignored this" is precisely what a human needs
 // to see, and dropping it would make the board look calm while the fleet was
 // uncoordinated.
 func TestExhaustedAnnouncementIsMarkedUnackedNotDropped(t *testing.T) {
@@ -409,7 +409,7 @@ func TestExhaustedAnnouncementIsMarkedUnackedNotDropped(t *testing.T) {
 	}
 	an := s.Announcements[serial]
 	if an == nil {
-		t.Fatal("the announcement must survive — dropping it hides the failure")
+		t.Fatal("the announcement must survive: dropping it hides the failure")
 	}
 	if an.State != AnnounceUnacked {
 		t.Fatalf("state = %q, want %q", an.State, AnnounceUnacked)
@@ -456,7 +456,7 @@ func TestGivingUpOnAnAlreadySettledAnnouncementIsANoop(t *testing.T) {
 // SPEC-CHANNELS.md §8.2: spawning a subagent must not require ceremony.
 //
 // A subagent that had to join would be counted as a second occupant of its
-// parent's own work — which is not a collision — and on an exclusive lane it
+// parent's own work (which is not a collision) and on an exclusive lane it
 // would queue behind its own parent forever.
 func TestSubagentInheritsItsParentsMembership(t *testing.T) {
 	s, a := chState(t, "parent", "other")
@@ -498,7 +498,7 @@ func TestSubagentAnnouncementIsAttributedToTheParent(t *testing.T) {
 	}
 	an := s.Announcements[r["serial"].(uint64)]
 	if an.From != "parent" {
-		t.Fatalf("attributed to %q, want the parent — peers see one participant", an.From)
+		t.Fatalf("attributed to %q, want the parent: peers see one participant", an.From)
 	}
 	if an.Required["parent"] {
 		t.Fatal("the parent must not owe an ack for what its own subagent said")
@@ -543,7 +543,7 @@ func makeCoordinator(t *testing.T, s *State, lane string) {
 }
 
 // The whole point of the role: unsticking a lane whose owner is gone. And it
-// must never be silent — the former owner is named, exactly as force_release on
+// must never be silent: the former owner is named, exactly as force_release on
 // a directory claim is (SPEC §9).
 func TestDirectorCanUnstickALaneAndIsNeverSilent(t *testing.T) {
 	s, a := chState(t, "owner", "director", "waiter")
@@ -604,7 +604,7 @@ func TestDirectorCanEvictAndTheAgentIsTold(t *testing.T) {
 
 // An announcement is the strongest thing an agent can do to a lane: it obliges
 // every member to acknowledge it and re-pings them until they do. The awareness
-// gate was enforced on lane_open and lane_join — the WEAKER acts — and not on
+// gate was enforced on lane_open and lane_join (the WEAKER acts) and not on
 // this one, so an agent that had just reattached after losing its context could
 // oblige a whole lane to answer something while never having read the board.
 func TestAnnouncingRequiresHavingReadTheBoard(t *testing.T) {
@@ -654,8 +654,8 @@ func TestPostingIsDeliberatelyNotGated(t *testing.T) {
 
 // Context loss is the most common thing that happens to an agent, and a token
 // rotation must not cost it its place. Everything the lane held has to survive:
-// exclusive ownership, membership, queue position, and — the one it cannot
-// reconstruct for itself — what it still owes an acknowledgement on.
+// exclusive ownership, membership, queue position, and: the one it cannot
+// reconstruct for itself: what it still owes an acknowledgement on.
 func TestReattachingKeepsEverythingTheAgentHeld(t *testing.T) {
 	s := NewState("t", DefaultLimits())
 	reg := func(name, sess, tok string) *Lane {
@@ -699,7 +699,7 @@ func TestReattachingKeepsEverythingTheAgentHeld(t *testing.T) {
 	if n := len(s.Unacked("member")); n != 1 {
 		t.Fatalf("an obligation must survive the agent forgetting it, got %d", n)
 	}
-	// And it can still be cleared with the NEW token — acking what you owe is
+	// And it can still be cleared with the NEW token: acking what you owe is
 	// not gated on the board, or an agent could be stuck owing something it is
 	// not allowed to answer.
 	do(t, s, &Op{Kind: OpLaneAck, Token: "t3b", MsgSerial: ser})
@@ -709,7 +709,7 @@ func TestReattachingKeepsEverythingTheAgentHeld(t *testing.T) {
 }
 
 // SPEC-CHANNELS.md §8.2: a subagent inherits its parent's lanes and does not
-// join, queue or count separately. Letting it join was not merely redundant —
+// join, queue or count separately. Letting it join was not merely redundant,
 // it deadlocked a parent against its own child.
 //
 // Observed: a subagent asking to join the lane its PARENT held exclusively was
@@ -747,7 +747,7 @@ func TestASubagentInheritsItsParentsLaneRatherThanQueueingBehindIt(t *testing.T)
 
 	r := do(t, s, &Op{Kind: OpLaneJoin, Token: sub.Token, Channel: "hot"})
 	if r["queued"] == true {
-		t.Fatalf("a subagent queued behind its own parent — neither can proceed: %v", r)
+		t.Fatalf("a subagent queued behind its own parent: neither can proceed: %v", r)
 	}
 	if r["joined"] != true || r["under"] != "parent" {
 		t.Fatalf("the subagent should already be in the lane, through its parent: %v", r)
@@ -771,12 +771,12 @@ func TestASubagentInheritsItsParentsLaneRatherThanQueueingBehindIt(t *testing.T)
 }
 
 // The promotion check used to be `Status == StatusClosed`, but an agent that
-// CRASHED is `stale` and one that is asleep is `dormant` — neither is closed.
+// CRASHED is `stale` and one that is asleep is `dormant`: neither is closed.
 // So a dead agent was handed exclusive ownership of the lane and every healthy
 // agent behind it waited on a corpse. Observed exactly: sweep marked the agent
 // stale, the owner left, and the lane's owner became the crashed agent.
 //
-// close_lane dequeues, so this only ever showed up for real crashes — which is
+// close_lane dequeues, so this only ever showed up for real crashes, which is
 // the case the queue exists to survive.
 func TestACrashedAgentIsNeverPromotedToOwner(t *testing.T) {
 	s, a := chState(t, "owner", "crashed", "live")
@@ -807,7 +807,7 @@ func TestACrashedAgentIsNeverPromotedToOwner(t *testing.T) {
 }
 
 // And when nobody waiting can take it, the lane must not sit locked-open with a
-// queue nothing will ever drain — that is the same "waiting forever" bug in
+// queue nothing will ever drain: that is the same "waiting forever" bug in
 // another dress.
 func TestALaneNobodyCanTakeIsReleasedRatherThanStranded(t *testing.T) {
 	s, a := chState(t, "owner", "crashed")
@@ -831,7 +831,7 @@ func TestALaneNobodyCanTakeIsReleasedRatherThanStranded(t *testing.T) {
 }
 
 // Eviction used to check membership only, so a director trying to remove an
-// agent that was QUEUED got evicted:false / "not a member" — technically true,
+// agent that was QUEUED got evicted:false / "not a member": technically true,
 // and it meant the director concluded the agent was not on the lane and moved
 // on. Then the owner left and the agent it had tried to remove was promoted to
 // OWNER of that lane. Observed exactly, in that order.
@@ -904,7 +904,7 @@ func TestDirectorCanMergeTwoLanesThatDriftedIntoOneJob(t *testing.T) {
 
 // A merge used to take the source lane's members and drop everything else on
 // the floor. Verified before the fix: src.Queue=[waiter] became dst.Queue=[]
-// and the waiter belonged to neither lane — blocked forever behind an exclusive
+// and the waiter belonged to neither lane: blocked forever behind an exclusive
 // owner that no longer existed, with nothing said to them.
 //
 // Where the queue goes depends on the destination, and both answers give the
@@ -928,7 +928,7 @@ func TestMergingIntoAnOpenLaneAdmitsTheAgentsThatWereWaiting(t *testing.T) {
 	}
 }
 
-// The other half: dst is exclusive, so the agent is still blocked — but blocked
+// The other half: dst is exclusive, so the agent is still blocked, but blocked
 // on a lane that exists, in a queue it can be promoted out of.
 func TestMergingIntoAnExclusiveLaneKeepsTheWaitersQueued(t *testing.T) {
 	s, a := chState(t, "director", "owner", "waiter", "host")
@@ -952,8 +952,8 @@ func TestMergingIntoAnExclusiveLaneKeepsTheWaitersQueued(t *testing.T) {
 }
 
 // An outstanding announcement left naming the deleted lane is countable on NO
-// board — invisible on the source because it is gone, invisible on the
-// destination because it names the wrong id — while still obliging its members
+// board: invisible on the source because it is gone, invisible on the
+// destination because it names the wrong id: while still obliging its members
 // to acknowledge it. That is the abandoned-announcement failure mode exactly.
 func TestMergeCarriesOutstandingAnnouncementsToTheSurvivingLane(t *testing.T) {
 	s, a := chState(t, "director", "owner", "other", "host")
@@ -1029,9 +1029,9 @@ func TestAdmittingIsCoordinatorOnlyAndRefusesADeadAgent(t *testing.T) {
 	}
 }
 
-// A lane outlives its members. Some work is permanent — a standing "release"
+// A lane outlives its members. Some work is permanent: a standing "release"
 // or "security review" lane that agents register into and drop out of as they
-// come and go — so emptying a lane must not destroy it, and the next agent to
+// come and go, so emptying a lane must not destroy it, and the next agent to
 // arrive must find the same lane rather than a fresh one with no history.
 func TestALaneSurvivesEveryMemberLeaving(t *testing.T) {
 	s, a := chState(t, "alpha", "beta")
@@ -1042,7 +1042,7 @@ func TestALaneSurvivesEveryMemberLeaving(t *testing.T) {
 
 	ch := s.Channels["release"]
 	if ch == nil {
-		t.Fatal("an empty lane must persist — permanent lanes are the point")
+		t.Fatal("an empty lane must persist: permanent lanes are the point")
 	}
 	if len(ch.Members) != 0 {
 		t.Fatalf("expected no members, got %v", ch.Members)
@@ -1061,7 +1061,7 @@ func TestALaneSurvivesEveryMemberLeaving(t *testing.T) {
 //
 // Not every agent does development work: a monitor, a reporter, a reviewer
 // waiting to be summoned. They may want to see a lane's traffic without joining
-// it, and an announcement must never oblige them — being nagged for work you
+// it, and an announcement must never oblige them: being nagged for work you
 // are not doing is how a fleet learns to ignore announcements.
 func TestOnlyMembersOweAnAcknowledgement(t *testing.T) {
 	s, a := chState(t, "worker", "watcher", "outsider")
@@ -1077,7 +1077,7 @@ func TestOnlyMembersOweAnAcknowledgement(t *testing.T) {
 			t.Errorf("%s is not a member and owes nothing, got %d", who, n)
 		}
 	}
-	// Joining is what creates the obligation — from then on, not retroactively.
+	// Joining is what creates the obligation: from then on, not retroactively.
 	do(t, s, &Op{Kind: OpLaneJoin, Token: a["watcher"].Token, Channel: "auth"})
 	if n := len(s.Unacked("watcher")); n != 0 {
 		t.Errorf("joining must not retroactively owe acks for old announcements, got %d", n)
@@ -1092,7 +1092,7 @@ func TestOnlyMembersOweAnAcknowledgement(t *testing.T) {
 //
 // Only `open` was counted for the board, so an announcement that exhausted its
 // retries and was marked `unacked` vanished from the roster at exactly the
-// moment it became interesting — somebody was told something with collision
+// moment it became interesting: somebody was told something with collision
 // risk, never acknowledged it, and Lanes had stopped asking. The constant's own
 // comment claimed it "stays visible, never dropped". It did not.
 func TestAnAbandonedAnnouncementStaysOnTheBoard(t *testing.T) {
@@ -1114,7 +1114,7 @@ func TestAnAbandonedAnnouncementStaysOnTheBoard(t *testing.T) {
 		t.Fatalf("after giving up: waiting=%d abandoned=%d", waiting, abandoned)
 	}
 
-	// And it must reach the board, under its own key — folding the two into one
+	// And it must reach the board, under its own key: folding the two into one
 	// number would hide which of them needs a person.
 	b := s.Board()
 	chans, _ := b["channels"].([]map[string]any)
@@ -1145,7 +1145,7 @@ func TestAnAbandonedAnnouncementStaysOnTheBoard(t *testing.T) {
 // polls, so its retry budget never spends and the announcement never reaches
 // `unacked`. It sits at "awaiting ack" indefinitely while the board gives no
 // hint that nothing can arrive. A standing role may legitimately sleep for a
-// week, so this is not an error — it is a fact the reader cannot otherwise get
+// week, so this is not an error: it is a fact the reader cannot otherwise get
 // without cross-referencing the roster.
 func TestAnAnnouncementOwedOnlyByAbsenteesSaysSo(t *testing.T) {
 	s, a := chState(t, "sender", "awake", "asleep")
@@ -1250,7 +1250,7 @@ func TestAPersistentRoleSleepingYieldsLocksButKeepsItsPlace(t *testing.T) {
 	ser, _ := ar["serial"].(uint64)
 
 	// It sleeps the way a standing role does. Persistent lanes go dormant, not
-	// stale — the distinction is the whole reason the kind exists.
+	// stale: the distinction is the whole reason the kind exists.
 	if _, _, err := s.Apply(&Op{Kind: OpSweep, DeadLanes: []string{"standing"}}, testNow); err != nil {
 		t.Fatal(err)
 	}
@@ -1264,7 +1264,7 @@ func TestAPersistentRoleSleepingYieldsLocksButKeepsItsPlace(t *testing.T) {
 		t.Fatal("the agent that was waiting should have been admitted when the lock lifted")
 	}
 	if _, in := s.Channels["open"].Members["standing"]; !in {
-		t.Fatal("membership survives sleep — it will be back")
+		t.Fatal("membership survives sleep: it will be back")
 	}
 	if n := len(s.Unacked("standing")); n != 1 {
 		t.Fatalf("an obligation survives sleep too, got %d", n)
@@ -1291,7 +1291,7 @@ func TestAPersistentRoleSleepingYieldsLocksButKeepsItsPlace(t *testing.T) {
 // SPEC-CHANNELS.md §10.3 promises every auto-join is explainable. It was false
 // for any agent that passed through a queue.
 //
-// Queue holds ids in order, which is all the wire needs — but the join op that
+// Queue holds ids in order, which is all the wire needs, but the join op that
 // put an agent there carries its whole provenance, and promotion fabricated a
 // fresh Membership{ScorerID: "queue"} instead. An agent auto-matched at 0.71
 // with evidence therefore surfaced, after waiting, as a manual member with
@@ -1335,7 +1335,7 @@ func TestAPromotedAgentKeepsWhyItWasMatched(t *testing.T) {
 // Leaving a lane ends the obligations that came WITH that lane.
 //
 // Only a full close dropped them, so lane_leave and lane_evict removed the
-// membership and left the announcement still owed — `Unacked` kept redelivering
+// membership and left the announcement still owed. `Unacked` kept redelivering
 // it and the board kept reporting a healthy wait on somebody who was no longer
 // there. Eviction is the sharpest version: it tells the agent to stop work and
 // coordinate before resuming, while still nagging it to acknowledge that lane's
@@ -1381,7 +1381,7 @@ func TestLeavingALaneEndsWhatThatLaneAskedOfYou(t *testing.T) {
 // A merge changes the DESTINATION's world too, and it was told nothing.
 //
 // The destination silently gains another lane's members, its predicted
-// footprint and its outstanding announcements — which its existing members may
+// footprint and its outstanding announcements, which its existing members may
 // now be required to acknowledge. Only the moved side was woken, so the
 // destination's owner could carry on believing its lane was unchanged and still
 // exclusively its own while a whole other lane had been folded in.
@@ -1411,7 +1411,7 @@ func TestAMergeWakesTheLaneThatAbsorbedTheOtherOne(t *testing.T) {
 				who, got[who])
 		}
 	}
-	// The agent that MOVED gets its own notice and must not get both — two
+	// The agent that MOVED gets its own notice and must not get both: two
 	// notices for one event is how a wake channel becomes noise.
 	if slices.Contains(got["srcowner"], "lane.absorbed") {
 		t.Errorf("the moved agent is told it joined, not that its lane absorbed one; got %v",
@@ -1429,8 +1429,8 @@ func TestAMergeWakesTheLaneThatAbsorbedTheOtherOne(t *testing.T) {
 // Every path that ends an exclusive hold must say WHO stopped owning, WHY, and
 // carry SPEC §9's caution.
 //
-// releaseExclusive emitted a bare event with only the lane id — no former
-// owner, no cause, no caution — while the two neighbouring release paths
+// releaseExclusive emitted a bare event with only the lane id: no former
+// owner, no cause, no caution: while the two neighbouring release paths
 // carried all three. It is also the path a liveness sweep uses, which is where
 // the caution matters most: a consumer that cannot tell a deliberate release
 // from a lapsed lease can read "released" as safe-to-take.
@@ -1487,13 +1487,13 @@ func TestEveryReleaseSaysWhoAndWhyAndDoesNotImplySafety(t *testing.T) {
 	}
 }
 
-// A channel's footprint is what its MEMBERS touch — all of them.
+// A channel's footprint is what its MEMBERS touch: all of them.
 //
 // An agent that queues behind an exclusive owner declares a footprint like
 // anybody else, and that footprint was thrown away: not deferred, dropped. When
 // the owner left and the waiter was promoted, it became a full member whose
 // files the channel had no record of, so every later declaration was scored
-// against a footprint missing a member's work — and the failure is silent,
+// against a footprint missing a member's work, and the failure is silent,
 // because a channel with a too-small footprint simply matches less.
 func TestAPromotedWaitersFootprintCountsOnceItIsAMember(t *testing.T) {
 	s, a := chState(t, "owner", "waiter")
@@ -1543,7 +1543,7 @@ func hasPred(fs []PredFile, path string) bool {
 // promote() was taught to carry a queued agent's footprint. carryQueue is the
 // other door: when a merge's destination has no owner, a source lane's WAITER
 // walks straight in as a member. src.Predicted deliberately excludes queued
-// agents, so merging the two lanes' footprints does not carry that agent's —
+// agents, so merging the two lanes' footprints does not carry that agent's,
 // and it arrived as a full member the lane had no file record of, which is the
 // same silent under-matching the promote fix was closing.
 func TestAWaiterCarriedInByAMergeBringsItsFootprint(t *testing.T) {
@@ -1605,18 +1605,18 @@ func TestALaneIsReadableAndAnAnnouncementMustSaySomething(t *testing.T) {
 	//
 	// Checked through Admit, not Apply, and that placement is itself the lesson:
 	// the rule first went into Apply, which is also the fold that replays the
-	// ledger — so a daemon holding announcements that were legal when written
+	// ledger, so a daemon holding announcements that were legal when written
 	// refused to replay its own history and would not start. Apply must accept
 	// forever whatever it has ever accepted; new restrictions bind at ingress.
 	for _, empty := range []string{"", "   ", "\n\t "} {
 		op := &Op{Kind: OpLaneAnnounce, Token: a["early"].Token, Channel: "work", Body: empty}
 		if err := Admit(op, DefaultLimits()); err == nil {
-			t.Errorf("an announcement of %q was admitted — every member would owe an "+
+			t.Errorf("an announcement of %q was admitted: every member would owe an "+
 				"acknowledgement for nothing", empty)
 		}
 		// ...and Apply still takes it, because a ledger may already hold one.
 		if _, _, err := s.Apply(op, testNow); err != nil {
-			t.Errorf("Apply must still fold %q — refusing it breaks replay of any "+
+			t.Errorf("Apply must still fold %q: refusing it breaks replay of any "+
 				"ledger written before the rule existed: %v", empty, err)
 		}
 	}
@@ -1626,8 +1626,8 @@ func TestALaneIsReadableAndAnAnnouncementMustSaySomething(t *testing.T) {
 		Body: "freezing auth/retry.go until Friday",
 	})
 
-	// A newcomer joins AFTER the announcement. It must not OWE an ack — that
-	// would be a retroactive obligation — but it must be able to SEE it, or a
+	// A newcomer joins AFTER the announcement. It must not OWE an ack: that
+	// would be a retroactive obligation, but it must be able to SEE it, or a
 	// lane's shared context is invisible to everyone who was not already there.
 	do(t, s, &Op{Kind: OpLaneJoin, Token: a["late"].Token, Channel: "work"})
 
@@ -1656,7 +1656,7 @@ func TestALaneIsReadableAndAnAnnouncementMustSaySomething(t *testing.T) {
 		t.Errorf("nobody acknowledges their own announcement, got %q", ack)
 	}
 
-	// Bodies are for the lane, not for anyone who can name it — the same rule
+	// Bodies are for the lane, not for anyone who can name it: the same rule
 	// the token-less wake path follows.
 	if _, err := s.MemberChannel(s.Lanes["outsider"], "work"); err == nil {
 		t.Error("a non-member must not be able to read a lane's announcements")
@@ -1669,7 +1669,7 @@ func TestALaneIsReadableAndAnAnnouncementMustSaySomething(t *testing.T) {
 // that makes it safe is membership at READ time, not membership at some point in
 // the past: an agent that left, or one a coordinator evicted, must not keep a
 // window into a lane it is no longer part of. Eviction in particular is how a
-// human removes an agent that is doing the wrong thing — if it could still read
+// human removes an agent that is doing the wrong thing: if it could still read
 // the lane afterwards, the removal would be cosmetic.
 func TestReadingALaneEndsWhenMembershipDoes(t *testing.T) {
 	s, a := chState(t, "owner", "leaver", "removed", "director")
@@ -1695,7 +1695,7 @@ func TestReadingALaneEndsWhenMembershipDoes(t *testing.T) {
 
 	for _, who := range []string{"leaver", "removed"} {
 		if _, err := s.MemberChannel(s.Lanes[who], "w"); err == nil {
-			t.Errorf("%s can still read a lane it is no longer in — membership is checked "+
+			t.Errorf("%s can still read a lane it is no longer in: membership is checked "+
 				"at read time for exactly this reason", who)
 		}
 	}
@@ -1704,7 +1704,7 @@ func TestReadingALaneEndsWhenMembershipDoes(t *testing.T) {
 // An error must name what a thing IS, not only what it is not.
 //
 // The wake nudge hands an agent an announcement serial and tells it to go read
-// that announcement. A serial in hand makes get_message the obvious call — and
+// that announcement. A serial in hand makes get_message the obvious call: and
 // get_message answered "no accessible message N" for something that plainly
 // exists. The only reasonable conclusion from that is that the announcement was
 // withdrawn, and a reviewing agent reached exactly that conclusion and messaged
@@ -1729,7 +1729,7 @@ func TestAWrongKindErrorNamesWhatTheSerialActuallyIs(t *testing.T) {
 // Lanes must be able to END, or automatic creation is a slow leak.
 //
 // Nothing removed a lane except lane_merge. E_LANE_LIMIT said "close a finished
-// lane first" — naming an action that did not exist — and the cap of 64 was
+// lane first" (naming an action that did not exist) and the cap of 64 was
 // generous only while a human chose every lane. Once a declaration opens one
 // automatically, a fleet working through 64 unrelated tasks exhausts the board
 // permanently, and every later declaration silently gets nothing.
@@ -1737,7 +1737,7 @@ func TestALaneEndsWhenItsLastMemberLeaves(t *testing.T) {
 	s, a := chState(t, "one", "two")
 
 	// Auto, because that is the lane this test is about and the only kind that
-	// may be reclaimed. A lane a human opened on purpose outlives its members —
+	// may be reclaimed. A lane a human opened on purpose outlives its members,
 	// see TestALaneSurvivesEveryMemberLeaving, which this used to contradict.
 	do(t, s, &Op{Kind: OpLaneOpen, Token: a["one"].Token, Channel: "w", Text: "work", Auto: true})
 	do(t, s, &Op{Kind: OpLaneJoin, Token: a["two"].Token, Channel: "w"})
@@ -1783,7 +1783,7 @@ func TestALaneWithAnUnansweredAnnouncementIsNotReclaimed(t *testing.T) {
 // A reclaimed lane id must carry NOTHING into its successor.
 //
 // Reclamation deleted the channel and left its announcements behind, keyed by an
-// id that no longer existed. LaneHistory selects purely by that id — and lane
+// id that no longer existed. LaneHistory selects purely by that id, and lane
 // ids are derived from the declaration, so two agents doing the same work at
 // different times naturally reuse one. The result: open a lane whose id matches
 // a reclaimed one and lane_read hands you the previous lane's announcement
@@ -1833,13 +1833,13 @@ func TestAReclaimedLaneLeavesNothingBehindForTheNextOne(t *testing.T) {
 // Two parts of this file believe opposite things, and only one of them runs.
 //
 // TestALaneSurvivesEveryMemberLeaving says an empty lane must persist, because
-// standing lanes — "release", "security review" — are the point: agents drop in
+// standing lanes, "release", "security review", are the point: agents drop in
 // and out and must find the same lane with its history. reclaimFinishedLanes
 // says "the last member leaving is what ends a lane" and deletes exactly those
 // lanes. The first test passes only because it never sweeps.
 //
 // So this sweeps. If the lane is gone afterwards, the standing lane the other
-// test protects survives only until the next sweep tick, which is minutes — and
+// test protects survives only until the next sweep tick, which is minutes: and
 // the agent that comes back finds a stranger's fresh lane under the same name,
 // with none of the history it was promised.
 func TestAStandingLaneSurvivesTheSweepThatReclaimsFinishedOnes(t *testing.T) {
@@ -1868,8 +1868,8 @@ func TestAStandingLaneSurvivesTheSweepThatReclaimsFinishedOnes(t *testing.T) {
 // A coordinator can retire a finished lane, because until now nobody could.
 //
 // Auto-opened lanes end themselves once the last member leaves. A lane a human
-// opened does NOT, deliberately — outliving its members is what a standing lane
-// is for — so a board accumulated finished lanes permanently, and E_LANE_LIMIT
+// opened does NOT, deliberately: outliving its members is what a standing lane
+// is for, so a board accumulated finished lanes permanently, and E_LANE_LIMIT
 // advised "lane_leave the ones you are done with", which does nothing at all for
 // exactly these. Naming a corrective action that does not work is this
 // codebase's most persistent failure mode; this was another instance.
@@ -1879,7 +1879,7 @@ func TestACoordinatorCanCloseAFinishedLane(t *testing.T) {
 	do(t, s, &Op{Kind: OpLaneOpen, Token: a["worker"].Token, Channel: "standing", Text: "work"})
 
 	// Occupied: refused, and told what to do instead. Closing is tidying, not
-	// eviction — a lane with agents in it is somebody's working context.
+	// eviction: a lane with agents in it is somebody's working context.
 	err := mustFail(t, s, &Op{Kind: OpLaneClose, Token: a["boss"].Token, Channel: "standing"})
 	if !strings.Contains(err.Error(), "member") {
 		t.Errorf("closing an occupied lane failed for the wrong reason: %v", err)
@@ -1894,7 +1894,7 @@ func TestACoordinatorCanCloseAFinishedLane(t *testing.T) {
 		t.Fatal("a human-opened lane was auto-reclaimed; this test needs one that persists")
 	}
 
-	// A STRANGER — neither coordinator nor the agent that opened it — is refused.
+	// A STRANGER (neither coordinator nor the agent that opened it) is refused.
 	// The role is human-granted and no agent can promote itself into it.
 	if err := mustFail(t, s, &Op{
 		Kind: OpLaneClose, Token: a["stranger"].Token, Channel: "standing",
@@ -1916,7 +1916,7 @@ func TestACoordinatorCanCloseAFinishedLane(t *testing.T) {
 // The agent that opened a lane may retire it without the coordinator role.
 //
 // lane_open is unprivileged and advertised, so an agent could create a lane it
-// could never end — and the refusal it got described its own lane as "another
+// could never end, and the refusal it got described its own lane as "another
 // agent's". Telling somebody they may not touch their own thing, in words about
 // somebody else's, is worse than the missing power was.
 func TestTheAgentThatOpenedALaneCanCloseIt(t *testing.T) {
@@ -1958,7 +1958,7 @@ func TestAnOpenerStillCannotCloseAnOccupiedLane(t *testing.T) {
 }
 
 // An unacknowledged announcement outlives the lane's population, and closing
-// over one would hide it rather than settle it — the board renders
+// over one would hide it rather than settle it: the board renders
 // announcements THROUGH their lane.
 func TestClosingWillNotHideAnUnansweredAnnouncement(t *testing.T) {
 	s, a := chState(t, "boss", "worker")

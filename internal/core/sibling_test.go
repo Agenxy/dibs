@@ -8,7 +8,7 @@ import (
 
 // A one-shot agent that re-registers under a taken name becomes a sibling, and
 // the mail addressed to the original is unreachable from the new lane. That is
-// correct — a new session is a new agent — but it happened in silence, and two
+// correct (a new session is a new agent) but it happened in silence, and two
 // real opencode agents lost an answer to it. The registration must say so.
 func TestRegisterUnderTakenNameWarnsAndNamesTheLostMail(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
@@ -58,7 +58,7 @@ func TestRegisterUnderTakenNameWarnsAndNamesTheLostMail(t *testing.T) {
 	}
 	warn, _ := second["name_taken"].(string)
 	if warn == "" {
-		t.Fatal("registering under a taken name must warn — this is how the answer got lost")
+		t.Fatal("registering under a taken name must warn: this is how the answer got lost")
 	}
 	if !strings.Contains(warn, betaID) {
 		t.Errorf("warning must name the sibling lane %q, got: %s", betaID, warn)
@@ -68,7 +68,7 @@ func TestRegisterUnderTakenNameWarnsAndNamesTheLostMail(t *testing.T) {
 	}
 	// The fix has to be one the caller can actually perform. This used to say
 	// "resume_lane", which is the standing-role path and does nothing for an
-	// ephemeral lane — so the warning correctly identified the problem and then
+	// ephemeral lane, so the warning correctly identified the problem and then
 	// sent the agent somewhere that could not solve it. Point at the nonce, which
 	// reattaches any kind of lane, and at lane_merge for an agent that kept none.
 	if !strings.Contains(warn, "nonce") {

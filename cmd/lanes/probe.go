@@ -15,8 +15,8 @@ import (
 // probe watches a spawned agent process and says whether it is working,
 // thinking, stuck or gone.
 //
-// A parent that spawns an out-of-process subagent — `codex exec`, another
-// `claude`, an opencode run — gets one signal back, at the end: an exit code.
+// A parent that spawns an out-of-process subagent. `codex exec`, another
+// `claude`, an opencode run: gets one signal back, at the end: an exit code.
 // Until then the child's silence is ambiguous, and the three things it can mean
 // (mid-turn, blocked forever, machine asleep) are indistinguishable from
 // outside. So the parent waits, sometimes for hours, on work that stopped.
@@ -28,7 +28,7 @@ import (
 //
 // The default form is a single verdict, which is what a parent asks for when it
 // wonders. --until is the one that matters: it BLOCKS until the child reaches a
-// state worth waking for, then exits — the same shape as `lanes await`, so a
+// state worth waking for, then exits: the same shape as `lanes await`, so a
 // parent can run it as a background task, keep working, and be woken by its own
 // harness the moment the child stalls or dies. The shell watches; the model
 // sleeps.
@@ -58,7 +58,7 @@ func probe(args []string) error {
 		return err
 	}
 	// No pid: list what is running. Somebody who suspects a stall does not
-	// usually know the pid — asking them for one before answering "what is
+	// usually know the pid: asking them for one before answering "what is
 	// running, and is any of it stuck" made the tool useless at the exact
 	// moment it was wanted.
 	if *pid <= 0 {
@@ -75,7 +75,7 @@ func probe(args []string) error {
 	// is getting.
 	if path == "" && !*asJSON {
 		fmt.Fprintf(os.Stderr,
-			"probe: no transcript found for pid %d — reporting on liveness and CPU only.\n"+
+			"probe: no transcript found for pid %d: reporting on liveness and CPU only.\n"+
 				"  Pass --transcript if you know the path; the agent's own token count is the\n"+
 				"  strongest progress signal and this is running without it.\n", *pid)
 	}
@@ -101,7 +101,7 @@ func probe(args []string) error {
 
 		if len(wake) == 0 {
 			// One-shot: answer the question that was asked. Progress is a
-			// DIFFERENCE, so this cannot answer anything from a single sample —
+			// DIFFERENCE, so this cannot answer anything from a single sample,
 			// an earlier version returned immediately and therefore always said
 			// "unknown", which is a correct statement and a useless command.
 			// Keep sampling until there is something to say.
@@ -126,7 +126,7 @@ func probe(args []string) error {
 // listAgents reports every agent process on this machine.
 //
 // Discovery needs no cooperation from the children, so this works for a harness
-// with no Lanes plugin at all — and for one that has stopped answering, which
+// with no Lanes plugin at all, and for one that has stopped answering, which
 // is the case that matters. Each is sampled twice, because progress is a
 // difference and a single look cannot show one.
 func listAgents(cfg liveness.Config, asJSON bool) error {
@@ -168,8 +168,8 @@ func listAgents(cfg liveness.Config, asJSON bool) error {
 // then any flags they typed.
 //
 // The file is read so ONE `[supervise]` table configures both the daemon's
-// sweep and this command. They used to diverge — the table existed, the daemon
-// honoured it, and `lanes probe` did not — so tuning it had no effect on the
+// sweep and this command. They used to diverge: the table existed, the daemon
+// honoured it, and `lanes probe` did not, so tuning it had no effect on the
 // tool a person actually runs, and demonstrating detection meant spelling the
 // configuration out loud on every invocation.
 //
@@ -181,7 +181,7 @@ func listAgents(cfg liveness.Config, asJSON bool) error {
 //
 // A state nobody can reach is not a long wait, it is a wait that cannot end.
 // Unvalidated, `--until exit` (for "exited") blocked for the whole six-hour
-// timeout having printed nothing — indistinguishable from an agent that simply
+// timeout having printed nothing: indistinguishable from an agent that simply
 // had not finished, which is the worst shape a typo can take.
 func parseUntil(until string) (map[liveness.State]bool, error) {
 	wake := map[liveness.State]bool{}
@@ -220,7 +220,7 @@ func settingsFor(quiet, frozen, minAge time.Duration, minDuty float64) liveness.
 	return cfg
 }
 
-// report writes a verdict for whoever is reading — a person at a terminal or an
+// report writes a verdict for whoever is reading: a person at a terminal or an
 // agent parsing a background task's output.
 func report(v liveness.Verdict, pid int, transcript string, asJSON bool) {
 	if asJSON {
@@ -233,7 +233,7 @@ func report(v liveness.Verdict, pid int, transcript string, asJSON bool) {
 		fmt.Println(string(out))
 		return
 	}
-	fmt.Printf("pid %d: %s — %s\n", pid, v.State, v.Why)
+	fmt.Printf("pid %d: %s. %s\n", pid, v.State, v.Why)
 	// The sleep is called out separately because it is the single most likely
 	// reason a parent is looking at this at all, and the one conclusion it must
 	// not draw unaided: a suspended machine looks exactly like a hung agent.

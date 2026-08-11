@@ -1,6 +1,6 @@
 # Lanes board panel (MCP Apps)
 
-The board is a spatial thing — who is live, what they claim, what is waiting.
+The board is a spatial thing: who is live, what they claim, what is waiting.
 Rendering it as JSON into an agent's context serves neither reader well: the
 model pays for detail it does not need, and the human reads a wall of braces.
 
@@ -11,14 +11,14 @@ extension spec `2026-01-26`) fixes exactly that split, so Lanes implements it.
 
 The spec draws a line we already care about:
 
-- **`content`** — text for the model. Costs context.
-- **`structuredContent`** — data for the UI. Explicitly **not** added to model context.
+- **`content`** (text for the model. Costs context.
+- **`structuredContent`**) data for the UI. Explicitly **not** added to model context.
 
 So on a host that renders, the model gets a single line and the human gets the
 whole board.
 
 **But that split is conditional, and an earlier draft of this document overstated
-it.** `structuredContent` is not an MCP Apps invention — it is a **base MCP
+it.** `structuredContent` is not an MCP Apps invention: it is a **base MCP
 field** whose normal destination is the model. MCP Apps reuses it and expects
 UI-capable hosts to route it to the iframe instead. On a host that declares the
 capability but does not render, it falls back to its base meaning and lands in
@@ -28,8 +28,8 @@ Measured against Claude Desktop, 6 lanes:
 
 | | bytes |
 |---|---|
-| `content` — model always pays | **72** |
-| `structuredContent` — panel, or model if rendering fails | **1537** |
+| `content` (model always pays | **72** |
+| `structuredContent`) panel, or model if rendering fails | **1537** |
 | worst case (no render) | **1609** |
 | what the same call cost before this feature | **2123** |
 
@@ -38,7 +38,7 @@ when rendering works is large; when it fails we are still cheaper than the plain
 tool we replaced. That is the honest claim, and `panel_test.go` enforces the
 trim.
 
-## The panel rides along — it is not a separate step
+## The panel rides along: it is not a separate step
 
 A human should not need the agent to make a ceremonial "now show it" call. Every
 tool that already carries board or mailbox state opens the panel:
@@ -50,10 +50,10 @@ tool that already carries board or mailbox state opens the panel:
 | `await_events` | board | it returned *because* something changed |
 | `show_board` | its `view` | the explicit request |
 
-This adds no data — `ack_board` already returned board + inbox. It re-shapes what
+This adds no data. `ack_board` already returned board + inbox. It re-shapes what
 the call produced, which is why it *reduced* context cost rather than adding any.
 
-Note the hook cannot do this. `hook_poll` returns `additionalContext` — injected
+Note the hook cannot do this. `hook_poll` returns `additionalContext`: injected
 text, not a rendered tool call. It can tell an agent mail arrived; only a tool
 call can draw. The flow is: mail arrives → hook injects "2 unread" → the agent
 calls `inbox` → the panel opens on that mail.
@@ -96,14 +96,14 @@ panel is the in-conversation view of *this agent's* board.
 
 ### Retraction: the UI capability is NOT required to render
 
-An earlier version of this document — and of `panelResult` — stated that MCP
+An earlier version of this document (and of `panelResult`) stated that MCP
 Apps "requires the client to declare
 `capabilities.extensions["io.modelcontextprotocol/ui"]`", and gated
 `structuredContent` on that declaration.
 
 **That is wrong, and the gate has been removed.** Measured against
-`modelcontextprotocol/ext-apps` `examples/basic-host` — the reference AppBridge
-implementation other hosts are built on — the initialize request is:
+`modelcontextprotocol/ext-apps` `examples/basic-host`, the reference AppBridge
+implementation other hosts are built on, the initialize request is:
 
 ```json
 {"protocolVersion":"2025-11-25","capabilities":{},
@@ -113,7 +113,7 @@ implementation other hosts are built on — the initialize request is:
 It declares **no capabilities at all**, and renders the panel anyway. Hosts
 dispatch off the tool result's `_meta.ui.resourceUri`, not off a declared
 extension. Gating on the declaration silently starves every such host: the panel
-draws, empty, which is indistinguishable from a host bug — and that is exactly
+draws, empty, which is indistinguishable from a host bug, and that is exactly
 how three rounds of "the panel is blank" were misdiagnosed.
 
 The cost of erring the other way is bounded and measured (see the byte table
@@ -122,23 +122,23 @@ same call cost before this feature existed. **Bounded waste beats a feature that
 silently does not work.** `panel_test.go` now asserts the payload is always
 present, with the reasoning inline so the gate is not reintroduced.
 
-Declarations captured from live handshakes (`LANES_LOG_RPC=1`) — still useful for
+Declarations captured from live handshakes (`LANES_LOG_RPC=1`): still useful for
 knowing what a client *says*, just not for deciding what to send it:
 
 | client | declares `io.modelcontextprotocol/ui` |
 |---|---|
-| `claude-ai/0.1.0` | yes — `{mimeTypes:["text/html;profile=mcp-app"]}` |
-| `local-agent-mode-lanes/1.0.0` | yes — same |
+| `claude-ai/0.1.0` | yes (`{mimeTypes:["text/html;profile=mcp-app"]}` |
+| `local-agent-mode-lanes/1.0.0` | yes) same |
 | `claude-code/2.1.219` | no |
-| `MCP Apps Host` (ext-apps reference) | **no — and renders regardless** |
+| `MCP Apps Host` (ext-apps reference) | **no, and renders regardless** |
 
 **Claude Desktop supports MCP Apps.** An earlier draft said it did not; that came
 from a CLI `claude -p` capture generalised to a surface it was never measured on.
 
 | surface | client | panel renders |
 |---|---|---|
-| Claude Desktop **chat** | `claude-ai/0.1.0` | **yes** — rendered inline |
-| Claude **Code pane** (inside Desktop) | `claude-code/2.1.219` | no — surfaces as text |
+| Claude Desktop **chat** | `claude-ai/0.1.0` | **yes**, rendered inline |
+| Claude **Code pane** (inside Desktop) | `claude-code/2.1.219` | no, surfaces as text |
 | **ext-apps reference host** | `MCP Apps Host` | **yes** |
 
 The gap is surface-specific, not app-wide.
@@ -152,11 +152,11 @@ at initialize and remembers what that connection declared, so a later
 Capped at 512 sessions. This no longer gates the panel, but it is what makes any
 per-connection decision possible at all on that transport.
 
-### The template is cached by URI — a fix does not reach a connected host
+### The template is cached by URI: a fix does not reach a connected host
 
 **This is the trap worth knowing before you build an MCP App.** Hosts prefetch
 `ui://…` at connect and cache by URI, exactly as the spec permits. A stable URI
-is required for that caching to work — and it means **changing the template's
+is required for that caching to work, and it means **changing the template's
 content is invisible to any already-connected client.**
 
 Measured: a `show_board` call at 03:25:00 triggered **zero** `resources/read`.
@@ -169,8 +169,8 @@ Consequences for anyone developing one of these:
 - You cannot iterate on a template against a live host. Every change needs a
   client reconnect, or you are testing something you shipped hours ago.
 - A blank panel tells you nothing about the template you just wrote.
-- `notifications/resources/updated` exists for this — Lanes advertises
-  `resources.subscribe` on both handshake paths — but no shipping client
+- `notifications/resources/updated` exists for this (Lanes advertises
+  `resources.subscribe` on both handshake paths) but no shipping client
   subscribes yet, so in practice reconnection is the only delivery mechanism.
 
 This is the third staleness trap in this project: a stale daemon serving 19 tools
@@ -181,13 +181,13 @@ from before trusting what it reports.**
 
 ### The panel was blank, and it was our bug
 
-The Desktop session reported a panel had rendered. It had not — the human saw an
+The Desktop session reported a panel had rendered. It had not: the human saw an
 **empty container**. That session inferred success from a host confirmation
 message rather than from seeing anything, and this document repeated it. Two
 retractions in one feature is a pattern: a rendering claim is only worth making
 when someone has looked at pixels.
 
-Diagnosed by reproducing the host's constraints locally — the template loaded in
+Diagnosed by reproducing the host's constraints locally: the template loaded in
 sandboxed iframes under four CSP regimes, from none to `default-src 'none'`:
 
 | CSP | result |
@@ -197,10 +197,10 @@ sandboxed iframes under four CSP regimes, from none to `default-src 'none'`:
 | inline allowed, no `data:` | shell renders |
 | inline + `data:` | shell renders |
 
-**CSP was not the cause** — nor the 68 KB of base64 font, nor the inline script.
+**CSP was not the cause**: nor the 68 KB of base64 font, nor the inline script.
 Every regime drew something. What every regime also showed was the actual fault:
 the panel sat on `connecting` with an empty body, because `draw()` was called
-only *after* the `ui/initialize` promise settled — a **10-second timeout** when a
+only *after* the `ui/initialize` promise settled: a **10-second timeout** when a
 host does not answer. A host that sizes its container to content sees an empty
 box and shows the human nothing.
 
@@ -216,7 +216,7 @@ local testing: **the panel rendered AND the model still received the whole board
 as JSON**, contradicting `show_board`'s own description.
 
 That was ours, not the host's. When the `ack_board` regression was fixed,
-`show_board` was routed through the shared panel path — which deliberately
+`show_board` was routed through the shared panel path, which deliberately
 preserves the agent's full result, because `ack_board` **needs** it: reading the
 board is the awareness gate. `show_board` has no such need; the human is looking
 at the panel. It now returns a summary line and nothing else when a renderer is
@@ -229,14 +229,14 @@ Lanes board: 8 lane(s), 0 active. Shown to the human in the board panel.
 Two further findings from the same session, both fixed:
 
 - **`since_serial: 0` was a footgun.** It is the only cursor an agent can pick
-  before it has seen the board, so every agent reaches for it — and once the ring
+  before it has seen the board, so every agent reaches for it, and once the ring
   floor moved past 0 it failed with `E_CURSOR_TOO_OLD`, an error about buffer
   internals the agent has no way to know. It now means "from the floor". A stale
   *non-zero* cursor still errors, because there the agent had a position and
   genuinely missed events.
 - **The stale-recipient warning arrived after commit**, warning about what might
   happen to a message already sent. It now states what is true: *delivered to X,
-  which is currently dormant — it will see this when it next wakes. The message is
+  which is currently dormant: it will see this when it next wakes. The message is
   not lost; only the response deadline is at risk.*
 
 ## Contextual views, not one dashboard repeated
@@ -247,16 +247,16 @@ draws nothing at all:
 
 | tool | view | when it stays silent |
 |---|---|---|
-| `ack_board` | board | never — orientation is always deliberate |
+| `ack_board` | board | never, orientation is always deliberate |
 | `inbox` | mail | **empty mailbox draws no panel** |
 | `await_events` | activity (capped at 40) | a timeout with no events draws nothing |
-| `send_message` / `respond` | mail | — |
-| `show_board` | its `view` argument | — |
+| `send_message` / `respond` | mail | (|
+| `show_board` | its `view` argument |) |
 
 Getting there exposed the named-map-type trap for the third time in this file:
 `core.Result` does not satisfy `case map[string]any`, and `[]core.Event` does not
 satisfy `.([]any)`, because Go treats named types as distinct. That has silently
-produced a wrong answer three times — a summary reporting 0 lanes over 7, a board
+produced a wrong answer three times: a summary reporting 0 lanes over 7, a board
 dropped entirely, and a mailbox panel suppressed while holding mail. The payload
 builder now normalises through JSON once at the boundary, which removes the class
 rather than patching the instance.
@@ -267,8 +267,8 @@ The panel was originally checked against a locally-written host simulator. That
 was the wrong instrument: a simulator only ever confirms the protocol *you
 believe* is correct, and every blank-panel misdiagnosis in this file came from
 believing something wrong. It has been replaced by
-`modelcontextprotocol/ext-apps` `examples/basic-host` — the actual AppBridge
-reference implementation — driven in a browser against the live daemon.
+`modelcontextprotocol/ext-apps` `examples/basic-host` (the actual AppBridge
+reference implementation) driven in a browser against the live daemon.
 
 Reaching it needed one shim: a bun proxy on :3001 that injects the
 `X-Lanes-Local` secret (the host knows nothing about our auth header) and answers

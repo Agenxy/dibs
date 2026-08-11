@@ -28,7 +28,7 @@ func TestInMatchedRepo(t *testing.T) {
 
 		// Not knowing is not evidence. A plain HTTP client or an older harness
 		// reports no cwd, and treating that as foreign would silently disable
-		// auto-join for every client that does not report one — a worse failure
+		// auto-join for every client that does not report one: a worse failure
 		// than the one being fixed, and indistinguishable from matching being
 		// broken.
 		{"no cwd reported", "", repo, true},
@@ -59,7 +59,7 @@ func TestInMatchedRepoRejectsPrefixSiblings(t *testing.T) {
 	}
 }
 
-// The guard existed, was correct, and was never called — which is this
+// The guard existed, was correct, and was never called, which is this
 // codebase's most expensive recurring defect: built but unreachable. A unit test
 // of the predicate alone would have stayed green through the entire outage.
 //
@@ -73,7 +73,7 @@ func TestRepoGuardIsActuallyWired(t *testing.T) {
 	// The daemon builds the index from `dir`; that same value has to reach the
 	// engine, or every agent looks like it is in the repo.
 	if !strings.Contains(liveCode(t, matchConfigLiteral(t)), "Repo:") {
-		t.Error("lanesd builds MatchConfig without Repo — the guard will never fire")
+		t.Error("lanesd builds MatchConfig without Repo: the guard will never fire")
 	}
 	if !strings.Contains(liveCode(t, readFile(t, "match.go")), "inMatchedRepo(selfCWD, cfg.Repo)") {
 		t.Error("suggestionsFor never consults the guard")
@@ -83,7 +83,7 @@ func TestRepoGuardIsActuallyWired(t *testing.T) {
 // matchConfigLiteral returns just the MatchConfig the daemon hands to SetScorer.
 //
 // Scoped deliberately. The first version of this test searched the whole file
-// for "Repo: dir" and passed with the wiring commented out — partly because a
+// for "Repo: dir" and passed with the wiring commented out: partly because a
 // comment contains its own code, and partly because `Repo: dir` also appears in
 // two MatchStatus literals that have nothing to do with the guard. An assertion
 // that can be satisfied by a neighbouring struct is not testing the wiring.

@@ -30,8 +30,8 @@ import (
 // is the machine. So this is a prompt, not a prohibition: refuse by default,
 // name the daemon already running, and say the one word that allows it.
 //
-// The registry mechanics — atomic claim, lock-based liveness, canonical
-// directory identity — live in internal/paths, which explains why each is
+// The registry mechanics: atomic claim, lock-based liveness, canonical
+// directory identity: live in internal/paths, which explains why each is
 // necessary. What lives here is the policy: who is allowed to start.
 
 // parallelAllowed reports whether the operator has said a second daemon is
@@ -57,7 +57,7 @@ func refusalText(others []paths.Daemon) error {
 	}
 	b.WriteString(
 		"\nTwo daemons means two boards. Agents pointed at different ones cannot see\n" +
-			"each other, every call still succeeds, and both boards look correct — which is\n" +
+			"each other, every call still succeeds, and both boards look correct, which is\n" +
 			"the exact failure Lanes exists to prevent, made invisible.\n\n" +
 			"If you meant to isolate agents you do not trust (SECURITY.md), that is a real\n" +
 			"reason and this is how you say so:\n" +
@@ -92,12 +92,12 @@ func claimHostSlot(addr, dir string, allowed bool) (func(), error) {
 
 	// 2. This machine. Reading the registry and claiming a slot happen under one
 	//    host-wide lock, so two daemons starting together cannot both conclude
-	//    they are alone — which a check-then-register pair allowed.
+	//    they are alone, which a check-then-register pair allowed.
 	unregister, err := paths.Claim(paths.Daemon{PID: os.Getpid(), Addr: addr, Dir: dir}, allowed)
 	if err != nil {
 		closeLock()
 		// The policy is a plain bool, so nothing of ours runs while the registry
-		// lock is held — a callback there would deadlock the moment it wanted to
+		// lock is held: a callback there would deadlock the moment it wanted to
 		// consult the registry, which is the obvious thing for a policy to want.
 		// The refusal is turned into prose out here instead.
 		var strangers *paths.Strangers

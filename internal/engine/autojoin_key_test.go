@@ -12,14 +12,14 @@ import (
 //
 // core has always returned the key on a join; the engine's matcher threw it
 // away, so an agent joined automatically by set_slot became a member of a lane
-// it could not name exactly — and the key is precisely what it would declare in
+// it could not name exactly, and the key is precisely what it would declare in
 // `refs` next time to be matched by identity instead of by wording. The agent
 // that got there by being guessed at was the one left unable to stop being
 // guessed at.
 //
 // Tested HERE rather than in core, and that distinction is the whole point. A
 // core test of the same behaviour passes with this engine fix reverted, because
-// core was never the broken half — it is the same "correct and dead" trap
+// core was never the broken half: it is the same "correct and dead" trap
 // admit_wired_test.go exists for. Verified by reverting: this fails, that does
 // not.
 //
@@ -64,11 +64,11 @@ func TestTheMatcherCarriesTheCoordinationKeyOutOfAnAutoJoin(t *testing.T) {
 		overlap.Prediction{ScorerID: "test"}, nil)
 
 	if action != "joined" {
-		t.Fatalf("attemptJoin action = %q, want joined — the assertion below cannot "+
+		t.Fatalf("attemptJoin action = %q, want joined: the assertion below cannot "+
 			"mean anything without an actual join", action)
 	}
 	if key != want {
-		t.Errorf("attemptJoin returned key %q, want %q — the matcher joined the agent "+
+		t.Errorf("attemptJoin returned key %q, want %q: the matcher joined the agent "+
 			"and kept the one thing that would let it declare the lane exactly", key, want)
 	}
 }

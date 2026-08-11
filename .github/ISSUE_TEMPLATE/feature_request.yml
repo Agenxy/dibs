@@ -6,7 +6,7 @@ body:
     attributes:
       value: |
         Worth knowing before you write: Lanes is a **service agents pull from**,
-        never something that drives a harness. It reports and does not act — it
+        never something that drives a harness. It reports and does not act: it
         will tell a parent its subagent is stuck and hand back the command to
         resume it, but it will not run that command. Requests that ask Lanes to
         take an action on an agent's behalf will usually be declined on those
@@ -38,7 +38,7 @@ body:
     attributes:
       label: What you tried instead
       description: >
-        Including "I did it by hand" or "I used claims for it, badly" — knowing
+        Including "I did it by hand" or "I used claims for it, badly": knowing
         the workaround tells us how much the gap actually hurts.
     validations:
       required: false

@@ -12,8 +12,8 @@ import (
 // 2025-11-25 lets a strict client hang up.
 //
 // The 2026-07-28 row is the interesting one, and it used to assert the opposite.
-// That revision RETIRED the initialize handshake — it is a stateless
-// per-request envelope reached through server/discover — so it is not something
+// That revision RETIRED the initialize handshake: it is a stateless
+// per-request envelope reached through server/discover, so it is not something
 // this path can agree to. The reference SDKs encode the split explicitly
 // (mcp_types.version: HANDSHAKE_PROTOCOL_VERSIONS stops at 2025-11-25,
 // MODERN_PROTOCOL_VERSIONS holds 2026-07-28 alone). Lanes echoing it back meant
@@ -30,7 +30,7 @@ func TestLegacyHandshakeNeverAgreesToAStatelessVersion(t *testing.T) {
 	} {
 		params, _ := json.Marshal(map[string]any{"protocolVersion": tc.asked})
 		if got := negotiateLegacy(params); got != tc.want {
-			t.Errorf("asked %q: got %q, want %q — %s", tc.asked, got, tc.want, tc.why)
+			t.Errorf("asked %q: got %q, want %q. %s", tc.asked, got, tc.want, tc.why)
 		}
 	}
 	if got := negotiateLegacy([]byte("not json")); got != "2025-11-25" {

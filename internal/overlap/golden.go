@@ -6,7 +6,7 @@ package overlap
 //
 // Calibrate samples COMMITS, predicts files from each commit MESSAGE, and calls a
 // pair related when the two commits share a file. Production predicts from an
-// AGENT DECLARATION — a paragraph about goals and intentions — and asks whether
+// AGENT DECLARATION (a paragraph about goals and intentions) and asks whether
 // two agents are doing the same work. Those are different input distributions and
 // different questions, and only the easy one was ever measured.
 //
@@ -15,8 +15,8 @@ package overlap
 // written before the fact about work that does not exist yet, in the vocabulary
 // of goals: "greening main's cross-cutting gates in my lane". The first is nearly
 // a query for the files it touched. The second shares its most distinctive words
-// with every other declaration in the same repository — CI, gates, docs, runtime
-// — and a path-token scorer turns exactly those into "evidence".
+// with every other declaration in the same repository. CI, gates, docs, runtime
+// and a path-token scorer turns exactly those into "evidence".
 //
 // That gap is why a smaller embedding model scored as well as a larger one and we
 // believed it: on commit messages, retrieval is easy enough that model capacity
@@ -30,7 +30,7 @@ package overlap
 // because the humans and agents involved said what they were doing and two of the
 // agents independently reported the misclassification.
 //
-// Details are genericised — subsystem names, paths and identifiers are replaced
+// Details are genericised: subsystem names, paths and identifiers are replaced
 // with equivalents that preserve the SHAPE that matters: the vocabulary overlap,
 // the directory disjointness, and whether the repository is shared. The failures
 // reproduce on the genericised text, which is the point; if they did not, the
@@ -41,10 +41,10 @@ package overlap
 // PRECISION, weighted far above recall, and measured at the operating point
 // rather than averaged. The costs are not symmetric:
 //
-//	false positive — an agent is told it is duplicating work that it is not, and
+//	false positive: an agent is told it is duplicating work that it is not, and
 //	                 stands down something real, or spends a turn arguing its way
 //	                 out of a lane. Both happened.
-//	false negative — two agents collide, which is where they were before Lanes
+//	false negative: two agents collide, which is where they were before Lanes
 //	                 existed. The system's own documentation already tells agents
 //	                 a low score proves nothing.
 //
@@ -63,7 +63,7 @@ type GoldenCase struct {
 	Why string
 }
 
-// GoldenDecl is everything an agent tells Lanes about itself — the whole signal,
+// GoldenDecl is everything an agent tells Lanes about itself: the whole signal,
 // not just the sentence the scorer currently reads.
 type GoldenDecl struct {
 	Text   string
@@ -87,7 +87,7 @@ var GoldenSet = []GoldenCase{
 			Branch: "feat/terminal-native",
 		},
 		B: GoldenDecl{
-			Text: "Runtime C++ and build-farm lane — outage recovery, migration off a personal " +
+			Text: "Runtime C++ and build-farm lane: outage recovery, migration off a personal " +
 				"account to a service account, CI throughput, runtime and gate infrastructure.",
 			Dirs:   []string{"/repo/tools/ci", "/repo/.github"},
 			Refs:   []string{"incident:farm-down", "gate:codeowners"},
@@ -96,7 +96,7 @@ var GoldenSet = []GoldenCase{
 		},
 		Same: false,
 		Why: "Both say gates and CI, and a path-token scorer matched them at 0.196 on " +
-			"Justfile, ci.yml, CMakeLists.txt and a generated file — none of which either " +
+			"Justfile, ci.yml, CMakeLists.txt and a generated file: none of which either " +
 			"agent declared. Their declared dirs are disjoint and each says explicitly it " +
 			"is not touching the other's.",
 	},
@@ -122,7 +122,7 @@ var GoldenSet = []GoldenCase{
 	{
 		Name: "genuinely the same work, declared differently",
 		A: GoldenDecl{
-			Text: "Fixing the stale owner handle in CODEOWNERS and MAINTAINERS — a renamed " +
+			Text: "Fixing the stale owner handle in CODEOWNERS and MAINTAINERS: a renamed " +
 				"account silently voids required owner review.",
 			Dirs: []string{"/repo/.github"},
 			Refs: []string{"gate:codeowners"},
@@ -136,8 +136,8 @@ var GoldenSet = []GoldenCase{
 			CWD:  "/repo",
 		},
 		Same: true,
-		Why: "The prose shares almost no vocabulary — 'stale owner handle' against 'approvals " +
-			"not enforced' — but the declared directory and the ref are identical. This is " +
+		Why: "The prose shares almost no vocabulary. 'stale owner handle' against 'approvals " +
+			"not enforced', but the declared directory and the ref are identical. This is " +
 			"the case text similarity alone cannot get right and structure gets right for free.",
 	},
 	{
@@ -179,7 +179,7 @@ var GoldenSet = []GoldenCase{
 			"exactly where it is wrong; the cwd and the declared dirs are what separate them.",
 	},
 	{
-		Name: "handoff continuation — the same work, one agent after the other",
+		Name: "handoff continuation: the same work, one agent after the other",
 		A: GoldenDecl{
 			Text: "Landing the supervisor daemon for the build farm: liveness checks, runner " +
 				"restart, disk trim.",
@@ -188,7 +188,7 @@ var GoldenSet = []GoldenCase{
 			CWD:  "/repo",
 		},
 		B: GoldenDecl{
-			Text: "Picking up the farm supervisor after the previous agent stopped — finishing " +
+			Text: "Picking up the farm supervisor after the previous agent stopped: finishing " +
 				"the restart path and its tests.",
 			Dirs: []string{"/repo/tools/ci"},
 			Refs: []string{"goal:farm-up"},
@@ -214,7 +214,7 @@ var GoldenSet = []GoldenCase{
 		},
 		Same: true,
 		Why: "COLLIDING is the question, not 'doing the same thing'. One agent is deleting " +
-			"what the other is editing — the most expensive collision there is, and the two " +
+			"what the other is editing: the most expensive collision there is, and the two " +
 			"declarations share a directory and a subject while their refs differ. A rule " +
 			"that trusts differing refs to mean 'unrelated' gets this wrong, which is why " +
 			"refs may confirm a match and must not veto one.",
@@ -233,7 +233,7 @@ var GoldenSet = []GoldenCase{
 		},
 		Same: true,
 		Why: "A terse declaration is common and must still match. Structure alone cannot see " +
-			"it — B declared no dirs and no refs — so this is where semantic similarity has " +
+			"it (B declared no dirs and no refs) so this is where semantic similarity has " +
 			"to carry the case, and where dropping the text scorer would cost real recall.",
 	},
 }

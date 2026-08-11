@@ -25,7 +25,7 @@ func TestStaleLaneWithoutPIDIsIdleNotDead(t *testing.T) {
 		}
 		found = true
 		if got := e.Data["reason"]; got != "idle_no_activity" {
-			t.Errorf("reason = %v, want idle_no_activity — no PID means no evidence of death", got)
+			t.Errorf("reason = %v, want idle_no_activity: no PID means no evidence of death", got)
 		}
 		if _, has := e.Data["proc_alive"]; has {
 			t.Error("proc_alive reported for a lane that never gave a PID")
@@ -48,7 +48,7 @@ func TestStaleLaneWithPIDKeepsLeaseSemantics(t *testing.T) {
 	// gone. A lane running a long build has a perfectly alive process.
 	//
 	// So the verdict appears only when something measured it. The lease still
-	// governs the transition either way — that is what "keeps lease semantics"
+	// governs the transition either way: that is what "keeps lease semantics"
 	// means here.
 	_, evs, _ := s.Apply(&Op{Kind: OpSweep, StaleLanes: []string{"agent"}}, now)
 	for _, e := range evs {
@@ -85,7 +85,7 @@ func TestIdleTTLIsLongerThanLeaseTTL(t *testing.T) {
 	}
 }
 
-// "name + session_id" is guessable, and presenting both rotates the token —
+// "name + session_id" is guessable, and presenting both rotates the token,
 // taking the mailbox, the actor identity, and any role the lane holds.
 //
 // The bridge derives the session id from the host's process id
@@ -95,7 +95,7 @@ func TestIdleTTLIsLongerThanLeaseTTL(t *testing.T) {
 // that read the victim's private mail.
 //
 // Losing your context must not lose your mailbox, so the weak path survives for
-// lanes that have nothing better — and those are TOLD so. A lane that
+// lanes that have nothing better, and those are TOLD so. A lane that
 // registered with a nonce has a real secret, and that is what reclaims it.
 func TestALaneWithARealCredentialIsNotReclaimedByAGuessableOne(t *testing.T) {
 	s := NewState("t", DefaultLimits())
@@ -126,8 +126,8 @@ func TestALaneWithARealCredentialIsNotReclaimedByAGuessableOne(t *testing.T) {
 		t.Fatal("and its token must not have been rotated out from under it")
 	}
 
-	// A lane with only a session id keeps working — losing context must not
-	// lose your mailbox — but it is told what that costs.
+	// A lane with only a session id keeps working: losing context must not
+	// lose your mailbox, but it is told what that costs.
 	plain, _, err := s.Apply(&Op{
 		Kind: OpRegisterLane, Name: "plain", NewToken: "t2", SessionID: "plain-sess",
 	}, now)

@@ -1,8 +1,8 @@
 /**
  * The host side of the panel test, running in a real browser.
  *
- * This is the actual `AppBridge` from @modelcontextprotocol/ext-apps — the same
- * implementation shipping hosts embed — driving the panel in a real iframe, so
+ * This is the actual `AppBridge` from @modelcontextprotocol/ext-apps: the same
+ * implementation shipping hosts embed: driving the panel in a real iframe, so
  * the panel gets real layout, real CSS and a real postMessage boundary.
  * Bundled by `bun build` and served same-origin so the two frames may talk.
  *
@@ -24,11 +24,11 @@ const probe = {
 window.__probe = probe
 
 // AppBridge wants an MCP Client. A full in-browser SDK client would need the
-// daemon to send CORS headers, which it deliberately does not — so tool calls
+// daemon to send CORS headers, which it deliberately does not, so tool calls
 // go through this page's own origin, which proxies them to the real daemon with
 // the local secret attached. Everything below /rpc is genuinely the daemon.
 // AppBridge wants an MCP Client, and on connect() it installs its OWN proxying
-// handlers that call `client.request(...)` — overwriting anything the host set
+// handlers that call `client.request(...)`: overwriting anything the host set
 // beforehand. So the shim must implement `request`, not just `callTool`;
 // implementing only the latter made every panel action die silently, which is
 // exactly the contract detail a hand-written host mock cannot teach you.
@@ -59,7 +59,7 @@ const client = {
 // into that same window with document.write.
 //
 // Order is load-bearing twice over. A real host is listening before its app
-// starts, and the panel sends ui/initialize the instant its script parses — set
+// starts, and the panel sends ui/initialize the instant its script parses: set
 // a src and the handshake is gone before the transport exists. Writing into the
 // already-connected about:blank window also preserves `contentWindow` identity,
 // which is what lets the transport keep its event-source check rather than
@@ -80,8 +80,8 @@ const bridge = new AppBridge(
   },
   {
     hostContext: {
-      // The HOST is authoritative for theme in MCP Apps — the panel reads
-      // ctx.theme and never a media query — so a page-level colour scheme
+      // The HOST is authoritative for theme in MCP Apps: the panel reads
+      // ctx.theme and never a media query, so a page-level colour scheme
       // cannot reach it. A test host that can only say "dark" makes the light
       // theme unobservable, which is how this board once shipped one that was
       // unreadable while every check passed. Default stays dark; the inspector

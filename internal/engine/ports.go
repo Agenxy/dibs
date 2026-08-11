@@ -12,7 +12,7 @@ import (
 //
 // Interfaces are declared here, in the *consumer*, which is the Go idiom: the
 // engine states what it needs, and any implementation satisfying that shape is
-// a valid backend. Adding a backend is additive — no core change.
+// a valid backend. Adding a backend is additive: no core change.
 //
 // Deliberately NOT declared yet: Index and Embedder. They arrive with semantic
 // discovery, together with a real consumer. An interface with no caller is
@@ -30,7 +30,7 @@ type Ledger interface {
 	Append(serial uint64, ts time.Time, op *core.Op) error
 }
 
-// Store holds attachment bytes outside the replay model (the blob store —
+// Store holds attachment bytes outside the replay model (the blob store,
 // named for what it is, not what it holds; e.blobs supplies the context). The ledger records
 // which blobs *should* exist; this holds the bytes themselves.
 //
@@ -47,7 +47,7 @@ type Ledger interface {
 // own goroutine (see reconcileBlobs) while callers are still staging bytes, so
 // Put and Reconcile genuinely overlap. This was implied by the in-flight rule
 // above but never stated, and the in-package test double was written without a
-// lock as a result — caught by `go test -race`, which is why it is spelled out
+// lock as a result: caught by `go test -race`, which is why it is spelled out
 // here rather than left to be inferred.
 type Store interface {
 	// Put stages plaintext bytes, returning their content id and size.

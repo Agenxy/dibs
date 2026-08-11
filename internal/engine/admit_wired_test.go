@@ -10,7 +10,7 @@ import (
 
 // A validation gate that is never called is not a validation gate.
 //
-// core.Admit was written, unit-tested and documented — and the line that calls
+// core.Admit was written, unit-tested and documented, and the line that calls
 // it never landed, because the script that made the change died between adding
 // the function and wiring it up. Every test still passed: the unit tests call
 // Admit directly, and the fold tests assert Apply keeps accepting what Admit
@@ -45,7 +45,7 @@ func TestAdmitIsActuallyOnTheIngressPath(t *testing.T) {
 		Kind: core.OpLaneAnnounce, Token: tok, Channel: "w", Body: "   ",
 	})
 	if err == nil {
-		t.Fatal("an empty announcement reached the ledger — core.Admit is not wired " +
+		t.Fatal("an empty announcement reached the ledger: core.Admit is not wired " +
 			"into engine.exec, and every unit test of it passes anyway")
 	}
 	if !strings.Contains(err.Error(), "E_EMPTY_BODY") {

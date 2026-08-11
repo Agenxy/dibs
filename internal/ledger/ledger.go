@@ -32,7 +32,7 @@ type Line struct {
 	Op   *core.Op  `json:"op"`
 }
 
-// Ledger is a single-writer append log. Not safe for concurrent use — the
+// Ledger is a single-writer append log. Not safe for concurrent use: the
 // engine's single goroutine is the only writer, by design.
 type Ledger struct {
 	f        *os.File
@@ -44,19 +44,19 @@ type Ledger struct {
 	OnEvents func([]core.Event)
 
 	// OnSerialGap, if set, is told when Replay finds the ledger's serial ahead
-	// of the replayed state — a serial the writer allocated but never appended.
+	// of the replayed state: a serial the writer allocated but never appended.
 	// Survivable (see Replay), but never normal: the daemon logs it so a writer
 	// bug leaves a trail instead of being silently smoothed over.
 	OnSerialGap func(stateSerial, ledgerSerial uint64)
 
-	// OnTornTail, if set, is told when Replay discards a partial final record —
+	// OnTornTail, if set, is told when Replay discards a partial final record,
 	// the ordinary artifact of a crash between write and fsync.
 	//
 	// Dropping it is correct: the daemon died before it could answer the caller,
 	// so nobody was ever told that op succeeded. Doing it SILENTLY is not.
 	// Replay truncates the file to remove the fragment, which is the one place
 	// in this system where reading the ledger writes to it, and the log said
-	// only "ledger replayed ops=7" — indistinguishable from a board that always
+	// only "ledger replayed ops=7": indistinguishable from a board that always
 	// had seven. By the standard OnSerialGap already sets ("a silent resync
 	// would hide the next writer bug completely"), a torn tail earns a line too,
 	// and more so, because this one destroys bytes.
@@ -81,7 +81,7 @@ func Open(path, nodeID string, box *Box) (*Ledger, error) {
 // OnEvents, if set, receives every event regenerated during Replay. The engine
 // uses it to rebuild its event ring, so an agent's cursor survives a daemon
 // restart. Without it the ring starts empty and the floor jumps to whatever
-// serial the daemon happened to restart at — invalidating every cursor in the
+// serial the daemon happened to restart at: invalidating every cursor in the
 // fleet, which is exactly what happened during a day of rebuilds.
 func (l *Ledger) Replay(st *core.State) (int, error) {
 	if _, err := l.f.Seek(0, io.SeekStart); err != nil {
@@ -115,7 +115,7 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 			// The hash chain above is the integrity guarantee, not this number.
 			//
 			// A serial that runs AHEAD of the replayed state means the writer
-			// allocated a serial it never appended — a hole. That is a writer
+			// allocated a serial it never appended: a hole. That is a writer
 			// bug, and it happened: a real board reached serial 566 with 565
 			// lines, missing 447, chain fully intact. Treating it as fatal made
 			// the daemon refuse to start at all, so a bug that lost nothing
@@ -127,7 +127,7 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 			// writer bug completely.
 			//
 			// BACKWARD is still fatal. rec.S < st.Serial means replay produced
-			// MORE transitions than the writer recorded — the state machine and
+			// MORE transitions than the writer recorded: the state machine and
 			// the ledger genuinely disagree about what an op does, and every
 			// serial from here on would be wrong.
 			if rec.S < st.Serial {

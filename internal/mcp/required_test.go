@@ -15,7 +15,7 @@ import (
 // as though the caller had supplied it.
 //
 // Found by making the mistake: acknowledging an announcement with `serial`
-// instead of `msg_serial` returned "no announcement at serial 0" — a serial
+// instead of `msg_serial` returned "no announcement at serial 0": a serial
 // that appears nowhere in the request. The obvious reading is that the
 // announcement is gone, and the actual fault, a parameter name, is not
 // mentioned at all. A confident and specific error for a cause that is fiction.
@@ -50,7 +50,7 @@ func TestAMisnamedParameterIsNamed(t *testing.T) {
 	}
 }
 
-// Enforcement must not break the calls that are correct — including the two
+// Enforcement must not break the calls that are correct: including the two
 // legitimate ways a token arrives.
 func TestValidCallsAreNotRejected(t *testing.T) {
 	for _, c := range []struct {
@@ -78,11 +78,11 @@ func TestValidCallsAreNotRejected(t *testing.T) {
 
 // The index is derived from toolDefs rather than restated, so a tool cannot
 // declare one contract in its schema and be held to another. This checks the
-// derivation actually found the schemas — an empty map would make every check
+// derivation actually found the schemas: an empty map would make every check
 // above vacuously pass.
 func TestRequiredIsDerivedFromTheSchemasThemselves(t *testing.T) {
 	if len(requiredParams) < 10 {
-		t.Fatalf("only %d tools have required params indexed — the derivation is broken, "+
+		t.Fatalf("only %d tools have required params indexed: the derivation is broken, "+
 			"and every enforcement test above would pass vacuously", len(requiredParams))
 	}
 	for tool, req := range requiredParams {
@@ -92,7 +92,7 @@ func TestRequiredIsDerivedFromTheSchemasThemselves(t *testing.T) {
 		}
 		for _, r := range req {
 			if !known[r] {
-				t.Errorf("%s requires %q but does not declare it as a property — "+
+				t.Errorf("%s requires %q but does not declare it as a property. "+
 					"a parameter no caller can satisfy", tool, r)
 			}
 		}
@@ -103,7 +103,7 @@ func TestRequiredIsDerivedFromTheSchemasThemselves(t *testing.T) {
 //
 // Nothing connected the two before: hooks.json is data, the schemas are Go, and
 // a rename on either side would be found by an operator whose edits stopped
-// being guarded — a silent failure, since guard_path fails open by design.
+// being guarded: a silent failure, since guard_path fails open by design.
 //
 // Enforcement of `required` made this worse before it made it better: with the
 // schemas now actually binding, a hook that omits a required parameter goes
@@ -111,8 +111,8 @@ func TestRequiredIsDerivedFromTheSchemasThemselves(t *testing.T) {
 // checked against each other here.
 func TestShippedHooksSatisfyTheSchemasTheyCall(t *testing.T) {
 	// EVERY shipped plugin, not one hardcoded path. Codex loads hooks from the
-	// same `hooks/hooks.json` layout as Claude Code — deliberately, its own
-	// feature flag calls them "Claude-style" — so Lanes will ship more than one
+	// same `hooks/hooks.json` layout as Claude Code: deliberately, its own
+	// feature flag calls them "Claude-style", so Lanes will ship more than one
 	// of these, and a second plugin referencing a tool that does not exist would
 	// have sailed past a test that only ever opened the first.
 	files, _ := filepath.Glob("../../plugins/*/hooks/hooks.json")
@@ -137,7 +137,7 @@ func TestShippedHooksSatisfyTheSchemasTheyCall(t *testing.T) {
 					t.Errorf("%s calls %s but the schema rejects it: %v", where, tool, err)
 				}
 				if _, known := knownParams[tool]; !known {
-					t.Errorf("%s calls %q, which is not a tool this server serves —\n"+
+					t.Errorf("%s calls %q, which is not a tool this server serves , \n"+
 						"  a hook wired to a tool that does not exist fails silently at runtime,\n"+
 						"  which is indistinguishable from the hook never having been written",
 						where, tool)
@@ -168,7 +168,7 @@ func TestShippedHooksSatisfyTheSchemasTheyCall(t *testing.T) {
 	}
 
 	if seen == 0 {
-		t.Error("found no mcp_tool hooks to check — the walk is broken, and this " +
+		t.Error("found no mcp_tool hooks to check: the walk is broken, and this " +
 			"test would pass no matter how wrong hooks.json got")
 	}
 }
@@ -177,13 +177,13 @@ func TestShippedHooksSatisfyTheSchemasTheyCall(t *testing.T) {
 //
 // vouch_child was in exactly that state, and it mattered more than a missing
 // entry usually would. register_lane's `parent` parameter told agents "you
-// inherit its lanes and do not join, queue or count separately" — but lineage
+// inherit its lanes and do not join, queue or count separately", but lineage
 // grants nothing unless the parent vouched with a one-time nonce, and
 // vouch_child, the only way to issue one, was absent from tools/list. So the
 // documented inheritance was unreachable: every subagent naming a parent got
 // none of what the parameter promised, silently, and was queued like a stranger.
 //
-// Nothing failed. That is the point — a capability that quietly does nothing
+// Nothing failed. That is the point: a capability that quietly does nothing
 // reads as a capability that works.
 func TestEveryDispatchedToolIsDeclared(t *testing.T) {
 	src, err := os.ReadFile("mcp.go")
@@ -209,12 +209,12 @@ func TestEveryDispatchedToolIsDeclared(t *testing.T) {
 		if protocol[name] || declared[name] {
 			continue
 		}
-		t.Errorf("%q is dispatched but not in toolDefs — it is absent from tools/list, "+
+		t.Errorf("%q is dispatched but not in toolDefs: it is absent from tools/list, "+
 			"so no agent can discover or call it, and nothing reports that", name)
 	}
 
 	if len(declared) < 30 {
-		t.Errorf("only %d tools declared — the parse is broken and this test would "+
+		t.Errorf("only %d tools declared: the parse is broken and this test would "+
 			"pass vacuously", len(declared))
 	}
 }
@@ -229,7 +229,7 @@ func TestEveryDispatchedToolIsDeclared(t *testing.T) {
 // just pointed them at live processes.
 //
 // This is the worst failure this server can produce. An agent cannot see the
-// board it is not looking at — its only evidence that anything happened is
+// board it is not looking at: its only evidence that anything happened is
 // what these tools return. Answering "ok" for work not done means the agent
 // proceeds on it, and the entire product is other agents trusting that.
 func TestAWellFormedCallWithAMisnamedFieldIsRefused(t *testing.T) {
@@ -242,7 +242,7 @@ func TestAWellFormedCallWithAMisnamedFieldIsRefused(t *testing.T) {
 	} {
 		err := checkRequired(c.tool, []byte(c.args), "")
 		if err == nil {
-			t.Errorf("%s(%s) was accepted — a field the tool does not take was "+
+			t.Errorf("%s(%s) was accepted: a field the tool does not take was "+
 				"ignored and the caller told it succeeded", c.tool, c.args)
 			continue
 		}
@@ -258,7 +258,7 @@ func TestAWellFormedCallWithAMisnamedFieldIsRefused(t *testing.T) {
 	}
 }
 
-// And a correct call must still be a correct call — strictness that rejects
+// And a correct call must still be a correct call: strictness that rejects
 // valid work is a worse bug than the one it fixes.
 func TestValidCallsAreStillAccepted(t *testing.T) {
 	for _, c := range []struct{ tool, args string }{
@@ -279,12 +279,12 @@ func TestValidCallsAreStillAccepted(t *testing.T) {
 // Everything the bridge injects must be a parameter the tool declares.
 //
 // `lanes mcp-stdio` enriches register_lane with what it can discover about the
-// caller — cwd, branch, host, harness, surface, session id, title. Three of
+// caller: cwd, branch, host, harness, surface, session id, title. Three of
 // those (surface, harness, host) were never in the schema. The server stored
 // them anyway, so nothing looked broken; but no agent could discover them, no
 // documentation described them, and the moment unknown arguments started being
 // REFUSED rather than ignored, the bridge's own calls were rejected. Every
-// real harness path — opencode, codex, pi — went through that call.
+// real harness path, opencode, codex, pi, went through that call.
 //
 // A schema that under-describes its tool is not a smaller problem than one
 // that over-describes it. This pins the two together.
@@ -303,13 +303,13 @@ func TestTheBridgeOnlySendsFieldsTheSchemaDeclares(t *testing.T) {
 		if !known[f] {
 			t.Errorf("the stdio bridge injects %q into register_lane and the schema does not declare it\n"+
 				"  the value is stored but undiscoverable, and strict argument checking will refuse\n"+
-				"  every call the bridge makes — which is every real harness", f)
+				"  every call the bridge makes, which is every real harness", f)
 		}
 	}
 	// And the check has to be looking at something. A typo in the tool name
 	// would make this pass against an empty set.
 	if len(known) < len(injected) {
-		t.Fatalf("register_lane declares %d params, fewer than the %d the bridge injects — "+
+		t.Fatalf("register_lane declares %d params, fewer than the %d the bridge injects. "+
 			"this test is not reading the schema it thinks it is", len(known), len(injected))
 	}
 }
@@ -318,7 +318,7 @@ func TestTheBridgeOnlySendsFieldsTheSchemaDeclares(t *testing.T) {
 //
 // Claude Code treats a non-zero PreToolUse hook as a REJECTION: the tool call
 // is blocked. So a hook that shells out has the power to break every Bash
-// command the agent issues, and it exercised that power — a `lanes hook-spawn`
+// command the agent issues, and it exercised that power: a `lanes hook-spawn`
 // hook shipped against an older `lanes` binary that had no such subcommand,
 // which exited 2 AND printed its usage text to stdout, where hook output is
 // parsed. Every Bash invocation in that session was rejected. Observed in a
@@ -376,7 +376,7 @@ func TestCommandHooksCannotBreakTheToolTheyDecorate(t *testing.T) {
 		}
 	}
 	if checked == 0 {
-		t.Error("no command hooks were examined — the walk is broken and this test " +
+		t.Error("no command hooks were examined: the walk is broken and this test " +
 			"would pass however dangerous the hooks became")
 	}
 }

@@ -4,7 +4,7 @@ import "time"
 
 // Guarding: turning a claim from a note into something that actually holds.
 //
-// Until now a claim was purely advisory — it told a well-behaved agent to stay
+// Until now a claim was purely advisory: it told a well-behaved agent to stay
 // away and did nothing whatsoever to one that never looked. That is the honest
 // floor for a coordination service, and it is also the gap that makes fleets
 // corrupt each other's work: the agent that damages your edit is precisely the
@@ -17,7 +17,7 @@ import "time"
 // THE DESIGN CONSTRAINT, from claims.go and worth restating because it is the
 // thing most likely to be got wrong later:
 //
-//	two agents editing the same file is NORMAL — version control solved that,
+//	two agents editing the same file is NORMAL: version control solved that,
 //	and suppressing it would destroy fleet parallelism
 //
 // So this must NOT block on incidental overlap. It blocks on one signal only:
@@ -55,7 +55,7 @@ var guardAllowed = GuardVerdict{Decision: GuardAllow}
 // not recognise is a broken editor, not a safe one.
 func (s *State) GuardPath(lane, path string, now time.Time) GuardVerdict {
 	// An unresolved caller is ALLOWED, and this early return is the whole of
-	// that promise — without it the loop below treats every claim as somebody
+	// that promise: without it the loop below treats every claim as somebody
 	// else's and denies, because "" never equals a holder's id.
 	//
 	// Getting this wrong blocks every editor on the machine that is not a
@@ -68,7 +68,7 @@ func (s *State) GuardPath(lane, path string, now time.Time) GuardVerdict {
 	p := cleanPath(path)
 
 	// The strongest matching claim wins, and a live holder outranks a stale one
-	// — being told "no" by someone who is still working is more actionable than
+	// being told "no" by someone who is still working is more actionable than
 	// being told "maybe" by someone who vanished.
 	verdict := guardAllowed
 	for _, c := range s.Claims {
@@ -77,8 +77,8 @@ func (s *State) GuardPath(lane, path string, now time.Time) GuardVerdict {
 		}
 		// A subagent is its parent's work, not a third party to it.
 		//
-		// This is the ordinary delegation pattern — claim the area, spawn a
-		// subagent to edit it — and without this the guard DENIES that subagent
+		// This is the ordinary delegation pattern: claim the area, spawn a
+		// subagent to edit it, and without this the guard DENIES that subagent
 		// on its own parent's claim, telling it to "coordinate with lane parent"
 		// and "pick different work". Because the guard is an enforcement path
 		// rather than advice, the harness then refuses the edit outright: the
@@ -103,7 +103,7 @@ func (s *State) GuardPath(lane, path string, now time.Time) GuardVerdict {
 				Holder:   c.Lane,
 				Path:     c.Path,
 				Reason: "lane " + c.Lane + " holds an exclusive claim on " + c.Path +
-					" and is active. Coordinate with it before editing here — send it a " +
+					" and is active. Coordinate with it before editing here: send it a " +
 					"request, or pick different work. If it is finished, ask it to release " +
 					"the claim.",
 			}
@@ -111,7 +111,7 @@ func (s *State) GuardPath(lane, path string, now time.Time) GuardVerdict {
 
 		// The holder stopped checking in. SPEC §claims is explicit that an
 		// expired claim is "loss of coordination, not proof it is safe to
-		// proceed" — so this is neither a clean allow nor a fair deny. Handing
+		// proceed", so this is neither a clean allow nor a fair deny. Handing
 		// it to the human as a prompt is the honest third answer, and the only
 		// one that cannot silently lose someone's work OR wedge the fleet
 		// behind a crashed agent.

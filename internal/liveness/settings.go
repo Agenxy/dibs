@@ -12,7 +12,7 @@ import (
 //
 // It lives here, beside the thing it configures, because BOTH the daemon and
 // `lanes probe` need it and they are different binaries. Keeping it in the
-// daemon meant the CLI could only be tuned by flags — so the same five
+// daemon meant the CLI could only be tuned by flags, so the same five
 // judgements existed in two forms, and an operator who set them in the file
 // found the command still using the defaults. Somebody demonstrating stall
 // detection then has to type
@@ -29,7 +29,7 @@ import (
 // already silently disabled a check once in this codebase.
 type Settings struct {
 	// Every is how often the machine is scanned. Scanning faster does not find
-	// a stall sooner — nothing becomes stuck in less than Frozen — it only
+	// a stall sooner (nothing becomes stuck in less than Frozen) it only
 	// costs more.
 	Every time.Duration `toml:"every"`
 	// Quiet is how long output may pause before an agent stops counting as
@@ -44,7 +44,7 @@ type Settings struct {
 	MinAge time.Duration `toml:"min_age"`
 	// MinDuty is the fraction of its life a process must have spent on the CPU
 	// to escape that verdict. Every program burns CPU starting up, so over a
-	// short life that fixed cost is a large share of it — which is why tuning
+	// short life that fixed cost is a large share of it, which is why tuning
 	// MinAge down without raising this acquits everything.
 	MinDuty float64 `toml:"min_duty"`
 	// Off stops the DAEMON volunteering stall reports. `lanes probe` still

@@ -2,7 +2,7 @@
 // no I/O, no goroutines, and no wall clock. Every mutation flows through
 // Apply(op, now) → events. SPEC §2 invariant: an op is ledgered iff it changed
 // replayable state, every change has exactly one serial, and unledgered
-// activity never mutates replayable state — so replay is exact:
+// activity never mutates replayable state, so replay is exact:
 // state == fold(ledger).
 package core
 
@@ -63,14 +63,14 @@ const (
 // Three tiers, each granted only by the human:
 //
 //	member       default. Its own lane, its own mail.
-//	coordinator  BREADTH, not intrusion — address the whole fleet, unstick a
+//	coordinator  BREADTH, not intrusion: address the whole fleet, unstick a
 //	             shared resource. Still cannot read another lane's mail.
 //	admin        everything a human can do, INCLUDING reading all mail.
 //
 // The coordinator/admin split is the load-bearing one. Most fleets want a lead
 // agent that can direct workers without reading their private exchanges, and
 // that is coordinator. Admin is a deliberate, human-granted escalation for an
-// agent the operator trusts as they trust themselves — it is the god view, and
+// agent the operator trusts as they trust themselves: it is the god view, and
 // it is named plainly so nobody grants it by accident.
 const (
 	RoleMember      = "member"      // default
@@ -98,7 +98,7 @@ type Limits struct {
 	// Every other collection in replayed state has a bound and this one did not:
 	// announcements were added on every lane_announce and removed only when an
 	// empty auto-opened channel was reclaimed. A standing channel a human opened
-	// is never reclaimed, so its history grew for the life of the board — and it
+	// is never reclaimed, so its history grew for the life of the board, and it
 	// is replayed into memory on every daemon start, so the cost compounds.
 	//
 	// Only fully acknowledged ones are eligible. An open announcement is an
@@ -133,7 +133,7 @@ type Limits struct {
 	ArchiveRetention time.Duration `json:"archive_retention"`
 	// ConsumedRetention keeps consumed terminal messages readable (the
 	// sender must have a real window to fetch the outcome via get_message
-	// before GC — found by real-agent testing).
+	// before GC: found by real-agent testing).
 	ConsumedRetention  time.Duration `json:"consumed_retention"`
 	ClaimLease         time.Duration `json:"claim_lease"`
 	ClaimMaxLife       time.Duration `json:"claim_max_life"`
@@ -196,7 +196,7 @@ type Slot struct {
 	ID   string   `json:"id"`
 	Text string   `json:"text"`
 	Dirs []string `json:"dirs,omitempty"`
-	// Refs are the OBJECTIVE ids this work pursues — "pr:1186", "gate:typos",
+	// Refs are the OBJECTIVE ids this work pursues. "pr:1186", "gate:typos",
 	// "issue:1140", "goal:green-main". Two lanes sharing a ref are probably
 	// duplicating effort, which is the failure Lanes exists to catch. Paths are
 	// only a weak hint; objectives are the real key.
@@ -209,7 +209,7 @@ type Slot struct {
 	// max weight, and leaving never removes them. So the target got easier the
 	// longer a lane lived, and a lane that matched more gained members and gained
 	// surface by gaining them. Measured: the same unrelated newcomer scored 0.0000
-	// against a one-member lane and 0.1000 against the same lane with five —
+	// against a one-member lane and 0.1000 against the same lane with five,
 	// crossing a real fleet's join bar without its work changing or the lane's
 	// topic changing.
 	//
@@ -222,7 +222,7 @@ type Slot struct {
 	// it is: implement, review, test, investigate, document, release.
 	//
 	// Without it, two agents attached to the same PR are indistinguishable from
-	// each other, and the strongest evidence Lanes has — a shared identifier —
+	// each other, and the strongest evidence Lanes has: a shared identifier,
 	// produces the worst possible advice. An implementer and a REVIEWER on
 	// pr:1231 both classify as "the same work item", so the reviewer is told to
 	// stand down from reviewing because somebody else is attached to the thing it
@@ -241,7 +241,7 @@ type Slot struct {
 	// running git in one worktree both take .git/index.lock; two building both
 	// want the same cargo cache. None of that is repository surface, none of it
 	// shows up in a declaration's prose, and every one of them is a hard failure
-	// rather than a merge conflict — the second agent does not get a confusing
+	// rather than a merge conflict: the second agent does not get a confusing
 	// diff, it gets "address already in use" and no idea why.
 	//
 	// Reported by an adversarial review as an entire missing axis, correctly.
@@ -275,16 +275,16 @@ func Complementary(a, b string) bool {
 // Descriptive only: none of it grants anything, so a wrong value misleads a
 // reader and cannot escalate.
 //
-// Lane is an agent's registration. Replayable fields only — last-seen
+// Lane is an agent's registration. Replayable fields only: last-seen
 // freshness and process-aliveness are presentation annotations computed by
 // the engine (SPEC §2) and never appear here.
 // AgentInfo is who is behind a lane, for the human reading the board. Purely
 // descriptive: none of it grants anything, so a wrong value misleads a reader
 // and cannot escalate.
 type AgentInfo struct {
-	Harness  string `json:"harness,omitempty"`  // "Claude Code", "Codex" — from clientInfo
+	Harness  string `json:"harness,omitempty"`  // "Claude Code", "Codex": from clientInfo
 	Version  string `json:"version,omitempty"`  // harness version, from clientInfo
-	Surface  string `json:"surface,omitempty"`  // "claude-desktop", "cli" — entrypoint, when known
+	Surface  string `json:"surface,omitempty"`  // "claude-desktop", "cli": entrypoint, when known
 	Model    string `json:"model,omitempty"`    // self-reported; no harness sends this
 	Provider string `json:"provider,omitempty"` // self-reported or PI_PROVIDER
 	Effort   string `json:"effort,omitempty"`   // reasoning effort, when the harness exposes it
@@ -310,10 +310,10 @@ type Lane struct {
 	Status      LaneStatus
 	// SessionID binds the lane to its harness session, so a lifecycle hook that
 	// knows only "${session_id}" can find the right mailbox without carrying a
-	// token through config. Set at registration; never a credential on its own —
+	// token through config. Set at registration; never a credential on its own,
 	// the connection is already authenticated.
 	SessionID string `json:"session_id,omitempty"`
-	// Lane is who is behind this lane — harness, version, model, surface. In a
+	// Lane is who is behind this lane: harness, version, model, surface. In a
 	// large fleet "reviewer" is not enough; the human needs to know that it is
 	// Codex 0.145 rather than Opus 5 in Claude Desktop. Purely descriptive: it
 	// never grants anything, so a wrong value misleads a reader but cannot
@@ -326,7 +326,7 @@ type Lane struct {
 	// Spawning subagents is ordinary development behaviour and MUST NOT require
 	// coordination ceremony (SPEC-CHANNELS.md §8.2): a subagent inherits its
 	// parent's lane membership, does not join, does not queue, and is not
-	// counted as a second occupant. The parent stays accountable — its departure
+	// counted as a second occupant. The parent stays accountable: its departure
 	// takes the subagent's access with it, because the access was never the
 	// subagent's to begin with.
 	Parent string `json:"parent,omitempty"`
@@ -337,13 +337,13 @@ type Lane struct {
 	// powers keyed off it are not cosmetic: a subagent speaks under its
 	// parent's membership, skips an exclusive lane's queue, and is exempt from
 	// its parent's exclusive claims in the guard. Verified against a running
-	// daemon — an agent registering with parent:"victim" posted into the
+	// daemon: an agent registering with parent:"victim" posted into the
 	// victim's exclusive lane, joined it instead of queueing, and got
 	// allow/no-claim for a path the victim held exclusively.
 	//
 	// So lineage is now claimed and PROVEN separately. An unproven parent stays
-	// on the board as the lineage the agent asserts — useful for a human
-	// reading a fleet — and grants nothing.
+	// on the board as the lineage the agent asserts: useful for a human
+	// reading a fleet, and grants nothing.
 	ParentProven bool `json:"parent_proven,omitempty"`
 
 	// ChildNonces are one-time secrets this lane has issued to subagents it is
@@ -356,7 +356,7 @@ type Lane struct {
 	ChildNonces map[string]bool `json:"-"`
 
 	// Role is "member", "coordinator", or "admin". Only the human, through the
-	// admin path, can grant it — a lane can never promote itself.
+	// admin path, can grant it: a lane can never promote itself.
 	Role          string `json:"role,omitempty"`
 	CreatedSerial uint64 `json:"created_serial"`
 	// AckedSerial is the awareness-gate watermark; 0 = gate not passed in the
@@ -364,7 +364,7 @@ type Lane struct {
 	AckedSerial uint64 `json:"acked_serial"`
 	// Activation is the generation counter, incremented by each resume_lane.
 	Activation uint64 `json:"activation"`
-	// LastCoordination is the latest durable coordination checkpoint — a
+	// LastCoordination is the latest durable coordination checkpoint: a
 	// conservative lower bound on the lane's own last accepted call (may
 	// trail by up to TTL/2). Updated only by ops with this lane as actor.
 	LastCoordination time.Time `json:"last_coordination_at"`
@@ -381,7 +381,7 @@ type Lane struct {
 	//
 	// The reason was already computed there and put only into the `lane.stale`
 	// event, so a human opening the board later saw "out of touch" and nothing
-	// else — next to a last-contact time of "now", which reads as the board
+	// else: next to a last-contact time of "now", which reads as the board
 	// being broken rather than the agent being dead. The three cases are not
 	// interchangeable: a process that exited is definitive, a lapsed lease may
 	// just be a long build, and a lane that never gave a PID has told us
@@ -418,13 +418,13 @@ func (l *Lane) Sleeping() bool {
 }
 
 // finishedCleanly reports that the agent ended on purpose rather than going
-// dark — it called close_lane, or it did and was later retired by retention.
+// dark: it called close_lane, or it did and was later retired by retention.
 //
 // The distinction matters to anyone still waiting on it: a deliberate close
 // released every claim and answered nothing further BY CHOICE, while a lapsed
 // lease means the work may still be running somewhere unobserved. Reporting the
 // first as the second sends people to verify directories that were cleanly let
-// go — the opposite of the caution SPEC §7's honest-liveness rule exists for.
+// go: the opposite of the caution SPEC §7's honest-liveness rule exists for.
 //
 // StaleReason is the discriminator, and it survives archiving: it is set only
 // when the sweep declared the lane dark, so an archived lane with none was
@@ -436,7 +436,7 @@ func (l *Lane) finishedCleanly() bool {
 	return (l.Status == StatusClosed || l.Status == StatusArchived) && l.StaleReason == ""
 }
 
-// Gone reports whether an agent is finished with — closed by itself, or
+// Gone reports whether an agent is finished with: closed by itself, or
 // archived by retention. A nil lane counts: it was pruned out from under us.
 //
 // Distinct from Sleeping, and the distinction is the whole point. A stale agent
@@ -446,7 +446,7 @@ func (l *Lane) finishedCleanly() bool {
 //
 // Written down because the two were being conflated by hand: several checks
 // tested Status == StatusClosed alone, which quietly answered "still here" for
-// an archived agent AND for a crashed one — and that second answer handed
+// an archived agent AND for a crashed one, and that second answer handed
 // exclusive ownership of a lane to an agent the sweep had already declared
 // dead.
 func (l *Lane) Gone() bool {
@@ -486,7 +486,7 @@ type Message struct {
 	// DeliveredTime IS the read time: a message becomes delivered when its
 	// recipient pulls it with inbox or ack_board, so the gap from SentAt is how
 	// long it waited. There is no separate read_at, because a second stamp written
-	// on a pure read path would be an unledgered mutation — the bug class that
+	// on a pure read path would be an unledgered mutation: the bug class that
 	// once put a hole in a real board's serial sequence.
 	SentAt        time.Time    `json:"sent_at,omitzero"`
 	DeliveredTime time.Time    `json:"delivered_at,omitzero"`

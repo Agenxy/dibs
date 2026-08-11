@@ -9,7 +9,7 @@ import (
 //
 // codex's SessionStart hands over transcript_path; its Stop does not. Replacing
 // the record on every event would discard the transcript exactly when
-// supervision needs it most — at the end, when the question is whether the
+// supervision needs it most: at the end, when the question is whether the
 // child finished or died.
 func TestALaterEventDoesNotEraseWhatTheFirstOneCarried(t *testing.T) {
 	e, now := &Engine{}, time.Now()
@@ -22,7 +22,7 @@ func TestALaterEventDoesNotEraseWhatTheFirstOneCarried(t *testing.T) {
 	e.noteChild(Child{SessionID: "s1", State: StateForEvent("Stop")}, now)
 	got := e.children["s1"]
 	if got.Transcript != "/tmp/rollout.jsonl" {
-		t.Errorf("the transcript was lost on Stop (%q) — it is the one field that makes\n"+
+		t.Errorf("the transcript was lost on Stop (%q): it is the one field that makes\n"+
 			"  a finished child distinguishable from a dead one", got.Transcript)
 	}
 	if got.Model != "gpt-5.6" || got.CWD != "/repo" {
@@ -44,7 +44,7 @@ func TestBlockedIsRecordedWithWhatItIsWaitingFor(t *testing.T) {
 		t.Errorf("got %+v, want blocked on shell", got)
 	}
 	if got.Since.IsZero() {
-		t.Error("no timestamp — how long it has been blocked is the whole question")
+		t.Error("no timestamp: how long it has been blocked is the whole question")
 	}
 }
 
@@ -86,7 +86,7 @@ func TestAnUnmatchedSessionIsNotAnError(t *testing.T) {
 // that would make every opencode agent look busy whenever any one of them was.
 //
 // So the child counts for itself and Lanes uses the counter. Without it, an
-// opencode child is judged on CPU alone — which catches a hard stall and misses
+// opencode child is judged on CPU alone, which catches a hard stall and misses
 // a slow one, the exact distinction this whole layer exists to make.
 func TestAChildsOwnProgressCounterIsUsedAndIsMonotonic(t *testing.T) {
 	e, now := &Engine{}, time.Now()
@@ -105,7 +105,7 @@ func TestAChildsOwnProgressCounterIsUsedAndIsMonotonic(t *testing.T) {
 	}
 
 	// It only goes up. A counter that went backwards is a restarted process
-	// reusing a session, not work that un-happened — and treating it as a
+	// reusing a session, not work that un-happened, and treating it as a
 	// decrease would read as a stall to the classifier.
 	e.noteChild(Child{SessionID: "oc", Progress: 1, State: "running"}, now)
 	if got := e.children["oc"].Progress; got != 3 {
@@ -114,6 +114,6 @@ func TestAChildsOwnProgressCounterIsUsedAndIsMonotonic(t *testing.T) {
 
 	e.noteChild(Child{SessionID: "oc", Progress: 9, State: "running"}, now)
 	if got := e.children["oc"].Progress; got != 9 {
-		t.Errorf("progress = %d, want 9 — a real advance was dropped", got)
+		t.Errorf("progress = %d, want 9: a real advance was dropped", got)
 	}
 }

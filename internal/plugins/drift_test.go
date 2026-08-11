@@ -15,7 +15,7 @@ import (
 // receives are a COPY of plugins/ rather than the thing itself. That copy is a
 // liability the moment it drifts: an agent would be handed a plugin that no
 // longer matches the one this project ships and tests, and the failure would
-// appear as hooks that quietly do not fire — indistinguishable from not having
+// appear as hooks that quietly do not fire: indistinguishable from not having
 // installed it. skills.md has the same arrangement for the same reason.
 func TestEmbeddedPluginsMatchTheRepository(t *testing.T) {
 	// Walk the CANONICAL tree, rather than checking a hand-written list of pairs.
@@ -46,7 +46,7 @@ func TestEmbeddedPluginsMatchTheRepository(t *testing.T) {
 				// Reported, not returned: a missing file is the defect being looked
 				// for, and aborting the walk on the first one would hide the rest.
 				// The whole point is to list everything the payload is short of.
-				t.Errorf("plugins/%s/%s is not embedded — an agent installing from "+
+				t.Errorf("plugins/%s/%s is not embedded: an agent installing from "+
 					"lanes://plugin would write an incomplete plugin. Copy it to "+
 					"internal/plugins/%s (and remember go:embed needs all: for dotfiles)",
 					dir, rel, embedded)
@@ -93,7 +93,7 @@ func TestTheClaudeCodePluginCarriesItsManifestAndServer(t *testing.T) {
 		"skills/lanes/SKILL.md",
 	} {
 		if _, has := p.Files[needed]; !has {
-			t.Errorf("claude-code payload is missing %s — %v", needed, keysOf(p.Files))
+			t.Errorf("claude-code payload is missing %s. %v", needed, keysOf(p.Files))
 		}
 	}
 }
@@ -110,7 +110,7 @@ func keysOf(m map[string]string) []string {
 func TestEveryPluginIsActionable(t *testing.T) {
 	for _, p := range All() {
 		if len(p.Files) == 0 {
-			t.Errorf("%s has no files — an agent told to install it has nothing to write", p.Harness)
+			t.Errorf("%s has no files: an agent told to install it has nothing to write", p.Harness)
 		}
 		if p.Verify == "" {
 			t.Errorf("%s has no end-to-end verification", p.Harness)
@@ -120,7 +120,7 @@ func TestEveryPluginIsActionable(t *testing.T) {
 		}
 		for i, s := range p.Setup {
 			if s.Do == "" || s.Check == "" {
-				t.Errorf("%s step %d is missing do or check — a step whose effect cannot "+
+				t.Errorf("%s step %d is missing do or check: a step whose effect cannot "+
 					"be confirmed lets a broken setup look finished", p.Harness, i)
 			}
 		}
@@ -138,7 +138,7 @@ func TestHarnessNamesResolveHowAgentsSpellThem(t *testing.T) {
 		"codex", "chatgpt-desktop", "gpt",
 	} {
 		if _, ok := For(name); !ok {
-			t.Errorf("For(%q) found nothing — an agent reporting this harness would be "+
+			t.Errorf("For(%q) found nothing: an agent reporting this harness would be "+
 				"told there is no plugin for it", name)
 		}
 	}

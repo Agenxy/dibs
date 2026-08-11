@@ -10,7 +10,7 @@ import (
 	"sync"
 )
 
-// Commit is one commit's description and what it touched — the project
+// Commit is one commit's description and what it touched: the project
 // describing its own work, in the words the project uses.
 type Commit struct {
 	Subject string
@@ -50,7 +50,7 @@ type CoChangeOptions struct {
 	// a five-year-old refactor describes a layout that no longer exists.
 	MaxCommits int
 	// MaxFilesPerCommit discards sweeping commits. A commit touching 200 files
-	// — a vendor drop, a licence header sweep, a mass rename — contributes
+	// (a vendor drop, a licence header sweep, a mass rename) contributes
 	// 19,900 pairs, every one of them a coincidence. Left in, these dominate
 	// the index and make everything look coupled to everything.
 	MaxFilesPerCommit int
@@ -92,7 +92,7 @@ func MineCoChange(ctx context.Context, repo string, opt CoChangeOptions) (*CoCha
 	// operator flag or config, never from an agent.
 	// %s is the commit SUBJECT, and it comes free: the same log call already
 	// reads the file list. A commit message is a description of work in the
-	// project's own words, and its files are what that work touched — which is
+	// project's own words, and its files are what that work touched, which is
 	// precisely the pairing `lanes calibrate` already treats as ground truth.
 	// Reading it here is what lets tier 0 answer a declaration that names no
 	// file, without a model.
@@ -162,7 +162,7 @@ func (c *CoChange) Commits() int {
 //
 // Conditional probability rather than raw pair count, because raw counts just
 // rank the repository's busiest files. README.md co-occurring with everything
-// is a fact about README.md, not a relationship — dividing by how often the
+// is a fact about README.md, not a relationship: dividing by how often the
 // query file itself changes removes exactly that.
 //
 // minSupport discards pairs seen too rarely to mean anything: two files that
@@ -193,7 +193,7 @@ func (c *CoChange) Related(path string, minSupport int, limit int) []File {
 // One hop, not transitive closure: two hops through a repository's history
 // reaches most of it, and a prediction that names everything distinguishes
 // nothing. Expanded files are damped by `decay` so a historically-implied file
-// never outweighs one the declaration actually pointed at — an inference is
+// never outweighs one the declaration actually pointed at: an inference is
 // weaker evidence than a direct hit and the weights have to say so.
 func (c *CoChange) Expand(files []File, decay float64, limit int) []File {
 	if decay <= 0 {

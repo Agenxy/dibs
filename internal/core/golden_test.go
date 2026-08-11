@@ -15,7 +15,7 @@ import (
 // every lane would pass), and the join test explicitly passed when the classifier
 // fired on NOTHING. A fixture that cannot fail is not a gate.
 //
-// It also asked one boolean — "would these collide?" — of pairs that have
+// It also asked one boolean ("would these collide?") of pairs that have
 // genuinely different answers on different axes. An implementer and a reviewer on
 // one PR are a coordination positive and a duplicate-work negative at the same
 // time, and a single label has to lie about one of them.
@@ -61,7 +61,7 @@ func goldenPairs() []goldenPair {
 		aCWD: repo, bCWD: repo, repo: repo,
 		relation: RelationSameItem, autoJoin: false,
 		why: "the same item and NOT a duplicate. Auto-joining a reviewer into a " +
-			"duplicate-work lane tells it to stop reviewing — the process working, " +
+			"duplicate-work lane tells it to stop reviewing: the process working, " +
 			"reported as waste",
 	}, {
 		name: "same PR number, different repositories",
@@ -77,7 +77,7 @@ func goldenPairs() []goldenPair {
 		aCWD: "", bCWD: "/work/unrelated", repo: repo,
 		relation: RelationPossible, autoJoin: false,
 		why: "unknown provenance must not be read as agreement, and must not silence " +
-			"the match either — show it, do not act on it",
+			"the match either: show it, do not act on it",
 	}, {
 		name: "both want main green, in different subsystems",
 		a:    decl("greening the CLI gates", []string{"/repo/cli"}, []string{"goal:green-main"}, ""),
@@ -108,7 +108,7 @@ func goldenPairs() []goldenPair {
 		aCWD: repo, bCWD: repo, repo: repo,
 		relation: RelationSameSurface, autoJoin: false,
 		why: "contradictory identifiers demote the duplicate claim and must not " +
-			"silence the territory warning — one agent deleting what another edits " +
+			"silence the territory warning: one agent deleting what another edits " +
 			"carries different tickets",
 	}, {
 		name: "two agents needing one port",
@@ -161,7 +161,7 @@ func TestGoldenRelations(t *testing.T) {
 // The gate that matters: not one false automatic join, on the whole set.
 //
 // Stated separately from the per-case assertions because this is the property
-// that must hold as cases are added — a new case may legitimately change a
+// that must hold as cases are added: a new case may legitimately change a
 // relation, and must never add a false join.
 func TestNoFalseAutomaticJoins(t *testing.T) {
 	var joins, falseJoins int

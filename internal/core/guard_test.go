@@ -9,7 +9,7 @@ import (
 //
 // The ordinary delegation pattern is: claim the area, spawn a subagent to edit
 // it. Without lineage the guard DENIED that subagent on its own parent's claim
-// — "coordinate with lane parent", "pick different work" — and because the
+// , "coordinate with lane parent", "pick different work", and because the
 // guard is an enforcement path rather than advice, the harness then refused the
 // edit outright. The exclusive claim locked out the very work it was taken for.
 func TestAnAgentIsNotBlockedByItsOwnParentsClaim(t *testing.T) {
@@ -20,7 +20,7 @@ func TestAnAgentIsNotBlockedByItsOwnParentsClaim(t *testing.T) {
 		op := &Op{Kind: OpRegisterLane, Name: name, NewToken: "tok-" + name, Parent: parent}
 		if parent != "" {
 			// The parent vouches. Without this the lineage is a bare claim and
-			// grants nothing — which is the whole point: an agent that merely
+			// grants nothing, which is the whole point: an agent that merely
 			// declared parent:"victim" used to be exempt from the victim's
 			// exclusive claims here.
 			nonce := "nonce-" + name + "-0123456789abcdef"
@@ -55,7 +55,7 @@ func TestAnAgentIsNotBlockedByItsOwnParentsClaim(t *testing.T) {
 	file := "/repo/internal/auth/token.go"
 	for _, who := range []string{"parent", "sub", "grand"} {
 		if v := s.GuardPath(who, file, now); v.Decision != GuardAllow {
-			t.Errorf("%s is the claim holder's own work and must not be blocked by it: %s — %s",
+			t.Errorf("%s is the claim holder's own work and must not be blocked by it: %s. %s",
 				who, v.Decision, v.Reason)
 		}
 	}
@@ -76,7 +76,7 @@ func TestAParentIsStillStoppedByItsSubagentsClaim(t *testing.T) {
 		op := &Op{Kind: OpRegisterLane, Name: name, NewToken: "tok-" + name, Parent: parent}
 		if parent != "" {
 			// The parent vouches. Without this the lineage is a bare claim and
-			// grants nothing — which is the whole point: an agent that merely
+			// grants nothing, which is the whole point: an agent that merely
 			// declared parent:"victim" used to be exempt from the victim's
 			// exclusive claims here.
 			nonce := "nonce-" + name + "-0123456789abcdef"
@@ -113,7 +113,7 @@ func TestAParentIsStillStoppedByItsSubagentsClaim(t *testing.T) {
 // A self-reported parent chain must never hang the writer loop.
 func TestALoopedParentChainTerminates(t *testing.T) {
 	s := NewState("t", DefaultLimits())
-	// Proven links, so the walk actually traverses them — an unproven parent
+	// Proven links, so the walk actually traverses them: an unproven parent
 	// stops the walk immediately and would make this test pass for the wrong
 	// reason.
 	s.Lanes["a"] = &Lane{ID: "a", Parent: "b", ParentProven: true, Status: StatusActive}
@@ -127,14 +127,14 @@ func TestALoopedParentChainTerminates(t *testing.T) {
 }
 
 // A session id that was SUPPLIED and matched nothing is positive evidence this
-// is a DIFFERENT session — not a hint to go looking for a neighbour.
+// is a DIFFERENT session, not a hint to go looking for a neighbour.
 //
 // The directory fallback attributed any unregistered session to whichever
 // single registered agent shared its working directory, which is the normal
 // state of two agents in one repository. Verified against a running daemon
 // before the fix: an unknown session id was handed the other agent's private
 // mail INCLUDING the body, and guard_path answered decision=allow
-// basis=no-claim for a path that agent held EXCLUSIVELY — the guard having
+// basis=no-claim for a path that agent held EXCLUSIVELY: the guard having
 // resolved the stranger TO the claim holder and then reported that nothing
 // claimed it.
 //
@@ -156,7 +156,7 @@ func TestAnUnknownSessionIsNotAttributedToItsNeighbour(t *testing.T) {
 		t.Fatal("the real owner must still be resolved by its session id")
 	}
 	// A hook that genuinely does not know its session id is still matched by
-	// directory — that is what the fallback is FOR, and it stays.
+	// directory: that is what the fallback is FOR, and it stays.
 	if l := s.LaneForHook("", "/repo"); l == nil || l.ID != id {
 		t.Fatal("a hook sending no session id must still be matched by directory")
 	}
@@ -189,7 +189,7 @@ func TestAStrangerIsNotHandedTheClaimHoldersIdentity(t *testing.T) {
 	}
 
 	// Resolved as the holder itself, the guard would allow and say "no claim".
-	// Resolved as nobody, it still allows — failing open is deliberate — but
+	// Resolved as nobody, it still allows (failing open is deliberate) but
 	// the reason is honest, and the caller can tell the two apart.
 	stranger := s.LaneForHook("some-other-session", "/repo")
 	if stranger != nil {
@@ -219,7 +219,7 @@ func TestAStrangerIsNotHandedTheClaimHoldersIdentity(t *testing.T) {
 // queueing, and got allow/no-claim for a path the victim held exclusively.
 //
 // Two of those powers were added earlier in this same session, to fix a real
-// subagent deadlock and a real guard block — without ever asking how we know it
+// subagent deadlock and a real guard block: without ever asking how we know it
 // IS a subagent. Raised by an independent reviewer (GPT-5.6-sol).
 func TestLineageGrantsNothingUntilTheParentVouchesForIt(t *testing.T) {
 	s := NewState("t", DefaultLimits())
@@ -253,7 +253,7 @@ func TestLineageGrantsNothingUntilTheParentVouchesForIt(t *testing.T) {
 		t.Fatal("nobody vouched for this lineage")
 	}
 	if s.DescendsFrom("impostor", "victim") {
-		t.Error("an unvouched lineage must not be walked — this decides whether the guard " +
+		t.Error("an unvouched lineage must not be walked: this decides whether the guard " +
 			"waives somebody's exclusive claim")
 	}
 	if v := s.GuardPath("impostor", "/repo/x.go", now); v.Decision != GuardDeny {

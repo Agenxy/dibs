@@ -15,7 +15,7 @@ import (
 // This is the one mechanism standing between "you are up to date" and "you
 // silently skipped everything that happened while you were away", and both the
 // polling call and the long-poll agents sleep on have to enforce it. The clamp
-// helper is unit-tested, but nothing proved the CALLERS act on a stale cursor —
+// helper is unit-tested, but nothing proved the CALLERS act on a stale cursor,
 // a floor check that never fires would look exactly like a healthy board.
 func TestAStaleCursorIsRefusedOnBothReadPaths(t *testing.T) {
 	st := core.NewState("test", core.DefaultLimits())
@@ -50,7 +50,7 @@ func TestAStaleCursorIsRefusedOnBothReadPaths(t *testing.T) {
 		t.Fatalf("and must say which failure it is, got: %v", err)
 	}
 	if _, err := e.AwaitEvents(ctx, tok, 1, time.Second, false); err == nil {
-		t.Fatal("await_events must refuse it too — this is the call agents SLEEP on, " +
+		t.Fatal("await_events must refuse it too: this is the call agents SLEEP on, " +
 			"so a silent resume here loses events with nothing awake to notice")
 	} else if !strings.Contains(err.Error(), "E_CURSOR_TOO_OLD") {
 		t.Fatalf("await_events must name the failure, got: %v", err)
@@ -72,7 +72,7 @@ func TestAStaleCursorIsRefusedOnBothReadPaths(t *testing.T) {
 }
 
 // Cursor 0 is what every agent reaches for before it has seen anything, and it
-// is NOT a lost cursor — refusing it would make an agent's opening call fail
+// is NOT a lost cursor: refusing it would make an agent's opening call fail
 // with a message about ring internals it cannot know about.
 func TestAFirstCursorIsNotTreatedAsLoss(t *testing.T) {
 	st := core.NewState("test", core.DefaultLimits())

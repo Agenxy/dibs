@@ -78,7 +78,7 @@ func TestDoctorStatusFollowsTheProblemTier(t *testing.T) {
 
 // Doctor flagged the operator's real, working ~/.codex/config.toml as having a
 // STALE secret, purely because it was run against a second daemon. The fix it
-// offered — "run `lanes mcp-config` and re-copy the block" — would have
+// offered ("run `lanes mcp-config` and re-copy the block") would have
 // repointed a working global setup at whichever scratch daemon happened to be
 // running. Anyone with a per-project daemon alongside their usual one hits
 // this, and the advice actively breaks them.
@@ -122,7 +122,7 @@ url = "https://developers.openai.com/mcp"
 	}
 }
 
-// A config with no URL takes its address from the environment — the stdio
+// A config with no URL takes its address from the environment: the stdio
 // bridge, and several harnesses. Guessing "different daemon" there would trade
 // one false alarm for another.
 func TestAConfigWithNoURLIsAssumedToBeForThisDaemon(t *testing.T) {
@@ -154,12 +154,12 @@ func chain(t *testing.T, records int) (path string, lines []string) {
 }
 
 // A torn tail is NOT damage. The ledger is append-only and fsynced, so a crash
-// between write and fsync leaves a partial final record — for an op that was
+// between write and fsync leaves a partial final record: for an op that was
 // never acknowledged to its caller. Ledger.Replay truncates it and carries on.
 //
 // verify read with a bufio.Scanner, which hands back that partial chunk as
 // though it were a complete line, so all it could say was "line N: bad JSON"
-// under the heading INTEGRITY FAILURE — while the daemon replayed the same
+// under the heading INTEGRITY FAILURE: while the daemon replayed the same
 // file, started, and served it. Two tools, one file, opposite verdicts, on the
 // exact surface an operator checks after a crash.
 func TestATornFinalRecordIsNotAnIntegrityFailure(t *testing.T) {
@@ -185,7 +185,7 @@ func TestATornFinalRecordIsNotAnIntegrityFailure(t *testing.T) {
 		t.Fatalf("the complete records still count, got %d", got.Lines)
 	}
 	// And the head must match the intact prefix, so verify and the daemon agree
-	// on the same file — that disagreement was the bug.
+	// on the same file: that disagreement was the bug.
 	if got.Head != whole.Head {
 		t.Fatalf("head diverged from the intact prefix: %s vs %s", got.Head, whole.Head)
 	}
@@ -217,7 +217,7 @@ func TestRealDamageIsStillReportedAndNamesBothRecords(t *testing.T) {
 }
 
 // A bad record in the MIDDLE is corruption even though it fails the same way a
-// torn tail does — the difference is only that the file continues past it.
+// torn tail does: the difference is only that the file continues past it.
 func TestUnparseableMidFileIsNotMistakenForATornTail(t *testing.T) {
 	path, lines := chain(t, 5)
 	lines[2] = `{"s":3,"prev":` // valid-looking start, cut short, but not last

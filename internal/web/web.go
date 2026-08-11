@@ -2,7 +2,7 @@
 // Package web serves the operator's god view of the board: every lane, every
 // claim, all mail, and the ledger tail.
 //
-// Go owns all STATE — the ledger and the engine are the only source of truth,
+// Go owns all STATE: the ledger and the engine are the only source of truth,
 // and this server holds none of its own. It no longer owns the templates: the
 // board is rendered by the shared components in internal/assets, the same ones
 // the MCP Apps panel uses, because the panel physically cannot be
@@ -242,7 +242,7 @@ func (s *Server) sse(w http.ResponseWriter, r *http.Request) {
 	// client connected at.
 	//
 	// The initial frame and the 30-second refresh both sent `since`, which is
-	// fixed at connect time — so on an idle board a client's Last-Event-ID never
+	// fixed at connect time, so on an idle board a client's Last-Event-ID never
 	// advanced, and on a busy one it was reset backwards every 30 seconds. On
 	// reconnect the client then asked for everything from that stale point, and
 	// the replay is a non-blocking send into a 256-slot channel: the excess is

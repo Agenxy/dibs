@@ -143,17 +143,17 @@ WorkIntent
 
 Keep `text`, but make it a summary rather than the primary machine key. Add:
 
-1. **`work_item` — optional, singular, and literal.** Its schema description should
+1. **`work_item`: optional, singular, and literal.** Its schema description should
    say: “If the task already contains a PR, issue, incident, ticket, URL, or Lanes
    coordination key, copy it verbatim. Otherwise omit this field. Do not invent an
    id.” A single primary item is cheaper and more discriminating than a bag of refs.
-2. **`activity` — a required enum for new clients.** Selecting `implement` or `review`
+2. **`activity`: a required enum for new clients.** Selecting `implement` or `review`
    is cheap, and it prevents the most obvious false duplicate: two agents deliberately
    performing complementary roles on the same item. A short stable enum plus `other`
    is preferable to a free-form role taxonomy. Legacy declarations without it
    normalize to `unknown`; absence must never block the declaration or silently mean
    `implement`.
-3. **`paths` — optional and narrow.** The description should ask for up to a small
+3. **`paths`: optional and narrow.** The description should ask for up to a small
    number of paths the agent expects to change or is directly investigating. “Omit
    when unknown” is better than encouraging `/repo`, read-only reference files, or
    speculative directories.
@@ -562,5 +562,5 @@ core folds it as fact. That preserves `state == fold(ledger)` while making the
 decision auditable.
 
 The goal is not a more elaborate score. It is a system that knows the difference
-between identity, intent, behavior, and a guess—and imposes friction in proportion to
+between identity, intent, behavior, and a guess, and imposes friction in proportion to
 what it actually knows.

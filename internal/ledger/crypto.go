@@ -116,7 +116,7 @@ func (b *Box) EncryptOp(op *core.Op) error {
 	// same promise: lane_read is membership-gated, revoked on leave or eviction,
 	// and SECURITY.md states announcement bodies are unreachable on the
 	// token-less path. All of that is true of the running daemon and none of it
-	// survives a copied ledger — a backup, a support bundle, a pasted repro —
+	// survives a copied ledger: a backup, a support bundle, a pasted repro,
 	// where an announcement body sat in plaintext next to a sealed message body.
 	//
 	// Two content surfaces with one confidentiality contract and only one of

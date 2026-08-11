@@ -10,7 +10,7 @@ import (
 // One [supervise] table configures every surface.
 //
 // It existed for the daemon and `lanes probe` ignored it, so the same five
-// judgements lived in two forms — a file the sweep honoured, and flags on the
+// judgements lived in two forms: a file the sweep honoured, and flags on the
 // command a person actually runs. Demonstrating stall detection meant spelling
 // the configuration out loud on every invocation.
 func TestOneTableConfiguresEverySurface(t *testing.T) {
@@ -25,7 +25,7 @@ func TestOneTableConfiguresEverySurface(t *testing.T) {
 		t.Errorf("the file was not applied: MinAge=%v MinDuty=%v", got.MinAge, got.MinDuty)
 	}
 	// The fields it did NOT mention must keep the measured defaults, not become
-	// zero. A zero threshold is not "no threshold" — it is "everything is
+	// zero. A zero threshold is not "no threshold": it is "everything is
 	// stuck" or "nothing is" depending on the comparison, and assigning a
 	// Config wholesale from partial input has silently disabled a check here
 	// before.

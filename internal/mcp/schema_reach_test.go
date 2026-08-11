@@ -12,7 +12,7 @@ import (
 
 // Every parameter a tool advertises must reach a handler that reads it.
 //
-// A schema is a PROMISE. An agent reads these descriptions and nothing else —
+// A schema is a PROMISE. An agent reads these descriptions and nothing else,
 // it cannot see the handler, so a documented parameter that no code consumes is
 // indistinguishable, from the outside, from one that works. The agent supplies
 // it, the call succeeds, and the effect it was told to expect silently does not
@@ -60,13 +60,13 @@ func TestEveryDeclaredParameterIsReadByAHandler(t *testing.T) {
 			}
 			f, declared := field[param]
 			if !declared {
-				t.Errorf("%s advertises %q, but toolArgs has no field with that json tag —\n"+
+				t.Errorf("%s advertises %q, but toolArgs has no field with that json tag , \n"+
 					"  the decoder discards it, so an agent that supplies it is silently ignored",
 					name, param)
 				continue
 			}
 			if !read[f] {
-				t.Errorf("%s advertises %q and toolArgs.%s is decoded, but nothing reads it —\n"+
+				t.Errorf("%s advertises %q and toolArgs.%s is decoded, but nothing reads it , \n"+
 					"  the parameter is documented, accepted, and has no effect. Either wire it\n"+
 					"  through or stop advertising it; leaving it is a promise to the agent that\n"+
 					"  it has no way to discover is false", name, param, f)
@@ -79,13 +79,13 @@ func TestEveryDeclaredParameterIsReadByAHandler(t *testing.T) {
 // actually reads.
 //
 // Parsed rather than grepped so that a mention inside a comment, a string, or
-// the struct declaration itself does not count as a use — those are exactly the
+// the struct declaration itself does not count as a use: those are exactly the
 // places a field name appears when nobody consumes it. Only a selector on the
 // right of a dot counts, which is how a field is read.
 func fieldsReadIn(t *testing.T, dir string) map[string]bool {
 	t.Helper()
 	// Tests are excluded on purpose. A field read only by its own test is still
-	// dead in the shipped binary, and that is exactly the shape being hunted —
+	// dead in the shipped binary, and that is exactly the shape being hunted,
 	// counting test reads would let a parameter pass this check while doing
 	// nothing for any agent that supplies it.
 	sources, err := filepath.Glob(filepath.Join(dir, "*.go"))
@@ -105,7 +105,7 @@ func fieldsReadIn(t *testing.T, dir string) map[string]bool {
 		files = append(files, f)
 	}
 	// Guard the guard: an empty file list would make every field look unread,
-	// which fails loudly — but a glob that silently matched nothing while the
+	// which fails loudly, but a glob that silently matched nothing while the
 	// check still passed is the failure worth preventing here.
 	if len(files) == 0 {
 		t.Fatalf("no non-test sources found in %s; this check would be vacuous", dir)

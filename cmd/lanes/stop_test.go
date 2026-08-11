@@ -28,7 +28,7 @@ func TestStopSignalsOnlyTheDaemonForThisDirectory(t *testing.T) {
 			t.Fatalf("selected %v, want the daemon on %s (pid 22)", d, mine)
 		}
 		if others != 2 {
-			t.Errorf("others = %d, want 2 — the caller reports what it left alone", others)
+			t.Errorf("others = %d, want 2: the caller reports what it left alone", others)
 		}
 	})
 
@@ -57,7 +57,7 @@ func TestStopSignalsOnlyTheDaemonForThisDirectory(t *testing.T) {
 			t.Fatal(err)
 		}
 		if d != nil {
-			t.Fatalf("selected an entry we could not decode (pid %d) — signalling a pid "+
+			t.Fatalf("selected an entry we could not decode (pid %d): signalling a pid "+
 				"we cannot attribute is the exact mistake this guards", d.PID)
 		}
 		if others != 1 {
@@ -76,9 +76,9 @@ func TestStopSignalsOnlyTheDaemonForThisDirectory(t *testing.T) {
 }
 
 // `lanes stop --help` stopped the daemon and exited 0: asking a destructive
-// command what it does performed it. Second time in this CLI — configure.go
+// command what it does performed it. Second time in this CLI: configure.go
 // carries a comment about `lanes configure --help` being read as a directory
-// named "--help" — so this asserts the shape, not just the one flag.
+// named "--help", so this asserts the shape, not just the one flag.
 func TestStopInspectsItsArgumentsBeforeSignallingAnything(t *testing.T) {
 	for _, arg := range []string{"-h", "--help", "help"} {
 		if err := stop([]string{arg}); err != nil {
@@ -89,7 +89,7 @@ func TestStopInspectsItsArgumentsBeforeSignallingAnything(t *testing.T) {
 	// argument is how `--dry-run` becomes a live run.
 	for _, arg := range []string{"--dry-run", "--force", "/some/other/dir", "-n"} {
 		if err := stop([]string{arg}); err == nil {
-			t.Errorf("stop(%q) was accepted — an unrecognised argument to a destructive "+
+			t.Errorf("stop(%q) was accepted: an unrecognised argument to a destructive "+
 				"command must refuse, not proceed", arg)
 		}
 	}
@@ -97,7 +97,7 @@ func TestStopInspectsItsArgumentsBeforeSignallingAnything(t *testing.T) {
 
 // The bug was in the DISPATCH, not in stop(): main called stopDaemon directly
 // and threw os.Args[2:] away, so `lanes stop --help` signalled the daemon. A
-// test that calls stop() cannot see that — reverting the dispatch leaves it
+// test that calls stop() cannot see that: reverting the dispatch leaves it
 // green, which is how a correct-but-unwired guard ships.
 //
 // This is the same shape as internal/engine/admit_wired_test.go and
@@ -111,7 +111,7 @@ func TestTheStopVerbIsWiredThroughArgumentChecking(t *testing.T) {
 	const dispatch = `case "stop":`
 	i := bytes.Index(src, []byte(dispatch))
 	if i < 0 {
-		t.Fatalf("no %q in main.go — the verb was renamed; update this test", dispatch)
+		t.Fatalf("no %q in main.go: the verb was renamed; update this test", dispatch)
 	}
 	// The next non-blank line is what the verb actually runs.
 	body := string(src[i : i+220])

@@ -16,13 +16,13 @@ import (
 // # Why this exists
 //
 // No agent can promote itself. grant_role is not an MCP tool and is admitted
-// only on the daemon's admin path, so an agent asking for a role gets a 401 —
+// only on the daemon's admin path, so an agent asking for a role gets a 401,
 // which is the correct answer, because an admin can read every lane's mail and
 // an agent that could grant itself that has no boundary left.
 //
 // But the operator paid for that safety with a chore. Wanting a standing
 // coordinator is an ordinary thing, and until now it meant running
-// `lanes admin coordinator <lane>` by hand — after every fresh data directory,
+// `lanes admin coordinator <lane>` by hand: after every fresh data directory,
 // and while typing the admin password. For somebody running several fleets that
 // is exactly the mechanical provisioning work that gets skipped, and a
 // coordinator nobody remembered to appoint is a fleet with nobody able to merge
@@ -47,7 +47,7 @@ import (
 // RolesConfig is the [roles] table.
 type RolesConfig struct {
 	// Coordinator gets breadth without intrusion: broadcast, force-release,
-	// merge and evict — but never another lane's mail.
+	// merge and evict, but never another lane's mail.
 	Coordinator []string `toml:"coordinator"`
 	// Admin adds the god view, mail included. Grant it only to an agent trusted
 	// as the operator trusts themselves.
@@ -56,8 +56,8 @@ type RolesConfig struct {
 
 // keepDeclaredRolesApplied grants the declared roles, and keeps granting them.
 //
-// A role can only be attached to a lane that EXISTS — core.applyGrantRole
-// answers E_NO_LANE otherwise — and on a fresh daemon no lane exists yet. A
+// A role can only be attached to a lane that EXISTS: core.applyGrantRole
+// answers E_NO_LANE otherwise, and on a fresh daemon no lane exists yet. A
 // one-shot grant at startup would therefore do nothing at all on exactly the
 // board where the operator most needs it, and would do it silently, which is the
 // failure shape this project works hardest to avoid.
@@ -65,8 +65,8 @@ type RolesConfig struct {
 // So it converges instead: apply now, and again on a slow ticker. A lane that
 // registers a minute after the daemon picks up its role a few seconds later,
 // without the engine having to know anything about configuration. Re-granting a
-// role a lane already holds is free — the state machine reports changed:false
-// and ledgers nothing — so the steady-state cost is one map lookup per lane per
+// role a lane already holds is free: the state machine reports changed:false
+// and ledgers nothing, so the steady-state cost is one map lookup per lane per
 // tick.
 func keepDeclaredRolesApplied(ctx context.Context, eng *engine.Engine, c RolesConfig) {
 	if len(c.Coordinator) == 0 && len(c.Admin) == 0 {

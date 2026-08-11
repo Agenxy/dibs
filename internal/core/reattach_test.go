@@ -8,7 +8,7 @@ import (
 
 // A lifecycle hook can wake an agent, but a fresh turn carries no token. Without
 // reattach the agent registers again, gets a sibling lane, and cannot read or
-// answer the mail that woke it — observed live in opencode as E_NO_MESSAGE.
+// answer the mail that woke it: observed live in opencode as E_NO_MESSAGE.
 func TestRegisterReattachesToItsOwnSession(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	now := time.Now()
@@ -39,7 +39,7 @@ func TestRegisterReattachesToItsOwnSession(t *testing.T) {
 		t.Error("token was not rotated on reattach")
 	}
 	if got := len(s.Lanes); got != 1 {
-		t.Errorf("lane count = %d, want 1 — reattach must not duplicate", got)
+		t.Errorf("lane count = %d, want 1: reattach must not duplicate", got)
 	}
 	// The gate must re-arm: a new activation has not yet seen the board.
 	if s.Lanes[laneID].AckedSerial != 0 {
@@ -50,7 +50,7 @@ func TestRegisterReattachesToItsOwnSession(t *testing.T) {
 // The restart that forked a whole fleet.
 //
 // Four agents restarted, four re-registered under their own names, and all four
-// became siblings — builder-2, api-a-2, api-b-2, orchestrator-2 — with every message
+// became siblings, builder-2, api-a-2, api-b-2, orchestrator-2, with every message
 // addressed to them beforehand stranded in a lane nobody occupied. Nothing looked
 // broken; the board showed four healthy agents throughout.
 //
@@ -110,7 +110,7 @@ func TestRestartWithNonceReattaches(t *testing.T) {
 		t.Error("reattach not signalled to the caller")
 	}
 	if again["via"] != "nonce" {
-		t.Errorf("via = %v, want nonce — the agent should learn which credential saved it", again["via"])
+		t.Errorf("via = %v, want nonce: the agent should learn which credential saved it", again["via"])
 	}
 	if again["token"] != "tok2" {
 		t.Error("token was not rotated on reattach")
@@ -125,7 +125,7 @@ func TestRestartWithNonceReattaches(t *testing.T) {
 	}
 }
 
-// Without a nonce the restart still forks, and that is correct — a genuinely new
+// Without a nonce the restart still forks, and that is correct: a genuinely new
 // session IS a new agent and Lanes cannot tell the two apart. What it must not do
 // is fork in silence.
 func TestRestartWithoutNonceForksButSaysSo(t *testing.T) {

@@ -2,7 +2,7 @@
 
 How Lanes is put together, why it is put together that way, and what you need to
 know before changing it. If you are fixing a bug, the useful question is usually
-not "what does this code do" but "what was it supposed to do" — this document is
+not "what does this code do" but "what was it supposed to do": this document is
 the second one.
 
 Companion documents: [SPEC.md](../SPEC.md) is the design (v1.1, living),
@@ -16,7 +16,7 @@ around.
 ## The one-paragraph version
 
 Every coordination fact is an **op** appended to an fsync'd, hash-chained JSONL
-**ledger**. State is exactly the fold of that ledger — `state == fold(ledger)` —
+**ledger**. State is exactly the fold of that ledger. `state == fold(ledger)`,
 so a restart replays rather than recovers, and the persistence *is* the audit
 history. All mutation goes through a **single-writer event loop** over a **pure
 state machine**, and one monotonic **serial** totally orders everything that has
@@ -32,8 +32,8 @@ that replaying gives an identical board. A mutex-guarded shared struct gives you
 safety without giving you that, and the moment two goroutines can interleave
 writes, "what happened here" stops being answerable from the log.
 
-The cost is that the writer must never block. Anything slow — process scans,
-embedding calls, HTTP — happens *outside* the loop, and only the verdict goes
+The cost is that the writer must never block. Anything slow, process scans,
+embedding calls, HTTP, happens *outside* the loop, and only the verdict goes
 back through it.
 
 ## Layout
@@ -62,7 +62,7 @@ telling you the logic belongs in `engine`.
 
 ## The path of a request
 
-1. A surface (`internal/mcp`) decodes arguments and **authenticates** — the
+1. A surface (`internal/mcp`) decodes arguments and **authenticates**: the
    coordination secret for the machine, plus a lane token for anything
    lane-scoped.
 2. It builds a `core.Op`.
@@ -94,13 +94,13 @@ These are invariants, not preferences. Each was learned expensively.
 - **A serial is never reused and never goes backwards.**
 - **Nothing acts on an agent's behalf.** Lanes reports. It will tell a parent its
   subagent is stuck and hand back the resume command; it will not run it. See
-  [PHILOSOPHY.md](../PHILOSOPHY.md) — this one is the product, not an
+  [PHILOSOPHY.md](../PHILOSOPHY.md): this one is the product, not an
   implementation detail.
 - **Ephemeral observations stay out of the ledger.** Which processes happen to be
   running is a fact about this machine right now; it does not survive a restart
   and should not. Child sessions and stall verdicts are in-memory.
 - **A wrong answer is worse than none.** Attribution walks a ladder and records
-  which rung it came from. If no rung matches, the answer is "unattributed" — not
+  which rung it came from. If no rung matches, the answer is "unattributed": not
   a guess. A stall reported to the wrong parent is worse than one reported to
   nobody, because the agent that could act never hears it.
 
@@ -113,9 +113,9 @@ knowing because they are the ones review does not catch.
 nothing: a validator nobody invoked, a tool implemented but never declared, a
 parameter agents were told about that no handler read, a threshold rung never
 called from the classifier. Everything *looks* present, which is why reading the
-diff does not find it. There are now machine checks for some shapes —
+diff does not find it. There are now machine checks for some shapes,
 `schema_reach_test.go` parses the package to prove every advertised tool
-parameter is actually read — and adding one for a shape not yet covered is a
+parameter is actually read, and adding one for a shape not yet covered is a
 genuinely valuable contribution.
 
 **B. Tests that prove the wrong thing.** A thinking-state test that still passed
@@ -126,7 +126,7 @@ it.
 
 **C. Threshold zeroing.** A config built from flags where an unset flag means
 zero, and zero means "everything is stuck" or "nothing is" depending on the
-comparison — silently disabling a check. Every config now layers over
+comparison: silently disabling a check. Every config now layers over
 `DefaultConfig()` and overlays field by field.
 
 **D. Green suite over a broken surface.** 155 browser checks passed against a
@@ -138,14 +138,14 @@ number and a keyword, where it is only valid for colours, so it fell back to
 
 The channel end-to-end suite scores declarations against **this repository's own
 git history**, which grows every time anyone commits. It therefore measures its
-join bar at runtime rather than hardcoding one — a fixed threshold passes until
+join bar at runtime rather than hardcoding one: a fixed threshold passes until
 somebody makes a commit, then fails for a reason no contributor can act on. If
 you add an assertion about an absolute score, it will rot. Assert the
 *property*: above the bar joins, below it advises.
 
 ## Adding a tool
 
-1. Declare it in `internal/mcp/tools.go` — name, description, JSON Schema. The
+1. Declare it in `internal/mcp/tools.go`: name, description, JSON Schema. The
    description is the **only** thing an agent ever sees, so write it for a reader
    with no access to the code.
 2. Add its arguments to `toolArgs`.
@@ -153,7 +153,7 @@ you add an assertion about an absolute score, it will rot. Assert the
    no handler consumes is indistinguishable from a working one, from outside:
    the call succeeds and the effect silently does not happen.
    `TestEveryDeclaredParameterIsReadByAHandler` enforces this.
-4. If it mutates, add the op to `core` — validation in `Admit`, fold in `Apply`.
+4. If it mutates, add the op to `core`: validation in `Admit`, fold in `Apply`.
 5. Add it to the end-to-end suite, which drives a real daemon over real HTTP.
    The Go tests prove the state machine; the e2e proves the *wire*, which is
    where a field name not matching a JSON tag turns a recorded score into a zero
@@ -164,7 +164,7 @@ you add an assertion about an absolute score, it will rot. Assert the
 The MCP Apps panel and the web board share a design system
 (`internal/assets`) but are deliberately different products. The panel is **one
 lane's** own board and mailbox, authenticated by that lane's token, rendered in
-a host's sandboxed iframe under a CSP with no external origins — so every asset
+a host's sandboxed iframe under a CSP with no external origins, so every asset
 is inlined, and a stylesheet fetched over the network would fail closed and
 silently. The web board is the **operator's** view over every lane and all mail,
 behind the admin password.
@@ -190,14 +190,14 @@ list results.
 **The two version lists are deliberately disjoint.** `handshakeVersions` is what
 `initialize` may negotiate; `modernVersions` holds `2026-07-28`, which retired
 that handshake. They were one flat list, so `initialize` with `2026-07-28` was
-echoed straight back — the server agreeing to a stateless contract over the path
+echoed straight back: the server agreeing to a stateless contract over the path
 that contract removed. The reference SDKs make the same split
 (`HANDSHAKE_PROTOCOL_VERSIONS` / `MODERN_PROTOCOL_VERSIONS`), and
 `TestHandshakeAndStatelessVersionsDoNotOverlap` keeps them apart.
 
 **Cache hints are a permission, not just a hint.** `internal/mcp/caching.go`
 stamps `ttlMs` and `cacheScope` on every result the spec requires. `ttlMs` being
-wrong costs a stale read; `cacheScope` being wrong is a disclosure bug —
+wrong costs a stale read; `cacheScope` being wrong is a disclosure bug,
 `"public"` tells shared gateways and proxies they may serve a response to a
 caller in a *different authorization context*. So `lanes://inbox` is `private`
 and everything identical-for-all-callers is `public`, and

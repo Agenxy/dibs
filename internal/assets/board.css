@@ -1,10 +1,10 @@
 /* ═══════════════════════════════════════════════════════════════
-   LANES — SHARED DESIGN SYSTEM
+   LANES. SHARED DESIGN SYSTEM
 
    One stylesheet for both surfaces: the MCP Apps panel and the web
-   board. They are DIFFERENT VIEWS — the panel is one lane's own
+   board. They are DIFFERENT VIEWS: the panel is one lane's own
    board and mailbox, the web board is the operator's god view over
-   every lane and all mail — but they are the same product and must
+   every lane and all mail, but they are the same product and must
    not look like two.
 
    Inlined into both by internal/assets. It is never fetched: the
@@ -16,26 +16,26 @@
   /* ═══ COLOUR ═══════════════════════════════════════════════════
      OKLCH, one hue family, derived rather than picked.
 
-     This was eighteen hand-tuned sRGB hexes declared THREE times —
+     This was eighteen hand-tuned sRGB hexes declared THREE times,
      :root, [data-theme=light], and the media query. It worked, and it
      hid its own structure: every neutral sits at hue ~261, the signal
      hues at 262/158/36, and in dark, accent and live land within 0.03
-     of the same lightness — a relationship achieved by eye that the
+     of the same lightness: a relationship achieved by eye that the
      source could not show. In OKLCH the structure IS the source:
      lightness carries contrast, chroma intensity, hue meaning, and the
      three move independently, which hex does not allow.
 
      Two consequences. Contrast is now a number a reader can check
      rather than a hex somebody sampled. And the old values were
-     leaving chroma unspent: at IDENTICAL lightness — so identical
-     contrast — accent had room for twice its saturation and live for
+     leaving chroma unspent: at IDENTICAL lightness, so identical
+     contrast: accent had room for twice its saturation and live for
      65% more. These sit near three-quarters of the sRGB ceiling:
      richer, still restrained, and on a P3 display rendered wider still
      without our asking, because OKLCH describes the colour and not the
      device.
 
      light-dark() collapses the three copies into one. Declaring it
-     three times drifted once already — a mangled selector let a light
+     three times drifted once already: a mangled selector let a light
      rule escape to global scope and put 2.98:1 on the loudest mark on
      the board. One declaration cannot do that. */
   color-scheme: light dark;
@@ -50,7 +50,7 @@
   /* The emphasis surface: a selected tab, a hovered control, a raised card.
      It has to move AWAY from the page, and which way that is differs by
      theme. Dark went up by 4.9 lightness; light went UP by 1.1, because the
-     page is already at 97.6 and there is nowhere above it to go — so the
+     page is already at 97.6 and there is nowhere above it to go, so the
      selected tab was, in the light theme, unmarked. Visible only by opening
      the board in light and noticing that nothing said which tab was current.
      Light marks emphasis by going down, which is also what every other light
@@ -70,7 +70,7 @@
   --warn:     light-dark(oklch(53.1% .165 var(--h-warn)),   oklch(68.5% .165 var(--h-warn)));
 
   /* Derived, not declared. These were rgba() literals that had to be
-     re-derived by hand whenever a hue moved — and twice were not. */
+     re-derived by hand whenever a hue moved, and twice were not. */
   --accent-dim: color-mix(in oklch, var(--accent) 30%, transparent);
   --live-dim:   color-mix(in oklch, var(--live)   26%, transparent);
 
@@ -94,8 +94,8 @@
 
   /* ── Type ────────────────────────────────────────────────────
      Spacing had a spine and type did not: FIFTEEN hardcoded pixel
-     sizes had accreted — 9, 9.5, 10, 10.5, 11, 11.5, 12, 12.5, 13,
-     13.5, 14, 17 — where the 0.5px steps are differences nobody
+     sizes had accreted. 9, 9.5, 10, 10.5, 11, 11.5, 12, 12.5, 13,
+     13.5, 14, 17: where the 0.5px steps are differences nobody
      chose and no reader can perceive. That is not a scale, it is
      sediment, and every new rule added another grain.
 
@@ -106,13 +106,13 @@
      below still land on the pixel grid at default settings.
 
      Named for ROLE, not size, so a rule says what it is doing. */
-  --t-micro: 0.5625rem;  /*  9px — pills, badges, the smallest label */
-  --t-meta:  0.625rem;   /* 10px — timestamps, counts, provenance    */
-  --t-fine:  0.6875rem;  /* 11px — secondary labels                  */
-  --t-sm:    0.75rem;    /* 12px — dense body, controls              */
-  --t-body:  0.8125rem;  /* 13px — the default reading size          */
-  --t-lg:    0.875rem;   /* 14px — emphasis, message bodies          */
-  --t-title: 1.0625rem;  /* 17px — the one heading                   */
+  --t-micro: 0.5625rem;  /*  9px: pills, badges, the smallest label */
+  --t-meta:  0.625rem;   /* 10px: timestamps, counts, provenance    */
+  --t-fine:  0.6875rem;  /* 11px: secondary labels                  */
+  --t-sm:    0.75rem;    /* 12px: dense body, controls              */
+  --t-body:  0.8125rem;  /* 13px: the default reading size          */
+  --t-lg:    0.875rem;   /* 14px: emphasis, message bodies          */
+  --t-title: 1.0625rem;  /* 17px: the one heading                   */
 
   /* Tracking rides with size: small type needs air, large type
      needs less. Stated once rather than guessed per rule. */
@@ -126,7 +126,7 @@
   /* ── Focus ───────────────────────────────────────────────────
      One ring, stated once. It was styled per-component in four
      places with three different treatments, and one of them did
-     `outline: none` and leaned on a border colour — which is a
+     `outline: none` and leaned on a border colour, which is a
      1.2:1 change against its own background, invisible to most
      people and absent entirely in forced-colours mode.
 
@@ -144,7 +144,7 @@
      deliberate control.
 
      This was previously handled by the panel RE-DECLARING the whole
-     .act family under `.panel #pane-mail` — thirty lines restating
+     .act family under `.panel #pane-mail`: thirty lines restating
      border, background, font and colour in order to change a height.
      That is how a design system dies: the shared rule stops being
      shared, the copy drifts, and a change to one surface silently
@@ -158,7 +158,7 @@
 /* --grain is a NUMBER and --grain-blend a KEYWORD, and light-dark() takes
    colours only. Substituting it elsewhere does not warn: the declaration goes
    invalid at computed-value time and the property silently falls back to its
-   INITIAL value — so `opacity: var(--grain)` became opacity 1 and
+   INITIAL value, so `opacity: var(--grain)` became opacity 1 and
    `mix-blend-mode: var(--grain-blend)` became `normal`, and the noise layer
    that should be a whisper covered the entire board. Every end-to-end check
    still passed, because a page can be completely unreadable and structurally
@@ -175,7 +175,7 @@
 /* An explicit choice still outranks the system: the MCP host knows things the
    OS does not, and a dark system with light host chrome must not render this
    panel dark inside a light conversation. Narrowing color-scheme is now the
-   whole override — every value above resolves itself. */
+   whole override: every value above resolves itself. */
 :root[data-theme="dark"]  { color-scheme: dark; }
 :root[data-theme="light"] { color-scheme: light; }
 
@@ -241,7 +241,7 @@ body {
 .views {
   display: flex; align-items: center; gap: var(--s1);
   /* At 375px the five items ran off the right edge and "Protocol" was simply
-     gone — not scrolled, not wrapped, unreachable. A nav that silently drops an
+     gone, not scrolled, not wrapped, unreachable. A nav that silently drops an
      item is worse than one that looks crowded. Wrapping keeps every destination
      reachable at any width without inventing a menu nobody asked for. */
   flex-wrap: wrap; justify-content: flex-end; row-gap: var(--s1);
@@ -259,7 +259,7 @@ body {
 .views button:hover { color: var(--fg-2); background: var(--bg-1); }
 .views button[aria-selected="true"] { color: var(--fg); background: var(--bg-2); }
 /* ── focus, once, for everything ──────────────────────────────────────────
-   Keyboard users are not a subset of this audience — a coordination board is
+   Keyboard users are not a subset of this audience: a coordination board is
    watched, scanned and driven from the keyboard for hours. `:focus-visible`
    rather than `:focus` so a mouse press does not leave a ring behind. */
 :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
@@ -285,7 +285,7 @@ body {
    rather than in that page so the two surfaces cannot drift on the one
    element they both put in the masthead. */
 /* Selected on the ELEMENT, not on where it sits. Moving this link out of the
-   tablist — correct, a tablist owns tabs — left the rule behind on `.views
+   tablist, correct, a tablist owns tabs, left the rule behind on `.views
    .proto`, so it rendered as a browser-default blue underlined link with no
    padding, in the masthead, next to four styled tabs. A structural fix that
    silently un-styles the thing it moved is not a fix, and I shipped it. Found
@@ -301,7 +301,7 @@ body {
 
 /* ── status mark ───────────────────────────────────────────────
    Not a logo and not a spinner. A small target that closes when
-   the panel is genuinely attached to a host — the one continuous
+   the panel is genuinely attached to a host: the one continuous
    motion in the panel, slow enough to read as breathing. */
 .status-mark { width: 15px; height: 15px; display: block; flex: none; }
 .status-mark circle, .status-mark line { stroke: var(--fg-3); }
@@ -385,7 +385,7 @@ body {
 
 /* ── roster ────────────────────────────────────────────────────
    A bare lane costs one row; a working lane earns more. That
-   asymmetry is the design — fifteen idle agents must not out-shout
+   asymmetry is the design: fifteen idle agents must not out-shout
    the two that are doing something. */
 .entry {
   padding: var(--s3) var(--s3) var(--s3) 0;
@@ -430,7 +430,7 @@ body {
 .tag.self { color: var(--accent); border-color: var(--accent-dim); }
 /* A member that is not currently working. The chip is dimmed rather than
    coloured: it is context on somebody else's state, not something the reader
-   must act on — but a lane that lists a corpse identically to a live agent
+   must act on, but a lane that lists a corpse identically to a live agent
    answers "who is on this" wrongly. */
 .member.gone { opacity: .62; }
 .member-tag.gone { color: var(--warn); }
@@ -514,7 +514,7 @@ body {
 .route .wire { flex: 1; height: 1px; background: var(--line-2); position: relative; overflow: hidden; }
 /* Overdue is STILL. The travelling light says "on its way"; a message whose
    deadline went by is not on its way, and animating it would be a picture of
-   progress over something stalled. The wire warms instead — the same amber that
+   progress over something stalled. The wire warms instead: the same amber that
    means "outstanding" everywhere else. */
 .msg.overdue .route .wire { background: var(--warn); opacity: .5; }
 .msg.overdue .route .wire::after { content: none; }
@@ -548,8 +548,8 @@ body {
   text-transform: uppercase; letter-spacing: .04em;
   font-size: var(--t-micro); color: var(--fg-2);
 }
-/* The whole handle is in the DOM — selectable, copyable, searchable, and read
-   in full by a screen reader — and only its DISPLAY is narrowed. A sha256
+/* The whole handle is in the DOM: selectable, copyable, searchable, and read
+   in full by a screen reader, and only its DISPLAY is narrowed. A sha256
    address is 71 characters and would otherwise dominate the message. */
 .msg .att code.handle {
   font-family: var(--mono);
@@ -602,7 +602,7 @@ body {
   transition: border-color .18s var(--ease), color .18s var(--ease), background .18s var(--ease);
 }
 /* A finger is not a cursor. Anything driven by touch gets the 44px the platform
-   guidelines have asked for since 2013 — stated once, for both surfaces, rather
+   guidelines have asked for since 2013: stated once, for both surfaces, rather
    than remembered per component. */
 @media (pointer: coarse) {
   :root { --ctl-h: 44px; }
@@ -614,7 +614,7 @@ body {
 .act.no:hover { color: var(--warn); border-color: var(--warn); }
 .act-busy { font-size: var(--t-sm); color: var(--fg-3); }
 
-/* Inline, because a sandboxed iframe may refuse a modal outright —
+/* Inline, because a sandboxed iframe may refuse a modal outright,
    and because typing a reply in a system dialog is worse anyway. */
 .compose { margin-top: var(--s3); max-width: 74ch; }
 .compose textarea {
@@ -627,8 +627,8 @@ body {
   padding: var(--s3); resize: vertical; min-height: 66px;
   transition: border-color .18s var(--ease);
 }
-/* The border still warms on focus — it reads as "this is where you are typing"
-   at a glance — but it is no longer the ONLY signal. The shared ring above
+/* The border still warms on focus: it reads as "this is where you are typing"
+   at a glance, but it is no longer the ONLY signal. The shared ring above
    still applies; this is on top of it, not instead of it. */
 .compose textarea:focus { border-color: var(--accent); }
 .compose textarea::placeholder { color: var(--fg-3); }
@@ -744,7 +744,7 @@ body {
   padding: 1px var(--s2) 1px var(--s1);
   border: 1px solid var(--line); border-radius: var(--r);
   display: inline-flex; align-items: center; gap: var(--s1);
-  /* The title carries the score, threshold, scorer and evidence — the
+  /* The title carries the score, threshold, scorer and evidence: the
      explainability §10.3 requires, without spending a line of the board on
      every membership. */
   cursor: default;
@@ -775,7 +775,7 @@ body {
 
 /* Two facts that change how a row should be read, and are invisible without a
    mark: a coordinator can act on lanes it does not own, and a subagent's work
-   is really its parent's. Quieter than .tag — they qualify an agent rather
+   is really its parent's. Quieter than .tag: they qualify an agent rather
    than describing its state. */
 .badge {
   font-family: var(--mono);
@@ -813,7 +813,7 @@ body {
 .compose select { flex: 0 0 auto; font-family: var(--mono); font-size: var(--t-fine); }
 .compose input::placeholder { color: var(--fg-3); }
 /* Border only. This used to restate `outline`, which beat the shared :where()
-   ring on specificity — so the "one ring" was not one, it shrank to 1px here,
+   ring on specificity, so the "one ring" was not one, it shrank to 1px here,
    and it overrode `Highlight` in forced-colours, which is the mode where the
    ring matters most. The warm border is additive; the ring comes from the
    shared rule and stays authoritative. */
@@ -822,18 +822,18 @@ body {
 }
 .compose input:disabled { opacity: .5; cursor: not-allowed; }
 
-/* The OPERATOR BOARD's composer actions — join / post / announce — sitting in a
+/* The OPERATOR BOARD's composer actions (join / post / announce) sitting in a
    row beside a text field. A quieter, tighter thing than a standalone .act.
 
    Scoped to the surface, not to the component. It was globally declared, then
    narrowed to `.compose .act`, which was still wrong: the panel puts its reply
    box in a `.compose` too, so the operator's mono/lowercase/tight treatment
    went on reaching it and --ctl-pad still was not authoritative there. Component
-   scoping cannot express "this surface only". Found by codex, twice — I fixed
+   scoping cannot express "this surface only". Found by codex, twice. I fixed
    the symptom the first time.
    
    Globally declared, this second `.act` overrode the shared one's font, colour,
-   background and padding on BOTH surfaces — including the MCP panel, which does
+   background and padding on BOTH surfaces: including the MCP panel, which does
    not have a composer row at all. So the density tokens introduced to end
    exactly that kind of override were themselves being overridden, and --ctl-pad
    was not authoritative despite the refactor that claimed it was. --ctl-h
@@ -888,11 +888,11 @@ body {
   font-weight: 500;
 }
 /* The light-theme overrides that used to sit here are GONE, not moved.
-   They were mangled by an edit of mine — a `:root[data-theme="light"]` selector
+   They were mangled by an edit of mine: a `:root[data-theme="light"]` selector
    left dangling in front of a comment, which silently formed a descendant
    selector and let two rules escape to global scope. The escapee was
    `.pill.abandoned { color: #fff }`, which overrode the dark theme's
-   `color: var(--bg)` and put white on amber at 2.98:1 — failing even the
+   `color: var(--bg)` and put white on amber at 2.98:1: failing even the
    large-text bar, on the ONE mark that means nothing will resolve this without
    a person. The loudest thing on the board was the least legible.
 
@@ -925,7 +925,7 @@ body {
 }
 
 /* Content for screen readers only.
-   Not `display:none` and not `visibility:hidden` — both remove it from the
+   Not `display:none` and not `visibility:hidden`: both remove it from the
    accessibility tree, which is the one place it needs to exist. */
 .sr-only {
   position: absolute;
@@ -939,13 +939,13 @@ body {
 /* The band that wants a person reads warmer than the ones that do not.
    Colour carries the same meaning here as everywhere else in the system: amber
    is outstanding, and this is the only band that can be. Quiet enough that a
-   healthy board has no warm pixels at all — a board where everything is
+   healthy board has no warm pixels at all: a board where everything is
    coloured is a board nobody reads. */
 .band.gone > span:first-child { color: var(--warn); }
 .band.gone .n { color: var(--warn); border-color: var(--warn); }
 
 /* First run. The one screen where the product has to say what to do next, so it
-   is allowed slightly more room than anything else — and no colour, because
+   is allowed slightly more room than anything else, and no colour, because
    nothing here is a problem. */
 .firstrun { padding: var(--s7) 0 var(--s6); max-width: 60ch; }
 .firstrun h3 {
@@ -966,7 +966,7 @@ body {
 .firstrun-note { margin-top: var(--s4) !important; font-size: var(--t-sm) !important; color: var(--fg-3) !important; }
 .firstrun-note code { font-family: var(--mono); color: var(--fg-2); }
 
-/* The band is a heading now, so it needs a heading's margins reset — it must
+/* The band is a heading now, so it needs a heading's margins reset: it must
    look exactly as it did, because nothing about the visual grouping was wrong.
    Only the claim the labels made, and the fact that a reader who could not see
    the dividers had no grouping at all. */
@@ -977,7 +977,7 @@ h2.band { margin: 0; font-weight: inherit; }
    One popover, re-anchored to whichever mark is being read (Board.explainer).
 
    In the top layer, so it is never clipped by the scrolling pane it came from
-   — which is what forced the old `title` attribute in the first place, and
+   which is what forced the old `title` attribute in the first place, and
    `title` reaches only a reader with a mouse who is willing to wait.
 
    Positioned by CSS anchor positioning rather than by measuring in JS: no
@@ -1001,7 +1001,7 @@ h2.band { margin: 0; font-weight: inherit; }
   text-wrap: pretty;
   box-shadow: 0 var(--s2) var(--s5) color-mix(in oklch, var(--bg) 55%, transparent);
   /* allow-discrete lets `display` and the top layer participate in the
-     transition, so it fades rather than appearing — without it the exit is
+     transition, so it fades rather than appearing: without it the exit is
      instant no matter what duration is set. */
   opacity: 1;
   translate: 0 0;
@@ -1017,7 +1017,7 @@ h2.band { margin: 0; font-weight: inherit; }
 }
 
 /* Where anchor positioning is not implemented, a popover defaults to the
-   middle of the viewport — a tooltip landing over the board it explains. Pin
+   middle of the viewport: a tooltip landing over the board it explains. Pin
    it to the bottom instead, as a status line: not the same design, but a
    deliberate one rather than whatever the default happened to be. */
 @supports not (position-area: block-start) {
@@ -1029,7 +1029,7 @@ h2.band { margin: 0; font-weight: inherit; }
   }
 }
 
-/* A mark that explains itself says so — otherwise the explanation is a secret
+/* A mark that explains itself says so: otherwise the explanation is a secret
    kept from everyone who has not already found it. Dotted, because it is the
    one decoration that reads as "there is more here" without reading as a link. */
 [data-why] {
@@ -1045,15 +1045,15 @@ button[data-why], .act[data-why] { text-decoration: none; cursor: pointer; }
 button[data-why]:disabled { cursor: not-allowed; }
 
 /* ── Motion, and the typographic details, shared ────────────────────────────
-   These lived only in the MCP App panel. The web board — same components, same
-   design system, same product — redrew by replacing its HTML with no
+   These lived only in the MCP App panel. The web board: same components, same
+   design system, same product: redrew by replacing its HTML with no
    continuity at all, so the two surfaces moved differently and read
    differently. That is the drift this sheet exists to prevent, and it is as
    true of motion and measure as it is of colour. Anything genuinely specific
    to being a guest inside another application stays in the panel. */
 
 /* A view switch is a move, not a repaint. `.view.hide` is display:none, so
-   exactly one pane is rendered and the name stays unique — which is what
+   exactly one pane is rendered and the name stays unique, which is what
    view-transition-name requires. Board.transition names the direction on
    <html>; this names the thing that moves. */
 @supports (view-transition-name: none) {
@@ -1092,7 +1092,7 @@ p, .body, .msg-body, .said-body { text-wrap: pretty; }
 textarea { field-sizing: content; min-block-size: calc(var(--ctl-h, 2lh)); max-block-size: 40vh; }
 
 /* ═══ THE INSTRUMENT ════════════════════════════════════════════════════════
-   A board is not a document. It is watched, not read — scanned for minutes at
+   A board is not a document. It is watched, not read: scanned for minutes at
    a time while it changes, by somebody deciding whether to intervene in a
    fleet. The things below are what separate an instrument face from a styled
    web page, and none of them are effects: each fixes something that was
@@ -1102,14 +1102,14 @@ textarea { field-sizing: content; min-block-size: calc(var(--ctl-h, 2lh)); max-b
 /* ── Continuous geometry ────────────────────────────────────────────────────
    A `border-radius` corner is a circular arc, and its curvature jumps from
    zero to constant the instant it meets the straight edge. The eye reads that
-   discontinuity even when it cannot name it — it is why a rounded rectangle
+   discontinuity even when it cannot name it: it is why a rounded rectangle
    can look approximately soft rather than deliberately shaped. A superellipse
    has no such break: curvature eases in.
 
    This is the shape language of physical instruments and of every considered
    piece of industrial design, and until recently the web could not draw it
    without hand-authored SVG per corner. Now it is one property, so the whole
-   product speaks it — and being one property means it stays coherent. */
+   product speaks it, and being one property means it stays coherent. */
 :root { --corner: superellipse(2.6); }
 
 *, *::before, *::after { corner-shape: var(--corner); }
@@ -1125,13 +1125,13 @@ textarea { field-sizing: content; min-block-size: calc(var(--ctl-h, 2lh)); max-b
    A line box is taller than the letters in it: half the leading sits above the
    cap height and half below the baseline, and that invisible space is part of
    every padded label. So a pill with symmetric CSS padding is optically
-   BOTTOM-heavy, every time, on every surface — the text sits high in its box
+   BOTTOM-heavy, every time, on every surface: the text sits high in its box
    because the descender space below it is empty.
 
    Typographers have compensated for this by hand forever. `text-box` removes
    the leading instead, so padding measures from the letters themselves and
    symmetric padding is symmetric. Applied to single-line labels, where it is a
-   correction — never to prose, where the leading is doing its actual job of
+   correction: never to prose, where the leading is doing its actual job of
    making successive lines readable. */
 :where(h1, h2, h3, .wordmark, .pill, .badge, .tag, .member-tag,
        button, .act, .metric .figure, .band-group > h2) {
@@ -1143,7 +1143,7 @@ textarea { field-sizing: content; min-block-size: calc(var(--ctl-h, 2lh)); max-b
    stated honestly rather than borrowed from the leading.
    
    NOT :where(). These have to WIN over the original single-class rules they
-   are correcting, and :where() contributes zero specificity — written that
+   are correcting, and :where() contributes zero specificity: written that
    way, the trim landed and the compensation did not, so every pill on the
    board quietly lost a third of its height. Found by measuring the computed
    padding, which is the only way it is visible at this size. */
@@ -1153,7 +1153,7 @@ button, .act { padding-block: max(5px, calc((var(--ctl-h, 26px) - 1lh) / 2)); }
 /* ── States derived, not chosen ─────────────────────────────────────────────
    Hover and active used to be hand-picked colours sitting next to the token
    they were meant to be a variation OF, which means they drift the moment the
-   token moves — and did. Relative colour syntax states the RELATIONSHIP: same
+   token moves, and did. Relative colour syntax states the RELATIONSHIP: same
    hue, same chroma, a step of lightness toward the reader. Change --accent and
    every state of it follows, because they were never separate values. */
 :where(button, .act, .views button):hover:not(:disabled) {
@@ -1163,7 +1163,7 @@ button, .act { padding-block: max(5px, calc((var(--ctl-h, 26px) - 1lh) / 2)); }
 
 /* ── The stagger, without JavaScript ────────────────────────────────────────
    Entries used to be staggered by a loop that wrote an inline animation-delay
-   onto every child on every redraw — layout read, style write, per element,
+   onto every child on every redraw: layout read, style write, per element,
    several times a minute. `sibling-index()` is the same effect stated as a
    fact about position rather than computed and pushed in. The cap is what
    stops a fifty-lane board from taking a second to finish arriving. */
@@ -1175,16 +1175,16 @@ button, .act { padding-block: max(5px, calc((var(--ctl-h, 26px) - 1lh) / 2)); }
 /* ── The cadence trace ──────────────────────────────────────────────────────
    How much a lane actually did, minute by minute, over the last ten.
 
-   The board could always say what an agent IS — active, dormant, out of touch.
+   The board could always say what an agent IS: active, dormant, out of touch.
    That is a state derived from a timeout, and it cannot tell a healthy agent
    between turns from one that stopped eight minutes ago and still claims to be
    working. The shape of the work can, and the shape is what a person reads a
    fleet by.
 
    BINNED, after two rewrites that were wrong. First attempt: one mark per
-   event on a linear axis — twenty-five actions inside six seconds all landed
+   event on a linear axis: twenty-five actions inside six seconds all landed
    in the same one-pixel column, so a busy lane drew the same single line as a
-   dead one. Second: a square-rooted time axis to give the recent end room —
+   dead one. Second: a square-rooted time axis to give the recent end room,
    which cannot help, because events six seconds apart ARE simultaneous at this
    width and no transform separates them. Bins make collision the signal rather
    than the failure: a burst is a tall column, which is what a burst is.

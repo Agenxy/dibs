@@ -13,14 +13,14 @@ import (
 // Everything else the classifier weighs is inference. Shared paths, similar
 // prose, co-changing files: all of it says two declarations resemble each other,
 // and resemblance is exactly what produces the failure this system is judged on
-// — two agents told they are duplicating work when they are not. Only two things
+// two agents told they are duplicating work when they are not. Only two things
 // escape that. One is a canonical id both agents copied from the world (pr:1231);
 // the other is this.
 //
 // The key is issued when a lane opens and held by its members. Holding it is not
 // a claim an agent can make: it is membership, which Lanes granted and recorded,
-// and the three ways to get it — opening a lane, being admitted to one, or being
-// vouched for by a parent that holds it — are all decisions somebody made on
+// and the three ways to get it: opening a lane, being admitted to one, or being
+// vouched for by a parent that holds it: are all decisions somebody made on
 // purpose. That is why a shared key justifies an exact match when a 0.9 semantic
 // score does not.
 //
@@ -31,7 +31,7 @@ import (
 // seriously: do not treat any self-authored `lane:*` string as issued.
 //
 // It is DERIVED, not random, because it is created inside Apply. A random key
-// would differ on every replay of the same ledger and void the hash chain — the
+// would differ on every replay of the same ledger and void the hash chain: the
 // same rule that keeps scoring out of the fold (SPEC-CHANNELS.md §4.3).
 const coordKeyNS = "key"
 
@@ -47,7 +47,7 @@ func coordKey(nodeID string, serial uint64) string {
 	return coordKeyNS + ":" + hex.EncodeToString(sum[:])[:20]
 }
 
-// isCoordKey reports the shape only. Shape proves nothing — validation is
+// isCoordKey reports the shape only. Shape proves nothing: validation is
 // holdsCoordKey, and every path that treats a key as identity must go through it.
 func isCoordKey(ref string) bool {
 	ns, rest, ok := strings.Cut(ref, ":")
@@ -60,12 +60,12 @@ func isCoordKey(ref string) bool {
 //
 // This is the entire security of the mechanism, and it is deliberately not a
 // lookup of "has this key ever existed". An agent that learns another lane's key
-// — from a message, from a log, from a panel — must not be able to declare it
+// , from a message, from a log, from a panel, must not be able to declare it
 // and be treated as coordinating. Issued AND held, or it is just a string.
 //
 // Inherited holding is not a loosening; it is the case that makes the key worth
 // having. Membership alone would confine the key to agents already in one lane,
-// and matching deliberately never proposes a lane you are in — so a key that
+// and matching deliberately never proposes a lane you are in, so a key that
 // only members could hold would fire exactly where it changed nothing. Live
 // probing is what showed this: two agents sharing a key matched nothing, because
 // each was already where the key would have sent it.
@@ -73,7 +73,7 @@ func isCoordKey(ref string) bool {
 // The lineage a parent vouched for is the one channel that genuinely carries
 // shared intent. A parent that opens a lane and fans out subagents has made one
 // coordination decision covering all of them, and each child can then declare
-// its own work and be matched to the parent's lane exactly — while holding no
+// its own work and be matched to the parent's lane exactly: while holding no
 // membership of its own, which is what keeps a helper from being counted as a
 // second occupant of its parent's work. speaksFor is the same rule the rest of
 // the lane machinery already applies, and it walks only PROVEN links: an
@@ -94,7 +94,7 @@ func (s *State) holdsCoordKey(agent, key string) bool {
 //
 // Ordinary refs pass through untouched: `pr:1231` is a claim about the world
 // that Lanes cannot verify and does not pretend to. A coordination key is
-// different in kind — Lanes issued it, so Lanes can check it, and a key that
+// different in kind. Lanes issued it, so Lanes can check it, and a key that
 // does not survive this is removed rather than downgraded. Leaving it in as a
 // label would let an invented key still contribute shared-vocabulary evidence,
 // which is a smaller version of the same laundering.

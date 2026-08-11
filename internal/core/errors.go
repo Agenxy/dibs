@@ -6,7 +6,7 @@ import (
 )
 
 // Error is a structured, instructive API error. Hint tells a drifted agent
-// the corrective call — protocol recovery is built into the error surface.
+// the corrective call: protocol recovery is built into the error surface.
 type Error struct {
 	Code string `json:"code"`
 	Msg  string `json:"message"`
@@ -17,7 +17,7 @@ func (e *Error) Error() string { return fmt.Sprintf("%s: %s", e.Code, e.Msg) }
 
 // Structured error codes (spec §10).
 var (
-	// The "if lost" clause used to say "register a fresh lane" — the one action
+	// The "if lost" clause used to say "register a fresh lane": the one action
 	// this codebase has measured going wrong. A fresh registration under the same
 	// name makes you `yourname-2`: a second lane that cannot read the first one's
 	// mail, while the board shows two healthy agents and nothing looks broken.
@@ -27,7 +27,7 @@ var (
 	ErrBadToken = &Error{
 		Code: "E_BAD_TOKEN", Msg: "unknown or missing lane token",
 		Hint: "pass the token returned by register_lane. If you lost it, register " +
-			"again with the SAME name and the SAME nonce — you get your own lane " +
+			"again with the SAME name and the SAME nonce: you get your own lane " +
 			"back, with its mail. Registering without the nonce makes you a second " +
 			"lane that cannot read the first one's mail",
 	}
@@ -53,7 +53,7 @@ var (
 	}
 	// Distinguished from ErrBadID because the two have different causes and the
 	// wrong one sends you looking in the wrong place. An empty id almost always
-	// means the argument never arrived — a misspelled parameter name, which
+	// means the argument never arrived: a misspelled parameter name, which
 	// models do constantly (get_blob takes `blob`, and `blob_id` is the common
 	// miss). Lecturing about hex format in that case is actively misleading.
 	ErrNoID = &Error{
@@ -73,7 +73,7 @@ var (
 	// A blob referenced by a live message CAN still be evicted: the store cap is
 	// a hard bound, and its last-resort pass drops referenced content rather
 	// than exceed it. The recipient then holds a message naming a blob that is
-	// gone — and used to be told "you can fetch only blobs you created or
+	// gone, and used to be told "you can fetch only blobs you created or
 	// received on a live message", which is precisely the rule it had satisfied.
 	// An agent reading that debugs its own access assumptions, or concludes the
 	// sender lied.
@@ -83,7 +83,7 @@ var (
 	// concern is about strangers, not recipients).
 	ErrBlobEvicted = &Error{
 		Code: "E_BLOB_EVICTED", Msg: "that blob was evicted to keep the store under its cap",
-		Hint: "your message still names it, and your access was never the problem — the " +
+		Hint: "your message still names it, and your access was never the problem: the " +
 			"content is gone. Ask the sender to put_blob it again, or to send the data another way",
 	}
 	ErrQuota = &Error{
@@ -138,7 +138,7 @@ func ErrCursorTooOld(floor uint64) *Error {
 func ErrNoMessage(serial, truncatedBefore uint64) *Error {
 	hint := "check the serial; use inbox() to list your mail"
 	if serial < truncatedBefore {
-		hint = "this serial precedes your truncated_before_serial watermark — the message was evicted under retention bounds"
+		hint = "this serial precedes your truncated_before_serial watermark: the message was evicted under retention bounds"
 	}
 	return errf("E_NO_MESSAGE", hint, "no accessible message %d", serial)
 }
@@ -154,12 +154,12 @@ var (
 
 // ErrWrongKind is for a serial that exists but is not the kind of thing the
 // caller asked for. Names what it IS and which tool reads it, rather than
-// reporting the absence of what was asked for — a serial the caller got from a
+// reporting the absence of what was asked for: a serial the caller got from a
 // wake nudge is not a serial they invented, and "no such message" sends them
 // looking for a deletion that never happened.
 func ErrWrongKind(serial uint64, lane string) *Error {
 	return errf("E_NOT_A_MESSAGE",
 		"read it with lane_read on lane "+lane,
-		"serial %d is an announcement in lane %q, not a message — get_message reads "+
+		"serial %d is an announcement in lane %q, not a message: get_message reads "+
 			"direct mail, lane_read reads a lane's announcements", serial, lane)
 }

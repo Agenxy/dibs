@@ -10,7 +10,7 @@ import (
 // GuardPath answers a harness's pre-edit hook: "may this session write here?"
 //
 // This is what turns a claim from a note into something that holds. Until now a
-// claim only informed an agent that bothered to look — and the agent that
+// claim only informed an agent that bothered to look, and the agent that
 // damages your work is exactly the one that never looked. Every harness Lanes
 // supports can ask before it edits and refuse on the answer, so the claim is
 // enforced at the moment it matters, by the harness, with Lanes still never
@@ -22,7 +22,7 @@ import (
 // It FAILS OPEN, deliberately and in three ways: an unknown session, an
 // unregistered lane, and any internal trouble all return allow. A coordination
 // service that bricks the editor when it is confused is not a safe tool, it is
-// a broken one — and the blast radius of a missed guard is a merge conflict,
+// a broken one, and the blast radius of a missed guard is a merge conflict,
 // while the blast radius of a false deny is an engineer who turns Lanes off.
 func (e *Engine) GuardPath(ctx context.Context, sessionID, path, cwd string) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
@@ -40,7 +40,7 @@ func (e *Engine) GuardPath(ctx context.Context, sessionID, path, cwd string) (co
 			// and one of them means the guard is not protecting anything.
 			//
 			// "nothing claims this path" is the guard working. "I could not tell
-			// which agent you are" is the guard FAILING OPEN — deliberately, and
+			// which agent you are" is the guard FAILING OPEN: deliberately, and
 			// correctly, since blocking every editor it cannot identify would be
 			// a broken editor rather than a safe one. But the two were
 			// indistinguishable in the reply, so a misconfigured session id made
@@ -52,7 +52,7 @@ func (e *Engine) GuardPath(ctx context.Context, sessionID, path, cwd string) (co
 				out["hint"] = "no agent could be resolved for this session, so no claim " +
 					"could apply and the edit was allowed. This is fail-open by design, " +
 					"NOT a finding that the path is unclaimed. If this session belongs to " +
-					"a registered agent, its session id does not match — check `lanes doctor`"
+					"a registered agent, its session id does not match: check `lanes doctor`"
 			} else {
 				out["basis"] = "no-claim"
 				out["agent"] = lane
@@ -60,7 +60,7 @@ func (e *Engine) GuardPath(ctx context.Context, sessionID, path, cwd string) (co
 			// Say nothing further on the happy path, and in particular do NOT
 			// emit permissionDecision:"allow".
 			//
-			// In the PreToolUse contract "allow" does not mean "no objection" —
+			// In the PreToolUse contract "allow" does not mean "no objection",
 			// it means SKIP THE PERMISSION PROMPT. Returning it here would make
 			// Lanes silently auto-approve every edit to an unclaimed path, which
 			// is a far larger change to the user's safety posture than anything

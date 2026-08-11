@@ -4,8 +4,8 @@ import "sort"
 
 // Ref matching: the DECLARED half of the matcher.
 //
-// Separated from channel.go because these functions answer one question — what
-// did two agents write down that names the same thing — and because that is the
+// Separated from channel.go because these functions answer one question: what
+// did two agents write down that names the same thing, and because that is the
 // question the scorer cannot answer. A ref is a fact an agent typed; a score is
 // a resemblance a model computed. When they disagree the ref should win, and the
 // bug that prompted this split was the ref never getting to speak: a channel
@@ -50,8 +50,8 @@ func (s *State) sharedRefsWith(ch *Channel, mine map[string]bool) []string {
 // point. The caller-side guard already says declared facts must match even when
 // the scorer produced no footprint; that rule was applied only to the caller. A
 // channel whose own opener predicted no files was discarded two lines before
-// sharedRefsWith ran, so two agents declaring the same issue:42 — same
-// repository, same activity — opened two channels. That is the case an
+// sharedRefsWith ran, so two agents declaring the same issue:42: same
+// repository, same activity: opened two channels. That is the case an
 // identifying ref exists to solve, failing exactly when the scorer had no
 // opinion, which is when a hand-written fact matters most.
 //

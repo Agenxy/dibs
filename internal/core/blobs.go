@@ -8,7 +8,7 @@ import (
 )
 
 // Attachments & blob registry (SPEC-ATTACHMENTS A3–A6). The registry holds
-// metadata only — bytes live in the side blob store (internal/blobstore),
+// metadata only: bytes live in the side blob store (internal/blobstore),
 // outside the replay model. Every mutation here is a pure function of ledgered
 // ops, so which blobs *should* exist replays exactly; the bytes are reconciled
 // against this registry at boot.
@@ -96,7 +96,7 @@ func (s *State) blobAccessible(id, lane string) bool {
 func (s *State) BlobAccessible(id, lane string) bool { return s.blobAccessible(id, lane) }
 
 // BlobWasEvicted reports that lane holds a live message naming id, but the blob
-// itself is gone — the store cap's last-resort pass drops referenced content
+// itself is gone: the store cap's last-resort pass drops referenced content
 // rather than exceed the bound.
 //
 // This separates "you may not have it" from "it no longer exists", which are
@@ -119,7 +119,7 @@ func (s *State) BlobWasEvicted(id, lane string) bool {
 	return false
 }
 
-// laneBlobBytes sums the sizes of blobs a lane owns — the per-lane quota metric
+// laneBlobBytes sums the sizes of blobs a lane owns: the per-lane quota metric
 // (A9, fixes P1-3). A blob shared by N owners counts against each; content the
 // lane put is content it is accountable for.
 func (s *State) laneBlobBytes(lane string) int64 {
@@ -132,7 +132,7 @@ func (s *State) laneBlobBytes(lane string) int64 {
 	return total
 }
 
-// storeBytes is the total registry size — the global-cap metric (A9).
+// storeBytes is the total registry size: the global-cap metric (A9).
 func (s *State) storeBytes() int64 {
 	var total int64
 	for _, b := range s.Blobs {
@@ -198,7 +198,7 @@ func (s *State) applyPutBlob(l *Lane, op *Op, now time.Time) (Result, []Event, e
 	}
 
 	// Content exists for someone else; grant this caller ownership (they
-	// supplied the plaintext, so this discloses nothing — A6.1).
+	// supplied the plaintext, so this discloses nothing. A6.1).
 	b.Owners[l.ID] = true
 	return Result{"blob": b.ID, "size": b.Size, "mime": b.Mime, "deduped": false},
 		[]Event{{Type: "blob.owner_added", Lane: l.ID, Data: map[string]any{"id": b.ID}}}, nil
@@ -207,15 +207,15 @@ func (s *State) applyPutBlob(l *Lane, op *Op, now time.Time) (Result, []Event, e
 // gcBlobs is the deterministic, pure blob eviction pass (A5). It runs inside
 // the sweep (for TTL) and inside put_blob (to reclaim under cap pressure before
 // registering). Every decision is a pure function of (registry, live messages,
-// now), so replay reproduces it exactly — no recorded victims needed, unlike
+// now), so replay reproduces it exactly: no recorded victims needed, unlike
 // lane liveness (which depends on impure PID probes). Bytes are deleted from
 // disk afterward by the engine's reconcile pass, which diffs files vs registry.
 //
-// Policy (deterministic; created-order, not access-order — true LRU would
+// Policy (deterministic; created-order, not access-order: true LRU would
 // require ledgering reads, which we refuse to do for a read path):
 //  1. unreferenced blobs older than the hard TTL → evicted (cause "ttl");
 //  2. under cap pressure, unreferenced blobs past the grace window, oldest
-//     first, until under cap (cause "cap") — grace protects freshly-put,
+//     first, until under cap (cause "cap"): grace protects freshly-put,
 //     not-yet-attached blobs so put→send works;
 //  3. still over cap → last-resort: referenced blobs oldest first (cause
 //     "cap"), so a store full of referenced blobs degrades honestly instead of

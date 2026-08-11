@@ -26,8 +26,8 @@ func run(t *testing.T, git, dir string, args ...string) {
 	}
 }
 
-// The case the fleet actually hits. Agents run in linked worktrees — this
-// project's own sessions do — and a worktree lives wherever it was created,
+// The case the fleet actually hits. Agents run in linked worktrees: this
+// project's own sessions do, and a worktree lives wherever it was created,
 // which is routinely nowhere near its checkout. To a prefix test those are two
 // unrelated places, so repository-scoped identifiers between two agents in one
 // project could never be trusted to act. Git says they are one repository.
@@ -51,7 +51,7 @@ func TestLensSeesOneRepositoryAcrossLinkedWorktrees(t *testing.T) {
 
 // A directory the engine never resolved must answer "no evidence", not
 // "different". The lens is keyed by cwd, and a lane can register between the
-// resolve and the read — reporting that as positively somewhere else would veto
+// resolve and the read: reporting that as positively somewhere else would veto
 // a match on the strength of a race.
 func TestLensIsSilentAboutWhatItNeverResolved(t *testing.T) {
 	requireGit(t)

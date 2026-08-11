@@ -18,7 +18,7 @@ import (
 
 func adminHashPath() string { return filepath.Join(paths.DataDir(), "admin.hash") }
 
-// readPassword reads a line from the terminal with echo disabled (via stty —
+// readPassword reads a line from the terminal with echo disabled (via stty,
 // no dependency). Falls back to a visible read when stdin is not a TTY.
 func readPassword(prompt string) (string, error) {
 	fmt.Fprint(os.Stderr, prompt)
@@ -80,7 +80,7 @@ func adminCmd(args []string) error {
 		if len(args) < 2 {
 			// Exit non-zero, not 0. This printed usage and reported success, so
 			// `lanes admin coordinator $LANE && echo granted` with $LANE unset
-			// printed "granted" and granted nothing — and the next
+			// printed "granted" and granted nothing, and the next
 			// coordinator-gated call failed with no reason to suspect the grant.
 			// A misspelt lane NAME already fails loudly with E_NO_LANE, so a
 			// missing one must too.
@@ -110,7 +110,7 @@ const adminUsage = `usage:
 
 A coordinator gets breadth, not intrusion: it can address the whole fleet and
 unstick shared resources, but it still cannot read another lane's mail.
-An admin gets the god view, mail included — grant it only to an agent you trust
+An admin gets the god view, mail included: grant it only to an agent you trust
 as you trust yourself. Either way, only a human can grant it: agents can never
 promote themselves.`
 
@@ -147,7 +147,7 @@ func pruneLanes(lane string) error {
 	}
 	_ = json.Unmarshal(raw, &out)
 	if out.Count == 0 {
-		fmt.Println("nothing to prune — every lane is live.")
+		fmt.Println("nothing to prune: every lane is live.")
 		return nil
 	}
 	fmt.Printf("closed %d lane(s): %s\n", out.Count, strings.Join(out.Pruned, ", "))
@@ -186,7 +186,7 @@ func setLaneRole(lane, role string) error {
 // directory that does not belong to the daemon this command is talking to.
 //
 // `lanes admin prune` and `lanes admin role` act on the daemon at LANES_ADDR.
-// `set-password` writes a FILE, and resolved that file from LANES_DIR — so
+// `set-password` writes a FILE, and resolved that file from LANES_DIR: so
 // setting only the address, which is the natural thing to do when you are
 // pointed at a second daemon, silently rewrote the credentials of the first.
 // Two halves of one command family acting on two different installs, with
@@ -195,7 +195,7 @@ func setLaneRole(lane, role string) error {
 //
 // The local secret is the install's identity, so the check is exact: offer the
 // directory's secret to the addressed daemon. If it says no, they are not the
-// same install. If nothing is listening we proceed — setting a password before
+// same install. If nothing is listening we proceed: setting a password before
 // the first start is legitimate, and is how installs begin.
 func confirmDirIsTheAddressedDaemon() error {
 	secret, err := localSecret()
@@ -213,8 +213,8 @@ func confirmDirIsTheAddressedDaemon() error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	// Anything that is not a refusal means the secret was accepted, so the
-	// directory is this daemon's. The real endpoint answers 404 — authenticated,
-	// no such route — and reading that as a rejection would block every
+	// directory is this daemon's. The real endpoint answers 404: authenticated,
+	// no such route, and reading that as a rejection would block every
 	// legitimate run.
 	if resp.StatusCode != http.StatusUnauthorized {
 		return nil
@@ -223,7 +223,7 @@ func confirmDirIsTheAddressedDaemon() error {
 	// explanation, and an error string is conventionally one line.
 	fmt.Fprintf(os.Stderr,
 		"\nThis command writes a file into the data directory, while `admin prune` and\n"+
-			"`admin role` act on the address — so with only LANES_ADDR set you would be\n"+
+			"`admin role` act on the address, so with only LANES_ADDR set you would be\n"+
 			"changing the password of a DIFFERENT install than the one you are pointed at.\n"+
 			"Set LANES_DIR to %s's data directory as well, and run it again.\n\n", addr())
 	return fmt.Errorf("refusing to write: %s does not belong to the daemon at %s (set LANES_DIR too)",
@@ -264,7 +264,7 @@ func setAdminPassword() error {
 // request, erroring early with guidance if none is configured.
 func promptAdminForGodView() (string, error) {
 	if _, err := os.Stat(adminHashPath()); err != nil {
-		return "", fmt.Errorf("no admin password set — run `lanes admin set-password` first")
+		return "", fmt.Errorf("no admin password set: run `lanes admin set-password` first")
 	}
 	return readPassword("Lanes admin password: ")
 }

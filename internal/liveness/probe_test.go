@@ -8,7 +8,7 @@ import (
 )
 
 // The two record shapes, copied from real transcripts on disk rather than
-// written from the documentation — the documentation for these does not exist.
+// written from the documentation: the documentation for these does not exist.
 //
 // A wrong reading here is worse than none: the classifier falls back to file
 // growth when Tokens returns 0, but a number that moves for the wrong reason
@@ -57,7 +57,7 @@ func TestTokensReadsWhatTheHarnessesActuallyWrite(t *testing.T) {
 		t.Errorf("pi transcript: got %d, want 4069 (3949 + 120)", got)
 	}
 
-	// An unrecognised format must return 0 — "no signal" — rather than a number.
+	// An unrecognised format must return 0 ("no signal") rather than a number.
 	other := filepath.Join(dir, "other.jsonl")
 	if err := os.WriteFile(other, []byte(`{"tokens":"a lot"}`+"\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -94,12 +94,12 @@ func TestPSTimeParsesEveryFormItPrints(t *testing.T) {
 //
 // The first version picked the most recently modified transcript on disk. Run
 // from inside a Claude Code session, that discovered the PARENT'S own
-// transcript — appended to constantly — and reported a subagent as "working"
+// transcript (appended to constantly) and reported a subagent as "working"
 // on the strength of its supervisor's activity. Caught by printing the path it
 // had chosen, which is the only reason it was caught at all.
 func TestTranscriptDiscoveryFollowsTheProcess(t *testing.T) {
 	// This process holds no harness transcript open, so the honest answer is
-	// nothing — NOT whichever session file happens to be freshest on this disk.
+	// nothing. NOT whichever session file happens to be freshest on this disk.
 	if got := FindTranscript(os.Getpid()); got != "" {
 		t.Errorf("found %q for a process that has no transcript open\n"+
 			"  discovery by recency is how a parent ends up watching its own session\n"+

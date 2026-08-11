@@ -1,7 +1,7 @@
 // Package humanauth proves a HUMAN is at this machine, right now.
 //
 // Lanes' panel runs inside an agent's MCP host and acts with that agent's own
-// token. That is fine for answering the agent's own mail — the agent handed the
+// token. That is fine for answering the agent's own mail: the agent handed the
 // token over. It is not fine for speaking AS the operator. "Stand down, this is
 // your operator" is exactly the sentence that must never be forgeable, and
 // nothing in the transport can tell "the human clicked Broadcast" from "an agent
@@ -17,7 +17,7 @@
 // stop arbitrary code ALREADY running as the user, which can replace the helper
 // binary in a directory the user owns and have it exit 0. That adversary can
 // equally read the lane tokens, the ledger and the local secret, so presence is
-// not the weakest thing it defeats — but the earlier claim here, that software
+// not the weakest thing it defeats, but the earlier claim here, that software
 // cannot produce a fingerprint, was wrong and worth correcting rather than
 // leaving as reassurance. See findHelper for exactly what is and is not bought.
 //
@@ -44,19 +44,19 @@ type Verdict int
 const (
 	// Verified means a human authenticated just now.
 	Verified Verdict = iota
-	// Declined means a human was asked and did not authenticate — they dismissed
+	// Declined means a human was asked and did not authenticate: they dismissed
 	// the sheet, failed the match, or let it time out. Distinct from Unavailable
 	// because the remedies are opposite: try again, versus stop asking and use the
 	// password. Distinct from Abandoned because a person actually saw a prompt.
 	Declined
 	// Unavailable means this machine cannot check biometrics at all.
 	Unavailable
-	// Abandoned means the request went away before a human answered — the caller
+	// Abandoned means the request went away before a human answered: the caller
 	// cancelled, or the daemon is shutting down.
 	//
 	// Distinct from Declined because Declined is a STATEMENT ABOUT A PERSON: it
 	// says somebody was asked and said no, and the panel answers it with "nothing
-	// was sent — press the button again when you want to act". Nobody was asked
+	// was sent: press the button again when you want to act". Nobody was asked
 	// here. Reporting a cancelled request as a refusal attributes a decision to a
 	// human who may never have seen a prompt, in the one package whose entire
 	// purpose is not to claim things about people that did not happen.
@@ -76,7 +76,7 @@ const promptTimeout = 90 * time.Second
 
 // helperName is the compiled Swift binary lanesd execs. A separate process
 // rather than cgo because Lanes ships CGO_ENABLED=0 and cross-compiles to four
-// targets — linking LocalAuthentication into the daemon would break every build
+// targets: linking LocalAuthentication into the daemon would break every build
 // that is not macOS. Exec also means a missing or unrunnable helper degrades to
 // the password path instead of taking the daemon down with it.
 const helperName = "lanes-presence"
@@ -87,7 +87,7 @@ const helperName = "lanes-presence"
 // say what is being approved. Callers pass the actual action ("post to the lane
 // auth-work") rather than a generic sentence.
 func Check(ctx context.Context, reason string) (Verdict, error) {
-	// A scripted verdict, in dev builds only — see mock_release.go. Consulted
+	// A scripted verdict, in dev builds only: see mock_release.go. Consulted
 	// before the helper so the mock can also stand in for a machine that has one,
 	// which is what makes the Declined and Unavailable branches testable at all.
 	if verdict, on := mocked(); on {
@@ -107,7 +107,7 @@ func Check(ctx context.Context, reason string) (Verdict, error) {
 
 	// #nosec G204 -- `helper` is not caller input: findHelper resolves a fixed
 	// filename beside this executable and refuses anything else, which is the
-	// point (see findHelper). `reason` is an argument, never a shell string —
+	// point (see findHelper). `reason` is an argument, never a shell string,
 	// there is no shell here.
 	cmd := exec.CommandContext(ctx, helper, reason)
 	err = cmd.Run()
@@ -128,7 +128,7 @@ func Check(ctx context.Context, reason string) (Verdict, error) {
 	if parent.Err() != nil {
 		return Abandoned, nil
 	}
-	// Our own deadline expired — a human who never answered, which IS a decline:
+	// Our own deadline expired: a human who never answered, which IS a decline:
 	// nothing was approved, and telling them their Mac cannot do this would be
 	// false.
 	if ctx.Err() != nil {
@@ -147,7 +147,7 @@ func Check(ctx context.Context, reason string) (Verdict, error) {
 // WHAT THIS DOES NOT DO, stated plainly because the surrounding comments used to
 // overclaim it. The default install directory is ~/.local/bin, which is owned
 // and writable by the user. Anything already running as that user can replace
-// the helper — or, before this, point a symlink at something else — with a
+// the helper, or, before this, point a symlink at something else, with a
 // binary that exits 0, and Check would report Verified without a sensor ever
 // being touched. So presence is unforgeable by a REMOTE or unprivileged caller,
 // and by an agent confined to the MCP transport, which is the threat this was
@@ -155,13 +155,13 @@ func Check(ctx context.Context, reason string) (Verdict, error) {
 // sheet on the operator's own Mac. It is NOT unforgeable by arbitrary code
 // already executing with the user's own privileges. That adversary can also
 // read the lane tokens, the ledger and ~/.lanes/local.secret, so presence is not
-// the weakest link — but "software cannot produce a fingerprint" was the wrong
+// the weakest link, but "software cannot produce a fingerprint" was the wrong
 // sentence and this one is the right one.
 //
 // The symlink refusal is a real narrowing rather than a fix: replacing the file
 // in place still works, and defeating that needs a signature check or an install
 // root the user cannot write. What it buys is that the cheapest version of the
-// substitution — dropping a link next to the daemon — no longer succeeds
+// substitution (dropping a link next to the daemon) no longer succeeds
 // silently, and Lstat cannot be satisfied by a path that resolves elsewhere.
 func findHelper() (string, error) {
 	self, err := os.Executable()

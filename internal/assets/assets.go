@@ -1,5 +1,5 @@
-// Package assets holds the visual material shared by every Lanes surface — the
-// MCP Apps board panel and the web board — so the two render as one product
+// Package assets holds the visual material shared by every Lanes surface: the
+// MCP Apps board panel and the web board, so the two render as one product
 // rather than drifting into two house styles.
 //
 // The surfaces are deliberately NOT the same page. The panel is one lane's own
@@ -7,7 +7,7 @@
 // host's sandboxed iframe; the web board is the operator's god view over every
 // lane and all mail, behind the admin password. They answer different questions
 // for different readers. What they share is what a lane looks like, what a
-// message looks like, and what an event looks like — so this package holds the
+// message looks like, and what an event looks like, so this package holds the
 // design system and the components, and each surface composes its own page.
 //
 // Everything here is INLINED into the HTML rather than served as a file. That
@@ -17,13 +17,13 @@
 //
 // Geist and Geist Mono are SIL OFL (see fonts/OFL.txt) and vendored for the
 // same reason. Two faces, two jobs: Geist Mono carries every identifier and
-// figure — lane names, serials, paths, counts — because those are read in
+// figure, lane names, serials, paths, counts, because those are read in
 // columns and columns need tabular figures and a fixed advance; Geist Sans
 // carries everything a person wrote in prose.
 //
 // A text serif was vendored here briefly and removed. It gave the panel the air
 // of a printed report, which is the wrong costume for a tool engineers keep
-// open next to their editor — and its italic, used for agent descriptions, read
+// open next to their editor, and its italic, used for agent descriptions, read
 // as handwriting.
 package assets
 
@@ -48,7 +48,7 @@ var GeistMono []byte
 // Icon is the Lanes mark, served as the favicon by both surfaces.
 //
 // A tab with no favicon shows the browser's blank-page glyph, which is what an
-// unfinished tool looks like — and the board is a page people leave open all
+// unfinished tool looks like, and the board is a page people leave open all
 // day beside their editor. Embedded like everything else here: the panel's CSP
 // admits no external origin, so a linked icon would fail closed and silently.
 //
@@ -91,7 +91,7 @@ func build() {
 func FontFaces() string { build(); return faces }
 
 // Styles is the complete stylesheet for either surface: the inlined faces
-// followed by the shared design system. Both surfaces use this whole string —
+// followed by the shared design system. Both surfaces use this whole string,
 // a surface that took only part of it would be the beginning of the drift this
 // package exists to prevent.
 func Styles() string { build(); return styles }
@@ -99,5 +99,5 @@ func Styles() string { build(); return styles }
 // BoardJS is the shared component library: pure functions from board data to
 // HTML strings, exposed as a `Board` object. It contains no transport and no
 // state, because the two surfaces get their data by completely different means
-// — postMessage from an MCP host, and server-sent events from lanesd.
+// postMessage from an MCP host, and server-sent events from lanesd.
 func BoardJS() string { return boardJS }

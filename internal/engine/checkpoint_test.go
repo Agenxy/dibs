@@ -12,10 +12,10 @@ import (
 // while it was away.
 //
 // Both of those keys used to be OMITTED when there was nothing to report, so the
-// answer to "what happened to me?" was silence — indistinguishable from the
+// answer to "what happened to me?" was silence: indistinguishable from the
 // feature being broken, or from having asked on the wrong lane. The first agent
 // to use it as a recovery checkpoint reported exactly that: "returned no
-// `announcements` or `lane_updates` keys at all — absent, not empty — though its
+// `announcements` or `lane_updates` keys at all, absent, not empty, though its
 // description says it returns them."
 //
 // A checkpoint has to answer, including with nothing.
@@ -35,14 +35,14 @@ func TestAckBoardAlwaysAnswersWithBothKeys(t *testing.T) {
 
 	ann, ok := res["announcements"]
 	if !ok {
-		t.Error("announcements key absent — an agent cannot tell 'nothing owed' from 'broken'")
+		t.Error("announcements key absent: an agent cannot tell 'nothing owed' from 'broken'")
 	} else if ann == nil {
 		t.Error("announcements is nil; want an empty list")
 	}
 
 	upd, ok := res["lane_updates"]
 	if !ok {
-		t.Fatal("lane_updates key absent — this is the one that says what was done TO you")
+		t.Fatal("lane_updates key absent: this is the one that says what was done TO you")
 	}
 	got, isSlice := upd.([]string)
 	if !isSlice {

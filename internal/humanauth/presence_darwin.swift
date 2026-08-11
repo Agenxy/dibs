@@ -1,11 +1,11 @@
-// lanes-presence — proves a HUMAN is at this machine, right now.
+// lanes-presence: proves a HUMAN is at this machine, right now.
 //
 // Lanes' panel runs inside an agent's MCP host and acts with that agent's own
 // token. That is fine for answering the agent's mail: the agent handed the token
 // over. It is NOT fine for speaking AS the operator. "Stand down, this is your
 // operator" is exactly the message that must never be forgeable, and nothing in
 // the transport can tell "the human clicked Broadcast" from "an agent called the
-// tool and set a flag" — both arrive on the same connection, with the same
+// tool and set a flag": both arrive on the same connection, with the same
 // credential.
 //
 // So the proof has to come from outside the transport. Touch ID is the right
@@ -16,7 +16,7 @@
 //
 // The bound is the transport, not the machine. Code already running as the user
 // can replace this binary in the directory it was installed into and return
-// success without asking anybody — see findHelper in presence.go for what that
+// success without asking anybody: see findHelper in presence.go for what that
 // does and does not cost. Saying "software cannot produce a fingerprint", as an
 // earlier version of this comment did, overstated it.
 //
@@ -30,7 +30,7 @@
 //
 //	0  a human authenticated just now
 //	1  a human was asked and did not authenticate (declined, failed, cancelled)
-//	2  biometrics are unavailable here — the caller should fall back to the
+//	2  biometrics are unavailable here: the caller should fall back to the
 //	   admin password, which is a different sentence to say to the user
 //
 // The distinction between 1 and 2 is load-bearing. "You cancelled" and "this Mac
@@ -42,7 +42,7 @@ import LocalAuthentication
 
 // Biometrics ONLY, never .deviceOwnerAuthentication. The broader policy falls
 // back to the login password on failure, and a login password proves possession
-// of a credential an agent could in principle have been given — the point here
+// of a credential an agent could in principle have been given: the point here
 // is a fingerprint, which an agent on the transport cannot supply. When there is no sensor we exit 2 and let
 // Lanes ask for its own admin password, so the fallback stays explicit and
 // visible rather than silently swapping one factor for another.

@@ -15,7 +15,7 @@ import (
 // learn: this check first went into Apply, and Apply is also the fold that
 // replays the ledger. A ledger holding ops that were legal when they were
 // written then failed to replay under the stricter rule, and the daemon refused
-// to start — "replay apply serial 12: E_EMPTY_BODY" — on data it had itself
+// to start ("replay apply serial 12: E_EMPTY_BODY") on data it had itself
 // written and acknowledged.
 //
 // So Apply must accept everything it has ever accepted, forever. Anything that
@@ -36,7 +36,7 @@ func Admit(op *Op, lim Limits) error {
 	// 100,000 holds, and the board took both.
 	//
 	// A hold is a host resource name ("port:8080"), a ref a file path, an
-	// AgentInfo field a harness name — the honest values are tens of bytes, so
+	// AgentInfo field a harness name: the honest values are tens of bytes, so
 	// these ceilings are three orders of magnitude above real use and only ever
 	// catch a mistake or an abuse.
 	if err := boundStrings(lim.MaxPathBytes, "dirs", op.Dirs); err != nil {
@@ -82,17 +82,17 @@ func Admit(op *Op, lim Limits) error {
 		if strings.TrimSpace(op.Body) == "" {
 			return errf("E_EMPTY_BODY",
 				"pass the announcement text as `body`",
-				"`body` is empty — an announcement needs something to say, because it "+
+				"`body` is empty: an announcement needs something to say, because it "+
 					"obliges every member to acknowledge it, and an empty one obliges "+
 					"them to acknowledge nothing")
 		}
 	case OpLanePost:
 		// A post obliges nobody, so an empty one is noise rather than a false
-		// obligation — but it is still an event delivered to every member, and
+		// obligation, but it is still an event delivered to every member, and
 		// the cause is the same slip.
 		if strings.TrimSpace(op.Body) == "" {
 			return errf("E_EMPTY_BODY", "pass the text as `body`",
-				"`body` is empty — a post needs something to say")
+				"`body` is empty: a post needs something to say")
 		}
 	}
 	return nil
@@ -116,7 +116,7 @@ type Op struct {
 	Kind string `json:"kind"`
 
 	// Actor resolution. Token authenticates (live path); Lane is set by Apply
-	// and used on replay (the engine blanks it on ingress — unforgeable).
+	// and used on replay (the engine blanks it on ingress: unforgeable).
 	Token string `json:"-"`
 	Lane  string `json:"lane,omitempty"`
 
@@ -134,8 +134,8 @@ type Op struct {
 	// ParentNonce is the one-time secret the parent issued for this child.
 	//
 	// Parent alone is a claim anyone can make; this is the proof. A parent that
-	// actually spawned a child can hand it a secret — same process, same trust
-	// domain — and nobody else has it.
+	// actually spawned a child can hand it a secret: same process, same trust
+	// domain, and nobody else has it.
 	ParentNonce string   `json:"parent_nonce,omitempty"`
 	LaneKind    LaneKind `json:"lane_kind,omitempty"`
 
@@ -173,7 +173,7 @@ type Op struct {
 	//
 	// GiveUpAnnounce lists announcements whose redelivery budget is spent. The
 	// count lives in the engine (it is delivery bookkeeping, not coordination
-	// state), so like every other impure sweep input it arrives RECORDED —
+	// state), so like every other impure sweep input it arrives RECORDED,
 	// replay marks exactly the same announcements without counting anything.
 	GiveUpAnnounce []uint64 `json:"give_up_announce,omitempty"`
 	DeadLanes      []string `json:"dead_lanes,omitempty"`
@@ -188,7 +188,7 @@ type Op struct {
 	Channel   string `json:"channel,omitempty"`
 	Exclusive bool   `json:"exclusive,omitempty"`
 
-	// Recorded scoring inputs — the replay contract (SPEC-CHANNELS.md §4.3).
+	// Recorded scoring inputs: the replay contract (SPEC-CHANNELS.md §4.3).
 	//
 	// These are IMPURE and therefore travel in the op, exactly as the sweep's
 	// PID verdicts do. Apply must treat them as fact: it may not invoke a
@@ -203,7 +203,7 @@ type Op struct {
 	Evidence      []string `json:"evidence,omitempty"`
 	Auto          bool     `json:"auto,omitempty"`
 
-	// Predicted is the recorded file footprint of the declaring work — what a
+	// Predicted is the recorded file footprint of the declaring work: what a
 	// scorer said this agent will touch. Recorded for the same reason the score
 	// is: it decides lane membership, and recomputing it on replay reconstructs
 	// a different fleet.
@@ -334,7 +334,7 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		//
 		// This lived on the engine's read path: BindSession mutated l.SessionID
 		// inside e.query, outside any op, so nothing was appended and the binding
-		// vanished on restart. The consequence is quiet and bad — lifecycle hooks
+		// vanished on restart. The consequence is quiet and bad: lifecycle hooks
 		// resolve an agent by session id, and a supplied-but-unmatched id
 		// deliberately disables the cwd fallback, so after a restart mail stopped
 		// being injected and the claim guard failed open. Nothing reported an
@@ -385,14 +385,14 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	// ONE op, ONE serial.
 	//
 	// Several handlers allocate their own serial because they need it in the
-	// result — a lane's key, a join's membership serial, an announcement's id.
+	// result: a lane's key, a join's membership serial, an announcement's id.
 	// Finishing again here allocated a SECOND for the same op, and the engine
 	// appends at the final value, so the intermediate serial was never written:
 	// a permanent hole in the ledger at a point where a real transition had
 	// happened.
 	//
 	// This took a live board down. lane_open advanced the serial by two on every
-	// call, and one of the resulting holes held the op that re-created a lane —
+	// call, and one of the resulting holes held the op that re-created a lane,
 	// so on restart the daemon replayed a board where that lane was still closed,
 	// hit a close_lane it could not apply, and refused to start. The gap warning
 	// at replay had been firing for weeks and reads as cosmetic; it was not.
@@ -453,7 +453,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	}
 	if kind == KindPersistent && op.Nonce == "" {
 		return nil, nil, errf("E_BAD_NONCE", "persistent lanes require a client-generated nonce (≥128-bit random); it "+
-			"doubles as the resume_lane recovery credential — treat it as a secret", "nonce required for persistent lanes")
+			"doubles as the resume_lane recovery credential: treat it as a secret", "nonce required for persistent lanes")
 	}
 	// Response-loss retry: same nonce, lane still active, created within one
 	// TTL → return the original result. Outside that window → reattach, or
@@ -467,13 +467,13 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 					"resumed": true, "board": s.Board(),
 				}, nil, nil
 			}
-			// The nonce IS the recovery credential — for every kind of lane, not
+			// The nonce IS the recovery credential: for every kind of lane, not
 			// just persistent ones.
 			//
 			// This used to refuse and say "use resume_lane", which is the standing
 			// -role path and does not apply to an ephemeral lane. So the advice
-			// two hundred lines below — "register with a nonce to make recovery
-			// require something only you hold" — described a credential that could
+			// two hundred lines below. "register with a nonce to make recovery
+			// require something only you hold": described a credential that could
 			// not be used to recover anything. An agent that took the advice, kept
 			// its nonce and came back after a restart was told its own nonce was
 			// in use, by itself.
@@ -484,8 +484,8 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 			// the harness's process id. That id cannot survive the harness
 			// restarting, which is the exact event an agent needs to recover from.
 			// Measured on a live fleet: four agents restarted, four re-registered
-			// under their own names, and all four became siblings — builder-2,
-			// api-a-2, api-b-2, orchestrator-2 — with every message addressed to
+			// under their own names, and all four became siblings: builder-2,
+			// api-a-2, api-b-2, orchestrator-2: with every message addressed to
 			// them before the restart stranded in a lane nobody occupied. Nothing
 			// looked broken. Every lane was green.
 			//
@@ -514,7 +514,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				// LEDGERED, like every other transition.
 				//
 				// This branch rotates the token, wakes the lane, re-arms the
-				// awareness gate and rebinds the session — and returned no events,
+				// awareness gate and rebinds the session, and returned no events,
 				// so finish() never ran, the serial never advanced, and the engine
 				// (which appends only when the serial moves) never wrote it down.
 				// Replay therefore never reattached: after a restart the lane was
@@ -534,7 +534,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 			}
 			return nil, nil, errf(
 				"E_NONCE_IN_USE",
-				"that nonce already belongs to lane "+id+", registered under a different name — "+
+				"that nonce already belongs to lane "+id+", registered under a different name. "+
 					"a nonce recovers one identity, so use the name it was bound to, or a new nonce",
 				"nonce already bound to lane %s", id,
 			)
@@ -543,7 +543,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	// Reattach: a woken agent has no token.
 	//
 	// A lifecycle hook can tell an agent it has mail, but a fresh turn carries no
-	// token, so the agent would register again — getting a SIBLING lane that
+	// token, so the agent would register again: getting a SIBLING lane that
 	// cannot read or answer the mail addressed to the original. Measured live in
 	// opencode: the model read its mail, then failed get_message with E_NO_MESSAGE
 	// because it was now a different lane.
@@ -558,7 +558,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	// session_id is NOT a secret. The bridge derives it from the host's process
 	// id (`host-<ppid>`), which any same-user process can enumerate with ps, and
 	// the lane's name is on the board. So "name + session_id" is guessable, and
-	// presenting both rotates the token — taking the mailbox, the actor
+	// presenting both rotates the token: taking the mailbox, the actor
 	// identity, and any role the lane holds. Verified against a running daemon:
 	// a second registration with a victim's name and session id returned a
 	// working token that read the victim's private mail.
@@ -566,7 +566,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	// A lane that registered with a NONCE has a real secret, so that is what
 	// reattaches it; session_id alone must not. A lane with only a session_id
 	// keeps the old behaviour, because the alternative is that an agent which
-	// genuinely lost its context can never recover — and the honest description
+	// genuinely lost its context can never recover, and the honest description
 	// of that lane is "reclaimable by anyone who learns its session id", which
 	// the result now says.
 	//
@@ -650,7 +650,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	//
 	// Reattach keys on (name, session_id), and both halves have to be presentable
 	// by the agent for that to be a recovery path rather than a description of
-	// one. The name it chose; the session_id it usually did NOT — the bridge
+	// one. The name it chose; the session_id it usually did NOT: the bridge
 	// supplies it when the model leaves the argument empty, which is almost
 	// always. So the agent was told "re-register with the same name and
 	// session_id" while holding only one of the two, and there was no call
@@ -668,7 +668,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	// Said out loud because the agent asked for one name, received another, and
 	// nothing told it why. A reviewer asked to register as `sol` and was handed
 	// `sol-4` across three runs, noticing only because it happened to read the
-	// id — and an agent that does not notice publishes the wrong address, tells
+	// id, and an agent that does not notice publishes the wrong address, tells
 	// colleagues to write to `sol`, and never learns why the mail stops.
 	//
 	// The holder is named along with its state, because that decides what to do
@@ -691,18 +691,18 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 			// Two different reasons, and saying the wrong one is worse than saying
 			// nothing. A stale or dormant lane can still be written to, so handing
 			// its name away would redirect somebody else's mail. A retired one
-			// cannot receive anything — applySend refuses closed and archived — so
+			// cannot receive anything (applySend refuses closed and archived) so
 			// it is holding the name purely because its id is stamped into every
 			// ledger record that ever named it, and reusing the id would make that
 			// history ambiguous. The first is a live conflict; the second is an
 			// audit constraint, and an agent reading this can tell which it hit.
 			switch holder.Status {
 			case StatusClosed, StatusArchived:
-				note += ", which is retired and can no longer receive mail — it holds the " +
+				note += ", which is retired and can no longer receive mail: it holds the " +
 					"id only because the ledger's history refers to it, and reusing the id " +
 					"would make those records mean two different agents"
 			default:
-				note += ", which still holds its mailbox — a new lane cannot take the name " +
+				note += ", which still holds its mailbox: a new lane cannot take the name " +
 					"without redirecting mail meant for it"
 			}
 		}
@@ -717,41 +717,41 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	if op.Name != "" && slug(op.Name) == "" {
 		res["name_note"] = "your id is " + id + ", not " + op.Name + ": ids are addresses and " +
 			"must be ASCII, and nothing in that name survived. Others will address you as " +
-			id + " — register with an ASCII name if you want a meaningful one. Your original " +
+			id + ": register with an ASCII name if you want a meaningful one. Your original " +
 			"name is kept and shown to humans on the board."
 	}
 	// A lane whose only recovery credential is a session id is reclaimable by
-	// anyone who learns that id — and the bridge derives it from a process id
+	// anyone who learns that id, and the bridge derives it from a process id
 	// that any same-user program can enumerate. Say so, rather than letting the
 	// word "credential" imply a secret.
 	if op.Nonce == "" && op.SessionID != "" {
 		res["recovery"] = "this lane can be reclaimed by presenting its name and the session_id above, " +
-			"neither of which is secret — AND that session_id will not survive your harness " +
+			"neither of which is secret. AND that session_id will not survive your harness " +
 			"restarting, because it names the harness process. To be able to recover after a " +
 			"restart, re-register now with a nonce (a random id >=128-bit that you keep): same " +
 			"name + same nonce reattaches you to this lane and its mail, after anything."
 	}
 	if op.Nonce == "" && op.SessionID == "" {
 		// With neither recovery credential this lane cannot be reclaimed: lose the
-		// token and every message addressed to it becomes unreachable — the agent
+		// token and every message addressed to it becomes unreachable: the agent
 		// re-registers, gets a sibling, and cannot answer the mail that woke it.
 		// Say so now, while it is still free to fix, rather than at the moment an
 		// agent discovers it has been woken into a dead end.
 		res["recovery"] = "no session_id or nonce given, so this lane cannot be reclaimed if you " +
-			"lose your token — re-registering would create a SECOND lane and this one's mail would " +
+			"lose your token: re-registering would create a SECOND lane and this one's mail would " +
 			"be unreachable. Re-register with a nonce (a random id >=128-bit that you keep): same " +
 			"name + same nonce reattaches you to this lane and its mail, and is the only credential " +
 			"that survives your harness restarting."
 	}
 	// The name was taken, so this lane is a SIBLING of an agent that is already
-	// on the board — and mail addressed to that name will never arrive here.
+	// on the board, and mail addressed to that name will never arrive here.
 	//
 	// This is the one failure the recovery hint above does not cover. Once the
 	// bridge started supplying a per-process session_id, that hint stopped firing
 	// entirely, yet the trap remained: a one-shot run registers "beta", asks a
 	// question, exits; the next run is a NEW process with a NEW session_id, so it
 	// registers "beta" again, becomes "beta-2", and finds an empty inbox. Measured
-	// end to end with two real opencode agents — the answer was delivered
+	// end to end with two real opencode agents: the answer was delivered
 	// correctly to "beta" and the asker never saw it.
 	//
 	// Nothing here is wrong at the protocol level: a new session genuinely is a
@@ -759,7 +759,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	// moment it happens, and say what mail is being left behind.
 	if sib := s.siblingByName(op.Name, id); sib != nil {
 		msg := "a lane named " + op.Name + " already exists as " + sib.ID +
-			" — you are " + id + ", a separate agent. Mail addressed to " + sib.ID +
+			": you are " + id + ", a separate agent. Mail addressed to " + sib.ID +
 			" will NOT appear in your inbox."
 		if n := len(s.Inbox(sib.ID)); n > 0 {
 			msg += " It is holding " + itoa(n) + " message(s) you cannot read."
@@ -767,14 +767,14 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 		res["name_taken"] = msg + " If you ARE that agent returning, you can still get back in:" +
 			" register again with the same name and the nonce you kept, and you reattach to it" +
 			" instead of forking. If you kept no nonce, that lane is only reachable with its" +
-			" session_id — ask a coordinator to lane_merge " + id + " into " + sib.ID +
+			" session_id: ask a coordinator to lane_merge " + id + " into " + sib.ID +
 			", which moves this lane's mail and slots onto that one."
 	}
 	return res, evs, nil
 }
 
 // applyResume is the explicit activation op for standing roles (SPEC §5):
-// a complete activation boundary — atomic wake + rotation at one serial.
+// a complete activation boundary: atomic wake + rotation at one serial.
 func (s *State) applyResume(op *Op, now time.Time) (Result, []Event, error) {
 	if op.Nonce == "" || op.ResumeID == "" {
 		return nil, nil, errf("E_BAD_NONCE", "resume_lane requires nonce and resume_id", "missing nonce or resume_id")
@@ -834,8 +834,8 @@ func (s *State) applyWake(l *Lane) (Result, []Event, error) {
 	l.Status, l.StaleReason = StatusActive, ""
 	l.StaleSince, l.DormantSince = time.Time{}, time.Time{}
 
-	// Re-arms the AWARENESS gate — the agent has been away and must look at the
-	// board again — but deliberately does NOT start a new credential epoch:
+	// Re-arms the AWARENESS gate: the agent has been away and must look at the
+	// board again, but deliberately does NOT start a new credential epoch:
 	// Activation is unchanged and the token is not rotated.
 	//
 	// The two are separate on purpose. A wake happens inside an ordinary op that
@@ -878,7 +878,7 @@ func (s *State) applyAckBoard(l *Lane, _ time.Time) (Result, []Event) {
 		// Apply is the fold: the result is built while s.Serial still holds the
 		// pre-op value, and the common finish path advances it afterwards. So
 		// every cursor field here says s.Serial+1 while the embedded board said
-		// s.Serial — an atomic checkpoint that disagreed with itself by one, and
+		// s.Serial: an atomic checkpoint that disagreed with itself by one, and
 		// SPEC.md promises a COHERENT post-state snapshot. A client treating
 		// board.serial as the cut, which is the obvious reading, would re-fetch
 		// one event it already held or reason from a board a serial behind its
@@ -891,7 +891,7 @@ func (s *State) applyAckBoard(l *Lane, _ time.Time) (Result, []Event) {
 
 // applyPrune closes lanes the human has finished with. Reaching a dead lane is
 // otherwise impossible: close_lane needs the lane's own token, and a lane that
-// crashed or lost its context no longer has one — so without this the board
+// crashed or lost its context no longer has one, so without this the board
 // accumulates debris nobody can clear.
 //
 // op.To names a single lane; empty means "every lane that is not live", which is
@@ -909,7 +909,7 @@ func (s *State) applyPrune(op *Op, now time.Time) (Result, []Event, error) {
 		// Ranging the map directly gave a different audit sequence every run.
 		for _, id := range sortedKeys(s.Lanes) {
 			l := s.Lanes[id]
-			// Never prune a lane that is still working — only the debris.
+			// Never prune a lane that is still working: only the debris.
 			if l.Status != StatusActive && l.Status != StatusClosed {
 				targets = append(targets, l)
 			}
@@ -925,7 +925,7 @@ func (s *State) applyPrune(op *Op, now time.Time) (Result, []Event, error) {
 	}
 	slices.Sort(ids)
 	// LEDGERED. applyPrune closes lanes, blanks their tokens and releases their
-	// claims, and it returned without finish() — so the serial never moved, the
+	// claims, and it returned without finish(), so the serial never moved, the
 	// engine never appended, and replay undid all of it. The human was told the
 	// prune succeeded; after the next restart the lanes were back, stale rather
 	// than closed, holding their old tokens again.
@@ -952,7 +952,7 @@ func (s *State) applyClose(l *Lane, now time.Time) (Result, []Event) {
 // strandedQuestions terminates the questions a departing lane will never answer.
 //
 // The sweep already decides this correctly, and has a branch and a sentence
-// written for exactly this case — "recipient closed its lane before answering
+// written for exactly this case. "recipient closed its lane before answering
 // … nobody will answer this now". It just does not run until the DEADLINE. So
 // an agent that asked a question with a ten-minute deadline waited the whole
 // ten minutes for an answer that became impossible in the first second, while
@@ -972,7 +972,7 @@ func (s *State) strandedQuestions(gone *Lane, now time.Time) []Event {
 		m.State = MsgStateExpiredDead
 		m.ExpireDetail = "recipient closed its lane before answering; it finished deliberately " +
 			"and released its claims, so this is not a crash and there is nothing of its to " +
-			"verify — nobody will answer this now"
+			"verify: nobody will answer this now"
 		m.TerminalAt = now
 		evs = append(evs, Event{
 			Type: "message." + m.State, Lane: m.To, To: m.From,
@@ -993,7 +993,7 @@ func (s *State) applySetSlot(l *Lane, op *Op) (Result, []Event, error) {
 	if id == "" {
 		// The next FREE id, not len+1. Counting produced a collision the moment
 		// a middle slot was cleared: with s1,s2,s3 and s2 gone, len is 2 and the
-		// next id is "s3" — which already exists, so the new declaration
+		// next id is "s3", which already exists, so the new declaration
 		// silently overwrote the old one and the limit check waved it through
 		// because the id was not new. For a lane that has never cleared a slot
 		// this generates exactly the ids it always did.
@@ -1011,7 +1011,7 @@ func (s *State) applySetSlot(l *Lane, op *Op) (Result, []Event, error) {
 		return nil, nil, errTooLarge("refs", s.Limits.MaxDirs)
 	}
 	// Declaration-time overlap detection (the duplicate-objective fix). Purely advisory: the
-	// slot is always set — we never block someone from declaring work — but
+	// slot is always set (we never block someone from declaring work) but
 	// BOTH sides learn immediately that two lanes intend the same scope, which
 	// is the earliest honest moment to catch duplicated effort.
 	overlaps := s.overlapsFor(op.Refs, op.Dirs, l.ID)
@@ -1029,13 +1029,13 @@ func (s *State) applySetSlot(l *Lane, op *Op) (Result, []Event, error) {
 		"overlaps": len(overlaps),
 	}}}
 	// An agent updating its focus naturally calls set_slot again with new text
-	// and no slot_id, which MINTS A SLOT every time — so a lane that is simply
+	// and no slot_id, which MINTS A SLOT every time, so a lane that is simply
 	// working stacks declarations until it hits the cap and starts erroring. The
 	// tool cannot know whether a second slot was intended, so it does not
 	// guess: it says what it did and what to pass to update instead. Told, not
 	// prevented.
 	grew := op.SlotID == "" && len(l.Slots) > 1
-	// Tell the incumbents too — an overlap only one side can see is how the
+	// Tell the incumbents too: an overlap only one side can see is how the
 	// measured collision survived for days.
 	notified := map[string]bool{}
 	strong := 0
@@ -1057,17 +1057,17 @@ func (s *State) applySetSlot(l *Lane, op *Op) (Result, []Event, error) {
 		res["note"] = "this ADDED a slot (" + id + "); your lane now declares " +
 			itoa(len(l.Slots)) + ". If you meant to change what you are doing rather than " +
 			"take on something additional, pass slot_id=\"" + id + "\" next time, or clear_slot the " +
-			"ones you have finished — a lane declaring five things is read as doing five things."
+			"ones you have finished: a lane declaring five things is read as doing five things."
 	}
 	if len(overlaps) > 0 {
 		res["overlaps"] = overlaps
 	}
 	if strong > 0 {
-		res["warning"] = "another lane is already pursuing the same objective — you are probably " +
+		res["warning"] = "another lane is already pursuing the same objective: you are probably " +
 			"about to duplicate its work. Read its slot, then message it (question/handoff) to " +
 			"split or stand down. This is the measured failure; do not just proceed."
 	} else if len(overlaps) > 0 {
-		res["note"] = "other lanes are active on these paths. Concurrent edits are normal — this is " +
+		res["note"] = "other lanes are active on these paths. Concurrent edits are normal: this is " +
 			"awareness, not a conflict. Coordinate only if your changes are semantically incompatible."
 	}
 	return res, evs, nil
@@ -1102,7 +1102,7 @@ func nearestLanesHint(s *State, want string) string {
 	sort.Strings(near)
 	sort.Strings(live)
 	if len(near) > 0 {
-		return "no lane " + want + " — did you mean " + strings.Join(near, ", ") + "?"
+		return "no lane " + want + ": did you mean " + strings.Join(near, ", ") + "?"
 	}
 	if len(live) == 0 {
 		return "no lane " + want + ", and no other lane is live either"
@@ -1110,7 +1110,7 @@ func nearestLanesHint(s *State, want string) string {
 	if len(live) > 8 {
 		live = live[:8]
 	}
-	return "no lane " + want + " — live lanes are: " + strings.Join(live, ", ") +
+	return "no lane " + want + ": live lanes are: " + strings.Join(live, ", ") +
 		operatorFallback(s)
 }
 
@@ -1119,7 +1119,7 @@ func nearestLanesHint(s *State, want string) string {
 //
 // An agent that finishes work and wants to report it can find the recipient
 // gone: lanes are reaped, and the agent that asked for the work may be the one
-// that ended. A reviewer hit exactly this — its report was addressed to a lane
+// that ended. A reviewer hit exactly this: its report was addressed to a lane
 // that had been reaped, the refusal listed live lanes, and it concluded there was
 // no durable delivery path at all. It then tried broadcast, which is
 // coordinator-only and correctly refused, and the review survived only in its own
@@ -1130,7 +1130,7 @@ func nearestLanesHint(s *State, want string) string {
 // who always wants to know. It was already in that list of live lanes, spelled
 // like any other agent, with nothing to say it was the person.
 //
-// Named only when it is not the lane being looked for, and only when it exists —
+// Named only when it is not the lane being looked for, and only when it exists,
 // on a board no human has opened there is nothing to offer, and inventing one
 // would be worse than the silence.
 func operatorFallback(s *State) string {
@@ -1142,7 +1142,7 @@ func operatorFallback(s *State) string {
 			continue
 		}
 		return ". If this was a report for a person rather than an agent, the operator " +
-			"is on this board as " + id + " — that lane is persistent and outlives the " +
+			"is on this board as " + id + ": that lane is persistent and outlives the " +
 			"agents, so it is the address that keeps working when the one you wanted is gone"
 	}
 	return ""
@@ -1152,7 +1152,7 @@ func (s *State) applySend(l *Lane, op *Op, now time.Time) (Result, []Event, erro
 	to, ok := s.Lanes[op.To]
 	if !ok || to.Status == StatusClosed || to.Status == StatusArchived {
 		// Name the candidates. "Check the board" is advice the agent has to act
-		// on with another call, and it already told us who it meant — an agent
+		// on with another call, and it already told us who it meant: an agent
 		// that addressed "claude" and was told to go looking gave up instead,
 		// rather than guessing which of the live lanes was the right one.
 		return nil, nil, errf("E_NO_LANE", nearestLanesHint(s, op.To), "no live lane %q", op.To)
@@ -1211,7 +1211,7 @@ func (s *State) finishSend(
 			// Clamp in SECONDS, before converting to a Duration.
 			//
 			// The multiply happened first, so a large positive deadline_s
-			// overflowed int64 nanoseconds and came out NEGATIVE — min() then
+			// overflowed int64 nanoseconds and came out NEGATIVE: min() then
 			// happily chose it over the ceiling, and the wire accepted MaxInt64
 			// and returned a deadline one second in the PAST. The next sweep
 			// expires a question that was just asked, which reads to the sender
@@ -1263,18 +1263,18 @@ func (s *State) finishSend(
 		// those lanes were dormant tombstones whose occupants were now alive under
 		// `-2` ids. Lanes accepted the mail and told the senders it would be seen
 		// "when it next wakes". Nobody was coming. The failure was invisible from
-		// both ends at once — the sender read success, the intended recipient saw
-		// nothing — and it took a third channel to notice.
+		// both ends at once: the sender read success, the intended recipient saw
+		// nothing, and it took a third channel to notice.
 		if live := s.liveSiblingOf(to); live != nil {
 			res["note"] = "delivered to " + to.ID + ", which is " + string(to.Status) +
-				" — but " + live.ID + " is LIVE under the same name and is almost certainly who " +
+				", but " + live.ID + " is LIVE under the same name and is almost certainly who " +
 				"you meant. " + to.ID + " will not wake to read this. Resend to " + live.ID + "."
 		} else {
 			// The message is already committed by the time we get here, so the note
 			// must say what IS true, not warn about what might happen: it is queued
 			// and will be delivered; only the deadline is at risk.
 			res["note"] = "delivered to " + to.ID + ", which is currently " + string(to.Status) +
-				" — it will see this when it next wakes. The message is not lost; only the response " +
+				": it will see this when it next wakes. The message is not lost; only the response " +
 				"deadline is at risk, so re-send with a larger deadline_s if you need an answer, or " +
 				"use notify/handoff when you do not."
 		}
@@ -1285,7 +1285,7 @@ func (s *State) finishSend(
 // liveSiblingOf finds an active lane sharing this one's name.
 //
 // Deliberately NOT siblingByName, which ranks by how much mail a lane holds
-// because it answers a different question — "which mailbox can the caller not
+// because it answers a different question. "which mailbox can the caller not
 // read". Here the only thing that matters is which sibling is ALIVE, and
 // borrowing that ranking would quietly skip a live lane that happened to hold
 // less mail than a dead one.
@@ -1359,14 +1359,14 @@ func (s *State) applyRespond(l *Lane, op *Op, now time.Time) (Result, []Event, e
 	// An agent that asked a question can close its lane while the answer is
 	// being composed, and a closed lane never comes back. The response is
 	// recorded, the event is addressed to a lane that will never read it, and
-	// this returned a bare {"ok": true} — a confident, specific and false
+	// this returned a bare {"ok": true}: a confident, specific and false
 	// statement of the kind that costs the next agent an hour. It cannot be
 	// prevented (the asker left mid-thought, which is allowed) but it can be
 	// reported, so the responder stops waiting for a follow-up and does not
 	// treat the exchange as closed by agreement.
 	if asker := s.Lanes[m.From]; asker.Gone() {
 		res["delivered"] = false
-		res["note"] = "recorded, but " + m.From + " closed its lane before this arrived — " +
+		res["note"] = "recorded, but " + m.From + " closed its lane before this arrived. " +
 			"nobody will read this answer, and no follow-up is coming"
 	}
 	return res,
@@ -1438,7 +1438,7 @@ func (s *State) applyClaim(l *Lane, op *Op, now time.Time) (Result, []Event, err
 			[]Event{{Type: "claim.conflict_noted", Lane: l.ID, Data: map[string]any{"path": path, "mode": op.Mode}}}, nil
 	}
 	for _, c := range s.Claims {
-		if c.Lane == l.ID && c.Path == path { // renewal (ledgered — drives expiry)
+		if c.Lane == l.ID && c.Path == path { // renewal (ledgered: drives expiry)
 			c.Renewed, c.Mode, c.Note = now, op.Mode, op.Note
 			return Result{"granted": true, "renewed": true, "overlaps": ov},
 				[]Event{{Type: "claim.renewed", Lane: l.ID, Data: map[string]any{"path": path, "mode": op.Mode}}}, nil
