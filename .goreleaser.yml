@@ -55,6 +55,14 @@ archives:
           group: root
           mode: 0644
           mtime: "{{ .CommitDate }}"
+      # NOTICE ships with LICENSE, not as an afterthought beside it. Apache 2.0
+      # section 4(d) requires redistributions of a work that has one to carry it,
+      # and after the relicensing ours holds the retained MIT attribution for the
+      # contributions made before it. Listing these files explicitly replaced
+      # GoReleaser's default set, and NOTICE arrived later than the list did, so
+      # every archive was shipping without it.
+      - src: NOTICE
+        info: *archive_file_info
       - src: README.md
         info: *archive_file_info
       - src: CHANGELOG.md
