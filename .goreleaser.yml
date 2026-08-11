@@ -88,7 +88,7 @@ release:
   # linked instead, because it documents the product across versions and pasting
   # all of it into every release makes each one look like the whole history.
   header: |
-    Install: `brew install agenxy/lanes/lanes`, or `go install github.com/agenxy/lanes/cmd/lanes@{{ .Tag }}` and the same for `cmd/lanesd`.
+    Install: `brew install agenxy/tap/lanes`, or `go install github.com/agenxy/lanes/cmd/lanes@{{ .Tag }}` and the same for `cmd/lanesd`.
 
     Verify the artifacts (cosign 3, bundle format):
 
@@ -109,7 +109,7 @@ release:
 homebrew_casks:
   - repository:
       owner: agenxy
-      name: homebrew-lanes
+      name: homebrew-tap
       # Pushed over SSH with a DEPLOY KEY, not an account token.
       #
       # A token here is necessarily broader than the job needs: the default
@@ -124,7 +124,7 @@ homebrew_casks:
       # stops here with "map has no entry for key HOMEBREW_TAP_DEPLOY_KEY".
       # That is the config working. Add --skip=homebrew locally.
       git:
-        url: git@github.com:Agenxy/homebrew-lanes.git
+        url: git@github.com:Agenxy/homebrew-tap.git
         private_key: "{{ .Env.HOMEBREW_TAP_DEPLOY_KEY }}"
       # Explicit, because the default is GITHUB_TOKEN and that is scoped to THIS
       # repository: it cannot commit to the tap. Relying on the default makes

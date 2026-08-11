@@ -73,7 +73,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # A separate token, because the cask is committed to ANOTHER
-          # repository (agenxy/homebrew-lanes) and the default GITHUB_TOKEN is
+          # repository (agenxy/homebrew-tap) and the default GITHUB_TOKEN is
           # scoped to this one. Without it the release succeeds and the cask
           # silently is not published, which is the failure mode most likely to
           # go unnoticed: the artifacts are all there, and `brew upgrade` just

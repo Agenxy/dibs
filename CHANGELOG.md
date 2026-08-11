@@ -7,6 +7,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The Homebrew tap moved from `agenxy/homebrew-lanes` to `agenxy/homebrew-tap`,
+  so the install line is `brew install agenxy/tap/lanes` rather than repeating
+  the project name. GitHub keeps a redirect, so the old form still works and
+  nobody who already tapped needs to act.
+- Repository identity survives three Git configurations that previously made two
+  clones of one project look like strangers: a shallow clone (which does not have
+  its root commit, so it now records none rather than a boundary), `git replace
+  --graft` (identity is read with replacement objects disabled), and
+  `url.*.insteadOf` (the effective remote is resolved instead of the configured
+  string).
 - Two standards are now checked rather than remembered. `internal/hygiene`
   fails the build on a shell script entering the tracked tree, by extension or
   by shebang, and on an em dash in prose. En dashes are flagged only when spaced,

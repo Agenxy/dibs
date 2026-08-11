@@ -91,8 +91,12 @@ Node, no runtime dependencies.
 ### Homebrew (macOS)
 
 ```sh
-brew install agenxy/lanes/lanes
+brew install agenxy/tap/lanes
 ```
+
+`agenxy/tap` is one tap for every Agenxy project, so the third component is the
+only part that changes. The older `agenxy/lanes/lanes` still works: GitHub keeps
+a redirect, so nobody who already tapped has to do anything.
 
 Installs both binaries. The cask clears the macOS quarantine flag on install:
 the binaries are cosign-signed for provenance but not Apple-notarised, and
