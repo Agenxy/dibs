@@ -24,6 +24,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Nine real Git configurations are now regression tests. Each builds actual
+  repositories, registers agents through the actual server, and asserts on the
+  warning an agent would receive: an orphan `--single-branch` clone, a vendored
+  subtree, shallow clones with removed origins, case-variant remotes, a stale
+  url after a rename, a `git replace` graft. Synthetic values proved the
+  decision and never exercised the resolver, which is how several of the defects
+  fixed in this release reached a review rather than a test.
 - Two standards are now checked rather than remembered. `internal/hygiene`
   fails the build on a shell script entering the tracked tree, by extension or
   by shebang, and on an em dash in prose. The shebang is read the way `env`
