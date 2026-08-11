@@ -1,14 +1,14 @@
 name: Feature request
-description: Something Lanes should do and doesn't
+description: Something Dibs should do and doesn't
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: |
-        Worth knowing before you write: Lanes is a **service agents pull from**,
+        Worth knowing before you write: Dibs is a **service agents pull from**,
         never something that drives a harness. It reports and does not act: it
         will tell a parent its subagent is stuck and hand back the command to
-        resume it, but it will not run that command. Requests that ask Lanes to
+        resume it, but it will not run that command. Requests that ask Dibs to
         take an action on an agent's behalf will usually be declined on those
         grounds rather than on merit, so it is worth framing the need instead of
         the mechanism.

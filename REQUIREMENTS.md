@@ -1,4 +1,4 @@
-# Why Lanes exists: the requirements, from a measured failure
+# Why Dibs exists: the requirements, from a measured failure
 
 Derived from a real incident in a private multi-agent fleet. Details are withheld;
 the numbers are real. This is the requirements spec: a design that doesn't prevent
@@ -54,20 +54,20 @@ responses*: reinvented by hand, badly, after the cost was sunk.
 
 ## Non-goals
 
-- **Orchestration.** Agents and humans decide; Lanes informs.
+- **Orchestration.** Agents and humans decide; Dibs informs.
 - **Merge-conflict prevention.** Version control already does that, and it wasn't the failure.
 - **A hard mutex over source files.** See R3b/R9.
 - **Solving only this instance.** The class is *coordination failures among parallel
-  agents sharing a project*: redundant objectives, lost handoffs, unknown status,
+  dibs sharing a project*: redundant objectives, lost handoffs, unknown status,
   repeated dead ends, and contention over the few genuinely exclusive resources.
 
-## R10: a lane's liveness model must fit its surface
+## R10: an agent's liveness model must fit its surface
 
 Discovered by running a chat-surface agent against a lease tuned for
 continuously-running processes.
 
 A chat agent only touches the API when its human types, so multi-minute silence
-is its normal state, not a failure. Under a 5-minute lease such a lane flaps
+is its normal state, not a failure. Under a 5-minute lease such an agent flaps
 `stale → recovered` forever while nothing is wrong, and it was reported as
 `proc_alive: false`: a claim about a process that had never been declared,
 because `alive[0]` returns the zero value. A human reads that as "it crashed".
@@ -77,24 +77,24 @@ Requirements:
 - **Never assert a process state that was never claimed.** No PID given ⇒ no
   `proc_alive` in the event, and the stale reason is `idle_no_activity`, not
   `lease_lapsed`.
-- **Grace scales with what can actually be checked.** A lane with a PID can be
+- **Grace scales with what can actually be checked.** An agent with a PID can be
   probed directly, so a short lease is safe: death is detected by the prober,
-  not the clock. A lane without one can only be judged by silence, and gets
+  not the clock. An agent without one can only be judged by silence, and gets
   `IdleTTL` (45m) instead of `LaneTTL` (5m).
-- **Staleness is a statement about coordination, never about health.** Lanes
+- **Staleness is a statement about coordination, never about health.** Dibs
   knows an agent has not spoken. It does not know why, and must not imply it.
 
 ## R11: reaching the daemon is not the same as being a participant
 
 Found by an agent whose token had been invalidated: `inbox` and `await_events`
-rejected it with `E_BAD_TOKEN`, and in the same second `show_board` accepted the
+rejected it with `E_BAD_TOKEN`, and in the same second `board` accepted the
 same token and rendered the whole board to a human.
 
 Two distinct holes, one behind the other:
 
-1. **`show_board` deliberately did not authenticate.** The code said so, in a
+1. **`board` deliberately did not authenticate.** The code said so, in a
    comment reading *"the board is public and still worth showing"*. It is not
-   public: every other tool requires a lane token, and the board carries lane
+   public: every other tool requires an agent token, and the board carries agent
    descriptions, working directories, hostnames and branch names.
 2. **After that was closed, an empty token still passed**, because the check went
    through `SubscribeInfo`, which short-circuits on `token == ""` to serve the
@@ -110,4 +110,4 @@ Requirements:
   `SubscribeInfo` does not, by design; anything using it for authorisation must
   reject empty input itself, and say why.
 - **The local secret is a reachability proof, not an identity.** It says the
-  caller is on this machine. Participation requires a lane.
+  caller is on this machine. Participation requires an agent.

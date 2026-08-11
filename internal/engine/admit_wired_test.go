@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // A validation gate that is never called is not a validation gate.
@@ -32,17 +32,17 @@ func TestAdmitIsActuallyOnTheIngressPath(t *testing.T) {
 	}
 	tok, _ := res["token"].(string)
 	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
-		t.Fatalf("setup: ack_board: %v", err)
+		t.Fatalf("setup: check_in: %v", err)
 	}
 
 	if _, err := e.Do(ctx, &core.Op{
-		Kind: core.OpLaneOpen, Token: tok, Channel: "w", Text: "work",
+		Kind: core.OpLaneOpen, Token: tok, Space: "w", Text: "work",
 	}); err != nil {
-		t.Fatalf("setup: opening a lane: %v", err)
+		t.Fatalf("setup: opening an agent: %v", err)
 	}
 
 	_, err = e.Do(ctx, &core.Op{
-		Kind: core.OpLaneAnnounce, Token: tok, Channel: "w", Body: "   ",
+		Kind: core.OpLaneAnnounce, Token: tok, Space: "w", Body: "   ",
 	})
 	if err == nil {
 		t.Fatal("an empty announcement reached the ledger: core.Admit is not wired " +
@@ -54,7 +54,7 @@ func TestAdmitIsActuallyOnTheIngressPath(t *testing.T) {
 
 	// And a real one still gets through, or the gate is worse than none.
 	if _, err := e.Do(ctx, &core.Op{
-		Kind: core.OpLaneAnnounce, Token: tok, Channel: "w", Body: "freezing auth/retry.go",
+		Kind: core.OpLaneAnnounce, Token: tok, Space: "w", Body: "freezing auth/retry.go",
 	}); err != nil {
 		t.Errorf("a legitimate announcement was refused: %v", err)
 	}

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // The board detail must reach the UI and NOT the model. Base MCP's content and
@@ -18,7 +18,7 @@ func TestShowBoardSplitsModelAndUIPayloads(t *testing.T) {
 	res := core.Result{
 		"board": core.Result{
 			"node": "n1", "serial": 42,
-			"lanes": []core.Result{
+			"agents": []core.Result{
 				{"id": "a", "status": "active"},
 				{"id": "b", "status": "dormant"},
 			},
@@ -30,18 +30,18 @@ func TestShowBoardSplitsModelAndUIPayloads(t *testing.T) {
 
 	content := out["content"].([]map[string]any)
 	text := content[0]["text"].(string)
-	for _, want := range []string{"2 lane(s)", "1 active", "2 unread"} {
+	for _, want := range []string{"2 agent(s)", "1 active", "2 unread"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("summary %q missing %q", text, want)
 		}
 	}
 	// A summary that silently reports zero is the failure mode we actually hit:
 	// asserting []any against a typed slice yields nothing without erroring.
-	if strings.Contains(text, "0 lane(s)") {
-		t.Fatal("summary counted 0 lanes while the payload had 2")
+	if strings.Contains(text, "0 agent(s)") {
+		t.Fatal("summary counted 0 agents while the payload had 2")
 	}
 
-	// structuredContent may carry the panel's BOOTSTRAP: the view, the lane id
+	// structuredContent may carry the panel's BOOTSTRAP: the view, the agent id
 	// and the caller's own token, so a host that drops _meta can still let the
 	// panel fetch the board over its own bridge. It must never carry the board
 	// itself: that is the cost this tool exists to avoid.
@@ -64,8 +64,8 @@ func TestShowBoardSplitsModelAndUIPayloads(t *testing.T) {
 		t.Fatal("panel metadata missing: the UI would render nothing")
 	}
 	b := asMap(sc["board"])
-	if got := len(asMaps(b["lanes"])); got != 2 {
-		t.Errorf("panel metadata lanes = %d, want 2", got)
+	if got := len(asMaps(b["agents"])); got != 2 {
+		t.Errorf("panel metadata agents = %d, want 2", got)
 	}
 
 	ui := meta["ui"].(map[string]any)
@@ -106,7 +106,7 @@ func TestUIBoardTemplateIsStaticAndWellFormed(t *testing.T) {
 	// Match rendered output only: prose in a comment explaining the rule is fine.
 	for _, bad := range []string{`>you<`, `> you<`, "→ you", "You</"} {
 		if strings.Contains(html, bad) {
-			t.Errorf("panel addresses the reader as the agent (%q); name the lane instead", bad)
+			t.Errorf("panel addresses the reader as the agent (%q); name the agent instead", bad)
 		}
 	}
 	// First paint must not wait on the host. An earlier version called draw()
@@ -124,7 +124,7 @@ func TestUIBoardTemplateIsStaticAndWellFormed(t *testing.T) {
 	if !strings.Contains(html, "appInfo:") || !strings.Contains(html, "appCapabilities:") {
 		t.Error("ui/initialize must send appInfo + appCapabilities, not clientInfo/capabilities")
 	}
-	if strings.Contains(html, `clientInfo: { name: "lanes-board"`) {
+	if strings.Contains(html, `clientInfo: { name: "agents-board"`) {
 		t.Error("ui/initialize still sends the base-MCP clientInfo shape")
 	}
 	// The host sizes the iframe from what the app reports. Send nothing and the
@@ -136,14 +136,14 @@ func TestUIBoardTemplateIsStaticAndWellFormed(t *testing.T) {
 	if !strings.Contains(html, "ui/notifications/initialized") {
 		t.Error("app never confirms initialization; the host may not treat it as live")
 	}
-	// The panel is set as a document, not a dashboard: a lane is a ledger
+	// The panel is set as a document, not a dashboard: an agent is a ledger
 	// ENTRY, its status a printed mark. Asserting the structure rather than a
 	// particular decoration: the previous version of this pinned `class="rail"`
 	// and so failed the moment the design was reworked, which is a test
 	// measuring the wrong thing.
 	for _, part := range []string{`class="entry`, `class="pip"`, `class="band`} {
 		if !strings.Contains(html, part) {
-			t.Errorf("lane entry structure missing %s", part)
+			t.Errorf("agent entry structure missing %s", part)
 		}
 	}
 	// Figures are read in columns, so they must be tabular or the columns lie.
@@ -166,7 +166,7 @@ func TestUIBoardTemplateIsStaticAndWellFormed(t *testing.T) {
 	}
 	// Live board data must arrive via notifications, never be baked into a
 	// cached template.
-	if strings.Contains(html, "9c879068") || strings.Contains(html, "\"lanes\":[") {
+	if strings.Contains(html, "9c879068") || strings.Contains(html, "\"agents\":[") {
 		t.Error("template appears to embed board data; it must stay static")
 	}
 	csp := a["_meta"].(map[string]any)["ui"].(map[string]any)["csp"].(map[string]any)
@@ -251,14 +251,14 @@ func TestThePanelURIChangesWhenThePanelDoes(t *testing.T) {
 	}
 }
 
-// show_board on a host that declares a renderer must actually carry a board.
+// board on a host that declares a renderer must actually carry a board.
 //
 // This is the failure a screenshot finally showed, after the tool result had
 // been measured every other way and looked correct every time. The panel said it
 // itself: "no board from this host". Every carrier was empty. _meta dropped by
 // the host, `content` one summary line with no board in it, structuredContent
 // holding three fields of plumbing, and the fetch impossible because that host
-// does not let an app call tools back. show_board's whole purpose is to put the
+// does not let an app call tools back. board's whole purpose is to put the
 // board in front of a human, and it was displaying nothing at all.
 //
 // So a client that DECLARES it renders MCP Apps gets the board in
@@ -270,7 +270,7 @@ func TestShowBoardCarriesTheBoardToAHostThatSaysItRenders(t *testing.T) {
 	res := core.Result{
 		"board": core.Result{
 			"node": "n1", "serial": 7,
-			"lanes": []core.Result{{"id": "a", "status": "active"}},
+			"agents": []core.Result{{"id": "a", "status": "active"}},
 		},
 		"lane_id": "a", "act_token": "tok",
 	}
@@ -281,8 +281,8 @@ func TestShowBoardCarriesTheBoardToAHostThatSaysItRenders(t *testing.T) {
 		t.Fatal("no structuredContent for a host that declared a renderer")
 	}
 	board := asMap(declared["board"])
-	if got := len(asMaps(board["lanes"])); got != 1 {
-		t.Errorf("structuredContent board has %d lanes, want 1: the panel would draw "+
+	if got := len(asMaps(board["agents"])); got != 1 {
+		t.Errorf("structuredContent board has %d agents, want 1: the panel would draw "+
 			"\"no board from this host\"", got)
 	}
 	// The summary must survive alongside it: this host shows the model
@@ -303,7 +303,7 @@ func TestShowBoardCarriesTheBoardToAHostThatSaysItRenders(t *testing.T) {
 	}
 	if _, leaked := boot["board"]; leaked {
 		t.Error("board duplicated into structuredContent for a host that never asked; " +
-			"that is the context cost show_board exists to avoid")
+			"that is the context cost board exists to avoid")
 	}
 	meta := plain["_meta"].(map[string]any)
 	if _, has := meta[panelDataMetaKey]; !has {
@@ -374,13 +374,13 @@ func TestEverySurfaceNamesTheSamePanelURI(t *testing.T) {
 	// The exact set, not a count.
 	//
 	// Requiring "at least one" let three of the four declarations be deleted
-	// while the suite stayed green: ack_board, inbox and show_board would all
+	// while the suite stayed green: check_in, inbox and board would all
 	// have stopped opening the panel, which is most of the ways a human ever
 	// sees it, and only await_events kept the guard satisfied. These four are
 	// named because each is a moment the human is meant to get a board: the
 	// activation checkpoint, reading mail, asking for the board, and waking.
 	mustDeclare := map[string]bool{
-		"ack_board": false, "inbox": false, "show_board": false, "await_events": false,
+		"check_in": false, "inbox": false, "board": false, "await_events": false,
 	}
 	for _, tool := range toolDefs {
 		name, _ := tool["name"].(string)
@@ -413,7 +413,7 @@ func TestEverySurfaceNamesTheSamePanelURI(t *testing.T) {
 // them.
 //
 // The hash covered the full template unconditionally while boardApp() could
-// return the minimal panel instead, so a daemon with LANES_PANEL_MINIMAL set
+// return the minimal panel instead, so a daemon with DIBS_PANEL_MINIMAL set
 // advertised the same URI for 483 bytes that another advertised for 264594. A
 // host that saw both across a restart would hold whichever it cached first and
 // never refetch: a content-addressed identity that was not addressing the
@@ -442,7 +442,7 @@ func TestThePanelBuildNamesTheBytesActuallyServed(t *testing.T) {
 // requireFullPanel skips a test that is about the SHIPPING panel when the daemon
 // is configured to serve the stripped diagnostic one.
 //
-// LANES_PANEL_MINIMAL exists to answer "is the panel blank because of the panel,
+// DIBS_PANEL_MINIMAL exists to answer "is the panel blank because of the panel,
 // or because of the host" by serving 483 bytes that cannot possibly be at fault.
 // Tests asserting the real template's structure, its script, or the way its hash
 // tracks its content are meaningless against that stub: they were simply failing,
@@ -455,7 +455,7 @@ func TestThePanelBuildNamesTheBytesActuallyServed(t *testing.T) {
 func requireFullPanel(t *testing.T) {
 	t.Helper()
 	if panelMinimal {
-		t.Skip("LANES_PANEL_MINIMAL=1: this asserts the shipping panel, which is not " +
+		t.Skip("DIBS_PANEL_MINIMAL=1: this asserts the shipping panel, which is not " +
 			"what this daemon serves; see TestTheMinimalPanelIsServableAndIdentified")
 	}
 }
@@ -468,7 +468,7 @@ func requireFullPanel(t *testing.T) {
 // not quietly the full template with the flag ignored.
 func TestTheMinimalPanelIsServableAndIdentified(t *testing.T) {
 	if !panelMinimal {
-		t.Skip("LANES_PANEL_MINIMAL is not set; task test:minimal runs this")
+		t.Skip("DIBS_PANEL_MINIMAL is not set; task test:minimal runs this")
 	}
 	body := boardApp()
 	if body != minimalPanelHTML {

@@ -1,4 +1,4 @@
-//go:build !lanesdev
+//go:build !dibdev
 
 package humanauth
 
@@ -17,10 +17,10 @@ import "testing"
 // flag: this test fails, and it fails on the exact claim that matters: software
 // asserted that a person was present, and was believed.
 func TestAReleaseBuildCannotBeToldAHumanIsPresent(t *testing.T) {
-	t.Setenv("LANES_PRESENCE_MOCK", "verified")
+	t.Setenv("DIBS_PRESENCE_MOCK", "verified")
 
 	if Mocked() {
-		t.Fatal("Mocked() is true in a build with no lanesdev tag: the mock reached " +
+		t.Fatal("Mocked() is true in a build with no dibdev tag: the mock reached " +
 			"a shipped binary")
 	}
 	verdict, _ := Check(t.Context(), "probe")

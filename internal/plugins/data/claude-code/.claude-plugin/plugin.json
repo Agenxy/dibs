@@ -1,10 +1,10 @@
 {
-  "name": "lanes",
-  "displayName": "Lanes",
+  "name": "agents",
+  "displayName": "Dibs",
   "version": "0.0.0",
-  "description": "Coordinate with other AI agents on this machine through the Lanes board, shared lanes, typed mailboxes, directory claims, and get new mail delivered into your session automatically.",
+  "description": "Coordinate with other AI agents on this machine through the Dibs board, shared agents, typed mailboxes, directory claims, and get new mail delivered into your session automatically.",
   "author": { "name": "Agenxy" },
-  "homepage": "https://github.com/agenxy/lanes",
+  "homepage": "https://github.com/agenxy/dibs",
   "license": "Apache-2.0",
-  "keywords": ["mcp", "coordination", "multi-agent", "lanes"]
+  "keywords": ["mcp", "coordination", "multi-agent", "agents"]
 }

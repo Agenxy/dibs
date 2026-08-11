@@ -7,10 +7,10 @@ import (
 
 // Sweep events come out in the same order every time.
 //
-// Go randomises map iteration per process, so a sweep that marked eight lanes
+// Go randomises map iteration per process, so a sweep that marked eight agents
 // stale at one serial emitted those eight events in one order live and a
 // different order on cold replay. The replayed STATE was identical: this was
-// never a fold failure, but the event stream is the audit history, and `lanes
+// never a fold failure, but the event stream is the audit history, and `agents
 // log`, events_since and every consumer of the ledger read it. An audit trail
 // that reorders itself when re-derived is not an audit trail.
 //
@@ -35,8 +35,8 @@ func TestSweepEmitsEventsInADeterministicOrder(t *testing.T) {
 		return s
 	}
 	order := func(s *State) []string {
-		// Far enough ahead that every lane crosses the idle bound in one sweep.
-		// The daemon computes which lanes have lapsed and passes them IN; the fold
+		// Far enough ahead that every agent crosses the idle bound in one sweep.
+		// The daemon computes which agents have lapsed and passes them IN; the fold
 		// does not consult a clock. Naming all eight makes one sweep emit eight
 		// events at one serial, which is the case whose order was unstable.
 		stale := []string{
@@ -49,8 +49,8 @@ func TestSweepEmitsEventsInADeterministicOrder(t *testing.T) {
 		}
 		var out []string
 		for _, e := range evs {
-			if e.Lane != "" {
-				out = append(out, e.Type+":"+e.Lane)
+			if e.Agent != "" {
+				out = append(out, e.Type+":"+e.Agent)
 			}
 		}
 		return out
@@ -58,7 +58,7 @@ func TestSweepEmitsEventsInADeterministicOrder(t *testing.T) {
 
 	a, b := order(build()), order(build())
 	if len(a) == 0 {
-		t.Skip("this fixture produced no lane events; the ordering it guards is unreachable here")
+		t.Skip("this fixture produced no agent events; the ordering it guards is unreachable here")
 	}
 	if len(a) != len(b) {
 		t.Fatalf("two identical states swept to different event counts: %d vs %d", len(a), len(b))
@@ -74,7 +74,7 @@ func TestSweepEmitsEventsInADeterministicOrder(t *testing.T) {
 
 // Message expiry emits in a stable order too.
 //
-// The lane sweep was sorted first and this range was missed, which is the
+// The agent sweep was sorted first and this range was missed, which is the
 // pattern worth guarding rather than the single site: any map traversal in the
 // sweep that appends to evs reorders the audit stream on replay. Blob TTL
 // eviction in blobs.go had the same shape and is sorted for the same reason.

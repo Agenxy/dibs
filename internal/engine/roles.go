@@ -4,22 +4,22 @@ import (
 	"context"
 	"time"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
-// GrantRole sets a lane's role. It is reachable only from the daemon's admin
-// path (local secret + admin password), which is why it takes no lane token:
+// GrantRole sets an agent's role. It is reachable only from the daemon's admin
+// path (local secret + admin password), which is why it takes no agent token:
 // promotion is a human decision, never an agent's.
-func (e *Engine) GrantRole(ctx context.Context, lane, role string) (core.Result, error) {
-	return e.Do(ctx, &core.Op{Kind: core.OpGrantRole, To: lane, Mode: role})
+func (e *Engine) GrantRole(ctx context.Context, agent, role string) (core.Result, error) {
+	return e.Do(ctx, &core.Op{Kind: core.OpGrantRole, To: agent, Mode: role})
 }
 
-// Broadcast sends one message to every other live lane. Coordinator-only.
+// Broadcast sends one message to every other live agent. Coordinator-only.
 //
 // It is deliberately N ordinary sends rather than one clever op: each message
 // keeps its own serial, its own ledger entry, its own mailbox accounting and
 // deadline. Replay stays exact and a broadcast is indistinguishable from the
-// coordinator having written to each lane by hand, which is what it is.
+// coordinator having written to each agent by hand, which is what it is.
 func (e *Engine) Broadcast(ctx context.Context, token, msgType, body string) (core.Result, error) {
 	// Resolve the sender and the recipient set inside the loop, so the fan-out
 	// is taken from one consistent snapshot of the board.
@@ -64,13 +64,13 @@ func (e *Engine) Broadcast(ctx context.Context, token, msgType, body string) (co
 	out := core.Result{"ok": true, "delivered": len(delivered), "msg_serials": delivered}
 	if len(failed) > 0 {
 		out["undelivered"] = failed
-		out["warning"] = "some lanes did not receive this: see undelivered"
+		out["warning"] = "some agents did not receive this: see undelivered"
 	}
 	return out, nil
 }
 
-// AllMail returns every message, decrypted: the god view, for a lane the human
-// promoted to admin. It is the one place a lane may read mail it is not party
+// AllMail returns every message, decrypted: the god view, for an agent the human
+// promoted to admin. It is the one place an agent may read mail it is not party
 // to, which is exactly why it is gated on the admin role and nothing weaker.
 func (e *Engine) AllMail(ctx context.Context, token string) (core.Result, error) {
 	res, err := e.query(ctx, func() core.Result {

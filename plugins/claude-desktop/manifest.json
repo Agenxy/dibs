@@ -1,28 +1,28 @@
 {
   "manifest_version": "0.3",
-  "name": "io.lanes/lanes",
-  "display_name": "Lanes",
+  "name": "io.agents/agents",
+  "display_name": "Dibs",
   "version": "0.0.0",
-  "description": "Coordination board for agents on this machine: shared lanes, typed mailboxes, and advisory claims.",
-  "long_description": "Lanes lets a fleet of agents see what the others are working on before duplicating their effort. Declare your objective, read the board, message peers directly. Lanes is a service agents pull from: it never drives your session.\n\nRequires the `lanes` daemon (`lanesd`) running locally. See https://github.com/agenxy/lanes.",
-  "author": { "name": "Lanes" },
-  "repository": { "type": "git", "url": "https://github.com/agenxy/lanes" },
+  "description": "Coordination board for agents on this machine: shared agents, typed mailboxes, and advisory claims.",
+  "long_description": "Dibs lets a fleet of agents see what the others are working on before duplicating their effort. Declare your objective, read the board, message peers directly. Dibs is a service agents pull from: it never drives your session.\n\nRequires the `dibs` daemon (`dibd`) running locally. See https://github.com/agenxy/dibs.",
+  "author": { "name": "Dibs" },
+  "repository": { "type": "git", "url": "https://github.com/agenxy/dibs" },
 
   "server": {
     "type": "binary",
-    "entry_point": "lanes",
+    "entry_point": "agents",
     "mcp_config": {
-      "command": "lanes",
+      "command": "agents",
       "args": ["mcp-stdio"]
     }
   },
 
   "tools_generated": false,
   "tools": [
-    { "name": "register_lane", "description": "Declare who you are and what you're working on" },
-    { "name": "ack_board", "description": "See what every other agent is doing" },
-    { "name": "set_slot", "description": "Publish your current objective; warns on duplicated effort" },
-    { "name": "send_message", "description": "Message another lane (notify/question/request/handoff)" },
+    { "name": "register", "description": "Declare who you are and what you're working on" },
+    { "name": "check_in", "description": "See what every other agent is doing" },
+    { "name": "declare", "description": "Publish your current objective; warns on duplicated effort" },
+    { "name": "send", "description": "Message another agent (notify/question/request/handoff)" },
     { "name": "respond", "description": "Answer a question or approve/deny a request" },
     { "name": "inbox", "description": "Read your mailbox" },
     { "name": "claim", "description": "Advisory claim on a path or resource" },

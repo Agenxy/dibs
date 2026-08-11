@@ -1,4 +1,4 @@
-//go:build lanesdev
+//go:build dibdev
 
 package humanauth
 
@@ -40,7 +40,7 @@ func TestTheMockProducesEachVerdict(t *testing.T) {
 //
 // The switch could have defaulted to Verified for convenience, since that is the
 // value a developer wants nine times out of ten. It does not: an unrecognised
-// value falls through to the real sensor. Otherwise LANES_PRESENCE_MOCK=ture
+// value falls through to the real sensor. Otherwise DIBS_PRESENCE_MOCK=ture
 // would silently assert that somebody was sitting there, which is the failure
 // this whole package is built to prevent: arriving, of all ways, by
 // misspelling.

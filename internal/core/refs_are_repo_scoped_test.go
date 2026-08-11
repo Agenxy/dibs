@@ -7,7 +7,7 @@ import "testing"
 //
 // Reported by an adversarial review, which registered two agents from two Git
 // checkouts, had both declare `issue:42`, and got back the strongest signal
-// Lanes emits: "another lane is already pursuing the same objective". That tells
+// Dibs emits: "another agent is already pursuing the same objective". That tells
 // an agent to stop or to go and coordinate over work nobody else is doing, and
 // on a machine running several projects it fires constantly, because issue and
 // PR numbers are small integers that every project reuses.
@@ -44,7 +44,7 @@ func TestRefsOnlyCollideInsideOneRepository(t *testing.T) {
 			a:         &AgentInfo{CWD: "/w/api", RepoDir: "/w/api/.git", RepoRemote: "github.com/acme/api"},
 			b:         &AgentInfo{CWD: "/w/api/internal", RepoDir: "/w/api/.git", RepoRemote: "github.com/acme/api"},
 			wantAlarm: true,
-			why:       "this is duplicated effort, and catching it is why Lanes exists",
+			why:       "this is duplicated effort, and catching it is why Dibs exists",
 		},
 		{
 			what:      "two linked worktrees of one repository",
@@ -102,7 +102,7 @@ func TestRefsOnlyCollideInsideOneRepository(t *testing.T) {
 			// dependency brings its whole history, so two unrelated projects that
 			// vendored the same thing each carry their own root plus the shared
 			// one. Any-commit-in-common fused them and fired the strongest signal
-			// Lanes has between strangers, which is how a signal stops being
+			// Dibs has between strangers, which is how a signal stops being
 			// believed.
 			what:      "two unrelated projects that vendored the same dependency by subtree",
 			a:         &AgentInfo{CWD: "/w/one", RepoDir: "/w/one/.git", RepoRemote: "github.com/acme/one", RepoRoots: "aaa111 vendor22"},
@@ -123,7 +123,7 @@ func TestRefsOnlyCollideInsideOneRepository(t *testing.T) {
 		},
 		{
 			what:      "a shallow clone whose sibling renamed its remote",
-			a:         &AgentInfo{CWD: "/w/a", RepoDir: "/w/a/.git", RepoRemote: "github.com/agenxy/homebrew-lanes"},
+			a:         &AgentInfo{CWD: "/w/a", RepoDir: "/w/a/.git", RepoRemote: "github.com/agenxy/homebrew-agents"},
 			b:         &AgentInfo{CWD: "/w/b", RepoDir: "/w/b/.git", RepoRemote: "github.com/agenxy/homebrew-tap"},
 			wantAlarm: true,
 			why:       "no roots to compare and remotes that cannot be reconciled locally: unknown, so warn",
@@ -151,14 +151,14 @@ func TestRefsOnlyCollideInsideOneRepository(t *testing.T) {
 		},
 		{
 			what:      "one repository whose clones spell the remote with different case",
-			a:         &AgentInfo{CWD: "/w/a", RepoDir: "/w/a/.git", RepoRemote: "github.com/Agenxy/Lanes", RepoRoots: "aaa111"},
-			b:         &AgentInfo{CWD: "/w/b", RepoDir: "/w/b/.git", RepoRemote: "github.com/agenxy/lanes", RepoRoots: "aaa111"},
+			a:         &AgentInfo{CWD: "/w/a", RepoDir: "/w/a/.git", RepoRemote: "github.com/Agenxy/Dibs", RepoRoots: "aaa111"},
+			b:         &AgentInfo{CWD: "/w/b", RepoDir: "/w/b/.git", RepoRemote: "github.com/agenxy/dibs", RepoRoots: "aaa111"},
 			wantAlarm: true,
 			why:       "GitHub paths are case-insensitive, so these are two names for one repository",
 		},
 		{
 			what:      "one repository seen through a rename redirect",
-			a:         &AgentInfo{CWD: "/w/a", RepoDir: "/w/a/.git", RepoRemote: "github.com/agenxy/homebrew-lanes", RepoRoots: "aaa111"},
+			a:         &AgentInfo{CWD: "/w/a", RepoDir: "/w/a/.git", RepoRemote: "github.com/agenxy/homebrew-agents", RepoRoots: "aaa111"},
 			b:         &AgentInfo{CWD: "/w/b", RepoDir: "/w/b/.git", RepoRemote: "github.com/agenxy/homebrew-tap", RepoRoots: "aaa111"},
 			wantAlarm: true,
 			why:       "a renamed repository still serves its old path, so a stale clone url is not a different project",
@@ -166,11 +166,11 @@ func TestRefsOnlyCollideInsideOneRepository(t *testing.T) {
 	} {
 		t.Run(tc.what, func(t *testing.T) {
 			s := NewState("test", DefaultLimits())
-			s.Lanes = map[string]*Lane{
+			s.Agents = map[string]*Agent{
 				"mine":   {ID: "mine", Name: "mine", Agent: tc.a},
 				"theirs": {ID: "theirs", Name: "theirs", Agent: tc.b},
 			}
-			s.Lanes["theirs"].Slots = map[string]Slot{"now": {Text: "fixing the thing", Refs: []string{ref}}}
+			s.Agents["theirs"].Slots = map[string]Slot{"now": {Text: "fixing the thing", Refs: []string{ref}}}
 
 			got := s.overlapsFor([]string{ref}, nil, "mine")
 			var strong bool
@@ -198,7 +198,7 @@ func TestRefsOnlyCollideInsideOneRepository(t *testing.T) {
 func TestScopingRefsDoesNotSilencePathOverlap(t *testing.T) {
 	s := NewState("test", DefaultLimits())
 	shared := "/shared/vendor/lib"
-	s.Lanes = map[string]*Lane{
+	s.Agents = map[string]*Agent{
 		"mine": {ID: "mine", Name: "mine", Agent: &AgentInfo{
 			CWD: "/w/api", RepoDir: "/w/api/.git", RepoRemote: "github.com/acme/api",
 		}},
@@ -206,7 +206,7 @@ func TestScopingRefsDoesNotSilencePathOverlap(t *testing.T) {
 			CWD: "/w/site", RepoDir: "/w/site/.git", RepoRemote: "github.com/acme/site",
 		}},
 	}
-	s.Lanes["theirs"].Slots = map[string]Slot{"now": {Text: "vendoring", Dirs: []string{shared}}}
+	s.Agents["theirs"].Slots = map[string]Slot{"now": {Text: "vendoring", Dirs: []string{shared}}}
 
 	got := s.overlapsFor(nil, []string{shared}, "mine")
 	if len(got) == 0 {

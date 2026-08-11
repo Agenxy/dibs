@@ -9,11 +9,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // Box performs daemon-side encryption of private op fields (message bodies,
-// responses, lane tokens) so ledger readers see ciphertext. Lanes never
+// responses, agent tokens) so ledger readers see ciphertext. Dibs never
 // touch crypto; the human CLI decrypts via the same-user key file.
 type Box struct{ aead cipher.AEAD }
 
@@ -112,8 +112,8 @@ func (b *Box) EncryptOp(op *core.Op) error {
 	var err error
 	// Every op whose Body is CONTENT rather than a public label.
 	//
-	// Mail was sealed and lane traffic was not, though both carry exactly the
-	// same promise: lane_read is membership-gated, revoked on leave or eviction,
+	// Mail was sealed and agent traffic was not, though both carry exactly the
+	// same promise: read_space is membership-gated, revoked on leave or eviction,
 	// and SECURITY.md states announcement bodies are unreachable on the
 	// token-less path. All of that is true of the running daemon and none of it
 	// survives a copied ledger: a backup, a support bundle, a pasted repro,

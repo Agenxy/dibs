@@ -1,11 +1,11 @@
 // Package build carries the version this binary was built from.
 //
 // One variable, because there were three. `internal/mcp` reported one to every
-// agent on connect, `cmd/lanes` printed another, and `internal/web` put a third
+// agent on connect, `cmd/dibs` printed another, and `internal/web` put a third
 // in the board's footer, and only the first two were stamped at link time. The
 // third carried a comment saying "stamped by the build" that had never been
 // true, so a released binary would have shown a development version on the most
-// visible surface the project has, indefinitely, while `lanes version` in the
+// visible surface the project has, indefinitely, while `dibs version` in the
 // same binary said something else.
 //
 // Nothing here prevents someone adding a fourth. What it does is make the
@@ -19,7 +19,7 @@ import (
 )
 
 // Version is what every surface reports. Overwritten at link time by
-// -X github.com/agenxy/lanes/internal/build.Version=<tag>; anything else is
+// -X github.com/agenxy/dibs/internal/build.Version=<tag>; anything else is
 // worked out below from what the toolchain knows.
 var Version = unstamped
 
@@ -29,7 +29,7 @@ var Version = unstamped
 // It used to be "0.0.0-dev", which stated a release that exists: and, once
 // v0.0.1 shipped, one that is OLDER than what people are running. A build from
 // a tree four commits ahead of the release announced itself as 0.0.0 and read
-// as stale. That is the same confusion `lanes version` was written to end: a
+// as stale. That is the same confusion `dibs version` was written to end: a
 // daemon serving old code while everything else insisted the fix was in.
 //
 // So the fallback says what is true: this binary was not built from a release,

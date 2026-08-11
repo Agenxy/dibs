@@ -16,7 +16,7 @@ import (
 // per-request envelope reached through server/discover, so it is not something
 // this path can agree to. The reference SDKs encode the split explicitly
 // (mcp_types.version: HANDSHAKE_PROTOCOL_VERSIONS stops at 2025-11-25,
-// MODERN_PROTOCOL_VERSIONS holds 2026-07-28 alone). Lanes echoing it back meant
+// MODERN_PROTOCOL_VERSIONS holds 2026-07-28 alone). Dibs echoing it back meant
 // the server claimed a stateless contract over the very handshake that contract
 // removed. A client that asks for it here is confused, and the useful answer is
 // the newest version the handshake can actually carry.
@@ -51,7 +51,7 @@ func TestHandshakeAndStatelessVersionsDoNotOverlap(t *testing.T) {
 	}
 	if len(supportedVersions) != len(modernVersions)+len(handshakeVersions) {
 		t.Errorf("supportedVersions (%d) is not the union of modern (%d) and handshake (%d); "+
-			"the unsupported-version error would then advertise a list Lanes does not speak",
+			"the unsupported-version error would then advertise a list Dibs does not speak",
 			len(supportedVersions), len(modernVersions), len(handshakeVersions))
 	}
 }

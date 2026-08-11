@@ -70,7 +70,7 @@ func Admit(op *Op, lim Limits) error {
 		// generous for a model or a branch and ordinary for a working
 		// directory: a macOS temp directory alone reaches ninety, and any
 		// checkout a few levels inside a home directory passes it. The whole
-		// register_lane was then refused, so the agent could not coordinate AT
+		// register was then refused, so the agent could not coordinate AT
 		// ALL, over a descriptive field. Relaxing an admission bound is safe in
 		// the direction that matters: Admit runs only on ingress, so nothing
 		// already in a ledger becomes inadmissible.
@@ -89,11 +89,11 @@ func Admit(op *Op, lim Limits) error {
 		// acknowledge nothing, and re-pings them until they do. The UPPER bound
 		// on a body was checked and the lower one was not.
 		//
-		// Not hypothetical: a whole coordination channel between two agents ran
+		// Not hypothetical: a whole coordination space between two agents ran
 		// on empty announcements, because the caller sent the text under the
 		// wrong key and the missing value became "". Each returned a serial and
 		// a must_ack count, so it looked delivered from the sending side, while
-		// the receiving agent saw a lane full of obligations that said nothing
+		// the receiving agent saw an agent full of obligations that said nothing
 		// and had to ask a human what was going on.
 		if strings.TrimSpace(op.Body) == "" {
 			return errf("E_EMPTY_BODY",
@@ -131,12 +131,12 @@ func boundStrings(max int, what string, vals []string) error {
 type Op struct {
 	Kind string `json:"kind"`
 
-	// Actor resolution. Token authenticates (live path); Lane is set by Apply
+	// Actor resolution. Token authenticates (live path); Agent is set by Apply
 	// and used on replay (the engine blanks it on ingress: unforgeable).
-	Token string `json:"-"`
-	Lane  string `json:"lane,omitempty"`
+	Token   string `json:"-"`
+	AgentID string `json:"agent_id,omitempty"`
 
-	// register_lane / resume_lane / update_lane
+	// register / resume / update
 	Name        string     `json:"name,omitempty"`
 	Description string     `json:"description,omitempty"`
 	PID         int        `json:"pid,omitempty"`
@@ -145,7 +145,7 @@ type Op struct {
 	Nonce       string     `json:"nonce,omitempty"` // encrypted at rest
 	ResumeID    string     `json:"resume_id,omitempty"`
 	SessionID   string     `json:"session_id,omitempty"` // harness session, for hook lookup
-	Agent       *AgentInfo `json:"agent,omitempty"`      // who is behind the lane (descriptive only)
+	Agent       *AgentInfo `json:"agent,omitempty"`      // who is behind the agent (descriptive only)
 	Parent      string     `json:"parent,omitempty"`     // the agent that spawned this one (§8.2)
 	// ParentNonce is the one-time secret the parent issued for this child.
 	//
@@ -155,7 +155,7 @@ type Op struct {
 	ParentNonce string   `json:"parent_nonce,omitempty"`
 	LaneKind    LaneKind `json:"lane_kind,omitempty"`
 
-	// set_slot / clear_slot
+	// declare / undeclare
 	SlotID string   `json:"slot_id,omitempty"`
 	Text   string   `json:"text,omitempty"`
 	Dirs   []string `json:"dirs,omitempty"`
@@ -165,7 +165,7 @@ type Op struct {
 	Activity string   `json:"activity,omitempty"`
 	Holds    []string `json:"holds,omitempty"`
 
-	// send_message / respond / ack_message
+	// send / respond / ack
 	To          string       `json:"to,omitempty"`
 	MsgType     string       `json:"msg_type,omitempty"`
 	Body        string       `json:"body,omitempty"` // encrypted at rest
@@ -173,7 +173,7 @@ type Op struct {
 	OpID        string       `json:"op_id,omitempty"`
 	MsgSerial   uint64       `json:"msg_serial,omitempty"`
 	Disposition string       `json:"disposition,omitempty"`
-	Attachments []Attachment `json:"attachments,omitempty"` // send_message (A2)
+	Attachments []Attachment `json:"attachments,omitempty"` // send (A2)
 
 	// put_blob (bytes already staged off-thread; op carries the recorded id)
 	Blob string `json:"blob,omitempty"`
@@ -199,9 +199,9 @@ type Op struct {
 	// mark_delivered: ledgered pending→delivered receipts
 	MsgSerials []uint64 `json:"msg_serials,omitempty"`
 
-	// Channels (SPEC-CHANNELS.md). "Channel" is the Go name; the wire name is
-	// "lane", which is the vocabulary the protocol and the spec both use.
-	Channel   string `json:"channel,omitempty"`
+	// Spaces (SPEC-CHANNELS.md). "Space" is the Go name; the wire name is
+	// "agent", which is the vocabulary the protocol and the spec both use.
+	Space     string `json:"space,omitempty"`
 	Exclusive bool   `json:"exclusive,omitempty"`
 
 	// Recorded scoring inputs: the replay contract (SPEC-CHANNELS.md §4.3).
@@ -221,27 +221,27 @@ type Op struct {
 
 	// Predicted is the recorded file footprint of the declaring work: what a
 	// scorer said this agent will touch. Recorded for the same reason the score
-	// is: it decides lane membership, and recomputing it on replay reconstructs
+	// is: it decides agent membership, and recomputing it on replay reconstructs
 	// a different fleet.
 	Predicted []PredFile `json:"predicted,omitempty"`
 }
 
 // Op kinds.
 const (
-	OpRegisterLane       = "register_lane"
-	OpResumeLane         = "resume_lane"
+	OpRegisterLane       = "register"
+	OpResumeLane         = "resume"
 	OpWakeLane           = "wake_lane"
 	OpActivityCheckpoint = "activity_checkpoint"
-	OpAckBoard           = "ack_board"
-	OpUpdateLane         = "update_lane"
+	OpAckBoard           = "check_in"
+	OpUpdateLane         = "update"
 	OpBindSession        = "bind_session"
-	OpCloseLane          = "close_lane"
+	OpCloseLane          = "sign_off"
 	OpHeartbeat          = "heartbeat"
-	OpSetSlot            = "set_slot"
-	OpClearSlot          = "clear_slot"
-	OpSendMessage        = "send_message"
+	OpSetSlot            = "declare"
+	OpClearSlot          = "undeclare"
+	OpSendMessage        = "send"
 	OpRespond            = "respond"
-	OpAckMessage         = "ack_message"
+	OpAckMessage         = "ack"
 	OpClaim              = "claim"
 	OpRelease            = "release"
 	OpSweep              = "sweep"
@@ -271,30 +271,30 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		return s.applyMarkDelivered(op, now)
 	case OpGrantRole:
 		// Admin-only: the engine admits this solely on the human's admin path,
-		// so no lane token is consulted and no lane can promote itself.
+		// so no agent token is consulted and no agent can promote itself.
 		return s.applyGrantRole(op, now)
 	case OpPruneLane:
-		// Admin-only, same path. Closing another lane is a human's call: a lane
+		// Admin-only, same path. Closing another agent is a human's call: an agent
 		// that crashed cannot close itself, and no agent should be able to
 		// evict a peer.
 		return s.applyPrune(op, now)
 	}
 
-	// Actor ops. Live path: token. Replay path: recorded Lane (engine blanks
-	// Lane on ingress, so it cannot be forged).
+	// Actor ops. Live path: token. Replay path: recorded Agent (engine blanks
+	// Agent on ingress, so it cannot be forged).
 	l := s.LaneByToken(op.Token)
-	if l == nil && op.Token == "" && op.Lane != "" {
-		l = s.Lanes[op.Lane]
+	if l == nil && op.Token == "" && op.AgentID != "" {
+		l = s.Agents[op.AgentID]
 	}
 	if l == nil {
 		return nil, nil, ErrBadToken
 	}
 	if l.Status == StatusClosed {
-		return nil, nil, errf("E_LANE_CLOSED", "register a new lane", "lane %s is closed", l.ID)
+		return nil, nil, errf("E_LANE_CLOSED", "register a new agent", "agent %s is closed", l.ID)
 	}
-	op.Lane = l.ID
+	op.AgentID = l.ID
 
-	// Heartbeat on an active lane touches no replayable state (never
+	// Heartbeat on an active agent touches no replayable state (never
 	// ledgered; the engine tracks the ephemeral lease). SPEC §2.
 	if op.Kind == OpHeartbeat && l.Status == StatusActive {
 		return Result{"ok": true, "lane_id": l.ID}, nil, nil
@@ -344,7 +344,7 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 			break
 		}
 		l.Description = op.Description
-		res, evs = Result{"ok": true}, []Event{{Type: "lane.updated", Lane: l.ID}}
+		res, evs = Result{"ok": true}, []Event{{Type: "agent.updated", Agent: l.ID}}
 	case OpBindSession:
 		// A LEDGERED write, because it is a write.
 		//
@@ -360,8 +360,8 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 			break
 		}
 		l.SessionID = op.SessionID
-		res = Result{"ok": true, "lane": l.ID, "session_id": l.SessionID}
-		evs = []Event{{Type: "lane.updated", Lane: l.ID}}
+		res = Result{"ok": true, "agent": l.ID, "session_id": l.SessionID}
+		evs = []Event{{Type: "agent.updated", Agent: l.ID}}
 	case OpCloseLane:
 		res, evs = s.applyClose(l, now)
 	case OpHeartbeat: // unreachable when sleeping (wake_lane precedes); no-op
@@ -401,16 +401,16 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	// ONE op, ONE serial.
 	//
 	// Several handlers allocate their own serial because they need it in the
-	// result: a lane's key, a join's membership serial, an announcement's id.
+	// result: an agent's key, a join's membership serial, an announcement's id.
 	// Finishing again here allocated a SECOND for the same op, and the engine
 	// appends at the final value, so the intermediate serial was never written:
 	// a permanent hole in the ledger at a point where a real transition had
 	// happened.
 	//
-	// This took a live board down. lane_open advanced the serial by two on every
-	// call, and one of the resulting holes held the op that re-created a lane,
-	// so on restart the daemon replayed a board where that lane was still closed,
-	// hit a close_lane it could not apply, and refused to start. The gap warning
+	// This took a live board down. open_space advanced the serial by two on every
+	// call, and one of the resulting holes held the op that re-created an agent,
+	// so on restart the daemon replayed a board where that agent was still closed,
+	// hit a sign_off it could not apply, and refused to start. The gap warning
 	// at replay had been firing for weeks and reads as cosmetic; it was not.
 	//
 	// Detected by whether the handler already stamped its events rather than by a
@@ -433,7 +433,7 @@ func (s *State) finish(evs *[]Event, now time.Time) uint64 {
 	return s.Serial
 }
 
-func dedupKey(lane, id string) string { return lane + "\x00" + id }
+func dedupKey(agent, id string) string { return agent + "\x00" + id }
 
 // sendDigest binds a send's payload (recipient, type, body, deadline, and every
 // attachment handle) so op_id dedup rejects a retry that reused the id with
@@ -465,29 +465,29 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 		kind = KindEphemeral
 	}
 	if kind != KindEphemeral && kind != KindPersistent {
-		return nil, nil, errf("E_BAD_KIND", "use ephemeral|persistent", "unknown lane kind %q", kind)
+		return nil, nil, errf("E_BAD_KIND", "use ephemeral|persistent", "unknown agent kind %q", kind)
 	}
 	if kind == KindPersistent && op.Nonce == "" {
-		return nil, nil, errf("E_BAD_NONCE", "persistent lanes require a client-generated nonce (≥128-bit random); it "+
-			"doubles as the resume_lane recovery credential: treat it as a secret", "nonce required for persistent lanes")
+		return nil, nil, errf("E_BAD_NONCE", "persistent agents require a client-generated nonce (≥128-bit random); it "+
+			"doubles as the resume recovery credential: treat it as a secret", "nonce required for persistent agents")
 	}
-	// Response-loss retry: same nonce, lane still active, created within one
+	// Response-loss retry: same nonce, agent still active, created within one
 	// TTL → return the original result. Outside that window → reattach, or
 	// E_NONCE_IN_USE if the nonce is being pointed at a different identity.
 	if op.Nonce != "" {
 		if id, ok := s.Nonces[op.Nonce]; ok {
-			l := s.Lanes[id]
+			l := s.Agents[id]
 			if l != nil && l.Status == StatusActive && now.Sub(l.LastCoordination) <= s.Limits.LaneTTL && l.CreatedSerial > 0 {
 				return Result{
 					"lane_id": id, "token": l.Token, "serial": s.Serial,
 					"resumed": true, "board": s.Board(),
 				}, nil, nil
 			}
-			// The nonce IS the recovery credential: for every kind of lane, not
+			// The nonce IS the recovery credential: for every kind of agent, not
 			// just persistent ones.
 			//
-			// This used to refuse and say "use resume_lane", which is the standing
-			// -role path and does not apply to an ephemeral lane. So the advice
+			// This used to refuse and say "use resume", which is the standing
+			// -role path and does not apply to an ephemeral agent. So the advice
 			// two hundred lines below. "register with a nonce to make recovery
 			// require something only you hold": described a credential that could
 			// not be used to recover anything. An agent that took the advice, kept
@@ -502,8 +502,8 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 			// Measured on a live fleet: four agents restarted, four re-registered
 			// under their own names, and all four became siblings: builder-2,
 			// api-a-2, api-b-2, orchestrator-2: with every message addressed to
-			// them before the restart stranded in a lane nobody occupied. Nothing
-			// looked broken. Every lane was green.
+			// them before the restart stranded in an agent nobody occupied. Nothing
+			// looked broken. Every agent was green.
 			//
 			// A nonce has none of that fragility: the agent chooses it, keeps it,
 			// and can present it after anything. It is also a real secret, unlike
@@ -529,16 +529,16 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				}
 				// LEDGERED, like every other transition.
 				//
-				// This branch rotates the token, wakes the lane, re-arms the
+				// This branch rotates the token, wakes the agent, re-arms the
 				// awareness gate and rebinds the session, and returned no events,
 				// so finish() never ran, the serial never advanced, and the engine
 				// (which appends only when the serial moves) never wrote it down.
-				// Replay therefore never reattached: after a restart the lane was
+				// Replay therefore never reattached: after a restart the agent was
 				// stale again, the freshly issued token did not work, and the OLD
 				// token came back to life. A rotated credential returning from the
 				// dead is the worst shape this can take, and the documented
 				// nonce-recovery path is exactly the case it broke.
-				evs := []Event{{Type: "lane.reattached", Lane: l.ID, Data: map[string]any{
+				evs := []Event{{Type: "agent.reattached", Agent: l.ID, Data: map[string]any{
 					"via": "nonce",
 				}}}
 				serial := s.finish(&evs, now)
@@ -550,22 +550,22 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 			}
 			return nil, nil, errf(
 				"E_NONCE_IN_USE",
-				"that nonce already belongs to lane "+id+", registered under a different name. "+
+				"that nonce already belongs to agent "+id+", registered under a different name. "+
 					"a nonce recovers one identity, so use the name it was bound to, or a new nonce",
-				"nonce already bound to lane %s", id,
+				"nonce already bound to agent %s", id,
 			)
 		}
 	}
 	// Reattach: a woken agent has no token.
 	//
 	// A lifecycle hook can tell an agent it has mail, but a fresh turn carries no
-	// token, so the agent would register again: getting a SIBLING lane that
+	// token, so the agent would register again: getting a SIBLING agent that
 	// cannot read or answer the mail addressed to the original. Measured live in
-	// opencode: the model read its mail, then failed get_message with E_NO_MESSAGE
-	// because it was now a different lane.
+	// opencode: the model read its mail, then failed read_mail with E_NO_MESSAGE
+	// because it was now a different agent.
 	//
 	// So a registration presenting both the same session_id AND the same name as a
-	// live lane reattaches to it, rotating the token. This is what makes the
+	// live agent reattaches to it, rotating the token. This is what makes the
 	// server's promise that "re-registering after context loss is always safe"
 	// literally true.
 	//
@@ -573,23 +573,23 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	//
 	// session_id is NOT a secret. The bridge derives it from the host's process
 	// id (`host-<ppid>`), which any same-user process can enumerate with ps, and
-	// the lane's name is on the board. So "name + session_id" is guessable, and
+	// the agent's name is on the board. So "name + session_id" is guessable, and
 	// presenting both rotates the token: taking the mailbox, the actor
-	// identity, and any role the lane holds. Verified against a running daemon:
+	// identity, and any role the agent holds. Verified against a running daemon:
 	// a second registration with a victim's name and session id returned a
 	// working token that read the victim's private mail.
 	//
-	// A lane that registered with a NONCE has a real secret, so that is what
-	// reattaches it; session_id alone must not. A lane with only a session_id
+	// An agent that registered with a NONCE has a real secret, so that is what
+	// reattaches it; session_id alone must not. An agent with only a session_id
 	// keeps the old behaviour, because the alternative is that an agent which
 	// genuinely lost its context can never recover, and the honest description
-	// of that lane is "reclaimable by anyone who learns its session id", which
+	// of that agent is "reclaimable by anyone who learns its session id", which
 	// the result now says.
 	//
 	// What this does NOT fix: every agent shares one coordination secret, so
 	// agent-to-agent isolation is a bar to raise, not a wall. See SECURITY.md.
 	if op.SessionID != "" && op.Nonce == "" {
-		for _, l := range s.Lanes {
+		for _, l := range s.Agents {
 			if l.Nonce != "" {
 				continue // it has a real credential; a guessable one will not do
 			}
@@ -606,7 +606,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 					l.PID, l.ProcStart = op.PID, op.ProcStart
 				}
 				// Ledgered for the same reason as the nonce branch above.
-				evs := []Event{{Type: "lane.reattached", Lane: l.ID, Data: map[string]any{
+				evs := []Event{{Type: "agent.reattached", Agent: l.ID, Data: map[string]any{
 					"via": "session_id",
 				}}}
 				serial := s.finish(&evs, now)
@@ -620,7 +620,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	}
 
 	live, persistent := 0, 0
-	for _, l := range s.Lanes {
+	for _, l := range s.Agents {
 		if l.Status == StatusActive || l.Sleeping() {
 			live++
 			if l.Kind == KindPersistent {
@@ -633,15 +633,15 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	}
 	id := laneID(s, op.Name)
 	// Lineage is claimed and proven separately. An unproven parent is displayed
-	// and grants nothing; a vouched one inherits its parent's lanes, skips an
+	// and grants nothing; a vouched one inherits its parent's agents, skips an
 	// exclusive queue, and is exempt from the parent's claims in the guard.
 	parentProven := false
 	if op.Parent != "" && op.ParentNonce != "" {
-		if p := s.Lanes[op.Parent]; p != nil && p.burnChildNonce(op.ParentNonce) {
+		if p := s.Agents[op.Parent]; p != nil && p.burnChildNonce(op.ParentNonce) {
 			parentProven = true
 		}
 	}
-	l := &Lane{
+	l := &Agent{
 		ID: id, Kind: kind, Name: op.Name, Description: op.Description, Agent: op.Agent,
 		PID: op.PID, ProcStart: op.ProcStart, Status: StatusActive, SessionID: op.SessionID,
 		Parent:           op.Parent,
@@ -649,20 +649,20 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 		LastCoordination: now, Token: op.NewToken, Nonce: op.Nonce,
 		Slots: map[string]Slot{},
 	}
-	s.Lanes[id] = l
+	s.Agents[id] = l
 	if op.Nonce != "" {
 		s.Nonces[op.Nonce] = id
 	}
-	evs := []Event{{Type: "lane.registered", Lane: id, Data: map[string]any{
+	evs := []Event{{Type: "agent.registered", Agent: id, Data: map[string]any{
 		"name": op.Name, "kind": kind, "description": op.Description,
 	}}}
 	serial := s.finish(&evs, now)
 	l.CreatedSerial = serial
 	res := Result{
 		"lane_id": id, "token": op.NewToken, "serial": serial, "board": s.Board(),
-		"gate": "call ack_board to acknowledge the board before set_slot or claim",
+		"gate": "call check_in to acknowledge the board before declare or claim",
 	}
-	// Hand back the session_id the lane was actually filed under.
+	// Hand back the session_id the agent was actually filed under.
 	//
 	// Reattach keys on (name, session_id), and both halves have to be presentable
 	// by the agent for that to be a recovery path rather than a description of
@@ -688,24 +688,24 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	// colleagues to write to `sol`, and never learns why the mail stops.
 	//
 	// The holder is named along with its state, because that decides what to do
-	// about it. A stale or dormant lane still owns its mailbox: taking its name
+	// about it. A stale or dormant agent still owns its mailbox: taking its name
 	// would silently redirect mail meant for somebody else, which is the failure
 	// this suffix exists to prevent. So the answer is not to seize the name but
 	// to say who has it, and how to become them if they are in fact you.
 	if want := slug(op.Name); want != "" && id != want {
 		note := "you asked for " + op.Name + " and your id is " + id + ": " + want +
 			" is already taken"
-		if holder, ok := s.Lanes[want]; ok {
+		if holder, ok := s.Agents[want]; ok {
 			article := " by a "
 			if st := string(holder.Status); st != "" && strings.ContainsRune("aeiou", rune(st[0])) {
 				article = " by an "
 			}
-			note += article + string(holder.Status) + " lane"
+			note += article + string(holder.Status) + " agent"
 			if holder.StaleReason != "" {
 				note += " (" + holder.StaleReason + ")"
 			}
 			// Two different reasons, and saying the wrong one is worse than saying
-			// nothing. A stale or dormant lane can still be written to, so handing
+			// nothing. A stale or dormant agent can still be written to, so handing
 			// its name away would redirect somebody else's mail. A retired one
 			// cannot receive anything (applySend refuses closed and archived) so
 			// it is holding the name purely because its id is stamped into every
@@ -718,13 +718,13 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 					"id only because the ledger's history refers to it, and reusing the id " +
 					"would make those records mean two different agents"
 			default:
-				note += ", which still holds its mailbox: a new lane cannot take the name " +
+				note += ", which still holds its mailbox: a new agent cannot take the name " +
 					"without redirecting mail meant for it"
 			}
 		}
-		note += ". Others will address you as " + id + ". If that older lane is YOU, " +
+		note += ". Others will address you as " + id + ". If that older agent is YOU, " +
 			"reattach instead: register again with the same name and the same nonce, " +
-			"or the same name and session_id, and you get the lane and its mail back " +
+			"or the same name and session_id, and you get the agent and its mail back " +
 			"rather than another sibling"
 		res["name_note"] = note
 	}
@@ -736,30 +736,30 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 			id + ": register with an ASCII name if you want a meaningful one. Your original " +
 			"name is kept and shown to humans on the board."
 	}
-	// A lane whose only recovery credential is a session id is reclaimable by
+	// An agent whose only recovery credential is a session id is reclaimable by
 	// anyone who learns that id, and the bridge derives it from a process id
 	// that any same-user program can enumerate. Say so, rather than letting the
 	// word "credential" imply a secret.
 	if op.Nonce == "" && op.SessionID != "" {
-		res["recovery"] = "this lane can be reclaimed by presenting its name and the session_id above, " +
+		res["recovery"] = "this agent can be reclaimed by presenting its name and the session_id above, " +
 			"neither of which is secret. AND that session_id will not survive your harness " +
 			"restarting, because it names the harness process. To be able to recover after a " +
 			"restart, re-register now with a nonce (a random id >=128-bit that you keep): same " +
-			"name + same nonce reattaches you to this lane and its mail, after anything."
+			"name + same nonce reattaches you to this agent and its mail, after anything."
 	}
 	if op.Nonce == "" && op.SessionID == "" {
-		// With neither recovery credential this lane cannot be reclaimed: lose the
+		// With neither recovery credential this agent cannot be reclaimed: lose the
 		// token and every message addressed to it becomes unreachable: the agent
 		// re-registers, gets a sibling, and cannot answer the mail that woke it.
 		// Say so now, while it is still free to fix, rather than at the moment an
 		// agent discovers it has been woken into a dead end.
-		res["recovery"] = "no session_id or nonce given, so this lane cannot be reclaimed if you " +
-			"lose your token: re-registering would create a SECOND lane and this one's mail would " +
+		res["recovery"] = "no session_id or nonce given, so this agent cannot be reclaimed if you " +
+			"lose your token: re-registering would create a SECOND agent and this one's mail would " +
 			"be unreachable. Re-register with a nonce (a random id >=128-bit that you keep): same " +
-			"name + same nonce reattaches you to this lane and its mail, and is the only credential " +
+			"name + same nonce reattaches you to this agent and its mail, and is the only credential " +
 			"that survives your harness restarting."
 	}
-	// The name was taken, so this lane is a SIBLING of an agent that is already
+	// The name was taken, so this agent is a SIBLING of an agent that is already
 	// on the board, and mail addressed to that name will never arrive here.
 	//
 	// This is the one failure the recovery hint above does not cover. Once the
@@ -774,7 +774,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	// new agent. What was wrong is that it happened in silence. Say it at the
 	// moment it happens, and say what mail is being left behind.
 	if sib := s.siblingByName(op.Name, id); sib != nil {
-		msg := "a lane named " + op.Name + " already exists as " + sib.ID +
+		msg := "an agent named " + op.Name + " already exists as " + sib.ID +
 			": you are " + id + ", a separate agent. Mail addressed to " + sib.ID +
 			" will NOT appear in your inbox."
 		if n := len(s.Inbox(sib.ID)); n > 0 {
@@ -782,9 +782,9 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 		}
 		res["name_taken"] = msg + " If you ARE that agent returning, you can still get back in:" +
 			" register again with the same name and the nonce you kept, and you reattach to it" +
-			" instead of forking. If you kept no nonce, that lane is only reachable with its" +
-			" session_id: ask a coordinator to lane_merge " + id + " into " + sib.ID +
-			", which moves this lane's mail and slots onto that one."
+			" instead of forking. If you kept no nonce, that agent is only reachable with its" +
+			" session_id: ask a coordinator to merge_spaces " + id + " into " + sib.ID +
+			", which moves this agent's mail and slots onto that one."
 	}
 	return res, evs, nil
 }
@@ -793,18 +793,18 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 // a complete activation boundary: atomic wake + rotation at one serial.
 func (s *State) applyResume(op *Op, now time.Time) (Result, []Event, error) {
 	if op.Nonce == "" || op.ResumeID == "" {
-		return nil, nil, errf("E_BAD_NONCE", "resume_lane requires nonce and resume_id", "missing nonce or resume_id")
+		return nil, nil, errf("E_BAD_NONCE", "resume requires nonce and resume_id", "missing nonce or resume_id")
 	}
 	id, ok := s.Nonces[op.Nonce]
 	if !ok {
-		return nil, nil, errf("E_BAD_NONCE", "check the nonce; if lost, register a new lane", "unknown nonce")
+		return nil, nil, errf("E_BAD_NONCE", "check the nonce; if lost, register a new agent", "unknown nonce")
 	}
-	l := s.Lanes[id]
+	l := s.Agents[id]
 	if l == nil || l.Status == StatusArchived {
-		return nil, nil, errf("E_NO_LANE", "the lane was archived; register a new one", "lane for nonce is gone")
+		return nil, nil, errf("E_NO_LANE", "the agent was archived; register a new one", "agent for nonce is gone")
 	}
 	if l.Status == StatusClosed {
-		return nil, nil, errf("E_LANE_CLOSED", "register a new lane", "lane %s is closed", id)
+		return nil, nil, errf("E_LANE_CLOSED", "register a new agent", "agent %s is closed", id)
 	}
 	// Generation-aware idempotent retry (SPEC §5): same resume_id returns the
 	// original token iff the generation is unchanged; else superseded.
@@ -824,28 +824,28 @@ func (s *State) applyResume(op *Op, now time.Time) (Result, []Event, error) {
 	l.StaleSince, l.DormantSince = time.Time{}, time.Time{}
 	l.AckedSerial = 0 // gate re-arms per activation
 	s.Dedup[dedupKey(id, op.ResumeID)] = &DedupRec{
-		Lane: id, ID: op.ResumeID, Activation: l.Activation, Token: op.NewToken, At: now,
+		Agent: id, ID: op.ResumeID, Activation: l.Activation, Token: op.NewToken, At: now,
 	}
 	l.LastCoordination = now
-	evs := []Event{{Type: "lane.resumed", Lane: id, Data: map[string]any{"activation": l.Activation}}}
+	evs := []Event{{Type: "agent.resumed", Agent: id, Data: map[string]any{"activation": l.Activation}}}
 	serial := s.finish(&evs, now)
 	return Result{
 		"lane_id": id, "token": op.NewToken, "activation": l.Activation,
 		"serial": serial, "board": s.Board(),
-		"gate": "call ack_board before set_slot or claim",
+		"gate": "call check_in before declare or claim",
 	}, evs, nil
 }
 
 // applyWake is the ledgered dormant/stale → active transition (SPEC §2).
 //
 //nolint:unparam // the (Result, []Event, error) shape is the dispatch contract
-func (s *State) applyWake(l *Lane) (Result, []Event, error) {
+func (s *State) applyWake(l *Agent) (Result, []Event, error) {
 	if !l.Sleeping() {
 		return Result{"ok": true}, nil, nil // no-op: unchanged, not ledgered
 	}
-	ev := "lane.recovered"
+	ev := "agent.recovered"
 	if l.Status == StatusDormant {
-		ev = "lane.awoke"
+		ev = "agent.awoke"
 	}
 	l.Status, l.StaleReason = StatusActive, ""
 	l.StaleSince, l.DormantSince = time.Time{}, time.Time{}
@@ -863,20 +863,20 @@ func (s *State) applyWake(l *Lane) (Result, []Event, error) {
 	// Worth naming because "activation" reads as one thing and is two, and
 	// SECURITY.md said tokens rotate per activation on the strength of that.
 	l.AckedSerial = 0
-	return Result{"ok": true}, []Event{{Type: ev, Lane: l.ID}}, nil
+	return Result{"ok": true}, []Event{{Type: ev, Agent: l.ID}}, nil
 }
 
 // applyAckBoard is the atomic checkpoint (SPEC §10): awareness ack + delivery
 // transitions of returned pending mail, one op, one serial; snapshot is the
 // post-state.
-func (s *State) applyAckBoard(l *Lane, _ time.Time) (Result, []Event) {
-	evs := []Event{{Type: "board.acked", Lane: l.ID}}
+func (s *State) applyAckBoard(l *Agent, _ time.Time) (Result, []Event) {
+	evs := []Event{{Type: "board.acked", Agent: l.ID}}
 	for _, m := range s.Inbox(l.ID) {
 		if m.State == MsgStatePending {
 			m.State = MsgStateDelivered
 			m.DeliveredAt = s.Serial + 1
 			evs = append(evs, Event{
-				Type: "message.delivered", Lane: l.ID, To: m.From,
+				Type: "message.delivered", Agent: l.ID, To: m.From,
 				Data: map[string]any{"msg_serial": m.Serial},
 			})
 		}
@@ -905,27 +905,27 @@ func (s *State) applyAckBoard(l *Lane, _ time.Time) (Result, []Event) {
 	}, evs
 }
 
-// applyPrune closes lanes the human has finished with. Reaching a dead lane is
-// otherwise impossible: close_lane needs the lane's own token, and a lane that
+// applyPrune closes agents the human has finished with. Reaching a dead agent is
+// otherwise impossible: sign_off needs the agent's own token, and an agent that
 // crashed or lost its context no longer has one, so without this the board
 // accumulates debris nobody can clear.
 //
-// op.To names a single lane; empty means "every lane that is not live", which is
+// op.To names a single agent; empty means "every agent that is not live", which is
 // the common case after a day's work.
 func (s *State) applyPrune(op *Op, now time.Time) (Result, []Event, error) {
-	var targets []*Lane
+	var targets []*Agent
 	if op.To != "" {
-		l := s.Lanes[op.To]
+		l := s.Agents[op.To]
 		if l == nil {
-			return nil, nil, errf("E_NO_LANE", "check the id on the board", "no lane %q", op.To)
+			return nil, nil, errf("E_NO_LANE", "check the id on the board", "no agent %q", op.To)
 		}
 		targets = append(targets, l)
 	} else {
 		// Sorted, because the events below go into the ledger in this order.
 		// Ranging the map directly gave a different audit sequence every run.
-		for _, id := range sortedKeys(s.Lanes) {
-			l := s.Lanes[id]
-			// Never prune a lane that is still working: only the debris.
+		for _, id := range sortedKeys(s.Agents) {
+			l := s.Agents[id]
+			// Never prune an agent that is still working: only the debris.
 			if l.Status != StatusActive && l.Status != StatusClosed {
 				targets = append(targets, l)
 			}
@@ -940,10 +940,10 @@ func (s *State) applyPrune(op *Op, now time.Time) (Result, []Event, error) {
 		ids = append(ids, l.ID)
 	}
 	slices.Sort(ids)
-	// LEDGERED. applyPrune closes lanes, blanks their tokens and releases their
+	// LEDGERED. applyPrune closes agents, blanks their tokens and releases their
 	// claims, and it returned without finish(), so the serial never moved, the
 	// engine never appended, and replay undid all of it. The human was told the
-	// prune succeeded; after the next restart the lanes were back, stale rather
+	// prune succeeded; after the next restart the agents were back, stale rather
 	// than closed, holding their old tokens again.
 	//
 	// It reaches this point through the special-op switch, which is why it
@@ -952,32 +952,32 @@ func (s *State) applyPrune(op *Op, now time.Time) (Result, []Event, error) {
 	return Result{"ok": true, "pruned": ids, "count": len(ids), "serial": serial}, evs, nil
 }
 
-func (s *State) applyClose(l *Lane, now time.Time) (Result, []Event) {
+func (s *State) applyClose(l *Agent, now time.Time) (Result, []Event) {
 	l.Status = StatusClosed
 	l.Token = ""
 	released := s.releaseClaims(l.ID)
-	evs := []Event{{Type: "lane.closed", Lane: l.ID}}
+	evs := []Event{{Type: "agent.closed", Agent: l.ID}}
 	evs = append(evs, s.departAllChannels(l.ID)...)
 	for _, p := range released {
-		evs = append(evs, Event{Type: "claim.released", Lane: l.ID, Data: map[string]any{"path": p}})
+		evs = append(evs, Event{Type: "claim.released", Agent: l.ID, Data: map[string]any{"path": p}})
 	}
 	evs = append(evs, s.strandedQuestions(l, now)...)
 	return Result{"ok": true, "released_claims": len(released)}, evs
 }
 
-// strandedQuestions terminates the questions a departing lane will never answer.
+// strandedQuestions terminates the questions a departing agent will never answer.
 //
 // The sweep already decides this correctly, and has a branch and a sentence
-// written for exactly this case. "recipient closed its lane before answering
+// written for exactly this case. "recipient closed its agent before answering
 // … nobody will answer this now". It just does not run until the DEADLINE. So
 // an agent that asked a question with a ten-minute deadline waited the whole
 // ten minutes for an answer that became impossible in the first second, while
-// the board knew: a closed lane cannot resume (resume_lane returns
+// the board knew: a closed agent cannot resume (resume returns
 // E_LANE_CLOSED) and Gone() is documented as "never comes back".
 //
 // Ten minutes of an agent blocking on a certainty is the cost, and it is paid
 // by the one participant who did nothing wrong.
-func (s *State) strandedQuestions(gone *Lane, now time.Time) []Event {
+func (s *State) strandedQuestions(gone *Agent, now time.Time) []Event {
 	var evs []Event
 	// Sorted: these events go into the ledger in this order.
 	for _, serial := range sortedKeys(s.Messages) {
@@ -986,19 +986,19 @@ func (s *State) strandedQuestions(gone *Lane, now time.Time) []Event {
 			continue
 		}
 		m.State = MsgStateExpiredDead
-		m.ExpireDetail = "recipient closed its lane before answering; it finished deliberately " +
+		m.ExpireDetail = "recipient closed its agent before answering; it finished deliberately " +
 			"and released its claims, so this is not a crash and there is nothing of its to " +
 			"verify: nobody will answer this now"
 		m.TerminalAt = now
 		evs = append(evs, Event{
-			Type: "message." + m.State, Lane: m.To, To: m.From,
+			Type: "message." + m.State, Agent: m.To, To: m.From,
 			Data: map[string]any{"msg_serial": m.Serial, "detail": m.ExpireDetail},
 		})
 	}
 	return evs
 }
 
-func (s *State) applySetSlot(l *Lane, op *Op) (Result, []Event, error) {
+func (s *State) applySetSlot(l *Agent, op *Op) (Result, []Event, error) {
 	if l.AckedSerial == 0 {
 		return nil, nil, ErrMustAck
 	}
@@ -1011,7 +1011,7 @@ func (s *State) applySetSlot(l *Lane, op *Op) (Result, []Event, error) {
 		// a middle slot was cleared: with s1,s2,s3 and s2 gone, len is 2 and the
 		// next id is "s3", which already exists, so the new declaration
 		// silently overwrote the old one and the limit check waved it through
-		// because the id was not new. For a lane that has never cleared a slot
+		// because the id was not new. For an agent that has never cleared a slot
 		// this generates exactly the ids it always did.
 		for n := len(l.Slots) + 1; ; n++ {
 			id = "s" + itoa(n)
@@ -1021,14 +1021,14 @@ func (s *State) applySetSlot(l *Lane, op *Op) (Result, []Event, error) {
 		}
 	}
 	if _, exists := l.Slots[id]; !exists && len(l.Slots) >= s.Limits.MaxSlotsPerLane {
-		return nil, nil, errf("E_SLOT_LIMIT", "clear_slot an old slot first", "lane has %d slots (max)", len(l.Slots))
+		return nil, nil, errf("E_SLOT_LIMIT", "undeclare an old slot first", "agent has %d slots (max)", len(l.Slots))
 	}
 	if len(op.Refs) > s.Limits.MaxDirs {
 		return nil, nil, errTooLarge("refs", s.Limits.MaxDirs)
 	}
 	// Declaration-time overlap detection (the duplicate-objective fix). Purely advisory: the
 	// slot is always set (we never block someone from declaring work) but
-	// BOTH sides learn immediately that two lanes intend the same scope, which
+	// BOTH sides learn immediately that two agents intend the same scope, which
 	// is the earliest honest moment to catch duplicated effort.
 	overlaps := s.overlapsFor(op.Refs, op.Dirs, l.ID)
 	l.Slots[id] = Slot{
@@ -1040,12 +1040,12 @@ func (s *State) applySetSlot(l *Lane, op *Op) (Result, []Event, error) {
 		UpdatedSerial: s.Serial + 1,
 	}
 
-	evs := []Event{{Type: "slot.set", Lane: l.ID, Data: map[string]any{
+	evs := []Event{{Type: "slot.set", Agent: l.ID, Data: map[string]any{
 		"slot_id": id, "text": op.Text, "dirs": op.Dirs, "refs": op.Refs,
 		"overlaps": len(overlaps),
 	}}}
-	// An agent updating its focus naturally calls set_slot again with new text
-	// and no slot_id, which MINTS A SLOT every time, so a lane that is simply
+	// An agent updating its focus naturally calls declare again with new text
+	// and no slot_id, which MINTS A SLOT every time, so an agent that is simply
 	// working stacks declarations until it hits the cap and starts erroring. The
 	// tool cannot know whether a second slot was intended, so it does not
 	// guess: it says what it did and what to pass to update instead. Told, not
@@ -1059,51 +1059,51 @@ func (s *State) applySetSlot(l *Lane, op *Op) (Result, []Event, error) {
 		if o.Strong() {
 			strong++
 		}
-		if notified[o.Lane] {
+		if notified[o.Agent] {
 			continue
 		}
-		notified[o.Lane] = true
+		notified[o.Agent] = true
 		evs = append(evs, Event{
-			Type: "slot.overlap_noted", Lane: l.ID, To: o.Lane,
+			Type: "slot.overlap_noted", Agent: l.ID, To: o.Agent,
 			Data: map[string]any{"slot_id": id, "text": op.Text, "signal": o.Signal},
 		})
 	}
 	res := Result{"ok": true, "slot_id": id}
 	if grew {
-		res["note"] = "this ADDED a slot (" + id + "); your lane now declares " +
+		res["note"] = "this ADDED a slot (" + id + "); your agent now declares " +
 			itoa(len(l.Slots)) + ". If you meant to change what you are doing rather than " +
-			"take on something additional, pass slot_id=\"" + id + "\" next time, or clear_slot the " +
-			"ones you have finished: a lane declaring five things is read as doing five things."
+			"take on something additional, pass slot_id=\"" + id + "\" next time, or undeclare the " +
+			"ones you have finished: an agent declaring five things is read as doing five things."
 	}
 	if len(overlaps) > 0 {
 		res["overlaps"] = overlaps
 	}
 	if strong > 0 {
-		res["warning"] = "another lane is already pursuing the same objective: you are probably " +
+		res["warning"] = "another agent is already pursuing the same objective: you are probably " +
 			"about to duplicate its work. Read its slot, then message it (question/handoff) to " +
 			"split or stand down. This is the measured failure; do not just proceed."
 	} else if len(overlaps) > 0 {
-		res["note"] = "other lanes are active on these paths. Concurrent edits are normal: this is " +
+		res["note"] = "other agents are active on these paths. Concurrent edits are normal: this is " +
 			"awareness, not a conflict. Coordinate only if your changes are semantically incompatible."
 	}
 	return res, evs, nil
 }
 
-func (s *State) applyClearSlot(l *Lane, op *Op) (Result, []Event, error) {
+func (s *State) applyClearSlot(l *Agent, op *Op) (Result, []Event, error) {
 	if _, ok := l.Slots[op.SlotID]; !ok {
 		return nil, nil, errf("E_NO_SLOT", "list your slots via the board", "no slot %q", op.SlotID)
 	}
 	delete(l.Slots, op.SlotID)
 	return Result{"ok": true},
-		[]Event{{Type: "slot.cleared", Lane: l.ID, Data: map[string]any{"slot_id": op.SlotID}}}, nil
+		[]Event{{Type: "slot.cleared", Agent: l.ID, Data: map[string]any{"slot_id": op.SlotID}}}, nil
 }
 
-// nearestLanesHint lists live lanes, closest-looking first, so a misaddressed
+// nearestLanesHint lists live agents, closest-looking first, so a misaddressed
 // message can be fixed in one step instead of a board round trip.
 func nearestLanesHint(s *State, want string) string {
 	var near, live []string
 	w := strings.ToLower(want)
-	for id, l := range s.Lanes {
+	for id, l := range s.Agents {
 		if l.Status != StatusActive && !l.Sleeping() {
 			continue
 		}
@@ -1118,39 +1118,39 @@ func nearestLanesHint(s *State, want string) string {
 	sort.Strings(near)
 	sort.Strings(live)
 	if len(near) > 0 {
-		return "no lane " + want + ": did you mean " + strings.Join(near, ", ") + "?"
+		return "no agent " + want + ": did you mean " + strings.Join(near, ", ") + "?"
 	}
 	if len(live) == 0 {
-		return "no lane " + want + ", and no other lane is live either"
+		return "no agent " + want + ", and no other agent is live either"
 	}
 	if len(live) > 8 {
 		live = live[:8]
 	}
-	return "no lane " + want + ": live lanes are: " + strings.Join(live, ", ") +
+	return "no agent " + want + ": live agents are: " + strings.Join(live, ", ") +
 		operatorFallback(s)
 }
 
-// operatorFallback names the human's own lane, because it is the one address
+// operatorFallback names the human's own agent, because it is the one address
 // that is always there.
 //
 // An agent that finishes work and wants to report it can find the recipient
-// gone: lanes are reaped, and the agent that asked for the work may be the one
-// that ended. A reviewer hit exactly this: its report was addressed to a lane
-// that had been reaped, the refusal listed live lanes, and it concluded there was
+// gone: agents are reaped, and the agent that asked for the work may be the one
+// that ended. A reviewer hit exactly this: its report was addressed to an agent
+// that had been reaped, the refusal listed live agents, and it concluded there was
 // no durable delivery path at all. It then tried broadcast, which is
 // coordinator-only and correctly refused, and the review survived only in its own
 // stdout.
 //
-// There WAS a path and nothing pointed at it. The operator's lane is persistent,
+// There WAS a path and nothing pointed at it. The operator's agent is persistent,
 // exists as soon as anyone opens the board, and belongs to the one participant
-// who always wants to know. It was already in that list of live lanes, spelled
+// who always wants to know. It was already in that list of live agents, spelled
 // like any other agent, with nothing to say it was the person.
 //
-// Named only when it is not the lane being looked for, and only when it exists,
+// Named only when it is not the agent being looked for, and only when it exists,
 // on a board no human has opened there is nothing to offer, and inventing one
 // would be worse than the silence.
 func operatorFallback(s *State) string {
-	for id, l := range s.Lanes {
+	for id, l := range s.Agents {
 		if l.Agent == nil || l.Agent.Surface != "web" {
 			continue
 		}
@@ -1158,20 +1158,20 @@ func operatorFallback(s *State) string {
 			continue
 		}
 		return ". If this was a report for a person rather than an agent, the operator " +
-			"is on this board as " + id + ": that lane is persistent and outlives the " +
+			"is on this board as " + id + ": that agent is persistent and outlives the " +
 			"agents, so it is the address that keeps working when the one you wanted is gone"
 	}
 	return ""
 }
 
-func (s *State) applySend(l *Lane, op *Op, now time.Time) (Result, []Event, error) {
-	to, ok := s.Lanes[op.To]
+func (s *State) applySend(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+	to, ok := s.Agents[op.To]
 	if !ok || to.Status == StatusClosed || to.Status == StatusArchived {
 		// Name the candidates. "Check the board" is advice the agent has to act
 		// on with another call, and it already told us who it meant: an agent
 		// that addressed "claude" and was told to go looking gave up instead,
-		// rather than guessing which of the live lanes was the right one.
-		return nil, nil, errf("E_NO_LANE", nearestLanesHint(s, op.To), "no live lane %q", op.To)
+		// rather than guessing which of the live agents was the right one.
+		return nil, nil, errf("E_NO_LANE", nearestLanesHint(s, op.To), "no live agent %q", op.To)
 	}
 	switch op.MsgType {
 	case MsgNotify, MsgQuestion, MsgRequest, MsgHandoff:
@@ -1187,7 +1187,7 @@ func (s *State) applySend(l *Lane, op *Op, now time.Time) (Result, []Event, erro
 	}
 	op.Attachments = atts
 	// Identified-op dedup (SPEC §4): digest-bound, effectively-once within
-	// the lesser of the window and the per-lane cap.
+	// the lesser of the window and the per-agent cap.
 	digest := sendDigest(op)
 	if op.OpID != "" {
 		if rec, exists := s.Dedup[dedupKey(l.ID, op.OpID)]; exists {
@@ -1213,7 +1213,7 @@ func (s *State) applySend(l *Lane, op *Op, now time.Time) (Result, []Event, erro
 }
 
 func (s *State) finishSend(
-	l, to *Lane, op *Op, now time.Time, digest string, displaced *Message,
+	l, to *Agent, op *Op, now time.Time, digest string, displaced *Message,
 ) (Result, []Event, error) {
 	expecting := op.MsgType == MsgQuestion || op.MsgType == MsgRequest
 	var deadline time.Time
@@ -1251,18 +1251,18 @@ func (s *State) finishSend(
 		SentAt: now,
 	}
 	s.Messages[serial] = m
-	evs := []Event{{Type: "message.sent", Lane: l.ID, To: to.ID, Data: map[string]any{
+	evs := []Event{{Type: "message.sent", Agent: l.ID, To: to.ID, Data: map[string]any{
 		"msg_type": op.MsgType, "from": l.ID, "attachments": len(op.Attachments),
 	}}}
 	if displaced != nil {
 		evs = append(evs, Event{
-			Type: "message.displaced", Lane: to.ID, To: displaced.From,
+			Type: "message.displaced", Agent: to.ID, To: displaced.From,
 			Data: map[string]any{"msg_serial": displaced.Serial},
 		})
 	}
 	if op.OpID != "" {
 		s.Dedup[dedupKey(l.ID, op.OpID)] = &DedupRec{
-			Lane: l.ID, ID: op.OpID, Digest: digest, Serial: serial,
+			Agent: l.ID, ID: op.OpID, Digest: digest, Serial: serial,
 			Activation: l.Activation, At: now,
 		}
 	}
@@ -1271,16 +1271,16 @@ func (s *State) finishSend(
 		res["deadline"] = deadline
 	}
 	if to.Sleeping() {
-		// A sleeping lane that has been SUPERSEDED will never wake, so the
+		// A sleeping agent that has been SUPERSEDED will never wake, so the
 		// reassurance below is false for it and has to be said differently.
 		//
 		// This is the case that lost two full bug reports on a live fleet. A
-		// restart forked every lane; agents addressed mail to the names they knew;
-		// those lanes were dormant tombstones whose occupants were now alive under
-		// `-2` ids. Lanes accepted the mail and told the senders it would be seen
+		// restart forked every agent; agents addressed mail to the names they knew;
+		// those agents were dormant tombstones whose occupants were now alive under
+		// `-2` ids. Dibs accepted the mail and told the senders it would be seen
 		// "when it next wakes". Nobody was coming. The failure was invisible from
 		// both ends at once: the sender read success, the intended recipient saw
-		// nothing, and it took a third channel to notice.
+		// nothing, and it took a third space to notice.
 		if live := s.liveSiblingOf(to); live != nil {
 			res["note"] = "delivered to " + to.ID + ", which is " + string(to.Status) +
 				", but " + live.ID + " is LIVE under the same name and is almost certainly who " +
@@ -1298,15 +1298,15 @@ func (s *State) finishSend(
 	return res, evs, nil
 }
 
-// liveSiblingOf finds an active lane sharing this one's name.
+// liveSiblingOf finds an active agent sharing this one's name.
 //
-// Deliberately NOT siblingByName, which ranks by how much mail a lane holds
+// Deliberately NOT siblingByName, which ranks by how much mail an agent holds
 // because it answers a different question. "which mailbox can the caller not
 // read". Here the only thing that matters is which sibling is ALIVE, and
-// borrowing that ranking would quietly skip a live lane that happened to hold
+// borrowing that ranking would quietly skip a live agent that happened to hold
 // less mail than a dead one.
-func (s *State) liveSiblingOf(to *Lane) *Lane {
-	for _, l := range s.Lanes {
+func (s *State) liveSiblingOf(to *Agent) *Agent {
+	for _, l := range s.Agents {
 		if l.ID != to.ID && l.Name == to.Name && l.Status == StatusActive {
 			return l
 		}
@@ -1314,10 +1314,10 @@ func (s *State) liveSiblingOf(to *Lane) *Lane {
 	return nil
 }
 
-func (s *State) oldestDisplaceableNotify(lane string) *Message {
+func (s *State) oldestDisplaceableNotify(agent string) *Message {
 	var oldest *Message
 	for _, m := range s.Messages {
-		if m.To == lane && m.Type == MsgNotify &&
+		if m.To == agent && m.Type == MsgNotify &&
 			(m.State == MsgStatePending || m.State == MsgStateDelivered) {
 			if oldest == nil || m.Serial < oldest.Serial {
 				oldest = m
@@ -1327,7 +1327,7 @@ func (s *State) oldestDisplaceableNotify(lane string) *Message {
 	return oldest
 }
 
-func (s *State) applyRespond(l *Lane, op *Op, now time.Time) (Result, []Event, error) {
+func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	m, ok := s.Messages[op.MsgSerial]
 	if !ok || m.To != l.ID {
 		return nil, nil, errf("E_NO_MESSAGE", "check your inbox", "no message %d addressed to you", op.MsgSerial)
@@ -1355,7 +1355,7 @@ func (s *State) applyRespond(l *Lane, op *Op, now time.Time) (Result, []Event, e
 	case "decline":
 		if !m.Expecting() {
 			return nil, nil, errf(
-				"E_BAD_DISPOSITION", "notify/handoff take ack_message, not decline", "cannot decline a %s", m.Type,
+				"E_BAD_DISPOSITION", "notify/handoff take ack, not decline", "cannot decline a %s", m.Type,
 			)
 		}
 		st = MsgStateDeclined
@@ -1372,21 +1372,21 @@ func (s *State) applyRespond(l *Lane, op *Op, now time.Time) (Result, []Event, e
 	res := Result{"ok": true, "state": st}
 	// Say when the answer has nowhere to go.
 	//
-	// An agent that asked a question can close its lane while the answer is
-	// being composed, and a closed lane never comes back. The response is
-	// recorded, the event is addressed to a lane that will never read it, and
+	// An agent that asked a question can close its agent while the answer is
+	// being composed, and a closed agent never comes back. The response is
+	// recorded, the event is addressed to an agent that will never read it, and
 	// this returned a bare {"ok": true}: a confident, specific and false
 	// statement of the kind that costs the next agent an hour. It cannot be
 	// prevented (the asker left mid-thought, which is allowed) but it can be
 	// reported, so the responder stops waiting for a follow-up and does not
 	// treat the exchange as closed by agreement.
-	if asker := s.Lanes[m.From]; asker.Gone() {
+	if asker := s.Agents[m.From]; asker.Gone() {
 		res["delivered"] = false
-		res["note"] = "recorded, but " + m.From + " closed its lane before this arrived. " +
+		res["note"] = "recorded, but " + m.From + " closed its agent before this arrived. " +
 			"nobody will read this answer, and no follow-up is coming"
 	}
 	return res,
-		[]Event{{Type: "message." + st, Lane: l.ID, To: m.From, Data: map[string]any{
+		[]Event{{Type: "message." + st, Agent: l.ID, To: m.From, Data: map[string]any{
 			"msg_serial": m.Serial,
 		}}}, nil
 }
@@ -1394,7 +1394,7 @@ func (s *State) applyRespond(l *Lane, op *Op, now time.Time) (Result, []Event, e
 // applyAckMessage: pending/delivered → acked (terminal + consumed for
 // notify/handoff); on already-terminal mail it is the consumption transition
 // (SPEC §8).
-func (s *State) applyAckMessage(l *Lane, op *Op, now time.Time) (Result, []Event, error) {
+func (s *State) applyAckMessage(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	m, ok := s.Messages[op.MsgSerial]
 	if !ok || m.To != l.ID {
 		return nil, nil, errf("E_NO_MESSAGE", "", "no message %d addressed to you", op.MsgSerial)
@@ -1406,7 +1406,7 @@ func (s *State) applyAckMessage(l *Lane, op *Op, now time.Time) (Result, []Event
 		m.Consumed = true
 		return Result{"ok": true, "state": m.State, "consumed": true},
 			[]Event{{
-				Type: "message.consumed", Lane: l.ID, To: m.From,
+				Type: "message.consumed", Agent: l.ID, To: m.From,
 				Data: map[string]any{"msg_serial": m.Serial},
 			}}, nil
 	}
@@ -1417,10 +1417,10 @@ func (s *State) applyAckMessage(l *Lane, op *Op, now time.Time) (Result, []Event
 		m.TerminalAt = now
 	}
 	return Result{"ok": true, "state": MsgStateAcked},
-		[]Event{{Type: "message.acked", Lane: l.ID, To: m.From, Data: map[string]any{"msg_serial": m.Serial}}}, nil
+		[]Event{{Type: "message.acked", Agent: l.ID, To: m.From, Data: map[string]any{"msg_serial": m.Serial}}}, nil
 }
 
-func (s *State) applyClaim(l *Lane, op *Op, now time.Time) (Result, []Event, error) {
+func (s *State) applyClaim(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	if l.AckedSerial == 0 {
 		return nil, nil, ErrMustAck
 	}
@@ -1447,45 +1447,45 @@ func (s *State) applyClaim(l *Lane, op *Op, now time.Time) (Result, []Event, err
 	}
 	ov := make([]map[string]any, 0, len(overlaps))
 	for _, c := range overlaps {
-		ov = append(ov, map[string]any{"lane": c.Lane, "path": c.Path, "mode": c.Mode, "note": c.Note})
+		ov = append(ov, map[string]any{"agent": c.Agent, "path": c.Path, "mode": c.Mode, "note": c.Note})
 	}
 	if !granted {
 		return Result{"granted": false, "overlaps": ov},
-			[]Event{{Type: "claim.conflict_noted", Lane: l.ID, Data: map[string]any{"path": path, "mode": op.Mode}}}, nil
+			[]Event{{Type: "claim.conflict_noted", Agent: l.ID, Data: map[string]any{"path": path, "mode": op.Mode}}}, nil
 	}
 	for _, c := range s.Claims {
-		if c.Lane == l.ID && c.Path == path { // renewal (ledgered: drives expiry)
+		if c.Agent == l.ID && c.Path == path { // renewal (ledgered: drives expiry)
 			c.Renewed, c.Mode, c.Note = now, op.Mode, op.Note
 			return Result{"granted": true, "renewed": true, "overlaps": ov},
-				[]Event{{Type: "claim.renewed", Lane: l.ID, Data: map[string]any{"path": path, "mode": op.Mode}}}, nil
+				[]Event{{Type: "claim.renewed", Agent: l.ID, Data: map[string]any{"path": path, "mode": op.Mode}}}, nil
 		}
 	}
 	mine, total := 0, len(s.Claims)
 	for _, c := range s.Claims {
-		if c.Lane == l.ID {
+		if c.Agent == l.ID {
 			mine++
 		}
 	}
 	if mine >= s.Limits.MaxClaimsPerLane || total >= s.Limits.MaxClaimsGlobal {
-		return nil, nil, errf("E_CLAIM_LIMIT", "release claims you no longer need", "claim limit reached (%d/lane, %d "+
+		return nil, nil, errf("E_CLAIM_LIMIT", "release claims you no longer need", "claim limit reached (%d/agent, %d "+
 			"global)", s.Limits.MaxClaimsPerLane, s.Limits.MaxClaimsGlobal)
 	}
-	cl := &Claim{Lane: l.ID, Path: path, Mode: op.Mode, Note: op.Note, Acquired: now, Renewed: now}
+	cl := &Claim{Agent: l.ID, Path: path, Mode: op.Mode, Note: op.Note, Acquired: now, Renewed: now}
 	s.Claims = append(s.Claims, cl)
 	cl.AcquiredSerial = s.Serial + 1
 	return Result{"granted": true, "overlaps": ov},
-		[]Event{{Type: "claim.acquired", Lane: l.ID, Data: map[string]any{
+		[]Event{{Type: "claim.acquired", Agent: l.ID, Data: map[string]any{
 			"path": path, "mode": op.Mode, "note": op.Note,
 		}}}, nil
 }
 
-func (s *State) applyRelease(l *Lane, op *Op) (Result, []Event, error) {
+func (s *State) applyRelease(l *Agent, op *Op) (Result, []Event, error) {
 	path := cleanPath(op.Path)
 	for i, c := range s.Claims {
-		if c.Lane == l.ID && c.Path == path {
+		if c.Agent == l.ID && c.Path == path {
 			s.Claims = append(s.Claims[:i], s.Claims[i+1:]...)
 			return Result{"ok": true},
-				[]Event{{Type: "claim.released", Lane: l.ID, Data: map[string]any{"path": path}}}, nil
+				[]Event{{Type: "claim.released", Agent: l.ID, Data: map[string]any{"path": path}}}, nil
 		}
 	}
 	return nil, nil, errf("E_NO_CLAIM", "list claims via the board", "no claim on %q", path)
@@ -1505,7 +1505,7 @@ func (s *State) applyMarkDelivered(op *Op, now time.Time) (Result, []Event, erro
 		// identically rather than stamping the moment of replay.
 		m.DeliveredTime = now
 		evs = append(evs, Event{
-			Type: "message.delivered", Lane: m.To, To: m.From,
+			Type: "message.delivered", Agent: m.To, To: m.From,
 			Data: map[string]any{"msg_serial": m.Serial},
 		})
 	}

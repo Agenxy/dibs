@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // An agent that missed events must be TOLD, not quietly resumed from wherever
@@ -56,7 +56,7 @@ func TestAStaleCursorIsRefusedOnBothReadPaths(t *testing.T) {
 		t.Fatalf("await_events must name the failure, got: %v", err)
 	}
 
-	// And the error has to be recoverable rather than terminal: ack_board is the
+	// And the error has to be recoverable rather than terminal: check_in is the
 	// documented checkpoint, and the serial it returns must be usable.
 	ack, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok})
 	if err != nil {
@@ -64,10 +64,10 @@ func TestAStaleCursorIsRefusedOnBothReadPaths(t *testing.T) {
 	}
 	at, _ := ack["serial"].(uint64)
 	if at == 0 {
-		t.Fatalf("ack_board must hand back a position to resume from, got %v", ack["serial"])
+		t.Fatalf("check_in must hand back a position to resume from, got %v", ack["serial"])
 	}
 	if _, err := e.EventsSince(ctx, tok, at, false); err != nil {
-		t.Fatalf("the serial ack_board returned must be accepted, got: %v", err)
+		t.Fatalf("the serial check_in returned must be accepted, got: %v", err)
 	}
 }
 

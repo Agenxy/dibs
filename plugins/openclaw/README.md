@@ -1,4 +1,4 @@
-# Lanes for OpenClaw
+# Dibs for OpenClaw
 
 **Deferred.** Not surveyed, not cloned, not measured.
 
@@ -10,8 +10,8 @@ worse than an empty page.
 When it is picked up, the order that worked elsewhere:
 
 1. Clone the source; never infer capabilities from a shipped binary's strings
-   (that mistake is recorded in [WAKE-MECHANISMS.md](https://github.com/agenxy/lanes/blob/main/WAKE-MECHANISMS.md) §3).
-2. Probe a live handshake with `LANES_LOG_RPC=1`: protocol version, declared
+   (that mistake is recorded in [WAKE-MECHANISMS.md](https://github.com/agenxy/dibs/blob/main/WAKE-MECHANISMS.md) §3).
+2. Probe a live handshake with `DIBS_LOG_RPC=1`: protocol version, declared
    capabilities, which methods it actually sends.
 3. If it is an MCP client, a config entry is the whole integration.
 4. Only then look for a wake path, and only accept one that needs no subprocess.

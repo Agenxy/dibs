@@ -35,12 +35,12 @@ function check(name: string, cond: boolean, detail = "") {
   else { failures++; console.log(`  [31m✗[0m ${name}${detail ? ". " + detail : ""}`) }
 }
 
-const dir = mkdtempSync(join(tmpdir(), "lanes-web-e2e-"))
+const dir = mkdtempSync(join(tmpdir(), "agents-web-e2e-"))
 const home = process.env.HOME
-const lanesd = process.env.LANESD ?? `${home}/.local/bin/lanesd`
-const lanes = process.env.LANES ?? `${home}/.local/bin/lanes`
+const dibd = process.env.DIBD ?? `${home}/.local/bin/dibd`
+const agents = process.env.DIBS ?? `${home}/.local/bin/dibs`
 const daemon = Bun.spawn({
-  cmd: [lanesd, "-dir", dir, "-addr", ADDR],
+  cmd: [dibd, "-dir", dir, "-addr", ADDR],
   stdout: "ignore", stderr: "ignore",
 })
 let browser: Browser | undefined
@@ -51,14 +51,14 @@ const cleanup = () => {
 }
 process.on("exit", cleanup)
 
-// LANES_ADMIN=1 is the documented escape from the interactive-terminal gate;
+// DIBS_ADMIN=1 is the documented escape from the interactive-terminal gate;
 // the password itself is piped, because readPassword reads stdin byte by byte
 // rather than requiring a tty.
 const cli = (args: string[], input: string) => {
   const r = Bun.spawnSync({
-    cmd: [lanes, ...args],
+    cmd: [agents, ...args],
     stdin: new TextEncoder().encode(input),
-    env: { ...process.env, LANES_DIR: dir, LANES_ADDR: ADDR, LANES_ADMIN: "1" },
+    env: { ...process.env, DIBS_DIR: dir, DIBS_ADDR: ADDR, DIBS_ADMIN: "1" },
   })
   return r.stdout.toString() + r.stderr.toString()
 }
@@ -68,7 +68,7 @@ let rpcId = 0
 const tool = async (name: string, args: unknown) => {
   const res = await fetch(`http://${ADDR}/mcp`, {
     method: "POST",
-    headers: { "content-type": "application/json", "X-Lanes-Local": secret },
+    headers: { "content-type": "application/json", "X-Dibs-Local": secret },
     body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call",
                            params: { name, arguments: args } }),
   })
@@ -78,21 +78,21 @@ const tool = async (name: string, args: unknown) => {
 }
 
 /**
- * show_board is the one tool whose `content` is a prose summary for the model
+ * board is the one tool whose `content` is a prose summary for the model
  * and whose panel data lives in tool-result metadata: the MCP Apps private
  * backchannel. Parsing content[0].text as JSON fails on
- * "Lanes board: 3 lane(s)…".
+ * "Dibs board: 3 agent(s)…".
  */
 const boardOf = async (token: string) => {
   const res = await fetch(`http://${ADDR}/mcp`, {
     method: "POST",
-    headers: { "content-type": "application/json", "X-Lanes-Local": secret },
+    headers: { "content-type": "application/json", "X-Dibs-Local": secret },
     body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call",
-                           params: { name: "show_board", arguments: { token } } }),
+                           params: { name: "board", arguments: { token } } }),
   })
   const body = await res.json()
-  if (body.error) throw new Error("show_board: " + JSON.stringify(body.error))
-  return body.result?._meta?.["com.lanes/panel"] ?? {}
+  if (body.error) throw new Error("board: " + JSON.stringify(body.error))
+  return body.result?._meta?.["com.dibs/panel"] ?? {}
 }
 
 /**
@@ -133,12 +133,12 @@ try {
   secret = (await Bun.file(join(dir, "local.secret")).text()).trim()
 
   // ── seed something worth drawing ─────────────────────────────────────────
-  const a = await tool("register_lane", { name: "builder", description: "on the web board", session_id: "w1" })
-  await tool("ack_board", { token: a.token })
-  await tool("set_slot", { token: a.token, text: "rendering the web board", dirs: ["internal/web"] })
-  const b = await tool("register_lane", { name: "checker", description: "peer", session_id: "w2" })
-  await tool("ack_board", { token: b.token })
-  await tool("send_message", { token: b.token, to: a.lane_id, type: "question",
+  const a = await tool("register", { name: "builder", description: "on the web board", session_id: "w1" })
+  await tool("check_in", { token: a.token })
+  await tool("declare", { token: a.token, text: "rendering the web board", dirs: ["internal/web"] })
+  const b = await tool("register", { name: "checker", description: "peer", session_id: "w2" })
+  await tool("check_in", { token: b.token })
+  await tool("send", { token: b.token, to: a.lane_id, type: "question",
     body: "Does the web board render?", op_id: "w-q", deadline_s: 600 })
   // A message WITH an attachment, because the server has always carried them
   // and neither human surface drew them: a message saying "see the attached
@@ -147,36 +147,36 @@ try {
   const blob = await tool("put_blob", { token: b.token,
     data: Buffer.from("evidence for the web board").toString("base64"),
     mime: "text/plain" })
-  await tool("send_message", { token: b.token, to: a.lane_id, type: "notify",
+  await tool("send", { token: b.token, to: a.lane_id, type: "notify",
     body: "Evidence attached.", op_id: "w-att",
     attachments: [{ blob: blob.blob ?? blob.id }] })
-  // Two channels, because one cannot hold every state worth drawing: an
-  // exclusive lane QUEUES a second agent rather than admitting it, so a lane
-  // with a scored member and a lane with a queue have to be different lanes.
-  await tool("lane_open", { token: a.token, lane: "web-render", topic: "drawing the operator board" })
-  await tool("lane_join", { token: b.token, lane: "web-render", score: 0.71, threshold: 0.33,
+  // Two spaces, because one cannot hold every state worth drawing: an
+  // exclusive agent QUEUES a second agent rather than admitting it, so an agent
+  // with a scored member and an agent with a queue have to be different agents.
+  await tool("open_space", { token: a.token, agent: "web-render", topic: "drawing the operator board" })
+  await tool("join_space", { token: b.token, agent: "web-render", score: 0.71, threshold: 0.33,
     scorer_id: "lexical+cochange", evidence: ["internal/web/web.go"], auto: true })
-  await tool("lane_open", { token: a.token, lane: "web-locked", topic: "single-writer work", exclusive: true })
-  await tool("lane_join", { token: b.token, lane: "web-locked", score: 0.42 })
+  await tool("open_space", { token: a.token, agent: "web-locked", topic: "single-writer work", exclusive: true })
+  await tool("join_space", { token: b.token, agent: "web-locked", score: 0.42 })
   // A subagent and a coordinator, so the board has the two facts that change
   // how a row should be read.
-  const sub = await tool("register_lane", { name: "helper", session_id: "w3", parent: a.lane_id })
-  await tool("ack_board", { token: sub.token })
+  const sub = await tool("register", { name: "helper", session_id: "w3", parent: a.lane_id })
+  await tool("check_in", { token: sub.token })
 
   // An agent that CRASHED, so the board has to draw the state a fleet actually
   // spends its time in. The board used to render this identically to a working
   // agent. "out of touch" beside a last-contact time of "now", which reads as
-  // a broken board rather than a dead agent, and its lane listed it as a plain
-  // member, so "who is on this lane" was answered wrongly.
+  // a broken board rather than a dead agent, and its agent listed it as a plain
+  // member, so "who is on this agent" was answered wrongly.
   //
   // A real death: a process that existed and exited, detected by the sweep's
   // pid probe rather than asserted here.
   const doomed = Bun.spawn({ cmd: ["sleep", "300"], stdout: "ignore", stderr: "ignore" })
-  const ghost = await tool("register_lane", {
+  const ghost = await tool("register", {
     name: "ghost", description: "was refactoring auth", session_id: "w4", pid: doomed.pid,
   })
-  await tool("ack_board", { token: ghost.token })
-  await tool("lane_join", { token: ghost.token, lane: "web-render", score: 0.55 })
+  await tool("check_in", { token: ghost.token })
+  await tool("join_space", { token: ghost.token, agent: "web-render", score: 0.55 })
   doomed.kill()
   await doomed.exited
 
@@ -192,7 +192,7 @@ try {
 
   const linkOut = cli(["web"], `${PASSWORD}\n`)
   const link = (linkOut.match(/http:\/\/\S+/) || [])[0]
-  check("lanes web mints a link", !!link, linkOut.split("\n")[0])
+  check("dibs web mints a link", !!link, linkOut.split("\n")[0])
   check("the secret is not in the URL", !!link && !link.includes(PASSWORD))
 
   // The link is single-use and trades itself for a session cookie via a 303.
@@ -211,7 +211,7 @@ try {
   // an idle board a client's Last-Event-ID never advanced and on a busy one it
   // was reset backwards every 30 seconds. The board itself was never wrong,
   // every frame is a full snapshot, but the id was useless as the one thing it
-  // is for, and a reconnect from a stale point replays into a 256-slot channel
+  // is for, and a reconnect from a stale point replays into a 256-slot space
   // whose overflow is dropped without a word.
   {
     const firstFrame = async (headers: Record<string, string>) => {
@@ -236,18 +236,18 @@ try {
       `id=${f1.id} board.serial=${f1.payload?.board?.serial}`)
 
     // Something happens while the client is away, then it resumes from that id.
-    await tool("set_slot", { token: a.token, text: "changed while disconnected" })
+    await tool("declare", { token: a.token, text: "changed while disconnected" })
     const f2 = await firstFrame({ cookie, "Last-Event-ID": String(f1.id) })
     check("resuming from that id advances rather than repeating it",
       f2.id > f1.id, `${f1.id} -> ${f2.id}`)
-    const slots = (f2.payload?.board?.lanes ?? []).flatMap((l: any) => l.slots ?? [])
+    const slots = (f2.payload?.board?.agents ?? []).flatMap((l: any) => l.slots ?? [])
     check("and the resumed snapshot already contains what was missed",
       slots.some((sl: any) => (sl.text ?? "").includes("changed while disconnected")),
       JSON.stringify(slots).slice(0, 160))
   }
   const html = await served.text()
 
-  check("board renders the lanes", html.includes("builder") && html.includes("checker"))
+  check("board renders the agents", html.includes("builder") && html.includes("checker"))
   check("board renders the declared work", html.includes("rendering the web board"))
   check("board renders the message", html.includes("Does the web board render?"))
 
@@ -272,8 +272,8 @@ try {
   // the source, which is a much weaker claim than the board working. Since the
   // web board now renders client-side with the shared components, only a real
   // browser can tell the difference.
-  const channel = process.env.PW_CHANNEL === undefined ? "chrome" : process.env.PW_CHANNEL
-  browser = await chromium.launch({ ...(channel ? { channel } : {}), headless: true })
+  const space = process.env.PW_CHANNEL === undefined ? "chrome" : process.env.PW_CHANNEL
+  browser = await chromium.launch({ ...(space ? { space } : {}), headless: true })
   const ctx = await browser.newContext()
   const [name, value] = cookie.split("=")
   await ctx.addCookies([{ name, value, domain: "127.0.0.1", path: "/" }])
@@ -291,7 +291,7 @@ try {
 
   await page.locator(".entry").first().waitFor({ timeout: 10000 })
   const rendered = await page.locator(".entry .name").allTextContents()
-  check("the board renders lanes in a real browser",
+  check("the board renders agents in a real browser",
     rendered.includes("builder") && rendered.includes("checker"), rendered.join(","))
   check("it uses the shared roster grouping", (await page.locator(".band").count()) >= 1)
   // The design system is applied: in WHICHEVER theme the system asked for.
@@ -390,7 +390,7 @@ try {
     !!texture && texture.opacity <= 0.2 && texture.blend !== "normal",
     JSON.stringify(texture))
 
-  // The cadence trace: how much a lane actually did, minute by minute.
+  // The cadence trace: how much an agent actually did, minute by minute.
   //
   // The board could always say what an agent IS: a state derived from a
   // timeout, and that cannot tell a healthy agent between turns from one that
@@ -410,9 +410,9 @@ try {
       box: el.getBoundingClientRect().height,
     }
   })
-  check("a lane carries a cadence trace", !!cadence && cadence.bins > 8, JSON.stringify(cadence))
+  check("an agent carries a cadence trace", !!cadence && cadence.bins > 8, JSON.stringify(cadence))
   // Not "the element exists": whether it DREW anything. The first two versions
-  // of this rendered every event into the same one-pixel column, so a busy lane
+  // of this rendered every event into the same one-pixel column, so a busy agent
   // and a dead one looked identical. Every check passed; only rendering it and
   // looking caught it.
   check("and it actually draws the work, not a flat line",
@@ -424,16 +424,16 @@ try {
     !!cadence && cadence.role === "img" && /\d+ actions? in the last 10 minutes/.test(cadence.label),
     cadence?.label ?? "(none)")
 
-  // A lane with no events in the window must draw NOTHING. An empty strip says
+  // An agent with no events in the window must draw NOTHING. An empty strip says
   // "measured, and nothing happened", which is a stronger and different claim
-  // from "this lane predates the window".
+  // from "this agent predates the window".
   const silent = await page.evaluate(() => {
     const el = document.createElement("div")
     // @ts-expect-error Board is a page global
-    el.innerHTML = Board.cadenceHTML("nobody-here", [{ lane: "someone-else", ts: new Date().toISOString() }])
+    el.innerHTML = Board.cadenceHTML("nobody-here", [{ agent: "someone-else", ts: new Date().toISOString() }])
     return el.innerHTML
   })
-  check("a lane with nothing in the window draws nothing at all", silent === "", silent)
+  check("an agent with nothing in the window draws nothing at all", silent === "", silent)
 
   // Binning, with inputs chosen so a broken implementation CANNOT pass.
   //
@@ -444,7 +444,7 @@ try {
   // Spread events across the window and the two stop agreeing.
   const binned = await page.evaluate(() => {
     const now = Date.now()
-    const at = (minsAgo: number) => ({ lane: "L", ts: new Date(now - minsAgo * 60_000).toISOString() })
+    const at = (minsAgo: number) => ({ agent: "L", ts: new Date(now - minsAgo * 60_000).toISOString() })
     const el = document.createElement("div")
     // @ts-expect-error Board is a page global
     el.innerHTML = Board.cadenceHTML("L", [at(9), at(5), at(0.1)], now)
@@ -473,7 +473,7 @@ try {
 
   await page.keyboard.press("ArrowRight")
   check("arrow keys move between tabs, as role=tablist promises",
-    (await page.locator('.views button[aria-selected="true"]').getAttribute("data-view")) === "lanes",
+    (await page.locator('.views button[aria-selected="true"]').getAttribute("data-view")) === "agents",
     String(await page.locator('.views button[aria-selected="true"]').getAttribute("data-view")))
   await page.keyboard.press("End")
   check("End jumps to the last tab",
@@ -520,7 +520,7 @@ try {
 
   // ── a redraw must not eat what somebody is saying ────────────────────────
   //
-  // The existing draft check exercised only the channel composer, so it passed
+  // The existing draft check exercised only the space composer, so it passed
   // while the MAIL pane was replaced wholesale on every SSE frame: losing the
   // body, the chosen type, focus and caret of anyone composing a message. On a
   // live board that is every few seconds. A test that covers one composer and
@@ -532,7 +532,7 @@ try {
   await page.locator("#msg-body").focus()
 
   // Force a real redraw the way the fleet does: a genuine board event.
-  await tool("set_slot", { token: a.token, text: "something new, to force a redraw" })
+  await tool("declare", { token: a.token, text: "something new, to force a redraw" })
   await page.waitForTimeout(600)
 
   check("a redraw preserves the message body",
@@ -563,7 +563,7 @@ try {
   await page.waitForTimeout(400)
   const flashed = (await page.locator("#flash").textContent()) || ""
   check("a transport failure is reported, and says nothing was sent",
-    /could not reach Lanes/.test(flashed) && /nothing was sent/.test(flashed), flashed)
+    /could not reach Dibs/.test(flashed) && /nothing was sent/.test(flashed), flashed)
   check("and the draft is still there to retry",
     (await page.locator("#msg-body").inputValue()) === "this one cannot get through",
     await page.locator("#msg-body").inputValue())
@@ -590,7 +590,7 @@ try {
   await page.locator("#msg-to").fill("builder")
   await page.locator("#msg-body").fill("must be sent exactly once")
   await page.locator(".compose.new-msg .act.send").click()
-  await tool("set_slot", { token: a.token, text: "a redraw, mid-flight" })
+  await tool("declare", { token: a.token, text: "a redraw, mid-flight" })
   await page.waitForTimeout(300)
   await page.locator(".compose.new-msg .act.send").click({ force: true })
   await page.waitForTimeout(1200)
@@ -606,7 +606,7 @@ try {
   // title does not exist on touch, keyboards cannot summon it, and screen-reader
   // support is inconsistent. SPEC-CHANNELS §10.3 asks the board to explain its
   // marks; they were explainable only to somebody holding a mouse.
-  await page.locator('.views button[data-view="lanes"]').click()
+  await page.locator('.views button[data-view="agents"]').click()
   const explainable = await page.evaluate(() => {
     const out: { mark: string; inTree: boolean }[] = []
     document.querySelectorAll(".pill, .tag.why, .member-tag.gone, .badge").forEach((el) => {
@@ -661,9 +661,9 @@ try {
       bandOrder.indexOf("Out of touch") === 0, bandOrder.join(" | "))
   }
 
-  // The labels must claim only what Lanes knows. It knows an agent has SPOKEN;
+  // The labels must claim only what Dibs knows. It knows an agent has SPOKEN;
   // it does not know what that agent is doing. "Working" was a claim about work
-  // applied to every active lane, including ones that had declared nothing, and
+  // applied to every active agent, including ones that had declared nothing, and
   // "Idle" made a dormant standing reviewer: exactly where it belongs between
   // activations: look like a problem.
   check("the roster claims coordination state, not what an agent is doing",
@@ -691,18 +691,18 @@ try {
   check("tabbing to a control gives it a real focus ring",
     !!ring && ring.style !== "none" && ring.width >= 1, JSON.stringify(ring))
 
-  // A god view has no "this lane": marking one would be a lie, and the shared
+  // A god view has no "this agent": marking one would be a lie, and the shared
   // component takes selfId as a parameter precisely so this page can pass null.
-  check("no lane is marked as the viewer's own",
+  check("no agent is marked as the viewer's own",
     (await page.locator(".entry.self").count()) === 0)
 
   // ── a dead agent must LOOK dead ─────────────────────────────────────────
-  // The reason a lane stopped counting as live was computed by the sweep and
-  // put only into the `lane.stale` event, so the board showed "out of touch"
+  // The reason an agent stopped counting as live was computed by the sweep and
+  // put only into the `agent.stale` event, so the board showed "out of touch"
   // and nothing else: beside a last-contact time of "now", which reads as a
   // broken board rather than a dead agent. And the three cases are not
   // interchangeable: an exited process is definitive, a lapsed lease may be a
-  // long build, and a lane that never gave a pid has said nothing at all.
+  // long build, and an agent that never gave a pid has said nothing at all.
   {
     const ghostRow = page.locator(".entry", { has: page.locator('.name:text-is("ghost")') })
     await ghostRow.locator(".tag.why").waitFor({ timeout: 10000 })
@@ -718,21 +718,21 @@ try {
       (await liveRow.locator(".tag.why").count()) === 0, await liveRow.innerText())
   }
 
-  // ── a lane must not list a corpse as though it were working ─────────────
-  // "Who is on this lane" is the question this view exists to answer, and a
+  // ── an agent must not list a corpse as though it were working ─────────────
+  // "Who is on this agent" is the question this view exists to answer, and a
   // dead member rendered identically to a live one answers it wrongly. Reading
   // the roster on another tab to find out is not an answer.
   {
-    await page.locator('.views button[data-view="lanes"]').click()
-    const lane = page.locator(".channel", { has: page.locator('.channel-id:text-is("web-render")') })
-    await lane.waitFor({ timeout: 5000 })
-    const ghostChip = lane.locator(".member", { hasText: "ghost" })
-    check("a lane marks the member that is not working",
-      (await ghostChip.locator(".member-tag.gone").count()) === 1, await lane.innerText())
+    await page.locator('.views button[data-view="agents"]').click()
+    const agent = page.locator(".space", { has: page.locator('.space-id:text-is("web-render")') })
+    await agent.waitFor({ timeout: 5000 })
+    const ghostChip = agent.locator(".member", { hasText: "ghost" })
+    check("an agent marks the member that is not working",
+      (await ghostChip.locator(".member-tag.gone").count()) === 1, await agent.innerText())
     check("and says what happened to it",
       (await ghostChip.innerText()).toLowerCase().includes("process gone"), await ghostChip.innerText())
     check("while a live member is left unmarked",
-      (await lane.locator(".member", { hasText: "checker" }).locator(".member-tag.gone").count()) === 0)
+      (await agent.locator(".member", { hasText: "checker" }).locator(".member-tag.gone").count()) === 0)
     await page.locator('.views button[data-view="board"]').click()
   }
 
@@ -752,53 +752,53 @@ try {
       (await page.locator(".msg .atts").count()) < (await page.locator(".msg").count()),
       `${await page.locator(".msg .atts").count()} lists / ${await page.locator(".msg").count()} messages`)
   }
-  // The operator watches; only the panel holds a lane token and may answer.
+  // The operator watches; only the panel holds an agent token and may answer.
   // This assertion used to read "the operator view offers no actions", which
   // was true and was the problem: a coordination service whose human can only
   // watch is a monitoring tool. The human is now a PARTICIPANT: an agent
-  // identity, not a lane of their own, and everything below drives the real
+  // identity, not an agent of their own, and everything below drives the real
   // browser through the same ops an agent sends.
   check("the operator can act", (await page.locator(".act").count()) > 0)
 
-  // ── the human joins a lane and speaks in it ─────────────────────────────
+  // ── the human joins an agent and speaks in it ─────────────────────────────
   {
-    await page.locator('.views button[data-view="lanes"]').click()
-    await page.locator("#pane-lanes .channel").first().waitFor({ timeout: 5000 })
+    await page.locator('.views button[data-view="agents"]').click()
+    await page.locator("#pane-agents .space").first().waitFor({ timeout: 5000 })
 
     // Watching is not participating. Loading the board must not put an agent on
     // the roster: an operator who has joined nothing owes nobody an ack and
     // should not be counted in the fleet or swept for liveness.
     const before = (await page.locator("#ctx-you").textContent()) ?? ""
     check("merely watching the board does not register you", /observing/.test(before), before)
-    // show_board's `content` is a prose summary for the model; the data lives in
+    // board's `content` is a prose summary for the model; the data lives in
     // structuredContent (the MCP Apps contract), so it cannot go through tool().
-    const ids = (((await boardOf(a.token)).board?.lanes) ?? []).map((l: any) => l.id)
+    const ids = (((await boardOf(a.token)).board?.agents) ?? []).map((l: any) => l.id)
     check("and no agent appears for the watcher", !ids.includes("ada"), ids.join(","))
 
-    const box = page.locator('.compose[data-lane="web-render"]')
-    check("a lane the human has not joined offers a join button",
+    const box = page.locator('.compose[data-agent="web-render"]')
+    check("an agent the human has not joined offers a join button",
       (await box.locator(".act.join").count()) === 1)
     check("and will not let them speak until they do",
       await box.locator('input[type="text"]').isDisabled())
 
     await box.locator(".act.join").click()
-    await page.locator('.compose[data-lane="web-render"] .act.leave').waitFor({ timeout: 5000 })
+    await page.locator('.compose[data-agent="web-render"] .act.leave').waitFor({ timeout: 5000 })
     check("joining flips the control to leave", true)
     // The identity is minted by the first ACTION, not by the page load.
     await page.locator("#ctx-you").filter({ hasText: "you are" }).waitFor({ timeout: 5000 })
     check("acting is what gives you an identity", true)
     check("and unlocks the composer",
-      !(await page.locator('.compose[data-lane="web-render"] input[type="text"]').isDisabled()))
+      !(await page.locator('.compose[data-agent="web-render"] input[type="text"]').isDisabled()))
 
     // A redraw must not eat what a person is in the middle of typing.
     //
     // Every board event calls draw(), which replaces whole panes with
     // innerHTML: destroying the composer, its contents, the focus and the
     // caret. In a live fleet an event arrives whenever ANY agent does anything,
-    // so a human writing to a lane loses it mid-sentence. This is how it was
+    // so a human writing to an agent loses it mid-sentence. This is how it was
     // found: a fill() followed by a click() failed under load because the
     // redraw landed between them, which is the same race a person hits.
-    const composer = page.locator('.compose[data-lane="web-render"] input[type="text"]')
+    const composer = page.locator('.compose[data-agent="web-render"] input[type="text"]')
     await composer.fill("humans are here too")
     await composer.focus()
     // Force the redraw the fleet would cause anyway, mid-compose.
@@ -808,27 +808,27 @@ try {
     check("and leaves the caret where it was",
       await page.evaluate(() => document.activeElement?.tagName === "INPUT"))
 
-    await page.locator('.compose[data-lane="web-render"] .act.post').click()
+    await page.locator('.compose[data-agent="web-render"] .act.post').click()
     // NOT the flash: it clears itself after six seconds, so waiting on it is a
     // race that fails about one run in three. Assert the EFFECT instead, which
     // is the better test anyway, since it checks what happened rather than what
     // was announced.
     // The event announces that a post happened and deliberately does NOT carry
-    // its text: channel events have no recipient, so a body here goes to every
-    // authenticated lane on the board, member or not (SPEC §10).
-    await expectEvent(a.token, "lane.post", (e) => e.data?.lane_id === "web-render")
+    // its text: space events have no recipient, so a body here goes to every
+    // authenticated agent on the board, member or not (SPEC §10).
+    await expectEvent(a.token, "agent.post", (e) => e.data?.lane_id === "web-render")
     check("posting reaches the board as an event", true)
 
     const seen = await tool("events_since", { token: a.token, since_serial: 0 })
-    const posts = (seen.events ?? []).filter((e: any) => e.type === "lane.post")
+    const posts = (seen.events ?? []).filter((e: any) => e.type === "agent.post")
     check("the event carries no body: only members and subscribers may read one",
       !JSON.stringify(posts).includes("humans are here too"),
       JSON.stringify(posts).slice(0, 200))
 
     // The point of all of it: an AGENT can see what the human said. Through
-    // lane_read, which checks who is asking.
-    const read = await tool("lane_read", { token: a.token, lane: "web-render" })
-    check("an agent reads the human's post in the lane",
+    // read_space, which checks who is asking.
+    const read = await tool("read_space", { token: a.token, agent: "web-render" })
+    check("an agent reads the human's post in the agent",
       (read.posts ?? []).some((p: any) => (p.body ?? "").includes("humans are here too")),
       JSON.stringify(read.posts ?? []).slice(0, 200))
   }
@@ -837,9 +837,9 @@ try {
   {
     // `checker` asked `builder` a question during setup; ask the human one too.
     const me = ((await (await fetch(`http://${ADDR}/api/me`, { headers: { cookie } })).json()) as any).agent
-    check("the human has an agent identity, not a lane of their own", typeof me === "string" && me.length > 0, String(me))
+    check("the human has an agent identity, not an agent of their own", typeof me === "string" && me.length > 0, String(me))
 
-    const asked = await tool("send_message", { token: b.token, to: me, type: "question",
+    const asked = await tool("send", { token: b.token, to: me, type: "question",
       body: "Should I proceed with the rename?", op_id: "ask-human", deadline_s: 600 })
 
     await page.locator('.views button[data-view="mail"]').click()
@@ -849,12 +849,12 @@ try {
 
     await reply.locator('input[type="text"]').fill("no, hold off until Monday")
     await reply.locator(".act.respond").click()
-    await Bun.sleep(250) // the get_message assertion below is the real check
+    await Bun.sleep(250) // the read_mail assertion below is the real check
 
     // The agent must be able to READ the answer, not merely see it delivered.
     // By serial, not from the inbox: an inbox holds mail addressed TO you, and
     // the asker is the sender: its answer arrives on the message it sent.
-    const got = await tool("get_message", { token: b.token, msg_serial: asked.msg_serial })
+    const got = await tool("read_mail", { token: b.token, msg_serial: asked.msg_serial })
     const answer = got.message?.response ?? got.response ?? ""
     check("the agent receives the human's answer",
       String(answer).includes("hold off until Monday"),
@@ -879,23 +879,23 @@ try {
       got?.type === "request", String(got?.type))
   }
 
-  // ── channels render on the operator board ──────────────────────────────
-  await page.locator('.views button[data-view="lanes"]').click()
+  // ── spaces render on the operator board ──────────────────────────────
+  await page.locator('.views button[data-view="agents"]').click()
   {
-    const pane = page.locator("#pane-lanes")
-    await pane.locator(".channel").first().waitFor({ timeout: 5000 })
+    const pane = page.locator("#pane-agents")
+    await pane.locator(".space").first().waitFor({ timeout: 5000 })
     const text = (await pane.textContent()) ?? ""
-    check("the Lanes tab lists the channel", text.includes("web-render"), text.slice(0, 160))
+    check("the Dibs tab lists the space", text.includes("web-render"), text.slice(0, 160))
     check("it shows the topic", text.includes("drawing the operator board"), text.slice(0, 160))
     check("it shows both members", text.includes("builder") && text.includes("checker"), text.slice(0, 160))
-    check("an exclusive lane is marked as such", /exclusive/i.test(text), text.slice(0, 160))
+    check("an exclusive agent is marked as such", /exclusive/i.test(text), text.slice(0, 160))
     // SPEC-CHANNELS.md §10.3: an auto-join must be explainable. The score rides
     // with the mark, so it is available without spending a line of the board on
     // every membership.
     const why = (await pane.locator(".member[data-why]").first().getAttribute("data-why")) ?? ""
     check("an auto-joined member carries its score as evidence",
       /0\.7/.test(why) && /lexical/.test(why), why || "(no explanation on the mark)")
-    check("an exclusive lane shows who is waiting", /waiting:/i.test(text), text.slice(0, 240))
+    check("an exclusive agent shows who is waiting", /waiting:/i.test(text), text.slice(0, 240))
     }
   {
     // Back to the roster for the agent-level marks.
@@ -911,21 +911,21 @@ try {
     // could not reach it. So this drives it the way a keyboard user does.
     const badge = roster.locator(".badge.sub").first()
     check("and the mark explains itself",
-      /inherits its lanes/.test((await badge.getAttribute("data-why")) ?? ""),
+      /inherits its agents/.test((await badge.getAttribute("data-why")) ?? ""),
       (await badge.getAttribute("data-why")) ?? "(no explanation on the mark)")
 
     await badge.focus()
     const shown = await page.evaluate(() => {
-      const tip = document.getElementById("lanes-why")
+      const tip = document.getElementById("agents-why")
       return { open: tip?.matches(":popover-open") ?? false, text: tip?.textContent ?? "" }
     })
     check("and the explanation is reachable from the keyboard, not just a mouse",
-      shown.open && /inherits its lanes/.test(shown.text), JSON.stringify(shown))
+      shown.open && /inherits its agents/.test(shown.text), JSON.stringify(shown))
 
     // It must also be positioned by the anchor rather than dumped in the middle
     // of the viewport, which is where an unanchored popover lands by default.
     const placed = await page.evaluate(() => {
-      const tip = document.getElementById("lanes-why")!.getBoundingClientRect()
+      const tip = document.getElementById("agents-why")!.getBoundingClientRect()
       const b = document.querySelector(".badge.sub")!.getBoundingClientRect()
       return { dx: Math.abs((tip.left + tip.width / 2) - (b.left + b.width / 2)), h: tip.height }
     })
@@ -941,7 +941,7 @@ try {
     // predicted.
     await page.evaluate(() => (globalThis as { draw?: () => void }).draw?.())
     const survived = await page.evaluate(() => {
-      const tip = document.getElementById("lanes-why")
+      const tip = document.getElementById("agents-why")
       const a = document.activeElement as HTMLElement | null
       return {
         open: tip?.matches(":popover-open") ?? false,
@@ -951,23 +951,23 @@ try {
       }
     })
     check("and it survives the board redrawing underneath the reader",
-      survived.open && /inherits its lanes/.test(survived.text) && survived.refocused,
+      survived.open && /inherits its agents/.test(survived.text) && survived.refocused,
       JSON.stringify(survived))
 
     // And it goes away when the reader moves on, without stealing their place.
     await page.keyboard.press("Escape")
     check("and it closes on Escape",
-      !(await page.evaluate(() => document.getElementById("lanes-why")?.matches(":popover-open"))),
+      !(await page.evaluate(() => document.getElementById("agents-why")?.matches(":popover-open"))),
       "still open")
-    await page.locator('.views button[data-view="lanes"]').click()
-    await page.locator("#pane-lanes .channel").first().waitFor({ timeout: 5000 })
+    await page.locator('.views button[data-view="agents"]').click()
+    await page.locator("#pane-agents .space").first().waitFor({ timeout: 5000 })
   }
   {
     const page2 = page
     void page2
-    check("the lane tally counts them",
-      (await page.locator("#tally-lanes").textContent()) === "2",
-      String(await page.locator("#tally-lanes").textContent()))
+    check("the agent tally counts them",
+      (await page.locator("#tally-agents").textContent()) === "2",
+      String(await page.locator("#tally-agents").textContent()))
   }
 
   check("the live stream connected", await page.locator(".status-mark.live").count() > 0)

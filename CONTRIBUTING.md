@@ -35,7 +35,7 @@ It takes a few minutes and needs two things beyond Go:
   nothing else is affected.
 
 Working on one area? The gate splits: `task test` (Go only, seconds),
-`task test:panel`, `task test:web`, `task test:channel`, `task test:guard`.
+`task test:panel`, `task test:web`, `task test:space`, `task test:guard`.
 Run the whole chain before opening a pull request.
 
 That is the whole gate: vet, lint, `go test -race` in both build
@@ -44,7 +44,7 @@ coverage floor on `core` and `ledger`, a cross-compile matrix, and govulncheck.
 It is the same set the pull-request workflow runs, so a green `task ci` locally
 should mean a green CI.
 
-`task install` builds and puts `lanes` and `lanesd` in `~/.local/bin`.
+`task install` builds and puts `dibs` and `dibd` in `~/.local/bin`.
 
 ### Working on the human actions, without a fingerprint
 
@@ -53,10 +53,10 @@ nobody wants raised on their Mac by a test run. Build a dev daemon and script th
 verdict instead:
 
 ```bash
-go build -tags lanesdev -o bin/lanesd-dev ./cmd/lanesd
+go build -tags dibdev -o bin/dibd-dev ./cmd/dibd
 ```
 
-Run it with `LANES_PRESENCE_MOCK` set to `verified`, `declined`, or
+Run it with `DIBS_PRESENCE_MOCK` set to `verified`, `declined`, or
 `unavailable`. Use the last two: they are the branches a working sensor hides,
 and the panel has to say something different and correct for each.
 
@@ -113,7 +113,7 @@ Do not open a public issue for a vulnerability. `SECURITY.md` has the process.
 
 ## Organisation-wide standards
 
-Lanes follows the Agenxy
+Dibs follows the Agenxy
 [charter](https://github.com/agenxy/.github/blob/main/CHARTER.md) and
 [engineering standards](https://github.com/agenxy/.github/blob/main/ENGINEERING.md):
 Apache 2.0, latest stable of every tool, warnings fatal, nothing logged about how

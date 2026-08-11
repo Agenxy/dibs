@@ -71,7 +71,7 @@ document.body.appendChild(iframe)
 
 const bridge = new AppBridge(
   client,
-  { name: "lanes-panel-e2e", version: "1" },
+  { name: "agents-panel-e2e", version: "1" },
   {
     openLinks: {},
     serverTools: window.__serverCapabilities?.tools,
@@ -127,6 +127,6 @@ window.addEventListener("message", (e) => {
 })
 
 window.__bridge = bridge
-window.__deliver = (result) => bridge.sendToolResult({ toolName: "show_board", ...result })
+window.__deliver = (result) => bridge.sendToolResult({ toolName: "board", ...result })
 window.__panelDoc = () => iframe.contentDocument
 window.__ready = true

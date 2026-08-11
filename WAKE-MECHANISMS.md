@@ -1,14 +1,14 @@
 # Waking an agent: what actually works (decision record)
 
-**Question:** when a peer sends a Lanes message, how does the recipient agent find out,
-without Lanes shelling out, driving the harness, or orchestrating sessions? Lanes is a
+**Question:** when a peer sends a Dibs message, how does the recipient agent find out,
+without Dibs shelling out, driving the harness, or orchestrating sessions? Dibs is a
 coordination *service* agents use, not a harness.
 
 **Answer as of 2026-07-25: solved for Claude Code, without a subprocess.** Its hooks
 support `type: "mcp_tool"`: a lifecycle hook calls a tool on the MCP connection the
 model already holds, and the tool's `hookSpecificOutput.additionalContext` is injected
-into the model's context. No shell, no second process, no polling. Lanes ships this in
-its plugin (`plugins/lanes/hooks/hooks.json` → `hook_poll`).
+into the model's context. No shell, no second process, no polling. Dibs ships this in
+its plugin (`plugins/agents/hooks/hooks.json` → `hook_poll`).
 
 **Amended 2026-07-26: opencode is the second, and it was driven live.** An
 in-process opencode plugin on the `chat.message` hook injects mail as a synthetic
@@ -16,8 +16,8 @@ message part. Verified in a real turn with a real model, which read the mail and
 replied unprompted. See `plugins/opencode/`.
 
 **And waking is not enough on its own.** That same live run exposed the missing
-half: a woken agent has no token, so it re-registered and became a sibling lane
-that could not read the mail that woke it. `register_lane` now reattaches on
+half: a woken agent has no token, so it re-registered and became a sibling agent
+that could not read the mail that woke it. `register` now reattaches on
 matching name + `session_id`. A wake path without reattach only frustrates the
 agent it wakes.
 
@@ -33,7 +33,7 @@ See `plugins/claude-desktop/README.md`.
 1. *"All hook mechanisms are subprocesses"*: true of Codex (`HookHandlerConfig::Command`
    is the only executing variant), FALSE of Claude Code, which has five handler types:
    `command`, `http`, `mcp_tool`, `prompt`, `agent`.
-2. *"Codex never calls resources/list, so Lanes' resources are invisible there"*: wrong.
+2. *"Codex never calls resources/list, so Dibs' resources are invisible there"*: wrong.
    Codex registers `list_mcp_resources` / `read_mcp_resource` as model-facing tools
    whenever any MCP server is configured, and they issue real `resources/list`. opencode
    exposes the same three tool names. Resources are pull-visible in both.
@@ -42,7 +42,7 @@ See `plugins/claude-desktop/README.md`.
 
 ## 1. Measured, not researched
 
-A daemon with `LANES_LOG_RPC=1` recorded exactly what each client sends when it connects
+A daemon with `DIBS_LOG_RPC=1` recorded exactly what each client sends when it connects
 over plain HTTP (no stdio bridge in the way):
 
 | Harness | Version | Handshake | Declared capabilities | Methods sent |
@@ -56,7 +56,7 @@ over plain HTTP (no stdio bridge in the way):
 
 **Nobody sends `subscriptions/listen`, `resources/subscribe`, or `resources/read`.
 Nobody speaks MCP 2026**, not even Codex alpha, which negotiates 2025-06-18. Codex never
-even calls `resources/list`, so Lanes' resources are invisible there; only tools reach it.
+even calls `resources/list`, so Dibs' resources are invisible there; only tools reach it.
 
 ## 2. Is 2026 support hidden behind a flag? No
 
@@ -69,7 +69,7 @@ even calls `resources/list`, so Lanes' resources are invisible there; only tools
   the measured 2025-06-18 handshake stands for stable 0.145.0.
   **TESTED 2026-07-25: the flag does NOT change the wire.** With
   `mcp_2026_07_28 = true` resolved true (`codex features list`), a source build of
-  codex `61a4488` connecting to Lanes over HTTP still negotiated
+  codex `61a4488` connecting to Dibs over HTTP still negotiated
   `protocolVersion: 2025-06-18`, and sent ZERO `server/discover` and ZERO
   `subscriptions/listen`. It saw all 24 tools over the legacy path. Codex marks the
   flag "under development"; it gates unfinished work, not a protocol switch.
@@ -102,38 +102,38 @@ if (capabilities?.resources?.subscribe) {            // server must advertise th
 
 Gated on the server advertising `resources.subscribe`. Siblings:
 `feat/mcp-resource-list-changed`, `fix/mcp-prompts-list-changed`. When this merges,
-opencode is the first harness that can receive a Lanes push: provided we advertise the
+opencode is the first harness that can receive a Dibs push: provided we advertise the
 capability (we now do, on the **legacy** handshake, which is the one every client uses).
 
 Codex, by contrast, handles `resource_updated` as a **tracing log only** (inert to the
 model) per `codex-rs/rmcp-client/src/logging_client_handler.rs`.
 
-## 5. What Lanes implements
+## 5. What Dibs implements
 
-- **`await_events`**: a Lanes tool that blocks server-side (parks a waiter, event-driven,
+- **`await_events`**: a Dibs tool that blocks server-side (parks a waiter, event-driven,
   ≤60s) and returns a **batch** of everything since the caller's cursor. Works on every
   MCP host today. This is the floor and the product.
 - **`subscriptions/listen`** (SEP-2575): held-open SSE, acks with
   `notifications/subscriptions/acknowledged`, then pushes
-  `notifications/resources/updated` for `lanes://inbox` (token-scoped via
-  `_meta["com.lanes/token"]`) and `lanes://board`. Verified end-to-end. Unused by clients
+  `notifications/resources/updated` for `dibs://inbox` (token-scoped via
+  `_meta["com.dibs/token"]`) and `dibs://board`. Verified end-to-end. Unused by clients
   today; ready for the 07-28 wave.
 - **`resources.subscribe` advertised on BOTH handshakes**: including legacy
   `initialize`, since that's the path 100% of clients take. Advertising only on
   `server/discover` made the capability invisible.
 
 **Not built (the next bet):** legacy `resources/subscribe` / `unsubscribe` + a GET SSE
-channel to deliver `notifications/resources/updated` on 2025-11-25. This is what pays off
+space to deliver `notifications/resources/updated` on 2025-11-25. This is what pays off
 first, because it's what shipping clients speak.
 
 ## 6. Rejected approaches, and why
 
 | Approach | Verdict |
 |---|---|
-| Shell hooks (`lanes codex-hook`, plugin `monitor`) | **Deleted.** A CLI reformatting mail into the harness's continuation protocol is us driving the agent, a wrapper, not a service. |
+| Shell hooks (`dibs codex-hook`, plugin `monitor`) | **Deleted.** A CLI reformatting mail into the harness's continuation protocol is us driving the agent, a wrapper, not a service. |
 | Codex app-server `turn/steer` (true mid-turn inject) | Rejected: requires *owning* the thread over a Unix socket = orchestration. |
 | `@openai/codex-sdk` supervisor | Rejected: TS-only (no Go SDK), and it means managing sessions. |
-| Claude **Channels** (`notifications/claude/channel`) | Genuinely elegant (zero agent steps) but **CLI-only** (platforms matrix), so unavailable in the Desktop app; research-preview + allowlist. |
+| Claude **Spaces** (`notifications/claude/space`) | Genuinely elegant (zero agent steps) but **CLI-only** (platforms matrix), so unavailable in the Desktop app; research-preview + allowlist. |
 | `Monitor(ws)` tool | Works in Claude Desktop (one agentic tool call, WebSocket push, no shell) but is Claude-specific. |
 | MCP notifications / elicitation as a wake | Notifications are inert; **elicitation targets the human**, not the model (and SEP-2260 forbids unsolicited server→client requests). |
 

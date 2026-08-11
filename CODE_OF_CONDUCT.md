@@ -4,7 +4,7 @@
 
 Be decent. Argue with the work, not the person.
 
-Lanes invites criticism (including "this design is wrong") and that only works
+Dibs invites criticism (including "this design is wrong") and that only works
 if disagreement stays about the thing being built. Sharp technical pushback is
 welcome and is not a conduct problem. Contempt for the person on the other end
 of it is.
@@ -48,7 +48,7 @@ commits, and when someone is representing the project in public.
 ## Enforcement
 
 Report unacceptable behaviour privately through
-[GitHub's report form](https://github.com/agenxy/lanes/security/advisories/new)
+[GitHub's report form](https://github.com/agenxy/dibs/security/advisories/new)
 or by direct message to the maintainer. Reports are handled confidentially, and
 you will get a response.
 

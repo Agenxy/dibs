@@ -17,31 +17,31 @@ func (e *Error) Error() string { return fmt.Sprintf("%s: %s", e.Code, e.Msg) }
 
 // Structured error codes (spec §10).
 var (
-	// The "if lost" clause used to say "register a fresh lane": the one action
+	// The "if lost" clause used to say "register a fresh agent": the one action
 	// this codebase has measured going wrong. A fresh registration under the same
-	// name makes you `yourname-2`: a second lane that cannot read the first one's
+	// name makes you `yourname-2`: a second agent that cannot read the first one's
 	// mail, while the board shows two healthy agents and nothing looks broken.
 	// SKILLS.md spends a paragraph on that exact incident (four agents restarted,
 	// four became siblings, every message sent to them beforehand stranded), and
 	// the error was advising it.
 	ErrBadToken = &Error{
-		Code: "E_BAD_TOKEN", Msg: "unknown or missing lane token",
-		Hint: "pass the token returned by register_lane. If you lost it, register " +
-			"again with the SAME name and the SAME nonce: you get your own lane " +
+		Code: "E_BAD_TOKEN", Msg: "unknown or missing agent token",
+		Hint: "pass the token returned by register. If you lost it, register " +
+			"again with the SAME name and the SAME nonce: you get your own agent " +
 			"back, with its mail. Registering without the nonce makes you a second " +
-			"lane that cannot read the first one's mail",
+			"agent that cannot read the first one's mail",
 	}
 	ErrMustAck = &Error{
 		Code: "E_MUST_ACK_BOARD", Msg: "awareness gate: board not acknowledged",
-		Hint: "call ack_board() first to see what other agents are doing, then retry",
+		Hint: "call check_in() first to see what other agents are doing, then retry",
 	}
 	ErrMailboxFull = &Error{
 		Code: "E_MAILBOX_FULL", Msg: "recipient mailbox is at capacity",
 		Hint: "retry later; the recipient has unprocessed messages",
 	}
 	ErrLaneLimit = &Error{
-		Code: "E_LANE_LIMIT", Msg: "maximum number of lanes reached",
-		Hint: "wait for stale lanes to be archived or ask the human to raise limits",
+		Code: "E_LANE_LIMIT", Msg: "maximum number of agents reached",
+		Hint: "wait for stale agents to be archived or ask the human to raise limits",
 	}
 	ErrRateLimited = &Error{
 		Code: "E_RATE_LIMITED", Msg: "rate limit exceeded",
@@ -87,7 +87,7 @@ var (
 			"content is gone. Ask the sender to put_blob it again, or to send the data another way",
 	}
 	ErrQuota = &Error{
-		Code: "E_QUOTA", Msg: "per-lane blob quota exceeded",
+		Code: "E_QUOTA", Msg: "per-agent blob quota exceeded",
 		Hint: "let old blobs age out, or attach fewer/smaller blobs",
 	}
 	ErrStoreFull = &Error{
@@ -97,12 +97,12 @@ var (
 	ErrNotAdmin = &Error{
 		Code: "E_NOT_ADMIN",
 		Msg:  "this action needs the admin role",
-		Hint: "admin can read every lane's mail, so only a human grants it: `lanes admin admin <lane>`",
+		Hint: "admin can read every agent's mail, so only a human grants it: `dibs admin admin <agent>`",
 	}
 	ErrNotCoordinator = &Error{
 		Code: "E_NOT_COORDINATOR",
 		Msg:  "this action needs the coordinator role",
-		Hint: "a human grants it with `lanes admin coordinator <lane>`; lanes cannot promote themselves",
+		Hint: "a human grants it with `dibs admin coordinator <agent>`; agents cannot promote themselves",
 	}
 	ErrBlobUnavailable = &Error{
 		Code: "E_BLOB_UNAVAILABLE", Msg: "blob bytes are no longer available",
@@ -129,7 +129,7 @@ func errTooLarge(what string, limit int) *Error {
 // ErrCursorTooOld carries the SPEC §10 checkpoint recovery protocol.
 func ErrCursorTooOld(floor uint64) *Error {
 	return errf("E_CURSOR_TOO_OLD",
-		"call ack_board() for an atomic {board, inbox, serial} checkpoint and resume polling from its serial",
+		"call check_in() for an atomic {board, inbox, serial} checkpoint and resume polling from its serial",
 		"cursor precedes the event ring floor (%d)", floor)
 }
 
@@ -157,9 +157,9 @@ var (
 // reporting the absence of what was asked for: a serial the caller got from a
 // wake nudge is not a serial they invented, and "no such message" sends them
 // looking for a deletion that never happened.
-func ErrWrongKind(serial uint64, lane string) *Error {
+func ErrWrongKind(serial uint64, agent string) *Error {
 	return errf("E_NOT_A_MESSAGE",
-		"read it with lane_read on lane "+lane,
-		"serial %d is an announcement in lane %q, not a message: get_message reads "+
-			"direct mail, lane_read reads a lane's announcements", serial, lane)
+		"read it with read_space on agent "+agent,
+		"serial %d is an announcement in agent %q, not a message: read_mail reads "+
+			"direct mail, read_space reads an agent's announcements", serial, agent)
 }

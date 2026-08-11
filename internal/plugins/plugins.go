@@ -1,6 +1,6 @@
-// Package plugins hands an agent the Lanes plugin for its own harness, over MCP.
+// Package plugins hands an agent the Dibs plugin for its own harness, over MCP.
 //
-// Lanes works with no plugin at all: the daemon is the product and every tool
+// Dibs works with no plugin at all: the daemon is the product and every tool
 // behaves the same without one. What a plugin buys is delivery: on Claude Code
 // it turns mail from something an agent must remember to poll for into something
 // that arrives in the session, which is the difference between a board that gets
@@ -44,7 +44,7 @@ var files embed.FS
 
 // Plugin is everything an agent needs to install one, in one object.
 type Plugin struct {
-	// Harness is the canonical name, matching what agents report in register_lane.
+	// Harness is the canonical name, matching what agents report in register.
 	Harness string `json:"harness"`
 	// Buys says what installing it actually changes, in the agent's terms. Not a
 	// feature list: an agent deciding whether to spend a turn on this needs to
@@ -73,7 +73,7 @@ type Plugin struct {
 	// the agent without it asking.
 	//
 	// Not every harness with lifecycle hooks has one. Codex fires hooks as
-	// subprocesses, which Lanes refuses to be, so it has hook traffic and no
+	// subprocesses, which Dibs refuses to be, so it has hook traffic and no
 	// delivery: an agent there must still pull. Without this flag the two facts
 	// were reported by different code paths and contradicted each other in the
 	// same result. "mail will arrive, you do not need to poll" beside an entry
@@ -105,17 +105,17 @@ var catalog = []struct {
 		aliases: []string{"claude", "claudecode", "claude_code"},
 		buys: "mail is DELIVERED instead of polled. A SessionStart hook and a " +
 			"PreToolUse hook call the wake path for you, so a question addressed to " +
-			"your lane appears in your context on your next tool call rather than " +
-			"waiting until you remember to check inbox. Also installs the lanes " +
+			"your agent appears in your context on your next tool call rather than " +
+			"waiting until you remember to check inbox. Also installs the agents " +
 			"skill, so the protocol is in context when it is relevant and absent " +
 			"when it is not.",
-		install: "claude plugin marketplace add agenxy/lanes && claude plugin install lanes",
-		root:    "~/.claude/plugins/lanes",
+		install: "claude plugin marketplace add agenxy/agents && claude plugin install agents",
+		root:    "~/.claude/plugins/agents",
 		setup: []Step{
 			{
-				Do: "Install the plugin: `claude plugin marketplace add agenxy/lanes && " +
-					"claude plugin install lanes`. If you have no network or no checkout, " +
-					"write the files in `files` below under ~/.claude/plugins/lanes/ " +
+				Do: "Install the plugin: `claude plugin marketplace add agenxy/agents && " +
+					"claude plugin install agents`. If you have no network or no checkout, " +
+					"write the files in `files` below under ~/.claude/plugins/agents/ " +
 					"instead: they are the whole plugin.",
 				Check: "the files exist at the paths in `files`, with the same contents",
 				IfNot: "nothing else here will work; the hooks are what the rest depends on",
@@ -131,7 +131,7 @@ var catalog = []struct {
 			{
 				Do: "Confirm mail actually arrives rather than merely being fetchable. " +
 					"Have another agent send you a message, or send one to yourself from " +
-					"a second lane.",
+					"a second agent.",
 				Check: "it appears in your context on your next tool call, WITHOUT you " +
 					"calling inbox",
 				IfNot: "the PreToolUse hook is not reaching the daemon. Check that the " +
@@ -148,30 +148,30 @@ var catalog = []struct {
 		harness: "codex",
 		dir:     "codex",
 		aliases: []string{"chatgpt-desktop", "chatgpt", "gpt"},
-		buys: "nothing to install. Codex fires hooks as SUBPROCESSES, which Lanes " +
+		buys: "nothing to install. Codex fires hooks as SUBPROCESSES, which Dibs " +
 			"will not be: a plugin that spawned a process to drive your harness " +
-			"would make Lanes a wrapper rather than a service. So on this harness " +
+			"would make Dibs a wrapper rather than a service. So on this harness " +
 			"mail stays pull-only: call await_events or inbox when you choose. " +
 			"That is the honest floor and it works everywhere.",
 		root: "~/.codex",
 		setup: []Step{
 			{
 				Do: "Nothing is required: you are connected and every tool works. Do NOT " +
-					"install a hook that shells out to fetch mail: that would make Lanes " +
+					"install a hook that shells out to fetch mail: that would make Dibs " +
 					"drive your harness, which this project refuses on purpose.",
-				Check: "call ack_board and confirm it returns a board",
+				Check: "call check_in and confirm it returns a board",
 			},
 			{
-				Do: "Set a pull rhythm instead of waiting to be woken: ack_board at the " +
+				Do: "Set a pull rhythm instead of waiting to be woken: check_in at the " +
 					"start of each activation, await_events when you are about to block. " +
 					"Those are the two moments where news changes what you do next.",
-				Check: "await_events returns rather than erroring, and ack_board reports a " +
+				Check: "await_events returns rather than erroring, and check_in reports a " +
 					"cursor serial",
-				IfNot: "you are registered but not acknowledging: set_slot and claim " +
-					"refuse until ack_board has succeeded this activation",
+				IfNot: "you are registered but not acknowledging: declare and claim " +
+					"refuse until check_in has succeeded this activation",
 			},
 		},
-		verify: "call ack_board and then inbox: if both answer, this harness is as " +
+		verify: "call check_in and then inbox: if both answer, this harness is as " +
 			"configured as it can be. There is no wake path to verify here, by design",
 		delivers: false,
 	},

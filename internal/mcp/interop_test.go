@@ -9,7 +9,7 @@ import (
 
 // Agents on different protocol revisions must share one board.
 //
-// This is the situation Lanes will actually be in for the foreseeable future,
+// This is the situation Dibs will actually be in for the foreseeable future,
 // and it is not hypothetical: as of August 2026 no shipping host negotiates
 // 2026-07-28, so the moment one does, a fleet becomes mixed: one agent arriving
 // through the stateless core with no handshake, another through the legacy
@@ -40,7 +40,7 @@ func TestAgentsOnDifferentProtocolVersionsShareOneBoard(t *testing.T) {
 	}
 	legacy := registerOn(t, srv, "2025-11-25", "agent-legacy")
 
-	// Visibility, both directions. ack_board is the agent's board: show_board
+	// Visibility, both directions. check_in is the agent's board: board
 	// is the panel's, and reaching for it here once cost an hour chasing a
 	// "missing claims" bug that was a wrong tool, not a wrong server.
 	modernBoard := ackOn(t, srv, "2026-07-28", modern)
@@ -53,7 +53,7 @@ func TestAgentsOnDifferentProtocolVersionsShareOneBoard(t *testing.T) {
 	}
 
 	// Mail across the boundary, both directions.
-	toolCallOn(t, srv, "2026-07-28", "send_message", map[string]any{
+	toolCallOn(t, srv, "2026-07-28", "send", map[string]any{
 		"token": modern, "to": "agent-legacy", "type": "question",
 		"body": "reaching across from the stateless side",
 	})
@@ -61,7 +61,7 @@ func TestAgentsOnDifferentProtocolVersionsShareOneBoard(t *testing.T) {
 		"stateless side") {
 		t.Error("mail sent over 2026 never reached the agent on 2025")
 	}
-	toolCallOn(t, srv, "2025-11-25", "send_message", map[string]any{
+	toolCallOn(t, srv, "2025-11-25", "send", map[string]any{
 		"token": legacy, "to": "agent-modern", "type": "notify",
 		"body": "reaching back from the handshake side",
 	})
@@ -78,7 +78,7 @@ func TestAgentsOnDifferentProtocolVersionsShareOneBoard(t *testing.T) {
 	// incidental here: this test is about whether the two protocols see one
 	// board, but a refused claim would make it pass for the wrong reason.
 	toolCallOn(t, srv, "2026-07-28", "claim", map[string]any{
-		"token": modern, "path": "/tmp/lanes-interop/internal/core", "mode": "exclusive",
+		"token": modern, "path": "/tmp/agents-interop/internal/core", "mode": "exclusive",
 	})
 	if !mentions(ackOn(t, srv, "2025-11-25", legacy), "internal/core") {
 		t.Error("a claim made over 2026 is invisible to an agent on 2025")
@@ -101,18 +101,18 @@ func TestAgentsOnDifferentProtocolVersionsShareOneBoard(t *testing.T) {
 
 func registerOn(t *testing.T, srv *httptest.Server, version, name string) string {
 	t.Helper()
-	out := toolCallOn(t, srv, version, "register_lane",
+	out := toolCallOn(t, srv, version, "register",
 		map[string]any{"name": name, "session_id": "s-" + name})
 	tok, _ := out["token"].(string)
 	if tok == "" {
-		t.Fatalf("register_lane on %s returned no token: %v", version, out)
+		t.Fatalf("register on %s returned no token: %v", version, out)
 	}
 	return tok
 }
 
 func ackOn(t *testing.T, srv *httptest.Server, version, token string) map[string]any {
 	t.Helper()
-	return toolCallOn(t, srv, version, "ack_board", map[string]any{"token": token})
+	return toolCallOn(t, srv, version, "check_in", map[string]any{"token": token})
 }
 
 // toolCallOn is toolCall with the protocol version chosen by the caller, which
@@ -182,7 +182,7 @@ func sameOrder(a, b []float64) bool {
 // The stateless core requires resultType on results; the legacy path must not
 // see it.
 //
-// Found by driving Lanes with the official MCP Python SDK, which rejected
+// Found by driving Dibs with the official MCP Python SDK, which rejected
 // tools/list outright: "ListToolsResult: resultType. Field required". Every
 // hand-rolled check had passed, because both sides of them were written from one
 // reading of the spec. That is why this test exists and why it asserts BOTH

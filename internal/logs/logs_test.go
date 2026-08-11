@@ -33,7 +33,7 @@ func TestSensitiveAttrsAreRedactedAtCapture(t *testing.T) {
 	h := NewHandler(slog.NewTextHandler(discard{}, nil), r)
 	log := slog.New(h)
 
-	log.Info("register", "token", "SUPER-SECRET", "lane", "alpha")
+	log.Info("register", "token", "SUPER-SECRET", "agent", "alpha")
 	log.Info("send", "body", "the private message", "msg_serial", 7)
 	log.With("local_secret", "ALSO-SECRET").Info("wired")
 
@@ -52,7 +52,7 @@ func TestSensitiveAttrsAreRedactedAtCapture(t *testing.T) {
 	if all[0].Attrs["token"] != "[redacted]" {
 		t.Fatalf("token should be redacted, got %v", all[0].Attrs["token"])
 	}
-	if all[0].Attrs["lane"] != "alpha" {
+	if all[0].Attrs["agent"] != "alpha" {
 		t.Fatal("non-sensitive attrs must survive: a log nobody can read is useless")
 	}
 	if all[2].Attrs["local_secret"] != "[redacted]" {

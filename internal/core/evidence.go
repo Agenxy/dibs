@@ -118,7 +118,7 @@ const (
 	// It does NOT mean they will write the same file, and saying so would be an
 	// overclaim: two agents in /repo/.github editing different workflows overlap
 	// in territory and never touch each other. Attributable concurrent writes to
-	// one FILE would be stronger evidence and Lanes does not observe them.
+	// one FILE would be stronger evidence and Dibs does not observe them.
 	RelationSameSurface Relation = "same_surface"
 	// RelationContended means they need the same exclusive host resource: a port,
 	// a lock, a GPU. Independent of whether the work is related: two unrelated
@@ -159,7 +159,7 @@ func (e Evidence) Classify() Relation {
 		// demoted it to "possible" was wrong: it threw away the exact identity in
 		// order to avoid the wrong wording. An implementer and a reviewer on
 		// pr:1231 ARE on the same work item: that is a fact, and it is exactly
-		// what should put them in one lane to talk. What must change is the ACTION
+		// what should put them in one agent to talk. What must change is the ACTION
 		// and the sentence, not the classification, so Complementary stays on the
 		// evidence for the policy to read.
 		return RelationSameItem
@@ -250,7 +250,7 @@ func (e Evidence) strongest() string {
 }
 
 // EvidenceBetween compares two live declarations: slot against slot, not
-// declaration against a lane's accumulated union.
+// declaration against an agent's accumulated union.
 func EvidenceBetween(
 	a, b Slot, aCWD, bCWD, repo string, discount map[string]float64, lens RepoLens,
 ) Evidence {
@@ -302,7 +302,7 @@ func EvidenceBetween(
 //
 // Matching runs on the loop, so it must not ask Git anything: a cold
 // `git rev-parse` behind a one-second timeout would stall every agent on the
-// board while one lane is matched. The engine resolves identities off the loop
+// board while one agent is matched. The engine resolves identities off the loop
 // and hands the answers in here as data, which keeps this package a pure
 // function of what it was given: the same property that lets the ledger replay.
 //

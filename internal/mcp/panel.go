@@ -3,7 +3,7 @@ package mcp
 import (
 	"encoding/json"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // panelPayload trims board/mailbox state down to exactly the fields the panel
@@ -20,7 +20,7 @@ func panelPayload(raw core.Result) core.Result {
 	// ([]core.Event, []core.Message). Neither satisfies `case map[string]any` or
 	// `.([]any)` in a type switch. Go treats a named type as distinct. That has
 	// silently produced a wrong answer three times in this file's history: a
-	// summary reporting 0 lanes over 7, a board dropped entirely, and a mailbox
+	// summary reporting 0 agents over 7, a board dropped entirely, and a mailbox
 	// panel suppressed while holding mail. One round-trip removes the whole class.
 	in := core.Result{}
 	if b, err := json.Marshal(raw); err == nil {
@@ -73,16 +73,16 @@ var (
 		// WHY an agent stopped counting as live. Without it the panel shows
 		// "out of touch" beside a last-contact time of "now", which reads as a
 		// broken panel rather than a dead agent, and it cannot tell a crashed
-		// process from a lane that never gave a pid and is simply quiet.
+		// process from an agent that never gave a pid and is simply quiet.
 		"stale_reason",
 		// The name a human chose, when the id could not carry it. Without it a
-		// fleet named in a non-Latin script reads `lane`, `lane-2`, `lane-3`.
+		// fleet named in a non-Latin script reads `agent`, `agent-2`, `agent-3`.
 		"display_name",
 	}
 	slotFields = []string{"id", "text", "refs", "dirs"}
 )
 
-// channelFields / memberFields are what the Lanes tab renders. Same discipline
+// channelFields / memberFields are what the Dibs tab renders. Same discipline
 // as laneFields: a field added here and not drawn is payload rot.
 var (
 	channelFields = []string{
@@ -102,7 +102,7 @@ var (
 	// blob rendered identically to one carrying nothing, so "review the attached
 	// evidence" showed no attachment at all. The shared renderer displays them.
 	msgFields   = []string{"serial", "type", "from", "to", "body", "response", "state", "attachments"}
-	eventFields = []string{"serial", "type", "lane", "to", "ts"}
+	eventFields = []string{"serial", "type", "agent", "to", "ts"}
 )
 
 // maxPanelEvents bounds the activity list: enough to see what just happened,
@@ -116,8 +116,8 @@ func trimBoard(b map[string]any) core.Result {
 			out[k] = v
 		}
 	}
-	var lanes []map[string]any
-	for _, raw := range asMaps(b["lanes"]) {
+	var agents []map[string]any
+	for _, raw := range asMaps(b["agents"]) {
 		l := pick(raw, laneFields)
 		var slots []map[string]any
 		for _, s := range asMaps(raw["slots"]) {
@@ -126,18 +126,18 @@ func trimBoard(b map[string]any) core.Result {
 		if slots != nil {
 			l["slots"] = slots
 		}
-		lanes = append(lanes, l)
+		agents = append(agents, l)
 	}
-	out["lanes"] = lanes
+	out["agents"] = agents
 
-	// Channels, trimmed the same way and for the same reason: this payload is
+	// Spaces, trimmed the same way and for the same reason: this payload is
 	// sent to every host on every board call, so anything the template does not
 	// draw is context the model pays for and nobody reads. Membership carries
 	// its score and evidence because SPEC-CHANNELS.md §10.3 requires an
 	// auto-join to be explainable, and the panel renders exactly that in the
 	// member's title attribute.
 	var chans []map[string]any
-	for _, raw := range asMaps(b["channels"]) {
+	for _, raw := range asMaps(b["spaces"]) {
 		c := pick(raw, channelFields)
 		var members []map[string]any
 		for _, m := range asMaps(raw["members"]) {
@@ -149,7 +149,7 @@ func trimBoard(b map[string]any) core.Result {
 		chans = append(chans, c)
 	}
 	if chans != nil {
-		out["channels"] = chans
+		out["spaces"] = chans
 	}
 	return out
 }

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // Do submits one mutating op to the loop and waits.
@@ -36,7 +36,7 @@ func (e *Engine) send(ctx context.Context, req request) (core.Result, error) {
 // authRead performs the read-path phases (SPEC §2): auth, rate, ledgered wake,
 // ephemeral touch, durable checkpoint coalescing. Must run inside the loop.
 // Returns nil (with an error result set) if the caller is not authenticated.
-func (e *Engine) authRead(token string, now time.Time) (*core.Lane, core.Result) {
+func (e *Engine) authRead(token string, now time.Time) (*core.Agent, core.Result) {
 	l := e.state.LaneByToken(token)
 	if l == nil {
 		return nil, core.Result{"error": core.ErrBadToken}
@@ -51,8 +51,8 @@ func (e *Engine) authRead(token string, now time.Time) (*core.Lane, core.Result)
 }
 
 // SubscribeInfo resolves what a subscriptions/listen (SEP-2575) request needs:
-// the current serial to stream from, and (if a lane token is supplied) the
-// authenticated lane id so an inbox subscription can be scoped to it. An empty
+// the current serial to stream from, and (if an agent token is supplied) the
+// authenticated agent id so an inbox subscription can be scoped to it. An empty
 // token is allowed (board-only subscription); a bad token errors.
 func (e *Engine) SubscribeInfo(ctx context.Context, token string) (laneID string, since uint64, err error) {
 	res, qerr := e.query(ctx, func() core.Result {
@@ -78,7 +78,7 @@ func (e *Engine) SubscribeInfo(ctx context.Context, token string) (laneID string
 }
 
 // InboxFor returns the caller's decrypted mailbox for a resources/read of
-// lanes://inbox (marks pending delivered, same as the inbox tool).
+// dibs://inbox (marks pending delivered, same as the inbox tool).
 func (e *Engine) InboxFor(ctx context.Context, token string) (core.Result, error) {
 	return e.Inbox(ctx, token)
 }
@@ -88,19 +88,19 @@ func (e *Engine) InboxFor(ctx context.Context, token string) (core.Result, error
 func (e *Engine) EventsSince(ctx context.Context, token string, serial uint64, all bool) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
 		now := time.Now()
-		lane := ""
+		agent := ""
 		if !all {
 			l, errRes := e.authRead(token, now)
 			if errRes != nil {
 				return errRes
 			}
-			lane = l.ID
+			agent = l.ID
 		}
 		serial = clampCursor(serial, e.ringFloor())
 		if floor := e.ringFloor(); serial+1 < floor {
 			return core.Result{"error": errCursorTooOld(floor)}
 		}
-		return core.Result{"events": e.eventsSince(serial, lane, all), "serial": e.state.Serial}
+		return core.Result{"events": e.eventsSince(serial, agent, all), "serial": e.state.Serial}
 	})
 }
 
@@ -114,23 +114,23 @@ func (e *Engine) AwaitEvents(
 	ch := make(chan []core.Event, 1)
 	res, err := e.query(ctx, func() core.Result {
 		now := time.Now()
-		lane := ""
+		agent := ""
 		if !all {
 			l, errRes := e.authRead(token, now)
 			if errRes != nil {
 				return errRes
 			}
-			lane = l.ID
+			agent = l.ID
 		}
 		serial = clampCursor(serial, e.ringFloor())
 		if floor := e.ringFloor(); serial+1 < floor {
 			return core.Result{"error": errCursorTooOld(floor)}
 		}
-		if evs := e.eventsSince(serial, lane, all); len(evs) > 0 {
+		if evs := e.eventsSince(serial, agent, all); len(evs) > 0 {
 			return core.Result{"events": evs, "serial": e.state.Serial}
 		}
 		e.watch = append(e.watch, waiter{
-			since: serial, lane: lane, all: all, ch: ch, expires: now.Add(timeout),
+			since: serial, agent: agent, all: all, ch: ch, expires: now.Add(timeout),
 		})
 		return core.Result{"parked": true}
 	})
@@ -167,7 +167,7 @@ func (e *Engine) Inbox(ctx context.Context, token string) (core.Result, error) {
 		// The same mail under both names, because the two tools that return it
 		// disagreed about what to call it, and each used the OTHER one's name.
 		//
-		// inbox returned `messages`; ack_board returned `inbox`. So an agent that
+		// inbox returned `messages`; check_in returned `inbox`. So an agent that
 		// called the inbox tool and read the inbox key got an empty list while its
 		// mail sat one key away, and nothing anywhere said so. Cost a debugging
 		// cycle to find from the outside, on a day spent fixing ways mail goes
@@ -177,45 +177,45 @@ func (e *Engine) Inbox(ctx context.Context, token string) (core.Result, error) {
 		// returned and something will be reading it.
 		res["inbox"] = mail
 		// Surfaced here, but NOT cleared here. Exactly one call consumes a
-		// notice, ack_board, the documented checkpoint, because two owners of
+		// notice, check_in, the documented checkpoint, because two owners of
 		// a clear is how the first version of this went wrong twice over: it
 		// cleared without returning anything (destroying unseen notices on an
 		// ordinary read), and once that was fixed, whichever of inbox and
-		// ack_board an agent happened to call first silently decided which
+		// check_in an agent happened to call first silently decided which
 		// response carried them.
 		//
 		// Read-only here is free: repeating a notice on inbox costs a line,
 		// while losing one costs the agent the fact that it was admitted.
 		if pending := e.pendingNotices(l.ID); len(pending) > 0 {
-			res["lane_updates"] = pending
+			res["agent_updates"] = pending
 		}
 		return res
 	})
 }
 
-// LaneRead returns a lane's announcement history to one of its members.
+// LaneRead returns an agent's announcement history to one of its members.
 //
 // A read, not an op: it changes nothing, and in particular it does not acknowledge
-// anything. Reading what a lane has said and accepting an obligation it placed on
+// anything. Reading what an agent has said and accepting an obligation it placed on
 // you are separate acts, and collapsing them would let a context-recovery read
 // silently discharge an ack the agent never accounted for.
-func (e *Engine) LaneRead(ctx context.Context, token, lane string, limit int) (core.Result, error) {
+func (e *Engine) LaneRead(ctx context.Context, token, agent string, limit int) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
 		l, errRes := e.authRead(token, time.Now())
 		if errRes != nil {
 			return errRes
 		}
-		ch, err := e.state.ReaderChannel(l, lane)
+		ch, err := e.state.ReaderChannel(l, agent)
 		if err != nil {
 			// Hand the error to the loop, which turns res["error"] into a real
 			// Go error: do NOT flatten it into a payload here.
 			//
 			// This built {code, message, hint} by hand and returned no error, so
-			// the MCP layer never set isError: "not a member of this lane" and
-			// "that lane does not exist" arrived as SUCCESSFUL tool calls
+			// the MCP layer never set isError: "not a member of this agent" and
+			// "that agent does not exist" arrived as SUCCESSFUL tool calls
 			// carrying a refusal in their text. A client that trusts the
 			// protocol's own error signal, which is the point of having one,
-			// reads that as a lane snapshot and skips the hint telling it to
+			// reads that as an agent snapshot and skips the hint telling it to
 			// join or subscribe.
 			//
 			// The payload the caller sees is unchanged: callTool unpacks a
@@ -227,7 +227,7 @@ func (e *Engine) LaneRead(ctx context.Context, token, lane string, limit int) (c
 			"lane_id": ch.ID, "topic": ch.Topic, "members": len(ch.Members),
 			"announcements": e.state.LaneHistory(ch, l.ID, limit),
 			// Posts are here because this is the only place they can be read.
-			// The lane.post event carries metadata only (SPEC §10), so without
+			// The agent.post event carries metadata only (SPEC §10), so without
 			// this a remark was write-only: delivered once to whoever happened
 			// to be polling, and unreachable to everyone else forever.
 			"posts": e.state.PostHistory(ch, limit),
@@ -235,7 +235,7 @@ func (e *Engine) LaneRead(ctx context.Context, token, lane string, limit int) (c
 		// The coordination key goes to MEMBERS only. An agent that lost its
 		// context lost the key with it, and a key it cannot recover is a key it
 		// stops declaring, which quietly returns the fleet to guessing. But a
-		// subscriber is not a member: it watches the lane without holding the
+		// subscriber is not a member: it watches the agent without holding the
 		// key, and handing it one would let it claim a membership it does not
 		// have.
 		if _, member := ch.Members[l.ID]; member || e.state.SpeaksFor(ch, l.ID) != "" {
@@ -259,7 +259,7 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 		if !ok || (m.From != l.ID && m.To != l.ID) {
 			// An ANNOUNCEMENT serial is the overwhelmingly likely mistake here,
 			// because the wake nudge hands the agent a serial and says to go
-			// read it, and a serial in hand makes get_message the obvious call.
+			// read it, and a serial in hand makes read_mail the obvious call.
 			//
 			// Answering "no message N addressed to you" for a thing that plainly
 			// exists is the failure this codebase keeps producing: a confident,
@@ -267,7 +267,7 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 			// conclusion is that the announcement was withdrawn. A reviewing
 			// agent reached exactly that conclusion and messaged a human.
 			if an, isAnnounce := e.state.Announcements[serial]; isAnnounce {
-				return core.Result{"error": core.ErrWrongKind(serial, an.Channel)}
+				return core.Result{"error": core.ErrWrongKind(serial, an.Space)}
 			}
 			return core.Result{"error": core.ErrNoMessage(serial, l.TruncatedBefore)}
 		}
@@ -278,8 +278,8 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 	})
 }
 
-// markDelivered ledgers pending→delivered for the lane's mailbox.
-func (e *Engine) markDelivered(l *core.Lane, now time.Time) {
+// markDelivered ledgers pending→delivered for the agent's mailbox.
+func (e *Engine) markDelivered(l *core.Agent, now time.Time) {
 	var serials []uint64
 	for _, m := range e.state.Messages {
 		if m.To == l.ID && m.State == core.MsgStatePending {
@@ -299,10 +299,10 @@ func (e *Engine) Board(ctx context.Context) (core.Result, error) {
 
 func (e *Engine) decoratedBoard() core.Result {
 	b := e.state.Board()
-	lanes, _ := b["lanes"].([]map[string]any)
-	for _, lm := range lanes {
+	agents, _ := b["agents"].([]map[string]any)
+	for _, lm := range agents {
 		id, _ := lm["id"].(string)
-		l := e.state.Lanes[id]
+		l := e.state.Agents[id]
 		if l == nil {
 			continue
 		}

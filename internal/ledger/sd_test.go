@@ -3,7 +3,7 @@ package ledger
 import (
 	"testing"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // The whole-state comparison in TestRandomizedReplayEquivalence is only worth
@@ -22,8 +22,8 @@ func TestStateDiffIsNotVacuous(t *testing.T) {
 		t.Fatal("stateDiff sees no difference between serial 0 and serial 999: it compares nothing")
 	}
 	st2 = reopen(t, path)
-	st2.Channels["ghost"] = &core.Channel{ID: "ghost", Members: map[string]*core.Membership{}, Subs: map[string]bool{}}
+	st2.Spaces["ghost"] = &core.Space{ID: "ghost", Members: map[string]*core.Membership{}, Subs: map[string]bool{}}
 	if stateDiff(st, st2) == "" {
-		t.Fatal("stateDiff missed an entire extra channel")
+		t.Fatal("stateDiff missed an entire extra space")
 	}
 }

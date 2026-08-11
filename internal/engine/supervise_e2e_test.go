@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agenxy/lanes/internal/core"
-	"github.com/agenxy/lanes/internal/liveness"
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/liveness"
 )
 
 // The whole chain, against a real process: spawn a stalled agent, sweep the
-// machine, and assert the lane that spawned it was told.
+// machine, and assert the agent that spawned it was told.
 //
 // Every other test here covers one link. This is the only one that proves they
 // join up, and it existed as a gap for a while precisely because it was awkward:
@@ -52,10 +52,10 @@ func TestAStalledAgentReachesTheLaneThatSpawnedIt(t *testing.T) {
 		t.Skipf("could not build the stand-in agent: %v\n%s", err, out)
 	}
 
-	// Spawned the way the PreToolUse stamp spawns one: the parent's lane in the
+	// Spawned the way the PreToolUse stamp spawns one: the parent's agent in the
 	// environment, inherited by the process and everything below it.
 	child := exec.Command(fake, "exec", "--stand-in")
-	child.Env = append(os.Environ(), "LANES_PARENT=builder")
+	child.Env = append(os.Environ(), "DIBS_PARENT=builder")
 	if err := child.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestAStalledAgentReachesTheLaneThatSpawnedIt(t *testing.T) {
 			mine.Owner, mine.Via)
 	}
 
-	// A board with that lane on it, and a sweep impatient enough to finish
+	// A board with that agent on it, and a sweep impatient enough to finish
 	// inside a test. Only the thresholds are relaxed; the logic is the shipped
 	// logic.
 	s := core.NewState("n1", core.DefaultLimits())
@@ -158,7 +158,7 @@ func TestAStalledAgentReachesTheLaneThatSpawnedIt(t *testing.T) {
 		t.Errorf("the notice does not say what happened: %q", got[0].Text)
 	}
 	if !strings.Contains(got[0].Text, "has not touched it") {
-		t.Errorf("the notice does not say Lanes left it alone, so a parent could\n"+
+		t.Errorf("the notice does not say Dibs left it alone, so a parent could\n"+
 			"  reasonably assume the stall was handled: %q", got[0].Text)
 	}
 
@@ -185,7 +185,7 @@ func TestAStalledAgentReachesTheLaneThatSpawnedIt(t *testing.T) {
 	if n := len(e.notices["builder"]); n != 0 {
 		t.Errorf("a child reporting RISING progress was reported stalled (%d notices)\n"+
 			"  the counter is not reaching the classifier, so a harness whose store\n"+
-			"  Lanes cannot read is judged on CPU alone", n)
+			"  Dibs cannot read is judged on CPU alone", n)
 	}
 
 	// And when the counter stops moving, the verdict returns. Otherwise the

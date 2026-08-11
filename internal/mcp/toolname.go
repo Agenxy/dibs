@@ -3,7 +3,7 @@ package mcp
 import "encoding/json"
 
 // toolName extracts just the tool name for logging: never the arguments, which
-// carry lane tokens and message bodies.
+// carry agent tokens and message bodies.
 func toolName(params json.RawMessage) string {
 	var p struct {
 		Name string `json:"name"`

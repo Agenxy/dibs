@@ -8,10 +8,10 @@ import (
 // Settled announcement history is bounded; obligations are not.
 //
 // Announcements were the one collection in replayed state with no bound. They
-// were added on every lane_announce and removed only when an empty auto-opened
-// channel was reclaimed, and a standing channel a human opened is never
+// were added on every announce and removed only when an empty auto-opened
+// space was reclaimed, and a standing space a human opened is never
 // reclaimed, so its history grew for the life of the board and was replayed into
-// memory on every daemon start. A reviewer made 60 in one channel and found all
+// memory on every daemon start. A reviewer made 60 in one space and found all
 // 60 still resident; the visible default of 50 is response pagination, not
 // retention.
 //
@@ -25,10 +25,10 @@ func TestSettledAnnouncementsAreBoundedButObligationsAreNot(t *testing.T) {
 	s.Limits.AnnouncementRetention = 3
 	now := time.Now()
 
-	s.Channels["standing"] = &Channel{ID: "standing", Members: map[string]*Membership{}}
+	s.Spaces["standing"] = &Space{ID: "standing", Members: map[string]*Membership{}}
 	add := func(serial uint64, state string) {
 		s.Announcements[serial] = &Announcement{
-			Serial: serial, Channel: "standing", State: state, MadeAt: now,
+			Serial: serial, Space: "standing", State: state, MadeAt: now,
 		}
 	}
 	for i := uint64(1); i <= 10; i++ {
@@ -72,10 +72,10 @@ func TestAnnouncementPruningIsDeterministic(t *testing.T) {
 	build := func() *State {
 		s := NewState("n1", DefaultLimits())
 		s.Limits.AnnouncementRetention = 2
-		s.Channels["c"] = &Channel{ID: "c", Members: map[string]*Membership{}}
+		s.Spaces["c"] = &Space{ID: "c", Members: map[string]*Membership{}}
 		for i := uint64(1); i <= 6; i++ {
 			s.Announcements[i] = &Announcement{
-				Serial: i, Channel: "c", State: AnnounceAcked,
+				Serial: i, Space: "c", State: AnnounceAcked,
 			}
 		}
 		return s

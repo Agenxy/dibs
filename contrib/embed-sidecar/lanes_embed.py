@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Lanes embedding sidecar: tier 2 of SPEC-CHANNELS.md §4.
+"""Dibs embedding sidecar: tier 2 of SPEC-CHANNELS.md §4.
 
 Answers one endpoint:
 
@@ -8,26 +8,26 @@ Answers one endpoint:
                     "scorer": "<model>", "version": "<n>"}
 
 WHY THIS IS A SEPARATE PROCESS, not a Go library: the strongest embedding
-runtime on Apple Silicon is MLX, which is Python. Lanes' core is Go with no
+runtime on Apple Silicon is MLX, which is Python. Dibs' core is Go with no
 dependencies, and linking a model runtime in would end that. CGO alone
 forfeits pure-Go cross-compilation. Behind loopback HTTP the daemon stays
 dependency-free and the runtime becomes the operator's choice.
 
 WHAT IT ACTUALLY DOES, and why it is not "embed two sentences and compare":
 two tasks that are unrelated in English embed as unrelated in English, which is
-precisely the case channels exist for (SPEC-CHANNELS.md §0, §4.2). So the
-declaration is embedded and used to RETRIEVE code: the comparison Lanes makes
+precisely the case spaces exist for (SPEC-CHANNELS.md §0, §4.2). So the
+declaration is embedded and used to RETRIEVE code: the comparison Dibs makes
 is between predicted file sets, not between sentences. This process owns the
 index; the daemon never learns which model, which dimensions, or how chunks are
 made.
 
-Weights here are raw similarities. Lanes renormalises them on receipt precisely
+Weights here are raw similarities. Dibs renormalises them on receipt precisely
 so this script does not have to know its conventions.
 
     # real use (Apple Silicon):
     pip install mlx mlx-lm
     ./lanes_embed.py --repo /path/to/repo --port 8737
-    lanesd -match-repo /path/to/repo -match-join 0.33 \\
+    dibd -match-repo /path/to/repo -match-join 0.33 \\
            -match-embed-url http://127.0.0.1:8737
 
     # contract check, no model needed:
@@ -35,7 +35,7 @@ so this script does not have to know its conventions.
     ./lanes_embed.py --self-test
 
 The default model is F2LLM-v2-4B: Apache 2.0, and the measured winner of a
-four-way comparison run with `lanes calibrate` on this repository's own git
+four-way comparison run with `dibs calibrate` on this repository's own git
 history: recall@10 0.638 and MRR 0.780 at n=60, ahead of Qwen3-Embedding-4B
 (0.560 / 0.649), Qwen3-Embedding-0.6B (0.532 / 0.667) and the built-in tier-0
 scorer (0.488 / 0.542). See README.md in this directory for the full table.
@@ -74,7 +74,7 @@ class HashBackend:
 
     Not a scorer anybody should run: it is a hashed bag-of-words, which is what
     tier 0 already does better with git history behind it. It exists so the
-    HTTP contract, the indexing, and Lanes' client can be tested end to end on
+    HTTP contract, the indexing, and Dibs' client can be tested end to end on
     a machine with no model: the failure mode this replaces is "the sidecar
     was never run before it shipped".
     """
@@ -156,7 +156,7 @@ def make_handler(backend, model_name: str):
                 texts = [raw] if isinstance(raw, str) else [str(t) for t in (raw or [])]
                 vecs = backend.encode(texts) if texts else []
             except Exception as e:  # noqa: BLE001 - never take the board down
-                # Lanes treats any failure as "degrade to tier 0" (§4.1), so an
+                # Dibs treats any failure as "degrade to tier 0" (§4.1), so an
                 # error here costs a better answer, never the declaration.
                 self._send(500, {"error": str(e)})
                 return
@@ -218,7 +218,7 @@ def self_test() -> int:
           len(first["embedding"]) > 0
           and all(isinstance(x, (int, float)) for x in first["embedding"]))
 
-    # Batching is how Lanes indexes a repository; order is how it maps vectors
+    # Batching is how Dibs indexes a repository; order is how it maps vectors
     # back to files, so a reordered or short reply corrupts the whole index.
     batch = post({"model": "hash-stub", "input": ["alpha", "beta", "gamma"]})
     check("a batch returns one vector per input, in order",

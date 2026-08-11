@@ -4,7 +4,7 @@
 // Two rules shape it, both from PHILOSOPHY.md:
 //   - Nothing is immortal. The ring has a fixed capacity; the oldest record is
 //     dropped, never a file that grows until a disk fills.
-//   - The log must not leak what the ledger protects. Lane tokens, secrets, and
+//   - The log must not leak what the ledger protects. Agent tokens, secrets, and
 //     message bodies are encrypted at rest; a debug log that printed them would
 //     quietly undo that. Sensitive attributes are redacted at capture time, not
 //     at display time: there is no copy holding the real value.

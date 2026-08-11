@@ -3,8 +3,8 @@ package engine
 import (
 	"sync"
 
-	"github.com/agenxy/lanes/internal/core"
-	"github.com/agenxy/lanes/internal/paths"
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/paths"
 )
 
 // repoLens answers core's "are these two agents in one repository" from Git,
@@ -17,7 +17,7 @@ import (
 // the loop, and core is handed a lookup that cannot block and cannot fail.
 //
 // Directories with no entry answer "no evidence" rather than "different", which
-// is the whole reason core asks for three-valued truth: a lane registered
+// is the whole reason core asks for three-valued truth: an agent registered
 // without a cwd, or one that arrived between the resolve and the read, must not
 // be treated as positively somewhere else.
 type repoLens struct {
@@ -27,8 +27,8 @@ type repoLens struct {
 // newRepoLens resolves every directory it is given, concurrently.
 //
 // Concurrently because the cost is a cold `git rev-parse` bounded at one second
-// EACH: resolved in turn, a board of a dozen lanes that Git has not been asked
-// about yet would put twelve seconds in front of one set_slot, and set_slot is
+// EACH: resolved in turn, a board of a dozen agents that Git has not been asked
+// about yet would put twelve seconds in front of one declare, and declare is
 // the call agents make constantly. Fanning out bounds the whole thing to roughly
 // one timeout. Repeats are free: paths.Identify is memoised process-wide behind
 // a mutex, so this is a first-encounter cost per directory, not a per-call one.

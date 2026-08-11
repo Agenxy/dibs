@@ -1,10 +1,10 @@
-//go:build lanesdev
+//go:build dibdev
 
 package humanauth
 
 import "os"
 
-// This file is compiled only under `-tags lanesdev`. See mock_release.go for why
+// This file is compiled only under `-tags dibdev`. See mock_release.go for why
 // the switch is a build tag and not a runtime check.
 //
 // It exists because the human flow is otherwise undrivable without a person: no
@@ -17,7 +17,7 @@ import "os"
 // mock: an unknown value falls through to the real sensor rather than being
 // treated as a verification, because a typo must not be a way to assert that
 // somebody is present.
-const mockEnv = "LANES_PRESENCE_MOCK"
+const mockEnv = "DIBS_PRESENCE_MOCK"
 
 func mocked() (Verdict, bool) {
 	switch os.Getenv(mockEnv) {

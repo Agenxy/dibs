@@ -1,5 +1,5 @@
 // Package web serves the human window: a server-rendered board over SSE.
-// Package web serves the operator's god view of the board: every lane, every
+// Package web serves the operator's god view of the board: every agent, every
 // claim, all mail, and the ledger tail.
 //
 // Go owns all STATE: the ledger and the engine are the only source of truth,
@@ -24,10 +24,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agenxy/lanes/internal/assets"
-	"github.com/agenxy/lanes/internal/build"
-	"github.com/agenxy/lanes/internal/core"
-	"github.com/agenxy/lanes/internal/engine"
+	"github.com/agenxy/dibs/internal/assets"
+	"github.com/agenxy/dibs/internal/build"
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
 )
 
 //go:embed templates
@@ -98,7 +98,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /events", s.sse)
 	mux.HandleFunc("GET /api/board", s.apiBoard)
 	mux.HandleFunc("GET /api/messages", s.apiMessages)
-	// Why the Lanes tab is empty. Without this a board with matching switched
+	// Why the Dibs tab is empty. Without this a board with matching switched
 	// off looks identical to one where nobody is colliding.
 	mux.HandleFunc("GET /api/matching", func(w http.ResponseWriter, r *http.Request) {
 		writeActJSON(w, http.StatusOK, s.eng.MatchStatus())
@@ -245,7 +245,7 @@ func (s *Server) sse(w http.ResponseWriter, r *http.Request) {
 	// fixed at connect time, so on an idle board a client's Last-Event-ID never
 	// advanced, and on a busy one it was reset backwards every 30 seconds. On
 	// reconnect the client then asked for everything from that stale point, and
-	// the replay is a non-blocking send into a 256-slot channel: the excess is
+	// the replay is a non-blocking send into a 256-slot space: the excess is
 	// dropped silently. The board itself was never wrong (every frame is a full
 	// snapshot), but the id was useless as a resume point, which is the one job
 	// it has.

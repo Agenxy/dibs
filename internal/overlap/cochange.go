@@ -93,7 +93,7 @@ func MineCoChange(ctx context.Context, repo string, opt CoChangeOptions) (*CoCha
 	// %s is the commit SUBJECT, and it comes free: the same log call already
 	// reads the file list. A commit message is a description of work in the
 	// project's own words, and its files are what that work touched, which is
-	// precisely the pairing `lanes calibrate` already treats as ground truth.
+	// precisely the pairing `dibs calibrate` already treats as ground truth.
 	// Reading it here is what lets tier 0 answer a declaration that names no
 	// file, without a model.
 	cmd := exec.CommandContext(ctx, "git", "-C", repo, "log",

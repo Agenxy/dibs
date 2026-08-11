@@ -5,12 +5,12 @@ import (
 	"testing"
 )
 
-// There was no way out of an exclusive lane's queue.
+// There was no way out of an exclusive agent's queue.
 //
-// lane_leave checked membership, found none, and answered "not a member": true
+// leave_space checked membership, found none, and answered "not a member": true
 // and useless, because the agent was in the queue and stayed there. An
-// exclusive lane admits from its queue whenever it frees, so an agent that
-// queued, changed its mind, and was told it had left, was joined to the lane
+// exclusive agent admits from its queue whenever it frees, so an agent that
+// queued, changed its mind, and was told it had left, was joined to the agent
 // minutes later: handed the coordination key and made liable for acknowledging
 // announcements in work it had explicitly declined.
 func TestAQueuedAgentCanActuallyLeaveTheQueue(t *testing.T) {
@@ -29,23 +29,23 @@ func TestAQueuedAgentCanActuallyLeaveTheQueue(t *testing.T) {
 	holder, quitter, stayer := reg("holder"), reg("quitter"), reg("stayer")
 
 	if _, _, err := st.Apply(&Op{
-		Kind: OpLaneOpen, Token: holder, Channel: "excl", Text: "t", Exclusive: true,
+		Kind: OpLaneOpen, Token: holder, Space: "excl", Text: "t", Exclusive: true,
 	}, now); err != nil {
 		t.Fatal(err)
 	}
 	for _, tok := range []string{quitter, stayer} {
 		if _, _, err := st.Apply(&Op{
-			Kind: OpLaneJoin, Token: tok, Channel: "excl", Score: 0.9, ScorerID: "t",
+			Kind: OpLaneJoin, Token: tok, Space: "excl", Score: 0.9, ScorerID: "t",
 		}, now); err != nil {
 			t.Fatal(err)
 		}
 	}
-	ch := st.Channels["excl"]
+	ch := st.Spaces["excl"]
 	if len(ch.Queue) != 2 {
 		t.Fatalf("precondition: expected 2 queued, got %v", ch.Queue)
 	}
 
-	res, _, err := st.Apply(&Op{Kind: OpLaneLeave, Token: quitter, Channel: "excl"}, now)
+	res, _, err := st.Apply(&Op{Kind: OpLaneLeave, Token: quitter, Space: "excl"}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,14 +59,14 @@ func TestAQueuedAgentCanActuallyLeaveTheQueue(t *testing.T) {
 		t.Error("quitter's pending membership outlived its departure")
 	}
 
-	// The lane frees. The one that stayed gets in; the one that left does not.
+	// The agent frees. The one that stayed gets in; the one that left does not.
 	if _, _, err := st.Apply(&Op{
-		Kind: OpLaneExclusive, Token: holder, Channel: "excl", Mode: "release",
+		Kind: OpLaneExclusive, Token: holder, Space: "excl", Mode: "release",
 	}, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, in := ch.Members["quitter"]; in {
-		t.Error("an agent that left the queue was admitted to the lane anyway. " +
+		t.Error("an agent that left the queue was admitted to the agent anyway. " +
 			"with the coordination key and every announcement it now owes")
 	}
 	if _, in := ch.Members["stayer"]; !in {

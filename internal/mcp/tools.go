@@ -37,37 +37,37 @@ var toolDefs = func() []map[string]any {
 	}
 	str := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
 	num := func(desc string) map[string]any { return map[string]any{"type": "integer", "description": desc} }
-	tok := str("your lane token from register_lane")
+	tok := str("your agent token from register")
 
 	return []map[string]any{
 		{
-			"name": "register_lane",
-			"description": "Register a lane: your public declaration of who you are and what you're working on. Returns " +
+			"name": "register",
+			"description": "Register an agent: your public declaration of who you are and what you're working on. Returns " +
 				"your secret token and the current board. PASS A NONCE: a random id >=128-bit that you keep. It is the only " +
 				"credential that survives your harness restarting: registering again with the same name and the same nonce " +
-				"reattaches you to your existing lane, its mail and its claims (result carries reattached:true), instead of " +
-				"forking a second lane that cannot read the first one's mail. Without one you can still reattach within a " +
+				"reattaches you to your existing agent, its mail and its claims (result carries reattached:true), instead of " +
+				"forking a second agent that cannot read the first one's mail. Without one you can still reattach within a " +
 				"session via name + session_id (returned to you here), but that id names the harness process and dies with it. " +
-				"kind 'persistent' is for standing roles that sleep between activations and reactivate via resume_lane.",
+				"kind 'persistent' is for standing roles that sleep between activations and reactivate via resume.",
 			"inputSchema": obj(map[string]any{
 				"name": str("WHO YOU ARE: a stable name others address mail to, like 'reviewer', 'codex-1', " +
 					"'fleet-lead'. NOT what you're doing: 'refactor-auth' is a task, and mail addressed to a task reads as " +
-					"nonsense. The work goes in set_slot."),
+					"nonsense. The work goes in declare."),
 				"description": str("one line on your standing purpose, who/what you are, e.g. 'Claude (Opus 5), " +
 					"reviewing PRs for the release'"),
 				"pid": num("your process id, for crash detection (optional)"),
 				"kind": map[string]any{"type": "string", "enum": []string{"ephemeral", "persistent"}, "description": "ephemeral " +
 					"(default): session-scoped; persistent: standing role with a durable mailbox"},
 				"nonce": str("client-generated random id (>=128-bit): treat as a secret and KEEP IT. Required for " +
-					"persistent lanes, and strongly advised for every lane: it is what lets you reattach to this lane after " +
-					"your harness restarts. Same name + same nonce = the same lane, with its mail."),
+					"persistent agents, and strongly advised for every agent: it is what lets you reattach to this agent after " +
+					"your harness restarts. Same name + same nonce = the same agent, with its mail."),
 				"session_id": str("your harness session id, if you know it: lets lifecycle hooks find your mailbox. " +
 					"Supplied for you when omitted, and echoed back in the result; note it names the harness process, so it " +
 					"does not survive a restart. Use a nonce for that."),
 				"parent": str("the agent that spawned you, if you are a subagent. Pass `parent_nonce` too: " +
 					"WITHOUT one, naming a parent grants you nothing and you are treated as an ordinary stranger. " +
 					"anyone can type any name, so lineage has to be proven. WITH a nonce your parent issued you via " +
-					"vouch_child, you speak under its lane membership and do not join, queue or count separately."),
+					"vouch_child, you speak under its agent membership and do not join, queue or count separately."),
 				"parent_nonce": str("the one-time secret your parent got from vouch_child and handed to you. " +
 					"Proves the lineage `parent` merely claims."),
 				"model": str("the model you are, e.g. 'claude-opus-5', 'gpt-5.6-sol'. No harness puts this on the " +
@@ -80,7 +80,7 @@ var toolDefs = func() []map[string]any {
 				"branch": str("git branch you are on (optional; the bridge fills this in): two agents on the same " +
 					"branch is a much stronger collision signal than two on different ones"),
 				// The bridge has always sent this and the server has always
-				// stored it (core.Lane.Surface); it was simply never declared,
+				// stored it (core.Agent.Surface); it was simply never declared,
 				// so no agent could discover it and no schema check could see
 				// it. Found when unknown arguments started being refused
 				// instead of ignored, which is the point of refusing them.
@@ -93,8 +93,8 @@ var toolDefs = func() []map[string]any {
 			}, "name"),
 		},
 		{
-			"name": "resume_lane",
-			"description": "Reactivate your persistent lane after sleep or context loss: rotates the token (save the new " +
+			"name": "resume",
+			"description": "Reactivate your persistent agent after sleep or context loss: rotates the token (save the new " +
 				"one), rebinds your pid, and re-arms the awareness gate. resume_id makes retries safe.",
 			"inputSchema": obj(map[string]any{
 				"nonce":     str("the nonce you registered with"),
@@ -103,10 +103,11 @@ var toolDefs = func() []map[string]any {
 			}, "nonce", "resume_id"),
 		},
 		{
-			"name": "ack_board",
-			"description": "Acknowledge the board: required once per activation before set_slot or claim. Returns an " +
+			"name": "check_in",
+			"description": "Acknowledge the board: required once per activation before declare or claim. Returns an " +
 				"atomic checkpoint: board, your inbox, your cursor serial, `announcements`: anything you still owe an " +
-				"acknowledgement on, and `lane_updates`, anything that happened TO you in a lane (admitted, promoted, evicted, " +
+				"acknowledgement on, and `agent_updates`, anything that happened TO you in an " +
+				"agent (admitted, promoted, evicted, " +
 				"merged) since you last checked. Both are things you cannot reconstruct for yourself after losing context, and " +
 				"this is the authoritative path for them: the wake hook only nudges. Also the recovery " +
 				"call after E_CURSOR_TOO_OLD. Shows the human the board panel, so they see the fleet whenever you check it.",
@@ -121,7 +122,7 @@ var toolDefs = func() []map[string]any {
 			"description": "Vouch for a subagent you are about to spawn: YOU generate a one-time secret, " +
 				"register it here, and hand the same value to the child, which presents it as `parent_nonce` " +
 				"when it registers. Only then does naming you as `parent` grant " +
-				"it anything: speaking under your lane membership, skipping an exclusive lane's queue, and being " +
+				"it anything: speaking under your agent membership, skipping an exclusive agent's queue, and being " +
 				"exempt from your own exclusive claims in the guard. Without this, a `parent` is an unproven claim " +
 				"anybody could type, and is ignored.",
 			"inputSchema": obj(map[string]any{
@@ -130,15 +131,15 @@ var toolDefs = func() []map[string]any {
 			}, "token", "nonce"),
 		},
 		{
-			"name": "update_lane", "description": "Update your lane's description.",
+			"name": "update", "description": "Update your agent's description.",
 			"inputSchema": obj(map[string]any{"token": tok, "description": str("new description")}, "token"),
 		},
 		{
-			"name": "close_lane", "description": "Retire YOURSELF from the board when your " +
-				"work is done: ends the lane you are registered as, releases all your claims, " +
+			"name": "sign_off", "description": "Retire YOURSELF from the board when your " +
+				"work is done: ends the agent you are registered as, releases all your claims, " +
 				"and takes you off the roster. Takes no target: it always closes the CALLER. " +
-				"This is not how you retire a channel of work, even one you opened: that is " +
-				"`lane_close`, which is coordinator-only and takes the lane id. The two names " +
+				"This is not how you retire a space of work, even one you opened: that is " +
+				"`close_space`, which is coordinator-only and takes the agent id. The two names " +
 				"are nearly the same and the subjects are opposite, so read this one as " +
 				"`close_myself`.",
 			"inputSchema": obj(map[string]any{"token": tok}, "token"),
@@ -148,31 +149,31 @@ var toolDefs = func() []map[string]any {
 			"inputSchema": obj(map[string]any{"token": tok}, "token"),
 		},
 		{
-			"name": "set_slot",
-			"description": "Declare what you are working on (publicly visible). Requires ack_board first. " +
+			"name": "declare",
+			"description": "Declare what you are working on (publicly visible). Requires check_in first. " +
 				"To CHANGE what you are doing, pass the slot_id you were given: omitting it ADDS a second " +
-				"declaration, and a lane declaring five things is read by every other agent as doing five things. " +
+				"declaration, and an agent declaring five things is read by every other agent as doing five things. " +
 				"Omit slot_id only when you have genuinely taken on additional concurrent work. " +
 				"Fill in whichever of dirs/refs/activity/holds are TRUE of your work and leave the rest out. " +
 				"an empty array and an absent field mean the same thing, and a guessed value is worse than " +
 				"either. Reading a file is not working on it: declare where you will WRITE. " +
-				"Lanes compares these against every other lane and tells you what it found and why.",
+				"Dibs compares these against every other agent and tells you what it found and why.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
-				"slot_id": str("the slot to UPDATE: pass the one set_slot returned; omit only " +
+				"slot_id": str("the slot to UPDATE: pass the one declare returned; omit only " +
 					"to add a second concurrent declaration"),
 				"text": str("what you are doing"), "refs": map[string]any{
 					"type":  "array",
 					"items": map[string]any{"type": "string"}, "description": "ids this work pursues. " +
-						"Two kinds, and the difference decides what Lanes may do: ids that NAME " +
+						"Two kinds, and the difference decides what Dibs may do: ids that NAME " +
 						"something, pr:1186, issue:1140, incident:db-down, are the duplicate-work " +
-						"key and can put you in a lane automatically; labels like goal:green-main or " +
+						"key and can put you in an agent automatically; labels like goal:green-main or " +
 						"gate:typos are context only, because two agents can share a goal while " +
 						"dividing the work between them. Give a real id when one exists; do not " +
-						"invent one. The strongest id here is the key: value a lane handed you when " +
-						"you opened or joined it: it is the one thing Lanes issued itself, so pass " +
-						"it back and later work is matched to that lane exactly instead of guessed " +
-						"at from your wording. lane_read returns it again if you lost it; a key you " +
+						"invent one. The strongest id here is the key: value an agent handed you when " +
+						"you opened or joined it: it is the one thing Dibs issued itself, so pass " +
+						"it back and later work is matched to that agent exactly instead of guessed " +
+						"at from your wording. read_space returns it again if you lost it; a key you " +
 						"were never given is ignored, so copying someone else's buys nothing",
 				},
 				"dirs": map[string]any{
@@ -181,14 +182,14 @@ var toolDefs = func() []map[string]any {
 						"can give about where you are: believed over anything guessed from your description, " +
 						"and a parent directory counts as overlapping a child. Reading somewhere does not " +
 						"count: an agent that merely read a file elsewhere was once auto-joined to that " +
-						"project's lane because of it. Purely read-only work declares nothing here, which " +
+						"project's agent because of it. Purely read-only work declares nothing here, which " +
 						"is correct and not a gap",
 				},
 				"activity": map[string]any{
 					"type": "string",
 					"description": "your ROLE on this work: implement, review, test, investigate, " +
 						"document, release. Without it, an implementer and a REVIEWER on the same PR " +
-						"look identical to Lanes, and the reviewer gets told it is duplicating work " +
+						"look identical to Dibs, and the reviewer gets told it is duplicating work " +
 						"and should stand down",
 				},
 				"holds": map[string]any{
@@ -196,26 +197,26 @@ var toolDefs = func() []map[string]any {
 					"description": "exclusive HOST resources this work needs: port:8080, " +
 						"lock:.git/index, gpu:0, cache:cargo, service:postgres. You share a machine " +
 						"with the other agents, and these collide hard: the second agent to bind a " +
-						"port gets 'address already in use' and no idea why. Nothing else Lanes " +
+						"port gets 'address already in use' and no idea why. Nothing else Dibs " +
 						"tracks can see this",
 				},
 			}, "token", "text"),
 		},
 		{
-			"name": "clear_slot", "description": "Remove one of your slots (work finished).",
+			"name": "undeclare", "description": "Remove one of your slots (work finished).",
 			"inputSchema": obj(map[string]any{"token": tok, "slot_id": str("slot to clear")}, "token", "slot_id"),
 		},
 		{
-			"name": "send_message",
-			"description": "Send a message to another lane. Types: notify (FYI), question (expects an answer), request " +
+			"name": "send",
+			"description": "Send a message to another agent. Types: notify (FYI), question (expects an answer), request " +
 				"(expects approve/deny), handoff (context transfer). Questions/requests carry a deadline; on expiry you get a " +
 				"diagnosis (alive-but-silent vs dormant vs gone). Pass op_id to make retries safe (same op_id + same content = " +
 				"same message).",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "to": str("recipient lane id"),
+				"token": tok, "to": str("recipient agent id"),
 				"type": map[string]any{"type": "string", "enum": []string{"notify", "question", "request", "handoff"}},
 				"body": str("message body"), "deadline_s": num("response deadline in seconds (default 600; max 7200, or 7 " +
-					"days to persistent lanes)"),
+					"days to persistent agents)"),
 				"op_id": str("client-generated id for safe retries (optional, recommended)"),
 				"attachments": map[string]any{"type": "array", "description": "handles to attach: each is a blob " +
 					"{blob:'sha256:…'} from put_blob, or a fileref {path, size?, hash?} pointing at a large local file (advisory, " +
@@ -229,7 +230,7 @@ var toolDefs = func() []map[string]any {
 		{
 			"name": "put_blob",
 			"description": "Store attachment content in the encrypted blob store, addressed by hash; returns a blob id " +
-				"you attach to send_message. Give either data (base64, for small/in-memory content) or path (a local file the " +
+				"you attach to send. Give either data (base64, for small/in-memory content) or path (a local file the " +
 				"daemon reads). Idempotent: same content ⇒ same id. For very large local files you don't want copied, skip " +
 				"put_blob and attach a fileref {path} directly.",
 			"inputSchema": obj(map[string]any{
@@ -250,11 +251,11 @@ var toolDefs = func() []map[string]any {
 			}, "token", "blob"),
 		},
 		{
-			"name": "get_message",
+			"name": "read_mail",
 			"description": "Fetch one full message by serial: including the body and any response. Works for messages " +
 				"you sent (read the answer) or received. ATTACHMENTS: a `blob` handle is content-addressed and immutable. " +
 				"fetch it with get_blob and what you get is what was sent. A `path` handle (fileref) is the opposite: its " +
-				"path, size and hash are the SENDER's claims, recorded verbatim and never checked by Lanes, which does not " +
+				"path, size and hash are the SENDER's claims, recorded verbatim and never checked by Dibs, which does not " +
 				"read your filesystem. The file may have changed or been deleted since. Verify the hash yourself before " +
 				"relying on it, and treat a missing file as ordinary rather than as a fault in the message.",
 			"inputSchema": obj(map[string]any{"token": tok, "msg_serial": num("serial of the message")}, "token", "msg_serial"),
@@ -270,17 +271,18 @@ var toolDefs = func() []map[string]any {
 			}, "token", "msg_serial", "disposition"),
 		},
 		{
-			"name": "ack_message", "description": "Acknowledge a message after reading it (sender is notified). For FYIs " +
+			"name": "ack", "description": "Acknowledge a message after reading it (sender is notified). For FYIs " +
 				"this closes them out; on finished messages it marks them consumed so they stop appearing in your inbox.",
 			"inputSchema": obj(map[string]any{"token": tok, "msg_serial": num("serial of the message")}, "token", "msg_serial"),
 		},
 		{
 			"name": "inbox", "description": "Read your mailbox: unhandled messages plus finished ones you haven't " +
-				"acknowledged yet. Marks pending messages delivered. Also returns `announcements`: lane announcements you " +
-				"still owe an acknowledgement on; ack each with lane_ack, and `lane_updates`, anything that happened TO you " +
-				"in a lane. Reading either here consumes nothing (only ack_board clears lane_updates), so this is the " +
+				"acknowledged yet. Marks pending messages delivered. Also returns `announcements`: agent announcements you " +
+				"still owe an acknowledgement on; ack each with ack_announcement, and " +
+				"`agent_updates`, anything that happened TO you " +
+				"in an agent. Reading either here consumes nothing (only check_in clears agent_updates), so this is the " +
 				"way to find out what you owe after losing context. A fileref attachment (`path`) carries the sender's own " +
-				"claims about size and hash, never verified by Lanes: check before you trust them. Returns " +
+				"claims about size and hash, never verified by Dibs: check before you trust them. Returns " +
 				"truncated_before_serial: mail below it may have been evicted under retention bounds. Opens the human's " +
 				"panel on your mail, so reading it shows it.",
 			"inputSchema": obj(map[string]any{"token": tok}, "token"),
@@ -308,19 +310,19 @@ var toolDefs = func() []map[string]any {
 			"inputSchema": obj(map[string]any{
 				"session_id": str("harness session id"),
 				"event":      str("the hook event name, e.g. Stop"),
-				"cwd": str("the harness's working directory: used to find the lane when the harness's session id " +
-					"differs from the one the lane registered with"),
+				"cwd": str("the harness's working directory: used to find the agent when the harness's session id " +
+					"differs from the one the agent registered with"),
 			}, "session_id"),
 		},
 		{
 			"name": "hook_session",
 			"description": "For LIFECYCLE HOOKS, not for agents to call directly. A spawned agent reporting its own " +
 				"existence and state, so the agent that spawned it can be told when it stalls. Records the session, its " +
-				"transcript and what it is doing; never errors when nothing matches, because most sessions have no lane.",
+				"transcript and what it is doing; never errors when nothing matches, because most sessions have no agent.",
 			"inputSchema": obj(map[string]any{
 				"session_id": str("the reporting agent's session id"),
 				"event":      str("the hook event name, e.g. SessionStart, Stop, SubagentStop"),
-				"cwd":        str("its working directory: how it is matched to a lane when nothing stronger exists"),
+				"cwd":        str("its working directory: how it is matched to an agent when nothing stronger exists"),
 				"transcript_path": str("the file it appends its turns to. The single most useful field here: " +
 					"supervision otherwise has to discover it by asking the process which files it holds open"),
 				"model":      str("the model it is running (optional)"),
@@ -329,7 +331,7 @@ var toolDefs = func() []map[string]any {
 				"progress": map[string]any{
 					"type": "integer",
 					"description": "a MONOTONIC counter of work done: messages, turns, tool calls, tokens; " +
-						"anything that only ever goes up. For a harness whose store Lanes cannot read, this is " +
+						"anything that only ever goes up. For a harness whose store Dibs cannot read, this is " +
 						"the difference between detecting a hard stall and detecting a slow one. Only its " +
 						"MOVEMENT is used; the unit is yours",
 				},
@@ -339,7 +341,7 @@ var toolDefs = func() []map[string]any {
 			"name": "spawned_agents",
 			"description": "The subagents this machine's harnesses have reported, and what they say they are " +
 				"doing: running, blocked (waiting for a human to answer a permission prompt), or finished. " +
-				"Process-level health is a separate question. `lanes probe` answers that without needing the " +
+				"Process-level health is a separate question. `dibs probe` answers that without needing the " +
 				"child's cooperation. This is what the children themselves said.",
 			"inputSchema": obj(map[string]any{}),
 		},
@@ -359,18 +361,18 @@ var toolDefs = func() []map[string]any {
 		{
 			"name": "guard_path",
 			"description": "For PRE-EDIT HOOKS, not for agents to call directly. Given a harness session id and a file " +
-				"path, answers allow | deny | ask so the harness can refuse an edit that would trample another lane's exclusive " +
+				"path, answers allow | deny | ask so the harness can refuse an edit that would trample another agent's exclusive " +
 				"claim. Fails open: an unknown session or unclaimed path always allows.",
 			"inputSchema": obj(map[string]any{
 				"session_id": str("harness session id"),
 				"path":       str("absolute path the tool is about to write"),
-				"cwd": str("the harness's working directory: used to find the lane when the harness's session id " +
-					"differs from the one the lane registered with"),
+				"cwd": str("the harness's working directory: used to find the agent when the harness's session id " +
+					"differs from the one the agent registered with"),
 			}, "session_id", "path"),
 		},
 		{
-			"name": "show_board",
-			"description": "Show the board to the HUMAN as an interactive panel (MCP Apps UI): every lane, what each is " +
+			"name": "board",
+			"description": "Show the board to the HUMAN as an interactive panel (MCP Apps UI): every agent, what each is " +
 				"working on, and your mailbox. Call this when the human asks to see the board, or after you change it and they " +
 				"would want to look. Costs almost no context: the detail goes to the panel, not to you; you get one summary " +
 				"line. Pass detail=true only when YOU need the full board JSON in model context. Falls back to the summary " +
@@ -391,31 +393,31 @@ var toolDefs = func() []map[string]any {
 				"visibility":  []string{"model", "app"},
 			}},
 		},
-		// ── channels (SPEC-CHANNELS.md) ──────────────────────────────────
-		// A LANE here is a channel of work, not an agent. Directory claims catch
-		// two agents naming the same path; a lane catches two agents doing the
+		// ── spaces (SPEC-CHANNELS.md) ──────────────────────────────────
+		// A LANE here is a space of work, not an agent. Directory claims catch
+		// two agents naming the same path; an agent catches two agents doing the
 		// same WORK, which is the collision that actually destroys things.
 		{
-			"name": "lane_open",
-			"description": "Open a lane: a channel for one piece of work that several agents may need. Name it for the " +
+			"name": "open_space",
+			"description": "Open an agent: a space for one piece of work that several agents may need. Name it for the " +
 				"WORK ('auth-refactor'), not for yourself. You become its first member. Set exclusive if nobody else should " +
 				"work here; others will queue rather than be refused.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
-				"lane":  str("lane id, named for the work (e.g. auth-refactor)"),
+				"agent": str("agent id, named for the work (e.g. auth-refactor)"),
 				"topic": str("one line: what this work is"),
 				"exclusive": map[string]any{"type": "boolean", "description": "take it exclusively; others queue or request " +
 					"access"},
-			}, "token", "lane", "topic"),
+			}, "token", "agent", "topic"),
 		},
 		{
-			"name": "lane_join",
-			"description": "Join a lane, declaring you are working on that. Members collide, so join only what you are " +
-				"actually working on. If the lane is exclusive you are QUEUED instead, and told your position and who owns it " +
+			"name": "join_space",
+			"description": "Join an agent, declaring you are working on that. Members collide, so join only what you are " +
+				"actually working on. If the agent is exclusive you are QUEUED instead, and told your position and who owns it " +
 				",  send them a request, or wait to be admitted.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
-				"lane":  str("lane id to join"),
+				"agent": str("agent id to join"),
 				// Scoring provenance. Supplied by whatever matched the work; it is
 				// RECORDED, never recomputed, so the ledger stays replayable and
 				// "why am I here" stays answerable years later.
@@ -431,75 +433,75 @@ var toolDefs = func() []map[string]any {
 					"type":        "boolean",
 					"description": "true if matched automatically rather than chosen",
 				},
-			}, "token", "lane"),
+			}, "token", "agent"),
 		},
 		{
-			"name": "lane_leave",
-			"description": "Leave a lane when you are done with that work. If you held it exclusively this releases it and " +
+			"name": "leave_space",
+			"description": "Leave an agent when you are done with that work. If you held it exclusively this releases it and " +
 				"admits whoever is next in the queue: leaving promptly is what keeps a fleet from waiting on you. " +
-				"Also how you give up a place in an exclusive lane's queue: call it while waiting and you will not be " +
+				"Also how you give up a place in an exclusive agent's queue: call it while waiting and you will not be " +
 				"admitted later.",
-			"inputSchema": obj(map[string]any{"token": tok, "lane": str("lane id")}, "token", "lane"),
+			"inputSchema": obj(map[string]any{"token": tok, "agent": str("agent id")}, "token", "agent"),
 		},
 		{
-			"name": "lane_subscribe",
-			"description": "Watch a lane's traffic WITHOUT joining it. Subscribers see everything " +
+			"name": "watch_space",
+			"description": "Watch an agent's traffic WITHOUT joining it. Subscribers see everything " +
 				"and collide with nobody: this is how you keep an eye on adjacent work you are " +
 				"not doing. mode=release to unsubscribe.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "lane": str("lane id"),
+				"token": tok, "agent": str("agent id"),
 				"mode": map[string]any{"type": "string", "enum": []string{"subscribe", "release"}},
-			}, "token", "lane"),
+			}, "token", "agent"),
 		},
 		{
-			"name": "lane_exclusive",
-			"description": "Take or release exclusivity on a lane you are in. Only the first member may take it. " +
+			"name": "lock_space",
+			"description": "Take or release exclusivity on an agent you are in. Only the first member may take it. " +
 				"mode=release hands it back and admits everyone waiting. Exclusivity is a coordination signal; pair it with " +
 				"claim() if you need edits actually blocked.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "lane": str("lane id"),
+				"token": tok, "agent": str("agent id"),
 				"mode": map[string]any{"type": "string", "enum": []string{"exclusive", "release"}},
-			}, "token", "lane"),
+			}, "token", "agent"),
 		},
 		{
-			"name": "lane_post",
-			"description": "Post an FYI to a lane: progress, notes, anything for the record. " +
-				"Nobody has to acknowledge it, and members and subscribers read it with lane_read " +
-				"whenever they get to it. Use lane_announce instead when others MUST know, " +
+			"name": "post",
+			"description": "Post an FYI to an agent: progress, notes, anything for the record. " +
+				"Nobody has to acknowledge it, and members and subscribers read it with read_space " +
+				"whenever they get to it. Use announce instead when others MUST know, " +
 				"or the post will be skimmed past.",
 			"inputSchema": obj(
-				map[string]any{"token": tok, "lane": str("lane id"), "body": str("what you want the lane to know")}, "token",
-				"lane", "body",
+				map[string]any{"token": tok, "agent": str("agent id"), "body": str("what you want the agent to know")}, "token",
+				"agent", "body",
 			),
 		},
 		{
-			"name": "lane_announce",
-			"description": "Announce something every member of the lane MUST know: an interface " +
+			"name": "announce",
+			"description": "Announce something every member of the agent MUST know: an interface " +
 				"change, a rename, anything with collision risk. Members are required to " +
 				"acknowledge, and are re-prompted until they do. Use sparingly: announce " +
-				"everything and it becomes noise nobody reads. Requires ack_board() first, " +
-				"because this obliges everyone else to answer you: read what the lane has " +
+				"everything and it becomes noise nobody reads. Requires check_in() first, " +
+				"because this obliges everyone else to answer you: read what the agent has " +
 				"already been told before adding to it.",
 			"inputSchema": obj(
-				map[string]any{"token": tok, "lane": str("lane id"), "body": str("what everyone must know")}, "token", "lane",
+				map[string]any{"token": tok, "agent": str("agent id"), "body": str("what everyone must know")}, "token", "agent",
 				"body",
 			),
 		},
 		{
-			"name": "lane_read",
-			"description": "Read a lane you are a member of or subscribed to: its topic, what has been ANNOUNCED " +
-				"in it, and what has been POSTED. This is what 'read the lane first' means: call it when you join, " +
+			"name": "read_space",
+			"description": "Read an agent you are a member of or subscribed to: its topic, what has been ANNOUNCED " +
+				"in it, and what has been POSTED. This is what 'read the agent first' means: call it when you join, " +
 				"and again after losing context. It is also the only way to read a post: the event stream says a post " +
 				"happened and never what it said. Each announcement says whether an acknowledgement is OWED by you, " +
 				"already done, or not required (announced before you joined: you can see it, you do not owe it). " +
-				"Reading acknowledges NOTHING; use lane_ack for that.",
+				"Reading acknowledges NOTHING; use ack_announcement for that.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "lane": str("the lane id"),
+				"token": tok, "agent": str("the agent id"),
 				"limit": num("most recent N announcements and posts (default 50)"),
-			}, "token", "lane"),
+			}, "token", "agent"),
 		},
 		{
-			"name": "lane_ack",
+			"name": "ack_announcement",
 			"description": "Acknowledge an announcement, by its serial. Acknowledging means you have READ it and accounted " +
 				"for it in your work, not merely that it arrived. Until you do, it keeps coming back.",
 			"inputSchema": obj(
@@ -508,37 +510,37 @@ var toolDefs = func() []map[string]any {
 		},
 
 		{
-			"name": "lane_force_release",
-			"description": "COORDINATOR ONLY. Strip exclusivity from a lane whose owner is gone, " +
+			"name": "unlock_space",
+			"description": "COORDINATOR ONLY. Strip exclusivity from an agent whose owner is gone, " +
 				"admitting everyone queued behind it. The former owner is named in the event; this " +
 				"is never silent. Their coordination signal ended, which is NOT proof their work " +
 				"stopped: prefer asking them first.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "lane": str("lane id to unstick"),
+				"token": tok, "agent": str("agent id to unstick"),
 				"note": str("why: the former owner and the board both see this"),
-			}, "token", "lane"),
+			}, "token", "agent"),
 		},
 		{
-			"name": "lane_evict",
-			"description": "COORDINATOR ONLY. Remove an agent from a lane it should not be in. " +
-				"whether it is a member or only waiting in the lane's queue, so an agent you " +
+			"name": "evict",
+			"description": "COORDINATOR ONLY. Remove an agent from an agent it should not be in. " +
+				"whether it is a member or only waiting in the agent's queue, so an agent you " +
 				"remove cannot be promoted into it later. This is also how you MOVE an agent: " +
-				"evict, and it joins the right lane. The agent is told, and its work is untouched.",
+				"evict, and it joins the right agent. The agent is told, and its work is untouched.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "lane": str("lane id"), "to": str("the agent to remove"),
+				"token": tok, "agent": str("agent id"), "to": str("the agent to remove"),
 				"note": str("why: the evicted agent sees this"),
-			}, "token", "lane", "to"),
+			}, "token", "agent", "to"),
 		},
 		{
-			"name": "lane_admit",
-			"description": "COORDINATOR ONLY. Add another agent to a lane. This is the approval " +
+			"name": "admit",
+			"description": "COORDINATOR ONLY. Add another agent to an agent. This is the approval " +
 				"step when the board is configured to require one, and is also how you pull " +
 				"somebody into work they belong in but did not match.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "lane": str("lane id"), "to": str("the agent to admit"),
+				"token": tok, "agent": str("agent id"), "to": str("the agent to admit"),
 				"note":  str("why"),
 				"score": map[string]any{"type": "number", "description": "the match score, if you are acting on one"},
-			}, "token", "lane", "to"),
+			}, "token", "agent", "to"),
 		},
 		{
 			"name": "human_unlock",
@@ -556,58 +558,58 @@ var toolDefs = func() []map[string]any {
 			}, "token"),
 		},
 		{
-			"name": "lane_close",
+			"name": "close_space",
 			"description": "COORDINATOR ONLY. Retire a finished CHANNEL of work, not an " +
-				"agent, and not you: leaving the board yourself is `close_lane`, which takes " +
-				"no id. Lanes opened automatically " +
-				"from a declaration end by themselves once their last member leaves; a lane a " +
+				"agent, and not you: leaving the board yourself is `sign_off`, which takes " +
+				"no id. Dibs opened automatically " +
+				"from a declaration end by themselves once their last member leaves; an agent a " +
 				"human opened does NOT, deliberately: outliving its members is what a standing " +
-				"lane is for, so without this nothing could ever end one and a board accumulated " +
-				"finished lanes permanently. Refuses a lane that still has members or anyone " +
+				"agent is for, so without this nothing could ever end one and a board accumulated " +
+				"finished agents permanently. Refuses an agent that still has members or anyone " +
 				"queued (evict them first if you mean to: closing is tidying, not eviction), and " +
 				"refuses one holding an announcement nobody has acknowledged, because the board " +
-				"shows announcements through their lane and closing would hide it rather than " +
+				"shows announcements through their agent and closing would hide it rather than " +
 				"settle it.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "lane": str("lane id to close"),
+				"token": tok, "agent": str("agent id to close"),
 				"note": str("why you are closing it"),
-			}, "token", "lane"),
+			}, "token", "agent"),
 		},
 		{
-			"name": "lane_merge",
-			"description": "COORDINATOR ONLY. Fold one lane into another when the two drifted into " +
+			"name": "merge_spaces",
+			"description": "COORDINATOR ONLY. Fold one agent into another when the two drifted into " +
 				"the same job. Everything moves across: members, subscribers, outstanding " +
 				"announcements, and anyone queued for exclusive access: who are admitted if the " +
 				"destination is open, or keep their place in its queue if it is not. Everyone " +
-				"moved is told the source lane is gone. The source lane disappears. Deliberately " +
+				"moved is told the source agent is gone. The source agent disappears. Deliberately " +
 				"a human-granted decision rather than an automatic one: merging is destructive " +
 				"to context.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "lane": str("lane id to merge FROM (it disappears)"),
-				"to": str("lane id to merge INTO"), "note": str("why"),
-			}, "token", "lane", "to"),
+				"token": tok, "agent": str("agent id to merge FROM (it disappears)"),
+				"to": str("agent id to merge INTO"), "note": str("why"),
+			}, "token", "agent", "to"),
 		},
 
 		{
 			"name": "bind_session",
-			"description": "Attach your harness session id to your lane so lifecycle hooks can find your mailbox without a " +
-				"token. Call once after register_lane if your harness exposes a session id.",
+			"description": "Attach your harness session id to your agent so lifecycle hooks can find your mailbox without a " +
+				"token. Call once after register if your harness exposes a session id.",
 			"inputSchema": obj(
 				map[string]any{"token": tok, "session_id": str("your harness session id")}, "token", "session_id",
 			),
 		},
 		{
 			"name": "all_mail",
-			"description": "ADMIN ONLY. Read every lane's messages, decrypted: the god view. Granted by a human to an " +
+			"description": "ADMIN ONLY. Read every agent's messages, decrypted: the god view. Granted by a human to an " +
 				"agent trusted as they trust themselves. Coordinators do NOT have this; directing a fleet does not require " +
 				"reading its private mail.",
 			"inputSchema": obj(map[string]any{"token": tok}, "token"),
 		},
 		{
 			"name": "broadcast",
-			"description": "COORDINATOR ONLY. Send one message to every other live lane at once: the same as writing to " +
+			"description": "COORDINATOR ONLY. Send one message to every other live agent at once: the same as writing to " +
 				"each by hand, so each recipient gets its own message it may decline. Use for fleet-wide direction; use " +
-				"send_message for anything targeted.",
+				"send for anything targeted.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"type":  map[string]any{"type": "string", "enum": []string{"notify", "question", "request", "handoff"}},
@@ -616,7 +618,7 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "force_release",
-			"description": "COORDINATOR ONLY. Release a claim held by ANOTHER lane: for " +
+			"description": "COORDINATOR ONLY. Release a claim held by ANOTHER agent: for " +
 				"unsticking a shared resource whose holder is gone. The holder is notified; " +
 				"this is never silent. Prefer asking the holder first with a request.",
 			"inputSchema": obj(map[string]any{

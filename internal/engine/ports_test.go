@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // memLedger is an alternative Ledger backend that keeps ops in memory. Its
@@ -104,13 +104,13 @@ func TestPortsAreSwappable(t *testing.T) {
 		t.Fatal("no token returned")
 	}
 	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
-		t.Fatalf("ack_board: %v", err)
+		t.Fatalf("check_in: %v", err)
 	}
 	if _, err := e.Do(ctx, &core.Op{
 		Kind: core.OpSetSlot, Token: tok,
 		Text: "working", Refs: []string{"issue:1"},
 	}); err != nil {
-		t.Fatalf("set_slot: %v", err)
+		t.Fatalf("declare: %v", err)
 	}
 
 	// The alternative ledger must have received every state-advancing op.

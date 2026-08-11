@@ -4,24 +4,24 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // One op, one serial: the invariant whose breach took a live board down.
 //
 // Apply finishes centrally, and several handlers finish for themselves because
-// they need the serial in their result. lane_open therefore allocated TWO for
+// they need the serial in their result. open_space therefore allocated TWO for
 // one op, and the engine appends at the final value, so the intermediate
 // serial was never written: a permanent hole in the ledger at a point where a
 // real transition had happened.
 //
 // The consequence was not cosmetic. One of those holes held the op that
-// re-created a lane, so on restart the daemon replayed a board where that lane
-// was still closed, met a close_lane it could not apply, and refused to start
+// re-created an agent, so on restart the daemon replayed a board where that agent
+// was still closed, met a sign_off it could not apply, and refused to start
 // with no way back. The serial-gap WARNING had been firing for weeks and reads
 // as housekeeping; it was the symptom.
 //
-// Asserted over the family that shares the pattern rather than only lane_open,
+// Asserted over the family that shares the pattern rather than only open_space,
 // which is merely the one that got caught.
 func TestOneOpAllocatesExactlyOneSerial(t *testing.T) {
 	s := core.NewState("n1", core.DefaultLimits())
@@ -36,10 +36,10 @@ func TestOneOpAllocatesExactlyOneSerial(t *testing.T) {
 	}
 
 	for _, op := range []*core.Op{
-		{Kind: core.OpLaneOpen, Token: "tok", Channel: "serial-work", Text: "work"},
+		{Kind: core.OpLaneOpen, Token: "tok", Space: "serial-work", Text: "work"},
 		{Kind: core.OpSetSlot, Token: "tok", Text: "declaring something"},
-		{Kind: core.OpLaneAnnounce, Token: "tok", Channel: "serial-work", Body: "heads up"},
-		{Kind: core.OpLaneLeave, Token: "tok", Channel: "serial-work"},
+		{Kind: core.OpLaneAnnounce, Token: "tok", Space: "serial-work", Body: "heads up"},
+		{Kind: core.OpLaneLeave, Token: "tok", Space: "serial-work"},
 	} {
 		before := s.Serial
 		if _, evs, err := s.Apply(op, now); err != nil {

@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 var t0 = time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
@@ -79,7 +79,7 @@ func reopen(t *testing.T, path string) *core.State {
 }
 
 // TestReplayDeterminism covers the full v1.0 op surface: register (both
-// kinds), resume, wake, checkpoint, ack_board, send with op_id, respond,
+// kinds), resume, wake, checkpoint, check_in, send with op_id, respond,
 // ack/consume, claims, sweeps with recorded decisions, GC.
 func TestReplayDeterminism(t *testing.T) {
 	led, path := newLedger(t)
@@ -115,8 +115,8 @@ func TestReplayDeterminism(t *testing.T) {
 	if st2.LaneByToken("tr2") == nil || st2.LaneByToken("tr") != nil {
 		t.Fatal("token rotation lost in replay")
 	}
-	if st2.Lanes["rev"].Activation != 1 {
-		t.Fatalf("activation lost: %d", st2.Lanes["rev"].Activation)
+	if st2.Agents["rev"].Activation != 1 {
+		t.Fatalf("activation lost: %d", st2.Agents["rev"].Activation)
 	}
 	if got := st2.Messages[5].Response; got != "yes" {
 		t.Fatalf("response after replay = %q", got)
@@ -148,7 +148,7 @@ func TestEncryptionAtRestIncludesNonce(t *testing.T) {
 			t.Fatalf("%q appears in plaintext in the ledger", secret)
 		}
 	}
-	if !strings.Contains(string(raw), "register_lane") {
+	if !strings.Contains(string(raw), "register") {
 		t.Fatal("public op kinds should be plaintext")
 	}
 }
@@ -199,10 +199,10 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 	st := core.NewState("test", core.DefaultLimits())
 	rng := rand.New(rand.NewSource(42))
 	var tokens []string
-	var announceSerials []uint64  // real serials, so lane_ack can hit one
+	var announceSerials []uint64  // real serials, so ack_announcement can hit one
 	coordinator := ""             // a real coordinator, so the director ops land
 	accepted := map[string]int{}  // which op kinds actually landed
-	nonces := map[string]string{} // token → nonce for persistent lanes
+	nonces := map[string]string{} // token → nonce for persistent agents
 	now := t0
 
 	// A deterministic prologue, so what the gate COVERS does not depend on the
@@ -223,17 +223,17 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 	// would still fail on the draws where the walk happens to miss one.
 	apply(t, st, led, &core.Op{
 		Kind: core.OpLaneOpen, Token: "seedtokaa",
-		Channel: "seedlane", Text: "seeded work",
+		Space: "seedlane", Text: "seeded work",
 	}, now)
 	accepted[core.OpLaneOpen]++
 	apply(t, st, led, &core.Op{
 		Kind: core.OpLaneJoin, Token: "seedtokba",
-		Channel: "seedlane", Score: 0.66, ScorerID: "seed",
+		Space: "seedlane", Score: 0.66, ScorerID: "seed",
 	}, now)
 	accepted[core.OpLaneJoin]++
 	seeded := apply(t, st, led, &core.Op{
 		Kind: core.OpLaneAnnounce, Token: "seedtokaa",
-		Channel: "seedlane", Body: "seeded announcement",
+		Space: "seedlane", Body: "seeded announcement",
 	}, now)
 	accepted[core.OpLaneAnnounce]++
 	if ser, ok := seeded["serial"].(uint64); ok {
@@ -246,7 +246,7 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 	accepted[core.OpLaneAck]++
 	apply(t, st, led, &core.Op{
 		Kind: core.OpLaneLeave, Token: "seedtokba",
-		Channel: "seedlane",
+		Space: "seedlane",
 	}, now)
 	accepted[core.OpLaneLeave]++
 
@@ -256,7 +256,7 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 		switch k := rng.Intn(40); {
 		case k == 0 && len(tokens) < 15:
 			tok := "tok" + itoa(len(tokens))
-			op = &core.Op{Kind: core.OpRegisterLane, Name: "lane" + tok, NewToken: tok}
+			op = &core.Op{Kind: core.OpRegisterLane, Name: "agent" + tok, NewToken: tok}
 			if rng.Intn(3) == 0 {
 				op.LaneKind = core.KindPersistent
 				op.Nonce = "nonce-" + tok
@@ -272,7 +272,7 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 		case k <= 6:
 			op = &core.Op{
 				Kind: core.OpSendMessage, Token: pick(rng, tokens),
-				To: "lane" + pick(rng, tokens), MsgType: pickType(rng), Body: "b",
+				To: "agent" + pick(rng, tokens), MsgType: pickType(rng), Body: "b",
 				OpID: maybeOpID(rng, i),
 			}
 		case k == 7:
@@ -298,29 +298,29 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 			}
 		case k == 12:
 			op = &core.Op{Kind: core.OpWakeLane, Token: pick(rng, tokens)}
-		// Channels (SPEC-CHANNELS.md). Included here because this is the
-		// load-bearing determinism gate (SPEC §17), and channel membership is
+		// Spaces (SPEC-CHANNELS.md). Included here because this is the
+		// load-bearing determinism gate (SPEC §17), and space membership is
 		// the one piece of state decided by an IMPURE input: a similarity
 		// score. If Apply ever recomputes one instead of taking the recorded
 		// value, this is the test that catches it.
 		case k == 14:
 			op = &core.Op{
 				Kind: core.OpLaneOpen, Token: pick(rng, tokens),
-				Channel: "lane" + itoa(rng.Intn(6)), Text: "topic",
+				Space: "agent" + itoa(rng.Intn(6)), Text: "topic",
 				Exclusive: rng.Intn(3) == 0,
 			}
 		case k == 15:
 			op = &core.Op{
 				Kind: core.OpLaneJoin, Token: pick(rng, tokens),
-				Channel: "lane" + itoa(rng.Intn(6)),
-				Score:   rng.Float64(), Threshold: 0.327,
+				Space: "agent" + itoa(rng.Intn(6)),
+				Score: rng.Float64(), Threshold: 0.327,
 				ScorerID: "lexical+cochange", ScorerVersion: "1",
 				Evidence: []string{"a.go", "b.go"}, Auto: rng.Intn(2) == 0,
 			}
 		case k == 16:
 			op = &core.Op{
 				Kind: core.OpLaneAnnounce, Token: pick(rng, tokens),
-				Channel: "lane" + itoa(rng.Intn(6)), Body: "announcement",
+				Space: "agent" + itoa(rng.Intn(6)), Body: "announcement",
 			}
 		case k == 17:
 			op = &core.Op{
@@ -330,13 +330,13 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 		case k == 18:
 			op = &core.Op{
 				Kind: core.OpLaneExclusive, Token: pick(rng, tokens),
-				Channel: "lane" + itoa(rng.Intn(6)),
-				Mode:    []string{"exclusive", "release"}[rng.Intn(2)],
+				Space: "agent" + itoa(rng.Intn(6)),
+				Mode:  []string{"exclusive", "release"}[rng.Intn(2)],
 			}
 		case k == 19:
 			op = &core.Op{
 				Kind: core.OpLaneLeave, Token: pick(rng, tokens),
-				Channel: "lane" + itoa(rng.Intn(6)),
+				Space: "agent" + itoa(rng.Intn(6)),
 			}
 		// The four below were absent from this walk, and all four turned out to
 		// be broken in the same way: a mutation the fold could not reproduce.
@@ -346,22 +346,22 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 		case k == 13:
 			op = &core.Op{
 				Kind: core.OpLaneSubscribe, Token: pick(rng, tokens),
-				Channel: "lane" + itoa(rng.Intn(6)),
-				Mode:    []string{"", "release"}[rng.Intn(2)],
+				Space: "agent" + itoa(rng.Intn(6)),
+				Mode:  []string{"", "release"}[rng.Intn(2)],
 			}
 		case k == 20:
 			op = &core.Op{
 				Kind: core.OpLanePost, Token: pick(rng, tokens),
-				Channel: "lane" + itoa(rng.Intn(6)), Body: "post",
+				Space: "agent" + itoa(rng.Intn(6)), Body: "post",
 			}
 		case k == 21:
 			// Reattach: the same nonce arriving on a NEW token, which is what a
-			// restarted agent actually sends. Both branches emit lane.reattached.
+			// restarted agent actually sends. Both branches emit agent.reattached.
 			tok := pick(rng, tokens)
 			if n, ok := nonces[tok]; ok {
 				fresh := "re" + itoa(i)
 				op = &core.Op{
-					Kind: core.OpRegisterLane, Name: "lane" + tok,
+					Kind: core.OpRegisterLane, Name: "agent" + tok,
 					Nonce: n, NewToken: fresh,
 				}
 				tokens = append(tokens, fresh)
@@ -374,9 +374,9 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 			}
 		case k == 22 && i > 900:
 			// Late, and rarely: pruning early would empty the board and starve
-			// every other branch of lanes to act on.
+			// every other branch of agents to act on.
 			if rng.Intn(8) == 0 {
-				op = &core.Op{Kind: core.OpPruneLane, To: "lane" + pick(rng, tokens)}
+				op = &core.Op{Kind: core.OpPruneLane, To: "agent" + pick(rng, tokens)}
 			} else {
 				op = &core.Op{Kind: core.OpBindSession, Token: pick(rng, tokens), SessionID: "s" + itoa(i)}
 			}
@@ -393,12 +393,12 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 				announceSerials = append(announceSerials, ser)
 			}
 		}
-		// Promote the first agent that opens a lane, so the director branches
+		// Promote the first agent that opens an agent, so the director branches
 		// have somebody to run as.
 		if coordinator == "" && op.Kind == core.OpLaneOpen {
-			lane, _ := res["lane_id"].(string)
+			agent, _ := res["lane_id"].(string)
 			owner := st.LaneByToken(op.Token)
-			if owner != nil && lane != "" {
+			if owner != nil && agent != "" {
 				if _, gerr := applyE(st, led, &core.Op{
 					Kind: core.OpGrantRole,
 					To:   owner.ID, Mode: core.RoleCoordinator,
@@ -434,8 +434,8 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 		t.Fatalf("randomized: messages/dedup divergence (%d/%d vs %d/%d)",
 			len(st2.Messages), len(st2.Dedup), len(st.Messages), len(st.Dedup))
 	}
-	if len(st2.Channels) != len(st.Channels) {
-		t.Fatalf("randomized: channel divergence (%d vs %d)", len(st2.Channels), len(st.Channels))
+	if len(st2.Spaces) != len(st.Spaces) {
+		t.Fatalf("randomized: space divergence (%d vs %d)", len(st2.Spaces), len(st.Spaces))
 	}
 	// Guard against a vacuous pass: measured on what was EXERCISED, not on what
 	// survived.
@@ -443,7 +443,7 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 	// An earlier version counted members left on the board at the end, and was
 	// seed-fragile for a reason that turned out to be correct behaviour:
 	// evictions, merges and departures legitimately remove members, so a run
-	// that exercised channels HARDER finished with fewer. Counting accepted ops
+	// that exercised spaces HARDER finished with fewer. Counting accepted ops
 	// measures the thing the gate is actually for.
 	for _, kind := range []string{
 		core.OpLaneOpen, core.OpLaneJoin, core.OpLaneLeave, core.OpLaneAnnounce,
@@ -453,35 +453,35 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 			t.Errorf("%s was never accepted in 1500 ops: the gate is not covering it", kind)
 		}
 	}
-	t.Logf("accepted channel ops: %v", accepted)
+	t.Logf("accepted space ops: %v", accepted)
 
 	// Membership, exclusivity and QUEUE ORDER must all survive byte-identically:
 	// queue order decides who gets admitted next, so a reordering on replay is a
 	// different fleet, not a cosmetic difference.
-	for id, live := range st.Channels {
-		replayed := st2.Channels[id]
+	for id, live := range st.Spaces {
+		replayed := st2.Spaces[id]
 		if replayed == nil {
-			t.Fatalf("randomized: lane %s lost in replay", id)
+			t.Fatalf("randomized: agent %s lost in replay", id)
 		}
 		if replayed.Owner != live.Owner {
-			t.Fatalf("randomized: lane %s owner %q != %q", id, replayed.Owner, live.Owner)
+			t.Fatalf("randomized: agent %s owner %q != %q", id, replayed.Owner, live.Owner)
 		}
 		if !reflect.DeepEqual(replayed.Queue, live.Queue) {
-			t.Fatalf("randomized: lane %s queue %v != %v", id, replayed.Queue, live.Queue)
+			t.Fatalf("randomized: agent %s queue %v != %v", id, replayed.Queue, live.Queue)
 		}
 		if len(replayed.Members) != len(live.Members) {
-			t.Fatalf("randomized: lane %s members %d != %d", id, len(replayed.Members), len(live.Members))
+			t.Fatalf("randomized: agent %s members %d != %d", id, len(replayed.Members), len(live.Members))
 		}
 		// Subscribers, because they are not private to the subscriber: the post
 		// event's audience count and what a merge carries across both read this
 		// set, so a fold that loses it is a different board.
 		if !reflect.DeepEqual(replayed.Subs, live.Subs) {
-			t.Fatalf("randomized: lane %s subs %v != %v", id, replayed.Subs, live.Subs)
+			t.Fatalf("randomized: agent %s subs %v != %v", id, replayed.Subs, live.Subs)
 		}
-		// Posts, because lane_read is the only way to reach one: a fold that
+		// Posts, because read_space is the only way to reach one: a fold that
 		// loses them loses the content itself, not merely a count.
 		if !reflect.DeepEqual(replayed.Posts, live.Posts) {
-			t.Fatalf("randomized: lane %s posts %d != %d", id, len(replayed.Posts), len(live.Posts))
+			t.Fatalf("randomized: agent %s posts %d != %d", id, len(replayed.Posts), len(live.Posts))
 		}
 		// Pending explicitly, because stateDiff CANNOT see it: the field is
 		// `json:"-"` so it never reaches the marshalled form the whole-state
@@ -490,12 +490,12 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 		// assertion rather than the assumption that the general check covers
 		// everything.
 		if !reflect.DeepEqual(replayed.Pending, live.Pending) {
-			t.Fatalf("randomized: lane %s pending %v != %v", id, replayed.Pending, live.Pending)
+			t.Fatalf("randomized: agent %s pending %v != %v", id, replayed.Pending, live.Pending)
 		}
 		for a, m := range live.Members {
 			r := replayed.Members[a]
 			if r == nil || r.Score != m.Score || r.JoinedSerial != m.JoinedSerial || r.Auto != m.Auto {
-				t.Fatalf("randomized: lane %s membership %s diverged: %+v vs %+v", id, a, r, m)
+				t.Fatalf("randomized: agent %s membership %s diverged: %+v vs %+v", id, a, r, m)
 			}
 		}
 	}
@@ -532,9 +532,9 @@ func maybeOpID(rng *rand.Rand, i int) string {
 	return "op" + itoa(i)
 }
 
-// staleSubset picks a random subset of live lanes to declare stale.
+// staleSubset picks a random subset of live agents to declare stale.
 //
-// SORTED, and that is load-bearing. It used to range over st.Lanes directly,
+// SORTED, and that is load-bearing. It used to range over st.Agents directly,
 // a Go map, whose iteration order is randomised on every run. That made the
 // "seeded" generator non-reproducible in two ways at once: a different subset
 // went stale, and the per-entry rng.Intn call consumed draws in a different
@@ -544,14 +544,14 @@ func maybeOpID(rng *rand.Rand, i int) string {
 // A determinism gate that is not itself deterministic teaches you to re-run it
 // instead of to trust it, which is worse than having no gate at all.
 func staleSubset(rng *rand.Rand, st *core.State) []string {
-	ids := make([]string, 0, len(st.Lanes))
-	for id := range st.Lanes {
+	ids := make([]string, 0, len(st.Agents))
+	for id := range st.Agents {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
 	var out []string
 	for _, id := range ids {
-		if st.Lanes[id].Status == core.StatusActive && rng.Intn(6) == 0 {
+		if st.Agents[id].Status == core.StatusActive && rng.Intn(6) == 0 {
 			out = append(out, id)
 		}
 	}
@@ -574,7 +574,7 @@ func TestBlobReplayDeterminism(t *testing.T) {
 	apply(t, st, led, &core.Op{Kind: core.OpRegisterLane, Name: "alpha", NewToken: "ta"}, t0)
 	apply(t, st, led, &core.Op{Kind: core.OpRegisterLane, Name: "beta", NewToken: "tb"}, t0)
 	apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: "ta"}, t0)
-	// Two lanes put the SAME content: registered then owner_added.
+	// Two agents put the SAME content: registered then owner_added.
 	body := "the-generated-dataset-bytes"
 	id := blobID(body)
 	apply(t, st, led, &core.Op{Kind: core.OpPutBlob, Token: "ta", Blob: id, Size: int64(len(body)), Mime: "application/json"}, t0)
@@ -631,13 +631,13 @@ func TestBlobReplayDeterminism(t *testing.T) {
 
 // TestChannelReplayDeterminism is the proof of SPEC-CHANNELS.md §4.3.
 //
-// Channel membership is decided by a similarity SCORE, which is impure: recompute
+// Space membership is decided by a similarity SCORE, which is impure: recompute
 // it next week against a reindexed repository and it is a different number. If
 // Apply ever recomputed one, replaying this ledger would reconstruct different
 // membership and the hash chain would stop meaning anything.
 //
 // So the scores travel IN THE OP, exactly as the sweep's PID verdicts do, and
-// this test replays a ledger full of channel activity on a state that has no
+// this test replays a ledger full of space activity on a state that has no
 // repository, no index and no scorer, and demands byte-identical membership,
 // queue order, exclusivity and announcement state out the other side.
 func TestChannelReplayDeterminism(t *testing.T) {
@@ -653,36 +653,36 @@ func TestChannelReplayDeterminism(t *testing.T) {
 
 	apply(t, st, led, &core.Op{
 		Kind: core.OpLaneOpen, Token: "talpha",
-		Channel: "auth-refactor", Text: "reworking the auth middleware",
+		Space: "auth-refactor", Text: "reworking the auth middleware",
 	}, t0.Add(10*time.Second))
 	// An auto-join carrying a recorded score and its evidence.
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneJoin, Token: "tbeta", Channel: "auth-refactor",
+		Kind: core.OpLaneJoin, Token: "tbeta", Space: "auth-refactor",
 		Score: 0.8137, Threshold: 0.327, ScorerID: "lexical+cochange", ScorerVersion: "1",
 		Evidence: []string{"internal/mcp/identity.go", "internal/core/roles.go"}, Auto: true,
 	},
 		t0.Add(11*time.Second))
 	ann := apply(t, st, led, &core.Op{
 		Kind: core.OpLaneAnnounce, Token: "talpha",
-		Channel: "auth-refactor", Body: "renaming AgentInfo.Token",
+		Space: "auth-refactor", Body: "renaming AgentInfo.Token",
 	}, t0.Add(12*time.Second))
 	annSerial, ok := ann["serial"].(uint64)
 	if !ok {
 		t.Fatalf("announce must return its serial, got %v", ann)
 	}
 	apply(t, st, led, &core.Op{Kind: core.OpLaneAck, Token: "tbeta", MsgSerial: annSerial}, t0.Add(13*time.Second))
-	// A second, exclusive lane with somebody queued behind it.
+	// A second, exclusive agent with somebody queued behind it.
 	apply(t, st, led, &core.Op{
 		Kind: core.OpLaneOpen, Token: "tgamma",
-		Channel: "hot", Text: "single-writer work", Exclusive: true,
+		Space: "hot", Text: "single-writer work", Exclusive: true,
 	}, t0.Add(14*time.Second))
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneJoin, Token: "talpha", Channel: "hot",
+		Kind: core.OpLaneJoin, Token: "talpha", Space: "hot",
 		Score: 0.91, Threshold: 0.327, ScorerID: "lexical+cochange",
 	}, t0.Add(15*time.Second))
 	apply(t, st, led, &core.Op{
 		Kind: core.OpLanePost, Token: "tbeta",
-		Channel: "auth-refactor", Body: "halfway through",
+		Space: "auth-refactor", Body: "halfway through",
 	}, t0.Add(16*time.Second))
 	_ = led.Close()
 
@@ -690,11 +690,11 @@ func TestChannelReplayDeterminism(t *testing.T) {
 	if st2.Serial != st.Serial {
 		t.Fatalf("serial %d != %d", st2.Serial, st.Serial)
 	}
-	if len(st2.Channels) != len(st.Channels) {
-		t.Fatalf("channel count %d != %d", len(st2.Channels), len(st.Channels))
+	if len(st2.Spaces) != len(st.Spaces) {
+		t.Fatalf("space count %d != %d", len(st2.Spaces), len(st.Spaces))
 	}
 
-	auth := st2.Channels["auth-refactor"]
+	auth := st2.Spaces["auth-refactor"]
 	if auth == nil {
 		t.Fatal("auth-refactor lost in replay")
 	}
@@ -712,11 +712,11 @@ func TestChannelReplayDeterminism(t *testing.T) {
 	if len(m.Evidence) != 2 || m.Evidence[0] != "internal/mcp/identity.go" {
 		t.Fatalf("evidence lost in replay: %v", m.Evidence)
 	}
-	if m.JoinedSerial != st.Channels["auth-refactor"].Members["beta"].JoinedSerial {
+	if m.JoinedSerial != st.Spaces["auth-refactor"].Members["beta"].JoinedSerial {
 		t.Fatal("joined serial diverged")
 	}
 
-	hot := st2.Channels["hot"]
+	hot := st2.Spaces["hot"]
 	if hot == nil || hot.Owner != "gamma" {
 		t.Fatalf("exclusivity lost in replay: %+v", hot)
 	}
@@ -730,7 +730,7 @@ func TestChannelReplayDeterminism(t *testing.T) {
 	// Announcement state, including who still owes an acknowledgement.
 	var found bool
 	for _, a := range st2.Announcements {
-		if a.Channel != "auth-refactor" {
+		if a.Space != "auth-refactor" {
 			continue
 		}
 		found = true
@@ -750,12 +750,12 @@ func TestChannelReplayDeterminism(t *testing.T) {
 	}
 }
 
-// TestDirectorReplayDeterminism pins the coordinator's channel powers
+// TestDirectorReplayDeterminism pins the coordinator's space powers
 // (SPEC-CHANNELS.md §8.1) and subagent inheritance (§8.2) through a real ledger
 // round-trip.
 //
 // Deterministic rather than fuzzed because both need a specific setup: a
-// granted role, a locked lane, a declared parent: that a random walk reaches
+// granted role, a locked agent, a declared parent: that a random walk reaches
 // too rarely to depend on. TestRandomizedReplayEquivalence covers the ops that
 // fuzz well; this covers the ones that do not.
 func TestDirectorReplayDeterminism(t *testing.T) {
@@ -785,40 +785,40 @@ func TestDirectorReplayDeterminism(t *testing.T) {
 
 	apply(t, st, led, &core.Op{
 		Kind: core.OpLaneOpen, Token: "towner",
-		Channel: "locked", Text: "single-writer", Exclusive: true,
+		Space: "locked", Text: "single-writer", Exclusive: true,
 	}, t0.Add(8*time.Second))
-	apply(t, st, led, &core.Op{Kind: core.OpLaneJoin, Token: "twaiter", Channel: "locked"},
+	apply(t, st, led, &core.Op{Kind: core.OpLaneJoin, Token: "twaiter", Space: "locked"},
 		t0.Add(9*time.Second))
-	// The subagent speaks in its parent's lane without ever joining.
+	// The subagent speaks in its parent's agent without ever joining.
 	apply(t, st, led, &core.Op{
 		Kind: core.OpLanePost, Token: "thelper",
-		Channel: "locked", Body: "from the helper",
+		Space: "locked", Body: "from the helper",
 	}, t0.Add(10*time.Second))
 	// The director unsticks it.
 	apply(t, st, led, &core.Op{
 		Kind: core.OpLaneForceRelease, Token: "tboss",
-		Channel: "locked", Note: "owner gone",
+		Space: "locked", Note: "owner gone",
 	}, t0.Add(11*time.Second))
 
-	// A second lane, an eviction, and a merge.
+	// A second agent, an eviction, and a merge.
 	apply(t, st, led, &core.Op{
 		Kind: core.OpLaneOpen, Token: "tstray",
-		Channel: "side", Text: "adjacent",
+		Space: "side", Text: "adjacent",
 	}, t0.Add(12*time.Second))
-	apply(t, st, led, &core.Op{Kind: core.OpLaneJoin, Token: "twaiter", Channel: "side"},
+	apply(t, st, led, &core.Op{Kind: core.OpLaneJoin, Token: "twaiter", Space: "side"},
 		t0.Add(13*time.Second))
 	apply(t, st, led, &core.Op{
 		Kind: core.OpLaneEvict, Token: "tboss",
-		Channel: "side", To: "waiter", Note: "wrong lane",
+		Space: "side", To: "waiter", Note: "wrong agent",
 	}, t0.Add(14*time.Second))
 	apply(t, st, led, &core.Op{
 		Kind: core.OpLaneMerge, Token: "tboss",
-		Channel: "side", To: "locked", Note: "same job",
+		Space: "side", To: "locked", Note: "same job",
 	}, t0.Add(15*time.Second))
 	// An announcement the sweep later gives up on.
 	ann := apply(t, st, led, &core.Op{
 		Kind: core.OpLaneAnnounce, Token: "towner",
-		Channel: "locked", Body: "nobody will answer this",
+		Space: "locked", Body: "nobody will answer this",
 	}, t0.Add(16*time.Second))
 	serial, ok := ann["serial"].(uint64)
 	if !ok {
@@ -832,12 +832,12 @@ func TestDirectorReplayDeterminism(t *testing.T) {
 	if st2.Serial != st.Serial {
 		t.Fatalf("serial %d != %d", st2.Serial, st.Serial)
 	}
-	if _, gone := st2.Channels["side"]; gone {
-		t.Fatal("the merged-away lane came back on replay")
+	if _, gone := st2.Spaces["side"]; gone {
+		t.Fatal("the merged-away agent came back on replay")
 	}
-	locked := st2.Channels["locked"]
+	locked := st2.Spaces["locked"]
 	if locked == nil {
-		t.Fatal("the surviving lane is missing after replay")
+		t.Fatal("the surviving agent is missing after replay")
 	}
 	if locked.Owner != "" {
 		t.Fatalf("force-release did not replay: still owned by %q", locked.Owner)
@@ -848,8 +848,8 @@ func TestDirectorReplayDeterminism(t *testing.T) {
 	if _, in := locked.Members["helper"]; in {
 		t.Fatal("a subagent must not replay as a member in its own right")
 	}
-	if st2.Lanes["helper"].Parent != "owner" {
-		t.Fatalf("the parent link did not replay: %q", st2.Lanes["helper"].Parent)
+	if st2.Agents["helper"].Parent != "owner" {
+		t.Fatalf("the parent link did not replay: %q", st2.Agents["helper"].Parent)
 	}
 	if got := st2.Announcements[serial].State; got != core.AnnounceUnacked {
 		t.Fatalf("the abandoned announcement replayed as %q, want %q", got, core.AnnounceUnacked)
@@ -860,14 +860,14 @@ func TestDirectorReplayDeterminism(t *testing.T) {
 }
 
 // Reclamation DELETES state, which makes it the sharpest test of `state ==
-// fold(ledger)`: a deletion the fold does not reproduce leaves a phantom lane on
+// fold(ledger)`: a deletion the fold does not reproduce leaves a phantom agent on
 // every restart, and a deletion the fold performs but the live daemon did not is
 // worse still.
 //
-// This exists because reclaiming empty lanes was added late, to stop automatic
-// lane creation from exhausting the 64-lane cap. It runs inside the sweep: the
+// This exists because reclaiming empty agents was added late, to stop automatic
+// agent creation from exhausting the 64-agent cap. It runs inside the sweep: the
 // one op that is ledgered only when it changed something, so "the sweep removed
-// a lane" and "the sweep did nothing" have to be distinguishable in the ledger,
+// an agent" and "the sweep did nothing" have to be distinguishable in the ledger,
 // not merely in memory.
 func TestReclaimedLanesStayReclaimedAcrossReplay(t *testing.T) {
 	led, path := newLedger(t)
@@ -879,49 +879,49 @@ func TestReclaimedLanesStayReclaimedAcrossReplay(t *testing.T) {
 		apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: "t" + n},
 			t0.Add(time.Duration(i)*time.Second+500*time.Millisecond))
 	}
-	// One lane everybody leaves, one that keeps a member. Auto, because only a
-	// lane Lanes opened from a declaration is reclaimable: one a human opened on
-	// purpose outlives its members, which is what standing lanes are for.
+	// One agent everybody leaves, one that keeps a member. Auto, because only a
+	// agent Dibs opened from a declaration is reclaimable: one a human opened on
+	// purpose outlives its members, which is what standing agents are for.
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneOpen, Token: "talpha", Channel: "abandoned", Text: "work nobody kept",
+		Kind: core.OpLaneOpen, Token: "talpha", Space: "abandoned", Text: "work nobody kept",
 		Auto: true,
 	}, t0.Add(10*time.Second))
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneOpen, Token: "tbeta", Channel: "kept", Text: "work with somebody in it",
+		Kind: core.OpLaneOpen, Token: "tbeta", Space: "kept", Text: "work with somebody in it",
 	}, t0.Add(11*time.Second))
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneLeave, Token: "talpha", Channel: "abandoned",
+		Kind: core.OpLaneLeave, Token: "talpha", Space: "abandoned",
 	}, t0.Add(12*time.Second))
 	apply(t, st, led, &core.Op{Kind: core.OpSweep}, t0.Add(13*time.Second))
 
-	if _, alive := st.Channels["abandoned"]; alive {
-		t.Fatal("setup: the abandoned lane should have been reclaimed live")
+	if _, alive := st.Spaces["abandoned"]; alive {
+		t.Fatal("setup: the abandoned agent should have been reclaimed live")
 	}
-	if _, alive := st.Channels["kept"]; !alive {
-		t.Fatal("setup: a lane with a member must survive")
+	if _, alive := st.Spaces["kept"]; !alive {
+		t.Fatal("setup: an agent with a member must survive")
 	}
 	_ = led.Close()
 
 	st2 := reopen(t, path)
 	if st2.Serial != st.Serial {
-		t.Fatalf("serial %d != %d: the sweep that reclaimed a lane did not ledger "+
+		t.Fatalf("serial %d != %d: the sweep that reclaimed an agent did not ledger "+
 			"identically", st2.Serial, st.Serial)
 	}
-	if _, back := st2.Channels["abandoned"]; back {
-		t.Error("a reclaimed lane came back on replay: it will return on every restart")
+	if _, back := st2.Spaces["abandoned"]; back {
+		t.Error("a reclaimed agent came back on replay: it will return on every restart")
 	}
-	if _, gone := st2.Channels["kept"]; !gone {
-		t.Error("replay reclaimed a lane the live daemon kept")
+	if _, gone := st2.Spaces["kept"]; !gone {
+		t.Error("replay reclaimed an agent the live daemon kept")
 	}
-	if len(st2.Channels) != len(st.Channels) {
-		t.Errorf("channel count diverged: %d replayed vs %d live", len(st2.Channels), len(st.Channels))
+	if len(st2.Spaces) != len(st.Spaces) {
+		t.Errorf("space count diverged: %d replayed vs %d live", len(st2.Spaces), len(st.Spaces))
 	}
 }
 
-// Lane traffic is CONTENT and must be sealed like mail.
+// Agent traffic is CONTENT and must be sealed like mail.
 //
-// Mail bodies were encrypted at rest and lane bodies were not, though both carry
-// the same promise: lane_read is membership-gated, revoked on leave or eviction,
+// Mail bodies were encrypted at rest and agent bodies were not, though both carry
+// the same promise: read_space is membership-gated, revoked on leave or eviction,
 // and SECURITY.md states announcement bodies are unreachable on the token-less
 // path. All of that holds for the running daemon and none of it survives a
 // COPIED ledger, a backup, a support bundle, a pasted reproduction, where an
@@ -940,9 +940,9 @@ func TestLaneTrafficIsSealedAtRestLikeMail(t *testing.T) {
 			t0.Add(time.Duration(i)*time.Second+500*time.Millisecond))
 	}
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneOpen, Token: "talpha", Channel: "w", Text: "work",
+		Kind: core.OpLaneOpen, Token: "talpha", Space: "w", Text: "work",
 	}, t0.Add(10*time.Second))
-	apply(t, st, led, &core.Op{Kind: core.OpLaneJoin, Token: "tbeta", Channel: "w"},
+	apply(t, st, led, &core.Op{Kind: core.OpLaneJoin, Token: "tbeta", Space: "w"},
 		t0.Add(11*time.Second))
 
 	const (
@@ -954,10 +954,10 @@ func TestLaneTrafficIsSealedAtRestLikeMail(t *testing.T) {
 		Kind: core.OpSendMessage, Token: "talpha", To: "beta", MsgType: "notify", Body: mail,
 	}, t0.Add(12*time.Second))
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneAnnounce, Token: "talpha", Channel: "w", Body: announce,
+		Kind: core.OpLaneAnnounce, Token: "talpha", Space: "w", Body: announce,
 	}, t0.Add(13*time.Second))
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLanePost, Token: "talpha", Channel: "w", Body: post,
+		Kind: core.OpLanePost, Token: "talpha", Space: "w", Body: post,
 	}, t0.Add(14*time.Second))
 	_ = led.Close()
 
@@ -968,7 +968,7 @@ func TestLaneTrafficIsSealedAtRestLikeMail(t *testing.T) {
 	for _, secret := range []string{mail, announce, post} {
 		if bytes.Contains(raw, []byte(secret)) {
 			t.Errorf("%q is plaintext on disk: anyone handed a copy of this ledger "+
-				"reads lane-scoped content the live daemon would refuse them", secret)
+				"reads agent-scoped content the live daemon would refuse them", secret)
 		}
 	}
 
@@ -988,7 +988,7 @@ func TestLaneTrafficIsSealedAtRestLikeMail(t *testing.T) {
 // stateDiff compares two states as data.
 //
 // It has one known blind spot: fields tagged `json:"-"` are invisible to it.
-// Channel.Pending is the only one today and the randomized test asserts it
+// Space.Pending is the only one today and the randomized test asserts it
 // separately, but a new `json:"-"` field on replayed state gets no coverage
 // here and will pass silently, so add its own assertion when you add one. It goes through JSON rather than
 // reflect.DeepEqual because time.Time carries a monotonic reading in a live
@@ -1076,5 +1076,39 @@ func TestATornFinalRecordIsReportedNotJustSwallowed(t *testing.T) {
 	}
 	if gotOffset != int64(lastNL+1) {
 		t.Errorf("reported offset %d, want %d", gotOffset, lastNL+1)
+	}
+}
+
+// The ledger is a file on disk: it can be truncated by a full disk, edited by
+// somebody curious, or replaced by something else entirely. None of that may
+// produce a panic, because a stack trace is the one output that tells an
+// operator nothing and buries the diagnosis the daemon prints just above it.
+//
+// Found while testing an unrelated message: a hand-written line that was valid
+// JSON but had no `op` object reached DecryptOp as nil and took the process
+// down.
+func TestALineWithNoOpIsCorruptionNotAPanic(t *testing.T) {
+	dir := t.TempDir()
+	box, err := LoadOrCreateKey(filepath.Join(dir, "key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "ledger.jsonl")
+	if err := os.WriteFile(path, []byte(`{"s":1,"prev":"","t":"2026-08-11T00:00:00Z"}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l, err := Open(path, "t", box)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = l.Close() }()
+
+	st := core.NewState("t", core.DefaultLimits())
+	_, err = l.Replay(st) // must not panic
+	if err == nil {
+		t.Fatal("a record with no op was accepted as replayable")
+	}
+	if !strings.Contains(err.Error(), "no op") {
+		t.Errorf("the error does not say what is wrong with the line: %v", err)
 	}
 }

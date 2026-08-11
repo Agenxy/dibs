@@ -22,7 +22,7 @@
  *
  *   task panel:inspect                      # live daemon, nothing dropped
  *   task panel:inspect -- --drop meta       # a host that forwards no _meta
- *   task panel:inspect -- --tool ack_board
+ *   task panel:inspect -- --tool check_in
  *
  * It prints a URL and stays up. Open it, click a tool, read the dump.
  */
@@ -31,8 +31,8 @@ import { homedir } from "node:os"
 import { join } from "node:path"
 
 const HERE = import.meta.dir
-const DAEMON = process.env.LANES_ADDR ?? "127.0.0.1:4777"
-const LANES_DIR = process.env.LANES_DIR ?? join(homedir(), ".lanes")
+const DAEMON = process.env.DIBS_ADDR ?? "127.0.0.1:4777"
+const DIBS_DIR = process.env.DIBS_DIR ?? join(homedir(), ".agents")
 const PORT = Number(process.env.INSPECT_PORT ?? 4942)
 
 const argv = process.argv.slice(2)
@@ -41,7 +41,7 @@ const argOf = (flag: string, fallback: string) => {
   return i >= 0 && argv[i + 1] ? argv[i + 1] : fallback
 }
 const drops = argv.flatMap((a, i) => (a === "--drop" ? [argv[i + 1]] : [])).filter(Boolean)
-const defaultTool = argOf("--tool", "show_board")
+const defaultTool = argOf("--tool", "board")
 // Headed is the default: a human opening this wants to see it. --headless is for
 // running it as an instrument, where the dump is read over CDP instead.
 const headless = argv.includes("--headless")
@@ -54,7 +54,7 @@ async function rpc(method: string, params: unknown): Promise<any> {
     headers: {
       "content-type": "application/json",
       accept: "application/json, text/event-stream",
-      "X-Lanes-Local": secret,
+      "X-Dibs-Local": secret,
     },
     body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
   })
@@ -70,16 +70,16 @@ process.on("exit", () => {
   try { server?.stop(true) } catch {}
 })
 
-secret = (await Bun.file(join(LANES_DIR, "local.secret")).text()).trim()
+secret = (await Bun.file(join(DIBS_DIR, "local.secret")).text()).trim()
 
 // A token to look at the board WITH. Reusing one you already hold shows you
-// exactly what that agent's panel shows; otherwise register an inspector lane,
+// exactly what that agent's panel shows; otherwise register an inspector agent,
 // which is honest: it really is another agent on this machine, and it will
 // appear on the board it is inspecting.
 let token = argOf("--token", "")
 if (!token) {
   const reg = await rpc("tools/call", {
-    name: "register_lane",
+    name: "register",
     arguments: {
       name: "panel-inspect",
       description: "Looking at the board panel: an instrument, not a worker",
@@ -87,15 +87,15 @@ if (!token) {
     },
   })
   token = JSON.parse(reg.content[0].text).token
-  await rpc("tools/call", { name: "ack_board", arguments: { token } })
+  await rpc("tools/call", { name: "check_in", arguments: { token } })
 }
 
-const read = await rpc("resources/read", { uri: "ui://lanes/board" })
+const read = await rpc("resources/read", { uri: "ui://agents/board" })
 const panelHTML: string = read.contents[0].text
 const caps = (await rpc("initialize", {
   protocolVersion: "2025-11-25",
   capabilities: {},
-  clientInfo: { name: "lanes-panel-inspect", version: "1" },
+  clientInfo: { name: "agents-panel-inspect", version: "1" },
 })).capabilities
 
 const built = await Bun.build({
@@ -134,7 +134,7 @@ async function callTool(name, args) {
 
 async function deliver(name) {
   const args = { token: TOKEN }
-  if (name === "show_board") args.view = "board"
+  if (name === "board") args.view = "board"
   const result = await callTool(name, args)
   const sent = strip(result)
   window.__lastResult = { tool: name, dropped: [...DROPS], sent }
@@ -148,10 +148,10 @@ async function deliver(name) {
 function dump() {
   const doc = window.__panelDoc()
   const text = (sel) => (doc.querySelector(sel)?.textContent ?? "").trim().replace(/\\s+/g, " ")
-  const tabs = ["board", "lanes", "mail", "activity"]
+  const tabs = ["board", "agents", "mail", "activity"]
   const lines = []
   lines.push("── panel ──────────────────────────────────────────")
-  lines.push("context:  " + text("#ctx-lane") + "  ·  " + text("#ctx-caps"))
+  lines.push("context:  " + text("#ctx-agent") + "  ·  " + text("#ctx-caps"))
   // Whether the person at the keyboard has proved they are here, and what the
   // affordance is offering them. Locked is the resting state, not a fault.
   const lock = doc.querySelector("#human-lock")
@@ -209,7 +209,7 @@ function dump() {
   lines.push("── what the host sent the app ─────────────────────")
   lines.push(JSON.stringify(window.__lastResult ?? null, null, 2)?.slice(0, 4000) ?? "null")
   lines.push("")
-  lines.push("── the panel's own calls back to Lanes ────────────")
+  lines.push("── the panel's own calls back to Dibs ────────────")
   lines.push(JSON.stringify(window.__probe.toolCalls.map((c) => c.name)) +
     (window.__probe.toolCalls.length ? "" : "  (none: it asked for nothing)"))
   lines.push("")
@@ -219,7 +219,7 @@ function dump() {
 }
 window.__dump = dump
 
-for (const name of ["show_board", "ack_board", "inbox"]) {
+for (const name of ["board", "check_in", "inbox"]) {
   const b = document.createElement("button")
   b.textContent = name
   b.onclick = () => deliver(name)
@@ -259,7 +259,7 @@ server = Bun.serve({
       return new Response(inspectJS, { headers: { "content-type": "text/javascript" } })
     if (url.pathname === "/")
       return new Response(
-        `<!doctype html><meta charset=utf-8><title>Lanes panel inspector</title>` +
+        `<!doctype html><meta charset=utf-8><title>Dibs panel inspector</title>` +
         `<body style="margin:0;background:#0E0F11;color:#c8ccd2;` +
         `font:13px ui-monospace,SFMono-Regular,Menlo,monospace">` +
         `<div id="bar" style="padding:8px;display:flex;gap:8px;align-items:center"></div>` +
@@ -278,8 +278,8 @@ server = Bun.serve({
   },
 })
 
-const channel = process.env.PW_CHANNEL === undefined ? "chrome" : process.env.PW_CHANNEL
-browser = await chromium.launch({ ...(channel ? { channel } : {}), headless })
+const space = process.env.PW_CHANNEL === undefined ? "chrome" : process.env.PW_CHANNEL
+browser = await chromium.launch({ ...(space ? { space } : {}), headless })
 // --light renders in the light theme.
 //
 // Worth a flag rather than a one-off check: this board once shipped a light
@@ -310,7 +310,7 @@ console.log(await page.textContent("#dump"))
 // the join-first state, the two refusal sentences: unobservable to anything
 // that reads text.
 //
-// Point this at a daemon built with `-tags lanesdev` and LANES_PRESENCE_MOCK
+// Point this at a daemon built with `-tags dibdev` and DIBS_PRESENCE_MOCK
 // set, and the click goes all the way through: panel → human_unlock → verdict →
 // re-render. Against an ordinary daemon it raises a real system sheet, which is
 // correct, and is why this is a flag rather than something the inspector does on

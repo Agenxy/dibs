@@ -172,7 +172,7 @@ func TestRefScopingAcrossRealRepositories(t *testing.T) {
 func mustDeclare(t *testing.T, srv *httptest.Server, name, cwd string) map[string]any {
 	const ref = "issue:42" // one ref throughout: what varies here is the repositories
 	t.Helper()
-	out := toolCall(t, srv, "register_lane", map[string]any{
+	out := toolCall(t, srv, "register", map[string]any{
 		"name": name, "cwd": cwd,
 		"nonce": "n-" + name + "-0123456789abcdef0123",
 	})
@@ -180,8 +180,8 @@ func mustDeclare(t *testing.T, srv *httptest.Server, name, cwd string) map[strin
 	if token == "" {
 		t.Fatalf("%s could not register from %s: %v", name, cwd, out)
 	}
-	toolCall(t, srv, "ack_board", map[string]any{"token": token})
-	return toolCall(t, srv, "set_slot", map[string]any{
+	toolCall(t, srv, "check_in", map[string]any{"token": token})
+	return toolCall(t, srv, "declare", map[string]any{
 		"token": token, "text": "working on " + ref, "refs": []string{ref},
 	})
 }
@@ -317,7 +317,7 @@ func TestIdentityIsRereadWhenACheckoutPathIsReused(t *testing.T) {
 // first time the path is seen and there would be nothing stale to catch.
 func primeIdentityCache(t *testing.T, srv *httptest.Server, name, cwd string) {
 	t.Helper()
-	out := toolCall(t, srv, "register_lane", map[string]any{
+	out := toolCall(t, srv, "register", map[string]any{
 		"name": name, "cwd": cwd, "nonce": "n-" + name + "-0123456789abcdef0123",
 	})
 	if token, _ := out["token"].(string); token == "" {
@@ -364,7 +364,7 @@ func TestADirectoryThatBecomesARepositoryIsNoticed(t *testing.T) {
 	g.run(later, "remote", "add", "origin", "https://github.com/acme/upstream.git")
 	g.commit(later, "README.md")
 
-	out := toolCall(t, srv, "register_lane", map[string]any{
+	out := toolCall(t, srv, "register", map[string]any{
 		"name": "after-init", "cwd": later,
 		"nonce": "n-after-init-0123456789abcdef0123",
 	})
@@ -372,7 +372,7 @@ func TestADirectoryThatBecomesARepositoryIsNoticed(t *testing.T) {
 	if token == "" {
 		t.Fatalf("registration failed: %v", out)
 	}
-	board, err := json.Marshal(toolCall(t, srv, "ack_board", map[string]any{"token": token}))
+	board, err := json.Marshal(toolCall(t, srv, "check_in", map[string]any{"token": token}))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -39,7 +39,7 @@ jobs:
       # It has to be the WHOLE gate. This ran `go test -race ./...` alone, which
       # is the part of the chain least likely to catch a release-breaking
       # problem: it does not build the panel, drive a browser, exercise the
-      # channels, or enforce the coverage floor. A tag could therefore publish
+      # spaces, or enforce the coverage floor. A tag could therefore publish
       # signed binaries whose end-to-end suites had never been run against them.
       # The action, not `curl https://mise.run | sh`.
       #

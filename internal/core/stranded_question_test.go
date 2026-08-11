@@ -2,14 +2,14 @@ package core
 
 import "testing"
 
-// A question owed by a lane that closes is unanswerable from that instant, and
+// A question owed by an agent that closes is unanswerable from that instant, and
 // the asker was told nothing until the deadline.
 //
 // The sweep already reaches the right verdict: it has a branch and a sentence
 // for precisely this case, but it does not run until the deadline elapses. So
 // an agent that asked with a ten-minute deadline blocked for ten minutes on an
 // answer that became impossible in the first second, while the board knew:
-// resume_lane refuses a closed lane with E_LANE_CLOSED, and Gone() is
+// resume refuses a closed agent with E_LANE_CLOSED, and Gone() is
 // documented as "never comes back".
 func TestClosingALaneEndsTheQuestionsItWillNeverAnswer(t *testing.T) {
 	st := NewState("test", DefaultLimits())
@@ -75,7 +75,7 @@ func TestClosingALaneEndsTheQuestionsItWillNeverAnswer(t *testing.T) {
 //
 // This cannot be prevented (leaving mid-thought is allowed) but it was
 // reported as an unqualified success. respond() returned {"ok": true} for an
-// answer addressed to a lane that will never read it, which reads as "the other
+// answer addressed to an agent that will never read it, which reads as "the other
 // side has your answer" and leaves the responder waiting for a follow-up that
 // is not coming.
 func TestAnsweringADepartedAskerSaysSo(t *testing.T) {

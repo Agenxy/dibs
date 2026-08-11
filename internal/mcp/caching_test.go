@@ -10,7 +10,7 @@ import "testing"
 // test it rather than trust it is asymmetric: a missing or wrong ttlMs costs a
 // refetch, but cacheScope is a PERMISSION. "public" tells shared gateways and
 // caching proxies they may serve the response to a different caller,
-// explicitly including one holding a different token. So marking one lane's
+// explicitly including one holding a different token. So marking one agent's
 // mailbox public is not a performance mistake, it is disclosure.
 //
 // Driven through the real dispatcher rather than by inspecting the constants,
@@ -56,40 +56,40 @@ func TestCacheHintsArePresentAndCorrectlyScoped(t *testing.T) {
 
 // The one that would be a security bug.
 //
-// lanes://inbox is a single lane's mail, authorised by that lane's token.
-// lanes://board is what every agent is entitled to see. They must not carry the
+// dibs://inbox is a single agent's mail, authorised by that agent's token.
+// dibs://board is what every agent is entitled to see. They must not carry the
 // same sharing permission, and the difference is not cosmetic: a shared cache
 // obeying "public" on the inbox would hand one agent's private mail to another.
 func TestAPrivateMailboxIsNeverMarkedShareable(t *testing.T) {
 	srv, _ := newServer(t)
-	reg := toolCall(t, srv, "register_lane", map[string]any{"name": "cache-probe"})
+	reg := toolCall(t, srv, "register", map[string]any{"name": "cache-probe"})
 	tok, _ := reg["token"].(string)
 	if tok == "" {
-		t.Fatalf("could not register a lane to read a mailbox with: %v", reg)
+		t.Fatalf("could not register an agent to read a mailbox with: %v", reg)
 	}
 
 	box := result(t, rpc(t, srv, "2026-07-28", "resources/read", map[string]any{
-		"uri":   "lanes://inbox",
+		"uri":   "dibs://inbox",
 		"_meta": map[string]any{metaTokenKey: tok},
-	}), "resources/read lanes://inbox")
+	}), "resources/read dibs://inbox")
 	if got := box["cacheScope"]; got != scopePrivate {
-		t.Fatalf("lanes://inbox cacheScope = %v, want %q.\n"+
-			"  This resource is one lane's mail, keyed by its token. \"public\" tells shared\n"+
+		t.Fatalf("dibs://inbox cacheScope = %v, want %q.\n"+
+			"  This resource is one agent's mail, keyed by its token. \"public\" tells shared\n"+
 			"  gateways they may serve it to a caller with a different authorization context,\n"+
 			"  so this is a disclosure bug and not a caching one.", got, scopePrivate)
 	}
 
 	board := result(t, rpc(t, srv, "2026-07-28", "resources/read",
-		map[string]any{"uri": "lanes://board"}), "resources/read lanes://board")
+		map[string]any{"uri": "dibs://board"}), "resources/read dibs://board")
 	if got := board["cacheScope"]; got != scopePublic {
-		t.Errorf("lanes://board cacheScope = %v, want %q: the board is what every agent is "+
+		t.Errorf("dibs://board cacheScope = %v, want %q: the board is what every agent is "+
 			"entitled to see, and marking it private forfeits sharing for no gain", got, scopePublic)
 	}
 
 	// Live data must not claim the static TTL, or a client sits on a stale board
 	// for an hour while the fleet moves underneath it.
 	if n, _ := toInt(board["ttlMs"]); n >= ttlStatic {
-		t.Errorf("lanes://board ttlMs = %v, which is the static hint; the board changes on "+
+		t.Errorf("dibs://board ttlMs = %v, which is the static hint; the board changes on "+
 			"every event", board["ttlMs"])
 	}
 }

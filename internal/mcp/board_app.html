@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="color-scheme" content="dark light" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Lanes. Board</title>
+<title>Dibs. Board</title>
 <style>/*__STYLES__*/</style>
 <style>
 /* The shared sheet is the product language. The panel adds one piece of its
@@ -12,7 +12,7 @@
    width, so it behaves like a calibrated instrument inserted into the host:
    one persistent axis, and every live record registered against it. */
 .panel {
-  container: lanes-panel / inline-size;
+  container: agents-panel / inline-size;
   --panel-gutter: var(--s6);
   --panel-rail-size: 30px;
   --panel-rail-gap: var(--s3);
@@ -346,14 +346,14 @@
    A bordered, filled, bevelled, inset-shadowed rectangle around every record is
    the default component of every dashboard ever built; it added four kinds of
    chrome to say one thing the status bands overhead already say, and it cost
-   real density: a lane with a single line of description occupied eighty
+   real density: an agent with a single line of description occupied eighty
    vertical pixels, most of it padding around a box drawn to contain it.
    What survives is the part that carries meaning: the signal edge on the left,
    which is coloured by status and reaches back to the rail. Records now hang off
    that datum instead of floating beside it, so the eye follows one continuous
    spine down the board rather than counting containers. Density roughly halves,
    and nothing that was legible stops being legible. */
-.panel :is(.entry, .channel, .msg) {
+.panel :is(.entry, .space, .msg) {
   position: relative;
   margin-block: 0;
   margin-inline: 0;
@@ -372,16 +372,16 @@
 /* Hover fills rather than outlines: it marks the row under the pointer without
    introducing an edge that was not there a moment ago, which on a dense list
    reads as the layout shifting. */
-.panel :is(.entry, .channel, .msg):hover {
+.panel :is(.entry, .space, .msg):hover {
   background: color-mix(in oklch, var(--fg) 3%, transparent);
   border-left-color: var(--panel-record-signal);
 }
 /* A hairline between records, owned by the one above, so the first row does not
    start with a rule hanging off nothing. */
-.panel :is(.entry, .channel, .msg) + :is(.entry, .channel, .msg) {
+.panel :is(.entry, .space, .msg) + :is(.entry, .space, .msg) {
   border-top: 1px solid color-mix(in oklch, var(--line-2) 34%, transparent);
 }
-.panel :is(.entry, .channel, .msg)::after {
+.panel :is(.entry, .space, .msg)::after {
   content: "";
   position: absolute;
   top: var(--s4);
@@ -430,7 +430,7 @@
 .panel .entry.active { --panel-record-signal: var(--live); }
 .panel .entry.stale { --panel-record-signal: var(--warn); }
 
-/* A lane losing touch, shown once, as the thing that actually happened.
+/* An agent losing touch, shown once, as the thing that actually happened.
  *
  * The marker's hairline reaches left toward the timeline: it is this agent's
  * line to the board. So when the agent stops answering, the line retracts to
@@ -452,8 +452,8 @@
   100% { transform: scaleX(1); }
 }
 .panel .entry.self { --panel-record-signal: var(--accent); }
-.panel .channel.mine { --panel-record-signal: var(--accent); }
-.panel .channel.exclusive { --panel-record-signal: var(--warn); }
+.panel .space.mine { --panel-record-signal: var(--accent); }
+.panel .space.exclusive { --panel-record-signal: var(--warn); }
 .panel .msg[data-type="question"] { --panel-record-signal: var(--accent); }
 .panel .msg[data-type="request"] { --panel-record-signal: var(--warn); }
 .panel .msg[data-type="handoff"] { --panel-record-signal: var(--live); }
@@ -470,7 +470,7 @@
 /* The band separates two groups; it does not need to be an intermission.
    Shared spacing gives it a top pad plus a panel margin on top of that, which
    read as a paragraph break on a wide web page and as dead air in a sidebar,
-   a single-lane group could cost more vertical space in its gaps than in its
+   a single-agent group could cost more vertical space in its gaps than in its
    content. Asymmetric now, deliberately: more room above than below, so the
    label binds to the records it introduces instead of floating between two
    groups belonging to neither. */
@@ -662,7 +662,7 @@
    makes an older engine usable, while these refinements follow the actual
    embedding container whenever size queries exist. */
 @supports (container-type: inline-size) {
-  @container lanes-panel (inline-size <= 42rem) {
+  @container agents-panel (inline-size <= 42rem) {
     .panel {
       --panel-gutter: var(--s4);
     }
@@ -679,7 +679,7 @@
     .panel :is(.entry .about, .task, .idents) { margin-left: 0; }
   }
 
-  @container lanes-panel (inline-size <= 32rem) {
+  @container agents-panel (inline-size <= 32rem) {
     .panel .views {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -702,22 +702,22 @@
     .panel .metric:nth-child(n + 3) {
       border-top: 1px solid color-mix(in oklch, var(--line-2) 62%, transparent);
     }
-    .panel :is(.entry, .channel, .msg) {
+    .panel :is(.entry, .space, .msg) {
       padding: var(--s3);
       border-radius: calc(var(--r) * 1.3);
     }
-    .panel :is(.entry, .channel, .msg)::after {
+    .panel :is(.entry, .space, .msg)::after {
       top: var(--s3);
     }
   }
 
-  @container lanes-panel (inline-size <= 18rem) {
+  @container agents-panel (inline-size <= 18rem) {
     .panel .views {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 
-  @container lanes-panel (inline-size > 48rem) {
+  @container agents-panel (inline-size > 48rem) {
     .panel .sheet {
       margin-block: var(--s4);
       border: 1px solid color-mix(in oklch, var(--line-2) 72%, transparent);
@@ -741,7 +741,7 @@
   /* Keep the first scanful fully realized. Skipping every record made even a
      two-agent board eligible for off-screen suppression, which is neither a
      long-list optimization nor friendly to DOM-based assistive tooling. */
-  .panel :is(.entry, .channel, .msg):nth-child(n + 7) {
+  .panel :is(.entry, .space, .msg):nth-child(n + 7) {
     content-visibility: auto;
     contain-intrinsic-block-size: auto 7rem;
   }
@@ -752,7 +752,7 @@
 }
 
 @supports (text-wrap: pretty) {
-  .panel :is(.about, .channel-topic, .msg .body, .empty p) {
+  .panel :is(.about, .space-topic, .msg .body, .empty p) {
     text-wrap: pretty;
   }
   .panel :is(.empty h3, .firstrun h3) { text-wrap: balance; }
@@ -762,7 +762,7 @@
    out of the substrate. A tab change moves only the pane: the masthead and
    telemetry stay optically locked, which makes the navigation legible as a
    state change rather than a page reload. view-transition-class lets every
-   dynamically named lane/message share one treatment. */
+   dynamically named agent/message share one treatment. */
 @supports (view-transition-name: none) {
   /* The pane switch itself is the shared sheet's (--> .view / board-view):
      it is the same movement on both surfaces and naming it twice is how one
@@ -775,11 +775,11 @@
   .panel .metric .figure { view-transition-class: panel-metric; }
 
   html[data-transition="mail-arrival"]::view-transition-new(.panel-mail),
-  html[data-transition="lane-arrival"]::view-transition-new(.panel-lane) {
+  html[data-transition="agent-arrival"]::view-transition-new(.panel-agent) {
     animation: panel-record-resolve .46s var(--ease) both;
   }
   html[data-transition="mail-arrival"]::view-transition-group(.panel-mail),
-  html[data-transition="lane-arrival"]::view-transition-group(.panel-lane) {
+  html[data-transition="agent-arrival"]::view-transition-group(.panel-agent) {
     animation-duration: .46s;
     animation-timing-function: var(--ease);
   }
@@ -788,10 +788,10 @@
     animation-timing-function: var(--ease);
   }
 
-  /* A lane changing state TRAVELS to its new band.
+  /* An agent changing state TRAVELS to its new band.
    *
    * The rows are grouped by status, so a status change is also a change of
-   * place: between two frames a lane leaves one group and reappears in another
+   * place: between two frames an agent leaves one group and reappears in another
    * a few hundred pixels away. Drawn without motion that reads as two unrelated
    * edits, a row disappeared here, a similar row appeared there, and the
    * reader has to reconstruct the one fact that mattered, which is that THIS
@@ -804,14 +804,14 @@
    * and the band headers re-count during the same transition, so the number and
    * the row that caused it change together rather than in two steps.
    *
-   * Every lane row carries a stable name, not just the movers, and that is the
+   * Every agent row carries a stable name, not just the movers, and that is the
    * right choice rather than an oversight. The rows below a departure really do
    * change place, and naming only the traveller would leave them to the root
    * cross-fade: they would blink to their new positions while one row glided
    * past, which reads as a rendering fault rather than a list resettling. Named
-   * throughout, the group closes and the destination opens around a lane that
+   * throughout, the group closes and the destination opens around an agent that
    * visibly moves between them: one event, drawn once. */
-  html[data-transition="lane-band"]::view-transition-group(.panel-lane) {
+  html[data-transition="agent-band"]::view-transition-group(.panel-agent) {
     animation-duration: .62s;
     animation-timing-function: var(--ease);
   }
@@ -845,7 +845,7 @@
   .panel .status-mark::before,
   .panel .status-mark::after { animation: none; }
   .panel .views button::after,
-  .panel :is(.entry, .channel, .msg) { transition: none; }
+  .panel :is(.entry, .space, .msg) { transition: none; }
   ::view-transition-group(*) { animation-duration: .001ms; }
 }
 </style>
@@ -862,11 +862,11 @@
           <circle class="core" cx="8" cy="8" r="1.6" stroke="none" fill="currentColor" opacity=".45" />
         </svg>
       </span>
-      <span class="wordmark">Lanes</span>
+      <span class="wordmark">Dibs</span>
     </div>
-    <nav class="views" role="tablist" aria-label="Lanes views">
+    <nav class="views" role="tablist" aria-label="Dibs views">
       <button id="tab-board" data-view="board" role="tab" aria-controls="pane-board" aria-selected="true" tabindex="0">Board</button>
-      <button id="tab-lanes" data-view="lanes" role="tab" aria-controls="pane-lanes" aria-selected="false" tabindex="-1">Lanes<span class="tally zero" id="tally-lanes" aria-hidden="true">0</span></button>
+      <button id="tab-agents" data-view="agents" role="tab" aria-controls="pane-agents" aria-selected="false" tabindex="-1">Dibs<span class="tally zero" id="tally-agents" aria-hidden="true">0</span></button>
       <button id="tab-mail" data-view="mail" role="tab" aria-controls="pane-mail" aria-selected="false" tabindex="-1">Mail<span class="tally zero" id="tally-mail" aria-hidden="true">0</span></button>
       <button id="tab-activity" data-view="activity" role="tab" aria-controls="pane-activity" aria-selected="false" tabindex="-1">Activity<span class="tally zero" id="tally-act" aria-hidden="true">0</span></button>
     </nav>
@@ -874,7 +874,7 @@
   <div class="hairline"></div>
 
   <div class="context" aria-label="Panel context">
-    <span class="lane-id" id="ctx-lane">awaiting board</span>
+    <span class="agent-id" id="ctx-agent">awaiting board</span>
     <span id="ctx-caps">, </span>
     <!-- The human's way in. Locked until a fingerprint proves somebody is
          actually here: the panel speaks with the AGENT's token, so without
@@ -898,7 +898,7 @@
 
   <main id="main">
     <section class="view" id="pane-board" role="tabpanel" aria-labelledby="tab-board" tabindex="0"></section>
-    <section class="view hide" id="pane-lanes" role="tabpanel" aria-labelledby="tab-lanes" tabindex="0" hidden></section>
+    <section class="view hide" id="pane-agents" role="tabpanel" aria-labelledby="tab-agents" tabindex="0" hidden></section>
     <section class="view hide" id="pane-mail" role="tabpanel" aria-labelledby="tab-mail" tabindex="0" hidden></section>
     <section class="view hide" id="pane-activity" role="tabpanel" aria-labelledby="tab-activity" tabindex="0" hidden></section>
   </main>
@@ -915,7 +915,7 @@
          anyone had. Now it can. Substituted server-side; see panelBuild. -->
     <span id="foot-build">panel /*__PANELBUILD__*/</span>
     <!-- Read this line first when the panel looks wrong. It is the build the
-         SERVER produced, so if it disagrees with what `lanes` serves now, the
+         SERVER produced, so if it disagrees with what `dibs` serves now, the
          host is rendering a template it cached and no server-side change can
          reach it until the client reconnects. -->
   </footer>
@@ -981,7 +981,7 @@ function notify(method, params) {
 
 // Mark every call this panel makes through the bridge.
 //
-// The server duplicates ack_board's whole checkpoint into structuredContent
+// The server duplicates check_in's whole checkpoint into structuredContent
 // because, on a host that drops _meta AND forbids an app from calling tools,
 // that is the only carrier that can reach this panel at all. It costs the model
 // a second copy of the board on every activation, and it is only necessary on
@@ -992,7 +992,7 @@ function notify(method, params) {
 // permits app→tool calls, which means the panel can fetch for itself and the
 // duplicate is dead weight. So say so, in _meta, where it costs the model
 // nothing. The server stops duplicating for this session from then on.
-const PANEL_CALL_META = "com.lanes/panel-call"
+const PANEL_CALL_META = "com.dibs/panel-call"
 
 function call(method, params) {
   if (tornDown) return Promise.reject(new Error("The host closed this panel"))
@@ -1047,7 +1047,7 @@ let state = {
   board: null,
   inbox: [],
   events: [],
-  lane: null,
+  agent: null,
   token: null,
   composing: null,
   pending: new Map(),
@@ -1059,13 +1059,13 @@ let state = {
   // panel can stop claiming one is on the way. Cleared the moment one arrives.
   // Why the board never arrived, and what the reader can do about it. A bare
   // boolean produced a 10px "no board from this host" beside four confident
-  // zeros and "No lanes yet": over a live five-lane fleet. The panel KNEW which
+  // zeros and "No agents yet": over a live five-agent fleet. The panel KNEW which
   // carrier failed and threw the answer away.
   unreachable: null,
 }
 
 // What the host is willing to let this panel do. Learned at handshake.
-//   serverTools       : the panel may call Lanes itself
+//   serverTools       : the panel may call Dibs itself
 //   updateModelContext: the panel may put content into the agent's context
 let host = {
   caps: {}, ctx: {}, name: "", version: "", proto: "",
@@ -1086,7 +1086,7 @@ let stopTicker = null
 const runPanelTransition = (kind, update) => Board.transition(kind, update)
 
 // Dynamic records need stable, valid custom identifiers so the browser can
-// move an existing lane/message from its old geometry to its new one. Encoding
+// move an existing agent/message from its old geometry to its new one. Encoding
 // code points instead of using the raw id also handles spaces and non-ASCII
 // display names without relying on CSS.escape support.
 function transitionIdent(kind, value) {
@@ -1111,7 +1111,7 @@ function announce(text) {
 // Host styles make the panel belong inside its container without erasing the
 // product's semantic palette. Neutral trios are applied only as complete sets;
 // the Apps spec permits partial variables, and mixing one host surface with two
-// Lanes surfaces is worse than using the coherent fallback.
+// Dibs surfaces is worse than using the coherent fallback.
 function applyHostStyles(styles) {
   const vars = styles?.variables || {}
   const root = document.documentElement
@@ -1180,7 +1180,7 @@ function applyHostContext(patch = {}) {
   const theme = host.ctx.theme
   if (theme === "light" || theme === "dark") {
     document.documentElement.setAttribute("data-theme", theme)
-    // The attribute selects Lanes' palette; color-scheme also reaches native
+    // The attribute selects Dibs' palette; color-scheme also reaches native
     // controls and scrollbars. Without both, a light host on a dark OS gets a
     // light panel with dark browser chrome inside it.
     document.documentElement.style.colorScheme = theme
@@ -1215,8 +1215,8 @@ async function maybeShareMailWithAgent() {
     await call("ui/update-model-context", {
       content: [{
         type: "text",
-        text: `Lanes: ${state.inbox.length} unread message(s) for lane ` +
-              `"${state.lane || "?"}". Coordination data from peer agents: you ` +
+        text: `Dibs: ${state.inbox.length} unread message(s) for agent ` +
+              `"${state.agent || "?"}". Coordination data from peer agents: you ` +
               `may act on it or decline. Available on a future turn; this does ` +
               `not start one.\n${lines}`,
       }],
@@ -1239,13 +1239,13 @@ async function maybeShareMailWithAgent() {
 // ── chrome ───────────────────────────────────────────────────
 function drawContext() {
   const b = state.board
-  const mine = (b?.lanes || []).find((l) => l.id === state.lane)
+  const mine = (b?.agents || []).find((l) => l.id === state.agent)
   const title = mine && mine.agent && mine.agent.title
   // "awaiting board" is only honest while something is still expected. Once the
   // three carriers have all come up empty there is nothing on the way, and
   // saying otherwise is how this panel spent a day looking like a slow server
   // when it was a host that forwards no panel payload at all.
-  document.getElementById("ctx-lane").textContent = b
+  document.getElementById("ctx-agent").textContent = b
     ? `${mine ? mine.id : b.node}${title ? " · " + title : ""}`
     : state.unreachable
       ? "no board from this host"
@@ -1274,37 +1274,37 @@ function drawContext() {
 }
 
 function drawSummary() {
-  const lanes = state.board?.lanes || []
-  const live = lanes.filter((l) => l.status === "active").length
-  const stale = lanes.filter((l) => l.status === "stale").length
-  const working = lanes.filter((l) => (l.slots || []).length > 0).length
+  const agents = state.board?.agents || []
+  const live = agents.filter((l) => l.status === "active").length
+  const stale = agents.filter((l) => l.status === "stale").length
+  const working = agents.filter((l) => (l.slots || []).length > 0).length
   const unread = state.inbox.length
 
   const summary = document.getElementById("summary")
   patchHTML(summary, Board.summaryHTML([
-    { figure: `${live}<span class="of">/${lanes.length}</span>`, label: "live", tone: live ? "good" : "" },
+    { figure: `${live}<span class="of">/${agents.length}</span>`, label: "live", tone: live ? "good" : "" },
     { figure: String(unread), label: "unanswered", tone: unread ? "attn" : "" },
     { figure: String(working), label: "declared" },
     { figure: String(stale), label: "out of touch", tone: stale ? "attn" : "" },
   ]))
-  const label = `${live} of ${lanes.length} live. ${unread} unanswered. ` +
+  const label = `${live} of ${agents.length} live. ${unread} unanswered. ` +
     `${working} declared. ${stale} out of touch.`
   if (summary.getAttribute("aria-label") !== label)
     summary.setAttribute("aria-label", label)
-  document.title = unread ? `Lanes (${unread} waiting` : "Lanes) Board"
+  document.title = unread ? `Dibs (${unread} waiting` : "Dibs) Board"
 }
 
 // ── actions ──────────────────────────────────────────────────
 // The one genuinely panel-specific piece of rendering, and the reason the
 // shared components take an `actionsHTML` callback rather than deciding for
-// themselves: only this surface holds a lane token and may answer AS that lane.
+// themselves: only this surface holds an agent token and may answer AS that agent.
 // The web board watches the same messages and can do none of it.
 //
 // What the human can DO about this message, right here.
 //
 // A panel that shows you mail you must then go and type instructions about is a
 // picture of a problem. Where the host grants serverTools, the panel can answer
-// as the lane it belongs to.
+// as the agent it belongs to.
 function actionsHTML(m) {
   if (!canCallTools() || !state.token) return ""
   const s = esc(m.serial)
@@ -1350,7 +1350,7 @@ function actionsHTML(m) {
   return `<div class="acts">${btn("ack", "Acknowledge", "")}</div>${errorHTML}`
 }
 
-// A Lanes refusal is a successful JSON-RPC exchange carrying an MCP `isError`
+// A Dibs refusal is a successful JSON-RPC exchange carrying an MCP `isError`
 // result. Treating only rejected promises as failures announces a refused
 // action as sent. Keep the engine's honest hint intact.
 function toolFailure(result) {
@@ -1358,10 +1358,10 @@ function toolFailure(result) {
   const raw = result.content?.find((c) => c?.type === "text")?.text || ""
   try {
     const detail = JSON.parse(raw)
-    const reason = detail.message || detail.error || "Lanes refused this action."
+    const reason = detail.message || detail.error || "Dibs refused this action."
     return detail.hint ? `${reason} ${detail.hint}` : reason
   } catch (_) {
-    return raw || "Lanes refused this action."
+    return raw || "Dibs refused this action."
   }
 }
 
@@ -1374,7 +1374,7 @@ function toolJSON(result) {
 // Board and mailbox state out of an ordinary tool result's content.
 //
 // Only the shapes the panel draws, and only when they are actually there: a
-// summary line parses to nothing, `show_board` without detail carries no board,
+// summary line parses to nothing, `board` without detail carries no board,
 // and neither should overwrite what the panel already has. Returns null rather
 // than an empty object so the caller can tell "nothing in content" from
 // "content said the mailbox is empty", which are different facts.
@@ -1383,7 +1383,7 @@ function contentState(params) {
   if (!plain || typeof plain !== "object") return null
   const out = {}
   if (plain.board && typeof plain.board === "object") out.board = plain.board
-  // inbox nests under "inbox" from ack_board and sits at the top level from
+  // inbox nests under "inbox" from check_in and sits at the top level from
   // inbox itself: the same two shapes panelState normalises server-side.
   if (plain.inbox) out.inbox = plain.inbox
   else if (Array.isArray(plain.messages)) out.inbox = { messages: plain.messages }
@@ -1395,9 +1395,9 @@ function contentState(params) {
 //
 // The server sends panel data in tool-result _meta, which is where the spec puts
 // it and which keeps the board out of model context: the whole reason
-// show_board can honestly cost one summary line. Not every host forwards it. On
+// board can honestly cost one summary line. Not every host forwards it. On
 // one that does not, this panel receives a tool-result carrying a token and no
-// board, and used to sit on "awaiting board · No lanes yet" indefinitely while
+// board, and used to sit on "awaiting board · No agents yet" indefinitely while
 // the daemon held a full board. It looked exactly like a server bug.
 //
 // The repair is to stop waiting and ask. A tool call we make over our own bridge
@@ -1425,27 +1425,27 @@ function fetchBoard() {
   // them to the wrong place.
   if (!state.token) {
     unreachable("This host forwarded no panel payload, so the panel has no token to read the board with.",
-      "Run `lanes board` in a terminal to see the fleet.")
+      "Run `dibs board` in a terminal to see the fleet.")
     return
   }
   if (!canCallTools()) {
     unreachable("This host does not let panels call tools, and it forwarded no board.",
-      "Run `lanes board` in a terminal to see the fleet.")
+      "Run `dibs board` in a terminal to see the fleet.")
     return
   }
   boardFetch = (async () => {
     try {
       const res = await call("tools/call", {
-        name: "show_board",
+        name: "board",
         arguments: { token: state.token, detail: true },
       })
       if (toolFailure(res)) return
-      const payload = res?._meta?.["com.lanes/panel"] || toolJSON(res)
+      const payload = res?._meta?.["com.dibs/panel"] || toolJSON(res)
       // Guard against re-entry: render() calls back here when a push carries no
       // board, so handing it another boardless payload would spin.
       if (payload && (payload.board || payload.inbox)) render({ structuredContent: payload })
-      else unreachable("Lanes answered, but this host delivered no board with it.",
-        "Run `lanes doctor`: it names what is quietly broken.")
+      else unreachable("Dibs answered, but this host delivered no board with it.",
+        "Run `dibs doctor`: it names what is quietly broken.")
     } catch (err) {
       // The fetch is the last of three carriers, so its failure ends the line,
       // say so rather than leaving "awaiting board" up forever. The next tool
@@ -1453,14 +1453,14 @@ function fetchBoard() {
       // host's own words: a bare catch threw away the one sentence that could
       // tell a stalled panel from a broken daemon.
       unreachable(err instanceof Error ? err.message : "The host did not answer.",
-        "Run `lanes doctor`: it names what is quietly broken.")
+        "Run `dibs doctor`: it names what is quietly broken.")
     } finally {
       boardFetch = null
     }
   })()
 }
 
-// Run a Lanes tool through the host proxy, as this lane.
+// Run a Dibs tool through the host proxy, as this agent.
 async function act(serial, disposition) {
   if (state.pending.has(serial)) return
   if (disposition === "compose") {
@@ -1502,7 +1502,7 @@ async function act(serial, disposition) {
   try {
     if (disposition === "ack") {
       result = await call("tools/call", {
-        name: "ack_message", arguments: { token: state.token, msg_serial: serial } })
+        name: "ack", arguments: { token: state.token, msg_serial: serial } })
     } else {
       result = await call("tools/call", { name: "respond",
         arguments: { token: state.token, msg_serial: serial, disposition, body } })
@@ -1510,7 +1510,7 @@ async function act(serial, disposition) {
   } catch (err) {
     state.pending.delete(serial)
     state.errors.set(serial,
-      "Delivery could not be confirmed. Check Lanes before retrying. " +
+      "Delivery could not be confirmed. Check Dibs before retrying. " +
       (err instanceof Error ? err.message : "The host did not complete the action."))
     draw()
     announce(`Delivery not confirmed for ${actionName(disposition)} on message ${serial}`)
@@ -1522,9 +1522,9 @@ async function act(serial, disposition) {
   const refusal = toolFailure(result)
   if (refusal) {
     state.pending.delete(serial)
-    state.errors.set(serial, `Lanes refused this action; nothing changed. ${refusal}`)
+    state.errors.set(serial, `Dibs refused this action; nothing changed. ${refusal}`)
     draw()
-    announce(`Lanes refused ${actionName(disposition)} for message ${serial}`)
+    announce(`Dibs refused ${actionName(disposition)} for message ${serial}`)
     if (wasComposing) focusReply(serial)
     else focusAction(serial, disposition)
     return
@@ -1551,7 +1551,7 @@ async function act(serial, disposition) {
       "tools/call", { name: "inbox", arguments: { token: state.token } })
     const refreshRefusal = toolFailure(refreshed)
     if (refreshRefusal) throw new Error(refreshRefusal)
-    const panelInbox = refreshed?._meta?.["com.lanes/panel"]
+    const panelInbox = refreshed?._meta?.["com.dibs/panel"]
       || refreshed?.structuredContent
     if (panelInbox && Object.prototype.hasOwnProperty.call(panelInbox, "inbox")) {
       render({ structuredContent: panelInbox })
@@ -1657,7 +1657,7 @@ async function unlockHuman() {
   try {
     const res = await call("tools/call", {
       name: "human_unlock",
-      arguments: { token: state.token, note: "act on the Lanes board as yourself" },
+      arguments: { token: state.token, note: "act on the Dibs board as yourself" },
     })
     const refusal = toolFailure(res)
     if (refusal) { setHumanState("locked"); announce(refusal); return }
@@ -1703,7 +1703,7 @@ async function humanAct(name, args, said) {
       name, arguments: { ...args, token: state.human.token },
     })
     const refusal = toolFailure(res)
-    // A Lanes refusal is a successful exchange carrying isError: reporting it
+    // A Dibs refusal is a successful exchange carrying isError: reporting it
     // as sent is the failure this panel already guards against elsewhere.
     announce(refusal || said)
     if (!refusal) await refreshBoard()
@@ -1717,10 +1717,10 @@ async function humanAct(name, args, said) {
 async function refreshBoard() {
   try {
     const res = await call("tools/call", {
-      name: "show_board", arguments: { token: state.token, detail: true },
+      name: "board", arguments: { token: state.token, detail: true },
     })
     if (toolFailure(res)) return
-    const payload = res?._meta?.["com.lanes/panel"] || toolJSON(res)
+    const payload = res?._meta?.["com.dibs/panel"] || toolJSON(res)
     if (payload && (payload.board || payload.inbox)) render({ structuredContent: payload })
   } catch (_) { /* the next push will carry it */ }
 }
@@ -1757,17 +1757,17 @@ function wireHumanComposers(root) {
       const verb = btn.dataset.do
       field.value = ""
       if (verb === "post") {
-        void humanAct("lane_post", { lane: target, body }, `posted to ${target}`)
+        void humanAct("post", { agent: target, body }, `posted to ${target}`)
       } else if (verb === "announce") {
-        void humanAct("lane_announce", { lane: target, body },
+        void humanAct("announce", { agent: target, body },
           `announced to ${target}: every member must acknowledge`)
       } else if (verb === "notify") {
-        void humanAct("send_message", { to: target, type: "notify", body },
+        void humanAct("send", { to: target, type: "notify", body },
           `sent to ${target}`)
       } else if (verb === "join") {
-        void humanAct("lane_join", { lane: target }, `joined ${target}`)
+        void humanAct("join_space", { agent: target }, `joined ${target}`)
       } else if (verb === "ask") {
-        void humanAct("send_message", { to: target, type: "question", body, deadline_s: 3600 },
+        void humanAct("send", { to: target, type: "question", body, deadline_s: 3600 },
           `asked ${target}`)
       }
     }
@@ -1798,28 +1798,28 @@ function decorateMail(el) {
 }
 
 function decorateRoster(el) {
-  const lanes = state.board?.lanes || []
+  const agents = state.board?.agents || []
   const ordered = [
-    ...lanes.filter((lane) => lane.status === "stale"),
-    ...lanes.filter((lane) => lane.status === "active"),
-    ...lanes.filter((lane) => lane.status === "dormant"),
-    ...lanes.filter((lane) =>
-      !["active", "dormant", "stale"].includes(lane.status)),
+    ...agents.filter((agent) => agent.status === "stale"),
+    ...agents.filter((agent) => agent.status === "active"),
+    ...agents.filter((agent) => agent.status === "dormant"),
+    ...agents.filter((agent) =>
+      !["active", "dormant", "stale"].includes(agent.status)),
   ]
   ;[...el.querySelectorAll(".entry")].forEach((node, index) => {
-    const lane = ordered[index]
-    if (!lane) return
-    node.dataset.lane = lane.id || ""
-    nameTransition(node, "lane", lane.id, "panel-lane")
+    const agent = ordered[index]
+    if (!agent) return
+    node.dataset.agent = agent.id || ""
+    nameTransition(node, "agent", agent.id, "panel-agent")
   })
 }
 
 function decorateChannels(el) {
-  ;[...el.querySelectorAll(".channel")].forEach((node, index) => {
-    const channel = (state.board?.channels || [])[index]
-    if (!channel) return
-    node.dataset.channel = channel.id || ""
-    nameTransition(node, "channel", channel.id, "panel-lane")
+  ;[...el.querySelectorAll(".space")].forEach((node, index) => {
+    const space = (state.board?.spaces || [])[index]
+    if (!space) return
+    node.dataset.space = space.id || ""
+    nameTransition(node, "space", space.id, "panel-agent")
   })
 }
 
@@ -1837,19 +1837,19 @@ function draw() {
   drawContext()
   drawSummary()
 
-  const opts = { selfId: state.lane, actionsHTML }
+  const opts = { selfId: state.agent, actionsHTML }
 
   const boardEl = document.getElementById("pane-board")
-  patchHTML(boardEl, Board.rosterHTML(state.board?.lanes, {
-    selfId: state.lane,
+  patchHTML(boardEl, Board.rosterHTML(state.board?.agents, {
+    selfId: state.agent,
     events: state.events,
-    empty: Board.emptyHTML("No lanes yet",
+    empty: Board.emptyHTML("No agents yet",
       "Agents appear here the moment they register."),
   }))
   decorateRoster(boardEl)
   if (state.human) {
     for (const node of boardEl.querySelectorAll(".entry")) {
-      const who = node.dataset.lane
+      const who = node.dataset.agent
       if (!who || who === state.human.agent || node.querySelector(".human-compose")) continue
       node.insertAdjacentHTML("beforeend",
         composerHTML("agent", who, `message ${who}`, [
@@ -1863,47 +1863,47 @@ function draw() {
   // Unlike the operator view, the panel DOES know which agent is reading, so
   // its own memberships are marked. That is the whole difference between the
   // two surfaces here; the component is identical.
-  const chans = state.board?.channels || []
-  const chEl = document.getElementById("pane-lanes")
+  const chans = state.board?.spaces || []
+  const chEl = document.getElementById("pane-agents")
   patchHTML(chEl, Board.channelsHTML(chans, {
-    selfId: state.lane,
-    agents: state.board?.lanes,
-    empty: Board.emptyHTML("No lanes yet",
-      "A lane is a piece of work several agents may need. Open one, or declare what you are doing and Lanes will match you."),
+    selfId: state.agent,
+    agents: state.board?.agents,
+    empty: Board.emptyHTML("No agents yet",
+      "An agent is a piece of work several agents may need. Open one, or declare what you are doing and Dibs will match you."),
   }))
   decorateChannels(chEl)
   // The human's affordances appear only after a person proved they are here.
   // Appended after the shared component rather than passed into it: board.js
   // renders the operator board too, and that surface authenticates differently.
   if (state.human) {
-    for (const node of chEl.querySelectorAll(".channel")) {
-      const lane = node.dataset.lane || node.dataset.channel
-      if (!lane || node.querySelector(".human-compose")) continue
+    for (const node of chEl.querySelectorAll(".space")) {
+      const agent = node.dataset.agent || node.dataset.space
+      if (!agent || node.querySelector(".human-compose")) continue
       // Only members may speak. "subscribers read, members speak" is the
       // engine's rule, and offering a button that returns E_NOT_MEMBER is a
       // trap, not an affordance. Driving this for real is what found it: the
       // post came back refused while the question to an agent went through.
       // The web board reached the same conclusion and disables its post and
       // announce for non-members; here there is room to offer the way in.
-      const mine = (state.board?.channels || []).find((c) => c.id === lane)
+      const mine = (state.board?.spaces || []).find((c) => c.id === agent)
       const member = (mine?.members || []).some((m) => m.agent === state.human.agent)
       node.insertAdjacentHTML("beforeend", member
-        ? composerHTML("lane", lane, `say something in ${lane}`, [
+        ? composerHTML("agent", agent, `say something in ${agent}`, [
             { do: "post", label: "post" },
             { do: "announce", label: "announce" },
           ])
-        : `<div class="human-compose" data-kind="join" data-target="${escapeAttr(lane)}">
-             <span class="join-note">you are not in this lane yet</span>
+        : `<div class="human-compose" data-kind="join" data-target="${escapeAttr(agent)}">
+             <span class="join-note">you are not in this agent yet</span>
              <button class="act" type="button" data-do="join" data-for="">join to speak</button>
            </div>`)
     }
     wireHumanComposers(chEl)
   }
-  const tl = document.getElementById("tally-lanes")
+  const tl = document.getElementById("tally-agents")
   tl.textContent = chans.length
   tl.classList.toggle("zero", chans.length === 0)
-  document.getElementById("tab-lanes").setAttribute(
-    "aria-label", chans.length ? `Lanes, ${chans.length}` : "Lanes")
+  document.getElementById("tab-agents").setAttribute(
+    "aria-label", chans.length ? `Dibs, ${chans.length}` : "Dibs")
 
   const mailEl = document.getElementById("pane-mail")
   // A redraw must not eat a reply that is half-written.
@@ -1922,7 +1922,7 @@ function draw() {
   const mailHTML = state.inbox.length
     ? state.inbox.map((m) => Board.messageHTML(m, opts)).join("")
     : Board.emptyHTML("Nothing waiting",
-        "Messages addressed to this lane arrive here. Mail between other agents is private to them.")
+        "Messages addressed to this agent arrive here. Mail between other agents is private to them.")
   const mailChanged = patchHTML(mailEl, mailHTML)
   // Re-arm the keyboard path first: the textarea is a NEW element, so its
   // handler went with the old one.
@@ -1965,31 +1965,31 @@ function draw() {
 }
 
 function render(params) {
-  // Base MCP structuredContent is model-facing. Lanes keeps panel-only board
-  // detail in the result metadata backchannel so show_board can honestly cost
+  // Base MCP structuredContent is model-facing. Dibs keeps panel-only board
+  // detail in the result metadata backchannel so board can honestly cost
   // one summary line. Accept the old carrier during rolling upgrades: a cached
   // v1 server response can reach this v2 template, and blanking the panel would
   // turn a safe transport migration into a silent UI failure.
   //
-  // Third carrier, last: the ordinary result content. ack_board and inbox put
+  // Third carrier, last: the ordinary result content. check_in and inbox put
   // the whole board and mailbox there for the AGENT, so on a host that drops
   // _meta the state the panel is waiting for has usually arrived already, in the
   // one field every host forwards. Reading it costs nothing and needs nothing
   // from the host beyond delivering the result it already delivered: unlike
-  // fetching, which needs the host to proxy a tool call back to Lanes.
-  const carried = (params && params._meta && params._meta["com.lanes/panel"])
+  // fetching, which needs the host to proxy a tool call back to Dibs.
+  const carried = (params && params._meta && params._meta["com.dibs/panel"])
     || (params && params.structuredContent) || {}
   const d = (carried.board || carried.inbox || carried.events)
     ? carried
     : { ...carried, ...(contentState(params) || {}) }
   const previousInbox = new Set(state.inbox.map((m) => m.serial))
-  // Status, not just presence. A lane going out of touch is the most
+  // Status, not just presence. An agent going out of touch is the most
   // consequential change this board can show: an agent stopped answering and
   // work may be sitting behind it, and it was the one that happened in total
   // silence: the entry restyled and re-sorted between two frames, which is
   // invisible to anyone not already staring at that row.
   const previousLanes = new Map(
-    (state.board?.lanes || []).map((lane) => [lane.id, lane.status]))
+    (state.board?.agents || []).map((agent) => [agent.id, agent.status]))
   if (d.board) { state.board = d.board; state.unreachable = null }
   // inbox arrives as {messages:[…]}; tolerate a bare array so the panel never
   // renders "nothing waiting" over a full mailbox.
@@ -2008,7 +2008,7 @@ function render(params) {
       if (!message || Board.TERMINAL.has(message.state)) state.errors.delete(serial)
     }
   }
-  if (d.lane_id) state.lane = d.lane_id
+  if (d.lane_id) state.agent = d.lane_id
   if (d.act_token) state.token = d.act_token
   if (d.events) state.events = d.events
 
@@ -2016,21 +2016,21 @@ function render(params) {
     ? state.inbox.filter((m) => !previousInbox.has(m.serial))
     : []
   const laneArrivals = state.received
-    ? (state.board?.lanes || []).filter((lane) => !previousLanes.has(lane.id))
+    ? (state.board?.agents || []).filter((agent) => !previousLanes.has(agent.id))
     : []
-  // Only a lane we were already watching, and only on the way IN to stale.
-  // A lane that arrives already stale has not changed: it is simply how we
+  // Only an agent we were already watching, and only on the way IN to stale.
+  // An agent that arrives already stale has not changed: it is simply how we
   // first met it, and marking that would spend the operator's attention on
   // history rather than on news.
   const wentQuiet = state.received
-    ? (state.board?.lanes || []).filter((lane) =>
-        lane.status === "stale" &&
-        previousLanes.has(lane.id) &&
-        previousLanes.get(lane.id) !== "stale")
+    ? (state.board?.agents || []).filter((agent) =>
+        agent.status === "stale" &&
+        previousLanes.has(agent.id) &&
+        previousLanes.get(agent.id) !== "stale")
     : []
   // Any change of band, not only the one into stale.
   //
-  // The board groups lanes by status, so a status change is also a change of
+  // The board groups agents by status, so a status change is also a change of
   // PLACE: the row leaves one group and appears in another, several hundred
   // pixels away, between two frames. Without motion that is indistinguishable
   // from two unrelated edits: one row vanished here, an identical row appeared
@@ -2039,21 +2039,21 @@ function render(params) {
   // Waking up matters as much as going quiet, which is why this is every band
   // move and not a second copy of wentQuiet.
   const bandMoves = state.received
-    ? (state.board?.lanes || []).filter((lane) =>
-        previousLanes.has(lane.id) && previousLanes.get(lane.id) !== lane.status)
+    ? (state.board?.agents || []).filter((agent) =>
+        previousLanes.has(agent.id) && previousLanes.get(agent.id) !== agent.status)
     : []
-  const requestedView = ["mail", "board", "lanes", "activity"].includes(d.view)
+  const requestedView = ["mail", "board", "agents", "activity"].includes(d.view)
     ? d.view
     : null
   const requestedTabChange = requestedView && requestedView !== activeView
   let transitionKind = ""
   if (requestedTabChange) transitionKind = tabDirection(activeView, requestedView)
   else if (arrivals.length && activeView === "mail") transitionKind = "mail-arrival"
-  else if (laneArrivals.length && activeView === "board") transitionKind = "lane-arrival"
+  else if (laneArrivals.length && activeView === "board") transitionKind = "agent-arrival"
   // A band move outranks nothing above it and everything below: an arrival is a
-  // lane we have never seen, a band move is a lane we know changing state, and
+  // agent we have never seen, a band move is an agent we know changing state, and
   // only the second one has an origin worth travelling from.
-  else if (bandMoves.length && activeView === "board") transitionKind = "lane-band"
+  else if (bandMoves.length && activeView === "board") transitionKind = "agent-band"
 
   const update = (enhanced) => {
     draw()
@@ -2065,8 +2065,8 @@ function render(params) {
       void tally.offsetWidth
       tally.classList.add("bump")
     }
-    for (const lane of wentQuiet) {
-      const entry = document.querySelector('.entry[data-lane="' + CSS.escape(lane.id) + '"]')
+    for (const agent of wentQuiet) {
+      const entry = document.querySelector('.entry[data-agent="' + CSS.escape(agent.id) + '"]')
       if (!entry) continue
       entry.classList.remove("went-quiet")
       void entry.offsetWidth
@@ -2083,7 +2083,7 @@ function render(params) {
   if (arrivals.length) {
     const first = arrivals[0]
     announce(arrivals.length === 1
-      ? `New ${first.type || "message"} from ${first.from || "another lane"}`
+      ? `New ${first.type || "message"} from ${first.from || "another agent"}`
       : `${arrivals.length} new messages`)
   }
   state.received = true
@@ -2177,7 +2177,7 @@ tab("board")
     // clientInfo + capabilities (the shape base MCP uses) is REJECTED, and a
     // rejected handshake is silent: the panel simply never comes up.
     const init = await call("ui/initialize", {
-      appInfo: { name: "lanes-board", version: "2" },
+      appInfo: { name: "agents-board", version: "2" },
       appCapabilities: { availableDisplayModes: ["inline", "fullscreen"] },
       protocolVersion: "2026-01-26",
     })

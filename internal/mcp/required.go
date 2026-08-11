@@ -99,8 +99,8 @@ func checkRequired(tool string, raw json.RawMessage, bearerToken string) error {
 	// An argument the tool does not take is an error on its OWN, not merely a
 	// hint about a missing one. This check used to live behind `len(missing)
 	// == 0`, so a well-formed call carrying a misnamed field was answered
-	// `{"ok": true}` and quietly did nothing: `update_lane` accepts only
-	// "description", and update_lane(pid: 1234) reported success while
+	// `{"ok": true}` and quietly did nothing: `update` accepts only
+	// "description", and update(pid: 1234) reported success while
 	// changing nothing at all.
 	//
 	// That is the worst failure this server can produce. An agent cannot see

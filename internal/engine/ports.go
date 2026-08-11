@@ -3,12 +3,12 @@ package engine
 import (
 	"time"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // Ports: the engine depends on these interfaces, never on concrete
 // implementations. Adapters live in their own packages (internal/ledger,
-// internal/blobstore) and are injected at wiring time in cmd/lanesd.
+// internal/blobstore) and are injected at wiring time in cmd/dibd.
 //
 // Interfaces are declared here, in the *consumer*, which is the Go idiom: the
 // engine states what it needs, and any implementation satisfying that shape is

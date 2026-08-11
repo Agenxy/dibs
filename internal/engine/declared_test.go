@@ -3,7 +3,7 @@ package engine
 import (
 	"testing"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // What the agent SAID must outrank what a scorer guessed from its prose.

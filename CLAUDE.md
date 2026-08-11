@@ -1,4 +1,4 @@
-# Lanes
+# Dibs
 
 @AGENTS.md
 

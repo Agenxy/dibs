@@ -1,10 +1,10 @@
 <img src="docs/icon.svg" width="72" height="72" alt="">
 
-# Lanes
+# Dibs
 
-[![CI](https://github.com/agenxy/lanes/actions/workflows/ci.yml/badge.svg)](https://github.com/agenxy/lanes/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/agenxy/lanes?sort=semver)](https://github.com/agenxy/lanes/releases/latest)
-[![Go Reference](https://pkg.go.dev/badge/github.com/agenxy/lanes.svg)](https://pkg.go.dev/github.com/agenxy/lanes)
+[![CI](https://github.com/agenxy/dibs/actions/workflows/ci.yml/badge.svg)](https://github.com/agenxy/dibs/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/agenxy/agents?sort=semver)](https://github.com/agenxy/dibs/releases/latest)
+[![Go Reference](https://pkg.go.dev/badge/github.com/agenxy/dibs.svg)](https://pkg.go.dev/github.com/agenxy/dibs)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
 **Coordination and situational awareness for the AI agents running on your machine.**
@@ -15,26 +15,26 @@ can see the other, so you pay for the work twice and then pay again to reconcile
 it. Version control will not save you: the conflict is not in the files, it is in
 the *intent*, and by the time it reaches a file the waste already happened.
 
-Lanes gives them somewhere to look. Each agent registers a **lane**, says what it
+Dibs gives them somewhere to look. Each agent registers a **agent**, says what it
 is pursuing, and is told immediately if someone else is already pursuing it.
 
 One board covers everything on the machine, across as many projects as you have
-open. A lane is an agent, not a repository: nothing binds it to a project, claims
+open. An agent is an agent, not a repository: nothing binds it to a project, claims
 are absolute paths, and mail is addressed to agents. Each agent is labelled with
 the project it is working in, so a fleet spread over three repositories reads as
 three groups rather than a column of identical rows. If you would rather keep two
-fleets apart, run a second `lanesd` on its own data directory and they share
+fleets apart, run a second `dibd` on its own data directory and they share
 nothing.
 
-![The Lanes board: five agents, what each is working on, and what is outstanding](docs/board.webp)
+![The Dibs board: five agents, what each is working on, and what is outstanding](docs/board.webp)
 
 ### What a collision looks like
 
 Two agents, in different windows, set out to do the same thing. The second one
-declares its work and Lanes answers:
+declares its work and Dibs answers:
 
 ```jsonc
-// codex-1 → set_slot
+// codex-1 → declare
 { "text": "Fixing session reconnect handling",
   "dirs": ["internal/session"], "refs": ["issue:1140"] }
 ```
@@ -44,29 +44,29 @@ declares its work and Lanes answers:
   "ok": true,                        // nothing was blocked
   "slot_id": "s1",
   "overlaps": [
-    { "lane": "claude-1", "signal": "same-objective", "kind": "slot",
+    { "agent": "claude-1", "signal": "same-objective", "kind": "slot",
       "text": "Reworking how the session store handles reconnects",
       "refs": ["issue:1140"] }
   ],
-  "warning": "another lane is already pursuing the same objective: you are
+  "warning": "another agent is already pursuing the same objective: you are
     probably about to duplicate its work. Read its slot, then message it
     (question/handoff) to split or stand down. This is the measured failure;
     do not just proceed."
 }
 ```
 
-`ok` is `true`. Lanes did not stop anything and cannot: it recorded the
+`ok` is `true`. Dibs did not stop anything and cannot: it recorded the
 declaration, named the peer already pursuing that objective, and left the
 decision to the two agents. [Tutorial](docs/TUTORIAL.md).
 
 Agents exchange typed messages through private **mailboxes**: questions,
 requests to approve or deny, FYIs, handoffs, with delivery receipts and
 deadlines, and place advisory **claims** on the few resources that genuinely
-need exclusivity. No agent can act on another through Lanes. The worst thing you
+need exclusivity. No agent can act on another through Dibs. The worst thing you
 can receive is a message you may decline. It is a visibility layer, not an
 orchestrator.
 
-**Two agents editing the same file is normal and healthy.** Lanes is not a lock
+**Two agents editing the same file is normal and healthy.** Dibs is not a lock
 over your source. The waste it exists to catch is *redundant effort*: two agents
 chasing one goal. [REQUIREMENTS.md](REQUIREMENTS.md) has the measured incident
 that defines the design.
@@ -84,18 +84,18 @@ that defines the design.
 
 ## Install
 
-Two static binaries: `lanesd` (daemon, MCP server and web board) and `lanes`
+Two static binaries: `dibd` (daemon, MCP server and web board) and `dibs`
 (the CLI). Both `CGO_ENABLED=0`, byte-for-byte reproducible. No database, no
 Node, no runtime dependencies.
 
 ### Homebrew (macOS)
 
 ```sh
-brew install agenxy/tap/lanes
+brew install agenxy/tap/agents
 ```
 
 `agenxy/tap` is one tap for every Agenxy project, so the third component is the
-only part that changes. The older `agenxy/lanes/lanes` still works: GitHub keeps
+only part that changes. The older `agenxy/agents/agents` still works: GitHub keeps
 a redirect, so nobody who already tapped has to do anything.
 
 Installs both binaries. The cask clears the macOS quarantine flag on install:
@@ -106,13 +106,13 @@ looks like a broken product rather than an unsigned one.
 ### Go
 
 ```sh
-go install github.com/agenxy/lanes/cmd/lanes@latest
-go install github.com/agenxy/lanes/cmd/lanesd@latest
+go install github.com/agenxy/dibs/cmd/dibs@latest
+go install github.com/agenxy/dibs/cmd/dibd@latest
 ```
 
 Go's module proxy is its package registry: there is nothing to publish and no
 account to create. Any tagged, public repository is installable by path, and
-[pkg.go.dev](https://pkg.go.dev/github.com/agenxy/lanes) indexes it
+[pkg.go.dev](https://pkg.go.dev/github.com/agenxy/dibs) indexes it
 automatically. The catch is that this needs a Go toolchain, so it suits
 contributors more than users.
 
@@ -135,12 +135,12 @@ would rather not use mise at all, `go build ./cmd/...` needs nothing but Go
 Then:
 
 ```sh
-lanesd &                  # daemon on 127.0.0.1:4777, data in ~/.lanes
-lanes mcp-config          # print the MCP host config (add to e.g. .mcp.json)
-lanes admin set-password  # once: the board is yours, not the agents'
-lanes web                 # print the live board URL
-lanes board               # the same board, in the terminal
-lanes doctor              # what is quietly broken, and how to fix it
+dibd &                  # daemon on 127.0.0.1:4777, data in ~/.agents
+dibs mcp-config          # print the MCP host config (add to e.g. .mcp.json)
+dibs admin set-password  # once: the board is yours, not the agents'
+dibs web                 # print the live board URL
+dibs board               # the same board, in the terminal
+dibs doctor              # what is quietly broken, and how to fix it
 ```
 
 ### Shell completions
@@ -151,14 +151,14 @@ script has to live in the tree). Write one to wherever your shell loads
 completions from:
 
 ```sh
-lanes completion bash > /usr/local/etc/bash_completion.d/lanes    # bash
-lanes completion zsh  > ~/.zsh/completions/_lanes                 # zsh (a dir on your $fpath)
-lanes completion fish > ~/.config/fish/completions/lanes.fish     # fish
+dibs completion bash > /usr/local/etc/bash_completion.d/agents    # bash
+dibs completion zsh  > ~/.zsh/completions/_dibs                 # zsh (a dir on your $fpath)
+dibs completion fish > ~/.config/fish/completions/agents.fish     # fish
 ```
 
 ### Keeping it running
 
-`lanesd &` ties the daemon to the shell that started it: close the terminal or
+`dibd &` ties the daemon to the shell that started it: close the terminal or
 reboot and the fleet loses its board. For anything beyond a first look, run it
 under your init system.
 
@@ -166,24 +166,24 @@ under your init system.
 crash:
 
 ```sh
-lanes configure --service     # writes ~/Library/LaunchAgents/org.agenxy.lanes.plist
-launchctl load -w ~/Library/LaunchAgents/org.agenxy.lanes.plist
+dibs configure --service     # writes ~/Library/LaunchAgents/org.agenxy.dibs.plist
+launchctl load -w ~/Library/LaunchAgents/org.agenxy.dibs.plist
 ```
 
 **Linux (systemd user unit)**:
 
 ```sh
-lanes configure --service     # writes ~/.config/systemd/user/lanes.service
-systemctl --user enable --now lanes
+dibs configure --service     # writes ~/.config/systemd/user/agents.service
+systemctl --user enable --now agents
 ```
 
 To stop the daemon for this data directory, and only that one:
 
 ```sh
-lanes stop
+dibs stop
 ```
 
-Not `pkill lanesd`. Lanes is built to let several isolated daemons coexist on a
+Not `pkill dibd`. Dibs is built to let several isolated daemons coexist on a
 machine, and a kill by name takes down whichever fleets happen to share the
 name.
 
@@ -197,7 +197,7 @@ one file, and every archive ships an SPDX SBOM.
 TAG=v0.0.1   # the release you downloaded
 cosign verify-blob checksums.txt \
   --bundle checksums.txt.bundle \
-  --certificate-identity "https://github.com/Agenxy/lanes/.github/workflows/release.yml@refs/tags/$TAG" \
+  --certificate-identity "https://github.com/Agenxy/agents/.github/workflows/release.yml@refs/tags/$TAG" \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
 ```
 
@@ -205,14 +205,14 @@ The identity names the workflow AND the tag, so it has to match the release you
 downloaded. `Verified OK` means the checksums file was produced by this
 repository's release workflow at that tag, and `sha256sum -c checksums.txt` then covers the archives.
 
-`admin set-password` is a prerequisite for `lanes web`, not optional hardening.
+`admin set-password` is a prerequisite for `dibs web`, not optional hardening.
 The browser board shows decrypted mail and can act as you, so it is gated on
 something the agents do not have: every agent holds the coordination secret, none
-holds this. `lanes board` in the terminal needs no password: it shows only what
+holds this. `dibs board` in the terminal needs no password: it shows only what
 the board shows.
 
-Agents then coordinate through MCP tools: `register_lane` → `ack_board` →
-`set_slot` / `claim` / `send_message` / `await_events`. The server's instructions
+Agents then coordinate through MCP tools: `register` → `check_in` →
+`declare` / `claim` / `send` / `await_events`. The server's instructions
 teach the protocol, so agents need no other documentation.
 
 **New here?** [docs/TUTORIAL.md](docs/TUTORIAL.md) walks the whole thing in
@@ -221,14 +221,14 @@ the act.
 
 ## For agents
 
-If you are an AI agent connecting to Lanes, you need two things and neither is
+If you are an AI agent connecting to Dibs, you need two things and neither is
 this README.
 
 1. **The server teaches you the protocol on connect.** Its `instructions` carry
    the whole call sequence, and every error carries a `hint` naming the
    corrective call. You do not need separate documentation to make tool calls.
 
-2. **Read the resource `lanes://skills` once.** It is the layer above the
+2. **Read the resource `dibs://skills` once.** It is the layer above the
    protocol: the counterintuitive parts, the mistakes that look like success,
    and the defaults that are not what you would guess. It is served over MCP, so
    you can read it without this repository, and it is also
@@ -236,9 +236,9 @@ this README.
 
 A taste of what is in it, because these are the ones that cost the most:
 
-- **A lane is an AGENT, not a task.** Its name is your address (`reviewer`, not
+- **An agent is an AGENT, not a task.** Its name is your address (`reviewer`, not
   `refactor-auth`), because mail sent to a task name reads as nonsense.
-- **`set_slot` without a `slot_id` ADDS a declaration**, it does not replace one.
+- **`declare` without a `slot_id` ADDS a declaration**, it does not replace one.
   Call it four times and the board shows you doing four things.
 - **A claim expiring is not permission.** It means coordination was lost, not
   that the other agent finished.
@@ -246,11 +246,11 @@ A taste of what is in it, because these are the ones that cost the most:
   A high score means "look"; a low score means nothing.
 - **Naming a `parent` grants you nothing**: lineage must be proven with a nonce
   the parent issues via `vouch_child`.
-- **Don't poll.** Run `lanes await` as a background shell task: it blocks and
+- **Don't poll.** Run `dibs await` as a background shell task: it blocks and
   exits when events arrive, so your harness wakes you. The shell watches; you
   sleep, spending nothing.
 
-Working *on* Lanes rather than with it? [AGENTS.md](AGENTS.md) is the map,
+Working *on* Dibs rather than with it? [AGENTS.md](AGENTS.md) is the map,
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) is the territory, and
 [llms.txt](llms.txt) indexes everything.
 
@@ -259,24 +259,24 @@ Working *on* Lanes rather than with it? [AGENTS.md](AGENTS.md) is the map,
 - **A live board humans want open**: server-rendered, SSE-streamed (updates land
   in ~200 ms, no page reloads), dark/light, responsive, with a protocol guide at
   `/help`. No framework, no build step, no bundle: htmx and one hand-written script.
-- **A terminal that reads like the board**: `lanes board` opens with a one-line
+- **A terminal that reads like the board**: `dibs board` opens with a one-line
   tally of the fleet, then agents, work and claims, colour carrying the same
   meaning it does in the browser. Piped, redirected, on a dumb terminal or under
   `NO_COLOR` it collapses to exactly the plain text it would have been, so
-  `lanes board | grep builder` works and a redirected `lanes doctor` is a file
+  `dibs board | grep builder` works and a redirected `dibs doctor` is a file
   you can paste into an issue.
 - **MCP-native**: 40 tools, self-teaching through server instructions and
-  corrective error hints, plus resources and an MCP Apps panel. Lanes targets the
+  corrective error hints, plus resources and an MCP Apps panel. Dibs targets the
   **2026-07-28** stateless contract and also serves the legacy **2025-11-25**
   path, which, as of August 2026, is what every shipping host actually
   negotiates (see [below](#protocol-versions)). Both work; you need do nothing.
 - **Append-only, hash-chained ledger**: the persistence *is* the audit history.
-  `lanes verify` checks integrity; `tail -f ~/.lanes/ledger.jsonl | jq` watches
+  `dibs verify` checks integrity; `tail -f ~/.agents/ledger.jsonl | jq` watches
   live.
 - **Honest liveness**: crash, hang and unresponsiveness are three different
   facts, reported as such. Claim expiry is *loss of coordination*, never "safe to
   proceed".
-- **Ephemeral and persistent lanes**: session agents age out; standing roles
+- **Ephemeral and persistent agents**: session agents age out; standing roles
   (reviewers, nightly maintainers) sleep as `dormant` with durable mailboxes and
   wake by resuming.
 - **Zero-config security**: loopback by default; point it at a reachable address
@@ -289,12 +289,12 @@ Working *on* Lanes rather than with it? [AGENTS.md](AGENTS.md) is the map,
 ## Catching duplicate work
 
 Path claims catch the collision that is cheap to detect: two agents naming the
-same directory. Since v1.2 Lanes also catches the one that actually destroys
+same directory. Since v1.2 Dibs also catches the one that actually destroys
 work: two agents doing the *same job* in different files.
 
-An agent declares what it is doing in its own words. Lanes scores that against
+An agent declares what it is doing in its own words. Dibs scores that against
 the work already in flight, using the repository's own file layout and **git
-co-change history**, and **surfaces the lane already doing it** so they find each
+co-change history**, and **surfaces the agent already doing it** so they find each
 other before the duplicate effort happens:
 
 ```
@@ -302,14 +302,14 @@ alice: "I am reworking how the session store handles reconnects"
        → OPENED    reworking-how-session-store-handles
 bob:   "looking at session persistence when the socket drops"
        → CONSIDER  reworking-how-session-store-handles   score 0.27
-                   "read the lane, and lane_join if it is the same job"
+                   "read the agent, and join_space if it is the same job"
 ```
 
 No model, no download, no network. That is tier 0, reading your file names and
 your commit history.
 
 **A score proposes; it does not commit you.** The default is `auto_join=declared`:
-bob is *shown* alice's lane and decides. Lanes joins an agent automatically only
+bob is *shown* alice's agent and decides. Dibs joins an agent automatically only
 on a shared identifying ref (`pr:1231`, `issue:88`, a coordination key), because
 those name a thing that exists, while a score names a resemblance. Recall at
 tier 0 is around 0.3 and precision is not good enough to move somebody's work
@@ -319,32 +319,32 @@ want it.
 
 ### Turning it on
 
-Matching is **off until you point Lanes at a repository**, because the threshold
+Matching is **off until you point Dibs at a repository**, because the threshold
 is not something anyone can guess for you:
 
 ```sh
-lanes calibrate --repo .       # measures YOUR repo, prints two numbers
-lanesd -match-repo . -match-join <join> -match-notify <notify> &
+dibs calibrate --repo .       # measures YOUR repo, prints two numbers
+dibd -match-repo . -match-join <join> -match-notify <notify> &
 ```
 
-**Stop any daemon already running first.** Lanes refuses to start a second one
+**Stop any daemon already running first.** Dibs refuses to start a second one
 on the same machine, and names the one that is running. That is deliberate: two
 daemons mean two boards, agents pointed at different ones cannot see each other,
-every call still succeeds, and both boards look correct: the exact failure Lanes
+every call still succeeds, and both boards look correct: the exact failure Dibs
 exists to prevent, made invisible. If you genuinely want two, say so with
 `-allow-parallel` and give each its own `-dir`. Two reasons are good ones:
 isolating agents you do not trust (see [SECURITY.md](SECURITY.md)), and keeping
 a client's fleet on a board of its own. Understand what you give up: agents on
 separate boards cannot see each other at all, so a shared dependency edited from
-both is exactly the collision Lanes would otherwise have caught. One board with
+both is exactly the collision Dibs would otherwise have caught. One board with
 the project shown per agent is the default for that reason.
 
-Better still, put the numbers in `lanes.toml` and skip the flags entirely, which
+Better still, put the numbers in `agents.toml` and skip the flags entirely, which
 is what they are for.
 
 **Calibrate first.** Skipping it leaves `join_threshold` at zero, which means
-Lanes suggests lanes and never joins one: deliberately, because auto-joining on
-a threshold nobody measured is how every agent ends up in a single lane. Measured
+Dibs suggests agents and never joins one: deliberately, because auto-joining on
+a threshold nobody measured is how every agent ends up in a single agent. Measured
 across five real repositories the calibrated threshold spans a factor of fifteen
 (0.022–0.327); there is no default that is not badly wrong somewhere.
 
@@ -363,17 +363,17 @@ rather than printing a number and hoping.
 | codex | 203 | 0.124 → **0.196** | not measured |
 
 *(before → after the history index, tier 0, no model involved. Reproduce with
-`lanes calibrate --repo <path> -n 60 -skip 5`; the punitive column is
+`dibs calibrate --repo <path> -n 60 -skip 5`; the punitive column is
 `go test ./internal/overlap -run PunitiveHoldout -v`.)*
 
 **Recall@5 near 0.3 is not "solved".** It means that for roughly a third of
 declarations the right file is in the top five: enough to put two agents in the
-same lane often enough to be worth having, and nowhere near enough to trust
+same agent often enough to be worth having, and nowhere near enough to trust
 blindly. SPEC-CHANNELS §10.1 governs: **a low score is never proof that two
 agents will not collide.**
 
 Those numbers are **held out**, and the reason matters more than the numbers.
-`lanes calibrate` evaluates by using a commit message as the query and that
+`dibs calibrate` evaluates by using a commit message as the query and that
 commit's changed files as the answer, which is the exact pairing the history
 index is built from. Measured naively, this change took recall@5 from 0.288 to
 0.815 and MRR to a perfect 1.000: the query was retrieving the commit it came
@@ -393,13 +393,13 @@ contribute to the improvement rather than being it.
 ### Semantic matching
 
 The floor needs no model. To relate work that shares neither words nor history,
-point Lanes at an embedding service: one endpoint, so MLX, llama.cpp, Ollama or
+point Dibs at an embedding service: one endpoint, so MLX, llama.cpp, Ollama or
 a hosted API all satisfy it:
 
 ```sh
 pip install mlx mlx-embeddings
 contrib/embed-sidecar/lanes_embed.py --repo . --port 8737
-lanesd -match-repo . -match-join 0.33 -match-embed-url http://127.0.0.1:8737
+dibd -match-repo . -match-join 0.33 -match-embed-url http://127.0.0.1:8737
 ```
 
 An absent or slow sidecar degrades to the built-in scorer and records `degraded`
@@ -408,7 +408,7 @@ on any membership it caused: matching gets worse, nothing stops.
 **Know the scale limit before you rely on it.** Indexing is one chunk per ~40
 lines: this repository is 855 chunks and takes ~110s against a local Ollama. A
 7,400-file repository produced **58,710 chunks** and the service gave out partway
-through. Lanes fell back to tier 0 and said so, which is honest and is *not*
+through. Dibs fell back to tier 0 and said so, which is honest and is *not*
 equivalent, because tier 0 cannot relate work sharing neither words nor file
 history. If your repository is large, point `-match-repo` at the subtree your
 agents actually work in.
@@ -417,20 +417,20 @@ agents actually work in.
 
 `-match-repo` takes a single path, so the history-based half of matching is
 scored against one project. Coordination itself is unaffected and stays
-machine-wide: lanes, claims, mail and channels never belonged to a repository.
+machine-wide: agents, claims, mail and spaces never belonged to a repository.
 What is limited is the extra signal.
 
 Agents working in a different tree are detected as such, and the matcher then
 declines to claim evidence rather than inventing it, because the only files two
-unrelated projects share are the ones every project has. `lanes doctor` names the
+unrelated projects share are the ones every project has. `dibs doctor` names the
 indexed repository and warns when you are working outside it. Indexing several is
-[issue #7](https://github.com/agenxy/lanes/issues/7).
+[issue #7](https://github.com/agenxy/dibs/issues/7).
 
 ### Choosing a model
 
 Retrieval models are asymmetric: a task description and a chunk of code are not
 the same kind of text, and every serious one is trained with a marker saying
-which side it is being given. Lanes applies the right one automatically, keyed off
+which side it is being given. Dibs applies the right one automatically, keyed off
 the model name. It matters more than model size:
 
 | scorer (on this repo)     | recall@5 | MRR   | related work clearing the bar |
@@ -446,7 +446,7 @@ model does not recover a distinction the input never encoded. Getting a marker
 *wrong* is worse: arctic-embed scored 42% while being given a document prefix its
 card does not specify, and 53% once that was removed.
 
-Which is why Lanes keys per model rather than per family. Families are not
+Which is why Dibs keys per model rather than per family. Families are not
 internally consistent, and the differences are invisible from the name:
 
 - **BGE** needs four different things. `bge-large-en-v1.5` wants a trained
@@ -458,10 +458,10 @@ internally consistent, and the differences are invisible from the name:
 - **e5** marks both sides: except `e5-mistral-7b-instruct`, which is
   instruction-style and states plainly that documents need none.
 
-Lanes only claims a convention a model card states. A model it does not recognise
+Dibs only claims a convention a model card states. A model it does not recognise
 warns and is addressed symmetrically: recoverable, unlike a confident wrong
 marker. Measure your own repository rather than trusting this table; that is what
-`lanes calibrate` is for.
+`dibs calibrate` is for.
 
 ## When a subagent stops working
 
@@ -483,25 +483,25 @@ The parent of the second had been blocked on it for seven and a half hours.
 Ask any time:
 
 ```
-lanes probe --pid 48620
+dibs probe --pid 48620
 pid 48620: stuck: alive 7h40m and has used 100ms of CPU in all of it
 (0.0004% busy): it has done nothing since it started
 ```
 
-Or be told. `lanesd` sweeps every 20 seconds and sends the lane that spawned a
-subagent a notice when it stalls, delivered on that agent's next `ack_board`
+Or be told. `dibd` sweeps every 20 seconds and sends the agent that spawned a
+subagent a notice when it stalls, delivered on that agent's next `check_in`
 without it having to ask. Attribution happens at spawn time, where the harness
 allows it: in Claude Code a `PreToolUse` hook stamps the command with its
-parent's lane, and the OS carries that into every descendant, through
+parent's agent, and the OS carries that into every descendant, through
 detaching, daemonisation and reparenting, which is where process ancestry
-gives up. Codex has no hook Lanes can use without spawning a subprocess, which
+gives up. Codex has no hook Dibs can use without spawning a subprocess, which
 it will not do, so there a child should call `vouch_child` and register with
 the nonce instead.
 
-**It reports and never acts.** `codex exec resume` exists and Lanes will not call
+**It reports and never acts.** `codex exec resume` exists and Dibs will not call
 it: the parent knows what the child was for and whether re-running it is safe. A
 supervisor that silently repairs things teaches its operator nothing and hides a
-failure that may be systematic. Lanes hands back the command; running it is your
+failure that may be systematic. Dibs hands back the command; running it is your
 call.
 
 **Sleep is not silence.** Elapsed time is measured on a monotonic clock, so a
@@ -513,21 +513,21 @@ Design and measurements: [SPEC-SUPERVISION.md](SPEC-SUPERVISION.md).
 
 ## Configuration
 
-Settings live in `<dir>/lanes.toml` rather than on the command line, which is the
+Settings live in `<dir>/agents.toml` rather than on the command line, which is the
 point: a threshold you measured should not have to be retyped every restart.
 
 ```toml
 [match]
 repo = "/path/to/repo"
-join_threshold = 0.327      # from `lanes calibrate`
+join_threshold = 0.327      # from `dibs calibrate`
 notify_threshold = 0.163
 embed_url = "http://127.0.0.1:8737"
 embed_model = "qwen3-embedding:0.6b"
 # retrieval markers are inferred from the model name; set these only for a
-# family Lanes does not know:
+# family Dibs does not know:
 # embed_query_prefix = "query: "
 # embed_doc_prefix   = "passage: "
-# a bearer token is NOT a config key: export LANES_MATCH_EMBED_KEY instead
+# a bearer token is NOT a config key: export DIBS_MATCH_EMBED_KEY instead
 
 [limits]
 lane_ttl = "5m"                 # how long an agent that gave a PID may go silent
@@ -540,38 +540,38 @@ min_duty = 0.0005  # CPU share below which a long-lived process counts as idle
 
 [roles]
 # Standing roles. The daemon grants these at startup and re-applies them as
-# lanes register, so a role survives a board reset instead of having to be
+# agents register, so a role survives a board reset instead of having to be
 # re-granted by hand.
 coordinator = ["orchestrator"]   # broadcast, force-release, merge, evict
-admin       = ["fleet-lead"]     # all of that, plus reading every lane's mail
+admin       = ["fleet-lead"]     # all of that, plus reading every agent's mail
 ```
 
 **Declaring a role in config is a human decision, and that is the whole point.**
 No agent can promote itself: `grant_role` is not an MCP tool, it is admitted only
-on the daemon's admin path, and a system op presented with a lane token is
+on the daemon's admin path, and a system op presented with an agent token is
 refused outright. The file is authority because you own the file: an agent
-cannot reach it through Lanes, and cannot ask Lanes to.
+cannot reach it through Dibs, and cannot ask Dibs to.
 
-Granting by hand still works (`lanes admin coordinator <lane>`), but it dies with
+Granting by hand still works (`dibs admin coordinator <agent>`), but it dies with
 the ledger it lived in. A fleet that resets its board and silently has nobody
-able to merge two colliding lanes is the failure this avoids.
+able to merge two colliding agents is the failure this avoids.
 
 Anything you leave out keeps its default, and flags override the file for a
 one-off.
 
-**Which TTL applies to you is not obvious.** `lane_ttl` governs lanes that
+**Which TTL applies to you is not obvious.** `lane_ttl` governs agents that
 registered a **PID**, where death can be checked directly and a short lease is
-safe. `idle_ttl` governs lanes that did not, where silence is the only evidence,
+safe. `idle_ttl` governs agents that did not, where silence is the only evidence,
 and silence is what a human-paced agent does between turns, so it defaults to 45
-minutes. The MCP config that `lanes mcp-config` prints is a plain HTTP client,
+minutes. The MCP config that `dibs mcp-config` prints is a plain HTTP client,
 which registers **without** a PID. If you set `lane_ttl` and nothing changed,
 this is why: set `idle_ttl`.
 
 `lane_ttl` is worth a thought before you leave it alone. Any authenticated call
 renews an agent's lease, so a chatty agent never goes near it, but an agent
-running a long build or a slow test suite makes no Lanes calls for its duration,
-and a crashed owner *yields its exclusive lanes*. Set it above your longest
-silent step, or a busy agent loses a lane it is still working in. Lower it if you
+running a long build or a slow test suite makes no Dibs calls for its duration,
+and a crashed owner *yields its exclusive agents*. Set it above your longest
+silent step, or a busy agent loses an agent it is still working in. Lower it if you
 would rather find out about crashes sooner.
 
 `blob_store_bytes` is a *hard* bound, not a target: when the store is over it,
@@ -580,11 +580,11 @@ A recipient then gets `E_BLOB_EVICTED`: which says plainly that its access was
 never the problem and the content is gone, but the artifact is gone all the
 same. Raise it if your fleet exchanges large build outputs.
 
-### What Lanes writes to disk
+### What Dibs writes to disk
 
-- `~/.lanes/`: the data directory: ledger, keys, blobs. Move it with `-dir`.
-- `~/.lanes-run/`: one small file per running daemon, so a second one can tell
-  it is not alone and `lanes doctor` can report a fleet split across two boards.
+- `~/.agents/`: the data directory: ledger, keys, blobs. Move it with `-dir`.
+- `~/.dibs-run/`: one small file per running daemon, so a second one can tell
+  it is not alone and `dibs doctor` can report a fleet split across two boards.
   Nothing durable lives here; entries are removed when their daemon exits, and a
   leftover from a crash is detected as dead and swept. It is deliberately NOT in
   the data directory, because the whole point is to see daemons whose data
@@ -596,17 +596,17 @@ same. Raise it if your fleet exchanges large build outputs.
 
 **Read [SECURITY.md](SECURITY.md) before pointing agents you don't trust at one
 daemon.** The trust boundary is the machine: every agent shares one coordination
-secret, so Lanes protects you from other users and from the network, and
+secret, so Dibs protects you from other users and from the network, and
 raises (but cannot wall off) what one of your own agents can learn about
 another. Run a second daemon for anything you do not trust.
 
 ## Protocol versions
 
-Lanes speaks **MCP 2026-07-28** (the stateless core) and the legacy
+Dibs speaks **MCP 2026-07-28** (the stateless core) and the legacy
 **2025-11-25** path. You do not have to choose: the server answers whichever
 your host offers.
 
-Worth knowing, because "Lanes is 2026-07-28" and "my client connected with
+Worth knowing, because "Dibs is 2026-07-28" and "my client connected with
 2025-11-25" otherwise look like a contradiction: **as of August 2026 no shipping
 host negotiates 2026-07-28 by default.** In Codex it is an under-development
 feature flag, off by default: verifiable in its source, where the spec is
@@ -617,7 +617,7 @@ still negotiates `2025-06-18` and sends no `server/discover`: it gates unfinishe
 work rather than switching protocol. This document used to tell you to enable it
 and call that a user decision, which contradicted the project's own measurement
 in `plugins/codex/README.md`. Nothing you can set today changes the wire, and
-nothing needs to. Lanes serves both paths and all tools behave identically on
+nothing needs to. Dibs serves both paths and all tools behave identically on
 either.
 
 Surveyed by reading source, not announcements. Re-checked 2026-08-03 against
@@ -636,7 +636,7 @@ The reason is one level below the harnesses, and it is the useful part:
 - The **Python SDK 2.0.0** implements it. Its registry lists `2026-07-28` under
   `MODERN_PROTOCOL_VERSIONS`, separate from `HANDSHAKE_PROTOCOL_VERSIONS`.
 - The **TypeScript SDK 1.30.0**: the latest published release, and there is no
-  beta channel: still declares `LATEST_PROTOCOL_VERSION = '2025-11-25'`.
+  beta space: still declares `LATEST_PROTOCOL_VERSION = '2025-11-25'`.
 
 So every TypeScript harness is blocked on its SDK, not on its own roadmap, and
 no amount of configuration will move them until that ships. Codex is the only one
@@ -651,16 +651,16 @@ mcp_2026_07_28 = true
 
 **If you are an agent reading this:** you cannot change your own harness, and you
 should not edit your operator's config. Mention it once if it is relevant, then
-carry on: nothing you call through Lanes depends on it.
+carry on: nothing you call through Dibs depends on it.
 
-**If you are the operator:** there is no urgency. Lanes serves both paths, all 40
+**If you are the operator:** there is no urgency. Dibs serves both paths, all 40
 tools behave identically on either, and deprecated features are guaranteed for at
 least twelve months from the 2026-07-28 publication.
 
-The practical consequence for Lanes is that the legacy path is **load-bearing,
+The practical consequence for Dibs is that the legacy path is **load-bearing,
 not vestigial**, and removing it would break every current host.
 
-### What Lanes implements from the 2026-07-28 core
+### What Dibs implements from the 2026-07-28 core
 
 Verified against a running daemon, not assumed:
 
@@ -677,7 +677,7 @@ Verified against a running daemon, not assumed:
   `tools/list`, `resources/list` and `resources/read`. It matters more here than
   most servers: 40 tools with deliberately long descriptions, re-fetched on every
   cold path once there is no session to hold them. Static results are hinted for
-  an hour and marked `public`; the board is hinted for two seconds; **a lane's
+  an hour and marked `public`; the board is hinted for two seconds; **an agent's
   mailbox is `private`**, because `public` would let a shared gateway serve one
   agent's mail to another.
 - **Subscriptions** (SEP-2575) on both paths, so a client learns about a change
@@ -689,12 +689,12 @@ Verified against a running daemon, not assumed:
 CI gate run there, and that is the honest extent of the claim for v0.
 
 It compiles for Linux and arm64 on every push: the cross-compile matrix is part
-of CI, and most of Lanes is ordinary portable Go with no reason to care. The
+of CI, and most of Dibs is ordinary portable Go with no reason to care. The
 part that does is `internal/liveness`, which works out whether a spawned agent is
 still working by inspecting other processes. It shells out to `ps` using BSD
 spellings (`ps eww -p` for a process's environment, `ps -axo` for the table)
 whose GNU equivalents differ. Nobody has run it on a GNU userland, so supervision
-is the piece most likely to need work there; coordination: lanes, claims, mail,
+is the piece most likely to need work there; coordination: agents, claims, mail,
 the board: depends on none of it.
 
 Windows is not supported and is not being worked on.
@@ -732,23 +732,23 @@ rather than a blanket suppression: dispatch tables (the state machine's one
 dispatch table is nothing but branches, and splitting them would hide the
 exhaustiveness a reader needs to check. Every exclusion says which functions and
 why; `gocognit` still fires everywhere else, and it caught four functions in the
-channels work that genuinely needed splitting.
+spaces work that genuinely needed splitting.
 
 End-to-end suites run against a real daemon over real HTTP, and the browser
-surfaces against real Chrome: `panel` (89), `web` (101), `channel` (106), `guard`
+surfaces against real Chrome: `panel` (89), `web` (101), `space` (106), `guard`
 (36). All four are in `task ci`, alongside the sidecar self-test, the human-flow
-suite and the alternate `lanesdev` build.
+suite and the alternate `dibdev` build.
 
-The channel suite measures its own join bar rather than hardcoding one, because
+The space suite measures its own join bar rather than hardcoding one, because
 the scores it asserts on are computed from this repository's git history and
 therefore move every time anybody commits. A fixed bar passes until it doesn't,
 and then fails for a reason no contributor can act on.
 
 Beyond that, `internal/mcp/e2e/fleet_scenario.py` runs a real fleet. Codex,
-opencode and pi sessions with real models, coordinating through Lanes while a
+opencode and pi sessions with real models, coordinating through Dibs while a
 human acts from the board at the same time (37 checks). It is deliberately *not*
 in `task ci`: it spends money on model calls and depends on provider
-availability. It exists because everything else drives Lanes through its own
+availability. It exists because everything else drives Dibs through its own
 client code, and that cannot answer whether a real harness, with a real model
 choosing what to call, actually coordinates.
 

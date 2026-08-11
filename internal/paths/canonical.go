@@ -16,8 +16,8 @@ import (
 // than in internal/core.
 //
 // The bug it exists for was measured, not imagined. On macOS /tmp, /var and
-// /etc are symlinks into /private. The `lanes mcp-stdio` bridge records a
-// lane's cwd from os.Getwd(), which returns the RESOLVED path
+// /etc are symlinks into /private. The `dibs mcp-stdio` bridge records a
+// agent's cwd from os.Getwd(), which returns the RESOLVED path
 // (/private/var/folders/…/p), while a harness plugin guarding an edit passes
 // the path the user typed (/var/folders/…/p). Those two strings do not
 // overlap, so an exclusive claim taken by one agent silently failed to stop

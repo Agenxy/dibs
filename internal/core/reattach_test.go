@@ -7,7 +7,7 @@ import (
 )
 
 // A lifecycle hook can wake an agent, but a fresh turn carries no token. Without
-// reattach the agent registers again, gets a sibling lane, and cannot read or
+// reattach the agent registers again, gets a sibling agent, and cannot read or
 // answer the mail that woke it: observed live in opencode as E_NO_MESSAGE.
 func TestRegisterReattachesToItsOwnSession(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
@@ -21,7 +21,7 @@ func TestRegisterReattachesToItsOwnSession(t *testing.T) {
 	}
 	laneID := first["lane_id"].(string)
 
-	// Same session, same name, no token in hand: must return the SAME lane.
+	// Same session, same name, no token in hand: must return the SAME agent.
 	again, _, err := s.Apply(&Op{
 		Kind: OpRegisterLane, Name: "oc-agent",
 		SessionID: "ses_abc", NewToken: "tok2",
@@ -30,7 +30,7 @@ func TestRegisterReattachesToItsOwnSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	if again["lane_id"] != laneID {
-		t.Fatalf("got a sibling lane %v, want reattach to %v", again["lane_id"], laneID)
+		t.Fatalf("got a sibling agent %v, want reattach to %v", again["lane_id"], laneID)
 	}
 	if again["reattached"] != true {
 		t.Error("reattach not signalled to the caller")
@@ -38,11 +38,11 @@ func TestRegisterReattachesToItsOwnSession(t *testing.T) {
 	if again["token"] != "tok2" {
 		t.Error("token was not rotated on reattach")
 	}
-	if got := len(s.Lanes); got != 1 {
-		t.Errorf("lane count = %d, want 1: reattach must not duplicate", got)
+	if got := len(s.Agents); got != 1 {
+		t.Errorf("agent count = %d, want 1: reattach must not duplicate", got)
 	}
 	// The gate must re-arm: a new activation has not yet seen the board.
-	if s.Lanes[laneID].AckedSerial != 0 {
+	if s.Agents[laneID].AckedSerial != 0 {
 		t.Error("awareness gate not re-armed on reattach")
 	}
 }
@@ -51,7 +51,7 @@ func TestRegisterReattachesToItsOwnSession(t *testing.T) {
 //
 // Four agents restarted, four re-registered under their own names, and all four
 // became siblings, builder-2, api-a-2, api-b-2, orchestrator-2, with every message
-// addressed to them beforehand stranded in a lane nobody occupied. Nothing looked
+// addressed to them beforehand stranded in an agent nobody occupied. Nothing looked
 // broken; the board showed four healthy agents throughout.
 //
 // The cause is that reattach keys on (name, session_id) and the bridge derives
@@ -72,7 +72,7 @@ func TestRestartWithNonceReattaches(t *testing.T) {
 	}
 	laneID := first["lane_id"].(string)
 
-	// Mail arrives for it, from a lane that has to exist to send.
+	// Mail arrives for it, from an agent that has to exist to send.
 	if _, _, err := s.Apply(&Op{
 		Kind: OpRegisterLane, Name: "orchestrator", SessionID: "s-orch", NewToken: "tok-orch",
 	}, t0); err != nil {
@@ -85,7 +85,7 @@ func TestRestartWithNonceReattaches(t *testing.T) {
 	}
 	if _, _, err := s.Apply(&Op{
 		Kind: OpSendMessage, Token: "tok-orch", To: laneID,
-		MsgType: MsgNotify, Body: "report any Lanes bugs you hit",
+		MsgType: MsgNotify, Body: "report any Dibs bugs you hit",
 	}, t0); err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestRestartWithNonceReattaches(t *testing.T) {
 	}
 
 	// The harness restarts: same agent, same name, same nonce, NEW session id.
-	// This is the step that used to fork the lane.
+	// This is the step that used to fork the agent.
 	again, _, err := s.Apply(&Op{
 		Kind: OpRegisterLane, Name: "builder",
 		SessionID: "host-35645", Nonce: "nonce-builder-secret", NewToken: "tok2",
@@ -104,7 +104,7 @@ func TestRestartWithNonceReattaches(t *testing.T) {
 	}
 
 	if again["lane_id"] != laneID {
-		t.Fatalf("restart forked the lane: got %v, want reattach to %v", again["lane_id"], laneID)
+		t.Fatalf("restart forked the agent: got %v, want reattach to %v", again["lane_id"], laneID)
 	}
 	if again["reattached"] != true {
 		t.Error("reattach not signalled to the caller")
@@ -119,14 +119,14 @@ func TestRestartWithNonceReattaches(t *testing.T) {
 	if n := len(s.Inbox(laneID)); n != 1 {
 		t.Fatalf("mail stranded by the restart: inbox has %d message(s), want 1", n)
 	}
-	// And the live harness owns it now, so the claim guard can still name this lane.
-	if got := s.Lanes[laneID].SessionID; got != "host-35645" {
+	// And the live harness owns it now, so the claim guard can still name this agent.
+	if got := s.Agents[laneID].SessionID; got != "host-35645" {
 		t.Errorf("session_id = %q, want the restarted harness host-35645", got)
 	}
 }
 
 // Without a nonce the restart still forks, and that is correct: a genuinely new
-// session IS a new agent and Lanes cannot tell the two apart. What it must not do
+// session IS a new agent and Dibs cannot tell the two apart. What it must not do
 // is fork in silence.
 func TestRestartWithoutNonceForksButSaysSo(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
@@ -212,7 +212,7 @@ func TestNonceForADifferentNameIsRefused(t *testing.T) {
 }
 
 // Reattach keys on session AND name, so a different agent in the same session,
-// or the same name in another session, still gets its own lane.
+// or the same name in another session, still gets its own agent.
 func TestReattachDoesNotCollapseDistinctLanes(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	now := time.Now()
@@ -220,12 +220,12 @@ func TestReattachDoesNotCollapseDistinctLanes(t *testing.T) {
 	b, _, _ := s.Apply(&Op{Kind: OpRegisterLane, Name: "reviewer", SessionID: "ses_1", NewToken: "t2"}, now)
 	c, _, _ := s.Apply(&Op{Kind: OpRegisterLane, Name: "writer", SessionID: "ses_2", NewToken: "t3"}, now)
 	if a["lane_id"] == b["lane_id"] {
-		t.Error("different names in one session collapsed into one lane")
+		t.Error("different names in one session collapsed into one agent")
 	}
 	if a["lane_id"] == c["lane_id"] {
-		t.Error("same name in different sessions collapsed into one lane")
+		t.Error("same name in different sessions collapsed into one agent")
 	}
-	if got := len(s.Lanes); got != 3 {
-		t.Errorf("lane count = %d, want 3", got)
+	if got := len(s.Agents); got != 3 {
+		t.Errorf("agent count = %d, want 3", got)
 	}
 }

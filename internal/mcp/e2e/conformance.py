@@ -3,9 +3,9 @@
 # requires-python = ">=3.11"
 # dependencies = ["mcp==2.0.0", "httpx2"]
 # ///
-"""Drive Lanes with the OFFICIAL MCP Python SDK, not a hand-rolled client.
+"""Drive Dibs with the OFFICIAL MCP Python SDK, not a hand-rolled client.
 
-Everything Lanes' 2026-07-28 support has been checked against so far was written
+Everything Dibs' 2026-07-28 support has been checked against so far was written
 by the same person who wrote the server, which is the weakest possible evidence:
 a shared misreading of the spec passes both sides. The reference SDK is the
 independent check: it ships the discover/fallback probe and the caching model
@@ -38,7 +38,7 @@ def no(m):
 
 
 def _text_payload(result):
-    """Most Lanes tools answer with JSON in the text content block; only the
+    """Most Dibs tools answer with JSON in the text content block; only the
     panel tools populate structuredContent."""
     for c in getattr(result, "content", []) or []:
         txt = getattr(c, "text", None)
@@ -52,7 +52,7 @@ def _text_payload(result):
 
 async def main() -> int:
     url, secret = sys.argv[1], sys.argv[2]
-    headers = {"X-Lanes-Local": secret}
+    headers = {"X-Dibs-Local": secret}
 
     # Headers go on the http client: the transport takes a configured client
     # rather than header kwargs.
@@ -70,7 +70,7 @@ async def main() -> int:
             if version == "2026-07-28":
                 ok("the official client settled on the STATELESS core")
             else:
-                no(f"fell back to {version}. Lanes' discover was not accepted as modern")
+                no(f"fell back to {version}. Dibs' discover was not accepted as modern")
 
             tools = await client.list_tools()
             names = {t.name for t in tools.tools}
@@ -88,36 +88,36 @@ async def main() -> int:
             res = await client.list_resources()
             uris = {str(r.uri) for r in res.resources}
             if any("skills" in u for u in uris):
-                ok("lanes://skills is discoverable to a reference client")
+                ok("dibs://skills is discoverable to a reference client")
             else:
                 no(f"skills resource missing: {uris}")
 
-            doc = await client.read_resource("lanes://skills")
+            doc = await client.read_resource("dibs://skills")
             text = "".join(getattr(c, "text", "") for c in doc.contents)
-            if "A lane is an AGENT" in text:
+            if "An agent is an AGENT" in text:
                 ok(f"the agent playbook reads back intact ({len(text)} chars)")
             else:
                 no("skills resource did not read back")
 
             # A full coordination round trip over the modern path.
-            reg = await client.call_tool("register_lane", {
+            reg = await client.call_tool("register", {
                 "name": "sdk-conformance", "description": "official MCP SDK client",
                 "session_id": "s-sdk"})
             payload = reg.structured_content or _text_payload(reg)
             token = payload.get("token")
-            ok("register_lane over the stateless core") if token else no(f"register: {payload}")
+            ok("register over the stateless core") if token else no(f"register: {payload}")
 
             if token:
-                await client.call_tool("ack_board", {"token": token})
-                slot = await client.call_tool("set_slot", {
+                await client.call_tool("check_in", {"token": token})
+                slot = await client.call_tool("declare", {
                     "token": token, "text": "conformance run via the official SDK",
                     "refs": ["goal:v0-release"]})
                 sc = slot.structured_content or _text_payload(slot)
-                ok("set_slot accepted and echoed a slot") if sc.get("slot_id") or sc.get("ok") else no(f"set_slot: {sc}")
+                ok("declare accepted and echoed a slot") if sc.get("slot_id") or sc.get("ok") else no(f"declare: {sc}")
 
-                board = await client.call_tool("ack_board", {"token": token})
+                board = await client.call_tool("check_in", {"token": token})
                 b = (board.structured_content or {}).get("board", {})
-                ok(f"board readable: {len(b.get('lanes', []))} lane(s)") if b else no("no board")
+                ok(f"board readable: {len(b.get('agents', []))} agent(s)") if b else no("no board")
 
     print(f"\n  {passed} passed, {failed} failed")
     return 0 if failed == 0 else 1

@@ -6,31 +6,31 @@ import (
 	"time"
 )
 
-// Sending into a lane nobody occupies used to succeed in silence.
+// Sending into an agent nobody occupies used to succeed in silence.
 //
-// The fleet restart that forked every lane left `orchestrator` dormant and
+// The fleet restart that forked every agent left `orchestrator` dormant and
 // `orchestrator-2` live under the same name. An agent addressed its bug report to
-// `orchestrator`, Lanes returned ok, and the report was never read by anyone. The
+// `orchestrator`, Dibs returned ok, and the report was never read by anyone. The
 // failure was invisible from both ends at once: the sender saw success, and the
 // agent it was reaching for saw nothing. Two full reports were lost that way
-// before anybody noticed, and only then because a THIRD channel happened to
+// before anybody noticed, and only then because a THIRD space happened to
 // mention it.
 func TestSendToSupersededLaneWarnsAndNamesTheLiveOne(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	t0 := time.Now()
 
-	// The lane that will be superseded, and a sender.
+	// The agent that will be superseded, and a sender.
 	mustApply(t, s, &Op{Kind: OpRegisterLane, Name: "orchestrator", SessionID: "s1", NewToken: "t-old"}, t0)
 	reg(t, s, "builder", "t-builder", t0)
 
 	// It goes dormant, and the same agent comes back as a sibling.
-	s.Lanes["orchestrator"].Status = StatusDormant
+	s.Agents["orchestrator"].Status = StatusDormant
 	again := mustApply(t, s, &Op{
 		Kind: OpRegisterLane, Name: "orchestrator", SessionID: "s2", NewToken: "t-new",
 	}, t0.Add(time.Hour))
 	liveID := again["lane_id"].(string)
 	if liveID == "orchestrator" {
-		t.Fatal("setup: expected a sibling lane")
+		t.Fatal("setup: expected a sibling agent")
 	}
 
 	mustApply(t, s, &Op{Kind: OpAckBoard, Token: "t-builder"}, t0)
@@ -41,23 +41,23 @@ func TestSendToSupersededLaneWarnsAndNamesTheLiveOne(t *testing.T) {
 
 	warn, _ := res["note"].(string)
 	if warn == "" {
-		t.Fatal("silent success is the bug; sending to a superseded lane must say so")
+		t.Fatal("silent success is the bug; sending to a superseded agent must say so")
 	}
 	if !strings.Contains(warn, liveID) {
-		t.Errorf("note must name the live lane %q so the sender can resend, got: %s", liveID, warn)
+		t.Errorf("note must name the live agent %q so the sender can resend, got: %s", liveID, warn)
 	}
-	// It still DELIVERS. The message is not the sender's to lose, and a lane can
+	// It still DELIVERS. The message is not the sender's to lose, and an agent can
 	// come back; what was missing was the sender knowing.
 	if res["ok"] != true {
 		t.Error("the message must still be delivered, not refused")
 	}
 	if n := len(s.Inbox("orchestrator")); n != 1 {
-		t.Errorf("message not delivered to the addressed lane: inbox %d", n)
+		t.Errorf("message not delivered to the addressed agent: inbox %d", n)
 	}
 }
 
-// A dormant lane with NO live sibling is a standing role asleep between
-// activations. That is what persistent lanes are for, so this must not be
+// A dormant agent with NO live sibling is a standing role asleep between
+// activations. That is what persistent agents are for, so this must not be
 // refused, but the sender still deserves to know nothing is owed to it.
 func TestSendToDormantLaneDeliversWithNotice(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
@@ -66,7 +66,7 @@ func TestSendToDormantLaneDeliversWithNotice(t *testing.T) {
 		Kind: OpRegisterLane, Name: "nightly", SessionID: "s1", NewToken: "t-n",
 	}, t0)
 	reg(t, s, "sender", "t-s", t0)
-	s.Lanes["nightly"].Status = StatusDormant
+	s.Agents["nightly"].Status = StatusDormant
 
 	mustApply(t, s, &Op{Kind: OpAckBoard, Token: "t-s"}, t0)
 	res := mustApply(t, s, &Op{
@@ -81,7 +81,7 @@ func TestSendToDormantLaneDeliversWithNotice(t *testing.T) {
 		t.Errorf("want the sender told the recipient is asleep, got: %q", warn)
 	}
 	if n := len(s.Inbox("nightly")); n != 1 {
-		t.Errorf("dormant lanes must still collect mail, inbox %d", n)
+		t.Errorf("dormant agents must still collect mail, inbox %d", n)
 	}
 }
 

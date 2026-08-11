@@ -54,7 +54,7 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 		"README.md", "SKILLS.md", "CHANGELOG.md",
 		"docs/ARCHITECTURE.md", "internal/mcp/skills.md",
 		// Both carry the count and neither was guarded: SPEC.md states it as a
-		// contract, and the tutorial quotes a `lanes doctor` transcript that
+		// contract, and the tutorial quotes a `dibs doctor` transcript that
 		// prints it. A number in a transcript goes stale exactly like a number
 		// in a sentence, and is likelier to be believed.
 		"SPEC.md", "docs/TUTORIAL.md",

@@ -6,12 +6,12 @@ import (
 	"testing"
 )
 
-// Board() is not the operator's private view. It is what ack_board returns to
+// Board() is not the operator's private view. It is what check_in returns to
 // EVERY agent on every activation, and what /api/board serves to anything
 // holding the coordination secret, which every agent must hold to call /mcp at
 // all. So anything in it is public to the whole machine.
 //
-// It carried every announcement body from every channel. An agent that had
+// It carried every announcement body from every space. An agent that had
 // joined nothing received them all, without asking, on the one call it is
 // required to make before it does anything else.
 func TestTheBoardCarriesNoLaneText(t *testing.T) {
@@ -31,19 +31,19 @@ func TestTheBoardCarriesNoLaneText(t *testing.T) {
 	reg("outsider")
 
 	if _, _, err := st.Apply(&Op{
-		Kind: OpLaneOpen, Token: insider, Channel: "secret", Text: "t",
+		Kind: OpLaneOpen, Token: insider, Space: "secret", Text: "t",
 	}, now); err != nil {
 		t.Fatal(err)
 	}
 	const announced = "THE-ANNOUNCEMENT-TEXT"
 	const posted = "THE-POST-TEXT"
 	if _, _, err := st.Apply(&Op{
-		Kind: OpLaneAnnounce, Token: insider, Channel: "secret", Body: announced,
+		Kind: OpLaneAnnounce, Token: insider, Space: "secret", Body: announced,
 	}, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := st.Apply(&Op{
-		Kind: OpLanePost, Token: insider, Channel: "secret", Body: posted,
+		Kind: OpLanePost, Token: insider, Space: "secret", Body: posted,
 	}, now); err != nil {
 		t.Fatal(err)
 	}
@@ -54,12 +54,12 @@ func TestTheBoardCarriesNoLaneText(t *testing.T) {
 	}
 	for _, secret := range []string{announced, posted} {
 		if strings.Contains(string(blob), secret) {
-			t.Errorf("the board carries %q: every agent gets this from ack_board, "+
-				"whether or not it is in the lane", secret)
+			t.Errorf("the board carries %q: every agent gets this from check_in, "+
+				"whether or not it is in the agent", secret)
 		}
 	}
 	// It must still say an announcement HAPPENED, or the board stops being a
-	// board: the count of what is hanging over a lane is the point.
+	// board: the count of what is hanging over an agent is the point.
 	if !strings.Contains(string(blob), `"said"`) {
 		t.Errorf("the board no longer mentions announcements at all: %s", blob)
 	}

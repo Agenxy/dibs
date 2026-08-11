@@ -1,8 +1,8 @@
-# Lanes for pi
+# Dibs for pi
 
 **pi has no MCP client.** Measured twice: a search for `modelcontextprotocol`
 across `pi-mono/packages/*/src` returns nothing. pi is the only harness in this
-survey that cannot reach Lanes through the standard path, so it needs an
+survey that cannot reach Dibs through the standard path, so it needs an
 extension, and that is the only route.
 
 Built and driven live. The four questions the previous draft of this file left
@@ -11,15 +11,15 @@ open are answered below by running it, not by reading it.
 ## Install
 
 ```bash
-cp plugins/pi/lanes.ts ~/.pi/agent/extensions/lanes.ts
+cp plugins/pi/dibs.ts ~/.pi/agent/extensions/dibs.ts
 ```
 
-Project-local `.pi/extensions/lanes.ts` works too. Both locations are
+Project-local `.pi/extensions/dibs.ts` works too. Both locations are
 auto-discovered and hot-reload with `/reload`.
 
 Nothing else to configure. The extension finds the daemon at `127.0.0.1:4777`
-and authenticates with `~/.lanes/local.secret`. Override with `LANES_ADDR` and
-`LANES_DIR`.
+and authenticates with `~/.agents/local.secret`. Override with `DIBS_ADDR` and
+`DIBS_DIR`.
 
 ## The tool surface is fetched, not copied
 
@@ -29,7 +29,7 @@ through via `Type.Unsafe`.
 
 This matters more than it looks. A hand-written mirror of 25 tool definitions is
 a second source of truth for argument shapes the server already validates, and
-it is wrong the first time a tool changes. Fetching means `lanes` and this file
+it is wrong the first time a tool changes. Fetching means `dibs` and this file
 cannot drift: add a tool to the server, and pi has it on next start.
 
 If the daemon is not running, the extension registers **nothing**. A tool that
@@ -37,9 +37,9 @@ always fails is worse than an absent one: the model will keep reaching for it.
 
 ## Identity is observed, not asked for
 
-The first real pi run registered a lane with a completely empty `agent`, sitting
-on a board next to opencode lanes carrying harness, host, cwd and branch. Every
-other harness gets that from the `lanes mcp-stdio` bridge, which fills in blank
+The first real pi run registered an agent with a completely empty `agent`, sitting
+on a board next to opencode agents carrying harness, host, cwd and branch. Every
+other harness gets that from the `dibs mcp-stdio` bridge, which fills in blank
 fields on the way past; pi has no bridge.
 
 So the extension observes it directly, and two details are load-bearing:
@@ -48,7 +48,7 @@ So the extension observes it directly, and two details are load-bearing:
   server takes them only from the handshake half of the call, precisely because
   the client states them and the model cannot (`internal/mcp/identity.go`).
   Passing them as arguments silently does nothing, which is why the first fix
-  produced a lane with cwd and branch but still no harness.
+  produced an agent with cwd and branch but still no harness.
 
 - **An observed value overrides what the model typed.** This inverts the
   bridge's "the agent already said, it knows better" rule, deliberately. A live
@@ -62,7 +62,7 @@ Note this supersedes the `PI_MODEL` / `PI_PROVIDER` environment route the
 earlier draft described. Those are read by the stdio bridge, and pi never
 launches one: the extension is the only path that runs.
 
-The result is the richest identity of any harness Lanes supports:
+The result is the richest identity of any harness Dibs supports:
 
 ```json
 { "harness": "pi", "version": "0.82.1", "host": "workstation",
@@ -75,13 +75,13 @@ The result is the richest identity of any harness Lanes supports:
 `before_agent_start` fires after the user submits and before the agent loop, and
 can inject a message, so **pi is a wake surface, not pull-only.** The extension
 polls `hook_poll` and, when there is mail, injects it with
-`customType: "lanes-mail"`. No mail means nothing is injected at all: an empty
+`customType: "agents-mail"`. No mail means nothing is injected at all: an empty
 turn costs one 1.5-second-bounded HTTP call and adds no tokens.
 
-Lanes stays a service the agent pulls from. The extension only decides *when* to
+Dibs stays a service the agent pulls from. The extension only decides *when* to
 pull; it never drives the harness, spawns a subprocess, or runs a polling loop.
-See [PHILOSOPHY.md](https://github.com/agenxy/lanes/blob/main/PHILOSOPHY.md) and
-[WAKE-MECHANISMS.md](https://github.com/agenxy/lanes/blob/main/WAKE-MECHANISMS.md).
+See [PHILOSOPHY.md](https://github.com/agenxy/dibs/blob/main/PHILOSOPHY.md) and
+[WAKE-MECHANISMS.md](https://github.com/agenxy/dibs/blob/main/WAKE-MECHANISMS.md).
 
 `hook_poll` is read-only (it never consumes mail) so a dropped or timed-out
 response loses nothing and the poll is always safe to repeat.
@@ -96,12 +96,12 @@ success.
 
 ## Session identity
 
-`register_lane` gets pi's own `sessionId`, so re-registering after a context loss
-reattaches to the same lane instead of forking a sibling whose mail is
+`register` gets pi's own `sessionId`, so re-registering after a context loss
+reattaches to the same agent instead of forking a sibling whose mail is
 unreachable. With `--no-session` there is no session id, so the extension falls
 back to `pi-<pid>-<random>`: random-suffixed because a recycled PID would
-otherwise reattach a fresh agent onto a dead agent's lane and its mail.
+otherwise reattach a fresh agent onto a dead agent's agent and its mail.
 
-A *new* pi session is genuinely a new agent and correctly gets a new lane. For a
+A *new* pi session is genuinely a new agent and correctly gets a new agent. For a
 standing role that must keep one address across sessions, register with
-`kind: "persistent"` and a nonce, then reactivate with `resume_lane`.
+`kind: "persistent"` and a nonce, then reactivate with `resume`.

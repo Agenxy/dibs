@@ -8,11 +8,11 @@ import (
 
 // The advertised tool surface has a size budget.
 //
-// A reviewer reported its capability discovery being TRUNCATED by Lanes' tool
+// A reviewer reported its capability discovery being TRUNCATED by Dibs' tool
 // list, measuring ~68k characters of which it said 58% was repeated orientation.
 // Measured at the server, that does not reproduce: the descriptions total ~12k
 // with no repeated sentence at all, and the whole tools/list payload is ~31k. The
-// inflation was in that client's own rendering, which Lanes does not control.
+// inflation was in that client's own rendering, which Dibs does not control.
 //
 // The concern survives the failed reproduction, though. Every tool this project
 // adds is paid for by every agent on every connection, forever, and the failure
@@ -62,7 +62,7 @@ func TestTheAdvertisedToolSurfaceStaysWithinBudget(t *testing.T) {
 // it is worth a guard even though it was not true: shared preamble is the natural
 // way a tool surface rots. Each new tool copies the orientation from the last,
 // nobody reads the total, and the cost lands on every agent on every connection.
-// Orientation belongs in the server instructions and lanes://skills, which are
+// Orientation belongs in the server instructions and dibs://skills, which are
 // sent once.
 func TestNoSentenceIsRepeatedAcrossToolDescriptions(t *testing.T) {
 	seen := map[string]string{}

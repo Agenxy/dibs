@@ -18,8 +18,8 @@
 // DEGRADATION IS THE POINT. A coordination tool gets piped, teed into logs, and
 // run in CI. lipgloss resolves the colour profile from the writer: a pipe, a
 // dumb terminal, NO_COLOR or CLICOLOR_FORCE all resolve correctly, so styled
-// output collapses to exactly the plain text it would have been. `lanes board |
-// grep builder` finds builder, and a redirected `lanes doctor` writes readable
+// output collapses to exactly the plain text it would have been. `dibs board |
+// grep builder` finds builder, and a redirected `dibs doctor` writes readable
 // text rather than escape sequences.
 package ui
 

@@ -13,7 +13,7 @@ package overlap
 // A commit message names its subsystem, because it is written after the fact
 // about files that exist: "fix retry backoff in auth/token.go". A declaration is
 // written before the fact about work that does not exist yet, in the vocabulary
-// of goals: "greening main's cross-cutting gates in my lane". The first is nearly
+// of goals: "greening main's cross-cutting gates in my agent". The first is nearly
 // a query for the files it touched. The second shares its most distinctive words
 // with every other declaration in the same repository. CI, gates, docs, runtime
 // and a path-token scorer turns exactly those into "evidence".
@@ -43,8 +43,8 @@ package overlap
 //
 //	false positive: an agent is told it is duplicating work that it is not, and
 //	                 stands down something real, or spends a turn arguing its way
-//	                 out of a lane. Both happened.
-//	false negative: two agents collide, which is where they were before Lanes
+//	                 out of an agent. Both happened.
+//	false negative: two agents collide, which is where they were before Dibs
 //	                 existed. The system's own documentation already tells agents
 //	                 a low score proves nothing.
 //
@@ -63,7 +63,7 @@ type GoldenCase struct {
 	Why string
 }
 
-// GoldenDecl is everything an agent tells Lanes about itself: the whole signal,
+// GoldenDecl is everything an agent tells Dibs about itself: the whole signal,
 // not just the sentence the scorer currently reads.
 type GoldenDecl struct {
 	Text   string
@@ -87,7 +87,7 @@ var GoldenSet = []GoldenCase{
 			Branch: "feat/terminal-native",
 		},
 		B: GoldenDecl{
-			Text: "Runtime C++ and build-farm lane: outage recovery, migration off a personal " +
+			Text: "Runtime C++ and build-farm agent: outage recovery, migration off a personal " +
 				"account to a service account, CI throughput, runtime and gate infrastructure.",
 			Dirs:   []string{"/repo/tools/ci", "/repo/.github"},
 			Refs:   []string{"incident:farm-down", "gate:codeowners"},

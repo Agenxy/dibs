@@ -1,6 +1,6 @@
 // Package humanauth proves a HUMAN is at this machine, right now.
 //
-// Lanes' panel runs inside an agent's MCP host and acts with that agent's own
+// Dibs' panel runs inside an agent's MCP host and acts with that agent's own
 // token. That is fine for answering the agent's own mail: the agent handed the
 // token over. It is not fine for speaking AS the operator. "Stand down, this is
 // your operator" is exactly the sentence that must never be forgeable, and
@@ -16,7 +16,7 @@
 // The bound is the transport, and saying it precisely matters. This does not
 // stop arbitrary code ALREADY running as the user, which can replace the helper
 // binary in a directory the user owns and have it exit 0. That adversary can
-// equally read the lane tokens, the ledger and the local secret, so presence is
+// equally read the agent tokens, the ledger and the local secret, so presence is
 // not the weakest thing it defeats, but the earlier claim here, that software
 // cannot produce a fingerprint, was wrong and worth correcting rather than
 // leaving as reassurance. See findHelper for exactly what is and is not bought.
@@ -65,26 +65,26 @@ const (
 
 // ErrNoHelper reports that the presence helper is not installed beside the
 // daemon. Treated as Unavailable by Check, and named separately because
-// "biometrics are off" and "Lanes was packaged without its helper" are different
+// "biometrics are off" and "Dibs was packaged without its helper" are different
 // things for whoever has to fix it.
-var ErrNoHelper = errors.New("presence helper not found beside lanesd")
+var ErrNoHelper = errors.New("presence helper not found beside dibd")
 
 // promptTimeout bounds the system sheet. Longer than a person needs and shorter
 // than a forgotten prompt holding a request open: the helper also caps itself,
 // so this is the outer of two bounds rather than the only one.
 const promptTimeout = 90 * time.Second
 
-// helperName is the compiled Swift binary lanesd execs. A separate process
-// rather than cgo because Lanes ships CGO_ENABLED=0 and cross-compiles to four
+// helperName is the compiled Swift binary dibd execs. A separate process
+// rather than cgo because Dibs ships CGO_ENABLED=0 and cross-compiles to four
 // targets: linking LocalAuthentication into the daemon would break every build
 // that is not macOS. Exec also means a missing or unrunnable helper degrades to
 // the password path instead of taking the daemon down with it.
-const helperName = "lanes-presence"
+const helperName = "agents-presence"
 
 // Check asks for proof that a human is present, showing them `reason`.
 //
 // The reason is displayed inside the system sheet, so it is the one chance to
-// say what is being approved. Callers pass the actual action ("post to the lane
+// say what is being approved. Callers pass the actual action ("post to the agent
 // auth-work") rather than a generic sentence.
 func Check(ctx context.Context, reason string) (Verdict, error) {
 	// A scripted verdict, in dev builds only: see mock_release.go. Consulted
@@ -140,7 +140,7 @@ func Check(ctx context.Context, reason string) (Verdict, error) {
 // findHelper looks beside the running binary, and refuses a symlink.
 //
 // Beside, not on PATH: the helper is part of this daemon's install, and picking
-// up a `lanes-presence` from somewhere else on PATH would mean trusting an
+// up a `agents-presence` from somewhere else on PATH would mean trusting an
 // unrelated binary to answer "is a human here". That is the one question where
 // substituting the answerer defeats the whole mechanism.
 //
@@ -154,7 +154,7 @@ func Check(ctx context.Context, reason string) (Verdict, error) {
 // built for: an agent that wants to speak as the operator must raise a system
 // sheet on the operator's own Mac. It is NOT unforgeable by arbitrary code
 // already executing with the user's own privileges. That adversary can also
-// read the lane tokens, the ledger and ~/.lanes/local.secret, so presence is not
+// read the agent tokens, the ledger and ~/.agents/local.secret, so presence is not
 // the weakest link, but "software cannot produce a fingerprint" was the wrong
 // sentence and this one is the right one.
 //
@@ -185,7 +185,7 @@ func findHelper() (string, error) {
 func helperIn(dir string) (string, error) {
 	candidate := filepath.Join(dir, helperName)
 	// Lstat, not Stat: Stat follows the link and reports on the target, so a
-	// symlink named lanes-presence pointing at /usr/bin/true satisfied every
+	// symlink named agents-presence pointing at /usr/bin/true satisfied every
 	// condition here and answered "a human is present" forever after.
 	info, serr := os.Lstat(candidate)
 	if serr != nil || info.IsDir() || info.Mode()&0o111 == 0 {

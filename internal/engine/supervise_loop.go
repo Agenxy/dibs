@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agenxy/lanes/internal/core"
-	"github.com/agenxy/lanes/internal/liveness"
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/liveness"
 )
 
 // superviseEvery is how often the machine is scanned for stalled subagents.
@@ -34,7 +34,7 @@ type SuperviseSettings struct {
 //
 // It reports and never acts. Killing or restarting a child is the parent's
 // decision, made with context about what the child was for that this does not
-// have, and even where Lanes could resume a codex session itself, a supervisor
+// have, and even where Dibs could resume a codex session itself, a supervisor
 // that silently repairs things teaches its operator nothing and hides a failure
 // that may be systematic.
 func (e *Engine) Supervise(ctx context.Context, s SuperviseSettings) {
@@ -162,18 +162,18 @@ func (e *Engine) progressFor(ctx context.Context, owner string) int64 {
 	return n
 }
 
-// reportStall tells the owning lane, and returns whether anybody was told.
+// reportStall tells the owning agent, and returns whether anybody was told.
 //
 // Through the notice path rather than mail: a notice is precisely "something
 // happened to you that you could not have inferred", it is delivered on the
-// agent's next ack_board or hook_poll without it having to ask, and it needs no
+// agent's next check_in or hook_poll without it having to ask, and it needs no
 // ledger op, which matters because a stall is an observation about this
 // machine right now, not a coordination fact that must survive replay.
 //
 // An unattributable child is not reported to anybody. That is the deliberate
 // choice: a wrong owner sends a stall report to an agent that cannot act on it
 // while the one that can hears nothing, which is worse than the silence it
-// replaces. It is visible to a human through `lanes probe` either way.
+// replaces. It is visible to a human through `dibs probe` either way.
 func (e *Engine) reportStall(ctx context.Context, a liveness.Agent, v liveness.Verdict, transcript string) bool {
 	sent := false
 	_, _ = e.query(ctx, func() core.Result {
@@ -190,14 +190,14 @@ func (e *Engine) reportStall(ctx context.Context, a liveness.Agent, v liveness.V
 // would BLOCK rather than fail. That cost five minutes of CI earlier in this
 // work, and the fix is structural rather than remembered.
 func (e *Engine) reportStallLocked(a liveness.Agent, v liveness.Verdict, transcript string) bool {
-	lane := e.laneForOwner(a.Owner)
-	if lane == "" {
+	agent := e.laneForOwner(a.Owner)
+	if agent == "" {
 		return false
 	}
 	text := fmt.Sprintf(
 		"A %s subagent you spawned (pid %d) has stopped working: %s. "+
-			"Lanes has not touched it: restarting or abandoning it is your call, "+
-			"and `lanes probe --pid %d` will show its current state.",
+			"Dibs has not touched it: restarting or abandoning it is your call, "+
+			"and `dibs probe --pid %d` will show its current state.",
 		a.Harness, a.PID, v.Why, a.PID)
 	if v.Slept > 0 {
 		text += fmt.Sprintf(" The machine also slept %s during this window, which is NOT "+
@@ -212,19 +212,19 @@ func (e *Engine) reportStallLocked(a liveness.Agent, v liveness.Verdict, transcr
 	}
 	// Serial 0: this has no ledger op behind it, and claiming one would point a
 	// reader at an entry that does not exist.
-	e.pushNotice(lane, text, 0)
+	e.pushNotice(agent, text, 0)
 	return true
 }
 
-// laneForOwner resolves an attribution to a lane on the board.
+// laneForOwner resolves an attribution to an agent on the board.
 //
-// The owner may be a lane id already (the LANES_PARENT rung) or a harness
+// The owner may be an agent id already (the DIBS_PARENT rung) or a harness
 // session id (the session rungs), so both are tried. Called on the writer loop.
 func (e *Engine) laneForOwner(owner string) string {
 	if owner == "" || e.state == nil {
 		return ""
 	}
-	if l, ok := e.state.Lanes[owner]; ok {
+	if l, ok := e.state.Agents[owner]; ok {
 		return l.ID
 	}
 	if l := e.state.LaneForHook(owner, ""); l != nil {

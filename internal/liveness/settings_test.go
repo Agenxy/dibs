@@ -9,13 +9,13 @@ import (
 
 // One [supervise] table configures every surface.
 //
-// It existed for the daemon and `lanes probe` ignored it, so the same five
+// It existed for the daemon and `dibs probe` ignored it, so the same five
 // judgements lived in two forms: a file the sweep honoured, and flags on the
 // command a person actually runs. Demonstrating stall detection meant spelling
 // the configuration out loud on every invocation.
 func TestOneTableConfiguresEverySurface(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "lanes.toml"), []byte(
+	if err := os.WriteFile(filepath.Join(dir, "agents.toml"), []byte(
 		"[supervise]\nmin_age = \"1s\"\nmin_duty = 0.05\nevery = \"3s\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestAnAbsentOrBrokenFileLeavesTheDefaults(t *testing.T) {
 		"broken": t.TempDir(),
 	} {
 		if name == "broken" {
-			if err := os.WriteFile(filepath.Join(dir, "lanes.toml"), []byte("[supervise\nmin_age ="), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "agents.toml"), []byte("[supervise\nmin_age ="), 0o600); err != nil {
 				t.Fatal(err)
 			}
 		}

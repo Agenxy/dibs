@@ -10,7 +10,7 @@ import (
 // The agent block is optional and descriptive, so most registrations arrive
 // without one. The first version of the hint read op.Agent.Harness
 // unconditionally and panicked on a nil pointer inside an HTTP handler: every
-// plain register_lane would have killed the connection, and the feature that
+// plain register would have killed the connection, and the feature that
 // caused it is a nicety the caller never asked for.
 func TestAHarnesslessRegistrationGetsNoHintAndDoesNotPanic(t *testing.T) {
 	if hint := pluginHint("", false, false); hint != nil {
@@ -101,7 +101,7 @@ func TestThePluginDocIsServableAndHonest(t *testing.T) {
 // A harness with hooks but no wake path is never told it can stop polling.
 //
 // Hook traffic and DELIVERY are different facts. Codex fires hooks as
-// subprocesses, which Lanes refuses to be, so it can have live hooks and still
+// subprocesses, which Dibs refuses to be, so it can have live hooks and still
 // have no way to wake an agent. The hint used one sentence for every harness, so
 // a Codex agent whose hooks had fired was told "mail will arrive, you do not need
 // to poll" in the same result whose catalogue entry said mail is pull-only. An

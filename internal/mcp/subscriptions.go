@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // rpcErrFrom maps a core error to a JSON-RPC error, preserving the code/hint.
@@ -20,12 +20,12 @@ func rpcErrFrom(err error) *rpcError {
 	return &rpcError{Code: -32603, Message: err.Error()}
 }
 
-// metaTokenKey names the _meta field that carries a lane token in a
+// metaTokenKey names the _meta field that carries an agent token in a
 // subscriptions/listen (or resources/read) request, so an inbox subscription can
-// be scoped to the caller's lane. The daemon connection is already gated by the
-// local secret; this token identifies WHICH lane's mailbox to watch. It is a
+// be scoped to the caller's agent. The daemon connection is already gated by the
+// local secret; this token identifies WHICH agent's mailbox to watch. It is a
 // field NAME, not a secret value.
-const metaTokenKey = "com.lanes/token" //nolint:gosec // G101: metadata key name, not a credential
+const metaTokenKey = "com.dibs/token" //nolint:gosec // G101: metadata key name, not a credential
 
 // subscriptionParams is the SEP-2575 subscriptions/listen params shape.
 type subscriptionParams struct {
@@ -72,24 +72,24 @@ func (s sseStream) comment() bool {
 // whether a host surfaces the notification to the model is the host's call, but
 // the server half is standards-correct and harmless when unused.
 //
-// Lanes honors two resource URIs:
-//   - lanes://board : any board change (lanes/slots/claims). No token needed.
-//   - lanes://inbox : mail to the caller's lane. Requires a lane token in
-//     _meta[com.lanes/token] so it can be scoped and access-checked.
+// Dibs honors two resource URIs:
+//   - dibs://board : any board change (agents/slots/claims). No token needed.
+//   - dibs://inbox : mail to the caller's agent. Requires an agent token in
+//     _meta[com.dibs/token] so it can be scoped and access-checked.
 func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *rpcRequest) {
 	var p subscriptionParams
 	_ = json.Unmarshal(req.Params, &p)
 
-	wantBoard := containsStr(p.Notifications.ResourceSubscriptions, "lanes://board")
-	wantInbox := containsStr(p.Notifications.ResourceSubscriptions, "lanes://inbox")
+	wantBoard := containsStr(p.Notifications.ResourceSubscriptions, "dibs://board")
+	wantInbox := containsStr(p.Notifications.ResourceSubscriptions, "dibs://inbox")
 
-	// Resolve the lane (for inbox scoping) and the current serial in one call.
+	// Resolve the agent (for inbox scoping) and the current serial in one call.
 	token := ""
 	if wantInbox {
 		token, _ = p.Meta[metaTokenKey].(string)
 		if token == "" {
 			writeRPC(w, http.StatusBadRequest, req.ID, nil, &rpcError{
-				Code: -32602, Message: "lanes://inbox subscription requires a lane token in _meta['" + metaTokenKey + "']",
+				Code: -32602, Message: "dibs://inbox subscription requires an agent token in _meta['" + metaTokenKey + "']",
 			})
 			return
 		}
@@ -155,10 +155,10 @@ func (s *Server) pump(r *http.Request, stream sseStream, ch <-chan core.Event,
 // matchedURI returns the subscribed resource URI an event changed, or "".
 func matchedURI(ev core.Event, laneID string, wantInbox, wantBoard bool) string {
 	if wantInbox && ev.To == laneID && strings.HasPrefix(ev.Type, "message.") {
-		return "lanes://inbox"
+		return "dibs://inbox"
 	}
 	if wantBoard && isBoardEvent(ev) {
-		return "lanes://board"
+		return "dibs://board"
 	}
 	return ""
 }
@@ -166,16 +166,16 @@ func matchedURI(ev core.Event, laneID string, wantInbox, wantBoard bool) string 
 func honoredURIs(wantBoard, wantInbox bool) []string {
 	subs := make([]string, 0, 2)
 	if wantBoard {
-		subs = append(subs, "lanes://board")
+		subs = append(subs, "dibs://board")
 	}
 	if wantInbox {
-		subs = append(subs, "lanes://inbox")
+		subs = append(subs, "dibs://inbox")
 	}
 	return subs
 }
 
 func isBoardEvent(ev core.Event) bool {
-	for _, pfx := range []string{"lane.", "slot.", "claim.", "board."} {
+	for _, pfx := range []string{"agent.", "slot.", "claim.", "board."} {
 		if strings.HasPrefix(ev.Type, pfx) {
 			return true
 		}

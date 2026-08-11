@@ -1,5 +1,5 @@
 /**
- * End-to-end test for channels. SPEC-CHANNELS.md.
+ * End-to-end test for spaces. SPEC-CHANNELS.md.
  *
  * Everything here goes over real HTTP to a real daemon, so it exercises the
  * whole path the agents use: tool schema → argument decode → op construction →
@@ -11,9 +11,9 @@
  * quietly:
  *
  *   - the recorded score survives the round trip verbatim (§4.3). A score that
- *     arrives as 0 still joins the lane, still looks fine on the board, and
+ *     arrives as 0 still joins the agent, still looks fine on the board, and
  *     destroys the ledger's meaning.
- *   - an exclusive lane QUEUES rather than refuses (§5). A refusal an agent
+ *   - an exclusive agent QUEUES rather than refuses (§5). A refusal an agent
  *     can ignore is not coordination.
  *
  * Run: bun internal/mcp/e2e/channel_e2e.ts
@@ -33,11 +33,11 @@ function check(name: string, cond: boolean, detail = "") {
 }
 
 const home = process.env.HOME
-const lanesd = process.env.LANESD ?? `${home}/.local/bin/lanesd`
-const dir_ = mkdtempSync(join(tmpdir(), "lanes-channel-e2e-"))
+const dibd = process.env.DIBD ?? `${home}/.local/bin/dibd`
+const dir_ = mkdtempSync(join(tmpdir(), "agents-space-e2e-"))
 const dir = dir_
 // -match-repo enables work-overlap scoring against THIS repository, and
-// -match-join sets the bar `lanes calibrate` measured for it. Without both, the
+// -match-join sets the bar `dibs calibrate` measured for it. Without both, the
 // daemon runs suggest-only and the auto-join checks below cannot pass.
 const repo = process.env.MATCH_REPO ?? new URL("../../..", import.meta.url).pathname
 
@@ -60,10 +60,10 @@ const repo = process.env.MATCH_REPO ?? new URL("../../..", import.meta.url).path
  * so a daemon that stopped consulting the bar still fails.
  */
 async function measureTheBar(): Promise<number> {
-  const mdir = mkdtempSync(join(tmpdir(), "lanes-channel-e2e-measure-"))
+  const mdir = mkdtempSync(join(tmpdir(), "agents-space-e2e-measure-"))
   const maddr = `127.0.0.1:${Number(process.env.PORT ?? 4934) + 2}`
   const md = Bun.spawn({
-    cmd: [lanesd, "-dir", mdir, "-addr", maddr,
+    cmd: [dibd, "-dir", mdir, "-addr", maddr,
           "-match-repo", repo, "-match-join", "0.95", "-match-notify", "0.05"],
     stdout: "ignore", stderr: "ignore",
   })
@@ -77,7 +77,7 @@ async function measureTheBar(): Promise<number> {
     const c = async (name: string, args: Record<string, unknown>) => {
       const res = await fetch(`http://${maddr}/mcp`, {
         method: "POST",
-        headers: { "content-type": "application/json", "X-Lanes-Local": sec },
+        headers: { "content-type": "application/json", "X-Dibs-Local": sec },
         body: JSON.stringify({ jsonrpc: "2.0", id: ++id, method: "tools/call", params: { name, arguments: args } }),
       })
       const b = await res.json() as any
@@ -85,16 +85,16 @@ async function measureTheBar(): Promise<number> {
       return JSON.parse(b.result.content[0].text)
     }
     const mk = async (n: string) => {
-      const r = await c("register_lane", { name: n, session_id: `m-${n}` })
-      await c("ack_board", { token: r.token })
+      const r = await c("register", { name: n, session_id: `m-${n}` })
+      await c("check_in", { token: r.token })
       return r.token
     }
     // The same two declarations the assertions use, in the same order.
     const a = await mk("m-one"), b = await mk("m-two")
-    await c("set_slot", { token: a, text: "enforcing exclusive claims in the guard" })
-    await c("lane_open", { token: a, lane: "guard-work", topic: "claim guard denies edits to claimed paths" })
-    const r = await c("set_slot", { token: b, text: "guard path enforcement for exclusive claims" })
-    const m = (r.lanes ?? []).find((l: any) => l.lane === "guard-work")
+    await c("declare", { token: a, text: "enforcing exclusive claims in the guard" })
+    await c("open_space", { token: a, agent: "guard-work", topic: "claim guard denies edits to claimed paths" })
+    const r = await c("declare", { token: b, text: "guard path enforcement for exclusive claims" })
+    const m = (r.agents ?? []).find((l: any) => l.agent === "guard-work")
     if (!m || typeof m.score !== "number" || !(m.score > 0)) {
       throw new Error(`could not measure a score for the guard pair: ${JSON.stringify(r).slice(0, 300)}`)
     }
@@ -113,11 +113,11 @@ const JOIN_BAR = Math.max(0.05, Number((observedScore - 0.02).toFixed(4)))
 console.log(`  · join bar measured from this repository: ${JOIN_BAR} (observed ${observedScore.toFixed(4)})`)
 
 // -match-repo enables work-overlap scoring against THIS repository, and
-// -match-join is the bar measured just above: the same thing `lanes calibrate`
+// -match-join is the bar measured just above: the same thing `dibs calibrate`
 // does for a real operator. Without both, the daemon runs suggest-only and the
 // auto-join checks below cannot pass.
 const daemon = Bun.spawn({
-  cmd: [lanesd, "-dir", dir, "-addr", ADDR,
+  cmd: [dibd, "-dir", dir, "-addr", ADDR,
         "-match-repo", repo, "-match-join", String(JOIN_BAR), "-match-notify", "0.15"],
   stdout: "ignore", stderr: "ignore",
 })
@@ -137,7 +137,7 @@ let rpcId = 0
 async function raw(name: string, args: Record<string, unknown>): Promise<any> {
   const res = await fetch(`http://${ADDR}/mcp`, {
     method: "POST",
-    headers: { "content-type": "application/json", "X-Lanes-Local": secret },
+    headers: { "content-type": "application/json", "X-Dibs-Local": secret },
     body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call", params: { name, arguments: args } }),
   })
   return await res.json() as any
@@ -149,25 +149,25 @@ async function call(name: string, args: Record<string, unknown>): Promise<any> {
   // NOT as a JSON-RPC error, so without this it parses cleanly and is returned
   // as though it had worked. A setup step that quietly failed then shows up as
   // a baffling assertion failure several checks later, which is exactly how a
-  // `lane_exclusive` that was refused looked like a lane that had no owner.
+  // `lock_space` that was refused looked like an agent that had no owner.
   // Use fails() when a refusal is the thing being tested.
   if (body.result?.isError) {
     throw new Error(`${name}: ${body.result.content?.[0]?.text ?? "unknown tool error"}`)
   }
   const out = JSON.parse(body.result.content[0].text)
-  if (Array.isArray(out?.lanes)) seenSuggestions.push(...out.lanes)
+  if (Array.isArray(out?.agents)) seenSuggestions.push(...out.agents)
   return out
 }
 /**
- * show_board is the one tool whose `content` is a prose summary for the model
+ * board is the one tool whose `content` is a prose summary for the model
  * and whose panel data lives in tool-result metadata: the MCP Apps private
  * backchannel. Parsing content[0].text as JSON here fails on
- * "Lanes board: 3 lane(s)…".
+ * "Dibs board: 3 agent(s)…".
  */
 async function board(token: string): Promise<any> {
-  const body = await raw("show_board", { token })
-  if (body.error) throw new Error(`show_board: ${JSON.stringify(body.error)}`)
-  return body.result?._meta?.["com.lanes/panel"] ?? {}
+  const body = await raw("board", { token })
+  if (body.error) throw new Error(`board: ${JSON.stringify(body.error)}`)
+  return body.result?._meta?.["com.dibs/panel"] ?? {}
 }
 
 /** Expect a tool to fail, and return the error for inspection. */
@@ -188,7 +188,7 @@ async function fails(name: string, args: Record<string, unknown>): Promise<strin
  * finding one declaration that happens to sit between the bars. An earlier
  * version of this file tested "unrelated work is not auto-joined" against a
  * pair that scored exactly 0, which passes just as happily when the threshold
- * check is deleted entirely, because a zero-scoring lane never reaches the
+ * check is deleted entirely, because a zero-scoring agent never reaches the
  * comparison at all. Mutation-testing caught it: replacing the bar with
  * `if true` left the suite fully green.
  *
@@ -199,8 +199,8 @@ async function fails(name: string, args: Record<string, unknown>): Promise<strin
 const seenSuggestions: any[] = []
 
 async function agent(name: string): Promise<string> {
-  const r = await call("register_lane", { name, session_id: `s-${name}` })
-  await call("ack_board", { token: r.token })
+  const r = await call("register", { name, session_id: `s-${name}` })
+  await call("check_in", { token: r.token })
   return r.token
 }
 
@@ -211,14 +211,14 @@ console.log("─".repeat(60))
 {
   const res = await fetch(`http://${ADDR}/mcp`, {
     method: "POST",
-    headers: { "content-type": "application/json", "X-Lanes-Local": secret },
+    headers: { "content-type": "application/json", "X-Dibs-Local": secret },
     body: JSON.stringify({ jsonrpc: "2.0", id: 999, method: "tools/list", params: {} }),
   })
   const names = ((await res.json()) as any).result.tools.map((t: any) => t.name)
-  const want = ["lane_open", "lane_join", "lane_leave", "lane_subscribe",
-    "lane_exclusive", "lane_post", "lane_announce", "lane_ack"]
+  const want = ["open_space", "join_space", "leave_space", "watch_space",
+    "lock_space", "post", "announce", "ack_announcement"]
   const missing = want.filter((w) => !names.includes(w))
-  check("all channel tools are discoverable", missing.length === 0, "missing: " + missing.join(", "))
+  check("all space tools are discoverable", missing.length === 0, "missing: " + missing.join(", "))
 }
 
 const alpha = await agent("alpha")
@@ -227,19 +227,19 @@ const gamma = await agent("gamma")
 
 // ── open and join ────────────────────────────────────────────────────────
 {
-  const r = await call("lane_open", { token: alpha, lane: "Auth Refactor", topic: "reworking auth middleware" })
-  check("lane_open normalises the id so one topic is one lane", r.lane_id === "auth-refactor", r.lane_id)
+  const r = await call("open_space", { token: alpha, agent: "Auth Refactor", topic: "reworking auth middleware" })
+  check("open_space normalises the id so one topic is one agent", r.lane_id === "auth-refactor", r.lane_id)
 }
 
 // §4.3: the property that quietly destroys the ledger if it breaks.
 {
-  const r = await call("lane_join", {
-    token: beta, lane: "auth-refactor",
+  const r = await call("join_space", {
+    token: beta, agent: "auth-refactor",
     score: 0.8137, threshold: 0.327,
     scorer_id: "lexical+cochange", scorer_version: "1",
     evidence: ["internal/mcp/identity.go", "internal/core/roles.go"], auto: true,
   })
-  check("lane_join reports joined", r.joined === true, JSON.stringify(r))
+  check("join_space reports joined", r.joined === true, JSON.stringify(r))
   // Round-tripped through JSON tags, arg decode and the op: the exact float.
   check("the recorded score survives the wire verbatim", r.score === 0.8137,
     `got ${r.score}: a score that arrives as 0 still joins, and silently voids replay`)
@@ -248,60 +248,60 @@ const gamma = await agent("gamma")
 
 // ── exclusivity queues rather than refuses (§5) ──────────────────────────
 {
-  await call("lane_open", { token: gamma, lane: "hot", topic: "single-writer work", exclusive: true })
-  const r = await call("lane_join", { token: alpha, lane: "hot", score: 0.91 })
-  check("joining an exclusive lane queues rather than refusing", r.queued === true && r.joined === false,
+  await call("open_space", { token: gamma, agent: "hot", topic: "single-writer work", exclusive: true })
+  const r = await call("join_space", { token: alpha, agent: "hot", score: 0.91 })
+  check("joining an exclusive agent queues rather than refusing", r.queued === true && r.joined === false,
     JSON.stringify(r))
   check("the queue tells you your position", r.queue_position === 1, String(r.queue_position))
   check("the queue names the owner so you can ask them", r.owner === "gamma", r.owner)
   check("and says what to do next", typeof r.hint === "string" && r.hint.length > 0, r.hint)
 
-  const again = await call("lane_join", { token: alpha, lane: "hot" })
+  const again = await call("join_space", { token: alpha, agent: "hot" })
   check("re-asking does not queue you twice", again.queue_position === 1, String(again.queue_position))
 }
 
 // ── announce requires acks; post does not ───────────────────────────────
 let annSerial = 0
 {
-  const r = await call("lane_announce", { token: alpha, lane: "auth-refactor", body: "renaming AgentInfo.Token" })
+  const r = await call("announce", { token: alpha, agent: "auth-refactor", body: "renaming AgentInfo.Token" })
   annSerial = r.serial
   check("announce requires an ack from every other member", r.must_ack === 1, JSON.stringify(r))
 
-  const post = await call("lane_post", { token: alpha, lane: "auth-refactor", body: "halfway done" })
+  const post = await call("post", { token: alpha, agent: "auth-refactor", body: "halfway done" })
   check("post is delivered without requiring anything", typeof post.serial === "number")
 }
 
 {
-  const r = await call("lane_ack", { token: beta, msg_serial: annSerial })
+  const r = await call("ack_announcement", { token: beta, msg_serial: annSerial })
   check("acking clears the requirement", r.acked === true && r.outstanding === 0, JSON.stringify(r))
 }
 
 // ── membership is what collides; subscription is free ───────────────────
 {
-  const r = await call("lane_subscribe", { token: gamma, lane: "auth-refactor" })
+  const r = await call("watch_space", { token: gamma, agent: "auth-refactor" })
   check("subscribing works without joining", r.subscribed === true, JSON.stringify(r))
 
-  const err = await fails("lane_post", { token: gamma, lane: "auth-refactor", body: "hello" })
+  const err = await fails("post", { token: gamma, agent: "auth-refactor", body: "hello" })
   check("a subscriber may read but not speak", err.includes("E_NOT_MEMBER"), err || "(allowed!)")
 }
 
-// ── leaving hands the lane on ───────────────────────────────────────────
+// ── leaving hands the agent on ───────────────────────────────────────────
 {
-  await call("lane_leave", { token: gamma, lane: "hot" })
-  const r = await call("lane_join", { token: alpha, lane: "hot" })
+  await call("leave_space", { token: gamma, agent: "hot" })
+  const r = await call("join_space", { token: alpha, agent: "hot" })
   check("the queued agent is admitted once the owner leaves",
     r.joined === true || r.already === true, JSON.stringify(r))
 }
 
 // ── the awareness gate still applies (SPEC §6) ──────────────────────────
 {
-  const fresh = await call("register_lane", { name: "ungreeted", session_id: "s-ungreeted" })
-  const err = await fails("lane_open", { token: fresh.token, lane: "somewhere", topic: "t" })
-  check("channels respect the awareness gate", /E_MUST_ACK|ack_board/i.test(err), err || "(allowed!)")
+  const fresh = await call("register", { name: "ungreeted", session_id: "s-ungreeted" })
+  const err = await fails("open_space", { token: fresh.token, agent: "somewhere", topic: "t" })
+  check("spaces respect the awareness gate", /E_MUST_ACK|check_in/i.test(err), err || "(allowed!)")
 }
 
 // ── auto-join: the whole point, end to end ──────────────────────────────
-// Two agents declare related work IN THEIR OWN WORDS, never naming a lane, and
+// Two agents declare related work IN THEIR OWN WORDS, never naming an agent, and
 // must end up in the same one. This is the feature: not that a score can be
 // computed, but that declaring work puts you next to the person already doing it.
 {
@@ -310,50 +310,50 @@ let annSerial = 0
   //
   // Indexing is asynchronous, so the daemon answers before it can match and the
   // probe has to retry. A SEPARATE probe declaration is not free, though:
-  // declaring work that matches nothing opens a lane for it, so the probe left
+  // declaring work that matches nothing opens an agent for it, so the probe left
   // `claim-guard-path-enforcement` on the board, and the block below is
   // explicitly about a board where nothing matches the bootstrap work. That
   // premise held only while the probe's wording happened not to resemble the
   // bootstrap wording in this repository's index, which made the test a
   // measurement of the repository's commit history. A few commits that touched
-  // guard and channel code together were enough to break it.
+  // guard and space code together were enough to break it.
   //
-  // Probing with the real declaration removes the extra lane entirely: the first
+  // Probing with the real declaration removes the extra agent entirely: the first
   // call that gets an answer IS the assertion.
 
-  // BOOTSTRAP FIRST: two agents, nothing matching them, nobody calling lane_open.
+  // BOOTSTRAP FIRST: two agents, nothing matching them, nobody calling open_space.
   //
   // This is the case the whole feature exists for and the one that was broken:
-  // matching only ever compared a declaration against lanes that ALREADY
+  // matching only ever compared a declaration against agents that ALREADY
   // existed, and nothing created the first one. Two agents could declare
   // identical work and both were told "you have the field to yourself".
   //
-  // The suite did not catch it because every matching test called lane_open by
+  // The suite did not catch it because every matching test called open_space by
   // hand between the two agents: testing the second half of a mechanism whose
-  // first half did not exist. So this runs before any lane_open does.
+  // first half did not exist. So this runs before any open_space does.
   const one = await agent("matcher-one")
   const two = await agent("matcher-two")
   const solo = await agent("bootstrap-one")
   const peer = await agent("bootstrap-two")
-  const work = "reworking the queue promotion logic in internal/core/channel.go"
+  const work = "reworking the queue promotion logic in internal/core/space.go"
 
   // Same slot each time, so a retry updates the declaration instead of adding a
   // second one and making this agent look like it is doing two things.
   let first: any = {}
   for (let i = 0; i < 60; i++) {
-    first = await call("set_slot", { token: solo, slot_id: "s1", text: work })
-    if (first.lanes || first.lanes_hint) break
+    first = await call("declare", { token: solo, slot_id: "s1", text: work })
+    if (first.agents || first.lanes_hint) break
     await Bun.sleep(250)
   }
-  const born = (first.lanes ?? []).find((l: any) => l.action === "opened")
-  check("declaring work nobody is doing OPENS the first lane, per SPEC-CHANNELS §3",
+  const born = (first.agents ?? []).find((l: any) => l.action === "opened")
+  check("declaring work nobody is doing OPENS the first agent, per SPEC-CHANNELS §3",
     born !== undefined, JSON.stringify(first).slice(0, 260))
 
-  const second = await call("set_slot", { token: peer, text: work })
-  const met = (second.lanes ?? []).find((l: any) => l.lane === born?.lane)
+  const second = await call("declare", { token: peer, text: work })
+  const met = (second.agents ?? []).find((l: any) => l.agent === born?.agent)
   // A SCORE is a proposal now, not a membership: two agents caught false
   // auto-joins from the inside that no threshold had, so the decision belongs to
-  // whoever is better at it. The lane must still be SURFACED: that is the part
+  // whoever is better at it. The agent must still be SURFACED: that is the part
   // that carries the value, and the part that has to keep working.
   check("and the next agent declaring the same work is shown it, not told it is alone",
     met !== undefined, JSON.stringify(second).slice(0, 260))
@@ -361,29 +361,29 @@ let annSerial = 0
     met?.action === "consider", `action=${met?.action} score=${met?.score}`)
 
   // The follow-up that used to lie: an agent refreshing its slot is filtered out
-  // of its own lane's suggestions, and the fallback said "you have the field to
-  // yourself": to an agent standing in a lane with the peer it names.
-  const again = await call("set_slot", { token: solo, text: work + ", plus tests" })
-  check("refreshing a slot does not spawn a second lane for the same work",
-    (again.lanes ?? []).every((l: any) => l.action !== "opened"),
-    JSON.stringify(again.lanes ?? []).slice(0, 200))
+  // of its own agent's suggestions, and the fallback said "you have the field to
+  // yourself": to an agent standing in an agent with the peer it names.
+  const again = await call("declare", { token: solo, text: work + ", plus tests" })
+  check("refreshing a slot does not spawn a second agent for the same work",
+    (again.agents ?? []).every((l: any) => l.action !== "opened"),
+    JSON.stringify(again.agents ?? []).slice(0, 200))
   check("and never claims solitude to an agent that is already coordinating",
     !/field to yourself/.test(String(again.matching_hint ?? "")),
     String(again.matching_hint ?? ""))
 
-  // First agent declares, then opens a lane for that work.
-  await call("set_slot", { token: one, text: "enforcing exclusive claims in the guard" })
-  const opened = await call("lane_open", {
-    token: one, lane: "guard-work", topic: "claim guard denies edits to claimed paths",
+  // First agent declares, then opens an agent for that work.
+  await call("declare", { token: one, text: "enforcing exclusive claims in the guard" })
+  const opened = await call("open_space", {
+    token: one, agent: "guard-work", topic: "claim guard denies edits to claimed paths",
   })
-  check("a lane opened from a topic gets a footprint to match against",
+  check("an agent opened from a topic gets a footprint to match against",
     opened.lane_id === "guard-work", JSON.stringify(opened))
 
-  // Second agent declares OVERLAPPING work, in different words, naming no lane.
-  const r = await call("set_slot", { token: two, text: "guard path enforcement for exclusive claims" })
-  const lanes: any[] = r.lanes ?? []
-  const guard = lanes.find((l) => l.lane === "guard-work")
-  check("declaring related work surfaces the lane already doing it",
+  // Second agent declares OVERLAPPING work, in different words, naming no agent.
+  const r = await call("declare", { token: two, text: "guard path enforcement for exclusive claims" })
+  const agents: any[] = r.agents ?? []
+  const guard = agents.find((l) => l.agent === "guard-work")
+  check("declaring related work surfaces the agent already doing it",
     guard !== undefined, JSON.stringify(r).slice(0, 300))
   if (guard) {
     check("the match carries a score", typeof guard.score === "number" && guard.score > 0, String(guard.score))
@@ -393,17 +393,17 @@ let annSerial = 0
       guard.action === "consider", `action=${guard.action} score=${guard.score}`)
     check("and the proposal names what WOULD make it automatic",
       typeof guard.hint === "string" && guard.hint.includes("refs"), String(guard.hint))
-    check("and the agent is told to read the lane before starting",
+    check("and the agent is told to read the agent before starting",
       typeof r.lanes_hint === "string" && r.lanes_hint.length > 0, r.lanes_hint)
   }
 
   // Unrelated work must NOT be dragged in: the failure mode that collapses
-  // every agent into one lane.
+  // every agent into one agent.
   const three = await agent("matcher-three")
-  const u = await call("set_slot", { token: three, text: "restyling the web board fonts and stylesheet" })
-  const dragged = (u.lanes ?? []).find((l: any) => l.lane === "guard-work" && l.action === "joined")
-  check("unrelated work is not auto-joined into the guard lane", dragged === undefined,
-    JSON.stringify(u.lanes ?? []).slice(0, 200))
+  const u = await call("declare", { token: three, text: "restyling the web board fonts and stylesheet" })
+  const dragged = (u.agents ?? []).find((l: any) => l.agent === "guard-work" && l.action === "joined")
+  check("unrelated work is not auto-joined into the guard agent", dragged === undefined,
+    JSON.stringify(u.agents ?? []).slice(0, 200))
 }
 
 // ── announcements ride the wake path (§6) ───────────────────────────────
@@ -412,16 +412,16 @@ let annSerial = 0
 // so it has to arrive through the hook the harness already fires.
 {
   const speaker = await agent("announcer")
-  const listener = await call("register_lane", { name: "listener", session_id: "sess-listener" })
-  await call("ack_board", { token: listener.token })
-  await call("lane_open", { token: speaker, lane: "wake-test", topic: "wake path check" })
-  await call("lane_join", { token: listener.token, lane: "wake-test" })
-  await call("lane_announce", { token: speaker, lane: "wake-test", body: "INTERFACE CHANGED: Token is now Secret" })
+  const listener = await call("register", { name: "listener", session_id: "sess-listener" })
+  await call("check_in", { token: listener.token })
+  await call("open_space", { token: speaker, agent: "wake-test", topic: "wake path check" })
+  await call("join_space", { token: listener.token, agent: "wake-test" })
+  await call("announce", { token: speaker, agent: "wake-test", body: "INTERFACE CHANGED: Token is now Secret" })
 
   const poll = await call("hook_poll", { session_id: "sess-listener", event: "Stop" })
   const ctxText: string = poll?.hookSpecificOutput?.additionalContext ?? ""
   // The wake path is authenticated by NOTHING: it takes a session id and a
-  // cwd off the wire because a harness lifecycle hook has no lane token. So it
+  // cwd off the wire because a harness lifecycle hook has no agent token. So it
   // must wake the agent without disclosing anything private: any holder of the
   // coordination secret can name any session id, or omit it and name a working
   // directory, and be treated as that agent.
@@ -440,7 +440,7 @@ let annSerial = 0
       mine.length === 1, JSON.stringify(owed.announcements ?? []).slice(0, 200))
   }
   check("it is labelled as needing acknowledgement",
-    /ANNOUNCEMENT/.test(ctxText) && /lane_ack/.test(ctxText), ctxText.slice(0, 200))
+    /ANNOUNCEMENT/.test(ctxText) && /ack_announcement/.test(ctxText), ctxText.slice(0, 200))
   check("and it is framed as data, not as an instruction",
     /not instructions/.test(ctxText), ctxText.slice(0, 200))
 
@@ -453,9 +453,9 @@ let annSerial = 0
     !secondText.includes("INTERFACE CHANGED"), secondText.slice(0, 160))
 
   // Acking must stop the redelivery, or the agent sees it forever.
-  const anns = ctxText.match(/#(\d+) in lane/)
+  const anns = ctxText.match(/#(\d+) in agent/)
   const serial = anns ? Number(anns[1]) : 0
-  await call("lane_ack", { token: listener.token, msg_serial: serial })
+  await call("ack_announcement", { token: listener.token, msg_serial: serial })
   const after = await call("hook_poll", { session_id: "sess-listener", event: "Stop" })
   const afterText: string = after?.hookSpecificOutput?.additionalContext ?? ""
   check("acknowledging stops the redelivery",
@@ -465,131 +465,131 @@ let annSerial = 0
 // ── subagents inherit, and cost nothing (§8.2) ──────────────────────────
 {
   const par = await agent("parent-agent")
-  await call("lane_open", { token: par, lane: "sub-work", topic: "work with a helper" })
+  await call("open_space", { token: par, agent: "sub-work", topic: "work with a helper" })
   await call("vouch_child", { token: par, nonce: "helper-nonce-0123456789abcdef" })
   // A subagent names its parent at registration and joins nothing.
-  const sub = await call("register_lane", {
+  const sub = await call("register", {
     name: "helper-agent", session_id: "s-helper", parent: "parent-agent",
     // Vouched. `parent` alone is a claim anybody can make, and a subagent
     // inherits its parent's memberships, so the parent proves it with a
     // one-time nonce only it can issue.
     parent_nonce: "helper-nonce-0123456789abcdef",
   })
-  await call("ack_board", { token: sub.token })
+  await call("check_in", { token: sub.token })
 
-  const posted = await call("lane_post", { token: sub.token, lane: "sub-work", body: "progress" })
-  check("a subagent may speak in its parent's lane without joining",
+  const posted = await call("post", { token: sub.token, agent: "sub-work", body: "progress" })
+  check("a subagent may speak in its parent's agent without joining",
     typeof posted.serial === "number", JSON.stringify(posted))
 
   const b = await board(par)
-  const lane = (b.board?.channels ?? []).find((c: any) => c.id === "sub-work")
+  const subWork = (b.board?.spaces ?? []).find((c: any) => c.id === "sub-work")
   check("and is NOT counted as a second occupant",
-    lane !== undefined && lane.members.length === 1,
-    JSON.stringify(lane?.members))
+    subWork !== undefined && subWork.members.length === 1,
+    JSON.stringify(subWork?.members))
 }
 
-// ── the director: coordinator powers over channels (§8.1) ───────────────
+// ── the director: coordinator powers over spaces (§8.1) ───────────────
 {
   const owner = await agent("stuck-owner")
   const waiter = await agent("stuck-waiter")
-  await call("lane_open", { token: owner, lane: "stuck", topic: "locked work", exclusive: true })
-  await call("lane_join", { token: waiter, lane: "stuck" }) // queues
+  await call("open_space", { token: owner, agent: "stuck", topic: "locked work", exclusive: true })
+  await call("join_space", { token: waiter, agent: "stuck" }) // queues
 
   // Without the role, every director power is refused.
-  const denied = await fails("lane_force_release", { token: waiter, lane: "stuck" })
+  const denied = await fails("unlock_space", { token: waiter, agent: "stuck" })
   check("director powers are refused without the granted role",
     denied.includes("E_NOT_COORDINATOR"), denied || "(allowed!)")
 
   // Granted by a human through the admin path: no agent can promote itself.
-  // Same route web_e2e uses: LANES_ADMIN=1 escapes the interactive-terminal
+  // Same route web_e2e uses: DIBS_ADMIN=1 escapes the interactive-terminal
   // gate, and the password is piped, because readPassword reads stdin bytewise
   // rather than requiring a tty.
-  const lanesBin = process.env.LANES ?? `${home}/.local/bin/lanes`
+  const dibsBin = process.env.DIBS ?? `${home}/.local/bin/dibs`
   const adminCLI = (args: string[], input: string) => {
     const r = Bun.spawnSync({
-      cmd: [lanesBin, ...args],
+      cmd: [dibsBin, ...args],
       stdin: new TextEncoder().encode(input),
-      env: { ...process.env, LANES_ADDR: ADDR, LANES_DIR: dir_, LANES_ADMIN: "1" },
+      env: { ...process.env, DIBS_ADDR: ADDR, DIBS_DIR: dir_, DIBS_ADMIN: "1" },
       stdout: "pipe", stderr: "pipe",
     })
     return new TextDecoder().decode(r.stdout) + new TextDecoder().decode(r.stderr)
   }
-  const PW = "channel-e2e-password"
+  const PW = "space-e2e-password"
   adminCLI(["admin", "set-password"], `${PW}\n${PW}\n`)
 
-  const dirLane = await call("register_lane", { name: "director", session_id: "s-director" })
-  await call("ack_board", { token: dirLane.token })
+  const dirLane = await call("register", { name: "director", session_id: "s-director" })
+  await call("check_in", { token: dirLane.token })
   const grantOut = adminCLI(["admin", "coordinator", "director"], `${PW}\n`)
   check("a human can grant the coordinator role", /coordinator/i.test(grantOut) && !/error/i.test(grantOut),
     grantOut.trim().slice(0, 160))
 
-  const r = await call("lane_force_release", {
-    token: dirLane.token, lane: "stuck", note: "owner's machine died",
+  const r = await call("unlock_space", {
+    token: dirLane.token, agent: "stuck", note: "owner's machine died",
   })
-  check("a director can unstick a lane whose owner is gone", r.released === true, JSON.stringify(r))
+  check("a director can unstick an agent whose owner is gone", r.released === true, JSON.stringify(r))
   check("and the former owner is named, never silent", r.former_owner === "stuck-owner", String(r.former_owner))
 
   const after = await board(waiter)
-  const stuck = (after.board?.channels ?? []).find((c: any) => c.id === "stuck")
+  const stuck = (after.board?.spaces ?? []).find((c: any) => c.id === "stuck")
   check("the queued agent was admitted when the lock lifted",
     stuck !== undefined && stuck.members.some((m: any) => m.agent === "stuck-waiter"),
     JSON.stringify(stuck?.members))
 
-  // ── retiring a finished lane ───────────────────────────────────────────
+  // ── retiring a finished agent ───────────────────────────────────────────
   //
-  // A lane a human opened outlives its members on purpose, so nothing reclaims
-  // it and until lane_close nothing could end it at all. Exercised here rather
+  // An agent a human opened outlives its members on purpose, so nothing reclaims
+  // it and until close_space nothing could end it at all. Exercised here rather
   // than only in units because the interesting half is the ROLE: the grant is a
   // human act through the admin CLI, and a unit test that sets Role directly
   // proves nothing about whether an agent can reach this over MCP.
   const closerOwner = await agent("closer-owner")
-  await call("lane_open", { token: closerOwner, lane: "finished", topic: "work that ended" })
+  await call("open_space", { token: closerOwner, agent: "finished", topic: "work that ended" })
 
-  const occupied = await fails("lane_close", { token: dirLane.token, lane: "finished" })
-  check("a coordinator may not close a lane with somebody in it",
+  const occupied = await fails("close_space", { token: dirLane.token, agent: "finished" })
+  check("a coordinator may not close an agent with somebody in it",
     /member/i.test(occupied), occupied.slice(0, 200) || "(allowed!)")
 
-  await call("lane_leave", { token: closerOwner, lane: "finished" })
+  await call("leave_space", { token: closerOwner, agent: "finished" })
   const stillThere = await board(dirLane.token)
-  check("a human-opened lane is not reclaimed when it empties",
-    (stillThere.board?.channels ?? []).some((c: any) => c.id === "finished"))
+  check("a human-opened agent is not reclaimed when it empties",
+    (stillThere.board?.spaces ?? []).some((c: any) => c.id === "finished"))
 
   // A STRANGER: neither coordinator nor the agent that opened it.
   const stranger = await agent("closer-stranger")
-  const refusedRole = await fails("lane_close", { token: stranger, lane: "finished" })
-  check("a stranger may not close somebody else's lane",
+  const refusedRole = await fails("close_space", { token: stranger, agent: "finished" })
+  check("a stranger may not close somebody else's agent",
     refusedRole.includes("E_NOT_COORDINATOR"), refusedRole.slice(0, 200) || "(allowed!)")
 
-  // The agent that OPENED it may retire it without the role: lane_open is
-  // unprivileged, so a lane an agent could create and never end was a hole, and
-  // the refusal called its own lane "another agent's".
-  const byOwner = await call("lane_close", { token: closerOwner, lane: "finished", note: "mine, done" })
-  check("the agent that opened a lane can close it", byOwner.closed === true, JSON.stringify(byOwner))
+  // The agent that OPENED it may retire it without the role: open_space is
+  // unprivileged, so an agent an agent could create and never end was a hole, and
+  // the refusal called its own agent "another agent's".
+  const byOwner = await call("close_space", { token: closerOwner, agent: "finished", note: "mine, done" })
+  check("the agent that opened an agent can close it", byOwner.closed === true, JSON.stringify(byOwner))
 
   // And a coordinator can retire one that is not theirs.
-  await call("lane_open", { token: closerOwner, lane: "finished-2", topic: "more work that ended" })
-  await call("lane_leave", { token: closerOwner, lane: "finished-2" })
-  const closed = await call("lane_close", {
-    token: dirLane.token, lane: "finished-2", note: "done with it",
+  await call("open_space", { token: closerOwner, agent: "finished-2", topic: "more work that ended" })
+  await call("leave_space", { token: closerOwner, agent: "finished-2" })
+  const closed = await call("close_space", {
+    token: dirLane.token, agent: "finished-2", note: "done with it",
   })
-  check("a coordinator can retire somebody else's finished lane", closed.closed === true, JSON.stringify(closed))
+  check("a coordinator can retire somebody else's finished agent", closed.closed === true, JSON.stringify(closed))
   const gone = await board(dirLane.token)
   check("and it is actually gone from the board",
-    !(gone.board?.channels ?? []).some((c: any) => c.id === "finished" || c.id === "finished-2"))
+    !(gone.board?.spaces ?? []).some((c: any) => c.id === "finished" || c.id === "finished-2"))
 }
 
 // ── the threshold is enforced, as an invariant ──────────────────────────
 // Checked over every suggestion the run produced rather than over one chosen
 // pair: "joined" must imply the score cleared the configured bar. This is what
 // catches a threshold comparison being loosened or removed, which is the
-// failure that silently collapses an entire fleet into one lane.
+// failure that silently collapses an entire fleet into one agent.
 {
   check("suggestions were actually produced (else the checks below are vacuous)",
     seenSuggestions.length > 0, `saw ${seenSuggestions.length}`)
   const joinedBelowBar = seenSuggestions.filter((s) => s.action === "joined" && s.score < JOIN_BAR)
   check("nothing was ever auto-joined below the configured threshold",
     joinedBelowBar.length === 0,
-    JSON.stringify(joinedBelowBar.map((s: any) => ({ lane: s.lane, score: s.score }))).slice(0, 300))
+    JSON.stringify(joinedBelowBar.map((s: any) => ({ agent: s.agent, score: s.score }))).slice(0, 300))
   // INVERTED deliberately. Nothing is auto-joined on a score alone any more; only
   // DECLARED overlap does that. So the invariant to police is the opposite one:
   // every automatic join must point at something both agents actually stated.
@@ -597,18 +597,18 @@ let annSerial = 0
     (s: any) => s.action === "joined" && (s.shared_refs ?? []).length === 0)
   check("nothing was auto-joined on a score alone",
     joinedOnScoreAlone.length === 0,
-    JSON.stringify(joinedOnScoreAlone.map((s: any) => ({ lane: s.lane, score: s.score }))).slice(0, 300))
+    JSON.stringify(joinedOnScoreAlone.map((s: any) => ({ agent: s.agent, score: s.score }))).slice(0, 300))
 }
 
 // ── director_required: matching advises, admission decides (§8.1) ───────
 // With the gate on, a match above the join bar must NOT create a membership.
-// The agent has to be told who to ask, or it is left wondering why the lane it
+// The agent has to be told who to ask, or it is left wondering why the agent it
 // clearly belongs in never opened to it.
 {
-  const dirDir = mkdtempSync(join(tmpdir(), "lanes-channel-e2e-gated-"))
+  const dirDir = mkdtempSync(join(tmpdir(), "agents-space-e2e-gated-"))
   const ADDR3 = `127.0.0.1:${Number(process.env.PORT ?? 4934) + 2}`
   const d3 = Bun.spawn({
-    cmd: [lanesd, "-dir", dirDir, "-addr", ADDR3, "-match-repo", repo,
+    cmd: [dibd, "-dir", dirDir, "-addr", ADDR3, "-match-repo", repo,
           // Measured, not fixed: this daemon scores the same live repository,
           // so a constant here rots exactly as the one above did.
           // A bar of its own, deliberately NOT the measured JOIN_BAR.
@@ -637,7 +637,7 @@ let annSerial = 0
     const c3 = async (name: string, args: Record<string, unknown>) => {
       const res = await fetch(`http://${ADDR3}/mcp`, {
         method: "POST",
-        headers: { "content-type": "application/json", "X-Lanes-Local": sec3 },
+        headers: { "content-type": "application/json", "X-Dibs-Local": sec3 },
         body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call", params: { name, arguments: args } }),
       })
       const b = await res.json() as any
@@ -645,8 +645,8 @@ let annSerial = 0
       return JSON.parse(b.result.content[0].text)
     }
     const mk3 = async (n: string) => {
-      const r = await c3("register_lane", { name: n, session_id: `s3-${n}` })
-      await c3("ack_board", { token: r.token })
+      const r = await c3("register", { name: n, session_id: `s3-${n}` })
+      await c3("check_in", { token: r.token })
       return r.token
     }
     const first = await mk3("g-first")
@@ -656,14 +656,14 @@ let annSerial = 0
     // This line was missing, and the join bar is measured from that scenario and
     // applied to this one, so the two have to BE the same scenario or the gate
     // is being judged against a bar taken from something else. It passed anyway
-    // while a candidate was scored against the lane's merged footprint, which
+    // while a candidate was scored against the agent's merged footprint, which
     // ignored member declarations and so made the two identical by accident.
     // Now that a candidate is judged against the closest live declaration, an
     // opener that has declared nothing is a materially different case, and the
     // mismatch became a failure. The bar was always being applied to a scenario
     // it had not measured.
-    await c3("set_slot", { token: first, text: "enforcing exclusive claims in the guard" })
-    await c3("lane_open", { token: first, lane: "guard-work", topic: "claim guard denies edits to claimed paths" })
+    await c3("declare", { token: first, text: "enforcing exclusive claims in the guard" })
+    await c3("open_space", { token: first, agent: "guard-work", topic: "claim guard denies edits to claimed paths" })
 
     // Wait for an ELIGIBLE match, not merely a visible one.
     //
@@ -679,16 +679,16 @@ let annSerial = 0
     // loop now waits for the decision the test is about, and if it never comes
     // the failure says the score never cleared rather than blaming the gate.
     //
-    // The slot id is stable because set_slot WITHOUT one adds a declaration
+    // The slot id is stable because declare WITHOUT one adds a declaration
     // every time: sixty polls would leave sixty slots and eventually hit the
-    // per-lane cap, which is a different failure wearing this test's name.
+    // per-agent cap, which is a different failure wearing this test's name.
     let sug: any
     for (let i = 0; i < 60; i++) {
-      const r = await c3("set_slot", {
+      const r = await c3("declare", {
         token: second, slot_id: "s1",
         text: "guard path enforcement for exclusive claims",
       })
-      const m = (r.lanes ?? []).find((l: any) => l.lane === "guard-work")
+      const m = (r.agents ?? []).find((l: any) => l.agent === "guard-work")
       if (m) sug = m
       if (m && m.action !== "consider") break
       await Bun.sleep(250)
@@ -701,7 +701,7 @@ let annSerial = 0
       check("but it does NOT auto-join", sug.action === "awaiting_director",
         `action=${sug.action} score=${sug.score}`)
       check("and the agent is told what to do about it",
-        typeof sug.hint === "string" && /lane_admit/.test(sug.hint), sug.hint ?? "(no hint)")
+        typeof sug.hint === "string" && /admit/.test(sug.hint), sug.hint ?? "(no hint)")
     }
   } finally {
     d3.kill()
@@ -720,10 +720,10 @@ let annSerial = 0
 // match must now come back as advice rather than an auto-join. That cannot pass
 // vacuously: if the threshold stops being consulted, this fails immediately.
 {
-  const dir2 = mkdtempSync(join(tmpdir(), "lanes-channel-e2e-hi-"))
+  const dir2 = mkdtempSync(join(tmpdir(), "agents-space-e2e-hi-"))
   const ADDR2 = `127.0.0.1:${Number(process.env.PORT ?? 4934) + 1}`
   const d2 = Bun.spawn({
-    cmd: [lanesd, "-dir", dir2, "-addr", ADDR2,
+    cmd: [dibd, "-dir", dir2, "-addr", ADDR2,
           "-match-repo", repo, "-match-join", "0.95", "-match-notify", "0.05"],
     stdout: "ignore", stderr: "ignore",
   })
@@ -735,7 +735,7 @@ let annSerial = 0
     const call2 = async (name: string, args: Record<string, unknown>) => {
       const res = await fetch(`http://${ADDR2}/mcp`, {
         method: "POST",
-        headers: { "content-type": "application/json", "X-Lanes-Local": sec2 },
+        headers: { "content-type": "application/json", "X-Dibs-Local": sec2 },
         body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call", params: { name, arguments: args } }),
       })
       const b = await res.json() as any
@@ -743,19 +743,19 @@ let annSerial = 0
       return JSON.parse(b.result.content[0].text)
     }
     const mk = async (n: string) => {
-      const r = await call2("register_lane", { name: n, session_id: `s2-${n}` })
-      await call2("ack_board", { token: r.token })
+      const r = await call2("register", { name: n, session_id: `s2-${n}` })
+      await call2("check_in", { token: r.token })
       return r.token
     }
     const one = await mk("hi-one")
     const two = await mk("hi-two")
-    await call2("lane_open", { token: one, lane: "guard-work", topic: "claim guard denies edits to claimed paths" })
+    await call2("open_space", { token: one, agent: "guard-work", topic: "claim guard denies edits to claimed paths" })
 
     // Retry while the async index finishes; the daemon serves before it is ready.
     let sug: any
     for (let i = 0; i < 60; i++) {
-      const r = await call2("set_slot", { token: two, text: "guard path enforcement for exclusive claims" })
-      sug = (r.lanes ?? []).find((l: any) => l.lane === "guard-work")
+      const r = await call2("declare", { token: two, text: "guard path enforcement for exclusive claims" })
+      sug = (r.agents ?? []).find((l: any) => l.agent === "guard-work")
       if (sug) break
       await Bun.sleep(250)
     }
@@ -773,7 +773,7 @@ let annSerial = 0
   }
 }
 
-// ── tier 2 against a service Lanes did not write ────────────────────────
+// ── tier 2 against a service Dibs did not write ────────────────────────
 // The client is otherwise only ever tested against our own test double and our
 // own reference server: both ours, so both could share a misreading of the
 // spec. This runs the DAEMON against whatever OpenAI-compatible service is up
@@ -798,11 +798,11 @@ let annSerial = 0
     console.log(`  \x1b[33m·\x1b[0m tier-2 interop skipped: no embeddings service at ${embedURL}`)
   } else {
     // A TINY repository, not this one. The property under test is interop,
-    // that Lanes drives a service it did not write, and indexing 438 chunks of
-    // Lanes through a real model to prove it costs eight minutes and tests
+    // that Dibs drives a service it did not write, and indexing 438 chunks of
+    // Dibs through a real model to prove it costs eight minutes and tests
     // throughput instead. Three files prove the same thing in seconds.
-    const tiny = mkdtempSync(join(tmpdir(), "lanes-embed-repo-"))
-    writeFileSync(join(tiny, "guard.go"), "package guard\n// deny edits to paths claimed exclusively by another lane\n")
+    const tiny = mkdtempSync(join(tmpdir(), "agents-embed-repo-"))
+    writeFileSync(join(tiny, "guard.go"), "package guard\n// deny edits to paths claimed exclusively by another agent\n")
     writeFileSync(join(tiny, "styles.css"), "/* board fonts, colours and layout */\n")
     writeFileSync(join(tiny, "README.md"), "# tiny fixture\n")
     for (const args of [["init", "-q"], ["add", "-A"],
@@ -810,10 +810,10 @@ let annSerial = 0
       Bun.spawnSync({ cmd: ["git", "-C", tiny, ...args], stdout: "ignore", stderr: "ignore" })
     }
 
-    const d2 = mkdtempSync(join(tmpdir(), "lanes-embed-e2e-"))
+    const d2 = mkdtempSync(join(tmpdir(), "agents-embed-e2e-"))
     const ADDR3 = `127.0.0.1:${Number(process.env.PORT ?? 4934) + 2}`
     const proc = Bun.spawn({
-      cmd: [lanesd, "-dir", d2, "-addr", ADDR3,
+      cmd: [dibd, "-dir", d2, "-addr", ADDR3,
             "-match-repo", tiny, "-match-join", "0.40", "-match-notify", "0.20",
             "-match-embed-url", embedURL, "-match-embed-model", embedModel],
       stdout: "ignore", stderr: "ignore",
@@ -826,7 +826,7 @@ let annSerial = 0
       const c3 = async (name: string, args: Record<string, unknown>) => {
         const res = await fetch(`http://${ADDR3}/mcp`, {
           method: "POST",
-          headers: { "content-type": "application/json", "X-Lanes-Local": sec },
+          headers: { "content-type": "application/json", "X-Dibs-Local": sec },
           body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call", params: { name, arguments: args } }),
         })
         const b = await res.json() as any
@@ -834,20 +834,20 @@ let annSerial = 0
         return JSON.parse(b.result.content[0].text)
       }
       const mk = async (n: string) => {
-        const r = await c3("register_lane", { name: n, session_id: `e-${n}` })
-        await c3("ack_board", { token: r.token })
+        const r = await c3("register", { name: n, session_id: `e-${n}` })
+        await c3("check_in", { token: r.token })
         return r.token
       }
       const one = await mk("embed-one")
       const two = await mk("embed-two")
-      await c3("lane_open", { token: one, lane: "guard-work", topic: "deny edits to exclusively claimed paths" })
+      await c3("open_space", { token: one, agent: "guard-work", topic: "deny edits to exclusively claimed paths" })
 
       // The daemon answers while indexing runs, which is itself part of the
       // contract, so poll rather than waiting for a ready signal.
       let sug: any
       for (let i = 0; i < 90; i++) {
-        const r = await c3("set_slot", { token: two, text: "guard path enforcement for exclusive claims" })
-        sug = (r.lanes ?? []).find((l: any) => l.lane === "guard-work")
+        const r = await c3("declare", { token: two, text: "guard path enforcement for exclusive claims" })
+        sug = (r.agents ?? []).find((l: any) => l.agent === "guard-work")
         if (sug) break
         await Bun.sleep(2000)
       }
@@ -856,16 +856,16 @@ let annSerial = 0
       if (sug) {
         check("the match carries the model in its provenance",
           typeof sug.score === "number" && sug.score > 0, JSON.stringify(sug).slice(0, 200))
-        // show_board on THIS daemon. `board()` is bound to the main one, and a
+        // board on THIS daemon. `board()` is bound to the main one, and a
         // token from a different daemon is meaningless there.
         const res3 = await fetch(`http://${ADDR3}/mcp`, {
           method: "POST",
-          headers: { "content-type": "application/json", "X-Lanes-Local": sec },
+          headers: { "content-type": "application/json", "X-Dibs-Local": sec },
           body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call",
-                                 params: { name: "show_board", arguments: { token: one } } }),
+                                 params: { name: "board", arguments: { token: one } } }),
         })
-        const b = ((await res3.json()) as any).result?._meta?.["com.lanes/panel"] ?? {}
-        const ch = (b.board?.channels ?? []).find((c: any) => c.id === "guard-work")
+        const b = ((await res3.json()) as any).result?._meta?.["com.dibs/panel"] ?? {}
+        const ch = (b.board?.spaces ?? []).find((c: any) => c.id === "guard-work")
         const auto = (ch?.members ?? []).find((m: any) => m.auto)
         check("the recorded scorer names the model, not the endpoint",
           !!auto && typeof auto.scorer === "string" && auto.scorer.startsWith("embed:"),
@@ -886,9 +886,9 @@ let annSerial = 0
 // for eviction: all three are changes the agent did not cause and cannot
 // predict, and all three were silent.
 {
-  const d3 = mkdtempSync(join(tmpdir(), "lanes-director-"))
+  const d3 = mkdtempSync(join(tmpdir(), "agents-director-"))
   const ADDR5 = `127.0.0.1:${Number(process.env.PORT ?? 4934) + 4}`
-  const tiny = mkdtempSync(join(tmpdir(), "lanes-director-repo-"))
+  const tiny = mkdtempSync(join(tmpdir(), "agents-director-repo-"))
   // The filename must share a token with what the agents declare: tier 0
   // matches words against PATHS, so "token validation retry" against a file
   // called auth.go has nothing to go on (that case is covered separately, as
@@ -899,7 +899,7 @@ let annSerial = 0
     Bun.spawnSync({ cmd: ["git", "-C", tiny, ...args], stdout: "ignore", stderr: "ignore" })
   }
   const proc = Bun.spawn({
-    cmd: [lanesd, "-dir", d3, "-addr", ADDR5, "-match-repo", tiny,
+    cmd: [dibd, "-dir", d3, "-addr", ADDR5, "-match-repo", tiny,
           "-match-join", String(JOIN_BAR), "-match-director-required"],
     stdout: "ignore", stderr: "ignore",
   })
@@ -911,7 +911,7 @@ let annSerial = 0
     const c5 = async (name: string, args: Record<string, unknown>) => {
       const res = await fetch(`http://${ADDR5}/mcp`, {
         method: "POST",
-        headers: { "content-type": "application/json", "X-Lanes-Local": sec },
+        headers: { "content-type": "application/json", "X-Dibs-Local": sec },
         body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call", params: { name, arguments: args } }),
       })
       const b = await res.json() as any
@@ -919,45 +919,45 @@ let annSerial = 0
       return JSON.parse(b.result.content[0].text)
     }
     const mk = async (n: string, sid: string) => {
-      const r = await c5("register_lane", { name: n, session_id: sid })
-      await c5("ack_board", { token: r.token })
+      const r = await c5("register", { name: n, session_id: sid })
+      await c5("check_in", { token: r.token })
       return r.token
     }
     const dir = await mk("director", "dsid")
-    await c5("lane_open", { token: dir, lane: "auth-work", topic: "token validation and retry in auth" })
+    await c5("open_space", { token: dir, agent: "auth-work", topic: "token validation and retry in auth" })
     // Only a human may grant the role; no agent can promote itself.
-    Bun.spawnSync({ cmd: [process.env.LANES ?? `${home}/.local/bin/lanes`, "admin", "set-password"],
+    Bun.spawnSync({ cmd: [process.env.DIBS ?? `${home}/.local/bin/dibs`, "admin", "set-password"],
                     stdin: new TextEncoder().encode("dir-e2e-12345\ndir-e2e-12345\n"),
-                    env: { ...process.env, LANES_ADMIN: "1", LANES_DIR: d3, LANES_ADDR: ADDR5 },
+                    env: { ...process.env, DIBS_ADMIN: "1", DIBS_DIR: d3, DIBS_ADDR: ADDR5 },
                     stdout: "ignore", stderr: "ignore" })
     await fetch(`http://${ADDR5}/api/admin/role`, {
       method: "POST",
-      headers: { "content-type": "application/json", "X-Lanes-Local": sec, "X-Lanes-Admin": "dir-e2e-12345" },
-      body: JSON.stringify({ lane: "director", role: "coordinator" }),
+      headers: { "content-type": "application/json", "X-Dibs-Local": sec, "X-Dibs-Admin": "dir-e2e-12345" },
+      body: JSON.stringify({ agent: "director", role: "coordinator" }),
     })
 
     const worker = await mk("worker", "wsid")
     let decl: any
     for (let i = 0; i < 90; i++) {
-      decl = await c5("set_slot", { token: worker, text: "fixing the token validation retry loop" })
-      if ((decl.lanes ?? []).length) break
+      decl = await c5("declare", { token: worker, text: "fixing the token validation retry loop" })
+      if ((decl.agents ?? []).length) break
       await Bun.sleep(1000)
     }
-    const m = (decl.lanes ?? []).find((l: any) => l.lane === "auth-work")
+    const m = (decl.agents ?? []).find((l: any) => l.agent === "auth-work")
     check("a director gate holds the match instead of joining it",
       m?.action === "awaiting_director", JSON.stringify(m ?? {}).slice(0, 200))
     check("and names the tool that unblocks it",
-      /lane_admit/.test(String(m?.hint)), String(m?.hint))
+      /admit/.test(String(m?.hint)), String(m?.hint))
 
-    await c5("lane_admit", { token: dir, lane: "auth-work", to: "worker" })
+    await c5("admit", { token: dir, agent: "auth-work", to: "worker" })
     const poll = await c5("hook_poll", { session_id: "wsid", event: "Stop" })
     const txt: string = poll?.hookSpecificOutput?.additionalContext ?? ""
     check("the admitted agent is TOLD, through the wake path",
-      /admitted to lane "auth-work" by director/.test(txt), txt.slice(0, 200) || "(silent)")
+      /admitted to agent "auth-work" by director/.test(txt), txt.slice(0, 200) || "(silent)")
     check("and told what it may now do", /you may start/.test(txt), txt.slice(0, 200))
 
     // The wake path is token-less (a lifecycle hook has no token) so any
-    // holder of the coordination secret can poll another lane's session. It
+    // holder of the coordination secret can poll another agent's session. It
     // therefore may not CONSUME anything: reading it is repeatable and changes
     // nothing, or a peer could spend a victim's notices on its behalf.
     //
@@ -968,23 +968,23 @@ let annSerial = 0
     // acknowledging the board, which no peer can do for it.
     const again = await c5("hook_poll", { session_id: "wsid", event: "Stop" })
     check("a peer polling the wake path cannot consume the notice",
-      /admitted to lane "auth-work" by director/.test(again?.hookSpecificOutput?.additionalContext ?? ""),
+      /admitted to agent "auth-work" by director/.test(again?.hookSpecificOutput?.additionalContext ?? ""),
       String(again?.hookSpecificOutput?.additionalContext ?? "").slice(0, 120) || "(silent)")
 
-    const ackd = await c5("ack_board", { token: worker })
-    check("the agent's own ack_board is what delivers it authoritatively",
-      (ackd.lane_updates ?? []).some((u: string) => /admitted to lane "auth-work"/.test(u)),
-      JSON.stringify(ackd.lane_updates ?? []).slice(0, 160))
+    const ackd = await c5("check_in", { token: worker })
+    check("the agent's own check_in is what delivers it authoritatively",
+      (ackd.agent_updates ?? []).some((u: string) => /admitted to agent "auth-work"/.test(u)),
+      JSON.stringify(ackd.agent_updates ?? []).slice(0, 160))
 
     const settled = await c5("hook_poll", { session_id: "wsid", event: "Stop" })
     check("and having acknowledged it, the agent stops being told",
-      !/admitted to lane/.test(settled?.hookSpecificOutput?.additionalContext ?? ""),
+      !/admitted to agent/.test(settled?.hookSpecificOutput?.additionalContext ?? ""),
       String(settled?.hookSpecificOutput?.additionalContext ?? "").slice(0, 120))
 
-    await c5("lane_evict", { token: dir, lane: "auth-work", to: "worker" })
+    await c5("evict", { token: dir, agent: "auth-work", to: "worker" })
     const ev = await c5("hook_poll", { session_id: "wsid", event: "Stop" })
     check("eviction reaches the agent too, with what to do about it",
-      /removed from lane "auth-work"/.test(ev?.hookSpecificOutput?.additionalContext ?? "") &&
+      /removed from agent "auth-work"/.test(ev?.hookSpecificOutput?.additionalContext ?? "") &&
       /stop work there/.test(ev?.hookSpecificOutput?.additionalContext ?? ""),
       String(ev?.hookSpecificOutput?.additionalContext ?? "").slice(0, 200) || "(silent)")
   } finally {
@@ -995,7 +995,7 @@ let annSerial = 0
 }
 
 // ── silence is never an answer ──────────────────────────────────────────
-// `set_slot` used to return {"ok":true,"slot_id":"s1"} whether matching was
+// `declare` used to return {"ok":true,"slot_id":"s1"} whether matching was
 // off, still indexing, degraded, or working and genuinely found nothing. Four
 // unrelated situations, one identical reply: an agent could not tell whether
 // to wait, to reconfigure, or to get on with it alone.
@@ -1003,12 +1003,12 @@ let annSerial = 0
   // Words that name real files here, so the scorer HAS an opinion; the point of
   // this check is the case where it compared and found nothing close, which is
   // different from the no-opinion case below.
-  const r = await call("set_slot", { token: alpha, text: "blobstore retention and eviction limits" })
+  const r = await call("declare", { token: alpha, text: "blobstore retention and eviction limits" })
   check("a declaration always says whether matching ran",
     typeof r.matching === "string" && r.matching.length > 0, JSON.stringify(r).slice(0, 200))
   // Actionable guidance is the invariant; WHICH field carries it depends on the
   // outcome. This asserted `matching_hint` specifically, and started failing the
-  // moment a declaration that matched nothing began opening a lane instead of
+  // moment a declaration that matched nothing began opening an agent instead of
   // falling through: the guidance moved to `lanes_hint` and got better, while
   // the check reported a regression. Assert the property, not the field.
   const guidance = String(r.lanes_hint ?? r.matching_hint ?? "")
@@ -1019,7 +1019,7 @@ let annSerial = 0
   // built on no evidence: tier 0 reads FILE PATHS, so a declaration naming no
   // file in the repo predicts nothing at all.
   {
-    const blind = await call("set_slot", { token: beta, text: "zzqq wibble frobnicate" })
+    const blind = await call("declare", { token: beta, text: "zzqq wibble frobnicate" })
     check("words that name no file are reported as no-opinion, not as solitude",
       blind.matching === "no-opinion", `phase=${blind.matching}`)
     check("and the hint says explicitly it is not a finding of working alone",
@@ -1033,9 +1033,9 @@ let annSerial = 0
 
   // The same call against a daemon with NO repository configured must be
   // distinguishable: that is the whole point.
-  const dOff = mkdtempSync(join(tmpdir(), "lanes-nomatch-"))
+  const dOff = mkdtempSync(join(tmpdir(), "agents-nomatch-"))
   const ADDR4 = `127.0.0.1:${Number(process.env.PORT ?? 4934) + 3}`
-  const off = Bun.spawn({ cmd: [lanesd, "-dir", dOff, "-addr", ADDR4], stdout: "ignore", stderr: "ignore" })
+  const off = Bun.spawn({ cmd: [dibd, "-dir", dOff, "-addr", ADDR4], stdout: "ignore", stderr: "ignore" })
   try {
     let sec4 = ""
     for (let i = 0; i < 60 && !sec4; i++) {
@@ -1044,14 +1044,14 @@ let annSerial = 0
     const c4 = async (name: string, args: Record<string, unknown>) => {
       const res = await fetch(`http://${ADDR4}/mcp`, {
         method: "POST",
-        headers: { "content-type": "application/json", "X-Lanes-Local": sec4 },
+        headers: { "content-type": "application/json", "X-Dibs-Local": sec4 },
         body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call", params: { name, arguments: args } }),
       })
       return JSON.parse(((await res.json()) as any).result.content[0].text)
     }
-    const t4 = (await c4("register_lane", { name: "solo", session_id: "s4" })).token
-    await c4("ack_board", { token: t4 })
-    const r4 = await c4("set_slot", { token: t4, text: "fixing the auth retry loop" })
+    const t4 = (await c4("register", { name: "solo", session_id: "s4" })).token
+    await c4("check_in", { token: t4 })
+    const r4 = await c4("declare", { token: t4, text: "fixing the auth retry loop" })
     check("an unconfigured daemon says matching is OFF, not silent",
       r4.matching === "off", `phase=${r4.matching}`)
     check("and names the flag that turns it on",
@@ -1059,8 +1059,8 @@ let annSerial = 0
 
     // The same answer is available to a human, over HTTP, without a token.
     const st = await (await fetch(`http://${ADDR4}/api/match-status`,
-      { headers: { "X-Lanes-Local": sec4 } })).json() as any
-    check("the daemon exposes why, for `lanes doctor`", st.phase === "off", JSON.stringify(st).slice(0, 160))
+      { headers: { "X-Dibs-Local": sec4 } })).json() as any
+    check("the daemon exposes why, for `dibs doctor`", st.phase === "off", JSON.stringify(st).slice(0, 160))
   } finally {
     off.kill()
     try { rmSync(dOff, { recursive: true, force: true }) } catch {}
@@ -1070,7 +1070,7 @@ let annSerial = 0
 // ── it is all still replayable ──────────────────────────────────────────
 {
   const verify = Bun.spawnSync({
-    cmd: [process.env.LANES ?? `${home}/.local/bin/lanes`, "verify", `${dir}/ledger.jsonl`],
+    cmd: [process.env.DIBS ?? `${home}/.local/bin/dibs`, "verify", `${dir}/ledger.jsonl`],
     stdout: "pipe", stderr: "pipe",
   })
   const out = new TextDecoder().decode(verify.stdout) + new TextDecoder().decode(verify.stderr)
@@ -1080,44 +1080,44 @@ let annSerial = 0
 
 // ── context loss must not cost an agent its place ───────────────────────
 // Context loss is the most common thing that happens to an agent, and a token
-// rotation must not silently drop what its lane held. Everything has to
+// rotation must not silently drop what its agent held. Everything has to
 // survive: exclusive ownership, membership, queue position, and: the one it
 // cannot reconstruct for itself: what it still owes an acknowledgement on.
 {
-  const own = await call("register_lane", { name: "re-owner", session_id: "re1" })
-  await call("ack_board", { token: own.token })
-  const wait = await call("register_lane", { name: "re-waiter", session_id: "re2" })
-  await call("ack_board", { token: wait.token })
-  const mem = await call("register_lane", { name: "re-member", session_id: "re3" })
-  await call("ack_board", { token: mem.token })
+  const own = await call("register", { name: "re-owner", session_id: "re1" })
+  await call("check_in", { token: own.token })
+  const wait = await call("register", { name: "re-waiter", session_id: "re2" })
+  await call("check_in", { token: wait.token })
+  const mem = await call("register", { name: "re-member", session_id: "re3" })
+  await call("check_in", { token: mem.token })
 
-  // Two lanes, because one cannot hold both states: an exclusive lane QUEUES a
+  // Two agents, because one cannot hold both states: an exclusive agent QUEUES a
   // joiner rather than admitting it, so "a member who owes an acknowledgement"
-  // and "an agent waiting in a queue" have to live in different lanes. Built
+  // and "an agent waiting in a queue" have to live in different agents. Built
   // without a coordinator so this block stands on its own.
-  await call("lane_open", { token: own.token, lane: "re-locked", topic: "single-writer work", exclusive: true })
-  const queued = await call("lane_join", { token: wait.token, lane: "re-locked" })
+  await call("open_space", { token: own.token, agent: "re-locked", topic: "single-writer work", exclusive: true })
+  const queued = await call("join_space", { token: wait.token, agent: "re-locked" })
   check("the waiter is queued behind the owner", queued.queued === true, JSON.stringify(queued))
 
-  await call("lane_open", { token: own.token, lane: "re-lane", topic: "work that outlives a session" })
-  await call("lane_join", { token: mem.token, lane: "re-lane" })
-  const ann = await call("lane_announce", { token: own.token, lane: "re-lane", body: "re-lane: FREEZE the parser" })
+  await call("open_space", { token: own.token, agent: "re-agent", topic: "work that outlives a session" })
+  await call("join_space", { token: mem.token, agent: "re-agent" })
+  const ann = await call("announce", { token: own.token, agent: "re-agent", body: "re-agent: FREEZE the parser" })
 
   // All three lose context and come back the documented way: same name, same
   // session id, fresh token.
-  const own2 = await call("register_lane", { name: "re-owner", session_id: "re1" })
-  const wait2 = await call("register_lane", { name: "re-waiter", session_id: "re2" })
-  const mem2 = await call("register_lane", { name: "re-member", session_id: "re3" })
+  const own2 = await call("register", { name: "re-owner", session_id: "re1" })
+  const wait2 = await call("register", { name: "re-waiter", session_id: "re2" })
+  const mem2 = await call("register", { name: "re-member", session_id: "re3" })
   check("reattaching says so", own2.reattached === true, JSON.stringify(own2).slice(0, 120))
   check("and rotates the token", own2.token !== own.token)
 
   const b = await board(own2.token)
-  const chans = b.board?.channels ?? []
+  const chans = b.board?.spaces ?? []
   const locked = chans.find((c: any) => c.id === "re-locked")
-  const lane = chans.find((c: any) => c.id === "re-lane")
+  const reAgent = chans.find((c: any) => c.id === "re-agent")
   check("exclusive ownership survives a token rotation", locked?.owner === "re-owner", JSON.stringify(locked))
   check("queue position survives", (locked?.queue ?? []).includes("re-waiter"), JSON.stringify(locked?.queue))
-  check("membership survives", (lane?.members ?? []).some((m: any) => m.agent === "re-member"), JSON.stringify(lane))
+  check("membership survives", (reAgent?.members ?? []).some((m: any) => m.agent === "re-member"), JSON.stringify(reAgent))
 
   // The obligation is the one an agent cannot reconstruct, so it must be
   // PULLABLE with the new token, not merely still true in the daemon.
@@ -1125,25 +1125,25 @@ let annSerial = 0
   const mine = (owed.announcements ?? []).filter((a: any) => /FREEZE the parser/.test(a.body ?? ""))
   check("a reattached agent can ask what it still owes", mine.length === 1,
     JSON.stringify(owed.announcements ?? []).slice(0, 200))
-  check("and the obligation names the lane it belongs to", mine[0]?.lane === "re-lane", mine[0]?.lane)
+  check("and the obligation names the agent it belongs to", mine[0]?.agent === "re-agent", mine[0]?.agent)
 
   // Acking what you owe must NOT be gated on the board: an agent could
   // otherwise be stuck owing something it is not allowed to answer.
-  const cleared = await call("lane_ack", { token: mem2.token, msg_serial: ann.serial })
+  const cleared = await call("ack_announcement", { token: mem2.token, msg_serial: ann.serial })
   check("and can clear it with the new token, ungated", cleared.acked === true, JSON.stringify(cleared))
 
   // The strongest act in the system IS gated. A reattached agent has read
   // nothing, and an announcement obliges every member to answer it.
-  const early = await fails("lane_announce", {
-    token: own2.token, lane: "re-lane", body: "should not land",
+  const early = await fails("announce", {
+    token: own2.token, agent: "re-agent", body: "should not land",
   })
   check("but announcing before reading the board is refused",
     /E_MUST_ACK_BOARD/.test(early), early.slice(0, 160))
-  await call("ack_board", { token: own2.token })
-  const after = await call("lane_announce", { token: own2.token, lane: "re-lane", body: "now it lands" })
+  await call("check_in", { token: own2.token })
+  const after = await call("announce", { token: own2.token, agent: "re-agent", body: "now it lands" })
   check("and allowed once it has", typeof after.serial === "number", JSON.stringify(after).slice(0, 120))
   // Posting stays ungated on purpose: a remark obliges nobody.
-  await call("ack_board", { token: wait2.token })
+  await call("check_in", { token: wait2.token })
 }
 
 // ── an announcement waiting on somebody who is not there ────────────────
@@ -1153,23 +1153,23 @@ let annSerial = 0
 // spends its retry budget and never reaches "unanswered": it sits at
 // "awaiting ack" indefinitely, looking healthy, while nothing can arrive.
 {
-  const say = await call("register_lane", { name: "bl-sender", session_id: "bl1" })
-  await call("ack_board", { token: say.token })
-  const here = await call("register_lane", { name: "bl-present", session_id: "bl2" })
-  await call("ack_board", { token: here.token })
+  const say = await call("register", { name: "bl-sender", session_id: "bl1" })
+  await call("check_in", { token: say.token })
+  const here = await call("register", { name: "bl-present", session_id: "bl2" })
+  await call("check_in", { token: here.token })
   // A real process, so its death is detected by the sweep's pid probe rather
   // than asserted by the test.
   const doomed = Bun.spawn({ cmd: ["sleep", "300"], stdout: "ignore", stderr: "ignore" })
-  const away = await call("register_lane", { name: "bl-absent", session_id: "bl3", pid: doomed.pid })
-  await call("ack_board", { token: away.token })
+  const away = await call("register", { name: "bl-absent", session_id: "bl3", pid: doomed.pid })
+  await call("check_in", { token: away.token })
 
-  await call("lane_open", { token: say.token, lane: "bl-lane", topic: "work with an absentee" })
-  await call("lane_join", { token: here.token, lane: "bl-lane" })
-  await call("lane_join", { token: away.token, lane: "bl-lane" })
-  const ann = await call("lane_announce", { token: say.token, lane: "bl-lane", body: "bl-lane: FREEZE" })
+  await call("open_space", { token: say.token, agent: "bl-agent", topic: "work with an absentee" })
+  await call("join_space", { token: here.token, agent: "bl-agent" })
+  await call("join_space", { token: away.token, agent: "bl-agent" })
+  const ann = await call("announce", { token: say.token, agent: "bl-agent", body: "bl-agent: FREEZE" })
 
   const laneOf = async (tok: string) =>
-    ((await board(tok)).board?.channels ?? []).find((c: any) => c.id === "bl-lane")
+    ((await board(tok)).board?.spaces ?? []).find((c: any) => c.id === "bl-agent")
 
   check("the announcement is outstanding while somebody can still answer",
     (await laneOf(say.token))?.unacked_announcements === 1, JSON.stringify(await laneOf(say.token)))
@@ -1179,70 +1179,70 @@ let annSerial = 0
   doomed.kill()
   await doomed.exited
   // The one who could answer answers, leaving only the agent that is gone.
-  await call("lane_ack", { token: here.token, msg_serial: ann.serial })
+  await call("ack_announcement", { token: here.token, msg_serial: ann.serial })
   for (let i = 0; i < 50; i++) {
     if ((await laneOf(say.token))?.blocked_announcements === 1) break
     await Bun.sleep(200)
   }
-  const lane = await laneOf(say.token)
+  const whose = await laneOf(say.token)
   check("once only an absentee owes it, the board says it is BLOCKED",
-    lane?.blocked_announcements === 1, JSON.stringify(lane))
+    whose?.blocked_announcements === 1, JSON.stringify(whose))
   check("while still counting as outstanding, because it is",
-    lane?.unacked_announcements === 1, JSON.stringify(lane))
+    whose?.unacked_announcements === 1, JSON.stringify(whose))
   check("and never silently became 'unanswered': nothing gave up",
-    lane?.abandoned_announcements === undefined, JSON.stringify(lane))
+    whose?.abandoned_announcements === undefined, JSON.stringify(whose))
 }
 
 // ── a notice nobody read must not be recorded as read ───────────────────
-// A departing member's ack requirement has to be dropped, or the lane waits
+// A departing member's ack requirement has to be dropped, or the agent waits
 // forever on somebody who is never coming back. But dropping it silently
 // settled the announcement as `acked`: and in the extreme case that means an
 // announcement with an empty ack list, nobody at all, recorded as
 // acknowledged and invisible on the board. A sender checking later is told its
 // freeze notice landed when zero agents saw it.
 {
-  const say = await call("register_lane", { name: "du-sender", session_id: "du1" })
-  await call("ack_board", { token: say.token })
-  const quit = await call("register_lane", { name: "du-quitter", session_id: "du2" })
-  await call("ack_board", { token: quit.token })
-  await call("lane_open", { token: say.token, lane: "du-lane", topic: "work with a leaver" })
-  await call("lane_join", { token: quit.token, lane: "du-lane" })
-  const ann = await call("lane_announce", {
-    token: say.token, lane: "du-lane", body: "du-lane: FREEZE the tokenizer",
+  const say = await call("register", { name: "du-sender", session_id: "du1" })
+  await call("check_in", { token: say.token })
+  const quit = await call("register", { name: "du-quitter", session_id: "du2" })
+  await call("check_in", { token: quit.token })
+  await call("open_space", { token: say.token, agent: "du-agent", topic: "work with a leaver" })
+  await call("join_space", { token: quit.token, agent: "du-agent" })
+  const ann = await call("announce", {
+    token: say.token, agent: "du-agent", body: "du-agent: FREEZE the tokenizer",
   })
 
   // The only member that owed it leaves without reading it.
-  await call("close_lane", { token: quit.token })
+  await call("sign_off", { token: quit.token })
   const laneOf = async (tok: string) =>
-    ((await board(tok)).board?.channels ?? []).find((c: any) => c.id === "du-lane")
-  const lane = await laneOf(say.token)
-  check("the lane does not wait forever on an agent that left",
-    (lane?.unacked_announcements ?? 0) === 0, JSON.stringify(lane))
+    ((await board(tok)).board?.spaces ?? []).find((c: any) => c.id === "du-agent")
+  const whose = await laneOf(say.token)
+  check("the agent does not wait forever on an agent that left",
+    (whose?.unacked_announcements ?? 0) === 0, JSON.stringify(whose))
   check("but the member that never read it is recorded",
-    lane?.departed_unacked === 1, JSON.stringify(lane))
+    whose?.departed_unacked === 1, JSON.stringify(whose))
 
   // And the sender must not be told it was acknowledged.
-  const msg = await call("get_message", { token: say.token, msg_serial: ann.serial })
+  const msg = await call("read_mail", { token: say.token, msg_serial: ann.serial })
     .catch(() => null)
-  // get_message is for mail, not announcements; the board is the sender's view,
+  // read_mail is for mail, not announcements; the board is the sender's view,
   // so the assertion that matters is that nothing claims an ack happened.
   check("and nothing on the board claims somebody acknowledged it",
-    (lane?.abandoned_announcements ?? 0) >= 1 || lane?.departed_unacked === 1,
-    JSON.stringify(lane))
+    (whose?.abandoned_announcements ?? 0) >= 1 || whose?.departed_unacked === 1,
+    JSON.stringify(agent))
   void msg
 }
 
 // ── the terminal board must show the work, not just the agents ──────────
-// `lanes board` is the surface for an operator without a browser, and it
-// carried lanes, slots and claims, but no CHANNELS at all. The whole of what
+// `dibs board` is the surface for an operator without a browser, and it
+// carried agents, slots and claims, but no CHANNELS at all. The whole of what
 // v1.2 added was invisible there, including an announcement waiting on
 // somebody, which is the state that most needs a person.
 {
-  const cliBin = process.env.LANES ?? `${process.env.HOME}/.local/bin/lanes`
+  const cliBin = process.env.DIBS ?? `${process.env.HOME}/.local/bin/dibs`
   const cli = (...args: string[]) => {
     const r = Bun.spawnSync({
       cmd: [cliBin, ...args],
-      env: { ...process.env, LANES_ADDR: ADDR, LANES_DIR: dir_ },
+      env: { ...process.env, DIBS_ADDR: ADDR, DIBS_DIR: dir_ },
       stdout: "pipe", stderr: "pipe",
     })
     return new TextDecoder().decode(r.stdout) + new TextDecoder().decode(r.stderr)
@@ -1258,19 +1258,19 @@ let annSerial = 0
     !/\u001b\[/.test(out), JSON.stringify(out.slice(0, 120)))
   check("and doctor is too, which is what gets pasted into a bug report",
     !/\u001b\[/.test(cli("doctor")))
-  check("the terminal board lists lanes of work", /lanes of work/.test(out), out.slice(0, 300))
+  check("the terminal board lists agents of work", /agents of work/.test(out), out.slice(0, 300))
   check("with their topic", /token validation|drawing|single-writer|work that outlives/.test(out),
     out.slice(0, 400))
   check("and who is in them", /\bin: /.test(out), out.slice(0, 400))
-  // An exclusive lane and its queue are the two facts that decide whether an
+  // An exclusive agent and its queue are the two facts that decide whether an
   // agent can start; neither was reachable from a terminal.
-  check("an exclusive lane names its owner", /exclusive to /.test(out), out.slice(0, 600))
+  check("an exclusive agent names its owner", /exclusive to /.test(out), out.slice(0, 600))
   check("and shows who is waiting for it", /waiting: /.test(out), out.slice(0, 600))
   // The announcement states, which must stay four distinct facts rather than
   // one number.
   check("outstanding announcements are surfaced in the terminal",
     /awaiting ack|UNANSWERED|blocked|left unread/.test(out), out.slice(0, 800))
-  // And WHY a lane stopped counting as live, the same as the other two surfaces.
+  // And WHY an agent stopped counting as live, the same as the other two surfaces.
   check("a dead agent's reason is shown in the terminal too",
     /\(process gone\)|\(no contact\)|\(idle, no pid\)/.test(out), out.slice(0, 800))
   // The summary a person reads before anything else. The browser board has

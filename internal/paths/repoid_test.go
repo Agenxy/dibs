@@ -44,9 +44,9 @@ func TestSameRepoNormalisesPrimaryRemoteAcrossClones(t *testing.T) {
 		runGit(t, git, root, "clone", source, clone)
 		clones = append(clones, clone)
 	}
-	runGit(t, git, clones[0], "remote", "set-url", "origin", "git@GitHub.com:agenxy/lanes.git")
-	runGit(t, git, clones[1], "remote", "set-url", "origin", "https://github.com/agenxy/lanes")
-	runGit(t, git, clones[2], "remote", "set-url", "origin", "ssh://git@github.com/agenxy/lanes.git")
+	runGit(t, git, clones[0], "remote", "set-url", "origin", "git@GitHub.com:agenxy/dibs.git")
+	runGit(t, git, clones[1], "remote", "set-url", "origin", "https://github.com/agenxy/dibs")
+	runGit(t, git, clones[2], "remote", "set-url", "origin", "ssh://git@github.com/agenxy/dibs.git")
 
 	for i := 1; i < len(clones); i++ {
 		if same, known := SameRepo(Identify(clones[0]), Identify(clones[i])); !same || !known {
@@ -62,7 +62,7 @@ func TestSameRepoReportsDifferentNormalisedRemotes(t *testing.T) {
 	second := filepath.Join(root, "second")
 	initRepo(t, git, first)
 	initRepo(t, git, second)
-	runGit(t, git, first, "remote", "add", "origin", "https://github.com/agenxy/lanes.git")
+	runGit(t, git, first, "remote", "add", "origin", "https://github.com/agenxy/dibs.git")
 	runGit(t, git, second, "remote", "add", "origin", "https://github.com/other/project.git")
 
 	if same, known := SameRepo(Identify(first), Identify(second)); same || !known {
@@ -134,8 +134,8 @@ func initRepo(t *testing.T, git, dir string) {
 		t.Fatal(err)
 	}
 	runGit(t, git, dir, "init")
-	runGit(t, git, dir, "config", "user.name", "Lanes Test")
-	runGit(t, git, dir, "config", "user.email", "lanes@example.invalid")
+	runGit(t, git, dir, "config", "user.name", "Dibs Test")
+	runGit(t, git, dir, "config", "user.email", "agents@example.invalid")
 	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("fixture\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

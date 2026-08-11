@@ -17,11 +17,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/agenxy/lanes/internal/assets"
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/assets"
+	"github.com/agenxy/dibs/internal/core"
 )
 
-// skillsDoc is the agent-facing playbook, served as lanes://skills.
+// skillsDoc is the agent-facing playbook, served as dibs://skills.
 //
 // Embedded rather than read from disk because the binary has to answer this
 // without the repository: an agent that installed a release has no SKILLS.md
@@ -64,7 +64,7 @@ func boardAppTemplate() string {
 // cached pre-fix panel and the only view of it was a photograph.
 // It hashes whichever template will actually be SERVED, minimal included. It
 // used to hash the full one unconditionally, so two daemons: one with
-// LANES_PANEL_MINIMAL set, one without: advertised the identical URI for a
+// DIBS_PANEL_MINIMAL set, one without: advertised the identical URI for a
 // 264594-byte panel and a 483-byte one. Flipping that variable across a restart
 // then left a host holding completely different content under a URI it was told
 // was content-derived, which is the exact caching failure the hash exists to
@@ -86,7 +86,7 @@ var panelBuild = func() string {
 // server marks it public and hints an hour, and one host held it across a daemon
 // restart and every rebuild in a session. So a panel bug shipped to a running
 // host stayed shipped: the daemon served the corrected template to anyone who
-// asked, and nothing asked. Measured, not guessed: with LANES_LOG_RPC=1 the
+// asked, and nothing asked. Measured, not guessed: with DIBS_LOG_RPC=1 the
 // daemon recorded two tool calls and zero resources/read while the panel drew
 // pre-fix markup.
 //
@@ -106,14 +106,14 @@ var panelBuild = func() string {
 // the two are indistinguishable from the outside, which is the failure mode
 // the content hash exists to prevent, arriving through the one door it was not
 // applied to. TestNoToolDeclaresTheUnhashedPanelURI holds this.
-const uiBoardBase = "ui://lanes/board"
+const uiBoardBase = "ui://agents/board"
 
 var uiBoardURI = uiBoardBase + "/" + panelBuild
 
 // panelDataMetaKey is intentionally namespaced. Tool-result _meta is delivered
 // to the MCP App and withheld from model context; putting the board in ordinary
-// structuredContent is the exact context-cost defect show_board exists to avoid.
-const panelDataMetaKey = "com.lanes/panel"
+// structuredContent is the exact context-cost defect board exists to avoid.
+const panelDataMetaKey = "com.dibs/panel"
 
 // uiMime is the MIME type the MCP Apps spec reserves for HTML app templates.
 const uiMime = "text/html;profile=mcp-app"
@@ -123,7 +123,7 @@ func uiResourceDescriptor() map[string]any {
 	return map[string]any{
 		"uri":         uiBoardURI,
 		"name":        "board-app",
-		"description": "Interactive Lanes board (MCP Apps UI template)",
+		"description": "Interactive Dibs board (MCP Apps UI template)",
 		"mimeType":    uiMime,
 	}
 }
@@ -156,15 +156,15 @@ func (s *Server) showBoard(ctx context.Context, token, view string) (core.Result
 	//
 	// An earlier version served the board to any caller and justified it in a
 	// comment reading "the board is public and still worth showing". It is not
-	// public: ack_board, inbox and the rest all require a lane token, and the
-	// board carries lane descriptions, working directories, hostnames and branch
+	// public: check_in, inbox and the rest all require an agent token, and the
+	// board carries agent descriptions, working directories, hostnames and branch
 	// names. This tool accepted a token that inbox had rejected seconds earlier
 	// and rendered all of it to a human anyway. Reaching the daemon proves you
 	// are on this machine; it does not make you a participant.
 	// SubscribeInfo is NOT an authenticator, despite the shape. It short-circuits
 	// on an empty token to serve the token-less board subscription used by
 	// subscriptions/listen, so calling it with "" succeeds, which is exactly how
-	// an unauthenticated show_board slipped through after the bogus-token hole
+	// an unauthenticated board slipped through after the bogus-token hole
 	// was closed. Reject the empty token here, explicitly.
 	if strings.TrimSpace(token) == "" {
 		return nil, core.ErrBadToken
@@ -192,19 +192,19 @@ func (s *Server) showBoard(ctx context.Context, token, view string) (core.Result
 //
 // It reads the JSON-normalised payload, not the engine's typed structs: asserting
 // `[]any` against a typed slice silently yields zero, which is how an earlier
-// version of this reported "0 lanes" while handing the UI seven.
+// version of this reported "0 agents" while handing the UI seven.
 func boardSummary(sc map[string]any) string {
 	b, _ := sc["board"].(map[string]any)
-	lanes, _ := b["lanes"].([]any)
+	agents, _ := b["agents"].([]any)
 	var live int
-	for _, l := range lanes {
+	for _, l := range agents {
 		if m, ok := l.(map[string]any); ok {
 			if st, _ := m["status"].(string); st == "active" {
 				live++
 			}
 		}
 	}
-	msg := fmt.Sprintf("Lanes board: %d lane(s), %d active", len(lanes), live)
+	msg := fmt.Sprintf("Dibs board: %d agent(s), %d active", len(agents), live)
 	if n := inboxCount(sc["inbox"]); n > 0 {
 		msg += fmt.Sprintf("; %d unread message(s)", n)
 	}
@@ -240,12 +240,12 @@ func inboxCount(box any) int {
 // need the agent to make a second, ceremonial "now show it" call: reading the
 // board IS the moment to show the board.
 var panelTools = map[string]string{
-	"ack_board":    "board",    // orientation: who else is here, what are they on
+	"check_in":     "board",    // orientation: who else is here, what are they on
 	"inbox":        "mail",     // reading mail shows the mail, not the roster
 	"await_events": "activity", // it returned BECAUSE something changed: show that
-	"send_message": "mail",     // you just wrote to someone; show the thread
+	"send":         "mail",     // you just wrote to someone; show the thread
 	"respond":      "mail",
-	"show_board":   "", // explicit request; honours its own view argument
+	"board":        "", // explicit request; honours its own view argument
 }
 
 // panelWorthShowing decides whether this particular result has anything the
@@ -274,7 +274,7 @@ func panelWorthShowing(tool string, res core.Result) bool {
 		}
 		return res["events"] != nil
 	}
-	return true // ack_board / show_board / sends are always deliberate
+	return true // check_in / board / sends are always deliberate
 }
 
 // showBoardResult shapes the tools/call reply per the MCP Apps contract.
@@ -301,7 +301,7 @@ func showBoardResult(res core.Result, detail, declaredUI bool) map[string]any {
 		//
 		// Hosts choose a carrier. This one shows the model structuredContent
 		// INSTEAD of content, so a bootstrap that carried only plumbing replaced
-		// the one sentence show_board owes the agent: it read its own token back
+		// the one sentence board owes the agent: it read its own token back
 		// and learned nothing about the board.
 		boot["summary"] = boardSummary(fullMap)
 
@@ -318,7 +318,7 @@ func showBoardResult(res core.Result, detail, declaredUI bool) map[string]any {
 		//
 		// So the trimmed payload rides here too, and yes, a host that shows the
 		// model structuredContent pays for the board it displays. That is the
-		// honest price: show_board is called BECAUSE a human asked to look, it is
+		// honest price: board is called BECAUSE a human asked to look, it is
 		// trimmed to what the template draws, and detail=true remains the way an
 		// agent asks for the board on purpose. A summary line that buys a blank
 		// panel is not a saving.
@@ -344,23 +344,23 @@ func showBoardResult(res core.Result, detail, declaredUI bool) map[string]any {
 // board itself, and nothing else.
 //
 // _meta is the correct carrier for panel data: it reaches the MCP App and is
-// withheld from model context, which is the entire promise show_board makes.
+// withheld from model context, which is the entire promise board makes.
 // Hosts do not all honour it yet. This one declares the app capability, renders
 // the template, and hands the component nothing from _meta, so the panel sat on
-// "awaiting board · No lanes yet" while the daemon held three lanes, and the
+// "awaiting board · No agents yet" while the daemon held three agents, and the
 // 72-character summary in `content` was correct the whole time. That is why no
 // measurement of the tool result caught it; only looking at the panel did.
 //
 // The obvious repair (copy the payload into structuredContent as well) is the
 // one thing we must not do. structuredContent is model-facing, so it would hand
 // every agent the full board on every call and delete the saving the tool exists
-// for, and on ack_board it would put a TRIMMED checkpoint where a host may show
+// for, and on check_in it would put a TRIMMED checkpoint where a host may show
 // the model a complete one. Both are guarded by tests, and the tests are right.
 //
-// So what crosses is the bootstrap, not the board: the view, the lane id, and
+// So what crosses is the bootstrap, not the board: the view, the agent id, and
 // the caller's own token, which the model already holds, because it passed the
 // token into this very call. Some tens of bytes of things the model already
-// knows. With that the panel calls show_board(detail:true) over its own bridge,
+// knows. With that the panel calls board(detail:true) over its own bridge,
 // where the result cannot enter model context at all, and draws from the reply.
 // See board_app.html's fetchBoard.
 func panelBootstrap(payload core.Result) core.Result {
@@ -388,10 +388,10 @@ func panelMeta(payload core.Result) map[string]any {
 // panelResult attaches the board panel to a tool that already returns board or
 // mailbox state.
 //
-// The agent's own result is NEVER replaced. ack_board is the awareness gate,
+// The agent's own result is NEVER replaced. check_in is the awareness gate,
 // the model reads the board out of it to learn what its peers are doing, and an
 // earlier version of this swapped that JSON for a prose summary, quietly breaking
-// the thing Lanes exists to do. `content` stays exactly what it was; the panel is
+// the thing Dibs exists to do. `content` stays exactly what it was; the panel is
 // additive.
 //
 // The panel copy goes to everyone, and that is a deliberate reversal.
@@ -415,13 +415,13 @@ func (s *Server) panelResult(
 	// The bootstrap rides in CONTENT here, never structuredContent, and the
 	// difference is the whole recovery checkpoint.
 	//
-	// show_board can afford a bootstrap in structuredContent because its content
-	// is one summary line. ack_board cannot: its content IS the checkpoint: the
+	// board can afford a bootstrap in structuredContent because its content
+	// is one summary line. check_in cannot: its content IS the checkpoint: the
 	// board, the mailbox, what the agent still owes, and this host displays
 	// structuredContent to the model INSTEAD of content. A bootstrap there
 	// therefore replaced the answer with three fields of plumbing, and the agent
 	// read its own token back and learned nothing about the fleet. Caught by
-	// calling ack_board as an ordinary agent, not by any test: every assertion
+	// calling check_in as an ordinary agent, not by any test: every assertion
 	// about the tool result still passed, because the checkpoint was present the
 	// whole time in a field this host does not show.
 	//
@@ -450,7 +450,7 @@ func (s *Server) panelResult(
 	}
 	// The duplicate is dropped once a panel has PROVED it can reach us.
 	//
-	// ack_board is called every activation, and the board dominates its size, so
+	// check_in is called every activation, and the board dominates its size, so
 	// sending it in both content and structuredContent charges the model two
 	// copies of the fleet per turn: on a large board, most of what the tool
 	// costs. The duplication existed for one host shape: drops _meta, forbids an
@@ -473,7 +473,7 @@ func (s *Server) panelResult(
 	// the other costs the agent its checkpoint.
 	if !panelFetches {
 		// EQUAL, never smaller, when it is sent at all. A shape beside content that
-		// answers LESS is how ack_board once returned a token and nothing about the
+		// answers LESS is how check_in once returned a token and nothing about the
 		// fleet, on a host that shows structuredContent instead of content. So the
 		// rule was never "structuredContent is allowed" but "it is this exact
 		// object", and dropping it entirely is safe in a way that shrinking it is
@@ -492,11 +492,11 @@ func (s *Server) panelState(ctx context.Context, res core.Result, view, token st
 	}
 	if _, ok := out["board"]; !ok {
 		if b, err := s.eng.Board(ctx); err == nil {
-			out["board"] = b // the panel needs the board to draw lanes at all
+			out["board"] = b // the panel needs the board to draw agents at all
 		}
 	}
 	// Normalise the two shapes a mailbox arrives in: `inbox` returns its
-	// messages at the top level, `ack_board` nests them under "inbox".
+	// messages at the top level, `check_in` nests them under "inbox".
 	if _, ok := out["inbox"]; !ok {
 		if _, has := out["messages"]; has {
 			out["inbox"] = core.Result{"messages": out["messages"]}

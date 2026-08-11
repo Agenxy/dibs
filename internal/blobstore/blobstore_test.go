@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/agenxy/lanes/internal/ledger"
+	"github.com/agenxy/dibs/internal/ledger"
 )
 
 func newStore(t *testing.T) (*Store, string) {

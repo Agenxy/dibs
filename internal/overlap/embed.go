@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-// Embed is the tier-2/3 scorer: Lanes owns the index, an external service owns
+// Embed is the tier-2/3 scorer: Dibs owns the index, an external service owns
 // the model.
 //
 // THE BOUNDARY, and why it moved here.
@@ -51,7 +51,7 @@ import (
 //	                         →  {"data": [{"embedding": [...]}, …]}
 //
 // Ollama, vLLM, text-embeddings-inference, LM Studio, llama.cpp's server, and
-// every hosted provider speak exactly this. Lanes ships no service, invents no
+// every hosted provider speak exactly this. Dibs ships no service, invents no
 // protocol, and the port belongs to whatever the operator already runs.
 type Embed struct {
 	base    string
@@ -160,7 +160,7 @@ func (e *Embed) Chunks() int {
 }
 
 // embedReq/embedResp are the OpenAI embeddings shapes, and deliberately no more
-// of them than Lanes uses. Fields nobody reads are fields that rot.
+// of them than Dibs uses. Fields nobody reads are fields that rot.
 type embedReq struct {
 	Model string   `json:"model"`
 	Input []string `json:"input"`
@@ -233,7 +233,7 @@ const (
 //
 // Detected from the model name, because an operator should not have to know
 // each family's convention. Overridable with SetAffixes, because a model family
-// Lanes has never heard of still has a convention and its operator knows it,
+// Dibs has never heard of still has a convention and its operator knows it,
 // and without an override that operator silently gets half the separation with
 // nothing on screen to explain it.
 // affixes are the retrieval markers for one model family.
@@ -265,7 +265,7 @@ func affixesFor(model string) affixes {
 		// https://huggingface.co/BAAI/bge-m3
 		//
 		// Recognised-with-no-marker and unrecognised are different answers, and
-		// the difference is whether Lanes warns: there is nothing to warn about
+		// the difference is whether Dibs warns: there is nothing to warn about
 		// here, because the absence IS the convention.
 		return affixes{known: true}
 	case strings.Contains(m, "bge-code"), strings.Contains(m, "bge-multilingual-gemma"),
@@ -278,7 +278,7 @@ func affixesFor(model string) affixes {
 		// https://huggingface.co/BAAI/bge-en-icl
 		//
 		// bge-en-icl was briefly excluded here on the grounds that its
-		// convention is few-shot and Lanes has no examples to supply. That was
+		// convention is few-shot and Dibs has no examples to supply. That was
 		// wrong: its card gives the ZERO-SHOT form explicitly, and it is this
 		// one. Few-shot appends worked <response> examples on top: an
 		// enhancement to a documented format, not a precondition for it.
@@ -350,7 +350,7 @@ func (e *Embed) SetAffixes(query, doc string) {
 	e.affix = affixes{query: query, doc: doc}
 }
 
-// Affixes reports the markers in use, so `lanes doctor` and `calibrate` can say
+// Affixes reports the markers in use, so `dibs doctor` and `calibrate` can say
 // whether a model is being addressed the way it was trained.
 func (e *Embed) Affixes() (query, doc string) { return e.affix.query, e.affix.doc }
 
@@ -459,7 +459,7 @@ func (e *Embed) encode(ctx context.Context, texts []string) ([][]float32, error)
 
 // decodeEmbeddings maps a response back onto the inputs that produced it.
 //
-// Count and order are load-bearing: Lanes matches vector i to chunk i, so a
+// Count and order are load-bearing: Dibs matches vector i to chunk i, so a
 // service returning fewer vectors (or reordering them) would shift every
 // later vector onto the wrong file and corrupt the whole index silently. Both
 // are checked rather than trusted.
@@ -706,9 +706,9 @@ func (e *Embed) Predict(ctx context.Context, declaration string, limit int) (Pre
 	// genuinely scores 0. For embeddings it is a disaster: chunks at 0.70 and
 	// 0.83 become 0.84 and 1.00, and the discrimination is gone. Measured on a
 	// three-file fixture: "writing release notes for the changelog" scored
-	// 0.729 against an authentication lane, comfortably above any sane join
+	// 0.729 against an authentication agent, comfortably above any sane join
 	// threshold. A false positive that confident would put every agent in one
-	// lane.
+	// agent.
 	//
 	// So rescale against the query's OWN distribution before aggregating:
 	// typical becomes 0, best becomes 1. A query that matches everything

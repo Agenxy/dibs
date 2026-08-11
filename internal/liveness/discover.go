@@ -74,9 +74,9 @@ func attribute(pid, ppid int) (owner, via string) {
 	if m := lanesParent.FindStringSubmatch(env); len(m) == 2 {
 		return m[1], "env"
 	}
-	// 2. The harness's own session identity, however it leaks it. Lanes already
-	//    binds lanes to harness session ids (bind_session), so this maps
-	//    straight onto a lane with nothing new to store.
+	// 2. The harness's own session identity, however it leaks it. Dibs already
+	//    binds agents to harness session ids (bind_session), so this maps
+	//    straight onto an agent with nothing new to store.
 	if m := explicitSession.FindStringSubmatch(env); len(m) == 2 {
 		return m[1], "session"
 	}
@@ -211,9 +211,9 @@ func EnvironOf(pid int) string {
 	return string(out)
 }
 
-// lanesParent matches the explicit marker. Its value is a lane id, which is
+// lanesParent matches the explicit marker. Its value is an agent id, which is
 // ASCII and space-free by construction, so \S+ is exact rather than hopeful.
-var lanesParent = regexp.MustCompile(`\bLANES_PARENT=(\S+)`)
+var lanesParent = regexp.MustCompile(`\bDIBS_PARENT=(\S+)`)
 
 // explicitSession matches the session variables a harness may export directly.
 var explicitSession = regexp.MustCompile(`\b(?:CLAUDE|CODEX|OPENCODE)_SESSION_ID=(\S+)`)
@@ -225,7 +225,7 @@ var resumeSession = regexp.MustCompile(`rollout-[0-9T:-]+?-([0-9a-f]{8}-[0-9a-f-
 // ResumeCommand returns the command that would restart a stalled agent where it
 // stopped, or "" when there is none to offer.
 //
-// Lanes does not run it. That is not squeamishness: the parent knows what the
+// Dibs does not run it. That is not squeamishness: the parent knows what the
 // child was for and whether re-running it is safe, and a supervisor that
 // silently repairs things teaches its operator nothing while hiding a failure
 // that may be systematic. But withholding the command is a different thing from
@@ -233,7 +233,7 @@ var resumeSession = regexp.MustCompile(`rollout-[0-9T:-]+?-([0-9a-f]{8}-[0-9a-f-
 // out the incantation is being given a problem instead of a decision.
 //
 // Only codex exposes one today. Its transcript filename carries the session id,
-// so the command is derivable from a path Lanes already holds; nothing new is
+// so the command is derivable from a path Dibs already holds; nothing new is
 // stored and nothing is asked of the child.
 func ResumeCommand(harness, transcript string) string {
 	if harness != "codex" || transcript == "" {

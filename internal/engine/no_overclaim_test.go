@@ -5,13 +5,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agenxy/lanes/internal/core"
-	"github.com/agenxy/lanes/internal/overlap"
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/overlap"
 )
 
 // Every phrasing that asserts absence rather than reporting a measurement.
 var claimsOfSolitude = []string{
-	"nobody else is", "no one else is", "no lane existed",
+	"nobody else is", "no one else is", "no agent existed",
 	"you are alone", "you have the field", "nobody is working",
 }
 
@@ -38,16 +38,16 @@ func mustNotClaimSolitude(t *testing.T, where, s string) {
 	for _, bad := range claimsOfSolitude {
 		if strings.Contains(low, bad) {
 			t.Errorf("%s asserts absence: %q contains %q.\n"+
-				"  Recall is partial, so Lanes cannot know this. Report what was measured\n"+
-				"  (\"no existing lane cleared the threshold\") rather than what it would\n"+
+				"  Recall is partial, so Dibs cannot know this. Report what was measured\n"+
+				"  (\"no existing agent cleared the threshold\") rather than what it would\n"+
 				"  imply if recall were perfect.", where, s, bad)
 		}
 	}
 }
 
-// Lanes may not tell an agent it is alone.
+// Dibs may not tell an agent it is alone.
 //
-// Recall at tier 0 is about 0.3: for two thirds of declarations the right lane is
+// Recall at tier 0 is about 0.3: for two thirds of declarations the right agent is
 // not in the top five, so a miss is the COMMON case rather than evidence of
 // anything. SKILLS.md tells agents in as many words never to conclude from
 // silence that they are alone, and the API then said exactly that, with more
@@ -79,7 +79,7 @@ func TestTheOpenedLaneHintDoesNotClaimSolitude(t *testing.T) {
 	if sug == nil {
 		t.Fatal("openFirstLane returned nothing; this test cannot see the hint it guards")
 	}
-	mustNotClaimSolitude(t, "the opened-lane hint", sug.Hint)
+	mustNotClaimSolitude(t, "the opened-agent hint", sug.Hint)
 	low := strings.ToLower(sug.Hint)
 	if !strings.Contains(low, "threshold") {
 		t.Errorf("the hint does not mention the threshold, so an agent cannot tell a "+
@@ -93,7 +93,7 @@ func TestTheOpenedLaneHintDoesNotClaimSolitude(t *testing.T) {
 
 // The summary line an agent reads alongside the suggestions must not either.
 func TestTheMatchSummaryDoesNotClaimSolitude(t *testing.T) {
-	opened := lanesHint([]Suggestion{{Lane: "w", Action: "opened"}})
+	opened := lanesHint([]Suggestion{{Agent: "w", Action: "opened"}})
 	mustNotClaimSolitude(t, "the opened summary", opened)
 	if !strings.Contains(strings.ToLower(opened), "threshold") {
 		t.Errorf("the opened summary does not say a measurement happened: %q", opened)

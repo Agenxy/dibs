@@ -64,7 +64,7 @@ func TestAnUnknownEventLeavesTheStateAlone(t *testing.T) {
 }
 
 // A hook that errors on every turn of every unrelated session is a hook a
-// person deletes. Most sessions on a machine have no lane.
+// person deletes. Most sessions on a machine have no agent.
 func TestAnUnmatchedSessionIsNotAnError(t *testing.T) {
 	e, now := &Engine{}, time.Now()
 	if r := e.noteChild(Child{SessionID: "nobody", State: "running"}, now); r["ok"] != true {
@@ -85,7 +85,7 @@ func TestAnUnmatchedSessionIsNotAnError(t *testing.T) {
 // append-only file is a single log SHARED by every run on the machine. Watching
 // that would make every opencode agent look busy whenever any one of them was.
 //
-// So the child counts for itself and Lanes uses the counter. Without it, an
+// So the child counts for itself and Dibs uses the counter. Without it, an
 // opencode child is judged on CPU alone, which catches a hard stall and misses
 // a slow one, the exact distinction this whole layer exists to make.
 func TestAChildsOwnProgressCounterIsUsedAndIsMonotonic(t *testing.T) {

@@ -16,10 +16,10 @@ import (
 // populated: agents in three repositories all reported branch "main", so the
 // board rendered three identical-looking identities and the human had no way,
 // from the board, to tell which of their projects each agent was working on.
-// Lanes coordinates a MACHINE, and a machine usually has more than one project
+// Dibs coordinates a MACHINE, and a machine usually has more than one project
 // open, so this is the common case rather than an edge.
 //
-// This asserts the WIRING, from register_lane through to what a reader gets
+// This asserts the WIRING, from register through to what a reader gets
 // back. Testing paths.ProjectName alone would stay green with the resolve
 // deleted from agentInfo, which is this codebase's most repeated defect: a
 // correct helper that nothing calls.
@@ -36,8 +36,8 @@ func TestTheBoardSaysWhichProjectAnAgentIsIn(t *testing.T) {
 	}
 	for _, args := range [][]string{
 		{"init"},
-		{"config", "user.name", "Lanes Test"},
-		{"config", "user.email", "lanes@example.invalid"},
+		{"config", "user.name", "Dibs Test"},
+		{"config", "user.email", "agents@example.invalid"},
 		{"commit", "--allow-empty", "-m", "fixture"},
 	} {
 		cmd := exec.Command(git, append([]string{"-C", repo}, args...)...)
@@ -52,15 +52,15 @@ func TestTheBoardSaysWhichProjectAnAgentIsIn(t *testing.T) {
 	// label must name the project, not whatever folder the harness happened to
 	// start in: "store" would be indistinguishable from any other repository's
 	// internal/store.
-	out := toolCall(t, srv, "register_lane", map[string]any{
+	out := toolCall(t, srv, "register", map[string]any{
 		"name": "payments-worker", "cwd": nested, "branch": "main",
 	})
 	token, _ := out["token"].(string)
 	if token == "" {
-		t.Fatalf("register_lane returned no token: %v", out)
+		t.Fatalf("register returned no token: %v", out)
 	}
 
-	board := toolCall(t, srv, "ack_board", map[string]any{"token": token})
+	board := toolCall(t, srv, "check_in", map[string]any{"token": token})
 	blob, err := json.Marshal(board)
 	if err != nil {
 		t.Fatal(err)

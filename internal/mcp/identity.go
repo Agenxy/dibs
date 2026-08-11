@@ -5,11 +5,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/agenxy/lanes/internal/core"
-	"github.com/agenxy/lanes/internal/paths"
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/paths"
 )
 
-// agentInfo assembles who is behind a lane, for the human reading the board.
+// agentInfo assembles who is behind an agent, for the human reading the board.
 //
 // Two sources, deliberately kept apart:
 //   - harness + version come from the MCP handshake's clientInfo. The *client*
@@ -29,7 +29,7 @@ func agentInfo(params json.RawMessage, a *toolArgs, session *clientInfoJSON) *co
 		Title:    a.Title,
 		// Canonicalised on the way in, because this is not just a label: it is
 		// what a lifecycle hook matches against when it has no session id to
-		// resolve. Stored as given, a lane registered from /tmp/x could never
+		// resolve. Stored as given, an agent registered from /tmp/x could never
 		// be found by a hook asking about /private/tmp/x, or vice versa.
 		CWD:    canonPath(a.CWD),
 		Branch: a.Branch,
@@ -37,11 +37,11 @@ func agentInfo(params json.RawMessage, a *toolArgs, session *clientInfoJSON) *co
 	}
 	// Resolved HERE, once, at registration. This is the only impure step in
 	// assembling an identity: paths.ProjectName shells out to Git on a cache
-	// miss, bounded at a second. It is affordable because register_lane happens
+	// miss, bounded at a second. It is affordable because register happens
 	// once per agent, and it must not move anywhere hotter. In particular it
 	// cannot be derived when the board is read: that runs on the single-writer
-	// loop, where a cold `git rev-parse` per lane would hold every other agent's
-	// set_slot still. The engine already learned this once, which is why the
+	// loop, where a cold `git rev-parse` per agent would hold every other agent's
+	// declare still. The engine already learned this once, which is why the
 	// matcher's repo lens is resolved off the loop and handed in.
 	info.Project = paths.ProjectName(info.CWD)
 	// The identity behind the label. Resolved in the same breath because both
@@ -64,7 +64,7 @@ func agentInfo(params json.RawMessage, a *toolArgs, session *clientInfoJSON) *co
 	} else {
 		// The client either said nothing or announced its SDK rather than
 		// itself. hermes is the live case: it uses the official Python SDK and
-		// arrives as {"name":"mcp","version":"0.1.0"}, so its lane read
+		// arrives as {"name":"mcp","version":"0.1.0"}, so its agent read
 		// `harness: mcp`: useless on a mixed fleet, and it would collide with
 		// every other Python-SDK client.
 		//
@@ -85,7 +85,7 @@ func agentInfo(params json.RawMessage, a *toolArgs, session *clientInfoJSON) *co
 		}
 	}
 	if *info == (core.AgentInfo{}) {
-		return nil // nothing worth showing; keep the lane clean
+		return nil // nothing worth showing; keep the agent clean
 	}
 	return info
 }
@@ -140,7 +140,7 @@ type clientInfoJSON struct {
 	Version string `json:"version"`
 }
 
-var forcePanel = os.Getenv("LANES_FORCE_PANEL") == "1"
+var forcePanel = os.Getenv("DIBS_FORCE_PANEL") == "1"
 
 // clientWantsUI reports whether the caller declared the MCP Apps extension.
 // The stdio bridge forwards the capability from the initialize handshake, since
@@ -152,7 +152,7 @@ func clientWantsUI(params json.RawMessage) bool {
 	// us through the stdio bridge, so a bridge process older than that code
 	// cannot forward it, and respawning the bridge means restarting the host,
 	// which is exactly what you are trying to avoid when you want to test the
-	// host you are sitting in. LANES_FORCE_PANEL=1 sends the panel to everyone.
+	// host you are sitting in. DIBS_FORCE_PANEL=1 sends the panel to everyone.
 	if forcePanel {
 		return true
 	}
@@ -162,7 +162,7 @@ func clientWantsUI(params json.RawMessage) bool {
 	if json.Unmarshal(params, &p) != nil {
 		return false
 	}
-	v, _ := p.Meta["com.lanes/ui"].(bool)
+	v, _ := p.Meta["com.dibs/ui"].(bool)
 	return v
 }
 

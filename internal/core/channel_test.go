@@ -11,21 +11,21 @@ import (
 // the wall clock.
 var testNow = time.Unix(1700000000, 0)
 
-// ch builds a state with n registered, acked agents ready to use channels.
-func chState(t *testing.T, names ...string) (*State, map[string]*Lane) {
+// ch builds a state with n registered, acked agents ready to use spaces.
+func chState(t *testing.T, names ...string) (*State, map[string]*Agent) {
 	t.Helper()
 	s := NewState("test", DefaultLimits())
 	now := time.Unix(1700000000, 0)
-	agents := map[string]*Lane{}
+	agents := map[string]*Agent{}
 	for _, n := range names {
 		res, _, err := s.Apply(&Op{Kind: OpRegisterLane, Name: n, NewToken: "tok-" + n}, now)
 		if err != nil {
 			t.Fatalf("register %s: %v", n, err)
 		}
 		id, _ := res["lane_id"].(string)
-		l := s.Lanes[id]
+		l := s.Agents[id]
 		if l == nil {
-			t.Fatalf("no lane for %s (%v)", n, res)
+			t.Fatalf("no agent for %s (%v)", n, res)
 		}
 		if _, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: l.Token}, now); err != nil {
 			t.Fatalf("ack %s: %v", n, err)
@@ -73,14 +73,14 @@ func mustFail(t *testing.T, s *State, op *Op) error {
 // stops meaning anything.
 func TestJoinRecordsTheScoreExactlyAsGiven(t *testing.T) {
 	s, a := chState(t, "alpha", "beta")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Channel: "auth-refactor", Text: "reworking auth"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Space: "auth-refactor", Text: "reworking auth"})
 	do(t, s, &Op{
-		Kind: OpLaneJoin, Token: a["beta"].Token, Channel: "auth-refactor",
+		Kind: OpLaneJoin, Token: a["beta"].Token, Space: "auth-refactor",
 		Score: 0.8137, Threshold: 0.327, ScorerID: "lexical+cochange", ScorerVersion: "1",
 		Evidence: []string{"internal/mcp/identity.go"}, Auto: true,
 	})
 
-	m := s.Channels["auth-refactor"].Members["beta"]
+	m := s.Spaces["auth-refactor"].Members["beta"]
 	if m == nil {
 		t.Fatal("beta should be a member")
 	}
@@ -100,14 +100,14 @@ func TestJoinRecordsTheScoreExactlyAsGiven(t *testing.T) {
 func TestChannelStateIsReplayable(t *testing.T) {
 	build := func() *State {
 		s, a := chState(t, "alpha", "beta", "gamma")
-		do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Channel: "auth", Text: "auth"})
-		do(t, s, &Op{Kind: OpLaneJoin, Token: a["beta"].Token, Channel: "auth", Score: 0.7, ScorerID: "x"})
-		do(t, s, &Op{Kind: OpLaneJoin, Token: a["gamma"].Token, Channel: "auth", Score: 0.4, ScorerID: "x"})
-		do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["alpha"].Token, Channel: "auth", Body: "renaming the token field"})
+		do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Space: "auth", Text: "auth"})
+		do(t, s, &Op{Kind: OpLaneJoin, Token: a["beta"].Token, Space: "auth", Score: 0.7, ScorerID: "x"})
+		do(t, s, &Op{Kind: OpLaneJoin, Token: a["gamma"].Token, Space: "auth", Score: 0.4, ScorerID: "x"})
+		do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["alpha"].Token, Space: "auth", Body: "renaming the token field"})
 		return s
 	}
 	a, b := build(), build()
-	ca, cb := a.Channels["auth"], b.Channels["auth"]
+	ca, cb := a.Spaces["auth"], b.Spaces["auth"]
 	if len(ca.Members) != len(cb.Members) {
 		t.Fatalf("member counts diverged: %d vs %d", len(ca.Members), len(cb.Members))
 	}
@@ -126,37 +126,37 @@ func TestChannelStateIsReplayable(t *testing.T) {
 
 func TestExclusiveLaneQueuesRatherThanRefuses(t *testing.T) {
 	s, a := chState(t, "owner", "second", "third")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Channel: "hot", Text: "hot work", Exclusive: true})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Space: "hot", Text: "hot work", Exclusive: true})
 
-	r := do(t, s, &Op{Kind: OpLaneJoin, Token: a["second"].Token, Channel: "hot", Score: 0.9})
+	r := do(t, s, &Op{Kind: OpLaneJoin, Token: a["second"].Token, Space: "hot", Score: 0.9})
 	if r["joined"] != false || r["queued"] != true {
 		t.Fatalf("second must be queued, got %v", r)
 	}
 	if r["queue_position"] != 1 {
 		t.Fatalf("want position 1, got %v", r)
 	}
-	r = do(t, s, &Op{Kind: OpLaneJoin, Token: a["third"].Token, Channel: "hot", Score: 0.9})
+	r = do(t, s, &Op{Kind: OpLaneJoin, Token: a["third"].Token, Space: "hot", Score: 0.9})
 	if r["queue_position"] != 2 {
 		t.Fatalf("want position 2, got %v", r)
 	}
 	// Re-asking must not queue you twice.
-	r = do(t, s, &Op{Kind: OpLaneJoin, Token: a["second"].Token, Channel: "hot", Score: 0.9})
+	r = do(t, s, &Op{Kind: OpLaneJoin, Token: a["second"].Token, Space: "hot", Score: 0.9})
 	if r["queue_position"] != 1 {
 		t.Fatalf("re-joining must report the existing position, got %v", r)
 	}
-	if got := len(s.Channels["hot"].Queue); got != 2 {
+	if got := len(s.Spaces["hot"].Queue); got != 2 {
 		t.Fatalf("queue must hold 2, got %d", got)
 	}
 }
 
 func TestReleasingExclusivityAdmitsEveryoneWaiting(t *testing.T) {
 	s, a := chState(t, "owner", "second", "third")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Channel: "hot", Text: "t", Exclusive: true})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["second"].Token, Channel: "hot"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["third"].Token, Channel: "hot"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Space: "hot", Text: "t", Exclusive: true})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["second"].Token, Space: "hot"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["third"].Token, Space: "hot"})
 
-	do(t, s, &Op{Kind: OpLaneExclusive, Token: a["owner"].Token, Channel: "hot", Mode: "release"})
-	ch := s.Channels["hot"]
+	do(t, s, &Op{Kind: OpLaneExclusive, Token: a["owner"].Token, Space: "hot", Mode: "release"})
+	ch := s.Spaces["hot"]
 	if ch.Owner != "" {
 		t.Fatalf("owner should be cleared, got %q", ch.Owner)
 	}
@@ -168,14 +168,14 @@ func TestReleasingExclusivityAdmitsEveryoneWaiting(t *testing.T) {
 	}
 }
 
-// The owner leaving must hand the lane to the next waiter, not strand it.
+// The owner leaving must hand the agent to the next waiter, not strand it.
 func TestOwnerLeavingPromotesTheHeadOfTheQueue(t *testing.T) {
 	s, a := chState(t, "owner", "second")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Channel: "hot", Text: "t", Exclusive: true})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["second"].Token, Channel: "hot"})
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["owner"].Token, Channel: "hot"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Space: "hot", Text: "t", Exclusive: true})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["second"].Token, Space: "hot"})
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["owner"].Token, Space: "hot"})
 
-	ch := s.Channels["hot"]
+	ch := s.Spaces["hot"]
 	if ch.Owner != "second" {
 		t.Fatalf("second should have been promoted, owner=%q", ch.Owner)
 	}
@@ -188,24 +188,24 @@ func TestOwnerLeavingPromotesTheHeadOfTheQueue(t *testing.T) {
 }
 
 // A fleet must never stay wedged behind an agent that crashed. This is the
-// channel analogue of claim expiry and runs at the same moment.
+// space analogue of claim expiry and runs at the same moment.
 func TestStaleOwnerYieldsExclusivityButKeepsMembership(t *testing.T) {
 	s, a := chState(t, "owner", "second")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Channel: "hot", Text: "t", Exclusive: true})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["second"].Token, Channel: "hot"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Space: "hot", Text: "t", Exclusive: true})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["second"].Token, Space: "hot"})
 
 	now := time.Unix(1700000000, 0)
 	if _, _, err := s.Apply(&Op{Kind: OpSweep, StaleLanes: []string{"owner"}}, now); err != nil {
 		t.Fatal(err)
 	}
-	ch := s.Channels["hot"]
+	ch := s.Spaces["hot"]
 	if ch.Owner == "owner" {
-		t.Fatal("a stale agent must not keep the lane locked")
+		t.Fatal("a stale agent must not keep the agent locked")
 	}
 	// Membership is informative and costs nobody anything; a persistent agent
 	// that wakes should still be where it was working.
 	if _, ok := ch.Members["owner"]; !ok {
-		t.Fatal("going stale should not evict the agent from the lane")
+		t.Fatal("going stale should not evict the agent from the agent")
 	}
 	if _, ok := ch.Members["second"]; !ok {
 		t.Fatal("the waiter should have been admitted when the lock lifted")
@@ -214,30 +214,30 @@ func TestStaleOwnerYieldsExclusivityButKeepsMembership(t *testing.T) {
 
 func TestOnlyTheFirstMemberMayTakeALaneExclusively(t *testing.T) {
 	s, a := chState(t, "alpha", "beta")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Channel: "shared", Text: "t"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["beta"].Token, Channel: "shared"})
-	err := mustFail(t, s, &Op{Kind: OpLaneExclusive, Token: a["beta"].Token, Channel: "shared"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Space: "shared", Text: "t"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["beta"].Token, Space: "shared"})
+	err := mustFail(t, s, &Op{Kind: OpLaneExclusive, Token: a["beta"].Token, Space: "shared"})
 	if !contains(err.Error(), "members") {
-		t.Fatalf("error should explain the lane is already shared: %v", err)
+		t.Fatalf("error should explain the agent is already shared: %v", err)
 	}
 }
 
 func TestNonOwnerCannotReleaseSomeoneElsesLane(t *testing.T) {
 	s, a := chState(t, "owner", "other")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Channel: "hot", Text: "t", Exclusive: true})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["other"].Token, Channel: "hot"}) // queued
-	_ = mustFail(t, s, &Op{Kind: OpLaneExclusive, Token: a["other"].Token, Channel: "hot", Mode: "release"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Space: "hot", Text: "t", Exclusive: true})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["other"].Token, Space: "hot"}) // queued
+	_ = mustFail(t, s, &Op{Kind: OpLaneExclusive, Token: a["other"].Token, Space: "hot", Mode: "release"})
 }
 
 // ── announce and ack ─────────────────────────────────────────────────────
 
 func TestAnnounceRequiresAckFromEveryMemberButTheSender(t *testing.T) {
 	s, a := chState(t, "alpha", "beta", "gamma")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Channel: "auth", Text: "t"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["beta"].Token, Channel: "auth"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["gamma"].Token, Channel: "auth"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Space: "auth", Text: "t"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["beta"].Token, Space: "auth"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["gamma"].Token, Space: "auth"})
 
-	r := do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["alpha"].Token, Channel: "auth", Body: "renaming Token"})
+	r := do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["alpha"].Token, Space: "auth", Body: "renaming Token"})
 	if r["must_ack"] != 2 {
 		t.Fatalf("two others must ack, got %v", r)
 	}
@@ -270,8 +270,8 @@ func TestAnnounceRequiresAckFromEveryMemberButTheSender(t *testing.T) {
 // the unresolved column forever and trains people to ignore that column.
 func TestAnnounceWithNoOtherMembersIsSettledImmediately(t *testing.T) {
 	s, a := chState(t, "alpha")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Channel: "solo", Text: "t"})
-	r := do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["alpha"].Token, Channel: "solo", Body: "note"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Space: "solo", Text: "t"})
+	r := do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["alpha"].Token, Space: "solo", Body: "note"})
 	if s.Announcements[r["serial"].(uint64)].State != AnnounceAcked {
 		t.Fatal("an announcement nobody must ack is already settled")
 	}
@@ -291,9 +291,9 @@ func TestAnnounceWithNoOtherMembersIsSettledImmediately(t *testing.T) {
 // is exactly the situation.
 func TestClosingAnAgentSettlesTheAckItOwedWithoutClaimingItRead(t *testing.T) {
 	s, a := chState(t, "alpha", "beta")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Channel: "auth", Text: "t"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["beta"].Token, Channel: "auth"})
-	r := do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["alpha"].Token, Channel: "auth", Body: "x"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Space: "auth", Text: "t"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["beta"].Token, Space: "auth"})
+	r := do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["alpha"].Token, Space: "auth", Body: "x"})
 	serial := r["serial"].(uint64)
 
 	do(t, s, &Op{Kind: OpCloseLane, Token: a["beta"].Token})
@@ -307,22 +307,22 @@ func TestClosingAnAgentSettlesTheAckItOwedWithoutClaimingItRead(t *testing.T) {
 	if !slices.Contains(an.DepartedUnacked, "beta") {
 		t.Fatalf("the member that left owing it must be named, got %v", an.DepartedUnacked)
 	}
-	if _, ok := s.Channels["auth"].Members["beta"]; ok {
-		t.Fatal("a closed agent must leave its lanes")
+	if _, ok := s.Spaces["auth"].Members["beta"]; ok {
+		t.Fatal("a closed agent must leave its agents")
 	}
 }
 
 // The common case is NOT the extreme one, and must not cry wolf: if the
-// announcement did reach the lane (somebody read it) a later departure
+// announcement did reach the agent (somebody read it) a later departure
 // settles it as acked, with the departure recorded rather than alarmed about.
 // Filling the board with red marks after every prune is how people learn to
 // ignore the column that matters.
 func TestADepartureAfterSomebodyReadItDoesNotRaiseAnAlarm(t *testing.T) {
 	s, a := chState(t, "sender", "reader", "quitter")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["sender"].Token, Channel: "work", Text: "t"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["reader"].Token, Channel: "work"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["quitter"].Token, Channel: "work"})
-	r := do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["sender"].Token, Channel: "work", Body: "FREEZE"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["sender"].Token, Space: "work", Text: "t"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["reader"].Token, Space: "work"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["quitter"].Token, Space: "work"})
+	r := do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["sender"].Token, Space: "work", Body: "FREEZE"})
 	serial := r["serial"].(uint64)
 
 	do(t, s, &Op{Kind: OpLaneAck, Token: a["reader"].Token, MsgSerial: serial})
@@ -342,19 +342,19 @@ func TestADepartureAfterSomebodyReadItDoesNotRaiseAnAlarm(t *testing.T) {
 
 func TestOnlyMembersMaySpeak(t *testing.T) {
 	s, a := chState(t, "alpha", "outsider")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Channel: "auth", Text: "t"})
-	_ = mustFail(t, s, &Op{Kind: OpLanePost, Token: a["outsider"].Token, Channel: "auth", Body: "hi"})
-	_ = mustFail(t, s, &Op{Kind: OpLaneAnnounce, Token: a["outsider"].Token, Channel: "auth", Body: "hi"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Space: "auth", Text: "t"})
+	_ = mustFail(t, s, &Op{Kind: OpLanePost, Token: a["outsider"].Token, Space: "auth", Body: "hi"})
+	_ = mustFail(t, s, &Op{Kind: OpLaneAnnounce, Token: a["outsider"].Token, Space: "auth", Body: "hi"})
 
 	// …but subscribing is free, and does not make you a member.
-	do(t, s, &Op{Kind: OpLaneSubscribe, Token: a["outsider"].Token, Channel: "auth"})
-	if !s.Channels["auth"].Subs["outsider"] {
+	do(t, s, &Op{Kind: OpLaneSubscribe, Token: a["outsider"].Token, Space: "auth"})
+	if !s.Spaces["auth"].Subs["outsider"] {
 		t.Fatal("should be subscribed")
 	}
-	if _, ok := s.Channels["auth"].Members["outsider"]; ok {
+	if _, ok := s.Spaces["auth"].Members["outsider"]; ok {
 		t.Fatal("subscribing must not create membership: only membership collides")
 	}
-	_ = mustFail(t, s, &Op{Kind: OpLanePost, Token: a["outsider"].Token, Channel: "auth", Body: "hi"})
+	_ = mustFail(t, s, &Op{Kind: OpLanePost, Token: a["outsider"].Token, Space: "auth", Body: "hi"})
 }
 
 // ── ids and gating ───────────────────────────────────────────────────────
@@ -381,8 +381,8 @@ func TestChannelOpsRespectTheAwarenessGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	l := s.Lanes[res["lane_id"].(string)]
-	_ = mustFail(t, s, &Op{Kind: OpLaneOpen, Token: l.Token, Channel: "x", Text: "t"})
+	l := s.Agents[res["lane_id"].(string)]
+	_ = mustFail(t, s, &Op{Kind: OpLaneOpen, Token: l.Token, Space: "x", Text: "t"})
 }
 
 // SPEC-CHANNELS.md §10.6: silence is never resolution.
@@ -394,10 +394,10 @@ func TestChannelOpsRespectTheAwarenessGate(t *testing.T) {
 // uncoordinated.
 func TestExhaustedAnnouncementIsMarkedUnackedNotDropped(t *testing.T) {
 	s, a := chState(t, "alpha", "beta", "gamma")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Channel: "auth", Text: "t"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["beta"].Token, Channel: "auth"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["gamma"].Token, Channel: "auth"})
-	r := do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["alpha"].Token, Channel: "auth", Body: "x"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Space: "auth", Text: "t"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["beta"].Token, Space: "auth"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["gamma"].Token, Space: "auth"})
+	r := do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["alpha"].Token, Space: "auth", Body: "x"})
 	serial := r["serial"].(uint64)
 
 	// gamma answers; beta never does.
@@ -416,7 +416,7 @@ func TestExhaustedAnnouncementIsMarkedUnackedNotDropped(t *testing.T) {
 	}
 	var found bool
 	for _, e := range evs {
-		if e.Type != "lane.announce_unacked" {
+		if e.Type != "agent.announce_unacked" {
 			continue
 		}
 		found = true
@@ -439,9 +439,9 @@ func TestExhaustedAnnouncementIsMarkedUnackedNotDropped(t *testing.T) {
 
 func TestGivingUpOnAnAlreadySettledAnnouncementIsANoop(t *testing.T) {
 	s, a := chState(t, "alpha", "beta")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Channel: "auth", Text: "t"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["beta"].Token, Channel: "auth"})
-	r := do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["alpha"].Token, Channel: "auth", Body: "x"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Space: "auth", Text: "t"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["beta"].Token, Space: "auth"})
+	r := do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["alpha"].Token, Space: "auth", Body: "x"})
 	serial := r["serial"].(uint64)
 	do(t, s, &Op{Kind: OpLaneAck, Token: a["beta"].Token, MsgSerial: serial})
 
@@ -456,42 +456,42 @@ func TestGivingUpOnAnAlreadySettledAnnouncementIsANoop(t *testing.T) {
 // SPEC-CHANNELS.md §8.2: spawning a subagent must not require ceremony.
 //
 // A subagent that had to join would be counted as a second occupant of its
-// parent's own work (which is not a collision) and on an exclusive lane it
+// parent's own work (which is not a collision) and on an exclusive agent it
 // would queue behind its own parent forever.
 func TestSubagentInheritsItsParentsMembership(t *testing.T) {
 	s, a := chState(t, "parent", "other")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["parent"].Token, Channel: "work", Text: "t"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["parent"].Token, Space: "work", Text: "t"})
 
 	// A subagent registers naming its parent, and joins nothing.
 	res := spawnChild(t, s, a["parent"].Token, "parent", "nonce-child-0123456789abcdef")
-	helper := s.Lanes[res["lane_id"].(string)]
+	helper := s.Agents[res["lane_id"].(string)]
 	do(t, s, &Op{Kind: OpAckBoard, Token: helper.Token})
 
-	ch := s.Channels["work"]
+	ch := s.Spaces["work"]
 	if _, joined := ch.Members["helper"]; joined {
 		t.Fatal("a subagent must not become a member in its own right")
 	}
 	if len(ch.Members) != 1 {
-		t.Fatalf("the lane must still show ONE occupant, got %d", len(ch.Members))
+		t.Fatalf("the agent must still show ONE occupant, got %d", len(ch.Members))
 	}
 	// …and yet it may speak.
-	r := do(t, s, &Op{Kind: OpLanePost, Token: helper.Token, Channel: "work", Body: "progress"})
+	r := do(t, s, &Op{Kind: OpLanePost, Token: helper.Token, Space: "work", Body: "progress"})
 	if r["lane_id"] != "work" {
 		t.Fatalf("the subagent should be able to post: %v", r)
 	}
 	// An unrelated agent still cannot.
-	_ = mustFail(t, s, &Op{Kind: OpLanePost, Token: a["other"].Token, Channel: "work", Body: "hi"})
+	_ = mustFail(t, s, &Op{Kind: OpLanePost, Token: a["other"].Token, Space: "work", Body: "hi"})
 }
 
 func TestSubagentAnnouncementIsAttributedToTheParent(t *testing.T) {
 	s, a := chState(t, "parent", "peer")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["parent"].Token, Channel: "work", Text: "t"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["peer"].Token, Channel: "work"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["parent"].Token, Space: "work", Text: "t"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["peer"].Token, Space: "work"})
 	res := spawnChild(t, s, a["parent"].Token, "parent", "nonce-child-0123456789abcdef")
-	helper := s.Lanes[res["lane_id"].(string)]
+	helper := s.Agents[res["lane_id"].(string)]
 	do(t, s, &Op{Kind: OpAckBoard, Token: helper.Token})
 
-	r := do(t, s, &Op{Kind: OpLaneAnnounce, Token: helper.Token, Channel: "work", Body: "heads up"})
+	r := do(t, s, &Op{Kind: OpLaneAnnounce, Token: helper.Token, Space: "work", Body: "heads up"})
 	// The parent must not be asked to acknowledge its own subagent's news.
 	if r["must_ack"] != 1 {
 		t.Fatalf("only the peer should owe an ack, got %v", r)
@@ -509,14 +509,14 @@ func TestSubagentAnnouncementIsAttributedToTheParent(t *testing.T) {
 // it, because the access was never the subagent's to begin with.
 func TestSubagentLosesAccessWhenTheParentLeaves(t *testing.T) {
 	s, a := chState(t, "parent")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["parent"].Token, Channel: "work", Text: "t"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["parent"].Token, Space: "work", Text: "t"})
 	res := spawnChild(t, s, a["parent"].Token, "parent", "nonce-child-0123456789abcdef")
-	helper := s.Lanes[res["lane_id"].(string)]
+	helper := s.Agents[res["lane_id"].(string)]
 	do(t, s, &Op{Kind: OpAckBoard, Token: helper.Token})
-	do(t, s, &Op{Kind: OpLanePost, Token: helper.Token, Channel: "work", Body: "before"})
+	do(t, s, &Op{Kind: OpLanePost, Token: helper.Token, Space: "work", Body: "before"})
 
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["parent"].Token, Channel: "work"})
-	_ = mustFail(t, s, &Op{Kind: OpLanePost, Token: helper.Token, Channel: "work", Body: "after"})
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["parent"].Token, Space: "work"})
+	_ = mustFail(t, s, &Op{Kind: OpLanePost, Token: helper.Token, Space: "work", Body: "after"})
 }
 
 // A corrupted or hand-edited ledger could contain a parent cycle. An unbounded
@@ -524,43 +524,43 @@ func TestSubagentLosesAccessWhenTheParentLeaves(t *testing.T) {
 // fail one call.
 func TestParentCycleCannotHangTheLoop(t *testing.T) {
 	s, a := chState(t, "opener")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["opener"].Token, Channel: "work", Text: "t"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["opener"].Token, Space: "work", Text: "t"})
 	x := do(t, s, &Op{Kind: OpRegisterLane, Name: "x", NewToken: "tx", Parent: "y"})
 	y := do(t, s, &Op{Kind: OpRegisterLane, Name: "y", NewToken: "ty", Parent: "x"})
 	_, _ = x, y
-	if got := s.speaksFor(s.Channels["work"], "x"); got != "" {
+	if got := s.speaksFor(s.Spaces["work"], "x"); got != "" {
 		t.Fatalf("a cycle must resolve to no membership, got %q", got)
 	}
 }
 
 // ── the director (SPEC-CHANNELS.md §8.1) ────────────────────────────────
 
-func makeCoordinator(t *testing.T, s *State, lane string) {
+func makeCoordinator(t *testing.T, s *State, agent string) {
 	t.Helper()
-	if _, _, err := s.Apply(&Op{Kind: OpGrantRole, To: lane, Mode: RoleCoordinator}, testNow); err != nil {
+	if _, _, err := s.Apply(&Op{Kind: OpGrantRole, To: agent, Mode: RoleCoordinator}, testNow); err != nil {
 		t.Fatalf("grant: %v", err)
 	}
 }
 
-// The whole point of the role: unsticking a lane whose owner is gone. And it
+// The whole point of the role: unsticking an agent whose owner is gone. And it
 // must never be silent: the former owner is named, exactly as force_release on
 // a directory claim is (SPEC §9).
 func TestDirectorCanUnstickALaneAndIsNeverSilent(t *testing.T) {
 	s, a := chState(t, "owner", "director", "waiter")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Channel: "hot", Text: "t", Exclusive: true})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["waiter"].Token, Channel: "hot"}) // queued
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Space: "hot", Text: "t", Exclusive: true})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["waiter"].Token, Space: "hot"}) // queued
 	makeCoordinator(t, s, "director")
 
 	r := do(t, s, &Op{
-		Kind: OpLaneForceRelease, Token: a["director"].Token, Channel: "hot",
+		Kind: OpLaneForceRelease, Token: a["director"].Token, Space: "hot",
 		Note: "owner's machine died",
 	})
 	if r["released"] != true || r["former_owner"] != "owner" {
 		t.Fatalf("want a release naming the former owner, got %v", r)
 	}
-	ch := s.Channels["hot"]
+	ch := s.Spaces["hot"]
 	if ch.Owner != "" {
-		t.Fatalf("lane still locked to %q", ch.Owner)
+		t.Fatalf("agent still locked to %q", ch.Owner)
 	}
 	if _, in := ch.Members["waiter"]; !in {
 		t.Fatal("the waiter should have been admitted once the lock lifted")
@@ -571,11 +571,11 @@ func TestDirectorCanUnstickALaneAndIsNeverSilent(t *testing.T) {
 // path, and without it every director power is refused.
 func TestDirectorPowersAreRefusedWithoutTheRole(t *testing.T) {
 	s, a := chState(t, "owner", "nobody")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Channel: "hot", Text: "t", Exclusive: true})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Space: "hot", Text: "t", Exclusive: true})
 	for _, op := range []*Op{
-		{Kind: OpLaneForceRelease, Token: a["nobody"].Token, Channel: "hot"},
-		{Kind: OpLaneEvict, Token: a["nobody"].Token, Channel: "hot", To: "owner"},
-		{Kind: OpLaneMerge, Token: a["nobody"].Token, Channel: "hot", To: "hot2"},
+		{Kind: OpLaneForceRelease, Token: a["nobody"].Token, Space: "hot"},
+		{Kind: OpLaneEvict, Token: a["nobody"].Token, Space: "hot", To: "owner"},
+		{Kind: OpLaneMerge, Token: a["nobody"].Token, Space: "hot", To: "hot2"},
 	} {
 		err := mustFail(t, s, op)
 		if !strings.Contains(err.Error(), "E_NOT_COORDINATOR") {
@@ -586,27 +586,27 @@ func TestDirectorPowersAreRefusedWithoutTheRole(t *testing.T) {
 
 func TestDirectorCanEvictAndTheAgentIsTold(t *testing.T) {
 	s, a := chState(t, "director", "stray")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["director"].Token, Channel: "work", Text: "t"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["stray"].Token, Channel: "work"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["director"].Token, Space: "work", Text: "t"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["stray"].Token, Space: "work"})
 	makeCoordinator(t, s, "director")
 
 	r := do(t, s, &Op{
-		Kind: OpLaneEvict, Token: a["director"].Token, Channel: "work",
-		To: "stray", Note: "wrong lane",
+		Kind: OpLaneEvict, Token: a["director"].Token, Space: "work",
+		To: "stray", Note: "wrong agent",
 	})
 	if r["evicted"] != true {
 		t.Fatalf("want an eviction, got %v", r)
 	}
-	if _, in := s.Channels["work"].Members["stray"]; in {
+	if _, in := s.Spaces["work"].Members["stray"]; in {
 		t.Fatal("the evicted agent must not remain a member")
 	}
 }
 
-// An announcement is the strongest thing an agent can do to a lane: it obliges
+// An announcement is the strongest thing an agent can do to an agent: it obliges
 // every member to acknowledge it and re-pings them until they do. The awareness
-// gate was enforced on lane_open and lane_join (the WEAKER acts) and not on
+// gate was enforced on open_space and join_space (the WEAKER acts) and not on
 // this one, so an agent that had just reattached after losing its context could
-// oblige a whole lane to answer something while never having read the board.
+// oblige a whole agent to answer something while never having read the board.
 func TestAnnouncingRequiresHavingReadTheBoard(t *testing.T) {
 	s := NewState("t", DefaultLimits())
 	r, _, err := s.Apply(&Op{Kind: OpRegisterLane, Name: "a", NewToken: "tok"}, testNow)
@@ -614,8 +614,8 @@ func TestAnnouncingRequiresHavingReadTheBoard(t *testing.T) {
 		t.Fatal(err)
 	}
 	id, _ := r["lane_id"].(string)
-	do(t, s, &Op{Kind: OpAckBoard, Token: s.Lanes[id].Token})
-	do(t, s, &Op{Kind: OpLaneOpen, Token: s.Lanes[id].Token, Channel: "hot", Text: "w"})
+	do(t, s, &Op{Kind: OpAckBoard, Token: s.Agents[id].Token})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: s.Agents[id].Token, Space: "hot", Text: "w"})
 
 	// Losing context and reattaching re-arms the gate: a new activation has
 	// read nothing.
@@ -624,15 +624,15 @@ func TestAnnouncingRequiresHavingReadTheBoard(t *testing.T) {
 	}, testNow); err != nil {
 		t.Fatal(err)
 	}
-	s.Lanes[id].AckedSerial = 0 // what a fresh activation looks like
+	s.Agents[id].AckedSerial = 0 // what a fresh activation looks like
 
-	err = mustFail(t, s, &Op{Kind: OpLaneAnnounce, Token: s.Lanes[id].Token, Channel: "hot", Body: "FREEZE"})
+	err = mustFail(t, s, &Op{Kind: OpLaneAnnounce, Token: s.Agents[id].Token, Space: "hot", Body: "FREEZE"})
 	if !strings.Contains(err.Error(), "E_MUST_ACK_BOARD") {
 		t.Fatalf("want the awareness gate, got %v", err)
 	}
 	// And acking clears it, so the gate is a step rather than a wall.
-	do(t, s, &Op{Kind: OpAckBoard, Token: s.Lanes[id].Token})
-	do(t, s, &Op{Kind: OpLaneAnnounce, Token: s.Lanes[id].Token, Channel: "hot", Body: "FREEZE"})
+	do(t, s, &Op{Kind: OpAckBoard, Token: s.Agents[id].Token})
+	do(t, s, &Op{Kind: OpLaneAnnounce, Token: s.Agents[id].Token, Space: "hot", Body: "FREEZE"})
 }
 
 // The asymmetry is deliberate, and pinned so it does not get "fixed" into
@@ -645,36 +645,36 @@ func TestPostingIsDeliberatelyNotGated(t *testing.T) {
 		t.Fatal(err)
 	}
 	id, _ := r["lane_id"].(string)
-	do(t, s, &Op{Kind: OpAckBoard, Token: s.Lanes[id].Token})
-	do(t, s, &Op{Kind: OpLaneOpen, Token: s.Lanes[id].Token, Channel: "hot", Text: "w"})
-	s.Lanes[id].AckedSerial = 0
+	do(t, s, &Op{Kind: OpAckBoard, Token: s.Agents[id].Token})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: s.Agents[id].Token, Space: "hot", Text: "w"})
+	s.Agents[id].AckedSerial = 0
 
-	do(t, s, &Op{Kind: OpLanePost, Token: s.Lanes[id].Token, Channel: "hot", Body: "just so you know"})
+	do(t, s, &Op{Kind: OpLanePost, Token: s.Agents[id].Token, Space: "hot", Body: "just so you know"})
 }
 
 // Context loss is the most common thing that happens to an agent, and a token
-// rotation must not cost it its place. Everything the lane held has to survive:
+// rotation must not cost it its place. Everything the agent held has to survive:
 // exclusive ownership, membership, queue position, and: the one it cannot
 // reconstruct for itself: what it still owes an acknowledgement on.
 func TestReattachingKeepsEverythingTheAgentHeld(t *testing.T) {
 	s := NewState("t", DefaultLimits())
-	reg := func(name, sess, tok string) *Lane {
+	reg := func(name, sess, tok string) *Agent {
 		t.Helper()
 		r, _, err := s.Apply(&Op{Kind: OpRegisterLane, Name: name, SessionID: sess, NewToken: tok}, testNow)
 		if err != nil {
 			t.Fatal(err)
 		}
 		id, _ := r["lane_id"].(string)
-		do(t, s, &Op{Kind: OpAckBoard, Token: s.Lanes[id].Token})
-		return s.Lanes[id]
+		do(t, s, &Op{Kind: OpAckBoard, Token: s.Agents[id].Token})
+		return s.Agents[id]
 	}
 	owner, waiter := reg("owner", "s1", "t1"), reg("waiter", "s2", "t2")
 	reg("member", "s3", "t3")
 	makeCoordinator(t, s, "owner")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: owner.Token, Channel: "hot", Text: "w", Exclusive: true})
-	do(t, s, &Op{Kind: OpLaneAdmit, Token: owner.Token, Channel: "hot", To: "member"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: waiter.Token, Channel: "hot"})
-	ar := do(t, s, &Op{Kind: OpLaneAnnounce, Token: owner.Token, Channel: "hot", Body: "FREEZE"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: owner.Token, Space: "hot", Text: "w", Exclusive: true})
+	do(t, s, &Op{Kind: OpLaneAdmit, Token: owner.Token, Space: "hot", To: "member"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: waiter.Token, Space: "hot"})
+	ar := do(t, s, &Op{Kind: OpLaneAnnounce, Token: owner.Token, Space: "hot", Body: "FREEZE"})
 	ser, _ := ar["serial"].(uint64)
 
 	// All three lose context and come back: same name, same session, new token.
@@ -686,7 +686,7 @@ func TestReattachingKeepsEverythingTheAgentHeld(t *testing.T) {
 		}
 	}
 
-	ch := s.Channels["hot"]
+	ch := s.Spaces["hot"]
 	if ch.Owner != "owner" {
 		t.Fatalf("exclusive ownership must survive a token rotation, owner=%q", ch.Owner)
 	}
@@ -708,19 +708,19 @@ func TestReattachingKeepsEverythingTheAgentHeld(t *testing.T) {
 	}
 }
 
-// SPEC-CHANNELS.md §8.2: a subagent inherits its parent's lanes and does not
+// SPEC-CHANNELS.md §8.2: a subagent inherits its parent's agents and does not
 // join, queue or count separately. Letting it join was not merely redundant,
 // it deadlocked a parent against its own child.
 //
-// Observed: a subagent asking to join the lane its PARENT held exclusively was
+// Observed: a subagent asking to join the agent its PARENT held exclusively was
 // queued behind that parent at position 2, with a hint telling it to send the
 // owner a request. The parent does not release until the subagent's work is
-// done, so each waited on the other. All the while lane_post from that subagent
+// done, so each waited on the other. All the while post from that subagent
 // already worked, because speaking is exactly what the inherited membership is
 // for.
 func TestASubagentInheritsItsParentsLaneRatherThanQueueingBehindIt(t *testing.T) {
 	s := NewState("t", DefaultLimits())
-	reg := func(name, parent string) *Lane {
+	reg := func(name, parent string) *Agent {
 		t.Helper()
 		op := &Op{Kind: OpRegisterLane, Name: name, NewToken: "tok-" + name, Parent: parent}
 		if parent != "" {
@@ -731,7 +731,7 @@ func TestASubagentInheritsItsParentsLaneRatherThanQueueingBehindIt(t *testing.T)
 			t.Fatal(err)
 		}
 		id, _ := r["lane_id"].(string)
-		l := s.Lanes[id]
+		l := s.Agents[id]
 		if _, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: l.Token}, testNow); err != nil {
 			t.Fatal(err)
 		}
@@ -743,87 +743,87 @@ func TestASubagentInheritsItsParentsLaneRatherThanQueueingBehindIt(t *testing.T)
 	// skip its exclusive queue, and be exempt from its claims in the guard.
 	do(t, s, &Op{Kind: OpVouchChild, Token: parent.Token, Nonce: "nonce-sub-0123456789abcdef"})
 	sub := reg("sub", "parent")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: parent.Token, Channel: "hot", Text: "w", Exclusive: true})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: parent.Token, Space: "hot", Text: "w", Exclusive: true})
 
-	r := do(t, s, &Op{Kind: OpLaneJoin, Token: sub.Token, Channel: "hot"})
+	r := do(t, s, &Op{Kind: OpLaneJoin, Token: sub.Token, Space: "hot"})
 	if r["queued"] == true {
 		t.Fatalf("a subagent queued behind its own parent: neither can proceed: %v", r)
 	}
 	if r["joined"] != true || r["under"] != "parent" {
-		t.Fatalf("the subagent should already be in the lane, through its parent: %v", r)
+		t.Fatalf("the subagent should already be in the agent, through its parent: %v", r)
 	}
-	if q := s.Channels["hot"].Queue; len(q) != 0 {
+	if q := s.Spaces["hot"].Queue; len(q) != 0 {
 		t.Fatalf("a subagent must not queue separately, got %v", q)
 	}
-	if _, counted := s.Channels["hot"].Members["sub"]; counted {
+	if _, counted := s.Spaces["hot"].Members["sub"]; counted {
 		t.Fatal("a subagent must not count as a separate member")
 	}
 	// And the thing the inherited membership is FOR still works.
-	if _, _, err := s.Apply(&Op{Kind: OpLanePost, Token: sub.Token, Channel: "hot", Body: "hi"}, testNow); err != nil {
+	if _, _, err := s.Apply(&Op{Kind: OpLanePost, Token: sub.Token, Space: "hot", Body: "hi"}, testNow); err != nil {
 		t.Fatalf("a subagent speaks under its parent's membership: %v", err)
 	}
 	// An announcement binds the parent, once, not both.
-	ar := do(t, s, &Op{Kind: OpLaneOpen, Token: parent.Token, Channel: "other", Text: "x"})
+	ar := do(t, s, &Op{Kind: OpLaneOpen, Token: parent.Token, Space: "other", Text: "x"})
 	_ = ar
-	if _, counted := s.Channels["hot"].Members["sub"]; counted {
+	if _, counted := s.Spaces["hot"].Members["sub"]; counted {
 		t.Fatal("still must not count separately")
 	}
 }
 
 // The promotion check used to be `Status == StatusClosed`, but an agent that
 // CRASHED is `stale` and one that is asleep is `dormant`: neither is closed.
-// So a dead agent was handed exclusive ownership of the lane and every healthy
+// So a dead agent was handed exclusive ownership of the agent and every healthy
 // agent behind it waited on a corpse. Observed exactly: sweep marked the agent
-// stale, the owner left, and the lane's owner became the crashed agent.
+// stale, the owner left, and the agent's owner became the crashed agent.
 //
-// close_lane dequeues, so this only ever showed up for real crashes, which is
+// sign_off dequeues, so this only ever showed up for real crashes, which is
 // the case the queue exists to survive.
 func TestACrashedAgentIsNeverPromotedToOwner(t *testing.T) {
 	s, a := chState(t, "owner", "crashed", "live")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Channel: "hot", Text: "w", Exclusive: true})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["crashed"].Token, Channel: "hot"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["live"].Token, Channel: "hot"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Space: "hot", Text: "w", Exclusive: true})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["crashed"].Token, Space: "hot"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["live"].Token, Space: "hot"})
 	// Dies the way a real agent dies: detected by the sweep, never closed.
 	if _, _, err := s.Apply(&Op{Kind: OpSweep, StaleLanes: []string{"crashed"}}, testNow); err != nil {
 		t.Fatal(err)
 	}
-	if s.Lanes["crashed"].Status != StatusStale {
-		t.Fatalf("precondition: want stale, got %q", s.Lanes["crashed"].Status)
+	if s.Agents["crashed"].Status != StatusStale {
+		t.Fatalf("precondition: want stale, got %q", s.Agents["crashed"].Status)
 	}
 
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["owner"].Token, Channel: "hot"})
-	ch := s.Channels["hot"]
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["owner"].Token, Space: "hot"})
+	ch := s.Spaces["hot"]
 	if ch.Owner == "crashed" {
-		t.Fatal("an exclusive lane was locked behind a crashed agent")
+		t.Fatal("an exclusive agent was locked behind a crashed agent")
 	}
 	if ch.Owner != "live" {
 		t.Fatalf("the first agent that could actually take it should have, owner=%q", ch.Owner)
 	}
-	// Skipped, not evicted: going stale has never removed an agent from a lane,
+	// Skipped, not evicted: going stale has never removed an agent from an agent,
 	// and a persistent agent that wakes must still find itself in line.
 	if !slices.Contains(ch.Queue, "crashed") {
 		t.Fatalf("the crashed agent should keep its place for when it recovers, queue=%v", ch.Queue)
 	}
 }
 
-// And when nobody waiting can take it, the lane must not sit locked-open with a
+// And when nobody waiting can take it, the agent must not sit locked-open with a
 // queue nothing will ever drain: that is the same "waiting forever" bug in
 // another dress.
 func TestALaneNobodyCanTakeIsReleasedRatherThanStranded(t *testing.T) {
 	s, a := chState(t, "owner", "crashed")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Channel: "hot", Text: "w", Exclusive: true})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["crashed"].Token, Channel: "hot"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Space: "hot", Text: "w", Exclusive: true})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["crashed"].Token, Space: "hot"})
 	if _, _, err := s.Apply(&Op{Kind: OpSweep, StaleLanes: []string{"crashed"}}, testNow); err != nil {
 		t.Fatal(err)
 	}
 
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["owner"].Token, Channel: "hot"})
-	ch := s.Channels["hot"]
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["owner"].Token, Space: "hot"})
+	ch := s.Spaces["hot"]
 	if ch.Owner != "" {
-		t.Fatalf("no live waiter, so the lane must simply open; owner=%q", ch.Owner)
+		t.Fatalf("no live waiter, so the agent must simply open; owner=%q", ch.Owner)
 	}
 	if len(ch.Queue) != 0 {
-		t.Fatalf("a queue on an open lane is drained by nothing; got %v", ch.Queue)
+		t.Fatalf("a queue on an open agent is drained by nothing; got %v", ch.Queue)
 	}
 	if _, in := ch.Members["crashed"]; !in {
 		t.Fatal("the waiter was waiting to work here; with the lock gone it is a member")
@@ -832,28 +832,28 @@ func TestALaneNobodyCanTakeIsReleasedRatherThanStranded(t *testing.T) {
 
 // Eviction used to check membership only, so a director trying to remove an
 // agent that was QUEUED got evicted:false / "not a member": technically true,
-// and it meant the director concluded the agent was not on the lane and moved
+// and it meant the director concluded the agent was not on the agent and moved
 // on. Then the owner left and the agent it had tried to remove was promoted to
-// OWNER of that lane. Observed exactly, in that order.
+// OWNER of that agent. Observed exactly, in that order.
 func TestEvictingAQueuedAgentRemovesIt(t *testing.T) {
 	s, a := chState(t, "director", "owner", "waiter", "extra")
 	makeCoordinator(t, s, "director")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Channel: "hot", Text: "w", Exclusive: true})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["waiter"].Token, Channel: "hot"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["extra"].Token, Channel: "hot"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Space: "hot", Text: "w", Exclusive: true})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["waiter"].Token, Space: "hot"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["extra"].Token, Space: "hot"})
 
-	r := do(t, s, &Op{Kind: OpLaneEvict, Token: a["director"].Token, Channel: "hot", To: "waiter"})
+	r := do(t, s, &Op{Kind: OpLaneEvict, Token: a["director"].Token, Space: "hot", To: "waiter"})
 	if r["evicted"] != true || r["from_queue"] != true {
-		t.Fatalf("removing somebody from a lane must remove them, got %v", r)
+		t.Fatalf("removing somebody from an agent must remove them, got %v", r)
 	}
-	if q := s.Channels["hot"].Queue; len(q) != 1 || q[0] != "extra" {
+	if q := s.Spaces["hot"].Queue; len(q) != 1 || q[0] != "extra" {
 		t.Fatalf("the evicted agent must be out of the queue, got %v", q)
 	}
 	// The consequence that made this matter: the owner leaves, and whoever the
 	// director evicted must NOT be the one promoted.
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["owner"].Token, Channel: "hot"})
-	if got := s.Channels["hot"].Owner; got == "waiter" {
-		t.Fatal("an evicted agent was promoted to owner of the lane it was evicted from")
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["owner"].Token, Space: "hot"})
+	if got := s.Spaces["hot"].Owner; got == "waiter" {
+		t.Fatal("an evicted agent was promoted to owner of the agent it was evicted from")
 	} else if got != "extra" {
 		t.Fatalf("the next real waiter should have been promoted, owner=%q", got)
 	}
@@ -864,9 +864,9 @@ func TestEvictingAQueuedAgentRemovesIt(t *testing.T) {
 func TestEvictingSomebodyWhoIsNotThereSaysSoUsefully(t *testing.T) {
 	s, a := chState(t, "director", "owner", "stranger")
 	makeCoordinator(t, s, "director")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Channel: "hot", Text: "w"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Space: "hot", Text: "w"})
 
-	r := do(t, s, &Op{Kind: OpLaneEvict, Token: a["director"].Token, Channel: "hot", To: "stranger"})
+	r := do(t, s, &Op{Kind: OpLaneEvict, Token: a["director"].Token, Space: "hot", To: "stranger"})
 	if r["evicted"] != false {
 		t.Fatalf("nothing to evict, got %v", r)
 	}
@@ -880,96 +880,96 @@ func TestEvictingSomebodyWhoIsNotThereSaysSoUsefully(t *testing.T) {
 // to trust with it.
 func TestDirectorCanMergeTwoLanesThatDriftedIntoOneJob(t *testing.T) {
 	s, a := chState(t, "director", "alpha", "beta")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Channel: "auth-a", Text: "auth work"})
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["beta"].Token, Channel: "auth-b", Text: "also auth work"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Space: "auth-a", Text: "auth work"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["beta"].Token, Space: "auth-b", Text: "also auth work"})
 	makeCoordinator(t, s, "director")
 
 	r := do(t, s, &Op{
 		Kind: OpLaneMerge, Token: a["director"].Token,
-		Channel: "auth-a", To: "auth-b", Note: "same work",
+		Space: "auth-a", To: "auth-b", Note: "same work",
 	})
 	if r["moved"] != 1 {
 		t.Fatalf("alpha should have moved across, got %v", r)
 	}
-	if _, gone := s.Channels["auth-a"]; gone {
-		t.Fatal("the source lane should be gone after a merge")
+	if _, gone := s.Spaces["auth-a"]; gone {
+		t.Fatal("the source agent should be gone after a merge")
 	}
-	dst := s.Channels["auth-b"]
+	dst := s.Spaces["auth-b"]
 	for _, want := range []string{"alpha", "beta"} {
 		if _, in := dst.Members[want]; !in {
-			t.Fatalf("%s should be in the merged lane, members=%v", want, dst.Members)
+			t.Fatalf("%s should be in the merged agent, members=%v", want, dst.Members)
 		}
 	}
 }
 
-// A merge used to take the source lane's members and drop everything else on
+// A merge used to take the source agent's members and drop everything else on
 // the floor. Verified before the fix: src.Queue=[waiter] became dst.Queue=[]
-// and the waiter belonged to neither lane: blocked forever behind an exclusive
+// and the waiter belonged to neither agent: blocked forever behind an exclusive
 // owner that no longer existed, with nothing said to them.
 //
 // Where the queue goes depends on the destination, and both answers give the
 // agent what it was waiting for: dst is open here, so waiting is over.
 func TestMergingIntoAnOpenLaneAdmitsTheAgentsThatWereWaiting(t *testing.T) {
 	s, a := chState(t, "director", "owner", "waiter", "host")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Channel: "src", Text: "work", Exclusive: true})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["waiter"].Token, Channel: "src"}) // queued behind owner
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["host"].Token, Channel: "dst", Text: "same work"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Space: "src", Text: "work", Exclusive: true})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["waiter"].Token, Space: "src"}) // queued behind owner
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["host"].Token, Space: "dst", Text: "same work"})
 	makeCoordinator(t, s, "director")
-	if q := s.Channels["src"].Queue; len(q) != 1 || q[0] != "waiter" {
+	if q := s.Spaces["src"].Queue; len(q) != 1 || q[0] != "waiter" {
 		t.Fatalf("precondition: waiter should be queued on src, got %v", q)
 	}
 
-	r := do(t, s, &Op{Kind: OpLaneMerge, Token: a["director"].Token, Channel: "src", To: "dst"})
+	r := do(t, s, &Op{Kind: OpLaneMerge, Token: a["director"].Token, Space: "src", To: "dst"})
 	if r["admitted"] != 1 {
 		t.Fatalf("the queued agent should have been admitted, got %v", r)
 	}
-	if _, in := s.Channels["dst"].Members["waiter"]; !in {
-		t.Fatalf("waiter was dropped by the merge; members=%v", s.Channels["dst"].Members)
+	if _, in := s.Spaces["dst"].Members["waiter"]; !in {
+		t.Fatalf("waiter was dropped by the merge; members=%v", s.Spaces["dst"].Members)
 	}
 }
 
 // The other half: dst is exclusive, so the agent is still blocked, but blocked
-// on a lane that exists, in a queue it can be promoted out of.
+// on an agent that exists, in a queue it can be promoted out of.
 func TestMergingIntoAnExclusiveLaneKeepsTheWaitersQueued(t *testing.T) {
 	s, a := chState(t, "director", "owner", "waiter", "host")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Channel: "src", Text: "work", Exclusive: true})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["waiter"].Token, Channel: "src"})
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["host"].Token, Channel: "dst", Text: "same work", Exclusive: true})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Space: "src", Text: "work", Exclusive: true})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["waiter"].Token, Space: "src"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["host"].Token, Space: "dst", Text: "same work", Exclusive: true})
 	makeCoordinator(t, s, "director")
 
-	r := do(t, s, &Op{Kind: OpLaneMerge, Token: a["director"].Token, Channel: "src", To: "dst"})
+	r := do(t, s, &Op{Kind: OpLaneMerge, Token: a["director"].Token, Space: "src", To: "dst"})
 	if r["queued"] != 1 {
 		t.Fatalf("the waiter should still be waiting, on dst; got %v", r)
 	}
-	if q := s.Channels["dst"].Queue; len(q) != 1 || q[0] != "waiter" {
+	if q := s.Spaces["dst"].Queue; len(q) != 1 || q[0] != "waiter" {
 		t.Fatalf("waiter should be in dst's queue, got %v", q)
 	}
 	// And the queue still works: releasing the owner promotes them.
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["host"].Token, Channel: "dst"})
-	if s.Channels["dst"].Owner != "waiter" {
-		t.Fatalf("the carried-over waiter should have been promoted, owner=%q", s.Channels["dst"].Owner)
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["host"].Token, Space: "dst"})
+	if s.Spaces["dst"].Owner != "waiter" {
+		t.Fatalf("the carried-over waiter should have been promoted, owner=%q", s.Spaces["dst"].Owner)
 	}
 }
 
-// An outstanding announcement left naming the deleted lane is countable on NO
+// An outstanding announcement left naming the deleted agent is countable on NO
 // board: invisible on the source because it is gone, invisible on the
 // destination because it names the wrong id: while still obliging its members
 // to acknowledge it. That is the abandoned-announcement failure mode exactly.
 func TestMergeCarriesOutstandingAnnouncementsToTheSurvivingLane(t *testing.T) {
 	s, a := chState(t, "director", "owner", "other", "host")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Channel: "src", Text: "work"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["other"].Token, Channel: "src"})
-	r := do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["owner"].Token, Channel: "src", Body: "read this"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Space: "src", Text: "work"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["other"].Token, Space: "src"})
+	r := do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["owner"].Token, Space: "src", Body: "read this"})
 	serial := r["serial"].(uint64)
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["host"].Token, Channel: "dst", Text: "same work"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["host"].Token, Space: "dst", Text: "same work"})
 	makeCoordinator(t, s, "director")
 	if n := len(s.Unacked("other")); n != 1 {
 		t.Fatalf("precondition: other owes one ack, got %d", n)
 	}
 
-	do(t, s, &Op{Kind: OpLaneMerge, Token: a["director"].Token, Channel: "src", To: "dst"})
-	if got := s.Announcements[serial].Channel; got != "dst" {
-		t.Fatalf("announcement still names the deleted lane %q", got)
+	do(t, s, &Op{Kind: OpLaneMerge, Token: a["director"].Token, Space: "src", To: "dst"})
+	if got := s.Announcements[serial].Space; got != "dst" {
+		t.Fatalf("announcement still names the deleted agent %q", got)
 	}
 	if waiting, _, _ := s.unackedIn("dst"); waiting != 1 {
 		t.Fatalf("the carried announcement should show on dst's board, waiting=%d", waiting)
@@ -983,24 +983,24 @@ func TestMergeCarriesOutstandingAnnouncementsToTheSurvivingLane(t *testing.T) {
 
 func TestMergingALaneIntoItselfIsRefused(t *testing.T) {
 	s, a := chState(t, "director")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["director"].Token, Channel: "x", Text: "t"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["director"].Token, Space: "x", Text: "t"})
 	makeCoordinator(t, s, "director")
-	_ = mustFail(t, s, &Op{Kind: OpLaneMerge, Token: a["director"].Token, Channel: "x", To: "x"})
+	_ = mustFail(t, s, &Op{Kind: OpLaneMerge, Token: a["director"].Token, Space: "x", To: "x"})
 }
 
 func TestDirectorCanAdmitAnAgentThatDidNotMatch(t *testing.T) {
 	s, a := chState(t, "director", "outsider")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["director"].Token, Channel: "work", Text: "t"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["director"].Token, Space: "work", Text: "t"})
 	makeCoordinator(t, s, "director")
 
 	r := do(t, s, &Op{
-		Kind: OpLaneAdmit, Token: a["director"].Token, Channel: "work",
+		Kind: OpLaneAdmit, Token: a["director"].Token, Space: "work",
 		To: "outsider", Note: "belongs here", Score: 0.4, Threshold: 0.33, ScorerID: "director-call",
 	})
 	if r["admitted"] != true {
 		t.Fatalf("want an admission, got %v", r)
 	}
-	m := s.Channels["work"].Members["outsider"]
+	m := s.Spaces["work"].Members["outsider"]
 	if m == nil {
 		t.Fatal("the admitted agent must be a member")
 	}
@@ -1009,66 +1009,66 @@ func TestDirectorCanAdmitAnAgentThatDidNotMatch(t *testing.T) {
 		t.Fatalf("the recorded score must survive an admission: %+v", m)
 	}
 	// And it must clear any queue entry rather than leaving a ghost.
-	if len(s.Channels["work"].Queue) != 0 {
-		t.Fatalf("queue should be clean, got %v", s.Channels["work"].Queue)
+	if len(s.Spaces["work"].Queue) != 0 {
+		t.Fatalf("queue should be clean, got %v", s.Spaces["work"].Queue)
 	}
 }
 
 func TestAdmittingIsCoordinatorOnlyAndRefusesADeadAgent(t *testing.T) {
 	s, a := chState(t, "director", "nobody")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["director"].Token, Channel: "work", Text: "t"})
-	_ = mustFail(t, s, &Op{Kind: OpLaneAdmit, Token: a["nobody"].Token, Channel: "work", To: "director"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["director"].Token, Space: "work", Text: "t"})
+	_ = mustFail(t, s, &Op{Kind: OpLaneAdmit, Token: a["nobody"].Token, Space: "work", To: "director"})
 
 	makeCoordinator(t, s, "director")
 	err := mustFail(t, s, &Op{
 		Kind: OpLaneAdmit, Token: a["director"].Token,
-		Channel: "work", To: "ghost",
+		Space: "work", To: "ghost",
 	})
 	if !strings.Contains(err.Error(), "E_NO_LANE") {
 		t.Fatalf("admitting a nonexistent agent must fail clearly, got %v", err)
 	}
 }
 
-// A lane outlives its members. Some work is permanent: a standing "release"
-// or "security review" lane that agents register into and drop out of as they
-// come and go, so emptying a lane must not destroy it, and the next agent to
-// arrive must find the same lane rather than a fresh one with no history.
+// An agent outlives its members. Some work is permanent: a standing "release"
+// or "security review" agent that agents register into and drop out of as they
+// come and go, so emptying an agent must not destroy it, and the next agent to
+// arrive must find the same agent rather than a fresh one with no history.
 func TestALaneSurvivesEveryMemberLeaving(t *testing.T) {
 	s, a := chState(t, "alpha", "beta")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Channel: "release", Text: "the standing release lane"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["beta"].Token, Channel: "release"})
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["alpha"].Token, Channel: "release"})
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["beta"].Token, Channel: "release"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["alpha"].Token, Space: "release", Text: "the standing release agent"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["beta"].Token, Space: "release"})
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["alpha"].Token, Space: "release"})
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["beta"].Token, Space: "release"})
 
-	ch := s.Channels["release"]
+	ch := s.Spaces["release"]
 	if ch == nil {
-		t.Fatal("an empty lane must persist: permanent lanes are the point")
+		t.Fatal("an empty agent must persist: permanent agents are the point")
 	}
 	if len(ch.Members) != 0 {
 		t.Fatalf("expected no members, got %v", ch.Members)
 	}
-	if ch.Topic != "the standing release lane" {
-		t.Fatalf("the lane's identity must survive: %q", ch.Topic)
+	if ch.Topic != "the standing release agent" {
+		t.Fatalf("the agent's identity must survive: %q", ch.Topic)
 	}
-	// And a later arrival rejoins THE SAME lane, with its accumulated topic.
-	res := do(t, s, &Op{Kind: OpLaneJoin, Token: a["alpha"].Token, Channel: "release"})
-	if res["joined"] != true || res["topic"] != "the standing release lane" {
-		t.Fatalf("rejoining should find the same lane: %v", res)
+	// And a later arrival rejoins THE SAME agent, with its accumulated topic.
+	res := do(t, s, &Op{Kind: OpLaneJoin, Token: a["alpha"].Token, Space: "release"})
+	if res["joined"] != true || res["topic"] != "the standing release agent" {
+		t.Fatalf("rejoining should find the same agent: %v", res)
 	}
 }
 
 // An agent that is only watching owes nobody an acknowledgement.
 //
 // Not every agent does development work: a monitor, a reporter, a reviewer
-// waiting to be summoned. They may want to see a lane's traffic without joining
+// waiting to be summoned. They may want to see an agent's traffic without joining
 // it, and an announcement must never oblige them: being nagged for work you
 // are not doing is how a fleet learns to ignore announcements.
 func TestOnlyMembersOweAnAcknowledgement(t *testing.T) {
 	s, a := chState(t, "worker", "watcher", "outsider")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["worker"].Token, Channel: "auth", Text: "auth work"})
-	do(t, s, &Op{Kind: OpLaneSubscribe, Token: a["watcher"].Token, Channel: "auth"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["worker"].Token, Space: "auth", Text: "auth work"})
+	do(t, s, &Op{Kind: OpLaneSubscribe, Token: a["watcher"].Token, Space: "auth"})
 
-	r := do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["worker"].Token, Channel: "auth", Body: "renaming Token"})
+	r := do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["worker"].Token, Space: "auth", Body: "renaming Token"})
 	if r["must_ack"] != 0 {
 		t.Fatalf("a subscriber must not be obliged, got must_ack=%v", r["must_ack"])
 	}
@@ -1078,11 +1078,11 @@ func TestOnlyMembersOweAnAcknowledgement(t *testing.T) {
 		}
 	}
 	// Joining is what creates the obligation: from then on, not retroactively.
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["watcher"].Token, Channel: "auth"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["watcher"].Token, Space: "auth"})
 	if n := len(s.Unacked("watcher")); n != 0 {
 		t.Errorf("joining must not retroactively owe acks for old announcements, got %d", n)
 	}
-	do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["worker"].Token, Channel: "auth", Body: "second"})
+	do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["worker"].Token, Space: "auth", Body: "second"})
 	if n := len(s.Unacked("watcher")); n != 1 {
 		t.Errorf("a member owes an ack for announcements made while a member, got %d", n)
 	}
@@ -1093,21 +1093,21 @@ func TestOnlyMembersOweAnAcknowledgement(t *testing.T) {
 // Only `open` was counted for the board, so an announcement that exhausted its
 // retries and was marked `unacked` vanished from the roster at exactly the
 // moment it became interesting: somebody was told something with collision
-// risk, never acknowledged it, and Lanes had stopped asking. The constant's own
+// risk, never acknowledged it, and Dibs had stopped asking. The constant's own
 // comment claimed it "stays visible, never dropped". It did not.
 func TestAnAbandonedAnnouncementStaysOnTheBoard(t *testing.T) {
 	s, a := chState(t, "speaker", "ignorer")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["speaker"].Token, Channel: "auth", Text: "auth work"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["ignorer"].Token, Channel: "auth"})
-	r := do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["speaker"].Token, Channel: "auth", Body: "interface change"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["speaker"].Token, Space: "auth", Text: "auth work"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["ignorer"].Token, Space: "auth"})
+	r := do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["speaker"].Token, Space: "auth", Body: "interface change"})
 	serial := r["serial"].(uint64)
 
 	waiting, abandoned, _ := s.unackedIn("auth")
 	if waiting != 1 || abandoned != 0 {
-		t.Fatalf("while Lanes is still asking: waiting=%d abandoned=%d", waiting, abandoned)
+		t.Fatalf("while Dibs is still asking: waiting=%d abandoned=%d", waiting, abandoned)
 	}
 
-	// Lanes gives up.
+	// Dibs gives up.
 	s.Announcements[serial].State = AnnounceUnacked
 	waiting, abandoned, _ = s.unackedIn("auth")
 	if waiting != 0 || abandoned != 1 {
@@ -1117,9 +1117,9 @@ func TestAnAbandonedAnnouncementStaysOnTheBoard(t *testing.T) {
 	// And it must reach the board, under its own key: folding the two into one
 	// number would hide which of them needs a person.
 	b := s.Board()
-	chans, _ := b["channels"].([]map[string]any)
+	chans, _ := b["spaces"].([]map[string]any)
 	if len(chans) == 0 {
-		t.Fatal("no channels on the board")
+		t.Fatal("no spaces on the board")
 	}
 	var found map[string]any
 	for _, c := range chans {
@@ -1128,7 +1128,7 @@ func TestAnAbandonedAnnouncementStaysOnTheBoard(t *testing.T) {
 		}
 	}
 	if found == nil {
-		t.Fatal("auth lane missing from the board")
+		t.Fatal("auth agent missing from the board")
 	}
 	if got, ok := found["abandoned_announcements"]; !ok || got != 1 {
 		t.Fatalf("an abandoned announcement must be on the board: %v", found)
@@ -1149,10 +1149,10 @@ func TestAnAbandonedAnnouncementStaysOnTheBoard(t *testing.T) {
 // without cross-referencing the roster.
 func TestAnAnnouncementOwedOnlyByAbsenteesSaysSo(t *testing.T) {
 	s, a := chState(t, "sender", "awake", "asleep")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["sender"].Token, Channel: "work", Text: "t"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["awake"].Token, Channel: "work"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["asleep"].Token, Channel: "work"})
-	do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["sender"].Token, Channel: "work", Body: "FREEZE"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["sender"].Token, Space: "work", Text: "t"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["awake"].Token, Space: "work"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["asleep"].Token, Space: "work"})
+	do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["sender"].Token, Space: "work", Body: "FREEZE"})
 
 	// One member goes away; the other is still working and might yet answer.
 	if _, _, err := s.Apply(&Op{Kind: OpSweep, StaleLanes: []string{"asleep"}}, testNow); err != nil {
@@ -1175,7 +1175,7 @@ func TestAnAnnouncementOwedOnlyByAbsenteesSaysSo(t *testing.T) {
 		t.Fatalf("owed only by an absentee: want waiting=1 blocked=1, got %d/%d", waiting, blocked)
 	}
 	// And the board carries it, or the reader still cannot see it.
-	chans, _ := s.Board()["channels"].([]map[string]any)
+	chans, _ := s.Board()["spaces"].([]map[string]any)
 	var shown any
 	for _, cm := range chans {
 		if cm["id"] == "work" {
@@ -1191,16 +1191,16 @@ func TestAnAnnouncementOwedOnlyByAbsenteesSaysSo(t *testing.T) {
 func TestAnAbsenteeReturningUnblocksTheAnnouncement(t *testing.T) {
 	s, a := chState(t, "sender")
 	// Registered with a session id, because that is what makes a reattach a
-	// reattach rather than a second lane.
+	// reattach rather than a second agent.
 	r, _, err := s.Apply(&Op{Kind: OpRegisterLane, Name: "away", NewToken: "tk", SessionID: "sess-away"}, testNow)
 	if err != nil {
 		t.Fatal(err)
 	}
 	awayID, _ := r["lane_id"].(string)
-	do(t, s, &Op{Kind: OpAckBoard, Token: s.Lanes[awayID].Token})
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["sender"].Token, Channel: "work", Text: "t"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: s.Lanes[awayID].Token, Channel: "work"})
-	do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["sender"].Token, Channel: "work", Body: "FREEZE"})
+	do(t, s, &Op{Kind: OpAckBoard, Token: s.Agents[awayID].Token})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["sender"].Token, Space: "work", Text: "t"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: s.Agents[awayID].Token, Space: "work"})
+	do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["sender"].Token, Space: "work", Body: "FREEZE"})
 	if _, _, err := s.Apply(&Op{Kind: OpSweep, StaleLanes: []string{"away"}}, testNow); err != nil {
 		t.Fatal(err)
 	}
@@ -1225,7 +1225,7 @@ func TestAnAbsenteeReturningUnblocksTheAnnouncement(t *testing.T) {
 // obligations must survive (it will be back), and waking must restore it whole.
 func TestAPersistentRoleSleepingYieldsLocksButKeepsItsPlace(t *testing.T) {
 	s := NewState("t", DefaultLimits())
-	reg := func(name, tok, nonce string) *Lane {
+	reg := func(name, tok, nonce string) *Agent {
 		t.Helper()
 		op := &Op{Kind: OpRegisterLane, Name: name, NewToken: tok, PID: 4242}
 		if nonce != "" {
@@ -1236,34 +1236,34 @@ func TestAPersistentRoleSleepingYieldsLocksButKeepsItsPlace(t *testing.T) {
 			t.Fatalf("register %s: %v", name, err)
 		}
 		id, _ := r["lane_id"].(string)
-		do(t, s, &Op{Kind: OpAckBoard, Token: s.Lanes[id].Token})
-		return s.Lanes[id]
+		do(t, s, &Op{Kind: OpAckBoard, Token: s.Agents[id].Token})
+		return s.Agents[id]
 	}
 	const nonce = "nonce-standing-0123456789abcdef"
 	standing, peer := reg("standing", "t1", nonce), reg("peer", "t2", "")
 
-	do(t, s, &Op{Kind: OpLaneOpen, Token: standing.Token, Channel: "hot", Text: "long work", Exclusive: true})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: peer.Token, Channel: "hot"}) // queued
-	do(t, s, &Op{Kind: OpLaneOpen, Token: peer.Token, Channel: "open", Text: "shared"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: standing.Token, Channel: "open"})
-	ar := do(t, s, &Op{Kind: OpLaneAnnounce, Token: peer.Token, Channel: "open", Body: "FREEZE"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: standing.Token, Space: "hot", Text: "long work", Exclusive: true})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: peer.Token, Space: "hot"}) // queued
+	do(t, s, &Op{Kind: OpLaneOpen, Token: peer.Token, Space: "open", Text: "shared"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: standing.Token, Space: "open"})
+	ar := do(t, s, &Op{Kind: OpLaneAnnounce, Token: peer.Token, Space: "open", Body: "FREEZE"})
 	ser, _ := ar["serial"].(uint64)
 
-	// It sleeps the way a standing role does. Persistent lanes go dormant, not
+	// It sleeps the way a standing role does. Persistent agents go dormant, not
 	// stale: the distinction is the whole reason the kind exists.
 	if _, _, err := s.Apply(&Op{Kind: OpSweep, DeadLanes: []string{"standing"}}, testNow); err != nil {
 		t.Fatal(err)
 	}
-	if got := s.Lanes["standing"].Status; got != StatusDormant {
-		t.Fatalf("a persistent lane sleeps, it does not die; got %q", got)
+	if got := s.Agents["standing"].Status; got != StatusDormant {
+		t.Fatalf("a persistent agent sleeps, it does not die; got %q", got)
 	}
-	if s.Channels["hot"].Owner == "standing" {
-		t.Fatal("a lane must not stay locked behind an agent that is asleep")
+	if s.Spaces["hot"].Owner == "standing" {
+		t.Fatal("an agent must not stay locked behind an agent that is asleep")
 	}
-	if _, in := s.Channels["hot"].Members["peer"]; !in {
+	if _, in := s.Spaces["hot"].Members["peer"]; !in {
 		t.Fatal("the agent that was waiting should have been admitted when the lock lifted")
 	}
-	if _, in := s.Channels["open"].Members["standing"]; !in {
+	if _, in := s.Spaces["open"].Members["standing"]; !in {
 		t.Fatal("membership survives sleep: it will be back")
 	}
 	if n := len(s.Unacked("standing")); n != 1 {
@@ -1276,10 +1276,10 @@ func TestAPersistentRoleSleepingYieldsLocksButKeepsItsPlace(t *testing.T) {
 	}, testNow); err != nil {
 		t.Fatalf("resume: %v", err)
 	}
-	if got := s.Lanes["standing"].Status; got != StatusActive {
+	if got := s.Agents["standing"].Status; got != StatusActive {
 		t.Fatalf("waking makes it active, got %q", got)
 	}
-	if why := s.Lanes["standing"].StaleReason; why != "" {
+	if why := s.Agents["standing"].StaleReason; why != "" {
 		t.Fatalf("a working agent must not still be labelled %q", why)
 	}
 	do(t, s, &Op{Kind: OpLaneAck, Token: "t1b", MsgSerial: ser})
@@ -1302,18 +1302,18 @@ func TestAPersistentRoleSleepingYieldsLocksButKeepsItsPlace(t *testing.T) {
 // class, after the author had stopped seeing it.
 func TestAPromotedAgentKeepsWhyItWasMatched(t *testing.T) {
 	s, a := chState(t, "owner", "matched")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Channel: "hot", Text: "w", Exclusive: true})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Space: "hot", Text: "w", Exclusive: true})
 	do(t, s, &Op{
-		Kind: OpLaneJoin, Token: a["matched"].Token, Channel: "hot",
+		Kind: OpLaneJoin, Token: a["matched"].Token, Space: "hot",
 		Score: 0.71, Threshold: 0.33, ScorerID: "embed:qwen3", ScorerVersion: "2",
-		Evidence: []string{"internal/core/channel.go"}, Auto: true,
+		Evidence: []string{"internal/core/space.go"}, Auto: true,
 	})
-	if _, queued := s.Channels["hot"].Members["matched"]; queued {
-		t.Fatal("precondition: an exclusive lane queues rather than admitting")
+	if _, queued := s.Spaces["hot"].Members["matched"]; queued {
+		t.Fatal("precondition: an exclusive agent queues rather than admitting")
 	}
 
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["owner"].Token, Channel: "hot"})
-	m := s.Channels["hot"].Members["matched"]
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["owner"].Token, Space: "hot"})
+	m := s.Spaces["hot"].Members["matched"]
 	if m == nil {
 		t.Fatal("the waiter should have been promoted")
 	}
@@ -1332,38 +1332,38 @@ func TestAPromotedAgentKeepsWhyItWasMatched(t *testing.T) {
 	}
 }
 
-// Leaving a lane ends the obligations that came WITH that lane.
+// Leaving an agent ends the obligations that came WITH that agent.
 //
-// Only a full close dropped them, so lane_leave and lane_evict removed the
+// Only a full close dropped them, so leave_space and evict removed the
 // membership and left the announcement still owed. `Unacked` kept redelivering
 // it and the board kept reporting a healthy wait on somebody who was no longer
 // there. Eviction is the sharpest version: it tells the agent to stop work and
-// coordinate before resuming, while still nagging it to acknowledge that lane's
+// coordinate before resuming, while still nagging it to acknowledge that agent's
 // traffic.
 func TestLeavingALaneEndsWhatThatLaneAskedOfYou(t *testing.T) {
 	s, a := chState(t, "sender", "leaver", "evicted", "stays", "dir")
 	makeCoordinator(t, s, "dir")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["sender"].Token, Channel: "work", Text: "t"})
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["sender"].Token, Channel: "other", Text: "t2"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["sender"].Token, Space: "work", Text: "t"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["sender"].Token, Space: "other", Text: "t2"})
 	for _, who := range []string{"leaver", "evicted", "stays"} {
-		do(t, s, &Op{Kind: OpLaneJoin, Token: a[who].Token, Channel: "work"})
+		do(t, s, &Op{Kind: OpLaneJoin, Token: a[who].Token, Space: "work"})
 	}
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["leaver"].Token, Channel: "other"})
-	do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["sender"].Token, Channel: "work", Body: "FREEZE"})
-	do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["sender"].Token, Channel: "other", Body: "SEPARATE"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["leaver"].Token, Space: "other"})
+	do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["sender"].Token, Space: "work", Body: "FREEZE"})
+	do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["sender"].Token, Space: "other", Body: "SEPARATE"})
 
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["leaver"].Token, Channel: "work"})
-	do(t, s, &Op{Kind: OpLaneEvict, Token: a["dir"].Token, Channel: "work", To: "evicted"})
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["leaver"].Token, Space: "work"})
+	do(t, s, &Op{Kind: OpLaneEvict, Token: a["dir"].Token, Space: "work", To: "evicted"})
 
 	if n := len(s.Unacked("evicted")); n != 0 {
-		t.Errorf("an agent told to stop work must not still be nagged by that lane, owes %d", n)
+		t.Errorf("an agent told to stop work must not still be nagged by that agent, owes %d", n)
 	}
-	// Scoped: leaving ONE lane must not clear what it owes elsewhere.
+	// Scoped: leaving ONE agent must not clear what it owes elsewhere.
 	if n := len(s.Unacked("leaver")); n != 1 {
-		t.Fatalf("the other lane's announcement is still owed, got %d", n)
+		t.Fatalf("the other agent's announcement is still owed, got %d", n)
 	}
-	if s.Unacked("leaver")[0].Channel != "other" {
-		t.Error("and it is the other lane's, not the one it left")
+	if s.Unacked("leaver")[0].Space != "other" {
+		t.Error("and it is the other agent's, not the one it left")
 	}
 	// The one who stayed still owes it, and the board says so honestly.
 	if n := len(s.Unacked("stays")); n != 1 {
@@ -1380,48 +1380,48 @@ func TestLeavingALaneEndsWhatThatLaneAskedOfYou(t *testing.T) {
 
 // A merge changes the DESTINATION's world too, and it was told nothing.
 //
-// The destination silently gains another lane's members, its predicted
+// The destination silently gains another agent's members, its predicted
 // footprint and its outstanding announcements, which its existing members may
 // now be required to acknowledge. Only the moved side was woken, so the
-// destination's owner could carry on believing its lane was unchanged and still
-// exclusively its own while a whole other lane had been folded in.
+// destination's owner could carry on believing its agent was unchanged and still
+// exclusively its own while a whole other agent had been folded in.
 //
 // Raised by an independent reviewer (GPT-5.6-sol); confirmed by replaying the
 // merge and listing who each event was addressed to.
 func TestAMergeWakesTheLaneThatAbsorbedTheOtherOne(t *testing.T) {
 	s, a := chState(t, "dir", "srcowner", "dstowner", "dstmember")
 	makeCoordinator(t, s, "dir")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["srcowner"].Token, Channel: "src", Text: "src work"})
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["dstowner"].Token, Channel: "dst", Text: "dst work"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["dstmember"].Token, Channel: "dst"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["srcowner"].Token, Space: "src", Text: "src work"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["dstowner"].Token, Space: "dst", Text: "dst work"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["dstmember"].Token, Space: "dst"})
 
-	_, evs, err := s.Apply(&Op{Kind: OpLaneMerge, Token: a["dir"].Token, Channel: "src", To: "dst"}, testNow)
+	_, evs, err := s.Apply(&Op{Kind: OpLaneMerge, Token: a["dir"].Token, Space: "src", To: "dst"}, testNow)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := map[string][]string{}
 	for _, e := range evs {
-		if e.Lane != "" {
-			got[e.Lane] = append(got[e.Lane], e.Type)
+		if e.Agent != "" {
+			got[e.Agent] = append(got[e.Agent], e.Type)
 		}
 	}
 	for _, who := range []string{"dstowner", "dstmember"} {
-		if !slices.Contains(got[who], "lane.absorbed") {
-			t.Errorf("%s was already in the destination and must be told it absorbed a lane; got %v",
+		if !slices.Contains(got[who], "agent.absorbed") {
+			t.Errorf("%s was already in the destination and must be told it absorbed an agent; got %v",
 				who, got[who])
 		}
 	}
 	// The agent that MOVED gets its own notice and must not get both: two
-	// notices for one event is how a wake channel becomes noise.
-	if slices.Contains(got["srcowner"], "lane.absorbed") {
-		t.Errorf("the moved agent is told it joined, not that its lane absorbed one; got %v",
+	// notices for one event is how a wake space becomes noise.
+	if slices.Contains(got["srcowner"], "agent.absorbed") {
+		t.Errorf("the moved agent is told it joined, not that its agent absorbed one; got %v",
 			got["srcowner"])
 	}
-	if !slices.Contains(got["srcowner"], "lane.joined") {
+	if !slices.Contains(got["srcowner"], "agent.joined") {
 		t.Errorf("and it must still be told it moved; got %v", got["srcowner"])
 	}
 	// The coordinator did it deliberately; its own tool result already said so.
-	if slices.Contains(got["dir"], "lane.absorbed") {
+	if slices.Contains(got["dir"], "agent.absorbed") {
 		t.Error("the coordinator that ran the merge does not need telling about it")
 	}
 }
@@ -1429,7 +1429,7 @@ func TestAMergeWakesTheLaneThatAbsorbedTheOtherOne(t *testing.T) {
 // Every path that ends an exclusive hold must say WHO stopped owning, WHY, and
 // carry SPEC §9's caution.
 //
-// releaseExclusive emitted a bare event with only the lane id: no former
+// releaseExclusive emitted a bare event with only the agent id: no former
 // owner, no cause, no caution: while the two neighbouring release paths
 // carried all three. It is also the path a liveness sweep uses, which is where
 // the caution matters most: a consumer that cannot tell a deliberate release
@@ -1443,21 +1443,21 @@ func TestEveryReleaseSaysWhoAndWhyAndDoesNotImplySafety(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s, a := chState(t, "owner", "peer", "dir")
 			makeCoordinator(t, s, "dir")
-			do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Channel: "hot", Text: "w", Exclusive: true})
-			do(t, s, &Op{Kind: OpLaneJoin, Token: a["peer"].Token, Channel: "hot"})
+			do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Space: "hot", Text: "w", Exclusive: true})
+			do(t, s, &Op{Kind: OpLaneJoin, Token: a["peer"].Token, Space: "hot"})
 
 			var evs []Event
 			var err error
 			switch tc.wantCause {
 			case "released by its owner":
 				_, evs, err = s.Apply(&Op{
-					Kind: OpLaneExclusive, Token: a["owner"].Token, Channel: "hot", Mode: "release",
+					Kind: OpLaneExclusive, Token: a["owner"].Token, Space: "hot", Mode: "release",
 				}, testNow)
 			case "the owner stopped coordinating":
 				_, evs, err = s.Apply(&Op{Kind: OpSweep, StaleLanes: []string{"owner"}}, testNow)
 			case "forced by a coordinator":
 				_, evs, err = s.Apply(&Op{
-					Kind: OpLaneForceRelease, Token: a["dir"].Token, Channel: "hot",
+					Kind: OpLaneForceRelease, Token: a["dir"].Token, Space: "hot",
 				}, testNow)
 			}
 			if err != nil {
@@ -1465,7 +1465,7 @@ func TestEveryReleaseSaysWhoAndWhyAndDoesNotImplySafety(t *testing.T) {
 			}
 			var found bool
 			for _, e := range evs {
-				if e.Type != "lane.released" {
+				if e.Type != "agent.released" {
 					continue
 				}
 				found = true
@@ -1481,51 +1481,51 @@ func TestEveryReleaseSaysWhoAndWhyAndDoesNotImplySafety(t *testing.T) {
 				}
 			}
 			if !found {
-				t.Fatal("expected a lane.released event")
+				t.Fatal("expected an agent.released event")
 			}
 		})
 	}
 }
 
-// A channel's footprint is what its MEMBERS touch: all of them.
+// A space's footprint is what its MEMBERS touch: all of them.
 //
 // An agent that queues behind an exclusive owner declares a footprint like
 // anybody else, and that footprint was thrown away: not deferred, dropped. When
 // the owner left and the waiter was promoted, it became a full member whose
-// files the channel had no record of, so every later declaration was scored
+// files the space had no record of, so every later declaration was scored
 // against a footprint missing a member's work, and the failure is silent,
-// because a channel with a too-small footprint simply matches less.
+// because a space with a too-small footprint simply matches less.
 func TestAPromotedWaitersFootprintCountsOnceItIsAMember(t *testing.T) {
 	s, a := chState(t, "owner", "waiter")
 
 	do(t, s, &Op{
-		Kind: OpLaneOpen, Token: a["owner"].Token, Channel: "hot", Text: "auth work",
+		Kind: OpLaneOpen, Token: a["owner"].Token, Space: "hot", Text: "auth work",
 		Exclusive: true, Predicted: []PredFile{{Path: "auth/login.go", Weight: 1}},
 	})
 	// The waiter declares work in different files and is queued, not joined.
 	do(t, s, &Op{
-		Kind: OpLaneJoin, Token: a["waiter"].Token, Channel: "hot",
+		Kind: OpLaneJoin, Token: a["waiter"].Token, Space: "hot",
 		Predicted: []PredFile{{Path: "auth/session.go", Weight: 1}},
 	})
 
-	if hasPred(s.Channels["hot"].Predicted, "auth/session.go") {
+	if hasPred(s.Spaces["hot"].Predicted, "auth/session.go") {
 		t.Error("a queued agent is not a member; its files must not count yet")
 	}
 
 	// The owner leaves and the waiter is promoted off the queue.
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["owner"].Token, Channel: "hot"})
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["owner"].Token, Space: "hot"})
 
-	ch := s.Channels["hot"]
+	ch := s.Spaces["hot"]
 	if _, member := ch.Members["waiter"]; !member {
 		t.Fatalf("setup: the waiter should have been promoted; members=%v queue=%v",
 			ch.Members, ch.Queue)
 	}
 	if !hasPred(ch.Predicted, "auth/session.go") {
-		t.Errorf("a promoted waiter is a full member; the lane must know what it touches, got %v",
+		t.Errorf("a promoted waiter is a full member; the agent must know what it touches, got %v",
 			ch.Predicted)
 	}
 	if !hasPred(ch.Predicted, "auth/login.go") {
-		t.Error("the departed owner's footprint is still part of what this lane covers")
+		t.Error("the departed owner's footprint is still part of what this agent covers")
 	}
 }
 
@@ -1541,36 +1541,36 @@ func hasPred(fs []PredFile, path string) bool {
 // Membership has TWO doors, and a fix on one is not a fix.
 //
 // promote() was taught to carry a queued agent's footprint. carryQueue is the
-// other door: when a merge's destination has no owner, a source lane's WAITER
+// other door: when a merge's destination has no owner, a source agent's WAITER
 // walks straight in as a member. src.Predicted deliberately excludes queued
-// agents, so merging the two lanes' footprints does not carry that agent's,
-// and it arrived as a full member the lane had no file record of, which is the
+// agents, so merging the two agents' footprints does not carry that agent's,
+// and it arrived as a full member the agent had no file record of, which is the
 // same silent under-matching the promote fix was closing.
 func TestAWaiterCarriedInByAMergeBringsItsFootprint(t *testing.T) {
 	s, a := chState(t, "owner", "waiter", "dest", "director")
 	makeCoordinator(t, s, "director")
 
-	// A destination lane with no owner: anyone carried across walks straight in.
+	// A destination agent with no owner: anyone carried across walks straight in.
 	do(t, s, &Op{
-		Kind: OpLaneOpen, Token: a["dest"].Token, Channel: "dst", Text: "destination",
+		Kind: OpLaneOpen, Token: a["dest"].Token, Space: "dst", Text: "destination",
 		Predicted: []PredFile{{Path: "dst/main.go", Weight: 1}},
 	})
-	// A source lane held exclusively, with a waiter queued behind the owner.
+	// A source agent held exclusively, with a waiter queued behind the owner.
 	do(t, s, &Op{
-		Kind: OpLaneOpen, Token: a["owner"].Token, Channel: "src", Text: "source",
+		Kind: OpLaneOpen, Token: a["owner"].Token, Space: "src", Text: "source",
 		Exclusive: true, Predicted: []PredFile{{Path: "src/owner.go", Weight: 1}},
 	})
 	do(t, s, &Op{
-		Kind: OpLaneJoin, Token: a["waiter"].Token, Channel: "src",
+		Kind: OpLaneJoin, Token: a["waiter"].Token, Space: "src",
 		Predicted: []PredFile{{Path: "src/waiter.go", Weight: 1}},
 	})
 
 	do(t, s, &Op{
 		Kind: OpLaneMerge, Token: a["director"].Token,
-		Channel: "src", To: "dst", Note: "same work",
+		Space: "src", To: "dst", Note: "same work",
 	})
 
-	dst := s.Channels["dst"]
+	dst := s.Spaces["dst"]
 	if _, member := dst.Members["waiter"]; !member {
 		t.Fatalf("setup: the waiter should have been carried in as a member; members=%v queue=%v",
 			dst.Members, dst.Queue)
@@ -1580,25 +1580,25 @@ func TestAWaiterCarriedInByAMergeBringsItsFootprint(t *testing.T) {
 			dst.Predicted)
 	}
 	if !hasPred(dst.Predicted, "src/owner.go") || !hasPred(dst.Predicted, "dst/main.go") {
-		t.Errorf("the merge must not lose either lane's own footprint, got %v", dst.Predicted)
+		t.Errorf("the merge must not lose either agent's own footprint, got %v", dst.Predicted)
 	}
 }
 
-// A lane must be READABLE by its members, and an announcement must SAY something.
+// An agent must be READABLE by its members, and an announcement must SAY something.
 //
 // Both halves of this test come from one incident, and neither was found by
-// reading the code. A reviewing agent joined a lane, could not see the
-// announcement made before it arrived, and messaged a human to ask what the lane
+// reading the code. A reviewing agent joined an agent, could not see the
+// announcement made before it arrived, and messaged a human to ask what the agent
 // was about. Investigating that turned up the second fault: the announcements it
 // could not see were EMPTY, because the sender had passed the body under the
 // wrong key and the missing value became "". Every one returned a serial and a
-// must_ack count, so the sending side looked fine while the lane filled with
+// must_ack count, so the sending side looked fine while the agent filled with
 // obligations that said nothing.
 func TestALaneIsReadableAndAnAnnouncementMustSaySomething(t *testing.T) {
 	s, a := chState(t, "early", "member", "late", "outsider")
 
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["early"].Token, Channel: "work", Text: "the refactor"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["member"].Token, Channel: "work"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["early"].Token, Space: "work", Text: "the refactor"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["member"].Token, Space: "work"})
 
 	// An announcement with nothing in it obliges every member to acknowledge
 	// nothing. The upper bound on a body was checked; the lower one was not.
@@ -1609,7 +1609,7 @@ func TestALaneIsReadableAndAnAnnouncementMustSaySomething(t *testing.T) {
 	// refused to replay its own history and would not start. Apply must accept
 	// forever whatever it has ever accepted; new restrictions bind at ingress.
 	for _, empty := range []string{"", "   ", "\n\t "} {
-		op := &Op{Kind: OpLaneAnnounce, Token: a["early"].Token, Channel: "work", Body: empty}
+		op := &Op{Kind: OpLaneAnnounce, Token: a["early"].Token, Space: "work", Body: empty}
 		if err := Admit(op, DefaultLimits()); err == nil {
 			t.Errorf("an announcement of %q was admitted: every member would owe an "+
 				"acknowledgement for nothing", empty)
@@ -1622,19 +1622,19 @@ func TestALaneIsReadableAndAnAnnouncementMustSaySomething(t *testing.T) {
 	}
 
 	do(t, s, &Op{
-		Kind: OpLaneAnnounce, Token: a["early"].Token, Channel: "work",
+		Kind: OpLaneAnnounce, Token: a["early"].Token, Space: "work",
 		Body: "freezing auth/retry.go until Friday",
 	})
 
 	// A newcomer joins AFTER the announcement. It must not OWE an ack: that
 	// would be a retroactive obligation, but it must be able to SEE it, or a
-	// lane's shared context is invisible to everyone who was not already there.
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["late"].Token, Channel: "work"})
+	// agent's shared context is invisible to everyone who was not already there.
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["late"].Token, Space: "work"})
 
-	ch := s.Channels["work"]
+	ch := s.Spaces["work"]
 	late := s.LaneHistory(ch, "late", 0)
 	if len(late) == 0 {
-		t.Fatal("a newcomer must be able to read what the lane has said; got nothing")
+		t.Fatal("a newcomer must be able to read what the agent has said; got nothing")
 	}
 	last := late[len(late)-1]
 	if body, _ := last["body"].(string); body != "freezing auth/retry.go until Friday" {
@@ -1656,46 +1656,46 @@ func TestALaneIsReadableAndAnAnnouncementMustSaySomething(t *testing.T) {
 		t.Errorf("nobody acknowledges their own announcement, got %q", ack)
 	}
 
-	// Bodies are for the lane, not for anyone who can name it: the same rule
+	// Bodies are for the agent, not for anyone who can name it: the same rule
 	// the token-less wake path follows.
-	if _, err := s.MemberChannel(s.Lanes["outsider"], "work"); err == nil {
-		t.Error("a non-member must not be able to read a lane's announcements")
+	if _, err := s.MemberChannel(s.Agents["outsider"], "work"); err == nil {
+		t.Error("a non-member must not be able to read an agent's announcements")
 	}
 }
 
-// Leaving a lane ends your access to it, and so does being removed from it.
+// Leaving an agent ends your access to it, and so does being removed from it.
 //
-// lane_read exists so a member can catch up on what a lane has said. The rule
+// read_space exists so a member can catch up on what an agent has said. The rule
 // that makes it safe is membership at READ time, not membership at some point in
 // the past: an agent that left, or one a coordinator evicted, must not keep a
-// window into a lane it is no longer part of. Eviction in particular is how a
+// window into an agent it is no longer part of. Eviction in particular is how a
 // human removes an agent that is doing the wrong thing: if it could still read
-// the lane afterwards, the removal would be cosmetic.
+// the agent afterwards, the removal would be cosmetic.
 func TestReadingALaneEndsWhenMembershipDoes(t *testing.T) {
 	s, a := chState(t, "owner", "leaver", "removed", "director")
 	makeCoordinator(t, s, "director")
 
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Channel: "w", Text: "work"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["leaver"].Token, Channel: "w"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["removed"].Token, Channel: "w"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["owner"].Token, Space: "w", Text: "work"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["leaver"].Token, Space: "w"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["removed"].Token, Space: "w"})
 	do(t, s, &Op{
-		Kind: OpLaneAnnounce, Token: a["owner"].Token, Channel: "w",
+		Kind: OpLaneAnnounce, Token: a["owner"].Token, Space: "w",
 		Body: "freezing auth/retry.go until Friday",
 	})
 
 	// While they are members, both can read it.
 	for _, who := range []string{"leaver", "removed"} {
-		if _, err := s.MemberChannel(s.Lanes[who], "w"); err != nil {
-			t.Fatalf("setup: %s should be able to read the lane it is in: %v", who, err)
+		if _, err := s.MemberChannel(s.Agents[who], "w"); err != nil {
+			t.Fatalf("setup: %s should be able to read the agent it is in: %v", who, err)
 		}
 	}
 
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["leaver"].Token, Channel: "w"})
-	do(t, s, &Op{Kind: OpLaneEvict, Token: a["director"].Token, Channel: "w", To: "removed"})
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["leaver"].Token, Space: "w"})
+	do(t, s, &Op{Kind: OpLaneEvict, Token: a["director"].Token, Space: "w", To: "removed"})
 
 	for _, who := range []string{"leaver", "removed"} {
-		if _, err := s.MemberChannel(s.Lanes[who], "w"); err == nil {
-			t.Errorf("%s can still read a lane it is no longer in: membership is checked "+
+		if _, err := s.MemberChannel(s.Agents[who], "w"); err == nil {
+			t.Errorf("%s can still read an agent it is no longer in: membership is checked "+
 				"at read time for exactly this reason", who)
 		}
 	}
@@ -1704,8 +1704,8 @@ func TestReadingALaneEndsWhenMembershipDoes(t *testing.T) {
 // An error must name what a thing IS, not only what it is not.
 //
 // The wake nudge hands an agent an announcement serial and tells it to go read
-// that announcement. A serial in hand makes get_message the obvious call: and
-// get_message answered "no accessible message N" for something that plainly
+// that announcement. A serial in hand makes read_mail the obvious call: and
+// read_mail answered "no accessible message N" for something that plainly
 // exists. The only reasonable conclusion from that is that the announcement was
 // withdrawn, and a reviewing agent reached exactly that conclusion and messaged
 // a human to ask what had happened to it.
@@ -1714,7 +1714,7 @@ func TestReadingALaneEndsWhenMembershipDoes(t *testing.T) {
 // reads it.
 func TestAWrongKindErrorNamesWhatTheSerialActuallyIs(t *testing.T) {
 	err := ErrWrongKind(84, "final-validation")
-	for _, want := range []string{"84", "announcement", "final-validation", "lane_read"} {
+	for _, want := range []string{"84", "announcement", "final-validation", "read_space"} {
 		if !strings.Contains(err.Error()+err.Hint, want) {
 			t.Errorf("the error must mention %q so the reader can act on it: %v (hint: %s)",
 				want, err, err.Hint)
@@ -1726,254 +1726,254 @@ func TestAWrongKindErrorNamesWhatTheSerialActuallyIs(t *testing.T) {
 	}
 }
 
-// Lanes must be able to END, or automatic creation is a slow leak.
+// Dibs must be able to END, or automatic creation is a slow leak.
 //
-// Nothing removed a lane except lane_merge. E_LANE_LIMIT said "close a finished
-// lane first" (naming an action that did not exist) and the cap of 64 was
-// generous only while a human chose every lane. Once a declaration opens one
+// Nothing removed an agent except merge_spaces. E_LANE_LIMIT said "close a finished
+// agent first" (naming an action that did not exist) and the cap of 64 was
+// generous only while a human chose every agent. Once a declaration opens one
 // automatically, a fleet working through 64 unrelated tasks exhausts the board
 // permanently, and every later declaration silently gets nothing.
 func TestALaneEndsWhenItsLastMemberLeaves(t *testing.T) {
 	s, a := chState(t, "one", "two")
 
-	// Auto, because that is the lane this test is about and the only kind that
-	// may be reclaimed. A lane a human opened on purpose outlives its members,
+	// Auto, because that is the agent this test is about and the only kind that
+	// may be reclaimed. An agent a human opened on purpose outlives its members,
 	// see TestALaneSurvivesEveryMemberLeaving, which this used to contradict.
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["one"].Token, Channel: "w", Text: "work", Auto: true})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["two"].Token, Channel: "w"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["one"].Token, Space: "w", Text: "work", Auto: true})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["two"].Token, Space: "w"})
 
-	// One member left: still a lane, because somebody is accountable for it.
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["two"].Token, Channel: "w"})
+	// One member left: still an agent, because somebody is accountable for it.
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["two"].Token, Space: "w"})
 	mustApply(t, s, &Op{Kind: OpSweep}, testNow)
-	if _, alive := s.Channels["w"]; !alive {
-		t.Fatal("a lane with a member must not be reclaimed")
+	if _, alive := s.Spaces["w"]; !alive {
+		t.Fatal("an agent with a member must not be reclaimed")
 	}
 
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["one"].Token, Channel: "w"})
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["one"].Token, Space: "w"})
 	mustApply(t, s, &Op{Kind: OpSweep}, testNow)
-	if _, alive := s.Channels["w"]; alive {
-		t.Error("a lane nobody is in and nobody owes anything to must be reclaimed")
+	if _, alive := s.Spaces["w"]; alive {
+		t.Error("an agent nobody is in and nobody owes anything to must be reclaimed")
 	}
 }
 
 // ...but an unanswered obligation outlives the population.
 //
 // An announcement nobody acknowledged is the record that something was never
-// answered. Reclaiming the lane under it would delete that record, which is the
+// answered. Reclaiming the agent under it would delete that record, which is the
 // same silent-loss failure the announcement machinery exists to prevent.
 func TestALaneWithAnUnansweredAnnouncementIsNotReclaimed(t *testing.T) {
 	s, a := chState(t, "one", "two")
 
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["one"].Token, Channel: "w", Text: "work"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["two"].Token, Channel: "w"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["one"].Token, Space: "w", Text: "work"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["two"].Token, Space: "w"})
 	do(t, s, &Op{
-		Kind: OpLaneAnnounce, Token: a["one"].Token, Channel: "w",
+		Kind: OpLaneAnnounce, Token: a["one"].Token, Space: "w",
 		Body: "freezing auth/retry.go until Friday",
 	})
 	// Everyone leaves without answering it.
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["two"].Token, Channel: "w"})
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["one"].Token, Channel: "w"})
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["two"].Token, Space: "w"})
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["one"].Token, Space: "w"})
 	mustApply(t, s, &Op{Kind: OpSweep}, testNow)
 
-	if _, alive := s.Channels["w"]; !alive {
-		t.Error("an unanswered announcement is a record that must survive its lane")
+	if _, alive := s.Spaces["w"]; !alive {
+		t.Error("an unanswered announcement is a record that must survive its agent")
 	}
 }
 
-// A reclaimed lane id must carry NOTHING into its successor.
+// A reclaimed agent id must carry NOTHING into its successor.
 //
-// Reclamation deleted the channel and left its announcements behind, keyed by an
-// id that no longer existed. LaneHistory selects purely by that id, and lane
+// Reclamation deleted the space and left its announcements behind, keyed by an
+// id that no longer existed. LaneHistory selects purely by that id, and agent
 // ids are derived from the declaration, so two agents doing the same work at
-// different times naturally reuse one. The result: open a lane whose id matches
-// a reclaimed one and lane_read hands you the previous lane's announcement
+// different times naturally reuse one. The result: open an agent whose id matches
+// a reclaimed one and read_space hands you the previous agent's announcement
 // bodies. Members-only content, to somebody who was never a member, surviving a
 // restart.
 //
 // Neither change was wrong alone. Automatic reclamation created dead ids;
-// lane_read gave them a reader. This is the seam between them.
+// read_space gave them a reader. This is the seam between them.
 func TestAReclaimedLaneLeavesNothingBehindForTheNextOne(t *testing.T) {
 	s, a := chState(t, "first", "stranger")
 
-	// Auto: reused ids are a property of lanes Lanes names from a declaration,
+	// Auto: reused ids are a property of agents Dibs names from a declaration,
 	// which are also the only ones reclamation touches.
 	do(t, s, &Op{
-		Kind: OpLaneOpen, Token: a["first"].Token, Channel: "reuse",
+		Kind: OpLaneOpen, Token: a["first"].Token, Space: "reuse",
 		Text: "original work", Auto: true,
 	})
 	res := do(t, s, &Op{
-		Kind: OpLaneAnnounce, Token: a["first"].Token, Channel: "reuse",
+		Kind: OpLaneAnnounce, Token: a["first"].Token, Space: "reuse",
 		Body: "the credentials are in the vault under prod-2026",
 	})
 	serial, _ := res["serial"].(uint64)
-	// Settled: nobody else was a member, so nothing is owed and the lane is
+	// Settled: nobody else was a member, so nothing is owed and the agent is
 	// eligible for reclamation.
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["first"].Token, Channel: "reuse"})
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["first"].Token, Space: "reuse"})
 	mustApply(t, s, &Op{Kind: OpSweep}, testNow)
-	if _, alive := s.Channels["reuse"]; alive {
-		t.Fatal("setup: the lane should have been reclaimed")
+	if _, alive := s.Spaces["reuse"]; alive {
+		t.Fatal("setup: the agent should have been reclaimed")
 	}
 	if _, kept := s.Announcements[serial]; kept {
-		t.Error("a reclaimed lane's announcements outlived it, keyed by a dead id")
+		t.Error("a reclaimed agent's announcements outlived it, keyed by a dead id")
 	}
 
-	// An unrelated agent opens a lane that happens to take the same id.
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["stranger"].Token, Channel: "reuse", Text: "different work"})
-	ch := s.Channels["reuse"]
+	// An unrelated agent opens an agent that happens to take the same id.
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["stranger"].Token, Space: "reuse", Text: "different work"})
+	ch := s.Spaces["reuse"]
 	for _, entry := range s.LaneHistory(ch, "stranger", 0) {
 		if body, _ := entry["body"].(string); strings.Contains(body, "prod-2026") {
-			t.Errorf("the new lane's occupant can read the old lane's announcement: %q", body)
+			t.Errorf("the new agent's occupant can read the old agent's announcement: %q", body)
 		}
 	}
 	if n := len(s.LaneHistory(ch, "stranger", 0)); n != 0 {
-		t.Errorf("a freshly opened lane must have no history, got %d entries", n)
+		t.Errorf("a freshly opened agent must have no history, got %d entries", n)
 	}
 }
 
 // Two parts of this file believe opposite things, and only one of them runs.
 //
-// TestALaneSurvivesEveryMemberLeaving says an empty lane must persist, because
-// standing lanes, "release", "security review", are the point: agents drop in
-// and out and must find the same lane with its history. reclaimFinishedLanes
-// says "the last member leaving is what ends a lane" and deletes exactly those
-// lanes. The first test passes only because it never sweeps.
+// TestALaneSurvivesEveryMemberLeaving says an empty agent must persist, because
+// standing agents, "release", "security review", are the point: agents drop in
+// and out and must find the same agent with its history. reclaimFinishedLanes
+// says "the last member leaving is what ends an agent" and deletes exactly those
+// agents. The first test passes only because it never sweeps.
 //
-// So this sweeps. If the lane is gone afterwards, the standing lane the other
+// So this sweeps. If the agent is gone afterwards, the standing agent the other
 // test protects survives only until the next sweep tick, which is minutes: and
-// the agent that comes back finds a stranger's fresh lane under the same name,
+// the agent that comes back finds a stranger's fresh agent under the same name,
 // with none of the history it was promised.
 func TestAStandingLaneSurvivesTheSweepThatReclaimsFinishedOnes(t *testing.T) {
 	s, a := chState(t, "alpha", "beta")
 	do(t, s, &Op{
-		Kind: OpLaneOpen, Token: a["alpha"].Token, Channel: "release",
-		Text: "the standing release lane",
+		Kind: OpLaneOpen, Token: a["alpha"].Token, Space: "release",
+		Text: "the standing release agent",
 	})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["beta"].Token, Channel: "release"})
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["alpha"].Token, Channel: "release"})
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["beta"].Token, Channel: "release"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["beta"].Token, Space: "release"})
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["alpha"].Token, Space: "release"})
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["beta"].Token, Space: "release"})
 
 	if _, _, err := s.Apply(&Op{Kind: OpSweep}, testNow); err != nil {
 		t.Fatalf("sweep: %v", err)
 	}
-	ch := s.Channels["release"]
+	ch := s.Spaces["release"]
 	if ch == nil {
-		t.Fatal("the standing lane was reclaimed by the sweep; an agent returning to it " +
+		t.Fatal("the standing agent was reclaimed by the sweep; an agent returning to it " +
 			"finds nothing, which is what TestALaneSurvivesEveryMemberLeaving forbids")
 	}
-	if ch.Topic != "the standing release lane" {
-		t.Errorf("the lane's identity did not survive the sweep: %q", ch.Topic)
+	if ch.Topic != "the standing release agent" {
+		t.Errorf("the agent's identity did not survive the sweep: %q", ch.Topic)
 	}
 }
 
-// A coordinator can retire a finished lane, because until now nobody could.
+// A coordinator can retire a finished agent, because until now nobody could.
 //
-// Auto-opened lanes end themselves once the last member leaves. A lane a human
-// opened does NOT, deliberately: outliving its members is what a standing lane
-// is for, so a board accumulated finished lanes permanently, and E_LANE_LIMIT
-// advised "lane_leave the ones you are done with", which does nothing at all for
+// Auto-opened agents end themselves once the last member leaves. An agent a human
+// opened does NOT, deliberately: outliving its members is what a standing agent
+// is for, so a board accumulated finished agents permanently, and E_LANE_LIMIT
+// advised "leave_space the ones you are done with", which does nothing at all for
 // exactly these. Naming a corrective action that does not work is this
 // codebase's most persistent failure mode; this was another instance.
 func TestACoordinatorCanCloseAFinishedLane(t *testing.T) {
 	s, a := chState(t, "boss", "worker", "stranger")
 	a["boss"].Role = RoleCoordinator
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["worker"].Token, Channel: "standing", Text: "work"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["worker"].Token, Space: "standing", Text: "work"})
 
 	// Occupied: refused, and told what to do instead. Closing is tidying, not
-	// eviction: a lane with agents in it is somebody's working context.
-	err := mustFail(t, s, &Op{Kind: OpLaneClose, Token: a["boss"].Token, Channel: "standing"})
+	// eviction: an agent with agents in it is somebody's working context.
+	err := mustFail(t, s, &Op{Kind: OpLaneClose, Token: a["boss"].Token, Space: "standing"})
 	if !strings.Contains(err.Error(), "member") {
-		t.Errorf("closing an occupied lane failed for the wrong reason: %v", err)
+		t.Errorf("closing an occupied agent failed for the wrong reason: %v", err)
 	}
-	if _, alive := s.Channels["standing"]; !alive {
-		t.Fatal("a refused close removed the lane anyway")
+	if _, alive := s.Spaces["standing"]; !alive {
+		t.Fatal("a refused close removed the agent anyway")
 	}
 
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["worker"].Token, Channel: "standing"})
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["worker"].Token, Space: "standing"})
 	mustApply(t, s, &Op{Kind: OpSweep}, testNow)
-	if _, alive := s.Channels["standing"]; !alive {
-		t.Fatal("a human-opened lane was auto-reclaimed; this test needs one that persists")
+	if _, alive := s.Spaces["standing"]; !alive {
+		t.Fatal("a human-opened agent was auto-reclaimed; this test needs one that persists")
 	}
 
 	// A STRANGER (neither coordinator nor the agent that opened it) is refused.
 	// The role is human-granted and no agent can promote itself into it.
 	if err := mustFail(t, s, &Op{
-		Kind: OpLaneClose, Token: a["stranger"].Token, Channel: "standing",
+		Kind: OpLaneClose, Token: a["stranger"].Token, Space: "standing",
 	}); !strings.Contains(err.Error(), "coordinator") {
-		t.Errorf("a stranger closed a lane, or failed for the wrong reason: %v", err)
+		t.Errorf("a stranger closed an agent, or failed for the wrong reason: %v", err)
 	}
 
 	res := mustApply(t, s, &Op{
-		Kind: OpLaneClose, Token: a["boss"].Token, Channel: "standing", Note: "finished",
+		Kind: OpLaneClose, Token: a["boss"].Token, Space: "standing", Note: "finished",
 	}, testNow)
 	if res["closed"] != true {
 		t.Errorf("close result = %v, want closed:true", res)
 	}
-	if _, alive := s.Channels["standing"]; alive {
-		t.Error("the lane survived being closed by a coordinator")
+	if _, alive := s.Spaces["standing"]; alive {
+		t.Error("the agent survived being closed by a coordinator")
 	}
 }
 
-// The agent that opened a lane may retire it without the coordinator role.
+// The agent that opened an agent may retire it without the coordinator role.
 //
-// lane_open is unprivileged and advertised, so an agent could create a lane it
-// could never end, and the refusal it got described its own lane as "another
+// open_space is unprivileged and advertised, so an agent could create an agent it
+// could never end, and the refusal it got described its own agent as "another
 // agent's". Telling somebody they may not touch their own thing, in words about
 // somebody else's, is worse than the missing power was.
 func TestTheAgentThatOpenedALaneCanCloseIt(t *testing.T) {
 	s, a := chState(t, "opener", "stranger")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["opener"].Token, Channel: "mine", Text: "my work"})
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["opener"].Token, Channel: "mine"})
-	if _, alive := s.Channels["mine"]; !alive {
-		t.Fatal("the lane was reclaimed; this test needs one that persists while empty")
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["opener"].Token, Space: "mine", Text: "my work"})
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["opener"].Token, Space: "mine"})
+	if _, alive := s.Spaces["mine"]; !alive {
+		t.Fatal("the agent was reclaimed; this test needs one that persists while empty")
 	}
 
 	// A stranger still cannot, so the exemption is about ownership rather than
 	// having quietly removed the gate.
 	if err := mustFail(t, s, &Op{
-		Kind: OpLaneClose, Token: a["stranger"].Token, Channel: "mine",
+		Kind: OpLaneClose, Token: a["stranger"].Token, Space: "mine",
 	}); !strings.Contains(err.Error(), "coordinator") {
-		t.Errorf("a stranger closed somebody else's lane: %v", err)
+		t.Errorf("a stranger closed somebody else's agent: %v", err)
 	}
 
-	res := mustApply(t, s, &Op{Kind: OpLaneClose, Token: a["opener"].Token, Channel: "mine"}, testNow)
+	res := mustApply(t, s, &Op{Kind: OpLaneClose, Token: a["opener"].Token, Space: "mine"}, testNow)
 	if res["closed"] != true {
-		t.Errorf("the opener could not close its own lane: %v", res)
+		t.Errorf("the opener could not close its own agent: %v", res)
 	}
-	if _, alive := s.Channels["mine"]; alive {
-		t.Error("the lane survived its opener closing it")
+	if _, alive := s.Spaces["mine"]; alive {
+		t.Error("the agent survived its opener closing it")
 	}
 }
 
 // ...but ownership is not a bypass of the other two guards. An opener may not
-// close a lane somebody is standing in, any more than a coordinator may.
+// close an agent somebody is standing in, any more than a coordinator may.
 func TestAnOpenerStillCannotCloseAnOccupiedLane(t *testing.T) {
 	s, a := chState(t, "opener", "peer")
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["opener"].Token, Channel: "busy", Text: "work"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["peer"].Token, Channel: "busy"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["opener"].Token, Space: "busy", Text: "work"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["peer"].Token, Space: "busy"})
 	if err := mustFail(t, s, &Op{
-		Kind: OpLaneClose, Token: a["opener"].Token, Channel: "busy",
+		Kind: OpLaneClose, Token: a["opener"].Token, Space: "busy",
 	}); !strings.Contains(err.Error(), "member") {
-		t.Errorf("an opener emptied an occupied lane, or failed for the wrong reason: %v", err)
+		t.Errorf("an opener emptied an occupied agent, or failed for the wrong reason: %v", err)
 	}
 }
 
-// An unacknowledged announcement outlives the lane's population, and closing
+// An unacknowledged announcement outlives the agent's population, and closing
 // over one would hide it rather than settle it: the board renders
-// announcements THROUGH their lane.
+// announcements THROUGH their agent.
 func TestClosingWillNotHideAnUnansweredAnnouncement(t *testing.T) {
 	s, a := chState(t, "boss", "worker")
 	a["boss"].Role = RoleCoordinator
-	do(t, s, &Op{Kind: OpLaneOpen, Token: a["worker"].Token, Channel: "standing", Text: "work"})
-	do(t, s, &Op{Kind: OpLaneJoin, Token: a["boss"].Token, Channel: "standing"})
-	do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["worker"].Token, Channel: "standing", Body: "FREEZE"})
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["worker"].Token, Channel: "standing"})
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["boss"].Token, Channel: "standing"})
+	do(t, s, &Op{Kind: OpLaneOpen, Token: a["worker"].Token, Space: "standing", Text: "work"})
+	do(t, s, &Op{Kind: OpLaneJoin, Token: a["boss"].Token, Space: "standing"})
+	do(t, s, &Op{Kind: OpLaneAnnounce, Token: a["worker"].Token, Space: "standing", Body: "FREEZE"})
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["worker"].Token, Space: "standing"})
+	do(t, s, &Op{Kind: OpLaneLeave, Token: a["boss"].Token, Space: "standing"})
 
-	err := mustFail(t, s, &Op{Kind: OpLaneClose, Token: a["boss"].Token, Channel: "standing"})
+	err := mustFail(t, s, &Op{Kind: OpLaneClose, Token: a["boss"].Token, Space: "standing"})
 	if !strings.Contains(err.Error(), "acknowledged") {
 		t.Errorf("closing over an unanswered announcement failed for the wrong reason: %v", err)
 	}
-	if _, alive := s.Channels["standing"]; !alive {
-		t.Error("the lane was closed despite an unanswered announcement")
+	if _, alive := s.Spaces["standing"]; !alive {
+		t.Error("the agent was closed despite an unanswered announcement")
 	}
 }

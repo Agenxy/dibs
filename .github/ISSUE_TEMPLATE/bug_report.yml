@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Before anything else, please run `lanes doctor` and paste it below.
+        Before anything else, please run `dibs doctor` and paste it below.
 
         It is built for exactly this moment: it names what is broken and the fix,
         it redirects cleanly to a file, and it very often answers the question
@@ -16,7 +16,7 @@ body:
   - type: textarea
     id: doctor
     attributes:
-      label: "`lanes doctor` output"
+      label: "`dibs doctor` output"
       description: "Redirected output is fine: it drops colour automatically."
       render: text
     validations:
@@ -46,7 +46,7 @@ body:
     id: version
     attributes:
       label: Version
-      description: "`lanes version`"
+      description: "`dibs version`"
     validations:
       required: true
 
@@ -55,7 +55,7 @@ body:
     attributes:
       label: Platform
       description: >
-        Lanes is verified on macOS. Linux reports are welcome and useful: they
+        Dibs is verified on macOS. Linux reports are welcome and useful: they
         are not a waste of anyone's time, but see README §Platform for what is
         known to be unverified there.
       options:

@@ -4,18 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
-<title>Lanes: coordination board</title>
+<title>Dibs: coordination board</title>
   <link rel="icon" type="image/svg+xml" href="/icon.svg">
 <style>{{styles}}</style>
 </head>
 
 <!--
-  The operator's god view: every lane, every claim, all mail, the ledger.
+  The operator's god view: every agent, every claim, all mail, the ledger.
 
   This is NOT the same page as the MCP Apps panel and must not become one. The
-  panel is a single lane's own board and mailbox, authenticated by that lane's
+  panel is a single agent's own board and mailbox, authenticated by that agent's
   token; this is the whole fleet behind the admin password, and it reads mail
-  the panel never sees. What the two share is what a lane, a message and an
+  the panel never sees. What the two share is what an agent, a message and an
   event LOOK like, so both inline internal/assets/board.js and compose their
   own page from it.
 
@@ -49,11 +49,11 @@
         </svg>
       </span>
       <span class="sr-only" id="mark-state">connecting</span>
-      <span class="wordmark">Lanes</span>
+      <span class="wordmark">Dibs</span>
     </div>
     <nav class="views" role="tablist" aria-label="Board views">
       <button data-view="board" role="tab" aria-selected="true" aria-controls="pane-board" id="tab-board">Board</button>
-      <button data-view="lanes" role="tab" aria-selected="false" aria-controls="pane-lanes" id="tab-lanes" tabindex="-1">Lanes<span class="tally zero" id="tally-lanes">0</span></button>
+      <button data-view="agents" role="tab" aria-selected="false" aria-controls="pane-agents" id="tab-agents" tabindex="-1">Dibs<span class="tally zero" id="tally-agents">0</span></button>
       <button data-view="mail" role="tab" aria-selected="false" aria-controls="pane-mail" id="tab-mail" tabindex="-1">Mail<span class="tally zero" id="tally-mail">0</span></button>
       <button data-view="activity" role="tab" aria-selected="false" aria-controls="pane-activity" id="tab-activity" tabindex="-1">Activity<span class="tally zero" id="tally-act">0</span></button>
     </nav>
@@ -71,15 +71,15 @@
        truncation. As a pseudo-element it belongs to the item before it and
        cannot be separated from it. -->
   <div class="context">
-    <span class="lane-id" id="ctx-node">connecting</span>
+    <span class="agent-id" id="ctx-node">connecting</span>
     <span class="granted">operator view · all mail</span>
-    <span class="lane-id" id="ctx-you">…</span>
+    <span class="agent-id" id="ctx-you">…</span>
   </div>
 
   <div class="summary" id="summary"></div>
   <div class="flash" id="flash" role="status" aria-live="polite"></div>
   <!-- The board changes UNDER the reader: an agent goes quiet, mail arrives, a
-       lane forms, and a screen reader was told none of it. Announcing the whole
+       agent forms, and a screen reader was told none of it. Announcing the whole
        board on every frame would be unusable, so this announces the DELTA and
        only when it is material. See announceChange(). -->
   <p class="sr-only" id="live" role="status" aria-live="polite" aria-atomic="true"></p>
@@ -89,9 +89,9 @@
          masthead wordmark a span; this surface does the same. A page with no h1
          gives a screen-reader user nothing to jump to, and the four panes below
          were four unlabelled regions. -->
-    <h1 class="sr-only">Lanes board</h1>
+    <h1 class="sr-only">Dibs board</h1>
     <section class="view" id="pane-board" role="tabpanel" aria-labelledby="tab-board" tabindex="0"></section>
-    <section class="view hide" id="pane-lanes" role="tabpanel" aria-labelledby="tab-lanes" tabindex="0"></section>
+    <section class="view hide" id="pane-agents" role="tabpanel" aria-labelledby="tab-agents" tabindex="0"></section>
     <section class="view hide" id="pane-mail" role="tabpanel" aria-labelledby="tab-mail" tabindex="0"></section>
     <section class="view hide" id="pane-activity" role="tabpanel" aria-labelledby="tab-activity" tabindex="0"></section>
   </main>
@@ -99,9 +99,9 @@
   <footer class="foot">
     <span id="foot-node">, </span>
     <span class="dot">·</span>
-    <span>verify: lanes verify</span>
+    <span>verify: dibs verify</span>
     <span class="dot">·</span>
-    <span>lanes {{.Version}}</span>
+    <span>agents {{.Version}}</span>
   </footer>
 </div>
 
@@ -117,9 +117,9 @@
 // ── the human as a participant ───────────────────────────────────────────
 // The operator is a participant, not a special kind of actor: they get an AGENT
 // identity and every button below sends the SAME op an agent would. They have no
-// channel of their own: they join the lanes agents open. See internal/web/act.go.
+// space of their own: they join the agents agents open. See internal/web/act.go.
 let me = null
-// Why the Lanes tab is empty, in the operator's own words. An empty board with
+// Why the Dibs tab is empty, in the operator's own words. An empty board with
 // matching switched off is indistinguishable from a quiet fleet unless it says.
 let matchingHint = ""
 async function whyEmpty() {
@@ -149,7 +149,7 @@ async function whoAmI() {
 // an unhandled rejection: no flash, no live announcement, nothing in the
 // interface at all, and the operator learns their announcement never sent by
 // noticing later that nobody answered it. And a double click, or Enter twice,
-// issued the request twice: two identical posts, two lanes, two messages.
+// issued the request twice: two identical posts, two agents, two messages.
 // What is currently in flight, keyed by action + target.
 //
 // Disabling the CONTROL is not enough on this page and codex caught it: the
@@ -160,7 +160,7 @@ async function whoAmI() {
 const inFlight = new Set()
 
 async function act(what, payload, control) {
-  // Keyed by what is being done to what, so two different lanes can act at once
+  // Keyed by what is being done to what, so two different agents can act at once
   // while the same action on the same target cannot double-fire.
   const key = what + ":" + JSON.stringify(payload || {})
   if (inFlight.has(key)) return null
@@ -183,7 +183,7 @@ async function act(what, payload, control) {
       // reader nothing about what to do: while the guard's own 401 body is
       // plain text, so it did not even survive the JSON parse above.
       if (res.status === 401) {
-        flash("this board's session has expired: run `lanes web` for a fresh link", true)
+        flash("this board's session has expired: run `dibs web` for a fresh link", true)
         return null
       }
       // The engine writes its errors for an actor to act on: they name the
@@ -196,7 +196,7 @@ async function act(what, payload, control) {
     // Transport failure is not the same as a refusal, and saying "failed" for
     // both would tell the operator to fix the wrong thing. This one means the
     // request may never have reached the daemon.
-    flash("could not reach Lanes: nothing was sent. " + String(err && err.message || err), true)
+    flash("could not reach Dibs: nothing was sent. " + String(err && err.message || err), true)
     return null
   } finally {
     inFlight.delete(key)
@@ -220,22 +220,22 @@ function flash(msg, bad) {
 let state = { board: {{.BoardJSON}}, messages: {{.MessagesJSON}}, events: {{.EventsJSON}} }
 
 function drawSummary() {
-  const lanes = state.board?.lanes || []
-  const live = lanes.filter((l) => l.status === "active").length
-  const stale = lanes.filter((l) => l.status === "stale").length
-  const working = lanes.filter((l) => (l.slots || []).length > 0).length
+  const agents = state.board?.agents || []
+  const live = agents.filter((l) => l.status === "active").length
+  const stale = agents.filter((l) => l.status === "stale").length
+  const working = agents.filter((l) => (l.slots || []).length > 0).length
   const open = state.messages.filter((m) => !Board.TERMINAL.has(m.state)).length
 
-  announceChange({ open, stale, lanes: (state.board?.channels || []).length })
+  announceChange({ open, stale, agents: (state.board?.spaces || []).length })
 
   // A row of four zeros is not a summary, it is furniture, and on a board where
   // nothing has happened it is the loudest thing on the page. The terminal
   // surface has always dropped zero figures; this makes the web agree.
   const summary = document.getElementById("summary")
-  if (!lanes.length && !open) { summary.innerHTML = ""; return }
+  if (!agents.length && !open) { summary.innerHTML = ""; return }
 
   summary.innerHTML = Board.summaryHTML([
-    { figure: `${live}<span class="of">/${lanes.length}</span>`, label: "live", tone: live ? "good" : "" },
+    { figure: `${live}<span class="of">/${agents.length}</span>`, label: "live", tone: live ? "good" : "" },
     { figure: String(open), label: "in flight", tone: open ? "attn" : "" },
     { figure: String(working), label: "declared" },
     { figure: String(stale), label: "out of touch", tone: stale ? "attn" : "" },
@@ -247,7 +247,7 @@ function drawSummary() {
 // Every board event calls draw(), and draw() replaces whole panes with
 // innerHTML, which destroys the composer inputs, their contents, the focus and
 // the caret. In a live fleet an event arrives whenever ANY agent does anything,
-// so a human writing a message to a lane loses it mid-sentence, repeatedly, in
+// so a human writing a message to an agent loses it mid-sentence, repeatedly, in
 // the one feature that exists to let them take part.
 //
 // Found because a test that filled an input and then clicked post failed under
@@ -256,26 +256,26 @@ function drawSummary() {
 // A redraw must not eat what a person is in the middle of saying.
 //
 // This used to wrap ONE pane and look only for `.compose input[type=text]`
-// inside `[data-lane]`. The mail pane was replaced directly, its reply
-// composers are keyed by `[data-serial]` rather than `[data-lane]`, and the
+// inside `[data-agent]`. The mail pane was replaced directly, its reply
+// composers are keyed by `[data-serial]` rather than `[data-agent]`, and the
 // message-type <select> was not preserved at all, so an operator composing a
 // message lost the body, the type they had chosen, their focus and their caret
 // the moment ANY fleet event arrived. On a live board that is every few seconds.
 //
 // Found by codex in cross-review, and the browser suite had missed it because it
-// only ever exercised the channel composer.
+// only ever exercised the space composer.
 //
 // So: one pass around the WHOLE redraw, every kind of field, keyed by whatever
 // identity the element actually has.
 function keepingDrafts(render) {
   // The identity of a field has to survive its element being destroyed. In
-  // order of reliability: an explicit id, the lane it belongs to, the message
+  // order of reliability: an explicit id, the agent it belongs to, the message
   // serial it replies to.
   const keyOf = (el) => {
     if (!el) return null
     if (el.id) return "id:" + el.id
-    const lane = el.closest("[data-lane]")
-    if (lane) return "lane:" + lane.dataset.lane + ":" + el.tagName + ":" + (el.type || "")
+    const agent = el.closest("[data-agent]")
+    if (agent) return "agent:" + agent.dataset.agent + ":" + el.tagName + ":" + (el.type || "")
     const msg = el.closest("[data-serial]")
     if (msg) return "msg:" + msg.dataset.serial + ":" + el.tagName + ":" + (el.type || "")
     return null
@@ -288,7 +288,7 @@ function keepingDrafts(render) {
     : null
 
   // Every non-empty draft, not just the focused one: a person may fill one
-  // lane's box, look at another, and come back. A <select> is captured whatever
+  // agent's box, look at another, and come back. A <select> is captured whatever
   // its value, because "I deliberately chose notify" is a draft too.
   const drafts = []
   document.querySelectorAll(FIELDS).forEach((el) => {
@@ -330,10 +330,10 @@ function drawPanes() {
   document.getElementById("foot-node").textContent = where
 
   const boardEl = document.getElementById("pane-board")
-  // selfId is null: on a god view no lane is "this one", and marking one would
+  // selfId is null: on a god view no agent is "this one", and marking one would
   // be a lie. The shared component takes it as a parameter precisely so this
   // surface can decline to answer the question.
-  boardEl.innerHTML = Board.rosterHTML(b?.lanes, {
+  boardEl.innerHTML = Board.rosterHTML(b?.agents, {
     selfId: null,
     // The cadence trace is drawn from the event feed the board already has,
     // no new endpoint, no new poll, and the same events the Activity pane shows.
@@ -343,20 +343,20 @@ function drawPanes() {
     empty: (state.board?.serial || 0) === 0
       ? Board.firstRunHTML()
       : Board.emptyHTML("No agents right now",
-          "Every lane has closed or aged out. They reappear the moment one registers."),
+          "Every agent has closed or aged out. They reappear the moment one registers."),
   })
 
-  // Channels of work. selfId stays null for the same reason the roster's does:
+  // Spaces of work. selfId stays null for the same reason the roster's does:
   // on an operator view no agent is "you", and marking one would be a lie.
-  const chans = b?.channels || []
-  const chEl = document.getElementById("pane-lanes")
+  const chans = b?.spaces || []
+  const chEl = document.getElementById("pane-agents")
   chEl.innerHTML = (chans.length
     ? chans.map((c) => {
         const mine = (c.members || []).some((m) => m.agent === me)
-        return Board.channelHTML(c, { selfId: me, agents: b?.lanes }) + `
-          <div class="compose" data-lane="${Board.esc(c.id)}">
+        return Board.channelHTML(c, { selfId: me, agents: b?.agents }) + `
+          <div class="compose" data-agent="${Board.esc(c.id)}">
             <button class="act ${mine ? "leave" : "join"}">${mine ? "leave" : "join"}</button>
-            <input type="text" placeholder="${mine ? "say something to this lane…" : "join to speak here"}"
+            <input type="text" placeholder="${mine ? "say something to this agent…" : "join to speak here"}"
                    ${mine ? "" : "disabled"} aria-label="message ${Board.esc(c.id)}">
             <button class="act post" ${mine ? "" : "disabled"} data-why="everyone sees it; nobody must reply">post<span class="sr-only">: everyone sees it; nobody must reply</span></button>
             <button class="act announce" ${mine ? "" : "disabled"} data-why="every member must acknowledge">announce<span class="sr-only">: every member must acknowledge</span></button>
@@ -366,24 +366,24 @@ function drawPanes() {
     // while this sentence promised the very thing that is switched off, so an
     // operator watched an empty board waiting for a match that could never
     // arrive. Keep the clause that is always true; say the rest only when it is.
-    : Board.emptyHTML("No lanes", matchingHint
-        ? "Lanes appear when an agent opens one. " + matchingHint
-        : "Lanes appear when an agent opens one, or when two agents are matched into the same work.")
+    : Board.emptyHTML("No agents", matchingHint
+        ? "Dibs appear when an agent opens one. " + matchingHint
+        : "Dibs appear when an agent opens one, or when two agents are matched into the same work.")
     ) + `
-    <div class="compose new-lane">
-      <input type="text" id="new-lane-id" placeholder="new lane id (e.g. auth-refactor)" aria-label="new lane id">
-      <input type="text" id="new-lane-topic" placeholder="what the work is" aria-label="new lane topic">
-      <button class="act open">open lane</button>
+    <div class="compose new-agent">
+      <input type="text" id="new-agent-id" placeholder="new agent id (e.g. auth-refactor)" aria-label="new agent id">
+      <input type="text" id="new-agent-topic" placeholder="what the work is" aria-label="new agent topic">
+      <button class="act open">open agent</button>
     </div>`
-  const tl = document.getElementById("tally-lanes")
+  const tl = document.getElementById("tally-agents")
   tl.textContent = chans.length
   tl.classList.toggle("zero", chans.length === 0)
 
   const mailEl = document.getElementById("pane-mail")
-  // No actionsHTML: the operator watches. Answering as somebody else's lane is
-  // not something this view may do: only the panel holds a lane token.
+  // No actionsHTML: the operator watches. Answering as somebody else's agent is
+  // not something this view may do: only the panel holds an agent token.
   // Messages addressed to the human get a reply box. Everything else is still
-  // read-only: answering as somebody else's lane is not something this view may
+  // read-only: answering as somebody else's agent is not something this view may
   // do, and the operator holds exactly one token: their own.
   mailEl.innerHTML = `
     <div class="compose new-msg">
@@ -479,7 +479,7 @@ document.querySelector(".views").addEventListener("keydown", (ev) => {
 // ── announcing what changed ──────────────────────────────────
 //
 // The board redraws several times a second and a screen reader was told none of
-// it: an agent goes quiet, mail arrives, a lane forms, and the page silently
+// it: an agent goes quiet, mail arrives, an agent forms, and the page silently
 // becomes a different page. Announcing the board on every frame would be worse
 // than silence, so this announces the DELTA, and only the parts that mean
 // somebody has to do something.
@@ -496,7 +496,7 @@ function announceChange(now) {
     return
   }
   // BOTH DIRECTIONS. This announced arrivals and never departures: new mail,
-  // agents going quiet, lanes opening, so a reader was told about every
+  // agents going quiet, agents opening, so a reader was told about every
   // problem and about none of the resolutions. They would hear "1 new message
   // awaiting a reply" and never learn it had been answered, which leaves them
   // holding a to-do list that only ever grows. A reader who is told about the
@@ -522,13 +522,13 @@ function announceChange(now) {
       : plural(n, "agent", "agents") + " back in touch")
   }
 
-  if (now.lanes > lastAnnounced.lanes) {
-    said.push(plural(now.lanes - lastAnnounced.lanes, "new lane of work", "new lanes of work") + " opened")
-  } else if (now.lanes < lastAnnounced.lanes) {
-    // A lane ends when its last member leaves and nothing is outstanding, so
+  if (now.agents > lastAnnounced.agents) {
+    said.push(plural(now.agents - lastAnnounced.agents, "new agent of work", "new agents of work") + " opened")
+  } else if (now.agents < lastAnnounced.agents) {
+    // An agent ends when its last member leaves and nothing is outstanding, so
     // this is work FINISHING: the most useful thing a coordination board can
     // tell you and the one it was staying silent about.
-    said.push(plural(lastAnnounced.lanes - now.lanes, "lane of work", "lanes of work") + " closed")
+    said.push(plural(lastAnnounced.agents - now.agents, "agent of work", "agents of work") + " closed")
   }
 
   lastAnnounced = now
@@ -544,26 +544,26 @@ document.addEventListener("click", async (ev) => {
   if (!btn) return
   const box = btn.closest(".compose")
   const input = box?.querySelector('input[type="text"]')
-  const lane = box?.dataset.lane
+  const agent = box?.dataset.agent
   const serial = box?.dataset.serial ? Number(box.dataset.serial) : 0
 
   // Any action mints the identity server-side, so re-ask afterwards: the page
   // needs to know who it became in order to mark its own memberships.
   const wasAnon = !me
-  if (btn.classList.contains("join"))     { if (await act("join", { lane }, btn)) flash("joined " + lane) }
-  else if (btn.classList.contains("leave")) { if (await act("leave", { lane }, btn)) flash("left " + lane) }
+  if (btn.classList.contains("join"))     { if (await act("join", { agent }, btn)) flash("joined " + agent) }
+  else if (btn.classList.contains("leave")) { if (await act("leave", { agent }, btn)) flash("left " + agent) }
   else if (btn.classList.contains("post") || btn.classList.contains("announce")) {
     const body = input?.value.trim()
     if (!body) return flash("nothing to say", true)
     const what = btn.classList.contains("post") ? "post" : "announce"
-    if (await act(what, { lane, body }, btn)) { input.value = ""; flash(what + "ed to " + lane) }
+    if (await act(what, { agent, body }, btn)) { input.value = ""; flash(what + "ed to " + agent) }
   } else if (btn.classList.contains("open")) {
-    const id = document.getElementById("new-lane-id").value.trim()
-    const topic = document.getElementById("new-lane-topic").value.trim()
-    if (!id || !topic) return flash("a lane needs an id and a topic", true)
-    if (await act("open", { lane: id, body: topic }, btn)) {
-      document.getElementById("new-lane-id").value = ""
-      document.getElementById("new-lane-topic").value = ""
+    const id = document.getElementById("new-agent-id").value.trim()
+    const topic = document.getElementById("new-agent-topic").value.trim()
+    if (!id || !topic) return flash("an agent needs an id and a topic", true)
+    if (await act("open", { agent: id, body: topic }, btn)) {
+      document.getElementById("new-agent-id").value = ""
+      document.getElementById("new-agent-topic").value = ""
       flash("opened " + id)
     }
   } else if (btn.classList.contains("send")) {

@@ -1,4 +1,4 @@
-//go:build !lanesdev
+//go:build !dibdev
 
 package humanauth
 
@@ -7,7 +7,7 @@ package humanauth
 //
 // The mock lets somebody drive the human flow with no finger on the sensor,
 // necessary, because the flow is otherwise untestable without a person sitting
-// there. But "a human is present" is the one assertion in Lanes that must not be
+// there. But "a human is present" is the one assertion in Dibs that must not be
 // forgeable by software, and an environment variable is software. So the switch
 // is not a runtime check that a release build happens to leave off: the code
 // that can answer "yes, mocked" is behind a build tag and is not compiled at

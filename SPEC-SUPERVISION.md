@@ -130,7 +130,7 @@ tree deeper than one level needs no invention.
 Joining a child to the parent that spawned it, without either being asked to
 register.
 
-The environment is the channel: inherited at fork, and it survives reparenting,
+The environment is the space: inherited at fork, and it survives reparenting,
 daemonisation and process-group changes. A ladder, most trustworthy first, with
 every answer recording which rung produced it: a wrong owner is worse than
 none, because it sends a stall report to an agent that cannot act while the one
@@ -138,7 +138,7 @@ that can hears nothing.
 
 | rung | source | status |
 |---|---|---|
-| 1 | `LANES_PARENT` in the environment | built, and now SET by the PreToolUse stamp (§6.1) |
+| 1 | `DIBS_PARENT` in the environment | built, and now SET by the PreToolUse stamp (§6.1) |
 | 2 | harness `session_id`, exported or read off the session directory | built |
 | 3 | PPID, while the child is still a descendant | built |
 | 4 | nothing, said plainly | built |
@@ -176,14 +176,14 @@ tool's input before it runs, via `hookSpecificOutput.updatedInput`. Verified in
 both harnesses: it is in Codex's generated
 `pre-tool-use.command.output.schema.json` and in the shipped Claude Code bundle.
 
-So `lanes hook-spawn` stamps the child at the only moment the relationship is a
+So `dibs hook-spawn` stamps the child at the only moment the relationship is a
 FACT rather than a reconstruction (the instant it is spawned) by prefixing
 one assignment onto the command. The OS does the rest.
 
 It runs in front of every shell command an agent issues, so its first duty is
 to be harmless. It rewrites only when the command actually spawns an agent (the
 same executable-basename test the sweep uses, so the two cannot disagree about
-what an agent is), the session maps to a lane, the command is not already
+what an agent is), the session maps to an agent, the command is not already
 stamped, and a leading assignment would not change its meaning: subshells,
 groups, leading redirects, expansions and multi-line scripts are all refused.
 An agent whose command is mangled by an invisible hook cannot diagnose it.
@@ -193,8 +193,8 @@ because the assignment would bind to `cd` and never reach the agent: a stamp
 that silently does nothing is worse than none, since the fallback rungs would
 have caught it.
 
-This also required `hook_poll` to name the lane when it has no news. It
-returned a bare `{}`, which made "this session has no lane" and "this lane has
+This also required `hook_poll` to name the agent when it has no news. It
+returned a bare `{}`, which made "this session has no agent" and "this agent has
 no mail" indistinguishable, so the stamp silently never applied: the hook was
 correct on every negative case and did nothing on the only positive one. The
 digest, which is what a harness injects into a model's context, is unchanged.
@@ -204,7 +204,7 @@ functional: six of its seven entries used `mcp_tool`, which Codex does not
 support, and the seventh was a `command` hook, which Codex runs as a
 subprocess. A plugin that spawns a process to drive the harness is the thing
 this project refuses to be, so shipping it was wrong twice over. Codex is
-pull-only: `ack_board` at the start of an activation, `await_events` before
+pull-only: `check_in` at the start of an activation, `await_events` before
 blocking.
 
 The tools those entries called (`hook_session` and `hook_blocked`) are served
@@ -215,7 +215,7 @@ ahead of the tool it calls.
 
 The events it needs are settled:
 
-| event | carries | why Lanes wants it |
+| event | carries | why Dibs wants it |
 |---|---|---|
 | `SessionStart` | `session_id`, `transcript_path`, `cwd`, `model` | identity and the exact progress signal, handed over instead of inferred |
 | `PermissionRequest` | `agent_id`, `tool_name`, `tool_input`, `turn_id` | turns an invisible hang into "waiting for a human, and here is what it wants to do" |
@@ -224,8 +224,8 @@ The events it needs are settled:
 
 **6.2 The supervision loop, proven end to end.** A test spawns a
 real stalled agent, a user-compiled binary named `codex`, stamped with
-`LANES_PARENT`, blocked and burning nothing, sweeps the machine, and asserts
-the lane that spawned it was told, once. Each link is fault-injected: removing
+`DIBS_PARENT`, blocked and burning nothing, sweeps the machine, and asserts
+the agent that spawned it was told, once. Each link is fault-injected: removing
 the environment read makes attribution fall through to the session-path rung
 (the silent degradation this design exists to expose), removing the report
 produces silence, and removing the once-only guard produces a duplicate.
@@ -239,21 +239,21 @@ of Apple-signed binaries, so `/bin/sleep` and anything `/bin/bash` runs are
 precisely the processes this cannot read.
 
 Verified once more against the shipped daemon rather than in-process: with
-`[supervise] every/quiet/frozen` tightened in `lanes.toml`, a lane registered,
-and a stamped stand-in agent spawned, `ack_board` returned the notice without
+`[supervise] every/quiet/frozen` tightened in `agents.toml`, an agent registered,
+and a stamped stand-in agent spawned, `check_in` returned the notice without
 the agent asking for anything,
 
 ```
 A codex subagent you spawned (pid 78591) has stopped working: no output and no
-CPU for 6s: alive, but not doing anything. Lanes has not touched it,
-restarting or abandoning it is your call, and `lanes probe --pid 78591` will
+CPU for 6s: alive, but not doing anything. Dibs has not touched it,
+restarting or abandoning it is your call, and `dibs probe --pid 78591` will
 show its current state.
 ```
 
 The thresholds are a `[supervise]` table because there are no universally
 correct values and the two errors are not symmetric: a false "stuck" invites a
 parent to kill healthy work, while a slow true one costs a few minutes. `off`
-disables the sweep without disabling `lanes probe`.
+disables the sweep without disabling `dibs probe`.
 
 The in-process test compresses the timescale and scales the duty-cycle
 threshold with it.
@@ -261,9 +261,9 @@ Any process burns some CPU starting up, and over a two-second life that fixed
 cost is ~0.5% of it, against the 0.05% that means "did nothing for seven
 hours". Same judgement, same shape, different window.
 
- `lanesd` runs `Discover()` every 20
+ `dibd` runs `Discover()` every 20
 seconds in its own goroutine, samples and classifies each agent process, and
-tells the owning lane when one becomes stuck. Nothing is needed on the agent
+tells the owning agent when one becomes stuck. Nothing is needed on the agent
 side.
 
 Its own goroutine, not the writer loop: a scan forks `ps`, and putting that on
@@ -272,7 +272,7 @@ Sampling and classification happen outside; only the verdict crosses back in.
 
 Reported through the NOTICE path rather than mail. A notice is precisely
 "something happened to you that you could not have inferred", it is delivered
-on the agent's next `ack_board` or `hook_poll` without it having to ask, and it
+on the agent's next `check_in` or `hook_poll` without it having to ask, and it
 carries no ledger op, which is right, because a stall is an observation about
 this machine now, not a coordination fact that must survive replay.
 
@@ -280,18 +280,18 @@ Said once per stall, not every 20 seconds, and re-armed if the child recovers
 and stalls again: the second stall is news. A child nobody can be shown to own
 is reported to NOBODY, which is the deliberate choice: guessing would send the
 report to an agent that cannot act while the one that can hears nothing. It
-stays visible to a human through `lanes probe`.
+stays visible to a human through `dibs probe`.
 
 **6.3 Resumption: offered, never taken.** A stall report now carries the exact
 command that would pick the child up where it stopped:
 
 ```
-A codex subagent you spawned (pid 12407) has stopped working: … Lanes has not
+A codex subagent you spawned (pid 12407) has stopped working: … Dibs has not
 touched it: restarting or abandoning it is your call … To pick it up where it
 stopped rather than starting over: `codex exec resume 019ea7c2-…`.
 ```
 
-Lanes does not run it, and that is not squeamishness: the parent knows what the
+Dibs does not run it, and that is not squeamishness: the parent knows what the
 child was for and whether re-running it is safe, and a supervisor that silently
 repairs things teaches its operator nothing while hiding a failure that may be
 systematic. But WITHHOLDING the command is a different thing from declining to
@@ -299,13 +299,13 @@ run it: a parent told "your subagent is stuck" and left to work out the
 incantation has been handed a problem instead of a decision.
 
 Only codex exposes one today, and it costs nothing to derive: the session id is
-in the transcript filename Lanes already holds, so nothing new is stored and
+in the transcript filename Dibs already holds, so nothing new is stored and
 nothing is asked of the child. A harness without a resume, or a child with no
 transcript, is offered nothing rather than a guess.
 
 ## 7. Harness coverage
 
-Lanes ships integrations for eight surfaces. Four of them run agents that spawn
+Dibs ships integrations for eight surfaces. Four of them run agents that spawn
 other agents, and those are the ones this section is about.
 
 | harness | stamp mechanism | stamp | announces itself | transcript readable |
@@ -328,8 +328,8 @@ opencode is the exception and the one to copy: `shell.env` hands over the
 environment map, so nothing is parsed, nothing can be misparsed, and none of
 the shapes the other three must refuse are hazards there.
 
-The rewriting rules are duplicated in Go (`cmd/lanes/hookspawn.go`) and
-TypeScript (`plugins/pi/lanes.ts`) because the harnesses are in different
+The rewriting rules are duplicated in Go (`cmd/dibs/hookspawn.go`) and
+TypeScript (`plugins/pi/dibs.ts`) because the harnesses are in different
 languages. That duplication is a real risk (two copies of a security-adjacent
 predicate drift) so the TypeScript is checked against the same twenty cases
 the Go tests use.
@@ -374,7 +374,7 @@ attribution silently drops to a weaker rung. An environment-native path has no
 such cases, because nothing is being parsed.
 
 - **opencode** exposes exactly that, and the plugin is built
-  (`plugins/opencode/lanes.ts`). The stamp is exact and no command is touched.
+  (`plugins/opencode/dibs.ts`). The stamp is exact and no command is touched.
 - **codex** does NOT expose one. Its runtime carries
   `env: HashMap<String, String>` on `ExecParams`, but that is populated from
   session config, not from tool arguments: the model-facing shell tool declares
@@ -409,7 +409,7 @@ All four are now covered as children as well, by one of two routes. A harness
 that writes an append-only transcript is READ: codex, Claude Code and pi, each
 with a token count in it. One that does not is asked to REPORT: `hook_session`
 takes a monotonic `progress` counter, which is how opencode is covered without
-Lanes parsing a store it does not own.
+Dibs parsing a store it does not own.
 
 Adding a fifth harness therefore means either a glob in `transcriptGlobs` plus a
 parser in `Tokens`, or a plugin that counts its own turns, whichever its
@@ -433,8 +433,8 @@ Asked to run `echo ORIGINAL_COMMAND_RAN`, the session printed
 
 **That experiment also found a shipped bug that broke the session outright.**
 Claude Code treats a non-zero `PreToolUse` hook as a REJECTION, so the tool call
-is blocked. The plugin called `lanes hook-spawn` bare, against an installed
-`lanes` binary predating that subcommand: exit 2, and its usage text printed to
+is blocked. The plugin called `dibs hook-spawn` bare, against an installed
+`dibs` binary predating that subcommand: exit 2, and its usage text printed to
 stdout, where hook output is parsed. Every Bash invocation in that session was
 refused. Version skew between a plugin and the binary it calls is the normal
 state of a half-upgraded install, so the hook now runs the command, emits its
@@ -452,4 +452,4 @@ that can do otherwise.
 3. **A false "stuck" is more expensive than a slow true one.** Thresholds sit
    far from measured healthy behaviour, and the measurements are recorded here
    so a future reader can re-derive them rather than trust them.
-4. **Lanes reports; the parent acts.** Including when Lanes could act itself.
+4. **Dibs reports; the parent acts.** Including when Dibs could act itself.

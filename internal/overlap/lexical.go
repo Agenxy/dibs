@@ -61,7 +61,7 @@ func (l *Lexical) scoreHistory(declaration string, scores map[int]float64) []str
 			continue
 		}
 		// The same repository-describing guard as paths: a word in most commits
-		// ("lanes", "fix") describes the project, not the work.
+		// ("agents", "fix") describes the project, not the work.
 		if len(posting) > minCommonTerm && float64(len(posting)) > 0.25*float64(len(l.files)) {
 			continue
 		}
@@ -79,7 +79,7 @@ func (l *Lexical) scoreHistory(declaration string, scores map[int]float64) []str
 	// scorer too, so it was never history's to cause or to cure.
 	//
 	// The real exposure is small repositories with low-information messages,
-	// where any evidence source collapses. `lanes calibrate` detects exactly
+	// where any evidence source collapses. `dibs calibrate` detects exactly
 	// that and says so: a 95th-percentile threshold of 1.0 is it reporting that
 	// this repository cannot discriminate, and refusing to recommend auto-join.
 	matched := make([]string, 0, len(hits))
@@ -151,7 +151,7 @@ const minCommonTerm = 4
 // described like this has touched this file before": real, and weaker. At 1.0
 // a chatty commit log outvotes the filename an agent actually typed; at 0 the
 // index may as well not exist. Set by measurement on this repository with
-// `lanes calibrate`, not by taste.
+// `dibs calibrate`, not by taste.
 const historyWeight = 0.6
 
 // NewLexical builds the index over the repository's tracked files.
@@ -163,7 +163,7 @@ func NewLexical(ctx context.Context, repo string, cc *CoChange) (*Lexical, error
 // NewLexicalHolding is NewLexical with commits held OUT of the history index.
 //
 // It exists because measuring this scorer without it is measuring memorisation.
-// `lanes calibrate` evaluates by using a commit message as the query and that
+// `dibs calibrate` evaluates by using a commit message as the query and that
 // commit's files as the answer, and the history index is built from exactly
 // that pairing, so a query retrieves the commit it came from. Adding the index
 // took this repository from recall@5 0.288 to 0.815 and MRR 0.476 to a perfect
@@ -212,7 +212,7 @@ func newLexical(ctx context.Context, repo string, cc *CoChange, held map[string]
 	//
 	// A commit subject is a description of work in the project's own words and
 	// its files are what that work touched. That pairing is already the ground
-	// truth `lanes calibrate` measures against, and the co-change miner already
+	// truth `dibs calibrate` measures against, and the co-change miner already
 	// reads both: this uses what was being thrown away.
 	buildHistory(l, cc, held)
 

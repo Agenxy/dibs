@@ -13,7 +13,7 @@ import (
 //
 // Thresholds are unitless and scorer-relative, so any number shipped as a
 // default is a guess, and a guess that is wrong in one direction collapses
-// every agent into one lane, and wrong in the other leaves them all working
+// every agent into one agent, and wrong in the other leaves them all working
 // alone. SPEC-CHANNELS.md §9 makes calibration normative for exactly that
 // reason.
 //
@@ -305,7 +305,7 @@ func SuggestThresholds(ctx context.Context, s Scorer, cases []EvalCase) (join, n
 // A degenerate distribution collapses the two onto each other: if half the
 // unrelated pairs score identically, the median IS the 95th, and notify == join.
 // That silently deletes the advisory band: every match either auto-joins or is
-// invisible, with nothing in between and no warning. It was observed on Lanes'
+// invisible, with nothing in between and no warning. It was observed on Dibs'
 // own repository once its history passed a few hundred commits, which is exactly
 // when an operator has enough data to trust the number.
 //
@@ -470,7 +470,7 @@ func CalibrateWith(ctx context.Context, deployed, heldOut Scorer, cases []EvalCa
 
 	// A well-discriminating scorer scores MOST unrelated pairs at exactly zero,
 	// which drags the median to zero, and a notify threshold of zero notifies
-	// about every lane on the board, which is worse than not notifying at all.
+	// about every agent on the board, which is worse than not notifying at all.
 	// Measured on this repository: join 0.327, median 0.000.
 	//
 	// So the median is a floor to beat, not the answer. Half the join threshold

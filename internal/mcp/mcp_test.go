@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agenxy/lanes/internal/core"
-	"github.com/agenxy/lanes/internal/engine"
-	"github.com/agenxy/lanes/internal/ledger"
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
+	"github.com/agenxy/dibs/internal/ledger"
 )
 
 //nolint:unparam // the CancelFunc is part of the constructor's contract
@@ -84,7 +84,7 @@ func TestDualVersionSurface(t *testing.T) {
 	if res["supportedVersions"].([]any)[0] != "2026-07-28" {
 		t.Fatalf("discover versions: %v", res["supportedVersions"])
 	}
-	if !strings.Contains(res["instructions"].(string), "register_lane") {
+	if !strings.Contains(res["instructions"].(string), "register") {
 		t.Fatal("instructions must teach the protocol")
 	}
 
@@ -105,21 +105,21 @@ func TestDualVersionSurface(t *testing.T) {
 func TestFullCoordinationFlow(t *testing.T) {
 	srv, _ := newServer(t)
 
-	// Register two lanes; gate; claim conflict; message round-trip.
-	ra := toolCall(t, srv, "register_lane", map[string]any{"name": "alpha"})
+	// Register two agents; gate; claim conflict; message round-trip.
+	ra := toolCall(t, srv, "register", map[string]any{"name": "alpha"})
 	ta := ra["token"].(string)
-	rb := toolCall(t, srv, "register_lane", map[string]any{
+	rb := toolCall(t, srv, "register", map[string]any{
 		"name": "rev", "kind": "persistent", "nonce": "nonce-e2e-secret",
 	})
 	tb := rb["token"].(string)
 
 	// Awareness gate enforced with hint.
-	slot := toolCall(t, srv, "set_slot", map[string]any{"token": ta, "text": "x"})
+	slot := toolCall(t, srv, "declare", map[string]any{"token": ta, "text": "x"})
 	if slot["code"] != "E_MUST_ACK_BOARD" || slot["hint"] == "" {
 		t.Fatalf("gate: %v", slot)
 	}
-	toolCall(t, srv, "ack_board", map[string]any{"token": ta})
-	toolCall(t, srv, "ack_board", map[string]any{"token": tb})
+	toolCall(t, srv, "check_in", map[string]any{"token": ta})
+	toolCall(t, srv, "check_in", map[string]any{"token": tb})
 
 	// Claim matrix over HTTP.
 	c1 := toolCall(t, srv, "claim", map[string]any{"token": ta, "path": "/e2e/zone", "mode": "shared"})
@@ -131,13 +131,13 @@ func TestFullCoordinationFlow(t *testing.T) {
 		t.Fatalf("exclusive over shared must refuse: %v", c2)
 	}
 
-	// Question → respond → sender reads the answer via get_message.
-	q := toolCall(t, srv, "send_message", map[string]any{
+	// Question → respond → sender reads the answer via read_mail.
+	q := toolCall(t, srv, "send", map[string]any{
 		"token": ta, "to": "rev", "type": "question", "body": "ready?", "op_id": "q1",
 	})
 	serial := q["msg_serial"].(float64)
 	// Duplicate send dedups.
-	q2 := toolCall(t, srv, "send_message", map[string]any{
+	q2 := toolCall(t, srv, "send", map[string]any{
 		"token": ta, "to": "rev", "type": "question", "body": "ready?", "op_id": "q1",
 	})
 	if q2["deduplicated"] != true {
@@ -146,7 +146,7 @@ func TestFullCoordinationFlow(t *testing.T) {
 	toolCall(t, srv, "respond", map[string]any{
 		"token": tb, "msg_serial": serial, "disposition": "answer", "body": "yes, ship it",
 	})
-	got := toolCall(t, srv, "get_message", map[string]any{"token": ta, "msg_serial": serial})
+	got := toolCall(t, srv, "read_mail", map[string]any{"token": ta, "msg_serial": serial})
 	msg := got["message"].(map[string]any)
 	if msg["response"] != "yes, ship it" || msg["state"] != "answered" {
 		t.Fatalf("sender must read the answer: %v", msg)

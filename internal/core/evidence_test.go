@@ -193,7 +193,7 @@ func TestUnknownActivityIsNotComplementary(t *testing.T) {
 }
 
 // Host resources are a whole axis of collision that repository surface cannot
-// see, and Lanes exists precisely because these agents share a machine.
+// see, and Dibs exists precisely because these agents share a machine.
 func TestContendedHostResources(t *testing.T) {
 	const repo = "/repo"
 	a, b := slot("integration tests", []string{"/repo/test"}, nil), slot("e2e suite", []string{"/repo/e2e"}, nil)

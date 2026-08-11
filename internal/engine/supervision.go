@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // Child is what a spawned agent told us about itself.
@@ -15,14 +15,14 @@ import (
 // its own transcript removes the guess.
 type Child struct {
 	SessionID  string
-	Parent     string // the lane that owns it, "" until attributed
+	Parent     string // the agent that owns it, "" until attributed
 	CWD        string
 	Model      string
 	Transcript string
 	AgentID    string // set for a nested subagent
 	AgentType  string
 	// Progress is a monotonic counter the child reports for itself, in whatever
-	// unit it likes. It exists for harnesses whose stores Lanes cannot read,
+	// unit it likes. It exists for harnesses whose stores Dibs cannot read,
 	// opencode keeps sessions in SQLite and shares one log across every run, so
 	// there is no per-process signal to parse. A child that can count its own
 	// turns needs none.
@@ -43,12 +43,12 @@ type Child struct {
 // what agents AGREED, claims, mail, membership, and replaying it must
 // reproduce the board exactly. Which processes happen to be running is an
 // observation about this machine at this moment: it does not survive a restart
-// and should not, because a lane's children are all gone by then anyway.
+// and should not, because an agent's children are all gone by then anyway.
 // Putting it in the ledger would also mean every hook firing on every turn
 // wrote a durable op, which is a lot of fsync for a fact with a lifetime of
 // minutes.
 //
-// Never an error when nothing matches. Most sessions have no lane, and a hook
+// Never an error when nothing matches. Most sessions have no agent, and a hook
 // that fails loudly on every turn of every unrelated session is a hook a person
 // removes.
 func (e *Engine) NoteChildSession(ctx context.Context, c Child) (core.Result, error) {
@@ -90,8 +90,8 @@ func (e *Engine) noteChild(c Child, now time.Time) core.Result {
 		c.Since = now
 	}
 	c.Seen = now
-	// Attribution: the child's own cwd is the strongest link Lanes already has,
-	// because lanes register with theirs. A fallback for the environment ladder
+	// Attribution: the child's own cwd is the strongest link Dibs already has,
+	// because agents register with theirs. A fallback for the environment ladder
 	// in internal/liveness, not a replacement: two agents in one repo share a
 	// cwd, and the environment does not.
 	if c.Parent == "" && e.state != nil {
@@ -192,8 +192,8 @@ func StateForEvent(event string) string {
 // hook that fired left a record here.
 //
 // The ordering is what makes it usable at registration time. SessionStart runs
-// before the agent gets a turn, so by the time it calls register_lane the answer
-// is already known. Lanes can tell it whether its own wake path works without
+// before the agent gets a turn, so by the time it calls register the answer
+// is already known. Dibs can tell it whether its own wake path works without
 // asking it to test anything.
 //
 // A false answer means "no hook traffic seen for this session", never "the

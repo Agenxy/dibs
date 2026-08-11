@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// ack_board's checkpoint must agree with itself.
+// check_in's checkpoint must agree with itself.
 //
 // It is the recovery call: an agent that lost context asks for the board, its
 // mail, what it owes, and its cursor, in one atomic answer. SPEC.md promises a
@@ -27,12 +27,12 @@ func TestAckBoardsCheckpointAgreesWithItself(t *testing.T) {
 
 	ack, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: tok}, now)
 	if err != nil {
-		t.Fatalf("ack_board: %v", err)
+		t.Fatalf("check_in: %v", err)
 	}
 	cursor, _ := ack["serial"].(uint64)
 	board, _ := ack["board"].(map[string]any)
 	if board == nil {
-		t.Fatal("ack_board returned no board")
+		t.Fatal("check_in returned no board")
 	}
 	boardSerial, _ := board["serial"].(uint64)
 	if boardSerial != cursor {

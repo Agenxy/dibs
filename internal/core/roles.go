@@ -16,24 +16,24 @@ import "time"
 //   - force_release: unstick a shared resource whose holder is gone, instead
 //     of waiting out a lease or restarting the daemon.
 //
-// It gets no power to *read* another lane's mail. Breadth, not intrusion.
+// It gets no power to *read* another agent's mail. Breadth, not intrusion.
 
-// IsCoordinator reports whether the lane may use coordinator powers. Admin
+// IsCoordinator reports whether the agent may use coordinator powers. Admin
 // implies coordinator: a role that could not do less than the tier below it
 // would be a trap.
-func (l *Lane) IsCoordinator() bool { return l.Role == RoleCoordinator || l.Role == RoleAdmin }
+func (l *Agent) IsCoordinator() bool { return l.Role == RoleCoordinator || l.Role == RoleAdmin }
 
-// IsAdmin reports whether the lane holds the full god view: including reading
-// other lanes' mail. Only a human grants this.
-func (l *Lane) IsAdmin() bool { return l.Role == RoleAdmin }
+// IsAdmin reports whether the agent holds the full god view: including reading
+// other agents' mail. Only a human grants this.
+func (l *Agent) IsAdmin() bool { return l.Role == RoleAdmin }
 
-// applyGrantRole sets a lane's role. The engine admits this op only on the
-// admin path (local secret + admin password), so a lane can never promote
+// applyGrantRole sets an agent's role. The engine admits this op only on the
+// admin path (local secret + admin password), so an agent can never promote
 // itself or another; the core just applies the recorded decision.
 func (s *State) applyGrantRole(op *Op, now time.Time) (Result, []Event, error) {
-	l, ok := s.Lanes[op.To]
+	l, ok := s.Agents[op.To]
 	if !ok {
-		return nil, nil, errf("E_NO_LANE", "check the board for live lanes", "no lane %q", op.To)
+		return nil, nil, errf("E_NO_LANE", "check the board for live agents", "no agent %q", op.To)
 	}
 	role := op.Mode
 	if role != RoleMember && role != RoleCoordinator && role != RoleAdmin {
@@ -42,18 +42,18 @@ func (s *State) applyGrantRole(op *Op, now time.Time) (Result, []Event, error) {
 			"unknown role %q", role)
 	}
 	if l.Role == role || (l.Role == "" && role == RoleMember) {
-		return Result{"ok": true, "lane": l.ID, "role": role, "changed": false}, nil, nil
+		return Result{"ok": true, "agent": l.ID, "role": role, "changed": false}, nil, nil
 	}
 	l.Role = role
-	evs := []Event{{Type: "lane.role_changed", Lane: l.ID, Data: map[string]any{"role": role}}}
+	evs := []Event{{Type: "agent.role_changed", Agent: l.ID, Data: map[string]any{"role": role}}}
 	s.finish(&evs, now)
-	return Result{"ok": true, "lane": l.ID, "role": role, "changed": true}, evs, nil
+	return Result{"ok": true, "agent": l.ID, "role": role, "changed": true}, evs, nil
 }
 
-// applyForceRelease drops another lane's claim. Coordinator-only, ledgered, and
+// applyForceRelease drops another agent's claim. Coordinator-only, ledgered, and
 // reported to the holder: unsticking a shared resource is legitimate, doing it
 // invisibly is not.
-func (s *State) applyForceRelease(l *Lane, op *Op) (Result, []Event, error) {
+func (s *State) applyForceRelease(l *Agent, op *Op) (Result, []Event, error) {
 	if !l.IsCoordinator() {
 		return nil, nil, ErrNotCoordinator
 	}
@@ -62,22 +62,22 @@ func (s *State) applyForceRelease(l *Lane, op *Op) (Result, []Event, error) {
 		if c.Path != path {
 			continue
 		}
-		holder := c.Lane
+		holder := c.Agent
 		s.Claims = append(s.Claims[:i], s.Claims[i+1:]...)
 		return Result{"ok": true, "path": path, "was_held_by": holder},
 			[]Event{{
-				Type: "claim.force_released", Lane: l.ID, To: holder,
+				Type: "claim.force_released", Agent: l.ID, To: holder,
 				Data: map[string]any{"path": path, "by": l.ID, "note": op.Note},
 			}}, nil
 	}
 	return nil, nil, errf("E_NO_CLAIM", "list claims via the board", "no claim on %q", path)
 }
 
-// LiveLanesExcept returns every live lane other than one, sorted: the engine
+// LiveLanesExcept returns every live agent other than one, sorted: the engine
 // uses it to fan a broadcast out deterministically.
-func (s *State) LiveLanesExcept(id string) []*Lane {
-	out := make([]*Lane, 0, len(s.Lanes))
-	for _, l := range s.Lanes {
+func (s *State) LiveLanesExcept(id string) []*Agent {
+	out := make([]*Agent, 0, len(s.Agents))
+	for _, l := range s.Agents {
 		if l.ID == id || l.Status == StatusClosed || l.Status == StatusArchived {
 			continue
 		}
@@ -87,7 +87,7 @@ func (s *State) LiveLanesExcept(id string) []*Lane {
 	return out
 }
 
-func sortLanesByID(ls []*Lane) {
+func sortLanesByID(ls []*Agent) {
 	for i := 1; i < len(ls); i++ {
 		for j := i; j > 0 && ls[j-1].ID > ls[j].ID; j-- {
 			ls[j-1], ls[j] = ls[j], ls[j-1]
@@ -95,13 +95,13 @@ func sortLanesByID(ls []*Lane) {
 	}
 }
 
-// LaneBySession finds the lane bound to a harness session id. Used by lifecycle
-// hooks, which know their session but hold no lane token.
-func (s *State) LaneBySession(sid string) *Lane {
+// LaneBySession finds the agent bound to a harness session id. Used by lifecycle
+// hooks, which know their session but hold no agent token.
+func (s *State) LaneBySession(sid string) *Agent {
 	if sid == "" {
 		return nil
 	}
-	for _, l := range s.Lanes {
+	for _, l := range s.Agents {
 		if l.SessionID == sid && l.Status != StatusArchived && l.Status != StatusClosed {
 			return l
 		}
@@ -109,22 +109,22 @@ func (s *State) LaneBySession(sid string) *Lane {
 	return nil
 }
 
-// LaneForHook resolves the lane a lifecycle hook is speaking for.
+// LaneForHook resolves the agent a lifecycle hook is speaking for.
 //
 // A hook knows what its OWN harness calls the session. That is not always what
-// the lane registered with: the stdio bridge supplies `bridge-<pid>-<random>`
+// the agent registered with: the stdio bridge supplies `bridge-<pid>-<random>`
 // when the model leaves session_id blank, which it always does, so for
 // opencode, whose plugin knows only opencode's session id, the two identifiers
 // can never match. That mismatch silently disabled both the wake path and the
-// claim guard, because a hook that cannot name a lane simply gets nothing back.
+// claim guard, because a hook that cannot name an agent simply gets nothing back.
 //
 // cwd is the one identifier both sides observe: the bridge records it from
 // os.Getwd(), and a plugin knows the project it is running in. So it is the
 // fallback, and deliberately a STRICT one: used only when exactly one live
-// lane sits in that directory. Two agents in one checkout is precisely the case
-// where guessing would attribute an edit to the wrong lane, and a wrong
+// agent sits in that directory. Two agents in one checkout is precisely the case
+// where guessing would attribute an edit to the wrong agent, and a wrong
 // attribution here means allowing a write that should have been refused.
-func (s *State) LaneForHook(sid, cwd string) *Lane {
+func (s *State) LaneForHook(sid, cwd string) *Agent {
 	if l := s.LaneBySession(sid); l != nil {
 		return l
 	}
@@ -134,7 +134,7 @@ func (s *State) LaneForHook(sid, cwd string) *Lane {
 	// Without this, the directory fallback below attributed any unregistered
 	// session to whichever single registered agent shared its working
 	// directory, which is the normal state of two agents in one repository.
-	// Verified against a running daemon: a session id that matched no lane was
+	// Verified against a running daemon: a session id that matched no agent was
 	// handed the other agent's private mail INCLUDING the body ("SECRET: the
 	// staging password is hunter2"), and guard_path returned
 	// decision=allow basis=no-claim for a path that agent held EXCLUSIVELY,
@@ -151,8 +151,8 @@ func (s *State) LaneForHook(sid, cwd string) *Lane {
 		return nil
 	}
 	want := cleanPath(cwd)
-	var found *Lane
-	for _, l := range s.Lanes {
+	var found *Agent
+	for _, l := range s.Agents {
 		if l.Status == StatusArchived || l.Status == StatusClosed {
 			continue
 		}
@@ -172,16 +172,16 @@ func (s *State) LaneForHook(sid, cwd string) *Lane {
 //
 // Parent arrives on the wire as a bare string, and the powers keyed off it are
 // not cosmetic: a subagent speaks under its parent's membership, skips an
-// exclusive lane's queue, and is exempt from its parent's exclusive claims in
+// exclusive agent's queue, and is exempt from its parent's exclusive claims in
 // the guard. Verified against a running daemon before this existed: an agent
-// registering with parent:"victim" posted into the victim's exclusive lane,
+// registering with parent:"victim" posted into the victim's exclusive agent,
 // joined instead of queueing, and got allow/no-claim for a path the victim held
 // exclusively.
 //
 // Only the parent can issue this, because only the parent holds the token this
 // op requires. A genuine subagent is spawned BY its parent, so handing it a
 // secret costs nothing; an impostor has no way to obtain one.
-func (s *State) applyVouchChild(l *Lane, op *Op) (Result, []Event, error) {
+func (s *State) applyVouchChild(l *Agent, op *Op) (Result, []Event, error) {
 	if op.Nonce == "" {
 		return nil, nil, errf("E_BAD_NONCE",
 			"generate a random id (>=128-bit) and give it to the subagent you are spawning; "+
@@ -205,5 +205,5 @@ func (s *State) applyVouchChild(l *Lane, op *Op) (Result, []Event, error) {
 		"ok": true, "parent": l.ID, "outstanding": len(l.ChildNonces),
 		"detail": "give this nonce to the subagent; it registers with parent=" + l.ID +
 			" and parent_nonce=<nonce>. It is consumed on first use.",
-	}, []Event{{Type: "lane.vouched_child", Lane: l.ID}}, nil
+	}, []Event{{Type: "agent.vouched_child", Agent: l.ID}}, nil
 }

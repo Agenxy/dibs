@@ -5,15 +5,15 @@
    data in, HTML string out. No globals, no transport, no state.
 
    The two surfaces are genuinely different views and must stay so,
-   the MCP Apps panel is ONE lane's board and mailbox, authenticated
-   by that lane's token; the web board is the operator's god view
-   over every lane and all mail, behind the admin password. What
-   they share is what a lane looks like, what a message looks like,
+   the MCP Apps panel is ONE agent's board and mailbox, authenticated
+   by that agent's token; the web board is the operator's god view
+   over every agent and all mail, behind the admin password. What
+   they share is what an agent looks like, what a message looks like,
    and what an event looks like. Sharing the page would be wrong;
    sharing the components is the whole point.
 
    Purity is what makes that possible. An earlier version of these
-   read `state.lane` and called `canCallTools()` directly, which
+   read `state.agent` and called `canCallTools()` directly, which
    welded them to the panel; every caller-specific decision is now a
    parameter.
 
@@ -30,7 +30,7 @@ const Board = (() => {
     if (!iso) return ""
     const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
     // The cutover is 60, not 45: between the two, Math.floor(s/60) is 0 and a
-    // lane renders as "0m" old, which reads as broken rather than fresh.
+    // agent renders as "0m" old, which reads as broken rather than fresh.
     if (s < 60) return "now"
     if (s < 3600) return Math.floor(s / 60) + "m"
     if (s < 86400) return Math.floor(s / 3600) + "h"
@@ -73,13 +73,13 @@ const Board = (() => {
     return bits.length ? `<div class="idents">${bits.join("")}</div>` : ""
   }
 
-  // `selfId` is the lane whose view this is, or null on a god view where no
-  // lane is "this one". Passing it rather than reading a global is what lets
+  // `selfId` is the agent whose view this is, or null on a god view where no
+  // agent is "this one". Passing it rather than reading a global is what lets
   // the same function serve both surfaces.
   // WHY an agent stopped counting as live. "Out of touch" beside a last-contact
   // time of "now" reads as a broken board rather than a dead agent, and the
   // three cases are not interchangeable: a process that exited is definitive, a
-  // lapsed lease may be nothing worse than a long build, and a lane that never
+  // lapsed lease may be nothing worse than a long build, and an agent that never
   // gave a PID has said nothing about a process at all: grouping that last one
   // with the crashed is the misread this exists to prevent.
   const STALE_WHY = {
@@ -94,7 +94,7 @@ const Board = (() => {
   }
 
   /**
-   * How recently this lane was heard from, as something CSS can select on.
+   * How recently this agent was heard from, as something CSS can select on.
    *
    * The board already showed an age, "now", "4m", "2h", but that is a
    * STRING, and a stylesheet cannot ask whether a string means recently. So
@@ -120,12 +120,12 @@ const Board = (() => {
   }
 
   /**
-   * The cadence trace: when this lane actually did something, drawn discretely.
+   * The cadence trace: when this agent actually did something, drawn discretely.
    *
    * The board says what an agent IS, active, dormant, out of touch, and that
    * is a state, checked against a timeout. It never showed the shape of the
    * work, and the shape is what a person actually reads a fleet by: steady
-   * rhythm, a burst then nothing, or a lane that claims to be active and has
+   * rhythm, a burst then nothing, or an agent that claims to be active and has
    * not moved in eight minutes. The last of those is a stalled agent, and until
    * now it looked exactly like a healthy one between turns.
    *
@@ -138,7 +138,7 @@ const Board = (() => {
    *
    * Rendered only when there is something to render. An empty strip would say
    * "measured, and nothing happened", which is a different and much stronger
-   * claim than "this lane predates the window".
+   * claim than "this agent predates the window".
    */
   const CADENCE_WINDOW = 10 * 60 * 1000
   const CADENCE_BINS = 24
@@ -148,7 +148,7 @@ const Board = (() => {
     const bins = new Array(CADENCE_BINS).fill(0)
     let total = 0, newest = Infinity, mail = 0
     for (const e of events) {
-      if (e.lane !== laneID) continue
+      if (e.agent !== laneID) continue
       const t = new Date(e.ts).getTime()
       if (!isFinite(t)) continue
       const age = now - t
@@ -172,7 +172,7 @@ const Board = (() => {
     return `<div class="cadence" role="img" aria-label="${esc(label)}">` +
       bins.map((n) => {
         if (!n) return `<i></i>`
-        // Height is sqrt-scaled against the lane's own peak. Linear would make
+        // Height is sqrt-scaled against the agent's own peak. Linear would make
         // a single action invisible next to a burst of twenty-five, and the
         // question a reader is asking is "did anything happen here", not "how
         // does this second compare to that one".
@@ -193,12 +193,12 @@ const Board = (() => {
       </div>`).join("")
 
     return `
-      <article class="entry ${esc(st)}${self ? " self" : ""}" data-lane="${esc(l.id)}" data-recency="${recency(l.last_coordination_at)}">
+      <article class="entry ${esc(st)}${self ? " self" : ""}" data-agent="${esc(l.id)}" data-recency="${recency(l.last_coordination_at)}">
         <div class="entry-head">
           <span class="pip"></span>
           <span class="name">${esc(l.display_name || l.id || l.name)}</span>
           ${l.display_name ? explained("tag", l.id, "its addressable id: ids must be ASCII, and nothing in that name survived") : ""}
-          ${self ? '<span class="tag self">This lane</span>' : ""}
+          ${self ? '<span class="tag self">This agent</span>' : ""}
           ${l.kind === "persistent" ? '<span class="tag">Standing</span>' : ""}
           ${agentBadges(l)}
           ${staleReasonHTML(l)}
@@ -211,18 +211,18 @@ const Board = (() => {
       </article>`
   }
 
-  // Grouped by COORDINATION STATE. At fifteen lanes an ungrouped list buries
+  // Grouped by COORDINATION STATE. At fifteen agents an ungrouped list buries
   // the two that matter under thirteen that do not.
   //
   // The labels used to say "Working" and "Idle", which are claims about what an
   // agent is DOING, and the grouping is on status, which is a claim about
-  // whether it is talking to Lanes. An active agent that has declared nothing
+  // whether it is talking to Dibs. An active agent that has declared nothing
   // was labelled "Working"; a dormant standing reviewer, exactly where it is
   // meant to be between activations, was labelled "Idle" as though something
-  // were wrong. Lanes knows an agent has spoken. It does not know what it is
+  // were wrong. Dibs knows an agent has spoken. It does not know what it is
   // doing, and this board must not say otherwise (SPEC §7).
-  function rosterHTML(lanes, { selfId = null, empty = "", events = null } = {}) {
-    if (!lanes || !lanes.length) return empty
+  function rosterHTML(agents, { selfId = null, empty = "", events = null } = {}) {
+    if (!agents || !agents.length) return empty
     // Ordered by WHAT NEEDS A PERSON, not by status name.
     //
     // "Out of touch" sat third, below Working and Idle, so the one group that
@@ -236,12 +236,12 @@ const Board = (() => {
     // it first says "look here first", which is true. It does not say "this is
     // broken", which would not be.
     const groups = [
-      ["gone", "Out of touch", lanes.filter((l) => l.status === "stale")],
-      ["working", "Active", lanes.filter((l) => l.status === "active")],
-      ["idle", "Dormant", lanes.filter((l) => l.status === "dormant")],
+      ["gone", "Out of touch", agents.filter((l) => l.status === "stale")],
+      ["working", "Active", agents.filter((l) => l.status === "active")],
+      ["idle", "Dormant", agents.filter((l) => l.status === "dormant")],
       // Anything the server adds later still has to appear, or the board
       // silently under-reports the fleet.
-      ["other", "Other", lanes.filter((l) =>
+      ["other", "Other", agents.filter((l) =>
         !["active", "dormant", "stale"].includes(l.status))],
     ]
     // Each band is a real heading owning a real group, so an agent's status is
@@ -261,7 +261,7 @@ const Board = (() => {
   // person would ask the reader to be the agent.
   //
   // `actionsHTML` is a caller-supplied function, because who may act differs
-  // per surface: the panel can answer as its own lane, the god view watches.
+  // per surface: the panel can answer as its own agent, the god view watches.
   // Attachments were carried by the server and rendered by nobody.
   //
   // A message can attach a blob or a fileref, AllMessages returns them, and
@@ -274,7 +274,7 @@ const Board = (() => {
   // Handles are shown truncated: a sha256 content address is 71 characters and
   // would dominate the message, but the leading digits are what a reader
   // matches against get_blob output. A fileref shows its path, and is marked as
-  // one, because Lanes never opened it and cannot vouch that it is there.
+  // one, because Dibs never opened it and cannot vouch that it is there.
   function attachmentsHTML(atts) {
     if (!Array.isArray(atts) || atts.length === 0) return ""
     // The FULL handle goes in the DOM and CSS narrows it, rather than slicing
@@ -292,7 +292,7 @@ const Board = (() => {
       }
       return `<li class="att fileref">
         <span class="kind">file</span> <code class="handle">${esc(a.path || ", ")}</code>${size}
-        <span class="advisory">not verified by Lanes</span></li>`
+        <span class="advisory">not verified by Dibs</span></li>`
     }
     return `<ul class="atts" aria-label="${atts.length} attachment${atts.length === 1 ? "" : "s"}">
       ${atts.map(one).join("")}</ul>`
@@ -326,7 +326,7 @@ const Board = (() => {
         <div class="msg-head">
           <span class="serial">#${esc(m.serial ?? "")}</span>
           <span class="kind ${esc(t)}">${esc(t)}</span>
-          ${overdue ? explained("pill attn", "past its deadline", "the deadline on this message has passed and nobody has answered. Lanes is still waiting, but nothing is in flight") : ""}
+          ${overdue ? explained("pill attn", "past its deadline", "the deadline on this message has passed and nobody has answered. Dibs is still waiting, but nothing is in flight") : ""}
         </div>
         <div class="route">
           ${who(m.from)}<span class="wire"></span><span class="arrow">▶</span>${who(m.to)}
@@ -351,7 +351,7 @@ const Board = (() => {
       <div class="event ${esc(cls)}">
         <span class="e-serial">#${esc(e.serial ?? "")}</span>
         <span class="e-when">${esc(when)}</span>
-        <span class="e-lane">${esc(e.lane || ", ")}${e.to ? ` <i>▶</i> ${esc(e.to)}` : ""}</span>
+        <span class="e-agent">${esc(e.agent || ", ")}${e.to ? ` <i>▶</i> ${esc(e.to)}` : ""}</span>
         <span class="e-type">${esc(kind)}</span>
       </div>`
   }
@@ -386,7 +386,7 @@ const Board = (() => {
    * A mark and the reason for it, reachable by everyone.
    *
    * Every explanation on this board: why an agent is stale, what "blocked"
-   * means, what a match scored, who owns a lane exclusively: lived ONLY in a
+   * means, what a match scored, who owns an agent exclusively: lived ONLY in a
    * `title` on a non-focusable span. title is a mouse affordance: it does not
    * appear on touch at all, keyboard users cannot summon it, and screen-reader
    * support for it is inconsistent enough that nothing important should depend
@@ -440,7 +440,7 @@ const Board = (() => {
    * The board before anything has ever happened on it.
    *
    * This is the first thing a person sees: the moment they decide whether the
-   * thing is real, and it used to be the word "No lanes", a sentence, and a
+   * thing is real, and it used to be the word "No agents", a sentence, and a
    * row of four zeros. All true, and none of it a way forward: somebody who has
    * just started the daemon does not need to be told the board is empty, they
    * can see that. They need the next command.
@@ -452,22 +452,22 @@ const Board = (() => {
     return `
       <div class="firstrun">
         <h3>Nothing has registered yet</h3>
-        <p>Lanes is running and waiting. Agents appear the moment one connects,
+        <p>Dibs is running and waiting. Agents appear the moment one connects,
            this board updates live, so leave it open.</p>
         <p class="firstrun-do">Point an agent at it:</p>
-        <code class="firstrun-cmd">lanes mcp-config</code>
+        <code class="firstrun-cmd">dibs mcp-config</code>
         <p class="firstrun-note">Prints the MCP config for your host. Matching,
            two agents finding each other on the same work: needs a repository
-           and a measured threshold; <code>lanes calibrate</code> reports both.</p>
+           and a measured threshold; <code>dibs calibrate</code> reports both.</p>
       </div>`
   }
 
   /**
-   * One channel of work: who is in it, who owns it, who is waiting.
+   * One space of work: who is in it, who owns it, who is waiting.
    *
-   * A CHANNEL is what SPEC-CHANNELS.md calls a lane, and it is NOT the thing
+   * A CHANNEL is what SPEC-CHANNELS.md calls an agent, and it is NOT the thing
    * laneHTML draws: that one draws an agent. The two coexist until the
-   * Lane→Agent rename, so the names here are deliberately unambiguous even
+   * Agent→Agent rename, so the names here are deliberately unambiguous even
    * though they read oddly side by side.
    *
    * `selfId` is the reading agent, or null on the operator view, which has no
@@ -477,30 +477,30 @@ const Board = (() => {
    * A badge for what an agent IS, when it is not the default.
    *
    * Two facts change how a reader should treat a row and are invisible without
-   * this: a coordinator can act on lanes it does not own, and a subagent's work
+   * this: a coordinator can act on agents it does not own, and a subagent's work
    * is really its parent's, so seeing three "agents" where one is a helper of
    * another would overstate how crowded the board is.
    */
   function agentBadges(l) {
     let out = ""
     if (l.role && l.role !== "member") {
-      out += explained("badge role", l.role, "granted by a human; can administer lanes")
+      out += explained("badge role", l.role, "granted by a human; can administer agents")
     }
     if (l.parent) {
-      out += explained("badge sub", `↳ ${l.parent}`, `subagent of ${l.parent}: inherits its lanes`)
+      out += explained("badge sub", `↳ ${l.parent}`, `subagent of ${l.parent}: inherits its agents`)
     }
     return out
   }
 
-  // Who in this lane is actually working.
+  // Who in this agent is actually working.
   //
-  // A lane's member list is the answer to "who is on this", and rendering a
+  // An agent's member list is the answer to "who is on this", and rendering a
   // corpse identically to a live agent makes it the wrong answer. Observed: a
-  // lane whose exclusive owner had crashed showed `crashed` and `reviewer` as
+  // agent whose exclusive owner had crashed showed `crashed` and `reviewer` as
   // two identical chips, and the only way to learn that one of them was dead
   // was to cross-reference the roster on another tab.
   //
-  // `agents` is the roster; without it this degrades to what it did before
+  // `dibs` is the roster; without it this degrades to what it did before
   // rather than inventing a status it does not have.
   function memberStateHTML(agent, agents) {
     const l = (agents || []).find((x) => x.id === agent)
@@ -516,7 +516,7 @@ const Board = (() => {
     const owned = !!ch.owner
     const queue = ch.queue || []
     const unacked = ch.unacked_announcements || 0
-    // Two different states, deliberately not one number. "waiting" means Lanes
+    // Two different states, deliberately not one number. "waiting" means Dibs
     // is still asking; "abandoned" means it gave up and nobody ever answered,
     // which is the one a person has to act on, because nothing else will.
     const abandoned = ch.abandoned_announcements || 0
@@ -527,7 +527,7 @@ const Board = (() => {
     // waits forever, looking healthy.
     const blocked = ch.blocked_announcements || 0
     // Members that left owing an acknowledgement. Recorded, not alarmed about:
-    // their requirement had to be dropped or the lane would wait forever on
+    // their requirement had to be dropped or the agent would wait forever on
     // somebody who is not coming back, but "they never read it" stays true and
     // the sender may want to say it again to whoever replaced them.
     const departed = ch.departed_unacked || 0
@@ -538,7 +538,7 @@ const Board = (() => {
     const roster = members.map((m) => {
       const tag = m.agent === ch.owner ? "owner" : m.auto ? "auto" : ""
       const gone = memberStateHTML(m.agent, agents)
-      // Why this agent is in this lane. For an AUTO join this is the whole
+      // Why this agent is in this agent. For an AUTO join this is the whole
       // provenance: score, the bar it cleared, which scorer said so, and the
       // files that drove it, and SPEC-CHANNELS §10.3 requires it be
       // explainable.
@@ -558,41 +558,41 @@ const Board = (() => {
     }).join("")
 
     return `
-      <article class="channel${owned ? " exclusive" : ""}${mine ? " mine" : ""}">
+      <article class="space${owned ? " exclusive" : ""}${mine ? " mine" : ""}">
         <header>
-          <span class="channel-id">${esc(ch.id)}</span>
+          <span class="space-id">${esc(ch.id)}</span>
           ${owned ? explained("pill warn", "exclusive", `held exclusively by ${ch.owner}: coordinate with them before working here`) : ""}
           ${unacked ? explained("pill attn", `${unacked} awaiting ack`, "announcements still awaiting acknowledgement") : ""}
-          ${departed ? explained("pill quiet", `${departed} left unread`, "left this lane still owing an acknowledgement: their requirement was dropped so the lane could settle, but they never read it") : ""}
-          ${blocked ? explained("pill blocked", `${blocked} blocked`, "every agent that still owes these is asleep or gone, so nothing will arrive until one of them comes back. Lanes will keep waiting, but it is not waiting on anyone who can answer") : ""}
-          ${abandoned ? explained("pill abandoned", `${abandoned} unanswered`, "Lanes stopped asking and nobody ever acknowledged: this needs a person") : ""}
+          ${departed ? explained("pill quiet", `${departed} left unread`, "left this agent still owing an acknowledgement: their requirement was dropped so the agent could settle, but they never read it") : ""}
+          ${blocked ? explained("pill blocked", `${blocked} blocked`, "every agent that still owes these is asleep or gone, so nothing will arrive until one of them comes back. Dibs will keep waiting, but it is not waiting on anyone who can answer") : ""}
+          ${abandoned ? explained("pill abandoned", `${abandoned} unanswered`, "Dibs stopped asking and nobody ever acknowledged: this needs a person") : ""}
           <span class="grow"></span>
           <span class="count">${members.length} in</span>
         </header>
-        ${ch.topic ? `<p class="channel-topic">${esc(ch.topic)}</p>` : ""}
+        ${ch.topic ? `<p class="space-topic">${esc(ch.topic)}</p>` : ""}
         <div class="members">${roster || `<span class="member empty">nobody</span>`}</div>
         ${queue.length
-          ? `<p class="channel-queue">waiting: ${queue.map((q) => esc(q)).join(" · ")}</p>`
+          ? `<p class="space-queue">waiting: ${queue.map((q) => esc(q)).join(" · ")}</p>`
           : ""}
         ${saidHTML(ch.said)}
       </article>`
   }
 
   /**
-   * What has been ANNOUNCED in a lane.
+   * What has been ANNOUNCED in an agent.
    *
    * The board used to show membership and a count ("1 awaiting ack") which
    * tells an operator that something is outstanding and not what it is. A human
-   * could join a lane, broadcast into it, and have no way anywhere in the
+   * could join an agent, broadcast into it, and have no way anywhere in the
    * interface to read the announcement they had just sent, let alone the ones
-   * the agents had sent each other. Joining a lane to watch the work is the
-   * whole reason a human joins a lane.
+   * the agents had sent each other. Joining an agent to watch the work is the
+   * whole reason a human joins an agent.
    *
    * Newest last, so it reads like a conversation rather than a feed.
    */
   function saidHTML(said) {
     if (!said || !said.length) return ""
-    return `<ol class="channel-said">${said.map((a) => `
+    return `<ol class="space-said">${said.map((a) => `
       <li class="${a.owed > 0 ? "owed" : "settled"}">
         <span class="said-from">${esc(a.from)}</span>
         <span class="said-body">${esc(a.body)}</span>
@@ -602,10 +602,10 @@ const Board = (() => {
       </li>`).join("")}</ol>`
   }
 
-  /** The channel list, or an honest empty state. */
-  function channelsHTML(channels, { selfId = null, empty = "", agents = null } = {}) {
-    if (!channels || !channels.length) return empty
-    return channels.map((c) => channelHTML(c, { selfId, agents })).join("")
+  /** The space list, or an honest empty state. */
+  function channelsHTML(spaces, { selfId = null, empty = "", agents = null } = {}) {
+    if (!spaces || !spaces.length) return empty
+    return spaces.map((c) => channelHTML(c, { selfId, agents })).join("")
   }
 
   // The stagger used to live here: a loop that wrote an inline
@@ -636,7 +636,7 @@ const Board = (() => {
    */
   function explainer(root = document) {
     const tip = document.createElement("div")
-    tip.id = "lanes-why"
+    tip.id = "agents-why"
     tip.setAttribute("popover", "manual")
     tip.setAttribute("role", "tooltip")
     document.body.appendChild(tip)
@@ -675,7 +675,7 @@ const Board = (() => {
     // tell that the thing they are reading was rebuilt underneath them.
     function adopt(el) {
       anchor = el
-      el.style.anchorName = "--lanes-why"
+      el.style.anchorName = "--agents-why"
     }
 
     function show(el, how) {
@@ -777,7 +777,7 @@ const Board = (() => {
    * the one field that decays with no event to announce it was the one field
    * nothing ever refreshed.
    *
-   * It became urgent when liveness started encoding recency: a lane drawn at
+   * It became urgent when liveness started encoding recency: an agent drawn at
    * `immediate` would go on pulsing as though mid-exchange an hour after its
    * last word. That is exactly the false precision Sol refused to fake when
    * the data was missing, arriving instead through a stale DOM: a mark that

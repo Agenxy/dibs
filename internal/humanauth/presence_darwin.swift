@@ -1,6 +1,6 @@
-// lanes-presence: proves a HUMAN is at this machine, right now.
+// agents-presence: proves a HUMAN is at this machine, right now.
 //
-// Lanes' panel runs inside an agent's MCP host and acts with that agent's own
+// Dibs' panel runs inside an agent's MCP host and acts with that agent's own
 // token. That is fine for answering the agent's mail: the agent handed the token
 // over. It is NOT fine for speaking AS the operator. "Stand down, this is your
 // operator" is exactly the message that must never be forgeable, and nothing in
@@ -20,7 +20,7 @@
 // does and does not cost. Saying "software cannot produce a fingerprint", as an
 // earlier version of this comment did, overstated it.
 //
-// A separate binary rather than cgo, deliberately: Lanes ships CGO_ENABLED=0 and
+// A separate binary rather than cgo, deliberately: Dibs ships CGO_ENABLED=0 and
 // cross-compiles to four targets, so linking LocalAuthentication into the daemon
 // would break the build everywhere it is not macOS. The daemon execs this and
 // reads the exit code, which also means a missing or unrunnable helper degrades
@@ -44,7 +44,7 @@ import LocalAuthentication
 // back to the login password on failure, and a login password proves possession
 // of a credential an agent could in principle have been given: the point here
 // is a fingerprint, which an agent on the transport cannot supply. When there is no sensor we exit 2 and let
-// Lanes ask for its own admin password, so the fallback stays explicit and
+// Dibs ask for its own admin password, so the fallback stays explicit and
 // visible rather than silently swapping one factor for another.
 let policy: LAPolicy = .deviceOwnerAuthenticationWithBiometrics
 
@@ -59,11 +59,11 @@ guard context.canEvaluatePolicy(policy, error: &probe) else {
 
 // The reason string is shown to the human inside the system sheet, so it is the
 // one chance to say what they are approving. Passed in by the daemon so the
-// sentence can name the actual action ("post to the lane 'auth-work'") rather
+// sentence can name the actual action ("post to the agent 'auth-work'") rather
 // than a generic one.
 let reason = CommandLine.arguments.count > 1 && !CommandLine.arguments[1].isEmpty
     ? CommandLine.arguments[1]
-    : "act as the human on the Lanes board"
+    : "act as the human on the Dibs board"
 
 let done = DispatchSemaphore(value: 0)
 var verified = false

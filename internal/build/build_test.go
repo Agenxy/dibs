@@ -16,7 +16,7 @@ func info(mainVersion string, settings ...debug.BuildSetting) *debug.BuildInfo {
 //
 // The fallback used to be "0.0.0-dev". Once v0.0.1 shipped, a build from a tree
 // AHEAD of the release announced itself as 0.0.0 and read as stale: the exact
-// confusion `lanes version` exists to end.
+// confusion `dibs version` exists to end.
 func TestVersionNeverClaimsAReleaseItIsNot(t *testing.T) {
 	for _, tc := range []struct {
 		name, want string

@@ -3,11 +3,11 @@ package mcp
 import (
 	"encoding/json"
 
-	"github.com/agenxy/lanes/internal/core"
-	"github.com/agenxy/lanes/internal/plugins"
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/plugins"
 )
 
-// pluginDoc is the payload of lanes://plugin: every plugin, with its files and
+// pluginDoc is the payload of dibs://plugin: every plugin, with its files and
 // its setup procedure.
 //
 // Every plugin rather than a guess at the caller's, because resources/read
@@ -15,11 +15,11 @@ import (
 // inventing one would mean an agent whose harness we guessed wrong is told the
 // wrong thing with the same confidence as one we guessed right. The list is
 // small, the payload is a few kilobytes, and the agent knows perfectly well
-// which harness it is running on. register_lane, which DOES know the harness
+// which harness it is running on. register, which DOES know the harness
 // because the agent just said so, is where the specific recommendation belongs.
 func pluginDoc() string {
 	body := map[string]any{
-		"note": "Lanes works with no plugin at all: every tool behaves the same " +
+		"note": "Dibs works with no plugin at all: every tool behaves the same " +
 			"without one. What a plugin buys is DELIVERY: on some harnesses it turns " +
 			"mail from something you must remember to poll for into something that " +
 			"arrives in your session. Find your harness below, follow `setup` in " +
@@ -43,7 +43,7 @@ func pluginDoc() string {
 // connects, is handed forty tools, and has no way to learn that its particular
 // harness has a hook that would wake it: that lived in a README, in a
 // repository the agent may never have cloned. So the first time an agent says
-// what harness it is, Lanes answers with what that harness can do.
+// what harness it is, Dibs answers with what that harness can do.
 //
 // Only on a FRESH registration. A reattach is the same agent coming back after
 // losing context, and repeating an install prompt to somebody who has already
@@ -68,7 +68,7 @@ func pluginHint(harness string, reattached, hooksLive bool) map[string]any {
 	// Answer the question rather than handing over homework.
 	//
 	// SessionStart fires before the agent gets a turn, so by the time it reaches
-	// register_lane the daemon already knows whether that hook arrived. Telling an
+	// register the daemon already knows whether that hook arrived. Telling an
 	// agent to go and verify something the server can already see would be busywork
 	// on its first turn, and busywork is how a first-connection nudge gets learned
 	// as noise.
@@ -80,7 +80,7 @@ func pluginHint(harness string, reattached, hooksLive bool) map[string]any {
 		"harness":    p.Harness,
 		"buys":       p.Buys,
 		"hooks_live": hooksLive,
-		"read":       "lanes://plugin",
+		"read":       "dibs://plugin",
 	}
 	if hooksLive {
 		hint["status"] = "Your lifecycle hooks reached this daemon before you registered, " +
@@ -97,7 +97,7 @@ func pluginHint(harness string, reattached, hooksLive bool) map[string]any {
 		} else {
 			hint["note"] = "shown once, on first registration. Your hooks reach this " +
 				"daemon, but this harness has no wake path: mail is still PULL-ONLY " +
-				"here, so keep calling ack_board each activation and await_events when " +
+				"here, so keep calling check_in each activation and await_events when " +
 				"you are about to block"
 		}
 		return hint
@@ -106,7 +106,7 @@ func pluginHint(harness string, reattached, hooksLive bool) map[string]any {
 		"is not proof the plugin is missing: hooks are read at session start, so one " +
 		"installed during this session stays inert until the next, but it does mean " +
 		"nothing is waking you right now."
-	hint["note"] = "shown once, not repeated on reattach: read lanes://plugin for the " +
+	hint["note"] = "shown once, not repeated on reattach: read dibs://plugin for the " +
 		"files and an ordered setup procedure, each step with its own check"
 	hint["verify"] = p.Verify
 	return hint

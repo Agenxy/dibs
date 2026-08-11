@@ -1,12 +1,12 @@
-// Package assets holds the visual material shared by every Lanes surface: the
+// Package assets holds the visual material shared by every Dibs surface: the
 // MCP Apps board panel and the web board, so the two render as one product
 // rather than drifting into two house styles.
 //
-// The surfaces are deliberately NOT the same page. The panel is one lane's own
-// board and mailbox, authenticated by that lane's token and rendered inside a
+// The surfaces are deliberately NOT the same page. The panel is one agent's own
+// board and mailbox, authenticated by that agent's token and rendered inside a
 // host's sandboxed iframe; the web board is the operator's god view over every
-// lane and all mail, behind the admin password. They answer different questions
-// for different readers. What they share is what a lane looks like, what a
+// agent and all mail, behind the admin password. They answer different questions
+// for different readers. What they share is what an agent looks like, what a
 // message looks like, and what an event looks like, so this package holds the
 // design system and the components, and each surface composes its own page.
 //
@@ -17,7 +17,7 @@
 //
 // Geist and Geist Mono are SIL OFL (see fonts/OFL.txt) and vendored for the
 // same reason. Two faces, two jobs: Geist Mono carries every identifier and
-// figure, lane names, serials, paths, counts, because those are read in
+// figure, agent names, serials, paths, counts, because those are read in
 // columns and columns need tabular figures and a fixed advance; Geist Sans
 // carries everything a person wrote in prose.
 //
@@ -45,7 +45,7 @@ var GeistSans []byte
 //go:embed fonts/GeistMono.woff2
 var GeistMono []byte
 
-// Icon is the Lanes mark, served as the favicon by both surfaces.
+// Icon is the Dibs mark, served as the favicon by both surfaces.
 //
 // A tab with no favicon shows the browser's blank-page glyph, which is what an
 // unfinished tool looks like, and the board is a page people leave open all
@@ -99,5 +99,5 @@ func Styles() string { build(); return styles }
 // BoardJS is the shared component library: pure functions from board data to
 // HTML strings, exposed as a `Board` object. It contains no transport and no
 // state, because the two surfaces get their data by completely different means
-// postMessage from an MCP host, and server-sent events from lanesd.
+// postMessage from an MCP host, and server-sent events from dibd.
 func BoardJS() string { return boardJS }

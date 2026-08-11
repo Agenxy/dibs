@@ -1,4 +1,4 @@
-# Lanes. Attachments & Blob Exchange (SPEC addendum)
+# Dibs. Attachments & Blob Exchange (SPEC addendum)
 
 Status: **implemented and shipping.** Reviewed over one adversarial round (2 P0,
 3 P1, 6 P2: all folded) and built; `put_blob`, `get_blob` and message
@@ -15,7 +15,7 @@ Design creed unchanged: simple, rigorous, bounded, honest.
 
 ---
 
-## A1. Concept: Lanes as an artifact-exchange substrate
+## A1. Concept: Dibs as an artifact-exchange substrate
 
 Coordination is not only text. A handoff should carry the generated files; a review
 request should carry the diff; a research agent should ship the dataset to process.
@@ -32,18 +32,18 @@ model: refs in the log, objects by hash in a side store.
 
 ## A2. Two attachment kinds: value and reference
 
-Because Lanes agents share one filesystem, there are two honest ways to attach a file,
+Because Dibs agents share one filesystem, there are two honest ways to attach a file,
 serving different needs. A message may mix both.
 
 | Kind | What it is | Copy? | Durable? | Cross-machine (v2)? | Use when |
 |---|---|---|---|---|---|
-| **blob** | content copied into Lanes' encrypted blob store, addressed by `sha256:<hex>` of the plaintext | yes | yes (bounded, GC'd) | yes | generated/in-memory data; a durable snapshot independent of any source file; small structured payloads |
-| **fileref** | a *reference* to an existing file on the shared filesystem: `{path, size?, hash?}` | no (zero-copy) | no, Lanes doesn't own it | no | large local files you don't want to copy (datasets, build artifacts) |
+| **blob** | content copied into Dibs' encrypted blob store, addressed by `sha256:<hex>` of the plaintext | yes | yes (bounded, GC'd) | yes | generated/in-memory data; a durable snapshot independent of any source file; small structured payloads |
+| **fileref** | a *reference* to an existing file on the shared filesystem: `{path, size?, hash?}` | no (zero-copy) | no, Dibs doesn't own it | no | large local files you don't want to copy (datasets, build artifacts) |
 
 - A **blob** is the primary, durable mechanism. Content-addressing gives dedup,
   integrity, and idempotent puts (same content ⇒ same id ⇒ no re-store).
 - A **fileref** is the zero-copy option and is **advisory**, in the same spirit as
-  directory claims (SPEC §9): Lanes conveys `path` and whatever `{size, hash}` the
+  directory claims (SPEC §9): Dibs conveys `path` and whatever `{size, hash}` the
   **sender supplied**, but does not own, lock, preserve, stat, or hash the file itself
   (see A2.1). The recipient reads it with its own OS permissions and, if the sender
   supplied a hash, uses it to detect whether the bytes changed since. If the file is
@@ -52,20 +52,20 @@ serving different needs. A message may mix both.
 ### A2.1 The daemon never touches fileref bytes *(fixes P0-2)*
 
 The daemon does **not** stat or hash a fileref path, not at send time, not ever. Doing
-so on the single-writer event loop (SPEC §1) would let any authenticated lane freeze the
+so on the single-writer event loop (SPEC §1) would let any authenticated agent freeze the
 entire coordination substrate by pointing a fileref at `/dev/zero`, a FIFO, or a 500 GB
-file: an unbounded head-of-line read+sha256 blocking all lanes. It would also contradict
+file: an unbounded head-of-line read+sha256 blocking all agents. It would also contradict
 A1's "zero-copy" motive (hashing means fully reading the very file we refused to copy).
 
 Therefore: **fileref `{size, hash}` are sender-supplied and purely advisory metadata.**
 The daemon records the strings as received (subject to the A9 length caps) and never
 opens `path`. A recipient that wants integrity re-hashes the file itself, out of the
 daemon's trust boundary and off its thread. This is the same advisory contract as
-claims: Lanes conveys a fact the sender asserted; verification is the reader's.
+claims: Dibs conveys a fact the sender asserted; verification is the reader's.
 
 ## A3. Blob store
 
-- **Location:** `~/.lanes/blobs/<aa>/<sha256hex>` (sharded by the first hex byte of the
+- **Location:** `~/.agents/blobs/<aa>/<sha256hex>` (sharded by the first hex byte of the
   id for filesystem sanity). Mode `0700` dir, `0600` files.
 - **Content addressing:** `id = "sha256:" + hex(sha256(plaintext))`, lowercase hex. The
   id is over the *plaintext*, so dedup and integrity apply to real content.
@@ -78,7 +78,7 @@ claims: Lanes conveys a fact the sender asserted; verification is the reader's.
   (SPEC §4), like message bodies. Readers on the filesystem see ciphertext; the id
   (a hash, not secret-derivable) is a safe filename.
 - **Not event-sourced.** The blob *store* (bytes) is durable side storage *outside* the
-  replay model: like `~/.lanes/key`. What the ledger records is blob **metadata**
+  replay model: like `~/.agents/key`. What the ledger records is blob **metadata**
   (A4). Replay never re-writes blob bytes; it reconstructs which blobs *should* exist.
   A `get_blob` whose bytes are missing returns `E_BLOB_UNAVAILABLE` with an honest
   reason (evicted / missing), never a hang or a lie.
@@ -86,18 +86,18 @@ claims: Lanes conveys a fact the sender asserted; verification is the reader's.
 ## A4. State, determinism, and the ledger
 
 Replayable state gains a small **blob registry**: `id → {size, mime, created_serial,
-owners:set<lane>, pins:set<lane>, refs}`. There is deliberately no
+owners:set<agent>, pins:set<agent>, refs}`. There is deliberately no
 `last_access_serial`: recording one would make `get_blob` (a read) append to the
 ledger, and a read that writes is a read that can fail, can be rate-limited, and
 grows the ledger in proportion to traffic rather than to decisions. `owners` is the set of
-lanes that have `put` this content (A6.1); `refs` counts live messages attaching it.
+agents that have `put` this content (A6.1); `refs` counts live messages attaching it.
 Ledgered ops (bytes-free):
 
 | Event | When | Ledger record (no bytes) |
 |---|---|---|
-| `blob.registered` | `put_blob` stages **new** content (bytes already durable, A4.1) | `{id, size, mime, lane}` |
-| `blob.owner_added` | `put_blob` by a lane not yet an owner of an existing id | `{id, lane}` |
-| (attachment refs) | `send_message` with attachments | the message's `attachments: [handle…]` (already part of the send op) |
+| `blob.registered` | `put_blob` stages **new** content (bytes already durable, A4.1) | `{id, size, mime, agent}` |
+| `blob.owner_added` | `put_blob` by an agent not yet an owner of an existing id | `{id, agent}` |
+| (attachment refs) | `send` with attachments | the message's `attachments: [handle…]` (already part of the send op) |
 | `blob.evicted` | GC removes a blob | `{id, cause}`, cause ∈ {unreferenced, ttl, cap} |
 
 `put_blob`'s impure input (the bytes) is reduced to a recorded, pure value, the
@@ -149,7 +149,7 @@ Reconcile thus reaps only genuine orphans, never live in-flight writes.
   A subsequent `get_blob` on such an id then fails honestly with
   `E_BLOB_UNAVAILABLE{cause:"evicted"}`: the A5 contract already makes loss explicit, so
   a full store degrades gracefully instead of dead-locking. Without this, a store full of
-  pinned/referenced blobs is unreclaimable and every lane's `put_blob` fails forever.
+  pinned/referenced blobs is unreclaimable and every agent's `put_blob` fails forever.
 - **Eviction order is creation order, not access order.** Two earlier drafts of this
   document said LRU; the daemon has always evicted oldest-created-first, and the
   daemon is right. LRU needs a last-access timestamp, that timestamp is replayed
@@ -158,11 +158,11 @@ Reconcile thus reaps only genuine orphans, never live in-flight writes.
   that `state == fold(ledger)`. The cost is real and the benefit is not: blobs
   here are attachments to messages, and a message's attachments are read once,
   near the time they are sent. Creation age and access age are close to the same
-  ordering for that traffic, and creation age is free. A lane that needs a
+  ordering for that traffic, and creation age is free. An agent that needs a
   specific blob kept should **pin** it, which is an explicit, ledgered decision
   rather than a guess made from read traffic.
-- **Per-lane quota + pin cap** *(fixes P1-3)*. Beyond the global cap, each lane has a
-  per-lane store quota and a per-lane pin cap (A9), so one lane cannot fill or pin the
+- **Per-agent quota + pin cap** *(fixes P1-3)*. Beyond the global cap, each agent has a
+  per-agent store quota and a per-agent pin cap (A9), so one agent cannot fill or pin the
   whole shared store and starve others. Exceeding either → `E_QUOTA`.
 - **Startup reconcile sweep** *(fixes P2-1)*: on boot, after replay, delete any file
   under `blobs/` and any file under `out/` whose id has no live registry entry.
@@ -174,20 +174,20 @@ Reconcile thus reaps only genuine orphans, never live in-flight writes.
 
 ## A6. Access control
 
-- A **blob** is fetchable via `get_blob(id)` only by: an **owner** lane (A6.1), or a
-  lane that is the **recipient of a live message referencing it**. This scopes
-  attachments to conversation participants, exactly like `get_message` (SPEC §8). A
+- A **blob** is fetchable via `get_blob(id)` only by: an **owner** agent (A6.1), or a
+  agent that is the **recipient of a live message referencing it**. This scopes
+  attachments to conversation participants, exactly like `read_mail` (SPEC §8). A
   caller outside that set gets `E_NO_BLOB` (does not reveal existence).
-- **Attaching:** a lane may attach a blob it owns or one it legitimately received (is a
+- **Attaching:** an agent may attach a blob it owns or one it legitimately received (is a
   recipient of). Attaching an id you have no access to → `E_NO_BLOB`.
-- **Filerefs** carry no Lanes-enforced access control on the file itself: the file's
-  own OS permissions govern the recipient's read. Lanes only conveys the sender-asserted
+- **Filerefs** carry no Dibs-enforced access control on the file itself: the file's
+  own OS permissions govern the recipient's read. Dibs only conveys the sender-asserted
   path + optional hash.
 
-### A6.1 `deduped` is scoped: no cross-lane existence oracle *(fixes P1-1)*
+### A6.1 `deduped` is scoped: no cross-agent existence oracle *(fixes P1-1)*
 
 Global content-addressing must not become a confirmation oracle: a naive `deduped:true`
-would let lane B `put_blob(candidate)` and learn whether some other lane already stored
+would let agent B `put_blob(candidate)` and learn whether some other agent already stored
 exactly that content (the Dropbox-dedup class leak), contradicting A6's non-disclosure.
 
 Rule: **`put_blob` always makes the caller an owner of the resulting id, and `deduped`
@@ -196,7 +196,7 @@ reflects only whether *the caller* already owned it: never global existence.**
 - Caller already an owner of `id` → `{deduped:true}`, no new op.
 - Caller not yet an owner (whether or not the bytes already exist for someone else) →
   the daemon ensures the bytes are durable (A4.1; a no-op if the file is already
-  present and intact), appends `blob.owner_added{id, lane}` (or `blob.registered` if
+  present and intact), appends `blob.owner_added{id, agent}` (or `blob.registered` if
   brand-new), and returns `{deduped:false}`.
 
 `deduped:false` is thus returned to any caller who didn't previously own the content,
@@ -209,14 +209,14 @@ an owner with attach/read rights.
 ### A6.2 Re-share extends a transitive, creator-invisible closure *(documents P2-2)*
 
 A recipient may re-attach a blob it legitimately received to a new message (A6),
-granting read access to further lanes, transitively. The access set is therefore a
+granting read access to further agents, transitively. The access set is therefore a
 **growing closure, not a static list**, and an owner can neither see nor revoke the
-lanes a downstream recipient re-shares to; a blob an owner created can outlive that
+agents a downstream recipient re-shares to; a blob an owner created can outlive that
 owner's own message (kept alive by B→C references) within the retention bounds. This is
 not a new byte leak (a re-sharer already holds the bytes) but the "scoped to
 participants" framing is explicitly a *bounded-growth* closure, not a fixed set. v1
 accepts this (it mirrors real life: anyone you hand a file to can hand it on); the
-re-share graph is bounded only by the global/per-lane caps and TTLs, and eviction still
+re-share graph is bounded only by the global/per-agent caps and TTLs, and eviction still
 eventually reclaims everything. A future revision may record or cap the re-share fan-out
 if evidence warrants.
 
@@ -224,12 +224,12 @@ if evidence warrants.
 
 | Tool | Purpose |
 |---|---|
-| `put_blob(data?, path?, mime?)` | Store content, addressed by hash. `data` = base64 (inline, small); `path` = a local file the daemon reads (off-thread, A4.1), hashes, and stores. → `{blob:"sha256:…", size, mime, deduped}` where `deduped` is caller-scoped (A6.1). Idempotent. Bounded by max blob size + per-lane quota. |
-| `send_message(…, attachments?)` | `attachments` is a list, each either a blob id `"sha256:…"` or a fileref `{path, size?, hash?}`. Blob ids are id-validated (A3) and access-checked (A6) and refcount the blob. Fileref `{size, hash}` are recorded as sender-supplied advisory metadata; the daemon does **not** open `path` (A2.1). |
+| `put_blob(data?, path?, mime?)` | Store content, addressed by hash. `data` = base64 (inline, small); `path` = a local file the daemon reads (off-thread, A4.1), hashes, and stores. → `{blob:"sha256:…", size, mime, deduped}` where `deduped` is caller-scoped (A6.1). Idempotent. Bounded by max blob size + per-agent quota. |
+| `send(…, attachments?)` | `attachments` is a list, each either a blob id `"sha256:…"` or a fileref `{path, size?, hash?}`. Blob ids are id-validated (A3) and access-checked (A6) and refcount the blob. Fileref `{size, hash}` are recorded as sender-supplied advisory metadata; the daemon does **not** open `path` (A2.1). |
 | `get_blob(id, as?)` | Fetch an attachment's content (A8). `as: "auto" \| "inline" \| "path"`. Id-validated (A3), access-scoped (A6). A pure read: appends nothing (A4). |
-| `get_message(msg_serial)` | (existing) now also returns the message's `attachments` handles + metadata, so a recipient sees what's attached and can `get_blob` each. |
+| `read_mail(msg_serial)` | (existing) now also returns the message's `attachments` handles + metadata, so a recipient sees what's attached and can `get_blob` each. |
 
-`inbox`/`get_message` deliver only handles + metadata (never bytes) so mailbox reads
+`inbox`/`read_mail` deliver only handles + metadata (never bytes) so mailbox reads
 stay cheap; bytes come solely from an explicit `get_blob`.
 
 ## A8. MCP delivery (using the real, verified content model)
@@ -241,7 +241,7 @@ supports (response-only; there is no unsolicited media push, and none is needed)
   `{type:"audio", …}`; else → `{type:"resource", resource:{blob:<base64>, mimeType}}`.
 - **Inline vs materialize (context hygiene):** inlining a large blob as base64 would
   bloat the agent's context. Default `as:"auto"` inlines only small media (≤ 256 KiB);
-  otherwise it **materializes** the decrypted bytes to a path under `~/.lanes/out/` and
+  otherwise it **materializes** the decrypted bytes to a path under `~/.agents/out/` and
   returns `{path, size, mime}` for the agent to open as a file. `as:"inline"` /
   `as:"path"` force either. Large binary/dataset attachments thus reach the agent as a
   *file path*, not a context-flooding blob.
@@ -284,8 +284,8 @@ store, not a leak of the encryption-at-rest guarantee:
 | HTTP request body cap | 96 MiB (covers 64 MiB × ~1.37 base64 + envelope) | `E_TOO_LARGE` before buffering |
 | attachments per message | 8 | `E_TOO_LARGE` |
 | total blob store size | 1 GiB | evict unreferenced, oldest `created_serial` first; then last-resort cap eviction (A5) |
-| **per-lane blob quota** | 256 MiB | `E_QUOTA` |
-| **pins per lane** | 32 | `E_QUOTA` |
+| **per-agent blob quota** | 256 MiB | `E_QUOTA` |
+| **pins per agent** | 32 | `E_QUOTA` |
 | blob **grace window** (refcount 0, freshly put) | 10 min, measured from `created_serial` | eligible for eviction after |
 | blob **hard TTL** (unreferenced) | 7 days | `blob.evicted{cause:"ttl"}` |
 | inline delivery threshold | 256 KiB | larger ⇒ materialize to path |
@@ -293,7 +293,7 @@ store, not a leak of the encryption-at-rest guarantee:
 | fileref path length | 1 KiB | `E_TOO_LARGE` |
 | fileref sender hash length | 128 chars | `E_TOO_LARGE` |
 | mime length / charset | ≤ 128 chars, `^[a-zA-Z0-9!#$&^_.+-]+/[a-zA-Z0-9!#$&^_.+-]+$` | `E_BAD_MIME` (A10) |
-| put_blob rate | shares the per-lane token bucket (SPEC §11) | `E_RATE_LIMITED` |
+| put_blob rate | shares the per-agent token bucket (SPEC §11) | `E_RATE_LIMITED` |
 
 The **grace window** (freshly-put, not-yet-attached refcount-0 blob) is distinct from
 and shorter than the hard TTL: it bounds the put→send race (a caller has ≥10 min to
@@ -320,7 +320,7 @@ A4.1), not inline `data`.
 
 - **Attachment content is untrusted data.** A shared file or blob can contain text
   crafted to look like instructions. Receiving agents MUST treat `get_blob` content as
-  *data*, never as commands: consistent with Lanes' founding rule that a message is
+  *data*, never as commands: consistent with Dibs' founding rule that a message is
   something you may decline, not obey. Server instructions and `/help` state this.
 - **This rule covers metadata and paths, not just bytes** *(fixes P2-6)*. `mime` is
   validated/normalized against the A9 charset (`E_BAD_MIME` otherwise) so a crafted mime
@@ -328,12 +328,12 @@ A4.1), not inline `data`.
   commands rule **explicitly extends to fileref paths and materialized `out/` paths**,
   "here is a file at PATH" is a pointer to untrusted data, and a recipient must not treat
   a file's contents (or the path string itself) as more trusted than an inline blob.
-- **Filerefs are advisory** (A2/A2.1): Lanes does not own, lock, preserve, stat, or hash
+- **Filerefs are advisory** (A2/A2.1): Dibs does not own, lock, preserve, stat, or hash
   the file; any recorded hash is the *sender's* assertion and the recipient's own re-hash
   is the real integrity check.
 - **Eviction is observable** (A5): loss is an explicit error with a cause, never silent.
 - **Encryption/scope** (A3, A6): private blob bytes are encrypted at rest and readable
-  only by owners/participants; the human CLI (which outranks all lanes) can read blobs
+  only by owners/participants; the human CLI (which outranks all agents) can read blobs
   decrypted for inspection.
 
 ## A11. Non-goals (deliberate exclusions)
@@ -350,7 +350,7 @@ A4.1), not inline `data`.
 
 ## A12. Scope
 
-**In this addendum (a v1.x feature):** the blob store, blob registry + GC (with per-lane
+**In this addendum (a v1.x feature):** the blob store, blob registry + GC (with per-agent
 quota, pins, last-resort cap eviction, startup reconcile), `put_blob` / `get_blob`,
 message `attachments` (blob ids + advisory filerefs), the §A8 delivery model
 (mode-locked, bounded `out/`), limits, encryption/access/injection rules, and the
@@ -368,7 +368,7 @@ All eleven findings folded: **P0-1** (crash-window silent loss) → A4.1 object-
 + A6.1 filesystem-verified dedup; **P0-2** (fileref hash DoS) → A2.1 daemon never touches
 fileref bytes; **P1-1** (dedup oracle) → A6.1 caller-scoped `deduped` + ownership set;
 **P1-2** (plaintext to disk) → A8.1 mode-locked bounded `out/`; **P1-3** (no quota /
-unevictable) → A5 last-resort cap eviction + A9 per-lane quota & pin cap; **P2-1**
+unevictable) → A5 last-resort cap eviction + A9 per-agent quota & pin cap; **P2-1**
 (orphans) → A4.1 + A5 reconcile sweep; **P2-2** (transitive closure) → A6.2 documented;
 **P2-3** (id traversal) → A3 id validation before path construction; **P2-4** (grace
 window) → A9 explicit 10 min from `created_serial`; **P2-5** (pre-buffer cap) → A9.1;

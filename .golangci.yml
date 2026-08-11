@@ -73,10 +73,18 @@ linters:
       - path: internal/mcp/mcp\.go
         text: "function (run|dispatch|ServeHTTP)"
         linters: [cyclop]
-      - path: cmd/lanes/main\.go
+      - path: cmd/dibs/main\.go
         text: "function main"
         linters: [cyclop]
-      - path: cmd/lanesd/main\.go
+      # run() is the daemon's start-up sequence: a straight line of load, bind,
+      # serve, each step guarded. The 0.0.3 ledger-vocabulary check added one
+      # more guard to it, and gocognit counts guards in a sequence the same way
+      # it counts nesting. Splitting a start-up path to satisfy a counter would
+      # scatter the one function where reading top to bottom IS the design.
+      - path: cmd/dibd/main\.go
+        text: "func `run`"
+        linters: [gocognit]
+      - path: cmd/dibd/main\.go
         text: "function run"
         linters: [cyclop]
 
@@ -87,11 +95,11 @@ linters:
       # no independent meaning.
       #
       # NOT a blanket exemption: gocognit still fires everywhere else, and the
-      # ceiling caught four functions in the channels work that genuinely did
+      # ceiling caught four functions in the spaces work that genuinely did
       # need splitting.
-      - path: cmd/lanes/(await|watch|monitor|mcpstdio_identity|mcpstdio_session)\.go
+      - path: cmd/dibs/(await|watch|monitor|mcpstdio_identity|mcpstdio_session)\.go
         linters: [gocognit, cyclop]
-      - path: cmd/lanesd/guard\.go
+      - path: cmd/dibd/guard\.go
         linters: [gocognit, cyclop]
       - path: internal/web/web\.go
         linters: [gocognit, cyclop]

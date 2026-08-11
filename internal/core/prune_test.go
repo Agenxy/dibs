@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// A crashed lane cannot close itself: close_lane needs the lane's own token,
-// which a dead lane no longer has. Without prune the board accumulates debris
+// A crashed agent cannot close itself: sign_off needs the agent's own token,
+// which a dead agent no longer has. Without prune the board accumulates debris
 // nobody can clear.
 func TestPruneClearsDebrisButNeverLiveLanes(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
@@ -16,31 +16,31 @@ func TestPruneClearsDebrisButNeverLiveLanes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Two lanes lose coordination; one keeps working.
-	s.Lanes["gone-a"].Status = StatusStale
-	s.Lanes["gone-b"].Status = StatusDormant
+	// Two agents lose coordination; one keeps working.
+	s.Agents["gone-a"].Status = StatusStale
+	s.Agents["gone-b"].Status = StatusDormant
 
 	res, _, err := s.Apply(&Op{Kind: OpPruneLane}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if res["count"] != 2 {
-		t.Fatalf("pruned %v lanes, want 2", res["count"])
+		t.Fatalf("pruned %v agents, want 2", res["count"])
 	}
-	if s.Lanes["live"].Status != StatusActive {
-		t.Error("prune closed a lane that was still working")
+	if s.Agents["live"].Status != StatusActive {
+		t.Error("prune closed an agent that was still working")
 	}
 	for _, id := range []string{"gone-a", "gone-b"} {
-		if s.Lanes[id].Status != StatusClosed {
+		if s.Agents[id].Status != StatusClosed {
 			t.Errorf("%s not closed", id)
 		}
-		if s.Lanes[id].Token != "" {
+		if s.Agents[id].Token != "" {
 			t.Errorf("%s kept its token after closing", id)
 		}
 	}
 }
 
-// Naming a lane prunes exactly that one, live or not: the human said so.
+// Naming an agent prunes exactly that one, live or not: the human said so.
 func TestPruneNamedLaneAndUnknownLane(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	now := time.Now()
@@ -50,13 +50,13 @@ func TestPruneNamedLaneAndUnknownLane(t *testing.T) {
 	if _, _, err := s.Apply(&Op{Kind: OpPruneLane, To: "a"}, now); err != nil {
 		t.Fatal(err)
 	}
-	if s.Lanes["a"].Status != StatusClosed {
-		t.Error("named lane not closed")
+	if s.Agents["a"].Status != StatusClosed {
+		t.Error("named agent not closed")
 	}
-	if s.Lanes["b"].Status != StatusActive {
-		t.Error("prune of one lane touched another")
+	if s.Agents["b"].Status != StatusActive {
+		t.Error("prune of one agent touched another")
 	}
 	if _, _, err := s.Apply(&Op{Kind: OpPruneLane, To: "nope"}, now); err == nil {
-		t.Error("pruning an unknown lane should error, not succeed silently")
+		t.Error("pruning an unknown agent should error, not succeed silently")
 	}
 }
