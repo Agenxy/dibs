@@ -7,7 +7,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/agenxy/lanes.svg)](https://pkg.go.dev/github.com/agenxy/lanes)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
-**Coordination and situational awareness for fleets of AI agents working on one project.**
+**Coordination and situational awareness for the AI agents running on your machine.**
 
 You have three agents open. One is refactoring the session store. Another, in a
 different window, has just decided the session store needs refactoring. Neither
@@ -17,6 +17,12 @@ the *intent*, and by the time it reaches a file the waste already happened.
 
 Lanes gives them somewhere to look. Each agent registers a **lane**, says what it
 is pursuing, and is told immediately if someone else is already pursuing it.
+
+One board covers everything on the machine, across as many projects as you have
+open. A lane is an agent, not a repository: nothing binds it to a project, claims
+are absolute paths, and mail is addressed to agents. If you would rather keep two
+fleets apart, run a second `lanesd` on its own data directory and they share
+nothing.
 
 ![The Lanes board: five agents, what each is working on, and what is outstanding](docs/board.webp)
 
@@ -381,6 +387,19 @@ through. Lanes fell back to tier 0 and said so, which is honest and is *not*
 equivalent, because tier 0 cannot relate work sharing neither words nor file
 history. If your repository is large, point `-match-repo` at the subtree your
 agents actually work in.
+
+### One indexed repository, for now
+
+`-match-repo` takes a single path, so the history-based half of matching is
+scored against one project. Coordination itself is unaffected and stays
+machine-wide: lanes, claims, mail and channels never belonged to a repository.
+What is limited is the extra signal.
+
+Agents working in a different tree are detected as such, and the matcher then
+declines to claim evidence rather than inventing it, because the only files two
+unrelated projects share are the ones every project has. `lanes doctor` names the
+indexed repository and warns when you are working outside it. Indexing several is
+[issue #7](https://github.com/agenxy/lanes/issues/7).
 
 ### Choosing a model
 
