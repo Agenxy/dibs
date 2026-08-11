@@ -5,7 +5,7 @@
 [![CI](https://github.com/agenxy/lanes/actions/workflows/ci.yml/badge.svg)](https://github.com/agenxy/lanes/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/agenxy/lanes?sort=semver)](https://github.com/agenxy/lanes/releases/latest)
 [![Go Reference](https://pkg.go.dev/badge/github.com/agenxy/lanes.svg)](https://pkg.go.dev/github.com/agenxy/lanes)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
 **Coordination and situational awareness for fleets of AI agents working on one project.**
 
@@ -716,4 +716,4 @@ work, not the person".
 
 ## License
 
-MIT.
+Apache 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
