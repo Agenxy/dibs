@@ -48,11 +48,11 @@ over plain HTTP (no stdio bridge in the way):
 | Harness | Version | Handshake | Declared capabilities | Methods sent |
 |---|---|---|---|---|
 | Claude Code (desktop engine = the app's own build) | 2.1.219 | `initialize` **2025-11-25** | `roots`, `elicitation` | initialize, tools/list, resources/list |
-| Claude Code CLI | 2.1.218 | `initialize` 2025-11-25 |, | initialize, tools/list, resources/list |
+| Claude Code CLI | 2.1.218 | `initialize` 2025-11-25 | none | initialize, tools/list, resources/list |
 | Codex | 0.144.1 / **0.146.0-alpha.7** | `initialize` **2025-06-18** | `elicitation {form,url}` | initialize, tools/list |
 | opencode | 1.18.4 | `initialize` **2025-11-25** | `roots` | initialize, tools/list |
-| Copilot CLI | 1.0.75 | 2025-11-25 |, | tools only |
-| Pi | latest | **no MCP at all** |, |, |
+| Copilot CLI | 1.0.75 | 2025-11-25 | none | tools only |
+| Pi | latest | **no MCP at all** | none | none |
 
 **Nobody sends `subscriptions/listen`, `resources/subscribe`, or `resources/read`.
 Nobody speaks MCP 2026**, not even Codex alpha, which negotiates 2025-06-18. Codex never

@@ -307,6 +307,19 @@ type AgentInfo struct {
 	Project string `json:"project,omitempty"`
 	Branch  string `json:"branch,omitempty"`
 	Host    string `json:"host,omitempty"`
+
+	// The repository this agent is in, as identity rather than as a label.
+	// RepoDir is Git's common directory (shared by every linked worktree of one
+	// repository); RepoRemote is the normalized primary remote.
+	//
+	// Unlike Project, these DO decide things: a ref like "issue:42" means
+	// something only inside one repository, so an objective shared with an agent
+	// in a different project is a coincidence rather than duplicated effort.
+	// Recorded rather than derived because the comparison happens in the fold,
+	// which cannot call Git, and because a replay must reach the same verdict on
+	// a machine where the checkout is long gone.
+	RepoDir    string `json:"repo_dir,omitempty"`
+	RepoRemote string `json:"repo_remote,omitempty"`
 }
 
 // Lane is a participant on the board: an identity, a mailbox and a heartbeat.

@@ -216,3 +216,103 @@ func TestUpgradeRefusesToCreateASecondJob(t *testing.T) {
 		t.Errorf("a clean machine was refused: %v", err)
 	}
 }
+
+// systemd expands `$VAR` and `${VAR}` inside ExecStart even though its command
+// line is not a shell. A daemon at /opt/$LANES_BIN/lanesd therefore started
+// whatever the environment said, or failed to start at all when the variable was
+// unset. Reported after the first round of escaping shipped: backslash, quote
+// and percent were handled and dollar was not, which is the shape of every miss
+// in this file.
+func TestSystemdUnitDoesNotExpandVariablesFromAPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "cfg"))
+
+	daemon := filepath.Join(home, "opt", "$LANES_BIN", "lanesd")
+	dir := filepath.Join(home, "data", "${USER}", "fleet")
+	if err := writeSystemdUnit(daemon, dir); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(home, "cfg", "systemd", "user", "lanes.service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var exec string
+	for _, line := range strings.Split(string(body), "\n") {
+		if strings.HasPrefix(line, "ExecStart=") {
+			exec = line
+		}
+	}
+	// Every literal dollar must be doubled. Stripping the doubled pairs must
+	// leave none behind, exactly as the percent check does.
+	if strings.Contains(strings.ReplaceAll(exec, "$$", ""), "$") {
+		t.Errorf("ExecStart leaves a dollar for systemd to expand: %s", exec)
+	}
+	for _, want := range []string{"$$LANES_BIN", "$${USER}"} {
+		if !strings.Contains(exec, want) {
+			t.Errorf("ExecStart does not carry %q literally: %s", want, exec)
+		}
+	}
+}
+
+// U+FFFE and U+FFFF are ordinary runes in Go and legal in a macOS filename, and
+// they sit just outside XML's Char production, so the encoder replaces them with
+// U+FFFD without error. The unit then names a directory one byte-sequence away
+// from the one asked for and the service starts on the wrong state, silently.
+// The C0 check did not catch these because C0 is where one expects the problem.
+func TestPathsXMLCannotRepresentAreRefusedRatherThanChanged(t *testing.T) {
+	for _, r := range []rune{'￾', '￿'} {
+		bad := "/data/" + string(r) + "/fleet"
+		if err := usableInAUnitFile(bad); err == nil {
+			t.Errorf("%U was accepted; the written unit would point somewhere else", r)
+		}
+	}
+	// The replacement character itself is representable: a path that genuinely
+	// contains one round-trips unchanged, so refusing it would be wrong.
+	if err := usableInAUnitFile("/data/�/fleet"); err != nil {
+		t.Errorf("a path containing U+FFFD was refused, but it survives XML intact: %v", err)
+	}
+	// Supplementary-plane characters are ordinary and must not be caught.
+	if err := usableInAUnitFile("/data/\U0001F600/fleet"); err != nil {
+		t.Errorf("an emoji in a path was refused: %v", err)
+	}
+}
+
+// The refusal promises exact corrective commands. With a space in the path the
+// printed `rm` was two arguments, and with a backtick or `$(...)` it would have
+// been worse than merely broken.
+func TestTheCorrectiveCommandsAreSafeToPaste(t *testing.T) {
+	agents := filepath.Join(t.TempDir(), "Fleet 'A' $(whoami)")
+	if err := os.MkdirAll(agents, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	old := filepath.Join(agents, legacyLabels[0]+".plist")
+	if err := os.WriteFile(old, []byte("<plist/>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := refuseIfLegacyUnitExists(agents)
+	if err == nil {
+		t.Fatal("the legacy unit was ignored")
+	}
+	if !strings.Contains(err.Error(), "rm "+shellArg(old)) {
+		t.Errorf("the rm command is not quoted for a shell:\n%v", err)
+	}
+	if strings.Contains(err.Error(), "rm "+old) {
+		t.Errorf("the rm command was printed raw and would not run as shown:\n%v", err)
+	}
+}
+
+func TestShellArgSurvivesQuotesAndExpansions(t *testing.T) {
+	for in, want := range map[string]string{
+		`/plain/path`:  `'/plain/path'`,
+		`/a b/c`:       `'/a b/c'`,
+		`/it's/here`:   `'/it'\''s/here'`,
+		"/`whoami`/x":  "'/`whoami`/x'",
+		`/$(whoami)/x`: `'/$(whoami)/x'`,
+		`/a"b/c`:       `'/a"b/c'`,
+	} {
+		if got := shellArg(in); got != want {
+			t.Errorf("shellArg(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

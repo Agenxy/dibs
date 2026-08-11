@@ -404,7 +404,7 @@ Messages go lane → lane; identity = send serial; bodies private (§4, §5).
 
 | From | To | Trigger | Event |
 |---|---|---|---|
-|, | `pending` | `send_message` (with `op_id` dedup, §4) | `message.sent` |
+| (no message) | `pending` | `send_message` (with `op_id` dedup, §4) | `message.sent` |
 | `pending` | `delivered` | recipient **retrieves the body** via `inbox` or `get_message`, metadata polls (`events_since`/`await_events`) do NOT deliver | `message.delivered` (via ledgered `mark_delivered`, idempotent) |
 | `pending/delivered` | `acked` (terminal + consumed for notify/handoff; non-terminal for question/request) | `ack_message` | `message.acked` |
 | any terminal state | same state, `consumed` set | `ack_message` on terminal mail = consumption (§below) | `message.consumed` |

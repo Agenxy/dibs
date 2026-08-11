@@ -80,6 +80,24 @@ func SameRepo(a, b RepoID) (same, known bool) {
 	return a.remote == b.remote, true
 }
 
+// Identity returns the two facts that decide whether two checkouts are one
+// project: the Git common directory and the normalized primary remote. Either
+// may be empty, and ok is false when the directory is not a checkout at all.
+//
+// Exposed for RECORDING. Deciding this at read time needs Git, which the pure
+// core cannot call and the single-writer loop cannot afford; recording both
+// values on the op at registration lets the fold compare them deterministically,
+// and lets a replay reach the same verdict years later on a machine where the
+// checkout no longer exists.
+//
+// Both values, not a single key, because the answer is three-valued. Two unequal
+// remotes are evidence of SEPARATION, whereas one absent remote is merely an
+// absence of evidence, and collapsing those into one string loses the
+// distinction that keeps a missing fact from reading as a difference.
+func (r RepoID) Identity() (commonDir, remote string, ok bool) {
+	return r.commonDir, r.remote, r.repository
+}
+
 func identifyRepo(dir string) RepoID {
 	git, err := exec.LookPath("git")
 	if err != nil {

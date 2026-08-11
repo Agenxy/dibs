@@ -44,6 +44,10 @@ func agentInfo(params json.RawMessage, a *toolArgs, session *clientInfoJSON) *co
 	// set_slot still. The engine already learned this once, which is why the
 	// matcher's repo lens is resolved off the loop and handed in.
 	info.Project = paths.ProjectName(info.CWD)
+	// The identity behind the label. Resolved in the same breath because both
+	// come from one memoised Identify, and recorded because the fold compares
+	// them and the fold cannot call Git.
+	info.RepoDir, info.RepoRemote, _ = paths.Identify(info.CWD).Identity()
 	h, v := clientIdentity(params)
 	if h == "" && session != nil {
 		// Nothing on this request, but the session introduced itself at

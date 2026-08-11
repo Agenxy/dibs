@@ -42,7 +42,7 @@ the question.
 | [claude-desktop](claude-desktop/) | MCP (stdio) or `.mcpb` | ❌ no hook system exists | tools yes; panel renders in the ext-apps reference host |
 | [codex](codex/) | MCP over HTTP | ❌ hooks are subprocess-only | transport yes, every tool enumerated; execution blocked, see below |
 | [chatgpt-desktop](chatgpt-desktop/) | shares Codex config | ❌ inherits Codex | no |
-| openclaw |, |, | deferred |
+| openclaw | not yet assessed | not yet assessed | deferred |
 
 ## What the survey found
 

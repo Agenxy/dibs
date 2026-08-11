@@ -50,17 +50,27 @@ func selectDaemon(live []paths.Daemon, dir string) (mine *paths.Daemon, others i
 // Once is a slip; twice is a pattern, so this one refuses anything it does not
 // understand rather than assuming an unrecognised argument is harmless.
 func stop(args []string) error {
+	// TWO passes, and the order matters. Returning as soon as help was seen made
+	// the verdict depend on argument ORDER: `lanes stop --help --force` printed
+	// help and exited 0, silently accepting a flag that does not exist, while
+	// `--force --help` refused it. An argument this command does not understand
+	// is a misunderstanding about what it does, and that is worth saying whether
+	// or not help was also asked for.
+	help := false
 	for _, a := range args {
 		switch a {
 		case "-h", "--help", "help":
-			fmt.Print(stopHelp)
-			return nil
+			help = true
 		default:
 			return fmt.Errorf("`lanes stop` takes no arguments, and %q is not one. "+
 				"it stops the daemon for the data directory in LANES_DIR (or ~/.lanes) "+
 				"and nothing else. Refusing rather than guessing, because this is not "+
 				"an action to perform on a directory you did not mean", a)
 		}
+	}
+	if help {
+		fmt.Print(stopHelp)
+		return nil
 	}
 	return stopDaemon(paths.DataDir())
 }

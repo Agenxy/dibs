@@ -8,10 +8,11 @@ import (
 // A subagent is its parent's work, not a third party to it.
 //
 // The ordinary delegation pattern is: claim the area, spawn a subagent to edit
-// it. Without lineage the guard DENIED that subagent on its own parent's claim
-// , "coordinate with lane parent", "pick different work", and because the
-// guard is an enforcement path rather than advice, the harness then refused the
-// edit outright. The exclusive claim locked out the very work it was taken for.
+// it. Without lineage the guard DENIED that subagent on its own parent's claim,
+// telling it to "coordinate with lane parent" and "pick different work". The
+// guard is an enforcement path rather than advice, so the harness then refused
+// the edit outright: the exclusive claim locked out the very work it was taken
+// for.
 func TestAnAgentIsNotBlockedByItsOwnParentsClaim(t *testing.T) {
 	s := NewState("t", DefaultLimits())
 	now := time.Unix(1700000000, 0)

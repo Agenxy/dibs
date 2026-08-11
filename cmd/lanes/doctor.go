@@ -513,13 +513,21 @@ func checkOneDaemon(verbose bool, ok reportFn, warn fixFn) {
 }
 
 func checkSupervision(verbose bool, ok reportFn, warn fixFn) {
+	// Qualified by harness, because the stamp is not universal and a doctor that
+	// says otherwise is worse than one that says nothing. Only harnesses with a
+	// hook Lanes can use WITHOUT spawning a subprocess stamp automatically; Codex
+	// has none, so promising a Codex user that their subagents will be attributed
+	// sends them looking for a mechanism that is not there when one is not.
+	// Lineage still works everywhere: vouch_child, then register with the nonce.
 	if _, err := exec.LookPath("lanes"); err != nil {
 		warn("`lanes` is not on PATH",
-			"the PreToolUse hook that stamps a spawned subagent with its parent runs "+
-				"`lanes hook-spawn`, so without it on PATH nothing is stamped and stalled "+
-				"subagents are attributed by inference or not at all")
+			"where a harness supports it (Claude Code today), the PreToolUse hook that "+
+				"stamps a spawned subagent with its parent runs `lanes hook-spawn`, so "+
+				"without it on PATH nothing is stamped and stalled subagents are "+
+				"attributed by inference or not at all")
 	} else if verbose {
-		ok("`lanes` on PATH: spawned subagents will be stamped with their parent")
+		ok("`lanes` on PATH: subagents are stamped where the harness has a usable hook " +
+			"(Claude Code). Elsewhere, use vouch_child and register the child with the nonce")
 	}
 
 	// The session-path rung reads a directory layout that is Claude Desktop's

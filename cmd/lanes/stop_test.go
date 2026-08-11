@@ -121,3 +121,32 @@ func TestTheStopVerbIsWiredThroughArgumentChecking(t *testing.T) {
 			"  performs the stop. Dispatch found:\n%s", body)
 	}
 }
+
+// A command's verdict on an argument must not depend on where the argument sits.
+// `lanes stop --help --force` printed help and exited 0, silently accepting a
+// flag that does not exist, while `--force --help` refused it. Both of these
+// commands guard something consequential, so "I did not understand that" has to
+// be said whether or not help was also asked for.
+func TestUnknownArgumentsAreRefusedWhicheverSideOfHelpTheySit(t *testing.T) {
+	for _, args := range [][]string{
+		{"--help", "--force"},
+		{"--force", "--help"},
+		{"-h", "nonsense"},
+		{"help", "--dir", "/somewhere"},
+	} {
+		if err := stop(args); err == nil {
+			t.Errorf("lanes stop %v was accepted; an unsupported argument means the "+
+				"caller expects behaviour this command does not have", args)
+		}
+		if err := serviceCommand(args); err == nil {
+			t.Errorf("lanes configure --service %v was accepted", args)
+		}
+	}
+	// Help alone still works, and still does nothing else.
+	if err := stop([]string{"--help"}); err != nil {
+		t.Errorf("plain help was refused: %v", err)
+	}
+	if err := serviceCommand([]string{"--help"}); err != nil {
+		t.Errorf("plain help was refused: %v", err)
+	}
+}

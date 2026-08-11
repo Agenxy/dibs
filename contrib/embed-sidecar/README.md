@@ -82,7 +82,7 @@ unrelated work rather than scoring high across the board.
 | recall@20 | 0.653 | 0.677 | 0.677 | **0.779** |
 | MRR | 0.542 | 0.667 | 0.739 | **0.781** |
 | calibrated join bar | 0.327 | 0.536 | 0.555 | **0.362** |
-| licence |, | Apache 2.0 | Apache 2.0 | Apache 2.0 |
+| licence | n/a | Apache 2.0 | Apache 2.0 | Apache 2.0 |
 | download | 0 | ~1.1 GB | ~8 GB | ~8 GB |
 
 The **join bar** row is the one the rescale added, and it is the most useful

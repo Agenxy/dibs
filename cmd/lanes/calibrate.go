@@ -270,7 +270,7 @@ func printThresholds(cal overlap.Calibration) {
 		fmt.Fprintln(os.Stderr,
 			"calibration needs a repository with enough history for commits to be\n"+
 				"compared against each other. Run this against the repository your agents\n"+
-				"actually work in; if that IS this one, it is too new to calibrate from , \n"+
+				"actually work in; if that IS this one, it is too new to calibrate from:\n"+
 				"leave join_threshold at 0 so Lanes suggests lanes but never auto-joins.")
 	case cal.Thin():
 		fmt.Println("suggested thresholds for THIS repository. " + ui.Attn("THIN EVIDENCE"))

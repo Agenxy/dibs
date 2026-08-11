@@ -323,7 +323,7 @@ Three ways an agent relates to a lane:
 |---|---|---|---|
 | **member** | yes | yes | if the lane is exclusive |
 | **subscriber** | yes | no | never (public lanes) |
-| **none** | no | no |, |
+| **none** | no | no | n/a |
 
 Lanes are **public by default**: any agent may read a public lane's traffic and
 membership without joining it. Joining is the act that asserts "I am working
@@ -367,7 +367,7 @@ One interface, four implementations, chosen by configuration:
 | Tier | Scorer | Dependencies | Available |
 |---|---|---|---|
 | 0 | paths, directories, **git co-change** | none | always |
-| ~~1~~ | ~~director agent judges~~ |, | **withdrawn** |
+| ~~1~~ | ~~director agent judges~~ | n/a | **withdrawn** |
 | 2 | **local embedding sidecar** | one process | `-match-embed-url` |
 | 3 | hosted embedding endpoint | network | `-match-embed-url` (same contract, different URL) |
 
