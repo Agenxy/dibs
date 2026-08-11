@@ -188,7 +188,13 @@ func xmlText(v string) string {
 // label. Writing the new one and saying nothing gives them two daemons fighting
 // for the same data directory: the flock refuses the second, so the visible
 // result is a service that mysteriously will not start.
-var legacyLabels = []string{"dev.agenxy.lanes", "com.agenxy.lanes"}
+//
+// `com.lanes.lanesd` predates the org identifier entirely and was missing from
+// this list, which is how it was found: a daemon on this machine kept coming
+// back thirty seconds after being stopped, and the label supervising it was one
+// this guard did not know to look for. A list of known-old names is only worth
+// what its completeness is worth, so anything ever shipped belongs in it.
+var legacyLabels = []string{"dev.agenxy.lanes", "com.agenxy.lanes", "com.lanes.lanesd"}
 
 // refuseIfLegacyUnitExists stops rather than creating a second job.
 //

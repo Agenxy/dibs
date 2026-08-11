@@ -243,7 +243,7 @@ func run() error {
 	// problem. Nothing claims to be up until the socket is ours.
 	ln, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		return err
+		return bindFailure(listenAddr, err)
 	}
 	slog.Info("lanesd up", "addr", listenAddr, "node", nodeID, "dir", *dir, "transport", tr.why,
 		"mcp", scheme+"://"+listenAddr+"/mcp", "board", scheme+"://"+listenAddr+"/",
@@ -317,4 +317,57 @@ func startSupervision(ctx context.Context, eng *engine.Engine, c liveness.Settin
 		return
 	}
 	go eng.Supervise(ctx, superviseSettings(c))
+}
+
+// bindFailure turns a refused port into something the reader can act on.
+//
+// It used to surface Go's own text and nothing else: "listen tcp
+// 127.0.0.1:4777: bind: address already in use". True, and useless. Every other
+// error in this project carries the corrective call, and the one an operator is
+// most likely to meet on a first run did not.
+//
+// It does NOT fall back to a free port, and that restraint is the point. Clients
+// resolve the daemon from LANES_ADDR or the default, so a daemon that quietly
+// moved is a daemon nobody can find: every agent still starts, every call still
+// succeeds against nothing, and the fleet is silently partitioned. That is the
+// exact failure Lanes exists to prevent, and it would be self-inflicted.
+// Discovering the address from the run registry is what would make a fallback
+// safe, and until that exists this says what is wrong and stops.
+func bindFailure(listenAddr string, err error) error {
+	if !errors.Is(err, syscall.EADDRINUSE) {
+		return err
+	}
+	// The registry knows every lanesd on this machine, so name the one holding
+	// the port rather than making the reader run lsof.
+	if live, lerr := paths.LiveDaemons(); lerr == nil {
+		for _, d := range live {
+			// Not us. This daemon registers its intended address before it binds,
+			// so the first entry matching the port is our own, and reporting it
+			// told the reader that lanesd was already serving a port nothing was
+			// serving. Found by holding the port with a plain socket and reading
+			// what came out.
+			if d.Addr != listenAddr || d.PID == os.Getpid() {
+				continue
+			}
+			return fmt.Errorf("%s is already served by lanesd (pid %d) on %s.\n"+
+				"  If that is the daemon you want, it is already up.\n"+
+				"  To replace it:   lanes stop\n"+
+				"  To run alongside it, on its own port and data directory:\n"+
+				"    lanesd -allow-parallel -addr 127.0.0.1:4778 -dir %s",
+				listenAddr, d.PID, d.Dir, "/path/to/other-data")
+		}
+	}
+	return fmt.Errorf("something other than lanesd is listening on %s.\n"+
+		"  Choose another port:   lanesd -addr 127.0.0.1:4778\n"+
+		"  Or find the holder:    lsof -nP -iTCP:%s -sTCP:LISTEN",
+		listenAddr, portOf(listenAddr))
+}
+
+// portOf is the port half of host:port, for a hint that would read oddly with
+// the host still attached.
+func portOf(addr string) string {
+	if _, port, err := net.SplitHostPort(addr); err == nil {
+		return port
+	}
+	return addr
 }
