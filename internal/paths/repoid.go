@@ -287,3 +287,28 @@ func (c *repoIDCache) add(dir string, id RepoID) {
 	c.entries[dir] = id
 	c.insertionOrder = append(c.insertionOrder, dir)
 }
+
+// ProjectName is the human label for the project a directory belongs to: the
+// basename of the Git worktree, or "" when the directory is not a checkout.
+//
+// It answers the question a board cannot answer without it. A fleet spread over
+// three repositories showed three agents on branch "main" and one column of
+// identical-looking rows, because "main" is not a distinguishing fact and the
+// full cwd is too long to scan. The project name is the shortest thing that
+// separates them.
+//
+// It is a LABEL, not an identity. Two unrelated clones can both be called "api",
+// so nothing may group, match or authorise by this string; SameRepo is the only
+// thing entitled to decide that two directories are one project. The full cwd
+// travels beside it for anyone who has to disambiguate.
+//
+// The worktree basename rather than the basename of dir itself, because an agent
+// that has cd'd into a subdirectory is still working on the same project, and
+// "internal" or "src" names nothing.
+func ProjectName(dir string) string {
+	id := Identify(dir)
+	if id.WorktreeID == "" {
+		return ""
+	}
+	return filepath.Base(id.WorktreeID)
+}

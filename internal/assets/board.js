@@ -62,7 +62,12 @@ const Board = (() => {
     const bits = []
     if (a.model) bits.push(`<span class="model">${esc(a.model)}</span>`)
     if (a.harness) bits.push(`<span>${esc(a.harness)}${a.version ? " " + esc(a.version) : ""}</span>`)
-    if (a.branch) bits.push(`<span>${esc(a.branch)}</span>`)
+    // Project before branch, and branch folded into it. A fleet spread over
+    // three repositories rendered three rows reading "main", which is not a
+    // distinguishing fact: the project is the thing that tells them apart, and
+    // a bare branch name means nothing until you know which tree it is in.
+    if (a.project) bits.push(`<span>${esc(a.project)}${a.branch ? " @ " + esc(a.branch) : ""}</span>`)
+    else if (a.branch) bits.push(`<span>${esc(a.branch)}</span>`)
     if (a.surface) bits.push(`<span>${esc(a.surface)}</span>`)
     if (a.effort) bits.push(`<span>effort ${esc(a.effort)}</span>`)
     return bits.length ? `<div class="idents">${bits.join("")}</div>` : ""

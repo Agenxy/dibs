@@ -20,7 +20,9 @@ is pursuing, and is told immediately if someone else is already pursuing it.
 
 One board covers everything on the machine, across as many projects as you have
 open. A lane is an agent, not a repository: nothing binds it to a project, claims
-are absolute paths, and mail is addressed to agents. If you would rather keep two
+are absolute paths, and mail is addressed to agents. Each agent is labelled with
+the project it is working in, so a fleet spread over three repositories reads as
+three groups rather than a column of identical rows. If you would rather keep two
 fleets apart, run a second `lanesd` on its own data directory and they share
 nothing.
 
@@ -312,10 +314,16 @@ lanesd -match-repo . -match-join <join> -match-notify <notify> &
 on the same machine, and names the one that is running. That is deliberate: two
 daemons mean two boards, agents pointed at different ones cannot see each other,
 every call still succeeds, and both boards look correct: the exact failure Lanes
-exists to prevent, made invisible. If you genuinely want two (isolating agents
-you do not trust, see [SECURITY.md](SECURITY.md)), say so with
-`-allow-parallel`. Better still, put the numbers in `lanes.toml` and skip the
-flags entirely, which is what they are for.
+exists to prevent, made invisible. If you genuinely want two, say so with
+`-allow-parallel` and give each its own `-dir`. Two reasons are good ones:
+isolating agents you do not trust (see [SECURITY.md](SECURITY.md)), and keeping
+a client's fleet on a board of its own. Understand what you give up: agents on
+separate boards cannot see each other at all, so a shared dependency edited from
+both is exactly the collision Lanes would otherwise have caught. One board with
+the project shown per agent is the default for that reason.
+
+Better still, put the numbers in `lanes.toml` and skip the flags entirely, which
+is what they are for.
 
 **Calibrate first.** Skipping it leaves `join_threshold` at zero, which means
 Lanes suggests lanes and never joins one: deliberately, because auto-joining on

@@ -59,12 +59,23 @@ func Admit(op *Op, lim Limits) error {
 			"agent.harness": a.Harness, "agent.version": a.Version,
 			"agent.surface": a.Surface, "agent.model": a.Model,
 			"agent.provider": a.Provider, "agent.effort": a.Effort,
-			"agent.title": a.Title, "agent.cwd": a.CWD,
+			"agent.title": a.Title, "agent.project": a.Project,
 			"agent.branch": a.Branch, "agent.host": a.Host,
 		} {
 			if len(v) > lim.MaxNameBytes {
 				return errTooLarge(field, lim.MaxNameBytes)
 			}
+		}
+		// A cwd is a PATH, and was bounded as if it were a name. 128 bytes is
+		// generous for a model or a branch and ordinary for a working
+		// directory: a macOS temp directory alone reaches ninety, and any
+		// checkout a few levels inside a home directory passes it. The whole
+		// register_lane was then refused, so the agent could not coordinate AT
+		// ALL, over a descriptive field. Relaxing an admission bound is safe in
+		// the direction that matters: Admit runs only on ingress, so nothing
+		// already in a ledger becomes inadmissible.
+		if len(a.CWD) > lim.MaxPathBytes {
+			return errTooLarge("agent.cwd", lim.MaxPathBytes)
 		}
 	}
 	switch op.Kind {

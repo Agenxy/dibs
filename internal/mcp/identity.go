@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/lanes/internal/paths"
 )
 
 // agentInfo assembles who is behind a lane, for the human reading the board.
@@ -34,6 +35,15 @@ func agentInfo(params json.RawMessage, a *toolArgs, session *clientInfoJSON) *co
 		Branch: a.Branch,
 		Host:   a.Host,
 	}
+	// Resolved HERE, once, at registration. This is the only impure step in
+	// assembling an identity: paths.ProjectName shells out to Git on a cache
+	// miss, bounded at a second. It is affordable because register_lane happens
+	// once per agent, and it must not move anywhere hotter. In particular it
+	// cannot be derived when the board is read: that runs on the single-writer
+	// loop, where a cold `git rev-parse` per lane would hold every other agent's
+	// set_slot still. The engine already learned this once, which is why the
+	// matcher's repo lens is resolved off the loop and handed in.
+	info.Project = paths.ProjectName(info.CWD)
 	h, v := clientIdentity(params)
 	if h == "" && session != nil {
 		// Nothing on this request, but the session introduced itself at

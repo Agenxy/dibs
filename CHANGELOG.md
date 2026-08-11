@@ -5,7 +5,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The board says which project each agent is in. A machine usually has more
+  than one repository open, and agents in three of them all reported branch
+  `main`, so the rows were indistinguishable. The project is resolved from the
+  agent's working directory once, at registration, and recorded, so it names the
+  project even when the agent is several directories inside it.
+
 ### Fixed
+
+- An agent whose working directory exceeded 128 bytes could not register at all.
+  A cwd was bounded as if it were a name; it is a path. Any checkout a few levels
+  inside a home directory hit it, and the refusal was of the whole
+  `register_lane`, not of the field.
 
 - `lanes stop --help` stopped the daemon. The dispatch discarded its arguments,
   so asking a destructive command what it does performed it and exited 0.

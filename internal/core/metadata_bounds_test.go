@@ -28,7 +28,11 @@ func TestReplayedMetadataIsBounded(t *testing.T) {
 		{"too many holds", &Op{Kind: OpSetSlot, Holds: many}},
 		{"an oversized session_id", &Op{Kind: OpBindSession, SessionID: longName}},
 		{"an oversized agent.title", &Op{Kind: OpRegisterLane, Agent: &AgentInfo{Title: longName}}},
-		{"an oversized agent.cwd", &Op{Kind: OpRegisterLane, Agent: &AgentInfo{CWD: longName}}},
+		// Bounded as a PATH, not a name: 128 bytes rejected working directories
+		// that real agents register from, and what it refused was the whole
+		// register_lane, not the field.
+		{"an oversized agent.cwd", &Op{Kind: OpRegisterLane, Agent: &AgentInfo{CWD: huge}}},
+		{"an oversized agent.project", &Op{Kind: OpRegisterLane, Agent: &AgentInfo{Project: longName}}},
 		{"an oversized agent.harness", &Op{Kind: OpRegisterLane, Agent: &AgentInfo{Harness: longName}}},
 	} {
 		if err := Admit(tc.op, lim); err == nil {
@@ -47,6 +51,20 @@ func TestReplayedMetadataIsBounded(t *testing.T) {
 	}
 	if err := Admit(ok, lim); err != nil {
 		t.Fatalf("a perfectly ordinary slot was rejected: %v", err)
+	}
+
+	// A working directory a few levels inside a home directory is ORDINARY, and
+	// at 128 bytes it was refused. The cost was not a missing label: the whole
+	// registration failed, so an agent in a deep checkout could not join the
+	// board at all. On a machine running several projects, deep paths are the
+	// normal case rather than the exotic one.
+	deep := "/Users/somebody/Library/CloudStorage/Dropbox/Development/clients/" +
+		"northwind/services/payments-api/internal/store/migrations/2026/q3"
+	if len(deep) <= lim.MaxNameBytes {
+		t.Fatalf("the fixture is no longer long enough to exercise the bound (%d bytes)", len(deep))
+	}
+	if err := Admit(&Op{Kind: OpRegisterLane, Agent: &AgentInfo{CWD: deep}}, lim); err != nil {
+		t.Errorf("an agent in an ordinary deep checkout could not register: %v", err)
 	}
 }
 

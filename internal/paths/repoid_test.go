@@ -160,3 +160,42 @@ func realPath(t *testing.T, path string) string {
 	}
 	return real
 }
+
+// The label has to survive the two things agents actually do: work from a
+// subdirectory, and work in a directory that is not a checkout at all.
+func TestProjectNameNamesTheProjectNotTheDirectory(t *testing.T) {
+	git := requireGit(t)
+	root := t.TempDir()
+
+	repo := filepath.Join(root, "payments-api")
+	initRepo(t, git, repo)
+	deep := filepath.Join(repo, "internal", "store")
+	if err := os.MkdirAll(deep, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// An agent that has cd'd into internal/store is still working on
+	// payments-api. Naming the row "store" tells the human nothing, and two
+	// agents in different repositories both sitting in internal/ would render
+	// identically: the exact failure the label exists to remove.
+	if got := ProjectName(deep); got != "payments-api" {
+		t.Errorf("ProjectName(subdir) = %q, want the project name %q", got, "payments-api")
+	}
+	if got := ProjectName(repo); got != "payments-api" {
+		t.Errorf("ProjectName(root) = %q, want %q", got, "payments-api")
+	}
+
+	// Not a checkout: say nothing rather than guessing. The basename of an
+	// arbitrary directory is not a project, and a confident wrong label is
+	// worse on a board than a blank, because a blank prompts a look at the cwd.
+	plain := filepath.Join(root, "just-a-folder")
+	if err := os.MkdirAll(plain, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := ProjectName(plain); got != "" {
+		t.Errorf("ProjectName(non-repo) = %q, want \"\"", got)
+	}
+	if got := ProjectName(""); got != "" {
+		t.Errorf("ProjectName(\"\") = %q, want \"\"", got)
+	}
+}
