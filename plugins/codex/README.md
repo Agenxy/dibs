@@ -141,23 +141,22 @@ Independent of the above: Codex defaults to no reasoning, and gpt-oss-120b on
 OpenRouter's Responses endpoint answers *"Reasoning is mandatory for this
 endpoint and cannot be disabled."* Set `model_reasoning_effort` to `medium`.
 
-## Supervision hooks
+## No supervision hooks, deliberately
 
-`hooks/hooks.json` registers Lanes against Codex's lifecycle events so a spawned
-agent reports its own state, and the agent that spawned it can be told when that
-state stops changing.
+Lanes ships no hook file for Codex, and that is a decision rather than a gap.
 
-Codex loads hooks from `<plugin>/hooks/hooks.json`: the same layout and shape
-as Claude Code, deliberately: Codex's own feature flag calls them "Claude-style
-lifecycle hooks". One plugin shape serves both harnesses.
+Codex fires hooks as SUBPROCESSES. A hook that shells out to fetch mail makes
+Lanes a thing that drives your harness, which
+[PHILOSOPHY.md](https://github.com/agenxy/lanes/blob/main/PHILOSOPHY.md) rules
+out. Codex's `mcp_tool` hook type, which Claude Code uses to call a tool on the
+connection the model already holds, is not available here.
 
-| event | tool | why |
-|---|---|---|
-| `SessionStart` | `hook_session` | carries `transcript_path`, so supervision reads the agent's own progress instead of discovering the file by asking the process which ones it holds open |
-| `PermissionRequest` | `hook_blocked` | "waiting for a human" and "hung" are indistinguishable from outside and need opposite responses; only the harness knows which this is |
-| `SubagentStart` / `SubagentStop` | `hook_session` | Codex models nested agents natively |
-| `Stop` / `SessionEnd` | `hook_session` | a finished child, distinguished from a dead one |
+So on this harness mail is pull-only: call `ack_board` at the start of an
+activation and `await_events` when you are about to block. That is the honest
+floor, it needs no configuration, and it works everywhere.
 
-Hooks cannot report a hang (a wedged harness runs nothing) so they are half of
-the answer. `lanes probe --pid N` is the other half, and works with no
-cooperation from the child at all. See SPEC-SUPERVISION.md.
+An earlier version of this document described a `hooks/hooks.json` and claimed
+it registered Lanes against Codex's lifecycle. It was never functional: six of
+its seven entries used the unsupported type, and the seventh was the subprocess
+this project refuses to be.
+

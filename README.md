@@ -169,14 +169,16 @@ Sigstore bundle format: signature, certificate and transparency-log entry in
 one file, and every archive ships an SPDX SBOM.
 
 ```sh
+TAG=v0.0.1   # the release you downloaded
 cosign verify-blob checksums.txt \
   --bundle checksums.txt.bundle \
-  --certificate-identity 'https://github.com/Agenxy/lanes/.github/workflows/release.yml@refs/tags/v0.0.1' \
+  --certificate-identity "https://github.com/Agenxy/lanes/.github/workflows/release.yml@refs/tags/$TAG" \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
 ```
 
-`Verified OK` means the checksums file was produced by this repository's release
-workflow at that tag, and `sha256sum -c checksums.txt` then covers the archives.
+The identity names the workflow AND the tag, so it has to match the release you
+downloaded. `Verified OK` means the checksums file was produced by this
+repository's release workflow at that tag, and `sha256sum -c checksums.txt` then covers the archives.
 
 `admin set-password` is a prerequisite for `lanes web`, not optional hardening.
 The browser board shows decrypted mail and can act as you, so it is gated on
