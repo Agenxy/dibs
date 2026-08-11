@@ -292,10 +292,21 @@ type AgentInfo struct {
 	// Where the agent is working. In a fleet these answer "which of my sessions
 	// is this?" faster than any id: Title is what the human named the session,
 	// Branch and CWD say which code it is touching, Host which machine.
-	Title  string `json:"title,omitempty"`
-	CWD    string `json:"cwd,omitempty"`
-	Branch string `json:"branch,omitempty"`
-	Host   string `json:"host,omitempty"`
+	//
+	// Project is which codebase, resolved from CWD by the caller and RECORDED
+	// here rather than derived on read. Deriving it needs Git, and core is pure;
+	// recording the resolved value is the same bargain every other impure input
+	// on an Op makes, and it means replay reproduces the label the fleet
+	// actually saw rather than whatever the tree looks like today.
+	//
+	// A LABEL, for a human scanning rows. Never match, group or authorise by it:
+	// two unrelated clones are both called "api", and only paths.SameRepo is
+	// entitled to say whether two directories are one project.
+	Title   string `json:"title,omitempty"`
+	CWD     string `json:"cwd,omitempty"`
+	Project string `json:"project,omitempty"`
+	Branch  string `json:"branch,omitempty"`
+	Host    string `json:"host,omitempty"`
 }
 
 // Lane is a participant on the board: an identity, a mailbox and a heartbeat.
