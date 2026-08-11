@@ -271,7 +271,7 @@ func printThresholds(cal overlap.Calibration) {
 			"calibration needs a repository with enough history for commits to be\n"+
 				"compared against each other. Run this against the repository your agents\n"+
 				"actually work in; if that IS this one, it is too new to calibrate from:\n"+
-				"leave join_threshold at 0 so Dibs suggests agents but never auto-joins.")
+				"leave join_threshold at 0 so Dibs suggests spaces but never auto-joins.")
 	case cal.Thin():
 		fmt.Println("suggested thresholds for THIS repository. " + ui.Attn("THIN EVIDENCE"))
 		fmt.Printf("  join_threshold    %s   %s\n", ui.Bold(fmt.Sprintf("%.3f", cal.Join)),
@@ -376,7 +376,7 @@ func warnIfZeroJoin(cal overlap.Calibration) {
 			"sentinel for suggest-only, so setting it turns auto-join OFF. Here that is\n"+
 			"the right outcome: nothing separated related work from unrelated work, so\n"+
 			"there is no bar worth acting on yet. Dibs will still tell agents which\n"+
-			"agents look relevant; it just will not move them automatically.")
+			"spaces look relevant; it just will not move them automatically.")
 }
 
 // printSamples shows what the scorer predicted for a handful of real commits,

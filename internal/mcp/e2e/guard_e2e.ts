@@ -234,7 +234,7 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
     mkdirSync(join(cfgDir, rel.split("/").slice(0, -1).join("/")), { recursive: true })
     Bun.write(join(cfgDir, rel), body)
   }
-  write(".codex/config.toml", `[mcp_servers.agents]\ncommand = "agents"\nargs = ["mcp-stdio"]\n`)
+  write(".codex/config.toml", `[mcp_servers.dibs]\ncommand = "dibs"\nargs = ["mcp-stdio"]\n`)
   await Bun.sleep(100)
   const run = Bun.spawnSync({
     cmd: [dibsBin, "doctor"],
@@ -261,7 +261,7 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
   // it was written with a placeholder host, so the old check could not tell a
   // stale config from one belonging to somebody else's daemon at all.
   write(".codex/config.toml",
-    `[mcp_servers.agents]\nurl = "http://${ADDR}/mcp"\nhttp_headers = { "X-Dibs-Local" = "${"d".repeat(64)}" }\n`)
+    `[mcp_servers.dibs]\nurl = "http://${ADDR}/mcp"\nhttp_headers = { "X-Dibs-Local" = "${"d".repeat(64)}" }\n`)
   await Bun.sleep(100)
   const out2 = doctor()
   check("but a genuinely stale embedded secret IS reported",
@@ -272,7 +272,7 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
   // and told them to re-copy the block, which would have repointed a working
   // global setup at whichever scratch daemon happened to be running.
   write(".codex/config.toml",
-    `[mcp_servers.agents]\nurl = "http://127.0.0.1:59999/mcp"\nhttp_headers = { "X-Dibs-Local" = "${"d".repeat(64)}" }\n`)
+    `[mcp_servers.dibs]\nurl = "http://127.0.0.1:59999/mcp"\nhttp_headers = { "X-Dibs-Local" = "${"d".repeat(64)}" }\n`)
   await Bun.sleep(100)
   const out3 = doctor()
   check("a config for ANOTHER daemon is not called stale",

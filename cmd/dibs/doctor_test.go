@@ -87,7 +87,7 @@ func TestDoctorStatusFollowsTheProblemTier(t *testing.T) {
 // a diagnosis.
 func TestAConfigForAnotherDaemonIsNotStale(t *testing.T) {
 	codex := `
-[mcp_servers.agents]
+[mcp_servers.dibs]
 url = "http://127.0.0.1:4777/mcp"
 http_headers = { "X-Dibs-Local" = "` + strings.Repeat("a", 64) + `" }
 `
@@ -103,20 +103,20 @@ http_headers = { "X-Dibs-Local" = "` + strings.Repeat("a", 64) + `" }
 // servers, and the first version of it listed five Google and OpenAI endpoints
 // before the Dibs one. Anchoring on the secret is not enough either: a config
 // can hold several 64-hex strings, which is exactly the case this branch is for.
-func TestTheDiagnosisNamesOnlyTheLanesEndpoint(t *testing.T) {
+func TestTheDiagnosisNamesOnlyTheDibsEndpoint(t *testing.T) {
 	mixed := `
 [mcp_servers.bigquery]
 url = "https://bigquery.googleapis.com/mcp"
 token = "` + strings.Repeat("b", 64) + `"
 
-[mcp_servers.agents]
+[mcp_servers.dibs]
 url = "http://127.0.0.1:4777/mcp"
 http_headers = { "X-Dibs-Local" = "` + strings.Repeat("a", 64) + `" }
 
 [mcp_servers.other]
 url = "https://developers.openai.com/mcp"
 `
-	got := lanesTargets(mixed)
+	got := dibsTargets(mixed)
 	if len(got) != 1 || got[0] != "http://127.0.0.1:4777/mcp" {
 		t.Fatalf("only the Dibs endpoint belongs in the hint, got %v", got)
 	}
@@ -126,11 +126,11 @@ url = "https://developers.openai.com/mcp"
 // bridge, and several harnesses. Guessing "different daemon" there would trade
 // one false alarm for another.
 func TestAConfigWithNoURLIsAssumedToBeForThisDaemon(t *testing.T) {
-	const stdio = `{"mcpServers":{"agents":{"command":"agents","args":["mcp-stdio"]}}}`
+	const stdio = `{"mcpServers":{"dibs":{"command":"dibs","args":["mcp-stdio"]}}}`
 	if !targetsDaemon(stdio, "127.0.0.1:4777") {
 		t.Fatal("no URL means no evidence of a different daemon")
 	}
-	if n := len(lanesTargets(stdio)); n != 0 {
+	if n := len(dibsTargets(stdio)); n != 0 {
 		t.Fatalf("nothing to name, got %d", n)
 	}
 }

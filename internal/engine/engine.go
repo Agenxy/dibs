@@ -353,7 +353,7 @@ func (e *Engine) applyAndLedger(op *core.Op, now time.Time) (core.Result, error)
 		// good line. Loud and immediate beats silent and permanent.
 		if e.state.Serial != before {
 			panic(fmt.Sprintf(
-				"agents: %s advanced the serial %d→%d then failed (%v). "+
+				"dibs: %s advanced the serial %d→%d then failed (%v). "+
 					"a transition was committed but cannot be ledgered (fail-stop, SPEC §4)",
 				op.Kind, before, e.state.Serial, err,
 			))
@@ -378,7 +378,7 @@ func (e *Engine) applyAndLedger(op *core.Op, now time.Time) (core.Result, error)
 	// that did it is in the message.
 	if e.state.Serial > before+1 {
 		panic(fmt.Sprintf(
-			"agents: %s advanced the serial %d→%d: one op must allocate exactly one "+
+			"dibs: %s advanced the serial %d→%d: one op must allocate exactly one "+
 				"serial, or the ledger gets a hole where a real transition happened "+
 				"(fail-stop, SPEC §4)",
 			op.Kind, before, e.state.Serial,
@@ -386,7 +386,7 @@ func (e *Engine) applyAndLedger(op *core.Op, now time.Time) (core.Result, error)
 	}
 	if e.state.Serial != before {
 		if lerr := e.led.Append(e.state.Serial, now, op); lerr != nil {
-			panic(fmt.Sprintf("agents: ledger persistence failure (fail-stop, SPEC §4): %v", lerr))
+			panic(fmt.Sprintf("dibs: ledger persistence failure (fail-stop, SPEC §4): %v", lerr))
 		}
 		e.publish(evs)
 	}

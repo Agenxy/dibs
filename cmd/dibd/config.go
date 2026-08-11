@@ -291,7 +291,7 @@ func ensureSelfSignedCert(dir, addr string) (string, string, error) {
 	}
 	tmpl := x509.Certificate{
 		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: "agents"},
+		Subject:               pkix.Name{CommonName: "dibs"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().AddDate(10, 0, 0),
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
