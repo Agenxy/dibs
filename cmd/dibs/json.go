@@ -29,7 +29,7 @@ func printJSON(v any) error {
 
 // reportedError tells main a failure is already carried by the JSON document
 // on stdout. The exit status must still say failure, but repeating the
-// message as `agents: ...` would hand a script two copies of one fact: the
+// message as `dibs: ...` would hand a script two copies of one fact: the
 // same reasoning earlyDoctorError applies to doctor's prose.
 type reportedError struct{ error }
 

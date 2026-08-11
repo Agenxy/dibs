@@ -25,7 +25,7 @@ import (
 // that looked wrong. The question people actually have is "is what is running
 // what I last built", and a version string cannot answer it. A timestamp can.
 func printVersion() {
-	fmt.Println("agents", version)
+	fmt.Println("dibs", version)
 
 	info, err := daemonBuild()
 	if err != nil {

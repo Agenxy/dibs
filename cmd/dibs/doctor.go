@@ -218,7 +218,7 @@ func doctorResult(problems, _ int) error {
 }
 
 // earlyDoctorError tells main that doctor already printed the whole diagnosis.
-// The status must fail, but repeating it as "agents: N problem(s) found" would
+// The status must fail, but repeating it as "dibs: N problem(s) found" would
 // change the deliberately human-written early output for the sake of scripts.
 type earlyDoctorError struct{ error }
 
@@ -241,7 +241,7 @@ var secretPattern = regexp.MustCompile(`\b[0-9a-f]{64}\b`)
 var mcpURL = regexp.MustCompile(`https?://[^"'\s,}]+/mcp\b`)
 
 // serverBlock matches the name a config gives an MCP server, in either
-// supported layout: `[mcp_servers.agents]` (TOML) or `"agents": {` (JSON).
+// supported layout: `[mcp_servers.dibs]` (TOML) or `"dibs": {` (JSON).
 var serverBlock = regexp.MustCompile(`\[mcp[_a-zA-Z]*\.([A-Za-z0-9_.-]+)\]|"([A-Za-z0-9_-]+)"\s*:\s*\{`)
 
 // structuralKeys are object keys that name a section of a server's config
@@ -252,7 +252,7 @@ var structuralKeys = map[string]bool{
 	"http_headers": true, "headers": true, "environment": true, "env": true,
 }
 
-// lanesTargets lists the MCP endpoints a config points LANES at.
+// dibsTargets lists the MCP endpoints a config points DIBS at.
 //
 // Anchored on the server block that NAMES agents, because these configs hold
 // many servers and listing all their URLs buries the one address the reader
@@ -262,12 +262,12 @@ var structuralKeys = map[string]bool{
 // situation this branch exists for. Nor is a plain lookback window: a server
 // block that FOLLOWS the agents block falls inside it, and an unrelated endpoint
 // gets named as though it were the Dibs one.
-func lanesTargets(body string) []string {
+func dibsTargets(body string) []string {
 	names := serverBlock.FindAllStringSubmatchIndex(body, -1)
 	var out []string
 	seen := map[string]bool{}
 	for _, u := range mcpURL.FindAllStringIndex(body, -1) {
-		if !lanesOwns(body, names, u[0]) {
+		if !dibsOwns(body, names, u[0]) {
 			continue
 		}
 		if url := body[u[0]:u[1]]; !seen[url] {
@@ -278,8 +278,8 @@ func lanesTargets(body string) []string {
 	return out
 }
 
-// lanesOwns reports whether the server block containing position at is Dibs'.
-func lanesOwns(body string, names [][]int, at int) bool {
+// dibsOwns reports whether the server block containing position at is Dibs'.
+func dibsOwns(body string, names [][]int, at int) bool {
 	for i := len(names) - 1; i >= 0; i-- {
 		m := names[i]
 		if m[0] >= at {
@@ -294,7 +294,7 @@ func lanesOwns(body string, names [][]int, at int) bool {
 		if structuralKeys[strings.ToLower(name)] {
 			continue // a section of a server, not a server
 		}
-		return strings.Contains(strings.ToLower(name), "agents")
+		return strings.Contains(strings.ToLower(name), "dibs")
 	}
 	return false
 }
@@ -305,7 +305,7 @@ func lanesOwns(body string, names [][]int, at int) bool {
 // bridge and several harnesses take the address from the environment, and
 // guessing "different daemon" there would trade one false alarm for another.
 func targetsDaemon(body, addr string) bool {
-	targets := lanesTargets(body)
+	targets := dibsTargets(body)
 	if len(targets) == 0 {
 		return true
 	}
@@ -334,7 +334,7 @@ func checkHarnessConfigs(sec, addr string, ok reportFn, warn, bad fixFn) {
 		}
 		seen[c.path] = true
 		body, err := os.ReadFile(c.path) // #nosec G304 -- fixed well-known paths
-		if err != nil || !strings.Contains(string(body), "agents") {
+		if err != nil || !strings.Contains(string(body), "dibs") {
 			continue
 		}
 		// Only a config that CARRIES a secret can carry a stale one.
@@ -360,7 +360,7 @@ func checkHarnessConfigs(sec, addr string, ok reportFn, warn, bad fixFn) {
 			// this, and the advice actively breaks them.
 			warn(c.name+" config points at a different daemon ("+c.path+")",
 				"its secret does not match this one because it is not for this "+
-					"daemon: it names "+strings.Join(lanesTargets(string(body)), ", ")+
+					"daemon: it names "+strings.Join(dibsTargets(string(body)), ", ")+
 					" and you are checking "+addr+". Nothing to fix unless you meant "+
 					"to point it here; re-run with DIBS_ADDR set to that daemon to check it")
 		default:
@@ -598,7 +598,7 @@ func checkSupervision(verbose bool, ok reportFn, warn fixFn) {
 	// has none, so promising a Codex user that their subagents will be attributed
 	// sends them looking for a mechanism that is not there when one is not.
 	// Lineage still works everywhere: vouch_child, then register with the nonce.
-	if _, err := exec.LookPath("agents"); err != nil {
+	if _, err := exec.LookPath("dibs"); err != nil {
 		warn("`dibs` is not on PATH",
 			"where a harness supports it (Claude Code today), the PreToolUse hook that "+
 				"stamps a spawned subagent with its parent runs `dibs hook-spawn`, so "+

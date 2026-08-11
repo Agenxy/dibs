@@ -5,6 +5,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-08-11
+
+### Fixed
+
+- The rename left the old name in places only running the binary would show:
+  `dibs version` printed `agents`, `dibs doctor` looked for a binary called
+  `agents` on PATH and for an MCP server of that name in harness configs,
+  `mcp-config` generated a server block named `agents`, every error prefix and
+  the "did you mean" suggestion said `agents`, the shell completions declared
+  `#compdef agents`, and the daemon's self-signed certificate carried it as its
+  common name. Found by exercising the CLI rather than reading the diff, which
+  is how it should have been found before 0.0.3.
+
 ## [0.0.3] - 2026-08-11
 
 ### Changed

@@ -242,14 +242,14 @@ def launch_harnesses(proj: Path, work: Path, data: Path, secret: str) -> list:
 
     # codex. Its config is overridden per-invocation with -c rather than through
     # CODEX_HOME, which this build ignores; -c MERGES with ~/.codex/config.toml,
-    # so the override retargets the existing [mcp_servers.agents] URL instead of
+    # so the override retargets the existing [mcp_servers.dibs] URL instead of
     # adding a stdio server beside it (which errors: "url is not supported for
     # stdio"). The operator's own config is read but never written.
     if shutil.which("codex"):
         running.append(subprocess.Popen(
             ["codex", "exec", "--skip-git-repo-check",
-             "-c", f'mcp_servers.agents.url="http://127.0.0.1:{PORT}/mcp"',
-             "-c", f'mcp_servers.agents.http_headers={{"X-Dibs-Local"="{secret}"}}',
+             "-c", f'mcp_servers.dibs.url="http://127.0.0.1:{PORT}/mcp"',
+             "-c", f'mcp_servers.dibs.http_headers={{"X-Dibs-Local"="{secret}"}}',
              PROMPT],
             cwd=proj, stdout=(work / "codex.log").open("w"),
             stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL))

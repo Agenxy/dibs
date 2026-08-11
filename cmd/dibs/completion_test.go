@@ -55,7 +55,7 @@ func TestGeneratedCompletionsParseInTheirShells(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			path := filepath.Join(t.TempDir(), "agents."+ext)
+			path := filepath.Join(t.TempDir(), "dibs."+ext)
 			if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
 				t.Fatal(err)
 			}

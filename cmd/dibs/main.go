@@ -23,7 +23,7 @@ import (
 	"github.com/agenxy/dibs/internal/ui"
 )
 
-const usage = `agents: window into the agent coordination board
+const usage = `dibs: window into the agent coordination board
 
 agent-safe (agent-scoped or public, fine to run from any agent):
   dibs await              block until events arrive for YOUR agent, then exit 0
@@ -107,10 +107,10 @@ func styledUsage() string {
 			rest := line[len("  dibs "):]
 			i := strings.Index(rest, "  ")
 			if i < 0 {
-				b.WriteString("  " + ui.Accent("agents "+rest))
+				b.WriteString("  " + ui.Accent("dibs "+rest))
 				break
 			}
-			b.WriteString("  " + ui.Accent("agents "+rest[:i]) + ui.Dim(rest[i:]))
+			b.WriteString("  " + ui.Accent("dibs "+rest[:i]) + ui.Dim(rest[i:]))
 		case strings.HasPrefix(line, "     ") || strings.HasPrefix(line, "env:"):
 			b.WriteString(ui.Dim(line))
 		default:
@@ -171,7 +171,7 @@ func main() {
 	case "help", "--help", "-h":
 		// Asking a tool to explain itself is not a failure. This landed in
 		// `default:` and exited 2 while printing the help, so a docs step under
-		// `set -e` aborted on `agents --help`, and `agents --version` printed
+		// `set -e` aborted on `dibs --help`, and `dibs --version` printed
 		// forty-four lines of usage containing no version at all. git, cargo and
 		// rg all answer both and exit 0.
 		fmt.Println(styledUsage())
@@ -179,21 +179,21 @@ func main() {
 		// Name the word we did not understand, and the near miss if there is one.
 		//
 		// This used to print the whole usage to STDOUT and exit 2, which has two
-		// costs. `agents borad 2>/dev/null` was byte-identical to `agents --help`,
+		// costs. `dibs borad 2>/dev/null` was byte-identical to `dibs --help`,
 		// so a typo in a script looked like success. And telling a reader to go
 		// and find the verb they believe they just typed is not help: the same
 		// reasoning as nearestLanesHint, which answers a misaddressed message
 		// with the closest live agent rather than the whole board.
-		fmt.Fprintf(os.Stderr, "agents: unknown command %q\n", os.Args[1])
+		fmt.Fprintf(os.Stderr, "dibs: unknown command %q\n", os.Args[1])
 		if near := nearestCommand(os.Args[1]); near != "" {
-			fmt.Fprintf(os.Stderr, "  did you mean: agents %s\n", near)
+			fmt.Fprintf(os.Stderr, "  did you mean: dibs %s\n", near)
 		}
 		fmt.Fprintln(os.Stderr, "  dibs help   lists every command")
 		os.Exit(2)
 	}
 	if err != nil {
 		// A help request reaches here through flag.ContinueOnError. It is not an
-		// error: printing `agents: flag: help requested` and exiting 1 leaked a Go
+		// error: printing `dibs: flag: help requested` and exiting 1 leaked a Go
 		// internals string and told a reader their question had failed.
 		if errors.Is(err, flag.ErrHelp) {
 			return
@@ -202,7 +202,7 @@ func main() {
 		if errors.As(err, &exitOnly) {
 			os.Exit(1)
 		}
-		fmt.Fprintln(os.Stderr, "agents:", err)
+		fmt.Fprintln(os.Stderr, "dibs:", err)
 		os.Exit(1)
 	}
 }
@@ -210,7 +210,7 @@ func main() {
 // parseFlags is the one place a subcommand's flags are parsed.
 //
 // Three separate wrongs met here, each wrong differently. `--help` came back as
-// flag.ErrHelp and was printed as `agents: flag: help requested` with exit 1: a
+// flag.ErrHelp and was printed as `dibs: flag: help requested` with exit 1: a
 // Go internals string, reporting a question as a failure. A mistyped flag was
 // printed TWICE, once by flag's own output and once by main's `agents:` printer.
 // And both went to stderr, so `dibs await --help | less` showed a blank screen.
@@ -249,8 +249,8 @@ var commands = []string{
 //
 // Deliberately conservative. A wrong suggestion is worse than none: it sends
 // somebody to read the wrong page, and the reader cannot tell a guess from a
-// correction. Substring either way catches the common slips (`agents boar`,
-// `agents verif`), and one transposition or one wrong letter catches `borad` and
+// correction. Substring either way catches the common slips (`dibs boar`,
+// `dibs verif`), and one transposition or one wrong letter catches `borad` and
 // `verifu`: beyond that, silence and a pointer to `dibs help`.
 func nearestCommand(typed string) string {
 	w := strings.ToLower(typed)
@@ -364,7 +364,7 @@ func mcpConfig() error {
 
 	cfg := map[string]any{
 		"mcpServers": map[string]any{
-			"agents": map[string]any{
+			"dibs": map[string]any{
 				"type":    "http",
 				"url":     url,
 				"headers": map[string]string{"X-Dibs-Local": s},
@@ -1249,7 +1249,7 @@ func adminOnly(name string, fn func() error) error {
 	if err == nil && fi.Mode()&os.ModeCharDevice != 0 {
 		return fn()
 	}
-	return fmt.Errorf(`"agents %s" is a human/admin command and needs an interactive terminal.
+	return fmt.Errorf(`"dibs %s" is a human/admin command and needs an interactive terminal.
 Dibs: use your MCP tools instead: inbox/read_mail for mail, the board resource for state.
 Agent-safe CLI: dibs await | probe | board | log | verify.
 (Humans scripting: set DIBS_ADMIN=1.)`, name)
