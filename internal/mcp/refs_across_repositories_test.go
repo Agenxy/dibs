@@ -333,3 +333,52 @@ func warnedAboutSharedObjective(t *testing.T, result map[string]any) bool {
 	}
 	return strings.Contains(string(blob), `"signal":"same-objective"`)
 }
+
+// The other half of the same bug, and the one I saw coming and left. Cached
+// identity was revalidated only when it said "this is a repository", so a
+// directory observed BEFORE `git init` was remembered as not-a-repository for
+// the life of the daemon.
+//
+// Asserted on the recorded FACTS rather than on a warning, and that distinction
+// is the point. A stale negative makes the answer unknown, and unknown warns, so
+// a collision test passes with the bug present and proves nothing. What is
+// actually broken is that the agent is filed as being nowhere: no project on the
+// board, and no identity for anything else to reason with.
+//
+// Predicting a hole and not closing it is a slower way of shipping it.
+func TestADirectoryThatBecomesARepositoryIsNoticed(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is unavailable")
+	}
+	g := &gitFixtures{t: t, git: git, root: t.TempDir()}
+
+	later := filepath.Join(g.root, "becomes-a-repo")
+	if err := os.MkdirAll(later, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	srv, _ := newServer(t)
+	primeIdentityCache(t, srv, "primer", later)
+
+	g.run(later, "init", "-q")
+	g.run(later, "remote", "add", "origin", "https://github.com/acme/upstream.git")
+	g.commit(later, "README.md")
+
+	out := toolCall(t, srv, "register_lane", map[string]any{
+		"name": "after-init", "cwd": later,
+		"nonce": "n-after-init-0123456789abcdef0123",
+	})
+	token, _ := out["token"].(string)
+	if token == "" {
+		t.Fatalf("registration failed: %v", out)
+	}
+	board, err := json.Marshal(toolCall(t, srv, "ack_board", map[string]any{"token": token}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(board), `"project":"becomes-a-repo"`) {
+		t.Errorf("an agent in a directory that became a repository is still filed as "+
+			"being nowhere: the daemon is remembering that the path used to be nothing.\n%s",
+			board)
+	}
+}

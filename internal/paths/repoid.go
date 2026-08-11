@@ -35,9 +35,6 @@ type RepoID struct {
 	remote     string
 	roots      string // space-joined, sorted root commit ids
 	repository bool
-	// commonDirID is what commonDir was when this identity was resolved, so a
-	// checkout replaced at the same path is noticed rather than remembered.
-	commonDirID fileIdentity
 }
 
 var identifiedRepos = newRepoIDCache(repoIDCacheLimit)
@@ -122,12 +119,11 @@ func identifyRepo(dir string) RepoID {
 	worktree := Canonical(resolveGitPath(dir, lines[0]))
 	commonDir := Canonical(resolveGitPath(dir, lines[1]))
 	return RepoID{
-		WorktreeID:  worktree,
-		commonDir:   commonDir,
-		remote:      primaryRemote(ctx, git, worktree),
-		roots:       rootCommits(ctx, git, worktree),
-		repository:  true,
-		commonDirID: identifyFile(commonDir),
+		WorktreeID: worktree,
+		commonDir:  commonDir,
+		remote:     primaryRemote(ctx, git, worktree),
+		roots:      rootCommits(ctx, git, worktree),
+		repository: true,
 	}
 }
 
@@ -341,35 +337,46 @@ func normalizedPort(scheme, port string) string {
 type repoIDCache struct {
 	mu             sync.Mutex
 	limit          int
-	entries        map[string]RepoID
+	entries        map[string]repoIDEntry
 	insertionOrder []string
 }
 
+// repoIDEntry is a resolved identity plus the file whose identity says whether
+// it is still true.
+type repoIDEntry struct {
+	id      RepoID
+	watch   string
+	watchID fileIdentity
+}
+
 func newRepoIDCache(limit int) *repoIDCache {
-	return &repoIDCache{limit: limit, entries: make(map[string]RepoID, limit)}
+	return &repoIDCache{limit: limit, entries: make(map[string]repoIDEntry, limit)}
 }
 
 func (c *repoIDCache) get(dir string) (RepoID, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	id, ok := c.entries[dir]
-	if !ok {
+	e, ok := c.entries[dir]
+	if !ok || identifyFile(e.watch) != e.watchID {
 		return RepoID{}, false
 	}
-	// A cached identity is only usable while it still describes the checkout at
-	// that path. `rm -rf project && git clone something-else project` is an
-	// ordinary thing to do, and a daemon that runs for weeks will see it: the
-	// entry then reports the PREVIOUS repository's remote and roots, which both
-	// misses collisions inside the new project and invents them against the old.
-	// Caught by a review that reused a checkout path and drove both directions.
-	//
-	// The Git common directory is recreated by a fresh clone, so its identity on
-	// disk is the cheapest thing that changes. One stat, and no reliance on a
-	// clock, which is what the no-expiry rule above is protecting.
-	if id.repository && !sameFile(id.commonDir, id.commonDirID) {
-		return RepoID{}, false
+	return e.id, true
+}
+
+// watchPath is the file whose identity decides whether a cached answer still
+// describes what is on disk.
+//
+// For a repository it is the Git common directory, which a fresh clone
+// recreates. For a directory that is NOT one it is the `.git` that would appear
+// if somebody ran `git init` there, and its absence is recorded just as
+// precisely as its presence: an unknown answer that never recovers is the same
+// bug as a stale known one, and a review found both. The second is the one I
+// predicted and skipped, which is its own lesson.
+func watchPath(dir string, id RepoID) string {
+	if id.repository && id.commonDir != "" {
+		return id.commonDir
 	}
-	return id, ok
+	return filepath.Join(dir, ".git")
 }
 
 // fileIdentity is what a stat says about which file this is, as opposed to what
@@ -409,7 +416,15 @@ func sameFile(path string, observed fileIdentity) bool {
 func (c *repoIDCache) add(dir string, id RepoID) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	watch := watchPath(dir, id)
+	entry := repoIDEntry{id: id, watch: watch, watchID: identifyFile(watch)}
+	// REPLACES an existing entry rather than refusing. Refusing was correct
+	// while entries could never go stale, and stopped being correct the moment
+	// they could: a revalidated miss re-resolved, could not store the answer,
+	// and left the old entry in place, so that path invoked Git on every
+	// registration forever and the stale value was never actually removed.
 	if _, exists := c.entries[dir]; exists {
+		c.entries[dir] = entry
 		return
 	}
 	// Created-order eviction, not LRU: hits stay read-only from the caller's
@@ -418,7 +433,7 @@ func (c *repoIDCache) add(dir string, id RepoID) {
 		delete(c.entries, c.insertionOrder[0])
 		c.insertionOrder = c.insertionOrder[1:]
 	}
-	c.entries[dir] = id
+	c.entries[dir] = entry
 	c.insertionOrder = append(c.insertionOrder, dir)
 }
 
