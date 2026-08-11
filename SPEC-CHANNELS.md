@@ -21,7 +21,7 @@ freeze holds, and spaces are inert until `dibd -match-repo` is passed.
 | §6 `post` / `announce`, ack, redelivery via the wake path | **built** |
 | §6 `announce_retry` throttle (120 s, ephemeral) | **built** |
 | §6 `announce_max_retries` → mark `unacked` | **built** (5 tries, then marked and surfaced, never dropped) |
-| §7 configuration | **built**, `dibd` flags and a `[match]` table in `agents.toml`; flag > env > file |
+| §7 configuration | **built**, `dibd` flags and a `[match]` table in `dibs.toml`; flag > env > file |
 | §8.1 director role | **built**, as the existing `coordinator` role scoped to spaces: `unlock_space`, `evict`, `merge_spaces` |
 | §8.1 `director_required` gate | **built**: `dibd -match-director-required`; matches become `awaiting_director` and `admit` is the approval |
 | §8.2 subagent inheritance | **built**: `parent` on register; membership, speech and departure all resolve through it |
@@ -228,7 +228,7 @@ An agent that declares work under a director gate is told
 `action: "awaiting_director"`: and, until this was fixed, then told nothing
 ever again. It was admitted seconds later with no way to learn the wait had
 ended short of polling the event stream on the off-chance. The same held for an
-agent promoted from an exclusive agent's queue, and for one a director evicted:
+agent promoted from an exclusive space's queue, and for one a director evicted:
 still believing it held the agent.
 
 All three are changes the agent **did not cause and cannot predict**, and all
@@ -321,7 +321,7 @@ Three ways an agent relates to an agent:
 
 | Relation | Sees traffic | Counted for collisions | Needs permission |
 |---|---|---|---|
-| **member** | yes | yes | if the agent is exclusive |
+| **member** | yes | yes | if the space is exclusive |
 | **subscriber** | yes | no | never (public agents) |
 | **none** | no | no | n/a |
 
@@ -455,7 +455,7 @@ without a model present. Three things fall out of this for free:
 The first member of an agent MAY declare it **exclusive**. This is the semantic
 analogue of an exclusive directory claim (§9) and inherits its honesty rules.
 
-While an agent is exclusive, an agent whose declaration scores above
+While an space is exclusive, an agent whose declaration scores above
 `join_threshold`:
 
 1. is **told** who owns the agent, with the score and the evidence;
@@ -475,16 +475,16 @@ option of ignoring it.
 
 ### 5.1 Interaction with the claim guard
 
-Agent exclusivity is advisory in the same sense claims are: until it is paired
+Space exclusivity is advisory in the same sense claims are: until it is paired
 with a path claim, at which point `guard_path` (SPEC §9) enforces it at the
 edit boundary. The two layers are deliberately separate:
 
-- a **agent** says *this work is taken*;
+- a **space** says *this work is taken*;
 - a **claim** says *these files are taken*;
 - the **guard** is the only thing that stops a write.
 
-An exclusive agent whose owner also claims its paths is enforced. An exclusive
-agent with no claims is a strong social signal and nothing more, and MUST be
+An exclusive space whose owner also claims its paths is enforced. An exclusive
+space with no claims is a strong social signal and nothing more, and MUST be
 described that way to agents.
 
 ## 6. Traffic. `post` and `announce`
@@ -549,10 +549,10 @@ driving the harness, which Dibs does not do (PHILOSOPHY.md).
 The **Settable** column is not decoration. `dibd` rejects an unknown key and
 refuses to start, deliberately, so a setting that was never going to take
 effect cannot look applied, which means writing one of the "no" rows into
-`agents.toml` stops the daemon dead:
+`dibs.toml` stops the daemon dead:
 
 ```
-unknown setting(s) in agents.toml: match.subagent_inherit: check the spelling
+unknown setting(s) in dibs.toml: match.subagent_inherit: check the spelling
 and the table they are under ([match], [limits]); nothing here took effect
 ```
 
@@ -662,7 +662,7 @@ ordinary stranger: it joins or queues on its own merits.
 
 This is not belt-and-braces. Verified against a running daemon before the nonce
 existed: an agent registering with `parent: "victim"` posted into the victim's
-exclusive agent, joined instead of queueing, and was handed allow/no-claim by the
+exclusive space, joined instead of queueing, and was handed allow/no-claim by the
 guard for a path the victim held exclusively.
 
 ## 9. Calibration and evaluation: normative
@@ -712,5 +712,5 @@ is measured in an afternoon rather than argued about.
 - ~~`director_required`~~. RESOLVED: built, and OFF by default. §8.1's own
   warning stands, so the flag exists for fleets that want the gate and nobody
   is opted into it silently.
-- Does an exclusive agent imply an automatic path claim on its retrieved region?
+- Does an exclusive space imply an automatic path claim on its retrieved region?
   Convenient, and a large widening of what a single call does.

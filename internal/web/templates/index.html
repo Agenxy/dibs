@@ -523,12 +523,12 @@ function announceChange(now) {
   }
 
   if (now.agents > lastAnnounced.agents) {
-    said.push(plural(now.agents - lastAnnounced.agents, "new agent of work", "new agents of work") + " opened")
+    said.push(plural(now.agents - lastAnnounced.agents, "new space", "new spaces") + " opened")
   } else if (now.agents < lastAnnounced.agents) {
     // An agent ends when its last member leaves and nothing is outstanding, so
     // this is work FINISHING: the most useful thing a coordination board can
     // tell you and the one it was staying silent about.
-    said.push(plural(lastAnnounced.agents - now.agents, "agent of work", "agents of work") + " closed")
+    said.push(plural(lastAnnounced.agents - now.agents, "space", "spaces") + " closed")
   }
 
   lastAnnounced = now

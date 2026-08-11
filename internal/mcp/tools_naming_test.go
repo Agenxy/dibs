@@ -8,7 +8,7 @@ import (
 // sign_off and close_space must each point at the other.
 //
 // The two names are near-anagrams whose subjects are opposite: sign_off ends
-// the CALLER's own agent agent, close_space retires a CHANNEL of work. "Agent"
+// the CALLER's own agent, close_space retires a CHANNEL of work. "Agent"
 // legitimately means both things in this project, which is what makes the pair
 // dangerous rather than merely untidy.
 //

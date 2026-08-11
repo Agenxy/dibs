@@ -63,7 +63,7 @@ func run() error {
 				"intended for isolating agents you do not trust: see SECURITY.md)")
 		addr = flag.String("addr", "",
 			"listen address (override; default 127.0.0.1:4777: set a tailnet/LAN IP to serve "+
-				"remote agents. TLS is handled automatically; see <dir>/agents.toml to tune anything)")
+				"remote agents. TLS is handled automatically; see <dir>/dibs.toml to tune anything)")
 	)
 	scorer := registerScorerFlags()
 	flag.Parse()
@@ -82,7 +82,7 @@ func run() error {
 
 	cfg, err := loadConfig(*dir)
 	if err != nil {
-		return fmt.Errorf("reading %s/agents.toml: %w", *dir, err)
+		return fmt.Errorf("reading %s/dibs.toml: %w", *dir, err)
 	}
 	// DIBS_ADDR sits between the flag and the config file, because the CLI
 	// already honours it and a daemon that ignored it silently bound the
@@ -120,7 +120,7 @@ func run() error {
 
 	limits, err := cfg.Limits.apply(core.DefaultLimits())
 	if err != nil {
-		return fmt.Errorf("reading %s/agents.toml: %w", *dir, err)
+		return fmt.Errorf("reading %s/dibs.toml: %w", *dir, err)
 	}
 	st := core.NewState(nodeID, limits)
 	start := time.Now()

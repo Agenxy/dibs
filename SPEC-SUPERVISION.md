@@ -239,7 +239,7 @@ of Apple-signed binaries, so `/bin/sleep` and anything `/bin/bash` runs are
 precisely the processes this cannot read.
 
 Verified once more against the shipped daemon rather than in-process: with
-`[supervise] every/quiet/frozen` tightened in `agents.toml`, an agent registered,
+`[supervise] every/quiet/frozen` tightened in `dibs.toml`, an agent registered,
 and a stamped stand-in agent spawned, `check_in` returned the notice without
 the agent asking for anything,
 

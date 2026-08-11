@@ -8,7 +8,7 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// Settings is the `[supervise]` table of `<dir>/agents.toml`.
+// Settings is the `[supervise]` table of `<dir>/dibs.toml`.
 //
 // It lives here, beside the thing it configures, because BOTH the daemon and
 // `dibs probe` need it and they are different binaries. Keeping it in the
@@ -65,7 +65,7 @@ func LoadSettings(dir string) Settings {
 	var doc struct {
 		Supervise Settings `toml:"supervise"`
 	}
-	b, err := os.ReadFile(filepath.Join(dir, "agents.toml")) // #nosec G304 -- the operator's own data dir
+	b, err := os.ReadFile(filepath.Join(dir, "dibs.toml")) // #nosec G304 -- the operator's own data dir
 	if err != nil {
 		return Settings{}
 	}

@@ -172,9 +172,9 @@ func (s *State) LaneForHook(sid, cwd string) *Agent {
 //
 // Parent arrives on the wire as a bare string, and the powers keyed off it are
 // not cosmetic: a subagent speaks under its parent's membership, skips an
-// exclusive agent's queue, and is exempt from its parent's exclusive claims in
+// exclusive space's queue, and is exempt from its parent's exclusive claims in
 // the guard. Verified against a running daemon before this existed: an agent
-// registering with parent:"victim" posted into the victim's exclusive agent,
+// registering with parent:"victim" posted into the victim's exclusive space,
 // joined instead of queueing, and got allow/no-claim for a path the victim held
 // exclusively.
 //

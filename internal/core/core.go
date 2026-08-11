@@ -365,10 +365,10 @@ type Agent struct {
 	//
 	// Parent arrives as a bare string on the wire and nothing checked it. The
 	// powers keyed off it are not cosmetic: a subagent speaks under its
-	// parent's membership, skips an exclusive agent's queue, and is exempt from
+	// parent's membership, skips an exclusive space's queue, and is exempt from
 	// its parent's exclusive claims in the guard. Verified against a running
 	// daemon: an agent registering with parent:"victim" posted into the
-	// victim's exclusive agent, joined it instead of queueing, and got
+	// victim's exclusive space, joined it instead of queueing, and got
 	// allow/no-claim for a path the victim held exclusively.
 	//
 	// So lineage is now claimed and PROVEN separately. An unproven parent stays

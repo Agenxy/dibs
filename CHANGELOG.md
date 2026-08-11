@@ -14,7 +14,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exist. Thanks to @shaurya703 (#15).
 - `dibs man` renders the manual page from the same help text `dibs help`
   prints, and releases ship `agents.1` in the archive and the Homebrew cask, so
-  `man agents` answers after an install. Thanks to @shaurya703 (#16).
+  `man dibs` answers after an install. Thanks to @shaurya703 (#16).
 
 - Nine real Git configurations are now regression tests. Each builds actual
   repositories, registers agents through the actual server, and asserts on the

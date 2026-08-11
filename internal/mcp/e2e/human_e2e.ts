@@ -254,7 +254,7 @@ try {
   check("the human can acknowledge the board", succeeded(humanAck),
     JSON.stringify(humanAck).slice(0, 200))
   const joined = await attempt(dev, "join_space", { token: human, agent: "auth-work" })
-  check("the human can join the agent", succeeded(joined),
+  check("the human can join the space", succeeded(joined),
     JSON.stringify(joined).slice(0, 200))
 
   const posted2 = await attempt(dev, "post",

@@ -16,7 +16,7 @@ import (
 // quietly becomes a guess again.
 func TestMatchConfigIsReadFromFile(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "agents.toml"), []byte(`
+	if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(`
 addr = "127.0.0.1:4999"
 
 [match]
@@ -169,7 +169,7 @@ func TestUnknownConfigKeysAreRefusedNotIgnored(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			if err := os.WriteFile(filepath.Join(dir, "agents.toml"), []byte(tc.body), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(tc.body), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			_, err := loadConfig(dir)
@@ -184,7 +184,7 @@ func TestUnknownConfigKeysAreRefusedNotIgnored(t *testing.T) {
 	// And a correct file still loads, or the check is worse than the bug.
 	dir := t.TempDir()
 	body := "addr = \"127.0.0.1:4999\"\n[match]\nrepo = \"/tmp\"\n[limits]\nlane_ttl = \"9m\"\n"
-	if err := os.WriteFile(filepath.Join(dir, "agents.toml"), []byte(body), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	c, err := loadConfig(dir)
@@ -260,7 +260,7 @@ embed_model = "qwen3-embedding:0.6b"
 embed_query_prefix = "Q: "
 embed_doc_prefix = "D: "
 `
-	if err := os.WriteFile(filepath.Join(dir, "agents.toml"), []byte(body), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	c, err := loadConfig(dir)
@@ -277,7 +277,7 @@ embed_doc_prefix = "D: "
 
 	// The secret is the one thing that must NOT be a config key.
 	dir2 := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir2, "agents.toml"),
+	if err := os.WriteFile(filepath.Join(dir2, "dibs.toml"),
 		[]byte("[match]\nembed_key = \"sk-secret\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

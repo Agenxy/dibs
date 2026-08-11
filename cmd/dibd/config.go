@@ -24,7 +24,7 @@ import (
 
 // Config is everything dibd can be told. Every field is optional: running
 // `dibd` with no arguments and no config file must always do the right thing.
-// Written as <dir>/agents.toml for people who want to get their hands dirty.
+// Written as <dir>/dibs.toml for people who want to get their hands dirty.
 type Config struct {
 	Addr              string            `toml:"addr"`               // listen address
 	TLSCert           string            `toml:"tls_cert"`           // explicit cert (else auto)
@@ -196,14 +196,14 @@ func (c LimitsConfig) applyBlobCap(base *core.Limits) error {
 // minLaneTTL is the floor below which crash detection stops meaning anything.
 const minLaneTTL = 5 * time.Second
 
-// loadConfig reads <dir>/agents.toml if present. A missing file is not an error,
+// loadConfig reads <dir>/dibs.toml if present. A missing file is not an error,
 // zero config is the supported default, not a degraded mode.
 func loadConfig(dir string) (Config, error) {
 	var c Config
 	// #nosec G304 -- a path inside the daemon's own data directory, or one the
 	// operator pointed the CLI at. Same-user access only; refusing it would mean
 	// refusing to run.
-	b, err := os.ReadFile(filepath.Join(dir, "agents.toml"))
+	b, err := os.ReadFile(filepath.Join(dir, "dibs.toml"))
 	if os.IsNotExist(err) {
 		return c, nil
 	}
@@ -227,7 +227,7 @@ func loadConfig(dir string) (Config, error) {
 			keys = append(keys, k.String())
 		}
 		return c, fmt.Errorf(
-			"unknown setting(s) in agents.toml: %s: check the spelling and the table "+
+			"unknown setting(s) in dibs.toml: %s: check the spelling and the table "+
 				"they are under ([match], [limits]); nothing here took effect",
 			strings.Join(keys, ", "),
 		)

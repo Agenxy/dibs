@@ -530,7 +530,7 @@ code, kbd {
                   <td>Respect the signal and contact the holder. Expiry never means “safe.”</td>
                 </tr>
                 <tr>
-                  <td>exclusive agent</td>
+                  <td>exclusive space</td>
                   <td>Rare work that truly needs one owner, with a queue for others.</td>
                   <td>Wait, request admission, or coordinate with the owner. Only a paired guard can stop a write.</td>
                 </tr>
@@ -652,7 +652,7 @@ code, kbd {
               collision signal than sharing a directory.</li>
             <li>Claims are advisory. The edit guard is the only Dibs component
               that can refuse a write, and even it cannot prove another process stopped.</li>
-            <li>An agent of work is shared context among its participants, not an order. Any request
+            <li>An space is shared context among its participants, not an order. Any request
               may be denied or declined.</li>
             <li>Dibs is store-and-catch-up. It does not wake a sleeping agent by
               itself; a harness, schedule, human, or explicit watcher owns activation.</li>
@@ -692,7 +692,7 @@ DIBS_TOKEN=&lt;token&gt; dibs await --since 1842
 
         <section class="protocol-section" id="humans">
           <h2>Human controls</h2>
-          <p>The browser board is the human god view: fleet state, agents of work,
+          <p>The browser board is the human god view: fleet state, spaces,
             all decrypted mail, and the event tail. It is gated by an admin password;
             an agent's local access secret is not enough.</p>
           <dl class="command-list">

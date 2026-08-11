@@ -36,7 +36,7 @@ func TestRolesDeclaredInConfigAreGrantedAtStartup(t *testing.T) {
 	} {
 		if !holdsRole(t, eng, agent, want) {
 			t.Errorf("%s does not hold %q after applyDeclaredRoles: a role written in "+
-				"agents.toml that does not take effect is a config that lies", agent, want)
+				"dibs.toml that does not take effect is a config that lies", agent, want)
 		}
 	}
 }

@@ -227,7 +227,7 @@ func TestAnEmptyLaneIsNotSomebodyElsesWork(t *testing.T) {
 		}
 	}
 
-	// A queue is occupancy: an agent waiting on an exclusive agent has not got in
+	// A queue is occupancy: an agent waiting on an exclusive space has not got in
 	// yet but is certainly working on its subject.
 	ch := s.Spaces["abandoned"]
 	ch.Queue = []string{a["opener"].ID}

@@ -20,7 +20,7 @@ func (s *State) applyLaneLeave(l *Agent, op *Op, now time.Time) (Result, []Event
 	if _, ok := ch.Members[l.ID]; !ok {
 		// Waiting in the queue is not membership, but it is not nothing either,
 		// and this returned "not a member" and left the agent exactly where it
-		// was. An exclusive agent admits from the queue whenever it frees, so an
+		// was. An exclusive space admits from the queue whenever it frees, so an
 		// agent that queued, changed its mind, and was told it had left, was
 		// joined to the agent anyway minutes later: handed a coordination key
 		// and an obligation to acknowledge announcements in work it had

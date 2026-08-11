@@ -212,11 +212,11 @@ func TestAStrangerIsNotHandedTheClaimHoldersIdentity(t *testing.T) {
 
 // `parent` arrives as a bare string on the wire, and the powers keyed off it
 // are not cosmetic: a subagent speaks under its parent's membership, skips an
-// exclusive agent's queue, and is exempt from its parent's exclusive claims in
+// exclusive space's queue, and is exempt from its parent's exclusive claims in
 // the guard.
 //
 // Verified against a running daemon before this: an agent registering with
-// parent:"victim" posted into the victim's exclusive agent, joined it instead of
+// parent:"victim" posted into the victim's exclusive space, joined it instead of
 // queueing, and got allow/no-claim for a path the victim held exclusively.
 //
 // Two of those powers were added earlier in this same session, to fix a real

@@ -507,7 +507,7 @@ func alreadyCoordinating(matches []core.LaneMatch, notify float64) bool {
 	for _, m := range matches {
 		// RELEVANT membership, not any membership. This counted a match at any
 		// score above zero, so an agent that moved on to genuinely different
-		// work could never open an agent for it: a faint accidental overlap with
+		// work could never open a space for it: a faint accidental overlap with
 		// the agent it was still in (one shared file is enough) suppressed the
 		// new agent and told it "the work closest to this is in an agent you are
 		// already in; you are not working alone", about work it had stopped

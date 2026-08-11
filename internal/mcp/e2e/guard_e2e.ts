@@ -344,7 +344,7 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
 {
   // Vouched, because `parent` alone is a claim anybody can make. An agent that
   // merely declared parent:"holder" used to inherit the holder's memberships,
-  // skip an exclusive agent's queue, and be exempt from its claims right here,
+  // skip an exclusive space's queue, and be exempt from its claims right here,
   // so the parent proves it with a one-time nonce only it can issue.
   await call("vouch_child", { token: holder.token, nonce: "child-nonce-0123456789abcdef" })
   const child = await call("register", {
@@ -368,7 +368,7 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
 
   // And a lineage nobody vouched for buys nothing. Verified against a running
   // daemon before this existed: an agent registering with parent:"holder"
-  // posted into the holder's exclusive agent, skipped its queue, and got
+  // posted into the holder's exclusive space, skipped its queue, and got
   // allow/no-claim for a path the holder held exclusively.
   await call("register", {
     name: "impostor", session_id: "impostor-session", parent: "holder", cwd: project,

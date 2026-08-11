@@ -44,7 +44,7 @@ func probe(args []string) error {
 		"no output AND no CPU for this long (awake time) before calling it stuck")
 	// Zero means "not given", so the file can supply what the flag does not.
 	// Defaulting these to the built-in numbers would make every invocation look
-	// like an explicit override and silently beat agents.toml.
+	// like an explicit override and silently beat dibs.toml.
 	quiet := fs.Duration("quiet", 0,
 		"how long output may pause before the agent stops counting as working")
 	minAge := fs.Duration("min-age", 0,
@@ -164,7 +164,7 @@ func listAgents(cfg liveness.Config, asJSON bool) error {
 	return nil
 }
 
-// settingsFor layers the operator's configuration: defaults, then agents.toml,
+// settingsFor layers the operator's configuration: defaults, then dibs.toml,
 // then any flags they typed.
 //
 // The file is read so ONE `[supervise]` table configures both the daemon's

@@ -377,11 +377,11 @@ func tooEarly(silent, elapsed time.Duration, cfg Config) string {
 		"distinguish a model turn from a stall", round(silent))
 	if elapsed > 0 && elapsed < cfg.MinAge {
 		return why + fmt.Sprintf(". This process is only %s old; a whole life of idleness is "+
-			"convicted after %s: set [supervise] min_age in agents.toml, or pass --min-age",
+			"convicted after %s: set [supervise] min_age in dibs.toml, or pass --min-age",
 			round(elapsed), round(cfg.MinAge))
 	}
 	return why + fmt.Sprintf(". Keep watching: %s of continued silence makes it stuck "+
-		"([supervise] frozen in agents.toml, or --frozen)", round(cfg.Frozen))
+		"([supervise] frozen in dibs.toml, or --frozen)", round(cfg.Frozen))
 }
 
 // round trims a duration to something a person reads rather than parses.

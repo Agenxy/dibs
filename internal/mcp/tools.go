@@ -122,7 +122,7 @@ var toolDefs = func() []map[string]any {
 			"description": "Vouch for a subagent you are about to spawn: YOU generate a one-time secret, " +
 				"register it here, and hand the same value to the child, which presents it as `parent_nonce` " +
 				"when it registers. Only then does naming you as `parent` grant " +
-				"it anything: speaking under your agent membership, skipping an exclusive agent's queue, and being " +
+				"it anything: speaking under your agent membership, skipping an exclusive space's queue, and being " +
 				"exempt from your own exclusive claims in the guard. Without this, a `parent` is an unproven claim " +
 				"anybody could type, and is ignored.",
 			"inputSchema": obj(map[string]any{
@@ -413,7 +413,7 @@ var toolDefs = func() []map[string]any {
 		{
 			"name": "join_space",
 			"description": "Join an agent, declaring you are working on that. Members collide, so join only what you are " +
-				"actually working on. If the agent is exclusive you are QUEUED instead, and told your position and who owns it " +
+				"actually working on. If the space is exclusive you are QUEUED instead, and told your position and who owns it " +
 				",  send them a request, or wait to be admitted.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
@@ -439,7 +439,7 @@ var toolDefs = func() []map[string]any {
 			"name": "leave_space",
 			"description": "Leave an agent when you are done with that work. If you held it exclusively this releases it and " +
 				"admits whoever is next in the queue: leaving promptly is what keeps a fleet from waiting on you. " +
-				"Also how you give up a place in an exclusive agent's queue: call it while waiting and you will not be " +
+				"Also how you give up a place in an exclusive space's queue: call it while waiting and you will not be " +
 				"admitted later.",
 			"inputSchema": obj(map[string]any{"token": tok, "agent": str("agent id")}, "token", "agent"),
 		},

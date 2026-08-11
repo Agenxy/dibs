@@ -16,7 +16,7 @@ import (
 // Every question has a safe default; pressing Enter through the whole thing
 // produces a correct single-machine configuration.
 //
-// It writes <dir>/agents.toml, which is the same file an operator can hand-edit
+// It writes <dir>/dibs.toml, which is the same file an operator can hand-edit
 // and the same file the admin UI will drive. One source of truth, three doors.
 const serviceHelp = `dibs configure --service: keep the daemon running
 
@@ -79,9 +79,9 @@ func configure(args []string) error {
 	if len(args) > 0 && args[0] != "" {
 		// A flag is not a directory. `dibs configure --help` was taken as
 		// dir="--help": on a terminal the wizard created a directory literally
-		// named "--help", wrote agents.toml into it, printed a tick and told you
+		// named "--help", wrote dibs.toml into it, printed a tick and told you
 		// to run `dibd`: which reads ~/.agents and had never heard of it. Off a
-		// terminal it advised writing "--help/agents.toml", a corrective action
+		// terminal it advised writing "--help/dibs.toml", a corrective action
 		// that cannot work.
 		if strings.HasPrefix(args[0], "-") {
 			return fmt.Errorf("`dibs configure` takes a data directory, not %q. "+
@@ -94,14 +94,14 @@ func configure(args []string) error {
 Non-interactive setup: write %s directly: every field is optional.
 Example:
   addr = "0.0.0.0:4777"   # serve agents on other machines (TLS is automatic)`,
-			filepath.Join(dir, "agents.toml"))
+			filepath.Join(dir, "dibs.toml"))
 	}
 	// The path is the operator's own data dir, given by them on their own
 	// machine: it is an argument, not untrusted input.
 	if err := os.MkdirAll(dir, 0o700); err != nil { //nolint:gosec // G703: operator-supplied path is the feature
 		return err
 	}
-	cfgPath := filepath.Join(dir, "agents.toml")
+	cfgPath := filepath.Join(dir, "dibs.toml")
 
 	fmt.Println("\nLanes: setup")
 	fmt.Println("─────────────")
