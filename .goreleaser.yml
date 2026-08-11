@@ -126,11 +126,12 @@ homebrew_casks:
       git:
         url: git@github.com:Agenxy/homebrew-tap.git
         private_key: "{{ .Env.HOMEBREW_TAP_DEPLOY_KEY }}"
-      # Explicit, because the default is GITHUB_TOKEN and that is scoped to THIS
-      # repository: it cannot commit to the tap. Relying on the default makes
-      # the release succeed while the cask silently is not published: every
-      # artifact present, and `brew upgrade` simply never sees the new version.
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+      # No `token:` here, deliberately. It is the API path, and the git block
+      # above replaces it: with a url and a private key set, GoReleaser clones,
+      # commits and pushes over SSH and never calls the API. The token line
+      # outlived the token it named, and since GoReleaser fails on a
+      # `{{ .Env.X }}` whose X is unset, it would have failed the release at the
+      # cask step, after the tag was already pushed and spent.
     directory: Casks
     homepage: https://github.com/agenxy/lanes
     description: "Coordination and situational-awareness board for AI agents on one machine"
