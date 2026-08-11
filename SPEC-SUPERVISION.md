@@ -199,13 +199,19 @@ no mail" indistinguishable, so the stamp silently never applied: the hook was
 correct on every negative case and did nothing on the only positive one. The
 digest, which is what a harness injects into a model's context, is unchanged.
 
-The codex plugin ships at `plugins/codex/hooks/hooks.json`, and the two tools
-it calls (`hook_session` and `hook_blocked`) are served. It was briefly held
-back because those tools did not exist: a hook wired to a nonexistent tool
-fails silently at runtime, which is indistinguishable from never having written
-it. The test that enforces this now walks every `plugins/*/hooks/hooks.json`
-rather than the one hardcoded
-path it read before, so the second plugin cannot ship ahead of its tools.
+The codex plugin ships **no** hook file. It once did, and the file was never
+functional: six of its seven entries used `mcp_tool`, which Codex does not
+support, and the seventh was a `command` hook, which Codex runs as a
+subprocess. A plugin that spawns a process to drive the harness is the thing
+this project refuses to be, so shipping it was wrong twice over. Codex is
+pull-only: `ack_board` at the start of an activation, `await_events` before
+blocking.
+
+The tools those entries called (`hook_session` and `hook_blocked`) are served
+and are used by harnesses that can reach them without a subprocess. The test
+that enforces this walks every `plugins/*/hooks/hooks.json` that exists, rather
+than the one hardcoded path it read before, so a plugin cannot ship a hook
+ahead of the tool it calls.
 
 The events it needs are settled:
 

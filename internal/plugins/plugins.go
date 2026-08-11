@@ -148,12 +148,12 @@ var catalog = []struct {
 		harness: "codex",
 		dir:     "codex",
 		aliases: []string{"chatgpt-desktop", "chatgpt", "gpt"},
-		buys: "the hook definitions, for reference. Codex fires hooks as " +
-			"SUBPROCESSES, which Lanes will not be: a plugin that spawned a process " +
-			"to drive your harness would make Lanes a wrapper rather than a service " +
-			",  so on this harness mail stays pull-only: call await_events or inbox " +
-			"when you choose. That is the honest floor and it works everywhere.",
-		root: "~/.codex/hooks",
+		buys: "nothing to install. Codex fires hooks as SUBPROCESSES, which Lanes " +
+			"will not be: a plugin that spawned a process to drive your harness " +
+			"would make Lanes a wrapper rather than a service. So on this harness " +
+			"mail stays pull-only: call await_events or inbox when you choose. " +
+			"That is the honest floor and it works everywhere.",
+		root: "~/.codex",
 		setup: []Step{
 			{
 				Do: "Nothing is required: you are connected and every tool works. Do NOT " +
@@ -169,13 +169,6 @@ var catalog = []struct {
 					"cursor serial",
 				IfNot: "you are registered but not acknowledging: set_slot and claim " +
 					"refuse until ack_board has succeeded this activation",
-			},
-			{
-				Do: "Optional: `-c features.mcp_2026_07_28=true`, so a subagent reconnects " +
-					"without a handshake. Costs nothing and changes no behaviour.",
-				Check:  "the run starts without a protocol error",
-				IfNot:  "leave it off. Lanes serves both paths and all tools behave the same",
-				Manual: true,
 			},
 		},
 		verify: "call ack_board and then inbox: if both answer, this harness is as " +
