@@ -144,7 +144,7 @@ func (e *Engine) dueAnnouncements(agent string, now time.Time) []string {
 		e.announceTries[key]++
 		// Same rule as pendingMail: an unauthenticated caller learns THAT
 		// something is owed, never what it says. An announcement is broadcast
-		// to an agent's members, not to whoever can name that agent's session id.
+		// to an space's members, not to whoever can name that agent's session id.
 		// Names read_space rather than inbox. inbox returns announcements
 		// alongside mail, but a host that renders the board panel may show that
 		// structure to the human and not to the model: a reviewing agent hit

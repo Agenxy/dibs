@@ -456,7 +456,7 @@ func TestGivingUpOnAnAlreadySettledAnnouncementIsANoop(t *testing.T) {
 // SPEC-CHANNELS.md §8.2: spawning a subagent must not require ceremony.
 //
 // A subagent that had to join would be counted as a second occupant of its
-// parent's own work (which is not a collision) and on an exclusive agent it
+// parent's own work (which is not a collision) and on an exclusive space it
 // would queue behind its own parent forever.
 func TestSubagentInheritsItsParentsMembership(t *testing.T) {
 	s, a := chState(t, "parent", "other")
@@ -712,7 +712,7 @@ func TestReattachingKeepsEverythingTheAgentHeld(t *testing.T) {
 // join, queue or count separately. Letting it join was not merely redundant,
 // it deadlocked a parent against its own child.
 //
-// Observed: a subagent asking to join the agent its PARENT held exclusively was
+// Observed: a subagent asking to join the space its PARENT held exclusively was
 // queued behind that parent at position 2, with a hint telling it to send the
 // owner a request. The parent does not release until the subagent's work is
 // done, so each waited on the other. All the while post from that subagent
@@ -794,7 +794,7 @@ func TestACrashedAgentIsNeverPromotedToOwner(t *testing.T) {
 	do(t, s, &Op{Kind: OpLaneLeave, Token: a["owner"].Token, Space: "hot"})
 	ch := s.Spaces["hot"]
 	if ch.Owner == "crashed" {
-		t.Fatal("an exclusive agent was locked behind a crashed agent")
+		t.Fatal("an exclusive space was locked behind a crashed agent")
 	}
 	if ch.Owner != "live" {
 		t.Fatalf("the first agent that could actually take it should have, owner=%q", ch.Owner)
@@ -902,7 +902,7 @@ func TestDirectorCanMergeTwoLanesThatDriftedIntoOneJob(t *testing.T) {
 	}
 }
 
-// A merge used to take the source agent's members and drop everything else on
+// A merge used to take the source space's members and drop everything else on
 // the floor. Verified before the fix: src.Queue=[waiter] became dst.Queue=[]
 // and the waiter belonged to neither agent: blocked forever behind an exclusive
 // owner that no longer existed, with nothing said to them.
@@ -1309,7 +1309,7 @@ func TestAPromotedAgentKeepsWhyItWasMatched(t *testing.T) {
 		Evidence: []string{"internal/core/space.go"}, Auto: true,
 	})
 	if _, queued := s.Spaces["hot"].Members["matched"]; queued {
-		t.Fatal("precondition: an exclusive agent queues rather than admitting")
+		t.Fatal("precondition: an exclusive space queues rather than admitting")
 	}
 
 	do(t, s, &Op{Kind: OpLaneLeave, Token: a["owner"].Token, Space: "hot"})
@@ -1380,7 +1380,7 @@ func TestLeavingALaneEndsWhatThatLaneAskedOfYou(t *testing.T) {
 
 // A merge changes the DESTINATION's world too, and it was told nothing.
 //
-// The destination silently gains another agent's members, its predicted
+// The destination silently gains another space's members, its predicted
 // footprint and its outstanding announcements, which its existing members may
 // now be required to acknowledge. Only the moved side was woken, so the
 // destination's owner could carry on believing its agent was unchanged and still
@@ -1785,7 +1785,7 @@ func TestALaneWithAnUnansweredAnnouncementIsNotReclaimed(t *testing.T) {
 // Reclamation deleted the space and left its announcements behind, keyed by an
 // id that no longer existed. LaneHistory selects purely by that id, and agent
 // ids are derived from the declaration, so two agents doing the same work at
-// different times naturally reuse one. The result: open an agent whose id matches
+// different times naturally reuse one. The result: open a space whose id matches
 // a reclaimed one and read_space hands you the previous agent's announcement
 // bodies. Members-only content, to somebody who was never a member, surviving a
 // restart.

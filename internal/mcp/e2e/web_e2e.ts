@@ -151,7 +151,7 @@ try {
     body: "Evidence attached.", op_id: "w-att",
     attachments: [{ blob: blob.blob ?? blob.id }] })
   // Two spaces, because one cannot hold every state worth drawing: an
-  // exclusive agent QUEUES a second agent rather than admitting it, so an agent
+  // exclusive space QUEUES a second agent rather than admitting it, so an agent
   // with a scored member and an agent with a queue have to be different agents.
   await tool("open_space", { token: a.token, agent: "web-render", topic: "drawing the operator board" })
   await tool("join_space", { token: b.token, agent: "web-render", score: 0.71, threshold: 0.33,
@@ -888,14 +888,14 @@ try {
     check("the Dibs tab lists the space", text.includes("web-render"), text.slice(0, 160))
     check("it shows the topic", text.includes("drawing the operator board"), text.slice(0, 160))
     check("it shows both members", text.includes("builder") && text.includes("checker"), text.slice(0, 160))
-    check("an exclusive agent is marked as such", /exclusive/i.test(text), text.slice(0, 160))
+    check("an exclusive space is marked as such", /exclusive/i.test(text), text.slice(0, 160))
     // SPEC-CHANNELS.md §10.3: an auto-join must be explainable. The score rides
     // with the mark, so it is available without spending a line of the board on
     // every membership.
     const why = (await pane.locator(".member[data-why]").first().getAttribute("data-why")) ?? ""
     check("an auto-joined member carries its score as evidence",
       /0\.7/.test(why) && /lexical/.test(why), why || "(no explanation on the mark)")
-    check("an exclusive agent shows who is waiting", /waiting:/i.test(text), text.slice(0, 240))
+    check("an exclusive space shows who is waiting", /waiting:/i.test(text), text.slice(0, 240))
     }
   {
     // Back to the roster for the agent-level marks.

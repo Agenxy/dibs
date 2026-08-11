@@ -130,7 +130,7 @@ func (f *scorerFlags) applyConfig(c MatchConfig) {
 	// This comment claimed flag > environment > file while the code did flag >
 	// file > environment: every env read happened later, by which point the file
 	// value had already filled the slot and the guard `if x == "" ` could not
-	// fire. So a agents.toml naming a repository that no longer exists silently
+	// fire. So a dibs.toml naming a repository that no longer exists silently
 	// beat a correct DIBS_MATCH_REPO, and matching stayed off with the
 	// environment looking like it had been ignored, which it had.
 	f.markSetFlags()
@@ -189,7 +189,7 @@ func (f *scorerFlags) applyConfig(c MatchConfig) {
 				f.deadline = d
 			}
 		} else {
-			slog.Warn("ignoring unparseable match.deadline in agents.toml",
+			slog.Warn("ignoring unparseable match.deadline in dibs.toml",
 				"value", c.Deadline, "err", err)
 		}
 	}
@@ -240,7 +240,7 @@ func (f *scorerFlags) install(ctx context.Context, eng *engine.Engine) {
 		// log it cannot read.
 		eng.SetMatchStatus(engine.MatchStatus{Phase: engine.MatchOff})
 		slog.Info("work-overlap matching is off",
-			"enable", "-match-repo <path>, or [match] repo = \"…\" in agents.toml")
+			"enable", "-match-repo <path>, or [match] repo = \"…\" in dibs.toml")
 		return
 	}
 	eng.SetMatchStatus(engine.MatchStatus{Phase: engine.MatchIndexing, Repo: repo})

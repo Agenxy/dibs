@@ -15,7 +15,7 @@ import (
 // the configuration out loud on every invocation.
 func TestOneTableConfiguresEverySurface(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "agents.toml"), []byte(
+	if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(
 		"[supervise]\nmin_age = \"1s\"\nmin_duty = 0.05\nevery = \"3s\"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestAnAbsentOrBrokenFileLeavesTheDefaults(t *testing.T) {
 		"broken": t.TempDir(),
 	} {
 		if name == "broken" {
-			if err := os.WriteFile(filepath.Join(dir, "agents.toml"), []byte("[supervise\nmin_age ="), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte("[supervise\nmin_age ="), 0o600); err != nil {
 				t.Fatal(err)
 			}
 		}

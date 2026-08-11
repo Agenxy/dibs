@@ -366,7 +366,7 @@ func (s *State) applyLaneJoin(l *Agent, op *Op, now time.Time) (Result, []Event,
 	// §8.2 is explicit that it must not join, queue or count separately.
 	//
 	// Letting it join was not merely redundant, it deadlocked: a subagent asking
-	// to join the agent its own PARENT holds exclusively was queued behind that
+	// to join the space its own PARENT holds exclusively was queued behind that
 	// parent: position 2, with a hint telling it to send the owner a request,
 	// and the parent does not release until the subagent's work is done. Each
 	// waits for the other. Meanwhile post from that subagent already worked,
@@ -381,7 +381,7 @@ func (s *State) applyLaneJoin(l *Agent, op *Op, now time.Time) (Result, []Event,
 		}, nil, nil
 	}
 
-	// An exclusive agent held by somebody else does not admit; it queues. That
+	// An exclusive space held by somebody else does not admit; it queues. That
 	// is the difference between a refusal and coordination: a blocked agent
 	// with a queue position has somewhere to be, one with a refusal has only
 	// the option of ignoring it (SPEC-CHANNELS.md §5).
@@ -407,7 +407,7 @@ func (s *State) applyLaneJoin(l *Agent, op *Op, now time.Time) (Result, []Event,
 		return Result{
 			"lane_id": ch.ID, "joined": false, "queued": true,
 			"queue_position": len(ch.Queue), "owner": ch.Owner,
-			"hint": "the agent is exclusive; send its owner a request, or wait to be admitted",
+			"hint": "the space is exclusive; send its owner a request, or wait to be admitted",
 		}, evs, nil
 	}
 
@@ -758,7 +758,7 @@ func (s *State) SpeaksFor(ch *Space, id string) string { return s.speaksFor(ch, 
 // This is what makes spawning a subagent free (SPEC-CHANNELS.md §8.2). A
 // subagent that had to join would be counted as a second occupant of its
 // parent's work, which is not a collision (it is one agent's own helper) and
-// on an exclusive agent it would queue behind its own parent forever.
+// on an exclusive space it would queue behind its own parent forever.
 //
 // Bounded walk: a parent chain is a tree in practice, but a corrupted or
 // hand-edited ledger could contain a cycle, and an unbounded walk inside the
@@ -1099,8 +1099,8 @@ type LaneMatch struct {
 // good for. It is not what decides.
 // The third return says whether there was anything to judge AGAINST: at least
 // one member holding a live declaration with a footprint. It is not a detail.
-// "I compared you against this agent's members and none resembles you" and "this
-// agent's members have declared nothing I could compare you to" are opposite
+// "I compared you against this space's members and none resembles you" and "this
+// space's members have declared nothing I could compare you to" are opposite
 // facts, and scoring both as zero made every agent whose members had not yet
 // called declare permanently invisible: including the ordinary case of an
 // agent opening an agent for work it is about to start.
@@ -1188,7 +1188,7 @@ func judgedScore(union float64, ev Evidence, compared bool) float64 {
 // reclaimed, so they stay findable by name and joinable on purpose. What they
 // stop doing is claiming to be occupied.
 //
-// A queue counts: an agent waiting on an exclusive agent has not got in yet, but
+// A queue counts: an agent waiting on an exclusive space has not got in yet, but
 // it is certainly working on that agent's subject.
 func occupied(ch *Space) bool {
 	return len(ch.Members) > 0 || len(ch.Queue) > 0
@@ -1652,7 +1652,7 @@ func mergeNotices(src, dst *Space, by string, wasHere []string) []Event {
 	var evs []Event
 	// The DESTINATION's people are affected too, and were told nothing.
 	//
-	// Their agent silently gains another agent's members, its predicted
+	// Their agent silently gains another space's members, its predicted
 	// footprint, and its outstanding announcements, which they may now be
 	// required to acknowledge. Only the moved side was woken, so the
 	// destination's owner could carry on believing its agent was unchanged and

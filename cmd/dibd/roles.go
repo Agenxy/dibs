@@ -119,14 +119,14 @@ func applyDeclaredRoles(ctx context.Context, eng *engine.Engine, c RolesConfig) 
 				// Never fatal: a daemon that refuses to start over one wrong name
 				// in a config file leaves the fleet with nowhere to coordinate
 				// and the operator unable to read the complaint.
-				slog.Warn("could not grant a role declared in agents.toml",
+				slog.Warn("could not grant a role declared in dibs.toml",
 					"agent", agent, "role", spec.role, "err", err)
 				continue
 			}
 			// Only announce a real change, or the log fills with the same line
 			// every fifteen seconds forever.
 			if changed, _ := res["changed"].(bool); changed {
-				slog.Info("granted a role declared in agents.toml",
+				slog.Info("granted a role declared in dibs.toml",
 					"agent", agent, "role", spec.role)
 			}
 		}

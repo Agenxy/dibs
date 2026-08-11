@@ -410,7 +410,7 @@ func checkMatching(client *http.Client, sec string, ok reportFn, warn fixFn) {
 				warn("you are working in "+cwd+", which is not the indexed repository",
 					"matching compares declarations against "+st.Repo+": work outside it "+
 						"is matched against a stranger's file layout. Point [match] repo at "+
-						"this tree in agents.toml and restart, or expect suggestions to be "+
+						"this tree in dibs.toml and restart, or expect suggestions to be "+
 						"about the other project")
 			}
 		}

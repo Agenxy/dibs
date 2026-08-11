@@ -671,7 +671,7 @@ func TestChannelReplayDeterminism(t *testing.T) {
 		t.Fatalf("announce must return its serial, got %v", ann)
 	}
 	apply(t, st, led, &core.Op{Kind: core.OpLaneAck, Token: "tbeta", MsgSerial: annSerial}, t0.Add(13*time.Second))
-	// A second, exclusive agent with somebody queued behind it.
+	// A second, exclusive space with somebody queued behind it.
 	apply(t, st, led, &core.Op{
 		Kind: core.OpLaneOpen, Token: "tgamma",
 		Space: "hot", Text: "single-writer work", Exclusive: true,

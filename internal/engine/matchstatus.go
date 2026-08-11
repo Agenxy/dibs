@@ -99,7 +99,7 @@ func matchHint(st MatchStatus) string {
 	switch st.Phase {
 	case MatchOff:
 		return "work-overlap matching is not configured; start dibd with -match-repo <path> " +
-			"(or set [match] repo in agents.toml) to have Dibs tell you who else is doing your work"
+			"(or set [match] repo in dibs.toml) to have Dibs tell you who else is doing your work"
 	case MatchIndexing:
 		waited := time.Since(st.Since).Round(time.Second)
 		return "the repository is still being indexed (" + waited.String() + " so far); " +

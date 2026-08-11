@@ -3,7 +3,7 @@
 # Dibs
 
 [![CI](https://github.com/agenxy/dibs/actions/workflows/ci.yml/badge.svg)](https://github.com/agenxy/dibs/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/agenxy/agents?sort=semver)](https://github.com/agenxy/dibs/releases/latest)
+[![Release](https://img.shields.io/github/v/release/agenxy/dibs?sort=semver)](https://github.com/agenxy/dibs/releases/latest)
 [![Go Reference](https://pkg.go.dev/badge/github.com/agenxy/dibs.svg)](https://pkg.go.dev/github.com/agenxy/dibs)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
@@ -15,11 +15,12 @@ can see the other, so you pay for the work twice and then pay again to reconcile
 it. Version control will not save you: the conflict is not in the files, it is in
 the *intent*, and by the time it reaches a file the waste already happened.
 
-Dibs gives them somewhere to look. Each agent registers a **agent**, says what it
-is pursuing, and is told immediately if someone else is already pursuing it.
+Dibs gives them somewhere to look. Each agent **registers**, says what it is
+pursuing, and is told immediately if someone else is already pursuing it. It
+calls dibs, and everyone else can see it.
 
 One board covers everything on the machine, across as many projects as you have
-open. An agent is an agent, not a repository: nothing binds it to a project, claims
+open. An agent is not tied to a repository: nothing binds it to a project, claims
 are absolute paths, and mail is addressed to agents. Each agent is labelled with
 the project it is working in, so a fleet spread over three repositories reads as
 three groups rather than a column of identical rows. If you would rather keep two
@@ -339,7 +340,7 @@ separate boards cannot see each other at all, so a shared dependency edited from
 both is exactly the collision Dibs would otherwise have caught. One board with
 the project shown per agent is the default for that reason.
 
-Better still, put the numbers in `agents.toml` and skip the flags entirely, which
+Better still, put the numbers in `dibs.toml` and skip the flags entirely, which
 is what they are for.
 
 **Calibrate first.** Skipping it leaves `join_threshold` at zero, which means
@@ -513,7 +514,7 @@ Design and measurements: [SPEC-SUPERVISION.md](SPEC-SUPERVISION.md).
 
 ## Configuration
 
-Settings live in `<dir>/agents.toml` rather than on the command line, which is the
+Settings live in `<dir>/dibs.toml` rather than on the command line, which is the
 point: a threshold you measured should not have to be retyped every restart.
 
 ```toml

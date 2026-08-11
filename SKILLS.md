@@ -43,7 +43,7 @@ HTTP client, which registers **without** one, so your agent is governed by
 `lane_ttl` and see nothing change are hitting this.
 
 **5. Naming a `parent` grants you nothing.** Anyone can type any name. A
-subagent inherits its parent's memberships, skips an exclusive agent's queue and
+subagent inherits its parent's memberships, skips an exclusive space's queue and
 is exempt from the parent's claims, so lineage has to be *proven*. The parent
 *generates* a one-time secret itself, registers it with `vouch_child`, and hands
 the same value to you; you pass it as `parent_nonce`. The tool does not mint one

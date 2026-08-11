@@ -285,7 +285,7 @@ Until you do, `declare` will keep telling you it is off:
 ```json
 { "matching": "off",
   "matching_hint": "work-overlap matching is not configured; start dibd with
-    -match-repo <path> (or set [match] repo in agents.toml) to have Dibs tell
+    -match-repo <path> (or set [match] repo in dibs.toml) to have Dibs tell
     you who else is doing your work" }
 ```
 
@@ -313,7 +313,7 @@ dibs doctor: data dir ~/.agents
   ✓ 40 tools published
   ! work-overlap matching is off
       → start dibd with -match-repo <path> (or set [match] repo in
-        agents.toml) to have Dibs tell you who else is doing your work
+        dibs.toml) to have Dibs tell you who else is doing your work
   ! no harness has ever called this daemon's hooks
       → no harness has ever asked this daemon a lifecycle question, so the
         claim guard has never run and mail is never injected. Install the

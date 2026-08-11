@@ -81,7 +81,7 @@ func (e *Engine) noteEvent(ev core.Event) {
 	case "agent.joined":
 		who, text = ev.Agent, joinedNotice(ev)
 	case "agent.absorbed":
-		// Your agent just gained another agent's members, its predicted footprint
+		// Your agent just gained another space's members, its predicted footprint
 		// and its outstanding announcements, which you may now be required to
 		// acknowledge. You did not do this and cannot infer it.
 		agent, _ := ev.Data["lane_id"].(string)

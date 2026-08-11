@@ -5,11 +5,11 @@ import (
 	"testing"
 )
 
-// There was no way out of an exclusive agent's queue.
+// There was no way out of an exclusive space's queue.
 //
 // leave_space checked membership, found none, and answered "not a member": true
 // and useless, because the agent was in the queue and stayed there. An
-// exclusive agent admits from its queue whenever it frees, so an agent that
+// exclusive space admits from its queue whenever it frees, so an agent that
 // queued, changed its mind, and was told it had left, was joined to the agent
 // minutes later: handed the coordination key and made liable for acknowledging
 // announcements in work it had explicitly declined.

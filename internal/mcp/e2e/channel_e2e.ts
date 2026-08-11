@@ -13,7 +13,7 @@
  *   - the recorded score survives the round trip verbatim (§4.3). A score that
  *     arrives as 0 still joins the agent, still looks fine on the board, and
  *     destroys the ledger's meaning.
- *   - an exclusive agent QUEUES rather than refuses (§5). A refusal an agent
+ *   - an exclusive space QUEUES rather than refuses (§5). A refusal an agent
  *     can ignore is not coordination.
  *
  * Run: bun internal/mcp/e2e/channel_e2e.ts
@@ -250,7 +250,7 @@ const gamma = await agent("gamma")
 {
   await call("open_space", { token: gamma, agent: "hot", topic: "single-writer work", exclusive: true })
   const r = await call("join_space", { token: alpha, agent: "hot", score: 0.91 })
-  check("joining an exclusive agent queues rather than refusing", r.queued === true && r.joined === false,
+  check("joining an exclusive space queues rather than refusing", r.queued === true && r.joined === false,
     JSON.stringify(r))
   check("the queue tells you your position", r.queue_position === 1, String(r.queue_position))
   check("the queue names the owner so you can ask them", r.owner === "gamma", r.owner)
@@ -1091,7 +1091,7 @@ let annSerial = 0
   const mem = await call("register", { name: "re-member", session_id: "re3" })
   await call("check_in", { token: mem.token })
 
-  // Two agents, because one cannot hold both states: an exclusive agent QUEUES a
+  // Two agents, because one cannot hold both states: an exclusive space QUEUES a
   // joiner rather than admitting it, so "a member who owes an acknowledgement"
   // and "an agent waiting in a queue" have to live in different agents. Built
   // without a coordinator so this block stands on its own.
@@ -1258,13 +1258,13 @@ let annSerial = 0
     !/\u001b\[/.test(out), JSON.stringify(out.slice(0, 120)))
   check("and doctor is too, which is what gets pasted into a bug report",
     !/\u001b\[/.test(cli("doctor")))
-  check("the terminal board lists agents of work", /agents of work/.test(out), out.slice(0, 300))
+  check("the terminal board lists spaces", /spaces/.test(out), out.slice(0, 300))
   check("with their topic", /token validation|drawing|single-writer|work that outlives/.test(out),
     out.slice(0, 400))
   check("and who is in them", /\bin: /.test(out), out.slice(0, 400))
-  // An exclusive agent and its queue are the two facts that decide whether an
+  // An exclusive space and its queue are the two facts that decide whether an
   // agent can start; neither was reachable from a terminal.
-  check("an exclusive agent names its owner", /exclusive to /.test(out), out.slice(0, 600))
+  check("an exclusive space names its owner", /exclusive to /.test(out), out.slice(0, 600))
   check("and shows who is waiting for it", /waiting: /.test(out), out.slice(0, 600))
   // The announcement states, which must stay four distinct facts rather than
   // one number.

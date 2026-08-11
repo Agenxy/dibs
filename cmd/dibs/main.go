@@ -1087,7 +1087,7 @@ func printLanesOfWork(chans []boardChannel) {
 	if len(chans) == 0 {
 		return
 	}
-	fmt.Println(ui.Section("agents of work"))
+	fmt.Println(ui.Section("spaces"))
 	chW := 0
 	for _, c := range chans {
 		if w := lipgloss.Width(c.ID); w > chW {

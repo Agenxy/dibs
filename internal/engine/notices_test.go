@@ -30,7 +30,7 @@ func TestEveryEventDoneToAnAgentProducesANotice(t *testing.T) {
 		}},
 		want: []string{"admitted", "auth", "director"},
 	}, {
-		name: "promoted off an exclusive agent's queue",
+		name: "promoted off an exclusive space's queue",
 		ev: core.Event{Type: "agent.joined", Agent: "worker", Serial: 2, Data: map[string]any{
 			"lane_id": "auth", "from_queue": true,
 		}},

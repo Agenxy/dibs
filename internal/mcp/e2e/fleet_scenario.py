@@ -634,7 +634,7 @@ def subagent_inherits(d: Daemon) -> None:
     d.tool("open_space", {"token": par, "agent": "par-agent",
                          "topic": "work the parent owns", "exclusive": True})
     # `parent` alone is a claim anybody can make, and a subagent inherits its
-    # parent's memberships, skips an exclusive agent's queue and is exempt from
+    # parent's memberships, skips an exclusive space's queue and is exempt from
     # the parent's exclusive claims in the guard, so lineage is proven with a
     # one-time nonce only the parent can issue.
     d.tool("vouch_child", {"token": par, "nonce": nonce})
@@ -660,7 +660,7 @@ def subagent_inherits(d: Daemon) -> None:
 
     # An agent that merely CLAIMS the parent gets none of it. Before lineage was
     # proven, this was a live escalation: registering with parent:<victim> let an
-    # agent post into the victim's exclusive agent, skip its queue, and write
+    # agent post into the victim's exclusive space, skip its queue, and write
     # inside its exclusive claim.
     fake = d.agent("impostor", parent="parent-agent")
     if d.tool("join_space", {"token": fake, "agent": "par-agent"}).get("queued"):
@@ -681,13 +681,13 @@ def crashed_agent_never_inherits(work: Path) -> None:
     """
     cdir = work / "crash"
     cdir.mkdir(parents=True, exist_ok=True)
-    (cdir / "agents.toml").write_text('[limits]\nlane_ttl = "6s"\n')
+    (cdir / "dibs.toml").write_text('[limits]\nlane_ttl = "6s"\n')
     d = Daemon(cdir, PORT + 9, log=cdir / "log")
     if not d.secret:
         no("crash daemon", "never started")
         d.stop()
         return
-    ok("a daemon honours [limits] lane_ttl from agents.toml")
+    ok("a daemon honours [limits] lane_ttl from dibs.toml")
     try:
         owner = d.agent("cr-owner", pid=os.getpid())
         crashed = d.agent("cr-crashed", pid=os.getpid())
