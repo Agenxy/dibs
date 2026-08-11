@@ -48,7 +48,7 @@ func TestBoardJSONCarriesWhatTheProseBoardShows(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
-		fmt.Fprint(w, `{
+		_, _ = fmt.Fprint(w, `{
 			"serial": 42, "node": "n1",
 			"lanes": [{
 				"id": "codex-1", "name": "codex-1", "description": "refactors",
@@ -122,7 +122,7 @@ func TestBoardJSONCarriesWhatTheProseBoardShows(t *testing.T) {
 // doc["lanes"]` anywhere else.
 func TestBoardJSONPinsEmptyListsToEmptyLists(t *testing.T) {
 	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		fmt.Fprint(w, `{"serial": 0, "node": "n1", "lanes": []}`)
+		_, _ = fmt.Fprint(w, `{"serial": 0, "node": "n1", "lanes": []}`)
 	}))
 	defer daemon.Close()
 	t.Setenv("LANES_DIR", t.TempDir())
@@ -217,7 +217,8 @@ func TestVerifyJSONCarriesTheChainVerdict(t *testing.T) {
 		Head  string `json:"head"`
 		Torn  bool   `json:"torn"`
 		Error string `json:"error"`
-	}) {
+	},
+	) {
 		t.Helper()
 		if err := json.Unmarshal([]byte(out), &rep); err != nil {
 			t.Fatalf("stdout is not one JSON document: %v\n%s", err, out)
@@ -226,7 +227,7 @@ func TestVerifyJSONCarriesTheChainVerdict(t *testing.T) {
 	}
 
 	t.Run("intact", func(t *testing.T) {
-		path, _ := chain(t, 5)
+		path, _ := chain(t)
 		out, err := captureStdout(t, func() error { return verify([]string{"--json", path}) })
 		if err != nil {
 			t.Fatal(err)
@@ -238,7 +239,7 @@ func TestVerifyJSONCarriesTheChainVerdict(t *testing.T) {
 	})
 
 	t.Run("torn tail", func(t *testing.T) {
-		path, lines := chain(t, 5)
+		path, lines := chain(t)
 		torn := lines[4][:len(lines[4])/2]
 		if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"+torn), 0o600); err != nil {
 			t.Fatal(err)
@@ -254,7 +255,7 @@ func TestVerifyJSONCarriesTheChainVerdict(t *testing.T) {
 	})
 
 	t.Run("damaged", func(t *testing.T) {
-		path, lines := chain(t, 5)
+		path, lines := chain(t)
 		lines[2] = strings.Replace(lines[2], `"e":"noop"`, `"e":"noOp"`, 1)
 		if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
 			t.Fatal(err)

@@ -915,6 +915,9 @@ type verifyReport struct {
 	Head  string `json:"head"`
 	Torn  bool   `json:"torn"`
 	Error string `json:"error,omitempty"`
+	// Hint carries the corrective call beside the failure. A JSON consumer needs
+	// it at least as much as a person does, and it is the surface agents read.
+	Hint string `json:"hint,omitempty"`
 }
 
 func verify(args []string) error {
@@ -940,6 +943,17 @@ func verify(args []string) error {
 		rep := verifyReport{OK: err == nil, Path: path, Lines: res.Lines, Head: res.Head, Torn: res.Torn}
 		if err != nil {
 			rep.Error = err.Error()
+			// The prose path below tells a reader that a board which has never
+			// run simply has no ledger yet. Dropping that on the JSON path left
+			// `open …: no such file` and nothing else, on the surface agents
+			// actually read: AGENTS.md rule 6 is that every error carries the
+			// corrective call, and it does not stop applying because the output
+			// is machine-readable.
+			var pe *fs.PathError
+			if errors.As(err, &pe) {
+				rep.Hint = "a board that has never run has no ledger yet: start `lanesd` " +
+					"once, or pass the path to the one you meant to check"
+			}
 		}
 		if perr := printJSON(rep); perr != nil {
 			return perr
