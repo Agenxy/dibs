@@ -24,7 +24,7 @@ import (
 // A PreToolUse hook can rewrite the tool's input before it runs
 // (`hookSpecificOutput.updatedInput`, supported by both Codex and Claude Code).
 // So the parent stamps the child at the only moment when the relationship is a
-// FACT rather than a reconstruction — the instant it spawns it — by prefixing
+// FACT rather than a reconstruction (the instant it spawns it) by prefixing
 // one environment assignment onto the command. The OS does the rest: an
 // environment is inherited at fork and survives reparenting, daemonisation and
 // process-group changes, so every descendant carries it, however deep and
@@ -39,7 +39,7 @@ import (
 // prints nothing at all and lets the command through untouched:
 //
 //   - the command actually spawns an agent (the same executable-basename test
-//     the process sweep uses — a command that merely MENTIONS codex is not one)
+//     the process sweep uses: a command that merely MENTIONS codex is not one)
 //   - the calling session maps to a lane on the board
 //   - the command is not already stamped
 //   - the command has no shell syntax that a prefix would change the meaning of
@@ -65,7 +65,7 @@ func hookSpawn(args []string) error {
 // stampFor decides what, if anything, to emit for one hook invocation.
 //
 // Separated from hookSpawn so the decision can be tested without a process, a
-// daemon or a pipe — `resolve` is the only thing it needs from the outside
+// daemon or a pipe. `resolve` is the only thing it needs from the outside
 // world, and a test supplies it directly. Returns "" for "say nothing", which
 // is the answer in every case but one.
 func stampFor(r io.Reader, resolve func(sessionID, cwd string) string) string {
@@ -117,7 +117,7 @@ func stampFor(r io.Reader, resolve func(sessionID, cwd string) string) string {
 //
 // Only the FIRST command in the line is considered. `cd /x && codex exec …`
 // spawns an agent, but the prefix would land on `cd`, where the assignment
-// applies to `cd` alone and never reaches the agent — a stamp that silently
+// applies to `cd` alone and never reaches the agent: a stamp that silently
 // does nothing is worse than no stamp, because the fallback rungs would have
 // caught it.
 func spawnsAgent(cmd string) bool {
@@ -148,7 +148,7 @@ func safeToPrefix(cmd string) bool {
 	// Defence in depth rather than load-bearing today: spawnsAgent already
 	// rejects every one of these, because a command opening with `(`, `{`, `<`,
 	// `>`, `$`, a backtick or a quote has a first TOKEN that is not a bare
-	// harness name. Measured, not assumed — removing this check changes no
+	// harness name. Measured, not assumed: removing this check changes no
 	// reachable answer. It is kept because that is a property of how
 	// spawnsAgent tokenises, not a decision anybody made, and loosening
 	// spawnsAgent later (matching a harness anywhere in the line, say) would
@@ -165,7 +165,7 @@ func safeToPrefix(cmd string) bool {
 		return false
 	}
 	// Newlines mean the "command" is a script, and a prefix binds to its first
-	// line only — which is the same silent-no-op as the `cd &&` case. THIS one
+	// line only, which is the same silent-no-op as the `cd &&` case. THIS one
 	// is load-bearing: `codex exec 'a'\nrm -rf /` passes spawnsAgent, so
 	// without this check it would be rewritten.
 	return !strings.ContainsAny(t, "\n\r")

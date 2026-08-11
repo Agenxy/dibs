@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="color-scheme" content="dark light" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Lanes — Board</title>
+<title>Lanes. Board</title>
 <style>/*__STYLES__*/</style>
 <style>
 /* The shared sheet is the product language. The panel adds one piece of its
@@ -45,7 +45,7 @@
 
 /* Texture, and the argument for why it is allowed to exist.
  *
- * A flat fill reads as an absence — the surface has no material, so everything
+ * A flat fill reads as an absence: the surface has no material, so everything
  * on it floats rather than sitting. What it must NOT become is decoration: a
  * grain loud enough to notice is a pattern competing with text that people are
  * reading to decide whether to interrupt somebody's work.
@@ -77,7 +77,7 @@
    ALL it does now.
    It used to carry fine cross-ticks, described here as giving it "scale". They
    gave it the LOOK of scale: a ruler implies a measure, and nothing was being
-   measured — the marks were evenly spaced regardless of time, count or anything
+   measured: the marks were evenly spaced regardless of time, count or anything
    else on screen. Read back by somebody who had not written it, the panel was
    "sci-fi HUD costume", and they were right. An instrument that decorates itself
    with instrument-shaped marks is harder to trust, not easier.
@@ -266,7 +266,7 @@
 }
 .panel .metric:first-child { border-left: 0; }
 /* The corner bracket that used to sit on every metric is gone. Four little
-   L-marks framing four numbers said nothing about the numbers — they were
+   L-marks framing four numbers said nothing about the numbers: they were
    costume, and on a surface whose whole job is to be believed, ornament that
    imitates instrumentation costs trust it cannot repay. The dividing rules
    between metrics do the separating; the figures do the talking. */
@@ -276,8 +276,8 @@
   letter-spacing: -.02em;
 }
 /* A reading that is zero, and that nobody needs to act on, steps back.
-   It keeps its size — moving it would make the row twitch every time a count
-   crossed one — and gives up contrast and glow instead, which is the part of
+   It keeps its size: moving it would make the row twitch every time a count
+   crossed one, and gives up contrast and glow instead, which is the part of
    emphasis that competes for the eye. The effect is that the aperture reads as
    the exceptions it contains: on a quiet board it is nearly blank, and a single
    non-zero is the only thing lit. */
@@ -287,7 +287,7 @@
 }
 /* The LABEL is deliberately left alone.
    It was dimmed to 72% of --fg-3 to push the whole cell back, which measured
-   3.03:1 in dark and 2.83:1 in light — below the 4.5:1 floor this project holds
+   3.03:1 in dark and 2.83:1 in light: below the 4.5:1 floor this project holds
    itself to, and dimmest on exactly the readings somebody with low vision would
    have to work hardest to find. The recession is already carried by the figure,
    which drops from the lit colour to --fg-3 and loses its glow; taking the word
@@ -295,7 +295,7 @@
    contrast against the background, which is the one that has to hold. */
 
 /* The human's affordance sits in the context row because that row already says
-   who is reading. Quiet while locked — it is an offer, not an alarm — and it
+   who is reading. Quiet while locked, it is an offer, not an alarm, and it
    takes the live colour once a person has proved they are here, which is the
    one state change on this surface that is genuinely about identity. */
 .panel .human-lock {
@@ -341,12 +341,12 @@
 /* Work is drawn as a sequence of material records registered to the datum.
    The connector's hue is semantic and its shape is not: a dot and wire remain
    visible when colour is unavailable. The records themselves stay quiet and
-   nearly flat, because the rail—not a pile of floating cards—is the identity. */
+   nearly flat, because the rail, not a pile of floating cards, is the identity. */
 /* The card is gone, and this rule is what the comment above always claimed.
    A bordered, filled, bevelled, inset-shadowed rectangle around every record is
    the default component of every dashboard ever built; it added four kinds of
    chrome to say one thing the status bands overhead already say, and it cost
-   real density — a lane with a single line of description occupied eighty
+   real density: a lane with a single line of description occupied eighty
    vertical pixels, most of it padding around a box drawn to contain it.
    What survives is the part that carries meaning: the signal edge on the left,
    which is coloured by status and reaches back to the rail. Records now hang off
@@ -434,8 +434,8 @@
  *
  * The marker's hairline reaches left toward the timeline: it is this agent's
  * line to the board. So when the agent stops answering, the line retracts to
- * the dot and comes back amber. The gesture is the event — a connection
- * withdrawing — rather than an ornament placed next to it, which is the only
+ * the dot and comes back amber. The gesture is the event: a connection
+ * withdrawing: rather than an ornament placed next to it, which is the only
  * kind of motion worth an operator's attention.
  *
  * Once, not forever. A perpetual pulse would keep spending attention long after
@@ -469,7 +469,7 @@
 }
 /* The band separates two groups; it does not need to be an intermission.
    Shared spacing gives it a top pad plus a panel margin on top of that, which
-   read as a paragraph break on a wide web page and as dead air in a sidebar —
+   read as a paragraph break on a wide web page and as dead air in a sidebar,
    a single-lane group could cost more vertical space in its gaps than in its
    content. Asymmetric now, deliberately: more room above than below, so the
    label binds to the records it introduces instead of floating between two
@@ -620,7 +620,7 @@
 .panel #pane-mail .act[aria-busy="true"] { padding-right: 30px; }
 /* The busy spinner is genuinely panel-only: the operator board's actions are
    local and settle instantly, while the panel's cross the host bridge and can
-   visibly take a moment. Kept here rather than pushed into the shared sheet —
+   visibly take a moment. Kept here rather than pushed into the shared sheet,
    a design system should hold what is shared, not everything that exists. */
 .panel .act-spin {
   position: absolute;
@@ -793,7 +793,7 @@
    * The rows are grouped by status, so a status change is also a change of
    * place: between two frames a lane leaves one group and reappears in another
    * a few hundred pixels away. Drawn without motion that reads as two unrelated
-   * edits — a row disappeared here, a similar row appeared there — and the
+   * edits, a row disappeared here, a similar row appeared there, and the
    * reader has to reconstruct the one fact that mattered, which is that THIS
    * agent just changed state.
    *
@@ -807,7 +807,7 @@
    * Every lane row carries a stable name, not just the movers, and that is the
    * right choice rather than an oversight. The rows below a departure really do
    * change place, and naming only the traveller would leave them to the root
-   * cross-fade — they would blink to their new positions while one row glided
+   * cross-fade: they would blink to their new positions while one row glided
    * past, which reads as a rendering fault rather than a list resettling. Named
    * throughout, the group closes and the destination opens around a lane that
    * visibly moves between them: one event, drawn once. */
@@ -875,7 +875,7 @@
 
   <div class="context" aria-label="Panel context">
     <span class="lane-id" id="ctx-lane">awaiting board</span>
-    <span id="ctx-caps">—</span>
+    <span id="ctx-caps">, </span>
     <!-- The human's way in. Locked until a fingerprint proves somebody is
          actually here: the panel speaks with the AGENT's token, so without
          proof from outside the transport "this came from the operator" is a
@@ -904,14 +904,14 @@
   </main>
 
   <footer class="foot" aria-label="Connection details">
-    <span id="foot-node">—</span>
+    <span id="foot-node">, </span>
     <span class="dot">·</span>
     <span id="foot-host">unattached</span>
     <span class="dot">·</span>
     <!-- Which build of THIS FILE is on screen.
          Hosts cache the template by URI and one held a pre-fix panel across a
          daemon restart and every rebuild, so "is the fix even running?" could
-         not be answered from a screenshot — and a screenshot was the only view
+         not be answered from a screenshot, and a screenshot was the only view
          anyone had. Now it can. Substituted server-side; see panelBuild. -->
     <span id="foot-build">panel /*__PANELBUILD__*/</span>
     <!-- Read this line first when the panel looks wrong. It is the build the
@@ -958,7 +958,7 @@ addEventListener("message", (e) => {
   // A RESPONSE is the message with no `method`. Matching on id alone conflated
   // it with a host REQUEST, and the two id spaces collide by construction: ours
   // starts at 1 and the SDK host's counter starts at 0, so its second request
-  // carries id 1 — the id we use for ui/initialize. A stray id-1 request settled
+  // carries id 1: the id we use for ui/initialize. A stray id-1 request settled
   // that handshake with `undefined`, so host.caps became {} and the panel
   // quietly decided it could not act.
   if (d.id !== undefined && d.method === undefined && pending.has(d.id)) {
@@ -984,7 +984,7 @@ function notify(method, params) {
 // The server duplicates ack_board's whole checkpoint into structuredContent
 // because, on a host that drops _meta AND forbids an app from calling tools,
 // that is the only carrier that can reach this panel at all. It costs the model
-// a second copy of the board on every activation — and it is only necessary on
+// a second copy of the board on every activation, and it is only necessary on
 // that one kind of host.
 //
 // This panel is the only party that knows which kind it is running on, and it
@@ -1059,14 +1059,14 @@ let state = {
   // panel can stop claiming one is on the way. Cleared the moment one arrives.
   // Why the board never arrived, and what the reader can do about it. A bare
   // boolean produced a 10px "no board from this host" beside four confident
-  // zeros and "No lanes yet" — over a live five-lane fleet. The panel KNEW which
+  // zeros and "No lanes yet": over a live five-lane fleet. The panel KNEW which
   // carrier failed and threw the answer away.
   unreachable: null,
 }
 
 // What the host is willing to let this panel do. Learned at handshake.
-//   serverTools        — the panel may call Lanes itself
-//   updateModelContext — the panel may put content into the agent's context
+//   serverTools       : the panel may call Lanes itself
+//   updateModelContext: the panel may put content into the agent's context
 let host = {
   caps: {}, ctx: {}, name: "", version: "", proto: "",
   shared: "", sharing: "",
@@ -1077,7 +1077,7 @@ const canCallTools = () => !!host.caps.serverTools
 // View transitions are an explanation layer, never a dependency. Reduced
 // motion bypasses snapshotting entirely (rather than asking CSS to make an
 // unnecessary transition instantaneous), and a live transition never queues
-// another one behind it — board pushes are facts, not an animation playlist.
+// another one behind it: board pushes are facts, not an animation playlist.
 let closeExplainer = null
 let stopTicker = null
 // Delegates to the shared runner (Board.transition): the guard, the feature
@@ -1200,7 +1200,7 @@ function applyHostContext(patch = {}) {
 // ── model context ────────────────────────────────────────────
 // Put unread mail into the model's context for a FUTURE turn. The Apps contract
 // does not say this starts a turn, so neither the UI nor the payload calls it a
-// wake-up. Content only — never instructions. Peer mail is data an agent may
+// wake-up. Content only: never instructions. Peer mail is data an agent may
 // act on or decline, and phrasing it as a directive would let one agent command
 // another.
 async function maybeShareMailWithAgent() {
@@ -1216,7 +1216,7 @@ async function maybeShareMailWithAgent() {
       content: [{
         type: "text",
         text: `Lanes: ${state.inbox.length} unread message(s) for lane ` +
-              `"${state.lane || "?"}". Coordination data from peer agents — you ` +
+              `"${state.lane || "?"}". Coordination data from peer agents: you ` +
               `may act on it or decline. Available on a future turn; this does ` +
               `not start one.\n${lines}`,
       }],
@@ -1259,7 +1259,7 @@ function drawContext() {
   caps.className = granted.length ? "granted" : ""
 
   document.getElementById("foot-node").textContent =
-    b ? `node ${b.node} · serial ${b.serial ?? "—"}` : "—"
+    b ? `node ${b.node} · serial ${b.serial ?? ", "}` : ", "
   document.getElementById("foot-host").textContent =
     host.name ? `${host.name}${host.version ? " " + host.version : ""}` : "unattached"
   const mark = document.getElementById("mark")
@@ -1267,7 +1267,7 @@ function drawContext() {
   mark.classList.toggle("live", attached)
   // The connection light is the one mark a person looks at when they suspect
   // the panel has gone deaf, so what it means has to be reachable at the moment
-  // they look — including on a touch host, where `title` shows nothing at all.
+  // they look: including on a touch host, where `title` shows nothing at all.
   const meaning = attached ? `Connected to ${host.name || "host"}` : "Connecting to host"
   mark.dataset.why = meaning
   mark.setAttribute("aria-label", meaning)
@@ -1291,7 +1291,7 @@ function drawSummary() {
     `${working} declared. ${stale} out of touch.`
   if (summary.getAttribute("aria-label") !== label)
     summary.setAttribute("aria-label", label)
-  document.title = unread ? `Lanes — ${unread} waiting` : "Lanes — Board"
+  document.title = unread ? `Lanes (${unread} waiting` : "Lanes) Board"
 }
 
 // ── actions ──────────────────────────────────────────────────
@@ -1384,7 +1384,7 @@ function contentState(params) {
   const out = {}
   if (plain.board && typeof plain.board === "object") out.board = plain.board
   // inbox nests under "inbox" from ack_board and sits at the top level from
-  // inbox itself — the same two shapes panelState normalises server-side.
+  // inbox itself: the same two shapes panelState normalises server-side.
   if (plain.inbox) out.inbox = plain.inbox
   else if (Array.isArray(plain.messages)) out.inbox = { messages: plain.messages }
   if (Array.isArray(plain.events)) out.events = plain.events
@@ -1394,7 +1394,7 @@ function contentState(params) {
 // Fetch the board ourselves when the host handed us only a bootstrap.
 //
 // The server sends panel data in tool-result _meta, which is where the spec puts
-// it and which keeps the board out of model context — the whole reason
+// it and which keeps the board out of model context: the whole reason
 // show_board can honestly cost one summary line. Not every host forwards it. On
 // one that does not, this panel receives a tool-result carrying a token and no
 // board, and used to sit on "awaiting board · No lanes yet" indefinitely while
@@ -1419,7 +1419,7 @@ function unreachable(reason, action) {
 function fetchBoard() {
   if (boardFetch || tornDown) return
   // No token, or a host that will not proxy a tool call, means there is no
-  // third carrier — say so now rather than after a timeout that never resolves.
+  // third carrier: say so now rather than after a timeout that never resolves.
   // Two different failures, and they were one flag. Telling somebody their host
   // will not proxy tool calls when the real problem is a missing token sends
   // them to the wrong place.
@@ -1445,15 +1445,15 @@ function fetchBoard() {
       // board, so handing it another boardless payload would spin.
       if (payload && (payload.board || payload.inbox)) render({ structuredContent: payload })
       else unreachable("Lanes answered, but this host delivered no board with it.",
-        "Run `lanes doctor` — it names what is quietly broken.")
+        "Run `lanes doctor`: it names what is quietly broken.")
     } catch (err) {
-      // The fetch is the last of three carriers, so its failure ends the line —
+      // The fetch is the last of three carriers, so its failure ends the line,
       // say so rather than leaving "awaiting board" up forever. The next tool
       // result still tries again, and a success clears this. The reason is the
       // host's own words: a bare catch threw away the one sentence that could
       // tell a stalled panel from a broken daemon.
       unreachable(err instanceof Error ? err.message : "The host did not answer.",
-        "Run `lanes doctor` — it names what is quietly broken.")
+        "Run `lanes doctor`: it names what is quietly broken.")
     } finally {
       boardFetch = null
     }
@@ -1603,7 +1603,7 @@ function focusAction(serial, action) {
 // armReply binds the keyboard path to whichever textarea exists RIGHT NOW.
 //
 // It has to be re-run after every redraw. The handler is an element property,
-// and draw() replaces the mail pane with innerHTML — so the new textarea has no
+// and draw() replaces the mail pane with innerHTML, so the new textarea has no
 // handler at all, and ⌘+↵ silently stops working while the panel goes on
 // printing "⌘+↵ to send" underneath it. Nothing errors; the key just does
 // nothing, which is the worst way for a shortcut to fail.
@@ -1635,7 +1635,7 @@ function patchHTML(el, html) {
 // just acted on, after the last redraw.
 //
 // Not the settled notice: it does not live long enough to be a landing site. Not
-// the composer either — the reader has finished, not started. The neighbour is
+// the composer either: the reader has finished, not started. The neighbour is
 // where their eye already is.
 function landFocus(serial) {
   if (serial === undefined) return
@@ -1646,7 +1646,7 @@ function landFocus(serial) {
 // ── the human at the board ───────────────────────────────────────────────
 //
 // The panel speaks with the AGENT's token, and the transport cannot tell "a
-// person clicked this" from "the agent called the tool" — same connection, same
+// person clicked this" from "the agent called the tool": same connection, same
 // credential. So the proof comes from outside it: human_unlock raises a Touch ID
 // sheet on this machine, and what it hands back is the human's OWN agent
 // identity, not a privileged capability. Everything below then sends the same
@@ -1703,7 +1703,7 @@ async function humanAct(name, args, said) {
       name, arguments: { ...args, token: state.human.token },
     })
     const refusal = toolFailure(res)
-    // A Lanes refusal is a successful exchange carrying isError — reporting it
+    // A Lanes refusal is a successful exchange carrying isError: reporting it
     // as sent is the failure this panel already guards against elsewhere.
     announce(refusal || said)
     if (!refusal) await refreshBoard()
@@ -1760,7 +1760,7 @@ function wireHumanComposers(root) {
         void humanAct("lane_post", { lane: target, body }, `posted to ${target}`)
       } else if (verb === "announce") {
         void humanAct("lane_announce", { lane: target, body },
-          `announced to ${target} — every member must acknowledge`)
+          `announced to ${target}: every member must acknowledge`)
       } else if (verb === "notify") {
         void humanAct("send_message", { to: target, type: "notify", body },
           `sent to ${target}`)
@@ -1781,7 +1781,7 @@ function decorateMail(el) {
     if (!m) return
     // Landable, never tabbable. After an action the message it belonged to is
     // gone from the DOM, so focus fell to <body> and a keyboard reader was
-    // returned to the top of the panel — only the FAILURE paths put focus back.
+    // returned to the top of the panel: only the FAILURE paths put focus back.
     // A shared .msg class means this must live here and not in board.js: the web
     // board renders the same class and has no actions to land on.
     node.tabIndex = -1
@@ -1879,7 +1879,7 @@ function draw() {
     for (const node of chEl.querySelectorAll(".channel")) {
       const lane = node.dataset.lane || node.dataset.channel
       if (!lane || node.querySelector(".human-compose")) continue
-      // Only members may speak — "subscribers read, members speak" is the
+      // Only members may speak. "subscribers read, members speak" is the
       // engine's rule, and offering a button that returns E_NOT_MEMBER is a
       // trap, not an affordance. Driving this for real is what found it: the
       // post came back refused while the question to an agent went through.
@@ -1909,7 +1909,7 @@ function draw() {
   // A redraw must not eat a reply that is half-written.
   //
   // The host pushes a board update whenever this agent does anything, and every
-  // push calls draw(), which replaces this pane with innerHTML — destroying the
+  // push calls draw(), which replaces this pane with innerHTML: destroying the
   // reply textarea, its contents, the focus and the caret. Somebody answering a
   // question loses what they typed the moment their agent makes any tool call.
   // The same defect on the web board wiped a human's message mid-sentence.
@@ -1975,7 +1975,7 @@ function render(params) {
   // the whole board and mailbox there for the AGENT, so on a host that drops
   // _meta the state the panel is waiting for has usually arrived already, in the
   // one field every host forwards. Reading it costs nothing and needs nothing
-  // from the host beyond delivering the result it already delivered — unlike
+  // from the host beyond delivering the result it already delivered: unlike
   // fetching, which needs the host to proxy a tool call back to Lanes.
   const carried = (params && params._meta && params._meta["com.lanes/panel"])
     || (params && params.structuredContent) || {}
@@ -1984,8 +1984,8 @@ function render(params) {
     : { ...carried, ...(contentState(params) || {}) }
   const previousInbox = new Set(state.inbox.map((m) => m.serial))
   // Status, not just presence. A lane going out of touch is the most
-  // consequential change this board can show — an agent stopped answering and
-  // work may be sitting behind it — and it was the one that happened in total
+  // consequential change this board can show: an agent stopped answering and
+  // work may be sitting behind it, and it was the one that happened in total
   // silence: the entry restyled and re-sorted between two frames, which is
   // invisible to anyone not already staring at that row.
   const previousLanes = new Map(
@@ -2019,8 +2019,8 @@ function render(params) {
     ? (state.board?.lanes || []).filter((lane) => !previousLanes.has(lane.id))
     : []
   // Only a lane we were already watching, and only on the way IN to stale.
-  // A lane that arrives already stale has not changed — it is simply how we
-  // first met it — and marking that would spend the operator's attention on
+  // A lane that arrives already stale has not changed: it is simply how we
+  // first met it, and marking that would spend the operator's attention on
   // history rather than on news.
   const wentQuiet = state.received
     ? (state.board?.lanes || []).filter((lane) =>
@@ -2033,8 +2033,8 @@ function render(params) {
   // The board groups lanes by status, so a status change is also a change of
   // PLACE: the row leaves one group and appears in another, several hundred
   // pixels away, between two frames. Without motion that is indistinguishable
-  // from two unrelated edits — one row vanished here, an identical row appeared
-  // there — and the single most useful fact on the board, that this particular
+  // from two unrelated edits: one row vanished here, an identical row appeared
+  // there, and the single most useful fact on the board, that this particular
   // agent just changed state, is the one thing the reader has to reconstruct.
   // Waking up matters as much as going quiet, which is why this is every band
   // move and not a second copy of wentQuiet.
@@ -2090,7 +2090,7 @@ function render(params) {
   maybeShareMailWithAgent()
 
   // A push that carried no state at all is a host that dropped the panel
-  // payload out of _meta. Go and get it — see fetchBoard, which also decides
+  // payload out of _meta. Go and get it: see fetchBoard, which also decides
   // when there is no way to and says so.
   if (!state.board && !d.board && !d.inbox) fetchBoard()
 }
@@ -2157,7 +2157,7 @@ document.querySelector(".views").onkeydown = (e) => {
 
 // ── handshake ────────────────────────────────────────────────
 // Paint before talking to anyone. An earlier version drew only after
-// ui/initialize settled — so a host that never answered left the panel blank for
+// ui/initialize settled, so a host that never answered left the panel blank for
 // the full timeout, and a host that sizes its container to content saw an empty
 // box and showed the human nothing. First paint must never depend on a reply
 // that may not come.
@@ -2174,7 +2174,7 @@ tab("board")
   try {
     // Field names are load-bearing. The host validates this against a zod
     // schema requiring appInfo / appCapabilities / protocolVersion. Sending
-    // clientInfo + capabilities — the shape base MCP uses — is REJECTED, and a
+    // clientInfo + capabilities (the shape base MCP uses) is REJECTED, and a
     // rejected handshake is silent: the panel simply never comes up.
     const init = await call("ui/initialize", {
       appInfo: { name: "lanes-board", version: "2" },
@@ -2194,7 +2194,7 @@ tab("board")
     notify("ui/notifications/initialized", {})
     maybeShareMailWithAgent()
     startSizeReporting()
-  } catch (_) { /* no handshake — we already painted; report size anyway */ }
+  } catch (_) { /* no handshake: we already painted; report size anyway */ }
   draw()
   reportSize()
 })()

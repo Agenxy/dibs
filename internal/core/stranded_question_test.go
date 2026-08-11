@@ -5,8 +5,8 @@ import "testing"
 // A question owed by a lane that closes is unanswerable from that instant, and
 // the asker was told nothing until the deadline.
 //
-// The sweep already reaches the right verdict — it has a branch and a sentence
-// for precisely this case — but it does not run until the deadline elapses. So
+// The sweep already reaches the right verdict: it has a branch and a sentence
+// for precisely this case, but it does not run until the deadline elapses. So
 // an agent that asked with a ten-minute deadline blocked for ten minutes on an
 // answer that became impossible in the first second, while the board knew:
 // resume_lane refuses a closed lane with E_LANE_CLOSED, and Gone() is
@@ -48,7 +48,7 @@ func TestClosingALaneEndsTheQuestionsItWillNeverAnswer(t *testing.T) {
 
 	m := st.Messages[serial]
 	if !m.Terminal() {
-		t.Fatalf("the question is still pending after its recipient closed — the "+
+		t.Fatalf("the question is still pending after its recipient closed: the "+
 			"asker waits out the full deadline for an answer that cannot come "+
 			"(state %q)", m.State)
 	}
@@ -58,7 +58,7 @@ func TestClosingALaneEndsTheQuestionsItWillNeverAnswer(t *testing.T) {
 	// The distinction the detail text exists to draw: this was a deliberate
 	// finish, not a crash, so nobody should be sent to inspect its directories.
 	if m.ExpireDetail == "" {
-		t.Error("no detail — the sender cannot tell a clean close from a crash")
+		t.Error("no detail: the sender cannot tell a clean close from a crash")
 	}
 	var told bool
 	for _, e := range evs {
@@ -73,7 +73,7 @@ func TestClosingALaneEndsTheQuestionsItWillNeverAnswer(t *testing.T) {
 
 // The mirror image: the ASKER closes while the answer is being composed.
 //
-// This cannot be prevented — leaving mid-thought is allowed — but it was
+// This cannot be prevented (leaving mid-thought is allowed) but it was
 // reported as an unqualified success. respond() returned {"ok": true} for an
 // answer addressed to a lane that will never read it, which reads as "the other
 // side has your answer" and leaves the responder waiting for a follow-up that
@@ -111,7 +111,7 @@ func TestAnsweringADepartedAskerSaysSo(t *testing.T) {
 		Disposition: "answer", Body: "here is my answer",
 	}, now)
 	if err != nil {
-		t.Fatalf("answering should still be allowed — the work was done: %v", err)
+		t.Fatalf("answering should still be allowed: the work was done: %v", err)
 	}
 	if res["delivered"] != false {
 		t.Errorf("respond reported plain success for an answer nobody will read: %v", res)

@@ -2,7 +2,7 @@ name: release
 
 # Nothing ran GoReleaser. The config was complete and validated and had never
 # been executed by anything but a human, which meant tagging a release produced
-# a tag and no artifacts — and the Homebrew cask, being generated at release
+# a tag and no artifacts, and the Homebrew cask, being generated at release
 # time, did not exist at all.
 on:
   push:
@@ -16,7 +16,7 @@ permissions:
 #
 # A tag is mutable: whoever controls the action's repository can move v7 to
 # different code, and this workflow holds `contents: write` and `id-token: write`
-# for keyless signing — so a moved tag could sign and publish artifacts nobody
+# for keyless signing, so a moved tag could sign and publish artifacts nobody
 # wrote. The project already pins its Go toolchain, its linter, GoReleaser, syft
 # and cosign for weaker reasons than that. The trailing comment is the human
 # readable version; the SHA is what is enforced.
@@ -24,7 +24,7 @@ permissions:
 jobs:
   release:
     # macOS, matching the CI gate. The binaries are CGO_ENABLED=0 and
-    # cross-compiled, so the host only decides where the build ran — but it is
+    # cross-compiled, so the host only decides where the build ran, but it is
     # the platform this project verifies on, and a release built somewhere the
     # tests have never run is a different artifact than the one that was tested.
     runs-on: macos-latest
@@ -38,7 +38,7 @@ jobs:
       #
       # It has to be the WHOLE gate. This ran `go test -race ./...` alone, which
       # is the part of the chain least likely to catch a release-breaking
-      # problem — it does not build the panel, drive a browser, exercise the
+      # problem: it does not build the panel, drive a browser, exercise the
       # channels, or enforce the coverage floor. A tag could therefore publish
       # signed binaries whose end-to-end suites had never been run against them.
       # The action, not `curl https://mise.run | sh`.

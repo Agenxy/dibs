@@ -8,13 +8,13 @@ import (
 // Is anything actually asking?
 //
 // The claim guard fails open when it cannot resolve the caller to an agent, and
-// that is the right behaviour — blocking every editor it cannot identify would
+// that is the right behaviour: blocking every editor it cannot identify would
 // be a broken editor rather than a safe one. But it means a guard that is
 // wired wrong is INDISTINGUISHABLE from a board where nothing is claimed: every
 // call returns allow, every test passes, and the fleet is unprotected.
 //
-// That is not a hypothetical. A mismatched session id — opencode's plugin
-// sending its own id while the bridge had registered the lane under another —
+// That is not a hypothetical. A mismatched session id: opencode's plugin
+// sending its own id while the bridge had registered the lane under another,
 // left the guard inert for a day. Nothing anywhere said so.
 //
 // The daemon is the one party that can see it, because it sees every call and
@@ -80,13 +80,13 @@ func (e *Engine) HookHealth() HookHealth {
 		h.Verdict = "never-called"
 		h.Hint = "no harness has ever asked this daemon a lifecycle question, so the " +
 			"claim guard has never run and mail is never injected. Install the plugin or " +
-			"hook for your harness (see plugins/), then start a NEW agent session — " +
+			"hook for your harness (see plugins/), then start a NEW agent session. " +
 			"running sessions do not reload their config"
 	case resolved == 0:
 		// The exact signature of the bug that cost a day.
 		h.Verdict = "never-resolved"
 		h.Hint = "harness hooks ARE reaching this daemon, but not one call has resolved " +
-			"to a registered agent — so the guard has allowed every edit and injected no " +
+			"to a registered agent, so the guard has allowed every edit and injected no " +
 			"mail. The session id the hook sends does not match the one the agent " +
 			"registered with. This looks exactly like a board where nothing is claimed"
 	case h.GuardResolved == 0 && h.GuardUnresolved > 0:

@@ -3,27 +3,27 @@
 Notable changes to Lanes. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.0] — 2026-08-09
+## [0.0.0]. 2026-08-09
 
 First public release. Everything below is what v0 ships with rather than a list
-of changes from something earlier — there is no earlier.
+of changes from something earlier: there is no earlier.
 
 ### Coordination
 
 - Lanes, slots and advisory path claims over an append-only, hash-chained JSONL
   ledger. Replay is exact (`state == fold(ledger)`), so the persistence is the
   audit history; `lanes verify` checks the chain.
-- Private mailboxes with typed messages — question, request, notify, handoff —
+- Private mailboxes with typed messages: question, request, notify, handoff,
   with delivery receipts, deadlines and idempotent retries.
 - Ephemeral and persistent lanes; standing roles sleep as `dormant` with durable
   mailboxes and wake by resuming.
 - MCP-native: 40 advertised tools over the 2026-07-28 stateless contract, with
   the legacy 2025-11-25 path for current hosts. Five more are callable but not
-  listed — the lifecycle hooks a harness invokes on the agent's behalf. A tool an
+  listed: the lifecycle hooks a harness invokes on the agent's behalf. A tool an
   agent cannot correctly call is not a capability, it is a trap.
 - A coordinator can retire a finished lane with `lane_close`. Auto-opened lanes
   end themselves when their last member leaves; a lane a human opened outlives
-  its members on purpose, and until now nothing could ever end one — so a board
+  its members on purpose, and until now nothing could ever end one, so a board
   accumulated finished lanes permanently and E_LANE_LIMIT advised a fix that did
   not work for them. Refuses an occupied lane, and one holding an unacknowledged
   announcement.
@@ -34,7 +34,7 @@ of changes from something earlier — there is no earlier.
   archive install therefore falls back to the admin password, which is a
   supported path rather than a broken one. `task install`, or a build from
   source on a Mac with the Xcode command line tools, produces it. Lanes reports
-  the sensor as `unavailable` and sends you to the password — it never claims a
+  the sensor as `unavailable` and sends you to the password: it never claims a
   human was checked when none was. What they get back is an
   ordinary agent identity, not a privileged one: every action is the same op an
   agent would send, so nothing in the state machine learns that humans exist.
@@ -45,19 +45,19 @@ of changes from something earlier — there is no earlier.
   The check cannot be disabled by configuration: there is a scripted-verdict mock
   for development, but it lives behind a build tag, so the code that reads it is
   not compiled into a release binary at all. An environment variable is inert in
-  a shipped build, and two tests — one in the untagged build, one against a real
-  release daemon with the variable already set — hold that line.
+  a shipped build, and two tests, one in the untagged build, one against a real
+  release daemon with the variable already set, hold that line.
 - An agent whose chosen name is taken is told so, and told by what. Asking for
   `sol` and being handed `sol-4` used to be silent, so an agent could publish an
   address nobody could write to and never learn why the mail stopped. The suffix
-  itself stays — a stale lane still owns its mailbox, and giving its name away
-  would redirect somebody else's mail — but the note names the holder, says
+  itself stays, a stale lane still owns its mailbox, and giving its name away
+  would redirect somebody else's mail, but the note names the holder, says
   whether it is a live conflict or a retired lane holding an id the ledger still
   refers to, and points at reattach if the older lane is in fact you.
 - Lanes-issued coordination keys. Opening or joining a lane hands the agent an
   opaque key; declared back in `refs`, later work is matched to that lane exactly
-  instead of inferred from wording. Checked rather than trusted — a key the
-  declaring agent does not hold is struck out, so copying one buys nothing — and
+  instead of inferred from wording. Checked rather than trusted, a key the
+  declaring agent does not hold is struck out, so copying one buys nothing, and
   inherited down a vouched parent/child lineage, which is what lets one
   coordination decision cover a whole fan-out of subagents.
 
@@ -70,13 +70,13 @@ of changes from something earlier — there is no earlier.
   hosted API all satisfy it. An unreachable service degrades to the built-in
   scorer and records `degraded` rather than failing.
 - `lanes calibrate` measures thresholds against your own repository's history and
-  reports how much genuinely-related work clears the bar — not just a number.
+  reports how much genuinely-related work clears the bar, not just a number.
   **Recalibrate if you measured a bar before this release**, because the runtime
   now gates on the quantity calibration actually measures. `lanes calibrate`
   scores one declaration against another; the runtime used to score a declaration
   against a lane's MERGED footprint, so the bar was measured on one thing and
   applied to another, and nothing said so. A candidate is now judged against the
-  closest single live declaration — the same comparison, at last. The merged
+  closest single live declaration: the same comparison, at last. The merged
   footprint was diluted by every other member, so the same pair scores higher
   now: measured on this repository, one scenario moved 0.29 → 0.45.
 - Matching stays off until a repository is configured, and auto-join stays off
@@ -94,7 +94,7 @@ of changes from something earlier — there is no earlier.
   read as a stalled fleet.
 - Attribution survives detaching, daemonisation and reparenting: a `PreToolUse`
   hook stamps a spawned command with its parent's lane.
-- Reports and never acts — it hands back the command to resume a stalled child
+- Reports and never acts: it hands back the command to resume a stalled child
   rather than running it.
 
 ### Surfaces
@@ -104,11 +104,11 @@ of changes from something earlier — there is no earlier.
 - Terminal board that degrades cleanly under pipes, redirection and `NO_COLOR`.
 - `lanes doctor`, which names the fix rather than only the fault.
 - Board panel as an MCP App, which fills from whichever carrier a host actually
-  forwards — tool-result `_meta`, ordinary content, or by fetching the board
-  itself — and says so plainly when a host forwards none, rather than showing an
+  forwards, tool-result `_meta`, ordinary content, or by fetching the board
+  itself, and says so plainly when a host forwards none, rather than showing an
   empty board that looks like a server fault.
 - The MCP server DELIVERS its own plugin. `lanes://plugin` carries the actual
-  files — manifest, hooks, skill, MCP server definition — so an agent with no
+  files, manifest, hooks, skill, MCP server definition, so an agent with no
   network and no checkout can install one, and an ordered setup procedure where
   every step says how to check it took effect. On first registration an agent is
   told whether a plugin exists for the harness it just named, and whether its
@@ -117,7 +117,7 @@ of changes from something earlier — there is no earlier.
   Harnesses with hooks but no wake path are told mail is still pull-only there,
   rather than being invited to stop checking.
 - `ack_board` costs the model half what it did. It is the one tool every agent
-  must call every activation, and it returned the whole checkpoint twice — once
+  must call every activation, and it returned the whole checkpoint twice: once
   in `content` and again, identically, in `structuredContent`. The duplicate
   existed for hosts that drop `_meta` and forbid an app from calling tools, where
   it is the panel's only carrier; a panel that has successfully called through
@@ -133,7 +133,7 @@ of changes from something earlier — there is no earlier.
   consequential change and it used to occur in silence, between two frames. A
   lane that changes state also TRAVELS to its new status group rather than
   vanishing from one and reappearing in another, so a change of state reads as
-  one event instead of two unrelated edits — both directions, because recovery
+  one event instead of two unrelated edits: both directions, because recovery
   is worth seeing too.
 - The board panel is drawn as a spine rather than a stack of cards. Records hang
   off the status rail instead of each sitting in a bordered, filled, bevelled
@@ -146,4 +146,4 @@ of changes from something earlier — there is no earlier.
 ### Platform
 
 - Verified on macOS. Builds for Linux and arm64 on every push; behaviour on a GNU
-  userland is unverified — see README §Platform.
+  userland is unverified: see README §Platform.

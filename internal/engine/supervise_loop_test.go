@@ -9,7 +9,7 @@ import (
 	"github.com/agenxy/lanes/internal/liveness"
 )
 
-// stall builds a verdict for a child that has done nothing since it started —
+// stall builds a verdict for a child that has done nothing since it started,
 // the shape the real 7h39m stall had.
 func stall() liveness.Verdict {
 	return liveness.Verdict{
@@ -33,13 +33,13 @@ func laneOwning(t *testing.T, id string) *Engine {
 		t.Fatalf("register %s: %v", id, err)
 	}
 	if got, _ := res["lane_id"].(string); got != id {
-		t.Fatalf("lane registered as %q, not %q — the test's premise is wrong", got, id)
+		t.Fatalf("lane registered as %q, not %q: the test's premise is wrong", got, id)
 	}
 	return &Engine{state: s}
 }
 
 // The report must reach the lane that spawned the child, and must say what
-// Lanes did NOT do — a supervisor that reads as though it intervened invites a
+// Lanes did NOT do: a supervisor that reads as though it intervened invites a
 // parent to assume the problem is handled.
 func TestAStallIsReportedToTheLaneThatSpawnedIt(t *testing.T) {
 	e := laneOwning(t, "builder")
@@ -59,14 +59,14 @@ func TestAStallIsReportedToTheLaneThatSpawnedIt(t *testing.T) {
 		}
 	}
 	if !strings.Contains(text, "has not touched it") {
-		t.Error("the report does not say Lanes left the child alone — a parent reading it\n" +
+		t.Error("the report does not say Lanes left the child alone: a parent reading it\n" +
 			"  could reasonably assume the stall was already handled")
 	}
 }
 
 // A child nobody can be shown to own is reported to NOBODY.
 //
-// The alternative — guessing — sends a stall report to an agent that cannot act
+// The alternative (guessing) sends a stall report to an agent that cannot act
 // on it while the one that can hears nothing, which is worse than the silence
 // it replaces. It is still visible to a human through `lanes probe`.
 func TestAnUnattributableStallIsNotMisdelivered(t *testing.T) {
@@ -103,7 +103,7 @@ func TestSleepIsReportedSeparatelyFromSilence(t *testing.T) {
 
 // A stall report offers the way back, when there is one.
 //
-// Lanes does not restart anything — the parent knows what the child was for and
+// Lanes does not restart anything: the parent knows what the child was for and
 // whether re-running it is safe, and a supervisor that silently repairs teaches
 // its operator nothing. But withholding the COMMAND is a different thing from
 // declining to run it: a parent told "your subagent is stuck" and left to work

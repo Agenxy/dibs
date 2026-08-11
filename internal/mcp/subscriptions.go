@@ -73,8 +73,8 @@ func (s sseStream) comment() bool {
 // the server half is standards-correct and harmless when unused.
 //
 // Lanes honors two resource URIs:
-//   - lanes://board  — any board change (lanes/slots/claims). No token needed.
-//   - lanes://inbox  — mail to the caller's lane. Requires a lane token in
+//   - lanes://board : any board change (lanes/slots/claims). No token needed.
+//   - lanes://inbox : mail to the caller's lane. Requires a lane token in
 //     _meta[com.lanes/token] so it can be scoped and access-checked.
 func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *rpcRequest) {
 	var p subscriptionParams

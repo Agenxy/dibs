@@ -11,7 +11,7 @@ import (
 // The env-var variant of this test is deliberately gone.
 //
 // It indexed against whatever repository CALIB_REPO named and reported precision
-// 1.00 / recall 1.00 — against pi-mono, whose paths share no vocabulary with these
+// 1.00 / recall 1.00: against pi-mono, whose paths share no vocabulary with these
 // declarations. A benchmark whose result depends on which repository happens to be
 // lying around is not measuring the classifier, and this one flattered it: the same
 // pairs score 0.33 precision on a tree that reproduces the conditions. It also
@@ -32,13 +32,13 @@ func TestGoldenSetAgainstDeclaredSignal(t *testing.T) {
 			t.Logf("FALSE POSITIVE  %s", c.Name)
 		case !said && c.Same:
 			fn++
-			t.Logf("false negative  %s — %s", c.Name, c.Why)
+			t.Logf("false negative  %s. %s", c.Name, c.Why)
 		default:
 			tn++
 		}
 	}
 	t.Logf("")
-	t.Logf("DECLARED SIGNAL ONLY — refs, then directory overlap")
+	t.Logf("DECLARED SIGNAL ONLY: refs, then directory overlap")
 	t.Logf("  precision %.2f   recall %.2f   (tp=%d fp=%d tn=%d fn=%d)",
 		ratio(tp, tp+fp), ratio(tp, tp+fn), tp, fp, tn, fn)
 	// Structure must not be worse than text at the thing it is for. If it ever
@@ -51,7 +51,7 @@ func TestGoldenSetAgainstDeclaredSignal(t *testing.T) {
 
 // declaredOverlap is the structural decision: what both agents stated, with no
 // scorer involved. Refs first because they are objective ids, then directories,
-// which are weaker — two agents can share a directory and do unrelated things in
+// which are weaker: two agents can share a directory and do unrelated things in
 // it, which the golden set contains on purpose.
 func declaredOverlap(a, b GoldenDecl) bool {
 	for _, r := range a.Refs {
@@ -89,15 +89,15 @@ func ratio(n, d int) float64 {
 // syntheticRepo builds the file tree the golden declarations live in.
 //
 // The first version of this test indexed against whatever repository CALIB_REPO
-// pointed at and scored a perfect 1.00/1.00 — against pi-mono, a TypeScript
+// pointed at and scored a perfect 1.00/1.00: against pi-mono, a TypeScript
 // monorepo whose paths share no vocabulary with the declarations at all. That is
 // not the classifier being good; it is the fixture failing to reproduce the
 // conditions of the failure.
 //
 // The production failure needs BOTH halves: declarations that share ordinary
 // words, and a file tree in which those words are also path tokens. So the tree
-// ships with the test. It has what every repository has — a Justfile, a CI
-// workflow, a generated bundle at the root — plus disjoint subsystems whose names
+// ships with the test. It has what every repository has: a Justfile, a CI
+// workflow, a generated bundle at the root: plus disjoint subsystems whose names
 // appear in the declarations.
 func syntheticRepo(t *testing.T) string {
 	t.Helper()
@@ -188,13 +188,13 @@ func TestGoldenSetOnTheTreeThatBrokeIt(t *testing.T) {
 
 // The SHIPPED pipeline is measured in internal/core, against EvidenceBetween and
 // Classify. The version that used to sit here rebuilt a lookalike of the engine's
-// logic and then asserted RECALL only — so surfacing every lane on the board would
+// logic and then asserted RECALL only, so surfacing every lane on the board would
 // have passed it, and it did pass while logging three false positives.
 //
 // The JOIN gate lives in internal/core (TestNoFalseAutomaticJoins), where it can
 // exercise EvidenceBetween and Classify directly. The version that used to sit
 // here compared a bespoke proxy, and explicitly PASSED when the classifier fired
-// on nothing — precision undefined, reported as success.
+// on nothing: precision undefined, reported as success.
 //
 // The aspiration-vs-identifier rule is tested in internal/core against the real
 // namespace table (TestGoldenRelations, "both want main green").

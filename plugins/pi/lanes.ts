@@ -4,8 +4,8 @@
  * pi has no MCP client, so unlike every other harness Lanes cannot ride in on a
  * server config. It has something better: `pi.registerTool()`, plus a
  * `before_agent_start` hook that can inject a message into the turn. That is
- * exactly the two halves Lanes needs — a tool surface, and a place to deliver
- * mail — so this extension provides both by talking to the daemon directly.
+ * exactly the two halves Lanes needs: a tool surface, and a place to deliver
+ * mail, so this extension provides both by talking to the daemon directly.
  *
  * The tool surface is NOT hand-copied. It is fetched from the running daemon
  * with tools/list and registered verbatim, so `lanes` and this file can never
@@ -38,7 +38,7 @@ const PREFIX = "lanes_"
  * directory is recreated, which cannot happen mid-session.
  *
  * `undefined` means "not looked yet"; `null` means "looked, and there is no
- * daemon here" — a distinction that matters because the miss must not be
+ * daemon here": a distinction that matters because the miss must not be
  * retried on every single turn.
  */
 let secretCache: string | null | undefined
@@ -48,7 +48,7 @@ async function secret(): Promise<string | null> {
   try {
     secretCache = (await readFile(`${DIR}/local.secret`, "utf8")).trim() || null
   } catch {
-    secretCache = null // daemon never started here — stay quiet
+    secretCache = null // daemon never started here: stay quiet
   }
   return secretCache
 }
@@ -123,7 +123,7 @@ async function pollMail(sessionID: string): Promise<string | null> {
  *
  * Every other harness gets this from the `lanes mcp-stdio` bridge, which fills
  * in blank identity fields on the way past. pi talks to the daemon directly, so
- * it has no bridge — and the first real pi run registered a lane with a
+ * it has no bridge, and the first real pi run registered a lane with a
  * completely empty `agent`, while the opencode lanes beside it on the same board
  * carried harness, host, cwd and branch.
  *
@@ -136,7 +136,7 @@ async function gitBranch(cwd: string): Promise<string> {
     const br = stdout.trim()
     if (br) return br
   } catch {
-    /* not a repo, or an unborn branch — fall through to the sha */
+    /* not a repo, or an unborn branch: fall through to the sha */
   }
   try {
     const { stdout } = await run("git", ["-C", cwd, "rev-parse", "--short", "HEAD"])
@@ -151,7 +151,7 @@ async function gitBranch(cwd: string): Promise<string> {
 /**
  * pi's own session id, via the documented accessor.
  *
- * There is no `ctx.sessionId` — the field this originally reached for. Guessing
+ * There is no `ctx.sessionId`: the field this originally reached for. Guessing
  * it cost a whole wake test: registration silently fell back to a per-process
  * id, the poll asked about a different session, and the injected mail never
  * appeared. `ctx.sessionManager.getSessionId()` is the real API.
@@ -184,7 +184,7 @@ async function laneOf(sessionID: string): Promise<string | null> {
  *
  * Mirrors cmd/lanes/hookspawn.go, which is the same judgement for Claude Code
  * and Codex. pi's bash tool takes `command` and `timeout` and no environment,
- * so — unlike opencode, which hands over the env map — the stamp has to ride on
+ * so, unlike opencode, which hands over the env map, the stamp has to ride on
  * the command string, and every shape a prefix would change has to be refused:
  * a subshell, a leading redirect, an expansion deciding the program, an
  * assignment already leading, or a multi-line script where the prefix binds to
@@ -252,7 +252,7 @@ let identityCache: Record<string, string> | undefined
  * `harness` and `version` are deliberately NOT here: the server takes those
  * only from the handshake's clientInfo, precisely because the client states
  * them and the model cannot. Putting them in the arguments silently does
- * nothing — the first pi lane came back with no harness at all for exactly
+ * nothing: the first pi lane came back with no harness at all for exactly
  * that reason.
  */
 async function identity(): Promise<Record<string, string>> {
@@ -308,7 +308,7 @@ export default function (pi: ExtensionAPI) {
         label: t.name,
         description: t.description ?? `Lanes ${t.name}`,
         // The server's JSON Schema is passed through untouched. Type.Unsafe is
-        // the supported bridge for a schema pi did not author — rebuilding these
+        // the supported bridge for a schema pi did not author: rebuilding these
         // as typebox literals would be a second source of truth for argument
         // shapes that the server already validates.
         parameters: Type.Unsafe<Record<string, unknown>>(
@@ -336,7 +336,7 @@ export default function (pi: ExtensionAPI) {
           const r = await rpc("tools/call", callParams, 30_000)
           if (r === null) {
             throw new Error(
-              "Lanes daemon is not reachable at " + ADDR + " — is lanesd running?",
+              "Lanes daemon is not reachable at " + ADDR + ": is lanesd running?",
             )
           }
           if (r.__error) {
@@ -373,12 +373,12 @@ export default function (pi: ExtensionAPI) {
    *
    * pi's own type says it plainly: "To modify arguments, mutate `event.input`
    * in place instead." So the command is rewritten here, the same way the
-   * Claude Code and Codex hooks rewrite theirs — pi's bash tool has no
+   * Claude Code and Codex hooks rewrite theirs: pi's bash tool has no
    * environment argument, so there is nothing cleaner available. opencode is
    * the only harness that offers one.
    *
    * The variable is inherited at fork and survives reparenting and
-   * daemonisation, so it reaches every descendant however deep — which is the
+   * daemonisation, so it reaches every descendant however deep, which is the
    * point, since a detached child's PPID is 1 and ancestry tells you nothing.
    *
    * Never throws and never blocks: this runs in front of every bash call the
@@ -410,7 +410,7 @@ export default function (pi: ExtensionAPI) {
     try {
       context = await pollMail(sessionID)
     } catch {
-      return // daemon down, timed out, malformed — never break the turn
+      return // daemon down, timed out, malformed: never break the turn
     }
     if (!context) return // no mail: inject nothing at all
     return {

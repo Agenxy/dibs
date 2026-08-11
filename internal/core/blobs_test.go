@@ -34,7 +34,7 @@ func ackReg(t *testing.T, s *State, name, token string, now time.Time) *Lane {
 }
 
 // TestBlobDedupIsCallerScoped is the P1-1 fix: `deduped` reflects only whether
-// the CALLER already owned the content, never global existence — so it can't be
+// the CALLER already owned the content, never global existence, so it can't be
 // used as a cross-lane existence oracle.
 func TestBlobDedupIsCallerScoped(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
@@ -266,7 +266,7 @@ func TestFilerefAdvisory(t *testing.T) {
 // A blob referenced by a live message CAN still be evicted: the store cap is a
 // hard bound, and its last-resort pass drops referenced content rather than
 // exceed it. The recipient is then holding a message that names a blob which is
-// gone — and used to be told "you can fetch only blobs you created or received
+// gone, and used to be told "you can fetch only blobs you created or received
 // on a live message", which is exactly the rule it HAD satisfied. An agent
 // reading that debugs its own access assumptions, or concludes the sender lied.
 func TestAnEvictedBlobIsNotReportedAsAnAccessProblem(t *testing.T) {

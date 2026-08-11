@@ -23,7 +23,7 @@ import (
 //
 // The first version asked kill(pid, 0). Pids are reused: a stale file whose pid
 // had been reassigned to any other process this user owns reads as a live daemon
-// forever, which turns the guard into a permanent refusal to start — and nothing
+// forever, which turns the guard into a permanent refusal to start, and nothing
 // sweeps it, because the sweep is the thing being fooled.
 //
 // So each daemon holds an exclusive flock on its own registration file for its
@@ -36,14 +36,14 @@ import (
 // Check-then-register is a TOCTOU: both daemons read an empty registry, both
 // register, both start. So reading the registry, applying policy and writing an
 // entry all happen while holding .hostlock. Readers take it too, which is also
-// what makes a torn read impossible — a writer cannot be mid-write while a
+// what makes a torn read impossible: a writer cannot be mid-write while a
 // reader holds it.
 //
 // # Where it lives, and why not TempDir
 //
 // os.TempDir() honours $TMPDIR, which differs between a login shell, a launchd
 // job and a sandbox. Two daemons with different TMPDIR values would take
-// unrelated .hostlock files, see empty registries, and both start — the exact
+// unrelated .hostlock files, see empty registries, and both start: the exact
 // partition, restored by an environment variable. So the location is derived
 // from the user's home directory, which is stable across launch contexts.
 // Staleness is not a concern in a persistent directory because liveness is a
@@ -69,8 +69,8 @@ type Daemon struct {
 func (d Daemon) IsStranger(ourDir string) bool {
 	// BOTH sides are canonicalised. This canonicalised only the registered
 	// directory and compared it against whatever the caller passed, so a caller
-	// holding an uncanonical path — DataDir() returns $LANES_DIR verbatim, and
-	// on macOS /tmp is a symlink to /private/tmp — found that every daemon was
+	// holding an uncanonical path. DataDir() returns $LANES_DIR verbatim, and
+	// on macOS /tmp is a symlink to /private/tmp: found that every daemon was
 	// a stranger, including itself.
 	//
 	// Both readings of that are bad. `lanes stop` concludes nothing is running
@@ -119,7 +119,7 @@ func hostLock() (release func(), err error) {
 // LiveDaemons returns the daemons currently running.
 //
 // An error means the registry could not be read, which is NOT the same as
-// "nothing is running" — conflating the two is how a guard fails open. Callers
+// "nothing is running": conflating the two is how a guard fails open. Callers
 // that must not guess (the daemon deciding whether to start) have to treat the
 // error as a refusal; callers that are only reporting (doctor) may say so.
 func LiveDaemons() ([]Daemon, error) {
@@ -163,8 +163,8 @@ func liveDaemonsLocked() ([]Daemon, error) {
 // the lock on it.
 //
 // Called only with the host lock held, so no writer can be mid-write. A file
-// that is held but undecodable is still reported as a live daemon — with
-// whatever fields survived — because "somebody is running something here" is
+// that is held but undecodable is still reported as a live daemon: with
+// whatever fields survived, because "somebody is running something here" is
 // the fact that matters, and treating it as absent would be the fail-open
 // answer.
 func readRegistration(path string) (Daemon, bool, error) {
@@ -196,7 +196,7 @@ func describe(path string) Daemon {
 // held reports whether some process still holds the exclusive lock on a file.
 //
 // Tries to take the lock without blocking: success means it was free, so the
-// owner is gone — and it is released immediately, because acquiring it was a
+// owner is gone, and it is released immediately, because acquiring it was a
 // question rather than a claim.
 //
 // Only contention means "held". Any other error is returned, because a
@@ -239,8 +239,8 @@ func (s *Strangers) Error() string {
 //
 // The policy is a BOOLEAN, not a callback. An earlier version invoked
 // caller-supplied code while holding .hostlock, which is a deadlock waiting to
-// be written: any callback that consulted the registry — the obvious thing for
-// a policy to want — would block forever on a lock its own caller holds. Nothing
+// be written: any callback that consulted the registry: the obvious thing for
+// a policy to want: would block forever on a lock its own caller holds. Nothing
 // but this file's own code runs inside the critical section now.
 //
 // Any failure to establish the picture is an error, never an empty list. The

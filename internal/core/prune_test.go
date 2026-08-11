@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// A crashed lane cannot close itself — close_lane needs the lane's own token,
+// A crashed lane cannot close itself: close_lane needs the lane's own token,
 // which a dead lane no longer has. Without prune the board accumulates debris
 // nobody can clear.
 func TestPruneClearsDebrisButNeverLiveLanes(t *testing.T) {
@@ -40,7 +40,7 @@ func TestPruneClearsDebrisButNeverLiveLanes(t *testing.T) {
 	}
 }
 
-// Naming a lane prunes exactly that one, live or not — the human said so.
+// Naming a lane prunes exactly that one, live or not: the human said so.
 func TestPruneNamedLaneAndUnknownLane(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	now := time.Now()

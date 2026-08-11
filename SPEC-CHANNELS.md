@@ -1,4 +1,4 @@
-# Lanes — Channels — SPEC v1.2 — IMPLEMENTED
+# Lanes (Channels) SPEC v1.2. IMPLEMENTED
 
 Extends SPEC.md §6, §8, §9. Nothing here changes v1 semantics; §18's scope
 freeze holds, and channels are inert until `lanesd -match-repo` is passed.
@@ -7,37 +7,37 @@ freeze holds, and channels are inert until `lanesd -match-repo` is passed.
 
 | Section | Status |
 |---|---|
-| §2 model — members, subscribers, public by default | **built** |
+| §2 model, members, subscribers, public by default | **built** |
 | §3 auto-join on `set_slot`, notify band, explicit join | **built** |
-| §3 opening the first lane when nothing matches | **built** — was the missing half: matching only compared against lanes that already existed, so on an empty board two agents declaring identical work were both told they had the field to themselves |
-| §3 matching on `claim` as well as `set_slot` | **not built** — `claim` declares a path, `set_slot` declares the work; only the latter is scored today |
-| §7 `scorer`, `announce_retry`, `announce_max_retries`, `lane_exclusive_default`, `subagent_inherit` as CONFIG KEYS | **not built** — the behaviours exist and match the documented defaults; the keys do not, and `lanesd` refuses to start on an unknown one |
+| §3 opening the first lane when nothing matches | **built**: was the missing half: matching only compared against lanes that already existed, so on an empty board two agents declaring identical work were both told they had the field to themselves |
+| §3 matching on `claim` as well as `set_slot` | **not built**: `claim` declares a path, `set_slot` declares the work; only the latter is scored today |
+| §7 `scorer`, `announce_retry`, `announce_max_retries`, `lane_exclusive_default`, `subagent_inherit` as CONFIG KEYS | **not built**: the behaviours exist and match the documented defaults; the keys do not, and `lanesd` refuses to start on an unknown one |
 | §4 Scorer interface; tier 0 (paths + git co-change) | **built** |
-| §4 tier 2 embedding sidecar / tier 3 hosted | **built** — client (`lanesd -match-embed-url`) *and* the sidecar itself (`contrib/embed-sidecar/`, MLX + F2LLM-v2-4B — measured best of four, see that README) |
-| §4 tier 1 director-agent scorer | **withdrawn** — see below |
+| §4 tier 2 embedding sidecar / tier 3 hosted | **built**, client (`lanesd -match-embed-url`) *and* the sidecar itself (`contrib/embed-sidecar/`, MLX + F2LLM-v2-4B, measured best of four, see that README) |
+| §4 tier 1 director-agent scorer | **withdrawn**: see below |
 | §4.3 recorded score/prediction, replay contract | **built + proven** |
 | §5 exclusive lanes, queue, promotion on departure | **built** |
 | §5.1 guard interaction | **built** (the guard predates this doc) |
 | §6 `post` / `announce`, ack, redelivery via the wake path | **built** |
 | §6 `announce_retry` throttle (120 s, ephemeral) | **built** |
 | §6 `announce_max_retries` → mark `unacked` | **built** (5 tries, then marked and surfaced, never dropped) |
-| §7 configuration | **built** — `lanesd` flags and a `[match]` table in `lanes.toml`; flag > env > file |
-| §8.1 director role | **built** — as the existing `coordinator` role scoped to channels: `lane_force_release`, `lane_evict`, `lane_merge` |
-| §8.1 `director_required` gate | **built** — `lanesd -match-director-required`; matches become `awaiting_director` and `lane_admit` is the approval |
-| §8.2 subagent inheritance | **built** — `parent` on register; membership, speech and departure all resolve through it |
+| §7 configuration | **built**, `lanesd` flags and a `[match]` table in `lanes.toml`; flag > env > file |
+| §8.1 director role | **built**, as the existing `coordinator` role scoped to channels: `lane_force_release`, `lane_evict`, `lane_merge` |
+| §8.1 `director_required` gate | **built**: `lanesd -match-director-required`; matches become `awaiting_director` and `lane_admit` is the approval |
+| §8.2 subagent inheritance | **built**: `parent` on register; membership, speech and departure all resolve through it |
 | §9 `lanes calibrate` | **built** |
 | §10 honesty rules | **built**, 1–6 |
 
 Tests: `internal/core/channel_test.go`, `internal/overlap/overlap_test.go`,
 `internal/mcp/e2e/channel_e2e.ts` (96 checks over real HTTP, including the
 auto-join loop end to end against this repository's own history), and three
-replay gates in `internal/ledger` —
+replay gates in `internal/ledger`,
 `TestRandomizedReplayEquivalence` (1,500 fuzzed ops, reproducible across seeds),
 `TestChannelReplayDeterminism`, and `TestDirectorReplayDeterminism`.
 
 The fuzzed gate asserts only the ops a random walk reaches DEPENDABLY. The ones
-needing specific preconditions — `lane_ack`, `lane_exclusive`, and the three
-director ops — are pinned deterministically instead. That split is not a
+needing specific preconditions, `lane_ack`, `lane_exclusive`, and the three
+director ops, are pinned deterministically instead. That split is not a
 preference: adding a coverage assertion revealed five channel ops that had never
 once been accepted while the gate reported "channel coverage" and passed.
 
@@ -47,7 +47,7 @@ names (`lane_open`, `lane_join`, …) are already correct.
 
 The rename was attempted and reverted. It cannot achieve what it is for, because
 of a constraint §1 itself imposes: **the ledger's wire names are frozen**, so
-`Op.Lane` and `Event.Lane` — tagged `json:"lane"` — must keep meaning the AGENT
+`Op.Lane` and `Event.Lane` (tagged `json:"lane"`) must keep meaning the AGENT
 forever. Renaming the Go type to `Agent` while the serialised field next to it
 still says `lane` and means an agent leaves the codebase *more* ambiguous than
 it started, not less, and the attempt collided `Op.Lane` with the existing
@@ -56,11 +56,11 @@ it started, not less, and the attempt collided `Op.Lane` with the existing
 So the ambiguity is contained instead of moved: it lives in two type names that
 `internal/core/channel.go` documents at the top of the file, rather than being
 spread across every JSON payload. Revisit only if the ledger format is ever
-allowed a breaking version — which SPEC §4 does not currently permit.
+allowed a breaking version, which SPEC §4 does not currently permit.
 
 That constraint is now ENFORCED rather than trusted.
 `internal/ledger/wireformat_test.go` pins every on-disk field name and every op
-kind string against a literal list, in both directions — an unexpected key and a
+kind string against a literal list, in both directions: an unexpected key and a
 vanished one each fail with a message explaining the consequence.
 
 It exists because nothing else could catch this. Every other test writes and
@@ -68,7 +68,7 @@ reads with the same code, so a renamed tag is invisible to all of them: the new
 name is written, the new name is read, everything passes, and every ledger
 written before the change stops replaying. `lanes verify` still reports the
 chain intact, because the hash chain protects the LINES, not the meaning of the
-keys inside them. The compiler cannot help either — both spellings compile.
+keys inside them. The compiler cannot help either: both spellings compile.
 
 Mutation-tested against the exact careless rename (`json:"lane"` → `json:"agent"`
 and `OpLaneJoin = "channel_join"`); both fail loudly. Anyone revisiting this
@@ -79,7 +79,7 @@ open.
 
 The board was a window: the operator could watch the fleet and could not speak
 to it. Every affordance existed for agents, and the web board's own test
-asserted "the operator view offers no actions" — coherent for a monitoring tool,
+asserted "the operator view offers no actions": coherent for a monitoring tool,
 wrong for a coordination service, because the human is the one participant who
 always has context the agents lack.
 
@@ -93,14 +93,14 @@ agent on the roster, count you in the fleet, or subject you to liveness sweeps.
 An operator who has joined nothing owes nobody an acknowledgement. The board
 says "observing" until you do something.
 
-The same is true of agents. Not every agent does development work — a monitor, a
+The same is true of agents. Not every agent does development work: a monitor, a
 reporter, a reviewer waiting to be summoned. `lane_subscribe` gives a lane's
 traffic without membership, and **only members are ever obliged to acknowledge
 an announcement**; being nagged about work you are not doing is how a fleet
 learns to ignore announcements. An agent may hold no lane membership at all.
 
 **A lane somebody opened outlives its members.** Emptying it does not destroy
-it, so a standing lane — "release", "security review" — is normal, and agents
+it, so a standing lane, "release", "security review", is normal, and agents
 register and deregister as they come and go. The next arrival finds the same
 lane with its accumulated topic and traffic, not a fresh one.
 
@@ -109,7 +109,7 @@ opened for it automatically (§3), and those are reclaimed once they are empty,
 unqueued and owe nothing. The distinction is not a nicety: the cap on lanes is
 generous for the ones a human chose to create and is exhausted within a day by
 one per declaration, after which every later declaration silently gets no lane
-at all. Applying either rule to both kinds breaks something real — reclaiming
+at all. Applying either rule to both kinds breaks something real: reclaiming
 everything deletes the standing lane an agent means to come back to, reclaiming
 nothing leaks until the board is full.
 
@@ -117,7 +117,7 @@ Everything routes through the SAME ops an agent sends, with the human's own
 token. There is no privileged write path: a parallel set of admin endpoints
 would be a second authorization surface into the state machine, unledgered
 unless each one remembered to ledger, and invisible to `lanes verify`. An agent
-answering the human cannot tell — and need not tell — that it is talking to a
+answering the human cannot tell (and need not tell) that it is talking to a
 person.
 
 Authentication is inherited, not invented: the routes sit behind the same
@@ -129,13 +129,13 @@ Tier 0 counts matched terms: a file sharing none genuinely scores **0**, so
 renormalising against the maximum is correct.
 
 Cosine similarity has no such floor. Two unrelated English texts embed around
-0.3–0.7 with a modern model, and nothing lands near zero — so the raw value is
+0.3–0.7 with a modern model, and nothing lands near zero, so the raw value is
 not the signal. **"How much better than typical"** is.
 
 Renormalising an embedding prediction against its maximum therefore destroys
 the only information it carries: chunks at 0.70 and 0.83 become 0.84 and 1.00.
 Measured on a three-file fixture, `"writing release notes for the changelog"`
-scored **0.729** against an authentication lane — a false positive confident
+scored **0.729** against an authentication lane: a false positive confident
 enough to put every agent in one lane.
 
 A tier-2 prediction is rescaled against **the query's own similarity
@@ -159,8 +159,7 @@ most of it. Recall on a real 121-file repository was unchanged by the rescale
 ## A deadline must scale with the work asked for
 
 One flat timeout treats a one-word probe and a 64-chunk batch as the same
-request. Measured: both 4B models failed on `chunk 0/449` — the very first batch
-— having succeeded at the same batch size on an idle machine. A production host
+request. Measured: both 4B models failed on `chunk 0/449`: the very first batch, having succeeded at the same batch size on an idle machine. A production host
 under load hits this first, and `context deadline exceeded` names no knob.
 
 The encode deadline is now `base + n × allowance`, bounded, and the error names
@@ -177,13 +176,13 @@ with a message blaming a slow model. Zero now means "use the default".
 §6 marks an announcement `unacked` once redelivery exhausts its retries, and the
 constant's own comment promised it "stays visible, never dropped". It did not:
 the board counted only `open`, so an announcement **vanished at exactly the
-moment it became interesting** — somebody was told something with collision
+moment it became interesting**: somebody was told something with collision
 risk, never acknowledged it, and Lanes had stopped asking.
 
 The two states are now separate numbers, and never folded into one:
 
-- `unacked_announcements` — Lanes is still asking. Nothing to do.
-- `abandoned_announcements` — Lanes gave up and nobody answered. **Only this one
+- `unacked_announcements`, Lanes is still asking. Nothing to do.
+- `abandoned_announcements`, Lanes gave up and nobody answered. **Only this one
   needs a person**, because nothing else is coming for it.
 
 It is also the only filled mark on the board. Every other state is an outline,
@@ -192,8 +191,8 @@ because every other state resolves on its own.
 ## A guard that resolves nothing is inert, and only the daemon can see it
 
 The guard fails open when it cannot resolve the caller to an agent. That is
-correct — blocking every editor it cannot identify would be a broken editor
-rather than a safe one — and it means a guard wired wrong is
+correct, blocking every editor it cannot identify would be a broken editor
+rather than a safe one, and it means a guard wired wrong is
 **indistinguishable from a board where nothing is claimed**: every call allows,
 every test passes, the fleet is unprotected.
 
@@ -212,21 +211,21 @@ running and protecting nothing is worse than one that is off.
 
 `guard_path` returned a bare `{"decision":"allow"}` in two unrelated cases:
 nothing claimed the path, and **the session could not be resolved to any agent
-at all**. The second is the guard failing open — correctly, since blocking every
-editor it cannot identify would be a broken editor rather than a safe one — but
+at all**. The second is the guard failing open, correctly, since blocking every
+editor it cannot identify would be a broken editor rather than a safe one, but
 it protects nothing, and it looked exactly like a clean board.
 
 That is not hypothetical: a mismatched session id made the guard silently inert
 for a day, while every test passed and the board looked healthy.
 
-An allow now carries its `basis` — `no-claim` with the resolved agent, or
+An allow now carries its `basis`: `no-claim` with the resolved agent, or
 `unidentified-session` with a hint stating outright that it is **not** a finding
 that the path is unclaimed.
 
 ## Things done TO an agent must reach it
 
 An agent that declares work under a director gate is told
-`action: "awaiting_director"` — and, until this was fixed, then told nothing
+`action: "awaiting_director"`: and, until this was fixed, then told nothing
 ever again. It was admitted seconds later with no way to learn the wait had
 ended short of polling the event stream on the off-chance. The same held for an
 agent promoted from an exclusive lane's queue, and for one a director evicted:
@@ -234,11 +233,11 @@ still believing it held the lane.
 
 All three are changes the agent **did not cause and cannot predict**, and all
 three were silent. Normative: such a change is delivered through the wake path,
-once, with what the agent may now do — "you may start; read the lane first",
+once, with what the agent may now do. "you may start; read the lane first",
 "stop work there and coordinate before resuming".
 
 Self-service actions are excluded deliberately: repeating your own tool result
-back to you is noise. The distinguishing mark is in the event — `admitted_by`
+back to you is noise. The distinguishing mark is in the event. `admitted_by`
 or `from_queue` mean somebody else moved you.
 
 ## Silence is never an answer
@@ -246,7 +245,7 @@ or `from_queue` mean somebody else moved you.
 A coordination service that fails quietly is worse than one that fails loudly,
 because the failure looks exactly like success. `set_slot` returned
 `{"ok":true,"slot_id":"s1"}` whether matching was **off**, still **indexing**,
-**degraded** to the built-in scorer, or **working and genuinely found nothing** —
+**degraded** to the built-in scorer, or **working and genuinely found nothing**,
 four unrelated situations, one identical reply, and the only way to tell was the
 daemon's log, which agents cannot read.
 
@@ -260,7 +259,7 @@ Normative from here:
    `no-opinion`, and the hint says outright that it is **not** a finding of
    working alone.
 1. **Every declaration reports why.** `matching` names the phase and
-   `matching_hint` names the ACTION — "declare again shortly", "run `lanes
+   `matching_hint` names the ACTION. "declare again shortly", "run `lanes
    calibrate`", "point -match-repo at a checkout with history". A diagnostic
    that only names the fault leaves the reader exactly as stuck.
 2. **A feature that is off must not look like a feature that found nothing.**
@@ -270,7 +269,7 @@ Normative from here:
 3. **Every failure sets a status, not only a log line.** A scorer that switched
    itself off because the repo was not a git checkout must say so where the
    person and the agent will actually look.
-4. **`lanes doctor` exists for the failures that are invisible by nature** — a
+4. **`lanes doctor` exists for the failures that are invisible by nature**: a
    stale harness secret is the worst: the harness starts fine, reports nothing,
    and simply has zero Lanes tools.
 
@@ -280,7 +279,7 @@ Directory claims (SPEC §9) detect exactly one kind of collision: two agents
 naming the same path. That is the collision that is *cheap to detect*, not the
 collision that hurts most.
 
-Two agents refactoring the same concept — one in Go, one in TypeScript — never
+Two agents refactoring the same concept, one in Go, one in TypeScript, never
 name the same path and destroy each other's work anyway. An agent adding rate
 limiting and an agent fixing a retry loop are unrelated in English and are the
 same work in a codebase where both live in one middleware chain. Path overlap
@@ -288,23 +287,23 @@ cannot see either case, and no amount of claim discipline will make it.
 
 Today the judgement is left to each agent: read the board, decide whether
 somebody else's slot text sounds like yours. That is inconsistent by
-construction — every agent applies a different standard, and the one that
+construction: every agent applies a different standard, and the one that
 judges wrong is the one that never looked.
 
 **A channel is one universal answer to "is this the same work?", computed once,
 by Lanes, on the same evidence for everybody.**
 
-## 1. Terminology — `agent` and `lane`
+## 1. Terminology. `agent` and `lane`
 
 v1.2 splits a word v1 overloaded.
 
 | Term | Is | Was called |
 |---|---|---|
 | **agent** | a participant: an identity, a mailbox address, a heartbeat, a token | "lane" |
-| **lane** | a channel of work that agents join | — (new) |
+| **lane** | a channel of work that agents join |, (new) |
 
-Agents work in lanes. Everything that resolves *identity* — mail addressing
-(§8), liveness (§7), the awareness gate (§6), the claim guard — keeps keying on
+Agents work in lanes. Everything that resolves *identity*, mail addressing
+(§8), liveness (§7), the awareness gate (§6), the claim guard: keeps keying on
 the agent and is unchanged.
 
 **Migration is a rename, not a re-model.** The v1 `lane` object becomes `agent`
@@ -324,7 +323,7 @@ Three ways an agent relates to a lane:
 |---|---|---|---|
 | **member** | yes | yes | if the lane is exclusive |
 | **subscriber** | yes | no | never (public lanes) |
-| **none** | no | no | — |
+| **none** | no | no |, |
 
 Lanes are **public by default**: any agent may read a public lane's traffic and
 membership without joining it. Joining is the act that asserts "I am working
@@ -335,15 +334,15 @@ recent traffic first; a lane's whole value is the context it already holds.
 
 ## 3. Declaring work, and auto-join
 
-An agent declares what it is doing exactly as it does in v1 — `set_slot`. That
+An agent declares what it is doing exactly as it does in v1 (`set_slot`. That
 declaration is the query.
 
-On `set_slot` — and, once implemented, on `claim` — Lanes scores the declaration
+On `set_slot`) and, once implemented, on `claim`: Lanes scores the declaration
 against every live lane (§4) and:
 
 - **score ≥ `join_threshold`** → under the default `auto_join=declared` the lane
   is **proposed** (`action: consider`) and the agent decides. Only a shared
-  identifying ref joins automatically — a score names a resemblance, an
+  identifying ref joins automatically: a score names a resemblance, an
   identifier names a thing. Under `auto_join=always` the agent is **auto-joined**
   on score alone, and told which
   lane, what the score was, and what drove it.
@@ -353,13 +352,13 @@ against every live lane (§4) and:
   lane is opened with the declaration as its topic.
 
 Both thresholds are human-tunable (§7). Auto-join is what makes the model
-useful — a mechanism that only advises reproduces the v1 problem, where the
+useful: a mechanism that only advises reproduces the v1 problem, where the
 agent that needed the signal is the one that ignored it.
 
 **An agent may always create, join, or leave a lane explicitly.** Scoring is a
 default, never a cage.
 
-## 4. Scoring — pluggable, tiered, and replayable
+## 4. Scoring: pluggable, tiered, and replayable
 
 ### 4.1 The interface
 
@@ -368,7 +367,7 @@ One interface, four implementations, chosen by configuration:
 | Tier | Scorer | Dependencies | Available |
 |---|---|---|---|
 | 0 | paths, directories, **git co-change** | none | always |
-| ~~1~~ | ~~director agent judges~~ | — | **withdrawn** |
+| ~~1~~ | ~~director agent judges~~ |, | **withdrawn** |
 | 2 | **local embedding sidecar** | one process | `-match-embed-url` |
 | 3 | hosted embedding endpoint | network | `-match-embed-url` (same contract, different URL) |
 
@@ -389,7 +388,7 @@ This replaced a bespoke `/predict` endpoint that took a declaration and returned
 repo paths, served by a sidecar we shipped. That design was incoherent and the
 incoherence is worth recording, because the shape is tempting: it claimed to
 accept any inference service while speaking a protocol no inference service
-implements, so the only thing it could ever point at was ours — which we then
+implements, so the only thing it could ever point at was ours, which we then
 treated as foreign, configuring it by URL with no lifecycle and no
 authentication. It also duplicated the indexing Go already does for tier 0.
 
@@ -409,7 +408,7 @@ Normative rules:
 - **Indexing happens once, at startup, off the request path.** Embedding a
   repository takes minutes; an agent declaring work must never wait for it.
 
-### 4.2 Grounding — embeddings alone are not enough
+### 4.2 Grounding: embeddings alone are not enough
 
 A tier-2 scorer MUST NOT compare two task descriptions directly. Two tasks that
 are unrelated in English embed as unrelated in English, which is precisely the
@@ -428,7 +427,7 @@ The comparison is between *predicted file sets*, not between sentences. This is
 text-to-code retrieval, so a code-capable embedder covers both sides of the
 query in one space and one model suffices.
 
-### 4.3 The replay contract — normative
+### 4.3 The replay contract: normative
 
 A similarity score is **impure**. Recomputing it next week against a reindexed
 repository yields a different number, so a state machine that scores during
@@ -445,10 +444,10 @@ This is the same problem as liveness, and takes the same solution (SPEC §2, §7
 Replay therefore reproduces membership exactly, on any machine, years later,
 without a model present. Three things fall out of this for free:
 
-- **`lanes verify` keeps working** — the ledger is still fully deterministic.
-- **Explainability** — "why am I in this lane" is a recorded number and a
+- **`lanes verify` keeps working** (the ledger is still fully deterministic.
+- **Explainability**) "why am I in this lane" is a recorded number and a
   recorded reason, not a re-run.
-- **Auditability** — changing the model changes future joins and cannot
+- **Auditability**: changing the model changes future joins and cannot
   retroactively rewrite past ones.
 
 ## 5. Exclusive lanes and the queue
@@ -460,13 +459,13 @@ While a lane is exclusive, an agent whose declaration scores above
 `join_threshold`:
 
 1. is **told** who owns the lane, with the score and the evidence;
-2. may **request** access — an ordinary `request` message (§8), so the existing
+2. may **request** access, an ordinary `request` message (§8), so the existing
    approve/deny path applies unchanged; and
-3. may **queue** — `queue_position` is returned, and the agent is auto-joined
+3. may **queue**, `queue_position` is returned, and the agent is auto-joined
    the moment the lane leaves exclusive.
 
 The owner may grant, deny, or hand the lane over. Ownership ends when the owner
-leaves the lane, or when its agent leaves `active` — identical to claim
+leaves the lane, or when its agent leaves `active`: identical to claim
 expiry, and carrying the identical warning: **the coordination signal ended; it
 is not proof the owner's processes stopped or that the work is safe to take.**
 
@@ -476,7 +475,7 @@ option of ignoring it.
 
 ### 5.1 Interaction with the claim guard
 
-Lane exclusivity is advisory in the same sense claims are — until it is paired
+Lane exclusivity is advisory in the same sense claims are: until it is paired
 with a path claim, at which point `guard_path` (SPEC §9) enforces it at the
 edit boundary. The two layers are deliberately separate:
 
@@ -488,7 +487,7 @@ An exclusive lane whose owner also claims its paths is enforced. An exclusive
 lane with no claims is a strong social signal and nothing more, and MUST be
 described that way to agents.
 
-## 6. Traffic — `post` and `announce`
+## 6. Traffic. `post` and `announce`
 
 Two grades, because "everyone must know this" and "for the record" are
 different needs and collapsing them trains agents to ignore both.
@@ -507,7 +506,7 @@ owe an acknowledgement for it, and `lane_read` labels each entry accordingly
 (`OWED` / done / not required). Reading acknowledges nothing.
 
 For a post, `lane_read` is the *only* read path. The `lane.post` event says a
-post happened — who, which lane, how many bytes — and never what it said,
+post happened, who, which lane, how many bytes, and never what it said,
 because channel events carry no recipient and anything in one is therefore
 readable by every authenticated lane on the board, member or not (SPEC §10).
 Posts are retained per lane (`post_retention`, default 128, oldest dropped
@@ -515,20 +514,20 @@ first) and are carried across a `lane_merge` with the members who were
 discussing them.
 
 Without a read path, "you do not owe this" was implemented as "you cannot see
-this" — a lane's shared context was invisible to everyone who was not already in
+this": a lane's shared context was invisible to everyone who was not already in
 it when it was said, and the notice sent to a newly-admitted agent told it to
 read the lane while naming no tool that could. Membership is checked at read
 time, so leaving or being evicted ends access immediately.
 
 An unacked `announce` is redelivered to every non-dormant member every
-`announce_retry` seconds, through the wake path (WAKE-MECHANISMS.md) — the same
+`announce_retry` seconds, through the wake path (WAKE-MECHANISMS.md): the same
 injection that delivers mail. This is why the injection mechanism matters: an
 announcement nobody reads is worth nothing, and an agent mid-turn has no reason
 to poll.
 
 Redelivery stops on ack, on the member going dormant (it will see it on wake),
 or at `announce_max_retries`, after which the announcement is marked
-`unacked` and surfaced on the board — **visibly unresolved, never silently
+`unacked` and surfaced on the board. **visibly unresolved, never silently
 dropped.**
 
 Dormant members are not nagged. Waking an agent to acknowledge a message is
@@ -541,19 +540,19 @@ driving the harness, which Lanes does not do (PHILOSOPHY.md).
 | `join_threshold` | *calibrated* | auto-join at or above | **yes** |
 | `notify_threshold` | *calibrated* | mention between this and join | **yes** |
 | `director_required` | `false` | all joins must be approved by the director | **yes** |
-| `announce_retry` | 120 s | redelivery interval | no — fixed |
-| `announce_max_retries` | 5 | then mark `unacked` | no — fixed |
-| `scorer` | `auto` | highest available tier | no — selected from what is reachable |
-| `lane_exclusive_default` | `false` | first member takes exclusivity automatically | no — always false; pass `exclusive` to `lane_open` |
-| `subagent_inherit` | `true` | subagents inherit their parent's lanes | no — always on (a vouched child inherits; see §8.2) |
+| `announce_retry` | 120 s | redelivery interval | no, fixed |
+| `announce_max_retries` | 5 | then mark `unacked` | no, fixed |
+| `scorer` | `auto` | highest available tier | no, selected from what is reachable |
+| `lane_exclusive_default` | `false` | first member takes exclusivity automatically | no, always false; pass `exclusive` to `lane_open` |
+| `subagent_inherit` | `true` | subagents inherit their parent's lanes | no, always on (a vouched child inherits; see §8.2) |
 
 The **Settable** column is not decoration. `lanesd` rejects an unknown key and
-refuses to start — deliberately, so a setting that was never going to take
-effect cannot look applied — which means writing one of the "no" rows into
+refuses to start, deliberately, so a setting that was never going to take
+effect cannot look applied, which means writing one of the "no" rows into
 `lanes.toml` stops the daemon dead:
 
 ```
-unknown setting(s) in lanes.toml: match.subagent_inherit — check the spelling
+unknown setting(s) in lanes.toml: match.subagent_inherit: check the spelling
 and the table they are under ([match], [limits]); nothing here took effect
 ```
 
@@ -588,7 +587,7 @@ numbers are a property of the scorer and the repository *together*, and neither
 is known when the binary is built. This document originally proposed 0.75.
 
 The second finding is why tier 2 exists. Tier-0 recall halves as a repository
-grows — 0.488 at 121 files, ~0.20 at 6,000 — because shared vocabulary dilutes
+grows, 0.488 at 121 files, ~0.20 at 6,000, because shared vocabulary dilutes
 while the file count does not. Abstention stays near zero throughout, so the
 scorer is not giving up; it is answering less precisely.
 
@@ -596,7 +595,7 @@ Measured head to head on identical cases, `lanes calibrate` against tier 0 and
 then against real MLX sidecars. Full model comparison lives in
 contrib/embed-sidecar/README.md; the short version is that **F2LLM-v2-4B wins on
 every metric** (recall@10 0.638, MRR 0.780 at n=60) and that its public-benchmark
-lead — which looked like contamination — survives on data it cannot have trained
+lead (which looked like contamination) survives on data it cannot have trained
 on. Against the small model:
 
 | metric | tier 0 | tier 2 | |
@@ -612,7 +611,7 @@ being right at rank 30 buys very little; being right at rank 2 is the difference
 between two agents meeting and not.
 
 Note the calibrated `join` threshold also moved, 0.363 → 0.554. **Thresholds are
-per-scorer as well as per-repository** — switching scorers without recalibrating
+per-scorer as well as per-repository**: switching scorers without recalibrating
 silently changes who gets auto-joined.
 
 Small repository: tier 0 is genuinely enough. Large one, or one where the top of
@@ -626,14 +625,14 @@ cannot know.
 
 ### 8.1 Director
 
-An optional agent holding the `director` role (SPEC §5 grant path — a human
+An optional agent holding the `director` role (SPEC §5 grant path: a human
 grants it; no agent may promote itself). A director may: move agents between
 lanes (`lane_admit`, `lane_evict`), force-release lane ownership
 (`lane_force_release`), merge two lanes (`lane_merge`), and approve joins when
 `director_required` is set.
 
 Two powers listed here originally are **not built**: *read all lanes* (a
-director reads a lane by being in it, like anybody else — `lane_read` is
+director reads a lane by being in it, like anybody else. `lane_read` is
 members-only and there is no override) and *split a lane* (merge has no inverse;
 open a new lane and move agents with `lane_admit`).
 
@@ -652,21 +651,21 @@ The parent remains accountable: a subagent's traffic is attributed to the
 parent's membership, and the parent's departure takes its subagents' access
 with it. Inheritance is always on: there is no `subagent_inherit` key (§7), and
 writing one stops the daemon. A parent that does not want a child to inherit
-simply does not vouch for it — an unvouched child joins on its own merits.
+simply does not vouch for it: an unvouched child joins on its own merits.
 
 **Lineage MUST be proven, not asserted.** `parent` arrives as a bare string and
 anybody can type any name, so naming a parent grants nothing on its own. The
 parent calls `vouch_child` with a one-time secret it generates, hands that value
 to the child, and the child presents it as `parent_nonce` when registering. Only
 then does it inherit anything. An unvouched claim of lineage is treated as an
-ordinary stranger — it joins or queues on its own merits.
+ordinary stranger: it joins or queues on its own merits.
 
 This is not belt-and-braces. Verified against a running daemon before the nonce
 existed: an agent registering with `parent: "victim"` posted into the victim's
 exclusive lane, joined instead of queueing, and was handed allow/no-claim by the
 guard for a path the victim held exclusively.
 
-## 9. Calibration and evaluation — normative
+## 9. Calibration and evaluation: normative
 
 A scorer MUST be evaluated before its thresholds are trusted, and the
 evaluation MUST use the repository it will run against.
@@ -678,8 +677,8 @@ declaration, and its changed file set is the label.**
 sample N commits → message as query → measure recall@k over changed files
 ```
 
-This measures the thing that matters — "did we predict the files this work
-touches" — on the user's own code, in their languages and conventions. It is
+This measures the thing that matters ("did we predict the files this work
+touches") on the user's own code, in their languages and conventions. It is
 also **contamination-proof by construction**: no published model has trained on
 a private repository's history, which no public leaderboard can claim.
 
@@ -687,7 +686,7 @@ a private repository's history, which no public leaderboard can claim.
 thresholds. It is a permanent regression test: when a better model appears it
 is measured in an afternoon rather than argued about.
 
-## 10. Honesty rules — normative for all surfaces
+## 10. Honesty rules: normative for all surfaces
 
 1. Semantic overlap is a **heuristic**. A high score is evidence, not proof; a
    low score is **not** proof that two agents will not collide.
@@ -702,7 +701,7 @@ is measured in an afternoon rather than argued about.
 
 ## 11. Open questions
 
-- ~~Lane merging when two lanes drift into the same work~~ — RESOLVED: always a
+- ~~Lane merging when two lanes drift into the same work~~. RESOLVED: always a
   director decision (`lane_merge`), never automatic. Merging is destructive to
   context, and a similarity threshold is the wrong thing to trust with it.
 - Should `join_threshold` be per-lane rather than global? A lane covering a hot
@@ -710,7 +709,7 @@ is measured in an afternoon rather than argued about.
 - Cross-repository lanes: an agent in `~/api` and an agent in `~/web` working
   one feature share no paths and no history. Probably needs an explicit link,
   not a score.
-- ~~`director_required`~~ — RESOLVED: built, and OFF by default. §8.1's own
+- ~~`director_required`~~. RESOLVED: built, and OFF by default. §8.1's own
   warning stands, so the flag exists for fleets that want the gate and nobody
   is opted into it silently.
 - Does an exclusive lane imply an automatic path claim on its retrieved region?

@@ -20,12 +20,12 @@ import (
 // Both defaults are deliberate:
 //
 //   - No repo means no index, and an index built from the wrong repository is
-//     worse than none — it would match agents into lanes on the strength of a
+//     worse than none: it would match agents into lanes on the strength of a
 //     codebase they are not working in.
 //   - Thresholds are unitless and scorer-relative. SPEC-CHANNELS.md originally
 //     proposed 0.75; `lanes calibrate` on the Lanes repository itself returned
 //     0.327. A shipped guess is wrong by a factor of two in one direction or the
-//     other, and both failures are silent — everyone in one lane, or nobody in
+//     other, and both failures are silent: everyone in one lane, or nobody in
 //     any. So Lanes will suggest without being told a bar, and will not act.
 //
 // Mining runs in the background: it shells out to git over potentially thousands
@@ -47,7 +47,7 @@ type scorerFlags struct {
 	// set records which knobs were given EXPLICITLY, by flag or environment.
 	//
 	// Without it, precedence was implemented as "is the value still its zero
-	// value?" — which silently makes 0 mean "unset". For a threshold, 0 is a
+	// value?", which silently makes 0 mean "unset". For a threshold, 0 is a
 	// real setting: the -match-join help says so itself ("0 = suggest only,
 	// never join"). So `-match-join 0` lost to a file's 0.5 and the daemon
 	// auto-joined against an explicit instruction not to.
@@ -59,7 +59,7 @@ type scorerFlags struct {
 }
 
 // defaultScorerFlags is the zero configuration, separated from flag
-// registration so it can be constructed more than once — registerScorerFlags
+// registration so it can be constructed more than once: registerScorerFlags
 // writes to the global flag set and panics if called twice.
 func defaultScorerFlags() *scorerFlags {
 	return &scorerFlags{history: 2000, deadline: 1500 * time.Millisecond, set: map[string]bool{}}
@@ -93,14 +93,14 @@ func registerScorerFlags() *scorerFlags {
 	flag.DurationVar(&f.deadline, "match-deadline", 1500*time.Millisecond,
 		"give up on scoring after this long; declaring work never blocks on it")
 	flag.StringVar(&f.embedURL, "match-embed-url", "",
-		"OpenAI-compatible embeddings service for tier 2/3 — Ollama, vLLM, TEI, "+
+		"OpenAI-compatible embeddings service for tier 2/3. Ollama, vLLM, TEI, "+
 			"LM Studio, llama.cpp's server, or a hosted provider. Lanes owns the index "+
 			"and only asks it to POST /v1/embeddings. Unreachable or slow degrades to "+
 			"the built-in scorer and says so")
 	flag.StringVar(&f.embedModel, "match-embed-model", "",
 		"model name to request from that service (e.g. codefuse-ai/F2LLM-v2-4B)")
 	flag.StringVar(&f.embedQueryPrefix, "match-embed-query-prefix", "",
-		"marker prepended to a QUERY before embedding (default: inferred from the model name — "+
+		"marker prepended to a QUERY before embedding (default: inferred from the model name. "+
 			"qwen3-embedding, nomic-embed, e5, arctic-embed and each BGE generation are "+
 			"known). Retrieval "+
 			"models are asymmetric; addressing one without its markers roughly halves how well "+
@@ -110,7 +110,7 @@ func registerScorerFlags() *scorerFlags {
 	flag.StringVar(&f.embedKey, "match-embed-key", "",
 		"bearer token for a hosted embeddings endpoint")
 	flag.StringVar(&f.autoJoin, "match-auto-join", engine.AutoJoinDeclared,
-		"who decides a match becomes a membership: declared (default — join only on a shared "+
+		"who decides a match becomes a membership: declared (default: join only on a shared "+
 			"ref, which both agents wrote down; everything else is proposed for the agent to "+
 			"judge), always, or never")
 	flag.BoolVar(&f.director, "match-director-required", false,
@@ -132,7 +132,7 @@ func (f *scorerFlags) applyConfig(c MatchConfig) {
 	// value had already filled the slot and the guard `if x == "" ` could not
 	// fire. So a lanes.toml naming a repository that no longer exists silently
 	// beat a correct LANES_MATCH_REPO, and matching stayed off with the
-	// environment looking like it had been ignored — which it had.
+	// environment looking like it had been ignored, which it had.
 	f.markSetFlags()
 	f.applyEnv()
 
@@ -181,8 +181,8 @@ func (f *scorerFlags) applyConfig(c MatchConfig) {
 	if c.Deadline != "" {
 		if d, err := time.ParseDuration(c.Deadline); err == nil {
 			// `f.set`, not "does it still look like the default". Passing
-			// `-match-deadline 1500ms` explicitly — which is a reasonable thing
-			// to type when pinning behaviour — was indistinguishable from not
+			// `-match-deadline 1500ms` explicitly, which is a reasonable thing
+			// to type when pinning behaviour: was indistinguishable from not
 			// passing it, so a file's `deadline = "9s"` silently won and a
 			// request that should have timed out at 1.5s ran for 2.2.
 			if !f.set["deadline"] {
@@ -197,7 +197,7 @@ func (f *scorerFlags) applyConfig(c MatchConfig) {
 
 // applyEnv folds the environment in, under the flags and above the file.
 //
-// The environment is where a per-invocation override belongs — and where the
+// The environment is where a per-invocation override belongs, and where the
 // embedding bearer token MUST live, since a file gets pasted into issues.
 func (f *scorerFlags) applyEnv() {
 	str := func(knob, env string, dst *string) {
@@ -266,7 +266,7 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 		eng.SetMatchStatus(engine.MatchStatus{
 			Phase: engine.MatchOff, Repo: repo,
 			Hint: "matching is off: " + repo + " is not a git repository. " +
-				"Point -match-repo at a checkout with history — Lanes mines co-change " +
+				"Point -match-repo at a checkout with history. Lanes mines co-change " +
 				"from git log, and cannot match without it",
 		})
 		slog.Warn("work-overlap matching disabled: not a git repository", "repo", repo, "err", err)
@@ -328,8 +328,8 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 		"took", time.Since(start).Round(time.Millisecond))
 	// A retrieval model addressed symmetrically still works, still ranks, and
 	// separates related from unrelated work about half as well. That is
-	// invisible from the outside — nothing errors, matching just gets quietly
-	// worse — so it is said once, at the moment it becomes true.
+	// invisible from the outside: nothing errors, matching just gets quietly
+	// worse, so it is said once, at the moment it becomes true.
 	// An index quietly smaller than the repository reports READY and then fails
 	// to match work touching the files it never saw.
 	if em, ok := scorer.(*overlap.Embed); ok {
@@ -337,7 +337,7 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 			slog.Warn("some tracked files are not in the embedding index",
 				"count", len(missing), "first", missing[0],
 				"consequence", "work touching them can never be matched",
-				"cause", "unreadable at index time — a broken symlink, a permission, "+
+				"cause", "unreadable at index time: a broken symlink, a permission, "+
 					"or a file removed between `git ls-files` and reading it")
 		}
 	}
@@ -355,7 +355,7 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 	if f.join == 0 {
 		// Said once, at boot, because a silently-suggest-only board looks
 		// identical to a broken one from the outside.
-		slog.Info("no join threshold set — lanes will be suggested but never joined automatically; " +
+		slog.Info("no join threshold set: lanes will be suggested but never joined automatically; " +
 			"run `lanes calibrate` and pass -match-join")
 	}
 }
@@ -363,7 +363,7 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 // withSidecar wraps the built-in scorer in an embedding service when one is
 // configured (tiers 2 and 3).
 //
-// markersGiven reports whether the operator stated a retrieval convention —
+// markersGiven reports whether the operator stated a retrieval convention,
 // including the empty one.
 //
 // Split out because it is the whole decision, and because testing it through
@@ -378,7 +378,7 @@ func (f *scorerFlags) markersGiven() bool {
 // An absent or unreachable sidecar is a DOWNGRADE, never an outage: matching
 // keeps working on paths and co-change, and the recorded provenance says which
 // tier actually answered. Returned even when the probe fails, because Remote
-// falls back per call — a sidecar that starts late still gets used.
+// falls back per call: a sidecar that starts late still gets used.
 func (f *scorerFlags) withSidecar(ctx context.Context, base overlap.Scorer) overlap.Scorer {
 	url, model, key := f.embedURL, f.embedModel, f.embedKey // resolved in applyConfig
 	if url == "" {
@@ -392,7 +392,7 @@ func (f *scorerFlags) withSidecar(ctx context.Context, base overlap.Scorer) over
 	// whether they were given, so `-match-embed-query-prefix ""` resolved
 	// correctly through precedence and was then dropped here, and the inferred
 	// marker came back on the wire. SetAffixes documents both-empty as "disable
-	// markers, do not detect again" — a real configuration for a model whose
+	// markers, do not detect again": a real configuration for a model whose
 	// card states it needs none, which is exactly when an operator reaches for
 	// it. Same zero-is-a-value fault, one layer down from the config.
 	if f.markersGiven() {
@@ -400,12 +400,12 @@ func (f *scorerFlags) withSidecar(ctx context.Context, base overlap.Scorer) over
 	}
 	if err := em.Probe(ctx); err != nil {
 		f.degraded = true
-		slog.Warn("embeddings service unreachable — matching continues on the built-in scorer",
+		slog.Warn("embeddings service unreachable: matching continues on the built-in scorer",
 			"url", url, "err", err, "fix", "start the service, or drop -match-embed-url")
 		return base
 	}
 	// Indexing embeds every chunk in the repository, so it happens here, once,
-	// before the scorer is published — never on an agent's request path.
+	// before the scorer is published: never on an agent's request path.
 	if err := em.Build(ctx, f.repo); err != nil {
 		f.degraded = true
 		// Say what to DO about it. The overwhelmingly common cause is scale:
@@ -414,9 +414,9 @@ func (f *scorerFlags) withSidecar(ctx context.Context, base overlap.Scorer) over
 		// means "this repository is larger than this service can index".
 		//
 		// It matters more than a normal warning because tier 0 cannot relate
-		// work that shares neither words nor file history — which is the case
+		// work that shares neither words nor file history, which is the case
 		// tier 2 exists for. Falling back is honest and it is not equivalent.
-		slog.Warn("could not index with the embeddings service — continuing on the built-in scorer",
+		slog.Warn("could not index with the embeddings service: continuing on the built-in scorer",
 			"url", url, "err", err,
 			"likely", "the repository is larger than this service can index in one pass",
 			"fix", "point -match-repo at the subtree your agents actually work in, "+

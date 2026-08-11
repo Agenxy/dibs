@@ -14,8 +14,8 @@ import (
 //
 // This is a real accident, not a hypothetical: `lanes admin prune` and `lanes
 // admin role` act on the daemon at LANES_ADDR, while `set-password` writes a
-// FILE and resolved it from LANES_DIR. Pointing the CLI at a second daemon —
-// which means setting LANES_ADDR, the obvious half — silently overwrote the
+// FILE and resolved it from LANES_DIR. Pointing the CLI at a second daemon,
+// which means setting LANES_ADDR, the obvious half: silently overwrote the
 // admin password of the FIRST one. It printed the path it wrote, and the path
 // was correct, and it was still the wrong install.
 //
@@ -43,7 +43,7 @@ func TestSetPasswordRefusesADirectoryTheAddressedDaemonDisowns(t *testing.T) {
 
 	err := confirmDirIsTheAddressedDaemon()
 	if err == nil {
-		t.Fatal("wrote a password into a directory the addressed daemon disowns —\n" +
+		t.Fatal("wrote a password into a directory the addressed daemon disowns , \n" +
 			"  this is the check that stops `LANES_ADDR=other lanes admin set-password`\n" +
 			"  from rewriting the credentials of the install you are NOT looking at")
 	}
@@ -97,13 +97,13 @@ func TestSetPasswordProceedsWhenNothingIsListening(t *testing.T) {
 
 // A command that exists, works, and is not in the usage text does not exist.
 //
-// This codebase has shipped that shape repeatedly — a validated schema nothing
+// This codebase has shipped that shape repeatedly: a validated schema nothing
 // called, a tool no agent could discover, a bootstrap path behind an early
 // return. `lanes probe` is aimed at agents, and an agent's only route to it is
 // the usage text, so being absent there is the same as not being built.
 func TestProbeIsReachableAndDocumented(t *testing.T) {
 	if !strings.Contains(usage, "lanes probe") {
-		t.Error("lanes probe is not in the usage text — an agent cannot discover it,\n" +
+		t.Error("lanes probe is not in the usage text: an agent cannot discover it,\n" +
 			"  and the usage text is the only place it would look")
 	}
 	// And it must be listed as lane-safe: it reads a process and a file, takes
@@ -125,7 +125,7 @@ func TestProbeIsReachableAndDocumented(t *testing.T) {
 // `lanes probe` constructed liveness.Config{Quiet: ..., Frozen: ...} from its
 // two flags, which silently zeroed the two fields that have no flag. A zero
 // MinDuty means "no process is ever idle enough to convict", so the check that
-// identifies a stalled agent immediately was disabled — the package answered
+// identifies a stalled agent immediately was disabled: the package answered
 // "stuck" for a real 7h39m stall while the command answered "unknown".
 func TestProbeStartsFromTheLibraryDefaults(t *testing.T) {
 	src, err := os.ReadFile("probe.go")
@@ -135,14 +135,14 @@ func TestProbeStartsFromTheLibraryDefaults(t *testing.T) {
 	if !strings.Contains(string(src), "liveness.DefaultConfig()") {
 		t.Error("probe does not start from liveness.DefaultConfig()\n" +
 			"  building a Config field-by-field from flags zeroes every field that has\n" +
-			"  no flag, and those fields are thresholds — a zero threshold silently\n" +
+			"  no flag, and those fields are thresholds: a zero threshold silently\n" +
 			"  turns a check off rather than failing")
 	}
 }
 
 // Every subcommand the dispatch accepts must appear in the usage text.
 //
-// The usage text is the only place a person — or an agent — looks. A command
+// The usage text is the only place a person (or an agent) looks. A command
 // that works and is not listed does not exist to them, which is this project's
 // most-repeated bug in a different costume: `lanes probe` shipped undiscovered,
 // and `hook-spawn` and `mcp-stdio` were still missing when this was written,
@@ -159,7 +159,7 @@ func TestEverySubcommandIsInTheUsageText(t *testing.T) {
 	text := string(src)
 	handled := regexp.MustCompile(`(?m)^\tcase "([a-z-]+)"`).FindAllStringSubmatch(text, -1)
 	if len(handled) < 10 {
-		t.Fatalf("found only %d subcommands — the dispatch pattern changed and this "+
+		t.Fatalf("found only %d subcommands: the dispatch pattern changed and this "+
 			"test is now checking almost nothing", len(handled))
 	}
 	for _, m := range handled {

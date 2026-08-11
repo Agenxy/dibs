@@ -22,7 +22,7 @@ type Child struct {
 	AgentID    string // set for a nested subagent
 	AgentType  string
 	// Progress is a monotonic counter the child reports for itself, in whatever
-	// unit it likes. It exists for harnesses whose stores Lanes cannot read —
+	// unit it likes. It exists for harnesses whose stores Lanes cannot read,
 	// opencode keeps sessions in SQLite and shares one log across every run, so
 	// there is no per-process signal to parse. A child that can count its own
 	// turns needs none.
@@ -40,7 +40,7 @@ type Child struct {
 // NoteChildSession records a lifecycle event from a spawned agent.
 //
 // Ephemeral rather than ledgered, deliberately. The ledger is the record of
-// what agents AGREED — claims, mail, membership — and replaying it must
+// what agents AGREED, claims, mail, membership, and replaying it must
 // reproduce the board exactly. Which processes happen to be running is an
 // observation about this machine at this moment: it does not survive a restart
 // and should not, because a lane's children are all gone by then anyway.
@@ -59,7 +59,7 @@ func (e *Engine) NoteChildSession(ctx context.Context, c Child) (core.Result, er
 //
 // Split out because the wrapper cannot be tested: query() sends on e.ops, which
 // is nil on a zero-value Engine, so a test that built one and called the
-// exported method blocked forever rather than failing — it hung CI for five
+// exported method blocked forever rather than failing: it hung CI for five
 // minutes before a timeout killed it. The logic worth testing is here, and it
 // takes its clock as an argument for the same reason.
 func (e *Engine) noteChild(c Child, now time.Time) core.Result {
@@ -71,8 +71,8 @@ func (e *Engine) noteChild(c Child, now time.Time) core.Result {
 	}
 	prev, known := e.children[c.SessionID]
 	if known {
-		// A later event carries less than SessionStart did — Stop has no
-		// transcript_path — so fields are merged rather than replaced.
+		// A later event carries less than SessionStart did. Stop has no
+		// transcript_path, so fields are merged rather than replaced.
 		// Overwriting would lose the transcript exactly when supervision needs
 		// it most, at the end.
 		c = mergeChild(prev, c)
@@ -92,7 +92,7 @@ func (e *Engine) noteChild(c Child, now time.Time) core.Result {
 	c.Seen = now
 	// Attribution: the child's own cwd is the strongest link Lanes already has,
 	// because lanes register with theirs. A fallback for the environment ladder
-	// in internal/liveness, not a replacement — two agents in one repo share a
+	// in internal/liveness, not a replacement: two agents in one repo share a
 	// cwd, and the environment does not.
 	if c.Parent == "" && e.state != nil {
 		if l := e.state.LaneForHook(c.SessionID, c.CWD); l != nil {
@@ -125,7 +125,7 @@ func mergeChild(prev, next Child) Child {
 	next.AgentType = keep(prev.AgentType, next.AgentType)
 	next.Parent = keep(prev.Parent, next.Parent)
 	next.Turn = keep(prev.Turn, next.Turn)
-	// Monotonic by contract, so a later event that omits it must not reset it —
+	// Monotonic by contract, so a later event that omits it must not reset it,
 	// and one that goes BACKWARDS is a restarted counter, not lost work.
 	if next.Progress < prev.Progress {
 		next.Progress = prev.Progress
@@ -135,7 +135,7 @@ func mergeChild(prev, next Child) Child {
 	// noteChild resets Since only when the STATE changes, which is right: the
 	// field means "how long has it been in this state". But no caller sets Since
 	// on an incoming event, so an event that left the state alone merged a zero
-	// time — and the sweep reported since_seconds of 9223372036, about 292 years,
+	// time, and the sweep reported since_seconds of 9223372036, about 292 years,
 	// on a child that had been running for a moment. Two ordinary lifecycle
 	// events in a row were enough.
 	//
@@ -183,7 +183,7 @@ func StateForEvent(event string) string {
 }
 
 // HookTrafficSeen reports whether a harness lifecycle hook has fired for this
-// session — the only evidence the daemon has that a plugin is LIVE.
+// session: the only evidence the daemon has that a plugin is LIVE.
 //
 // Installed on disk and actually loaded are different claims, and only the
 // second one matters: hooks are read at session start, so a plugin installed
@@ -193,7 +193,7 @@ func StateForEvent(event string) string {
 //
 // The ordering is what makes it usable at registration time. SessionStart runs
 // before the agent gets a turn, so by the time it calls register_lane the answer
-// is already known — Lanes can tell it whether its own wake path works without
+// is already known. Lanes can tell it whether its own wake path works without
 // asking it to test anything.
 //
 // A false answer means "no hook traffic seen for this session", never "the

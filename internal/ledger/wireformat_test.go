@@ -19,13 +19,13 @@ import (
 // new name is read, everything passes, and every ledger written before the
 // rename becomes unreplayable. The daemon would refuse to start on a board that
 // was working yesterday, and `lanes verify` would say the chain is intact
-// because the bytes are unchanged — the hash chain protects the LINES, not the
+// because the bytes are unchanged: the hash chain protects the LINES, not the
 // meaning of the keys inside them.
 //
 // This is not hypothetical. SPEC-CHANNELS.md §1 renames the participant from
 // `Lane` to `Agent`, which is 196 Go identifiers, several of which carry
 // `json:"lane"`. A careless rename does exactly the above. The compiler cannot
-// help — both spellings compile.
+// help: both spellings compile.
 //
 // So: the wire names are asserted against a literal list. Changing one requires
 // changing this file, which is the point. A Go identifier may be renamed freely;
@@ -107,7 +107,7 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		for k := range rec {
 			seenEnvelope[k] = true
 			if !wantEnvelope[k] {
-				t.Errorf("UNEXPECTED ledger envelope field %q — the on-disk format changed. "+
+				t.Errorf("UNEXPECTED ledger envelope field %q: the on-disk format changed. "+
 					"If this is deliberate, existing ledgers stop replaying; if it is a rename, "+
 					"put the old tag back.", k)
 			}
@@ -132,7 +132,7 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		for k := range op {
 			seenOp[k] = true
 			if !wantOp[k] {
-				t.Errorf("UNEXPECTED op field %q in a %s op — a struct tag changed. "+
+				t.Errorf("UNEXPECTED op field %q in a %s op: a struct tag changed. "+
 					"Renaming the Go identifier is fine; renaming the tag breaks every "+
 					"ledger written before the change.", k, opKind(op))
 			}
@@ -143,7 +143,7 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	// only checks for unexpected keys would not notice.
 	for _, k := range []string{"kind", "lane", "name", "token", "channel", "score", "predicted"} {
 		if !seenOp[k] {
-			t.Errorf("op field %q is no longer written — an existing ledger's %q "+
+			t.Errorf("op field %q is no longer written: an existing ledger's %q "+
 				"would be silently ignored on replay", k, k)
 		}
 	}
@@ -204,7 +204,7 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 			"OpLaneAnnounce": "lane_announce", "OpLaneAck": "lane_ack",
 		}[name]
 		if got != want {
-			t.Errorf("%s = %q, must stay %q — every ledger ever written uses the old "+
+			t.Errorf("%s = %q, must stay %q: every ledger ever written uses the old "+
 				"value, and Apply matches it by string", name, got, want)
 		}
 	}

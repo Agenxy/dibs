@@ -12,7 +12,7 @@ import (
 type Agent struct {
 	PID     int
 	PPID    int
-	Harness string // "codex", "claude", "opencode", "pi" — which tool it is
+	Harness string // "codex", "claude", "opencode", "pi", which tool it is
 	Owner   string // the parent session it belongs to, "" when unattributable
 	Via     string // how Owner was established, so a wrong answer can be traced
 	Cmd     string // the full command line, for a human deciding what to do
@@ -28,8 +28,8 @@ type Agent struct {
 //
 //	PID 16414  PPID 1  PGID 16410
 //
-// PPID 1. The child was launched detached — which is what every harness does
-// when it wants the subagent to outlive a tool call — so the kernel reparented
+// PPID 1. The child was launched detached, which is what every harness does
+// when it wants the subagent to outlive a tool call, so the kernel reparented
 // it to launchd the moment its spawner returned. The ancestry link that would
 // have identified the owner is destroyed by exactly the spawning pattern that
 // creates the problem.
@@ -44,7 +44,7 @@ type Agent struct {
 //	PATH=...  /Claude/local-agent-mode-sessions/<workspace>/<session>/rpm/...
 //
 // The session UUID in that path belonged to the Claude session that spawned it,
-// and NOT to the sibling session running on the same machine — a natural
+// and NOT to the sibling session running on the same machine: a natural
 // experiment that shows the environment distinguishes two agents of the same
 // harness, which is the whole difficulty.
 //
@@ -83,7 +83,7 @@ func attribute(pid, ppid int) (owner, via string) {
 	if m := claudeSession.FindStringSubmatch(env); len(m) == 2 {
 		return m[1], "session-path"
 	}
-	// 3. Ancestry, which works only while the child is still a descendant —
+	// 3. Ancestry, which works only while the child is still a descendant,
 	//    true for a tool call that blocks, false for anything detached.
 	if ppid > 1 {
 		if h := HarnessOf(commandOf(ppid)); h != "" {
@@ -95,14 +95,14 @@ func attribute(pid, ppid int) (owner, via string) {
 
 // claudeSession matches the per-session directory Claude Desktop puts on a
 // child's PATH. Incidental rather than a documented interface, so it is one
-// rung of a ladder and never the only one — if the layout changes this returns
+// rung of a ladder and never the only one: if the layout changes this returns
 // nothing and attribution falls through, rather than returning a wrong owner.
 var claudeSession = regexp.MustCompile(`local-agent-mode-sessions/[0-9a-f-]{36}/([0-9a-f-]{36})`)
 
 // HarnessOf names the agent tool a command line runs, or "" if it is not one.
 //
 // Matched on the executable's basename rather than anywhere in the string: a
-// command that merely MENTIONS codex — a grep, an editor, this very sweep — is
+// command that merely MENTIONS codex, a grep, an editor, this very sweep, is
 // not an agent, and treating it as one would fill a board with phantoms.
 func HarnessOf(cmd string) string {
 	if cmd == "" {
@@ -140,7 +140,7 @@ type rawProc struct {
 // One `ps` call for the whole table rather than a syscall per process: it is
 // the same interface on macOS and Linux, needs no cgo and no new dependency,
 // and costs a single fork on a cadence measured in seconds. macOS has no /proc,
-// so the alternative is sysctl(KERN_PROCARGS2) through x/sys — meaningfully
+// so the alternative is sysctl(KERN_PROCARGS2) through x/sys: meaningfully
 // faster, and worth doing only if this ever runs often enough to notice.
 func listProcesses() []rawProc {
 	out, err := exec.Command("ps", "-axo", "pid=,ppid=,command=").Output()
@@ -179,7 +179,7 @@ func commandOf(pid int) string {
 //
 // Deliberately NOT parsed into key/value pairs. `ps eww` separates variables
 // with spaces and does not quote values, so any value CONTAINING a space is
-// indistinguishable from the start of the next variable — and on macOS the one
+// indistinguishable from the start of the next variable, and on macOS the one
 // value that matters here is PATH, which contains
 // "/Library/Application Support/...". Splitting on whitespace truncated it at
 // the first space and threw away the session id sitting further along, which
@@ -193,7 +193,7 @@ func commandOf(pid int) string {
 // Only works for processes this user owns, which is the correct limit: an agent
 // belonging to somebody else is not this daemon's to attribute.
 //
-// macOS additionally hides the environment of Apple-signed PLATFORM binaries —
+// macOS additionally hides the environment of Apple-signed PLATFORM binaries,
 // /bin/sleep, /bin/bash, and anything they exec. That is not a limitation in
 // practice: every agent harness is a user-installed binary, and a harness
 // launched THROUGH a shell still works, because the shell hides its own
@@ -229,7 +229,7 @@ var resumeSession = regexp.MustCompile(`rollout-[0-9T:-]+?-([0-9a-f]{8}-[0-9a-f-
 // child was for and whether re-running it is safe, and a supervisor that
 // silently repairs things teaches its operator nothing while hiding a failure
 // that may be systematic. But withholding the command is a different thing from
-// declining to run it — a parent told "your subagent is stuck" and left to work
+// declining to run it: a parent told "your subagent is stuck" and left to work
 // out the incantation is being given a problem instead of a decision.
 //
 // Only codex exposes one today. Its transcript filename carries the session id,
@@ -250,14 +250,14 @@ func ResumeCommand(harness, transcript string) string {
 // session-path rung.
 //
 // That rung reads a per-session directory Claude Desktop puts on a child's
-// PATH — its private business, not an interface anybody published. If the
+// PATH: its private business, not an interface anybody published. If the
 // layout changes it simply stops matching, and attribution falls to a weaker
 // rung with no error and no log: the exact silent degradation this design is
 // arranged to avoid elsewhere. Counting it turns "still works" into something
 // observable rather than assumed.
 //
 // Zero is not a failure. It means no process on this machine currently needs
-// that rung — every agent was either stamped (the deterministic path) or is not
+// that rung: every agent was either stamped (the deterministic path) or is not
 // running at all.
 func SessionPathRungWorking() int {
 	n := 0

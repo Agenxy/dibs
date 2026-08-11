@@ -19,7 +19,7 @@ import (
 // monitor is the engine behind a Claude Code plugin monitor (and any harness
 // that turns a subprocess's stdout lines into notifications). It owns a
 // persistent per-project lane, writes that lane's token where the agent can
-// adopt it, then long-polls and prints ONE line per incoming message — which
+// adopt it, then long-polls and prints ONE line per incoming message, which
 // the harness delivers into the running session, so the agent notices mail
 // without ever spawning a waiter or remembering to poll.
 //
@@ -28,7 +28,7 @@ import (
 // With --lane it registers/resumes a persistent lane and writes its token to
 // <state-dir>/<name>.token (0600). Without --lane it uses LANES_TOKEN and only
 // watches. Each printed line is a notification; the body is NOT printed
-// (private) — the agent reads it with the inbox/get_message tool.
+// (private): the agent reads it with the inbox/get_message tool.
 func monitor(args []string) error {
 	fs := flag.NewFlagSet("monitor", flag.ContinueOnError)
 	lane := fs.String("lane", "", "own+watch a persistent lane by this name (default: project dir name)")
@@ -57,7 +57,7 @@ func monitor(args []string) error {
 	}
 	secret, err := localSecret()
 	if err != nil {
-		return fmt.Errorf("no local secret yet — start lanesd once first: %w", err)
+		return fmt.Errorf("no local secret yet: start lanesd once first: %w", err)
 	}
 	call := mcpCaller(secret)
 
@@ -121,9 +121,9 @@ func monitor(args []string) error {
 			if s, ok := ev["serial"].(float64); ok {
 				serial = strconv.FormatUint(uint64(s), 10)
 			}
-			// One notification line per message. Body stays private — the
+			// One notification line per message. Body stays private: the
 			// agent reads it with the inbox/get_message tool.
-			fmt.Printf("📬 Lanes: new %s from %q (serial %s) — read it with the inbox or get_message tool\n", mt, from, serial)
+			fmt.Printf("📬 Lanes: new %s from %q (serial %s): read it with the inbox or get_message tool\n", mt, from, serial)
 		}
 		if s, ok := res["serial"].(float64); ok && uint64(s) > cursor {
 			cursor = uint64(s)

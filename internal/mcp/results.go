@@ -11,7 +11,7 @@ import (
 // enriches its presentation with the identities the board already exposes.
 //
 // Returning only members:4 told an agent that coordination was needed while
-// withholding who to contact — reported by a real lane reader trying to recover
+// withholding who to contact: reported by a real lane reader trying to recover
 // context. The count stays for compatibility; member_names supplies the missing
 // addresses. This deliberately does NOT acknowledge an announcement or change
 // membership merely because somebody read the lane.

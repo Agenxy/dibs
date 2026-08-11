@@ -4,7 +4,7 @@ import "testing"
 
 // An absent blob id and a malformed one have different causes, and the wrong
 // message sends you looking in the wrong place. get_blob takes `blob`; `blob_id`
-// is the common miss, and models get argument names wrong constantly — a
+// is the common miss, and models get argument names wrong constantly: a
 // misspelled name arrives as an EMPTY id, where a lecture about hex format is
 // actively misleading.
 func TestEmptyBlobIDIsNotReportedAsMalformed(t *testing.T) {

@@ -12,15 +12,15 @@ import (
 // Evaluation: measuring a scorer on the repository it will actually run on.
 //
 // Thresholds are unitless and scorer-relative, so any number shipped as a
-// default is a guess — and a guess that is wrong in one direction collapses
+// default is a guess, and a guess that is wrong in one direction collapses
 // every agent into one lane, and wrong in the other leaves them all working
 // alone. SPEC-CHANNELS.md §9 makes calibration normative for exactly that
 // reason.
 //
 // The ground truth is free and already on disk: A COMMIT MESSAGE IS A TASK
 // DECLARATION AND ITS CHANGED FILES ARE THE LABEL. That is precisely the
-// prediction a scorer is asked for — "given this description, what will it
-// touch" — measured on the user's own code, in their languages, with their
+// prediction a scorer is asked for. "given this description, what will it
+// touch": measured on the user's own code, in their languages, with their
 // naming.
 //
 // It is also CONTAMINATION-PROOF BY CONSTRUCTION, which no public leaderboard
@@ -44,7 +44,7 @@ type EvalResult struct {
 	// RecallAt[k] is the mean fraction of a commit's changed files that appear
 	// in the scorer's top k predictions.
 	RecallAt map[int]float64
-	// MRR is the mean reciprocal rank of the FIRST correctly predicted file —
+	// MRR is the mean reciprocal rank of the FIRST correctly predicted file,
 	// "how far down the list before the scorer says something true". Recall
 	// alone hides a scorer that is right only at position 40.
 	MRR float64
@@ -60,7 +60,7 @@ type EvalResult struct {
 // commit touching 200 files is a vendor drop or a licence sweep, and "predict
 // these 200 files from this one-line message" is not a task anybody could do or
 // would want done. skip drops the most recent commits, which matters when
-// evaluating on a repo the agent is currently working in — the newest commits
+// evaluating on a repo the agent is currently working in: the newest commits
 // are the work in flight.
 func SampleCommits(ctx context.Context, repo string, n, maxFiles, skip int) ([]EvalCase, error) {
 	if maxFiles <= 0 {
@@ -113,7 +113,7 @@ func Evaluate(ctx context.Context, s Scorer, cases []EvalCase, ks []int) (EvalRe
 
 	// ScorerID is filled from the first ANSWER, not from s.ID() up front. A
 	// remote scorer does not know which model it is talking to until the service
-	// tells it, so asking beforehand reports "remote:remote" — a calibration run
+	// tells it, so asking beforehand reports "remote:remote": a calibration run
 	// that names the wrong scorer is worse than one that names none, because the
 	// numbers get filed against the wrong model.
 	res := EvalResult{Cases: len(cases), RecallAt: map[int]float64{}}
@@ -163,8 +163,8 @@ func Evaluate(ctx context.Context, s Scorer, cases []EvalCase, ks []int) (EvalRe
 // scoreCase measures one prediction against one commit's actual file set:
 // recall at each cutoff, and the rank of the first correct file.
 //
-// Split out from Evaluate so the loop reads as what it is — accumulate over
-// cases — rather than as three nested loops whose innermost one is doing the
+// Split out from Evaluate so the loop reads as what it is: accumulate over
+// cases: rather than as three nested loops whose innermost one is doing the
 // only interesting work.
 func scoreCase(files []File, changed []string, ks []int) (map[int]float64, int) {
 	want := make(map[string]bool, len(changed))
@@ -197,7 +197,7 @@ func scoreCase(files []File, changed []string, ks []int) (map[int]float64, int) 
 // minPairsForPercentile is where a 95th percentile starts being a percentile.
 //
 // pct() indexes at 0.95*(N-1), so below 20 samples the top 5% contains less
-// than one whole sample and the "95th percentile" IS the maximum — a single
+// than one whole sample and the "95th percentile" IS the maximum: a single
 // unlucky pair sets the threshold for the whole repository.
 const minPairsForPercentile = 20
 
@@ -205,7 +205,7 @@ const minPairsForPercentile = 20
 // number alone cannot say whether it was measured.
 //
 // The zero-pair case returns documented DEFAULTS, and the caller used to print
-// them under the label "95th pct of unrelated pairs" — a provenance that is
+// them under the label "95th pct of unrelated pairs": a provenance that is
 // simply false, on a screen that also says "set these in your config if they
 // look right". An operator has no way to tell 0.750-because-we-measured from
 // 0.750-because-we-could-not.
@@ -225,7 +225,7 @@ type Calibration struct {
 	//
 	// A threshold alone cannot say whether a scorer can tell the two apart. A
 	// scorer that ranks perfectly can still leave half the genuinely-related
-	// work below its own calibrated bar — measured here on this repository with
+	// work below its own calibrated bar: measured here on this repository with
 	// a small embedding model, two declarations describing identical work
 	// scored 0.566 and 0.509 against a bar of 0.542, so one auto-joined and one
 	// silently did not. The numbers looked healthy; the separation was 0.118.
@@ -237,9 +237,9 @@ type Calibration struct {
 // A note on the threshold rule, so the obvious idea is not re-derived.
 //
 // The 95th percentile of unrelated pairs fixes the false-positive rate at 5%
-// and lets the true-positive rate land where it will. An adaptive bar — the
+// and lets the true-positive rate land where it will. An adaptive bar: the
 // point maximising Youden's J, constrained never to be worse on false
-// positives — was implemented and measured against it on this repository. It
+// positives: was implemented and measured against it on this repository. It
 // moved the built-in scorer from 50% to 52% of related work clearing the bar,
 // and a small embedding model not at all.
 //
@@ -269,7 +269,7 @@ func describePositives(pos []float64, join float64) (median float64, above int) 
 	return pct(pos, 0.50), above
 }
 
-// Separation is the share of genuinely-related work that clears the join bar —
+// Separation is the share of genuinely-related work that clears the join bar,
 // the single number that says whether auto-join is worth switching on.
 //
 // Returns 0 when there was nothing to measure, which the caller must not
@@ -285,7 +285,7 @@ func (c Calibration) Separation() float64 {
 func (c Calibration) Measured() bool { return c.Pairs > 0 }
 
 // Thin reports that a percentile was taken, but over too few samples for it to
-// be one — the threshold is within a sample of the maximum.
+// be one: the threshold is within a sample of the maximum.
 func (c Calibration) Thin() bool { return c.Pairs > 0 && c.Pairs < minPairsForPercentile }
 
 // SuggestThresholds is Calibrate without the evidence, for callers that only
@@ -304,7 +304,7 @@ func SuggestThresholds(ctx context.Context, s Scorer, cases []EvalCase) (join, n
 //
 // A degenerate distribution collapses the two onto each other: if half the
 // unrelated pairs score identically, the median IS the 95th, and notify == join.
-// That silently deletes the advisory band — every match either auto-joins or is
+// That silently deletes the advisory band: every match either auto-joins or is
 // invisible, with nothing in between and no warning. It was observed on Lanes'
 // own repository once its history passed a few hundred commits, which is exactly
 // when an operator has enough data to trust the number.
@@ -328,7 +328,7 @@ func thresholdsFrom(neg []float64) (join, notify float64, degenerate bool) {
 // history, by measuring what Overlap actually returns for work that IS related
 // against work that is not.
 //
-// Positives are pairs of commits that touched a common file — the closest thing
+// Positives are pairs of commits that touched a common file: the closest thing
 // to "these two tasks were the same work" that history can supply. Negatives
 // are pairs that shared nothing. The join threshold is set at the negatives'
 // 95th percentile, so roughly one in twenty unrelated pairs would auto-join;
@@ -394,7 +394,7 @@ func distinctiveShare(a, b []string, ubiquitous map[string]bool) bool {
 // CalibrateWith for why they must not be the same.
 func scorePairs(cases []EvalCase, preds, honest []Prediction) (neg, pos []float64) {
 	// Pairs that share ONLY repo-wide files are the HARD NEGATIVES, and they used
-	// to be counted as positives — which is how a benchmark blessed the exact
+	// to be counted as positives, which is how a benchmark blessed the exact
 	// false positives a live fleet then hit. See ubiquitousFiles.
 	ubiquitous := ubiquitousFiles(cases)
 	for i := range cases {
@@ -406,7 +406,7 @@ func scorePairs(cases []EvalCase, preds, honest []Prediction) (neg, pos []float6
 				neg = append(neg, Overlap(preds[i], preds[j]))
 				continue
 			}
-			// Two commits that touched a common file — the closest thing
+			// Two commits that touched a common file: the closest thing
 			// history has to "these were the same work". Scored on the HELD-OUT
 			// predictions.
 			if len(honest[i].Files) > 0 && len(honest[j].Files) > 0 {
@@ -437,7 +437,7 @@ func predictAll(ctx context.Context, s Scorer, cases []EvalCase) ([]Prediction, 
 //
 // The threshold is "what score do UNRELATED pairs reach", and it has to be
 // measured on the index the daemon actually runs, or it is calibrated for a
-// weaker scorer than the one applying it — measured, a threshold taken from a
+// weaker scorer than the one applying it: measured, a threshold taken from a
 // held-out index let 10.6% and 14.4% of unrelated pairs through against the ~5%
 // its own 95th-percentile label promises.
 //
@@ -469,7 +469,7 @@ func CalibrateWith(ctx context.Context, deployed, heldOut Scorer, cases []EvalCa
 	join, notify, degenerate := thresholdsFrom(neg)
 
 	// A well-discriminating scorer scores MOST unrelated pairs at exactly zero,
-	// which drags the median to zero — and a notify threshold of zero notifies
+	// which drags the median to zero, and a notify threshold of zero notifies
 	// about every lane on the board, which is worse than not notifying at all.
 	// Measured on this repository: join 0.327, median 0.000.
 	//
@@ -480,7 +480,7 @@ func CalibrateWith(ctx context.Context, deployed, heldOut Scorer, cases []EvalCa
 	}
 	// The 95th-percentile rule fixes the false-positive rate at 5% and lets the
 	// true-positive rate fall where it may. That suits a scorer whose unrelated
-	// pairs cluster at zero — the built-in one does — but cosine similarity
+	// pairs cluster at zero (the built-in one does) but cosine similarity
 	// never goes near zero, so an embedding scorer's negatives sit high, the
 	// bar lands high with them, and it cuts through the positives. Measured on
 	// this repository: the built-in scorer cleared 50% of related work at its
@@ -491,7 +491,7 @@ func CalibrateWith(ctx context.Context, deployed, heldOut Scorer, cases []EvalCa
 	// rule would have been on false positives.
 	// A degenerate negative distribution collapses the two percentiles onto each
 	// other: if half the unrelated pairs score identically, the median IS the
-	// 95th, and notify == join. That silently deletes the advisory band — every
+	// 95th, and notify == join. That silently deletes the advisory band: every
 	// match either auto-joins or is invisible, with nothing in between and no
 	// warning. Observed on this repository's own history once it grew past a few
 	// hundred commits, which is exactly when an operator would trust the number.

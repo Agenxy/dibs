@@ -16,13 +16,13 @@ import (
 //
 // Torn is separate from an error because a torn tail is NOT damage. The ledger
 // is append-only and fsynced, so a crash between write and fsync leaves a
-// partial final record — the expected artifact, for an op that was never
+// partial final record: the expected artifact, for an op that was never
 // acknowledged to its caller. Ledger.Replay truncates it and carries on.
 //
 // verify used to read with a bufio.Scanner, which hands back that partial chunk
 // as though it were a complete line, so the only thing it could say was
 // "line N: bad JSON" under the heading INTEGRITY FAILURE. The daemon replayed
-// the same file, started, and served. Two tools, one file, opposite verdicts —
+// the same file, started, and served. Two tools, one file, opposite verdicts,
 // and the alarming one was wrong, on the exact surface an operator checks after
 // a crash.
 type chainResult struct {
@@ -32,14 +32,14 @@ type chainResult struct {
 }
 
 // verifyChain re-hashes every raw ledger line and checks each record's prev
-// pointer. Works on ciphertext — no daemon key needed for integrity checks.
+// pointer. Works on ciphertext: no daemon key needed for integrity checks.
 //
 // Reads with ReadString('\n') rather than a Scanner so it can tell a record cut
 // short by EOF from a bad record in the middle of the file, which is the same
 // rule Ledger.Replay applies. A complete record always ends in a newline.
 func verifyChain(path string) (chainResult, error) {
-	// The operator points `lanes verify` at a ledger file — that is the whole
-	// command — and it reads as the same user either way. Cleaned so a path with
+	// The operator points `lanes verify` at a ledger file: that is the whole
+	// command, and it reads as the same user either way. Cleaned so a path with
 	// traversal segments resolves before it is opened rather than after.
 	f, err := os.Open(filepath.Clean(path)) // #nosec G703 -- operator-supplied by design
 	if err != nil {
@@ -74,7 +74,7 @@ func verifyChain(path string) (chainResult, error) {
 		}
 		if rec.Prev != prev {
 			// Name BOTH records. The mismatch is between this record's `prev`
-			// and the hash of the one before it, so the damage is in either —
+			// and the hash of the one before it, so the damage is in either,
 			// and pointing only at the later one sends the reader to a line
 			// that is usually intact.
 			return res, fmt.Errorf(

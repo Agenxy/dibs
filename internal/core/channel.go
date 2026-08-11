@@ -8,12 +8,12 @@ import (
 	"time"
 )
 
-// Channels — the semantic half of coordination. See SPEC-CHANNELS.md.
+// Channels: the semantic half of coordination. See SPEC-CHANNELS.md.
 //
 // NAMING, because it will otherwise confuse everyone who reads this file:
 // SPEC-CHANNELS.md §1 renames the participant to "agent" and gives the word
-// "lane" to the channel. The PROTOCOL uses that vocabulary already — the tools
-// are `lane_join`, `lane_announce` — but the Go identifier for a participant is
+// "lane" to the channel. The PROTOCOL uses that vocabulary already: the tools
+// are `lane_join`, `lane_announce`: but the Go identifier for a participant is
 // still `Lane`, because renaming it touches 15 files and 7 wire-format JSON
 // tags, and that is a mechanical pass of its own rather than something to smuggle
 // into a new subsystem. So in this file: `Channel` is a lane, and `Lane` is an
@@ -43,8 +43,8 @@ type Channel struct {
 	// agent or a human opening it on purpose.
 	//
 	// It decides whether the lane can be reclaimed when it empties, and the two
-	// answers are both right for their own case. A standing lane — "release",
-	// "security review" — outlives its members by design: agents drop in and out
+	// answers are both right for their own case. A standing lane. "release",
+	// "security review": outlives its members by design: agents drop in and out
 	// and must find the same lane with its history. A lane opened automatically
 	// for one declaration has no such claim, and reclaiming those is what keeps a
 	// fleet from exhausting MaxLanes on work that finished hours ago.
@@ -55,7 +55,7 @@ type Channel struct {
 	// really did disappear at the next tick.
 	Auto bool
 	// Key is the lane's coordination key: Lanes' own record that the agents in
-	// here decided to work together. See coordkey.go — it is issued at open,
+	// here decided to work together. See coordkey.go: it is issued at open,
 	// held by membership, and is the one identity claim Lanes can actually
 	// verify.
 	Key     string
@@ -67,7 +67,7 @@ type Channel struct {
 	// Posts used to be stored nowhere. lane_post appended the text to an event
 	// and returned a serial, and that event was the only copy: an agent that
 	// was not polling at that moment never saw it, a restart lost it, and
-	// lane_read — the tool whose whole job is "read the lane" — did not return
+	// lane_read, the tool whose whole job is "read the lane", did not return
 	// posts at all. It looked like it worked because the event reached
 	// everybody, including agents who had no business receiving it.
 	//
@@ -81,8 +81,8 @@ type Channel struct {
 	// Pending holds what each queued agent would have joined WITH.
 	//
 	// Queue is ids in order, which is all the wire needs. But the join op that
-	// put an agent there carries its whole provenance — Auto, Score, Threshold,
-	// ScorerID/Version, Evidence — and promotion used to fabricate a fresh
+	// put an agent there carries its whole provenance. Auto, Score, Threshold,
+	// ScorerID/Version, Evidence, and promotion used to fabricate a fresh
 	// Membership{ScorerID: "queue"} instead. An agent auto-matched at 0.71 with
 	// evidence therefore surfaced, after waiting, as a manual member with score
 	// 0 and no reason: indistinguishable from somebody who simply asked to be
@@ -102,7 +102,7 @@ type Channel struct {
 	//
 	// This records lane_leave only. An eviction is somebody else's decision, and a
 	// departure the sweep made on behalf of a crashed agent is not a decision at
-	// all — neither should stop that agent being matched here later.
+	// all: neither should stop that agent being matched here later.
 	//
 	// It blocks AUTO-join, not membership: lane_join still works, because an agent
 	// is allowed to change its mind, and the lane is still surfaced with its score
@@ -112,7 +112,7 @@ type Channel struct {
 	// Predicted is the lane's file footprint: what the work in here touches,
 	// merged from every member's recorded prediction.
 	//
-	// RECORDED, never computed — same rule as Membership.Score and for the same
+	// RECORDED, never computed: same rule as Membership.Score and for the same
 	// reason (SPEC-CHANNELS.md §4.3). A footprint recomputed at replay time
 	// against a reindexed repository is a different footprint, which would match
 	// different agents into different lanes and make the ledger a work of
@@ -159,8 +159,8 @@ func mergePredicted(existing, add []PredFile) []PredFile {
 
 // Membership records how an agent came to be in a channel.
 //
-// Every impure field here — Score, Threshold, ScorerID, ScorerVersion, Evidence
-// — is COPIED FROM THE OP, never computed. That is the whole replay contract
+// Every impure field here. Score, Threshold, ScorerID, ScorerVersion, Evidence
+// is COPIED FROM THE OP, never computed. That is the whole replay contract
 // (SPEC-CHANNELS.md §4.3): a similarity score recomputed next week against a
 // reindexed repository is a different number, so a state machine that scores
 // during replay reconstructs different membership and the ledger's hash chain
@@ -212,12 +212,12 @@ type Announcement struct {
 	Required map[string]bool // members at announce time, excluding the sender
 	Retries  int
 	// DepartedUnacked names members that left the lane still owing an
-	// acknowledgement — closed, pruned, or evicted before reading it.
+	// acknowledgement: closed, pruned, or evicted before reading it.
 	//
 	// Their requirement has to be dropped or the announcement waits forever on
 	// somebody who is never coming back. But dropping it silently made the
 	// announcement settle as `acked`, which is a claim that everyone read it.
-	// Observed: an announcement with acked=[] — literally nobody — recorded as
+	// Observed: an announcement with acked=[] (literally nobody) recorded as
 	// acked, and invisible on the board. That is the strongest guarantee this
 	// system offers reporting success for something that did not happen.
 	//
@@ -228,7 +228,7 @@ type Announcement struct {
 }
 
 // Announcement states. An announcement is `open` until every member it named
-// has acknowledged it, and `unacked` only if redelivery gave up — which is
+// has acknowledged it, and `unacked` only if redelivery gave up, which is
 // visible on the board rather than silent (SPEC-CHANNELS.md §10.6).
 const (
 	AnnounceOpen    = "open"
@@ -247,7 +247,7 @@ const (
 	OpLaneAnnounce  = "lane_announce"
 	OpLaneAck       = "lane_ack"
 
-	// Director powers — the coordinator role applied to channels (§8.1).
+	// Director powers: the coordinator role applied to channels (§8.1).
 	OpLaneForceRelease = "lane_force_release"
 	OpLaneEvict        = "lane_evict"
 	OpLaneMerge        = "lane_merge"
@@ -275,8 +275,8 @@ func (s *State) applyLaneOpen(l *Lane, op *Op, now time.Time) (Result, []Event, 
 		return nil, nil, errf("E_LANE_LIMIT",
 			"a lane Lanes opened from a declaration is reclaimed once its last member "+
 				"leaves, so lane_leave the ones you are done with. A lane somebody "+
-				"opened by name outlives its members on purpose — standing lanes are "+
-				"the point — so leaving one frees nothing: lane_merge it into the lane "+
+				"opened by name outlives its members on purpose: standing lanes are "+
+				"the point, so leaving one frees nothing: lane_merge it into the lane "+
 				"that is the same work",
 			"%d lanes (max)", len(s.Channels))
 	}
@@ -303,7 +303,7 @@ func (s *State) applyLaneOpen(l *Lane, op *Op, now time.Time) (Result, []Event, 
 	s.finish(&evs, now)
 	ch.OpenedAt = evs[0].TS
 	// The key goes back to the agent that just earned it. A key nobody is ever
-	// handed is a mechanism nobody can use — which is what "the join path is
+	// handed is a mechanism nobody can use, which is what "the join path is
 	// decorative" meant.
 	return Result{
 		"lane_id": id, "exclusive": op.Exclusive, "key": ch.Key,
@@ -367,7 +367,7 @@ func (s *State) applyLaneJoin(l *Lane, op *Op, now time.Time) (Result, []Event, 
 	//
 	// Letting it join was not merely redundant, it deadlocked: a subagent asking
 	// to join the lane its own PARENT holds exclusively was queued behind that
-	// parent — position 2, with a hint telling it to send the owner a request —
+	// parent: position 2, with a hint telling it to send the owner a request,
 	// and the parent does not release until the subagent's work is done. Each
 	// waits for the other. Meanwhile lane_post from that subagent already worked,
 	// because speaking is what the inherited membership is for.
@@ -375,14 +375,14 @@ func (s *State) applyLaneJoin(l *Lane, op *Op, now time.Time) (Result, []Event, 
 		return Result{
 			"lane_id": ch.ID, "joined": true, "already": true, "under": under,
 			"detail": "you are in this lane through " + under +
-				", the agent that spawned you — subagents inherit lanes rather than " +
+				", the agent that spawned you: subagents inherit lanes rather than " +
 				"joining them, so you can post and announce here already and do not " +
 				"count as a separate member",
 		}, nil, nil
 	}
 
 	// An exclusive lane held by somebody else does not admit; it queues. That
-	// is the difference between a refusal and coordination — a blocked agent
+	// is the difference between a refusal and coordination: a blocked agent
 	// with a queue position has somewhere to be, one with a refusal has only
 	// the option of ignoring it (SPEC-CHANNELS.md §5).
 	if ch.Owner != "" && ch.Owner != l.ID {
@@ -469,8 +469,8 @@ func (s *State) applyLaneExclusive(l *Lane, op *Op, now time.Time) (Result, []Ev
 func (s *State) releaseExclusive(ch *Channel, why string) []Event {
 	// Name WHO stopped owning and WHY, and carry SPEC §9's caution.
 	//
-	// This emitted a bare event with only the lane id — no former owner, no
-	// cause, no caution — while the two neighbouring release paths carry all
+	// This emitted a bare event with only the lane id: no former owner, no
+	// cause, no caution: while the two neighbouring release paths carry all
 	// three. It is also the path a liveness sweep uses, which is the one case
 	// where the caution matters most: a consumer that cannot tell a deliberate
 	// release from a lapsed lease can read "released" as safe-to-take.
@@ -512,7 +512,7 @@ func (s *State) applyLanePost(l *Lane, op *Op, now time.Time) (Result, []Event, 
 	// never what was said, and bodies come from an authenticated read.
 	//
 	// This carried the whole post, and channel events have no `To`, so
-	// filterEvents delivered it to every authenticated lane on the board — a
+	// filterEvents delivered it to every authenticated lane on the board: a
 	// non-member reading events_since received the text verbatim. The
 	// member/subscriber/outsider distinction that lane_subscribe exists to draw
 	// was collapsed: everyone got the same bodies. Direct mail was always
@@ -545,7 +545,7 @@ func (s *State) applyLaneAnnounce(l *Lane, op *Op, now time.Time) (Result, []Eve
 	// An announcement is the strongest thing an agent can do to a lane: it
 	// obliges every member to acknowledge it and re-pings them until they do.
 	// Doing that without having read the board is exactly what the gate exists
-	// to prevent — an agent that has just reattached after losing its context
+	// to prevent: an agent that has just reattached after losing its context
 	// could announce "FREEZE auth/token.go" while contradicting an announcement
 	// made thirty seconds earlier by somebody else, and oblige the whole lane to
 	// answer it.
@@ -640,18 +640,18 @@ func (s *State) Unacked(agent string) []*Announcement {
 // UnackedFor is what an agent still owes an acknowledgement on, ready to
 // return from any read.
 //
-// Announcements used to reach an agent through exactly ONE path — the wake
-// injection in hook_poll — which made them the only obligation in the system
+// Announcements used to reach an agent through exactly ONE path: the wake
+// injection in hook_poll, which made them the only obligation in the system
 // that could not be PULLED. An agent whose harness has no plugin installed
 // never saw them at all; one that lost its context had no way to ask what it
 // owed; and because redelivery is rate-limited and consumed on read, a digest
 // that arrived at a bad moment was gone until the next retry window.
 //
-// A push-only obligation is a silent one. Both read paths return this — inbox,
+// A push-only obligation is a silent one. Both read paths return this: inbox,
 // and ack_board, which is the documented checkpoint after context loss and so
 // is exactly where an agent that has forgotten everything comes looking.
 // UnackedFor returns the announcements this agent still owes an acknowledgement
-// on — an EMPTY slice when there are none, never nil.
+// on: an EMPTY slice when there are none, never nil.
 //
 // The distinction is not pedantry here. ack_board is documented as the recovery
 // checkpoint, and an omitted key left an agent that had just lost its context
@@ -683,13 +683,13 @@ func (s *State) UnackedFor(agent string) []Result {
 // human to be told what the lane was about.
 //
 // Announcements bind their ack requirement to the members present when they are
-// made, which is right — arriving late must not saddle you with an obligation
+// made, which is right: arriving late must not saddle you with an obligation
 // for something said before you existed. But "you do not OWE this" was silently
 // implemented as "you cannot SEE this", and those are different. A lane is
 // supposed to be shared context; a newcomer got none of it.
 //
 // Sharpest form of the bug: the notice sent to an admitted agent reads "you may
-// start; read the lane first" — an instruction naming no tool that could do it.
+// start; read the lane first": an instruction naming no tool that could do it.
 //
 // Members only. An announcement's body is for the lane, not for anyone who can
 // name it, which is the same rule the wake path follows.
@@ -716,11 +716,11 @@ func (s *State) LaneHistory(ch *Channel, agent string, limit int) []Result {
 		// member cannot mistake context for an obligation or the reverse.
 		switch {
 		case !a.Required[agent]:
-			r["your_ack"] = "not required — this was announced before you joined, or you sent it"
+			r["your_ack"] = "not required: this was announced before you joined, or you sent it"
 		case a.Acked[agent]:
 			r["your_ack"] = "done"
 		default:
-			r["your_ack"] = "OWED — call lane_ack with msg_serial " +
+			r["your_ack"] = "OWED: call lane_ack with msg_serial " +
 				strconv.FormatUint(a.Serial, 10)
 		}
 		out = append(out, r)
@@ -742,7 +742,7 @@ func (s *State) memberChannel(l *Lane, op *Op) (*Channel, error) {
 		return nil, errf("E_NO_LANE", "lane_open or lane_join first", "no lane %s", op.Channel)
 	}
 	if s.speaksFor(ch, l.ID) == "" {
-		return nil, errf("E_NOT_MEMBER", "lane_join first — subscribers read, members speak",
+		return nil, errf("E_NOT_MEMBER", "lane_join first: subscribers read, members speak",
 			"not a member of %s", ch.ID)
 	}
 	return ch, nil
@@ -757,7 +757,7 @@ func (s *State) SpeaksFor(ch *Channel, id string) string { return s.speaksFor(ch
 //
 // This is what makes spawning a subagent free (SPEC-CHANNELS.md §8.2). A
 // subagent that had to join would be counted as a second occupant of its
-// parent's work, which is not a collision — it is one agent's own helper — and
+// parent's work, which is not a collision (it is one agent's own helper) and
 // on an exclusive lane it would queue behind its own parent forever.
 //
 // Bounded walk: a parent chain is a tree in practice, but a corrupted or
@@ -846,7 +846,7 @@ func cleanID(s string) string {
 // yieldChannelOwnership releases every lane this agent holds exclusively,
 // without touching its membership.
 //
-// Called when an agent leaves `active` — the same moment its directory claims
+// Called when an agent leaves `active`: the same moment its directory claims
 // end, and for the same reason. Ownership is the part that BLOCKS other agents,
 // so a fleet must never stay wedged behind an agent that crashed. Membership is
 // merely informative, costs nobody anything, and a dormant persistent agent
@@ -870,7 +870,7 @@ func (s *State) yieldChannelOwnership(agent string) []Event {
 // reclaimFinishedLanes deletes lanes nobody is in and nobody owes anything to.
 //
 // Lanes had no way to end. `lane_merge` was the only path that removed one, and
-// E_LANE_LIMIT told the operator to "close a finished lane first" — naming a
+// E_LANE_LIMIT told the operator to "close a finished lane first": naming a
 // corrective action that did not exist, which is this codebase's most persistent
 // failure mode in yet another place.
 //
@@ -879,7 +879,7 @@ func (s *State) yieldChannelOwnership(agent string) []Event {
 // after it, a fleet working through 64 unrelated tasks exhausts the cap for
 // good, and every later declaration silently gets no lane.
 //
-// "Finished" is deliberately narrow — AUTO-OPENED, no members, nobody queued,
+// "Finished" is deliberately narrow. AUTO-OPENED, no members, nobody queued,
 // and nothing outstanding. An agent that crashed still holds its membership
 // until the sweep archives it, so a lane whose members are merely quiet is not
 // touched.
@@ -887,7 +887,7 @@ func (s *State) yieldChannelOwnership(agent string) []Event {
 // Auto-opened is the load-bearing one, and it follows from the paragraph above:
 // the pressure on the cap comes from lanes Lanes itself opens per declaration,
 // never from the ones a human chose to create. Reclaiming both destroyed the
-// standing lanes that outliving your members is FOR — an agent returning to
+// standing lanes that outliving your members is FOR: an agent returning to
 // "release" found nothing, and the test protecting that property passed only
 // because it never ran a sweep.
 func (s *State) reclaimFinishedLanes() []Event {
@@ -899,7 +899,7 @@ func (s *State) reclaimFinishedLanes() []Event {
 		}
 		// An announcement that was never acknowledged is the record that
 		// something went unanswered, and the board renders announcements THROUGH
-		// their lane — so reclaiming the lane does not delete the record, it
+		// their lane, so reclaiming the lane does not delete the record, it
 		// hides it. The datum survives in s.Announcements and nothing can see it
 		// again, which is the worse half of losing it.
 		//
@@ -920,7 +920,7 @@ func (s *State) reclaimFinishedLanes() []Event {
 		// The lane's announcements go with it.
 		//
 		// Reclaiming the channel alone left them keyed by a lane id that no
-		// longer existed, and LaneHistory selects purely by that id — so the
+		// longer existed, and LaneHistory selects purely by that id, so the
 		// moment anyone opened a lane with the same id (and ids are derived from
 		// the declaration, so identical work reuses one), lane_read handed a
 		// stranger the previous lane's announcement bodies. Members-only content
@@ -931,7 +931,7 @@ func (s *State) reclaimFinishedLanes() []Event {
 		// alone.
 		//
 		// Safe to delete because reclamation only happens when every
-		// announcement here is ACKED — settled, everyone accounted for it. The
+		// announcement here is ACKED: settled, everyone accounted for it. The
 		// ledger keeps the full record either way; this is live state, not the
 		// audit trail.
 		for serial, a := range s.Announcements {
@@ -1059,7 +1059,7 @@ type LaneMatch struct {
 	// auto-joined. See Channel.Declined.
 	Declined bool `json:"declined,omitempty"`
 
-	// SharedRefs are objective ids BOTH sides declared — "pr:1231", "gate:glossary",
+	// SharedRefs are objective ids BOTH sides declared. "pr:1231", "gate:glossary",
 	// "incident:solis-down". This is the difference between knowing and guessing.
 	//
 	// Score is inferred: a scorer's opinion about whether two pieces of work look
@@ -1070,7 +1070,7 @@ type LaneMatch struct {
 	// Nothing consulted refs before this, which is the odd part: the most reliable
 	// signal an agent gives was stored and ignored while the least reliable one
 	// decided everything. Reported by an agent whose fleet had just had a genuine
-	// three-way collision — "refs matching is the right primitive... that incident
+	// three-way collision. "refs matching is the right primitive... that incident
 	// is exactly what Lanes should have caught, and would have, on refs."
 	SharedRefs []string `json:"shared_refs,omitempty"`
 
@@ -1079,7 +1079,7 @@ type LaneMatch struct {
 	SharedIDs []string `json:"shared_ids,omitempty"`
 
 	// Evidence is what this match actually rests on, slot-to-slot against the
-	// member whose live declaration is closest — not against the lane's
+	// member whose live declaration is closest, not against the lane's
 	// accumulated union, which only grows. Relation is what Evidence.Classify
 	// made of it, and it is what the decision reads.
 	Evidence Evidence `json:"evidence,omitzero"`
@@ -1089,8 +1089,8 @@ type LaneMatch struct {
 // evidenceAgainstMembers compares one live declaration against each member's own
 // live declaration and keeps the strongest relation.
 //
-// Slot-to-slot, deliberately. Comparing against ch.Predicted — the union of
-// everything every member has ever been predicted to touch — made a lane an
+// Slot-to-slot, deliberately. Comparing against ch.Predicted: the union of
+// everything every member has ever been predicted to touch: made a lane an
 // easier target the longer it lived, because that union grows on every join and
 // never shrinks. Measured: the same unrelated newcomer scored 0.0000 against a
 // one-member lane and 0.1000 against the same lane with five.
@@ -1102,7 +1102,7 @@ type LaneMatch struct {
 // "I compared you against this lane's members and none resembles you" and "this
 // lane's members have declared nothing I could compare you to" are opposite
 // facts, and scoring both as zero made every lane whose members had not yet
-// called set_slot permanently invisible — including the ordinary case of an
+// called set_slot permanently invisible: including the ordinary case of an
 // agent opening a lane for work it is about to start.
 func (s *State) evidenceAgainstMembers(
 	ch *Channel, mine Slot, myCWD, repo string, discount map[string]float64, lens RepoLens,
@@ -1123,7 +1123,7 @@ func (s *State) evidenceAgainstMembers(
 			// or it does not, whichever side wrote it down.
 			theirs.Refs = s.validatedRefs(agent, theirs.Refs)
 			// A slot the scorer had no opinion about cannot testify to
-			// dissimilarity either — it was never measured.
+			// dissimilarity either: it was never measured.
 			compared = compared || len(theirs.Predicted) > 0
 			ev := EvidenceBetween(mine, theirs, myCWD, theirCWD, repo, discount, lens)
 			rel := ev.Classify()
@@ -1143,8 +1143,8 @@ func (s *State) evidenceAgainstMembers(
 // judgedScore replaces a union-derived score with the closest live declaration's.
 //
 // The union FOUND this candidate; it does not get to judge it. ch.Predicted is
-// every member's footprint merged, and merging is monotonic — it grows on each
-// join and never shrinks — so a lane became an easier target the longer it lived,
+// every member's footprint merged, and merging is monotonic: it grows on each
+// join and never shrinks, so a lane became an easier target the longer it lived,
 // and a lane that matched more gained members and gained surface by gaining them.
 // Measured before this changed: the same unrelated newcomer scored 0.0000 against
 // a one-member lane and 0.1000 against the same lane with five, crossing a real
@@ -1154,14 +1154,14 @@ func (s *State) evidenceAgainstMembers(
 // judging them. The score now comes from the closest single live declaration,
 // which is the thing an agent can actually be duplicating.
 // There is deliberately no fallback to unionScore. Keeping one meant that a lane
-// where NO member matched still scored on the merged footprint — which is the
+// where NO member matched still scored on the merged footprint, which is the
 // accretion bug itself, surviving in the one branch that looked harmless. If no
 // live declaration in the lane resembles this one, the honest score is zero and
 // `worthless` drops the candidate.
 func judgedScore(union float64, ev Evidence, compared bool) float64 {
 	if !compared {
 		// Nothing was measured, so there is no verdict to prefer over the union.
-		// Scoring this zero does not express doubt — it deletes the lane from
+		// Scoring this zero does not express doubt: it deletes the lane from
 		// every future match, silently and permanently, and a lane opened for work
 		// that has not been declared yet is the commonest shape there is: the
 		// channel e2e opens one on exactly that path and it vanished.
@@ -1185,7 +1185,7 @@ func judgedScore(union float64, ev Evidence, compared bool) float64 {
 //
 // Empty lanes are not a transient state to wait out. A lane a human opened on
 // purpose outlives its members deliberately, and only auto-opened ones are ever
-// reclaimed — so they stay findable by name and joinable on purpose. What they
+// reclaimed, so they stay findable by name and joinable on purpose. What they
 // stop doing is claiming to be occupied.
 //
 // A queue counts: an agent waiting on an exclusive lane has not got in yet, but
@@ -1221,7 +1221,7 @@ func relationRank(r Relation) int {
 //
 // The distinction is load-bearing and the first version of the join rule did not
 // make it. Telling agents to always pass refs raises the fill rate by producing
-// invented values, not identity — and the live fleet had already done exactly
+// invented values, not identity, and the live fleet had already done exactly
 // that: two lanes that had deliberately partitioned the repository between them
 // both declared goal:green-main, because both wanted main green. Under a rule
 // that treats every ref as an identifier, they auto-join.
@@ -1231,12 +1231,12 @@ func relationRank(r Relation) int {
 //	goal:…, gate:…, area:…, epic:…                          name a wish
 //
 // `key` is Lanes' own coordination key and the only entry here Lanes can verify
-// — see coordkey.go. It arrives already validated: every path that reaches this
+// see coordkey.go. It arrives already validated: every path that reaches this
 // function passes refs through State.validatedRefs first, which strikes out a
 // key the declaring agent does not hold. `lane` used to sit in this list and no
 // longer does. A lane id is a string an agent can write for a lane it merely
 // believes it belongs in, and treating it as identity turned a belief into a
-// verified fact — the exact laundering the opaque key exists to prevent.
+// verified fact: the exact laundering the opaque key exists to prevent.
 //
 // Unknown namespaces are treated as labels, which is the safe direction: an
 // unrecognised ref surfaces the lane and lets the agent decide, rather than
@@ -1254,7 +1254,7 @@ func identifyingRef(ref string) bool {
 }
 
 // MatchLanesWith is MatchLanes with a footprint overlay for lanes whose own is
-// empty — those opened before a scorer finished indexing. Still pure: the
+// empty: those opened before a scorer finished indexing. Still pure: the
 // overlay is computed at the edge and handed in, exactly like the score.
 func (s *State) MatchLanesWith(agent string, pred []PredFile, overlay map[string][]PredFile, limit int) []LaneMatch {
 	return s.MatchLanesRefs(agent, pred, nil, overlay, limit)
@@ -1342,7 +1342,7 @@ func (s *State) MatchLanesEvidence(
 //
 // A file that appears in almost every lane's footprint cannot distinguish
 // between them. Justfile, .github/workflows/ci.yml, CMakeLists.txt, llms-full.txt
-// — every project has them, they co-change with everything, and so they turn up
+// every project has them, they co-change with everything, and so they turn up
 // as "shared" between any two agents who happen to work in the same repository.
 //
 // Two agents reported this within an hour of each other and neither was wrong.
@@ -1392,7 +1392,7 @@ func (s *State) ubiquityDiscount(overlay map[string][]PredFile) map[string]float
 	for p, n := range freq {
 		// Linear in the share of lanes that contain it: present in one lane of
 		// many → ~1, present in all → ~0. Floored so evidence is discounted, never
-		// erased — a file every lane touches is weak evidence, not counter-evidence.
+		// erased: a file every lane touches is weak evidence, not counter-evidence.
 		d := 1 - float64(n-1)/float64(docs)
 		if d < 0.1 {
 			d = 0.1
@@ -1468,12 +1468,12 @@ func jaccard(a, b []PredFile, discount map[string]float64) (float64, []PredFile)
 // The spec calls this role "director". It is NOT a new role: it is the existing
 // `coordinator` (SPEC §5), scoped to channels. Inventing a second privileged
 // role would mean a second grant path to get right, and the existing one already
-// has the property that matters — a human grants it, and no agent can promote
+// has the property that matters: a human grants it, and no agent can promote
 // itself (applyGrantRole is admitted only on the daemon's admin path).
 //
 // Every power here is one a lane owner already has over its own lane. The
 // director's addition is being able to use them on somebody else's, which is
-// what unsticks a fleet whose owner crashed — and every one of them is
+// what unsticks a fleet whose owner crashed, and every one of them is
 // ledgered and announced, never silent.
 
 func (s *State) directorOf(l *Lane, op *Op) (*Channel, error) {
@@ -1492,7 +1492,7 @@ func (s *State) directorOf(l *Lane, op *Op) (*Channel, error) {
 //
 // For the case the queue cannot solve on its own: an owner whose agent is gone
 // but whose lane is still locked. The holder is named in the event, so this is
-// never silent — same rule as force_release on a directory claim (SPEC §9).
+// never silent: same rule as force_release on a directory claim (SPEC §9).
 func (s *State) applyLaneForceRelease(l *Lane, op *Op, now time.Time) (Result, []Event, error) {
 	ch, err := s.directorOf(l, op)
 	if err != nil {
@@ -1504,7 +1504,7 @@ func (s *State) applyLaneForceRelease(l *Lane, op *Op, now time.Time) (Result, [
 	former := ch.Owner
 	evs := []Event{{Type: "lane.force_released", Lane: l.ID, To: former, Data: map[string]any{
 		"lane_id": ch.ID, "former_owner": former, "by": l.ID, "note": op.Note,
-		"caution": "a coordinator released this; the former owner may still be working — verify",
+		"caution": "a coordinator released this; the former owner may still be working: verify",
 	}}}
 	evs = append(evs, s.releaseExclusive(ch, "forced by a coordinator")...)
 	s.finish(&evs, now)
@@ -1561,18 +1561,18 @@ func (s *State) applyLaneEvict(l *Lane, op *Op, now time.Time) (Result, []Event,
 }
 
 // applyLaneMerge folds one lane into another when they drifted into the same
-// work — the case SPEC-CHANNELS.md §11 leaves open, resolved by a human-granted
+// work: the case SPEC-CHANNELS.md §11 leaves open, resolved by a human-granted
 // coordinator rather than by a score, because merging is destructive to context
 // and a threshold is the wrong thing to trust with it.
 // carryQueue moves the source lane's waiters somewhere real.
 //
 // Dropping them is the one thing that must not happen, and it is what used to
 // happen: src.Queue=[waiter] became dst.Queue=[] and the waiter belonged to
-// neither lane — blocked forever behind an owner that no longer existed.
+// neither lane: blocked forever behind an owner that no longer existed.
 //
 // Where they go depends on the destination, and both answers give the agent
 // what it was waiting for. If dst is exclusive they are still blocked, so they
-// keep waiting — but on a lane that exists, in a queue they can be promoted out
+// keep waiting, but on a lane that exists, in a queue they can be promoted out
 // of. If dst is open, the thing they were waiting for is gone, so waiting is
 // over and they are admitted.
 func (s *State) carryQueue(src, dst *Channel) (queued, admitted int) {
@@ -1597,8 +1597,8 @@ func (s *State) carryQueue(src, dst *Channel) (queued, admitted int) {
 			dst.Members[id] = m
 			// The same rule as promote, and it has to be repeated here because
 			// this is a second door into membership. A queued agent's footprint
-			// is deliberately excluded from its own lane's Predicted — it is not
-			// a member yet — so merging src.Predicted into dst does not carry
+			// is deliberately excluded from its own lane's Predicted: it is not
+			// a member yet, so merging src.Predicted into dst does not carry
 			// it. Without this, an agent that walks in through a merge instead
 			// of a promotion is a full member whose files the lane has no
 			// record of, which is exactly the hole the promote fix closed.
@@ -1630,9 +1630,9 @@ func carryWaiter(src, dst *Channel, id string) bool {
 
 // carryAnnouncements repoints outstanding traffic at the surviving lane.
 //
-// Left naming the deleted lane they are countable on NO board — invisible on
+// Left naming the deleted lane they are countable on NO board: invisible on
 // the source because it is gone, invisible on the destination because they name
-// the wrong id — while still obliging their members to acknowledge them. That
+// the wrong id: while still obliging their members to acknowledge them. That
 // is the abandoned-announcement failure mode exactly.
 func (s *State) carryAnnouncements(src, dst *Channel) {
 	for _, ser := range s.announcementSerials() {
@@ -1653,7 +1653,7 @@ func mergeNotices(src, dst *Channel, by string, wasHere []string) []Event {
 	// The DESTINATION's people are affected too, and were told nothing.
 	//
 	// Their lane silently gains another lane's members, its predicted
-	// footprint, and its outstanding announcements — which they may now be
+	// footprint, and its outstanding announcements, which they may now be
 	// required to acknowledge. Only the moved side was woken, so the
 	// destination's owner could carry on believing its lane was unchanged and
 	// still exclusively its own while a whole other lane had been folded in.
@@ -1698,15 +1698,15 @@ func mergeNotices(src, dst *Channel, by string, wasHere []string) []Event {
 //
 // Auto-opened lanes end by themselves: reclaimFinishedLanes deletes them once
 // the last member leaves. Lanes a human opened deliberately do NOT, and that is
-// correct — outliving your members is what a standing lane is FOR. The gap was
+// correct: outliving your members is what a standing lane is FOR. The gap was
 // that nothing could end one either, ever, by any path. A board accumulated
 // finished lanes permanently, and E_LANE_LIMIT advised "lane_leave the ones you
 // are done with", which does nothing for exactly these: naming a corrective
 // action that does not work is this codebase's most persistent failure mode, and
 // this was another instance of it.
 //
-// A coordinator can now say so explicitly. That fits the director rule — every
-// director power is one a lane owner already has over its own lane — with the
+// A coordinator can now say so explicitly. That fits the director rule: every
+// director power is one a lane owner already has over its own lane: with the
 // honest caveat that for THIS one no owner had it either. It is the same
 // decision reclaimFinishedLanes makes automatically, made on purpose by somebody
 // accountable, and ledgered under their name.
@@ -1725,7 +1725,7 @@ func (s *State) applyLaneClose(l *Lane, op *Op, now time.Time) (Result, []Event,
 	// The agent that OPENED a lane may retire it, without the coordinator role.
 	//
 	// lane_open is unprivileged and advertised, so an agent could create a lane
-	// and then never end it — and the refusal it got said "only a coordinator may
+	// and then never end it, and the refusal it got said "only a coordinator may
 	// administer ANOTHER AGENT'S lane" about its own. Telling somebody they may
 	// not touch their own thing, in words describing somebody else's, is worse
 	// than the missing power.
@@ -1733,7 +1733,7 @@ func (s *State) applyLaneClose(l *Lane, op *Op, now time.Time) (Result, []Event,
 	// Narrower than directorOf on purpose, and placed here rather than in it:
 	// closing your own finished lane is not the same act as merging your lane
 	// into a stranger's, and directorOf gates both. Every other guard below still
-	// applies — an opener cannot close a lane somebody is in, or one holding an
+	// applies: an opener cannot close a lane somebody is in, or one holding an
 	// unanswered announcement, any more than a coordinator can.
 	if ch.OpenedBy != l.ID {
 		if _, err := s.directorOf(l, op); err != nil {
@@ -1786,7 +1786,7 @@ func (s *State) applyLaneMerge(l *Lane, op *Op, now time.Time) (Result, []Event,
 	}
 	// Who was already in the destination, BEFORE anything moves. Taken here
 	// because mergeNotices runs after the merge and could not otherwise tell
-	// the people who were already there from the ones who just arrived — the
+	// the people who were already there from the ones who just arrived: the
 	// arrivals get their own notice, and two notices for one event is how a
 	// wake channel becomes noise.
 	wasHere := sortedKeys(dst.Members)
@@ -1833,7 +1833,7 @@ func (s *State) applyLaneMerge(l *Lane, op *Op, now time.Time) (Result, []Event,
 //
 // This is the approval half of `director_required` (SPEC-CHANNELS.md §8.1): with
 // the gate on, scoring stops auto-joining and an agent waits to be admitted, so
-// there has to be an act that admits it. It is also useful with the gate off —
+// there has to be an act that admits it. It is also useful with the gate off,
 // pulling somebody into work they should be part of but did not match.
 //
 // The recorded score travels through unchanged when the director is acting on a

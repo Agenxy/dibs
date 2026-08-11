@@ -12,7 +12,7 @@ import (
 // exception is precise rather than mysterious.
 //
 // Measured on macOS: the environment of an Apple-signed PLATFORM binary is
-// hidden — /bin/sleep, a copy of it, and any script run by /bin/bash all show
+// hidden. /bin/sleep, a copy of it, and any script run by /bin/bash all show
 // nothing. The environment of a user-installed binary is visible. Every agent
 // harness is the second kind (codex, claude, opencode), which is why a real
 // `codex exec` exposed its whole environment while three attempts to fake one
@@ -28,7 +28,7 @@ import (
 // this same symptom, made by testing the theory against /bin/sleep, where the
 // environment is hidden either way.
 //
-// The subject is this test binary — compiled by `go test`, so user-installed by
+// The subject is this test binary: compiled by `go test`, so user-installed by
 // construction, on every platform and every machine. That makes the assertion
 // unconditional rather than "skip if the platform is shy", which would have
 // hidden a real regression behind an environmental excuse.
@@ -72,7 +72,7 @@ func TestNoProcessMeansNoEnvironment(t *testing.T) {
 //
 // A user-compiled process that stays alive long enough to be inspected twice.
 // The first version of the test above pointed its child at a real test, which
-// finished in milliseconds — so the environment read succeeded and the
+// finished in milliseconds, so the environment read succeeded and the
 // attribution that followed sampled a process that had already exited. The
 // symptom was "readable but ignored", which reads exactly like a broken regex.
 func TestHelperStaysAlive(t *testing.T) {
@@ -80,7 +80,7 @@ func TestHelperStaysAlive(t *testing.T) {
 		t.Skip("not the helper invocation")
 	}
 	// Blocks until the parent kills it. A sleep would be banned here (and
-	// rightly — a test that sleeps is a test that is guessing); this is not
+	// rightly: a test that sleeps is a test that is guessing); this is not
 	// waiting for anything to happen, it is being a process that exists.
 	select {}
 }

@@ -16,7 +16,7 @@ import (
 // them. Token matching finds what the agent named and is blind to everything it
 // did not; co-change finds what the named files drag along and is blind to work
 // on files with no history. Together they answer "what will this touch" without
-// a model, a download or a network — the floor that has to be useful because it
+// a model, a download or a network: the floor that has to be useful because it
 // is what runs on the day the sidecar is not configured.
 //
 // Nothing here is a substitute for tier 2. It relates work that shares words or
@@ -32,7 +32,7 @@ type Lexical struct {
 	terms map[string][]int
 	idf   map[string]float64
 	// history[t] is the set of file indices that commits MENTIONING term t
-	// touched — the project describing its own work, which is the only evidence
+	// touched: the project describing its own work, which is the only evidence
 	// tier 0 has for a declaration that names no file.
 	history map[string][]int
 	histIDF map[string]float64
@@ -43,7 +43,7 @@ type Lexical struct {
 //
 // Additive rather than a fallback: a declaration that names a file AND uses the
 // project's vocabulary should score on both. Discounted because the evidence is
-// weaker — a path match says "this work is about this file", a history match
+// weaker: a path match says "this work is about this file", a history match
 // says "work described like this has touched this file before", and conflating
 // them would let a chatty commit log outvote the filename an agent typed.
 func (l *Lexical) scoreHistory(declaration string, scores map[int]float64) []string {
@@ -74,8 +74,8 @@ func (l *Lexical) scoreHistory(declaration string, scores map[int]float64) []str
 	// It was meant to stop a single low-information word ("wip", "update")
 	// dragging a whole commit's file set into a prediction. Measured on four
 	// repositories it cost recall (pi-mono 0.336 -> 0.300, opencode 0.246 ->
-	// 0.238) and fixed nothing: the pathology it targeted — unrelated pairs
-	// reaching an overlap of 1.0 on opencode — is present in the path-only
+	// 0.238) and fixed nothing: the pathology it targeted: unrelated pairs
+	// reaching an overlap of 1.0 on opencode: is present in the path-only
 	// scorer too, so it was never history's to cause or to cure.
 	//
 	// The real exposure is small repositories with low-information messages,
@@ -148,7 +148,7 @@ const minCommonTerm = 4
 // historyWeight discounts commit-message evidence against filename evidence.
 //
 // A path match says "this work is about this file". A history match says "work
-// described like this has touched this file before" — real, and weaker. At 1.0
+// described like this has touched this file before": real, and weaker. At 1.0
 // a chatty commit log outvotes the filename an agent actually typed; at 0 the
 // index may as well not exist. Set by measurement on this repository with
 // `lanes calibrate`, not by taste.
@@ -164,14 +164,14 @@ func NewLexical(ctx context.Context, repo string, cc *CoChange) (*Lexical, error
 //
 // It exists because measuring this scorer without it is measuring memorisation.
 // `lanes calibrate` evaluates by using a commit message as the query and that
-// commit's files as the answer — and the history index is built from exactly
+// commit's files as the answer, and the history index is built from exactly
 // that pairing, so a query retrieves the commit it came from. Adding the index
 // took this repository from recall@5 0.288 to 0.815 and MRR 0.476 to a perfect
 // 1.000, which is not a result, it is a leak wearing one.
 //
 // Holding the evaluation commits out restores the question anybody actually
 // cares about: does history help on work the index has never seen? That is also
-// what production does — index the past, predict the present.
+// what production does: index the past, predict the present.
 func NewLexicalHolding(ctx context.Context, repo string, cc *CoChange, holdOut []string) (*Lexical, error) {
 	held := make(map[string]bool, len(holdOut))
 	for _, h := range holdOut {
@@ -205,7 +205,7 @@ func newLexical(ctx context.Context, repo string, cc *CoChange, held map[string]
 	}
 	// Second index: how this project DESCRIBES its work.
 	//
-	// Path matching is blind to a declaration that names no file — "fixing the
+	// Path matching is blind to a declaration that names no file. "fixing the
 	// retry loop when tokens fail to refresh" shares no token with any path in a
 	// repo whose file is called auth.go, so tier 0 predicted nothing and said
 	// so. Honest, and useless to anyone evaluating whether the thing works.
@@ -213,7 +213,7 @@ func newLexical(ctx context.Context, repo string, cc *CoChange, held map[string]
 	// A commit subject is a description of work in the project's own words and
 	// its files are what that work touched. That pairing is already the ground
 	// truth `lanes calibrate` measures against, and the co-change miner already
-	// reads both — this uses what was being thrown away.
+	// reads both: this uses what was being thrown away.
 	buildHistory(l, cc, held)
 
 	n := float64(len(l.files))
@@ -240,7 +240,7 @@ func (l *Lexical) ID() string { return "lexical+cochange" }
 // membership records WHICH scorer produced its score so a later reader can tell
 // whether two scores are comparable. Adding an evidence source and leaving the
 // version at "1" makes a v1 score and a v2 score indistinguishable in the
-// ledger forever — and they are not the same measurement.
+// ledger forever, and they are not the same measurement.
 func (l *Lexical) Version() string { return "2" }
 
 // Files reports how many tracked files were indexed.
@@ -276,7 +276,7 @@ func (l *Lexical) Predict(ctx context.Context, declaration string, limit int) (P
 		// The absolute floor is what makes this safe on a SMALL repository, and
 		// it is not a nicety: at three files the ratio alone is 0.75, so a term
 		// appearing in a single file already "matches most of the repo" and gets
-		// dropped. Every term was discarded and tier 0 predicted nothing at all —
+		// dropped. Every term was discarded and tier 0 predicted nothing at all,
 		// silently, because an empty prediction is a legitimate answer meaning
 		// "no evidence". Found by a live fleet run over a three-file fixture,
 		// where two real agents declared plainly overlapping work and neither was
@@ -333,7 +333,7 @@ func itoa(n int) string {
 // being done to.
 //
 // This list is short and deliberately not a general English stopword list: IDF
-// already handles words that are common in PATHS. These are different — they
+// already handles words that are common in PATHS. These are different: they
 // are rare in paths and common in declarations, so IDF scores them as highly
 // informative when they are the opposite. "fix the retry loop" should retrieve
 // on "retry", and "fix" should not drag in the one file that happens to have
@@ -353,8 +353,8 @@ var actionWords = map[string]bool{
 
 // tokenize splits a path or a sentence into comparable lowercase terms.
 //
-// Handles the three casings that appear in one repository at once —
-// `HookPoll`, `hook_poll`, `hook-poll` — because a declaration says "hook poll"
+// Handles the three casings that appear in one repository at once,
+// `HookPoll`, `hook_poll`, `hook-poll`: because a declaration says "hook poll"
 // and has to reach all three. Terms shorter than three characters are dropped:
 // they are almost all `go`, `ts`, `js`, `md` extensions and single letters,
 // which match everywhere and mean nothing.

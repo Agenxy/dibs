@@ -18,7 +18,7 @@ func panelPayload(raw core.Result) core.Result {
 	//
 	// core.Result is a named map type and the engine returns typed slices
 	// ([]core.Event, []core.Message). Neither satisfies `case map[string]any` or
-	// `.([]any)` in a type switch — Go treats a named type as distinct. That has
+	// `.([]any)` in a type switch. Go treats a named type as distinct. That has
 	// silently produced a wrong answer three times in this file's history: a
 	// summary reporting 0 lanes over 7, a board dropped entirely, and a mailbox
 	// panel suppressed while holding mail. One round-trip removes the whole class.
@@ -40,7 +40,7 @@ func panelPayload(raw core.Result) core.Result {
 	// core.Result is a named map type, so a board stored as a plain
 	// map[string]any does NOT satisfy a core.Result assertion. Both shapes occur
 	// depending on whether the value came straight from the engine or through a
-	// JSON round-trip — accept either, or the board silently vanishes.
+	// JSON round-trip: accept either, or the board silently vanishes.
 	if b := asMap(in["board"]); b != nil {
 		out["board"] = trimBoard(b)
 	}
@@ -49,7 +49,7 @@ func panelPayload(raw core.Result) core.Result {
 	}
 	// await_events returns BECAUSE something changed; the panel shows what.
 	// Cap the activity list. A cursor reaching back far enough returns the whole
-	// history — 261 events in one observed call — which is neither readable nor
+	// history (261 events in one observed call) which is neither readable nor
 	// worth the payload. The newest are the ones the human is looking for.
 	all := asMaps(in["events"])
 	if n := len(all); n > maxPanelEvents {
@@ -72,7 +72,7 @@ var (
 		"id", "name", "kind", "status", "description", "last_coordination_at", "agent",
 		// WHY an agent stopped counting as live. Without it the panel shows
 		// "out of touch" beside a last-contact time of "now", which reads as a
-		// broken panel rather than a dead agent — and it cannot tell a crashed
+		// broken panel rather than a dead agent, and it cannot tell a crashed
 		// process from a lane that never gave a pid and is simply quiet.
 		"stale_reason",
 		// The name a human chose, when the id could not carry it. Without it a
@@ -93,7 +93,7 @@ var (
 	memberFields = []string{"agent", "auto", "score", "threshold", "scorer", "evidence"}
 )
 
-// `state` is load-bearing, not decoration. `response` is a plain STRING — the
+// `state` is load-bearing, not decoration. `response` is a plain STRING: the
 // disposition an agent chose (approved / denied / declined / acked) lives only
 // in state, so without it the panel can show that a request was answered but
 // never whether it was granted. That is the one thing the reader needs.
@@ -189,8 +189,8 @@ func pick(m map[string]any, keys []string) map[string]any {
 	return out
 }
 
-// asMaps normalises the several shapes a slice of records arrives in — typed
-// slices from core, []any after a JSON round-trip — without reflection.
+// asMaps normalises the several shapes a slice of records arrives in: typed
+// slices from core, []any after a JSON round-trip: without reflection.
 func asMaps(v any) []map[string]any {
 	switch s := v.(type) {
 	case []map[string]any:

@@ -36,7 +36,7 @@ func (s *State) overlapping(path, excludeLane string) []*Claim {
 // Signal strengths for an overlap. The distinction is the whole point: two
 // agents editing the same file is NORMAL (version control solved that, and
 // suppressing it would destroy fleet parallelism). Two agents pursuing the same
-// OBJECTIVE is the actual waste — a measured collision burned ~3,900 diff lines
+// OBJECTIVE is the actual waste: a measured collision burned ~3,900 diff lines
 // across three PRs chasing one goal, in files that only incidentally overlapped.
 const (
 	SignalSameObjective = "same-objective" // strong: probable duplicated effort
@@ -45,7 +45,7 @@ const (
 )
 
 // SlotOverlap is another lane's activity that relates to what you just declared.
-// Informational in every case — declaring work never fails.
+// Informational in every case: declaring work never fails.
 type SlotOverlap struct {
 	Lane   string   `json:"lane"`
 	Signal string   `json:"signal"`
@@ -146,7 +146,7 @@ func sortOverlaps(o []SlotOverlap) {
 	}
 }
 
-// overlapLess sorts strong signals first — the agent should read those.
+// overlapLess sorts strong signals first: the agent should read those.
 func overlapLess(a, b SlotOverlap) bool {
 	if a.Strong() != b.Strong() {
 		return a.Strong()

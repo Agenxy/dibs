@@ -9,7 +9,7 @@ import "testing"
 // server/discover, tools/list, resources/list and resources/read. The reason to
 // test it rather than trust it is asymmetric: a missing or wrong ttlMs costs a
 // refetch, but cacheScope is a PERMISSION. "public" tells shared gateways and
-// caching proxies they may serve the response to a different caller —
+// caching proxies they may serve the response to a different caller,
 // explicitly including one holding a different token. So marking one lane's
 // mailbox public is not a performance mistake, it is disclosure.
 //
@@ -41,7 +41,7 @@ func TestCacheHintsArePresentAndCorrectlyScoped(t *testing.T) {
 		ttl, ok := out["ttlMs"]
 		if !ok {
 			t.Errorf("%s carries no ttlMs; the spec requires a hint on every complete result "+
-				"and a client that gets none must treat it as immediately stale — which for a "+
+				"and a client that gets none must treat it as immediately stale, which for a "+
 				"43-tool list means resending it on every cold path", tc.method)
 			continue
 		}
@@ -49,7 +49,7 @@ func TestCacheHintsArePresentAndCorrectlyScoped(t *testing.T) {
 			t.Errorf("%s ttlMs = %v; servers MUST provide a value >= 0", tc.method, ttl)
 		}
 		if got := out["cacheScope"]; got != tc.wantScope {
-			t.Errorf("%s cacheScope = %v, want %q — %s", tc.method, got, tc.wantScope, tc.why)
+			t.Errorf("%s cacheScope = %v, want %q. %s", tc.method, got, tc.wantScope, tc.why)
 		}
 	}
 }
@@ -82,7 +82,7 @@ func TestAPrivateMailboxIsNeverMarkedShareable(t *testing.T) {
 	board := result(t, rpc(t, srv, "2026-07-28", "resources/read",
 		map[string]any{"uri": "lanes://board"}), "resources/read lanes://board")
 	if got := board["cacheScope"]; got != scopePublic {
-		t.Errorf("lanes://board cacheScope = %v, want %q — the board is what every agent is "+
+		t.Errorf("lanes://board cacheScope = %v, want %q: the board is what every agent is "+
 			"entitled to see, and marking it private forfeits sharing for no gain", got, scopePublic)
 	}
 
@@ -95,7 +95,7 @@ func TestAPrivateMailboxIsNeverMarkedShareable(t *testing.T) {
 }
 
 // result unwraps the JSON-RPC envelope, failing loudly rather than returning an
-// empty map — a nil result would make every assertion below vacuously "missing"
+// empty map: a nil result would make every assertion below vacuously "missing"
 // and blame the cache hints for a transport error.
 func result(t *testing.T, envelope map[string]any, what string) map[string]any {
 	t.Helper()

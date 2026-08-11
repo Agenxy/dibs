@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// Tools an agent must never call are not advertised to agents — and are still
+// Tools an agent must never call are not advertised to agents, and are still
 // callable, because the harness integrations depend on them.
 //
 // Both halves matter. A tool a model cannot correctly call is not a capability,
@@ -30,7 +30,7 @@ func TestHarnessOnlyToolsAreHiddenButNotRemoved(t *testing.T) {
 	}
 	for name := range harnessOnly {
 		if !defined[name] {
-			t.Errorf("%s vanished from toolDefs entirely — the integrations that call it are now broken", name)
+			t.Errorf("%s vanished from toolDefs entirely: the integrations that call it are now broken", name)
 		}
 	}
 }

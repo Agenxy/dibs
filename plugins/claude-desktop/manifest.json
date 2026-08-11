@@ -4,7 +4,7 @@
   "display_name": "Lanes",
   "version": "0.0.0",
   "description": "Coordination board for agents on this machine: shared lanes, typed mailboxes, and advisory claims.",
-  "long_description": "Lanes lets a fleet of agents see what the others are working on before duplicating their effort. Declare your objective, read the board, message peers directly. Lanes is a service agents pull from — it never drives your session.\n\nRequires the `lanes` daemon (`lanesd`) running locally. See https://github.com/agenxy/lanes.",
+  "long_description": "Lanes lets a fleet of agents see what the others are working on before duplicating their effort. Declare your objective, read the board, message peers directly. Lanes is a service agents pull from: it never drives your session.\n\nRequires the `lanes` daemon (`lanesd`) running locally. See https://github.com/agenxy/lanes.",
   "author": { "name": "Lanes" },
   "repository": { "type": "git", "url": "https://github.com/agenxy/lanes" },
 

@@ -9,7 +9,7 @@ toolchain go1.26.5
 // checksum they recorded can never agree with the tag again: `go install
 // ...@v0.0.0` with GOPROXY=direct fails with a SECURITY ERROR, and through the
 // default proxy it silently serves the older tree. Neither is acceptable, and
-// neither is fixable — a moved tag is permanent. Use v0.0.1 or later.
+// neither is fixable: a moved tag is permanent. Use v0.0.1 or later.
 //
 // v0.0.1 is NOT merely v0.0.0 plus this line, which an earlier version of this
 // comment claimed: it also carries `lanes stop`, service-unit generation, a

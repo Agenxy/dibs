@@ -22,7 +22,7 @@ func TestServiceUnitsAreWrittenSafely(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := writeUnit(target, "replacement"); err == nil {
-			t.Fatal("overwrote an existing unit — an operator's tuning is gone and the " +
+			t.Fatal("overwrote an existing unit: an operator's tuning is gone and the " +
 				"command reads as idempotent")
 		}
 		body, err := os.ReadFile(target) // #nosec G304 -- test temp dir
@@ -48,7 +48,7 @@ func TestServiceUnitsAreWrittenSafely(t *testing.T) {
 
 	t.Run("configHome honours XDG_CONFIG_HOME", func(t *testing.T) {
 		// A systemd user unit written to the wrong root is never loaded, and
-		// nothing reports that — the service simply does not exist.
+		// nothing reports that: the service simply does not exist.
 		t.Setenv("XDG_CONFIG_HOME", "/tmp/xdg-probe")
 		if got := configHome(); got != "/tmp/xdg-probe" {
 			t.Errorf("configHome() = %q, want the XDG value", got)
@@ -68,7 +68,7 @@ func TestTheWrittenPlistParsesWithAwkwardPaths(t *testing.T) {
 	// The unit test below covers xmlText. This covers the thing that actually
 	// ships: reverting writeLaunchAgent to concatenate a raw path left xmlText
 	// perfectly correct and never called, which is this codebase's most repeated
-	// defect — a helper that is right and unwired.
+	// defect: a helper that is right and unwired.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	dir := filepath.Join(home, "Fleet & Review")
@@ -83,7 +83,7 @@ func TestTheWrittenPlistParsesWithAwkwardPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	// launchd will not load a plist it cannot parse, and says so nowhere the
-	// operator is looking — the service simply never starts.
+	// operator is looking: the service simply never starts.
 	dec := xml.NewDecoder(bytes.NewReader(body))
 	for {
 		_, err := dec.Token()
@@ -108,10 +108,111 @@ func TestServiceUnitEscapesPathsForXML(t *testing.T) {
 		got := xmlText(in)
 		if strings.ContainsAny(strings.NewReplacer("&amp;", "", "&lt;", "", "&gt;", "",
 			"&#34;", "", "&#39;", "").Replace(got), `&<>`) {
-			t.Errorf("xmlText(%q) = %q — still contains raw markup", in, got)
+			t.Errorf("xmlText(%q) = %q: still contains raw markup", in, got)
 		}
 	}
 	if got := xmlText("/plain/path"); got != "/plain/path" {
 		t.Errorf("xmlText mangled an ordinary path: %q", got)
+	}
+}
+
+// systemd's ExecStart is neither a shell nor a literal: it splits on
+// whitespace, expands `%` specifiers, and ends the directive at a newline. Both
+// values were concatenated raw, so legal paths did three different damaging
+// things. This asserts the WRITTEN unit, because escaping the helper and
+// forgetting the call site is how the XML half shipped broken.
+func TestSystemdUnitCannotBeInjectedThroughAPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "cfg"))
+
+	daemon := filepath.Join(home, "bin with space", "lanesd")
+	dir := filepath.Join(home, "Fleet %n and \"quoted\"")
+	if err := writeSystemdUnit(daemon, dir); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(home, "cfg", "systemd", "user", "lanes.service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var exec string
+	for _, line := range strings.Split(string(body), "\n") {
+		if strings.HasPrefix(line, "ExecStart=") {
+			exec = line
+		}
+	}
+	if exec == "" {
+		t.Fatalf("no ExecStart in the written unit:\n%s", body)
+	}
+	// A bare % is a specifier. Literal percent must be doubled, or systemd
+	// expands %n to the unit name and starts on a different directory.
+	if strings.Contains(strings.ReplaceAll(exec, "%%", ""), "%") {
+		t.Errorf("ExecStart carries an unescaped %% specifier: %s", exec)
+	}
+	// Each path must survive as ONE argument despite its spaces.
+	if !strings.Contains(exec, `"`+daemon+`"`) {
+		t.Errorf("the daemon path is not quoted as a single argument: %s", exec)
+	}
+	// Nothing may introduce another directive.
+	for _, d := range []string{"\nEnvironment=", "\nExecStartPost=", "\n[Service]"} {
+		if strings.Contains(string(body), d[1:]+"SOL") {
+			t.Errorf("a path injected %q into the unit:\n%s", d, body)
+		}
+	}
+}
+
+// A unit does not inherit the invoking shell's working directory, so a relative
+// LANES_DIR produced a service that starts against whatever it resolves to
+// under launchd: a different board, silently.
+func TestServiceUnitsRecordAnAbsoluteDataDirectory(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("LANES_DIR", "relative-data")
+	t.Chdir(home)
+	if err := os.MkdirAll(filepath.Join(home, "relative-data"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeServiceUnit(); err != nil {
+		// No lanesd on PATH in a test environment is fine; the point is the path.
+		if strings.Contains(err.Error(), "cannot find lanesd") {
+			t.Skip("no lanesd available to reference")
+		}
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(filepath.Join(home, "Library", "LaunchAgents", "org.agenxy.lanes.plist"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(body, []byte(">relative-data<")) {
+		t.Errorf("the unit records a relative data directory:\n%s", body)
+	}
+}
+
+// Upgrading from a version that used a different label must not leave two jobs
+// pointing at one data directory: the flock refuses the second, so the visible
+// symptom is a service that will not start for no stated reason.
+func TestUpgradeRefusesToCreateASecondJob(t *testing.T) {
+	agents := t.TempDir()
+	for _, label := range legacyLabels {
+		old := filepath.Join(agents, label+".plist")
+		if err := os.WriteFile(old, []byte("<plist/>"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		err := refuseIfLegacyUnitExists(agents)
+		if err == nil {
+			t.Fatalf("%s was ignored; a second job would have been created", label)
+		}
+		// The refusal has to carry the way out, not just the objection.
+		for _, want := range []string{"launchctl unload", "rm ", old} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the refusal does not tell the operator how to proceed (%q):\n%v", want, err)
+			}
+		}
+		if err := os.Remove(old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := refuseIfLegacyUnitExists(agents); err != nil {
+		t.Errorf("a clean machine was refused: %v", err)
 	}
 }

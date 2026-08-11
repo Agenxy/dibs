@@ -11,7 +11,7 @@ import (
 // would compare refs, so a channel opened by an agent whose declaration
 // predicted no files was invisible to ref matching. Two agents declaring
 // issue:42, in the same repository, with the same activity, opened two separate
-// channels — the exact duplication the product exists to prevent, failing in
+// channels: the exact duplication the product exists to prevent, failing in
 // exactly the case a hand-written identifier is for: when the scorer has no
 // opinion.
 //
@@ -77,7 +77,7 @@ func TestASharedRefMatchesAChannelWithNoFootprint(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("a channel sharing issue:42 was not matched because it had no scorer "+
-			"footprint — two agents on one ticket would open two channels. Got %+v",
+			"footprint: two agents on one ticket would open two channels. Got %+v",
 			matches)
 	}
 }

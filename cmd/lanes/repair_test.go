@@ -11,7 +11,7 @@ import (
 )
 
 // poisonedBoard builds a real data directory whose ledger holds a record the
-// fold refuses — the shape a live board actually reached.
+// fold refuses: the shape a live board actually reached.
 //
 // Built through the real Ledger rather than by writing JSON, because the whole
 // point of the repair path is that it agrees with the daemon: the hash chain,
@@ -57,7 +57,7 @@ func poisonedBoard(t *testing.T) (dir string, lastGood uint64, records int) {
 	lastGood = st.Serial
 
 	// The poison: a SECOND close of the same lane, appended without applying.
-	// That is exactly what a live board ended up holding — an op the fold
+	// That is exactly what a live board ended up holding: an op the fold
 	// refuses, sitting in a chain that verifies.
 	if err := led.Append(st.Serial+1, now, &core.Op{Kind: core.OpCloseLane, Token: "tok"}); err != nil {
 		t.Fatalf("append poison: %v", err)
@@ -72,7 +72,7 @@ func poisonedBoard(t *testing.T) (dir string, lastGood uint64, records int) {
 // The tool must agree with the daemon about WHERE the ledger stops applying.
 //
 // The first version of this walked the file with its own loop and reported the
-// wrong record entirely — it never decrypted the ops, so every nonce was
+// wrong record entirely: it never decrypted the ops, so every nonce was
 // ciphertext, and it never resynced the serial. On a real board it named record
 // 8 where the daemon named 416: it would have offered to discard 402 records to
 // repair a fault in 33. A second implementation of a fold is a second answer,
@@ -94,7 +94,7 @@ func TestRepairFindsTheSameRecordTheDaemonRefuses(t *testing.T) {
 		t.Errorf("counted %d records, wrote %d", total, records)
 	}
 	if good != records-1 {
-		t.Errorf("%d records applied, want %d — only the poisoned one should fail", good, records-1)
+		t.Errorf("%d records applied, want %d: only the poisoned one should fail", good, records-1)
 	}
 }
 
@@ -116,7 +116,7 @@ func TestRepairKeepsThePrefixAndArchivesTheOriginal(t *testing.T) {
 		t.Errorf("kept %d records, want %d", kept, records-1)
 	}
 
-	// The repaired ledger must REPLAY — the only test of a repair that matters.
+	// The repaired ledger must REPLAY: the only test of a repair that matters.
 	good, _, _, applyErr, err := lastReplayableSerial(dir)
 	if err != nil {
 		t.Fatalf("probe after repair: %v", err)

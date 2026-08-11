@@ -4,16 +4,16 @@
  * This suite exists because the panel's human actions were the only surface in
  * Lanes with no automated coverage at all, for an honest reason: they are gated
  * on a fingerprint, and no test can produce one. The `lanesdev` build tag adds a
- * scripted verdict so the flow becomes drivable — and the moment it did, the
+ * scripted verdict so the flow becomes drivable, and the moment it did, the
  * flow had to be tested, because a mock that only ever gets used by hand is just
  * an untested security switch with a convenience feature attached.
  *
  * Two daemons run here, and the second one is the point:
  *
- *   dev      — built with `-tags lanesdev`, LANES_PRESENCE_MOCK set. Every
+ *   dev     : built with `-tags lanesdev`, LANES_PRESENCE_MOCK set. Every
  *              branch of the flow, including the two failure verdicts that a Mac
  *              with a working sensor cannot otherwise reach.
- *   release  — the ordinary build, same environment variable, deliberately set
+ *   release : the ordinary build, same environment variable, deliberately set
  *              to the most dangerous value. It must refuse to unlock.
  *
  * Unit tests already assert the tag boundary inside the package. This asserts it
@@ -29,7 +29,7 @@ import { join } from "node:path"
 let failures = 0
 function check(name: string, ok: boolean, detail = "") {
   if (ok) console.log(`  \x1b[32m✓\x1b[0m ${name}`)
-  else { failures++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? " — " + detail : ""}`) }
+  else { failures++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ". " + detail : ""}`) }
 }
 
 const DEV_ADDR = "127.0.0.1:47811"
@@ -45,15 +45,15 @@ const nodes: Node[] = []
  * Copy a daemon somewhere with no presence helper beside it.
  *
  * The helper is resolved from the daemon's own directory, so a release daemon
- * run out of bin/ finds the real one and raises a Touch ID sheet — which is
+ * run out of bin/ finds the real one and raises a Touch ID sheet, which is
  * correct behaviour and completely wrong for a test suite. The first run of this
  * file put a fingerprint prompt in front of a machine whose owner was away, and
  * then recorded their absence as the result. A suite that interrupts somebody is
  * a defect, and one whose outcome depends on whether they happened to be at the
  * desk is not a test.
  *
- * Isolating it also makes the refusal deterministic — no helper means
- * Unavailable, on every machine, in CI as much as here — without weakening what
+ * Isolating it also makes the refusal deterministic: no helper means
+ * Unavailable, on every machine, in CI as much as here: without weakening what
  * is being asked. The question is whether an environment variable can assert
  * that a human is present, and that is independent of whether a sensor exists.
  */
@@ -110,7 +110,7 @@ const textOf = (r: any) => JSON.parse(r.content[0].text)
  * pass when the call had actually failed with -32602 for a missing argument: the
  * daemon never reached the presence check at all, and the strongest assertion in
  * the file was being satisfied by a typo. A protocol-level error therefore kills
- * the suite instead of feeding an assertion — a security check that a broken
+ * the suite instead of feeding an assertion: a security check that a broken
  * probe can pass is worse than no check, because it reads as evidence.
  */
 async function attempt(n: Node, name: string, args: unknown): Promise<any> {
@@ -129,7 +129,7 @@ async function attempt(n: Node, name: string, args: unknown): Promise<any> {
  * `code === undefined` alone is NOT success. attempt() turns any non-protocol
  * error into `{_threw: ...}`, an object with no `code`, so an internal error, a
  * dropped connection or a daemon that died mid-suite satisfied every success
- * check in this file — join, post and mail all reported green off a transport
+ * check in this file: join, post and mail all reported green off a transport
  * failure. Both halves have to be true: nothing threw, and nothing was refused.
  */
 function succeeded(r: any): boolean {
@@ -172,7 +172,7 @@ try {
     { token: relCaller.token, note: "e2e boundary probe" })
   check("a release daemon refuses to unlock with LANES_PRESENCE_MOCK=verified",
     refused.unlocked === false,
-    `unlocked=${refused.unlocked} — an env var just spoke as the operator`)
+    `unlocked=${refused.unlocked}: an env var just spoke as the operator`)
   check("and it does not report itself as mocked",
     refused.mocked === undefined,
     "the release build compiled the mock in")
@@ -208,7 +208,7 @@ try {
     check(`${verdict} hands back no token`, r.token === undefined,
       "a refused unlock returned a credential")
     // Labelling was asserted only on the Verified branch, so stripping it from
-    // the two refusals would have left every check green — and those are the
+    // the two refusals would have left every check green, and those are the
     // branches a reader is most likely to meet while wondering whether the
     // check was real.
     check(`${verdict} still says no human was checked`,
@@ -229,7 +229,7 @@ try {
   // ── what the unlocked token can actually do ──────────────────────────────
   // The token is deliberately NOT a new capability: it is the operator's own
   // ordinary agent identity. So it must be bound by the same membership rules
-  // as any agent — which is exactly the thing the panel got wrong once, by
+  // as any agent, which is exactly the thing the panel got wrong once, by
   // offering a Broadcast button that returned E_NOT_MEMBER when pressed.
   console.log("\n  the unlocked token is an ordinary agent, not a superuser")
   const human = ok.token as string
@@ -242,7 +242,7 @@ try {
   const posted = await attempt(dev, "lane_post",
     { token: human, lane: "auth-work", body: "how is this going?" })
   // A refusal arrives as a SUCCESSFUL tool result carrying an error code, not as
-  // a JSON-RPC error — so the assertion names the code. Testing for a thrown
+  // a JSON-RPC error, so the assertion names the code. Testing for a thrown
   // exception here silently passed while the post was in fact succeeding.
   check("posting to a lane the human has not joined is refused",
     posted.code === "E_NOT_MEMBER",
@@ -262,7 +262,7 @@ try {
   check("and then posting succeeds", succeeded(posted2),
     JSON.stringify(posted2).slice(0, 200))
 
-  // Mail needs no membership — it is addressed, not broadcast — so the panel is
+  // Mail needs no membership, it is addressed, not broadcast, so the panel is
   // right to offer it unconditionally.
   const sent = await attempt(dev, "send_message", {
     token: human, to: worker.lane_id, type: "question",
@@ -278,13 +278,13 @@ try {
   const stream = JSON.stringify(events)
   // AND, not OR. As an OR either the post or the message could disappear from
   // the event stream while the check still reported the human's actions were
-  // ledgered — and a missing write is exactly what this exists to catch.
+  // ledgered, and a missing write is exactly what this exists to catch.
   check("the human's lane post is in the ledger",
     stream.includes("lane.post"),
     "no lane.post event in the stream at all")
   // The BODY is not in the stream, and that is the point of checking here: a
   // lane post is public to the LANE, not to the board, and channel events carry
-  // no recipient — so a body in this stream is a body every authenticated lane
+  // no recipient, so a body in this stream is a body every authenticated lane
   // can read, member or not.
   check("but its body is not, because the stream reaches non-members too",
     !stream.includes("how is this going?"),
@@ -307,7 +307,7 @@ try {
     "a private message body is readable from the lane event stream")
 } catch (e) {
   failures++
-  console.log(`\n  \x1b[31m✗ suite threw\x1b[0m — ${e}`)
+  console.log(`\n  \x1b[31m✗ suite threw\x1b[0m. ${e}`)
 }
 
 console.log(failures === 0

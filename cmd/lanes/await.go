@@ -11,7 +11,7 @@ import (
 )
 
 // await blocks until events for the caller's lane arrive, prints them as
-// JSON lines, and exits 0 — the universal adapter between Lanes and agent
+// JSON lines, and exits 0: the universal adapter between Lanes and agent
 // harnesses' background-task wake mechanism: an agent runs `lanes await` in
 // the background, keeps working, and is woken by its harness the moment the
 // command exits with mail. The shell polls; the model sleeps.
@@ -32,7 +32,7 @@ func await(args []string) error {
 	}
 	secret, err := localSecret()
 	if err != nil {
-		return fmt.Errorf("no local secret yet — start lanesd once first: %w", err)
+		return fmt.Errorf("no local secret yet: start lanesd once first: %w", err)
 	}
 
 	call := func(tool string, callArgs map[string]any) (map[string]any, error) {

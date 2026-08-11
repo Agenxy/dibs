@@ -83,7 +83,7 @@ func TestFlagsBeatTheConfigFile(t *testing.T) {
 	}
 	// This asymmetry used to be real and was documented here as deliberate: a
 	// bool left false was indistinguishable from unset, so the file could only
-	// ever turn it ON. It is no longer true — `set` records what was passed —
+	// ever turn it ON. It is no longer true. `set` records what was passed,
 	// and an explicit `-match-director-required=false` now wins, which is what
 	// an operator typing it plainly means.
 	if f.director {
@@ -114,7 +114,7 @@ func TestBadDeadlineDoesNotStopTheDaemon(t *testing.T) {
 }
 
 // LaneTTL decides when a silent agent is treated as crashed, and a stale owner
-// YIELDS its exclusive lanes — so an agent that is merely busy for longer than
+// YIELDS its exclusive lanes, so an agent that is merely busy for longer than
 // the TTL (a long build, a slow test run: no Lanes calls for its duration) is
 // declared dead and loses a lane it is still working in. 5m suits chatty
 // agents and nothing else, which is why it is a knob.
@@ -208,7 +208,7 @@ func TestBlobStoreCapIsConfigurable(t *testing.T) {
 	if got.BlobStoreBytes != 4<<30 {
 		t.Fatalf("want 4GiB, got %d", got.BlobStoreBytes)
 	}
-	// Set alongside a lane_ttl, both must land — the early return for an absent
+	// Set alongside a lane_ttl, both must land: the early return for an absent
 	// lane_ttl used to skip this one entirely.
 	both, err := LimitsConfig{LaneTTL: "9m", BlobStoreBytes: 2 << 30}.apply(base)
 	if err != nil {
@@ -240,7 +240,7 @@ func TestABlobStoreTooSmallToHoldOneBlobIsRefused(t *testing.T) {
 //
 // `-match-embed-model` had no toml key at all: an operator using an embedding
 // service had to retype the model on every restart while the URL beside it sat
-// in the config. Caught by the strict-key check refusing `match.embed_model` —
+// in the config. Caught by the strict-key check refusing `match.embed_model`,
 // which is the check working, turning a silent no-op into an error.
 //
 // There is deliberately NO embed_key: a bearer token belongs in the
@@ -307,7 +307,7 @@ func TestAFlagOverridesTheConfigFile(t *testing.T) {
 // Two separate faults lived here. The comment said flag > env > file while the
 // code did flag > file > env, because every env read happened after the file had
 // already filled the slot. And once that was fixed, precedence was still decided
-// by "is this still the zero value?" — which silently makes 0 mean unset. For a
+// by "is this still the zero value?", which silently makes 0 mean unset. For a
 // threshold 0 is a real instruction; -match-join's own help says so ("0 =
 // suggest only, never join"). So `-match-join 0` lost to a file's 0.5 and the
 // daemon auto-joined against an explicit instruction not to.
@@ -359,7 +359,7 @@ func TestPrecedenceIsFlagThenEnvThenFile_AndZeroIsAValue(t *testing.T) {
 	})
 
 	t.Run("an explicit empty prefix beats a file that names one", func(t *testing.T) {
-		// A model documenting NO marker is configured by passing "" — and
+		// A model documenting NO marker is configured by passing "": and
 		// SetAffixes treats both-empty as "disable markers", not "detect again".
 		withPrefix := file
 		withPrefix.EmbedQueryPrefix = "query: "
@@ -374,8 +374,8 @@ func TestPrecedenceIsFlagThenEnvThenFile_AndZeroIsAValue(t *testing.T) {
 
 	t.Run("an explicit default-valued duration still beats the file", func(t *testing.T) {
 		// The nastiest form of zero-is-unset: the "zero" here is the DEFAULT
-		// value, so `-match-deadline 1500ms` — a reasonable thing to type when
-		// pinning behaviour — was indistinguishable from not passing it, and a
+		// value, so `-match-deadline 1500ms`: a reasonable thing to type when
+		// pinning behaviour: was indistinguishable from not passing it, and a
 		// file's 9s silently won. Live, a request that should have timed out at
 		// 1.5s ran for 2.2 seconds.
 		withDeadline := file
@@ -412,7 +412,7 @@ func TestPrecedenceIsFlagThenEnvThenFile_AndZeroIsAValue(t *testing.T) {
 	})
 }
 
-// idle_ttl is settable, and refused when unusable — like lane_ttl.
+// idle_ttl is settable, and refused when unusable: like lane_ttl.
 //
 // It governs the configuration Lanes itself tells people to use: `lanes
 // mcp-config` prints a plain HTTP client, which registers without a PID, so an
@@ -443,7 +443,7 @@ func TestIdleTTLIsConfigurableAndValidated(t *testing.T) {
 		t.Errorf("got lane=%v idle=%v", both.LaneTTL, both.IdleTTL)
 	}
 
-	// A bad value is an ERROR, never a silent fallback — the same rule lane_ttl
+	// A bad value is an ERROR, never a silent fallback: the same rule lane_ttl
 	// follows, and for the same reason: a setting that looks accepted and was
 	// ignored is debugged as phantom crashes.
 	if _, err := (LimitsConfig{IdleTTL: "10"}).apply(base); err == nil {
@@ -463,7 +463,7 @@ func TestIdleTTLIsConfigurableAndValidated(t *testing.T) {
 //
 // The second is worse than cosmetic. "lanesd up" was logged before
 // ListenAndServe, so a collision printed a confident success line and THEN the
-// failure — and this project's own setup checks were fooled by exactly that
+// failure, and this project's own setup checks were fooled by exactly that
 // twice, grepping for "lanesd up", finding it, and going on to talk to a
 // different daemon that already held the port.
 func TestTheDaemonAnnouncesItselfOnlyAfterItHasThePort(t *testing.T) {
@@ -480,7 +480,7 @@ func TestTheDaemonAnnouncesItselfOnlyAfterItHasThePort(t *testing.T) {
 	bind := strings.Index(text, `net.Listen("tcp", listenAddr)`)
 	announce := strings.Index(text, `slog.Info("lanesd up"`)
 	if bind < 0 {
-		t.Fatal("lanesd no longer binds explicitly — if it went back to ListenAndServe,\n" +
+		t.Fatal("lanesd no longer binds explicitly: if it went back to ListenAndServe,\n" +
 			"  it is once again claiming to be up before it has the port")
 	}
 	if announce < 0 {
@@ -488,7 +488,7 @@ func TestTheDaemonAnnouncesItselfOnlyAfterItHasThePort(t *testing.T) {
 	}
 	if bind > announce {
 		t.Error("lanesd announces itself BEFORE binding, so a port collision prints\n" +
-			"  success and then failure — which has already fooled this project's own\n" +
+			"  success and then failure, which has already fooled this project's own\n" +
 			"  setup checks twice")
 	}
 }

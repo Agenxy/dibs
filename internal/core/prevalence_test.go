@@ -13,7 +13,7 @@ import (
 // day one or two of those are genuine overlaps. Precision measured on a balanced
 // set says very little about that, because the quantity an agent actually
 // experiences is not "of the warnings shown, how many were right" but "how often
-// am I interrupted for nothing" — and that scales with the number of PEERS, which
+// am I interrupted for nothing", and that scales with the number of PEERS, which
 // a pairwise metric hides entirely.
 //
 // An agent with one false-alert-per-pair rate of 2% meets eleven peers and is
@@ -24,14 +24,14 @@ import (
 //
 // Two things, both per-AGENT rather than per-pair:
 //
-//	no agent is auto-joined to work it is not doing — zero tolerance, because
+//	no agent is auto-joined to work it is not doing: zero tolerance, because
 //	that is the failure that makes an agent stand down real work;
 //	and the share of agents seeing at least one spurious WARNING stays low
 //	enough that warnings keep meaning something.
 //
 // The fleet below is synthetic but its shape is not invented: disjoint
 // subsystems, shared build files, shared vocabulary, a couple of genuine
-// overlaps, and agents who declare unevenly — which is what the live fleet looked
+// overlaps, and agents who declare unevenly, which is what the live fleet looked
 // like.
 func fleet() []struct {
 	name string
@@ -121,7 +121,7 @@ func TestFalseAlertsAcrossAWholeFleet(t *testing.T) {
 	}
 
 	t.Logf("")
-	t.Logf("FLEET OF %d — %d pairs, %d genuine overlaps (%.1f%% base rate)",
+	t.Logf("FLEET OF %d. %d pairs, %d genuine overlaps (%.1f%% base rate)",
 		len(agents), pairs, len(truePairs), 100*float64(len(truePairs))/float64(pairs))
 	t.Logf("  agents auto-joined to work they are not doing: %d", len(joinedWrongly))
 	t.Logf("  agents seeing at least one spurious warning:   %d of %d", len(warnedWrongly), len(agents))
@@ -172,6 +172,6 @@ func TestNoiseGrowsWithFleetSize(t *testing.T) {
 		}
 		t.Logf("fleet of %2d: %d agent(s) interrupted for nothing", n, len(noisy))
 	}
-	t.Logf("(reported, not asserted — the assertion lives in %s)",
+	t.Logf("(reported, not asserted: the assertion lives in %s)",
 		"TestFalseAlertsAcrossAWholeFleet")
 }

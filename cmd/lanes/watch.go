@@ -16,7 +16,7 @@ import (
 )
 
 // watch is the persistent sibling of `await`: it stays running and executes a
-// shell command every time a matching message arrives for the caller's lane —
+// shell command every time a matching message arrives for the caller's lane,
 // the "summoner". A cheap non-agent process holds the socket; when mail lands
 // it runs --exec (e.g. to launch a fresh agent session, ping a webhook, or
 // wake a harness). No agent ever polls; the daemon-adjacent watcher does.
@@ -43,7 +43,7 @@ func watch(args []string) error {
 	}
 	secret, err := localSecret()
 	if err != nil {
-		return fmt.Errorf("no local secret yet — start lanesd once first: %w", err)
+		return fmt.Errorf("no local secret yet: start lanesd once first: %w", err)
 	}
 
 	typeFilter := map[string]bool{}

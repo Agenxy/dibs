@@ -43,7 +43,7 @@ func TestPanelPayloadCarriesOnlyRenderedFields(t *testing.T) {
 		"pid", "updated_serial", "deadline", "delivered_serial", "consumed", "truncated_before_serial",
 	} {
 		if strings.Contains(s, leaked) {
-			t.Errorf("payload leaks %q — it is not drawn by the panel", leaked)
+			t.Errorf("payload leaks %q: it is not drawn by the panel", leaked)
 		}
 	}
 	for _, needed := range []string{"opus-5", "active", "question", "lane_id", "view"} {
@@ -51,13 +51,13 @@ func TestPanelPayloadCarriesOnlyRenderedFields(t *testing.T) {
 			t.Errorf("payload dropped %q, which the panel renders", needed)
 		}
 	}
-	// Trimming must not silently empty the board — the failure that shipped once
+	// Trimming must not silently empty the board: the failure that shipped once
 	// was a core.Result assertion against a plain map, which dropped every lane.
 	b := asMap(out["board"])
 	if b == nil || len(asMaps(b["lanes"])) != 1 {
 		t.Fatal("board lost its lanes in trimming")
 	}
-	// Same payload, but with the board as a bare map — the shape the engine
+	// Same payload, but with the board as a bare map: the shape the engine
 	// returns through ack_board.
 	in2 := core.Result{"board": map[string]any{"lanes": []any{
 		map[string]any{"id": "x", "status": "active"},
@@ -67,7 +67,7 @@ func TestPanelPayloadCarriesOnlyRenderedFields(t *testing.T) {
 	}
 }
 
-// The model-facing summary counts from the FULL result, not the trimmed one —
+// The model-facing summary counts from the FULL result, not the trimmed one,
 // otherwise trimming would silently change what the model is told.
 func TestSummaryCountsSurviveTrimming(t *testing.T) {
 	res := core.Result{
@@ -110,17 +110,17 @@ func TestPanelNeverReplacesTheAgentsResult(t *testing.T) {
 		// The panel copy goes to every client, regardless of what it declared.
 		//
 		// This assertion was inverted until the reference host disproved it: that
-		// host sends `"capabilities":{}` — declaring nothing — and renders the
+		// host sends `"capabilities":{}` (declaring nothing) and renders the
 		// panel anyway from the tool's _meta.ui. Gating on the declaration starved
 		// it silently, and a starved panel draws empty, which is indistinguishable
 		// from a host bug. Bounded duplication beats a feature that quietly does
 		// not work.
 		meta, _ := out["_meta"].(map[string]any)
 		if _, has := meta[panelDataMetaKey]; !has {
-			t.Errorf("wantsUI=%v: no panel payload — hosts render without declaring", wantsUI)
+			t.Errorf("wantsUI=%v: no panel payload: hosts render without declaring", wantsUI)
 		}
-		// structuredContent is the agent's OWN result again — the structured form
-		// of content, which is what the field means — and never the panel's
+		// structuredContent is the agent's OWN result again: the structured form
+		// of content, which is what the field means, and never the panel's
 		// trimmed payload.
 		//
 		// The distinction is the whole point and this check used to miss it by
@@ -142,7 +142,7 @@ func TestPanelNeverReplacesTheAgentsResult(t *testing.T) {
 			}
 		}
 		if len(structured) != len(got) {
-			t.Errorf("wantsUI=%v: structuredContent has %d keys, content %d — it must be "+
+			t.Errorf("wantsUI=%v: structuredContent has %d keys, content %d: it must be "+
 				"the same answer, not the panel's trimmed payload",
 				wantsUI, len(structured), len(got))
 		}
@@ -152,14 +152,14 @@ func TestPanelNeverReplacesTheAgentsResult(t *testing.T) {
 // A host that drops tool-result _meta must still be able to fill the panel.
 //
 // This is the test that did not exist when it was needed. The panel's data
-// travels in _meta, which is correct and keeps the board out of model context —
+// travels in _meta, which is correct and keeps the board out of model context,
 // and a host that forwards none of it left the panel on "awaiting board · No
 // lanes yet" while the daemon held three lanes. Nothing failed: `content` was a
 // correct 72-character summary the whole time, every assertion about the tool
 // result passed, and the only way to see it was to look at the panel.
 //
-// So the property under test is not "the payload is in _meta" — that passed
-// throughout — but "the panel has a route to the board that does not depend on
+// So the property under test is not "the payload is in _meta": that passed
+// throughout, but "the panel has a route to the board that does not depend on
 // the host honouring _meta". That route is the bootstrap: a token, and a tool
 // the panel can spend it on. Both halves are asserted here, because either one
 // alone is again a panel that quietly shows nothing.
@@ -183,7 +183,7 @@ func TestPanelCanReachTheBoardOnAHostThatDropsMeta(t *testing.T) {
 		t.Fatalf("bootstrap act_token = %q, want the caller's own token", got)
 	}
 	// The token is the caller's own, so it is not new information reaching the
-	// model — but the board would be, and that is the cost show_board promises
+	// model, but the board would be, and that is the cost show_board promises
 	// not to charge.
 	blob, _ := json.Marshal(boot)
 	if strings.Contains(string(blob), marker) {
@@ -210,8 +210,8 @@ func TestPanelCanReachTheBoardOnAHostThatDropsMeta(t *testing.T) {
 //
 // ack_board is called every activation and the board dominates its size, so
 // sending it in both content and structuredContent charged the model two copies
-// of the fleet per turn. The duplication existed for one host shape — drops
-// _meta, forbids app tool calls, shows structuredContent instead of content —
+// of the fleet per turn. The duplication existed for one host shape: drops
+// _meta, forbids app tool calls, shows structuredContent instead of content,
 // where structuredContent is the panel's only carrier AND a slim one would
 // starve the agent. A panel that has called a tool is proof we are not there.
 func TestTheCheckpointIsNotDuplicatedOnceThePanelCanFetch(t *testing.T) {
@@ -220,7 +220,7 @@ func TestTheCheckpointIsNotDuplicatedOnceThePanelCanFetch(t *testing.T) {
 
 	unproved := s.panelResult(t.Context(), res, "board", "", true, false)
 	if _, ok := unproved["structuredContent"]; !ok {
-		t.Fatal("an unproved session lost structuredContent — on the host this exists " +
+		t.Fatal("an unproved session lost structuredContent: on the host this exists " +
 			"for, that is the panel's only carrier and the agent's only checkpoint")
 	}
 
@@ -237,7 +237,7 @@ func TestTheCheckpointIsNotDuplicatedOnceThePanelCanFetch(t *testing.T) {
 	}
 	// And the panel keeps its own carrier regardless.
 	if _, ok := proved["_meta"]; !ok {
-		t.Error("_meta was dropped too — the panel's private channel is not the duplicate")
+		t.Error("_meta was dropped too: the panel's private channel is not the duplicate")
 	}
 }
 
@@ -255,7 +255,7 @@ func TestOnlyThePanelsOwnMarkerCountsAsAPanelCall(t *testing.T) {
 		`not json`,
 	} {
 		if isPanelCall(json.RawMessage(no)) {
-			t.Errorf("%s was treated as a panel call — an ordinary agent call must not "+
+			t.Errorf("%s was treated as a panel call: an ordinary agent call must not "+
 				"switch off the carrier a panel depends on", no)
 		}
 	}

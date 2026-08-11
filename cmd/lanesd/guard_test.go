@@ -13,7 +13,7 @@ import (
 // session cookie and then redirects, stripping the token from the URL.
 //
 // It used to redirect to `r.URL` with the query cleared. For a server request
-// r.URL carries only a path, so that looked safe — but a path beginning "//" is
+// r.URL carries only a path, so that looked safe, but a path beginning "//" is
 // PROTOCOL-RELATIVE, and a browser reads "//evil.com/" as a different host. So
 // a request to `//evil.com/?bt=<token>` would mint a fresh god-view session and
 // then send the browser, cookie in hand, to somebody else's server.
@@ -43,11 +43,11 @@ func TestBootstrapRedeemCannotRedirectOffHost(t *testing.T) {
 			continue // not a redirect at all; nothing to escape with
 		}
 		if strings.HasPrefix(loc, "//") {
-			t.Fatalf("path %q redirected to %q — protocol-relative, so the browser "+
+			t.Fatalf("path %q redirected to %q: protocol-relative, so the browser "+
 				"leaves this host carrying a fresh god-view session", path, loc)
 		}
 		if !strings.HasPrefix(loc, "/") {
-			t.Fatalf("path %q redirected to %q — not a rooted path", path, loc)
+			t.Fatalf("path %q redirected to %q, not a rooted path", path, loc)
 		}
 	}
 }
@@ -93,7 +93,7 @@ func TestSessionCookieIsSecureOnlyOverTLS(t *testing.T) {
 // already holds.
 //
 // /api/act/* and /api/me were absent from the god-view gate, so they fell to
-// the coordination tier — which accepts the local secret alone, and every agent
+// the coordination tier, which accepts the local secret alone, and every agent
 // must hold that secret to call /mcp at all. Verified against a running daemon
 // before the fix: an ordinary agent POSTed /api/act/join and /api/act/announce
 // with nothing but the coordination secret and got 200 both times, and /api/me
@@ -102,7 +102,7 @@ func TestSessionCookieIsSecureOnlyOverTLS(t *testing.T) {
 // The announcement route is the sharpest: it creates an obligation on every
 // other member of a lane, attributed to a human who never said it. The comment
 // on godViewAuthorized promises "an agent holding the secret still lacks the
-// password, so it cannot pass" — that was not true of these routes.
+// password, so it cannot pass": that was not true of these routes.
 //
 // Raised by an independent reviewer (GPT-5.6-sol) reading the gate against the
 // route table.
@@ -121,7 +121,7 @@ func TestActingAsTheHumanIsBehindTheAdminGate(t *testing.T) {
 		}
 	}
 
-	// The coordination surface stays open to agents holding the secret —
+	// The coordination surface stays open to agents holding the secret,
 	// gating it would break every agent on the board.
 	for _, p := range []string{"/mcp", "/api/board", "/healthz"} {
 		if godViewPath(p) {
@@ -141,7 +141,7 @@ func TestActingAsTheHumanIsBehindTheAdminGate(t *testing.T) {
 //
 // It used to enumerate the two admin routes that existed. That is correct until
 // somebody adds a third, at which point the new route is reachable with the
-// coordination secret alone — which every agent holds — and nothing anywhere
+// coordination secret alone (which every agent holds) and nothing anywhere
 // says so. A hypothetical future route stands in for that third one.
 func TestEveryAdminPathIsGatedIncludingOnesNotWrittenYet(t *testing.T) {
 	for _, p := range []string{

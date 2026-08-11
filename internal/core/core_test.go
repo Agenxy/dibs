@@ -350,7 +350,7 @@ func TestNonceRetryWindowAndInUse(t *testing.T) {
 		t.Fatal("retry must return the same lane")
 	}
 	// Outside the window, same name: the nonce is the recovery credential, so
-	// this is the agent coming back — reattach with a rotated token rather than
+	// this is the agent coming back: reattach with a rotated token rather than
 	// refusing. Refusing here is what stranded four lanes' mail on a live fleet:
 	// the agent had kept its nonce exactly as advised and was told, by its own
 	// credential, that it was somebody else.
@@ -425,7 +425,7 @@ func asErr(err error, target **Error) bool {
 
 // TestRedundantObjectiveIsCaught replays the real fleet failure. Two agents
 // independently pursued ONE objective ("green main / typos gate") and produced
-// three overlapping PRs — ~3,900 diff lines, ~1,200 wasted. The waste was
+// three overlapping PRs. ~3,900 diff lines, ~1,200 wasted. The waste was
 // redundant EFFORT, not a file conflict; the files only incidentally overlapped.
 // Detection keys on the shared objective ref.
 func TestRedundantObjectiveIsCaught(t *testing.T) {
@@ -442,7 +442,7 @@ func TestRedundantObjectiveIsCaught(t *testing.T) {
 		Dirs: []string{"/repo/_typos.toml"},
 	}, t0)
 
-	// Different phrasing, different files — same objective. Must still fire.
+	// Different phrasing, different files: same objective. Must still fire.
 	res := mustApply(t, s, &Op{
 		Kind: OpSetSlot, Token: "tdoc",
 		Text: "restore green main",
@@ -462,14 +462,14 @@ func TestRedundantObjectiveIsCaught(t *testing.T) {
 	}
 	// Advisory, never coercive: #103's lane was legitimately complementary.
 	if s.Lanes["lane-b"].Slots["s1"].Text == "" {
-		t.Fatal("declaring must still succeed — Lanes informs, never blocks")
+		t.Fatal("declaring must still succeed. Lanes informs, never blocks")
 	}
 }
 
 // TestConcurrentFileWorkIsNotAnAlarm is the counterweight, and it matters as
 // much as the test above: two agents editing the same file is NORMAL. Version
 // control solved that. Lanes must report it as awareness, never as duplication
-// — a false alarm here would push agents to serialize and destroy parallelism.
+// a false alarm here would push agents to serialize and destroy parallelism.
 func TestConcurrentFileWorkIsNotAnAlarm(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	reg(t, s, "alpha", "ta", t0)
@@ -487,7 +487,7 @@ func TestConcurrentFileWorkIsNotAnAlarm(t *testing.T) {
 	}, t0)
 
 	if _, warned := res["warning"]; warned {
-		t.Fatal("same files + different objectives must NOT warn — that is healthy parallelism")
+		t.Fatal("same files + different objectives must NOT warn: that is healthy parallelism")
 	}
 	ov, _ := res["overlaps"].([]SlotOverlap)
 	if len(ov) == 0 || ov[0].Signal != SignalSamePaths {

@@ -8,7 +8,7 @@ import (
 
 // WHY a lane stopped counting as live was computed at the moment it
 // transitioned and then put only into the `lane.stale` event. A human opening
-// the board later saw "out of touch" and nothing else — beside a last-contact
+// the board later saw "out of touch" and nothing else: beside a last-contact
 // time of "now", which reads as a broken board rather than a dead agent.
 //
 // The three cases are not interchangeable, and the third is the one that must
@@ -91,7 +91,7 @@ func TestReturningClearsTheReason(t *testing.T) {
 // different facts reported as such. A CLEAN CLOSE is a fourth fact, and it was
 // being reported as a crash: an agent that called close_lane finished
 // deliberately and said so, yet its correspondent was told "coordination lease
-// lapsed … verify before touching its directories" — wrong in every clause, and
+// lapsed … verify before touching its directories": wrong in every clause, and
 // it sends somebody to inspect work that definitively ended and released
 // everything cleanly. That is the opposite of the caution the rule exists for.
 func TestExpiryTellsTheTruthAboutWhyNobodyAnswered(t *testing.T) {
@@ -176,7 +176,7 @@ func TestExpiryTellsTheTruthAboutWhyNobodyAnswered(t *testing.T) {
 			got := s.Messages[ser].ExpireDetail
 			for _, w := range tc.want {
 				if !strings.Contains(got, w) {
-					t.Errorf("must say %q — the sender acts on this; got: %s", w, got)
+					t.Errorf("must say %q: the sender acts on this; got: %s", w, got)
 				}
 			}
 			for _, n := range tc.notWant {
@@ -205,13 +205,13 @@ func TestArchivingDoesNotLaunderACrashIntoACleanClose(t *testing.T) {
 	_ = s
 }
 
-// An id is an ADDRESS — it goes on the wire, into every message envelope and
-// into urls — so it is restricted to ASCII. A name that survives none of that
+// An id is an ADDRESS: it goes on the wire, into every message envelope and
+// into urls, so it is restricted to ASCII. A name that survives none of that
 // still needs an id, and "lane" is the fallback.
 //
 // That fallback was silent. An operator registering an agent as 監視者 got an
 // agent called `lane`, a second got `lane-2`, and nothing anywhere said their
-// names had been discarded — on a board, in mail, and in every hint that names
+// names had been discarded: on a board, in mail, and in every hint that names
 // an agent. Found by putting a wide-character name on a board to check column
 // alignment, which is not what it was checking.
 func TestANameThatCannotBecomeAnIDIsNotDiscardedSilently(t *testing.T) {
@@ -237,7 +237,7 @@ func TestANameThatCannotBecomeAnIDIsNotDiscardedSilently(t *testing.T) {
 		}
 	}
 
-	// The name itself is kept, and the board carries it — otherwise a fleet
+	// The name itself is kept, and the board carries it: otherwise a fleet
 	// named in a non-Latin script reads `lane`, `lane-2`, `lane-3`: correct
 	// addresses that identify nobody.
 	if got := s.Lanes[id].Name; got != "監視者" {
@@ -275,7 +275,7 @@ func TestANameThatCannotBecomeAnIDIsNotDiscardedSilently(t *testing.T) {
 // it was dead".
 //
 // AlivePIDs is a positive-only set, so alive[pid] returns false for a process
-// nobody probed — and that false went into the LEDGER as proc_alive, a
+// nobody probed, and that false went into the LEDGER as proc_alive, a
 // permanent record of a measurement that never happened. Boot marks lanes stale
 // with no AlivePIDs at all; a sweep with no prober reports every pid alive.
 // SPEC §7 exists to keep crash, hang and unresponsiveness distinct; an
@@ -322,7 +322,7 @@ func TestProcAliveIsOnlyRecordedWhenSomethingActuallyLooked(t *testing.T) {
 				v, present := e.Data["proc_alive"]
 				found = true
 				if present != tc.wantPresent {
-					t.Fatalf("proc_alive present=%v, want %v — recording a verdict nobody "+
+					t.Fatalf("proc_alive present=%v, want %v: recording a verdict nobody "+
 						"measured is worse than recording nothing", present, tc.wantPresent)
 				}
 				if present && v != tc.wantValue {

@@ -5,15 +5,15 @@ import "time"
 // Coordinator capabilities.
 //
 // The shape a fleet actually takes is one or a few trusted agents directing many
-// workers. Before this, the human had to relay between them by hand — which is
+// workers. Before this, the human had to relay between them by hand, which is
 // exactly the failure in REQUIREMENTS.md. A coordinator gets two powers, chosen
 // because each removes a place a human was previously the transport:
 //
-//   - broadcast   — address the whole fleet at once (implemented in the engine
+//   - broadcast  : address the whole fleet at once (implemented in the engine
 //     as N ordinary sends, so each message keeps its own serial and ledger
 //     entry; a single op cannot own N message identities without breaking the
 //     one-change-one-serial invariant).
-//   - force_release — unstick a shared resource whose holder is gone, instead
+//   - force_release: unstick a shared resource whose holder is gone, instead
 //     of waiting out a lease or restarting the daemon.
 //
 // It gets no power to *read* another lane's mail. Breadth, not intrusion.
@@ -23,7 +23,7 @@ import "time"
 // would be a trap.
 func (l *Lane) IsCoordinator() bool { return l.Role == RoleCoordinator || l.Role == RoleAdmin }
 
-// IsAdmin reports whether the lane holds the full god view — including reading
+// IsAdmin reports whether the lane holds the full god view: including reading
 // other lanes' mail. Only a human grants this.
 func (l *Lane) IsAdmin() bool { return l.Role == RoleAdmin }
 
@@ -73,7 +73,7 @@ func (s *State) applyForceRelease(l *Lane, op *Op) (Result, []Event, error) {
 	return nil, nil, errf("E_NO_CLAIM", "list claims via the board", "no claim on %q", path)
 }
 
-// LiveLanesExcept returns every live lane other than one, sorted — the engine
+// LiveLanesExcept returns every live lane other than one, sorted: the engine
 // uses it to fan a broadcast out deterministically.
 func (s *State) LiveLanesExcept(id string) []*Lane {
 	out := make([]*Lane, 0, len(s.Lanes))
@@ -113,14 +113,14 @@ func (s *State) LaneBySession(sid string) *Lane {
 //
 // A hook knows what its OWN harness calls the session. That is not always what
 // the lane registered with: the stdio bridge supplies `bridge-<pid>-<random>`
-// when the model leaves session_id blank, which it always does — so for
+// when the model leaves session_id blank, which it always does, so for
 // opencode, whose plugin knows only opencode's session id, the two identifiers
 // can never match. That mismatch silently disabled both the wake path and the
 // claim guard, because a hook that cannot name a lane simply gets nothing back.
 //
 // cwd is the one identifier both sides observe: the bridge records it from
 // os.Getwd(), and a plugin knows the project it is running in. So it is the
-// fallback, and deliberately a STRICT one — used only when exactly one live
+// fallback, and deliberately a STRICT one: used only when exactly one live
 // lane sits in that directory. Two agents in one checkout is precisely the case
 // where guessing would attribute an edit to the wrong lane, and a wrong
 // attribution here means allowing a write that should have been refused.
@@ -129,7 +129,7 @@ func (s *State) LaneForHook(sid, cwd string) *Lane {
 		return l
 	}
 	// A session id that was SUPPLIED and matched nothing is positive evidence
-	// this is a different session — not a hint to go looking for a neighbour.
+	// this is a different session, not a hint to go looking for a neighbour.
 	//
 	// Without this, the directory fallback below attributed any unregistered
 	// session to whichever single registered agent shared its working
@@ -137,7 +137,7 @@ func (s *State) LaneForHook(sid, cwd string) *Lane {
 	// Verified against a running daemon: a session id that matched no lane was
 	// handed the other agent's private mail INCLUDING the body ("SECRET: the
 	// staging password is hunter2"), and guard_path returned
-	// decision=allow basis=no-claim for a path that agent held EXCLUSIVELY —
+	// decision=allow basis=no-claim for a path that agent held EXCLUSIVELY,
 	// the guard resolving the stranger to the claim holder and then reporting
 	// that nothing claimed it.
 	//
@@ -173,7 +173,7 @@ func (s *State) LaneForHook(sid, cwd string) *Lane {
 // Parent arrives on the wire as a bare string, and the powers keyed off it are
 // not cosmetic: a subagent speaks under its parent's membership, skips an
 // exclusive lane's queue, and is exempt from its parent's exclusive claims in
-// the guard. Verified against a running daemon before this existed — an agent
+// the guard. Verified against a running daemon before this existed: an agent
 // registering with parent:"victim" posted into the victim's exclusive lane,
 // joined instead of queueing, and got allow/no-claim for a path the victim held
 // exclusively.

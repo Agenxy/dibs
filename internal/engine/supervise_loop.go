@@ -12,7 +12,7 @@ import (
 // superviseEvery is how often the machine is scanned for stalled subagents.
 //
 // Slow on purpose. A scan forks `ps` once for the table and once more per
-// candidate, and the thing it is looking for takes minutes to become true —
+// candidate, and the thing it is looking for takes minutes to become true,
 // liveness.DefaultConfig() will not call anything stuck before five minutes of
 // awake silence. Scanning every second would cost sixty times as much to learn
 // the same fact sixty times later.
@@ -34,7 +34,7 @@ type SuperviseSettings struct {
 //
 // It reports and never acts. Killing or restarting a child is the parent's
 // decision, made with context about what the child was for that this does not
-// have — and even where Lanes could resume a codex session itself, a supervisor
+// have, and even where Lanes could resume a codex session itself, a supervisor
 // that silently repairs things teaches its operator nothing and hides a failure
 // that may be systematic.
 func (e *Engine) Supervise(ctx context.Context, s SuperviseSettings) {
@@ -47,7 +47,7 @@ func (e *Engine) Supervise(ctx context.Context, s SuperviseSettings) {
 // superviseWith is Supervise with its two constants supplied.
 //
 // The thresholds were baked into the loop, which made the whole thing
-// untestable without waiting out a ten-minute minimum age — so the sweep was
+// untestable without waiting out a ten-minute minimum age, so the sweep was
 // the one part of supervision never exercised end to end. They are also worth
 // tuning per machine: a laptop running one agent and a workstation running
 // twelve want different patience.
@@ -88,7 +88,7 @@ func (e *Engine) superviseOnce(ctx context.Context, cfg liveness.Config,
 		// A child that reports its own progress is believed when there is no
 		// transcript to read. opencode keeps sessions in SQLite and shares one
 		// log across every run on the machine, so there is no per-process file
-		// to watch — but its plugin can count its own turns, and a counter that
+		// to watch, but its plugin can count its own turns, and a counter that
 		// only goes up is exactly what the classifier needs. Without this, an
 		// opencode child is judged on CPU alone: a hard stall is caught, a slow
 		// one is not.
@@ -108,7 +108,7 @@ func (e *Engine) superviseOnce(ctx context.Context, cfg liveness.Config,
 		v := liveness.Classify(history[a.PID], cfg)
 		if v.State != liveness.Stuck {
 			// Recovered. Clearing the flag means a child that stalls, resumes
-			// and stalls again is reported both times — the second stall is
+			// and stalls again is reported both times: the second stall is
 			// news, and suppressing it would be worse than the first silence.
 			told[a.PID] = false
 			continue
@@ -122,7 +122,7 @@ func (e *Engine) superviseOnce(ctx context.Context, cfg liveness.Config,
 	}
 
 	// Forget processes that are gone, or these maps grow for the life of the
-	// daemon — a long-running board spawns a lot of short-lived agents.
+	// daemon: a long-running board spawns a lot of short-lived agents.
 	for pid := range history {
 		if !live[pid] {
 			delete(history, pid)
@@ -167,7 +167,7 @@ func (e *Engine) progressFor(ctx context.Context, owner string) int64 {
 // Through the notice path rather than mail: a notice is precisely "something
 // happened to you that you could not have inferred", it is delivered on the
 // agent's next ack_board or hook_poll without it having to ask, and it needs no
-// ledger op — which matters because a stall is an observation about this
+// ledger op, which matters because a stall is an observation about this
 // machine right now, not a coordination fact that must survive replay.
 //
 // An unattributable child is not reported to anybody. That is the deliberate
@@ -196,7 +196,7 @@ func (e *Engine) reportStallLocked(a liveness.Agent, v liveness.Verdict, transcr
 	}
 	text := fmt.Sprintf(
 		"A %s subagent you spawned (pid %d) has stopped working: %s. "+
-			"Lanes has not touched it — restarting or abandoning it is your call, "+
+			"Lanes has not touched it: restarting or abandoning it is your call, "+
 			"and `lanes probe --pid %d` will show its current state.",
 		a.Harness, a.PID, v.Why, a.PID)
 	if v.Slept > 0 {
@@ -204,7 +204,7 @@ func (e *Engine) reportStallLocked(a liveness.Agent, v liveness.Verdict, transcr
 			"counted as silence.", v.Slept.Round(time.Second))
 	}
 	// Offer the command; do not run it. Withholding it is a different thing
-	// from declining to run it — a parent told "your subagent is stuck" and
+	// from declining to run it: a parent told "your subagent is stuck" and
 	// left to work out the incantation has been handed a problem instead of a
 	// decision.
 	if cmd := liveness.ResumeCommand(a.Harness, transcript); cmd != "" {

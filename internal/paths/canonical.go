@@ -8,7 +8,7 @@ import (
 // agents naming the same directory two different ways are understood to be
 // talking about the same directory.
 //
-// This is not cosmetic. Claims and the guard compare paths as STRINGS —
+// This is not cosmetic. Claims and the guard compare paths as STRINGS,
 // deliberately, because that comparison has to be replayable from the ledger on
 // any machine at any later time, and a state machine that stats the disk is not
 // replayable. String comparison only works if the strings were canonicalised on
@@ -21,7 +21,7 @@ import (
 // (/private/var/folders/…/p), while a harness plugin guarding an edit passes
 // the path the user typed (/var/folders/…/p). Those two strings do not
 // overlap, so an exclusive claim taken by one agent silently failed to stop
-// another — the guard fell open, exactly as designed, on a difference that was
+// another: the guard fell open, exactly as designed, on a difference that was
 // never real. Any repo reached through a symlink has the same problem, and
 // symlinked checkouts are ordinary.
 //
@@ -40,7 +40,7 @@ func Canonical(p string) string {
 	p = filepath.Clean(p)
 
 	// EvalSymlinks requires every component to exist, and the guard is asked
-	// about files that do not exist yet — `write` creating a new file is the
+	// about files that do not exist yet. `write` creating a new file is the
 	// common case, and a check that skipped new files would be a hole exactly
 	// where a rogue agent could drive through it. So resolve the deepest
 	// ancestor that DOES exist and re-attach the rest, which is sound: the

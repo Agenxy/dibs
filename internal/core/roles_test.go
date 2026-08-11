@@ -38,7 +38,7 @@ func TestAdminImpliesCoordinator(t *testing.T) {
 	if !l.IsCoordinator() {
 		t.Fatal("admin must also hold coordinator powers")
 	}
-	// And a coordinator is NOT an admin — the escalation is one-way.
+	// And a coordinator is NOT an admin: the escalation is one-way.
 	reg(t, s, "lead", "tl", t0)
 	mustApply(t, s, &Op{Kind: OpGrantRole, To: "lead", Mode: RoleCoordinator}, t0)
 	if s.Lanes["lead"].IsAdmin() {
@@ -60,7 +60,7 @@ func TestForceReleaseNeedsCoordinator(t *testing.T) {
 	if _, _, err := s.Apply(&Op{Kind: OpForceRelease, Token: "tb", Path: "/dev/ttyUSB0"}, t0); !errors.Is(err, ErrNotCoordinator) {
 		t.Fatalf("non-coordinator force_release: got %v, want E_NOT_COORDINATOR", err)
 	}
-	// A coordinator can — and the holder is told.
+	// A coordinator can, and the holder is told.
 	mustApply(t, s, &Op{Kind: OpGrantRole, To: "boss", Mode: RoleCoordinator}, t0)
 	_, evs, err := s.Apply(&Op{Kind: OpForceRelease, Token: "tb", Path: "/dev/ttyUSB0", Note: "holder died"}, t0)
 	if err != nil {
@@ -73,7 +73,7 @@ func TestForceReleaseNeedsCoordinator(t *testing.T) {
 		}
 	}
 	if !told {
-		t.Fatal("the claim holder must be notified — silent seizure is not honest")
+		t.Fatal("the claim holder must be notified: silent seizure is not honest")
 	}
 	if len(s.Claims) != 0 {
 		t.Fatal("claim should be gone")
@@ -81,7 +81,7 @@ func TestForceReleaseNeedsCoordinator(t *testing.T) {
 }
 
 // TestCoordinatorCannotReadOthersMail is the boundary that keeps the founding
-// guarantee true for the common case. Breadth, not intrusion — an admin, which
+// guarantee true for the common case. Breadth, not intrusion: an admin, which
 // the human grants deliberately and separately, is the documented exception.
 func TestCoordinatorCannotReadOthersMail(t *testing.T) {
 	s := NewState("n1", DefaultLimits())

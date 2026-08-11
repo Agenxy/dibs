@@ -1,6 +1,6 @@
 // Package plugins hands an agent the Lanes plugin for its own harness, over MCP.
 //
-// Lanes works with no plugin at all — the daemon is the product and every tool
+// Lanes works with no plugin at all: the daemon is the product and every tool
 // behaves the same without one. What a plugin buys is delivery: on Claude Code
 // it turns mail from something an agent must remember to poll for into something
 // that arrives in the session, which is the difference between a board that gets
@@ -8,7 +8,7 @@
 //
 // The problem was never that agents refused to install it. It was that nothing
 // ever told them it existed. An agent connects, sees forty tools, and has no way
-// to learn that this particular harness has a hook that would wake it — the
+// to learn that this particular harness has a hook that would wake it: the
 // information lived in a README in a repository the agent may not have, and
 // nobody reads a repository they did not clone.
 //
@@ -17,11 +17,11 @@
 // same connection the agent already trusts, so an agent that decides to install
 // can write the files and be done. A pointer would have reintroduced exactly the
 // gap this closes, because the reason the plugin went uninstalled was never
-// unwillingness — it was distance.
+// unwillingness: it was distance.
 //
 // The files are duplicated under data/ because go:embed cannot reach above its
 // own package, and plugins/ at the repository root stays canonical. Drift
-// between the two is a defect, and drift_test.go fails on it — the same
+// between the two is a defect, and drift_test.go fails on it: the same
 // arrangement skills.md already uses for the same reason.
 package plugins
 
@@ -34,9 +34,9 @@ import (
 )
 
 // all: is load-bearing. A bare `go:embed data` silently skips every path whose
-// name begins with a dot, so .claude-plugin/plugin.json and .mcp.json — the
+// name begins with a dot, so .claude-plugin/plugin.json and .mcp.json: the
 // manifest and the MCP server definition, without which the thing is not a
-// plugin at all — were omitted from a payload documented as "the whole plugin".
+// plugin at all: were omitted from a payload documented as "the whole plugin".
 // No error, no warning: the directive simply walked past them.
 //
 //go:embed all:data
@@ -54,7 +54,7 @@ type Plugin struct {
 	Install string `json:"install,omitempty"`
 	// Files maps a path relative to the plugin root to its contents, so an agent
 	// with no network and no checkout can still write the plugin out. Every file
-	// the canonical plugin has, including dotfiles — an install missing its
+	// the canonical plugin has, including dotfiles: an install missing its
 	// manifest is not an install.
 	Files map[string]string `json:"files"`
 	// Root is where Files are conventionally written on this harness.
@@ -69,14 +69,14 @@ type Plugin struct {
 	// Verify is the single end-to-end check that the whole thing works, phrased
 	// so a wrong answer is unambiguous.
 	Verify string `json:"verify"`
-	// Delivers says whether this harness has a WAKE PATH — whether mail can reach
+	// Delivers says whether this harness has a WAKE PATH: whether mail can reach
 	// the agent without it asking.
 	//
 	// Not every harness with lifecycle hooks has one. Codex fires hooks as
 	// subprocesses, which Lanes refuses to be, so it has hook traffic and no
 	// delivery: an agent there must still pull. Without this flag the two facts
 	// were reported by different code paths and contradicted each other in the
-	// same result — "mail will arrive, you do not need to poll" beside an entry
+	// same result. "mail will arrive, you do not need to poll" beside an entry
 	// stating mail is pull-only. An agent that believed the first would stop
 	// checking and silently lose mail.
 	Delivers bool `json:"delivers"`
@@ -116,7 +116,7 @@ var catalog = []struct {
 				Do: "Install the plugin: `claude plugin marketplace add agenxy/lanes && " +
 					"claude plugin install lanes`. If you have no network or no checkout, " +
 					"write the files in `files` below under ~/.claude/plugins/lanes/ " +
-					"instead — they are the whole plugin.",
+					"instead: they are the whole plugin.",
 				Check: "the files exist at the paths in `files`, with the same contents",
 				IfNot: "nothing else here will work; the hooks are what the rest depends on",
 			},
@@ -125,7 +125,7 @@ var catalog = []struct {
 					"start, so a plugin installed mid-session is inert until then.",
 				Check: "call spawned_agents and look for YOUR OWN session_id in the result",
 				IfNot: "your SessionStart hook did not fire. The plugin is installed but " +
-					"not loaded — restarting is the fix, not reinstalling",
+					"not loaded: restarting is the fix, not reinstalling",
 				Manual: true,
 			},
 			{
@@ -149,14 +149,14 @@ var catalog = []struct {
 		dir:     "codex",
 		aliases: []string{"chatgpt-desktop", "chatgpt", "gpt"},
 		buys: "the hook definitions, for reference. Codex fires hooks as " +
-			"SUBPROCESSES, which Lanes will not be — a plugin that spawned a process " +
+			"SUBPROCESSES, which Lanes will not be: a plugin that spawned a process " +
 			"to drive your harness would make Lanes a wrapper rather than a service " +
-			"— so on this harness mail stays pull-only: call await_events or inbox " +
+			",  so on this harness mail stays pull-only: call await_events or inbox " +
 			"when you choose. That is the honest floor and it works everywhere.",
 		root: "~/.codex/hooks",
 		setup: []Step{
 			{
-				Do: "Nothing is required — you are connected and every tool works. Do NOT " +
+				Do: "Nothing is required: you are connected and every tool works. Do NOT " +
 					"install a hook that shells out to fetch mail: that would make Lanes " +
 					"drive your harness, which this project refuses on purpose.",
 				Check: "call ack_board and confirm it returns a board",
@@ -167,14 +167,14 @@ var catalog = []struct {
 					"Those are the two moments where news changes what you do next.",
 				Check: "await_events returns rather than erroring, and ack_board reports a " +
 					"cursor serial",
-				IfNot: "you are registered but not acknowledging — set_slot and claim " +
+				IfNot: "you are registered but not acknowledging: set_slot and claim " +
 					"refuse until ack_board has succeeded this activation",
 			},
 			{
 				Do: "Optional: `-c features.mcp_2026_07_28=true`, so a subagent reconnects " +
 					"without a handshake. Costs nothing and changes no behaviour.",
 				Check:  "the run starts without a protocol error",
-				IfNot:  "leave it off — Lanes serves both paths and all tools behave the same",
+				IfNot:  "leave it off. Lanes serves both paths and all tools behave the same",
 				Manual: true,
 			},
 		},
@@ -254,7 +254,7 @@ func load(harness, dir, buys, install, root, verify string, setup []Step, delive
 }
 
 // relPath works on embed's slash-separated paths, which are not OS paths.
-// path/filepath would be wrong on Windows, and these strings go over the wire —
+// path/filepath would be wrong on Windows, and these strings go over the wire,
 // an agent writing the files out must get the same layout on every platform.
 func relPath(base, target string) string {
 	return strings.TrimPrefix(strings.TrimPrefix(target, base), "/")

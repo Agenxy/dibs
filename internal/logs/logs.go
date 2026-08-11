@@ -7,7 +7,7 @@
 //   - The log must not leak what the ledger protects. Lane tokens, secrets, and
 //     message bodies are encrypted at rest; a debug log that printed them would
 //     quietly undo that. Sensitive attributes are redacted at capture time, not
-//     at display time — there is no copy holding the real value.
+//     at display time: there is no copy holding the real value.
 package logs
 
 import (

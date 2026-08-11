@@ -41,7 +41,7 @@ func TestShowBoardSplitsModelAndUIPayloads(t *testing.T) {
 		t.Fatal("summary counted 0 lanes while the payload had 2")
 	}
 
-	// structuredContent may carry the panel's BOOTSTRAP — the view, the lane id
+	// structuredContent may carry the panel's BOOTSTRAP: the view, the lane id
 	// and the caller's own token, so a host that drops _meta can still let the
 	// panel fetch the board over its own bridge. It must never carry the board
 	// itself: that is the cost this tool exists to avoid.
@@ -61,7 +61,7 @@ func TestShowBoardSplitsModelAndUIPayloads(t *testing.T) {
 	meta := out["_meta"].(map[string]any)
 	sc, ok := meta[panelDataMetaKey].(core.Result)
 	if !ok {
-		t.Fatal("panel metadata missing — the UI would render nothing")
+		t.Fatal("panel metadata missing: the UI would render nothing")
 	}
 	b := asMap(sc["board"])
 	if got := len(asMaps(b["lanes"])); got != 2 {
@@ -103,7 +103,7 @@ func TestUIBoardTemplateIsStaticAndWellFormed(t *testing.T) {
 	}
 	// A human reads this panel; the agent is one of the names on screen. Second
 	// person asks the reader to be the agent, which is how "→ you" shipped once.
-	// Match rendered output only — prose in a comment explaining the rule is fine.
+	// Match rendered output only: prose in a comment explaining the rule is fine.
 	for _, bad := range []string{`>you<`, `> you<`, "→ you", "You</"} {
 		if strings.Contains(html, bad) {
 			t.Errorf("panel addresses the reader as the agent (%q); name the lane instead", bad)
@@ -111,7 +111,7 @@ func TestUIBoardTemplateIsStaticAndWellFormed(t *testing.T) {
 	}
 	// First paint must not wait on the host. An earlier version called draw()
 	// only after ui/initialize settled, so a silent host left the panel blank for
-	// the full timeout — and a host that sizes its container to content showed the
+	// the full timeout, and a host that sizes its container to content showed the
 	// human an empty box. The draw() call must precede the handshake IIFE.
 	firstDraw := strings.Index(html, "\ndraw()")
 	handshake := strings.Index(html, `call("ui/initialize"`)
@@ -120,7 +120,7 @@ func TestUIBoardTemplateIsStaticAndWellFormed(t *testing.T) {
 	}
 	// The handshake shape is validated by the host against a zod schema. Sending
 	// base MCP's clientInfo/capabilities instead of appInfo/appCapabilities is
-	// rejected, and rejection is silent — the panel simply never comes up.
+	// rejected, and rejection is silent: the panel simply never comes up.
 	if !strings.Contains(html, "appInfo:") || !strings.Contains(html, "appCapabilities:") {
 		t.Error("ui/initialize must send appInfo + appCapabilities, not clientInfo/capabilities")
 	}
@@ -128,7 +128,7 @@ func TestUIBoardTemplateIsStaticAndWellFormed(t *testing.T) {
 		t.Error("ui/initialize still sends the base-MCP clientInfo shape")
 	}
 	// The host sizes the iframe from what the app reports. Send nothing and the
-	// container has zero height — a widget that "rendered" showing nothing. This
+	// container has zero height: a widget that "rendered" showing nothing. This
 	// is what made the panel look blank for three rounds of testing.
 	if !strings.Contains(html, "ui/notifications/size-changed") {
 		t.Error("app never reports its size; the host cannot give it any height")
@@ -138,7 +138,7 @@ func TestUIBoardTemplateIsStaticAndWellFormed(t *testing.T) {
 	}
 	// The panel is set as a document, not a dashboard: a lane is a ledger
 	// ENTRY, its status a printed mark. Asserting the structure rather than a
-	// particular decoration — the previous version of this pinned `class="rail"`
+	// particular decoration: the previous version of this pinned `class="rail"`
 	// and so failed the moment the design was reworked, which is a test
 	// measuring the wrong thing.
 	for _, part := range []string{`class="entry`, `class="pip"`, `class="band`} {
@@ -189,7 +189,7 @@ func TestInboxCountHandlesBothShapes(t *testing.T) {
 
 // A panel fix has to be able to REACH a host, and for one release it could not.
 //
-// Hosts prefetch the template by URI and keep it — this server marks it public
+// Hosts prefetch the template by URI and keep it: this server marks it public
 // and hints an hour, and a real host held one across a daemon restart and every
 // rebuild in a session, serving pre-fix markup while the daemon served the fix
 // to anyone who asked. Nothing asked. A permanently stable URI makes a shipped
@@ -207,7 +207,7 @@ func TestThePanelURIChangesWhenThePanelDoes(t *testing.T) {
 			"dispatch both key off %q", uri, uiBoardBase)
 	}
 	if uri == uiBoardBase {
-		t.Fatal("the panel URI is still the bare constant — a cached panel can never be replaced")
+		t.Fatal("the panel URI is still the bare constant: a cached panel can never be replaced")
 	}
 	// Derived from the served template, so an edit anywhere in it moves the URI.
 	// Recomputed here the long way rather than compared to the package value,
@@ -216,7 +216,7 @@ func TestThePanelURIChangesWhenThePanelDoes(t *testing.T) {
 	// to contain its own digest.
 	sum := sha256.Sum256([]byte(boardAppTemplate()))
 	if want := uiBoardBase + "/" + hex.EncodeToString(sum[:])[:12]; uri != want {
-		t.Errorf("panel URI = %q, want %q — it is not derived from the template served", uri, want)
+		t.Errorf("panel URI = %q, want %q: it is not derived from the template served", uri, want)
 	}
 	// Two different templates must not share a URI, which is the property the
 	// whole mechanism rests on.
@@ -255,7 +255,7 @@ func TestThePanelURIChangesWhenThePanelDoes(t *testing.T) {
 //
 // This is the failure a screenshot finally showed, after the tool result had
 // been measured every other way and looked correct every time. The panel said it
-// itself: "no board from this host". Every carrier was empty — _meta dropped by
+// itself: "no board from this host". Every carrier was empty. _meta dropped by
 // the host, `content` one summary line with no board in it, structuredContent
 // holding three fields of plumbing, and the fetch impossible because that host
 // does not let an app call tools back. show_board's whole purpose is to put the
@@ -263,7 +263,7 @@ func TestThePanelURIChangesWhenThePanelDoes(t *testing.T) {
 //
 // So a client that DECLARES it renders MCP Apps gets the board in
 // structuredContent as well, and pays for it. A client that declares nothing
-// still gets _meta and nothing extra — that half is asserted too, because gating
+// still gets _meta and nothing extra: that half is asserted too, because gating
 // the payload itself (rather than this duplicate) is the older mistake that
 // silently starved the reference host.
 func TestShowBoardCarriesTheBoardToAHostThatSaysItRenders(t *testing.T) {
@@ -282,7 +282,7 @@ func TestShowBoardCarriesTheBoardToAHostThatSaysItRenders(t *testing.T) {
 	}
 	board := asMap(declared["board"])
 	if got := len(asMaps(board["lanes"])); got != 1 {
-		t.Errorf("structuredContent board has %d lanes, want 1 — the panel would draw "+
+		t.Errorf("structuredContent board has %d lanes, want 1: the panel would draw "+
 			"\"no board from this host\"", got)
 	}
 	// The summary must survive alongside it: this host shows the model
@@ -307,7 +307,7 @@ func TestShowBoardCarriesTheBoardToAHostThatSaysItRenders(t *testing.T) {
 	}
 	meta := plain["_meta"].(map[string]any)
 	if _, has := meta[panelDataMetaKey]; !has {
-		t.Fatal("the _meta payload is gated on the declaration — that starves every " +
+		t.Fatal("the _meta payload is gated on the declaration: that starves every " +
 			"host that renders without announcing")
 	}
 }
@@ -318,13 +318,13 @@ func TestShowBoardCarriesTheBoardToAHostThatSaysItRenders(t *testing.T) {
 // tools/list, and they resolve it once, at connect time. A URI that does not
 // change when the panel changes is therefore cached for the life of the
 // connection: the server ships a fix, the host keeps drawing the old panel, and
-// nothing in either log says so. That is precisely what happened — the result
+// nothing in either log says so. That is precisely what happened: the result
 // and resources/list carried the content hash while all four declarations
 // carried the base, so the one path hosts actually use was the one path the
 // versioning never reached.
 //
 // The inspector could not have caught this. It re-reads the template on every
-// run, so it never has a cache to serve stale bytes from — a green instrument
+// run, so it never has a cache to serve stale bytes from: a green instrument
 // and a stale screen, at the same time, for the same build.
 func TestNoToolDeclaresTheUnhashedPanelURI(t *testing.T) {
 	for _, tool := range toolDefs {
@@ -340,16 +340,16 @@ func TestNoToolDeclaresTheUnhashedPanelURI(t *testing.T) {
 		// An absent or empty resourceUri is not a pass.
 		//
 		// This test skipped it, so deleting the field from all four declarations
-		// left the whole suite green while every host lost the panel entirely —
+		// left the whole suite green while every host lost the panel entirely,
 		// the failure is total rather than stale, and it was the less-guarded of
 		// the two. A tool that declares `ui` at all is claiming to have one.
 		if uri == "" {
-			t.Errorf("tool %v declares _meta.ui with no resourceUri — a host has nothing "+
+			t.Errorf("tool %v declares _meta.ui with no resourceUri: a host has nothing "+
 				"to resolve and renders no panel at all", tool["name"])
 			continue
 		}
 		if uri == uiBoardBase {
-			t.Errorf("tool %v declares the unhashed panel URI %q — hosts cache the "+
+			t.Errorf("tool %v declares the unhashed panel URI %q: hosts cache the "+
 				"template under this URI at connect time and will never see a changed "+
 				"panel; use uiBoardURI", tool["name"], uri)
 		}
@@ -364,7 +364,7 @@ func TestNoToolDeclaresTheUnhashedPanelURI(t *testing.T) {
 //
 // Three surfaces name the same template, and a host may consult any of them. If
 // they disagree the host can fetch a URI the server does not serve, or cache one
-// the server has moved on from — both of which present as a blank or stale
+// the server has moved on from: both of which present as a blank or stale
 // panel with no error anywhere.
 func TestEverySurfaceNamesTheSamePanelURI(t *testing.T) {
 	// The declarations are the surface hosts actually resolve from, so they are
@@ -374,7 +374,7 @@ func TestEverySurfaceNamesTheSamePanelURI(t *testing.T) {
 	// The exact set, not a count.
 	//
 	// Requiring "at least one" let three of the four declarations be deleted
-	// while the suite stayed green — ack_board, inbox and show_board would all
+	// while the suite stayed green: ack_board, inbox and show_board would all
 	// have stopped opening the panel, which is most of the ways a human ever
 	// sees it, and only await_events kept the guard satisfied. These four are
 	// named because each is a moment the human is meant to get a board: the
@@ -395,7 +395,7 @@ func TestEverySurfaceNamesTheSamePanelURI(t *testing.T) {
 	}
 	for name, ok := range mustDeclare {
 		if !ok {
-			t.Errorf("tool %q no longer declares the panel URI — that surface stops "+
+			t.Errorf("tool %q no longer declares the panel URI: that surface stops "+
 				"opening the board for the human, and a count-based check would not "+
 				"have noticed while any other tool still declared it", name)
 		}
@@ -416,25 +416,25 @@ func TestEverySurfaceNamesTheSamePanelURI(t *testing.T) {
 // return the minimal panel instead, so a daemon with LANES_PANEL_MINIMAL set
 // advertised the same URI for 483 bytes that another advertised for 264594. A
 // host that saw both across a restart would hold whichever it cached first and
-// never refetch — a content-addressed identity that was not addressing the
+// never refetch: a content-addressed identity that was not addressing the
 // content.
 func TestThePanelBuildNamesTheBytesActuallyServed(t *testing.T) {
 	sum := sha256.Sum256([]byte(boardApp()))
 	served := hex.EncodeToString(sum[:])[:12]
 	// boardApp() substitutes the build id into the full template, so the served
-	// bytes cannot equal the hashed ones there — what must hold is that the id
+	// bytes cannot equal the hashed ones there: what must hold is that the id
 	// is derived from the same SOURCE the switch selects.
 	source := boardAppTemplate()
 	if panelMinimal {
 		source = minimalPanelHTML
 		if served != panelBuild {
-			t.Errorf("minimal panel serves %s but the URI names %s — a host would cache "+
+			t.Errorf("minimal panel serves %s but the URI names %s: a host would cache "+
 				"one under the other's identity", served, panelBuild)
 		}
 	}
 	sum2 := sha256.Sum256([]byte(source))
 	if want := hex.EncodeToString(sum2[:])[:12]; want != panelBuild {
-		t.Errorf("panelBuild = %s, want %s — the id does not name the template this "+
+		t.Errorf("panelBuild = %s, want %s: the id does not name the template this "+
 			"daemon would serve", panelBuild, want)
 	}
 }
@@ -445,7 +445,7 @@ func TestThePanelBuildNamesTheBytesActuallyServed(t *testing.T) {
 // LANES_PANEL_MINIMAL exists to answer "is the panel blank because of the panel,
 // or because of the host" by serving 483 bytes that cannot possibly be at fault.
 // Tests asserting the real template's structure, its script, or the way its hash
-// tracks its content are meaningless against that stub — they were simply failing,
+// tracks its content are meaningless against that stub: they were simply failing,
 // so the whole package was red in a mode the daemon genuinely supports and nobody
 // could run the suite to check anything else about it.
 //
@@ -464,7 +464,7 @@ func requireFullPanel(t *testing.T) {
 //
 // It is a diagnostic: something a person switches on when the board panel is
 // blank, to find out whether the panel or the host is at fault. That only works
-// if it is unmistakably itself — served, tiny, identified by its own hash, and
+// if it is unmistakably itself: served, tiny, identified by its own hash, and
 // not quietly the full template with the flag ignored.
 func TestTheMinimalPanelIsServableAndIdentified(t *testing.T) {
 	if !panelMinimal {
@@ -472,7 +472,7 @@ func TestTheMinimalPanelIsServableAndIdentified(t *testing.T) {
 	}
 	body := boardApp()
 	if body != minimalPanelHTML {
-		t.Fatal("the flag is set but boardApp served something else — the diagnostic " +
+		t.Fatal("the flag is set but boardApp served something else: the diagnostic " +
 			"cannot rule the panel out if it is still serving the panel")
 	}
 	if len(body) > 4096 {
@@ -481,7 +481,7 @@ func TestTheMinimalPanelIsServableAndIdentified(t *testing.T) {
 	}
 	sum := sha256.Sum256([]byte(minimalPanelHTML))
 	if want := hex.EncodeToString(sum[:])[:12]; panelBuild != want {
-		t.Errorf("panelBuild = %s, want %s — in this mode the URI must name the stub, "+
+		t.Errorf("panelBuild = %s, want %s: in this mode the URI must name the stub, "+
 			"or a host caches one panel under the other's identity", panelBuild, want)
 	}
 	if !strings.HasPrefix(uiBoardURI, uiBoardBase+"/") {

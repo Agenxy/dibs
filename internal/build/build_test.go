@@ -15,7 +15,7 @@ func info(mainVersion string, settings ...debug.BuildSetting) *debug.BuildInfo {
 // never answer with a release number the binary is not.
 //
 // The fallback used to be "0.0.0-dev". Once v0.0.1 shipped, a build from a tree
-// AHEAD of the release announced itself as 0.0.0 and read as stale — the exact
+// AHEAD of the release announced itself as 0.0.0 and read as stale: the exact
 // confusion `lanes version` exists to end.
 func TestVersionNeverClaimsAReleaseItIsNot(t *testing.T) {
 	for _, tc := range []struct {
@@ -51,7 +51,7 @@ func TestVersionNeverClaimsAReleaseItIsNot(t *testing.T) {
 func TestTheFallbackIsNotAVersionNumber(t *testing.T) {
 	for _, c := range unstamped {
 		if c >= '0' && c <= '9' {
-			t.Fatalf("the unstamped sentinel %q contains a digit — it can be mistaken "+
+			t.Fatalf("the unstamped sentinel %q contains a digit: it can be mistaken "+
 				"for, and compared against, a real release", unstamped)
 		}
 	}

@@ -7,11 +7,11 @@ import (
 	"github.com/agenxy/lanes/internal/core"
 )
 
-// One op, one serial — the invariant whose breach took a live board down.
+// One op, one serial: the invariant whose breach took a live board down.
 //
 // Apply finishes centrally, and several handlers finish for themselves because
 // they need the serial in their result. lane_open therefore allocated TWO for
-// one op, and the engine appends at the final value — so the intermediate
+// one op, and the engine appends at the final value, so the intermediate
 // serial was never written: a permanent hole in the ledger at a point where a
 // real transition had happened.
 //
@@ -48,7 +48,7 @@ func TestOneOpAllocatesExactlyOneSerial(t *testing.T) {
 			continue // no state change, no serial, correctly not ledgered
 		}
 		if got := s.Serial - before; got != 1 {
-			t.Errorf("%s advanced the serial by %d, want exactly 1 — anything more "+
+			t.Errorf("%s advanced the serial by %d, want exactly 1: anything more "+
 				"leaves a hole in the ledger where a transition happened",
 				op.Kind, got)
 		}

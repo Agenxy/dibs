@@ -9,7 +9,7 @@ import "os"
 //
 // It exists because the human flow is otherwise undrivable without a person: no
 // test, no CI run, and no unattended development session can produce a
-// fingerprint. Every branch of the flow needs exercising — the panel says three
+// fingerprint. Every branch of the flow needs exercising: the panel says three
 // different things for Verified, Declined and Unavailable, and the two failure
 // sentences are the ones nobody ever sees by accident.
 

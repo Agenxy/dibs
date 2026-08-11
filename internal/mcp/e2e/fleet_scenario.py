@@ -6,7 +6,7 @@
 """A fleet, for real: several harnesses with real models, coordinating through
 Lanes, with a human acting from the board at the same time.
 
-This is not a unit test and does not belong in `task ci` — it spends money on
+This is not a unit test and does not belong in `task ci`: it spends money on
 model calls and depends on provider availability. It exists because everything
 else in the suite drives Lanes through its own client code, and the one question
 that cannot answer is whether a REAL harness, with a real model deciding what to
@@ -55,7 +55,7 @@ def ok(msg: str) -> None:
 def no(msg: str, detail: str = "") -> None:
     global failed
     failed += 1
-    print(f"  {RED}✗{RESET} {msg}{' — ' + detail if detail else ''}")
+    print(f"  {RED}✗{RESET} {msg}{'. ' + detail if detail else ''}")
 
 
 def note(msg: str) -> None:
@@ -89,7 +89,7 @@ class Daemon:
         """Block until the daemon says its index is built.
 
         Indexing is asynchronous, so a declaration made before it finishes is
-        scored against an empty index and silently gets 0 — which reads as
+        scored against an empty index and silently gets 0, which reads as
         "these two agents are unrelated" rather than "ask again in a moment".
         """
         deadline = time.monotonic() + timeout
@@ -160,7 +160,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
     The board hands out its session by answering `GET /?bt=<token>` with a
     303 and a Set-Cookie. urllib follows redirects by default, so the headers
-    that reach the caller are the FINAL response's — and the cookie, which only
+    that reach the caller are the FINAL response's, and the cookie, which only
     ever existed on the 303, is silently gone. The whole human-acts-from-the-
     board half of this scenario then skips itself with "no session", which reads
     like an environment problem rather than a client bug.
@@ -278,7 +278,7 @@ def launch_harnesses(proj: Path, work: Path, data: Path, secret: str) -> list:
             stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL))
     elif shutil.which("pi"):
         (work / "pi.log").write_text(
-            "pi: skipped — set PI_API_KEY (or OPENROUTER_API_KEY) to include it\n")
+            "pi: skipped: set PI_API_KEY (or OPENROUTER_API_KEY) to include it\n")
     else:
         (work / "pi.log").write_text("pi: not installed\n")
 
@@ -289,7 +289,7 @@ class Human:
     """The operator, acting from the board while the agents run.
 
     The board's session is minted by proving the local secret AND the admin
-    password, exactly as `lanes web` does — no special path for the test.
+    password, exactly as `lanes web` does: no special path for the test.
     """
 
     def __init__(self, d: Daemon, password: str = "lanes-fleet"):
@@ -344,7 +344,7 @@ def human_acts(d: Daemon, human: Human) -> str:
         return ""
     # Watching is not participating: the identity does not exist until the human
     # ACTS, so asking first correctly returns empty. Any client that asks "who am
-    # I" before doing anything must handle that — the board's own UI re-asks
+    # I" before doing anything must handle that: the board's own UI re-asks
     # after its first action, and so does this.
     if human.whoami():
         no("lazy identity", "an agent existed before acting")
@@ -377,7 +377,7 @@ def human_acts(d: Daemon, human: Human) -> str:
 def human_directs(d: Daemon, human: Human, seed_tok: str, me: str) -> None:
     """The coordinator role, then a real two-way exchange with an agent."""
     if human.live:
-        # Only a human may grant the coordinator role — the director of
+        # Only a human may grant the coordinator role: the director of
         # SPEC-CHANNELS.md §8.1. No agent can promote itself.
         st, _, _ = http("POST", f"http://127.0.0.1:{d.port}/api/admin/role",
                         headers={"X-Lanes-Local": d.secret,
@@ -418,7 +418,7 @@ def human_directs(d: Daemon, human: Human, seed_tok: str, me: str) -> None:
 
 
 def announcement_reaches_an_agent(d: Daemon, seed_tok: str) -> None:
-    """The human's announcement must reach an agent through the wake path —
+    """The human's announcement must reach an agent through the wake path,
     WITHOUT handing its contents to a caller that proved nothing.
 
     hook_poll takes a session id off the wire with no lane token, because a
@@ -451,7 +451,7 @@ def report_board(board: dict, me: str) -> None:
     agents = [lane for lane in board.get("lanes", []) if lane["id"] not in ("seed", "inspector")]
     chans = board.get("channels", [])
     harnesses = sorted({(lane.get("agent") or {}).get("harness", "?") for lane in agents})
-    print(f"\n  agents registered: {len(agents)} — "
+    print(f"\n  agents registered: {len(agents)}. "
           f"harnesses: {', '.join(h for h in harnesses if h)}")
     for lane in agents:
         a = lane.get("agent") or {}
@@ -466,7 +466,7 @@ def report_board(board: dict, me: str) -> None:
                   for m in auth.get("members", []) if m.get("score")]
         print(f"\n  lane auth-work members: {', '.join(members)}")
         print(f"    auto-matched in: {', '.join(auto) if auto else '(none)'}")
-        print(f"    recorded scores: {', '.join(scored) if scored else '(none — joined explicitly)'}")
+        print(f"    recorded scores: {', '.join(scored) if scored else '(none: joined explicitly)'}")
         print(f"    human present:   {'yes' if me and me in members else 'no'}")
         print(f"    unacked announcements: {auth.get('unacked_announcements', 0)}")
 
@@ -476,13 +476,13 @@ def director_merges(d: Daemon, seed_tok: str) -> None:
 
     A merge is the destructive one, and it has three things to decide: the
     source lane's MEMBERS, its QUEUE, and its outstanding ANNOUNCEMENTS. Two of
-    those were silently dropped — a queued agent was left waiting forever on a
+    those were silently dropped: a queued agent was left waiting forever on a
     lane that had been deleted, and its announcements were left naming a lane
     that no longer existed, countable on no board while still obliging members
     to answer them.
     """
     print()
-    print("  the coordinator directs — merge with live members, a queue and unacked mail")
+    print("  the coordinator directs: merge with live members, a queue and unacked mail")
 
     holder = d.agent("holder")
     waiter = d.agent("waiter")
@@ -558,7 +558,7 @@ def director_merges(d: Daemon, seed_tok: str) -> None:
     #
     # lane_updates is the authoritative path for the second. The wake hook is a
     # nudge, and because it is token-less a peer that merely knows a session id
-    # can keep somebody else's nudges quiet indefinitely — so a fact that ONLY
+    # can keep somebody else's nudges quiet indefinitely, so a fact that ONLY
     # ever arrived that way was a fact another agent could suppress.
     rec = d.tool("ack_board", {"token": bystander})
     owes = len([x for x in (rec.get("announcements") or [])
@@ -573,7 +573,7 @@ def director_merges(d: Daemon, seed_tok: str) -> None:
 
     # 3. THE point: every agent the director moved was told. The two that never
     # called ack_board are told through the wake path; the bystander already had
-    # it from ack_board above, which is why its notice is gone — delivered, not
+    # it from ack_board above, which is why its notice is gone: delivered, not
     # lost.
     for who in ("holder", "waiter"):
         n = d.notice_for(f"s-{who}")
@@ -585,7 +585,7 @@ def director_merges(d: Daemon, seed_tok: str) -> None:
 
 def director_evicts(d: Daemon, seed_tok: str) -> None:
     """Eviction used to check membership only, so removing a QUEUED agent
-    answered "not a member" — the director concluded the agent was not on the
+    answered "not a member": the director concluded the agent was not on the
     lane and moved on, and the moment the owner left, the agent it had tried to
     remove was promoted to OWNER of that lane.
     """
@@ -625,7 +625,7 @@ def director_evicts(d: Daemon, seed_tok: str) -> None:
 def subagent_inherits(d: Daemon) -> None:
     """SPEC-CHANNELS.md §8.2: subagents inherit their parent's lanes.
 
-    Letting one JOIN was not merely redundant — a subagent asking for the lane
+    Letting one JOIN was not merely redundant: a subagent asking for the lane
     its parent held exclusively was queued behind that parent, and the parent
     does not release until the subagent's work is done. Each waits on the other.
     """
@@ -635,7 +635,7 @@ def subagent_inherits(d: Daemon) -> None:
                          "topic": "work the parent owns", "exclusive": True})
     # `parent` alone is a claim anybody can make, and a subagent inherits its
     # parent's memberships, skips an exclusive lane's queue and is exempt from
-    # the parent's exclusive claims in the guard — so lineage is proven with a
+    # the parent's exclusive claims in the guard, so lineage is proven with a
     # one-time nonce only the parent can issue.
     d.tool("vouch_child", {"token": par, "nonce": nonce})
     sub = d.agent("sub-agent", parent="parent-agent", parent_nonce=nonce)
@@ -675,7 +675,7 @@ def crashed_agent_never_inherits(work: Path) -> None:
     queued behind a corpse. close_lane dequeues, which is exactly why this hid:
     it only ever showed up for real crashes.
 
-    A crash here is a real one — the lease lapses and the sweep notices — on its
+    A crash here is a real one (the lease lapses and the sweep notices) on its
     own daemon with a short lane_ttl, so the rest of the fleet is not aged out
     underneath this check.
     """
@@ -741,7 +741,7 @@ def probe_separation(d: Daemon, label: str, lane: str = "auth-work") -> None:
         tok = d.agent(f"{label}-{i}")
         r = d.tool("set_slot", {"token": tok, "text": text})
         hit = [x for x in (r.get("lanes") or []) if x["lane"] == lane]
-        score = f"{hit[0]['score']:.3f}" if hit else "  —  "
+        score = f"{hit[0]['score']:.3f}" if hit else " ,  "
         print(f"    {score}  {text}")
 
 
@@ -779,12 +779,12 @@ def main() -> int:
         d.wait_for_matching()
 
         print()
-        print(f"fleet scenario — {proj} on 127.0.0.1:{PORT}")
+        print(f"fleet scenario. {proj} on 127.0.0.1:{PORT}")
         print("────────────────────────────────────────────────────────────")
 
         # session_id "seed", not the helper's "s-seed": the wake-path checks
         # below poll this session by name, and a mismatch makes hook_poll answer
-        # about a session that does not exist — which looks exactly like "the
+        # about a session that does not exist, which looks exactly like "the
         # announcement never reached the agent" rather than "you asked about the
         # wrong agent".
         seed_tok = d.agent("seed", session_id="seed")
@@ -851,13 +851,13 @@ def main() -> int:
         print("  semantic separation (auth-work topic: token validation, retry, rate limiting)")
         probe_separation(d, "probe")
         print("    (tier 0 matches on predicted FILES, so topic words that appear in no")
-        print("     filename — 'rate limiting' lives in a comment — are invisible to it.)")
+        print("     filename ('rate limiting' lives in a comment) are invisible to it.)")
 
         embed_url = os.environ.get("EMBED_URL", "http://127.0.0.1:11434")
         embed_model = os.environ.get("EMBED_MODEL", "qwen3-embedding:0.6b")
         if embeddings_available(embed_url, embed_model):
             print()
-            print(f"  same probes, tier 2 ({embed_model}) — content, not paths")
+            print(f"  same probes, tier 2 ({embed_model}): content, not paths")
             e = Daemon(work / "embed", PORT + 7, "-match-repo", str(proj),
                        "-match-join", "0.25", "-match-notify", "0.10",
                        "-match-embed-url", embed_url, "-match-embed-model", embed_model,
@@ -870,7 +870,7 @@ def main() -> int:
             probe_separation(e, "ep")
             e.stop()
         else:
-            print("  (tier 2 comparison skipped — no embeddings service)")
+            print("  (tier 2 comparison skipped: no embeddings service)")
 
         print("────────────────────────────────────────────────────────────")
         print(f"  {passed} passed, {failed} failed")

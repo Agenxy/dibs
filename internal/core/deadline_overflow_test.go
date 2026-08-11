@@ -9,7 +9,7 @@ import (
 // A huge positive deadline clamps to the ceiling, never into the past.
 //
 // The conversion to a Duration happened before the clamp, so a large
-// deadline_s overflowed int64 nanoseconds and came out negative — and min()
+// deadline_s overflowed int64 nanoseconds and came out negative, and min()
 // then preferred that "smaller" value over the ceiling. The real MCP surface
 // accepted MaxInt64 and returned a deadline one second BEFORE the send. The
 // next sweep expires a question the moment it is asked, which the sender reads
@@ -47,7 +47,7 @@ func TestAnEnormousDeadlineClampsRatherThanWrapping(t *testing.T) {
 		}
 		if !m.Deadline.After(now) {
 			t.Errorf("deadline_s=%d produced a deadline in the past (%v, %v before the "+
-				"send) — the next sweep expires a question that was just asked",
+				"send): the next sweep expires a question that was just asked",
 				secs, m.Deadline, now.Sub(m.Deadline))
 		}
 		if got := m.Deadline.Sub(now); got > s.Limits.MaxDeadlineDormant+time.Second {

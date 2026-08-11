@@ -17,7 +17,7 @@ import (
 //     model on the wire (verified against Claude Code, Codex, opencode, pi), so
 //     asking the agent is the only honest route.
 //
-// None of it grants anything — a wrong value misleads a reader, it cannot
+// None of it grants anything: a wrong value misleads a reader, it cannot
 // escalate. That is why it is safe to accept self-reported fields at all.
 func agentInfo(params json.RawMessage, a *toolArgs, session *clientInfoJSON) *core.AgentInfo {
 	info := &core.AgentInfo{
@@ -51,7 +51,7 @@ func agentInfo(params json.RawMessage, a *toolArgs, session *clientInfoJSON) *co
 		// The client either said nothing or announced its SDK rather than
 		// itself. hermes is the live case: it uses the official Python SDK and
 		// arrives as {"name":"mcp","version":"0.1.0"}, so its lane read
-		// `harness: mcp` — useless on a mixed fleet, and it would collide with
+		// `harness: mcp`: useless on a mixed fleet, and it would collide with
 		// every other Python-SDK client.
 		//
 		// Falling back to the agent's own word is strictly worse trust, and that
@@ -62,7 +62,7 @@ func agentInfo(params json.RawMessage, a *toolArgs, session *clientInfoJSON) *co
 		// Deriving it from the parent process was tried and removed: harnesses
 		// wrap the bridge. hermes spawns it under tools/mcp_stdio_watchdog.py and
 		// Claude Desktop under a `disclaimer` helper, so the parent is never the
-		// harness — the heuristic produced "python" and "disclaimer".
+		// harness: the heuristic produced "python" and "disclaimer".
 		if a.Harness != "" {
 			info.Harness = a.Harness
 		}
@@ -78,7 +78,7 @@ func agentInfo(params json.RawMessage, a *toolArgs, session *clientInfoJSON) *co
 
 // clientIdentity pulls the human-facing harness name and version out of either
 // the 2026 per-request _meta clientInfo or a legacy initialize's clientInfo.
-// Prefers `title` ("Claude Code") over `name` ("claude-code") — the board is
+// Prefers `title` ("Claude Code") over `name` ("claude-code"): the board is
 // read by a person.
 func clientIdentity(params json.RawMessage) (harness, version string) {
 	var p struct {
@@ -136,7 +136,7 @@ var forcePanel = os.Getenv("LANES_FORCE_PANEL") == "1"
 func clientWantsUI(params json.RawMessage) bool {
 	// Escape hatch for measuring a host directly. The capability signal reaches
 	// us through the stdio bridge, so a bridge process older than that code
-	// cannot forward it — and respawning the bridge means restarting the host,
+	// cannot forward it, and respawning the bridge means restarting the host,
 	// which is exactly what you are trying to avoid when you want to test the
 	// host you are sitting in. LANES_FORCE_PANEL=1 sends the panel to everyone.
 	if forcePanel {

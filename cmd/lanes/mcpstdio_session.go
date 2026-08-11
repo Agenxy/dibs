@@ -18,7 +18,7 @@ import (
 // already writes to disk. The agent never has to know any of it.
 //
 // Claude Code keeps a per-process sidecar at ~/.claude/sessions/<pid>.json
-// (sessionId, cwd, version, entrypoint) — cheap and structured. The session
+// (sessionId, cwd, version, entrypoint): cheap and structured. The session
 // TITLE, which is the field a human scanning a fleet actually wants, lives in
 // the transcript instead, so it is read separately and with a hard bound: the
 // transcripts run to tens of megabytes and we are doing this on registration.
@@ -30,7 +30,7 @@ func sessionContext(isClaude bool) map[string]string {
 
 	// The bridge is spawned by the harness as a child, so it inherits the
 	// agent's working directory. That makes os.Getwd() the universal answer to
-	// "which checkout is this agent in" — free, and available for every harness.
+	// "which checkout is this agent in": free, and available for every harness.
 	//
 	// This used to be read only from Claude Code's sidecar, which meant a real
 	// opencode run registered a lane with no cwd and no branch at all. Asking
@@ -45,7 +45,7 @@ func sessionContext(isClaude bool) map[string]string {
 	}
 
 	// Hostname and cwd are universal; everything below is Claude Code's own
-	// bookkeeping, and is authoritative where it exists — the sidecar knows the
+	// bookkeeping, and is authoritative where it exists: the sidecar knows the
 	// session's real cwd even if the bridge were spawned somewhere else.
 	pid := os.Getenv("CLAUDE_PID")
 	home, _ := os.UserHomeDir()
@@ -89,7 +89,7 @@ func sessionContext(isClaude bool) map[string]string {
 }
 
 // gitBranch reads the checked-out branch. symbolic-ref is used rather than
-// `rev-parse --abbrev-ref HEAD` because the latter fails on an unborn branch —
+// `rev-parse --abbrev-ref HEAD` because the latter fails on an unborn branch,
 // a fresh repo with no commits yet, which is exactly when a fleet is most
 // likely to be spun up on a new project.
 func gitBranch(dir string) string {
@@ -167,7 +167,7 @@ func sessionTitle(home, cwd, sessionID string) string {
 // bridge, which registers the lane, and the harness plugin, which later asks
 // "may this session write here?" on the lane's behalf. A random per-bridge id
 // satisfies only the first half. opencode's plugin knows opencode's own session
-// id and nothing about the bridge, so the two never matched — the lane went in
+// id and nothing about the bridge, so the two never matched: the lane went in
 // under one name and every hook asked about another. That silently disabled the
 // wake path and, worse, the claim guard: a hook that cannot name a lane gets
 // allow, so an agent walked straight through a peer's exclusive claim and
@@ -175,20 +175,20 @@ func sessionTitle(home, cwd, sessionID string) string {
 //
 // The parent pid is the fix because it is genuinely observed on both sides.
 // Harnesses spawn the stdio bridge as a direct child, so os.Getppid() here is
-// the harness's own process id — the same number its in-process plugin reads
+// the harness's own process id: the same number its in-process plugin reads
 // from process.pid. Verified against a live opencode run: bridge 22101, parent
 // 22071, opencode 22071. No handshake, no negotiation, no shared file.
 //
 // This drops the random suffix that used to guard against PID recycling, and
 // that is a deliberate trade. Recycling can only mislead if the OS hands a new
 // harness the exact pid of a dead one AND the agent inside it registers the
-// same lane NAME (reattach keys on both) — in which case treating it as the
+// same lane NAME (reattach keys on both): in which case treating it as the
 // same lane is very likely what the human meant anyway. An id nobody else can
 // pronounce is worse than one that collides once in a blue moon.
 //
 // Whoever spawned an orphan is not a session: ppid 1 (or 0) would make every
 // reparented bridge on the machine claim one identity, so those fall back to
-// this process plus randomness — unshareable, but at least not shared WRONGLY.
+// this process plus randomness: unshareable, but at least not shared WRONGLY.
 var bridgeSession struct {
 	sync.Once
 	id string

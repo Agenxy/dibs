@@ -10,18 +10,18 @@ import (
 //
 // Lanes already had server-push: subscriptions/listen (SEP-2575), verified end
 // to end. But that is the 2026-07-28 method, and no shipping host negotiates
-// 2026-07-28 — so the push capability existed for a protocol nobody speaks and
+// 2026-07-28, so the push capability existed for a protocol nobody speaks and
 // was absent from the one everybody does. Every real agent was left polling.
 //
 // 2025-11-25 does it in two parts rather than one:
 //
-//	POST resources/subscribe {uri}   — register interest, returns {}
-//	GET  /mcp  Accept: text/event-stream — the channel notifications arrive on
+//	POST resources/subscribe {uri}  : register interest, returns {}
+//	GET  /mcp  Accept: text/event-stream: the channel notifications arrive on
 //
 // The split is why this could not simply reuse serveSubscription: there, the
 // POST that subscribes IS the stream. Here the subscription outlives any single
 // request and has to be remembered against the session, and the stream is opened
-// separately — possibly before the subscribe, possibly after, possibly
+// separately: possibly before the subscribe, possibly after, possibly
 // reconnected after a drop.
 //
 // # Still not driving anything
@@ -33,14 +33,14 @@ import (
 //
 // # Scoping
 //
-// lanes://board is public — every agent may watch it. lanes://inbox is one
+// lanes://board is public: every agent may watch it. lanes://inbox is one
 // lane's mail, so subscribing to it requires that lane's token, exactly as
 // reading it does. The token is remembered with the subscription because the
 // GET that opens the stream carries no body to put it in.
 
 // legacySubs remembers what each session asked to watch.
 //
-// Keyed by Mcp-Session-Id, which the legacy handshake hands out at initialize —
+// Keyed by Mcp-Session-Id, which the legacy handshake hands out at initialize,
 // the only identifier that survives from the POST that subscribes to the GET
 // that streams.
 type legacySubs struct {
@@ -160,7 +160,7 @@ func (s *Server) handleLegacySubscribe(r *http.Request, params json.RawMessage) 
 // still be carrying another subscription.
 //
 // Cannot fail, and the signature says so. Unsubscribing from something you were
-// not subscribed to is not an error — it is the state you asked for.
+// not subscribed to is not an error: it is the state you asked for.
 func (s *Server) handleLegacyUnsubscribe(r *http.Request, params json.RawMessage) any {
 	var p subscribeParams
 	_ = json.Unmarshal(params, &p)
@@ -173,7 +173,7 @@ func (s *Server) handleLegacyUnsubscribe(r *http.Request, params json.RawMessage
 // serveLegacyStream is the GET side: the channel notifications arrive on.
 //
 // Opened by the client, closed by the client. If it opens before anything is
-// subscribed that is fine and normal — the stream simply carries keepalives
+// subscribed that is fine and normal: the stream simply carries keepalives
 // until a subscribe arrives, which is what a client reconnecting after a drop
 // does.
 func (s *Server) serveLegacyStream(w http.ResponseWriter, r *http.Request) {
@@ -208,7 +208,7 @@ func (s *Server) serveLegacyStream(w http.ResponseWriter, r *http.Request) {
 	ch, cancel := s.eng.Subscribe(since)
 	defer cancel()
 	// subID nil: a legacy notifications/resources/updated carries only the uri.
-	// There is no subscription id in 2025-11-25 — that is a 2026 concept, and
+	// There is no subscription id in 2025-11-25: that is a 2026 concept, and
 	// inventing one here would put a field in the payload no client expects.
 	s.pump(r, sseStream{w: w, fl: flusher}, ch, nil, laneID, sub.inbox, sub.board)
 }

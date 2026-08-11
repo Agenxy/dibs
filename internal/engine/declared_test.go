@@ -10,8 +10,8 @@ import (
 //
 // Tier 0 predicts by matching declaration words against file paths one token at a
 // time. Probed against a real repository: "CLI + web UI docs, cross-cutting
-// gates" returns packages/coding-agent/src/cli/* — the word "cli" appears in
-// those paths — and "runtime C++ forge, CI throughput, gate infrastructure"
+// gates" returns packages/coding-agent/src/cli/*: the word "cli" appears in
+// those paths, and "runtime C++ forge, CI throughput, gate infrastructure"
 // returns .github/workflows/pr-gate.yml, from the word "gate". Neither
 // declaration is about those files.
 //
@@ -34,7 +34,7 @@ func TestDeclaredDirsOutrankGuessedFiles(t *testing.T) {
 	if len(got) != 4 {
 		t.Fatalf("want declared dirs added to the guesses, got %d entries: %+v", len(got), got)
 	}
-	// Declared first, at full weight — nothing inferred outranks a statement.
+	// Declared first, at full weight: nothing inferred outranks a statement.
 	for _, want := range []string{"cli", "docs"} {
 		found := false
 		for _, f := range got {

@@ -30,7 +30,7 @@ func laneWithPID(t *testing.T, id string, pid int, prober Prober) (*Engine, *cor
 // The board renders a stale lane whose process is alive as "stale (no contact)
 // (hung?)". Because any lane reporting a PID was held to the 5-minute lane_ttl,
 // every Claude Code lane on a live fleet accused itself within five minutes of
-// its last tool call while its harness sat waiting for its human — and the
+// its last tool call while its harness sat waiting for its human, and the
 // operator had set idle_ttl to 45m specifically to stop that, only for it to be
 // skipped because those lanes reported a PID.
 //
@@ -54,7 +54,7 @@ func TestALiveProcessIsNotHeldToTheShortLease(t *testing.T) {
 	}
 }
 
-// Past idle_ttl, silence IS worth reporting — the fix must not make lanes
+// Past idle_ttl, silence IS worth reporting: the fix must not make lanes
 // immortal. At 45 minutes with a live process, "hung?" is a fair question.
 func TestALiveProcessStillGoesStalePastIdleTTL(t *testing.T) {
 	e, s := laneWithPID(t, "k7b", 4242, aliveProber{})

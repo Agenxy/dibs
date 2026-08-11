@@ -16,7 +16,7 @@ import (
 //
 // The concern survives the failed reproduction, though. Every tool this project
 // adds is paid for by every agent on every connection, forever, and the failure
-// mode is not an error — it is a client quietly truncating and an agent never
+// mode is not an error: it is a client quietly truncating and an agent never
 // learning a capability exists. Nothing measured that, so nothing would have
 // noticed it drifting.
 //
@@ -34,7 +34,7 @@ func TestTheAdvertisedToolSurfaceStaysWithinBudget(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 	if len(payload) > maxPayload {
-		t.Errorf("tools/list is %d bytes, over the %d budget — clients truncate "+
+		t.Errorf("tools/list is %d bytes, over the %d budget: clients truncate "+
 			"capability lists silently, so an agent stops learning tools exist rather "+
 			"than seeing an error", len(payload), maxPayload)
 	}

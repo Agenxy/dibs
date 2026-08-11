@@ -11,7 +11,7 @@ import (
 //
 // ~/.lanes, and never anywhere under Desktop, Documents or Downloads: those are
 // TCC-protected on macOS, so a daemon reading them raises a folder-access
-// prompt — and because TCC keys consent to the binary's identity, every rebuild
+// prompt, and because TCC keys consent to the binary's identity, every rebuild
 // invalidates the grant and asks again. A development instance belongs in
 // LANES_DIR, not in a path compiled into the binary.
 func DataDir() string {

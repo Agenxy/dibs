@@ -7,7 +7,7 @@ Driven live against the daemon with a real model. Everything below is measured.
 
 ## Install
 
-Hermes has a first-class CLI for this — prefer it over hand-editing the config:
+Hermes has a first-class CLI for this: prefer it over hand-editing the config:
 
 ```bash
 hermes mcp add lanes --command "$(which lanes)" --args mcp-stdio
@@ -46,7 +46,7 @@ uv pip install --python /path/to/hermes-agent/.venv/bin/python mcp
 
 Hermes connects with the official Python SDK and never customises its
 `clientInfo`, so it arrives as `{"name":"mcp","version":"0.1.0"}`. Without this
-env var its lane reads **`harness: mcp`** on the board — which tells a human
+env var its lane reads **`harness: mcp`** on the board, which tells a human
 scanning a mixed fleet nothing, and is identical for every Python-SDK client.
 
 Setting it once in the config is the whole fix. Lanes uses a declared harness
@@ -54,8 +54,8 @@ only when the client's own name is a known SDK placeholder; a client that
 identifies itself always wins.
 
 Deriving this from the parent process was tried and removed. Harnesses wrap the
-bridge — Hermes spawns it under `tools/mcp_stdio_watchdog.py`, and Claude Desktop
-under a `disclaimer` helper — so the parent is never the harness. Measured:
+bridge, Hermes spawns it under `tools/mcp_stdio_watchdog.py`, and Claude Desktop
+under a `disclaimer` helper, so the parent is never the harness. Measured:
 
 ```
 args=…/.venv/bin/python …/tools/mcp_stdio_watchdog.py --ppid 53771 -- …/lanes mcp-stdio
@@ -70,21 +70,21 @@ it is the natural path if Lanes is ever reached across a network boundary that
 wants real user auth rather than a shared secret.
 
 It also runs the bridge under a watchdog (`tools/mcp_stdio_watchdog.py`) that
-tracks the parent pid — the most careful stdio supervision of any harness here.
+tracks the parent pid, the most careful stdio supervision of any harness here.
 
-Extension surfaces: `plugins/`, `skills/`, `tools/` — with working in-tree
+Extension surfaces: `plugins/`, `skills/`, `tools/`, with working in-tree
 examples (browser, context_engine, cron_providers, dashboard_auth).
 
 ## Waking
 
 **Pull-only.** A search of `hermes_*.py` and `tools/*.py` found no lifecycle hook
-system — nothing equivalent to Claude Code's `mcp_tool` hooks, opencode's
+system: nothing equivalent to Claude Code's `mcp_tool` hooks, opencode's
 `chat.message`, or pi's `before_agent_start`. Agents receive mail when they call
 `inbox` / `await_events`.
 
 `plugins/` and `cron_providers/` are worth re-examining when Hermes next ships: a
 cron provider polling `hook_poll` would be a scheduler, not a subprocess, and so
-would not cross the service boundary. Untested — a lead, not a claim.
+would not cross the service boundary. Untested: a lead, not a claim.
 
 ## Verified
 
@@ -101,6 +101,6 @@ OpenRouter:
   "cwd": "/…/e2e/hermes", "branch": "hermes-work" }
 ```
 
-The `version` is the MCP SDK's, not Hermes'. That is deliberate — it is the
+The `version` is the MCP SDK's, not Hermes'. That is deliberate: it is the
 truthful version of the thing that produced the handshake, and inventing one
 would be worse.

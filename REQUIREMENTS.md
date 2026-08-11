@@ -1,4 +1,4 @@
-# Why Lanes exists — the requirements, from a measured failure
+# Why Lanes exists: the requirements, from a measured failure
 
 Derived from a real incident in a private multi-agent fleet. Details are withheld;
 the numbers are real. This is the requirements spec: a design that doesn't prevent
@@ -28,29 +28,29 @@ Both sessions ran in **separate worktrees**. Isolation was perfect and irrelevan
 worktrees prevent *merge conflicts*, not *duplicated effort*. Two agents can work in
 pristine isolation and still solve the same problem three times.
 
-Any "just isolate them" answer — including editor features that put each agent in its
-own worktree — does not address this. The missing layer is shared awareness.
+Any "just isolate them" answer, including editor features that put each agent in its
+own worktree, does not address this. The missing layer is shared awareness.
 
 ## What the agents invented under pressure
 
 Left to themselves, they converged on: declare what you own, partition by subsystem,
 and send a request to stand down. That is *slots*, *claims*, and *typed messages with
-responses* — reinvented by hand, badly, after the cost was sunk.
+responses*: reinvented by hand, badly, after the cost was sunk.
 
 ## Requirements
 
 | # | Requirement |
 |---|---|
-| R1 | **Pre-flight visibility** — ask "is anyone already doing X?" and get an answer *before* starting. |
-| R2 | **Declared intent**, not just file locks — scope is known before the file list is. |
-| R3 | **Objective-level duplicate detection** — the waste was redundant *effort*; overlapping files were incidental. Two agents pursuing one goal must find each other even in different files. |
-| R3b | **Claims are communication, not a mutex.** Concurrent edits to one file are normal and healthy; suppressing them would destroy fleet parallelism. Real exclusion is the rare case — resources version control does *not* isolate (a local install, a dev server, a device, a discrete work item). |
-| R4 | **Typed messaging with responses** — a scope claim is a *request* needing approve/deny, not a broadcast. |
+| R1 | **Pre-flight visibility**, ask "is anyone already doing X?" and get an answer *before* starting. |
+| R2 | **Declared intent**, not just file locks, scope is known before the file list is. |
+| R3 | **Objective-level duplicate detection**: the waste was redundant *effort*; overlapping files were incidental. Two agents pursuing one goal must find each other even in different files. |
+| R3b | **Claims are communication, not a mutex.** Concurrent edits to one file are normal and healthy; suppressing them would destroy fleet parallelism. Real exclusion is the rare case, resources version control does *not* isolate (a local install, a dev server, a device, a discrete work item). |
+| R4 | **Typed messaging with responses**: a scope claim is a *request* needing approve/deny, not a broadcast. |
 | R5 | **Delivery without a human in the loop.** |
-| R6 | **Cross-harness** — one fleet spans several agent products. |
-| R7 | **Work-item awareness** — collisions are often visible at PR/issue level before file level. |
-| R8 | **Durable and auditable** — sessions restart, compact, and die; declarations must outlive a context window. |
-| R9 | **Advisory, never coercive** — one of the three overlapping efforts was genuinely complementary. A hard lock would have blocked real work. |
+| R6 | **Cross-harness**, one fleet spans several agent products. |
+| R7 | **Work-item awareness**, collisions are often visible at PR/issue level before file level. |
+| R8 | **Durable and auditable**, sessions restart, compact, and die; declarations must outlive a context window. |
+| R9 | **Advisory, never coercive**, one of the three overlapping efforts was genuinely complementary. A hard lock would have blocked real work. |
 
 ## Non-goals
 
@@ -61,7 +61,7 @@ responses* — reinvented by hand, badly, after the cost was sunk.
   agents sharing a project*: redundant objectives, lost handoffs, unknown status,
   repeated dead ends, and contention over the few genuinely exclusive resources.
 
-## R10 — a lane's liveness model must fit its surface
+## R10: a lane's liveness model must fit its surface
 
 Discovered by running a chat-surface agent against a lease tuned for
 continuously-running processes.
@@ -69,7 +69,7 @@ continuously-running processes.
 A chat agent only touches the API when its human types, so multi-minute silence
 is its normal state, not a failure. Under a 5-minute lease such a lane flaps
 `stale → recovered` forever while nothing is wrong, and it was reported as
-`proc_alive: false` — a claim about a process that had never been declared,
+`proc_alive: false`: a claim about a process that had never been declared,
 because `alive[0]` returns the zero value. A human reads that as "it crashed".
 
 Requirements:
@@ -78,13 +78,13 @@ Requirements:
   `proc_alive` in the event, and the stale reason is `idle_no_activity`, not
   `lease_lapsed`.
 - **Grace scales with what can actually be checked.** A lane with a PID can be
-  probed directly, so a short lease is safe — death is detected by the prober,
+  probed directly, so a short lease is safe: death is detected by the prober,
   not the clock. A lane without one can only be judged by silence, and gets
   `IdleTTL` (45m) instead of `LaneTTL` (5m).
 - **Staleness is a statement about coordination, never about health.** Lanes
   knows an agent has not spoken. It does not know why, and must not imply it.
 
-## R11 — reaching the daemon is not the same as being a participant
+## R11: reaching the daemon is not the same as being a participant
 
 Found by an agent whose token had been invalidated: `inbox` and `await_events`
 rejected it with `E_BAD_TOKEN`, and in the same second `show_board` accepted the
@@ -94,7 +94,7 @@ Two distinct holes, one behind the other:
 
 1. **`show_board` deliberately did not authenticate.** The code said so, in a
    comment reading *"the board is public and still worth showing"*. It is not
-   public — every other tool requires a lane token, and the board carries lane
+   public: every other tool requires a lane token, and the board carries lane
    descriptions, working directories, hostnames and branch names.
 2. **After that was closed, an empty token still passed**, because the check went
    through `SubscribeInfo`, which short-circuits on `token == ""` to serve the

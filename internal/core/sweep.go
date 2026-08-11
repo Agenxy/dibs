@@ -19,7 +19,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 	// Probed, not assumed.
 	//
 	// AlivePIDs is a positive-only set, so `alive[pid]` returns false for a
-	// process nobody looked at — and that false went into the LEDGER as
+	// process nobody looked at, and that false went into the LEDGER as
 	// proc_alive, a permanent record claiming a measurement that never
 	// happened. Boot marks lanes stale with no AlivePIDs at all; a sweep with
 	// no prober configured reports every pid as alive. Neither is knowledge.
@@ -48,8 +48,8 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 	//
 	// Go randomises map iteration per process, so a sweep that marked eight lanes
 	// stale at one serial produced those eight events in one order live and a
-	// different order on cold replay. The replayed STATE was identical — this is
-	// not a fold failure — but the reconstructed event stream was not, and that
+	// different order on cold replay. The replayed STATE was identical: this is
+	// not a fold failure, but the reconstructed event stream was not, and that
 	// stream is the audit history: `lanes log` and every events_since consumer
 	// reads it. An audit trail that reorders itself when re-derived is not one.
 	//
@@ -59,7 +59,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 	for _, laneID := range sortedKeys(s.Lanes) {
 		l := s.Lanes[laneID]
 		// Only the live statuses advance here. Closed, archived and unreachable
-		// lanes have nothing left to sweep — they are terminal, and adding empty
+		// lanes have nothing left to sweep: they are terminal, and adding empty
 		// cases for them would imply a transition that does not exist.
 		//exhaustive:ignore // terminal statuses are intentionally inert
 		switch l.Status {
@@ -99,7 +99,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 				// proc_alive only when a PID was actually given: alive[0] is the
 				// zero value, so reporting it for a PID-less lane says
 				// "proc_alive: false" about a process that was never claimed to
-				// exist — read by a human as "it crashed" when nothing did.
+				// exist: read by a human as "it crashed" when nothing did.
 				data := map[string]any{"reason": reason}
 				if isAlive, known := probed(l); known {
 					data["proc_alive"] = isAlive
@@ -168,14 +168,14 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 		// A clean close is a FOURTH fact, and it was being reported as a crash.
 		//
 		// SPEC §7's whole point is that crash, hang and unresponsiveness are
-		// different facts reported as such — but an agent that called close_lane
+		// different facts reported as such, but an agent that called close_lane
 		// finished deliberately and SAID so, and telling its correspondent
 		// "coordination lease lapsed … verify before touching its directories"
 		// is wrong in every clause. It sends somebody to inspect work that
 		// definitively ended and released everything cleanly, which is the
 		// opposite of the caution the honest-liveness rule is for.
 		//
-		// The coarse state stays `expired_recipient_dead` — from the sender's
+		// The coarse state stays `expired_recipient_dead`: from the sender's
 		// side the recipient is equally unavailable either way, and inventing a
 		// wire state for the distinction would churn six files to say something
 		// the detail already carries. It is the DETAIL a sender acts on.
@@ -183,16 +183,16 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 			m.State = MsgStateExpiredDead
 			m.ExpireDetail = "recipient closed its lane before answering; it finished deliberately " +
 				"and released its claims, so this is not a crash and there is nothing of its to " +
-				"verify — nobody will answer this now"
+				"verify: nobody will answer this now"
 		case to == nil:
 			m.State = MsgStateExpiredDead
-			m.ExpireDetail = "recipient's lane no longer exists — retired or pruned past its retention " +
+			m.ExpireDetail = "recipient's lane no longer exists: retired or pruned past its retention " +
 				"bound. Whether it finished or crashed is no longer recorded, so treat any " +
 				"directories it held as unverified"
 		default:
 			m.State = MsgStateExpiredDead
 			m.ExpireDetail = "recipient's coordination lease lapsed and its claims no longer stand; " +
-				"this is loss of coordination, not proof its work stopped — verify before touching its directories"
+				"this is loss of coordination, not proof its work stopped: verify before touching its directories"
 		}
 		m.TerminalAt = now
 		evs = append(evs, Event{
@@ -204,7 +204,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 	// Announcements nobody acknowledged, after the retry budget ran out.
 	//
 	// SPEC-CHANNELS.md §10.6: silence is never resolution. The announcement is
-	// NOT deleted and NOT quietly settled — it is marked `unacked` and stays on
+	// NOT deleted and NOT quietly settled: it is marked `unacked` and stays on
 	// the board, because "three agents never answered this" is exactly the thing
 	// a human needs to see. Dropping it would make the board look calm while the
 	// fleet was uncoordinated.
@@ -223,7 +223,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 		sort.Strings(silent)
 		evs = append(evs, Event{Type: "lane.announce_unacked", Lane: a.From, Data: map[string]any{
 			"lane_id": a.Channel, "serial": a.Serial, "silent": silent,
-			"detail": "redelivery gave up; this is loss of coordination, not agreement — " +
+			"detail": "redelivery gave up; this is loss of coordination, not agreement. " +
 				"verify with these agents before assuming they acted on it",
 		}})
 	}
@@ -236,12 +236,12 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 	// something.
 	//
 	// gc deletes consumed mail and expired dedup records without emitting an
-	// event — correctly, since nobody needs telling that a message the sender
+	// event: correctly, since nobody needs telling that a message the sender
 	// already read has aged out. But the test here was "did we emit", so a sweep
 	// whose only work was those deletions returned changed:false, was never
 	// written to the ledger, and did not advance the serial. Replay therefore
 	// never performed the deletion: consumed mail RESURRECTED on restart, and
-	// state stopped being fold(ledger) — the one claim this whole design exists
+	// state stopped being fold(ledger): the one claim this whole design exists
 	// to keep. Silent to an observer and silent to the ledger are different
 	// things, and only the first is a choice.
 	if len(evs) == 0 && !pruned {
@@ -343,7 +343,7 @@ func (s *State) gc(now time.Time) ([]Event, bool) {
 		// Tie-broken by ID, because timestamps collide.
 		//
 		// Records come out of a map, so equal At values left them in random order
-		// and the cap kept an ARBITRARY subset — a different one live than on
+		// and the cap kept an ARBITRARY subset: a different one live than on
 		// replay. Which retry is deduplicated then depends on map iteration, and
 		// two runs of the same ledger disagree about whether an op already
 		// happened. Idempotency that is only sometimes idempotent is worse than
@@ -393,14 +393,14 @@ func (s *State) Board() map[string]any {
 		}
 		// The name a human chose, when the id could not carry it. Without this a
 		// board of agents named in a non-Latin script reads `lane`, `lane-2`,
-		// `lane-3` — technically correct addresses that identify nobody.
+		// `lane-3`: technically correct addresses that identify nobody.
 		if l.Name != "" && slug(l.Name) == "" {
 			lm["display_name"] = l.Name
 		}
 		if l.Parent != "" {
 			lm["parent"] = l.Parent
 		}
-		// Only when known — an empty object on every lane is payload the reader
+		// Only when known: an empty object on every lane is payload the reader
 		// and the model both pay for and neither uses.
 		if l.Agent != nil {
 			lm["agent"] = l.Agent
@@ -428,7 +428,7 @@ func (s *State) Board() map[string]any {
 // the operator's alone: Board() is what ack_board returns to EVERY agent on
 // every activation, and /api/board serves it to anything holding the
 // coordination secret. So every announcement body in every channel was handed
-// to agents that had joined none of them — the same defect as the lane.post
+// to agents that had joined none of them: the same defect as the lane.post
 // event, on a wider surface, and reachable without even asking for it.
 //
 // Nothing consumed the body. The board renderer shows counts (unacked,
@@ -455,7 +455,7 @@ func (s *State) laneSaid(id string) []map[string]any {
 			"serial": a.Serial, "from": a.From,
 			"bytes": len(a.Body),
 			"at":    a.MadeAt, "state": a.State,
-			// How many still owe it — the count a reader needs to know whether
+			// How many still owe it: the count a reader needs to know whether
 			// this is settled or still hanging over the lane.
 			"owed": len(a.Required) - len(a.Acked),
 		})
@@ -487,7 +487,7 @@ func (s *State) channelBoard() []map[string]any {
 		//
 		// The board carried membership and an unacked COUNT, which tells an
 		// operator that something is outstanding and not what it is. A human
-		// could join a lane, broadcast into it, and see "1 awaiting ack" — with
+		// could join a lane, broadcast into it, and see "1 awaiting ack": with
 		// no way anywhere in the interface to read the announcement they had
 		// just sent, or the ones the agents had. lane_read gave agents that and
 		// the board never called it.
@@ -510,13 +510,13 @@ func (s *State) channelBoard() []map[string]any {
 		// there" look identical on a board and are not the same problem.
 		// Redelivery is driven by the agent polling, so an announcement owed
 		// only by sleeping or crashed agents never spends its retry budget and
-		// never reaches `abandoned` — it waits forever, looking healthy.
+		// never reaches `abandoned`: it waits forever, looking healthy.
 		if blocked > 0 {
 			cm["blocked_announcements"] = blocked
 		}
 		// Members that left a lane still owing an acknowledgement. Their
-		// requirement has to be dropped — waiting on somebody who is never
-		// coming back is how a board fills with things nobody can act on — but
+		// requirement has to be dropped: waiting on somebody who is never
+		// coming back is how a board fills with things nobody can act on: but
 		// the fact that they never read it is not thereby untrue.
 		if n := s.departedUnackedIn(ch.ID); n > 0 {
 			cm["departed_unacked"] = n
@@ -533,7 +533,7 @@ func (s *State) channelBoard() []map[string]any {
 }
 
 // memberBoard renders a channel's membership, each entry carrying WHY it is
-// there — the explainability §10.3 requires, on the board itself rather than
+// there: the explainability §10.3 requires, on the board itself rather than
 // fetched on demand.
 func (s *State) memberBoard(ch *Channel) []map[string]any {
 	out := make([]map[string]any, 0, len(ch.Members))
@@ -558,7 +558,7 @@ func (s *State) memberBoard(ch *Channel) []map[string]any {
 //
 // The split matters and its absence was a bug. Only `open` was counted, so an
 // announcement that exhausted its retries and was marked `unacked` VANISHED
-// from the board — at exactly the moment it became most interesting. The
+// from the board: at exactly the moment it became most interesting. The
 // constant's own comment claims it "stays visible, never dropped"; it did not.
 //
 // `abandoned` is the more urgent number: somebody was told something with
@@ -576,7 +576,7 @@ func (s *State) unackedIn(channel string) (waiting, abandoned, blocked int) {
 			// Waiting on somebody who is not there is a different fact, and the
 			// one a person may have to act on.
 			//
-			// Redelivery is driven by the agent POLLING — an agent that is
+			// Redelivery is driven by the agent POLLING: an agent that is
 			// asleep or crashed never polls, so its retry budget never spends
 			// and the announcement never reaches `unacked`. It sits at
 			// "awaiting ack" forever while the board gives no hint that the
@@ -637,8 +637,8 @@ func sortedKeys[K cmp.Ordered, V any](m map[K]V) []K {
 
 // laneID derives an addressable id from an agent's chosen name.
 //
-// The id is an ADDRESS — it goes on the wire, into every message envelope and
-// into urls — so it is restricted to ASCII. A name that survives none of that
+// The id is an ADDRESS: it goes on the wire, into every message envelope and
+// into urls, so it is restricted to ASCII. A name that survives none of that
 // still needs an id, and "lane" is the fallback.
 //
 // That fallback was silent, and should not be: an operator registering an agent
@@ -681,7 +681,7 @@ func itoa(i int) string { return strconv.Itoa(i) }
 // reporting.
 //
 // A lane HOLDING MAIL always wins over one that is merely newer. That is the
-// whole point of the warning — naming the mailbox the caller cannot read. An
+// whole point of the warning: naming the mailbox the caller cannot read. An
 // earlier version ranked purely by recency and, in the exact scenario this was
 // written for, pointed at an empty sibling while the lost answer sat in an older
 // one. Among equals, newest wins.
@@ -708,13 +708,13 @@ func (s *State) siblingByName(name, exclude string) *Lane {
 //
 // This was the one collection in replayed state with no bound. Announcements
 // were added on every lane_announce and removed only when an empty auto-opened
-// channel was reclaimed — and a standing channel a human opened is never
+// channel was reclaimed, and a standing channel a human opened is never
 // reclaimed, so its history grew for the life of the board and was replayed into
 // memory on every daemon start.
 //
 // ONLY fully acknowledged announcements are eligible. An `open` one is an
 // outstanding obligation somebody still owes, and `unacked` is documented as
-// staying visible forever precisely because redelivery gave up on it — dropping
+// staying visible forever precisely because redelivery gave up on it: dropping
 // either would discard the fact the mechanism exists to preserve. Bounding the
 // settled ones costs nothing anybody is waiting on.
 //

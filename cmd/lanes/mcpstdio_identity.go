@@ -8,19 +8,19 @@ import (
 
 // enrichRegister fills in who the agent is, using the environment the harness
 // gave us. The bridge is spawned BY the harness, so it inherits that
-// environment — the agent itself never has to know or say any of this.
+// environment: the agent itself never has to know or say any of this.
 //
 // The list is a strict allowlist, and it always will be. The same environment
 // holds CODEX_API_KEY, OPENCODE_API_KEY, CODEX_ACCESS_TOKEN and friends; a
 // prefix scan or a "copy everything interesting" heuristic would put
 // credentials on a shared board. Only these keys, only these meanings.
 //
-// Anything the agent passed explicitly wins — it knows things the environment
+// Anything the agent passed explicitly wins: it knows things the environment
 // cannot, above all which model it is.
 // Each entry names the harness that owns the variable. That gate is not
 // decoration: environment is inherited transitively, so an opencode agent
 // launched from a shell inside Claude Code sees CLAUDE_PID and
-// CLAUDE_CODE_ENTRYPOINT, and would be labelled "claude-desktop" — mislabelling
+// CLAUDE_CODE_ENTRYPOINT, and would be labelled "claude-desktop": mislabelling
 // agents in exactly the mixed fleet this feature exists to clarify. A variable
 // is trusted only when the connected client says it owns it.
 var identityEnv = []struct{ harness, env, field string }{
@@ -50,7 +50,7 @@ var lastClientInfo map[string]any
 
 // lastWantsUI records whether the client declared the MCP Apps extension at
 // initialize. The HTTP hop is stateless, so the server cannot know this on its
-// own — without forwarding it, every client looks like it cannot render.
+// own: without forwarding it, every client looks like it cannot render.
 var lastWantsUI bool
 
 func noteClientInfo(msg map[string]any) {
@@ -107,7 +107,7 @@ func enrichRegister(line []byte) []byte {
 	var touched bool
 	// Host, cwd and branch are observed for every harness; session id, title and
 	// surface come from Claude Code's on-disk sidecar and so are Claude-only.
-	// Anything the caller already filled in wins — we only supply what is blank.
+	// Anything the caller already filled in wins: we only supply what is blank.
 	for k, v := range sessionContext(clientIs("claude")) {
 		if cur, ok := args[k].(string); ok && cur != "" {
 			continue
@@ -133,8 +133,8 @@ func enrichRegister(line []byte) []byte {
 	// find one.
 	//
 	// pid drives the sweep's dead-lane detection (kill(pid,0) plus start-time).
-	// Left to the model it is either absent — `"pid": 0`, which suppresses the
-	// proc_alive signal entirely — or wrong: a live glm-4.6 run sent the literal
+	// Left to the model it is either absent. `"pid": 0`, which suppresses the
+	// proc_alive signal entirely, or wrong: a live glm-4.6 run sent the literal
 	// string "$$", failed, then shelled out to `echo $$` to recover.
 	//
 	// This process is the better answer regardless. It is spawned when the
@@ -151,15 +151,15 @@ func enrichRegister(line []byte) []byte {
 	// Most clients identify themselves at initialize and this never fires. Some
 	// announce their SDK instead: hermes uses the official Python SDK and arrives
 	// as {"name":"mcp","version":"0.1.0"}, which reads as `harness: mcp` on the
-	// board — useless on a mixed fleet, and identical for every Python-SDK
+	// board: useless on a mixed fleet, and identical for every Python-SDK
 	// client.
 	//
 	// This is set in the harness's own MCP server config (hermes, codex and
 	// opencode all support an `env` block there), so it is stated once by the
 	// person wiring Lanes up, not guessed per call and never asked of the model.
 	// Deriving it from the parent process was tried and removed: harnesses wrap
-	// the bridge — hermes under tools/mcp_stdio_watchdog.py, Claude Desktop under
-	// a `disclaimer` helper — so the parent is never the harness.
+	// the bridge: hermes under tools/mcp_stdio_watchdog.py, Claude Desktop under
+	// a `disclaimer` helper, so the parent is never the harness.
 	if h := strings.TrimSpace(os.Getenv("LANES_HARNESS")); h != "" {
 		if cur, ok := args["harness"].(string); !ok || cur == "" {
 			args["harness"] = h
@@ -170,14 +170,14 @@ func enrichRegister(line []byte) []byte {
 	// all outside Claude Code.
 	//
 	// Reattach keys on (name, session_id). session_id is an ARGUMENT, so it
-	// only gets set if the model types it — and models do not: a live opencode
+	// only gets set if the model types it, and models do not: a live opencode
 	// run sent `"session_id":""` every time, so three consecutive runs of the
 	// same agent produced oc-alpha, oc-alpha-2 and oc-alpha-3. A question sent
 	// to the second was invisible to the third: the agent's own address changed
 	// underneath it, silently.
 	//
 	// The bridge process is the right thing to key on. Harnesses spawn one
-	// stdio bridge per session and hold it for that session's lifetime —
+	// stdio bridge per session and hold it for that session's lifetime,
 	// opencode's MCP.connectLocal passes no session identifier of its own, just
 	// process.env plus user config, so there is nothing else to observe. THIS
 	// PROCESS is the session: re-registering inside it reattaches, while a

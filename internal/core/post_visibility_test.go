@@ -12,7 +12,7 @@ import (
 //
 // The body travelled inside the lane.post event. Channel events carry no `To`,
 // so the event filter had no basis on which to withhold them and sent every
-// post to every authenticated lane on the board — SPEC §10 says events carry
+// post to every authenticated lane on the board. SPEC §10 says events carry
 // metadata only, precisely so this cannot happen. Meanwhile nothing STORED the
 // post, so the event was the only copy: lane_read, the tool whose job is to
 // read the lane, did not return posts at all.
@@ -66,7 +66,7 @@ func TestAPostGoesToTheLaneAndNotTheBoard(t *testing.T) {
 		t.Fatalf("expected one lane.post event, got %+v", evs)
 	}
 	if got := evs[0].Data["bytes"]; got != len(secret) {
-		t.Errorf("bytes = %v, want %d — a reader still needs to know how big it is", got, len(secret))
+		t.Errorf("bytes = %v, want %d: a reader still needs to know how big it is", got, len(secret))
 	}
 
 	ch := st.Channels["work"]
@@ -92,7 +92,7 @@ func TestAPostGoesToTheLaneAndNotTheBoard(t *testing.T) {
 			continue
 		}
 		if !ok {
-			t.Errorf("%s cannot read the post — it is write-only", who.name)
+			t.Errorf("%s cannot read the post: it is write-only", who.name)
 		}
 	}
 	if _, err := st.ReaderChannel(st.LaneByToken(outsider), "work"); err == nil {
@@ -132,7 +132,7 @@ func TestPostHistoryIsBounded(t *testing.T) {
 	}
 	ch := st.Channels["w"]
 	if len(ch.Posts) != lim.PostRetention {
-		t.Fatalf("kept %d posts, want %d — an unbounded collection is replayed "+
+		t.Fatalf("kept %d posts, want %d: an unbounded collection is replayed "+
 			"into memory on every start, forever", len(ch.Posts), lim.PostRetention)
 	}
 	// The ones kept are the NEWEST.
@@ -142,7 +142,7 @@ func TestPostHistoryIsBounded(t *testing.T) {
 }
 
 // A merge deletes the source lane. Anything the source held and the merge did
-// not carry is destroyed, and this codebase has done that twice already — first
+// not carry is destroyed, and this codebase has done that twice already: first
 // with queues, then with announcements, each time leaving a surviving lane that
 // looked healthy and had quietly eaten a collection.
 func TestAMergeCarriesThePostsAcross(t *testing.T) {

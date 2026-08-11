@@ -17,7 +17,7 @@ linters:
     - nilerr
     # Security
     - gosec
-    # Complexity budgets (SPEC §17 — ceilings, not targets)
+    # Complexity budgets (SPEC §17: ceilings, not targets)
     - cyclop
     - gocognit
     - funlen
@@ -49,9 +49,9 @@ linters:
     forbidigo:
       forbid:
         - pattern: time\.Sleep
-          msg: "no sleeps in tests — use testing/synctest or event-driven waits"
+          msg: "no sleeps in tests: use testing/synctest or event-driven waits"
         - pattern: fmt\.Print(|f|ln)
-          msg: "no prints outside cmd/ — use log/slog"
+          msg: "no prints outside cmd/: use log/slog"
     exhaustive:
       default-signifies-exhaustive: true
   exclusions:

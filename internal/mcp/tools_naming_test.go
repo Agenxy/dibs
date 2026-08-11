@@ -13,7 +13,7 @@ import (
 // dangerous rather than merely untidy.
 //
 // The asymmetry is the reason this is a guard and not a style note. Calling
-// lane_close by mistake fails safely — it is coordinator-only and needs an id it
+// lane_close by mistake fails safely: it is coordinator-only and needs an id it
 // will not have. Calling close_lane by mistake SUCCEEDS: it takes nothing but a
 // token, so no argument check can catch the error, and a coordinator who meant
 // to retire the channel they opened silently removes themselves from the board
@@ -33,7 +33,7 @@ func TestTheTwoCloseToolsDisambiguateEachOther(t *testing.T) {
 		}
 	}
 	if !strings.Contains(desc["close_lane"], "lane_close") {
-		t.Error("close_lane's description does not mention lane_close — the tool that " +
+		t.Error("close_lane's description does not mention lane_close: the tool that " +
 			"succeeds when called by mistake is the one that must warn")
 	}
 	if !strings.Contains(desc["lane_close"], "close_lane") {

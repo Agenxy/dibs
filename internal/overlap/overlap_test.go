@@ -115,7 +115,7 @@ func TestCoChangeConfidenceIgnoresBusyFiles(t *testing.T) {
 	}
 	// ledger.go co-occurs with engine.go in 10/10 of engine's commits; README
 	// also does, but the point is that confidence is normalised by the QUERY
-	// file, so both are 1.0 here — while docs.md, which never appears with
+	// file, so both are 1.0 here: while docs.md, which never appears with
 	// engine.go, is absent entirely.
 	for _, r := range rel {
 		if r.Path == "docs.md" {
@@ -253,7 +253,7 @@ func TestUnrelatedDeclarationsScoreBelowRelatedOnes(t *testing.T) {
 
 func TestSuggestThresholdsNeverReturnsAZeroNotify(t *testing.T) {
 	// A scorer that discriminates well puts MOST unrelated pairs at exactly
-	// zero, so the median is zero — and notify_threshold=0 notifies about every
+	// zero, so the median is zero, and notify_threshold=0 notifies about every
 	// lane on the board, which is worse than not notifying at all. Measured on
 	// this repository before the floor was added: join 0.327, notify 0.000.
 	ctx := context.Background()
@@ -273,7 +273,7 @@ func TestSuggestThresholdsNeverReturnsAZeroNotify(t *testing.T) {
 	// Skip when the checkout has too little history to calibrate FROM, which is
 	// not the same as having too few commits to sample.
 	//
-	// This test asserts that the notify floor works — that a scorer which puts
+	// This test asserts that the notify floor works: that a scorer which puts
 	// most unrelated pairs at zero does not produce notify=0. It can only assert
 	// that where there is a distribution to floor. After this repository's history
 	// was squashed to a single v0 commit there was not, and the test spent the
@@ -288,7 +288,7 @@ func TestSuggestThresholdsNeverReturnsAZeroNotify(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cal.Degenerate {
-		t.Skipf("history too uniform to calibrate (%d pairs, %d positives) — "+
+		t.Skipf("history too uniform to calibrate (%d pairs, %d positives). "+
 			"nothing to floor", cal.Pairs, cal.Positives)
 	}
 
@@ -313,7 +313,7 @@ func TestSuggestThresholdsNeverReturnsAZeroNotify(t *testing.T) {
 // The "term matches most of the repo" guard is a ratio, and a ratio is
 // degenerate at small N: with three files, 0.25*3 = 0.75, so a term appearing in
 // ONE file already exceeds it. Every term was dropped and Predict returned
-// nothing — silently, because an empty prediction legitimately means "no
+// nothing: silently, because an empty prediction legitimately means "no
 // evidence". Two real agents in a live fleet run declared plainly overlapping
 // work over a three-file fixture and neither was matched.
 func TestSmallRepoStillPredicts(t *testing.T) {
@@ -333,7 +333,7 @@ func TestSmallRepoStillPredicts(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(pred.Files) == 0 {
-		t.Fatal("a 3-file repo must still predict something — every term was dropped as 'too common'")
+		t.Fatal("a 3-file repo must still predict something: every term was dropped as 'too common'")
 	}
 	var hitRetry bool
 	for _, f := range pred.Files {
@@ -351,7 +351,7 @@ func TestSmallRepoStillPredicts(t *testing.T) {
 //
 // The zero-pair case returns documented DEFAULTS, and the CLI printed them
 // under "suggested thresholds for THIS repository … (95th pct of unrelated
-// pairs)" — a provenance that is simply false, on a screen that also said "set
+// pairs)": a provenance that is simply false, on a screen that also said "set
 // these in your config if they look right". Nothing distinguished
 // 0.750-because-we-measured from 0.750-because-we-could-not.
 func TestCalibrationSaysWhetherItMeasuredAnything(t *testing.T) {
@@ -377,14 +377,14 @@ func TestCalibrationSaysWhetherItMeasuredAnything(t *testing.T) {
 	if empty.Pairs != 0 {
 		t.Fatalf("want 0 pairs, got %d", empty.Pairs)
 	}
-	// The defaults are still returned — the caller needs something to print —
+	// The defaults are still returned: the caller needs something to print,
 	// but they are labelled by Pairs == 0, not by their value.
 	if empty.Join != 0.75 || empty.Notify != 0.55 {
 		t.Fatalf("documented defaults expected, got %v/%v", empty.Join, empty.Notify)
 	}
 }
 
-// Below 20 samples the 95th percentile IS the maximum — pct() indexes at
+// Below 20 samples the 95th percentile IS the maximum: pct() indexes at
 // 0.95*(N-1), so the top 5% holds less than one whole sample and a single
 // unlucky pair sets the bar for the entire repository.
 func TestThinEvidenceIsReportedAsThin(t *testing.T) {
@@ -396,7 +396,7 @@ func TestThinEvidenceIsReportedAsThin(t *testing.T) {
 		{pairs: 19, thin: true},
 		{pairs: 20, thin: false},
 		{pairs: 336, thin: false},
-		{pairs: 0, thin: false}, // not thin — not measured at all, a different report
+		{pairs: 0, thin: false}, // not thin, not measured at all, a different report
 	} {
 		c := Calibration{Pairs: tc.pairs, Join: 0.3}
 		if c.Thin() != tc.thin {
@@ -410,7 +410,7 @@ func TestThinEvidenceIsReportedAsThin(t *testing.T) {
 
 // A threshold on its own cannot say whether a scorer can TELL related work from
 // unrelated work. It reports a false-positive rate and nothing about the true
-// positives — so a scorer that ranks correctly can still leave most genuine
+// positives, so a scorer that ranks correctly can still leave most genuine
 // collisions below its own calibrated bar, and the numbers look healthy.
 //
 // Measured on this repository: the built-in scorer clears 50% of related pairs
@@ -448,15 +448,15 @@ func TestCalibrationReportsHowMuchRelatedWorkClearsTheBar(t *testing.T) {
 // symmetrically: raw text for both the task description and the code chunk.
 //
 // Every serious retrieval model is trained with a marker saying which side it
-// is being given — Qwen3-Embedding's card specifies `Instruct: …\nQuery: …`,
+// is being given. Qwen3-Embedding's card specifies `Instruct: …\nQuery: …`,
 // nomic was trained on literal `search_query:` / `search_document:`. Without
 // them the model embeds a query and a document into the same undifferentiated
 // space. It still RANKS tolerably, which is why this hid: what collapses is the
 // MARGIN between related and unrelated work.
 //
 // Measured on this repository: adding the markers took qwen3-embedding:4b from
-// 22% to 42% separation and MRR from 0.720 to 0.826, and the 0.6b model — with
-// its markers — separates better (49%) than the 4b did without them. It was
+// 22% to 42% separation and MRR from 0.720 to 0.826, and the 0.6b model: with
+// its markers: separates better (49%) than the 4b did without them. It was
 // never a question of model size.
 func TestRetrievalModelsGetTheMarkersTheyWereTrainedWith(t *testing.T) {
 	for _, tc := range []struct {
@@ -471,7 +471,7 @@ func TestRetrievalModelsGetTheMarkersTheyWereTrainedWith(t *testing.T) {
 		// first version of this table used an invented wording.
 		{"bge-large-en-v1.5", "Represent this sentence for searching relevant passages: ", ""},
 		// And this line is why the family prefix was not enough. This case used
-		// to name bge-m3 and expect the string above — but bge-m3's card says
+		// to name bge-m3 and expect the string above, but bge-m3's card says
 		// it "no longer requires adding instruction to the queries", so the
 		// family match was feeding an untrained string to the one member of the
 		// family that documents its absence. Matching a family is a guess about
@@ -500,7 +500,7 @@ func TestRetrievalModelsGetTheMarkersTheyWereTrainedWith(t *testing.T) {
 		// gte-large-en-v1.5, and the only instruction-tuned member of the
 		// family is a different model. Claiming a convention for the whole
 		// family installed a marker the model was never trained on AND
-		// suppressed the unknown-model warning — silent, and worse than
+		// suppressed the unknown-model warning: silent, and worse than
 		// nothing.
 		"gte-large-en-v1.5",
 	} {
@@ -519,7 +519,7 @@ func TestRetrievalModelsGetTheMarkersTheyWereTrainedWith(t *testing.T) {
 
 // A model family Lanes has never heard of still has a convention, and its
 // operator knows it. Without an override that operator silently gets about half
-// the separation with nothing on screen to explain it — demonstrated by giving
+// the separation with nothing on screen to explain it: demonstrated by giving
 // the SAME weights an unrecognised name: 49% of related work cleared the bar
 // under the recognised name, 33% under the unrecognised one, and 49% again once
 // the marker was supplied by hand.
@@ -557,7 +557,7 @@ func TestMarkersCanBeOverriddenForAModelWeDoNotKnow(t *testing.T) {
 }
 
 // dot() walked min(len(a), len(b)), so a query embedded at a different width
-// than the index was scored over a PREFIX of both — plausible numbers from
+// than the index was scored over a PREFIX of both: plausible numbers from
 // incompatible vector spaces, and auto-joins made from them. That happens for
 // real: a model alias repointed, an endpoint swapped, a service upgraded
 // between Build and Predict. Nothing errored; the scores just quietly stopped
@@ -601,7 +601,7 @@ func TestVectorsThatCannotBeComparedAreRefusedNotTruncated(t *testing.T) {
 }
 
 // An index quietly smaller than the repository fails to match work touching the
-// files it never saw — and reported itself READY while doing it. A tracked file
+// files it never saw, and reported itself READY while doing it. A tracked file
 // that cannot be read (broken symlink, permission, removed between `git
 // ls-files` and the read) was skipped without a word.
 func TestAnIncompleteIndexSaysSo(t *testing.T) {
@@ -627,7 +627,7 @@ func TestAnIncompleteIndexSaysSo(t *testing.T) {
 
 // Version identifies WHICH index produced a score. A second-resolution
 // timestamp cannot tell two rebuilds of a small repository apart, so recorded
-// membership could name a scorer version that matched two different indexes —
+// membership could name a scorer version that matched two different indexes,
 // the one thing a provenance field must never do.
 func TestVersionDistinguishesTwoBuildsInTheSameSecond(t *testing.T) {
 	at := time.Unix(1700000000, 0)
@@ -650,13 +650,13 @@ func TestVersionDistinguishesTwoBuildsInTheSameSecond(t *testing.T) {
 // It was a timestamp, then a timestamp plus chunk count and width. Both collide
 // on the case that actually happens: an operator edits a few files and rebuilds
 // within the same second. Same chunk count, same width, different answers, one
-// version string — so a membership recorded as "matched by index X" points at
+// version string, so a membership recorded as "matched by index X" points at
 // two indexes that disagree, and the provenance is worse than absent because it
 // reads as certain.
 func TestIndexVersionDistinguishesBuildsThatShareASecondAndAShape(t *testing.T) {
 	owners := []string{"a.go", "b.go"}
 	before := indexDigest(owners, [][]float32{{0.1, 0.2}, {0.3, 0.4}})
-	// Same files, same count, same width — one vector moved, because the file
+	// Same files, same count, same width: one vector moved, because the file
 	// behind it changed.
 	after := indexDigest(owners, [][]float32{{0.1, 0.2}, {0.3, 0.9}})
 	if before == after {
@@ -667,7 +667,7 @@ func TestIndexVersionDistinguishesBuildsThatShareASecondAndAShape(t *testing.T) 
 	if again := indexDigest(owners, [][]float32{{0.1, 0.2}, {0.3, 0.4}}); again != before {
 		t.Error("identical index content must produce an identical version")
 	}
-	// Same vectors, different owner — a chunk moving between files changes what
+	// Same vectors, different owner: a chunk moving between files changes what
 	// a hit attributes the work to.
 	if moved := indexDigest([]string{"a.go", "c.go"}, [][]float32{{0.1, 0.2}, {0.3, 0.4}}); moved == before {
 		t.Error("re-attributing a chunk to another file must change the version")
@@ -678,7 +678,7 @@ func TestIndexVersionDistinguishesBuildsThatShareASecondAndAShape(t *testing.T) 
 	// anyone who can write to the repository being indexed. An identity that an
 	// attacker can duplicate on purpose is not an identity.
 	if got := len(before); got != sha256.Size*2 {
-		t.Errorf("digest is %d hex chars, want the full %d — a truncated provenance "+
+		t.Errorf("digest is %d hex chars, want the full %d: a truncated provenance "+
 			"digest can be collided deliberately", got, sha256.Size*2)
 	}
 }
@@ -687,7 +687,7 @@ func TestIndexVersionDistinguishesBuildsThatShareASecondAndAShape(t *testing.T) 
 // first content-digest attempt broke.
 //
 // Version carried buildAt as well as the digest, so rebuilding byte-identical
-// content one second later produced a different version — and provenance that
+// content one second later produced a different version, and provenance that
 // was still perfectly accurate then read as stale. Both halves have to hold at
 // once: different answers, different version; same answers, same version.
 func TestIndexVersionIsStableAcrossRebuildsOfIdenticalContent(t *testing.T) {
@@ -713,12 +713,12 @@ func TestIndexVersionIsStableAcrossRebuildsOfIdenticalContent(t *testing.T) {
 	}
 }
 
-// The marker table is the highest-leverage table in the system and the one I got
+// The marker table matters more than any other in the system, and it is the one I got
 // wrong before: three of five entries were invented rather than quoted, and a
 // wrong marker scores WORSE than none while looking configured.
 //
 // So every claim below is checked against a stated model card, and the family
-// prefixes are checked for over-reach — "bge" matched bge-m3, which documents
+// prefixes are checked for over-reach. "bge" matched bge-m3, which documents
 // that it needs no instruction, and handed it bge-large-en-v1.5's trained
 // string.
 func TestFamilyPrefixesDoNotOverreachWithinAFamily(t *testing.T) {
@@ -733,7 +733,7 @@ func TestFamilyPrefixesDoNotOverreachWithinAFamily(t *testing.T) {
 		},
 		{
 			"bge-m3", "", true,
-			"the card says it no longer requires an instruction — recognised, but unmarked",
+			"the card says it no longer requires an instruction: recognised, but unmarked",
 		},
 		{
 			"bge-large-zh-v1.5", "为这个句子生成表示以用于检索相关文章：", true,
@@ -773,7 +773,7 @@ func TestFamilyPrefixesDoNotOverreachWithinAFamily(t *testing.T) {
 		},
 		{
 			"gte-large-en-v1.5", "", false,
-			"no card-stated prefix — must warn rather than guess one",
+			"no card-stated prefix: must warn rather than guess one",
 		},
 		{
 			"some-model-nobody-listed", "", false,
@@ -782,7 +782,7 @@ func TestFamilyPrefixesDoNotOverreachWithinAFamily(t *testing.T) {
 	} {
 		got := affixesFor(c.model)
 		// Prefix, because this table is about WHICH branch a model name lands
-		// in — the exact trained wording is pinned by the table above. An empty
+		// in: the exact trained wording is pinned by the table above. An empty
 		// want is the exception: it means "no marker at all", and a prefix test
 		// would accept anything.
 		if (c.query == "" && got.query != "") || !strings.HasPrefix(got.query, c.query) {
@@ -793,7 +793,7 @@ func TestFamilyPrefixesDoNotOverreachWithinAFamily(t *testing.T) {
 		}
 		// Only the symmetric e5 models mark the DOCUMENT side. Every other
 		// family here leaves documents bare, and inventing a document prefix is
-		// the specific mistake that cost arctic-embed 11 points of separation —
+		// the specific mistake that cost arctic-embed 11 points of separation,
 		// worse than no marker, because it looks configured.
 		wantDoc := c.model == "e5-large-v2"
 		if hasDoc := got.doc != ""; hasDoc != wantDoc {
@@ -815,7 +815,7 @@ func TestFamilyPrefixesDoNotOverreachWithinAFamily(t *testing.T) {
 // Tier 0 must answer a declaration that names no file.
 //
 // It matched declared words against file PATHS only, so "fixing the retry loop
-// when tokens fail to refresh" — in a repository whose file is called auth.go —
+// when tokens fail to refresh": in a repository whose file is called auth.go,
 // shared no token with anything and predicted nothing. Honest, and useless to
 // anyone evaluating whether the feature works: two agents doing the same job
 // were both told nobody else was near it.
@@ -841,7 +841,7 @@ func TestTierZeroLearnsHowTheProjectDescribesItsWork(t *testing.T) {
 		t.Fatalf("predict: %v", err)
 	}
 	if len(pred.Files) == 0 {
-		t.Fatal("a declaration naming no file predicted nothing — tier 0 is blind to " +
+		t.Fatal("a declaration naming no file predicted nothing: tier 0 is blind to " +
 			"natural language again")
 	}
 	if pred.Files[0].Path != "auth.go" {
@@ -852,13 +852,13 @@ func TestTierZeroLearnsHowTheProjectDescribesItsWork(t *testing.T) {
 // Holding commits out is what makes measuring this honest.
 //
 // `lanes calibrate` evaluates by using a commit message as the query and that
-// commit's files as the answer — the exact pairing this index is built from. On
+// commit's files as the answer: the exact pairing this index is built from. On
 // this repository, adding the index moved recall@5 from 0.288 to 0.815 and MRR
 // from 0.476 to a perfect 1.000, which is not a result: the query was
 // retrieving the commit it came from.
 //
 // Measured leak-free across four repositories with real history, recall@5 rose
-// 58–91% and MRR rose on every one — a real gain, an order of magnitude smaller
+// 58–91% and MRR rose on every one: a real gain, an order of magnitude smaller
 // than the leak that hid it.
 func TestHeldOutCommitsDoNotEnterTheHistoryIndex(t *testing.T) {
 	cc := &CoChange{Messages: []Commit{
@@ -873,7 +873,7 @@ func TestHeldOutCommitsDoNotEnterTheHistoryIndex(t *testing.T) {
 	buildHistory(l, cc, map[string]bool{"fix the retry backoff when a token refresh fails": true})
 
 	if _, leaked := l.history["backoff"]; leaked {
-		t.Error("a held-out commit reached the index — every measurement taken with " +
+		t.Error("a held-out commit reached the index: every measurement taken with " +
 			"it is memorisation, not retrieval")
 	}
 	if _, kept := l.history["restyle"]; !kept {

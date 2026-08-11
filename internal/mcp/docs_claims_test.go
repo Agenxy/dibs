@@ -10,8 +10,8 @@ import (
 
 // Numbers in the documentation must match the software.
 //
-// The tool count is the most-quoted figure in this project — it appears in the
-// README, SKILLS.md, the CHANGELOG and the architecture notes — and it is the
+// The tool count is the most-quoted figure in this project: it appears in the
+// README, SKILLS.md, the CHANGELOG and the architecture notes, and it is the
 // kind of claim that rots silently: adding a tool is a one-line change that
 // nobody thinks of as a documentation change, and the docs then advertise a
 // number that is simply false to every reader.
@@ -27,7 +27,7 @@ import (
 // Counted against what tools/list ADVERTISES, not against everything defined.
 // Those parted company when the harness lifecycle hooks stopped being listed:
 // 43 exist, an agent is offered 38, and "verify in seconds" means running
-// tools/list — so 38 is the number a reader can check and therefore the only one
+// tools/list, so 38 is the number a reader can check and therefore the only one
 // the docs may quote as "N tools". This test kept asserting the larger figure and
 // so demanded the docs state something no reader could confirm.
 func TestDocumentedToolCountMatchesReality(t *testing.T) {
@@ -44,7 +44,7 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 	// and two of them sat in SKILLS.md precisely because the plural-only pattern
 	// walked straight past.
 	// The leading class matters. `(\d+)\s+tools?` also matches the tail of a
-	// version number — "v1.0 tool table" was read as a claim of "0 tools" and
+	// version number. "v1.0 tool table" was read as a claim of "0 tools" and
 	// failed this test on a sentence that makes no numeric claim at all. A
 	// guard that fires on correct prose gets weakened by whoever hits it next.
 	claim := regexp.MustCompile(`(?:^|[^\w.])(\d+)\s+tools?\b`)
@@ -62,7 +62,7 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 		body, err := os.ReadFile(root(doc))
 		if err != nil {
 			// A document that has been renamed or removed should not fail this
-			// test — but it must not silently reduce coverage to nothing either,
+			// test, but it must not silently reduce coverage to nothing either,
 			// which the count below catches.
 			continue
 		}
@@ -74,13 +74,13 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 			checked++
 			if n != actual {
 				t.Errorf("%s claims %q, but the server publishes %d tools.\n"+
-					"  Adding or removing a tool is a documentation change too — every reader\n"+
+					"  Adding or removing a tool is a documentation change too: every reader\n"+
 					"  who trusts that number is being told something false.", doc, m[0], actual)
 			}
 		}
 	}
 	if checked == 0 {
 		t.Errorf("no document states a tool count, so this check verified nothing; " +
-			"either the claim was removed (fine — delete this test) or the pattern no longer matches")
+			"either the claim was removed (fine: delete this test) or the pattern no longer matches")
 	}
 }

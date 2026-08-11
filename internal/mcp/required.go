@@ -51,7 +51,7 @@ var knownParams = func() map[string][]string {
 // This existed nowhere, and the schemas were decorative: arguments unmarshal
 // into one struct, so an omitted parameter became that field's ZERO VALUE and
 // the handler ran on it. Getting a name wrong therefore produced a confident,
-// specific and false error — asking for an announcement with `serial` instead
+// specific and false error: asking for an announcement with `serial` instead
 // of `msg_serial` answered "no announcement at serial 0", a serial the caller
 // never sent and does not appear anywhere in its request. The caller's
 // reasonable conclusion is that the announcement is gone.
@@ -106,7 +106,7 @@ func checkRequired(tool string, raw json.RawMessage, bearerToken string) error {
 	// That is the worst failure this server can produce. An agent cannot see
 	// the board it is not looking at; its only evidence that an action
 	// happened is what this returns. Answering "ok" for work not done is
-	// worse than any error, because the agent proceeds on it — and the whole
+	// worse than any error, because the agent proceeds on it, and the whole
 	// product is other agents trusting that.
 	//
 	// Safe to be strict: knownParams is derived from the tools' own declared
@@ -115,16 +115,16 @@ func checkRequired(tool string, raw json.RawMessage, bearerToken string) error {
 		if len(extra) == 0 {
 			return nil
 		}
-		return fmt.Errorf("%s does not take %s — check the tool's schema; "+
+		return fmt.Errorf("%s does not take %s: check the tool's schema; "+
 			"nothing was changed", tool, quoteList(extra))
 	}
 
 	msg := fmt.Sprintf("%s needs %s", tool, quoteList(missing))
 	// If the caller supplied something this tool does not accept, that is
-	// almost always the misnamed parameter — say so, rather than leaving them
+	// almost always the misnamed parameter: say so, rather than leaving them
 	// to diff two lists by eye.
 	if len(extra) > 0 {
-		msg += fmt.Sprintf(" — you sent %s, which %s does not take",
+		msg += fmt.Sprintf(": you sent %s, which %s does not take",
 			quoteList(extra), tool)
 	}
 	return fmt.Errorf("%s", msg)
@@ -137,8 +137,8 @@ func unknownGiven(tool string, present map[string]bool) []string {
 	}
 	// "token" is authentication, not domain: it may arrive in the arguments or
 	// as a bearer header, for any tool, and it is orthogonal to what that tool
-	// is about. The session-addressed hook tools do not declare it — they are
-	// identified by session_id — and our own shipped hooks send it anyway.
+	// is about. The session-addressed hook tools do not declare it: they are
+	// identified by session_id, and our own shipped hooks send it anyway.
 	// Strictness is here to catch a MISNAMED field, not to relitigate where
 	// credentials are allowed to appear.
 	known["token"] = true

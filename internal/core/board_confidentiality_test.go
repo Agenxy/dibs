@@ -8,7 +8,7 @@ import (
 
 // Board() is not the operator's private view. It is what ack_board returns to
 // EVERY agent on every activation, and what /api/board serves to anything
-// holding the coordination secret — which every agent must hold to call /mcp at
+// holding the coordination secret, which every agent must hold to call /mcp at
 // all. So anything in it is public to the whole machine.
 //
 // It carried every announcement body from every channel. An agent that had
@@ -54,7 +54,7 @@ func TestTheBoardCarriesNoLaneText(t *testing.T) {
 	}
 	for _, secret := range []string{announced, posted} {
 		if strings.Contains(string(blob), secret) {
-			t.Errorf("the board carries %q — every agent gets this from ack_board, "+
+			t.Errorf("the board carries %q: every agent gets this from ack_board, "+
 				"whether or not it is in the lane", secret)
 		}
 	}

@@ -37,7 +37,7 @@ func TestAStalledAgentReachesTheLaneThatSpawnedIt(t *testing.T) {
 	// Blocks forever, consuming nothing: alive, silent, and burning no CPU,
 	// which is exactly the shape of the 7h39m stall this was built for.
 	//
-	// NOT `select {}` — Go's runtime detects that as a deadlock and kills the
+	// NOT `select {}`: Go's runtime detects that as a deadlock and kills the
 	// process on the spot. It then lingered as an unreaped zombie, which still
 	// has an elapsed time, so the wait-for-age loop below passed while discovery
 	// had quietly stopped matching it. A stand-in that dies at birth tests
@@ -71,12 +71,12 @@ func TestAStalledAgentReachesTheLaneThatSpawnedIt(t *testing.T) {
 		}
 	}
 	if mine == nil {
-		t.Fatalf("the sweep did not discover pid %d running %q — a stalled agent that is\n"+
+		t.Fatalf("the sweep did not discover pid %d running %q: a stalled agent that is\n"+
 			"  never found is never reported, whatever the rest of the chain does",
 			child.Process.Pid, fake+" exec")
 	}
 	if mine.Owner != "builder" || mine.Via != "env" {
-		t.Fatalf("discovered but attributed owner=%q via=%q, want builder via env —\n"+
+		t.Fatalf("discovered but attributed owner=%q via=%q, want builder via env , \n"+
 			"  the stamp is the deterministic rung and this is the round trip that proves it",
 			mine.Owner, mine.Via)
 	}
@@ -94,7 +94,7 @@ func TestAStalledAgentReachesTheLaneThatSpawnedIt(t *testing.T) {
 
 	// `ps` reports elapsed time to the SECOND, so a just-spawned process reads
 	// as zero seconds old and cannot be convicted of having idled its whole
-	// life — the duty-cycle rung needs an age to divide by. Wait for the
+	// life: the duty-cycle rung needs an age to divide by. Wait for the
 	// process to be observably old enough rather than sleeping a guessed
 	// interval: the condition is the thing being waited on.
 	deadline := time.Now().Add(20 * time.Second)
@@ -109,7 +109,7 @@ func TestAStalledAgentReachesTheLaneThatSpawnedIt(t *testing.T) {
 
 	cfg := liveness.DefaultConfig()
 	cfg.MinAge = time.Second
-	// The timescale is compressed, so the threshold is scaled with it — the
+	// The timescale is compressed, so the threshold is scaled with it: the
 	// LOGIC is the shipped logic. Any process burns some CPU starting up, and
 	// over a two-second life that fixed cost is ~0.5% of it, far above the
 	// 0.05% that means "did nothing for seven hours". Both are the same
@@ -137,7 +137,7 @@ func TestAStalledAgentReachesTheLaneThatSpawnedIt(t *testing.T) {
 	// which of the four links broke instead of only the last one.
 	v := liveness.Classify([]liveness.Sample{liveness.Observe(child.Process.Pid, "")}, cfg)
 	if v.State != liveness.Stuck {
-		t.Fatalf("classifier: %s — %s", v.State, v.Why)
+		t.Fatalf("classifier: %s. %s", v.State, v.Why)
 	}
 	if !e.reportStallLocked(*mine, v, "") {
 		t.Fatalf("reportStallLocked declined to deliver for owner=%q; laneForOwner said %q",
@@ -152,7 +152,7 @@ func TestAStalledAgentReachesTheLaneThatSpawnedIt(t *testing.T) {
 		// guessing game between four links that each look fine alone.
 		v := liveness.Classify([]liveness.Sample{liveness.Observe(child.Process.Pid, "")}, cfg)
 		t.Fatalf("the sweep found and attributed a stalled agent and told nobody.\n"+
-			"  classifier says: %s — %s", v.State, v.Why)
+			"  classifier says: %s. %s", v.State, v.Why)
 	}
 	if !strings.Contains(got[0].Text, "has stopped working") {
 		t.Errorf("the notice does not say what happened: %q", got[0].Text)
@@ -164,7 +164,7 @@ func TestAStalledAgentReachesTheLaneThatSpawnedIt(t *testing.T) {
 
 	// A reported counter reaches the classifier when there is no transcript.
 	//
-	// This stand-in has none — it is a bare binary, not a harness — which is
+	// This stand-in has none, it is a bare binary, not a harness, which is
 	// exactly the opencode situation. Verifies the field is actually read: a
 	// counter nothing consumes is this codebase's recurring bug, and it has
 	// shipped that shape more than once.
@@ -200,7 +200,7 @@ func TestAStalledAgentReachesTheLaneThatSpawnedIt(t *testing.T) {
 	// Said once. A report repeated every sweep is how a signal becomes noise.
 	//
 	// Its own baseline rather than the one captured above, because the progress
-	// checks in between deliberately cleared the notices — a shared baseline
+	// checks in between deliberately cleared the notices: a shared baseline
 	// would make this assert about that clearing instead of about repetition.
 	e.notices = nil
 	told := map[int]bool{child.Process.Pid: true}

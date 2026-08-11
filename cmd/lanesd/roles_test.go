@@ -10,7 +10,7 @@ import (
 	"github.com/agenxy/lanes/internal/ledger"
 )
 
-// A role declared in the config is granted at startup — including to a lane that
+// A role declared in the config is granted at startup: including to a lane that
 // has not registered yet.
 //
 // The ordering is the whole point. A standing coordinator that only took effect
@@ -35,7 +35,7 @@ func TestRolesDeclaredInConfigAreGrantedAtStartup(t *testing.T) {
 		"fleet-lead":   core.RoleAdmin,
 	} {
 		if !holdsRole(t, eng, lane, want) {
-			t.Errorf("%s does not hold %q after applyDeclaredRoles — a role written in "+
+			t.Errorf("%s does not hold %q after applyDeclaredRoles: a role written in "+
 				"lanes.toml that does not take effect is a config that lies", lane, want)
 		}
 	}
@@ -100,7 +100,7 @@ func testEngine(t *testing.T) (*engine.Engine, context.Context) {
 // holdsRole asks the state machine rather than parsing a board rendering.
 //
 // Re-granting a role a lane already holds reports changed:false, which is
-// exactly the question "is it already set" — and it does not depend on how the
+// exactly the question "is it already set", and it does not depend on how the
 // board happens to serialise itself today. An earlier version of this helper
 // read the board payload and silently returned "" for a role that HAD been
 // granted, which made a passing implementation look broken.
@@ -118,8 +118,8 @@ func holdsRole(t *testing.T, eng *engine.Engine, lane, role string) bool {
 //
 // This is the property the whole feature is balanced against: the operator's
 // file is a human decision, but nothing reachable from an agent may promote
-// anything. If grant_role ever became callable with a lane token — directly, or
-// by some tool growing a role argument — an agent could hand itself the god view
+// anything. If grant_role ever became callable with a lane token: directly, or
+// by some tool growing a role argument: an agent could hand itself the god view
 // and read every other lane's mail.
 //
 // Asserted here rather than trusted to the HTTP gate, because the gate is one
@@ -142,7 +142,7 @@ func TestAnAgentStillCannotPromoteItself(t *testing.T) {
 		Kind: core.OpGrantRole, To: "climber", Mode: core.RoleAdmin, Token: token,
 	}); err == nil {
 		if holdsRole(t, eng, "climber", core.RoleAdmin) {
-			t.Fatal("an agent promoted ITSELF to admin using its own lane token — " +
+			t.Fatal("an agent promoted ITSELF to admin using its own lane token. " +
 				"that role can read every other lane's mail")
 		}
 	}

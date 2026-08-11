@@ -8,14 +8,14 @@ import (
 // A lane must not become an easier target as it absorbs members.
 //
 // mergePredicted is monotonic: every join unions that member's predicted files
-// into the lane's, at max weight, and nothing removes them — leaving does not
+// into the lane's, at max weight, and nothing removes them: leaving does not
 // shrink it either. So what a newcomer was compared against was not "the work
 // this lane is doing" but "everything anyone in it has ever been predicted to
 // touch", which is strictly easier to hit the longer the lane lives. A lane that
 // matched more gained members, and gained surface by gaining them.
 //
 // Measured before the fix: the same unrelated newcomer scored 0.0000 against a
-// one-member lane and 0.1000 against the same lane with five — crossing a real
+// one-member lane and 0.1000 against the same lane with five: crossing a real
 // fleet's 0.064 join bar with no change to its work and no change to the lane's
 // topic. Only the membership changed.
 //
@@ -34,7 +34,7 @@ func TestALaneDoesNotGetEasierToMatchAsItGrows(t *testing.T) {
 		ch := &Channel{
 			ID: "lane", Topic: "docs", Members: map[string]*Membership{},
 		}
-		// The founding member is doing docs — nothing to do with the newcomer.
+		// The founding member is doing docs: nothing to do with the newcomer.
 		addMember(t, s, ch, "a", Slot{
 			Text: "the documentation site", Dirs: []string{"/repo/docs"},
 			Predicted: fp("docs/index.md", "docs/guide.md"),
@@ -43,7 +43,7 @@ func TestALaneDoesNotGetEasierToMatchAsItGrows(t *testing.T) {
 		// the whole point: accretion is the UNION matching where no single member
 		// does. A member that genuinely declares the newcomer's file is a true
 		// positive that must still be found, which is TestTheRightMemberIsStillFound
-		// — an earlier version of this fixture confused the two by handing one
+		// an earlier version of this fixture confused the two by handing one
 		// extra member the newcomer's own file, and then read the true positive as
 		// a regression.
 		extras := []Slot{
@@ -55,7 +55,7 @@ func TestALaneDoesNotGetEasierToMatchAsItGrows(t *testing.T) {
 		for i := 0; i < extraMembers && i < len(extras); i++ {
 			addMember(t, s, ch, string(rune('b'+i)), extras[i], now)
 		}
-		// The union carries a file no CURRENT member declares — exactly how a lane
+		// The union carries a file no CURRENT member declares: exactly how a lane
 		// accretes: somebody was predicted to touch it once and merging never
 		// forgets. This is what the newcomer used to be compared against.
 		ch.Predicted = mergePredicted(ch.Predicted, fp("auth/token.go"))
@@ -75,7 +75,7 @@ func TestALaneDoesNotGetEasierToMatchAsItGrows(t *testing.T) {
 	// The lane grew. The newcomer's work did not change and neither did the
 	// lane's topic, so growth must not be what moved the number.
 	if big > small {
-		t.Errorf("accretion raised an unrelated agent's score from %.4f to %.4f — a lane "+
+		t.Errorf("accretion raised an unrelated agent's score from %.4f to %.4f: a lane "+
 			"that has absorbed enough work matches everyone", small, big)
 	}
 	const fleetBar = 0.064
@@ -109,7 +109,7 @@ func TestTheRightMemberIsStillFound(t *testing.T) {
 		t.Fatal("the lane holds a member doing exactly this work and was not surfaced")
 	}
 	if got[0].Relation != RelationSameSurface {
-		t.Errorf("relation = %q, want same_surface — both declared /repo/auth", got[0].Relation)
+		t.Errorf("relation = %q, want same_surface: both declared /repo/auth", got[0].Relation)
 	}
 	if got[0].Score < 0.5 {
 		t.Errorf("score %.3f: a near-identical declaration must score high, and the "+
@@ -118,7 +118,7 @@ func TestTheRightMemberIsStillFound(t *testing.T) {
 }
 
 // addMember registers a lane, gives it a declaration, and puts it in the channel
-// — the shape production actually has.
+// the shape production actually has.
 //
 // The first version of this test built channels with a merged footprint and NO
 // member lanes, so the slot-to-slot path it existed to exercise was never
@@ -142,7 +142,7 @@ func addMember(t *testing.T, s *State, ch *Channel, id string, sl Slot, now time
 //
 // Judging a candidate on the closest live member declaration is right, and it
 // silently assumed a member declaration exists. Open a lane and start work
-// before calling set_slot — the ordinary order, and what the channel e2e does —
+// before calling set_slot: the ordinary order, and what the channel e2e does,
 // and there is no member slot to compare against. Scoring that zero does not
 // express doubt about the match; it deletes the lane from every future match
 // permanently, and nothing anywhere reports a fault.
@@ -195,8 +195,8 @@ func TestALaneWithNoMemberDeclarationIsStillFindable(t *testing.T) {
 //
 // Found on a live board, not in a suite: two lanes whose members had all been
 // swept were still being suggested, with `members=0` printed in the suggestion
-// itself. The wording a match carries — "another lane is already pursuing the
-// same objective", "join it to coordinate" — is false about an empty lane, and
+// itself. The wording a match carries. "another lane is already pursuing the
+// same objective", "join it to coordinate": is false about an empty lane, and
 // following it sends an agent to an empty room.
 //
 // Empty lanes are not a transient state to wait out: a lane a human opened
@@ -210,7 +210,7 @@ func TestAnEmptyLaneIsNotSomebodyElsesWork(t *testing.T) {
 	})
 	mine := Slot{Text: "rotating the refresh token", Predicted: fp("auth/token.go")}
 
-	// While somebody is in it, it is a real match — otherwise this test could
+	// While somebody is in it, it is a real match: otherwise this test could
 	// pass by breaking matching altogether.
 	if got := s.MatchLanesEvidence(a["newcomer"].ID, mine, "", "", nil, nil, 5); len(got) == 0 {
 		t.Fatal("an occupied lane doing identical work did not match; the check below proves nothing")

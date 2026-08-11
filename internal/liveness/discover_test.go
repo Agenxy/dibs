@@ -37,7 +37,7 @@ func TestOnlyRealAgentProcessesCount(t *testing.T) {
 func TestAttributionPatternsMatchWhatIsReallyThere(t *testing.T) {
 	// Measured: the session directory Claude Desktop puts on a child's PATH.
 	// The PATH value CONTAINS SPACES ("/Library/Application Support/..."), which
-	// is why the environment is matched as a blob and not split into pairs —
+	// is why the environment is matched as a blob and not split into pairs,
 	// splitting truncated this value and lost the id sitting further along.
 	blob := `codex exec -m gpt-5.6-sol __CFBundleIdentifier=com.anthropic.claudefordesktop ` +
 		`PATH=/usr/bin:/home/ada/Library/Application Support/Claude/local-agent-mode-sessions/` +

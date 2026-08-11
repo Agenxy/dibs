@@ -15,7 +15,7 @@ import (
 //
 // Recorded once, at start. Go's time.Time carries a monotonic reading and
 // time.Since uses it, so this difference does not advance while the machine is
-// asleep — which is the entire point. It is stored explicitly rather than left
+// asleep, which is the entire point. It is stored explicitly rather than left
 // implicit in a time.Time subtraction, because a reader has to be able to SEE
 // that the sleep correction is deliberate. Getting this wrong is silent: the
 // numbers stay plausible and every laptop agent looks hung.
@@ -23,7 +23,7 @@ var base = time.Now()
 
 // Observe takes one sample of a process and the transcript it appends to.
 //
-// transcript may be empty, in which case only liveness and CPU are known —
+// transcript may be empty, in which case only liveness and CPU are known,
 // enough to tell a dead agent from a live one, not enough to tell a working one
 // from a stuck one. Say so rather than guessing.
 func Observe(pid int, transcript string) Sample {
@@ -46,7 +46,7 @@ func Observe(pid int, transcript string) Sample {
 // been alive, in one call.
 //
 // Both together, because their RATIO is the only thing that can convict a
-// stalled agent from a single observation — and asking twice would be two forks
+// stalled agent from a single observation, and asking twice would be two forks
 // for one fact. Via ps, which reads the same on macOS and Linux without cgo or
 // a /proc dependency.
 func processTimes(pid int) (cpu, elapsed time.Duration) {
@@ -95,7 +95,7 @@ func parsePSTime(s string) time.Duration {
 // Tokens reads an agent's own cumulative token count out of its transcript.
 //
 // Both harnesses that matter write one, in different shapes, and both write it
-// repeatedly as the run proceeds — so the LAST occurrence is the current total:
+// repeatedly as the run proceeds, so the LAST occurrence is the current total:
 //
 //	codex        {"type":"event_msg","payload":{"type":"token_count",
 //	              "info":{"total_token_usage":{"total_tokens":N}}}}
@@ -104,7 +104,7 @@ func parsePSTime(s string) time.Duration {
 //
 // Claude Code reports per-message usage rather than a running total, so the
 // totals are accumulated here. Either way the result only has to be
-// MONOTONIC — nothing compares it against a billing figure, it is compared
+// MONOTONIC: nothing compares it against a billing figure, it is compared
 // against its own previous value to answer "did this move".
 //
 // Returns 0 when the format is unrecognised, which the classifier reads as "no
@@ -169,7 +169,7 @@ func Tokens(transcript string) int64 {
 // It asks the PROCESS which files it has open, rather than picking the most
 // recently modified transcript on disk. That distinction is not academic: the
 // recency version, run from inside a Claude Code session, discovered the
-// PARENT'S own transcript — which is being appended to constantly — and
+// PARENT'S own transcript (which is being appended to constantly) and
 // cheerfully reported a subagent as "working" on the strength of its
 // supervisor's activity. A watchdog that reports health because the watcher is
 // busy is worse than no watchdog.
@@ -190,7 +190,7 @@ func FindTranscript(pid int) string {
 //
 // Matched against the same locations transcriptGlobs lists, but as a predicate,
 // because here the candidate comes from the process rather than from the
-// filesystem — the question is "is this file one of those", not "which files
+// filesystem: the question is "is this file one of those", not "which files
 // exist".
 func isTranscript(path string) bool {
 	if !strings.HasSuffix(path, ".jsonl") {
@@ -240,7 +240,7 @@ func openFiles(pid int) []string {
 // transcriptGlobs is where the harnesses put their session transcripts.
 //
 // Listed rather than configured because these are facts about other people's
-// software, and a wrong guess produces "" — the safe answer — rather than a
+// software, and a wrong guess produces "" (the safe answer) rather than a
 // confident reading of the wrong file.
 func transcriptGlobs() []string {
 	home, err := os.UserHomeDir()

@@ -10,14 +10,14 @@ import (
 //
 // Codex renders each tool with the first 994 characters of this string
 // prepended. At 3412 characters that was 39,760 characters of the same paragraph
-// across 40 tools — 58% of everything that client showed the model about Lanes,
+// across 40 tools. 58% of everything that client showed the model about Lanes,
 // and enough to truncate its capability list. The reviewer who reported it
 // measured the total correctly and attributed it to the tool descriptions; the
 // descriptions were innocent and this string was not.
 //
 // The threshold is what makes the budget specific rather than a round number.
 // Anything at or above 994 costs the full 994 per tool, so a first cut from 3412
-// to 964 — a 72% reduction in the canonical text — saved that client 3%. Below
+// to 964 (a 72% reduction in the canonical text) saved that client 3%. Below
 // the threshold, savings become proportional. 700 leaves room to add a sentence
 // without silently falling off the cliff.
 func TestServerInstructionsStayUnderTheClientPrefixThreshold(t *testing.T) {
@@ -28,7 +28,7 @@ func TestServerInstructionsStayUnderTheClientPrefixThreshold(t *testing.T) {
 	if n := len(serverInstructions); n > budget {
 		over := ""
 		if n >= codexPrefixCap {
-			over = " — and past the " + itoa(codexPrefixCap) + "-character point where " +
+			over = ", and past the " + itoa(codexPrefixCap) + "-character point where " +
 				"Codex stops truncating and charges the full prefix on every one of its " +
 				"rendered tools, which is where the cost stops being linear"
 		}
@@ -44,7 +44,7 @@ func TestServerInstructionsStayUnderTheClientPrefixThreshold(t *testing.T) {
 // Shortening this string is the right instinct and it has an obvious failure
 // mode: trimming until it is merely short. An agent that names its lane for the
 // work has the wrong address from then on, and one that registers without a
-// nonce loses its mailbox to a restart — neither produces an error, and both are
+// nonce loses its mailbox to a restart: neither produces an error, and both are
 // discovered much later by somebody else.
 func TestServerInstructionsKeepTheIrreversibleWarnings(t *testing.T) {
 	for _, must := range []struct{ needle, why string }{
@@ -54,7 +54,7 @@ func TestServerInstructionsKeepTheIrreversibleWarnings(t *testing.T) {
 		{"lanes://skills", "the detail moved there; without the pointer it is unreachable"},
 	} {
 		if !strings.Contains(serverInstructions, must.needle) {
-			t.Errorf("serverInstructions no longer mentions %q — %s", must.needle, must.why)
+			t.Errorf("serverInstructions no longer mentions %q. %s", must.needle, must.why)
 		}
 	}
 }

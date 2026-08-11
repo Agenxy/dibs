@@ -8,8 +8,8 @@ import (
 //
 // scorePairs labels a pair "related" when the two commits share ANY file, and
 // "unrelated" when they share none. The pairs that actually broke a live fleet
-// shared Justfile, .github/workflows/ci.yml, CMakeLists.txt and llms-full.txt —
-// files every commit in a repository touches — while doing entirely unrelated
+// shared Justfile, .github/workflows/ci.yml, CMakeLists.txt and llms-full.txt,
+// files every commit in a repository touches: while doing entirely unrelated
 // work. Under that labelling they are POSITIVES.
 //
 // So the benchmark did not merely fail to measure the failure mode. It scored the
@@ -29,7 +29,7 @@ func TestSharesFileCallsGenericOverlapRelated(t *testing.T) {
 		t.Fatal("premise changed: these no longer share a file")
 	}
 	// sharesFile is what splits the calibration set, so this pair is scored as a
-	// POSITIVE — an example of "the same work" — on the strength of a Justfile.
+	// POSITIVE (an example of "the same work") on the strength of a Justfile.
 	t.Log("two unrelated subsystems are labelled related because both touch Justfile")
 
 	// The honest label needs a file that is actually about the work. Sharing only

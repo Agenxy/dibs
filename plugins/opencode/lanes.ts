@@ -1,8 +1,8 @@
 /**
  * Lanes plugin for opencode.
  *
- * Delivers Lanes mail into the session at a natural boundary — the moment a new
- * user message is assembled — by appending a synthetic text part.
+ * Delivers Lanes mail into the session at a natural boundary: the moment a new
+ * user message is assembled: by appending a synthetic text part.
  *
  * This is an in-process `fetch` from opencode's own plugin runtime. No
  * subprocess, no CLI, no polling loop. Lanes stays a service the agent pulls
@@ -27,7 +27,7 @@ const DIR =
  * NOT opencode's `input.sessionID`. That id is real, but the lane was not
  * registered under it: registration goes through the `lanes mcp-stdio` bridge,
  * which opencode spawns as a subprocess and hands no session identifier at all.
- * So the bridge names the session after the process that spawned it — and that
+ * So the bridge names the session after the process that spawned it, and that
  * process is opencode itself, this one. `process.pid` here is the bridge's
  * `os.Getppid()` there; both sides observe the same number without ever talking.
  *
@@ -52,7 +52,7 @@ async function secret(): Promise<string | null> {
     const f = Bun.file(`${DIR}/local.secret`)
     secretCache = (await f.text()).trim() || null
   } catch {
-    secretCache = null // daemon never started here — stay quiet
+    secretCache = null // daemon never started here: stay quiet
   }
   return secretCache
 }
@@ -61,7 +61,7 @@ async function secret(): Promise<string | null> {
  * Ask Lanes whether this session may write a path.
  *
  * This is what makes a claim hold rather than merely inform. Lanes fails open
- * on every unknown — unregistered session, unclaimed path, daemon down — so a
+ * on every unknown, unregistered session, unclaimed path, daemon down, so a
  * deny here means a peer explicitly took an exclusive claim and is still alive.
  */
 async function guard(sessionID: string, path: string): Promise<string | null> {
@@ -82,8 +82,8 @@ async function guard(sessionID: string, path: string): Promise<string | null> {
   const text = body.result?.content?.[0]?.text
   if (!text) return null
   const v = JSON.parse(text) as { decision?: string; reason?: string }
-  // Only a hard deny stops the edit. "ask" has nowhere to go in opencode —
-  // there is no permission prompt to defer to — and turning a maybe into a
+  // Only a hard deny stops the edit. "ask" has nowhere to go in opencode,
+  // there is no permission prompt to defer to, and turning a maybe into a
   // block would wedge the fleet behind a crashed agent.
   return v.decision === "deny" ? (v.reason ?? "path is claimed by another lane") : null
 }
@@ -132,7 +132,7 @@ async function poll(sessionID: string): Promise<string | null> {
  * Build a part id in opencode's own format.
  *
  * opencode validates part ids against a schema requiring the "prt" prefix, and
- * a violation does not degrade — it throws inside createUserMessage and 500s the
+ * a violation does not degrade: it throws inside createUserMessage and 500s the
  * whole turn. An earlier version of this plugin used `lanes-<ts>-<rand>` and
  * killed every session it touched.
  *
@@ -143,7 +143,7 @@ async function poll(sessionID: string): Promise<string | null> {
 /**
  * The lane this session belongs to, or null.
  *
- * Same endpoint as poll() and the same session identity — hook_poll names the
+ * Same endpoint as poll() and the same session identity: hook_poll names the
  * lane whether or not it has news, precisely so a caller that wants the
  * RELATIONSHIP rather than the mail can ask for it.
  */
@@ -153,14 +153,14 @@ async function poll(sessionID: string): Promise<string | null> {
  * opencode is the one harness whose progress Lanes cannot observe from outside:
  * sessions live in SQLite, where byte growth measures WAL churn rather than
  * work, and the only append-only file is a single opencode.log SHARED by every
- * run on the machine — watching it would make every opencode agent look busy
+ * run on the machine: watching it would make every opencode agent look busy
  * whenever any one of them was.
  *
  * So this process counts for itself. The unit does not matter and the number is
  * never compared against anything but its own previous value; what matters is
  * that it only goes up while work is happening, and stops when it is not. That
- * is the difference between catching a hard stall — which CPU alone already
- * catches — and catching a slow one.
+ * is the difference between catching a hard stall, which CPU alone already
+ * catches, and catching a slow one.
  *
  * Fire-and-forget. A supervision signal that can delay a turn is worse than a
  * missing one.
@@ -224,7 +224,7 @@ async function lane(): Promise<string | null> {
     const id = (JSON.parse(text) as { lane?: string }).lane
     return id && id.length > 0 ? id : null
   } catch {
-    return null // daemon down, secret unreadable, shape changed — stay quiet
+    return null // daemon down, secret unreadable, shape changed: stay quiet
   }
 }
 
@@ -252,7 +252,7 @@ export const LanesPlugin: Plugin = async () => {
      * Refuse an edit that would trample a peer's exclusive claim.
      *
      * opencode's `tool.execute.before` returns void, so a throw is the only way
-     * to stop a call — it surfaces as a tool error the model reads and can act
+     * to stop a call: it surfaces as a tool error the model reads and can act
      * on, which is exactly the outcome wanted: the agent learns who holds the
      * path and can send them a request instead of silently clobbering them.
      *
@@ -265,7 +265,7 @@ export const LanesPlugin: Plugin = async () => {
      *
      * This is the cleanest of the four harness integrations, and opencode is
      * the only one that allows it. Claude Code and Codex expose a shell tool
-     * whose arguments are `command`, `workdir` and `timeout` — no environment —
+     * whose arguments are `command`, `workdir` and `timeout`: no environment,
      * so their plugins must PREFIX an assignment onto the command string, and
      * then refuse to do so for subshells, leading redirects, multi-line scripts
      * and `cd /x && codex exec …`, because a prefix changes the meaning of each
@@ -274,7 +274,7 @@ export const LanesPlugin: Plugin = async () => {
      * `shell.env` hands over the environment map directly. Nothing is parsed,
      * so nothing can be misparsed and there are no shapes to refuse. The
      * variable is inherited at fork and survives reparenting, daemonisation and
-     * process-group changes, so it reaches every descendant however deep —
+     * process-group changes, so it reaches every descendant however deep,
      * which is the point, since a detached child's PPID is 1 and ancestry then
      * tells you nothing.
      */
@@ -298,21 +298,21 @@ export const LanesPlugin: Plugin = async () => {
       try {
         reason = await guard(SESSION, path)
       } catch {
-        return // daemon down, timed out, malformed — never break the edit
+        return // daemon down, timed out, malformed: never break the edit
       }
       if (reason) throw new Error("Lanes: " + reason)
     },
 
     "chat.message": async (input, output) => {
       // Counted before anything else, so a turn that fails later still counts
-      // as work done — the agent was running, which is the question.
+      // as work done: the agent was running, which is the question.
       reportProgress()
       if (!input.sessionID) return
       let context: string | null = null
       try {
         context = await poll(SESSION)
       } catch {
-        return // daemon down, timed out, malformed — never break the turn
+        return // daemon down, timed out, malformed: never break the turn
       }
       if (!context) return // no mail: inject nothing at all
 

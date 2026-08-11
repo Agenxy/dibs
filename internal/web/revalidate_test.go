@@ -17,7 +17,7 @@ import (
 // Raised by an independent reviewer (GPT-5.6-sol).
 func TestALongLivedHandlerCanAskWhetherItIsStillAllowedToBeHere(t *testing.T) {
 	// No revalidator: authorized. A handler without one must never be the thing
-	// that breaks streaming — that would trade a disclosure for an outage.
+	// that breaks streaming: that would trade a disclosure for an outage.
 	if !stillAuthorized(context.Background()) {
 		t.Fatal("a context with no gate attached must not be treated as expired")
 	}
@@ -27,7 +27,7 @@ func TestALongLivedHandlerCanAskWhetherItIsStillAllowedToBeHere(t *testing.T) {
 	if !stillAuthorized(ctx) {
 		t.Fatal("a valid session must stay authorized")
 	}
-	// The session expires mid-stream. The next ask must say so — that is the
+	// The session expires mid-stream. The next ask must say so: that is the
 	// whole point, since nothing else re-enters the gate.
 	live = false
 	if stillAuthorized(ctx) {

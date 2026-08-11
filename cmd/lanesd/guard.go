@@ -21,7 +21,7 @@ import (
 // loadOrCreateSecret returns the local access secret (SPEC §5): loopback TCP is
 // reachable by other OS users, so every request must present this 0600-file
 // value. The secret gates the COORDINATION surface (agents, MCP). It travels
-// only in the X-Lanes-Local / Authorization header — never a URL or cookie.
+// only in the X-Lanes-Local / Authorization header: never a URL or cookie.
 func loadOrCreateSecret(path string) (string, error) {
 	// #nosec G304 -- a path inside the daemon's own data directory, or one the
 	// operator pointed the CLI at. Same-user access only; refusing it would mean
@@ -53,7 +53,7 @@ func strconvItoa(n int) string { return strconv.Itoa(n) }
 //   - COORDINATION (agents, MCP tools, public board): the local secret via
 //     header. A same-user agent legitimately holds this.
 //   - GOD-VIEW (decrypted mail, web board): a session minted ONLY by proving the
-//     human ADMIN PASSWORD. The file secret is NOT sufficient — so an agent that
+//     human ADMIN PASSWORD. The file secret is NOT sufficient, so an agent that
 //     read the secret file still cannot curl /api/messages. Presence upgrade
 //     (TouchID) can later replace the password on capable platforms.
 type authGate struct {
@@ -180,10 +180,10 @@ func godViewPath(p string) bool {
 	// /api/admin/ is gated by PREFIX, not by naming the two routes that exist
 	// today. Enumerating them worked, but it fails OPEN: the next admin route
 	// somebody adds is ungated until they remember to come back here, and the
-	// failure is silent — the route works, for everyone. SECURITY.md documents
+	// failure is silent: the route works, for everyone. SECURITY.md documents
 	// the prefix; this is the code that makes that true rather than lucky.
 	// Both the subtree AND its root. path.Clean("/api/admin/") is "/api/admin",
-	// which has no trailing slash and so fails the prefix test — a handler
+	// which has no trailing slash and so fails the prefix test: a handler
 	// registered at "/api/admin", "/api/admin/" or "/api/admin/{$}" would have
 	// failed OPEN, which is the same fail-open shape that enumerating the two
 	// known routes had. Fixing one and leaving the other is not fixing it.
@@ -197,7 +197,7 @@ func godViewPath(p string) bool {
 	//
 	// These were missing, and the consequence was privilege escalation rather
 	// than mere visibility: /api/act/* falls through to the coordination tier,
-	// which accepts the local secret alone — and every agent must hold that
+	// which accepts the local secret alone, and every agent must hold that
 	// secret to call /mcp at all. Verified against a running daemon: an
 	// ordinary agent POSTed /api/act/join and /api/act/announce with nothing
 	// but the coordination secret and got 200 both times, and /api/me returned
@@ -217,8 +217,8 @@ func godViewPath(p string) bool {
 	return strings.HasPrefix(clean, "/api/act/")
 }
 
-// godViewAuthorized: a browser session cookie (from the magic-link), OR — for
-// the CLI — the local secret PLUS the admin password in headers. Both require
+// godViewAuthorized: a browser session cookie (from the magic-link), OR: for
+// the CLI: the local secret PLUS the admin password in headers. Both require
 // the admin password somewhere; the file secret alone is never enough. An agent
 // holding the secret still lacks the password, so it cannot pass.
 func (g *authGate) godViewAuthorized(r *http.Request) bool {
@@ -238,7 +238,7 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 			return
 		}
 
-		// Mint a god-view bootstrap token — requires BOTH the local secret
+		// Mint a god-view bootstrap token: requires BOTH the local secret
 		// (same-user) AND the admin password (human). `lanes web` calls this.
 		if r.Method == http.MethodPost && r.URL.Path == "/bootstrap" {
 			if !g.headerSecret(r) {
@@ -247,7 +247,7 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 			}
 			hash := g.adminHash()
 			if hash == "" {
-				http.Error(w, "no admin password set — run `lanes admin set-password` to enable the board", http.StatusForbidden)
+				http.Error(w, "no admin password set: run `lanes admin set-password` to enable the board", http.StatusForbidden)
 				return
 			}
 			// Throttle wrong-password attempts: the admin password guards all
@@ -257,7 +257,7 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 			if wait := time.Until(g.adminLockTill); wait > 0 {
 				g.mu.Unlock()
 				w.Header().Set("Retry-After", strconvItoa(int(wait.Seconds())+1))
-				http.Error(w, "too many attempts — wait "+wait.Round(time.Second).String(), http.StatusTooManyRequests)
+				http.Error(w, "too many attempts: wait "+wait.Round(time.Second).String(), http.StatusTooManyRequests)
 				return
 			}
 			g.mu.Unlock()
@@ -296,12 +296,12 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 					// Secure only when the connection actually is: the daemon
 					// serves plain HTTP on loopback and TLS on any reachable
 					// address, and a Secure cookie set over HTTP is simply never
-					// sent back — which would silently break the local board.
+					// sent back, which would silently break the local board.
 					Secure: r.TLS != nil,
 					MaxAge: int(sessionTTL.Seconds()),
 				})
 				// Redirect to the request's own path with the one-time token
-				// stripped — but SANITISE it first.
+				// stripped, but SANITISE it first.
 				//
 				// A path beginning "//" is protocol-relative: browsers read
 				// "//evil.com/" as a different HOST, so echoing r.URL back would
@@ -352,12 +352,12 @@ func (g *authGate) unauthorized(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(unauthorizedHTML))
 		return
 	}
-	_, _ = w.Write([]byte("unauthorized — coordination needs the local secret (X-Lanes-Local); the board needs a " +
+	_, _ = w.Write([]byte("unauthorized: coordination needs the local secret (X-Lanes-Local); the board needs a " +
 		"session from `lanes web` (admin password)\n"))
 }
 
 const unauthorizedHTML = `<!doctype html><meta charset=utf-8>
-<title>Lanes — locked</title>
+<title>Lanes: locked</title>
 <style>
 body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b0e14;color:#e6ebf2;
 font:15px/1.6 ui-sans-serif,-apple-system,system-ui,sans-serif}
@@ -371,7 +371,7 @@ border-radius:7px;padding:9px 14px;display:inline-block;margin-top:6px;color:#e6
 </style>
 <div class=card>
 <div class=mark>▤</div>
-<h1>This board shows private mail — it's locked</h1>
+<h1>This board shows private mail: it's locked</h1>
 <p>Opening it takes your admin password (something an agent on this machine can't read). In your terminal:</p>
 <code>lanes web</code>
 <p>then open the link it prints. Single-use, expires in two minutes.</p>

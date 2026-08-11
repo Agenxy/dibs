@@ -10,7 +10,7 @@ import (
 
 // Streamable HTTP is stateless per request, but MCP Apps capability is declared
 // once at initialize. Without somewhere to keep it, a host that told us it can
-// render gets no panel data on every subsequent call — which is exactly what the
+// render gets no panel data on every subsequent call, which is exactly what the
 // reference host hit: it drew the panel and we sent it nothing, because the
 // only carrier for that signal was the stdio bridge's _meta injection.
 //
@@ -24,7 +24,7 @@ type sessionStore struct {
 	// client remembers who introduced themselves at initialize.
 	//
 	// The streamable-HTTP transport is stateless, so a tools/call carries no
-	// clientInfo — only the handshake does. Without this, every harness that
+	// clientInfo: only the handshake does. Without this, every harness that
 	// connects over HTTP rather than through the stdio bridge registers lanes
 	// with NO identity: a live codex run showed up on the board as `harness:
 	// null`, indistinguishable from a hand-rolled script. The bridge injects
@@ -36,7 +36,7 @@ type sessionStore struct {
 	// It is a capability discovered by success rather than declared: an app tool
 	// call arriving here proves the host permits them, and a host that permits
 	// them is not the one that drops _meta and shows structuredContent instead of
-	// content. That pairing is what makes ack_board's duplicate droppable — see
+	// content. That pairing is what makes ack_board's duplicate droppable: see
 	// panelResult. Recorded per session because it is a property of the host on
 	// the other end of this connection, not of the daemon.
 	panelCalls map[string]bool
@@ -149,7 +149,7 @@ func isPanelCall(params json.RawMessage) bool {
 
 // declaresUI reports whether an initialize's capabilities include the MCP Apps
 // extension. This is the client's own statement, made once, and the only
-// authoritative source — no published matrix breaks capability down per client.
+// authoritative source: no published matrix breaks capability down per client.
 func declaresUI(params []byte) bool {
 	var p struct {
 		Capabilities struct {

@@ -13,7 +13,7 @@ import "time"
 // a subscriber.
 //
 // memberChannel's own error told subscribers "subscribers read, members speak"
-// while refusing every read a subscriber attempted — the hint was accurate
+// while refusing every read a subscriber attempted: the hint was accurate
 // about the design and wrong about the code. Subscribing exists to watch a
 // lane's traffic without joining it; a subscription that cannot read is a
 // subscription to nothing.
@@ -38,9 +38,9 @@ func (s *State) ReaderChannel(l *Lane, name string) (*Channel, error) {
 // is shown, not what the fleet agreed, and nothing about it can collide.
 //
 // It is ledgered because Subs is not private to the subscriber. Three ledgered
-// operations read it — lane.post reports len(Members)+len(Subs) as `audience`,
+// operations read it: lane.post reports len(Members)+len(Subs) as `audience`,
 // lane_merge carries subscribers across to the surviving lane, and lane_evict
-// removes them — so a fold of the ledger with Subs empty produces a different
+// removes them, so a fold of the ledger with Subs empty produces a different
 // audience count and a different post-merge membership than the daemon that
 // wrote it. state == fold(ledger) does not admit an exception for state the
 // author considers unimportant; it is the reads, not the writes, that decide.
@@ -59,7 +59,7 @@ func (s *State) applyLaneSubscribe(l *Lane, op *Op, now time.Time) (Result, []Ev
 	if op.Mode == "release" {
 		if !ch.Subs[l.ID] {
 			// Nothing changed, so nothing to ledger. Unsubscribing twice is not
-			// an error — it is the same request arriving after a retry.
+			// an error: it is the same request arriving after a retry.
 			return Result{"lane_id": ch.ID, "subscribed": false}, nil, nil
 		}
 		delete(ch.Subs, l.ID)

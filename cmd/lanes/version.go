@@ -15,7 +15,7 @@ import (
 // `lanes version` used to print one line about itself, which is the least useful
 // half of the answer. `lanes` and `lanesd` are separate processes: installing a
 // new binary does not restart the one already serving, so a fix can be built,
-// installed, and completely absent from every answer the board gives — with no
+// installed, and completely absent from every answer the board gives: with no
 // error anywhere, and both sides reporting the same version string, because in
 // development they are both `devel` (or the same pseudo-version).
 //
@@ -40,7 +40,7 @@ func printVersion() {
 		// A daemon that cannot say when it started predates this field, which
 		// answers the question by itself: it is older than the binary that is
 		// asking. Saying so beats printing "started" followed by nothing.
-		fmt.Printf("lanesd  %s  (running a build older than this CLI — it does not\n", info.Version)
+		fmt.Printf("lanesd  %s  (running a build older than this CLI: it does not\n", info.Version)
 		fmt.Println("        report its start time, which was added alongside this check)")
 		fmt.Println()
 		fmt.Println("  restart it to pick up the installed build:")
@@ -67,7 +67,7 @@ func printVersion() {
 		fmt.Printf("  the daemon is STALE: %s was rebuilt %s, after the running\n",
 			self, humanAge(st.ModTime().UTC().Format(time.RFC3339)))
 		fmt.Println("  process started. It is still serving the older code, and nothing")
-		fmt.Println("  else will say so — restart it to pick the new build up:")
+		fmt.Println("  else will say so: restart it to pick the new build up:")
 		fmt.Println()
 		fmt.Println("      lanes stop && lanesd &")
 	}
@@ -132,7 +132,7 @@ func humanAge(stamp string) string {
 // is the shape every guard has taken shortly before turning out not to work.
 //
 // Unparseable means NOT stale. A false alarm here sends somebody to restart a
-// daemon that was fine, and teaches them to ignore the line — which costs more
+// daemon that was fine, and teaches them to ignore the line, which costs more
 // than the silence, because the one time it is right is the time they need it.
 func staleDaemon(binaryMtime time.Time, startedAt string) bool {
 	started, err := time.Parse(time.RFC3339, startedAt)

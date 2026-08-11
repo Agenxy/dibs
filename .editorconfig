@@ -1,4 +1,4 @@
-# Keeps whitespace consistent regardless of which editor — or which agent —
+# Keeps whitespace consistent regardless of which editor, or which agent,
 # touched the file last.
 root = true
 

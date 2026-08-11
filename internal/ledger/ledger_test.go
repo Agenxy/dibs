@@ -192,7 +192,7 @@ func TestHashChainDetectsTampering(t *testing.T) {
 }
 
 // TestRandomizedReplayEquivalence: seeded random op/time sequences through
-// live state + ledger, then replay and compare — the load-bearing gate
+// live state + ledger, then replay and compare: the load-bearing gate
 // (SPEC §17), now covering the full v1.0 op surface.
 func TestRandomizedReplayEquivalence(t *testing.T) {
 	led, path := newLedger(t)
@@ -206,7 +206,7 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 	now := t0
 
 	// A deterministic prologue, so what the gate COVERS does not depend on the
-	// draw — only how hard it is stressed does.
+	// draw: only how hard it is stressed does.
 	//
 	// Without this the run is seed-fragile: seed 12345 produced zero
 	// announcements and tripped the vacuity guard, while seeds 1 and 7 passed.
@@ -300,7 +300,7 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 			op = &core.Op{Kind: core.OpWakeLane, Token: pick(rng, tokens)}
 		// Channels (SPEC-CHANNELS.md). Included here because this is the
 		// load-bearing determinism gate (SPEC §17), and channel membership is
-		// the one piece of state decided by an IMPURE input — a similarity
+		// the one piece of state decided by an IMPURE input: a similarity
 		// score. If Apply ever recomputes one instead of taking the recorded
 		// value, this is the test that catches it.
 		case k == 14:
@@ -339,7 +339,7 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 				Channel: "lane" + itoa(rng.Intn(6)),
 			}
 		// The four below were absent from this walk, and all four turned out to
-		// be broken in the same way — a mutation the fold could not reproduce.
+		// be broken in the same way: a mutation the fold could not reproduce.
 		// A determinism gate only covers the ops it generates, so an op missing
 		// from this switch is an op with no determinism guarantee at all,
 		// whatever the rest of the suite says about it.
@@ -437,7 +437,7 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 	if len(st2.Channels) != len(st.Channels) {
 		t.Fatalf("randomized: channel divergence (%d vs %d)", len(st2.Channels), len(st.Channels))
 	}
-	// Guard against a vacuous pass — measured on what was EXERCISED, not on what
+	// Guard against a vacuous pass: measured on what was EXERCISED, not on what
 	// survived.
 	//
 	// An earlier version counted members left on the board at the end, and was
@@ -450,7 +450,7 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 		core.OpLaneSubscribe, core.OpLanePost, core.OpBindSession, core.OpPruneLane,
 	} {
 		if accepted[kind] == 0 {
-			t.Errorf("%s was never accepted in 1500 ops — the gate is not covering it", kind)
+			t.Errorf("%s was never accepted in 1500 ops: the gate is not covering it", kind)
 		}
 	}
 	t.Logf("accepted channel ops: %v", accepted)
@@ -485,8 +485,8 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 		}
 		// Pending explicitly, because stateDiff CANNOT see it: the field is
 		// `json:"-"` so it never reaches the marshalled form the whole-state
-		// comparison works from. It is still replayed state — it decides what
-		// provenance a queued agent is promoted with — so it needs its own
+		// comparison works from. It is still replayed state: it decides what
+		// provenance a queued agent is promoted with, so it needs its own
 		// assertion rather than the assumption that the general check covers
 		// everything.
 		if !reflect.DeepEqual(replayed.Pending, live.Pending) {
@@ -500,7 +500,7 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 		}
 	}
 	// Announcement STATE includes `unacked`, which the sweep sets from a
-	// recorded decision — the same discipline as membership scores.
+	// recorded decision: the same discipline as membership scores.
 	for serial, live := range st.Announcements {
 		r := st2.Announcements[serial]
 		if r == nil || r.State != live.State || len(r.Acked) != len(live.Acked) ||
@@ -534,7 +534,7 @@ func maybeOpID(rng *rand.Rand, i int) string {
 
 // staleSubset picks a random subset of live lanes to declare stale.
 //
-// SORTED, and that is load-bearing. It used to range over st.Lanes directly —
+// SORTED, and that is load-bearing. It used to range over st.Lanes directly,
 // a Go map, whose iteration order is randomised on every run. That made the
 // "seeded" generator non-reproducible in two ways at once: a different subset
 // went stale, and the per-entry rng.Intn call consumed draws in a different
@@ -565,7 +565,7 @@ func blobID(content string) string {
 
 // TestBlobReplayDeterminism proves the attachment registry (blob.registered,
 // owner_added, evicted) and message attachments replay exactly from the ledger,
-// and — the load-bearing A1 invariant — that NO blob bytes ever enter the
+// and (the load-bearing A1 invariant) that NO blob bytes ever enter the
 // ledger (only metadata handles do).
 func TestBlobReplayDeterminism(t *testing.T) {
 	led, path := newLedger(t)
@@ -623,7 +623,7 @@ func TestBlobReplayDeterminism(t *testing.T) {
 	if strings.Contains(string(raw), body) {
 		t.Fatal("blob plaintext bytes leaked into the ledger (A1 violated)")
 	}
-	// The metadata handle (the sha256 id) SHOULD be present — it's a safe hash.
+	// The metadata handle (the sha256 id) SHOULD be present: it's a safe hash.
 	if !strings.Contains(string(raw), id) {
 		t.Fatal("blob id handle missing from ledger")
 	}
@@ -638,7 +638,7 @@ func TestBlobReplayDeterminism(t *testing.T) {
 //
 // So the scores travel IN THE OP, exactly as the sweep's PID verdicts do, and
 // this test replays a ledger full of channel activity on a state that has no
-// repository, no index and no scorer — and demands byte-identical membership,
+// repository, no index and no scorer, and demands byte-identical membership,
 // queue order, exclusivity and announcement state out the other side.
 func TestChannelReplayDeterminism(t *testing.T) {
 	led, path := newLedger(t)
@@ -754,8 +754,8 @@ func TestChannelReplayDeterminism(t *testing.T) {
 // (SPEC-CHANNELS.md §8.1) and subagent inheritance (§8.2) through a real ledger
 // round-trip.
 //
-// Deterministic rather than fuzzed because both need a specific setup — a
-// granted role, a locked lane, a declared parent — that a random walk reaches
+// Deterministic rather than fuzzed because both need a specific setup: a
+// granted role, a locked lane, a declared parent: that a random walk reaches
 // too rarely to depend on. TestRandomizedReplayEquivalence covers the ops that
 // fuzz well; this covers the ones that do not.
 func TestDirectorReplayDeterminism(t *testing.T) {
@@ -768,7 +768,7 @@ func TestDirectorReplayDeterminism(t *testing.T) {
 		apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: "t" + n},
 			t0.Add(time.Duration(i)*time.Second+500*time.Millisecond))
 	}
-	// A subagent of "owner", which joins nothing and inherits everything —
+	// A subagent of "owner", which joins nothing and inherits everything,
 	// vouched for by its parent, because lineage that is merely asserted grants
 	// nothing. The voucher is part of what replay must reproduce.
 	apply(t, st, led, &core.Op{
@@ -865,8 +865,8 @@ func TestDirectorReplayDeterminism(t *testing.T) {
 // worse still.
 //
 // This exists because reclaiming empty lanes was added late, to stop automatic
-// lane creation from exhausting the 64-lane cap. It runs inside the sweep — the
-// one op that is ledgered only when it changed something — so "the sweep removed
+// lane creation from exhausting the 64-lane cap. It runs inside the sweep: the
+// one op that is ledgered only when it changed something, so "the sweep removed
 // a lane" and "the sweep did nothing" have to be distinguishable in the ledger,
 // not merely in memory.
 func TestReclaimedLanesStayReclaimedAcrossReplay(t *testing.T) {
@@ -880,7 +880,7 @@ func TestReclaimedLanesStayReclaimedAcrossReplay(t *testing.T) {
 			t0.Add(time.Duration(i)*time.Second+500*time.Millisecond))
 	}
 	// One lane everybody leaves, one that keeps a member. Auto, because only a
-	// lane Lanes opened from a declaration is reclaimable — one a human opened on
+	// lane Lanes opened from a declaration is reclaimable: one a human opened on
 	// purpose outlives its members, which is what standing lanes are for.
 	apply(t, st, led, &core.Op{
 		Kind: core.OpLaneOpen, Token: "talpha", Channel: "abandoned", Text: "work nobody kept",
@@ -904,11 +904,11 @@ func TestReclaimedLanesStayReclaimedAcrossReplay(t *testing.T) {
 
 	st2 := reopen(t, path)
 	if st2.Serial != st.Serial {
-		t.Fatalf("serial %d != %d — the sweep that reclaimed a lane did not ledger "+
+		t.Fatalf("serial %d != %d: the sweep that reclaimed a lane did not ledger "+
 			"identically", st2.Serial, st.Serial)
 	}
 	if _, back := st2.Channels["abandoned"]; back {
-		t.Error("a reclaimed lane came back on replay — it will return on every restart")
+		t.Error("a reclaimed lane came back on replay: it will return on every restart")
 	}
 	if _, gone := st2.Channels["kept"]; !gone {
 		t.Error("replay reclaimed a lane the live daemon kept")
@@ -924,7 +924,7 @@ func TestReclaimedLanesStayReclaimedAcrossReplay(t *testing.T) {
 // the same promise: lane_read is membership-gated, revoked on leave or eviction,
 // and SECURITY.md states announcement bodies are unreachable on the token-less
 // path. All of that holds for the running daemon and none of it survives a
-// COPIED ledger — a backup, a support bundle, a pasted reproduction — where an
+// COPIED ledger, a backup, a support bundle, a pasted reproduction, where an
 // announcement body sat in plaintext beside a sealed message body.
 //
 // Found by an agent reading the ledger of a candidate build, not by reading the
@@ -967,7 +967,7 @@ func TestLaneTrafficIsSealedAtRestLikeMail(t *testing.T) {
 	}
 	for _, secret := range []string{mail, announce, post} {
 		if bytes.Contains(raw, []byte(secret)) {
-			t.Errorf("%q is plaintext on disk — anyone handed a copy of this ledger "+
+			t.Errorf("%q is plaintext on disk: anyone handed a copy of this ledger "+
 				"reads lane-scoped content the live daemon would refuse them", secret)
 		}
 	}
@@ -989,11 +989,11 @@ func TestLaneTrafficIsSealedAtRestLikeMail(t *testing.T) {
 //
 // It has one known blind spot: fields tagged `json:"-"` are invisible to it.
 // Channel.Pending is the only one today and the randomized test asserts it
-// separately — but a new `json:"-"` field on replayed state gets no coverage
+// separately, but a new `json:"-"` field on replayed state gets no coverage
 // here and will pass silently, so add its own assertion when you add one. It goes through JSON rather than
 // reflect.DeepEqual because time.Time carries a monotonic reading in a live
 // process and never after a replay, and comparing those directly reports a
-// difference on every single run — which is a gate that cannot be used.
+// difference on every single run, which is a gate that cannot be used.
 func stateDiff(live, replayed *core.State) string {
 	a, err := json.Marshal(live)
 	if err != nil {
@@ -1018,8 +1018,8 @@ func stateDiff(live, replayed *core.State) string {
 }
 
 // A crash between write and fsync leaves a partial final record. Discarding it
-// is correct — the daemon died before answering the caller, so nothing was
-// promised — but Replay TRUNCATES the file to do it, and it did so without
+// is correct: the daemon died before answering the caller, so nothing was
+// promised, but Replay TRUNCATES the file to do it, and it did so without
 // saying anything. "ledger replayed ops=7" is indistinguishable from a board
 // that always had seven, so a run that quietly loses writes for some other
 // reason leaves no trail at all.

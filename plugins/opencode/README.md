@@ -1,18 +1,18 @@
 # Lanes for opencode
 
 opencode is the **second harness after Claude Code where mail reaches the agent
-without Lanes driving anything** — and its hook is richer than Claude Code's.
+without Lanes driving anything**, and its hook is richer than Claude Code's.
 
 ## Two pieces
 
-**1. The MCP server** — tools. In `~/.config/opencode/opencode.json`:
+**1. The MCP server**, tools. In `~/.config/opencode/opencode.json`:
 
 ```json
 { "mcp": { "lanes": { "type": "remote", "url": "http://127.0.0.1:4777/mcp",
   "headers": { "X-Lanes-Local": "<contents of <data-dir>/local.secret>" } } } }
 ```
 
-**2. The plugin** ([lanes.ts](lanes.ts)) — delivery. Copy to
+**2. The plugin** ([lanes.ts](lanes.ts)): delivery. Copy to
 `~/.config/opencode/plugin/lanes.ts` (global) or `.opencode/plugin/lanes.ts`
 (project-local); opencode scans `{plugin,plugins}/*.{ts,js}`.
 
@@ -20,7 +20,7 @@ without Lanes driving anything** — and its hook is richer than Claude Code's.
 
 opencode plugins are **ES modules loaded into opencode's own runtime**. The
 plugin calls Lanes with `fetch`. There is no subprocess, no CLI, no polling loop,
-no thread ownership. Lanes stays a service that gets pulled from — the plugin
+no thread ownership. Lanes stays a service that gets pulled from: the plugin
 only decides *when* to pull, using a hook opencode already fires.
 
 The `import type { Plugin }` is erased at runtime, so the plugin has **no runtime
@@ -28,7 +28,7 @@ dependency** on the opencode SDK.
 
 ## The mechanism
 
-`Hooks["chat.message"]` — *"Called when a new message is received"* — receives a
+`Hooks["chat.message"]` (*"Called when a new message is received"*) receives a
 **mutable** `output: { message, parts }`. At
 `packages/opencode/src/session/prompt.ts:999` opencode hands the hook its
 `resolvedParts` array and then uses that same array downstream. Pushing a
@@ -41,7 +41,7 @@ like ours should set.
 
 | Hook | What it gives |
 |---|---|
-| `experimental.chat.system.transform` | mutable `system: string[]` — inject into the system prompt |
+| `experimental.chat.system.transform` | mutable `system: string[]`, inject into the system prompt |
 | `experimental.chat.messages.transform` | mutable full message array |
 | `tool.execute.before` / `.after` | mutate tool args / results |
 | `event` | receive opencode's event stream |
@@ -57,15 +57,15 @@ Against a live daemon, driving the plugin's exported hook directly:
 | Case | Result |
 |---|---|
 | session with 1 unread message | **1 synthetic text part injected**, carrying the mail summary |
-| session with no mail | 0 parts — injects nothing at all |
+| session with no mail | 0 parts, injects nothing at all |
 | daemon unreachable (`LANES_ADDR=127.0.0.1:9`) | 0 parts, no throw, **36 ms** |
-| no `local.secret` (fresh machine) | 0 parts, no throw, 0 ms — short-circuits before any I/O |
+| no `local.secret` (fresh machine) | 0 parts, no throw, 0 ms, short-circuits before any I/O |
 
 The last two matter most: a user's turn must never hang or break because Lanes is
 not running. Hence the 1.5 s `AbortSignal.timeout`, the catch-and-return, and the
 secret check before any network call.
 
-`hook_poll` is read-only — it never consumes mail — so a dropped or timed-out
+`hook_poll` is read-only (it never consumes mail) so a dropped or timed-out
 response loses nothing.
 
 ## Verified in a live turn (2026-07-26)
@@ -74,7 +74,7 @@ The gap above is closed. With `openai/gpt-oss-120b` over OpenRouter, in a real
 `opencode run --session` turn:
 
 1. The plugin fired on `chat.message` and injected the mail as a synthetic part.
-2. The model **read it and replied `MAIL RECEIVED`** — unprompted by the user
+2. The model **read it and replied `MAIL RECEIVED`**: unprompted by the user
    message, which said nothing about mail.
 3. It then acted: `lanes_register_lane`, `lanes_ack_board`, `lanes_inbox`.
 
@@ -90,15 +90,15 @@ SchemaError: Expected a string starting with "prt", got "lanes-1785053881727-i5b
   at Session.updatePart (session/session.ts:645)
 ```
 
-opencode validates part ids against a schema, and a violation does not degrade —
+opencode validates part ids against a schema, and a violation does not degrade,
 it throws inside `createUserMessage` and kills the session. The plugin's
 `lanes-<ts>-<rand>` id broke every turn it touched. It now mirrors opencode's own
 format (`prt_` + 12 hex + base62 to 26 chars, see `partID()`), replicated rather
 than imported so the zero-runtime-dependency property holds. Schema errors: 2 → 0.
 
 **The lesson generalises:** a hook that injects into a harness's data model must
-match that model's invariants exactly. Verifying the hook contract in isolation —
-which is what the earlier pass did — cannot see this class of failure.
+match that model's invariants exactly. Verifying the hook contract in isolation,
+which is what the earlier pass did: cannot see this class of failure.
 
 ### The gap it also exposed: a woken agent has no token
 
@@ -106,12 +106,12 @@ After reading the mail, the model tried `get_message(191)` and got
 `E_NO_MESSAGE`. Correct behaviour, but the wrong outcome:
 
 - Message 191 belongs to lane `oc-live-agent`, bound to that session.
-- The woken model had **no token** — a fresh turn carries none — so it called
+- The woken model had **no token** (a fresh turn carries none) so it called
   `register_lane` and got a *different* lane (`assistant`), which cannot read
   another lane's mail.
 
 So the injected context invites an agent to act on mail it cannot then reach. The
-summary itself carries sender and body, so the agent is not blind — but it cannot
+summary itself carries sender and body, so the agent is not blind, but it cannot
 **respond**, and responding is the point of a question.
 
 This is a Lanes design question, not an opencode one, and it applies to every

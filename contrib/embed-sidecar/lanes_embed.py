@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Lanes embedding sidecar — tier 2 of SPEC-CHANNELS.md §4.
+"""Lanes embedding sidecar: tier 2 of SPEC-CHANNELS.md §4.
 
 Answers one endpoint:
 
@@ -9,14 +9,14 @@ Answers one endpoint:
 
 WHY THIS IS A SEPARATE PROCESS, not a Go library: the strongest embedding
 runtime on Apple Silicon is MLX, which is Python. Lanes' core is Go with no
-dependencies, and linking a model runtime in would end that — CGO alone
+dependencies, and linking a model runtime in would end that. CGO alone
 forfeits pure-Go cross-compilation. Behind loopback HTTP the daemon stays
 dependency-free and the runtime becomes the operator's choice.
 
 WHAT IT ACTUALLY DOES, and why it is not "embed two sentences and compare":
 two tasks that are unrelated in English embed as unrelated in English, which is
 precisely the case channels exist for (SPEC-CHANNELS.md §0, §4.2). So the
-declaration is embedded and used to RETRIEVE code — the comparison Lanes makes
+declaration is embedded and used to RETRIEVE code: the comparison Lanes makes
 is between predicted file sets, not between sentences. This process owns the
 index; the daemon never learns which model, which dimensions, or how chunks are
 made.
@@ -36,13 +36,13 @@ so this script does not have to know its conventions.
 
 The default model is F2LLM-v2-4B: Apache 2.0, and the measured winner of a
 four-way comparison run with `lanes calibrate` on this repository's own git
-history — recall@10 0.638 and MRR 0.780 at n=60, ahead of Qwen3-Embedding-4B
+history: recall@10 0.638 and MRR 0.780 at n=60, ahead of Qwen3-Embedding-4B
 (0.560 / 0.649), Qwen3-Embedding-0.6B (0.532 / 0.667) and the built-in tier-0
 scorer (0.488 / 0.542). See README.md in this directory for the full table.
 
 Notably it was NOT the expected winner. On the public MTEB(Code) board F2LLM
 leads while having trained on 58% of that benchmark's evaluation data, so the
-lead looked like contamination — and it survives on data no published model can
+lead looked like contamination, and it survives on data no published model can
 have trained on. Swap it with --model; thresholds are per-model, so recalibrate.
 """
 
@@ -75,7 +75,7 @@ class HashBackend:
     Not a scorer anybody should run: it is a hashed bag-of-words, which is what
     tier 0 already does better with git history behind it. It exists so the
     HTTP contract, the indexing, and Lanes' client can be tested end to end on
-    a machine with no model — the failure mode this replaces is "the sidecar
+    a machine with no model: the failure mode this replaces is "the sidecar
     was never run before it shipped".
     """
 
@@ -89,7 +89,7 @@ class HashBackend:
         Python randomises str hashing per process unless PYTHONHASHSEED is
         set, so `hash(tok) % dims` put the same word in a different bucket on
         every run. Two single-word inputs then collided into one bucket about
-        once in 256 runs and produced identical vectors — a self-test that
+        once in 256 runs and produced identical vectors: a self-test that
         failed roughly one CI run in two hundred, with nothing about the
         failure pointing at the cause. It also made this class's own promise
         of determinism false.
@@ -197,7 +197,7 @@ def self_test() -> int:
     def check(name, cond, detail=""):
         nonlocal ok
         print(("  \033[32m✓\033[0m " if cond else "  \033[31m✗\033[0m ") + name +
-              ("" if cond else f" — {detail}"))
+              ("" if cond else f". {detail}"))
         ok = ok and cond
 
     def post(payload):
@@ -229,8 +229,8 @@ def self_test() -> int:
     # Determinism is a PROMISE this class makes, and it was false: builtin
     # hash() randomises str hashing per process, so the same word landed in a
     # different bucket on every run and two inputs collided about once in 256
-    # runs. Re-encoding here would not catch that — the collision is between
-    # processes — so the buckets themselves are pinned.
+    # runs. Re-encoding here would not catch that: the collision is between
+    # processes, so the buckets themselves are pinned.
     check("bucketing is stable across processes, not just within one",
           HashBackend._bucket("alpha") % HashBackend.dims == 180
           and HashBackend._bucket("beta") % HashBackend.dims == 79,

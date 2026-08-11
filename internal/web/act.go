@@ -16,7 +16,7 @@ import (
 //
 // That is the design constraint, not an implementation detail. A parallel set of
 // privileged write paths would be a second authorization surface into the state
-// machine — unledgered unless each one remembered to ledger, invisible to
+// machine: unledgered unless each one remembered to ledger, invisible to
 // `lanes verify`, and impossible for an agent to reason about. Routing the human
 // through an ordinary lane means their post is an ordinary post, their question
 // carries a real deadline, and the agent answering cannot tell it is talking to
@@ -48,7 +48,7 @@ func (s *Server) registerActions(mux *http.ServeMux) {
 // watching, so the UI can mark the human's own memberships without guessing.
 //
 // The human is a participant, not a channel: they join the lanes agents open,
-// and never need one of their own — and they need not be a participant at all.
+// and never need one of their own, and they need not be a participant at all.
 func (s *Server) apiMe(w http.ResponseWriter, r *http.Request) {
 	// Deliberately does NOT create. Watching the board is not participating:
 	// an operator who has joined nothing owes nobody an acknowledgement and
@@ -83,8 +83,8 @@ func (s *Server) apiAct(w http.ResponseWriter, r *http.Request) {
 
 	res, err := s.eng.Do(r.Context(), op)
 	if err != nil {
-		// The engine's errors are written for an agent to act on — they name the
-		// remedy, not just the fault — so they are worth showing verbatim rather
+		// The engine's errors are written for an agent to act on: they name the
+		// remedy, not just the fault, so they are worth showing verbatim rather
 		// than flattening into "something went wrong".
 		writeActJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
 		return

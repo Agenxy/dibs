@@ -1,5 +1,5 @@
 /**
- * End-to-end test for channels — SPEC-CHANNELS.md.
+ * End-to-end test for channels. SPEC-CHANNELS.md.
  *
  * Everything here goes over real HTTP to a real daemon, so it exercises the
  * whole path the agents use: tool schema → argument decode → op construction →
@@ -29,7 +29,7 @@ let checks = 0
 function check(name: string, cond: boolean, detail = "") {
   checks++
   if (cond) console.log(`  \x1b[32m✓\x1b[0m ${name}`)
-  else { failures++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? " — " + detail : ""}`) }
+  else { failures++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ". " + detail : ""}`) }
 }
 
 const home = process.env.HOME
@@ -47,15 +47,15 @@ const repo = process.env.MATCH_REPO ?? new URL("../../..", import.meta.url).path
  * The score this suite asserts on is computed from the REPOSITORY'S OWN GIT
  * HISTORY, which grows every time anybody commits. A fixed bar therefore has a
  * shelf life: this file used to say 0.30 against an observed 0.333, and by the
- * time it was next run in anger the same pair scored 0.2967 — the suite went
+ * time it was next run in anger the same pair scored 0.2967: the suite went
  * red because a commit had been made, which is not a defect anyone can act on
  * and trains a contributor to disbelieve the suite.
  *
  * So the bar is derived from a score this run actually observed. A throwaway
  * daemon with an unreachable bar (0.95 never joins) scores the same pair the
  * assertions below use; the real daemon then runs with a bar just under it.
- * What the checks assert is the PROPERTY — above the bar joins, below it only
- * advises — which is what the threshold means and is true at any absolute
+ * What the checks assert is the PROPERTY: above the bar joins, below it only
+ * advises, which is what the threshold means and is true at any absolute
  * score. It cannot pass vacuously either: the margin is small and deliberate,
  * so a daemon that stopped consulting the bar still fails.
  */
@@ -113,7 +113,7 @@ const JOIN_BAR = Math.max(0.05, Number((observedScore - 0.02).toFixed(4)))
 console.log(`  · join bar measured from this repository: ${JOIN_BAR} (observed ${observedScore.toFixed(4)})`)
 
 // -match-repo enables work-overlap scoring against THIS repository, and
-// -match-join is the bar measured just above — the same thing `lanes calibrate`
+// -match-join is the bar measured just above: the same thing `lanes calibrate`
 // does for a real operator. Without both, the daemon runs suggest-only and the
 // auto-join checks below cannot pass.
 const daemon = Bun.spawn({
@@ -146,7 +146,7 @@ async function call(name: string, args: Record<string, unknown>): Promise<any> {
   const body = await raw(name, args)
   if (body.error) throw new Error(`${name}: ${JSON.stringify(body.error)}`)
   // A tool-level failure arrives as isError with the error JSON in `content`,
-  // NOT as a JSON-RPC error — so without this it parses cleanly and is returned
+  // NOT as a JSON-RPC error, so without this it parses cleanly and is returned
   // as though it had worked. A setup step that quietly failed then shows up as
   // a baffling assertion failure several checks later, which is exactly how a
   // `lane_exclusive` that was refused looked like a lane that had no owner.
@@ -160,7 +160,7 @@ async function call(name: string, args: Record<string, unknown>): Promise<any> {
 }
 /**
  * show_board is the one tool whose `content` is a prose summary for the model
- * and whose panel data lives in tool-result metadata — the MCP Apps private
+ * and whose panel data lives in tool-result metadata: the MCP Apps private
  * backchannel. Parsing content[0].text as JSON here fails on
  * "Lanes board: 3 lane(s)…".
  */
@@ -187,12 +187,12 @@ async function fails(name: string, args: Record<string, unknown>): Promise<strin
  * Collected so the threshold can be checked as an INVARIANT rather than by
  * finding one declaration that happens to sit between the bars. An earlier
  * version of this file tested "unrelated work is not auto-joined" against a
- * pair that scored exactly 0 — which passes just as happily when the threshold
+ * pair that scored exactly 0, which passes just as happily when the threshold
  * check is deleted entirely, because a zero-scoring lane never reaches the
  * comparison at all. Mutation-testing caught it: replacing the bar with
  * `if true` left the suite fully green.
  *
- * Checked against the JOIN_BAR measured at the top of this file — the same
+ * Checked against the JOIN_BAR measured at the top of this file: the same
  * number the daemon was started with, so the invariant is about the bar the
  * daemon is actually applying rather than one this file hoped it would.
  */
@@ -231,7 +231,7 @@ const gamma = await agent("gamma")
   check("lane_open normalises the id so one topic is one lane", r.lane_id === "auth-refactor", r.lane_id)
 }
 
-// §4.3 — the property that quietly destroys the ledger if it breaks.
+// §4.3: the property that quietly destroys the ledger if it breaks.
 {
   const r = await call("lane_join", {
     token: beta, lane: "auth-refactor",
@@ -240,9 +240,9 @@ const gamma = await agent("gamma")
     evidence: ["internal/mcp/identity.go", "internal/core/roles.go"], auto: true,
   })
   check("lane_join reports joined", r.joined === true, JSON.stringify(r))
-  // Round-tripped through JSON tags, arg decode and the op — the exact float.
+  // Round-tripped through JSON tags, arg decode and the op: the exact float.
   check("the recorded score survives the wire verbatim", r.score === 0.8137,
-    `got ${r.score} — a score that arrives as 0 still joins, and silently voids replay`)
+    `got ${r.score}: a score that arrives as 0 still joins, and silently voids replay`)
   check("the join is marked automatic", r.auto === true)
 }
 
@@ -311,7 +311,7 @@ let annSerial = 0
   // Indexing is asynchronous, so the daemon answers before it can match and the
   // probe has to retry. A SEPARATE probe declaration is not free, though:
   // declaring work that matches nothing opens a lane for it, so the probe left
-  // `claim-guard-path-enforcement` on the board — and the block below is
+  // `claim-guard-path-enforcement` on the board, and the block below is
   // explicitly about a board where nothing matches the bootstrap work. That
   // premise held only while the probe's wording happened not to resemble the
   // bootstrap wording in this repository's index, which made the test a
@@ -329,7 +329,7 @@ let annSerial = 0
   // identical work and both were told "you have the field to yourself".
   //
   // The suite did not catch it because every matching test called lane_open by
-  // hand between the two agents — testing the second half of a mechanism whose
+  // hand between the two agents: testing the second half of a mechanism whose
   // first half did not exist. So this runs before any lane_open does.
   const one = await agent("matcher-one")
   const two = await agent("matcher-two")
@@ -353,7 +353,7 @@ let annSerial = 0
   const met = (second.lanes ?? []).find((l: any) => l.lane === born?.lane)
   // A SCORE is a proposal now, not a membership: two agents caught false
   // auto-joins from the inside that no threshold had, so the decision belongs to
-  // whoever is better at it. The lane must still be SURFACED — that is the part
+  // whoever is better at it. The lane must still be SURFACED: that is the part
   // that carries the value, and the part that has to keep working.
   check("and the next agent declaring the same work is shown it, not told it is alone",
     met !== undefined, JSON.stringify(second).slice(0, 260))
@@ -362,7 +362,7 @@ let annSerial = 0
 
   // The follow-up that used to lie: an agent refreshing its slot is filtered out
   // of its own lane's suggestions, and the fallback said "you have the field to
-  // yourself" — to an agent standing in a lane with the peer it names.
+  // yourself": to an agent standing in a lane with the peer it names.
   const again = await call("set_slot", { token: solo, text: work + ", plus tests" })
   check("refreshing a slot does not spawn a second lane for the same work",
     (again.lanes ?? []).every((l: any) => l.action !== "opened"),
@@ -397,7 +397,7 @@ let annSerial = 0
       typeof r.lanes_hint === "string" && r.lanes_hint.length > 0, r.lanes_hint)
   }
 
-  // Unrelated work must NOT be dragged in — the failure mode that collapses
+  // Unrelated work must NOT be dragged in: the failure mode that collapses
   // every agent into one lane.
   const three = await agent("matcher-three")
   const u = await call("set_slot", { token: three, text: "restyling the web board fonts and stylesheet" })
@@ -409,7 +409,7 @@ let annSerial = 0
 // ── announcements ride the wake path (§6) ───────────────────────────────
 // This is why the injection mechanism matters. An announcement is by definition
 // something every member MUST know, and an agent mid-turn has no reason to poll
-// — so it has to arrive through the hook the harness already fires.
+// so it has to arrive through the hook the harness already fires.
 {
   const speaker = await agent("announcer")
   const listener = await call("register_lane", { name: "listener", session_id: "sess-listener" })
@@ -420,7 +420,7 @@ let annSerial = 0
 
   const poll = await call("hook_poll", { session_id: "sess-listener", event: "Stop" })
   const ctxText: string = poll?.hookSpecificOutput?.additionalContext ?? ""
-  // The wake path is authenticated by NOTHING — it takes a session id and a
+  // The wake path is authenticated by NOTHING: it takes a session id and a
   // cwd off the wire because a harness lifecycle hook has no lane token. So it
   // must wake the agent without disclosing anything private: any holder of the
   // coordination secret can name any session id, or omit it and name a working
@@ -430,7 +430,7 @@ let annSerial = 0
     ctxText.slice(0, 200) || "(nothing injected)")
   check("but its CONTENT is not handed to an unauthenticated caller",
     !ctxText.includes("INTERFACE CHANGED"), ctxText.slice(0, 240))
-  // And the agent that actually holds the token can read it — the wake is a
+  // And the agent that actually holds the token can read it: the wake is a
   // pointer, the token is the key.
   {
     const owed = await call("inbox", { token: listener.token })
@@ -471,7 +471,7 @@ let annSerial = 0
   const sub = await call("register_lane", {
     name: "helper-agent", session_id: "s-helper", parent: "parent-agent",
     // Vouched. `parent` alone is a claim anybody can make, and a subagent
-    // inherits its parent's memberships — so the parent proves it with a
+    // inherits its parent's memberships, so the parent proves it with a
     // one-time nonce only it can issue.
     parent_nonce: "helper-nonce-0123456789abcdef",
   })
@@ -500,7 +500,7 @@ let annSerial = 0
   check("director powers are refused without the granted role",
     denied.includes("E_NOT_COORDINATOR"), denied || "(allowed!)")
 
-  // Granted by a human through the admin path — no agent can promote itself.
+  // Granted by a human through the admin path: no agent can promote itself.
   // Same route web_e2e uses: LANES_ADMIN=1 escapes the interactive-terminal
   // gate, and the password is piped, because readPassword reads stdin bytewise
   // rather than requiring a tty.
@@ -554,13 +554,13 @@ let annSerial = 0
   check("a human-opened lane is not reclaimed when it empties",
     (stillThere.board?.channels ?? []).some((c: any) => c.id === "finished"))
 
-  // A STRANGER — neither coordinator nor the agent that opened it.
+  // A STRANGER: neither coordinator nor the agent that opened it.
   const stranger = await agent("closer-stranger")
   const refusedRole = await fails("lane_close", { token: stranger, lane: "finished" })
   check("a stranger may not close somebody else's lane",
     refusedRole.includes("E_NOT_COORDINATOR"), refusedRole.slice(0, 200) || "(allowed!)")
 
-  // The agent that OPENED it may retire it without the role — lane_open is
+  // The agent that OPENED it may retire it without the role: lane_open is
   // unprivileged, so a lane an agent could create and never end was a hole, and
   // the refusal called its own lane "another agent's".
   const byOwner = await call("lane_close", { token: closerOwner, lane: "finished", note: "mine, done" })
@@ -609,7 +609,7 @@ let annSerial = 0
   const ADDR3 = `127.0.0.1:${Number(process.env.PORT ?? 4934) + 2}`
   const d3 = Bun.spawn({
     cmd: [lanesd, "-dir", dirDir, "-addr", ADDR3, "-match-repo", repo,
-          // Measured, not fixed — this daemon scores the same live repository,
+          // Measured, not fixed: this daemon scores the same live repository,
           // so a constant here rots exactly as the one above did.
           // A bar of its own, deliberately NOT the measured JOIN_BAR.
           //
@@ -617,7 +617,7 @@ let annSerial = 0
           // was then applied here, to different declarations. The comment below
           // already worried about that and tried to make the two scenarios
           // identical; they still are not, and this test's score landed either
-          // side of the moving bar depending on the repository index — 0.2636
+          // side of the moving bar depending on the repository index. 0.2636
           // against a bar of 0.333 on one run in three, which made the check fail
           // on a system behaving correctly.
           //
@@ -654,7 +654,7 @@ let annSerial = 0
     // The opener declares its work, exactly as measureTheBar's opener does.
     //
     // This line was missing, and the join bar is measured from that scenario and
-    // applied to this one — so the two have to BE the same scenario or the gate
+    // applied to this one, so the two have to BE the same scenario or the gate
     // is being judged against a bar taken from something else. It passed anyway
     // while a candidate was scored against the lane's merged footprint, which
     // ignored member declarations and so made the two identical by accident.
@@ -668,7 +668,7 @@ let annSerial = 0
     // Wait for an ELIGIBLE match, not merely a visible one.
     //
     // This broke as soon as any suggestion appeared and then asserted
-    // awaiting_director — an outcome only an eligible match can produce. While
+    // awaiting_director: an outcome only an eligible match can produce. While
     // the index is still warming the score comes in under the join threshold,
     // the action is `consider`, and the director gate is never consulted, so the
     // assertion failed on a system behaving correctly. Observed once in three
@@ -680,7 +680,7 @@ let annSerial = 0
     // the failure says the score never cleared rather than blaming the gate.
     //
     // The slot id is stable because set_slot WITHOUT one adds a declaration
-    // every time — sixty polls would leave sixty slots and eventually hit the
+    // every time: sixty polls would leave sixty slots and eventually hit the
     // per-lane cap, which is a different failure wearing this test's name.
     let sug: any
     for (let i = 0; i < 60; i++) {
@@ -693,10 +693,10 @@ let annSerial = 0
       if (m && m.action !== "consider") break
       await Bun.sleep(250)
     }
-    check("with the gate on, a match still surfaces", sug !== undefined, "no match — index may not be ready")
+    check("with the gate on, a match still surfaces", sug !== undefined, "no match: index may not be ready")
     check("and the match became eligible (else the gate below is never consulted)",
       sug !== undefined && sug.action !== "consider",
-      `action=${sug?.action} score=${sug?.score} — the score never cleared the join bar`)
+      `action=${sug?.action} score=${sug?.score}: the score never cleared the join bar`)
     if (sug) {
       check("but it does NOT auto-join", sug.action === "awaiting_director",
         `action=${sug.action} score=${sug.score}`)
@@ -711,14 +711,14 @@ let annSerial = 0
 
 // ── the bar is what decides, proven by moving it ─────────────────────────
 // The invariant above can only see the scores this run happens to produce, and
-// they all landed on one side of the bar — so it would stay green if the
+// they all landed on one side of the bar, so it would stay green if the
 // comparison were deleted. Mutation-testing showed exactly that.
 //
 // So instead of hunting for a declaration that scores between the bars, move
 // the BAR past a score we know occurs. Same daemon, same repository, same two
 // declarations, one threshold raised above the observed 0.333: the identical
 // match must now come back as advice rather than an auto-join. That cannot pass
-// vacuously — if the threshold stops being consulted, this fails immediately.
+// vacuously: if the threshold stops being consulted, this fails immediately.
 {
   const dir2 = mkdtempSync(join(tmpdir(), "lanes-channel-e2e-hi-"))
   const ADDR2 = `127.0.0.1:${Number(process.env.PORT ?? 4934) + 1}`
@@ -760,7 +760,7 @@ let annSerial = 0
       await Bun.sleep(250)
     }
     check("the same work still matches when the bar is raised", sug !== undefined,
-      "no match at all — the index may not have been ready")
+      "no match at all: the index may not have been ready")
     if (sug) {
       check("a score below the raised bar is advised, not auto-joined",
         sug.action === "consider", `action=${sug.action} score=${sug.score} bar=0.95`)
@@ -775,7 +775,7 @@ let annSerial = 0
 
 // ── tier 2 against a service Lanes did not write ────────────────────────
 // The client is otherwise only ever tested against our own test double and our
-// own reference server — both ours, so both could share a misreading of the
+// own reference server: both ours, so both could share a misreading of the
 // spec. This runs the DAEMON against whatever OpenAI-compatible service is up
 // (Ollama by default) and drives the whole auto-join path through it.
 //
@@ -795,10 +795,10 @@ let annSerial = 0
   } catch { up = false }
 
   if (!up) {
-    console.log(`  \x1b[33m·\x1b[0m tier-2 interop skipped — no embeddings service at ${embedURL}`)
+    console.log(`  \x1b[33m·\x1b[0m tier-2 interop skipped: no embeddings service at ${embedURL}`)
   } else {
-    // A TINY repository, not this one. The property under test is interop —
-    // that Lanes drives a service it did not write — and indexing 438 chunks of
+    // A TINY repository, not this one. The property under test is interop,
+    // that Lanes drives a service it did not write, and indexing 438 chunks of
     // Lanes through a real model to prove it costs eight minutes and tests
     // throughput instead. Three files prove the same thing in seconds.
     const tiny = mkdtempSync(join(tmpdir(), "lanes-embed-repo-"))
@@ -843,7 +843,7 @@ let annSerial = 0
       await c3("lane_open", { token: one, lane: "guard-work", topic: "deny edits to exclusively claimed paths" })
 
       // The daemon answers while indexing runs, which is itself part of the
-      // contract — so poll rather than waiting for a ready signal.
+      // contract, so poll rather than waiting for a ready signal.
       let sug: any
       for (let i = 0; i < 90; i++) {
         const r = await c3("set_slot", { token: two, text: "guard path enforcement for exclusive claims" })
@@ -852,11 +852,11 @@ let annSerial = 0
         await Bun.sleep(2000)
       }
       check("the daemon matches through a third-party embeddings service", sug !== undefined,
-        `no match via ${embedModel} — indexing may not have finished`)
+        `no match via ${embedModel}: indexing may not have finished`)
       if (sug) {
         check("the match carries the model in its provenance",
           typeof sug.score === "number" && sug.score > 0, JSON.stringify(sug).slice(0, 200))
-        // show_board on THIS daemon — `board()` is bound to the main one, and a
+        // show_board on THIS daemon. `board()` is bound to the main one, and a
         // token from a different daemon is meaningless there.
         const res3 = await fetch(`http://${ADDR3}/mcp`, {
           method: "POST",
@@ -883,7 +883,7 @@ let annSerial = 0
 // An agent told "awaiting_director" was then told nothing, ever. It was
 // admitted seconds later with no way to learn the wait had ended short of
 // polling the event stream on the off-chance. Same for queue promotion, same
-// for eviction — all three are changes the agent did not cause and cannot
+// for eviction: all three are changes the agent did not cause and cannot
 // predict, and all three were silent.
 {
   const d3 = mkdtempSync(join(tmpdir(), "lanes-director-"))
@@ -956,15 +956,15 @@ let annSerial = 0
       /admitted to lane "auth-work" by director/.test(txt), txt.slice(0, 200) || "(silent)")
     check("and told what it may now do", /you may start/.test(txt), txt.slice(0, 200))
 
-    // The wake path is token-less — a lifecycle hook has no token — so any
+    // The wake path is token-less (a lifecycle hook has no token) so any
     // holder of the coordination secret can poll another lane's session. It
     // therefore may not CONSUME anything: reading it is repeatable and changes
     // nothing, or a peer could spend a victim's notices on its behalf.
     //
     // This check used to assert the opposite ("delivered once"), which was the
     // consuming design. It is here in its corrected form rather than deleted,
-    // because the property it was guarding — an agent must not be nagged
-    // forever — is real; it is now the AGENT that ends the repetition, by
+    // because the property it was guarding: an agent must not be nagged
+    // forever: is real; it is now the AGENT that ends the repetition, by
     // acknowledging the board, which no peer can do for it.
     const again = await c5("hook_poll", { session_id: "wsid", event: "Stop" })
     check("a peer polling the wake path cannot consume the notice",
@@ -997,7 +997,7 @@ let annSerial = 0
 // ── silence is never an answer ──────────────────────────────────────────
 // `set_slot` used to return {"ok":true,"slot_id":"s1"} whether matching was
 // off, still indexing, degraded, or working and genuinely found nothing. Four
-// unrelated situations, one identical reply — an agent could not tell whether
+// unrelated situations, one identical reply: an agent could not tell whether
 // to wait, to reconfigure, or to get on with it alone.
 {
   // Words that name real files here, so the scorer HAS an opinion; the point of
@@ -1009,14 +1009,14 @@ let annSerial = 0
   // Actionable guidance is the invariant; WHICH field carries it depends on the
   // outcome. This asserted `matching_hint` specifically, and started failing the
   // moment a declaration that matched nothing began opening a lane instead of
-  // falling through — the guidance moved to `lanes_hint` and got better, while
+  // falling through: the guidance moved to `lanes_hint` and got better, while
   // the check reported a regression. Assert the property, not the field.
   const guidance = String(r.lanes_hint ?? r.matching_hint ?? "")
   check("and always says what to do about it",
     guidance.length > 20, JSON.stringify({ lanes_hint: r.lanes_hint, matching_hint: r.matching_hint }))
   // "I compared you and found nothing" and "I could form no opinion" are
   // different facts. Reporting the second as the first is a confident claim
-  // built on no evidence — tier 0 reads FILE PATHS, so a declaration naming no
+  // built on no evidence: tier 0 reads FILE PATHS, so a declaration naming no
   // file in the repo predicts nothing at all.
   {
     const blind = await call("set_slot", { token: beta, text: "zzqq wibble frobnicate" })
@@ -1032,7 +1032,7 @@ let annSerial = 0
     `phase=${r.matching}`)
 
   // The same call against a daemon with NO repository configured must be
-  // distinguishable — that is the whole point.
+  // distinguishable: that is the whole point.
   const dOff = mkdtempSync(join(tmpdir(), "lanes-nomatch-"))
   const ADDR4 = `127.0.0.1:${Number(process.env.PORT ?? 4934) + 3}`
   const off = Bun.spawn({ cmd: [lanesd, "-dir", dOff, "-addr", ADDR4], stdout: "ignore", stderr: "ignore" })
@@ -1081,8 +1081,8 @@ let annSerial = 0
 // ── context loss must not cost an agent its place ───────────────────────
 // Context loss is the most common thing that happens to an agent, and a token
 // rotation must not silently drop what its lane held. Everything has to
-// survive: exclusive ownership, membership, queue position, and — the one it
-// cannot reconstruct for itself — what it still owes an acknowledgement on.
+// survive: exclusive ownership, membership, queue position, and: the one it
+// cannot reconstruct for itself: what it still owes an acknowledgement on.
 {
   const own = await call("register_lane", { name: "re-owner", session_id: "re1" })
   await call("ack_board", { token: own.token })
@@ -1150,7 +1150,7 @@ let annSerial = 0
 // "Still asking" and "asking somebody who is not there" look identical on a
 // board and are not the same problem. Redelivery is driven by the agent
 // POLLING, so an announcement owed only by sleeping or crashed agents never
-// spends its retry budget and never reaches "unanswered" — it sits at
+// spends its retry budget and never reaches "unanswered": it sits at
 // "awaiting ack" indefinitely, looking healthy, while nothing can arrive.
 {
   const say = await call("register_lane", { name: "bl-sender", session_id: "bl1" })
@@ -1189,14 +1189,14 @@ let annSerial = 0
     lane?.blocked_announcements === 1, JSON.stringify(lane))
   check("while still counting as outstanding, because it is",
     lane?.unacked_announcements === 1, JSON.stringify(lane))
-  check("and never silently became 'unanswered' — nothing gave up",
+  check("and never silently became 'unanswered': nothing gave up",
     lane?.abandoned_announcements === undefined, JSON.stringify(lane))
 }
 
 // ── a notice nobody read must not be recorded as read ───────────────────
 // A departing member's ack requirement has to be dropped, or the lane waits
 // forever on somebody who is never coming back. But dropping it silently
-// settled the announcement as `acked` — and in the extreme case that means an
+// settled the announcement as `acked`: and in the extreme case that means an
 // announcement with an empty ack list, nobody at all, recorded as
 // acknowledged and invisible on the board. A sender checking later is told its
 // freeze notice landed when zero agents saw it.
@@ -1234,7 +1234,7 @@ let annSerial = 0
 
 // ── the terminal board must show the work, not just the agents ──────────
 // `lanes board` is the surface for an operator without a browser, and it
-// carried lanes, slots and claims — but no CHANNELS at all. The whole of what
+// carried lanes, slots and claims, but no CHANNELS at all. The whole of what
 // v1.2 added was invisible there, including an announcement waiting on
 // somebody, which is the state that most needs a person.
 {
@@ -1252,7 +1252,7 @@ let annSerial = 0
   // tool gets piped into grep, teed into a log and redirected into an issue
   // report; `doctor` used to write raw ANSI unconditionally, so a redirected
   // run produced a file of escape sequences. This runs the shipped binary with
-  // its stdout captured — which IS the not-a-terminal case.
+  // its stdout captured, which IS the not-a-terminal case.
   // eslint-disable-next-line no-control-regex
   check("styled output is plain when it is not going to a terminal",
     !/\u001b\[/.test(out), JSON.stringify(out.slice(0, 120)))

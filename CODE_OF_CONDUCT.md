@@ -4,7 +4,7 @@
 
 Be decent. Argue with the work, not the person.
 
-Lanes invites criticism — including "this design is wrong" — and that only works
+Lanes invites criticism (including "this design is wrong") and that only works
 if disagreement stays about the thing being built. Sharp technical pushback is
 welcome and is not a conduct problem. Contempt for the person on the other end
 of it is.
@@ -42,8 +42,8 @@ Behaviour that does not:
 
 ## Scope
 
-This applies in all project spaces — issues, pull requests, discussions,
-commits — and when someone is representing the project in public.
+This applies in all project spaces, issues, pull requests, discussions,
+commits, and when someone is representing the project in public.
 
 ## Enforcement
 

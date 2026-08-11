@@ -1,16 +1,16 @@
 /**
- * End-to-end test for the MCP Apps board panel — Bun, Playwright, real Chrome.
+ * End-to-end test for the MCP Apps board panel. Bun, Playwright, real Chrome.
  *
  * The whole stack is real except nothing:
  *
- *   panel (fetched over MCP with resources/read — the artifact that ships)
+ *   panel (fetched over MCP with resources/read: the artifact that ships)
  *     ↕ postMessage, across a real iframe boundary
  *   AppBridge + PostMessageTransport   (the real @modelcontextprotocol/ext-apps
  *                                       SDK that shipping hosts embed)
  *     ↕ HTTP
  *   lanesd                             (a real daemon on a scratch data dir)
  *
- * Using the real AppBridge is the point. A rejected handshake is SILENT — the
+ * Using the real AppBridge is the point. A rejected handshake is SILENT: the
  * SDK validates every frame with zod and validates ui/initialize against
  * McpUiInitializeRequestSchema, and a panel sending the wrong shape simply
  * never comes up, with no error anywhere. Lanes shipped exactly that bug once
@@ -19,7 +19,7 @@
  *
  * A real browser rather than a DOM shim matters for the same reason: the first
  * version of this ran on jsdom, which has no layout, so the size assertion had
- * to fake getBoundingClientRect and was therefore vacuous — and a zero-height
+ * to fake getBoundingClientRect and was therefore vacuous, and a zero-height
  * iframe is one of the bugs this panel actually shipped. Chrome measures.
  *
  * Run: task test:panel
@@ -27,7 +27,7 @@
 import { chromium, type Browser } from "playwright"
 // node:fs and node:os only for mkdtemp/rm/tmpdir, which Bun has no native
 // equivalent for; everything else below uses Bun's own APIs. These specifiers
-// are the cross-runtime standard and Bun implements them natively — they do not
+// are the cross-runtime standard and Bun implements them natively: they do not
 // pull in Node.
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -42,7 +42,7 @@ let checks = 0
 function check(name: string, cond: boolean, detail = "") {
   checks++
   if (cond) console.log(`  \x1b[32m✓\x1b[0m ${name}`)
-  else { failures++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? " — " + detail : ""}`) }
+  else { failures++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ". " + detail : ""}`) }
 }
 
 const dir = mkdtempSync(join(tmpdir(), "lanes-e2e-"))
@@ -107,7 +107,7 @@ try {
   }
 
   // A channel the reading agent is a member of, so the panel can mark it as
-  // the viewer's own — the one thing this surface knows that the operator
+  // the viewer's own: the one thing this surface knows that the operator
   // board deliberately does not.
   await tool("lane_open", { token: me.token, lane: "panel-work", topic: "rendering the panel" })
   await tool("lane_join", { token: peer.token, lane: "panel-work", score: 0.64, threshold: 0.33,
@@ -116,7 +116,7 @@ try {
   // ── the template, fetched the way a host fetches it ──────────────────────
   // The panel URI carries the template's content hash so a changed panel cannot
   // be served from a host's cache. Read it from the tool result rather than
-  // pinning the literal — a test that hardcodes the version would have to be
+  // pinning the literal: a test that hardcodes the version would have to be
   // edited on every panel change, which is the opposite of what it is for.
   const panelURI: string = (await tool("show_board", { token: me.token }))
     ?._meta?.ui?.resourceUri
@@ -134,7 +134,7 @@ try {
       /^ui:\/\/lanes\/board\/[0-9a-f]{12}$/.test(boardResult._meta.ui.resourceUri),
     boardResult?._meta?.ui?.resourceUri ?? "(none)")
   // Cache-busting is only real if the version tracks the bytes AND the panel
-  // says which build it is — a host serving a cached panel is otherwise
+  // says which build it is: a host serving a cached panel is otherwise
   // indistinguishable from a server that never shipped the fix.
   check("the panel prints the build the URI names",
     html.includes("panel " + panelURI.split("/").pop()),
@@ -142,8 +142,8 @@ try {
   check("show_board sends a private panel payload",
     !!boardResult?._meta?.["com.lanes/panel"])
   // structuredContent is model-facing, so the board must not be in it. What may
-  // be is the panel's bootstrap — the view, the lane id, and the caller's own
-  // token — which is how the panel reaches the board on a host that drops _meta.
+  // be is the panel's bootstrap: the view, the lane id, and the caller's own
+  // token, which is how the panel reaches the board on a host that drops _meta.
   // Asserting "undefined" instead of "carries no board" is what made the repair
   // for that host look like a contract violation.
   const boardBoot = boardResult?.structuredContent ?? {}
@@ -215,14 +215,14 @@ try {
 
   // First paint must not wait on the host. An earlier version drew only after
   // ui/initialize settled, so a silent host left the panel blank for the whole
-  // timeout — and a host that sizes to content then showed the human nothing.
+  // timeout, and a host that sizes to content then showed the human nothing.
   await panel.locator(".metric").first().waitFor({ timeout: 10000 })
   check("paints before any board data arrives", true)
 
   await page.waitForFunction("window.__probe.initialized === true", null, { timeout: 10000 })
     .then(() => check("the real AppBridge accepted our ui/initialize", true))
     .catch(() => check("the real AppBridge accepted our ui/initialize", false,
-      "a rejected handshake is silent — this is the assertion that catches it"))
+      "a rejected handshake is silent: this is the assertion that catches it"))
 
   const probe1 = await page.evaluate("window.__probe") as any
   check("AppBridge parsed our appInfo", probe1.appInfo?.name === "lanes-board",
@@ -256,8 +256,8 @@ try {
     const why = (await peer.getAttribute("data-why")) ?? ""
     check("an auto-joined peer carries its score", /0\.6/.test(why), why || "(no explanation)")
     // And a person can actually get to it. The evidence for an automatic join
-    // is the answer to "why is this agent in my lane" — the question the whole
-    // channel model has to be able to answer — and it used to be a `title`,
+    // is the answer to "why is this agent in my lane": the question the whole
+    // channel model has to be able to answer, and it used to be a `title`,
     // which shows nothing on a touch host and nothing to a keyboard.
     await peer.focus()
     // Located from the frame, not the pane: the popover lives in the top layer
@@ -270,7 +270,7 @@ try {
       tip.open && /0\.6/.test(tip.text), JSON.stringify(tip))
     // An announcement that exhausted its retries and was never acknowledged.
     // Driving that through the real timers would take five 120-second retry
-    // windows, so the payload is injected here — this check is about RENDERING,
+    // windows, so the payload is injected here: this check is about RENDERING,
     // and the state machine itself is pinned in TestAnAbandonedAnnouncementStaysOnTheBoard.
     await page.evaluate((r) => {
       const b = structuredClone(r)
@@ -305,7 +305,7 @@ try {
         // computed string. The old version pulled the first three numbers out
         // of `rgb(r, g, b)` with a regex; once the palette moved to OKLCH it
         // read `oklch(0.685 0.165 36)` as an RGB triplet and reported 2.46:1
-        // in BOTH themes — a confident, precise, entirely invented number for
+        // in BOTH themes: a confident, precise, entirely invented number for
         // a pill that renders at 5.3:1. A contrast check must measure light,
         // and the only light here is the pixel.
         const c = document.createElement("canvas")
@@ -343,7 +343,7 @@ try {
     // and "asking somebody who is not there" look identical on a board and are
     // not the same problem. Redelivery is driven by the agent POLLING, so an
     // announcement owed only by sleeping or crashed agents never spends its
-    // retry budget and never reaches `unanswered` — it waits forever, looking
+    // retry budget and never reaches `unanswered`: it waits forever, looking
     // healthy. Pinned in the state machine by
     // TestAnAnnouncementOwedOnlyByAbsenteesSaysSo; this is about RENDERING.
     await page.evaluate((r) => {
@@ -422,8 +422,8 @@ try {
 
   // A lane going out of touch is marked, once, on the way in.
   //
-  // This is the board's most consequential silent change — an agent stopped
-  // answering and work may be queued behind it — and until now it restyled
+  // This is the board's most consequential silent change: an agent stopped
+  // answering and work may be queued behind it, and until now it restyled
   // between two frames, which nobody sees unless they are already looking at
   // that row. The two halves are tested together because the second is what
   // keeps the first honest: marking a lane that was ALREADY stale when we first
@@ -455,7 +455,7 @@ try {
       // week while nothing moved: the rail marker is ::after, ::before has
       // `content: none` and never paints, and getComputedStyle happily reports
       // the animation from a rule attached to a box that does not exist. So the
-      // content is asserted first — a named animation on an unrendered
+      // content is asserted first: a named animation on an unrendered
       // pseudo-element is precisely the shape of the bug this now catches.
       const gesture = await panel.locator(`.entry[data-lane="${target}"]`).first()
         .evaluate((el) => {
@@ -480,7 +480,7 @@ try {
       // A band change also runs a view transition, so the row TRAVELS to its new
       // group instead of vanishing here and reappearing there. The transition
       // kind is stamped on <html> for the duration, which is what the CSS keys
-      // off, so that is the honest thing to observe — and it must be the
+      // off, so that is the honest thing to observe, and it must be the
       // band kind specifically, not whatever the previous push left behind.
       // Put the lane in a KNOWN band first, and let it settle.
       //
@@ -502,7 +502,7 @@ try {
       //
       // Observing that a transition STARTED says nothing about whether anything
       // was visible. Forcing ::view-transition-group(*) to .001ms left every
-      // other assertion here green while the row teleported — the motion was
+      // other assertion here green while the row teleported: the motion was
       // gone and the checks could not tell. So the interval the marker is
       // present for is measured, which is the interval the browser is animating.
       const travel = await page.evaluate(async (r) => {
@@ -522,7 +522,7 @@ try {
         ;(window as any).__deliver(r)
         // Sample what the browser is ACTUALLY running, mid-flight. The marker's
         // lifetime is set by the panel's own script, so timing it measures the
-        // script and not the motion — collapsing the CSS duration to .001ms left
+        // script and not the motion: collapsing the CSS duration to .001ms left
         // that measurement completely unchanged. getAnimations() reports the
         // resolved timing of the view-transition pseudo-elements themselves,
         // which is the thing a person would or would not see.
@@ -533,7 +533,7 @@ try {
             // ONLY the view-transition pseudo-elements. A name-based fallback was
             // here and quietly matched panel-went-quiet (1.05s), so the check
             // measured an unrelated animation and passed with the travel
-            // collapsed to nothing — the same shape of bug it was added to catch.
+            // collapsed to nothing: the same shape of bug it was added to catch.
             // The LANE group specifically. "any view-transition animation" was
             // still too loose: the pane transitions run at .34s in the same
             // frame, so they satisfied the floor while the lane group itself was
@@ -559,14 +559,14 @@ try {
       check("and the travel lasts long enough to be seen",
         travel.animMs >= 250,
         `the longest view-transition animation resolved to ${Math.round(travel.animMs)}ms ` +
-        `(marker window ${Math.round(travel.ms)}ms) — anything near zero is a teleport ` +
+        `(marker window ${Math.round(travel.ms)}ms): anything near zero is a teleport ` +
         `wearing a transition's name`)
 
       // The marker is not the movement.
       //
       // Watching data-transition only proves the panel DECIDED to animate. The
       // browser can only carry a row from one group to the other if that row has
-      // a stable view-transition-name across both frames — without one it is part
+      // a stable view-transition-name across both frames: without one it is part
       // of the root cross-fade and simply blinks to its new position, which is
       // the thing this feature exists to stop. So the name is asserted, and
       // asserted to be the SAME name before and after, which is what makes it a
@@ -609,7 +609,7 @@ try {
 
       // Put the lane back where the next check expects to find it. Measuring the
       // move required driving one, and leaving it driven made the following
-      // "coming back" case deliver a state the panel was already in — no change,
+      // "coming back" case deliver a state the panel was already in: no change,
       // so no transition, so a real feature reported as broken. A check that
       // mutates shared state owes the next one its starting conditions.
       await page.evaluate((r) => (window as any).__deliver(r),
@@ -660,7 +660,7 @@ try {
   const pipColour = await panel.locator(".entry.active .pip").first()
     .evaluate((el) => getComputedStyle(el).backgroundColor)
   // WHY a lane stopped counting as live has to survive the panel's field
-  // allowlist (trimBoard). It is dropped silently if it does not — a field
+  // allowlist (trimBoard). It is dropped silently if it does not: a field
   // added to the board simply never reaches the panel, and nothing says so,
   // which is exactly what happened the first three times this was checked.
   {
@@ -773,11 +773,11 @@ try {
   await page.locator("#panel").evaluate(
     (el: HTMLIFrameElement) => { el.style.width = "900px" })
 
-  await box.fill("Yes — it renders.")
+  await box.fill("Yes: it renders.")
   // A redraw must not eat a reply that is half-written.
   //
   // The host pushes a board update whenever this agent does anything, and every
-  // push calls draw(), which replaces the mail pane with innerHTML — destroying
+  // push calls draw(), which replaces the mail pane with innerHTML: destroying
   // this textarea, its contents, the focus and the caret. The same defect on
   // the web board wiped a human's message mid-sentence.
   await box.focus()
@@ -791,9 +791,9 @@ try {
     ;(window as any).__deliver(b)
   }, boardResult)
   check("a redraw does not eat a half-written reply",
-    (await box.inputValue()) === "Yes — it renders.", await box.inputValue())
+    (await box.inputValue()) === "Yes: it renders.", await box.inputValue())
   // And the keyboard path must survive it too. The handler is an element
-  // property, so the NEW textarea has none — ⌘+↵ silently stops working while
+  // property, so the NEW textarea has none. ⌘+↵ silently stops working while
   // the panel goes on printing "⌘+↵ to send" underneath it. The send below is
   // the assertion: it only passes if the redraw re-armed the handler.
   // Evaluated in the PANEL frame, not the host page: the panel is an iframe,
@@ -821,7 +821,7 @@ try {
 
   check("⌘+Enter sent the answer to the ledger", answered.state === "answered", answered.state)
   check("the answer text survived the whole path",
-    answered.response === "Yes — it renders.", String(answered.response))
+    answered.response === "Yes: it renders.", String(answered.response))
   check("Approve reached the ledger", (await stateOf(mail.r.msg_serial)).state === "approved")
   check("Acknowledge reached the ledger", (await stateOf(mail.n.msg_serial)).state === "acked")
   await panel.locator("#pane-mail .empty").waitFor({ timeout: 5000 }).catch(() => {})
@@ -985,13 +985,13 @@ try {
   // This is the failure that shipped. Panel data travels in tool-result _meta,
   // which is where the spec puts it and which keeps the board out of model
   // context. A host that forwards none of it left the panel reading "awaiting
-  // board · No lanes yet" while the daemon held a full board — and nothing
+  // board · No lanes yet" while the daemon held a full board, and nothing
   // failed anywhere: every assertion above passed, `content` carried a correct
   // summary throughout, and the only way to see it was to look at the panel.
   //
   // Both checks reload first, because they are about a panel that has NOTHING.
   // Asserting against the panel built up above would pass on state it already
-  // held and prove nothing — which is the exact shape of the original mistake.
+  // held and prove nothing, which is the exact shape of the original mistake.
   // Last in the file so the reload disturbs no earlier state.
   const freshPanel = async () => {
     await page.reload({ waitUntil: "load" })

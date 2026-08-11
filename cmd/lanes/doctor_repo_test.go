@@ -17,7 +17,7 @@ import (
 //
 // A false warning is the expensive failure here: told they are in the wrong tree
 // when they are not, somebody edits a working config. So the sibling-prefix case
-// is pinned — /Users/x/Lanes-old must not read as inside /Users/x/Lanes.
+// is pinned. /Users/x/Lanes-old must not read as inside /Users/x/Lanes.
 func TestUnderDirDoesNotConfuseSiblingsForChildren(t *testing.T) {
 	base := t.TempDir()
 	repo := filepath.Join(base, "Lanes")
@@ -30,7 +30,7 @@ func TestUnderDirDoesNotConfuseSiblingsForChildren(t *testing.T) {
 		{filepath.Join(repo, "internal", "core"), true, "a subdirectory is inside"},
 		{
 			filepath.Join(base, "Lanes-old"), false,
-			"a sibling sharing a name prefix is NOT inside — this is the case a naive " +
+			"a sibling sharing a name prefix is NOT inside: this is the case a naive " +
 				"strings.HasPrefix gets wrong, and it would warn somebody correctly " +
 				"configured into breaking their config",
 		},
@@ -38,7 +38,7 @@ func TestUnderDirDoesNotConfuseSiblingsForChildren(t *testing.T) {
 		{filepath.Join(base, "other-project"), false, "an unrelated sibling is not inside"},
 	} {
 		if got := underDir(tc.path, repo); got != tc.want {
-			t.Errorf("underDir(%q, %q) = %v, want %v — %s", tc.path, repo, got, tc.want, tc.why)
+			t.Errorf("underDir(%q, %q) = %v, want %v. %s", tc.path, repo, got, tc.want, tc.why)
 		}
 	}
 }

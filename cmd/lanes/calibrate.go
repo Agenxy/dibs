@@ -17,7 +17,7 @@ import (
 // and proposes thresholds for it.
 //
 // It exists because `join_threshold` is unitless and scorer-relative, so any
-// number compiled into the binary is a guess — and the two ways of guessing
+// number compiled into the binary is a guess, and the two ways of guessing
 // wrong are both bad in a way the user only discovers weeks later. Too low and
 // every agent collapses into one lane; too high and nobody ever meets and the
 // feature may as well be off.
@@ -38,8 +38,8 @@ import (
 // this repository jumped to recall@5 0.815 and MRR 1.000 the moment the history
 // index landed, which is a leak wearing a result's clothes.
 //
-// Holding them out asks the question anybody actually cares about — does history
-// help on work the index has never seen — and matches what production does,
+// Holding them out asks the question anybody actually cares about: does history
+// help on work the index has never seen, and matches what production does,
 // which is index the past and predict the present. Measured that way across four
 // repositories with real history, recall@5 rose 58–91%: a real gain, an order of
 // magnitude smaller than the leak that hid it.
@@ -128,7 +128,7 @@ func calibrate(args []string) error {
 		return err
 	}
 	if len(cases) == 0 {
-		return fmt.Errorf("no usable commits in %s — need commits touching 1..25 files with a message", dir)
+		return fmt.Errorf("no usable commits in %s: need commits touching 1..25 files with a message", dir)
 	}
 
 	fmt.Printf("repository  %s\n", dir)
@@ -173,7 +173,7 @@ func calibrate(args []string) error {
 	// These are two different questions and they need two different indexes.
 	// "How good is retrieval" must hold the evaluation commits out or it
 	// measures memorisation. "What score separates related work from unrelated"
-	// must NOT, because the daemon runs with every commit indexed — and a
+	// must NOT, because the daemon runs with every commit indexed, and a
 	// threshold measured against a weaker index is too low for the stronger one.
 	//
 	// Measured: the number printed from the held-out index let 10.6% and 14.4%
@@ -205,7 +205,7 @@ func buildEmbedScorer(ctx context.Context, dir, url, model, key, qPrefix, dPrefi
 	if qPrefix != "" || dPrefix != "" {
 		em.SetAffixes(qPrefix, dPrefix)
 	}
-	fmt.Printf("scorer      %s (%s) — indexing…\n", url, model)
+	fmt.Printf("scorer      %s (%s): indexing…\n", url, model)
 	if err := em.Build(ctx, dir); err != nil {
 		return nil, fmt.Errorf("indexing with the embeddings service: %w", err)
 	}
@@ -216,7 +216,7 @@ func buildEmbedScorer(ctx context.Context, dir, url, model, key, qPrefix, dPrefi
 // reportMarkers says how the model was ADDRESSED, not just which one it is.
 //
 // Retrieval models are asymmetric, and one given no markers separates related
-// from unrelated work about half as well — a difference that would otherwise
+// from unrelated work about half as well: a difference that would otherwise
 // show up in the numbers below with nothing on screen to explain it.
 func reportMarkers(em *overlap.Embed) {
 	fmt.Printf("            %d chunks embedded\n", em.Chunks())
@@ -227,20 +227,20 @@ func reportMarkers(em *overlap.Embed) {
 		return
 	}
 	// No markers has two causes and they call for opposite actions. Some models
-	// document that they need none — bge-m3 says so outright — and telling that
+	// document that they need none (bge-m3 says so outright) and telling that
 	// operator to go and find a convention sends them looking for something that
 	// does not exist, and invites them to invent one, which measured WORSE than
 	// none. So ask Recognised(), which carries the difference explicitly rather
 	// than inferring it from the markers being empty.
 	if em.Recognised() {
 		fmt.Println("            " + ui.Dim(
-			"no retrieval markers — this model documents that it needs none, so "+
+			"no retrieval markers: this model documents that it needs none, so "+
 				"it is addressed symmetrically on purpose",
 		))
 		return
 	}
 	fmt.Println("            " + ui.Attn("no retrieval markers") + ui.Dim(
-		" — this model name matches no convention Lanes knows, so it is being "+
+		": this model name matches no convention Lanes knows, so it is being "+
 			"addressed symmetrically",
 	))
 	fmt.Fprintln(os.Stderr,
@@ -253,7 +253,7 @@ func reportMarkers(em *overlap.Embed) {
 //
 // The zero-pair case returns documented defaults, and this used to print them
 // under "suggested thresholds for THIS repository … (95th pct of unrelated
-// pairs)" — a provenance that is false, alongside "set these if they look
+// pairs)": a provenance that is false, alongside "set these if they look
 // right". Nothing on screen distinguished 0.750-because-we-measured from
 // 0.750-because-we-could-not, and an operator has no way to judge the
 // difference by eye. A number whose evidence is not stated is worse than no
@@ -270,10 +270,10 @@ func printThresholds(cal overlap.Calibration) {
 		fmt.Fprintln(os.Stderr,
 			"calibration needs a repository with enough history for commits to be\n"+
 				"compared against each other. Run this against the repository your agents\n"+
-				"actually work in; if that IS this one, it is too new to calibrate from —\n"+
+				"actually work in; if that IS this one, it is too new to calibrate from , \n"+
 				"leave join_threshold at 0 so Lanes suggests lanes but never auto-joins.")
 	case cal.Thin():
-		fmt.Println("suggested thresholds for THIS repository — " + ui.Attn("THIN EVIDENCE"))
+		fmt.Println("suggested thresholds for THIS repository. " + ui.Attn("THIN EVIDENCE"))
 		fmt.Printf("  join_threshold    %s   %s\n", ui.Bold(fmt.Sprintf("%.3f", cal.Join)),
 			ui.Dim(fmt.Sprintf("(95th pct of only %d unrelated pairs)", cal.Pairs)))
 		fmt.Printf("  notify_threshold  %s   %s\n\n", ui.Bold(fmt.Sprintf("%.3f", cal.Notify)),
@@ -291,7 +291,7 @@ func printThresholds(cal overlap.Calibration) {
 		if cal.Degenerate {
 			// The UI claimed this floor before the code applied it. Now it does,
 			// and it says so only when it actually happened.
-			notifyNote = "(derived as join/2 — the unrelated pairs scored too alike " +
+			notifyNote = "(derived as join/2: the unrelated pairs scored too alike " +
 				"for a median to differ from the 95th percentile)"
 		}
 		fmt.Printf("  notify_threshold  %s   %s\n\n", ui.Good(fmt.Sprintf("%.3f", cal.Notify)),
@@ -307,11 +307,11 @@ func printThresholds(cal overlap.Calibration) {
 // A bar on its own looks equally healthy whether the two populations are far
 // apart or overlapping. Measured here with a small embedding model, two
 // declarations describing identical work scored 0.566 and 0.509 against a bar
-// of 0.542 — correctly ranked, and one of them silently did not join. Nothing
+// of 0.542: correctly ranked, and one of them silently did not join. Nothing
 // on screen said so.
 func printSeparation(cal overlap.Calibration) {
 	if cal.Positives == 0 {
-		// Not "no separation" — no measurement. The scorer had no opinion on a
+		// Not "no separation": no measurement. The scorer had no opinion on a
 		// single pair of commits that history says touched common files, so
 		// there is nothing to compare the threshold against. Silence here reads
 		// as though the numbers above were validated; they were not.
@@ -330,8 +330,8 @@ func printSeparation(cal overlap.Calibration) {
 		100*sep, ui.Dim(fmt.Sprintf("(%d of %d related pairs, median %.3f)",
 			cal.PosAboveJoin, cal.Positives, cal.PosMedian)))
 	// The bands are set from measurement, not taste. Across five scorers on this
-	// repository — the built-in one and four embedding models, each given the
-	// query/document markers it was trained for — separation ranged from 36% to
+	// repository: the built-in one and four embedding models, each given the
+	// query/document markers it was trained for: separation ranged from 36% to
 	// 50%, with two completely different mechanisms both landing near 50%. So a
 	// band that calls 45% "poor" would fire on every configuration anybody can
 	// actually reach, and a diagnostic that always warns is one people stop
@@ -344,7 +344,7 @@ func printSeparation(cal overlap.Calibration) {
 		fmt.Println(ui.Attn(line))
 		fmt.Fprintln(os.Stderr,
 			"a bar this many related pairs fall below will miss real collisions. Worth\n"+
-				"running — a missed match costs you only what you had before Lanes — but\n"+
+				"running, a missed match costs you only what you had before Lanes, but\n"+
 				"check that -embed-model is one whose query/document convention Lanes knows\n"+
 				"(qwen3-embedding, nomic-embed, e5, arctic-embed, each BGE generation).\n"+
 				"Using a retrieval\n"+
@@ -362,7 +362,7 @@ func printSeparation(cal overlap.Calibration) {
 // warnIfZeroJoin explains the one value that means something other than itself.
 //
 // 0 is the SENTINEL for suggest-only: `-match-join 0` never auto-joins. So a
-// measured 0.000 collides with a mode switch — the measurement is saying "no
+// measured 0.000 collides with a mode switch: the measurement is saying "no
 // unrelated pair scored above zero, so anything above zero is a match", and the
 // config reads the same number as "never join". The conservative reading wins,
 // which is the right accident, but an operator who configures a measured
@@ -372,7 +372,7 @@ func warnIfZeroJoin(cal overlap.Calibration) {
 		return
 	}
 	fmt.Fprintln(os.Stderr,
-		"NOTE: a join_threshold of 0 does not mean 'join on any overlap' — 0 is the\n"+
+		"NOTE: a join_threshold of 0 does not mean 'join on any overlap'. 0 is the\n"+
 			"sentinel for suggest-only, so setting it turns auto-join OFF. Here that is\n"+
 			"the right outcome: nothing separated related work from unrelated work, so\n"+
 			"there is no bar worth acting on yet. Lanes will still tell agents which\n"+

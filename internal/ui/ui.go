@@ -1,8 +1,8 @@
 // Package ui is the terminal's half of the design system.
 //
 // The board and the panel already share one component library so the two
-// browser surfaces cannot drift. The terminal is the third surface — the one an
-// operator on a server, over ssh, or in a pipeline actually has — and it was
+// browser surfaces cannot drift. The terminal is the third surface: the one an
+// operator on a server, over ssh, or in a pipeline actually has, and it was
 // the only one with no shared vocabulary at all: `doctor` wrote raw ANSI escape
 // codes inline, nothing else was styled, and nothing anywhere checked whether
 // the output was going to a terminal or into a file.
@@ -10,14 +10,14 @@
 // So the same rule applies here as there: colour MEANS something, and it means
 // the same thing on every surface.
 //
-//	quiet   context — true, but nobody must act on it
+//	quiet   context: true, but nobody must act on it
 //	good    working as intended
-//	attn    outstanding — somebody will get to it
+//	attn    outstanding: somebody will get to it
 //	alarm   nothing will resolve this without a person
 //
 // DEGRADATION IS THE POINT. A coordination tool gets piped, teed into logs, and
-// run in CI. lipgloss resolves the colour profile from the writer — a pipe, a
-// dumb terminal, NO_COLOR or CLICOLOR_FORCE all resolve correctly — so styled
+// run in CI. lipgloss resolves the colour profile from the writer: a pipe, a
+// dumb terminal, NO_COLOR or CLICOLOR_FORCE all resolve correctly, so styled
 // output collapses to exactly the plain text it would have been. `lanes board |
 // grep builder` finds builder, and a redirected `lanes doctor` writes readable
 // text rather than escape sequences.
@@ -44,8 +44,8 @@ var r = lipgloss.NewRenderer(os.Stdout)
 //
 // The two were picked independently, so "the same green" was two different
 // greens and the three surfaces were three products wearing one name. These are
-// the nearest xterm-256 entries to the exact hexes in board.css — computed, not
-// eyeballed — so an agent that is live is the same green in the terminal, the
+// the nearest xterm-256 entries to the exact hexes in board.css: computed, not
+// eyeballed, so an agent that is live is the same green in the terminal, the
 // web board and the MCP panel.
 //
 //	role    board.css dark → 256   board.css light → 256
@@ -78,7 +78,7 @@ func Good(s string) string { return good.Render(s) }
 func Attn(s string) string { return attn.Render(s) }
 
 // Alarm is the one weight that means nothing will resolve this without a
-// person. Used sparingly on purpose — a board where everything is red is a
+// person. Used sparingly on purpose: a board where everything is red is a
 // board people stop reading.
 func Alarm(s string) string { return alarm.Render(s) }
 
@@ -116,7 +116,7 @@ func Section(title string) string {
 }
 
 // Field renders a label and its value, aligned to width. Uses lipgloss.Width
-// rather than len so a name with wide or combining characters still lines up —
+// rather than len so a name with wide or combining characters still lines up,
 // agent names come from whatever the operator typed, and len() counts bytes.
 func Field(label string, width int, value string) string {
 	pad := width - lipgloss.Width(label)
@@ -146,7 +146,7 @@ func SetOutput(w io.Writer) { r = lipgloss.NewRenderer(w) }
 
 // Path shortens a filesystem path for display without making it ambiguous.
 //
-// Coordination paths are long — a claim inside a temp checkout ran to 96
+// Coordination paths are long: a claim inside a temp checkout ran to 96
 // characters and pushed everything after it off the line, which is how a
 // column-aligned board stops being aligned. Shortening is done in the order a
 // reader would: relative to where they are standing, then relative to home,
@@ -172,7 +172,7 @@ func Path(p string) string {
 // Elide drops the middle of an over-long string, keeping both ends.
 //
 // Both ends, because the head says where something lives and the tail says what
-// it is — truncating either one alone produces a line the reader cannot act on.
+// it is: truncating either one alone produces a line the reader cannot act on.
 func Elide(s string, max int) string {
 	if max < 8 || lipgloss.Width(s) <= max {
 		return s

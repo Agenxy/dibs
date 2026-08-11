@@ -10,7 +10,7 @@ import (
 // Things that happen TO an agent, which it would otherwise never hear about.
 //
 // An agent that declares work under a director gate is told
-// `action: "awaiting_director"` and then, until this existed, nothing — ever.
+// `action: "awaiting_director"` and then, until this existed, nothing: ever.
 // It was admitted seconds later and had no way to know short of polling the
 // event stream on the off-chance. Same for an agent queued behind an exclusive
 // lane's owner: promoted when the owner left, and never told. Same for one a
@@ -40,7 +40,7 @@ type notice struct {
 //
 // Only events an agent did NOT cause: `lane.joined` for a self-service join is
 // the agent's own tool result and repeating it back is noise. The distinguishing
-// mark is in the data — `admitted_by` or `from_queue` mean somebody else moved
+// mark is in the data. `admitted_by` or `from_queue` mean somebody else moved
 // you.
 // joinedNotice distinguishes the joins somebody else caused from the ones the
 // agent asked for. Returns "" for a self-service join: that is the agent's own
@@ -53,7 +53,7 @@ func joinedNotice(ev core.Event) string {
 		// lane it has no reason to think should be missing.
 		by, _ := ev.Data["merged_by"].(string)
 		return fmt.Sprintf(
-			"lane %q was merged into lane %q by %s — %q no longer exists; "+
+			"lane %q was merged into lane %q by %s. %q no longer exists; "+
 				"you are a member of %q, so post and announce there", from, lane, by, from, lane,
 		)
 	}
@@ -63,7 +63,7 @@ func joinedNotice(ev core.Event) string {
 			// advice pointing at nothing: there was no way to read a lane, and a
 			// reviewing agent that took the instruction seriously had to ask a
 			// human what the lane was about.
-			"you were admitted to lane %q by %s — you may start; read it first with lane_read(%q)",
+			"you were admitted to lane %q by %s: you may start; read it first with lane_read(%q)",
 			lane, by, lane,
 		)
 	}
@@ -82,26 +82,26 @@ func (e *Engine) noteEvent(ev core.Event) {
 		who, text = ev.Lane, joinedNotice(ev)
 	case "lane.absorbed":
 		// Your lane just gained another lane's members, its predicted footprint
-		// and its outstanding announcements — which you may now be required to
+		// and its outstanding announcements, which you may now be required to
 		// acknowledge. You did not do this and cannot infer it.
 		lane, _ := ev.Data["lane_id"].(string)
 		from, _ := ev.Data["merged_from"].(string)
 		by, _ := ev.Data["merged_by"].(string)
 		gained, _ := ev.Data["gained"].(int)
 		who, text = ev.Lane, fmt.Sprintf(
-			"%s folded lane %q into %q — the lane you are in just gained %d member(s) "+
+			"%s folded lane %q into %q: the lane you are in just gained %d member(s) "+
 				"and anything %q had outstanding. Re-read %q before assuming it is still "+
 				"the work you joined", by, from, lane, gained, from, lane,
 		)
 	case "lane.requeued":
-		// Still waiting, but on a different lane — and told so, rather than
+		// Still waiting, but on a different lane, and told so, rather than
 		// left holding a queue position in a lane that was deleted.
 		lane, _ := ev.Data["lane_id"].(string)
 		from, _ := ev.Data["merged_from"].(string)
 		pos, _ := ev.Data["queue_position"].(int)
 		owner, _ := ev.Data["owner"].(string)
 		who, text = ev.Lane, fmt.Sprintf(
-			"lane %q was merged into lane %q, which %s holds exclusively — %q no "+
+			"lane %q was merged into lane %q, which %s holds exclusively. %q no "+
 				"longer exists and you are now position %d in %q's queue",
 			from, lane, owner, from, pos, lane,
 		)
@@ -112,13 +112,13 @@ func (e *Engine) noteEvent(ev core.Event) {
 			// Never a member, so "stop work there" would be nonsense. What this
 			// agent needs to know is that waiting is pointless now.
 			who, text = ev.Lane, fmt.Sprintf(
-				"%s removed you from the queue for lane %q — you are no longer waiting "+
+				"%s removed you from the queue for lane %q: you are no longer waiting "+
 					"for it and will not be admitted; find other work or ask %s why", by, lane, by,
 			)
 			break
 		}
 		who, text = ev.Lane, fmt.Sprintf(
-			"you were removed from lane %q by %s — stop work there and coordinate before resuming", lane, by,
+			"you were removed from lane %q by %s: stop work there and coordinate before resuming", lane, by,
 		)
 	case "lane.exclusive":
 		lane, _ := ev.Data["lane_id"].(string)
@@ -139,7 +139,7 @@ func (e *Engine) noteEvent(ev core.Event) {
 // Split out of noteEvent because not everything an agent needs telling is a
 // ledger event. A subagent that stopped working is an observation about this
 // machine, made by the supervision loop, with no op behind it and no serial of
-// its own — but it is exactly what a notice is FOR: something that happened to
+// its own, but it is exactly what a notice is FOR: something that happened to
 // you which you could not have inferred.
 func (e *Engine) pushNotice(who, text string, serial uint64) {
 	if who == "" || text == "" {
@@ -149,7 +149,7 @@ func (e *Engine) pushNotice(who, text string, serial uint64) {
 		e.notices = map[string][]notice{}
 	}
 	// Bounded: an agent that never polls must not accumulate forever. The
-	// newest matter most — being told you were admitted an hour ago and then
+	// newest matter most: being told you were admitted an hour ago and then
 	// evicted is worse than being told only the eviction.
 	e.notices[who] = append(e.notices[who], notice{Serial: serial, Text: text})
 	if n := len(e.notices[who]); n > maxNotices {
@@ -159,7 +159,7 @@ func (e *Engine) pushNotice(who, text string, serial uint64) {
 
 // takeNotices returns everything an agent has outstanding, for the wake path.
 //
-// It used to DELETE on read, and the read path is hook_poll — which is
+// It used to DELETE on read, and the read path is hook_poll, which is
 // token-less, because a harness lifecycle hook has no token. So any holder of
 // the coordination secret could name a peer's session and consume that peer's
 // one-shot notices: the peer was never told it had been admitted, promoted or
@@ -168,12 +168,12 @@ func (e *Engine) pushNotice(who, text string, serial uint64) {
 // The first fix throttled delivery instead of destroying it, which was not a
 // fix. Any timeout is shared state mutated by a caller the daemon cannot
 // identify, so a peer polling faster than the window wins every eligibility
-// point and starves the victim indefinitely — a slower leak, not a closed one.
+// point and starves the victim indefinitely: a slower leak, not a closed one.
 //
 // So this path now mutates NOTHING. Reading is free, repeatable and harmless,
 // which is the only property that makes a token-less endpoint safe to expose:
 // there is no state for a peer to spend. What bounds repetition is the agent's
-// own ack_board, which delivers these (see pendingNotices) and clears them —
+// own ack_board, which delivers these (see pendingNotices) and clears them,
 // and ack_board is already required once per activation.
 func (e *Engine) takeNotices(agent string) []notice {
 	all := e.notices[agent]

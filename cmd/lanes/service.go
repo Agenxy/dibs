@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/agenxy/lanes/internal/paths"
 )
@@ -17,20 +18,36 @@ import (
 //
 // Every install path told people to run `lanesd &`, which ties the fleet's board
 // to one shell. Closing that window, or rebooting, takes the board away from
-// every agent still running — and nothing tells them why, because from their
+// every agent still running, and nothing tells them why, because from their
 // side coordination simply stops answering. A coordination service that a
 // laptop lid can end is not a service.
 //
 // It WRITES the unit and prints the command to load it, rather than loading it
 // itself. Registering a background job that starts at login is a change to the
-// machine, not to Lanes, and the operator should be the one who makes it — the
+// machine, not to Lanes, and the operator should be the one who makes it: the
 // same reason nothing here ever drives a harness.
 func writeServiceUnit() error {
 	daemon, err := daemonPath()
 	if err != nil {
 		return err
 	}
-	dir := paths.DataDir()
+	// ABSOLUTE. A unit does not inherit the invoking shell's working directory,
+	// so `LANES_DIR=relative-data lanes configure --service` wrote
+	// `-dir relative-data` and produced a service that starts against whatever
+	// that resolves to under launchd or systemd: a different board, silently.
+	dir, err := filepath.Abs(paths.DataDir())
+	if err != nil {
+		return fmt.Errorf("resolving the data directory to an absolute path: %w", err)
+	}
+	// Both unit formats are text with their own metacharacters, and a path is
+	// data. Reject what cannot be represented rather than mangling it: a data
+	// directory is an identity, and a service that starts on a REPLACED path
+	// starts on the wrong state.
+	for _, v := range []string{daemon, dir} {
+		if err := usableInAUnitFile(v); err != nil {
+			return err
+		}
+	}
 
 	switch runtime.GOOS {
 	case "darwin":
@@ -38,7 +55,7 @@ func writeServiceUnit() error {
 	case "linux":
 		return writeSystemdUnit(daemon, dir)
 	default:
-		return fmt.Errorf("no service unit for %s — run `%s` under whatever supervises "+
+		return fmt.Errorf("no service unit for %s: run `%s` under whatever supervises "+
 			"long-lived processes on this system", runtime.GOOS, daemon)
 	}
 }
@@ -58,14 +75,53 @@ func daemonPath() (string, error) {
 	}
 	found, err := exec.LookPath("lanesd")
 	if err != nil {
-		return "", fmt.Errorf("cannot find lanesd beside %s or on PATH — install it first "+
+		return "", fmt.Errorf("cannot find lanesd beside %s or on PATH: install it first "+
 			"(`task install`, or the release archive)", "lanes")
 	}
 	return found, nil
 }
 
+// usableInAUnitFile rejects values no unit format can carry faithfully.
+//
+// XML 1.0 cannot represent most control characters at all. Go's escaper
+// replaces them, so a directory containing 0x01 silently became a DIFFERENT
+// directory in the plist, and the service would have started on other state.
+// Silent replacement is never acceptable for something that identifies data.
+func usableInAUnitFile(v string) error {
+	if !utf8.ValidString(v) {
+		return fmt.Errorf("path is not valid UTF-8 and cannot be written to a service "+
+			"unit faithfully: %q", v)
+	}
+	for _, r := range v {
+		// Tab, newline and carriage return are legal in XML but break systemd's
+		// line-oriented format, and none of them belong in a path a service
+		// starts from. The rest of C0, plus DEL, cannot be represented in XML 1.0.
+		if r < 0x20 || r == 0x7f {
+			return fmt.Errorf("path contains the control character %q, which cannot be "+
+				"written to a service unit without changing it: %q", r, v)
+		}
+	}
+	return nil
+}
+
+// systemdArg quotes one ExecStart argument.
+//
+// Both values were concatenated raw, and systemd's command line is neither a
+// shell nor a literal: it splits on whitespace, expands `%` specifiers, and
+// treats a newline as the end of the directive. Legal paths therefore did three
+// distinct things. "bin with space/lanes" became two arguments, "%n" expanded
+// to the unit name, and a newline let the rest of the path inject
+// `Environment=` into the unit. Double-quoting handles the first, doubling `%`
+// the second, and usableInAUnitFile refuses the third.
+func systemdArg(v string) string {
+	v = strings.ReplaceAll(v, `\`, `\\`)
+	v = strings.ReplaceAll(v, `"`, `\"`)
+	v = strings.ReplaceAll(v, "%", "%%")
+	return `"` + v + `"`
+}
+
 // xmlText escapes a value for a plist <string>. Paths were concatenated into
-// the XML directly, so a perfectly ordinary directory — "~/Fleet & Review" —
+// the XML directly, so a perfectly ordinary directory. "~/Fleet & Review",
 // produced a plist that launchd refuses to parse ("unknown ampersand-escape
 // sequence"). The service then simply never starts, and the failure surfaces
 // far from its cause.
@@ -77,8 +133,46 @@ func xmlText(v string) string {
 	return b.String()
 }
 
+// legacyLabels are identifiers Lanes used before settling on org.agenxy.lanes.
+//
+// A user who followed the v0.0.1 instructions has a LOADED job under the old
+// label. Writing the new one and saying nothing gives them two daemons fighting
+// for the same data directory: the flock refuses the second, so the visible
+// result is a service that mysteriously will not start.
+var legacyLabels = []string{"dev.agenxy.lanes", "com.agenxy.lanes"}
+
+// refuseIfLegacyUnitExists stops rather than creating a second job.
+//
+// Not migrated automatically: unloading somebody's running service is an action
+// on their machine, and the same reasoning that has this command print
+// `launchctl load` instead of running it applies to unloading. Refusing with the
+// exact commands is the honest middle.
+func refuseIfLegacyUnitExists(agentsDir string) error {
+	for _, label := range legacyLabels {
+		old := filepath.Join(agentsDir, label+".plist")
+		// #nosec G703 -- agentsDir is this process's own HOME and label is a
+		// fixed constant from legacyLabels; no caller-supplied path reaches here.
+		if _, err := os.Stat(old); err != nil {
+			continue
+		}
+		return fmt.Errorf("a unit from an earlier version is still installed: %s\n"+
+			"  Lanes now uses org.agenxy.lanes. Writing the new one as well would leave two\n"+
+			"  jobs pointing at one data directory, and the directory lock refuses the second,\n"+
+			"  which looks like a service that will not start.\n\n"+
+			"  Remove the old one first:\n"+
+			"    launchctl unload -w %s\n"+
+			"    rm %s\n"+
+			"  then run this again", old, old, old)
+	}
+	return nil
+}
+
 func writeLaunchAgent(daemon, dir string) error {
-	target := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "org.agenxy.lanes.plist")
+	agents := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents")
+	if err := refuseIfLegacyUnitExists(agents); err != nil {
+		return err
+	}
+	target := filepath.Join(agents, "org.agenxy.lanes.plist")
 	logPath := filepath.Join(dir, "lanesd.log")
 	plist := `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -113,13 +207,13 @@ func writeLaunchAgent(daemon, dir string) error {
 func writeSystemdUnit(daemon, dir string) error {
 	target := filepath.Join(configHome(), "systemd", "user", "lanes.service")
 	unit := `[Unit]
-Description=Lanes — coordination board for AI agents
+Description=Lanes: coordination board for AI agents
 Documentation=https://github.com/agenxy/lanes
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=` + daemon + ` -dir ` + dir + `
+ExecStart=` + systemdArg(daemon) + ` -dir ` + systemdArg(dir) + `
 Restart=on-failure
 RestartSec=2
 
@@ -143,8 +237,8 @@ func configHome() string {
 	return filepath.Join(os.Getenv("HOME"), ".config")
 }
 
-// writeUnit refuses to clobber. An operator who hand-tuned a unit — a different
-// port, an environment variable, a resource limit — should not lose it to a
+// writeUnit refuses to clobber. An operator who hand-tuned a unit: a different
+// port, an environment variable, a resource limit: should not lose it to a
 // command that reads as idempotent.
 func writeUnit(target, body string) error {
 	// target is built in this file from the process's own HOME (or
@@ -157,7 +251,7 @@ func writeUnit(target, body string) error {
 		return err
 	}
 	if _, err := os.Stat(target); err == nil { // #nosec G703
-		return fmt.Errorf("%s already exists — delete it first if you want a fresh one, "+
+		return fmt.Errorf("%s already exists: delete it first if you want a fresh one, "+
 			"or edit it in place; refusing to overwrite a unit you may have tuned", target)
 	}
 	// #nosec G306,G703 -- a unit file the init system must be able to read, at a

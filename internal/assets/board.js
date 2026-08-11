@@ -1,10 +1,10 @@
 /* ═══════════════════════════════════════════════════════════════
-   LANES — SHARED BOARD COMPONENTS
+   LANES. SHARED BOARD COMPONENTS
 
    The rendering both surfaces have in common, as pure functions:
    data in, HTML string out. No globals, no transport, no state.
 
-   The two surfaces are genuinely different views and must stay so —
+   The two surfaces are genuinely different views and must stay so,
    the MCP Apps panel is ONE lane's board and mailbox, authenticated
    by that lane's token; the web board is the operator's god view
    over every lane and all mail, behind the admin password. What
@@ -17,7 +17,7 @@
    welded them to the panel; every caller-specific decision is now a
    parameter.
 
-   Inlined into both by internal/assets — never fetched, because the
+   Inlined into both by internal/assets: never fetched, because the
    panel's CSP declares no external origins.
    ═══════════════════════════════════════════════════════════════ */
 
@@ -38,7 +38,7 @@ const Board = (() => {
   }
 
   // Terminal states, mirroring core.Message.Terminal(). A message is finished
-  // when its STATE says so — not when it happens to carry response text,
+  // when its STATE says so, not when it happens to carry response text,
   // because a denial and a decline are both terminal and both carry none.
   const TERMINAL = new Set([
     "answered", "approved", "denied", "declined", "acked",
@@ -50,12 +50,12 @@ const Board = (() => {
     answered: "Answered", approved: "Approved", denied: "Denied",
     declined: "Declined", acked: "Acknowledged",
     expired_unanswered: "Expired, unanswered",
-    expired_recipient_dormant: "Expired — recipient dormant",
-    expired_recipient_dead: "Expired — recipient gone",
+    expired_recipient_dormant: "Expired: recipient dormant",
+    expired_recipient_dead: "Expired: recipient gone",
     displaced: "Displaced by a newer message",
   }
 
-  // In a fleet, "reviewer" is not enough — a human needs to see that it is
+  // In a fleet, "reviewer" is not enough: a human needs to see that it is
   // Opus 5 in Claude Code, not Codex in a terminal.
   function identHTML(a) {
     if (!a) return ""
@@ -75,10 +75,10 @@ const Board = (() => {
   // time of "now" reads as a broken board rather than a dead agent, and the
   // three cases are not interchangeable: a process that exited is definitive, a
   // lapsed lease may be nothing worse than a long build, and a lane that never
-  // gave a PID has said nothing about a process at all — grouping that last one
+  // gave a PID has said nothing about a process at all: grouping that last one
   // with the crashed is the misread this exists to prevent.
   const STALE_WHY = {
-    process_exited: ["process gone", "its process exited — this agent is not coming back on its own"],
+    process_exited: ["process gone", "its process exited: this agent is not coming back on its own"],
     lease_lapsed: ["no contact", "it stopped checking in; it may be mid-build rather than dead"],
     idle_no_activity: ["idle", "it never gave a pid, so silence says nothing about whether it is alive"],
   }
@@ -91,7 +91,7 @@ const Board = (() => {
   /**
    * How recently this lane was heard from, as something CSS can select on.
    *
-   * The board already showed an age — "now", "4m", "2h" — but that is a
+   * The board already showed an age, "now", "4m", "2h", but that is a
    * STRING, and a stylesheet cannot ask whether a string means recently. So
    * liveness was drawn as a fixed pulse on everything alive, which claims a
    * precision the page did not have: an agent that spoke a second ago and one
@@ -117,7 +117,7 @@ const Board = (() => {
   /**
    * The cadence trace: when this lane actually did something, drawn discretely.
    *
-   * The board says what an agent IS — active, dormant, out of touch — and that
+   * The board says what an agent IS, active, dormant, out of touch, and that
    * is a state, checked against a timeout. It never showed the shape of the
    * work, and the shape is what a person actually reads a fleet by: steady
    * rhythm, a burst then nothing, or a lane that claims to be active and has
@@ -125,7 +125,7 @@ const Board = (() => {
    * now it looked exactly like a healthy one between turns.
    *
    * Discrete marks, NOT a smoothed sparkline. Coordination events are discrete
-   * — a claim, a message, an acknowledgement — and drawing them as a continuous
+   *, a claim, a message, an acknowledgement, and drawing them as a continuous
    * curve would invent values between them and imply a rate that was never
    * measured. A chart may be beautiful or honest; where they conflict here, the
    * instrument has to be honest, and the density of real marks turns out to
@@ -192,7 +192,7 @@ const Board = (() => {
         <div class="entry-head">
           <span class="pip"></span>
           <span class="name">${esc(l.display_name || l.id || l.name)}</span>
-          ${l.display_name ? explained("tag", l.id, "its addressable id — ids must be ASCII, and nothing in that name survived") : ""}
+          ${l.display_name ? explained("tag", l.id, "its addressable id: ids must be ASCII, and nothing in that name survived") : ""}
           ${self ? '<span class="tag self">This lane</span>' : ""}
           ${l.kind === "persistent" ? '<span class="tag">Standing</span>' : ""}
           ${agentBadges(l)}
@@ -210,7 +210,7 @@ const Board = (() => {
   // the two that matter under thirteen that do not.
   //
   // The labels used to say "Working" and "Idle", which are claims about what an
-  // agent is DOING — and the grouping is on status, which is a claim about
+  // agent is DOING, and the grouping is on status, which is a claim about
   // whether it is talking to Lanes. An active agent that has declared nothing
   // was labelled "Working"; a dormant standing reviewer, exactly where it is
   // meant to be between activations, was labelled "Idle" as though something
@@ -220,7 +220,7 @@ const Board = (() => {
     if (!lanes || !lanes.length) return empty
     // Ordered by WHAT NEEDS A PERSON, not by status name.
     //
-    // "Out of touch" sat third, below Working and Idle — so the one group that
+    // "Out of touch" sat third, below Working and Idle, so the one group that
     // might want a human was the one you had to scroll past two healthy groups
     // to reach, on a board whose entire job is telling you where to look. An
     // agent in that group stopped coordinating and may still be holding an
@@ -252,7 +252,7 @@ const Board = (() => {
       </section>`).join("")
   }
 
-  // The reader is a human, so an agent is named like everyone else — second
+  // The reader is a human, so an agent is named like everyone else: second
   // person would ask the reader to be the agent.
   //
   // `actionsHTML` is a caller-supplied function, because who may act differs
@@ -260,7 +260,7 @@ const Board = (() => {
   // Attachments were carried by the server and rendered by nobody.
   //
   // A message can attach a blob or a fileref, AllMessages returns them, and
-  // both human surfaces dropped the field on the floor — so a message reading
+  // both human surfaces dropped the field on the floor, so a message reading
   // "review the attached evidence" appeared to have no attachment, and an
   // operator had no way to learn that one existed, how many, or which handle
   // the recipient was given. That is a false picture of the message, not a
@@ -274,7 +274,7 @@ const Board = (() => {
     if (!Array.isArray(atts) || atts.length === 0) return ""
     // The FULL handle goes in the DOM and CSS narrows it, rather than slicing
     // the string here and putting the rest in a title. A title reaches only a
-    // reader with a mouse who waits, which the shared library forbids — and it
+    // reader with a mouse who waits, which the shared library forbids, and it
     // is the wrong tool anyway: this is the datum, not an explanation of a
     // mark. Left in full it stays selectable, copyable, findable with the
     // browser's own search, and readable to a screen reader, while showing the
@@ -286,7 +286,7 @@ const Board = (() => {
           <span class="kind">blob</span> <code class="handle">${esc(a.blob)}</code>${size}</li>`
       }
       return `<li class="att fileref">
-        <span class="kind">file</span> <code class="handle">${esc(a.path || "—")}</code>${size}
+        <span class="kind">file</span> <code class="handle">${esc(a.path || ", ")}</code>${size}
         <span class="advisory">not verified by Lanes</span></li>`
     }
     return `<ul class="atts" aria-label="${atts.length} attachment${atts.length === 1 ? "" : "s"}">
@@ -302,7 +302,7 @@ const Board = (() => {
   function messageHTML(m, { selfId = null, actionsHTML = null } = {}) {
     const t = m.type || "notify"
     // `response` is a STRING; an earlier version read `.body` / `.disposition`
-    // off it — both always undefined — so every answered message rendered an
+    // off it (both always undefined) so every answered message rendered an
     // empty reply block. The disposition lives in `state`.
     const settled = TERMINAL.has(m.state)
     const verdict = VERDICT[m.state] || m.state
@@ -310,18 +310,18 @@ const Board = (() => {
     //
     // An open message animates a light travelling along the wire, which reads
     // as "moving, on its way". For a message whose deadline went by an hour ago
-    // that is a picture of progress over something stalled — the same
+    // that is a picture of progress over something stalled: the same
     // confidently-wrong shape this codebase keeps removing, in motion instead of
     // in words. Overdue goes still, and says so.
     const overdue = !settled && m.deadline && new Date(m.deadline) < new Date()
     const who = (id) =>
-      `<span class="who${selfId != null && id === selfId ? " focal" : ""}">${esc(id || "—")}</span>`
+      `<span class="who${selfId != null && id === selfId ? " focal" : ""}">${esc(id || ", ")}</span>`
     return `
       <article class="msg ${settled ? "" : "open"}${overdue ? " overdue" : ""}">
         <div class="msg-head">
           <span class="serial">#${esc(m.serial ?? "")}</span>
           <span class="kind ${esc(t)}">${esc(t)}</span>
-          ${overdue ? explained("pill attn", "past its deadline", "the deadline on this message has passed and nobody has answered — Lanes is still waiting, but nothing is in flight") : ""}
+          ${overdue ? explained("pill attn", "past its deadline", "the deadline on this message has passed and nobody has answered. Lanes is still waiting, but nothing is in flight") : ""}
         </div>
         <div class="route">
           ${who(m.from)}<span class="wire"></span><span class="arrow">▶</span>${who(m.to)}
@@ -346,7 +346,7 @@ const Board = (() => {
       <div class="event ${esc(cls)}">
         <span class="e-serial">#${esc(e.serial ?? "")}</span>
         <span class="e-when">${esc(when)}</span>
-        <span class="e-lane">${esc(e.lane || "—")}${e.to ? ` <i>▶</i> ${esc(e.to)}` : ""}</span>
+        <span class="e-lane">${esc(e.lane || ", ")}${e.to ? ` <i>▶</i> ${esc(e.to)}` : ""}</span>
         <span class="e-type">${esc(kind)}</span>
       </div>`
   }
@@ -356,8 +356,8 @@ const Board = (() => {
   /**
    * Four readings, weighted by whether they are news.
    *
-   * Every figure used to be typeset identically, so "0 unanswered" — the best
-   * possible answer, and the one a reader never needs to act on — carried the
+   * Every figure used to be typeset identically, so "0 unanswered": the best
+   * possible answer, and the one a reader never needs to act on: carried the
    * same weight as "2 out of touch", which is the whole reason to look. A row
    * where three of four cells are zeros then spends most of its size saying
    * nothing is wrong, in the same voice it would use to say something is.
@@ -380,8 +380,8 @@ const Board = (() => {
   /**
    * A mark and the reason for it, reachable by everyone.
    *
-   * Every explanation on this board — why an agent is stale, what "blocked"
-   * means, what a match scored, who owns a lane exclusively — lived ONLY in a
+   * Every explanation on this board: why an agent is stale, what "blocked"
+   * means, what a match scored, who owns a lane exclusively: lived ONLY in a
    * `title` on a non-focusable span. title is a mouse affordance: it does not
    * appear on touch at all, keyboard users cannot summon it, and screen-reader
    * support for it is inconsistent enough that nothing important should depend
@@ -393,14 +393,14 @@ const Board = (() => {
    *
    * Honest about what this does not solve: a sighted touch user still has only
    * the visible label. Fixing that means a tap target on every mark, which is
-   * more chrome than these marks are worth — the labels are written to stand
+   * more chrome than these marks are worth: the labels are written to stand
    * alone, and the reason is elaboration rather than the only information.
    */
   /**
    * A mark that can say what it means.
    *
-   * The board's vocabulary is tiny coloured pills — "blocked", "exclusive",
-   * "3 awaiting ack" — and a person seeing one for the first time has no way
+   * The board's vocabulary is tiny coloured pills. "blocked", "exclusive",
+   * "3 awaiting ack", and a person seeing one for the first time has no way
    * to derive it. That is what `why` is for.
    *
    * It used to be delivered by `title`, which reaches exactly one kind of
@@ -408,7 +408,7 @@ const Board = (() => {
    * appear on touch at all, it does not appear on keyboard focus, it cannot be
    * styled, and it is announced inconsistently between screen readers. So the
    * explanation existed, was written carefully, and most people could not get
-   * at it — the same shape of bug as a documented feature nothing calls.
+   * at it: the same shape of bug as a documented feature nothing calls.
    *
    * Now the text is carried as data and rendered by the shared explainer (see
    * Board.explainer) into ONE popover in the top layer. The `.sr-only` copy
@@ -416,7 +416,7 @@ const Board = (() => {
    * the mark's own text and the pointer/keyboard reader gets the popover.
    *
    * The mark is focusable, which is what makes it reachable without a mouse.
-   * That is a real cost in tab stops and it is bounded by design — marks
+   * That is a real cost in tab stops and it is bounded by design: marks
    * carrying an explanation are overwhelmingly the CONDITIONAL ones (blocked,
    * overdue, abandoned), so a healthy board has almost none and a board in
    * trouble puts the trouble on the tab path. Which is where it belongs.
@@ -424,7 +424,7 @@ const Board = (() => {
   function explained(cls, label, why) {
     if (!why) return `<span class="${cls}">${esc(label)}</span>`
     return `<span class="${cls}" data-why="${esc(why)}" tabindex="0">` +
-      `${esc(label)}<span class="sr-only"> — ${esc(why)}</span></span>`
+      `${esc(label)}<span class="sr-only">. ${esc(why)}</span></span>`
   }
 
   function emptyHTML(title, body) {
@@ -434,8 +434,8 @@ const Board = (() => {
   /**
    * The board before anything has ever happened on it.
    *
-   * This is the first thing a person sees — the moment they decide whether the
-   * thing is real — and it used to be the word "No lanes", a sentence, and a
+   * This is the first thing a person sees: the moment they decide whether the
+   * thing is real, and it used to be the word "No lanes", a sentence, and a
    * row of four zeros. All true, and none of it a way forward: somebody who has
    * just started the daemon does not need to be told the board is empty, they
    * can see that. They need the next command.
@@ -447,12 +447,12 @@ const Board = (() => {
     return `
       <div class="firstrun">
         <h3>Nothing has registered yet</h3>
-        <p>Lanes is running and waiting. Agents appear the moment one connects —
+        <p>Lanes is running and waiting. Agents appear the moment one connects,
            this board updates live, so leave it open.</p>
         <p class="firstrun-do">Point an agent at it:</p>
         <code class="firstrun-cmd">lanes mcp-config</code>
-        <p class="firstrun-note">Prints the MCP config for your host. Matching —
-           two agents finding each other on the same work — needs a repository
+        <p class="firstrun-note">Prints the MCP config for your host. Matching,
+           two agents finding each other on the same work: needs a repository
            and a measured threshold; <code>lanes calibrate</code> reports both.</p>
       </div>`
   }
@@ -461,7 +461,7 @@ const Board = (() => {
    * One channel of work: who is in it, who owns it, who is waiting.
    *
    * A CHANNEL is what SPEC-CHANNELS.md calls a lane, and it is NOT the thing
-   * laneHTML draws — that one draws an agent. The two coexist until the
+   * laneHTML draws: that one draws an agent. The two coexist until the
    * Lane→Agent rename, so the names here are deliberately unambiguous even
    * though they read oddly side by side.
    *
@@ -473,7 +473,7 @@ const Board = (() => {
    *
    * Two facts change how a reader should treat a row and are invisible without
    * this: a coordinator can act on lanes it does not own, and a subagent's work
-   * is really its parent's — so seeing three "agents" where one is a helper of
+   * is really its parent's, so seeing three "agents" where one is a helper of
    * another would overstate how crowded the board is.
    */
   function agentBadges(l) {
@@ -482,7 +482,7 @@ const Board = (() => {
       out += explained("badge role", l.role, "granted by a human; can administer lanes")
     }
     if (l.parent) {
-      out += explained("badge sub", `↳ ${l.parent}`, `subagent of ${l.parent} — inherits its lanes`)
+      out += explained("badge sub", `↳ ${l.parent}`, `subagent of ${l.parent}: inherits its lanes`)
     }
     return out
   }
@@ -512,13 +512,13 @@ const Board = (() => {
     const queue = ch.queue || []
     const unacked = ch.unacked_announcements || 0
     // Two different states, deliberately not one number. "waiting" means Lanes
-    // is still asking; "abandoned" means it gave up and nobody ever answered —
+    // is still asking; "abandoned" means it gave up and nobody ever answered,
     // which is the one a person has to act on, because nothing else will.
     const abandoned = ch.abandoned_announcements || 0
     // A third state. "Waiting" and "waiting on somebody who is not there" look
     // identical on a board and are not the same problem: redelivery is driven
     // by the agent polling, so an announcement owed only by sleeping or crashed
-    // agents never spends its retry budget and never reaches "unanswered" — it
+    // agents never spends its retry budget and never reaches "unanswered": it
     // waits forever, looking healthy.
     const blocked = ch.blocked_announcements || 0
     // Members that left owing an acknowledgement. Recorded, not alarmed about:
@@ -534,33 +534,33 @@ const Board = (() => {
       const tag = m.agent === ch.owner ? "owner" : m.auto ? "auto" : ""
       const gone = memberStateHTML(m.agent, agents)
       // Why this agent is in this lane. For an AUTO join this is the whole
-      // provenance — score, the bar it cleared, which scorer said so, and the
-      // files that drove it — and SPEC-CHANNELS §10.3 requires it be
+      // provenance: score, the bar it cleared, which scorer said so, and the
+      // files that drove it, and SPEC-CHANNELS §10.3 requires it be
       // explainable.
       const reason = m.score
         ? `matched ${m.score.toFixed(3)} ≥ ${(m.threshold || 0).toFixed(3)} via ${m.scorer || "an unnamed scorer"}${
-            (m.evidence || []).length ? " — shared " + (m.evidence || []).slice(0, 3).join(", ") : ""}`
+            (m.evidence || []).length ? ": shared " + (m.evidence || []).slice(0, 3).join(", ") : ""}`
         : ""
       // Carried the same way every other mark carries its meaning. This site
       // hand-rolled its own `title` instead of going through explained(), so
       // when explanations moved to the popover it silently stayed behind on
       // the one mark that SPEC-CHANNELS §10.3 actually requires be
-      // explainable — the evidence for an automatic join.
+      // explainable: the evidence for an automatic join.
       const why = reason ? ` data-why="${esc(reason)}" tabindex="0"` : ""
       return `<span class="member${m.agent === selfId ? " self" : ""}${gone ? " gone" : ""}"${why}>${esc(m.agent)}${
         tag ? `<span class="member-tag">${tag}</span>` : ""}${gone}${
-        reason ? `<span class="sr-only"> — ${esc(reason)}</span>` : ""}</span>`
+        reason ? `<span class="sr-only">. ${esc(reason)}</span>` : ""}</span>`
     }).join("")
 
     return `
       <article class="channel${owned ? " exclusive" : ""}${mine ? " mine" : ""}">
         <header>
           <span class="channel-id">${esc(ch.id)}</span>
-          ${owned ? explained("pill warn", "exclusive", `held exclusively by ${ch.owner} — coordinate with them before working here`) : ""}
+          ${owned ? explained("pill warn", "exclusive", `held exclusively by ${ch.owner}: coordinate with them before working here`) : ""}
           ${unacked ? explained("pill attn", `${unacked} awaiting ack`, "announcements still awaiting acknowledgement") : ""}
-          ${departed ? explained("pill quiet", `${departed} left unread`, "left this lane still owing an acknowledgement — their requirement was dropped so the lane could settle, but they never read it") : ""}
-          ${blocked ? explained("pill blocked", `${blocked} blocked`, "every agent that still owes these is asleep or gone, so nothing will arrive until one of them comes back — Lanes will keep waiting, but it is not waiting on anyone who can answer") : ""}
-          ${abandoned ? explained("pill abandoned", `${abandoned} unanswered`, "Lanes stopped asking and nobody ever acknowledged — this needs a person") : ""}
+          ${departed ? explained("pill quiet", `${departed} left unread`, "left this lane still owing an acknowledgement: their requirement was dropped so the lane could settle, but they never read it") : ""}
+          ${blocked ? explained("pill blocked", `${blocked} blocked`, "every agent that still owes these is asleep or gone, so nothing will arrive until one of them comes back. Lanes will keep waiting, but it is not waiting on anyone who can answer") : ""}
+          ${abandoned ? explained("pill abandoned", `${abandoned} unanswered`, "Lanes stopped asking and nobody ever acknowledged: this needs a person") : ""}
           <span class="grow"></span>
           <span class="count">${members.length} in</span>
         </header>
@@ -576,7 +576,7 @@ const Board = (() => {
   /**
    * What has been ANNOUNCED in a lane.
    *
-   * The board used to show membership and a count — "1 awaiting ack" — which
+   * The board used to show membership and a count ("1 awaiting ack") which
    * tells an operator that something is outstanding and not what it is. A human
    * could join a lane, broadcast into it, and have no way anywhere in the
    * interface to read the announcement they had just sent, let alone the ones
@@ -607,7 +607,7 @@ const Board = (() => {
   // animation-delay onto every child on every redraw. It is now one line of
   // CSS using sibling-index() (board.css, "The stagger, without JavaScript").
   // Kept as a no-op rather than removed outright would have been the coward's
-  // version — an inline style beats the stylesheet, so leaving it would have
+  // version: an inline style beats the stylesheet, so leaving it would have
   // silently overridden the rule that replaced it. Which it did, until this
   // was actually deleted.
 
@@ -616,14 +616,14 @@ const Board = (() => {
    * Install the shared explainer: one popover, every mark.
    *
    * A popover per mark would mean a hundred elements in the top layer and a
-   * hundred that die on the next redraw — both surfaces replace their HTML
+   * hundred that die on the next redraw: both surfaces replace their HTML
    * wholesale when the board changes. One element outside the redrawn region,
    * re-anchored as the pointer moves, survives all of it and costs nothing.
    *
    * CSS anchor positioning does the placement, so the popover follows its mark
    * without measuring anything in JavaScript and without a scroll listener.
    * The mark lends its `anchor-name` while it is being explained and takes it
-   * back afterwards — leaving it set would make every mark on the board an
+   * back afterwards: leaving it set would make every mark on the board an
    * anchor of the same name, and the resolution between them is not something
    * to rely on.
    *
@@ -637,18 +637,18 @@ const Board = (() => {
     document.body.appendChild(tip)
 
     let anchor = null
-    let by = null      // "pointer" or "focus" — how the current mark was reached
+    let by = null      // "pointer" or "focus": how the current mark was reached
     let at = { x: 0, y: 0 }
 
     // A coordination board redraws whenever ANY agent does anything, and both
-    // surfaces redraw by replacing their HTML — so the mark being read is
+    // surfaces redraw by replacing their HTML, so the mark being read is
     // destroyed and rebuilt as a different node several times a minute. The
     // first version of this simply closed the popover when its anchor left the
     // DOM, which meant the explanation was yanked away mid-sentence every time
     // the fleet did something. On the one screen whose entire purpose is
     // watching a fleet do something.
     //
-    // So a redraw re-acquires rather than closes. The pointer is exact —
+    // So a redraw re-acquires rather than closes. The pointer is exact,
     // whatever is under it now is what the reader is pointing at. Focus has no
     // such coordinate, so the equivalent mark is found by what it says and
     // focus is put back on it, which also repairs the tab position the redraw
@@ -666,7 +666,7 @@ const Board = (() => {
     })
 
     // adopt points the popover at a node without re-running the open sequence,
-    // so a redraw does not restart the fade — the reader should not be able to
+    // so a redraw does not restart the fade: the reader should not be able to
     // tell that the thing they are reading was rebuilt underneath them.
     function adopt(el) {
       anchor = el
@@ -697,7 +697,7 @@ const Board = (() => {
     }
     const onOut = (e) => { if (anchor && !anchor.contains(e.relatedTarget)) hide() }
     const onIn = (e) => { const m = mark(e); m ? show(m, "focus") : hide() }
-    // Escape closes it without moving focus — the reader is mid-scan and being
+    // Escape closes it without moving focus: the reader is mid-scan and being
     // thrown back to the top of the board is a worse outcome than the popover.
     const onKey = (e) => { if (e.key === "Escape" && anchor) { e.stopPropagation(); hide() } }
 
@@ -721,8 +721,8 @@ const Board = (() => {
    * Run an update inside a View Transition, or run it plainly.
    *
    * Shared because coherence is the point: the panel had view transitions, a
-   * reduced-motion guard and a feature check, and the web board — the same
-   * components, the same design system, the same product — redrew by
+   * reduced-motion guard and a feature check, and the web board: the same
+   * components, the same design system, the same product: redrew by
    * replacing its HTML with no continuity at all. Two surfaces wearing one
    * name is exactly the drift the design system exists to prevent, and it is
    * as true of motion as it is of colour.
@@ -766,7 +766,7 @@ const Board = (() => {
   /**
    * Keep the time-derived marks honest while nothing is happening.
    *
-   * Both surfaces redraw when the board CHANGES, and never otherwise — so an
+   * Both surfaces redraw when the board CHANGES, and never otherwise, so an
    * age rendered as "now" stayed "now", for as long as the fleet stayed quiet.
    * On a board whose entire purpose is answering "is that agent still alive",
    * the one field that decays with no event to announce it was the one field
@@ -775,12 +775,12 @@ const Board = (() => {
    * It became urgent when liveness started encoding recency: a lane drawn at
    * `immediate` would go on pulsing as though mid-exchange an hour after its
    * last word. That is exactly the false precision Sol refused to fake when
-   * the data was missing, arriving instead through a stale DOM — a mark that
+   * the data was missing, arriving instead through a stale DOM: a mark that
    * lies is worse than a mark that says nothing.
    *
    * Deliberately NOT a redraw. It rewrites the two derived values in place, so
    * it cannot disturb a draft being typed, a popover being read, or where the
-   * focus is — all of which a redraw costs. The interval is the finest bucket
+   * focus is: all of which a redraw costs. The interval is the finest bucket
    * boundary over four, which is enough to make the change look continuous and
    * cheap enough to leave running on a laptop all day.
    */

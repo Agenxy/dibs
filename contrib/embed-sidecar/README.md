@@ -11,7 +11,7 @@ lanesd -match-repo . -match-embed-url http://127.0.0.1:11434 \
 ```
 
 vLLM, text-embeddings-inference, LM Studio, llama.cpp's server and hosted
-providers all work the same way — Lanes only ever calls `POST /v1/embeddings`.
+providers all work the same way. Lanes only ever calls `POST /v1/embeddings`.
 
 This directory exists for one case: **running an MLX model that your serving
 stack does not carry**, such as `codefuse-ai/F2LLM-v2-4B`. It is ~200 lines,
@@ -34,7 +34,7 @@ together. That covers a great deal and cannot cover everything: two agents can
 be doing the same job in files with no shared vocabulary and no shared history.
 
 **Lanes** embeds the repository and uses the declaration to retrieve code, so
-what it compares is predicted *file sets*, never two sentences — two tasks
+what it compares is predicted *file sets*, never two sentences: two tasks
 unrelated in English embed as unrelated in English, which is exactly the
 collision channels exist to catch (§0, §4.2).
 
@@ -82,7 +82,7 @@ unrelated work rather than scoring high across the board.
 | recall@20 | 0.653 | 0.677 | 0.677 | **0.779** |
 | MRR | 0.542 | 0.667 | 0.739 | **0.781** |
 | calibrated join bar | 0.327 | 0.536 | 0.555 | **0.362** |
-| licence | — | Apache 2.0 | Apache 2.0 | Apache 2.0 |
+| licence |, | Apache 2.0 | Apache 2.0 | Apache 2.0 |
 | download | 0 | ~1.1 GB | ~8 GB | ~8 GB |
 
 The **join bar** row is the one the rescale added, and it is the most useful
@@ -91,7 +91,7 @@ lower is better: F2LLM's 0.362 against Qwen3-4B's 0.555 means a far wider margin
 between "this is the same job" and "this is not". Auto-join depends on that
 margin, and recall alone would never have shown it.
 
-**F2LLM-v2-4B wins on every metric**, before and after the rescale — the
+**F2LLM-v2-4B wins on every metric**, before and after the rescale: the
 ranking survived a change that altered its own reasoning. The rescale helped
 Qwen3-4B most (MRR 0.649 → 0.739) and left F2LLM and 0.6B unchanged, which is
 what you would expect: it removes confident-but-wrong matches, and a model that
@@ -101,14 +101,14 @@ This result overturned the
 expectation going in. On the public MTEB(Code) board F2LLM leads Qwen3 while
 having seen 58% of that benchmark's evaluation data in training, so its lead
 looked like contamination. On a benchmark it cannot have trained on it still
-wins — by *more*, not less. The contamination critique was methodologically
+wins: by *more*, not less. The contamination critique was methodologically
 right and the conclusion drawn from it was wrong.
 
 Second finding: **0.6B is most of the way there.** It captures ~70% of the
 MRR gain over tier 0 for one seventh the download, and beats the 4B Qwen on
 MRR. If disk or memory is tight, 0.6B is not a consolation prize.
 
-Third: **tier 0 is a real floor, not a placeholder** — 0.488 recall@10 with no
+Third: **tier 0 is a real floor, not a placeholder**: 0.488 recall@10 with no
 model, no download and no network.
 
 ### Recompare on your own repository
@@ -122,7 +122,7 @@ Restart the sidecar with `--model <name>` between runs. Two caveats:
 
 - **Thresholds are per-model.** The calibrated `join` bar was 0.363 (tier 0),
   0.568 (0.6B), 0.602 (Qwen3-4B), 0.370 (F2LLM). A model scoring higher across
-  the board is not better, it is differently scaled — **recalibrate on switch**.
+  the board is not better, it is differently scaled. **recalibrate on switch**.
   Compare recall and MRR, never raw scores.
 - **Sample size matters.** At n=25 the Qwen3-4B/F2LLM gap looked much narrower
   than at n=60. Use at least 50 commits before trusting an ordering.
@@ -130,14 +130,14 @@ Restart the sidecar with `--model <name>` between runs. Two caveats:
 ## If indexing times out
 
 A bigger model on a busier machine needs longer per batch than a small one, and
-the failure lands on the FIRST batch — `embedding chunk 0/449` — which reads
+the failure lands on the FIRST batch (`embedding chunk 0/449`) which reads
 like a broken service rather than a slow one.
 
 Lanes scales the deadline with batch size (a 64-chunk batch gets far longer than
 a one-word probe), and says which knob moves it:
 
 ```
-embeddings service did not answer within 3m30s for a batch of 64 —
+embeddings service did not answer within 3m30s for a batch of 64,
 a larger model on a busy machine needs longer: raise -match-deadline
 (daemon) or use a smaller model
 ```
@@ -147,7 +147,7 @@ matches nothing, which looks exactly like a quiet fleet.
 
 ## Choosing a model
 
-The default is **Qwen3-Embedding-4B** — Apache 2.0, and as of 2026-07 the
+The default is **Qwen3-Embedding-4B**: Apache 2.0, and as of 2026-07 the
 highest-ranked 100%-zero-shot model under 8B on the live MTEB(Code, v1) board.
 Models ranking above it are either non-commercial or trained on a large share
 of that benchmark's own evaluation data.

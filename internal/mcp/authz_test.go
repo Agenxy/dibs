@@ -4,7 +4,7 @@ import "testing"
 
 // show_board renders the board to a HUMAN, and the board carries lane
 // descriptions, working directories, hostnames and branch names. An earlier
-// version served it to any caller — it accepted a token that `inbox` had
+// version served it to any caller: it accepted a token that `inbox` had
 // rejected seconds before, on the same connection, and drew everything.
 //
 // Reaching the daemon proves you are on this machine. It does not make you a
@@ -27,8 +27,8 @@ func TestShowBoardRequiresAToken(t *testing.T) {
 }
 
 // The board carries lane descriptions, cwd, hostnames and branch names. Two
-// separate holes let it out: show_board deliberately not authenticating, and —
-// after that was closed — SubscribeInfo succeeding on an empty token, because it
+// separate holes let it out: show_board deliberately not authenticating, and,
+// after that was closed. SubscribeInfo succeeding on an empty token, because it
 // short-circuits to serve token-less board subscriptions. It looks like an
 // authenticator and is not one.
 func TestShowBoardRejectsEveryFormOfMissingToken(t *testing.T) {

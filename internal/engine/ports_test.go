@@ -32,7 +32,7 @@ func newMemBlobs() *memBlobs {
 
 // The Store contract requires concurrency safety: the engine reconciles on its
 // own goroutine while callers are still staging bytes. A double that does not
-// hold the same guarantee is not a double — it is a different component that
+// hold the same guarantee is not a double: it is a different component that
 // happens to compile, and it will pass tests the real store would fail.
 
 func (m *memBlobs) Put(plain []byte, maxSize int) (string, int64, error) {

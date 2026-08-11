@@ -2,7 +2,7 @@
 //
 // One variable, because there were three. `internal/mcp` reported one to every
 // agent on connect, `cmd/lanes` printed another, and `internal/web` put a third
-// in the board's footer — and only the first two were stamped at link time. The
+// in the board's footer, and only the first two were stamped at link time. The
 // third carried a comment saying "stamped by the build" that had never been
 // true, so a released binary would have shown a development version on the most
 // visible surface the project has, indefinitely, while `lanes version` in the
@@ -26,13 +26,13 @@ var Version = unstamped
 // unstamped is the sentinel meaning "the linker told us nothing". It is not a
 // version number, deliberately.
 //
-// It used to be "0.0.0-dev", which stated a release that exists — and, once
+// It used to be "0.0.0-dev", which stated a release that exists: and, once
 // v0.0.1 shipped, one that is OLDER than what people are running. A build from
 // a tree four commits ahead of the release announced itself as 0.0.0 and read
 // as stale. That is the same confusion `lanes version` was written to end: a
 // daemon serving old code while everything else insisted the fix was in.
 //
-// So the fallback says what is true — this binary was not built from a release —
+// So the fallback says what is true: this binary was not built from a release,
 // and never a number that could be compared against one.
 const unstamped = "devel"
 
@@ -61,7 +61,7 @@ func resolve(info *debug.BuildInfo) string {
 
 	// A local build. Go embeds the revision even when it has no version, and
 	// that is exactly what somebody asking "is what is running what I last
-	// built" needs — far more than a word saying "development".
+	// built" needs: far more than a word saying "development".
 	var rev string
 	var dirty bool
 	for _, s := range info.Settings {

@@ -77,7 +77,7 @@ func TestAckBoardKeepsRecoveryKeysInEveryModelFacingShape(t *testing.T) {
 	assertEmptyCheckpointLists(t, "content", plain)
 
 	// The rule is about half-answers. A host picks a carrier, so any shape it
-	// might show the model must answer everything the checkpoint owes — a
+	// might show the model must answer everything the checkpoint owes: a
 	// structuredContent carrying SOME of it would present a checkpoint with its
 	// obligations silently missing, which is indistinguishable from having none.
 	if structured, ok := result["structuredContent"].(map[string]any); ok {
@@ -157,14 +157,14 @@ func assertEmptyCheckpointLists(t *testing.T, carrier string, result map[string]
 
 // A host may show the model structuredContent INSTEAD of content, and this one
 // does. So a checkpoint tool must never put anything in structuredContent that
-// answers less than content does — the agent would silently read the lesser
+// answers less than content does: the agent would silently read the lesser
 // shape and believe it was the answer.
 //
 // This is not hypothetical and it is not old. A panel bootstrap of three
 // plumbing fields was added here, and calling ack_board as an ordinary agent
 // returned the token and the view and NOTHING about the fleet: no board, no
 // mail, nothing owed. Every existing assertion still passed, because the
-// checkpoint really was present — in the field this host does not display.
+// checkpoint really was present: in the field this host does not display.
 //
 // The rule is therefore about the whole result, not about any one carrier: what
 // the agent needs must be in content, and nothing may sit beside content
@@ -188,7 +188,7 @@ func TestACheckpointIsNeverReplacedByASmallerShape(t *testing.T) {
 				"that forwards neither _meta nor structuredContent", tool)
 		}
 
-		// structuredContent must be the SAME answer, key for key — never a
+		// structuredContent must be the SAME answer, key for key: never a
 		// smaller one. This was written as "must be absent", which was the right
 		// instinct aimed at the wrong target: what harms the agent is a shape
 		// beside content that says LESS, because a host may show that one
@@ -226,13 +226,13 @@ func TestACheckpointIsNeverReplacedByASmallerShape(t *testing.T) {
 // A relative claim path is refused, because the daemon's working directory is
 // not the agent's.
 //
-// canonPath runs inside lanesd, started wherever it was started — `/` under
+// canonPath runs inside lanesd, started wherever it was started. `/` under
 // launchd. So claim(path:"internal/mcp") was canonicalised to "/internal/mcp":
 // a directory that exists nowhere, that no other agent will ever name, and that
 // overlaps nothing. The call answered granted:true and the board displayed the
 // claim, so the agent believed it held exclusive access to a directory it had
 // never claimed. A coordination primitive reporting success for a no-op is the
-// worst way this mechanism can fail — every other agent is respecting a claim
+// worst way this mechanism can fail: every other agent is respecting a claim
 // that is not there.
 //
 // Refused rather than resolved against the caller's cwd, deliberately: a claim

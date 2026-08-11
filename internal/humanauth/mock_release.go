@@ -5,7 +5,7 @@ package humanauth
 // This file is the release half of the presence mock, and its entire job is to
 // not exist in the other one.
 //
-// The mock lets somebody drive the human flow with no finger on the sensor —
+// The mock lets somebody drive the human flow with no finger on the sensor,
 // necessary, because the flow is otherwise untestable without a person sitting
 // there. But "a human is present" is the one assertion in Lanes that must not be
 // forgeable by software, and an environment variable is software. So the switch
@@ -27,6 +27,6 @@ func mocked() (Verdict, bool) { return Unavailable, false }
 //
 // Callers surface this in their results rather than keeping it to themselves. A
 // mocked unlock that looked identical to a real one would be evidence of
-// nothing, and the person reading the transcript later — quite possibly the
-// person who set the variable — has no other way to tell the two apart.
+// nothing, and the person reading the transcript later: quite possibly the
+// person who set the variable: has no other way to tell the two apart.
 func Mocked() bool { return false }

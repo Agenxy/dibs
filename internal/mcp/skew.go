@@ -14,7 +14,7 @@ import (
 // says nothing, and the failure that keeps happening is not a version mismatch
 // at all: it is a daemon that is still running code from before the last build.
 // `lanes` and `lanesd` are separate processes, and installing a new binary does
-// not restart the one already serving — so a fix can be built, installed, and
+// not restart the one already serving, so a fix can be built, installed, and
 // completely absent from every answer the board gives, with no error anywhere
 // and nothing on either side that disagrees.
 //
@@ -37,7 +37,7 @@ func serverBuildInfo() map[string]any {
 		"panel_build": panelBuild,
 	}
 	// The mtime of the binary this process is RUNNING, which is not necessarily
-	// the one now on disk at that path — replacing a file does not change what an
+	// the one now on disk at that path: replacing a file does not change what an
 	// already-started process executes. Reported so a client can subtract.
 	if self, err := os.Executable(); err == nil {
 		if st, serr := os.Stat(self); serr == nil {

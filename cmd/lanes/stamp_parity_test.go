@@ -14,7 +14,7 @@ import (
 // The predicate that decides whether to rewrite somebody's shell command now
 // exists twice: in Go for the Claude Code and Codex hooks, and in TypeScript
 // for pi's extension, because those harnesses are in different languages and
-// neither can call the other. Two copies of a rule this consequential drift —
+// neither can call the other. Two copies of a rule this consequential drift,
 // one gets a fix, the other does not, and the symptom is a subagent silently
 // attributed by a weaker signal on one harness only.
 //
@@ -25,7 +25,7 @@ import (
 // What this covers was measured by injecting drift into the TypeScript, not
 // assumed: dropping a harness from the list is caught, and dropping the newline
 // guard is caught. Dropping the leading-character or leading-assignment guards
-// is NOT — because neither is reachable independently, since a command opening
+// is NOT, because neither is reachable independently, since a command opening
 // with `(`, `>`, `$` or `FOO=` has a first token that is not a bare harness
 // name and spawnsAgent has already said no. Those two are defence in depth
 // against a future loosening of spawnsAgent, and this test cannot speak for
@@ -85,7 +85,7 @@ func TestTheGoAndTypeScriptStampRulesAgree(t *testing.T) {
 	const marker = "function stampable(cmd: string): boolean {"
 	start := strings.Index(string(src), marker)
 	if start < 0 {
-		t.Fatalf("plugins/pi/lanes.ts no longer defines stampable() — either it was " +
+		t.Fatalf("plugins/pi/lanes.ts no longer defines stampable(): either it was " +
 			"renamed, in which case this test must follow it, or the stamp was removed, " +
 			"in which case pi silently stopped attributing its subagents")
 	}
@@ -122,7 +122,7 @@ func TestTheGoAndTypeScriptStampRulesAgree(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("the two implementations disagree about %q: Go says %v, TypeScript says %v\n"+
 				"  Whichever is wrong, one harness is now treating a command differently from\n"+
-				"  the others — either rewriting something it should not, or declining to\n"+
+				"  the others: either rewriting something it should not, or declining to\n"+
 				"  attribute a subagent it could have.", c, want[i], got[i])
 		}
 	}

@@ -32,7 +32,7 @@ func TestClassifyCascade(t *testing.T) {
 		b:    slot("greening the runtime build", []string{"/repo/runtime"}, []string{"goal:green-main"}),
 		aCWD: repo, bCWD: repo,
 		want: RelationPossible,
-		why:  "a shared aspiration is context, not a task — observed verbatim on a live fleet",
+		why:  "a shared aspiration is context, not a task: observed verbatim on a live fleet",
 	}, {
 		name: "same declared directory, different objectives",
 		a:    slot("adding a secret-scanning gate", []string{"/repo/.github"}, []string{"pr:1191"}),
@@ -146,7 +146,7 @@ func TestReviewFindings(t *testing.T) {
 		b:    withAct("reviewing the auth token refresh changes", nil, []string{"pr:1231"}, "review"),
 		want: RelationSameItem,
 		why: "they ARE on the same item, and that fact should not be thrown away to " +
-			"avoid the wrong wording — an earlier version demoted it to `possible` and " +
+			"avoid the wrong wording: an earlier version demoted it to `possible` and " +
 			"lost the exact identity. What must change is the ACTION: Complementary " +
 			"stays on the evidence, and auto-join reads it.",
 	}, {
@@ -154,7 +154,7 @@ func TestReviewFindings(t *testing.T) {
 		a:    withAct("implementing auth token refresh", nil, []string{"pr:1231"}, "implement"),
 		b:    withAct("adding the token refresh path", nil, []string{"pr:1231"}, "implement"),
 		want: RelationSameItem,
-		why:  "same role, same item — the case auto-join exists for",
+		why:  "same role, same item: the case auto-join exists for",
 	}, {
 		name: "a parent directory contains the other",
 		a:    slot("core package refactoring", []string{"/repo/internal"}, nil),
@@ -168,7 +168,7 @@ func TestReviewFindings(t *testing.T) {
 		b:    slot("fix issue 200", []string{"/repo/internal/core"}, []string{"issue:200"}),
 		want: RelationSameSurface,
 		why: "contradictory identifiers demote the DUPLICATE claim and must not " +
-			"silence the surface collision — one agent deleting what another edits " +
+			"silence the surface collision: one agent deleting what another edits " +
 			"carries different tickets and is the most expensive collision there is",
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -200,7 +200,7 @@ func TestContendedHostResources(t *testing.T) {
 	a.Holds, b.Holds = []string{"port:8080", "service:postgres"}, []string{"port:8080"}
 	ev := EvidenceBetween(a, b, repo, repo, repo, nil, nil)
 	if got := ev.Classify(); got != RelationContended {
-		t.Fatalf("relation = %q, want %q — two agents binding one port WILL fail, and "+
+		t.Fatalf("relation = %q, want %q: two agents binding one port WILL fail, and "+
 			"the second gets 'address already in use' with no idea why", got, RelationContended)
 	}
 	if !contains(ev.Strongest(), "port:8080") {
@@ -282,7 +282,7 @@ func TestRepoIdentityBothDirections(t *testing.T) {
 //
 // "Both declared internal/core" is true of half the fleet in a Go project; "both
 // declared internal/core/queue.go" is two agents about to meet. The relation is
-// the same — they do overlap — but an alarm that fires at full volume on the
+// the same (they do overlap) but an alarm that fires at full volume on the
 // first is one agents learn to ignore, and then they miss the second.
 func TestBroadTerritoryIsMarkedAsBroad(t *testing.T) {
 	const repo = "/repo"
@@ -302,7 +302,7 @@ func TestBroadTerritoryIsMarkedAsBroad(t *testing.T) {
 				slot("other work", []string{tc.bDir}, nil),
 				repo, repo, repo, nil, nil)
 			if ev.Classify() != RelationSameSurface {
-				t.Fatalf("relation = %q, want same_surface — they share territory either way",
+				t.Fatalf("relation = %q, want same_surface: they share territory either way",
 					ev.Classify())
 			}
 			if ev.SurfaceBroad != tc.wantBroad {

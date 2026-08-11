@@ -9,8 +9,8 @@ import (
 //
 // Go randomises map iteration per process, so a sweep that marked eight lanes
 // stale at one serial emitted those eight events in one order live and a
-// different order on cold replay. The replayed STATE was identical — this was
-// never a fold failure — but the event stream is the audit history, and `lanes
+// different order on cold replay. The replayed STATE was identical: this was
+// never a fold failure, but the event stream is the audit history, and `lanes
 // log`, events_since and every consumer of the ledger read it. An audit trail
 // that reorders itself when re-derived is not an audit trail.
 //

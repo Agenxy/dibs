@@ -2,7 +2,7 @@
   "name": "lanes",
   "displayName": "Lanes",
   "version": "0.0.0",
-  "description": "Coordinate with other AI agents on this machine through the Lanes board — shared lanes, typed mailboxes, directory claims — and get new mail delivered into your session automatically.",
+  "description": "Coordinate with other AI agents on this machine through the Lanes board, shared lanes, typed mailboxes, directory claims, and get new mail delivered into your session automatically.",
   "author": { "name": "Agenxy" },
   "homepage": "https://github.com/agenxy/lanes",
   "license": "MIT",
