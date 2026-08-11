@@ -110,3 +110,12 @@ find what they need.
 ## Security
 
 Do not open a public issue for a vulnerability. `SECURITY.md` has the process.
+
+## Organisation-wide standards
+
+Lanes follows the Agenxy
+[charter](https://github.com/agenxy/.github/blob/main/CHARTER.md) and
+[engineering standards](https://github.com/agenxy/.github/blob/main/ENGINEERING.md):
+Apache 2.0, latest stable of every tool, warnings fatal, nothing logged about how
+you use the software, and native code rather than shell. Two of those are checked
+by `internal/hygiene` and will fail the build rather than a review.

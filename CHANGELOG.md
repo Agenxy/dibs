@@ -7,6 +7,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Two standards are now checked rather than remembered. `internal/hygiene`
+  fails the build on a shell script entering the tracked tree, by extension or
+  by shebang, and on an em dash in prose. En dashes are flagged only when spaced,
+  since a numeric range is correct typography.
 - The board says which project each agent is in. A machine usually has more
   than one repository open, and agents in three of them all reported branch
   `main`, so the rows were indistinguishable. The project is resolved from the
