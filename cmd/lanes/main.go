@@ -62,6 +62,9 @@ setup:
   lanes configure --service write a launchd/systemd unit so the daemon survives a
                            closed terminal and a reboot; prints the load command
                            rather than running it
+  lanes completion SHELL   print verb completions for bash, zsh or fish,
+                           generated from the live verb table so the script
+                           cannot drift; the README says where each shell loads it
   lanes stop               stop the daemon serving THIS data directory, and only
                            that one, not "pkill lanesd", which also kills the
                            isolated daemons other fleets are running. SIGTERM, so
@@ -146,6 +149,8 @@ func main() {
 		err = probe(os.Args[2:])
 	case "watch":
 		err = watch(os.Args[2:])
+	case "completion":
+		err = completion(os.Args[2:])
 	case "configure":
 		err = configure(os.Args[2:])
 	case "monitor":
@@ -227,7 +232,7 @@ func parseFlags(fs *flag.FlagSet, args []string) error {
 // out of this file, so a verb added there and forgotten here is visible.
 var commands = []string{
 	"await", "probe", "watch", "monitor", "board", "log", "verify", "doctor",
-	"calibrate", "version", "help", "configure", "messages", "web", "admin",
+	"calibrate", "version", "help", "configure", "completion", "messages", "web", "admin",
 	"mcp-config", "mcp-stdio", "hook-spawn",
 }
 
