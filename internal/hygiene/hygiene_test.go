@@ -54,6 +54,12 @@ func TestNoShellScriptsHaveEnteredTheTree(t *testing.T) {
 			}
 			return
 		}
+		if target, ok := symlinkToShell(abs); ok && !shellAllowlist[rel] {
+			t.Errorf("%s is a tracked symlink to %s. Committing a link to a shell puts a "+
+				"shell in the tree under another name, and anything with a shebang naming "+
+				"it becomes a shell script the OS runs and this check cannot see", rel, target)
+			return
+		}
 		if shebangIsShell(abs) && !shellAllowlist[rel] {
 			t.Errorf("%s has a shell shebang, which makes it a shell script whatever it "+
 				"is called", rel)
@@ -173,8 +179,7 @@ func mentionsAShell(shebang string) bool {
 	for _, frag := range strings.FieldsFunc(shebang, func(r rune) bool {
 		return r == ' ' || r == '\t' || r == '\'' || r == '"' || r == '\\' || r == '=' || r == '/'
 	}) {
-		switch strings.ToLower(frag) {
-		case "sh", "bash", "zsh", "dash", "ksh", "ash", "csh", "tcsh", "fish":
+		if isShellName(frag) {
 			return true
 		}
 	}
@@ -230,6 +235,44 @@ func splitShebang(line string) []string {
 	return out
 }
 
+// symlinkToShell reports a tracked symlink whose target is a shell.
+//
+// Found by a review that committed `fixture-python` as a link to /bin/zsh and a
+// second file whose shebang named it. The OS ran the second file under zsh; this
+// check read the shebang, saw a basename that is not a shell, and passed it. The
+// walker uses Stat and the reader uses Open, and both follow links, so nothing
+// in the chain ever saw the link itself.
+//
+// Only the link is reported, not every file that might name it. The link is the
+// thing that put a shell in the tree, and it is the smaller and more precise
+// thing to remove.
+func symlinkToShell(abs string) (string, bool) {
+	info, err := os.Lstat(abs)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		return "", false
+	}
+	target, err := os.Readlink(abs)
+	if err != nil {
+		return "", false
+	}
+	// The name it points at, and the name that name resolves to: a link to a
+	// link to a shell is still a shell.
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		if isShellName(filepath.Base(resolved)) {
+			return target, true
+		}
+	}
+	return target, isShellName(filepath.Base(target))
+}
+
+func isShellName(name string) bool {
+	switch strings.ToLower(name) {
+	case "sh", "bash", "zsh", "dash", "ksh", "ash", "csh", "tcsh", "fish":
+		return true
+	}
+	return false
+}
+
 // interpreterIsAShell parses a shebang into the program it will actually run.
 //
 // Substring matching was tried and defeated immediately: `#!/usr/bin/env -S bash`
@@ -255,8 +298,7 @@ func interpreterIsAShell(shebang string) bool {
 		if strings.Contains(word, "=") && !strings.Contains(word, "/") {
 			continue
 		}
-		switch base {
-		case "sh", "bash", "zsh", "dash", "ksh", "ash", "csh", "tcsh", "fish":
+		if isShellName(base) {
 			return true
 		}
 		return false // the first real interpreter is something else
