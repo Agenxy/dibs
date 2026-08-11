@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,27 +32,99 @@ import (
 // stuck; "the secret in ~/.codex/config.toml no longer matches: run `lanes
 // mcp-config` and re-copy it" does not.
 func doctor(args []string) error {
-	verbose := len(args) > 0 && (args[0] == "-v" || args[0] == "--verbose")
+	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
+	verbose := fs.Bool("verbose", false, "also say what was checked and found healthy")
+	fs.BoolVar(verbose, "v", false, "shorthand for --verbose")
+	asJSON := fs.Bool("json", false, jsonHelp)
+	if err := parseFlags(fs, args); err != nil {
+		return err
+	}
+	d := &diagnosis{json: *asJSON}
+	err := d.run(*verbose)
+	if *asJSON {
+		// One document however far the run got: the early returns inside run
+		// stop the checking, never the report. Every level is carried, because
+		// a monitoring script's threshold is its own business, and the checks
+		// keep the order the prose prints them in.
+		if perr := printJSON(doctorReport{
+			DataDir:  paths.DataDir(),
+			Checks:   d.checks,
+			Problems: d.probs,
+			Warnings: d.warns,
+			Healthy:  d.probs == 0,
+		}); perr != nil {
+			return perr
+		}
+	}
+	return err
+}
+
+// doctorReport is `lanes doctor --json`: the same checks the prose prints,
+// as one document a monitoring probe can hold onto.
+type doctorReport struct {
+	DataDir  string        `json:"data_dir"`
+	Checks   []doctorCheck `json:"checks"`
+	Problems int           `json:"problems"`
+	Warnings int           `json:"warnings"`
+	Healthy  bool          `json:"healthy"`
+}
+
+// doctorCheck is one verdict: ok, warning or problem, with the fix beside the
+// fault for the two levels that need one, exactly as the prose insists.
+type doctorCheck struct {
+	Level string `json:"level"`
+	What  string `json:"what"`
+	Fix   string `json:"fix,omitempty"`
+}
+
+// diagnosis collects what doctor finds, and prints as it goes unless the run
+// is feeding a JSON document. One recording path for both modes, so the
+// document cannot carry a different diagnosis from the prose: formatting
+// twice is how they drift.
+type diagnosis struct {
+	json         bool
+	checks       []doctorCheck
+	probs, warns int
+}
+
+func (d *diagnosis) ok(what string) {
+	d.checks = append(d.checks, doctorCheck{Level: "ok", What: what})
+	d.prose(ui.OK(what))
+}
+
+func (d *diagnosis) bad(what, fix string) {
+	d.probs++
+	d.checks = append(d.checks, doctorCheck{Level: "problem", What: what, Fix: fix})
+	d.prose(ui.Bad(what))
+	d.prose(ui.Fix(fix))
+}
+
+func (d *diagnosis) warn(what, fix string) {
+	d.warns++
+	d.checks = append(d.checks, doctorCheck{Level: "warning", What: what, Fix: fix})
+	d.prose(ui.Warn(what))
+	d.prose(ui.Fix(fix))
+}
+
+// prose is for the lines that exist only for a person: under --json they go
+// nowhere, because stdout must stay one parseable document and none of them
+// says anything the checks do not.
+func (d *diagnosis) prose(line string) {
+	if !d.json {
+		fmt.Println(line)
+	}
+}
+
+func (d *diagnosis) run(verbose bool) error {
 	dir := paths.DataDir()
-	var probs, warns int
 
 	// Through the shared vocabulary rather than raw escape codes. The inline
 	// version wrote colour unconditionally, so `lanes doctor > report.txt`,
 	// which is exactly what somebody does before opening an issue: produced a
 	// file full of escape sequences, and NO_COLOR did nothing at all.
-	ok := func(what string) { fmt.Println(ui.OK(what)) }
-	bad := func(what, fix string) {
-		probs++
-		fmt.Println(ui.Bad(what))
-		fmt.Println(ui.Fix(fix))
-	}
-	warn := func(what, fix string) {
-		warns++
-		fmt.Println(ui.Warn(what))
-		fmt.Println(ui.Fix(fix))
-	}
+	ok, bad, warn := d.ok, d.bad, d.warn
 
-	fmt.Println(ui.Bold("lanes doctor") + ui.Dim(": data dir "+ui.Path(dir)) + "\n")
+	d.prose(ui.Bold("lanes doctor") + ui.Dim(": data dir "+ui.Path(dir)) + "\n")
 
 	// ── the daemon ───────────────────────────────────────────────────────
 	secretPath := filepath.Join(dir, "local.secret")
@@ -60,8 +133,8 @@ func doctor(args []string) error {
 	case err != nil:
 		bad("no local secret at "+secretPath,
 			"the daemon has never run here. Start it: `lanesd`")
-		fmt.Println("\nnothing else can be checked until the daemon has started.")
-		return earlyDoctorResult(probs, warns)
+		d.prose("\nnothing else can be checked until the daemon has started.")
+		return earlyDoctorResult(d.probs, d.warns)
 	default:
 		ok("local secret present")
 	}
@@ -76,14 +149,14 @@ func doctor(args []string) error {
 	if err != nil {
 		bad("daemon unreachable at "+addr()+" ("+err.Error()+")",
 			"start it with `lanesd`, or set LANES_ADDR if it listens elsewhere")
-		fmt.Println("\nnothing else can be checked while the daemon is down.")
-		return earlyDoctorResult(probs, warns)
+		d.prose("\nnothing else can be checked while the daemon is down.")
+		return earlyDoctorResult(d.probs, d.warns)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode == http.StatusUnauthorized {
 		bad("daemon rejected our own secret (401)",
 			"the data dir was recreated under a running daemon. Restart `lanesd`")
-		return earlyDoctorResult(probs, warns)
+		return earlyDoctorResult(d.probs, d.warns)
 	}
 	ok("daemon answering on " + addr())
 
@@ -104,7 +177,7 @@ func doctor(args []string) error {
 	}
 
 	checkHarnessConfigs(sec, addr(), ok, warn, bad)
-	checkPanelBuild(client, sec, ok, warn)
+	checkPanelBuild(client, sec, ok, warn, d.prose)
 	checkMatching(client, sec, ok, warn)
 	checkHooks(client, sec, ok, bad, warn)
 	checkLedgerAndBoard(dir, ok, bad, warn)
@@ -112,20 +185,26 @@ func doctor(args []string) error {
 	checkSupervision(verbose, ok, warn)
 	checkOneDaemon(verbose, ok, warn)
 
+	if d.json {
+		// The tally is a rendering of counts the document already carries, and
+		// the exit status is set the same way the early returns set it: the
+		// document on stdout is the whole diagnosis.
+		return earlyDoctorResult(d.probs, d.warns)
+	}
 	fmt.Println()
 	switch {
-	case probs > 0:
+	case d.probs > 0:
 		fmt.Println(ui.Tally([]ui.Count{
-			{Label: "problem(s)", N: probs, Tone: "alarm", Always: true},
-			{Label: "warning(s)", N: warns, Tone: "attn"},
+			{Label: "problem(s)", N: d.probs, Tone: "alarm", Always: true},
+			{Label: "warning(s)", N: d.warns, Tone: "attn"},
 		}))
-	case warns > 0:
+	case d.warns > 0:
 		fmt.Println(ui.Good("no problems") + ui.Dim("; ") +
-			ui.Attn(fmt.Sprintf("%d warning(s)", warns)) + ui.Dim(": all optional features"))
+			ui.Attn(fmt.Sprintf("%d warning(s)", d.warns)) + ui.Dim(": all optional features"))
 	default:
 		fmt.Println(ui.Good("no problems found"))
 	}
-	return doctorResult(probs, warns)
+	return doctorResult(d.probs, d.warns)
 }
 
 // doctorResult is the machine-readable half of the report. Warnings describe
@@ -621,7 +700,9 @@ func fetchMatchStatus(c *http.Client, secret string) matchStatusJSON {
 // numbers either agree or they do not. That is why this is neither ok() nor
 // warn() bait: it is a fact plus an instruction, printed whether or not anything
 // is wrong, because the human reads doctor precisely when the panel looks wrong.
-func checkPanelBuild(c *http.Client, secret string, ok reportFn, warn fixFn) {
+// The instruction rides on the prose reporter: under --json it is decoration
+// (a standing note, not a finding) and stdout must stay one document.
+func checkPanelBuild(c *http.Client, secret string, ok reportFn, warn fixFn, prose reportFn) {
 	uri := fetchPanelURI(c, secret)
 	if uri == "" {
 		warn("could not read the board panel's resource",
@@ -634,7 +715,7 @@ func checkPanelBuild(c *http.Client, secret string, ok reportFn, warn fixFn) {
 		build = uri[i+1:]
 	}
 	ok("board panel served: build " + build)
-	fmt.Println(ui.Fix("if the panel is blank or reads \"awaiting board\": look at the " +
+	prose(ui.Fix("if the panel is blank or reads \"awaiting board\": look at the " +
 		"build in its footer. Different, or no build line at all, means your client " +
 		"cached an older panel: it fetches one per session, so restart the client. " +
 		"Matching, and still blank, is a server-side fault worth reporting."))

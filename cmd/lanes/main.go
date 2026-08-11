@@ -37,12 +37,14 @@ agent-safe (lane-scoped or public, fine to run from any agent):
   lanes monitor --lane N   own+watch a persistent lane; print a line per message
                            (generic tail for humans/scripts. Lanes itself never
                            wires this into a harness; agents use await_events)
-  lanes board              public board: lanes, slots, claims
-  lanes log [--follow]     public event stream (private bodies stay encrypted)
-  lanes verify [path]      verify ledger hash chain
+  lanes board              public board: lanes, slots, claims (--json)
+  lanes log [--follow]     public event stream (private bodies stay encrypted;
+                           --json: one object per event)
+  lanes verify [path]      verify ledger hash chain (--json)
   lanes doctor             find what is quietly broken: stale harness secrets,
                            matching that is off or still indexing, a ledger that
                            will not replay. Names the fix, not just the fault
+                           (--json: the same checks as one document)
   lanes calibrate          measure work-overlap scoring against THIS repo's git
                            history and propose thresholds (nothing is written)
   lanes version           print the version (also --version)
@@ -127,13 +129,13 @@ func main() {
 	var err error
 	switch os.Args[1] {
 	case "board":
-		err = board()
+		err = board(os.Args[2:])
 	case "messages":
 		err = adminOnly("messages", messages)
 	case "log":
 		err = logCmd(os.Args[2:])
 	case "verify":
-		err = verify()
+		err = verify(os.Args[2:])
 	case "stop":
 		err = stop(os.Args[2:])
 	case "doctor":
@@ -443,28 +445,40 @@ func webURL() error {
 // can be rendered by its own function: a single board() that drew all three
 // scored 78 on the complexity gate, which is a fair reading of how much it was
 // doing.
+//
+// Every field carries its wire name explicitly, because these structs face
+// both ways now: they decode the daemon's payload and, under --json, they ARE
+// the document. Decoding tolerated Go's case-insensitive match; encoding does
+// not, and `"ID"` in a document whose source spelled it `"id"` would be a new
+// name for an old fact.
 type (
 	boardSlot struct {
-		ID, Text string
-		Dirs     []string
+		ID   string   `json:"id"`
+		Text string   `json:"text"`
+		Dirs []string `json:"dirs,omitempty"`
 	}
 	boardLane struct {
-		ID, Name, Description string
-		DisplayName           string `json:"display_name"`
-		Status                string
-		ProcAlive             bool      `json:"proc_alive"`
-		StaleReason           string    `json:"stale_reason"`
-		LastSeen              time.Time `json:"last_seen"`
-		Slots                 []boardSlot
+		ID          string      `json:"id"`
+		Name        string      `json:"name,omitempty"`
+		Description string      `json:"description,omitempty"`
+		DisplayName string      `json:"display_name,omitempty"`
+		Status      string      `json:"status"`
+		ProcAlive   bool        `json:"proc_alive"`
+		StaleReason string      `json:"stale_reason,omitempty"`
+		LastSeen    time.Time   `json:"last_seen"`
+		Slots       []boardSlot `json:"slots"`
 	}
 	boardClaim struct {
-		Lane, Path, Mode, Note string
-		Renewed                time.Time
+		Lane    string    `json:"lane"`
+		Path    string    `json:"path"`
+		Mode    string    `json:"mode"`
+		Note    string    `json:"note,omitempty"`
+		Renewed time.Time `json:"renewed"`
 	}
 	boardMember struct {
-		Agent string
-		Auto  bool
-		Score float64
+		Agent string  `json:"agent"`
+		Auto  bool    `json:"auto"`
+		Score float64 `json:"score"`
 	}
 	// boardChannel is the semantic half of coordination, and the whole of what
 	// v1.2 added. It was missing from this surface entirely: an operator
@@ -472,27 +486,50 @@ type (
 	// work, nor an announcement waiting on somebody: the state that most needs
 	// a person.
 	boardChannel struct {
-		ID, Topic, Owner string
-		Queue            []string
-		Members          []boardMember
-		Unacked          int `json:"unacked_announcements"`
-		Abandoned        int `json:"abandoned_announcements"`
-		Blocked          int `json:"blocked_announcements"`
-		Departed         int `json:"departed_unacked"`
+		ID        string        `json:"id"`
+		Topic     string        `json:"topic,omitempty"`
+		Owner     string        `json:"owner,omitempty"`
+		Queue     []string      `json:"queue,omitempty"`
+		Members   []boardMember `json:"members,omitempty"`
+		Unacked   int           `json:"unacked_announcements"`
+		Abandoned int           `json:"abandoned_announcements"`
+		Blocked   int           `json:"blocked_announcements"`
+		Departed  int           `json:"departed_unacked"`
 	}
 	boardView struct {
-		Serial   uint64 `json:"serial"`
-		Node     string `json:"node"`
-		Lanes    []boardLane
-		Claims   []boardClaim
-		Channels []boardChannel
+		Serial   uint64         `json:"serial"`
+		Node     string         `json:"node"`
+		Lanes    []boardLane    `json:"lanes"`
+		Claims   []boardClaim   `json:"claims"`
+		Channels []boardChannel `json:"channels"`
 	}
 )
 
-func board() error {
+func board(args []string) error {
+	fs := flag.NewFlagSet("board", flag.ContinueOnError)
+	asJSON := fs.Bool("json", false, jsonHelp)
+	if err := parseFlags(fs, args); err != nil {
+		return err
+	}
 	var b boardView
 	if err := get("/api/board", &b); err != nil {
 		return err
+	}
+	if *asJSON {
+		// One value, two renderings: the document is the same decoded view the
+		// prose below draws from, so the two cannot drift apart. The top-level
+		// lists are pinned to [] rather than null, because "no lanes" is a
+		// normal state a script iterates over, not an absent fact.
+		if b.Lanes == nil {
+			b.Lanes = []boardLane{}
+		}
+		if b.Claims == nil {
+			b.Claims = []boardClaim{}
+		}
+		if b.Channels == nil {
+			b.Channels = []boardChannel{}
+		}
+		return printJSON(&b)
 	}
 	fmt.Println(ui.Dim(fmt.Sprintf("node %s · serial %d", b.Node, b.Serial)))
 
@@ -597,6 +634,44 @@ func logLine(serial uint64, t time.Time, op, lane, to string) string {
 	return line
 }
 
+// ledgerRow is the slice of a ledger record the log surfaces read: the public
+// fields, keyed as the ledger file keys them. One type for the one-shot path,
+// the follower and the resync, which used to carry three copies of the same
+// anonymous struct.
+type ledgerRow struct {
+	S  uint64    `json:"s"`
+	T  time.Time `json:"t"`
+	E  string    `json:"e"`
+	Op struct {
+		Lane string `json:"lane"`
+		To   string `json:"to"`
+	} `json:"op"`
+}
+
+// logRecord is one row as `lanes log --json` emits it: one object per line,
+// the stream shape `lanes probe --json` already set. Named for a reader who
+// never sees the prose column: the ledger's single-letter keys are a storage
+// format, not an interface, and serialising them would promise a stranger's
+// abbreviations to every script.
+type logRecord struct {
+	Serial uint64    `json:"serial"`
+	Time   time.Time `json:"time"`
+	Op     string    `json:"op"`
+	Lane   string    `json:"lane"`
+	To     string    `json:"to"`
+}
+
+// renderRow renders one ledger row for whoever is reading: the styled column
+// view, or one JSON object for a parser. Both come from the same decoded row,
+// so the two renderings cannot drift.
+func renderRow(rec ledgerRow, asJSON bool) string {
+	if !asJSON {
+		return logLine(rec.S, rec.T, rec.E, rec.Op.Lane, rec.Op.To)
+	}
+	out, _ := json.Marshal(logRecord{Serial: rec.S, Time: rec.T, Op: rec.E, Lane: rec.Op.Lane, To: rec.Op.To})
+	return string(out)
+}
+
 func logCmd(args []string) error {
 	fs := flag.NewFlagSet("log", flag.ContinueOnError)
 	// -f as well as --follow, because that is how tail, docker logs, kubectl logs
@@ -619,6 +694,7 @@ func logCmd(args []string) error {
 	// merely annoying and the first is misleading.
 	limit := fs.Int("limit", 50, "show only the last N events (0 for all)")
 	fs.IntVar(limit, "n", 50, "shorthand for --limit")
+	asJSON := fs.Bool("json", false, jsonHelp)
 	if err := parseFlags(fs, args); err != nil {
 		return err
 	}
@@ -641,26 +717,18 @@ func logCmd(args []string) error {
 		sc.Buffer(make([]byte, 0, 1<<20), 1<<24)
 		var lines []string
 		for sc.Scan() {
-			var rec struct {
-				S  uint64    `json:"s"`
-				T  time.Time `json:"t"`
-				E  string    `json:"e"`
-				Op struct {
-					Lane string `json:"lane"`
-					To   string `json:"to"`
-				} `json:"op"`
-			}
+			var rec ledgerRow
 			if json.Unmarshal(sc.Bytes(), &rec) == nil {
-				lines = append(lines, logLine(rec.S, rec.T, rec.E, rec.Op.Lane, rec.Op.To))
+				lines = append(lines, renderRow(rec, *asJSON))
 			}
 		}
 		if err := sc.Err(); err != nil {
 			return err
 		}
-		printTail(lines, *limit)
+		printTail(lines, *limit, *asJSON)
 		return nil
 	}
-	return followLedger(ledgerPath())
+	return followLedger(ledgerPath(), *asJSON)
 }
 
 // followLedger tails the ledger file, printing records as they are appended.
@@ -686,7 +754,7 @@ func logCmd(args []string) error {
 // involved. A live fleet-wide view with mail bodies is what `lanes web` is
 // for, and that one asks for the password properly.
 // #nosec G304 -- the daemon's own data directory, chosen by the operator.
-func followLedger(path string) error {
+func followLedger(path string, asJSON bool) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -697,7 +765,14 @@ func followLedger(path string) error {
 	if _, err := f.Seek(0, io.SeekEnd); err != nil {
 		return err
 	}
-	fmt.Println("following " + path + " (^C to stop)…")
+	if asJSON {
+		// The banner is for a person; under --json stdout is one object per
+		// line and nothing else, so it moves to stderr rather than becoming a
+		// parse error in whatever is attached.
+		fmt.Fprintln(os.Stderr, "following "+path+" (^C to stop)…")
+	} else {
+		fmt.Println("following " + path + " (^C to stop)…")
+	}
 	rd := bufio.NewReader(f)
 	// Two things a naive tail gets wrong, both of which lose a record silently.
 	//
@@ -741,15 +816,7 @@ func followLedger(path string) error {
 			continue
 		}
 		full := line
-		var rec struct {
-			S  uint64    `json:"s"`
-			T  time.Time `json:"t"`
-			E  string    `json:"e"`
-			Op struct {
-				Lane string `json:"lane"`
-				To   string `json:"to"`
-			} `json:"op"`
-		}
+		var rec ledgerRow
 		if json.Unmarshal([]byte(strings.TrimSpace(full)), &rec) != nil || rec.S == 0 {
 			// A COMPLETE line that will not parse means we are reading from the
 			// wrong offset, and silently dropping it is how the record we were
@@ -761,17 +828,17 @@ func followLedger(path string) error {
 			// observable and the next read lands mid-record. Detecting the
 			// SYMPTOM instead of the race is what makes this robust: however we
 			// got mis-positioned, malformed input at a record boundary says so.
-			last = resync(f, rd, last)
+			last = resync(f, rd, last, asJSON)
 			continue
 		}
 		// A gap says records went past unseen: the same mis-positioning, caught
 		// even when the bytes happened to parse.
 		if last != 0 && rec.S > last+1 {
-			last = resync(f, rd, last)
+			last = resync(f, rd, last, asJSON)
 			continue
 		}
 		last = rec.S
-		fmt.Println(logLine(rec.S, rec.T, rec.E, rec.Op.Lane, rec.Op.To))
+		fmt.Println(renderRow(rec, asJSON))
 	}
 }
 
@@ -807,7 +874,7 @@ func repositionAfterShortRead(f *os.File, rd *bufio.Reader, start int64, partial
 // losing records silently forever.
 //
 // Returns the highest serial printed, so the caller resumes from a known point.
-func resync(f *os.File, rd *bufio.Reader, last uint64) uint64 {
+func resync(f *os.File, rd *bufio.Reader, last uint64, asJSON bool) uint64 {
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		return last
 	}
@@ -815,20 +882,12 @@ func resync(f *os.File, rd *bufio.Reader, last uint64) uint64 {
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 1<<20), 1<<24)
 	for sc.Scan() {
-		var rec struct {
-			S  uint64    `json:"s"`
-			T  time.Time `json:"t"`
-			E  string    `json:"e"`
-			Op struct {
-				Lane string `json:"lane"`
-				To   string `json:"to"`
-			} `json:"op"`
-		}
+		var rec ledgerRow
 		if json.Unmarshal(sc.Bytes(), &rec) != nil || rec.S <= last {
 			continue
 		}
 		last = rec.S
-		fmt.Println(logLine(rec.S, rec.T, rec.E, rec.Op.Lane, rec.Op.To))
+		fmt.Println(renderRow(rec, asJSON))
 	}
 	// Continue from the end the scanner reached, so the tail resumes cleanly.
 	if _, err := f.Seek(0, io.SeekEnd); err == nil {
@@ -855,20 +914,66 @@ func truncated(f *os.File) bool {
 	return st.Size() < off
 }
 
-func verify() error {
+// verifyReport is what `lanes verify --json` says about a ledger: the same
+// verdict the prose renders, from the same chainResult, so the two cannot
+// disagree. `ok` means the chain is intact; `torn` qualifies an intact chain
+// whose final record is a partial write, which is deliberately NOT a failure
+// (the comment on chainResult carries the reasoning).
+type verifyReport struct {
+	OK    bool   `json:"ok"`
+	Path  string `json:"path"`
+	Lines int    `json:"lines"`
+	Head  string `json:"head"`
+	Torn  bool   `json:"torn"`
+	Error string `json:"error,omitempty"`
+	// Hint carries the corrective call beside the failure. A JSON consumer needs
+	// it at least as much as a person does, and it is the surface agents read.
+	Hint string `json:"hint,omitempty"`
+}
+
+func verify(args []string) error {
+	// `flags`, not the usual `fs`: this function also names *fs.PathError, and
+	// shadowing the io/fs package with a FlagSet turns that type into a compile
+	// error that reads like a typo.
+	flags := flag.NewFlagSet("verify", flag.ContinueOnError)
+	asJSON := flags.Bool("json", false, jsonHelp)
+	// Flags are parsed properly now, which retires a real alarm: `lanes verify
+	// --help` used to reach os.Open and come back as INTEGRITY FAILURE on a
+	// ledger named "--help", a false alarm about the one thing this command
+	// exists to reassure you about.
+	if err := parseFlags(flags, args); err != nil {
+		return err
+	}
 	warnIfDirIsNotTheAddressedDaemon("`lanes verify`")
 	path := ledgerPath()
-	if len(os.Args) > 2 {
-		// A flag is not a path. `lanes verify --help` reached os.Open and came
-		// back as INTEGRITY FAILURE on a ledger named "--help": an alarm about
-		// the one thing this command exists to reassure you about.
-		if strings.HasPrefix(os.Args[2], "-") {
-			return fmt.Errorf("`lanes verify` takes a ledger path, not %q. "+
-				"run it bare to check this board's own ledger", os.Args[2])
-		}
-		path = os.Args[2]
+	if flags.NArg() > 0 {
+		path = flags.Arg(0)
 	}
 	res, err := verifyChain(path)
+	if *asJSON {
+		rep := verifyReport{OK: err == nil, Path: path, Lines: res.Lines, Head: res.Head, Torn: res.Torn}
+		if err != nil {
+			rep.Error = err.Error()
+			// The prose path below tells a reader that a board which has never
+			// run simply has no ledger yet. Dropping that on the JSON path left
+			// `open …: no such file` and nothing else, on the surface agents
+			// actually read: AGENTS.md rule 6 is that every error carries the
+			// corrective call, and it does not stop applying because the output
+			// is machine-readable.
+			var pe *fs.PathError
+			if errors.As(err, &pe) {
+				rep.Hint = "a board that has never run has no ledger yet: start `lanesd` " +
+					"once, or pass the path to the one you meant to check"
+			}
+		}
+		if perr := printJSON(rep); perr != nil {
+			return perr
+		}
+		if err != nil {
+			return reportedError{err}
+		}
+		return nil
+	}
 	if err != nil {
 		// A ledger that cannot be READ is not a ledger that is CORRUPT, and
 		// saying INTEGRITY FAILURE at a missing file sends an operator hunting a
@@ -1206,12 +1311,22 @@ func warnIfDirIsNotTheAddressedDaemon(what string) {
 // annoying and the first is misleading. The notice goes before the output so a
 // reader who pipes to head, or simply stops scrolling, still learns the view was
 // trimmed.
-func printTail(lines []string, limit int) {
+//
+// Under --json the notice still exists, on stderr: stdout has to stay one
+// object per line for whatever is parsing it, but silently truncating a
+// machine reader's view would be the same misdirection with a different
+// victim.
+func printTail(lines []string, limit int, asJSON bool) {
 	shown := lines
 	if limit > 0 && len(lines) > limit {
 		shown = lines[len(lines)-limit:]
-		fmt.Printf("showing the last %d of %d events. `lanes log --limit 0` for all\n",
+		notice := fmt.Sprintf("showing the last %d of %d events. `lanes log --limit 0` for all\n",
 			len(shown), len(lines))
+		if asJSON {
+			fmt.Fprint(os.Stderr, notice)
+		} else {
+			fmt.Print(notice)
+		}
 	}
 	for _, l := range shown {
 		fmt.Println(l)
