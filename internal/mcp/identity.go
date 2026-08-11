@@ -47,7 +47,7 @@ func agentInfo(params json.RawMessage, a *toolArgs, session *clientInfoJSON) *co
 	// The identity behind the label. Resolved in the same breath because both
 	// come from one memoised Identify, and recorded because the fold compares
 	// them and the fold cannot call Git.
-	info.RepoDir, info.RepoRemote, _ = paths.Identify(info.CWD).Identity()
+	info.RepoDir, info.RepoRemote, info.RepoRoots, _ = paths.Identify(info.CWD).Identity()
 	h, v := clientIdentity(params)
 	if h == "" && session != nil {
 		// Nothing on this request, but the session introduced itself at

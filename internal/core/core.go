@@ -318,8 +318,14 @@ type AgentInfo struct {
 	// Recorded rather than derived because the comparison happens in the fold,
 	// which cannot call Git, and because a replay must reach the same verdict on
 	// a machine where the checkout is long gone.
+	// RepoRoots is the repository's parentless commits, sorted and space joined.
+	// It settles the one case the other two cannot: a clone whose origin was
+	// removed looks exactly like a repository created locally, and one of those
+	// is the same project while the other is a stranger. Shared history is the
+	// only evidence that separates them.
 	RepoDir    string `json:"repo_dir,omitempty"`
 	RepoRemote string `json:"repo_remote,omitempty"`
+	RepoRoots  string `json:"repo_roots,omitempty"`
 }
 
 // Lane is a participant on the board: an identity, a mailbox and a heartbeat.
