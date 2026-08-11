@@ -149,6 +149,14 @@ func shebangIsShell(abs string) bool {
 	if !strings.HasPrefix(first, "#!") {
 		return false
 	}
+	// A NUL terminates the interpreter path as far as the kernel is concerned,
+	// so `#!/bin/zsh<NUL>rest-of-line` executes zsh while a reader of the whole
+	// line sees something else. Cut at the first NUL and judge what actually
+	// runs. Found by a review that tracked exactly that file and watched the OS
+	// run it.
+	if i := strings.IndexByte(first, 0); i >= 0 {
+		first = first[:i]
+	}
 	return interpreterIsAShell(first) || mentionsAShell(first)
 }
 

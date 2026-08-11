@@ -46,8 +46,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   string).
 - Repository identity is decided by positive evidence in three forms: the same
   Git common directory, the same canonicalised remote, or equal root-commit sets.
-  Anything else known on both sides and unequal means different projects, and
-  anything unknown warns.
+  Root sets known on both sides and unequal mean different projects; everything
+  else is unknown, and unknown warns.
   - Remotes are compared case-insensitively, because every forge people use
     serves `Acme/Api` and `acme/api` as one repository.
   - Roots are compared for EQUALITY rather than overlap. `git subtree add`
