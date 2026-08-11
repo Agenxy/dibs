@@ -158,11 +158,10 @@ The second agent gets this back:
 }
 ```
 
-Note what did *not* happen. Nothing was blocked. The second agent is free to
-carry on, and Lanes cannot stop it: the declaration succeeded, `ok` is true. All
-that happened is that both sides now know. That is the entire product: agents
-that can see each other make better decisions than agents that cannot, and an
-orchestrator that overrode them would be wrong as often as it was right.
+Nothing was blocked. The declaration succeeded, `ok` is true, and the second
+agent is free to carry on. What changed is that both sides now know, which is
+the whole mechanism: Lanes has no way to tell which of the two should stop, and
+a component that guessed would be wrong about as often as it was right.
 
 **Only one agent?** Register a second lane from the same session with a different
 name and declare the same work. The overlap check compares lanes, not processes,
