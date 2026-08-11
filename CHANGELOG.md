@@ -51,6 +51,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   --graft` (identity is read with replacement objects disabled), and
   `url.*.insteadOf` (the effective remote is resolved instead of the configured
   string).
+- Repository identity is re-read when a checkout path is reused. It was memoised
+  by path with no expiry, so after `rm -rf project && git clone something-else
+  project` a long-running daemon went on describing the repository that used to
+  be there, missing collisions inside the new project and inventing them against
+  the old. The Git common directory is now checked on every cache hit.
+- A shell reached through a tracked symlink is caught. A link named
+  `fixture-python` pointing at `/bin/zsh`, plus a file whose shebang named it,
+  ran under zsh while the check passed: both the walker and the reader follow
+  symlinks, so nothing ever saw the link itself.
 - Repository identity is decided by positive evidence in three forms: the same
   Git common directory, the same canonicalised remote, or equal root-commit sets.
   Root sets known on both sides and unequal mean different projects; everything

@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -34,6 +35,9 @@ type RepoID struct {
 	remote     string
 	roots      string // space-joined, sorted root commit ids
 	repository bool
+	// commonDirID is what commonDir was when this identity was resolved, so a
+	// checkout replaced at the same path is noticed rather than remembered.
+	commonDirID fileIdentity
 }
 
 var identifiedRepos = newRepoIDCache(repoIDCacheLimit)
@@ -118,11 +122,12 @@ func identifyRepo(dir string) RepoID {
 	worktree := Canonical(resolveGitPath(dir, lines[0]))
 	commonDir := Canonical(resolveGitPath(dir, lines[1]))
 	return RepoID{
-		WorktreeID: worktree,
-		commonDir:  commonDir,
-		remote:     primaryRemote(ctx, git, worktree),
-		roots:      rootCommits(ctx, git, worktree),
-		repository: true,
+		WorktreeID:  worktree,
+		commonDir:   commonDir,
+		remote:      primaryRemote(ctx, git, worktree),
+		roots:       rootCommits(ctx, git, worktree),
+		repository:  true,
+		commonDirID: identifyFile(commonDir),
 	}
 }
 
@@ -348,7 +353,57 @@ func (c *repoIDCache) get(dir string) (RepoID, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	id, ok := c.entries[dir]
+	if !ok {
+		return RepoID{}, false
+	}
+	// A cached identity is only usable while it still describes the checkout at
+	// that path. `rm -rf project && git clone something-else project` is an
+	// ordinary thing to do, and a daemon that runs for weeks will see it: the
+	// entry then reports the PREVIOUS repository's remote and roots, which both
+	// misses collisions inside the new project and invents them against the old.
+	// Caught by a review that reused a checkout path and drove both directions.
+	//
+	// The Git common directory is recreated by a fresh clone, so its identity on
+	// disk is the cheapest thing that changes. One stat, and no reliance on a
+	// clock, which is what the no-expiry rule above is protecting.
+	if id.repository && !sameFile(id.commonDir, id.commonDirID) {
+		return RepoID{}, false
+	}
 	return id, ok
+}
+
+// fileIdentity is what a stat says about which file this is, as opposed to what
+// it is named. Zero when the path could not be stat-ed at all.
+type fileIdentity struct {
+	// Widths follow the platform rather than the field: st_dev is int32 on
+	// darwin and uint64 on linux, and a conversion that narrows on either would
+	// make two different files compare equal. Keeping them as the signed and
+	// unsigned types Go already gives us avoids the question entirely.
+	device int64
+	inode  uint64
+}
+
+func identifyFile(path string) fileIdentity {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fileIdentity{}
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fileIdentity{}
+	}
+	return fileIdentity{device: int64(st.Dev), inode: st.Ino}
+}
+
+// sameFile reports whether path is still the same file it was when observed.
+// An unobservable identity (no stat, or a platform that does not expose one)
+// counts as unchanged: this exists to catch a replaced checkout, not to make
+// identification fail where it cannot be verified.
+func sameFile(path string, observed fileIdentity) bool {
+	if observed == (fileIdentity{}) || path == "" {
+		return true
+	}
+	return identifyFile(path) == observed
 }
 
 func (c *repoIDCache) add(dir string, id RepoID) {
