@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -336,25 +337,94 @@ func normalizedPort(scheme, port string) string {
 type repoIDCache struct {
 	mu             sync.Mutex
 	limit          int
-	entries        map[string]RepoID
+	entries        map[string]repoIDEntry
 	insertionOrder []string
 }
 
+// repoIDEntry is a resolved identity plus the file whose identity says whether
+// it is still true.
+type repoIDEntry struct {
+	id      RepoID
+	watch   string
+	watchID fileIdentity
+}
+
 func newRepoIDCache(limit int) *repoIDCache {
-	return &repoIDCache{limit: limit, entries: make(map[string]RepoID, limit)}
+	return &repoIDCache{limit: limit, entries: make(map[string]repoIDEntry, limit)}
 }
 
 func (c *repoIDCache) get(dir string) (RepoID, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	id, ok := c.entries[dir]
-	return id, ok
+	e, ok := c.entries[dir]
+	if !ok || identifyFile(e.watch) != e.watchID {
+		return RepoID{}, false
+	}
+	return e.id, true
+}
+
+// watchPath is the file whose identity decides whether a cached answer still
+// describes what is on disk.
+//
+// For a repository it is the Git common directory, which a fresh clone
+// recreates. For a directory that is NOT one it is the `.git` that would appear
+// if somebody ran `git init` there, and its absence is recorded just as
+// precisely as its presence: an unknown answer that never recovers is the same
+// bug as a stale known one, and a review found both. The second is the one I
+// predicted and skipped, which is its own lesson.
+func watchPath(dir string, id RepoID) string {
+	if id.repository && id.commonDir != "" {
+		return id.commonDir
+	}
+	return filepath.Join(dir, ".git")
+}
+
+// fileIdentity is what a stat says about which file this is, as opposed to what
+// it is named. Zero when the path could not be stat-ed at all.
+type fileIdentity struct {
+	// Widths follow the platform rather than the field: st_dev is int32 on
+	// darwin and uint64 on linux, and a conversion that narrows on either would
+	// make two different files compare equal. Keeping them as the signed and
+	// unsigned types Go already gives us avoids the question entirely.
+	device int64
+	inode  uint64
+}
+
+func identifyFile(path string) fileIdentity {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fileIdentity{}
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fileIdentity{}
+	}
+	return fileIdentity{device: int64(st.Dev), inode: st.Ino}
+}
+
+// sameFile reports whether path is still the same file it was when observed.
+// An unobservable identity (no stat, or a platform that does not expose one)
+// counts as unchanged: this exists to catch a replaced checkout, not to make
+// identification fail where it cannot be verified.
+func sameFile(path string, observed fileIdentity) bool {
+	if observed == (fileIdentity{}) || path == "" {
+		return true
+	}
+	return identifyFile(path) == observed
 }
 
 func (c *repoIDCache) add(dir string, id RepoID) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	watch := watchPath(dir, id)
+	entry := repoIDEntry{id: id, watch: watch, watchID: identifyFile(watch)}
+	// REPLACES an existing entry rather than refusing. Refusing was correct
+	// while entries could never go stale, and stopped being correct the moment
+	// they could: a revalidated miss re-resolved, could not store the answer,
+	// and left the old entry in place, so that path invoked Git on every
+	// registration forever and the stale value was never actually removed.
 	if _, exists := c.entries[dir]; exists {
+		c.entries[dir] = entry
 		return
 	}
 	// Created-order eviction, not LRU: hits stay read-only from the caller's
@@ -363,7 +433,7 @@ func (c *repoIDCache) add(dir string, id RepoID) {
 		delete(c.entries, c.insertionOrder[0])
 		c.insertionOrder = c.insertionOrder[1:]
 	}
-	c.entries[dir] = id
+	c.entries[dir] = entry
 	c.insertionOrder = append(c.insertionOrder, dir)
 }
 
