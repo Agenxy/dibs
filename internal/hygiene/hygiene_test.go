@@ -43,7 +43,10 @@ var shellAllowlist = map[string]bool{}
 func TestNoShellScriptsHaveEnteredTheTree(t *testing.T) {
 	root := repoRoot(t)
 	walk(t, root, func(rel, abs string) {
-		if strings.HasSuffix(rel, ".sh") || strings.HasSuffix(rel, ".bash") {
+		// Lowercased, because a case-sensitive check is not a check: smuggle.SH
+		// sailed past this and macOS would run it identically.
+		switch strings.ToLower(filepath.Ext(rel)) {
+		case ".sh", ".bash", ".zsh", ".ksh", ".fish", ".ps1":
 			if !shellAllowlist[rel] {
 				t.Errorf("%s is a shell script. Write it in the project's runner, or in "+
 					"Python with a uv shebang. If this is a bootstrap that runs before any "+
@@ -111,7 +114,7 @@ func spacedEnDash(line string) bool {
 }
 
 func checkedForProse(rel string) bool {
-	switch filepath.Ext(rel) {
+	switch strings.ToLower(filepath.Ext(rel)) {
 	case ".md", ".go", ".js", ".ts", ".html", ".css", ".yml", ".yaml", ".toml", ".json":
 		return true
 	}
@@ -133,10 +136,39 @@ func shebangIsShell(abs string) bool {
 	if !strings.HasPrefix(first, "#!") {
 		return false
 	}
-	for _, sh := range []string{"/sh", "/bash", "/zsh", "/dash", "/ksh", "env sh", "env bash", "env zsh"} {
-		if strings.Contains(first, sh) {
+	return interpreterIsAShell(first)
+}
+
+// interpreterIsAShell parses a shebang into the program it will actually run.
+//
+// Substring matching was tried and defeated immediately: `#!/usr/bin/env -S bash`
+// contains neither "env bash" nor "/bash", so the smuggled file passed. The line
+// has to be read the way the kernel and env read it, which means walking past
+// env, its flags, and any VAR=VALUE assignments to reach the real interpreter.
+func interpreterIsAShell(shebang string) bool {
+	fields := strings.Fields(strings.TrimPrefix(shebang, "#!"))
+	for len(fields) > 0 {
+		word := fields[0]
+		fields = fields[1:]
+		base := strings.ToLower(filepath.Base(word))
+		if base == "env" {
+			continue // the interpreter is further along
+		}
+		// env's own flags, and the assignments it accepts before the command.
+		if strings.HasPrefix(word, "-") {
+			if rest, ok := strings.CutPrefix(word, "--split-string="); ok {
+				fields = append(strings.Fields(rest), fields...)
+			}
+			continue
+		}
+		if strings.Contains(word, "=") && !strings.Contains(word, "/") {
+			continue
+		}
+		switch base {
+		case "sh", "bash", "zsh", "dash", "ksh", "ash", "csh", "tcsh", "fish":
 			return true
 		}
+		return false // the first real interpreter is something else
 	}
 	return false
 }
@@ -159,12 +191,8 @@ func walk(t *testing.T, root string, visit func(rel, abs string)) {
 	if err != nil {
 		t.Fatalf("listing tracked files: %v", err)
 	}
-	files := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
-	if len(files) < 2 {
-		t.Fatalf("git reported %d tracked files, which cannot be right: the check would "+
-			"pass by examining nothing", len(files))
-	}
-	for _, rel := range files {
+	visited := 0
+	for _, rel := range strings.Split(string(out), "\x00") {
 		if rel == "" {
 			continue
 		}
@@ -173,8 +201,22 @@ func walk(t *testing.T, root string, visit func(rel, abs string)) {
 			continue // deleted but still staged, or a submodule
 		}
 		visit(rel, abs)
+		visited++
+	}
+	// Counted AFTER the walk, not before it. The guard used to test how many
+	// lines `ls-files` printed, and an index holding two nonexistent gitlinks
+	// satisfied it while the loop examined zero real files: the check passed by
+	// looking at nothing, which is the exact failure the guard was added to
+	// prevent. Count what was actually opened.
+	if visited < minimumTrackedFiles {
+		t.Fatalf("only %d tracked files were examined, which cannot be right for this "+
+			"repository: the check would pass by looking at nothing", visited)
 	}
 }
+
+// minimumTrackedFiles is a floor far below the real count and far above zero.
+// It exists to catch a broken invocation, not to track the repository's size.
+const minimumTrackedFiles = 50
 
 // repoRoot walks up for go.mod, so the checks work wherever the test is run
 // from and do not encode this package's depth.

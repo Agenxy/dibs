@@ -142,7 +142,20 @@ func identifyRepo(dir string) RepoID {
 // depths disagree. They are clones, so they carry a remote, and the remote is
 // consulted first.
 func rootCommits(ctx context.Context, git, worktree string) string {
-	out, err := gitOutput(ctx, git, worktree, "rev-list", "--max-parents=0", "HEAD")
+	// A shallow clone does not HAVE its root commit: what rev-list reports is the
+	// boundary where the clone was cut, so two shallow clones of one repository at
+	// different depths report different ids and look like strangers. Say nothing
+	// rather than something false. Absence of evidence has to stay absence of
+	// evidence, which is the mistake this whole area keeps making.
+	if shallow, err := gitOutput(ctx, git, worktree, "rev-parse", "--is-shallow-repository"); err != nil ||
+		strings.TrimSpace(shallow) == "true" {
+		return ""
+	}
+	// --no-replace-objects because `git replace --graft` rewrites what rev-list
+	// calls a root, and it is a LOCAL decoration: two clones of one upstream
+	// disagree about their roots the moment one of them uses it. Identity must
+	// come from the objects themselves, not from a local view of them.
+	out, err := gitOutput(ctx, git, worktree, "--no-replace-objects", "rev-list", "--max-parents=0", "HEAD")
 	if err != nil {
 		return ""
 	}
@@ -206,6 +219,15 @@ func primaryRemote(ctx context.Context, git, worktree string) string {
 		}
 		return remotes[i].name < remotes[j].name
 	})
+	// The RAW configured url is not the one Git would use. `url.<base>.insteadOf`
+	// rewrites it, so two clones of one upstream can carry different strings in
+	// config and fetch from the same place, and comparing the strings called them
+	// different projects. Ask Git for the effective url instead; --get-url expands
+	// and prints without contacting the remote, so this stays local and cheap.
+	effective, err := gitOutput(ctx, git, worktree, "ls-remote", "--get-url", remotes[0].name)
+	if url := strings.TrimSpace(effective); err == nil && url != "" {
+		return normalizeRemote(url, worktree)
+	}
 	return normalizeRemote(remotes[0].url, worktree)
 }
 
