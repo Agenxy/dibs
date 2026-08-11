@@ -4,36 +4,36 @@ import (
 	"context"
 	"time"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // GuardPath answers a harness's pre-edit hook: "may this session write here?"
 //
 // This is what turns a claim from a note into something that holds. Until now a
 // claim only informed an agent that bothered to look, and the agent that
-// damages your work is exactly the one that never looked. Every harness Lanes
+// damages your work is exactly the one that never looked. Every harness Dibs
 // supports can ask before it edits and refuse on the answer, so the claim is
-// enforced at the moment it matters, by the harness, with Lanes still never
+// enforced at the moment it matters, by the harness, with Dibs still never
 // driving anything. Same category as the hook_poll wake path.
 //
 // It takes a session id for the same reason HookPoll does: a hook knows
 // "${session_id}" from its own input and has nowhere safe to keep a token.
 //
 // It FAILS OPEN, deliberately and in three ways: an unknown session, an
-// unregistered lane, and any internal trouble all return allow. A coordination
+// unregistered agent, and any internal trouble all return allow. A coordination
 // service that bricks the editor when it is confused is not a safe tool, it is
 // a broken one, and the blast radius of a missed guard is a merge conflict,
-// while the blast radius of a false deny is an engineer who turns Lanes off.
+// while the blast radius of a false deny is an engineer who turns Dibs off.
 func (e *Engine) GuardPath(ctx context.Context, sessionID, path, cwd string) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
-		lane := ""
+		agent := ""
 		if l := e.state.LaneForHook(sessionID, cwd); l != nil {
-			lane = l.ID
+			agent = l.ID
 		}
 		// Counted whether or not it resolved: a guard that never resolves is
 		// inert, and only the daemon can see that (hookhealth.go).
-		e.noteHook("guard", lane != "")
-		v := e.state.GuardPath(lane, path, time.Now())
+		e.noteHook("guard", agent != "")
+		v := e.state.GuardPath(agent, path, time.Now())
 		out := core.Result{"decision": v.Decision}
 		if v.Decision == core.GuardAllow {
 			// WHY it was allowed, because the two reasons are not the same fact
@@ -46,23 +46,23 @@ func (e *Engine) GuardPath(ctx context.Context, sessionID, path, cwd string) (co
 			// indistinguishable in the reply, so a misconfigured session id made
 			// the guard silently inert and looked exactly like a clean board.
 			// That happened, and cost a day: opencode's plugin sent its own
-			// session id while the bridge had registered the lane under another.
-			if lane == "" {
+			// session id while the bridge had registered the agent under another.
+			if agent == "" {
 				out["basis"] = "unidentified-session"
 				out["hint"] = "no agent could be resolved for this session, so no claim " +
 					"could apply and the edit was allowed. This is fail-open by design, " +
 					"NOT a finding that the path is unclaimed. If this session belongs to " +
-					"a registered agent, its session id does not match: check `lanes doctor`"
+					"a registered agent, its session id does not match: check `dibs doctor`"
 			} else {
 				out["basis"] = "no-claim"
-				out["agent"] = lane
+				out["agent"] = agent
 			}
 			// Say nothing further on the happy path, and in particular do NOT
 			// emit permissionDecision:"allow".
 			//
 			// In the PreToolUse contract "allow" does not mean "no objection",
 			// it means SKIP THE PERMISSION PROMPT. Returning it here would make
-			// Lanes silently auto-approve every edit to an unclaimed path, which
+			// Dibs silently auto-approve every edit to an unclaimed path, which
 			// is a far larger change to the user's safety posture than anything
 			// this feature is for. Omitting the field leaves the normal flow
 			// exactly as it was.
@@ -77,7 +77,7 @@ func (e *Engine) GuardPath(ctx context.Context, sessionID, path, cwd string) (co
 		out["hookSpecificOutput"] = map[string]any{
 			"hookEventName":            "PreToolUse",
 			"permissionDecision":       v.Decision, // deny | ask
-			"permissionDecisionReason": "Lanes: " + v.Reason,
+			"permissionDecisionReason": "Dibs: " + v.Reason,
 		}
 		return out
 	})

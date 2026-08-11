@@ -1,13 +1,13 @@
-# Lanes board panel (MCP Apps)
+# Dibs board panel (MCP Apps)
 
 The board is a spatial thing: who is live, what they claim, what is waiting.
 Rendering it as JSON into an agent's context serves neither reader well: the
 model pays for detail it does not need, and the human reads a wall of braces.
 
 MCP Apps ([SEP-1865](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1865),
-extension spec `2026-01-26`) fixes exactly that split, so Lanes implements it.
+extension spec `2026-01-26`) fixes exactly that split, so Dibs implements it.
 
-## Why it fits Lanes specifically
+## Why it fits Dibs specifically
 
 The spec draws a line we already care about:
 
@@ -24,7 +24,7 @@ UI-capable hosts to route it to the iframe instead. On a host that declares the
 capability but does not render, it falls back to its base meaning and lands in
 model context after all.
 
-Measured against Claude Desktop, 6 lanes:
+Measured against Claude Desktop, 6 agents:
 
 | | bytes |
 |---|---|
@@ -45,12 +45,12 @@ tool that already carries board or mailbox state opens the panel:
 
 | tool | opens on | why |
 |---|---|---|
-| `ack_board` | board | the mandatory once-per-activation checkpoint |
+| `check_in` | board | the mandatory once-per-activation checkpoint |
 | `inbox` | mail | reading mail should show the mail |
 | `await_events` | board | it returned *because* something changed |
-| `show_board` | its `view` | the explicit request |
+| `board` | its `view` | the explicit request |
 
-This adds no data. `ack_board` already returned board + inbox. It re-shapes what
+This adds no data. `check_in` already returned board + inbox. It re-shapes what
 the call produced, which is why it *reduced* context cost rather than adding any.
 
 Note the hook cannot do this. `hook_poll` returns `additionalContext`: injected
@@ -62,16 +62,16 @@ calls `inbox` → the panel opens on that mail.
 
 | Piece | Where |
 |---|---|
-| `ui://lanes/board` template, `text/html;profile=mcp-app` | `internal/mcp/board_app.html` (go:embed) |
+| `ui://agents/board` template, `text/html;profile=mcp-app` | `internal/mcp/board_app.html` (go:embed) |
 | Resource listing + read | `internal/mcp/apps.go` |
-| `show_board` tool with `_meta.ui.resourceUri` | `internal/mcp/tools.go` |
+| `board` tool with `_meta.ui.resourceUri` | `internal/mcp/tools.go` |
 | Result shaping (`content` + `structuredContent`) | `showBoardResult` |
 
-The panel shows every lane with a live/dormant/stale dot, its description, its
+The panel shows every agent with a live/dormant/stale dot, its description, its
 slots with `refs` and `dirs` as chips, a `persistent` badge, a `you` badge on the
-caller's own lane, and relative last-seen times. A **Mail** tab lists the
+caller's own agent, and relative last-seen times. A **Mail** tab lists the
 caller's messages colour-coded by type (question / request / notify / handoff)
-with sender and serial. `show_board(view:"mail")` opens straight onto it, so
+with sender and serial. `board(view:"mail")` opens straight onto it, so
 "show me my mail" does not land on the board and make the human hunt for a tab.
 
 ## Design decisions
@@ -86,10 +86,10 @@ data.
 to the host over `postMessage`. Nothing is fetched, so nothing needs allowing.
 
 **Degrades to text.** On hosts without MCP Apps, `_meta` is ignored and
-`show_board` still returns its summary line. Nothing breaks; the human just does
+`board` still returns its summary line. Nothing breaks; the human just does
 not get the panel.
 
-**The web board stays.** `lanes web` remains the broad, whole-world view. The
+**The web board stays.** `dibs web` remains the broad, whole-world view. The
 panel is the in-conversation view of *this agent's* board.
 
 ## Host support
@@ -122,13 +122,13 @@ same call cost before this feature existed. **Bounded waste beats a feature that
 silently does not work.** `panel_test.go` now asserts the payload is always
 present, with the reasoning inline so the gate is not reintroduced.
 
-Declarations captured from live handshakes (`LANES_LOG_RPC=1`): still useful for
+Declarations captured from live handshakes (`DIBS_LOG_RPC=1`): still useful for
 knowing what a client *says*, just not for deciding what to send it:
 
 | client | declares `io.modelcontextprotocol/ui` |
 |---|---|
 | `claude-ai/0.1.0` | yes (`{mimeTypes:["text/html;profile=mcp-app"]}` |
-| `local-agent-mode-lanes/1.0.0` | yes) same |
+| `local-agent-mode-agents/1.0.0` | yes) same |
 | `claude-code/2.1.219` | no |
 | `MCP Apps Host` (ext-apps reference) | **no, and renders regardless** |
 
@@ -159,7 +159,7 @@ per-connection decision possible at all on that transport.
 is required for that caching to work, and it means **changing the template's
 content is invisible to any already-connected client.**
 
-Measured: a `show_board` call at 03:25:00 triggered **zero** `resources/read`.
+Measured: a `board` call at 03:25:00 triggered **zero** `resources/read`.
 The host was still rendering the copy it fetched when it connected at 01:03,
 two hours and several fixes earlier. Two rounds of "the panel is blank" were the
 *same old template* both times; the fix had never been delivered.
@@ -169,7 +169,7 @@ Consequences for anyone developing one of these:
 - You cannot iterate on a template against a live host. Every change needs a
   client reconnect, or you are testing something you shipped hours ago.
 - A blank panel tells you nothing about the template you just wrote.
-- `notifications/resources/updated` exists for this (Lanes advertises
+- `notifications/resources/updated` exists for this (Dibs advertises
   `resources.subscribe` on both handshake paths) but no shipping client
   subscribes yet, so in practice reconnection is the only delivery mechanism.
 
@@ -213,17 +213,17 @@ promise. `apps_test.go` asserts `draw()` precedes the handshake.
 
 Driving it from Desktop chat produced a better bug report than any amount of
 local testing: **the panel rendered AND the model still received the whole board
-as JSON**, contradicting `show_board`'s own description.
+as JSON**, contradicting `board`'s own description.
 
-That was ours, not the host's. When the `ack_board` regression was fixed,
-`show_board` was routed through the shared panel path, which deliberately
-preserves the agent's full result, because `ack_board` **needs** it: reading the
-board is the awareness gate. `show_board` has no such need; the human is looking
+That was ours, not the host's. When the `check_in` regression was fixed,
+`board` was routed through the shared panel path, which deliberately
+preserves the agent's full result, because `check_in` **needs** it: reading the
+board is the awareness gate. `board` has no such need; the human is looking
 at the panel. It now returns a summary line and nothing else when a renderer is
 present:
 
 ```
-Lanes board: 8 lane(s), 0 active. Shown to the human in the board panel.
+Dibs board: 8 agent(s), 0 active. Shown to the human in the board panel.
 ```
 
 Two further findings from the same session, both fixed:
@@ -247,16 +247,16 @@ draws nothing at all:
 
 | tool | view | when it stays silent |
 |---|---|---|
-| `ack_board` | board | never, orientation is always deliberate |
+| `check_in` | board | never, orientation is always deliberate |
 | `inbox` | mail | **empty mailbox draws no panel** |
 | `await_events` | activity (capped at 40) | a timeout with no events draws nothing |
-| `send_message` / `respond` | mail | (|
-| `show_board` | its `view` argument |) |
+| `send` / `respond` | mail | (|
+| `board` | its `view` argument |) |
 
 Getting there exposed the named-map-type trap for the third time in this file:
 `core.Result` does not satisfy `case map[string]any`, and `[]core.Event` does not
 satisfy `.([]any)`, because Go treats named types as distinct. That has silently
-produced a wrong answer three times: a summary reporting 0 lanes over 7, a board
+produced a wrong answer three times: a summary reporting 0 agents over 7, a board
 dropped entirely, and a mailbox panel suppressed while holding mail. The payload
 builder now normalises through JSON once at the boundary, which removes the class
 rather than patching the instance.
@@ -271,21 +271,21 @@ believing something wrong. It has been replaced by
 reference implementation) driven in a browser against the live daemon.
 
 Reaching it needed one shim: a bun proxy on :3001 that injects the
-`X-Lanes-Local` secret (the host knows nothing about our auth header) and answers
+`X-Dibs-Local` secret (the host knows nothing about our auth header) and answers
 CORS preflight. The daemon, the template, the payload and the handshake are all
 real.
 
 Against that host:
 
-- `resources/list` advertises `ui://lanes/board` with the correct MIME type.
+- `resources/list` advertises `ui://agents/board` with the correct MIME type.
 - `resources/read` returns the template plus `_meta.ui.csp` and `prefersBorder`.
 - `tools/list` carries `_meta.ui.resourceUri` and `visibility: ["model","app"]`.
-- `tools/call show_board` returns summary + `structuredContent` + `_meta.ui`.
-- The panel renders **11 lanes and 6 messages** of live board state, with the
+- `tools/call board` returns summary + `structuredContent` + `_meta.ui`.
+- The panel renders **11 agents and 6 messages** of live board state, with the
   identity chip (`claude-opus-5`) and the `this panel` badge on the caller.
 - `view:"mail"` opens straight onto the Mail tab.
 - `ui/update-model-context` lands: the host's Model Context pane shows
-  `Lanes: 5 unread message(s) for lane "host-test"`.
+  `Dibs: 5 unread message(s) for agent "host-test"`.
 
 **Interaction is verified end to end.** Clicking **Approve** on request `#384` in
 the panel issued a real `respond` call; the daemon then reported
@@ -300,11 +300,11 @@ the reference host; actions were proven through that same-origin driver.
 
 Earlier findings from the simulator era, all still guarded by tests:
 
-- `resources/list` advertises `ui://lanes/board` with the correct MIME type.
+- `resources/list` advertises `ui://agents/board` with the correct MIME type.
 - `resources/read` returns the template plus `_meta.ui.csp` and `prefersBorder`.
 - `tools/list` carries `_meta.ui.resourceUri` and `visibility: ["model","app"]`.
-- `tools/call show_board` returns summary + `structuredContent` + `_meta.ui`.
+- `tools/call board` returns summary + `structuredContent` + `_meta.ui`.
 Two bugs were found by rendering it rather than reasoning about it: the summary
-counted `0 lanes` while handing the UI seven (asserting `[]any` against a typed
+counted `0 agents` while handing the UI seven (asserting `[]any` against a typed
 slice yields nothing, silently), and the mail panel showed "No mail" over a full
 mailbox (`inbox` arrives as `{messages:[…]}`, not an array). Both now have tests.

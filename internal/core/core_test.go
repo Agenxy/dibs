@@ -10,17 +10,17 @@ import (
 
 var t0 = time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
 
-func reg(t *testing.T, s *State, name, token string, now time.Time) *Lane {
+func reg(t *testing.T, s *State, name, token string, now time.Time) *Agent {
 	t.Helper()
 	res, _, err := s.Apply(&Op{Kind: OpRegisterLane, Name: name, NewToken: token}, now)
 	if err != nil {
 		t.Fatalf("register %s: %v", name, err)
 	}
-	return s.Lanes[res["lane_id"].(string)]
+	return s.Agents[res["lane_id"].(string)]
 }
 
-//nolint:unparam // returning the Lane keeps the helper usable from new tests
-func regPersistent(t *testing.T, s *State, name, token, nonce string, now time.Time) *Lane {
+//nolint:unparam // returning the Agent keeps the helper usable from new tests
+func regPersistent(t *testing.T, s *State, name, token, nonce string, now time.Time) *Agent {
 	t.Helper()
 	res, _, err := s.Apply(&Op{
 		Kind: OpRegisterLane, Name: name, NewToken: token,
@@ -29,7 +29,7 @@ func regPersistent(t *testing.T, s *State, name, token, nonce string, now time.T
 	if err != nil {
 		t.Fatalf("register persistent %s: %v", name, err)
 	}
-	return s.Lanes[res["lane_id"].(string)]
+	return s.Agents[res["lane_id"].(string)]
 }
 
 func mustApply(t *testing.T, s *State, op *Op, now time.Time) Result {
@@ -63,22 +63,22 @@ func TestWakeIsLedgeredTransition(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	reg(t, s, "a", "ta", t0)
 	mustApply(t, s, &Op{Kind: OpSweep, StaleLanes: []string{"a"}}, t0.Add(6*time.Minute))
-	if s.Lanes["a"].Status != StatusStale {
-		t.Fatal("setup: lane should be stale")
+	if s.Agents["a"].Status != StatusStale {
+		t.Fatal("setup: agent should be stale")
 	}
 	before := s.Serial
 	_, evs, err := s.Apply(&Op{Kind: OpWakeLane, Token: "ta"}, t0.Add(7*time.Minute))
-	if err != nil || len(evs) != 1 || evs[0].Type != "lane.recovered" {
+	if err != nil || len(evs) != 1 || evs[0].Type != "agent.recovered" {
 		t.Fatalf("wake: evs=%v err=%v", evs, err)
 	}
 	if s.Serial != before+1 {
 		t.Fatal("wake must consume exactly one serial")
 	}
-	// Idempotent wake on an active lane: unchanged, no serial.
+	// Idempotent wake on an active agent: unchanged, no serial.
 	before = s.Serial
 	_, evs, _ = s.Apply(&Op{Kind: OpWakeLane, Token: "ta"}, t0.Add(8*time.Minute))
 	if evs != nil || s.Serial != before {
-		t.Fatal("wake on active lane must be a serial-free no-op")
+		t.Fatal("wake on active agent must be a serial-free no-op")
 	}
 }
 
@@ -95,12 +95,12 @@ func TestPersistentLifecycleAndResume(t *testing.T) {
 	mustApply(t, s, &Op{Kind: OpAckBoard, Token: "tok1"}, t0)
 	mustApply(t, s, &Op{Kind: OpClaim, Token: "tok1", Path: "/w", Mode: ClaimExclusive}, t0)
 	mustApply(t, s, &Op{Kind: OpSweep, StaleLanes: []string{"reviewer"}}, t0.Add(10*time.Minute))
-	l := s.Lanes["reviewer"]
+	l := s.Agents["reviewer"]
 	if l.Status != StatusDormant || len(s.Claims) != 0 || l.AckedSerial != 0 {
 		t.Fatalf("dormant transition wrong: status=%s claims=%d acked=%d", l.Status, len(s.Claims), l.AckedSerial)
 	}
 
-	// resume_lane: rotation + generation + rebind, atomic.
+	// resume: rotation + generation + rebind, atomic.
 	res := mustApply(t, s, &Op{
 		Kind: OpResumeLane, Nonce: "nonce-secret-1", ResumeID: "r1",
 		NewToken: "tok2", PID: 4242,
@@ -137,8 +137,8 @@ func TestPersistentLifecycleAndResume(t *testing.T) {
 	// Dormancy max runs from the ledgered transition → archived.
 	mustApply(t, s, &Op{Kind: OpSweep, StaleLanes: []string{"reviewer"}}, t0.Add(26*time.Hour))
 	mustApply(t, s, &Op{Kind: OpSweep}, t0.Add(26*time.Hour).Add(DefaultLimits().DormancyMax+time.Hour))
-	if s.Lanes["reviewer"].Status != StatusArchived {
-		t.Fatalf("dormancy max must archive, got %s", s.Lanes["reviewer"].Status)
+	if s.Agents["reviewer"].Status != StatusArchived {
+		t.Fatalf("dormancy max must archive, got %s", s.Agents["reviewer"].Status)
 	}
 }
 
@@ -168,7 +168,7 @@ func TestTerminalPredicateAndConsumption(t *testing.T) {
 		t.Fatal("answered question must be terminal+consumed")
 	}
 
-	// ack_message on terminal mail = consumption transition.
+	// ack on terminal mail = consumption transition.
 	res = mustApply(t, s, &Op{
 		Kind: OpSendMessage, Token: "ta", To: "b", MsgType: MsgQuestion, Body: "q2",
 		DeadlineSec: 60,
@@ -190,7 +190,7 @@ func TestTerminalPredicateAndConsumption(t *testing.T) {
 		t.Fatal("consumption flag not set")
 	}
 	// GC keeps consumed terminal mail through the sender's read window
-	// (real-agent finding: respond+GC raced the sender's get_message)…
+	// (real-agent finding: respond+GC raced the sender's read_mail)…
 	mustApply(t, s, &Op{Kind: OpSweep}, t0.Add(4*time.Minute))
 	if _, exists := s.Messages[q2]; !exists {
 		t.Fatal("consumed terminal message must survive the consumed-retention window")
@@ -298,7 +298,7 @@ func TestMailboxDisplacementAndWatermark(t *testing.T) {
 	// evicts under the watermark.
 	mustApply(t, s, &Op{Kind: OpSendMessage, Token: "ta", To: "b", MsgType: MsgNotify, Body: "n4"}, t0)
 	mustApply(t, s, &Op{Kind: OpSweep}, t0.Add(time.Second))
-	if s.Lanes["b"].TruncatedBefore == 0 {
+	if s.Agents["b"].TruncatedBefore == 0 {
 		t.Fatal("watermark must advance when unconsumed terminal mail is evicted")
 	}
 }
@@ -347,19 +347,19 @@ func TestNonceRetryWindowAndInUse(t *testing.T) {
 		t.Fatalf("retry within window: %v %v", res2, err)
 	}
 	if res2["lane_id"] != res["lane_id"] {
-		t.Fatal("retry must return the same lane")
+		t.Fatal("retry must return the same agent")
 	}
 	// Outside the window, same name: the nonce is the recovery credential, so
 	// this is the agent coming back: reattach with a rotated token rather than
-	// refusing. Refusing here is what stranded four lanes' mail on a live fleet:
+	// refusing. Refusing here is what stranded four agents' mail on a live fleet:
 	// the agent had kept its nonce exactly as advised and was told, by its own
 	// credential, that it was somebody else.
 	res3, _, err := s.Apply(&Op{Kind: OpRegisterLane, Name: "a", NewToken: "t3", Nonce: "nx"}, t0.Add(10*time.Minute))
 	if err != nil {
-		t.Fatalf("outside the window the nonce must recover the lane: %v", err)
+		t.Fatalf("outside the window the nonce must recover the agent: %v", err)
 	}
 	if res3["lane_id"] != res["lane_id"] || res3["reattached"] != true || res3["token"] != "t3" {
-		t.Fatalf("want reattach to the same lane with a rotated token, got %v", res3)
+		t.Fatalf("want reattach to the same agent with a rotated token, got %v", res3)
 	}
 	// A DIFFERENT name is still refused: a nonce recovers one identity.
 	_, _, err = s.Apply(&Op{Kind: OpRegisterLane, Name: "b", NewToken: "t4", Nonce: "nx"}, t0.Add(20*time.Minute))
@@ -380,7 +380,7 @@ func TestAckBoardAtomicCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Post-state: returned inbox shows delivered; delivery event shares the
-	// ack_board serial; returned serial is the op's own.
+	// check_in serial; returned serial is the op's own.
 	inbox := res["inbox"].([]*Message)
 	if len(inbox) != 1 || inbox[0].State != MsgStateDelivered {
 		t.Fatalf("checkpoint inbox must be post-state: %+v", inbox)
@@ -396,10 +396,10 @@ func TestAckBoardAtomicCheckpoint(t *testing.T) {
 		}
 	}
 	if !hasDelivery {
-		t.Fatal("delivery must be an effect of the ack_board op at its serial")
+		t.Fatal("delivery must be an effect of the check_in op at its serial")
 	}
 	if res["truncated_before_serial"].(uint64) != 0 {
-		t.Fatal("fresh lane watermark must be 0")
+		t.Fatal("fresh agent watermark must be 0")
 	}
 }
 
@@ -430,8 +430,8 @@ func asErr(err error, target **Error) bool {
 // Detection keys on the shared objective ref.
 func TestRedundantObjectiveIsCaught(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
-	reg(t, s, "lane-a", "t3d", t0)
-	reg(t, s, "lane-b", "tdoc", t0)
+	reg(t, s, "agent-a", "t3d", t0)
+	reg(t, s, "agent-b", "tdoc", t0)
 	mustApply(t, s, &Op{Kind: OpAckBoard, Token: "t3d"}, t0)
 	mustApply(t, s, &Op{Kind: OpAckBoard, Token: "tdoc"}, t0)
 
@@ -454,21 +454,21 @@ func TestRedundantObjectiveIsCaught(t *testing.T) {
 	if !ok || len(ov) == 0 || !ov[0].Strong() {
 		t.Fatalf("redundant objective NOT caught: %#v", res)
 	}
-	if ov[0].Lane != "lane-a" || ov[0].Signal != SignalSameObjective {
+	if ov[0].Agent != "agent-a" || ov[0].Signal != SignalSameObjective {
 		t.Fatalf("overlap should name the incumbent + the objective: %+v", ov[0])
 	}
 	if _, warned := res["warning"]; !warned {
 		t.Fatal("a same-objective overlap must warn explicitly")
 	}
-	// Advisory, never coercive: #103's lane was legitimately complementary.
-	if s.Lanes["lane-b"].Slots["s1"].Text == "" {
-		t.Fatal("declaring must still succeed. Lanes informs, never blocks")
+	// Advisory, never coercive: #103's agent was legitimately complementary.
+	if s.Agents["agent-b"].Slots["s1"].Text == "" {
+		t.Fatal("declaring must still succeed. Dibs informs, never blocks")
 	}
 }
 
 // TestConcurrentFileWorkIsNotAnAlarm is the counterweight, and it matters as
 // much as the test above: two agents editing the same file is NORMAL. Version
-// control solved that. Lanes must report it as awareness, never as duplication
+// control solved that. Dibs must report it as awareness, never as duplication
 // a false alarm here would push agents to serialize and destroy parallelism.
 func TestConcurrentFileWorkIsNotAnAlarm(t *testing.T) {
 	s := NewState("n1", DefaultLimits())

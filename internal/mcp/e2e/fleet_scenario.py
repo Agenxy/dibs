@@ -4,11 +4,11 @@
 # dependencies = []
 # ///
 """A fleet, for real: several harnesses with real models, coordinating through
-Lanes, with a human acting from the board at the same time.
+Dibs, with a human acting from the board at the same time.
 
 This is not a unit test and does not belong in `task ci`: it spends money on
 model calls and depends on provider availability. It exists because everything
-else in the suite drives Lanes through its own client code, and the one question
+else in the suite drives Dibs through its own client code, and the one question
 that cannot answer is whether a REAL harness, with a real model deciding what to
 call, actually coordinates.
 
@@ -37,8 +37,8 @@ from pathlib import Path
 PORT = int(os.environ.get("PORT", "4966"))
 ROOT = Path(__file__).resolve().parents[3]
 HOME = Path.home()
-LANES = os.environ.get("LANES", str(HOME / ".local/bin/lanes"))
-LANESD = os.environ.get("LANESD", str(HOME / ".local/bin/lanesd"))
+LANES = os.environ.get("DIBS", str(HOME / ".local/bin/dibs"))
+LANESD = os.environ.get("DIBD", str(HOME / ".local/bin/dibd"))
 
 GREEN, RED, YELLOW, RESET = "\033[32m", "\033[31m", "\033[33m", "\033[0m"
 
@@ -63,7 +63,7 @@ def note(msg: str) -> None:
 
 
 class Daemon:
-    """One lanesd, its data directory, and an authenticated client for it."""
+    """One dibd, its data directory, and an authenticated client for it."""
 
     def __init__(self, dirpath: Path, port: int, *args: str, log: Path | None = None):
         self.dir = dirpath
@@ -110,7 +110,7 @@ class Daemon:
         }).encode()
         req = urllib.request.Request(
             f"http://127.0.0.1:{self.port}/mcp", body,
-            {"content-type": "application/json", "X-Lanes-Local": self.secret},
+            {"content-type": "application/json", "X-Dibs-Local": self.secret},
         )
         try:
             with urllib.request.urlopen(req, timeout=30) as r:
@@ -128,18 +128,18 @@ class Daemon:
 
     def board(self, token: str) -> dict:
         """The board, from structuredContent rather than the text payload."""
-        env = self.call("show_board", {"token": token})
+        env = self.call("board", {"token": token})
         try:
             return env["result"].get("structuredContent", {}).get("board", {})
         except (KeyError, TypeError):
             return {}
 
     def agent(self, name: str, **extra) -> str:
-        """Register a lane and acknowledge the board. Returns its token."""
-        r = self.tool("register_lane", {"name": name, "session_id": f"s-{name}", **extra})
+        """Register an agent and acknowledge the board. Returns its token."""
+        r = self.tool("register", {"name": name, "session_id": f"s-{name}", **extra})
         tok = r.get("token", "")
         if tok:
-            self.tool("ack_board", {"token": tok})
+            self.tool("check_in", {"token": tok})
         return tok
 
     def notice_for(self, session: str) -> str:
@@ -225,13 +225,13 @@ def launch_harnesses(proj: Path, work: Path, data: Path, secret: str) -> list:
     # opencode
     (proj / "opencode.json").write_text(json.dumps({
         "$schema": "https://opencode.ai/config.json",
-        "mcp": {"lanes": {"type": "local", "command": [LANES, "mcp-stdio"],
-                          "environment": {"LANES_ADDR": f"127.0.0.1:{PORT}",
-                                          "LANES_DIR": str(data)},
+        "mcp": {"agents": {"type": "local", "command": [LANES, "mcp-stdio"],
+                          "environment": {"DIBS_ADDR": f"127.0.0.1:{PORT}",
+                                          "DIBS_DIR": str(data)},
                           "enabled": True}},
     }))
     if shutil.which("opencode"):
-        env = {**os.environ, "LANES_ADDR": f"127.0.0.1:{PORT}", "LANES_DIR": str(data),
+        env = {**os.environ, "DIBS_ADDR": f"127.0.0.1:{PORT}", "DIBS_DIR": str(data),
                "OPENCODE_CONFIG": str(proj / "opencode.json")}
         running.append(subprocess.Popen(
             ["opencode", "run", PROMPT], cwd=proj, env=env,
@@ -242,14 +242,14 @@ def launch_harnesses(proj: Path, work: Path, data: Path, secret: str) -> list:
 
     # codex. Its config is overridden per-invocation with -c rather than through
     # CODEX_HOME, which this build ignores; -c MERGES with ~/.codex/config.toml,
-    # so the override retargets the existing [mcp_servers.lanes] URL instead of
+    # so the override retargets the existing [mcp_servers.agents] URL instead of
     # adding a stdio server beside it (which errors: "url is not supported for
     # stdio"). The operator's own config is read but never written.
     if shutil.which("codex"):
         running.append(subprocess.Popen(
             ["codex", "exec", "--skip-git-repo-check",
-             "-c", f'mcp_servers.lanes.url="http://127.0.0.1:{PORT}/mcp"',
-             "-c", f'mcp_servers.lanes.http_headers={{"X-Lanes-Local"="{secret}"}}',
+             "-c", f'mcp_servers.agents.url="http://127.0.0.1:{PORT}/mcp"',
+             "-c", f'mcp_servers.agents.http_headers={{"X-Dibs-Local"="{secret}"}}',
              PROMPT],
             cwd=proj, stdout=(work / "codex.log").open("w"),
             stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL))
@@ -262,14 +262,14 @@ def launch_harnesses(proj: Path, work: Path, data: Path, secret: str) -> list:
     # script must never write to the operator's own harness configuration, and
     # pi takes --provider/--model/--api-key directly. Set PI_PROVIDER/PI_MODEL/
     # PI_API_KEY (or OPENROUTER_API_KEY) to include it; without them it is
-    # skipped, which is an environment fact and not a Lanes failure.
+    # skipped, which is an environment fact and not a Dibs failure.
     (proj / ".pi/extensions").mkdir(parents=True, exist_ok=True)
-    ext = ROOT / "plugins/pi/lanes.ts"
+    ext = ROOT / "plugins/pi/dibs.ts"
     if ext.exists():
-        shutil.copy(ext, proj / ".pi/extensions/lanes.ts")
+        shutil.copy(ext, proj / ".pi/extensions/dibs.ts")
     key = os.environ.get("PI_API_KEY") or os.environ.get("OPENROUTER_API_KEY", "")
     if shutil.which("pi") and key:
-        env = {**os.environ, "LANES_ADDR": f"127.0.0.1:{PORT}", "LANES_DIR": str(data)}
+        env = {**os.environ, "DIBS_ADDR": f"127.0.0.1:{PORT}", "DIBS_DIR": str(data)}
         running.append(subprocess.Popen(
             ["pi", "--provider", os.environ.get("PI_PROVIDER", "openrouter"),
              "--model", os.environ.get("PI_MODEL", "openai/gpt-4o-mini"),
@@ -289,23 +289,23 @@ class Human:
     """The operator, acting from the board while the agents run.
 
     The board's session is minted by proving the local secret AND the admin
-    password, exactly as `lanes web` does: no special path for the test.
+    password, exactly as `dibs web` does: no special path for the test.
     """
 
-    def __init__(self, d: Daemon, password: str = "lanes-fleet"):
+    def __init__(self, d: Daemon, password: str = "agents-fleet"):
         self.d = d
         self.cookie = ""
         self.password = password
         subprocess.run(
             [LANES, "admin", "set-password"],
             input=f"{password}\n{password}\n", text=True,
-            env={**os.environ, "LANES_ADMIN": "1", "LANES_DIR": str(d.dir),
-                 "LANES_ADDR": f"127.0.0.1:{d.port}"},
+            env={**os.environ, "DIBS_ADMIN": "1", "DIBS_DIR": str(d.dir),
+                 "DIBS_ADDR": f"127.0.0.1:{d.port}"},
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
         # /bootstrap returns a single-use token; the board trades it for a
         # session cookie on first load and refuses it thereafter.
         st, body, _ = http("POST", f"http://127.0.0.1:{d.port}/bootstrap",
-                           headers={"X-Lanes-Local": d.secret, "X-Lanes-Admin": password})
+                           headers={"X-Dibs-Local": d.secret, "X-Dibs-Admin": password})
         bt = ""
         if st == 200:
             try:
@@ -351,7 +351,7 @@ def human_acts(d: Daemon, human: Human) -> str:
     else:
         ok("watching the board creates no agent")
 
-    if human.act("join", {"lane": "auth-work"}) == 200:
+    if human.act("join", {"agent": "auth-work"}) == 200:
         ok("human joined auth-work")
     else:
         no("human join", "non-200")
@@ -361,14 +361,14 @@ def human_acts(d: Daemon, human: Human) -> str:
     else:
         no("human identity", "still empty after acting")
 
-    if human.act("post", {"lane": "auth-work",
+    if human.act("post", {"agent": "auth-work",
                           "body": "heads up: I am renaming Validate() this afternoon"}) == 200:
-        ok("human posted to the lane")
+        ok("human posted to the agent")
     else:
         no("human post", "non-200")
-    if human.act("announce", {"lane": "auth-work",
+    if human.act("announce", {"agent": "auth-work",
                               "body": "do not touch auth/middleware.go until I say"}) == 200:
-        ok("human announced to the lane")
+        ok("human announced to the agent")
     else:
         no("human announce", "non-200")
     return me
@@ -380,9 +380,9 @@ def human_directs(d: Daemon, human: Human, seed_tok: str, me: str) -> None:
         # Only a human may grant the coordinator role: the director of
         # SPEC-CHANNELS.md §8.1. No agent can promote itself.
         st, _, _ = http("POST", f"http://127.0.0.1:{d.port}/api/admin/role",
-                        headers={"X-Lanes-Local": d.secret,
-                                 "X-Lanes-Admin": human.password},
-                        data={"lane": "seed", "role": "coordinator"})
+                        headers={"X-Dibs-Local": d.secret,
+                                 "X-Dibs-Admin": human.password},
+                        data={"agent": "seed", "role": "coordinator"})
         if st == 200:
             ok("human granted seed the coordinator role")
         else:
@@ -397,7 +397,7 @@ def human_directs(d: Daemon, human: Human, seed_tok: str, me: str) -> None:
             no("human send", f"HTTP {st}")
 
     # An agent asks the HUMAN something, and the human answers from the board.
-    q = d.tool("send_message", {"token": seed_tok, "to": me, "type": "question",
+    q = d.tool("send", {"token": seed_tok, "to": me, "type": "question",
                                 "body": "May I rename Validate()?",
                                 "op_id": "ask-human", "deadline_s": 600})
     serial = q.get("msg_serial", 0)
@@ -409,7 +409,7 @@ def human_directs(d: Daemon, human: Human, seed_tok: str, me: str) -> None:
             ok("human answered the agent from the board")
         else:
             no("human respond", f"HTTP {st}")
-        got = d.tool("get_message", {"token": seed_tok, "msg_serial": serial}) \
+        got = d.tool("read_mail", {"token": seed_tok, "msg_serial": serial}) \
                .get("message", {}).get("response", "")
         if "announce it in auth-work" in got:
             ok("the agent can READ the human's answer")
@@ -421,7 +421,7 @@ def announcement_reaches_an_agent(d: Daemon, seed_tok: str) -> None:
     """The human's announcement must reach an agent through the wake path,
     WITHOUT handing its contents to a caller that proved nothing.
 
-    hook_poll takes a session id off the wire with no lane token, because a
+    hook_poll takes a session id off the wire with no agent token, because a
     harness lifecycle hook has no token to give. So any holder of the
     coordination secret can name any session id. The wake says WHAT is waiting;
     the token is what reads it.
@@ -448,15 +448,15 @@ def announcement_reaches_an_agent(d: Daemon, seed_tok: str) -> None:
 
 
 def report_board(board: dict, me: str) -> None:
-    agents = [lane for lane in board.get("lanes", []) if lane["id"] not in ("seed", "inspector")]
-    chans = board.get("channels", [])
-    harnesses = sorted({(lane.get("agent") or {}).get("harness", "?") for lane in agents})
+    agents = [agent for agent in board.get("agents", []) if agent["id"] not in ("seed", "inspector")]
+    chans = board.get("spaces", [])
+    harnesses = sorted({(agent.get("agent") or {}).get("harness", "?") for agent in agents})
     print(f"\n  agents registered: {len(agents)}. "
           f"harnesses: {', '.join(h for h in harnesses if h)}")
-    for lane in agents:
-        a = lane.get("agent") or {}
-        slot = (lane.get("slots") or [{}])[0].get("text", "")
-        print(f"    {lane['id']:<22} {a.get('harness', '?'):<12} {slot[:44]}")
+    for agent in agents:
+        a = agent.get("agent") or {}
+        slot = (agent.get("slots") or [{}])[0].get("text", "")
+        print(f"    {agent['id']:<22} {a.get('harness', '?'):<12} {slot[:44]}")
 
     auth = next((c for c in chans if c["id"] == "auth-work"), None)
     if auth:
@@ -464,7 +464,7 @@ def report_board(board: dict, me: str) -> None:
         auto = [m["agent"] for m in auth.get("members", []) if m.get("auto")]
         scored = [f"{m['agent']}={m.get('score', 0):.3f}"
                   for m in auth.get("members", []) if m.get("score")]
-        print(f"\n  lane auth-work members: {', '.join(members)}")
+        print(f"\n  agent auth-work members: {', '.join(members)}")
         print(f"    auto-matched in: {', '.join(auto) if auto else '(none)'}")
         print(f"    recorded scores: {', '.join(scored) if scored else '(none: joined explicitly)'}")
         print(f"    human present:   {'yes' if me and me in members else 'no'}")
@@ -475,9 +475,9 @@ def director_merges(d: Daemon, seed_tok: str) -> None:
     """Granting the role proves nothing; using it does.
 
     A merge is the destructive one, and it has three things to decide: the
-    source lane's MEMBERS, its QUEUE, and its outstanding ANNOUNCEMENTS. Two of
+    source agent's MEMBERS, its QUEUE, and its outstanding ANNOUNCEMENTS. Two of
     those were silently dropped: a queued agent was left waiting forever on a
-    lane that had been deleted, and its announcements were left naming a lane
+    agent that had been deleted, and its announcements were left naming an agent
     that no longer existed, countable on no board while still obliging members
     to answer them.
     """
@@ -490,54 +490,54 @@ def director_merges(d: Daemon, seed_tok: str) -> None:
     host = d.agent("host")
 
     # src: exclusive, held by holder, with bystander a member and waiter queued.
-    d.tool("lane_open", {"token": holder, "lane": "src-lane",
+    d.tool("open_space", {"token": holder, "agent": "src-agent",
                          "topic": "token refresh retry loop", "exclusive": True})
-    d.tool("lane_admit", {"token": seed_tok, "lane": "src-lane", "to": "bystander"})
-    qpos = d.tool("lane_join", {"token": waiter, "lane": "src-lane"}).get("queue_position")
+    d.tool("admit", {"token": seed_tok, "agent": "src-agent", "to": "bystander"})
+    qpos = d.tool("join_space", {"token": waiter, "agent": "src-agent"}).get("queue_position")
     if qpos == 1:
         ok("waiter is queued behind the exclusive owner")
     else:
         no("queue setup", f"position={qpos}")
 
     # An outstanding announcement, bound to bystander and unanswered.
-    d.tool("lane_announce", {"token": holder, "lane": "src-lane",
-                             "body": "src-lane: freezing auth/retry.go"})
-    d.tool("lane_open", {"token": host, "lane": "dst-lane", "topic": "auth token work"})
+    d.tool("announce", {"token": holder, "agent": "src-agent",
+                             "body": "src-agent: freezing auth/retry.go"})
+    d.tool("open_space", {"token": host, "agent": "dst-agent", "topic": "auth token work"})
 
     # Drain everyone's notices first, so what we read after is the merge.
     for who in ("seed", "holder", "waiter", "bystander", "host"):
         d.notice_for(f"s-{who}")
     d.notice_for("seed")
 
-    env = d.call("lane_merge", {"token": seed_tok, "lane": "src-lane",
-                                "to": "dst-lane", "note": "same work"})
+    env = d.call("merge_spaces", {"token": seed_tok, "agent": "src-agent",
+                                "to": "dst-agent", "note": "same work"})
     if env.get("result", {}).get("isError"):
-        no("coordinator merged two lanes", json.dumps(env)[:120])
+        no("coordinator merged two agents", json.dumps(env)[:120])
     else:
-        ok("the coordinator merged src-lane into dst-lane")
+        ok("the coordinator merged src-agent into dst-agent")
 
     board = d.board(seed_tok)
-    dst = next((c for c in board.get("channels", []) if c["id"] == "dst-lane"), {})
+    dst = next((c for c in board.get("spaces", []) if c["id"] == "dst-agent"), {})
     members = sorted(m["agent"] for m in dst.get("members", []))
     unacked = dst.get("unacked_announcements", 0)
-    gone = not any(c["id"] == "src-lane" for c in board.get("channels", []))
-    print(f"    dst-lane after merge: members={members} unacked={unacked} src-gone={gone}")
+    gone = not any(c["id"] == "src-agent" for c in board.get("spaces", []))
+    print(f"    dst-agent after merge: members={members} unacked={unacked} src-gone={gone}")
 
     # 1. The queued agent went somewhere real.
     if "waiter" in members:
-        ok("the agent queued on the deleted lane was carried, not dropped")
+        ok("the agent queued on the deleted agent was carried, not dropped")
     else:
-        no("queue carried", f"waiter vanished with src-lane: {members}")
+        no("queue carried", f"waiter vanished with src-agent: {members}")
     if gone:
-        ok("the source lane is gone")
+        ok("the source agent is gone")
     else:
-        no("source deleted", "src-lane still present")
+        no("source deleted", "src-agent still present")
 
     # 2. The outstanding announcement follows the work, and is countable again.
     if unacked == 0:
         no("announcement carried", "still invisible on every board")
     else:
-        ok("the outstanding announcement is visible on the surviving lane")
+        ok("the outstanding announcement is visible on the surviving agent")
 
     # ...and an agent can PULL it, not just be pushed it. An obligation that only
     # arrives through the wake path is one an agent without a plugin never sees,
@@ -546,39 +546,39 @@ def director_merges(d: Daemon, seed_tok: str) -> None:
             if "freezing auth/retry.go" in x.get("body", "").lower()]
     if not anns:
         no("announcement pull", "the bystander cannot see what it owes")
-    elif anns[0].get("lane") == "dst-lane" and "lane_ack" in (anns[0].get("action") or ""):
-        ok("the carried announcement is pullable from the inbox, on the surviving lane")
+    elif anns[0].get("agent") == "dst-agent" and "ack_announcement" in (anns[0].get("action") or ""):
+        ok("the carried announcement is pullable from the inbox, on the surviving agent")
     else:
         no("announcement pull",
-           f"wrong lane or no instruction: {anns[0].get('lane')} {anns[0].get('action', '')[:40]}")
+           f"wrong agent or no instruction: {anns[0].get('agent')} {anns[0].get('action', '')[:40]}")
 
-    # The recovery path: an agent that lost everything calls ack_board. It must
+    # The recovery path: an agent that lost everything calls check_in. It must
     # return BOTH kinds of thing an agent cannot reconstruct for itself: what it
-    # owes somebody (announcements) and what was done to it (lane_updates).
+    # owes somebody (announcements) and what was done to it (agent_updates).
     #
-    # lane_updates is the authoritative path for the second. The wake hook is a
+    # agent_updates is the authoritative path for the second. The wake hook is a
     # nudge, and because it is token-less a peer that merely knows a session id
     # can keep somebody else's nudges quiet indefinitely, so a fact that ONLY
     # ever arrived that way was a fact another agent could suppress.
-    rec = d.tool("ack_board", {"token": bystander})
+    rec = d.tool("check_in", {"token": bystander})
     owes = len([x for x in (rec.get("announcements") or [])
                 if "freezing" in x.get("body", "").lower()])
-    moved = len([x for x in (rec.get("lane_updates") or []) if "src-lane" in json.dumps(x)])
+    moved = len([x for x in (rec.get("agent_updates") or []) if "src-agent" in json.dumps(x)])
     if owes == 0:
-        no("recovery checkpoint", "ack_board omitted the outstanding announcement")
+        no("recovery checkpoint", "check_in omitted the outstanding announcement")
     elif moved == 0:
-        no("recovery checkpoint", "ack_board omitted what was DONE to the agent")
+        no("recovery checkpoint", "check_in omitted what was DONE to the agent")
     else:
-        ok("and ack_board tells a context-lost agent what it owes AND what was done to it")
+        ok("and check_in tells a context-lost agent what it owes AND what was done to it")
 
     # 3. THE point: every agent the director moved was told. The two that never
-    # called ack_board are told through the wake path; the bystander already had
-    # it from ack_board above, which is why its notice is gone: delivered, not
+    # called check_in are told through the wake path; the bystander already had
+    # it from check_in above, which is why its notice is gone: delivered, not
     # lost.
     for who in ("holder", "waiter"):
         n = d.notice_for(f"s-{who}")
-        if "src-lane" in n and "no longer exists" in n:
-            ok(f"{who} was told src-lane is gone and where its work went")
+        if "src-agent" in n and "no longer exists" in n:
+            ok(f"{who} was told src-agent is gone and where its work went")
         else:
             no(f"{who} was told", f"got: {n[:90].replace(chr(10), ' ')}")
 
@@ -586,93 +586,93 @@ def director_merges(d: Daemon, seed_tok: str) -> None:
 def director_evicts(d: Daemon, seed_tok: str) -> None:
     """Eviction used to check membership only, so removing a QUEUED agent
     answered "not a member": the director concluded the agent was not on the
-    lane and moved on, and the moment the owner left, the agent it had tried to
-    remove was promoted to OWNER of that lane.
+    agent and moved on, and the moment the owner left, the agent it had tried to
+    remove was promoted to OWNER of that agent.
     """
     owner = d.agent("ev-owner")
     q1 = d.agent("ev-q1")
     q2 = d.agent("ev-q2")
-    d.tool("lane_open", {"token": owner, "lane": "ev-lane",
+    d.tool("open_space", {"token": owner, "agent": "ev-agent",
                          "topic": "exclusive work", "exclusive": True})
-    d.tool("lane_join", {"token": q1, "lane": "ev-lane"})
-    d.tool("lane_join", {"token": q2, "lane": "ev-lane"})
+    d.tool("join_space", {"token": q1, "agent": "ev-agent"})
+    d.tool("join_space", {"token": q2, "agent": "ev-agent"})
     d.notice_for("s-ev-q1")
 
-    if d.tool("lane_evict", {"token": seed_tok, "lane": "ev-lane",
-                             "to": "ev-q1", "note": "wrong lane"}).get("evicted"):
+    if d.tool("evict", {"token": seed_tok, "agent": "ev-agent",
+                             "to": "ev-q1", "note": "wrong agent"}).get("evicted"):
         ok("a coordinator can evict an agent that was only queued")
     else:
         no("queue eviction", "the director is told 'not a member'")
 
     n = d.notice_for("s-ev-q1")
-    if "queue for lane" in n and "will not be admitted" in n:
+    if "queue for agent" in n and "will not be admitted" in n:
         ok("and it is told waiting is over, not to 'stop work'")
     else:
         no("queue-eviction notice", f"got: {n[:90].replace(chr(10), ' ')}")
 
     # The consequence: the owner leaves, and the evicted agent must NOT inherit.
-    d.tool("lane_leave", {"token": owner, "lane": "ev-lane"})
-    ev = next((c for c in d.board(seed_tok).get("channels", []) if c["id"] == "ev-lane"), {})
+    d.tool("leave_space", {"token": owner, "agent": "ev-agent"})
+    ev = next((c for c in d.board(seed_tok).get("spaces", []) if c["id"] == "ev-agent"), {})
     new_owner = ev.get("owner", "")
     if new_owner == "ev-q1":
-        no("evicted agent promoted", "the agent the director removed now OWNS ev-lane")
+        no("evicted agent promoted", "the agent the director removed now OWNS ev-agent")
     elif new_owner == "ev-q2":
         ok("the next real waiter was promoted, not the evicted one")
     else:
-        note(f"ev-lane owner after release: '{new_owner or 'none'}'")
+        note(f"ev-agent owner after release: '{new_owner or 'none'}'")
 
 
 def subagent_inherits(d: Daemon) -> None:
-    """SPEC-CHANNELS.md §8.2: subagents inherit their parent's lanes.
+    """SPEC-CHANNELS.md §8.2: subagents inherit their parent's agents.
 
-    Letting one JOIN was not merely redundant: a subagent asking for the lane
+    Letting one JOIN was not merely redundant: a subagent asking for the agent
     its parent held exclusively was queued behind that parent, and the parent
     does not release until the subagent's work is done. Each waits on the other.
     """
     nonce = "fleet-child-0123456789abcdef"
     par = d.agent("parent-agent")
-    d.tool("lane_open", {"token": par, "lane": "par-lane",
+    d.tool("open_space", {"token": par, "agent": "par-agent",
                          "topic": "work the parent owns", "exclusive": True})
     # `parent` alone is a claim anybody can make, and a subagent inherits its
-    # parent's memberships, skips an exclusive lane's queue and is exempt from
+    # parent's memberships, skips an exclusive agent's queue and is exempt from
     # the parent's exclusive claims in the guard, so lineage is proven with a
     # one-time nonce only the parent can issue.
     d.tool("vouch_child", {"token": par, "nonce": nonce})
     sub = d.agent("sub-agent", parent="parent-agent", parent_nonce=nonce)
 
-    joined = d.tool("lane_join", {"token": sub, "lane": "par-lane"})
+    joined = d.tool("join_space", {"token": sub, "agent": "par-agent"})
     if joined.get("queued"):
         no("subagent deadlock", "the subagent was queued behind its own parent")
     else:
-        ok("a subagent inherits its parent's lane instead of queueing behind it")
+        ok("a subagent inherits its parent's agent instead of queueing behind it")
     if joined.get("under") == "parent-agent":
         ok("and is told whose membership it is acting under")
     else:
         no("inheritance attribution", f"under='{joined.get('under')}'")
 
     # The thing the inherited membership is FOR must still work.
-    serial = d.tool("lane_post", {"token": sub, "lane": "par-lane",
+    serial = d.tool("post", {"token": sub, "agent": "par-agent",
                                   "body": "subagent reporting"}).get("serial")
     if serial:
-        ok("and can speak in the lane under that membership")
+        ok("and can speak in the agent under that membership")
     else:
         no("subagent post", f"got serial '{serial}'")
 
     # An agent that merely CLAIMS the parent gets none of it. Before lineage was
     # proven, this was a live escalation: registering with parent:<victim> let an
-    # agent post into the victim's exclusive lane, skip its queue, and write
+    # agent post into the victim's exclusive agent, skip its queue, and write
     # inside its exclusive claim.
     fake = d.agent("impostor", parent="parent-agent")
-    if d.tool("lane_join", {"token": fake, "lane": "par-lane"}).get("queued"):
+    if d.tool("join_space", {"token": fake, "agent": "par-agent"}).get("queued"):
         ok("an unvouched lineage is queued like any stranger")
     else:
-        no("unvouched lineage", "an agent that merely claimed a parent inherited its lane")
+        no("unvouched lineage", "an agent that merely claimed a parent inherited its agent")
 
 
 def crashed_agent_never_inherits(work: Path) -> None:
     """The promotion check tested `closed` only, but an agent that CRASHES is
     `stale`. So a dead agent was handed exclusive ownership while healthy agents
-    queued behind a corpse. close_lane dequeues, which is exactly why this hid:
+    queued behind a corpse. sign_off dequeues, which is exactly why this hid:
     it only ever showed up for real crashes.
 
     A crash here is a real one (the lease lapses and the sweep notices) on its
@@ -681,50 +681,50 @@ def crashed_agent_never_inherits(work: Path) -> None:
     """
     cdir = work / "crash"
     cdir.mkdir(parents=True, exist_ok=True)
-    (cdir / "lanes.toml").write_text('[limits]\nlane_ttl = "6s"\n')
+    (cdir / "agents.toml").write_text('[limits]\nlane_ttl = "6s"\n')
     d = Daemon(cdir, PORT + 9, log=cdir / "log")
     if not d.secret:
         no("crash daemon", "never started")
         d.stop()
         return
-    ok("a daemon honours [limits] lane_ttl from lanes.toml")
+    ok("a daemon honours [limits] lane_ttl from agents.toml")
     try:
         owner = d.agent("cr-owner", pid=os.getpid())
         crashed = d.agent("cr-crashed", pid=os.getpid())
         live = d.agent("cr-live", pid=os.getpid())
-        d.tool("lane_open", {"token": owner, "lane": "cr-lane",
+        d.tool("open_space", {"token": owner, "agent": "cr-agent",
                              "topic": "exclusive work", "exclusive": True})
         # cr-crashed goes silent and stays silent from here. cr-owner and
         # cr-live keep their leases alive, exactly as a working agent does with
         # any authenticated call.
-        d.tool("lane_join", {"token": crashed, "lane": "cr-lane"})
-        d.tool("lane_join", {"token": live, "lane": "cr-lane"})
+        d.tool("join_space", {"token": crashed, "agent": "cr-agent"})
+        d.tool("join_space", {"token": live, "agent": "cr-agent"})
         for _ in range(14):
             d.tool("heartbeat", {"token": owner})
             d.tool("heartbeat", {"token": live})
             time.sleep(1)
 
-        status = next((lane.get("status", "") for lane in d.board(owner).get("lanes", [])
-                       if lane["id"] == "cr-crashed"), "")
+        status = next((agent.get("status", "") for agent in d.board(owner).get("agents", [])
+                       if agent["id"] == "cr-crashed"), "")
         if status != "stale":
             no("crash detection", f"cr-crashed is '{status}' after 14s at lane_ttl=6s")
             return
         ok("a silent agent is detected as crashed (stale), while busy ones stay active")
-        d.tool("lane_leave", {"token": owner, "lane": "cr-lane"})
-        cr = next((c for c in d.board(live).get("channels", []) if c["id"] == "cr-lane"), {})
-        print(f"    cr-lane after the owner left: owner={cr.get('owner', '')!r} "
+        d.tool("leave_space", {"token": owner, "agent": "cr-agent"})
+        cr = next((c for c in d.board(live).get("spaces", []) if c["id"] == "cr-agent"), {})
+        print(f"    cr-agent after the owner left: owner={cr.get('owner', '')!r} "
               f"queue={cr.get('queue', [])}")
         if cr.get("owner") == "cr-crashed":
-            no("crashed agent promoted", "the lane is locked behind a crashed agent")
+            no("crashed agent promoted", "the agent is locked behind a crashed agent")
         elif cr.get("owner") == "cr-live":
-            ok("the crashed agent was skipped and the live waiter took the lane")
+            ok("the crashed agent was skipped and the live waiter took the agent")
         else:
             no("promotion", f"unexpected owner: {cr.get('owner', '')!r}")
     finally:
         d.stop()
 
 
-def probe_separation(d: Daemon, label: str, lane: str = "auth-work") -> None:
+def probe_separation(d: Daemon, label: str, agent: str = "auth-work") -> None:
     """Declarations that SHOULD match, and ones that should not.
 
     Printed rather than asserted at a fixed number: the point is to see the
@@ -739,8 +739,8 @@ def probe_separation(d: Daemon, label: str, lane: str = "auth-work") -> None:
     ]
     for i, text in enumerate(probes):
         tok = d.agent(f"{label}-{i}")
-        r = d.tool("set_slot", {"token": tok, "text": text})
-        hit = [x for x in (r.get("lanes") or []) if x["lane"] == lane]
+        r = d.tool("declare", {"token": tok, "text": text})
+        hit = [x for x in (r.get("agents") or []) if x["agent"] == agent]
         score = f"{hit[0]['score']:.3f}" if hit else " ,  "
         print(f"    {score}  {text}")
 
@@ -752,7 +752,7 @@ def embeddings_available(url: str, model: str) -> bool:
 
 
 def main() -> int:
-    work = Path(tempfile.mkdtemp(prefix="lanes-fleet-"))
+    work = Path(tempfile.mkdtemp(prefix="agents-fleet-"))
     data, proj = work / "data", work / "project"
     proj.mkdir(parents=True, exist_ok=True)
     daemons: list[Daemon] = []
@@ -788,9 +788,9 @@ def main() -> int:
         # announcement never reached the agent" rather than "you asked about the
         # wrong agent".
         seed_tok = d.agent("seed", session_id="seed")
-        d.tool("lane_open", {"token": seed_tok, "lane": "auth-work",
+        d.tool("open_space", {"token": seed_tok, "agent": "auth-work",
                              "topic": "token validation, retry and rate limiting in auth"})
-        ok("seeded lane auth-work")
+        ok("seeded agent auth-work")
 
         running = launch_harnesses(proj, work, data, d.secret)
         human = Human(d)
@@ -814,11 +814,11 @@ def main() -> int:
         crashed_agent_never_inherits(work)
 
         # ── assertions on what the real harnesses did ──────────────────────
-        agents = [lane for lane in board.get("lanes", [])
-                  if lane["id"] not in ("seed", "inspector", me)]
-        harnesses = {(lane.get("agent") or {}).get("harness", "") for lane in agents}
+        agents = [agent for agent in board.get("agents", [])
+                  if agent["id"] not in ("seed", "inspector", me)]
+        harnesses = {(agent.get("agent") or {}).get("harness", "") for agent in agents}
         harnesses.discard("")
-        auth = next((c for c in board.get("channels", []) if c["id"] == "auth-work"), {})
+        auth = next((c for c in board.get("spaces", []) if c["id"] == "auth-work"), {})
         members = [m["agent"] for m in auth.get("members", [])]
         auto = [m["agent"] for m in auth.get("members", []) if m.get("auto")]
 
@@ -827,7 +827,7 @@ def main() -> int:
         else:
             no("multiple harnesses", f"only {len(harnesses)}")
         if len(auto) >= 1:
-            ok(f"{len(auto)} agent(s) auto-matched into the lane by their own words")
+            ok(f"{len(auto)} agent(s) auto-matched into the agent by their own words")
         else:
             note("no auto-match (models may not have declared work)")
         if me and me in members:
@@ -865,7 +865,7 @@ def main() -> int:
             daemons.append(e)
             e.wait_for_matching(timeout=180, step=2)
             etok = e.agent("eseed")
-            e.tool("lane_open", {"token": etok, "lane": "auth-work",
+            e.tool("open_space", {"token": etok, "agent": "auth-work",
                                  "topic": "token validation, retry and rate limiting in auth"})
             probe_separation(e, "ep")
             e.stop()

@@ -14,7 +14,7 @@ import (
 // call returns allow, every test passes, and the fleet is unprotected.
 //
 // That is not a hypothetical. A mismatched session id: opencode's plugin
-// sending its own id while the bridge had registered the lane under another,
+// sending its own id while the bridge had registered the agent under another,
 // left the guard inert for a day. Nothing anywhere said so.
 //
 // The daemon is the one party that can see it, because it sees every call and
@@ -34,7 +34,7 @@ type hookHealth struct {
 	lastAt          atomic.Int64 // unix nanos of the most recent call of any kind
 }
 
-// HookHealth is what `lanes doctor` reads.
+// HookHealth is what `dibs doctor` reads.
 type HookHealth struct {
 	GuardResolved   int64     `json:"guard_resolved"`
 	GuardUnresolved int64     `json:"guard_unresolved"`

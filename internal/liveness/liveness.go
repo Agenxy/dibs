@@ -1,7 +1,7 @@
 // Package liveness answers how an agent process is doing, from outside it.
 //
 // The coarse question (is the process alive?) is Poller, and the engine's
-// sweep already uses it to mark a lane whose PID has gone. This file is the
+// sweep already uses it to mark an agent whose PID has gone. This file is the
 // finer one, and it is the question a parent agent cannot answer for itself:
 // the subagent is still alive, so is it working, thinking, or stuck?
 //
@@ -95,7 +95,7 @@ var States = []State{Working, Thinking, Stuck, Exited, Unknown}
 //
 // Nothing else in the tree converts string to State, and that is deliberate: an
 // unrecognised value is not lenient input, it is a value no verdict can ever
-// equal. `lanes probe --until exit` (for "exited") waited six hours in silence
+// equal. `dibs probe --until exit` (for "exited") waited six hours in silence
 // for a state that cannot occur, which is the worst shape a mistake can take,
 // indistinguishable from the tool working and the agent simply never finishing.
 func ParseState(s string) (State, bool) {
@@ -377,11 +377,11 @@ func tooEarly(silent, elapsed time.Duration, cfg Config) string {
 		"distinguish a model turn from a stall", round(silent))
 	if elapsed > 0 && elapsed < cfg.MinAge {
 		return why + fmt.Sprintf(". This process is only %s old; a whole life of idleness is "+
-			"convicted after %s: set [supervise] min_age in lanes.toml, or pass --min-age",
+			"convicted after %s: set [supervise] min_age in agents.toml, or pass --min-age",
 			round(elapsed), round(cfg.MinAge))
 	}
 	return why + fmt.Sprintf(". Keep watching: %s of continued silence makes it stuck "+
-		"([supervise] frozen in lanes.toml, or --frozen)", round(cfg.Frozen))
+		"([supervise] frozen in agents.toml, or --frozen)", round(cfg.Frozen))
 }
 
 // round trims a duration to something a person reads rather than parses.

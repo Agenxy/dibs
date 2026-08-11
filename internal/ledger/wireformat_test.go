@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // The ledger's on-disk field names are FROZEN. This test is what makes that
@@ -18,13 +18,13 @@ import (
 // renamed struct tag is invisible to all of them: the new name is written, the
 // new name is read, everything passes, and every ledger written before the
 // rename becomes unreplayable. The daemon would refuse to start on a board that
-// was working yesterday, and `lanes verify` would say the chain is intact
+// was working yesterday, and `dibs verify` would say the chain is intact
 // because the bytes are unchanged: the hash chain protects the LINES, not the
 // meaning of the keys inside them.
 //
 // This is not hypothetical. SPEC-CHANNELS.md §1 renames the participant from
-// `Lane` to `Agent`, which is 196 Go identifiers, several of which carry
-// `json:"lane"`. A careless rename does exactly the above. The compiler cannot
+// `Agent` to `Agent`, which is 196 Go identifiers, several of which carry
+// `json:"agent"`. A careless rename does exactly the above. The compiler cannot
 // help: both spellings compile.
 //
 // So: the wire names are asserted against a literal list. Changing one requires
@@ -57,12 +57,12 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		MsgType: core.MsgQuestion, Body: "?", OpID: "op-1", DeadlineSec: 60,
 	}, t0.Add(6*time.Second))
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneOpen, Token: "ta", Channel: "work",
+		Kind: core.OpLaneOpen, Token: "ta", Space: "work",
 		Text: "a topic", Exclusive: true,
 		Predicted: []core.PredFile{{Path: "a.go", Weight: 1}},
 	}, t0.Add(7*time.Second))
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneJoin, Token: "tb", Channel: "work",
+		Kind: core.OpLaneJoin, Token: "tb", Space: "work",
 		Score: 0.8, Threshold: 0.3, ScorerID: "s", ScorerVersion: "1",
 		Evidence: []string{"a.go"}, Auto: true,
 	}, t0.Add(8*time.Second))
@@ -83,12 +83,12 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	}
 	// The op payload: the union of every tag that reached disk above.
 	wantOp := map[string]bool{
-		"kind": true, "lane": true, "name": true, "pid": true, "token": true,
-		"nonce": true, "lane_kind": true, "session_id": true, "agent": true,
+		"kind": true, "agent": true, "name": true, "pid": true, "token": true,
+		"nonce": true, "lane_kind": true, "session_id": true, "agent_id": true,
 		"slot_id": true, "text": true, "dirs": true, "refs": true,
 		"to": true, "msg_type": true, "body": true, "deadline_sec": true, "op_id": true,
 		"path": true, "mode": true, "note": true,
-		"channel": true, "exclusive": true, "predicted": true,
+		"space": true, "exclusive": true, "predicted": true,
 		"score": true, "threshold": true, "scorer_id": true, "scorer_version": true,
 		"evidence": true, "auto": true,
 		"stale_lanes": true, "alive_pids": true,
@@ -141,7 +141,7 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 
 	// The other direction: a tag that VANISHES is just as bad, and a test that
 	// only checks for unexpected keys would not notice.
-	for _, k := range []string{"kind", "lane", "name", "token", "channel", "score", "predicted"} {
+	for _, k := range []string{"kind", "agent", "name", "token", "space", "score", "predicted"} {
 		if !seenOp[k] {
 			t.Errorf("op field %q is no longer written: an existing ledger's %q "+
 				"would be silently ignored on replay", k, k)
@@ -188,24 +188,37 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		"OpLaneExclusive": core.OpLaneExclusive, "OpLanePost": core.OpLanePost,
 		"OpLaneAnnounce": core.OpLaneAnnounce, "OpLaneAck": core.OpLaneAck,
 	} {
+		// FROZEN AGAIN, at new values, and the break was deliberate.
+		//
+		// 0.0.3 renamed the product to Dibs and its vocabulary with it, and these
+		// strings went along because leaving `register` inside a tool called
+		// `register` is the kind of seam that outlives everyone who remembers why.
+		// A 0.0.2 ledger therefore cannot be replayed by 0.0.3: the daemon refuses
+		// to start and says so, with `verify` and `admin repair-ledger` offered,
+		// which is the honest failure rather than a silent one.
+		//
+		// That was affordable exactly once, at 0.0.x with a handful of users. It
+		// is not affordable again. From here these are append-only: a new op gets
+		// a new constant, and an existing one keeps its string forever, because
+		// every ledger already written is read by every version that follows.
 		want := map[string]string{
-			"OpRegisterLane": "register_lane", "OpResumeLane": "resume_lane",
-			"OpWakeLane": "wake_lane", "OpAckBoard": "ack_board",
-			"OpUpdateLane": "update_lane", "OpCloseLane": "close_lane",
-			"OpHeartbeat": "heartbeat", "OpSetSlot": "set_slot",
-			"OpClearSlot": "clear_slot", "OpSendMessage": "send_message",
+			"OpRegisterLane": "register", "OpResumeLane": "resume",
+			"OpWakeLane": "wake_lane", "OpAckBoard": "check_in",
+			"OpUpdateLane": "update", "OpCloseLane": "sign_off",
+			"OpHeartbeat": "heartbeat", "OpSetSlot": "declare",
+			"OpClearSlot": "undeclare", "OpSendMessage": "send",
 			"OpClaim": "claim", "OpRelease": "release",
 			"OpSweep": "sweep", "OpMarkDelivered": "mark_delivered",
 			"OpPutBlob": "put_blob", "OpGrantRole": "grant_role",
 			"OpPruneLane": "prune_lane", "OpForceRelease": "force_release",
-			"OpLaneOpen": "lane_open", "OpLaneJoin": "lane_join",
-			"OpLaneLeave": "lane_leave", "OpLaneSubscribe": "lane_subscribe",
-			"OpLaneExclusive": "lane_exclusive", "OpLanePost": "lane_post",
-			"OpLaneAnnounce": "lane_announce", "OpLaneAck": "lane_ack",
+			"OpLaneOpen": "open_space", "OpLaneJoin": "join_space",
+			"OpLaneLeave": "leave_space", "OpLaneSubscribe": "watch_space",
+			"OpLaneExclusive": "lock_space", "OpLanePost": "post",
+			"OpLaneAnnounce": "announce", "OpLaneAck": "ack_announcement",
 		}[name]
 		if got != want {
-			t.Errorf("%s = %q, must stay %q: every ledger ever written uses the old "+
-				"value, and Apply matches it by string", name, got, want)
+			t.Errorf("%s = %q, must stay %q: every ledger written since 0.0.3 uses "+
+				"this value, and Apply matches it by string", name, got, want)
 		}
 	}
 }

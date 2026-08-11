@@ -10,7 +10,7 @@ import (
 //
 // A coordination tool gets piped into grep, teed into a log, run in CI, and
 // redirected into an issue report. Before there was a ui package, `doctor`
-// wrote raw ANSI escapes unconditionally, so `lanes doctor > report.txt`
+// wrote raw ANSI escapes unconditionally, so `dibs doctor > report.txt`
 // produced a file of escape sequences, and NO_COLOR did nothing at all.
 //
 // Rendering to a plain buffer is exactly the not-a-terminal case, so this is
@@ -31,7 +31,7 @@ func TestStyledOutputIsPlainWhenNotATerminal(t *testing.T) {
 		}
 	}
 
-	// And the text itself survives, or `lanes board | grep builder` stops
+	// And the text itself survives, or `dibs board | grep builder` stops
 	// working, which is how people actually use this.
 	if !strings.Contains(Accent("builder"), "builder") {
 		t.Error("styling must never alter the text it wraps")

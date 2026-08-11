@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agenxy/lanes/internal/core"
-	"github.com/agenxy/lanes/internal/liveness"
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/liveness"
 )
 
 // stall builds a verdict for a child that has done nothing since it started,
@@ -19,7 +19,7 @@ func stall() liveness.Verdict {
 	}
 }
 
-// makes the helper read as "a board with THIS lane on it" rather than a fixture
+// makes the helper read as "a board with THIS agent on it" rather than a fixture
 // with a hidden name.
 //
 //nolint:unparam // every caller wants "builder" today; the parameter is what
@@ -33,13 +33,13 @@ func laneOwning(t *testing.T, id string) *Engine {
 		t.Fatalf("register %s: %v", id, err)
 	}
 	if got, _ := res["lane_id"].(string); got != id {
-		t.Fatalf("lane registered as %q, not %q: the test's premise is wrong", got, id)
+		t.Fatalf("agent registered as %q, not %q: the test's premise is wrong", got, id)
 	}
 	return &Engine{state: s}
 }
 
-// The report must reach the lane that spawned the child, and must say what
-// Lanes did NOT do: a supervisor that reads as though it intervened invites a
+// The report must reach the agent that spawned the child, and must say what
+// Dibs did NOT do: a supervisor that reads as though it intervened invites a
 // parent to assume the problem is handled.
 func TestAStallIsReportedToTheLaneThatSpawnedIt(t *testing.T) {
 	e := laneOwning(t, "builder")
@@ -53,13 +53,13 @@ func TestAStallIsReportedToTheLaneThatSpawnedIt(t *testing.T) {
 		t.Fatalf("expected one notice, got %d", len(got))
 	}
 	text := got[0].Text
-	for _, want := range []string{"48620", "codex", "0.0004%", "your call", "lanes probe"} {
+	for _, want := range []string{"48620", "codex", "0.0004%", "your call", "dibs probe"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the report omits %q, which is what makes it actionable:\n  %s", want, text)
 		}
 	}
 	if !strings.Contains(text, "has not touched it") {
-		t.Error("the report does not say Lanes left the child alone: a parent reading it\n" +
+		t.Error("the report does not say Dibs left the child alone: a parent reading it\n" +
 			"  could reasonably assume the stall was already handled")
 	}
 }
@@ -68,7 +68,7 @@ func TestAStallIsReportedToTheLaneThatSpawnedIt(t *testing.T) {
 //
 // The alternative (guessing) sends a stall report to an agent that cannot act
 // on it while the one that can hears nothing, which is worse than the silence
-// it replaces. It is still visible to a human through `lanes probe`.
+// it replaces. It is still visible to a human through `dibs probe`.
 func TestAnUnattributableStallIsNotMisdelivered(t *testing.T) {
 	e := laneOwning(t, "builder")
 	orphan := liveness.Agent{PID: 999, Harness: "codex", Owner: "", Via: ""}
@@ -77,11 +77,11 @@ func TestAnUnattributableStallIsNotMisdelivered(t *testing.T) {
 	}
 	stranger := liveness.Agent{PID: 998, Harness: "codex", Owner: "some-other-session", Via: "session"}
 	if e.reportStallLocked(stranger, stall(), "") {
-		t.Error("a child owned by a session with no lane was reported anyway")
+		t.Error("a child owned by a session with no agent was reported anyway")
 	}
-	for lane, n := range e.notices {
+	for agent, n := range e.notices {
 		if len(n) > 0 {
-			t.Errorf("lane %q received %d notices it has no business receiving", lane, len(n))
+			t.Errorf("agent %q received %d notices it has no business receiving", agent, len(n))
 		}
 	}
 }
@@ -103,7 +103,7 @@ func TestSleepIsReportedSeparatelyFromSilence(t *testing.T) {
 
 // A stall report offers the way back, when there is one.
 //
-// Lanes does not restart anything: the parent knows what the child was for and
+// Dibs does not restart anything: the parent knows what the child was for and
 // whether re-running it is safe, and a supervisor that silently repairs teaches
 // its operator nothing. But withholding the COMMAND is a different thing from
 // declining to run it: a parent told "your subagent is stuck" and left to work
@@ -119,10 +119,10 @@ func TestAStallReportOffersTheWayBack(t *testing.T) {
 	if !strings.Contains(text, "codex exec resume 019ea7c2-2c77-76a1-bde1-7635418cfb20") {
 		t.Errorf("the report does not offer the resume command:\n  %s", text)
 	}
-	// And it still says Lanes did not act, or offering the command reads as
+	// And it still says Dibs did not act, or offering the command reads as
 	// having run it.
 	if !strings.Contains(text, "has not touched it") {
-		t.Errorf("offering a resume lost the statement that Lanes left it alone:\n  %s", text)
+		t.Errorf("offering a resume lost the statement that Dibs left it alone:\n  %s", text)
 	}
 
 	// A harness with no resume, or no transcript, must not invent one.

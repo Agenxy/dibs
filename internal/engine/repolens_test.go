@@ -50,7 +50,7 @@ func TestLensSeesOneRepositoryAcrossLinkedWorktrees(t *testing.T) {
 }
 
 // A directory the engine never resolved must answer "no evidence", not
-// "different". The lens is keyed by cwd, and a lane can register between the
+// "different". The lens is keyed by cwd, and an agent can register between the
 // resolve and the read: reporting that as positively somewhere else would veto
 // a match on the strength of a race.
 func TestLensIsSilentAboutWhatItNeverResolved(t *testing.T) {

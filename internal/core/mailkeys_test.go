@@ -7,7 +7,7 @@ import (
 )
 
 // The two calls that return an agent's mail disagreed about what to call it, and
-// each used the OTHER one's name: the inbox tool returned `messages`, ack_board
+// each used the OTHER one's name: the inbox tool returned `messages`, check_in
 // returned `inbox`.
 //
 // So an agent that called inbox and read the inbox key got an empty list while
@@ -33,7 +33,7 @@ func TestBothMailKeysCarryTheMail(t *testing.T) {
 	under := func(key string) int {
 		v, ok := res[key]
 		if !ok {
-			t.Fatalf("ack_board has no %q key; an agent reading it sees no mail", key)
+			t.Fatalf("check_in has no %q key; an agent reading it sees no mail", key)
 		}
 		msgs, ok := v.([]*Message)
 		if !ok {
@@ -42,10 +42,10 @@ func TestBothMailKeysCarryTheMail(t *testing.T) {
 		return len(msgs)
 	}
 	if n := under("inbox"); n != 1 {
-		t.Errorf(`ack_board["inbox"] = %d, want 1`, n)
+		t.Errorf(`check_in["inbox"] = %d, want 1`, n)
 	}
 	if n := under("messages"); n != 1 {
-		t.Errorf(`ack_board["messages"] = %d, want 1: the inbox tool's name for the same thing`, n)
+		t.Errorf(`check_in["messages"] = %d, want 1: the inbox tool's name for the same thing`, n)
 	}
 }
 
@@ -89,9 +89,9 @@ func TestEnvelopeCarriesSentAndDeliveredTimes(t *testing.T) {
 
 // A misaddressed message must be fixable in one step.
 //
-// "check the board for live lanes" is advice the agent has to act on with another
-// call, and an agent that addressed a lane by the wrong name gave up instead of
-// guessing which of the live lanes was meant. It already told us who it wanted.
+// "check the board for live agents" is advice the agent has to act on with another
+// call, and an agent that addressed an agent by the wrong name gave up instead of
+// guessing which of the live agents was meant. It already told us who it wanted.
 func TestMisaddressedMailNamesTheCandidates(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	t0 := time.Now()
@@ -103,13 +103,13 @@ func TestMisaddressedMailNamesTheCandidates(t *testing.T) {
 		Kind: OpSendMessage, Token: "t-send", To: "claude", MsgType: MsgNotify, Body: "hi",
 	}, t0)
 	if err == nil {
-		t.Fatal("want a refusal for an unknown lane")
+		t.Fatal("want a refusal for an unknown agent")
 	}
 	var ce *Error
 	if !asErr(err, &ce) {
 		t.Fatalf("want a core error, got %T", err)
 	}
 	if !strings.Contains(ce.Hint, "claude-orchestrator") {
-		t.Errorf("the hint must name the lane the agent probably meant, got: %s", ce.Hint)
+		t.Errorf("the hint must name the agent the agent probably meant, got: %s", ce.Hint)
 	}
 }

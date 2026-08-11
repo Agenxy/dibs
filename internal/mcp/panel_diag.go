@@ -3,7 +3,7 @@ package mcp
 import "os"
 
 // panelMinimal serves a stripped template instead of the real one when
-// LANES_PANEL_MINIMAL=1.
+// DIBS_PANEL_MINIMAL=1.
 //
 // It exists because a host rendered an EMPTY container: the widget was created,
 // our HTML drew nothing, and no amount of local simulation reproduced it. The
@@ -18,7 +18,7 @@ import "os"
 // will change that.
 const minimalPanelHTML = `<!doctype html>
 <meta charset="utf-8">
-<title>Lanes</title>
+<title>Dibs</title>
 <div style="font:600 14px system-ui;padding:20px;color:#0a0;border:2px solid #0a0;border-radius:10px;margin:12px">
   LANES PANEL: RENDERED
   <div style="font:400 12px system-ui;color:#666;margin-top:8px">
@@ -28,4 +28,4 @@ const minimalPanelHTML = `<!doctype html>
   </div>
 </div>`
 
-var panelMinimal = os.Getenv("LANES_PANEL_MINIMAL") == "1"
+var panelMinimal = os.Getenv("DIBS_PANEL_MINIMAL") == "1"

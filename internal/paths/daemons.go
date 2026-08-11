@@ -13,9 +13,9 @@ import (
 
 // The host-wide register of running daemons.
 //
-// Lives here rather than in cmd/lanesd because two binaries need it for
-// opposite reasons: lanesd WRITES an entry and refuses to start beside a
-// stranger, and `lanes doctor` READS them to tell an operator their fleet is
+// Lives here rather than in cmd/dibd because two binaries need it for
+// opposite reasons: dibd WRITES an entry and refuses to start beside a
+// stranger, and `dibs doctor` READS them to tell an operator their fleet is
 // split. A guard nothing can report on is half a feature when the failure it
 // prevents is silent.
 //
@@ -49,7 +49,7 @@ import (
 // Staleness is not a concern in a persistent directory because liveness is a
 // held lock: yesterday's files are corpses and are swept on sight.
 
-// Daemon is one running lanesd, as it registered itself.
+// Daemon is one running dibd, as it registered itself.
 type Daemon struct {
 	PID  int    `json:"pid"`
 	Addr string `json:"addr"`
@@ -69,11 +69,11 @@ type Daemon struct {
 func (d Daemon) IsStranger(ourDir string) bool {
 	// BOTH sides are canonicalised. This canonicalised only the registered
 	// directory and compared it against whatever the caller passed, so a caller
-	// holding an uncanonical path. DataDir() returns $LANES_DIR verbatim, and
+	// holding an uncanonical path. DataDir() returns $DIBS_DIR verbatim, and
 	// on macOS /tmp is a symlink to /private/tmp: found that every daemon was
 	// a stranger, including itself.
 	//
-	// Both readings of that are bad. `lanes stop` concludes nothing is running
+	// Both readings of that are bad. `dibs stop` concludes nothing is running
 	// and stops nothing while reporting success; the parallel-daemon guard
 	// concludes it is alone and lets a second daemon onto a directory the flock
 	// then has to refuse. Canonical is idempotent, so doing it twice costs
@@ -84,12 +84,12 @@ func (d Daemon) IsStranger(ourDir string) bool {
 // RunRegistryDir is where daemons register themselves.
 func RunRegistryDir() string {
 	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		return filepath.Join(home, ".lanes-run")
+		return filepath.Join(home, ".dibs-run")
 	}
 	// No home directory is pathological; fall back rather than refuse, and
 	// accept that two daemons with different TMPDIR values could miss each other
 	// in that case.
-	return filepath.Join(os.TempDir(), "lanes-run-"+strconv.Itoa(os.Getuid()))
+	return filepath.Join(os.TempDir(), "agents-run-"+strconv.Itoa(os.Getuid()))
 }
 
 // hostLock serialises the whole check-and-claim across every daemon for this
@@ -228,7 +228,7 @@ func held(path string) (bool, error) {
 type Strangers struct{ Others []Daemon }
 
 func (s *Strangers) Error() string {
-	return fmt.Sprintf("%d other lanesd process(es) already running", len(s.Others))
+	return fmt.Sprintf("%d other dibd process(es) already running", len(s.Others))
 }
 
 // Claim atomically decides whether this daemon may start and, if so, registers

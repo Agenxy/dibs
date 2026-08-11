@@ -254,7 +254,7 @@ func TestUnrelatedDeclarationsScoreBelowRelatedOnes(t *testing.T) {
 func TestSuggestThresholdsNeverReturnsAZeroNotify(t *testing.T) {
 	// A scorer that discriminates well puts MOST unrelated pairs at exactly
 	// zero, so the median is zero, and notify_threshold=0 notifies about every
-	// lane on the board, which is worse than not notifying at all. Measured on
+	// agent on the board, which is worse than not notifying at all. Measured on
 	// this repository before the floor was added: join 0.327, notify 0.000.
 	ctx := context.Background()
 	repo := repoRoot(t)
@@ -444,7 +444,7 @@ func TestCalibrationReportsHowMuchRelatedWorkClearsTheBar(t *testing.T) {
 	}
 }
 
-// Retrieval embedding models are ASYMMETRIC, and Lanes was using them
+// Retrieval embedding models are ASYMMETRIC, and Dibs was using them
 // symmetrically: raw text for both the task description and the code chunk.
 //
 // Every serious retrieval model is trained with a marker saying which side it
@@ -517,7 +517,7 @@ func TestRetrievalModelsGetTheMarkersTheyWereTrainedWith(t *testing.T) {
 	}
 }
 
-// A model family Lanes has never heard of still has a convention, and its
+// A model family Dibs has never heard of still has a convention, and its
 // operator knows it. Without an override that operator silently gets about half
 // the separation with nothing on screen to explain it: demonstrated by giving
 // the SAME weights an unrecognised name: 49% of related work cleared the bar
@@ -851,7 +851,7 @@ func TestTierZeroLearnsHowTheProjectDescribesItsWork(t *testing.T) {
 
 // Holding commits out is what makes measuring this honest.
 //
-// `lanes calibrate` evaluates by using a commit message as the query and that
+// `dibs calibrate` evaluates by using a commit message as the query and that
 // commit's files as the answer: the exact pairing this index is built from. On
 // this repository, adding the index moved recall@5 from 0.288 to 0.815 and MRR
 // from 0.476 to a perfect 1.000, which is not a result: the query was

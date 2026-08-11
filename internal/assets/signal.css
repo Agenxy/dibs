@@ -5,8 +5,8 @@
 
    board.css is the substrate: colour, type, geometry, spacing,
    motion. This file is one layer above it and has one job: the
-   visual language of state. A lane that is coordinating right now,
-   a lane that has gone quiet, an announcement nobody can answer, a
+   visual language of state. An agent that is coordinating right now,
+   an agent that has gone quiet, an announcement nobody can answer, a
    claim somebody else holds.
 
    It is a separate file because it is the part that must feel
@@ -134,7 +134,7 @@
 /* Out of touch marks the reading as UNCERTAIN, never as void.
  *
  * This was a strikethrough, and a strikethrough on a timestamp says the value
- * has been cancelled: that it no longer applies and can be skipped. On a lane
+ * has been cancelled: that it no longer applies and can be skipped. On an agent
  * nobody has heard from, the age is the opposite of skippable: how long the
  * silence has run is the single number that decides whether somebody
  * investigates. The rows that most needed reading were the only rows drawn as
@@ -199,19 +199,19 @@
      coordinator  authority rail: doubled lower edge
 
    Their written labels remain present. Borders, fill, and silhouette provide
-   the second channel when hues are indistinguishable. */
+   the second space when hues are indistinguishable. */
 .pill,
 .badge.role {
   corner-shape: superellipse(0.65);
 }
 
-.channel.exclusive {
+.space.exclusive {
   position: relative;
   border-inline-start: calc(var(--s1) * 0.5) double var(--warn);
   padding-inline-start: var(--s3);
 }
 
-.channel.exclusive .channel-id {
+.space.exclusive .space-id {
   text-decoration: underline double;
   text-decoration-color: var(--warn);
   text-underline-offset: calc(var(--s1) * 0.5);
@@ -273,7 +273,7 @@
   margin-inline-end: var(--s1);
 }
 
-/* Staleness propagates into channel membership as an interrupted enclosure,
+/* Staleness propagates into space membership as an interrupted enclosure,
    matching the cut roster aperture rather than merely lowering opacity. */
 .member.gone {
   opacity: 1;

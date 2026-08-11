@@ -1,4 +1,4 @@
-// Package core is the pure deterministic heart of Lanes: a state machine with
+// Package core is the pure deterministic heart of Dibs: a state machine with
 // no I/O, no goroutines, and no wall clock. Every mutation flows through
 // Apply(op, now) → events. SPEC §2 invariant: an op is ledgered iff it changed
 // replayable state, every change has exactly one serial, and unledgered
@@ -14,16 +14,16 @@ import (
 // LaneKind distinguishes session-scoped agents from standing roles (SPEC §6).
 type LaneKind string
 
-// Lane kinds.
+// Agent kinds.
 const (
 	KindEphemeral  LaneKind = "ephemeral"
 	KindPersistent LaneKind = "persistent"
 )
 
-// LaneStatus is the lifecycle state of a lane.
+// LaneStatus is the lifecycle state of an agent.
 type LaneStatus string
 
-// Lane lifecycle states. Unreachable is reserved for v2 federation.
+// Agent lifecycle states. Unreachable is reserved for v2 federation.
 const (
 	StatusActive      LaneStatus = "active"
 	StatusStale       LaneStatus = "stale"   // ephemeral: coordination lost
@@ -56,15 +56,15 @@ const (
 	MsgStateDisplaced      = "displaced"
 )
 
-// Lane roles. A fleet is commonly one or a few trusted coordinator agents
-// directing many workers, so Lanes models that directly rather than making the
+// Agent roles. A fleet is commonly one or a few trusted coordinator agents
+// directing many workers, so Dibs models that directly rather than making the
 // human relay for them.
 //
 // Three tiers, each granted only by the human:
 //
-//	member       default. Its own lane, its own mail.
+//	member       default. Its own agent, its own mail.
 //	coordinator  BREADTH, not intrusion: address the whole fleet, unstick a
-//	             shared resource. Still cannot read another lane's mail.
+//	             shared resource. Still cannot read another agent's mail.
 //	admin        everything a human can do, INCLUDING reading all mail.
 //
 // The coordinator/admin split is the load-bearing one. Most fleets want a lead
@@ -92,12 +92,12 @@ type Limits struct {
 	MaxClaimsPerLane   int `json:"max_claims_per_lane"`
 	MaxClaimsGlobal    int `json:"max_claims_global"`
 	MaxMailboxDepth    int `json:"max_mailbox_depth"`
-	TerminalRetention  int `json:"terminal_retention"` // unconsumed terminal msgs kept per lane
-	// AnnouncementRetention bounds SETTLED announcements kept per channel.
+	TerminalRetention  int `json:"terminal_retention"` // unconsumed terminal msgs kept per agent
+	// AnnouncementRetention bounds SETTLED announcements kept per space.
 	//
 	// Every other collection in replayed state has a bound and this one did not:
-	// announcements were added on every lane_announce and removed only when an
-	// empty auto-opened channel was reclaimed. A standing channel a human opened
+	// announcements were added on every announce and removed only when an
+	// empty auto-opened space was reclaimed. A standing space a human opened
 	// is never reclaimed, so its history grew for the life of the board, and it
 	// is replayed into memory on every daemon start, so the cost compounds.
 	//
@@ -106,7 +106,7 @@ type Limits struct {
 	// forever precisely because redelivery gave up on it; dropping either would
 	// discard the thing the mechanism exists to guarantee.
 	AnnouncementRetention int `json:"announcement_retention"`
-	// PostRetention bounds remarks kept per lane. Posts oblige nobody, so
+	// PostRetention bounds remarks kept per agent. Posts oblige nobody, so
 	// unlike announcements the oldest can always be dropped unexamined.
 	PostRetention int `json:"post_retention"`
 	MaxBodyBytes  int `json:"max_body_bytes"`
@@ -120,19 +120,19 @@ type Limits struct {
 	MaxBlobSize      int           `json:"max_blob_size"`
 	MaxAttachments   int           `json:"max_attachments"`
 	BlobStoreBytes   int           `json:"blob_store_bytes"`    // global cap
-	PerLaneBlobBytes int           `json:"per_lane_blob_bytes"` // per-lane quota (P1-3)
+	PerLaneBlobBytes int           `json:"per_lane_blob_bytes"` // per-agent quota (P1-3)
 	MaxFilerefHash   int           `json:"max_fileref_hash"`
 	DedupPerLane     int           `json:"dedup_per_lane"`
 	DedupWindow      time.Duration `json:"dedup_window"`
 	LaneTTL          time.Duration `json:"lane_ttl"`
-	// IdleTTL applies to lanes that gave no PID, where silence is the only
+	// IdleTTL applies to agents that gave no PID, where silence is the only
 	// signal available and a human-paced surface is silent by nature.
 	IdleTTL          time.Duration `json:"idle_ttl"`
 	StaleGrace       time.Duration `json:"stale_grace"`
 	DormancyMax      time.Duration `json:"dormancy_max"`
 	ArchiveRetention time.Duration `json:"archive_retention"`
 	// ConsumedRetention keeps consumed terminal messages readable (the
-	// sender must have a real window to fetch the outcome via get_message
+	// sender must have a real window to fetch the outcome via read_mail
 	// before GC: found by real-agent testing).
 	ConsumedRetention  time.Duration `json:"consumed_retention"`
 	ClaimLease         time.Duration `json:"claim_lease"`
@@ -157,7 +157,7 @@ func DefaultLimits() Limits {
 		MaxClaimsGlobal:    256,
 		MaxMailboxDepth:    256,
 		TerminalRetention:  128,
-		// Comfortably above lane_read's default page of 50, so garbage collection
+		// Comfortably above read_space's default page of 50, so garbage collection
 		// never truncates history a reader could otherwise still page through.
 		AnnouncementRetention: 128,
 		PostRetention:         128,
@@ -197,32 +197,32 @@ type Slot struct {
 	Text string   `json:"text"`
 	Dirs []string `json:"dirs,omitempty"`
 	// Refs are the OBJECTIVE ids this work pursues. "pr:1186", "gate:typos",
-	// "issue:1140", "goal:green-main". Two lanes sharing a ref are probably
-	// duplicating effort, which is the failure Lanes exists to catch. Paths are
+	// "issue:1140", "goal:green-main". Two agents sharing a ref are probably
+	// duplicating effort, which is the failure Dibs exists to catch. Paths are
 	// only a weak hint; objectives are the real key.
 	Refs []string `json:"refs,omitempty"`
 	// Predicted is THIS declaration's own recorded footprint, kept per slot
-	// rather than only merged into the lane's.
+	// rather than only merged into the agent's.
 	//
-	// Matching used to compare a newcomer against a lane's accumulated union, and
+	// Matching used to compare a newcomer against an agent's accumulated union, and
 	// that union only ever grows: every join folds another member's files in at
 	// max weight, and leaving never removes them. So the target got easier the
-	// longer a lane lived, and a lane that matched more gained members and gained
+	// longer an agent lived, and an agent that matched more gained members and gained
 	// surface by gaining them. Measured: the same unrelated newcomer scored 0.0000
-	// against a one-member lane and 0.1000 against the same lane with five,
-	// crossing a real fleet's join bar without its work changing or the lane's
+	// against a one-member agent and 0.1000 against the same agent with five,
+	// crossing a real fleet's join bar without its work changing or the agent's
 	// topic changing.
 	//
 	// Keeping it here makes the comparison slot-to-slot: one live declaration
 	// against another live declaration, which is the thing an agent can actually
-	// be duplicating. The lane's merged footprint stays for candidate generation,
+	// be duplicating. The agent's merged footprint stays for candidate generation,
 	// where breadth is a virtue.
 	Predicted []PredFile `json:"predicted,omitempty"`
 	// Activity is WHAT this agent is doing to the work, as opposed to which work
 	// it is: implement, review, test, investigate, document, release.
 	//
 	// Without it, two agents attached to the same PR are indistinguishable from
-	// each other, and the strongest evidence Lanes has: a shared identifier,
+	// each other, and the strongest evidence Dibs has: a shared identifier,
 	// produces the worst possible advice. An implementer and a REVIEWER on
 	// pr:1231 both classify as "the same work item", so the reviewer is told to
 	// stand down from reviewing because somebody else is attached to the thing it
@@ -235,8 +235,8 @@ type Slot struct {
 	// Holds are exclusive HOST resources this work needs: "port:8080",
 	// "lock:.git/index", "gpu:0", "cache:cargo", "service:postgres".
 	//
-	// The dimension Lanes was blind to, and the most Lanes-specific one there is.
-	// Lanes exists because these agents share a MACHINE, and it modelled only the
+	// The dimension Dibs was blind to, and the most Dibs-specific one there is.
+	// Dibs exists because these agents share a MACHINE, and it modelled only the
 	// code they share. Two agents running the test suite both bind :8080; two
 	// running git in one worktree both take .git/index.lock; two building both
 	// want the same cargo cache. None of that is repository surface, none of it
@@ -271,14 +271,14 @@ func Complementary(a, b string) bool {
 	return oka && okb && ra != rb
 }
 
-// AgentInfo is who is behind a lane, for the human reading the board.
+// AgentInfo is who is behind an agent, for the human reading the board.
 // Descriptive only: none of it grants anything, so a wrong value misleads a
 // reader and cannot escalate.
 //
-// Lane is an agent's registration. Replayable fields only: last-seen
+// Agent is an agent's registration. Replayable fields only: last-seen
 // freshness and process-aliveness are presentation annotations computed by
 // the engine (SPEC §2) and never appear here.
-// AgentInfo is who is behind a lane, for the human reading the board. Purely
+// AgentInfo is who is behind an agent, for the human reading the board. Purely
 // descriptive: none of it grants anything, so a wrong value misleads a reader
 // and cannot escalate.
 type AgentInfo struct {
@@ -328,9 +328,9 @@ type AgentInfo struct {
 	RepoRoots  string `json:"repo_roots,omitempty"`
 }
 
-// Lane is a participant on the board: an identity, a mailbox and a heartbeat.
+// Agent is a participant on the board: an identity, a mailbox and a heartbeat.
 // (SPEC-CHANNELS.md §1 renames this to `agent`; the rename is a separate pass.)
-type Lane struct {
+type Agent struct {
 	ID          string   `json:"id"`
 	Kind        LaneKind `json:"kind"`
 	Name        string   `json:"name"`
@@ -338,12 +338,12 @@ type Lane struct {
 	PID         int      `json:"pid,omitempty"`
 	ProcStart   int64    `json:"proc_start,omitempty"` // unix ms; defeats PID reuse
 	Status      LaneStatus
-	// SessionID binds the lane to its harness session, so a lifecycle hook that
+	// SessionID binds the agent to its harness session, so a lifecycle hook that
 	// knows only "${session_id}" can find the right mailbox without carrying a
 	// token through config. Set at registration; never a credential on its own,
 	// the connection is already authenticated.
 	SessionID string `json:"session_id,omitempty"`
-	// Lane is who is behind this lane: harness, version, model, surface. In a
+	// Agent is who is behind this agent: harness, version, model, surface. In a
 	// large fleet "reviewer" is not enough; the human needs to know that it is
 	// Codex 0.145 rather than Opus 5 in Claude Desktop. Purely descriptive: it
 	// never grants anything, so a wrong value misleads a reader but cannot
@@ -355,7 +355,7 @@ type Lane struct {
 	//
 	// Spawning subagents is ordinary development behaviour and MUST NOT require
 	// coordination ceremony (SPEC-CHANNELS.md §8.2): a subagent inherits its
-	// parent's lane membership, does not join, does not queue, and is not
+	// parent's agent membership, does not join, does not queue, and is not
 	// counted as a second occupant. The parent stays accountable: its departure
 	// takes the subagent's access with it, because the access was never the
 	// subagent's to begin with.
@@ -365,10 +365,10 @@ type Lane struct {
 	//
 	// Parent arrives as a bare string on the wire and nothing checked it. The
 	// powers keyed off it are not cosmetic: a subagent speaks under its
-	// parent's membership, skips an exclusive lane's queue, and is exempt from
+	// parent's membership, skips an exclusive agent's queue, and is exempt from
 	// its parent's exclusive claims in the guard. Verified against a running
 	// daemon: an agent registering with parent:"victim" posted into the
-	// victim's exclusive lane, joined it instead of queueing, and got
+	// victim's exclusive agent, joined it instead of queueing, and got
 	// allow/no-claim for a path the victim held exclusively.
 	//
 	// So lineage is now claimed and PROVEN separately. An unproven parent stays
@@ -376,27 +376,27 @@ type Lane struct {
 	// reading a fleet, and grants nothing.
 	ParentProven bool `json:"parent_proven,omitempty"`
 
-	// ChildNonces are one-time secrets this lane has issued to subagents it is
+	// ChildNonces are one-time secrets this agent has issued to subagents it is
 	// spawning, each burned on first use.
 	//
 	// One-time because a reusable one is a standing capability: leak it once
-	// and every future holder inherits this lane's memberships and its guard
+	// and every future holder inherits this agent's memberships and its guard
 	// exemption. Bounded because an agent that issues and never spawns must not
 	// grow the state without limit.
 	ChildNonces map[string]bool `json:"-"`
 
 	// Role is "member", "coordinator", or "admin". Only the human, through the
-	// admin path, can grant it: a lane can never promote itself.
+	// admin path, can grant it: an agent can never promote itself.
 	Role          string `json:"role,omitempty"`
 	CreatedSerial uint64 `json:"created_serial"`
 	// AckedSerial is the awareness-gate watermark; 0 = gate not passed in the
 	// current activation (cleared by every dormant/stale transition and wake).
 	AckedSerial uint64 `json:"acked_serial"`
-	// Activation is the generation counter, incremented by each resume_lane.
+	// Activation is the generation counter, incremented by each resume.
 	Activation uint64 `json:"activation"`
 	// LastCoordination is the latest durable coordination checkpoint: a
-	// conservative lower bound on the lane's own last accepted call (may
-	// trail by up to TTL/2). Updated only by ops with this lane as actor.
+	// conservative lower bound on the agent's own last accepted call (may
+	// trail by up to TTL/2). Updated only by ops with this agent as actor.
 	LastCoordination time.Time `json:"last_coordination_at"`
 	StaleSince       time.Time `json:"stale_since,omitzero"`
 	DormantSince     time.Time `json:"dormant_since,omitzero"`
@@ -406,18 +406,18 @@ type Lane struct {
 	TruncatedBefore uint64          `json:"truncated_before_serial,omitempty"`
 	Slots           map[string]Slot `json:"slots,omitempty"`
 
-	// StaleReason is WHY this lane stopped counting as live, recorded at the
+	// StaleReason is WHY this agent stopped counting as live, recorded at the
 	// moment it transitioned.
 	//
-	// The reason was already computed there and put only into the `lane.stale`
+	// The reason was already computed there and put only into the `agent.stale`
 	// event, so a human opening the board later saw "out of touch" and nothing
 	// else: next to a last-contact time of "now", which reads as the board
 	// being broken rather than the agent being dead. The three cases are not
 	// interchangeable: a process that exited is definitive, a lapsed lease may
-	// just be a long build, and a lane that never gave a PID has told us
+	// just be a long build, and an agent that never gave a PID has told us
 	// nothing about a process at all.
 	//
-	// Replay-safe: every input to it (DeadLanes, StaleLanes, the lane's own
+	// Replay-safe: every input to it (DeadLanes, StaleLanes, the agent's own
 	// PID) is recorded in the sweep op, never probed during Apply.
 	StaleReason string `json:"stale_reason,omitempty"`
 
@@ -425,12 +425,12 @@ type Lane struct {
 	Nonce string `json:"-"`
 }
 
-// burnChildNonce reports whether n is a secret this lane issued, consuming it.
+// burnChildNonce reports whether n is a secret this agent issued, consuming it.
 //
 // Consuming is the point: a proof that can be replayed is a capability, and a
 // capability that grants another agent's guard exemption should not be
 // re-presentable by whoever sees it next.
-func (l *Lane) burnChildNonce(n string) bool {
+func (l *Agent) burnChildNonce(n string) bool {
 	if l == nil || n == "" || !l.ChildNonces[n] {
 		return false
 	}
@@ -442,13 +442,13 @@ func (l *Lane) burnChildNonce(n string) bool {
 // spawns must not grow state without limit.
 const maxChildNonces = 32
 
-// Sleeping reports whether the lane is in its kind's lease-lapsed state.
-func (l *Lane) Sleeping() bool {
+// Sleeping reports whether the agent is in its kind's lease-lapsed state.
+func (l *Agent) Sleeping() bool {
 	return l.Status == StatusStale || l.Status == StatusDormant
 }
 
 // finishedCleanly reports that the agent ended on purpose rather than going
-// dark: it called close_lane, or it did and was later retired by retention.
+// dark: it called sign_off, or it did and was later retired by retention.
 //
 // The distinction matters to anyone still waiting on it: a deliberate close
 // released every claim and answered nothing further BY CHOICE, while a lapsed
@@ -457,9 +457,9 @@ func (l *Lane) Sleeping() bool {
 // go: the opposite of the caution SPEC §7's honest-liveness rule exists for.
 //
 // StaleReason is the discriminator, and it survives archiving: it is set only
-// when the sweep declared the lane dark, so an archived lane with none was
+// when the sweep declared the agent dark, so an archived agent with none was
 // archived after a clean close.
-func (l *Lane) finishedCleanly() bool {
+func (l *Agent) finishedCleanly() bool {
 	if l == nil {
 		return false
 	}
@@ -467,7 +467,7 @@ func (l *Lane) finishedCleanly() bool {
 }
 
 // Gone reports whether an agent is finished with: closed by itself, or
-// archived by retention. A nil lane counts: it was pruned out from under us.
+// archived by retention. A nil agent counts: it was pruned out from under us.
 //
 // Distinct from Sleeping, and the distinction is the whole point. A stale agent
 // crashed and a dormant one is asleep; both may come back, so both keep their
@@ -477,9 +477,9 @@ func (l *Lane) finishedCleanly() bool {
 // Written down because the two were being conflated by hand: several checks
 // tested Status == StatusClosed alone, which quietly answered "still here" for
 // an archived agent AND for a crashed one, and that second answer handed
-// exclusive ownership of a lane to an agent the sweep had already declared
+// exclusive ownership of an agent to an agent the sweep had already declared
 // dead.
-func (l *Lane) Gone() bool {
+func (l *Agent) Gone() bool {
 	return l == nil || l.Status == StatusClosed || l.Status == StatusArchived
 }
 
@@ -487,7 +487,7 @@ func (l *Lane) Gone() bool {
 // exclusive lock would actually coordinate anything. Only an ACTIVE agent is:
 // a sleeping one blocks everybody while it is not working, and a gone one
 // blocks them forever.
-func (l *Lane) CanHoldExclusive() bool {
+func (l *Agent) CanHoldExclusive() bool {
 	return l != nil && l.Status == StatusActive
 }
 
@@ -514,7 +514,7 @@ type Message struct {
 	// answers it."
 	//
 	// DeliveredTime IS the read time: a message becomes delivered when its
-	// recipient pulls it with inbox or ack_board, so the gap from SentAt is how
+	// recipient pulls it with inbox or check_in, so the gap from SentAt is how
 	// long it waited. There is no separate read_at, because a second stamp written
 	// on a pure read path would be an unledgered mutation: the bug class that
 	// once put a hole in a real board's serial sequence.
@@ -548,7 +548,7 @@ func (m *Message) Expecting() bool {
 
 // Claim is an advisory, TTL-leased declaration over a path prefix.
 type Claim struct {
-	Lane           string    `json:"lane"`
+	Agent          string    `json:"agent"`
 	Path           string    `json:"path"`
 	Mode           string    `json:"mode"`
 	Note           string    `json:"note,omitempty"`
@@ -560,7 +560,7 @@ type Claim struct {
 // DedupRec is one identified-op record (SPEC §4): bounded by the lesser of
 // DedupWindow and DedupPerLane, digest-bound against payload reuse.
 type DedupRec struct {
-	Lane       string    `json:"lane"`
+	Agent      string    `json:"agent"`
 	ID         string    `json:"id"` // op_id or resume_id
 	Digest     string    `json:"digest"`
 	Serial     uint64    `json:"serial"` // msg_serial for sends
@@ -575,7 +575,7 @@ type Event struct {
 	Sub    int            `json:"sub"`
 	TS     time.Time      `json:"ts"`
 	Type   string         `json:"type"`
-	Lane   string         `json:"lane,omitempty"`
+	Agent  string         `json:"agent,omitempty"`
 	To     string         `json:"to,omitempty"`
 	Data   map[string]any `json:"data,omitempty"`
 }
@@ -585,16 +585,16 @@ type State struct {
 	NodeID   string
 	Serial   uint64
 	Limits   Limits
-	Lanes    map[string]*Lane
+	Agents   map[string]*Agent
 	Messages map[uint64]*Message // keyed by send serial
 	Claims   []*Claim
 	Nonces   map[string]string    // nonce → lane_id
 	Dedup    map[string]*DedupRec // key: lane_id + "\x00" + id
 	Blobs    map[string]*Blob     // id → registry entry (bytes live in blobstore)
 
-	// Channels of work, and the announcements awaiting acknowledgement in them
-	// (SPEC-CHANNELS.md). Keyed by channel id and by announce serial.
-	Channels      map[string]*Channel
+	// Spaces of work, and the announcements awaiting acknowledgement in them
+	// (SPEC-CHANNELS.md). Keyed by space id and by announce serial.
+	Spaces        map[string]*Space
 	Announcements map[uint64]*Announcement
 }
 
@@ -603,24 +603,24 @@ func NewState(nodeID string, lim Limits) *State {
 	return &State{
 		NodeID:   nodeID,
 		Limits:   lim,
-		Lanes:    map[string]*Lane{},
+		Agents:   map[string]*Agent{},
 		Messages: map[uint64]*Message{},
 		Nonces:   map[string]string{},
 		Dedup:    map[string]*DedupRec{},
 		Blobs:    map[string]*Blob{},
 
-		Channels:      map[string]*Channel{},
+		Spaces:        map[string]*Space{},
 		Announcements: map[uint64]*Announcement{},
 	}
 }
 
 // LaneByToken resolves an auth token, or nil. Constant-time comparison per
 // candidate; the map walk is bounded by MaxLanes.
-func (s *State) LaneByToken(tok string) *Lane {
+func (s *State) LaneByToken(tok string) *Agent {
 	if tok == "" {
 		return nil
 	}
-	for _, l := range s.Lanes {
+	for _, l := range s.Agents {
 		if l.Token != "" && constEq(l.Token, tok) && l.Status != StatusArchived {
 			return l
 		}
@@ -628,12 +628,12 @@ func (s *State) LaneByToken(tok string) *Lane {
 	return nil
 }
 
-// Inbox returns the lane's non-terminal plus unconsumed-terminal messages,
+// Inbox returns the agent's non-terminal plus unconsumed-terminal messages,
 // oldest first (SPEC §8).
-func (s *State) Inbox(lane string) []*Message {
+func (s *State) Inbox(agent string) []*Message {
 	var out []*Message
 	for _, m := range s.Messages {
-		if m.To == lane && (!m.Terminal() || !m.Consumed) {
+		if m.To == agent && (!m.Terminal() || !m.Consumed) {
 			out = append(out, m)
 		}
 	}
@@ -650,10 +650,10 @@ func sortMessages(ms []*Message) {
 }
 
 // nonTerminalCount is the mailbox-capacity metric (SPEC §8).
-func nonTerminalCount(s *State, lane string) int {
+func nonTerminalCount(s *State, agent string) int {
 	n := 0
 	for _, m := range s.Messages {
-		if m.To == lane && !m.Terminal() {
+		if m.To == agent && !m.Terminal() {
 			n++
 		}
 	}

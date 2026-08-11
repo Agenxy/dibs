@@ -2,8 +2,8 @@
 // The ledger IS the persistence, the audit history, and the serial authority:
 // line position = serial, line order = total order. Each line carries the
 // SHA-256 of the previous raw line, making history tamper-evident. Private
-// fields (message bodies, lane tokens) are encrypted with the daemon key
-// before writing, so ledger readers see ciphertext while `lanes` (same user)
+// fields (message bodies, agent tokens) are encrypted with the daemon key
+// before writing, so ledger readers see ciphertext while `dibs` (same user)
 // can decrypt.
 package ledger
 
@@ -18,7 +18,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // Line is one ledger record. Prev chains to the SHA-256 hex of the previous
@@ -68,7 +68,7 @@ const genesis = ""
 // Open opens (creating if needed) the ledger at path.
 func Open(path, nodeID string, box *Box) (*Ledger, error) {
 	// #nosec G304 -- `path` is the daemon's own ledger inside its data directory,
-	// chosen by the operator via -dir/LANES_DIR. Refusing it means refusing to run.
+	// chosen by the operator via -dir/DIBS_DIR. Refusing it means refusing to run.
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open ledger: %w", err)
@@ -101,6 +101,14 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 			}
 			if rec.Prev != prev {
 				return n, fmt.Errorf("hash chain broken at serial %d: prev %.12q != head %.12q", rec.S, rec.Prev, prev)
+			}
+			// A line can be valid JSON and still carry no op: a truncation that
+			// lands on a brace, a hand-edit, a file from something else. Without
+			// this the nil reaches DecryptOp and the daemon panics with a stack
+			// trace, which is the one output that tells an operator nothing and
+			// hides the careful diagnosis waiting further up the caller.
+			if rec.Op == nil {
+				return n, fmt.Errorf("ledger corrupt at offset %d (serial %d): record carries no op", off, rec.S)
 			}
 			if decErr := l.box.DecryptOp(rec.Op); decErr != nil {
 				return n, fmt.Errorf("decrypt serial %d: %w", rec.S, decErr)
@@ -203,7 +211,7 @@ func (l *Ledger) Close() error { return l.f.Close() }
 // Verify walks a ledger file and checks the hash chain without needing the
 // daemon key (hashes cover ciphertext). Returns lines checked and head hash.
 func Verify(path string) (int, string, error) {
-	// #nosec G304 -- operator-supplied ledger path; `lanes verify` exists precisely
+	// #nosec G304 -- operator-supplied ledger path; `dibs verify` exists precisely
 	// to be pointed at a file.
 	f, err := os.Open(path)
 	if err != nil {

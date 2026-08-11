@@ -36,7 +36,7 @@ func TestGitOutranksPathShape(t *testing.T) {
 // "Git is not installed" and "these are different repositories" must never
 // produce the same outcome. The first should change nothing; the second vetoes.
 // Collapsing them would disable matching for everyone without Git, which looks
-// exactly like Lanes being broken.
+// exactly like Dibs being broken.
 func TestNoGitAnswerChangesNothing(t *testing.T) {
 	for _, l := range []RepoLens{nil, lens{false, false}, lens{true, false}} {
 		// Same configured repository: still together, still on evidence.

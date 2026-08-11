@@ -1,13 +1,13 @@
-# Lanes plugins
+# Dibs plugins
 
-Lanes is an MCP server, so most harnesses need only a config entry. These folders
+Dibs is an MCP server, so most harnesses need only a config entry. These folders
 hold the per-platform specifics, and, where a harness offers a way to deliver
-mail without Lanes driving anything, the integration that does it.
+mail without Dibs driving anything, the integration that does it.
 
 ## The server delivers these
 
-An agent connecting to Lanes is told, once, on its first registration, that a
-plugin exists for the harness it just named, and `lanes://plugin` carries the
+An agent connecting to Dibs is told, once, on its first registration, that a
+plugin exists for the harness it just named, and `dibs://plugin` carries the
 actual files plus an ordered setup procedure where every step says how to check
 it took effect. Nothing here requires a checkout or network access.
 
@@ -23,7 +23,7 @@ the question.
 ## Three rules
 
 1. **Never drive the harness.** No subprocess, no CLI shelling, no owning a
-   thread or session. Lanes is a service agents pull from. A plugin may decide
+   thread or session. Dibs is a service agents pull from. A plugin may decide
    *when* to pull using a hook the harness already fires; it may not become a
    wrapper. See [PHILOSOPHY.md](../PHILOSOPHY.md).
 2. **Plugins are not the product.** The daemon works with none of them. These are
@@ -46,7 +46,7 @@ the question.
 
 ## What the survey found
 
-**Three harnesses can wake an agent without Lanes driving anything**: Claude
+**Three harnesses can wake an agent without Dibs driving anything**: Claude
 Code (`mcp_tool` lifecycle hooks), opencode (in-process plugin hooks) and pi
 (`before_agent_start`, which can inject a message). All three were verified in
 live turns, not in isolation. pi was the surprise: it has no MCP client at all,
@@ -56,11 +56,11 @@ Everywhere else mail is **pull-only**: `await_events` / `inbox`, at the agent's
 choosing. That is the honest floor and it works on every surface.
 
 Codex is the near miss: its hooks support `additionalContext` injection, exactly
-the mechanism Lanes uses in Claude Code, but `HookHandlerConfig` offers only
+the mechanism Dibs uses in Claude Code, but `HookHandlerConfig` offers only
 `command` (a subprocess), `prompt` and `agent`. One new handler variant would
 flip it. Re-check on upgrade.
 
-**Codex reaches Lanes; its model provider is what blocks execution.** Codex
+**Codex reaches Dibs; its model provider is what blocks execution.** Codex
 connects over streamable HTTP and enumerates every tool into an `mcp__lanes`
 namespace: that half is proven from a captured request payload. But it sends
 the tool list using OpenAI Responses-API types (`web_search` as a server tool,
@@ -68,18 +68,18 @@ and `namespace`-typed groups) that OpenRouter's Responses shim rejects with
 `400 Server tool request failed`. Codex namespaces MCP tools unconditionally
 (`codex-rs/core/src/tools/spec_plan.rs`); there is no config flag to flatten
 them. So driving Codex needs a provider that implements those types. Nothing
-here is a Lanes limitation.
+here is a Dibs limitation.
 
 **Identity is observed, never self-reported** (SPEC §5.0). Driving real models
 showed every observable field arriving blank, `{"cwd":"","branch":"",
 "model":"","session_id":"","pid":0}`, so the bridge fills in what it can see.
 Where a harness's MCP client announces its SDK rather than itself (hermes
-arrives as `{"name":"mcp"}`), set `LANES_HARNESS` in that harness's own MCP
+arrives as `{"name":"mcp"}`), set `DIBS_HARNESS` in that harness's own MCP
 config; a client that identifies itself always wins.
 
 **A woken agent needs to be able to answer.** Discovered by driving opencode: a
 lifecycle hook can tell an agent it has mail, but a fresh turn carries no token,
-so the agent re-registered and became a *sibling* lane that could not read the
-mail that woke it. `register_lane` now reattaches when the same name and
-`session_id` are presented, returning a fresh token for the existing lane. Any
+so the agent re-registered and became a *sibling* agent that could not read the
+mail that woke it. `register` now reattaches when the same name and
+`session_id` are presented, returning a fresh token for the existing agent. Any
 new wake path needs this, or waking an agent only frustrates it.

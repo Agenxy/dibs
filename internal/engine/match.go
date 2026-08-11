@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agenxy/lanes/internal/core"
-	"github.com/agenxy/lanes/internal/overlap"
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/overlap"
 )
 
 // Auto-joining: the wire between "what is this agent doing" and "who else is
@@ -31,14 +31,14 @@ import (
 //
 // The thresholds have NO safe defaults, and that is deliberate rather than an
 // omission. They are unitless and scorer-relative: SPEC-CHANNELS.md originally
-// proposed 0.75, and `lanes calibrate` against this very repository returned
+// proposed 0.75, and `dibs calibrate` against this very repository returned
 // 0.327: the shipped guess would have auto-joined nothing and the feature would
-// have looked broken rather than mis-tuned. So an unconfigured Lanes runs in
+// have looked broken rather than mis-tuned. So an unconfigured Dibs runs in
 // notify-only mode and says so, instead of guessing a bar it cannot know.
 type MatchConfig struct {
 	JoinThreshold   float64
 	NotifyThreshold float64
-	// Deadline bounds the scorer. This sits in front of set_slot, which agents
+	// Deadline bounds the scorer. This sits in front of declare, which agents
 	// call constantly; a slow model must never be what makes declaring work feel
 	// slow. Past the deadline the declaration proceeds unmatched.
 	Deadline time.Duration
@@ -48,7 +48,7 @@ type MatchConfig struct {
 	// words: it serialises the fleet behind one agent. With it on, a match above
 	// the join bar becomes a REQUEST to the director rather than a membership,
 	// the agent is told who to ask and is not silently left wondering why the
-	// lane it clearly belongs in never opened to it.
+	// agent it clearly belongs in never opened to it.
 	DirectorRequired bool
 
 	// Repo is the repository the index was built from, and it is here so that
@@ -101,7 +101,7 @@ var DefaultMatchConfig = MatchConfig{
 }
 
 // SetScorer installs the work-overlap scorer. Safe to call at any time; nil
-// disables matching entirely, which is the state Lanes ships in.
+// disables matching entirely, which is the state Dibs ships in.
 func (e *Engine) SetScorer(s overlap.Scorer, cfg MatchConfig) {
 	e.matchMu.Lock()
 	defer e.matchMu.Unlock()
@@ -126,9 +126,9 @@ func (e *Engine) scorerAndCfg() (overlap.Scorer, MatchConfig) {
 	return e.scorer, e.matchCfg
 }
 
-// Suggestion is one lane offered to an agent that just declared work.
+// Suggestion is one agent offered to an agent that just declared work.
 type Suggestion struct {
-	Lane    string   `json:"lane"`
+	Agent   string   `json:"agent"`
 	Topic   string   `json:"topic"`
 	Score   float64  `json:"score"`
 	Members int      `json:"members"`
@@ -146,20 +146,20 @@ type Suggestion struct {
 	Evidence core.Evidence `json:"evidence,omitzero"`
 	Position int           `json:"queue_position,omitempty"`
 	// Key is the coordination key, present only when this suggestion actually
-	// joined the agent. Declared in `refs` on a later set_slot it matches this
-	// lane exactly rather than by wording: see attemptJoin.
+	// joined the agent. Declared in `refs` on a later declare it matches this
+	// agent exactly rather than by wording: see attemptJoin.
 	Key  string `json:"key,omitempty"`
 	Hint string `json:"hint,omitempty"`
 }
 
-// matchDeclaration scores a declaration against live lanes and acts on it.
+// matchDeclaration scores a declaration against live agents and acts on it.
 //
 // Runs OFF the writer loop for the scoring, then re-enters it to join. That
 // ordering matters: the scorer may take a second and the loop is the whole
 // daemon, so holding it while a model runs would stall every other agent.
-// matchOutcome distinguishes the two ways a declaration produces no lanes.
+// matchOutcome distinguishes the two ways a declaration produces no agents.
 //
-// "I compared you against every lane and none was close" is real information.
+// "I compared you against every agent and none was close" is real information.
 // "I could form no opinion about what you are working on" is not, and reporting
 // the second as the first is a confident claim built on no evidence.
 type matchOutcome int
@@ -167,11 +167,11 @@ type matchOutcome int
 const (
 	matchedNothing   matchOutcome = iota // compared, and nothing was close
 	matchedNoOpinion                     // the scorer predicted nothing at all
-	// matchedAlreadyIn: the closest lanes are ones this agent is ALREADY in.
+	// matchedAlreadyIn: the closest agents are ones this agent is ALREADY in.
 	//
 	// A distinct outcome because the fallback for "no suggestions" is "you have
 	// the field to yourself", and for this case that is flatly false: the agent
-	// is standing in a lane with the very peers it would be told do not exist.
+	// is standing in an agent with the very peers it would be told do not exist.
 	// It happens on every slot refresh after an auto-join, which is to say
 	// constantly, to precisely the agents that DID coordinate.
 	matchedAlreadyIn
@@ -181,7 +181,7 @@ const (
 //
 // It used to be three loose arguments, and activity and holds were added to the
 // op without being added here, so Complementary was never computed and a live
-// REVIEWER was auto-joined into a duplicate-work lane while every unit test
+// REVIEWER was auto-joined into a duplicate-work agent while every unit test
 // passed. A struct makes the omission a compile error instead of a silence.
 func declarationOf(op *core.Op) core.Slot {
 	return core.Slot{
@@ -210,7 +210,7 @@ func (e *Engine) matchDeclaration(
 	// dirs and holds were ever looked at, so an exact pr:77 shared by two agents
 	// was invisible if the prose happened to share no token with any file path.
 	// Found end-to-end and not by any unit test: two agents declared the same PR,
-	// the scorer had no opinion about either sentence, and Lanes told them both
+	// the scorer had no opinion about either sentence, and Dibs told them both
 	// they were alone.
 	//
 	// Tier 0 matches declared WORDS against file PATHS, so "adding the promotion
@@ -229,7 +229,7 @@ func (e *Engine) matchDeclaration(
 	}
 	recorded := withDeclaredDirs(toPredFiles(pred.Files), declDirs, cfg.Repo)
 
-	// Lanes opened before the index was ready carry no footprint and would be
+	// Dibs opened before the index was ready carry no footprint and would be
 	// invisible forever; give them one first.
 	overlay := e.backfillFootprints(sctx, scorer)
 
@@ -253,7 +253,7 @@ func (e *Engine) matchDeclaration(
 		return core.Result{}
 	})
 	// An unresolvable token is the only genuine dead end here. NO MATCHES is not
-	// one, it is the case that opens the first lane, below, and returning
+	// one, it is the case that opens the first agent, below, and returning
 	// early on it is what made that code unreachable on exactly the board where
 	// it mattered most: an empty one.
 	if self == "" {
@@ -262,18 +262,18 @@ func (e *Engine) matchDeclaration(
 
 	out := e.suggestionsFor(ctx, token, matches, cfg, pred, recorded, selfCWD)
 
-	// Nothing matched, so OPEN the first lane. SPEC-CHANNELS §3: "If no lane
-	// matched at all, a new lane is opened with the declaration as its topic."
+	// Nothing matched, so OPEN the first agent. SPEC-CHANNELS §3: "If no agent
+	// matched at all, a new agent is opened with the declaration as its topic."
 	//
 	// This was the whole feature's missing half, and its absence was invisible
-	// from the inside. Matching only ever compared a declaration against lanes
+	// from the inside. Matching only ever compared a declaration against agents
 	// that already existed, and nothing created the first one, so on a fresh
 	// board two agents could declare identical work and BOTH were told "no other
 	// agent is working on anything close to this: you have the field to
-	// yourself." Precisely the false statement channels exist to prevent, stated
+	// yourself." Precisely the false statement spaces exist to prevent, stated
 	// with confidence, to the one agent that most needed the opposite.
 	//
-	// The end-to-end suite passed throughout because it calls lane_open by hand
+	// The end-to-end suite passed throughout because it calls open_space by hand
 	// between the two agents, so it was always testing the second half of a
 	// mechanism whose first half did not exist.
 	if len(out) == 0 {
@@ -287,7 +287,7 @@ func (e *Engine) matchDeclaration(
 	return out, matchedNothing
 }
 
-// suggestionsFor turns scored lanes into what the agent is told, joining it to
+// suggestionsFor turns scored agents into what the agent is told, joining it to
 // the ones above the bar as it goes.
 func (e *Engine) suggestionsFor(ctx context.Context, token string, matches []core.LaneMatch,
 	cfg MatchConfig, pred overlap.Prediction, recorded []core.PredFile, selfCWD string,
@@ -301,7 +301,7 @@ func (e *Engine) suggestionsFor(ctx context.Context, token string, matches []cor
 			continue
 		}
 		s := Suggestion{
-			Lane: m.Lane, Topic: m.Topic, Score: round4(m.Score),
+			Agent: m.Agent, Topic: m.Topic, Score: round4(m.Score),
 			Members: m.Members, Owner: m.Owner, Shared: predPaths(m.Shared),
 			Action: "consider",
 		}
@@ -317,12 +317,12 @@ func (e *Engine) suggestionsFor(ctx context.Context, token string, matches []cor
 		//
 		// An operator who said a coordinator decides memberships has not delegated
 		// that to the agent either. Letting a proposal through here would mean the
-		// agent simply calls lane_join and the gate it was told about never
+		// agent simply calls join_space and the gate it was told about never
 		// happens: the policy would silently become advice.
 		if cfg.DirectorRequired && (aboveBar || len(m.SharedIDs) > 0) {
 			s.Action = "awaiting_director"
-			s.Hint = "a coordinator must admit you to this lane (lane_admit); " +
-				"send one a request naming " + m.Lane
+			s.Hint = "a coordinator must admit you to this agent (admit); " +
+				"send one a request naming " + m.Agent
 			out = append(out, s)
 			continue
 		}
@@ -330,8 +330,8 @@ func (e *Engine) suggestionsFor(ctx context.Context, token string, matches []cor
 		if !shouldAutoJoin(cfg, m) {
 			if len(m.SharedIDs) == 0 && aboveBar {
 				s.Hint = "close enough to be worth your attention, but this is a SCORE, not a fact: " +
-					"the evidence is the shared files above. Read the lane with lane_read and " +
-					"lane_join if it is really your work. Declaring the same refs (pr:…, gate:…, " +
+					"the evidence is the shared files above. Read the agent with read_space and " +
+					"join_space if it is really your work. Declaring the same refs (pr:…, gate:…, " +
 					"incident:…) as another agent joins you automatically, because that is not a guess."
 			}
 			out = append(out, s)
@@ -350,13 +350,13 @@ func (e *Engine) suggestionsFor(ctx context.Context, token string, matches []cor
 // matter what the policy says, or "" when nothing stands in the way.
 func withheldReason(m core.LaneMatch, foreign bool, cwd, repo string) string {
 	if m.Declined {
-		return "not joined automatically: you left this lane deliberately, and Lanes does not " +
-			"put an agent back somewhere it walked out of. lane_join if you have changed your mind."
+		return "not joined automatically: you left this agent deliberately, and Dibs does not " +
+			"put an agent back somewhere it walked out of. join_space if you have changed your mind."
 	}
 	if foreign {
 		return "not joined automatically: you are working in " + cwd +
 			", outside the matched repository " + repo + ", so the shared files above are " +
-			"generic rather than evidence you are doing the same work. Join with lane_join if " +
+			"generic rather than evidence you are doing the same work. Join with join_space if " +
 			"this is a worktree or a second checkout and the match is real."
 	}
 	return ""
@@ -409,7 +409,7 @@ func relationLead(r core.Relation) string {
 	return ""
 }
 
-// shouldAutoJoin decides whether Lanes joins this match on the agent's behalf or
+// shouldAutoJoin decides whether Dibs joins this match on the agent's behalf or
 // hands it the decision.
 //
 // Declared overlap is a fact both agents wrote down; inferred overlap is a
@@ -425,7 +425,7 @@ func shouldAutoJoin(cfg MatchConfig, m core.LaneMatch) bool {
 		// The RELATION, not a score and not a ref list. Only "both named the same
 		// thing that exists" is strong enough to act on without asking, and not
 		// when the two agents hold different ROLES on it, because putting a
-		// reviewer in a duplicate-work lane tells it to stop reviewing.
+		// reviewer in a duplicate-work agent tells it to stop reviewing.
 		return m.Relation == core.RelationSameItem && !m.Evidence.Complementary
 	}
 }
@@ -500,16 +500,16 @@ func relativeTo(dir, repo string) string {
 }
 
 // alreadyCoordinating reports whether the declaring agent is already in one of
-// the lanes this declaration matched. If it is, its work already has a home and
-// a second lane for the same thing is noise: an agent that refines its slot
-// text must not spawn a lane per edit.
+// the agents this declaration matched. If it is, its work already has a home and
+// a second agent for the same thing is noise: an agent that refines its slot
+// text must not spawn an agent per edit.
 func alreadyCoordinating(matches []core.LaneMatch, notify float64) bool {
 	for _, m := range matches {
 		// RELEVANT membership, not any membership. This counted a match at any
 		// score above zero, so an agent that moved on to genuinely different
-		// work could never open a lane for it: a faint accidental overlap with
-		// the lane it was still in (one shared file is enough) suppressed the
-		// new lane and told it "the work closest to this is in a lane you are
+		// work could never open an agent for it: a faint accidental overlap with
+		// the agent it was still in (one shared file is enough) suppressed the
+		// new agent and told it "the work closest to this is in an agent you are
 		// already in; you are not working alone", about work it had stopped
 		// doing.
 		//
@@ -523,12 +523,12 @@ func alreadyCoordinating(matches []core.LaneMatch, notify float64) bool {
 	return false
 }
 
-// laneName turns a declaration into a short, readable lane name.
+// laneName turns a declaration into a short, readable agent name.
 //
 // Keeps the first few words that carry meaning and drops the ones that do not:
 // an agent writes "I am fixing the retry loop when tokens fail to refresh" and
-// the lane should be called "fixing-retry-loop-tokens", not the whole sentence.
-// This is not cosmetic: the id is what another agent passes to lane_join and
+// the agent should be called "fixing-retry-loop-tokens", not the whole sentence.
+// This is not cosmetic: the id is what another agent passes to join_space and
 // what a human reads on the board, and a fifty-character slug of somebody's
 // first-person phrasing is unusable as both.
 //
@@ -566,48 +566,48 @@ func laneName(declaration string) string {
 	if len(kept) == 0 {
 		// Every word was filler, which is a real declaration ("just working on
 		// it") even if an unhelpful one. Fall back rather than open a nameless
-		// lane, and let cleanID truncate.
+		// agent, and let cleanID truncate.
 		return declaration
 	}
 	return strings.Join(kept, " ")
 }
 
-// openFirstLane creates the lane a declaration deserves when none exists yet,
+// openFirstLane creates the agent a declaration deserves when none exists yet,
 // with the declaration as its topic and its predicted files as its footprint.
 //
-// The footprint is the point: a lane with none can never be matched against, so
+// The footprint is the point: an agent with none can never be matched against, so
 // opening one without it would leave the next agent exactly as alone as before.
 //
 // Failure is deliberately silent. This is additive: the agent has already
-// declared its work successfully, so a lane limit, an id collision with a
-// human-named lane, or a lost race with another agent declaring the same thing
+// declared its work successfully, so an agent limit, an id collision with a
+// human-named agent, or a lost race with another agent declaring the same thing
 // costs a suggestion, never the declaration.
 func (e *Engine) openFirstLane(ctx context.Context, token, declaration string,
 	pred overlap.Prediction, recorded []core.PredFile,
 ) *Suggestion {
 	// The topic keeps the declaration, bounded: it is what a reader sees to
-	// understand what the lane is FOR, and what the next agent reads before
+	// understand what the agent is FOR, and what the next agent reads before
 	// deciding to join.
 	topic := declaration
 	if len(topic) > 120 {
 		topic = strings.TrimSpace(topic[:120]) + "…"
 	}
-	// The lane's TOPIC is the declaration verbatim; its NAME is not.
+	// The agent's TOPIC is the declaration verbatim; its NAME is not.
 	//
-	// Ids are slugified topics, so naming a lane after a whole first-person
+	// Ids are slugified topics, so naming an agent after a whole first-person
 	// sentence produced things like
 	// "i-am-fixing-the-retry-loop-when-tokens-fail-to-refresh": the id an agent
-	// types into lane_join, a human reads on the board, and a projector shows to
-	// a room. A lane is named for the WORK, not for the sentence somebody used
+	// types into join_space, a human reads on the board, and a projector shows to
+	// a room. An agent is named for the WORK, not for the sentence somebody used
 	// to describe it.
 	name := laneName(declaration)
 	// A slug collision must not disable bootstrapping for that wording forever.
 	//
-	// The lane id is derived from the declaration, so an unrelated lane a human
+	// The agent id is derived from the declaration, so an unrelated agent a human
 	// happened to name the same thing takes the id and every future declaration
-	// phrased that way fails to open, gets no lane, and is told it is alone,
+	// phrased that way fails to open, gets no agent, and is told it is alone,
 	// permanently, because the next agent collides identically. Disambiguating
-	// costs one suffix; the SECOND agent then matches this lane on its footprint
+	// costs one suffix; the SECOND agent then matches this agent on its footprint
 	// and joins, which is the behaviour that matters.
 	var res core.Result
 	var err error
@@ -617,10 +617,10 @@ func (e *Engine) openFirstLane(ctx context.Context, token, declaration string,
 			attempted = fmt.Sprintf("%s %d", name, attempt)
 		}
 		res, err = e.Do(ctx, &core.Op{
-			Kind: core.OpLaneOpen, Token: token, Channel: attempted, Text: topic,
+			Kind: core.OpLaneOpen, Token: token, Space: attempted, Text: topic,
 			Predicted: recorded, ScorerID: pred.ScorerID, ScorerVersion: pred.Version,
-			// Lanes opened this, not an agent, so it may be reclaimed when it
-			// empties, and a lane somebody opened deliberately may not.
+			// Dibs opened this, not an agent, so it may be reclaimed when it
+			// empties, and an agent somebody opened deliberately may not.
 			Auto: true,
 		})
 		if err == nil {
@@ -628,7 +628,7 @@ func (e *Engine) openFirstLane(ctx context.Context, token, declaration string,
 		}
 		var ce *core.Error
 		if !errors.As(err, &ce) || ce.Code != "E_LANE_EXISTS" {
-			return nil // a limit, a closed lane, anything else: not ours to retry
+			return nil // a limit, a closed agent, anything else: not ours to retry
 		}
 	}
 	if err != nil {
@@ -639,12 +639,12 @@ func (e *Engine) openFirstLane(ctx context.Context, token, declaration string,
 		return nil
 	}
 	return &Suggestion{
-		Lane: id, Topic: topic, Action: "opened", Members: 1,
+		Agent: id, Topic: topic, Action: "opened", Members: 1,
 		// Says what was MEASURED, not what it implies.
 		//
 		// This read "nobody else is declaring work like this yet", which is a
-		// claim about the world that Lanes cannot make. Recall at tier 0 is about
-		// 0.3: for two thirds of declarations the right lane is not in the top
+		// claim about the world that Dibs cannot make. Recall at tier 0 is about
+		// 0.3: for two thirds of declarations the right agent is not in the top
 		// five, so silence is the common case rather than evidence. SKILLS.md
 		// tells agents in as many words never to conclude from silence that they
 		// are alone, and then the API said exactly that, with more authority than
@@ -652,7 +652,7 @@ func (e *Engine) openFirstLane(ctx context.Context, token, declaration string,
 		//
 		// A reviewer took it at face value and reported being alone on work
 		// another agent had declared minutes earlier.
-		Hint: "no existing lane cleared the match threshold, so one was opened for " +
+		Hint: "no existing agent cleared the match threshold, so one was opened for " +
 			"this work: the next agent whose declaration does clear it joins you here " +
 			"instead of duplicating. A miss is not proof you are alone: recall is " +
 			"partial, so declare refs (pr:, issue:, key:) if you want to be found " +
@@ -663,13 +663,13 @@ func (e *Engine) openFirstLane(ctx context.Context, token, declaration string,
 // attemptJoin performs the auto-join and reports what happened.
 //
 // A join that FAILS is not an error the agent needs to see: the suggestion still
-// stands, and it can join by hand. Losing the whole match because the lane
+// stands, and it can join by hand. Losing the whole match because the agent
 // turned exclusive a moment ago would be worse than telling the agent about it.
 func (e *Engine) attemptJoin(ctx context.Context, token string, m core.LaneMatch,
 	cfg MatchConfig, pred overlap.Prediction, recorded []core.PredFile,
 ) (action string, position int, key string) {
 	res, err := e.Do(ctx, &core.Op{
-		Kind: core.OpLaneJoin, Token: token, Channel: m.Lane,
+		Kind: core.OpLaneJoin, Token: token, Space: m.Agent,
 		Score: m.Score, Threshold: cfg.JoinThreshold,
 		ScorerID: pred.ScorerID, ScorerVersion: pred.Version,
 		Evidence: predPaths(m.Shared), Auto: true,
@@ -682,15 +682,15 @@ func (e *Engine) attemptJoin(ctx context.Context, token string, m core.LaneMatch
 		p, _ := res["queue_position"].(int)
 		return "queued", p, ""
 	case res["joined"] == true:
-		// Hand back the coordination key, exactly as an explicit lane_join does.
+		// Hand back the coordination key, exactly as an explicit join_space does.
 		//
 		// Two routes reach membership, asking, and being matched, and only the
 		// first returned the key. So an agent the matcher joined was a member of a
-		// lane it could not name exactly: the key exists to be declared in `refs`
-		// on the NEXT set_slot so Lanes matches by identity instead of guessing
+		// agent it could not name exactly: the key exists to be declared in `refs`
+		// on the NEXT declare so Dibs matches by identity instead of guessing
 		// from wording, and the agent auto-joined by guessing was the one left with
 		// no way to stop being guessed at. It could only recover by calling
-		// lane_join on a lane it was already in, which returns the key it should
+		// join_space on an agent it was already in, which returns the key it should
 		// have been given: a recovery nothing told it about.
 		k, _ := res["key"].(string)
 		return "joined", 0, k
@@ -699,7 +699,7 @@ func (e *Engine) attemptJoin(ctx context.Context, token string, m core.LaneMatch
 }
 
 // Predict exposes the scorer for callers that need a recorded footprint before
-// opening a lane, so a new lane starts with a footprint rather than an empty one
+// opening an agent, so a new agent starts with a footprint rather than an empty one
 // that nothing can ever match against.
 func (e *Engine) Predict(ctx context.Context, declaration string) ([]core.PredFile, string, string) {
 	scorer, cfg := e.scorerAndCfg()
@@ -723,7 +723,7 @@ func toPredFiles(in []overlap.File) []core.PredFile {
 	return out
 }
 
-// repoLensForBoard resolves where every lane actually is, off the state loop.
+// repoLensForBoard resolves where every agent actually is, off the state loop.
 //
 // Git is the only thing that can tell a linked worktree from a separate clone,
 // and paths.Identify shells out to it on a cache miss. Doing that inside the
@@ -733,7 +733,7 @@ func toPredFiles(in []overlap.File) []core.PredFile {
 func (e *Engine) repoLensForBoard(ctx context.Context) core.RepoLens {
 	var cwds []string
 	_, _ = e.query(ctx, func() core.Result {
-		for _, l := range e.state.Lanes {
+		for _, l := range e.state.Agents {
 			if l.Agent != nil {
 				cwds = append(cwds, l.Agent.CWD)
 			}
@@ -760,8 +760,8 @@ func round4(f float64) float64 {
 // DoMatched runs a declaring op and then tells the agent who else is doing that.
 //
 // The order is deliberate: the declaration ALWAYS lands first, and matching is
-// strictly additive afterwards. Lanes never blocks an agent from saying what it
-// is working on (the same rule set_slot's overlap check already follows) so a
+// strictly additive afterwards. Dibs never blocks an agent from saying what it
+// is working on (the same rule declare's overlap check already follows) so a
 // scorer that is slow, broken or absent costs the agent a suggestion and never
 // costs it the ability to declare.
 func (e *Engine) DoMatched(ctx context.Context, op *core.Op) (core.Result, error) {
@@ -770,7 +770,7 @@ func (e *Engine) DoMatched(ctx context.Context, op *core.Op) (core.Result, error
 	//
 	// The order used to be the other way round, which meant the slot stored no
 	// footprint of its own and the only thing matching could compare against was
-	// the lane's accumulated union: the union that grows with every join and
+	// the agent's accumulated union: the union that grows with every join and
 	// never shrinks. Predicting first is what makes slot-to-slot comparison
 	// possible at all, and it costs nothing extra: the same prediction is reused
 	// below instead of being computed twice.
@@ -787,13 +787,13 @@ func (e *Engine) DoMatched(ctx context.Context, op *core.Op) (core.Result, error
 	return res, nil
 }
 
-// annotateMatching explains the result: which lanes, and: when there are none
+// annotateMatching explains the result: which agents, and: when there are none
 // WHY there are none. The three answers are genuinely different and were once
 // all the same silence.
 func annotateMatching(res core.Result, sug []Suggestion, outcome matchOutcome, st MatchStatus) {
 	res["matching"] = st.Phase
 	if len(sug) > 0 {
-		res["lanes"] = sug
+		res["agents"] = sug
 		// A degraded scorer's results are real but weaker, and saying so is what
 		// stops a thin match being read as a confident one.
 		if st.Phase == MatchDegraded {
@@ -806,11 +806,11 @@ func annotateMatching(res core.Result, sug []Suggestion, outcome matchOutcome, s
 	case st.Hint != "":
 		res["matching_hint"] = st.Hint
 	case outcome == matchedAlreadyIn:
-		res["matching_hint"] = "the work closest to this is in a lane you are already in. " +
-			"read it with lane_read; you are not working alone"
+		res["matching_hint"] = "the work closest to this is in an agent you are already in. " +
+			"read it with read_space; you are not working alone"
 	case outcome == matchedNoOpinion:
 		res["matching"] = "no-opinion"
-		res["matching_hint"] = "Lanes could not tell what this work touches, so it has " +
+		res["matching_hint"] = "Dibs could not tell what this work touches, so it has " +
 			"compared you against nothing: this is NOT a finding that you are working " +
 			"alone. The built-in scorer matches your words against file PATHS; if none " +
 			"of them name a file in this repository it has nothing to go on. Name a " +
@@ -827,8 +827,8 @@ func annotateMatching(res core.Result, sug []Suggestion, outcome matchOutcome, s
 //
 // Two things here were reported as wrong by agents on a live fleet, and both were.
 //
-// It told an agent to read the lane "BEFORE YOU START": in the return value of
-// set_slot, which is how an agent declares it HAS started. There is no before
+// It told an agent to read the agent "BEFORE YOU START": in the return value of
+// declare, which is how an agent declares it HAS started. There is no before
 // left. The instruction an agent can actually act on is to check whether the work
 // it has just announced duplicates something already under way, and to stand down
 // if it does; so that is what this says now.
@@ -863,46 +863,46 @@ func lanesHint(sug []Suggestion) string {
 	}
 	switch {
 	case joined > 0 && consider > 0:
-		return "you were placed in a lane whose work " + claim +
-			", and there are others worth a look: read yours with lane_read now and " +
+		return "you were placed in an agent whose work " + claim +
+			", and there are others worth a look: read yours with read_space now and " +
 			"stand down if you are duplicating what is already under way"
 	case joined > 0:
-		return "you were placed in a lane whose work " + claim +
-			": read it with lane_read now and stand down if you are duplicating " +
+		return "you were placed in an agent whose work " + claim +
+			": read it with read_space now and stand down if you are duplicating " +
 			"what is already under way"
 	case opened > 0:
-		// "No lane existed" overstates the same way: what happened is that nothing
+		// "No agent existed" overstates the same way: what happened is that nothing
 		// cleared the threshold, which is a statement about the measurement.
-		return "no existing lane cleared the match threshold, so one was opened for " +
+		return "no existing agent cleared the match threshold, so one was opened for " +
 			"you: the next agent whose declaration does clear it joins you here " +
 			"instead of duplicating. A miss is not proof nobody else is on this"
 	default:
 		return "other agents may be doing overlapping work; " +
-			"lane_join to coordinate, or lane_subscribe to just watch"
+			"join_space to coordinate, or watch_space to just watch"
 	}
 }
 
-// OpenWithPrediction fills in a new lane's footprint before opening it.
+// OpenWithPrediction fills in a new agent's footprint before opening it.
 //
-// A lane opened with no footprint can never be matched against, so it would sit
+// An agent opened with no footprint can never be matched against, so it would sit
 // on the board invisible to exactly the auto-join mechanism that gives it a
-// point. Predicting from the topic at open time is what makes the first lane
+// point. Predicting from the topic at open time is what makes the first agent
 // discoverable by the second agent.
 func (e *Engine) OpenWithPrediction(ctx context.Context, op *core.Op) (core.Result, error) {
 	if len(op.Predicted) == 0 {
-		// The topic is the declaration here: it is what the lane is FOR.
+		// The topic is the declaration here: it is what the agent is FOR.
 		op.Predicted, _, _ = e.Predict(ctx, op.Text)
 	}
 	return e.Do(ctx, op)
 }
 
 // lanesNeedingFootprints reads the board once, coherently, and reports both the
-// lanes still missing a footprint and which lanes exist at all: the second so
+// agents still missing a footprint and which agents exist at all: the second so
 // the cache can forget the ones that do not.
 func (e *Engine) lanesNeedingFootprints(ctx context.Context) (need map[string]string, live map[string]bool) {
 	_, _ = e.query(ctx, func() core.Result {
-		live = make(map[string]bool, len(e.state.Channels))
-		for id, ch := range e.state.Channels {
+		live = make(map[string]bool, len(e.state.Spaces))
+		for id, ch := range e.state.Spaces {
 			live[id] = true
 			if len(ch.Predicted) > 0 || ch.Topic == "" {
 				continue
@@ -920,28 +920,28 @@ func (e *Engine) lanesNeedingFootprints(ctx context.Context) (need map[string]st
 	return need, live
 }
 
-// forgetFootprint drops one lane's cached footprint the moment that lane ends.
+// forgetFootprint drops one agent's cached footprint the moment that agent ends.
 func (e *Engine) forgetFootprint(id string) {
 	e.matchMu.Lock()
 	defer e.matchMu.Unlock()
 	delete(e.footprints, id)
 }
 
-// forgetDeadFootprints drops cached footprints for lanes that no longer exist.
+// forgetDeadFootprints drops cached footprints for agents that no longer exist.
 //
-// A BACKSTOP, not the mechanism. Invalidation happens on the lane.reclaimed and
-// lane.merged events (see publish), which have no window; this sweep catches
+// A BACKSTOP, not the mechanism. Invalidation happens on the agent.reclaimed and
+// agent.merged events (see publish), which have no window; this sweep catches
 // anything that ends by a path those events do not cover, and bounds the map.
 //
-// The cache is keyed by lane id, and lane ids are DERIVED FROM THE DECLARATION,
-// so identical work reuses one, and lanes are now reclaimed automatically when
-// their last member leaves. Left alone, a reclaimed lane's footprint stays here
-// forever and is handed to whatever opens that id next: the new lane gets
-// matched on the OLD lane's files, and the `if _, done := e.footprints[id]`
+// The cache is keyed by agent id, and agent ids are DERIVED FROM THE DECLARATION,
+// so identical work reuses one, and agents are now reclaimed automatically when
+// their last member leaves. Left alone, a reclaimed agent's footprint stays here
+// forever and is handed to whatever opens that id next: the new agent gets
+// matched on the OLD agent's files, and the `if _, done := e.footprints[id]`
 // guard in backfillFootprints means it never gets its own.
 //
-// The same shape as the announcement leak: state keyed by a lane id that
-// outlived the lane. Announcements were the instance somebody found; this is the
+// The same shape as the announcement leak: state keyed by an agent id that
+// outlived the agent. Announcements were the instance somebody found; this is the
 // one that was looked for afterwards, in the same place.
 func (e *Engine) forgetDeadFootprints(live map[string]bool) {
 	e.matchMu.Lock()
@@ -953,23 +953,23 @@ func (e *Engine) forgetDeadFootprints(live map[string]bool) {
 	}
 }
 
-// backfillFootprints predicts a footprint for any lane that has none.
+// backfillFootprints predicts a footprint for any agent that has none.
 //
-// A lane records its file footprint when it is opened, so later declarations
-// have something to match against. But a lane opened BEFORE the scorer finished
+// An agent records its file footprint when it is opened, so later declarations
+// have something to match against. But an agent opened BEFORE the scorer finished
 // indexing gets an empty one, and an empty footprint is permanent: nothing ever
-// matches it, so nobody joins, so it never gains one. The lane sits on the board
+// matches it, so nobody joins, so it never gains one. The agent sits on the board
 // looking fine and silently coordinating nobody.
 //
 // That window is not rare. Embedding a repository takes minutes, the daemon
 // serves throughout (deliberately), and a restart re-opens it every time. It was
-// found by an end-to-end run against a real embeddings service, where the lane
+// found by an end-to-end run against a real embeddings service, where the agent
 // was opened two seconds before the index was ready.
 //
 // The footprint is a CACHE, not a fact: the join op records the joiner's own
 // prediction and score, which is what replay reconstructs from (§4.3). So
-// deriving a missing one here, at the edge, from the lane's topic costs nothing
-// in determinism, and it is computed once per lane, not per declaration.
+// deriving a missing one here, at the edge, from the agent's topic costs nothing
+// in determinism, and it is computed once per agent, not per declaration.
 func (e *Engine) backfillFootprints(ctx context.Context, scorer overlap.Scorer) map[string][]core.PredFile {
 	need, live := e.lanesNeedingFootprints(ctx)
 	for id, topic := range need {

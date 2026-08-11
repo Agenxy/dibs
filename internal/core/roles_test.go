@@ -5,20 +5,20 @@ import (
 	"testing"
 )
 
-// TestCoordinatorIsGrantedNotClaimed: a lane must never be able to promote
+// TestCoordinatorIsGrantedNotClaimed: an agent must never be able to promote
 // itself. Grant flows only through the admin op, which the engine admits solely
 // on the human's admin path.
 func TestCoordinatorIsGrantedNotClaimed(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	reg(t, s, "worker", "tw", t0)
-	if s.Lanes["worker"].IsCoordinator() {
-		t.Fatal("lanes must default to member")
+	if s.Agents["worker"].IsCoordinator() {
+		t.Fatal("agents must default to member")
 	}
-	// A lane using its own token cannot reach the grant op at all: grant_role is
+	// An agent using its own token cannot reach the grant op at all: grant_role is
 	// handled before actor resolution and ignores tokens.
 	mustApply(t, s, &Op{Kind: OpGrantRole, To: "worker", Mode: RoleCoordinator}, t0)
-	if !s.Lanes["worker"].IsCoordinator() {
-		t.Fatal("admin grant should promote the lane")
+	if !s.Agents["worker"].IsCoordinator() {
+		t.Fatal("admin grant should promote the agent")
 	}
 	if _, _, err := s.Apply(&Op{Kind: OpGrantRole, To: "worker", Mode: "superuser"}, t0); err == nil {
 		t.Fatal("unknown roles must be rejected")
@@ -31,7 +31,7 @@ func TestAdminImpliesCoordinator(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	reg(t, s, "boss", "tb", t0)
 	mustApply(t, s, &Op{Kind: OpGrantRole, To: "boss", Mode: RoleAdmin}, t0)
-	l := s.Lanes["boss"]
+	l := s.Agents["boss"]
 	if !l.IsAdmin() {
 		t.Fatal("admin role not set")
 	}
@@ -41,7 +41,7 @@ func TestAdminImpliesCoordinator(t *testing.T) {
 	// And a coordinator is NOT an admin: the escalation is one-way.
 	reg(t, s, "lead", "tl", t0)
 	mustApply(t, s, &Op{Kind: OpGrantRole, To: "lead", Mode: RoleCoordinator}, t0)
-	if s.Lanes["lead"].IsAdmin() {
+	if s.Agents["lead"].IsAdmin() {
 		t.Fatal("coordinator must not silently gain admin (mail-reading) power")
 	}
 }
@@ -99,7 +99,7 @@ func TestCoordinatorCannotReadOthersMail(t *testing.T) {
 	// The coordinator is not a participant, so the message is not in its inbox.
 	for _, m := range s.Inbox("boss") {
 		if m.Serial == serial {
-			t.Fatal("coordinator must not receive other lanes' mail")
+			t.Fatal("coordinator must not receive other agents' mail")
 		}
 	}
 	// And access is still participant-scoped: only a and b.

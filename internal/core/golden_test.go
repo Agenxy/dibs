@@ -12,7 +12,7 @@ import (
 // bespoke `declaredOverlap` proxy instead of EvidenceBetween and Classify.
 // Passing it said nothing about the code that ships. Worse, three of its tests
 // asserted nothing at all: one only logged, one checked recall (so surfacing
-// every lane would pass), and the join test explicitly passed when the classifier
+// every agent would pass), and the join test explicitly passed when the classifier
 // fired on NOTHING. A fixture that cannot fail is not a gate.
 //
 // It also asked one boolean ("would these collide?") of pairs that have
@@ -26,7 +26,7 @@ import (
 // have opposite costs:
 //
 //	relation  what is true of the pair
-//	autoJoin  whether Lanes may act without asking. False positives here are the
+//	autoJoin  whether Dibs may act without asking. False positives here are the
 //	          expensive kind: an agent told it is duplicating work stands down.
 //
 // Every case is drawn from something observed on a live fleet or found by an
@@ -61,7 +61,7 @@ func goldenPairs() []goldenPair {
 		aCWD: repo, bCWD: repo, repo: repo,
 		relation: RelationSameItem, autoJoin: false,
 		why: "the same item and NOT a duplicate. Auto-joining a reviewer into a " +
-			"duplicate-work lane tells it to stop reviewing: the process working, " +
+			"duplicate-work agent tells it to stop reviewing: the process working, " +
 			"reported as waste",
 	}, {
 		name: "same PR number, different repositories",
@@ -84,7 +84,7 @@ func goldenPairs() []goldenPair {
 		b:    decl("greening the runtime build", []string{"/repo/runtime"}, []string{"goal:green-main"}, ""),
 		aCWD: repo, bCWD: repo, repo: repo,
 		relation: RelationPossible, autoJoin: false,
-		why: "observed verbatim on a live fleet: two lanes that had deliberately " +
+		why: "observed verbatim on a live fleet: two agents that had deliberately " +
 			"partitioned the repository between them both declared goal:green-main",
 	}, {
 		name: "same directory, different objectives",

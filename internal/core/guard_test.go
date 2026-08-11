@@ -9,14 +9,14 @@ import (
 //
 // The ordinary delegation pattern is: claim the area, spawn a subagent to edit
 // it. Without lineage the guard DENIED that subagent on its own parent's claim,
-// telling it to "coordinate with lane parent" and "pick different work". The
+// telling it to "coordinate with agent parent" and "pick different work". The
 // guard is an enforcement path rather than advice, so the harness then refused
 // the edit outright: the exclusive claim locked out the very work it was taken
 // for.
 func TestAnAgentIsNotBlockedByItsOwnParentsClaim(t *testing.T) {
 	s := NewState("t", DefaultLimits())
 	now := time.Unix(1700000000, 0)
-	reg := func(name, parent string) *Lane {
+	reg := func(name, parent string) *Agent {
 		t.Helper()
 		op := &Op{Kind: OpRegisterLane, Name: name, NewToken: "tok-" + name, Parent: parent}
 		if parent != "" {
@@ -26,7 +26,7 @@ func TestAnAgentIsNotBlockedByItsOwnParentsClaim(t *testing.T) {
 			// exclusive claims here.
 			nonce := "nonce-" + name + "-0123456789abcdef"
 			if _, _, err := s.Apply(&Op{
-				Kind: OpVouchChild, Token: s.Lanes[parent].Token, Nonce: nonce,
+				Kind: OpVouchChild, Token: s.Agents[parent].Token, Nonce: nonce,
 			}, now); err != nil {
 				t.Fatal(err)
 			}
@@ -37,7 +37,7 @@ func TestAnAgentIsNotBlockedByItsOwnParentsClaim(t *testing.T) {
 			t.Fatal(err)
 		}
 		id, _ := r["lane_id"].(string)
-		l := s.Lanes[id]
+		l := s.Agents[id]
 		if _, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: l.Token}, now); err != nil {
 			t.Fatal(err)
 		}
@@ -72,7 +72,7 @@ func TestAnAgentIsNotBlockedByItsOwnParentsClaim(t *testing.T) {
 func TestAParentIsStillStoppedByItsSubagentsClaim(t *testing.T) {
 	s := NewState("t", DefaultLimits())
 	now := time.Unix(1700000000, 0)
-	reg := func(name, parent string) *Lane {
+	reg := func(name, parent string) *Agent {
 		t.Helper()
 		op := &Op{Kind: OpRegisterLane, Name: name, NewToken: "tok-" + name, Parent: parent}
 		if parent != "" {
@@ -82,7 +82,7 @@ func TestAParentIsStillStoppedByItsSubagentsClaim(t *testing.T) {
 			// exclusive claims here.
 			nonce := "nonce-" + name + "-0123456789abcdef"
 			if _, _, err := s.Apply(&Op{
-				Kind: OpVouchChild, Token: s.Lanes[parent].Token, Nonce: nonce,
+				Kind: OpVouchChild, Token: s.Agents[parent].Token, Nonce: nonce,
 			}, now); err != nil {
 				t.Fatal(err)
 			}
@@ -93,7 +93,7 @@ func TestAParentIsStillStoppedByItsSubagentsClaim(t *testing.T) {
 			t.Fatal(err)
 		}
 		id, _ := r["lane_id"].(string)
-		l := s.Lanes[id]
+		l := s.Agents[id]
 		if _, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: l.Token}, now); err != nil {
 			t.Fatal(err)
 		}
@@ -117,8 +117,8 @@ func TestALoopedParentChainTerminates(t *testing.T) {
 	// Proven links, so the walk actually traverses them: an unproven parent
 	// stops the walk immediately and would make this test pass for the wrong
 	// reason.
-	s.Lanes["a"] = &Lane{ID: "a", Parent: "b", ParentProven: true, Status: StatusActive}
-	s.Lanes["b"] = &Lane{ID: "b", Parent: "a", ParentProven: true, Status: StatusActive}
+	s.Agents["a"] = &Agent{ID: "a", Parent: "b", ParentProven: true, Status: StatusActive}
+	s.Agents["b"] = &Agent{ID: "b", Parent: "a", ParentProven: true, Status: StatusActive}
 	if s.DescendsFrom("a", "nobody") {
 		t.Fatal("a cycle must answer no, not yes")
 	}
@@ -180,11 +180,11 @@ func TestAStrangerIsNotHandedTheClaimHoldersIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	id, _ := res["lane_id"].(string)
-	if _, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: s.Lanes[id].Token}, now); err != nil {
+	if _, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: s.Agents[id].Token}, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := s.Apply(&Op{
-		Kind: OpClaim, Token: s.Lanes[id].Token, Path: "/repo", Mode: ClaimExclusive,
+		Kind: OpClaim, Token: s.Agents[id].Token, Path: "/repo", Mode: ClaimExclusive,
 	}, now); err != nil {
 		t.Fatal(err)
 	}
@@ -212,11 +212,11 @@ func TestAStrangerIsNotHandedTheClaimHoldersIdentity(t *testing.T) {
 
 // `parent` arrives as a bare string on the wire, and the powers keyed off it
 // are not cosmetic: a subagent speaks under its parent's membership, skips an
-// exclusive lane's queue, and is exempt from its parent's exclusive claims in
+// exclusive agent's queue, and is exempt from its parent's exclusive claims in
 // the guard.
 //
 // Verified against a running daemon before this: an agent registering with
-// parent:"victim" posted into the victim's exclusive lane, joined it instead of
+// parent:"victim" posted into the victim's exclusive agent, joined it instead of
 // queueing, and got allow/no-claim for a path the victim held exclusively.
 //
 // Two of those powers were added earlier in this same session, to fix a real
@@ -225,17 +225,17 @@ func TestAStrangerIsNotHandedTheClaimHoldersIdentity(t *testing.T) {
 func TestLineageGrantsNothingUntilTheParentVouchesForIt(t *testing.T) {
 	s := NewState("t", DefaultLimits())
 	now := time.Unix(1700000000, 0)
-	mk := func(name, tok string) *Lane {
+	mk := func(name, tok string) *Agent {
 		t.Helper()
 		r, _, err := s.Apply(&Op{Kind: OpRegisterLane, Name: name, NewToken: tok}, now)
 		if err != nil {
 			t.Fatal(err)
 		}
 		id, _ := r["lane_id"].(string)
-		if _, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: s.Lanes[id].Token}, now); err != nil {
+		if _, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: s.Agents[id].Token}, now); err != nil {
 			t.Fatal(err)
 		}
-		return s.Lanes[id]
+		return s.Agents[id]
 	}
 	victim := mk("victim", "t1")
 	if _, _, err := s.Apply(&Op{
@@ -250,7 +250,7 @@ func TestLineageGrantsNothingUntilTheParentVouchesForIt(t *testing.T) {
 	}, now); err != nil {
 		t.Fatal(err)
 	}
-	if s.Lanes["impostor"].ParentProven {
+	if s.Agents["impostor"].ParentProven {
 		t.Fatal("nobody vouched for this lineage")
 	}
 	if s.DescendsFrom("impostor", "victim") {
@@ -273,7 +273,7 @@ func TestLineageGrantsNothingUntilTheParentVouchesForIt(t *testing.T) {
 	}, now); err != nil {
 		t.Fatal(err)
 	}
-	if !s.Lanes["realchild"].ParentProven {
+	if !s.Agents["realchild"].ParentProven {
 		t.Fatal("a vouched child must be proven")
 	}
 	if v := s.GuardPath("realchild", "/repo/x.go", now); v.Decision != GuardAllow {
@@ -288,7 +288,7 @@ func TestLineageGrantsNothingUntilTheParentVouchesForIt(t *testing.T) {
 	}, now); err != nil {
 		t.Fatal(err)
 	}
-	if s.Lanes["replay"].ParentProven {
+	if s.Agents["replay"].ParentProven {
 		t.Error("the voucher is consumed on first use; a replay proves nothing")
 	}
 	if v := s.GuardPath("replay", "/repo/x.go", now); v.Decision != GuardDeny {

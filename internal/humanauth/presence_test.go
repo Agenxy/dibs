@@ -12,7 +12,7 @@ import (
 //
 // The three verdicts are not severities, they are different sentences to say to
 // a person: Verified acts, Declined says nothing was sent, and Unavailable sends
-// them to `lanes web`. Collapsing Unavailable into Declined would tell somebody
+// them to `dibs web`. Collapsing Unavailable into Declined would tell somebody
 // on a Mac with no sensor to try their finger again: advice that cannot work,
 // which is this project's named failure mode.
 func TestAMissingHelperIsUnavailableNotDeclined(t *testing.T) {
@@ -34,7 +34,7 @@ func TestAMissingHelperIsUnavailableNotDeclined(t *testing.T) {
 // The helper is taken from beside the daemon, never from PATH.
 //
 // This is the one question where substituting the answerer defeats the whole
-// mechanism: a `lanes-presence` picked up from somewhere else on PATH would be
+// mechanism: a `agents-presence` picked up from somewhere else on PATH would be
 // an unrelated binary answering "is a human here", and it could answer yes.
 func TestTheHelperIsNotTakenFromPATH(t *testing.T) {
 	dir := t.TempDir()

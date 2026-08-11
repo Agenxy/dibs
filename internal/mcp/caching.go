@@ -6,7 +6,7 @@ package mcp
 // result from server/discover, tools/list, resources/list and resources/read.
 // It matters much more under the stateless core than it looks: with the
 // initialize handshake retired there is no session, so a client re-establishes
-// nothing and simply issues requests, and Lanes publishes 43 tools whose
+// nothing and simply issues requests, and Dibs publishes 43 tools whose
 // descriptions are deliberately long, because a tool description is the only
 // documentation an agent ever reads. Without a freshness hint that payload goes
 // back over the wire on every cold path, forever.
@@ -18,7 +18,7 @@ package mcp
 //     costs a stale read or a wasted fetch.
 //   - cacheScope is who may KEEP it. "public" tells shared gateways and proxies
 //     they may serve this response to a different caller: explicitly including
-//     one with a different authorization context. Marking per-lane mail public
+//     one with a different authorization context. Marking per-agent mail public
 //     would therefore be a disclosure bug, not a performance bug.
 //
 // So the rule here is: public only for bytes that are identical for every

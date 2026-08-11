@@ -73,7 +73,7 @@ func TestRepoGuardIsActuallyWired(t *testing.T) {
 	// The daemon builds the index from `dir`; that same value has to reach the
 	// engine, or every agent looks like it is in the repo.
 	if !strings.Contains(liveCode(t, matchConfigLiteral(t)), "Repo:") {
-		t.Error("lanesd builds MatchConfig without Repo: the guard will never fire")
+		t.Error("dibd builds MatchConfig without Repo: the guard will never fire")
 	}
 	if !strings.Contains(liveCode(t, readFile(t, "match.go")), "inMatchedRepo(selfCWD, cfg.Repo)") {
 		t.Error("suggestionsFor never consults the guard")
@@ -89,10 +89,10 @@ func TestRepoGuardIsActuallyWired(t *testing.T) {
 // that can be satisfied by a neighbouring struct is not testing the wiring.
 func matchConfigLiteral(t *testing.T) string {
 	t.Helper()
-	src := readFile(t, "../../cmd/lanesd/scorer.go")
+	src := readFile(t, "../../cmd/dibd/scorer.go")
 	i := strings.Index(src, "engine.MatchConfig{")
 	if i < 0 {
-		t.Fatal("lanesd no longer builds an engine.MatchConfig; this test needs rewriting")
+		t.Fatal("dibd no longer builds an engine.MatchConfig; this test needs rewriting")
 	}
 	rest := src[i:]
 	end := strings.Index(rest, "})")

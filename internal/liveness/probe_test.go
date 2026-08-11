@@ -119,7 +119,7 @@ func TestOnlyHarnessTranscriptsCount(t *testing.T) {
 	}
 	yes := []string{
 		filepath.Join(home, ".codex/sessions/2026/07/29/rollout-2026-07-29T12-02-30-019faf41.jsonl"),
-		filepath.Join(home, ".claude/projects/-home-ada-lanes/8064473b.jsonl"),
+		filepath.Join(home, ".claude/projects/-home-ada-agents/8064473b.jsonl"),
 	}
 	no := []string{
 		filepath.Join(home, ".codex/sessions/2026/07/29/rollout.txt"), // not jsonl

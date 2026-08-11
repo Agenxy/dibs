@@ -6,13 +6,13 @@ import (
 	"time"
 )
 
-// WHY a lane stopped counting as live was computed at the moment it
-// transitioned and then put only into the `lane.stale` event. A human opening
+// WHY an agent stopped counting as live was computed at the moment it
+// transitioned and then put only into the `agent.stale` event. A human opening
 // the board later saw "out of touch" and nothing else: beside a last-contact
 // time of "now", which reads as a broken board rather than a dead agent.
 //
 // The three cases are not interchangeable, and the third is the one that must
-// never be mistaken for the others: a lane that never gave a PID has said
+// never be mistaken for the others: an agent that never gave a PID has said
 // nothing about a process at all.
 func TestALaneRecordsWhyItStoppedCountingAsLive(t *testing.T) {
 	for _, tc := range []struct {
@@ -42,13 +42,13 @@ func TestALaneRecordsWhyItStoppedCountingAsLive(t *testing.T) {
 			if _, _, err := s.Apply(op, now); err != nil {
 				t.Fatal(err)
 			}
-			if got := s.Lanes[id].StaleReason; got != tc.want {
+			if got := s.Agents[id].StaleReason; got != tc.want {
 				t.Fatalf("want %q, got %q", tc.want, got)
 			}
 			// And the board must carry it, or the reader still cannot see it.
 			var shown any
-			lanes, _ := s.Board()["lanes"].([]map[string]any)
-			for _, lm := range lanes {
+			agents, _ := s.Board()["agents"].([]map[string]any)
+			for _, lm := range agents {
 				shown = lm["stale_reason"]
 			}
 			if shown != tc.want {
@@ -58,7 +58,7 @@ func TestALaneRecordsWhyItStoppedCountingAsLive(t *testing.T) {
 	}
 }
 
-// Coming back clears it. A lane that reattached and is working must not still
+// Coming back clears it. An agent that reattached and is working must not still
 // be labelled with how it died last time.
 func TestReturningClearsTheReason(t *testing.T) {
 	s := NewState("t", DefaultLimits())
@@ -73,7 +73,7 @@ func TestReturningClearsTheReason(t *testing.T) {
 	if _, _, err := s.Apply(&Op{Kind: OpSweep, DeadLanes: []string{id}}, now); err != nil {
 		t.Fatal(err)
 	}
-	if s.Lanes[id].StaleReason == "" {
+	if s.Agents[id].StaleReason == "" {
 		t.Fatal("precondition: it should have a reason")
 	}
 	// Re-registering with the same name + session is how an agent comes back.
@@ -82,14 +82,14 @@ func TestReturningClearsTheReason(t *testing.T) {
 	}, now); err != nil {
 		t.Fatal(err)
 	}
-	if got := s.Lanes[id].StaleReason; got != "" {
+	if got := s.Agents[id].StaleReason; got != "" {
 		t.Fatalf("a working agent must not still be labelled %q", got)
 	}
 }
 
 // SPEC §7's honest-liveness rule says crash, hang and unresponsiveness are
 // different facts reported as such. A CLEAN CLOSE is a fourth fact, and it was
-// being reported as a crash: an agent that called close_lane finished
+// being reported as a crash: an agent that called sign_off finished
 // deliberately and said so, yet its correspondent was told "coordination lease
 // lapsed … verify before touching its directories": wrong in every clause, and
 // it sends somebody to inspect work that definitively ended and released
@@ -115,7 +115,7 @@ func TestExpiryTellsTheTruthAboutWhyNobodyAnswered(t *testing.T) {
 		},
 		{
 			name: "finished on purpose", arrange: "closed",
-			want:    []string{"closed its lane", "not a crash", "nothing of its to verify"},
+			want:    []string{"closed its agent", "not a crash", "nothing of its to verify"},
 			notWant: []string{"lease lapsed"},
 		},
 		{
@@ -126,7 +126,7 @@ func TestExpiryTellsTheTruthAboutWhyNobodyAnswered(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := NewState("t", DefaultLimits())
-			reg := func(name, tok, nonce string) *Lane {
+			reg := func(name, tok, nonce string) *Agent {
 				t.Helper()
 				op := &Op{Kind: OpRegisterLane, Name: name, NewToken: tok, PID: 42}
 				if nonce != "" {
@@ -137,10 +137,10 @@ func TestExpiryTellsTheTruthAboutWhyNobodyAnswered(t *testing.T) {
 					t.Fatal(err)
 				}
 				id, _ := r["lane_id"].(string)
-				if _, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: s.Lanes[id].Token}, now); err != nil {
+				if _, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: s.Agents[id].Token}, now); err != nil {
 					t.Fatal(err)
 				}
-				return s.Lanes[id]
+				return s.Agents[id]
 			}
 			asker := reg("asker", "t1", "")
 			nonce := ""
@@ -163,11 +163,11 @@ func TestExpiryTellsTheTruthAboutWhyNobodyAnswered(t *testing.T) {
 					t.Fatal(err)
 				}
 			case "closed":
-				if _, _, err := s.Apply(&Op{Kind: OpCloseLane, Token: s.Lanes["target"].Token}, now); err != nil {
+				if _, _, err := s.Apply(&Op{Kind: OpCloseLane, Token: s.Agents["target"].Token}, now); err != nil {
 					t.Fatal(err)
 				}
 			case "gone":
-				delete(s.Lanes, "target")
+				delete(s.Agents, "target")
 			}
 			if _, _, err := s.Apply(&Op{Kind: OpSweep}, now.Add(2*time.Hour)); err != nil {
 				t.Fatal(err)
@@ -188,14 +188,14 @@ func TestExpiryTellsTheTruthAboutWhyNobodyAnswered(t *testing.T) {
 	}
 }
 
-// Archiving is retention, not a verdict: a lane archived after going dark and
+// Archiving is retention, not a verdict: an agent archived after going dark and
 // one archived after a clean close look identical by status alone, and only
 // StaleReason separates them. Getting this wrong made a crashed agent report as
 // a tidy shutdown.
 func TestArchivingDoesNotLaunderACrashIntoACleanClose(t *testing.T) {
 	s := NewState("t", DefaultLimits())
-	crashed := &Lane{ID: "crashed", Status: StatusArchived, StaleReason: "process_exited"}
-	tidy := &Lane{ID: "tidy", Status: StatusArchived}
+	crashed := &Agent{ID: "crashed", Status: StatusArchived, StaleReason: "process_exited"}
+	tidy := &Agent{ID: "tidy", Status: StatusArchived}
 	if crashed.finishedCleanly() {
 		t.Error("an agent archived after crashing did not finish cleanly")
 	}
@@ -207,10 +207,10 @@ func TestArchivingDoesNotLaunderACrashIntoACleanClose(t *testing.T) {
 
 // An id is an ADDRESS: it goes on the wire, into every message envelope and
 // into urls, so it is restricted to ASCII. A name that survives none of that
-// still needs an id, and "lane" is the fallback.
+// still needs an id, and "agent" is the fallback.
 //
 // That fallback was silent. An operator registering an agent as 監視者 got an
-// agent called `lane`, a second got `lane-2`, and nothing anywhere said their
+// agent called `agent`, a second got `agent-2`, and nothing anywhere said their
 // names had been discarded: on a board, in mail, and in every hint that names
 // an agent. Found by putting a wide-character name on a board to check column
 // alignment, which is not what it was checking.
@@ -223,14 +223,14 @@ func TestANameThatCannotBecomeAnIDIsNotDiscardedSilently(t *testing.T) {
 		t.Fatal(err)
 	}
 	id, _ := res["lane_id"].(string)
-	if id != "lane" {
+	if id != "agent" {
 		t.Fatalf("precondition: nothing in that name is addressable, got %q", id)
 	}
 	note, _ := res["name_note"].(string)
 	if note == "" {
 		t.Fatal("the agent is the only party that can correct this; it must be told")
 	}
-	for _, want := range []string{"監視者", "lane", "ASCII"} {
+	for _, want := range []string{"監視者", "agent", "ASCII"} {
 		if !strings.Contains(note, want) {
 			t.Errorf("the note must say what was asked for, what was assigned, and why; "+
 				"missing %q in: %s", want, note)
@@ -238,14 +238,14 @@ func TestANameThatCannotBecomeAnIDIsNotDiscardedSilently(t *testing.T) {
 	}
 
 	// The name itself is kept, and the board carries it: otherwise a fleet
-	// named in a non-Latin script reads `lane`, `lane-2`, `lane-3`: correct
+	// named in a non-Latin script reads `agent`, `agent-2`, `agent-3`: correct
 	// addresses that identify nobody.
-	if got := s.Lanes[id].Name; got != "監視者" {
+	if got := s.Agents[id].Name; got != "監視者" {
 		t.Fatalf("the original name must survive, got %q", got)
 	}
-	lanes, _ := s.Board()["lanes"].([]map[string]any)
+	agents, _ := s.Board()["agents"].([]map[string]any)
 	var shown any
-	for _, lm := range lanes {
+	for _, lm := range agents {
 		if lm["id"] == id {
 			shown = lm["display_name"]
 		}
@@ -262,7 +262,7 @@ func TestANameThatCannotBecomeAnIDIsNotDiscardedSilently(t *testing.T) {
 	if _, noisy := res2["name_note"]; noisy {
 		t.Error("a name that works needs no explanation")
 	}
-	for _, lm := range lanes {
+	for _, lm := range agents {
 		if lm["id"] == "builder" {
 			if _, dup := lm["display_name"]; dup {
 				t.Error("an id that already carries the name must not repeat it")
@@ -276,7 +276,7 @@ func TestANameThatCannotBecomeAnIDIsNotDiscardedSilently(t *testing.T) {
 //
 // AlivePIDs is a positive-only set, so alive[pid] returns false for a process
 // nobody probed, and that false went into the LEDGER as proc_alive, a
-// permanent record of a measurement that never happened. Boot marks lanes stale
+// permanent record of a measurement that never happened. Boot marks agents stale
 // with no AlivePIDs at all; a sweep with no prober reports every pid alive.
 // SPEC §7 exists to keep crash, hang and unresponsiveness distinct; an
 // unprobed process is a fourth state and must not be recorded as the second.
@@ -316,7 +316,7 @@ func TestProcAliveIsOnlyRecordedWhenSomethingActuallyLooked(t *testing.T) {
 			}
 			var found bool
 			for _, e := range evs {
-				if e.Type != "lane.stale" {
+				if e.Type != "agent.stale" {
 					continue
 				}
 				v, present := e.Data["proc_alive"]
@@ -330,7 +330,7 @@ func TestProcAliveIsOnlyRecordedWhenSomethingActuallyLooked(t *testing.T) {
 				}
 			}
 			if !found {
-				t.Fatal("expected a lane.stale event")
+				t.Fatal("expected an agent.stale event")
 			}
 		})
 	}

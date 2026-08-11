@@ -9,7 +9,7 @@ import (
 // The embedded playbook must be the one in the repository root.
 //
 // There are two copies because go:embed cannot reach above its own package, and
-// the binary has to answer lanes://skills without the repository: an agent that
+// the binary has to answer dibs://skills without the repository: an agent that
 // installed a release has no SKILLS.md to open. So the root file is canonical
 // and this pins the copy to it.
 //
@@ -48,8 +48,8 @@ func TestSkillsIsDiscoverableAndAdvertised(t *testing.T) {
 	}
 	// The connect instructions must point at it, or an agent has to already know
 	// to enumerate resources before it learns anything from them.
-	if !contains(serverInstructions, "lanes://skills") {
-		t.Error("serverInstructions never mentions lanes://skills, so an agent that does not " +
+	if !contains(serverInstructions, "dibs://skills") {
+		t.Error("serverInstructions never mentions dibs://skills, so an agent that does not " +
 			"enumerate resources will never discover the one document written for it")
 	}
 }

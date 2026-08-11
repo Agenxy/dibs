@@ -18,7 +18,7 @@ import (
 //
 // An agent with one false-alert-per-pair rate of 2% meets eleven peers and is
 // wrong-footed 20% of the time. That is the number that decides whether a fleet
-// keeps Lanes switched on, and nothing in the repository measured it.
+// keeps Dibs switched on, and nothing in the repository measured it.
 //
 // # What this asserts
 //
@@ -132,7 +132,7 @@ func TestFalseAlertsAcrossAWholeFleet(t *testing.T) {
 	}
 	// Per AGENT, not per pair. A 2% per-pair error rate means one agent in five is
 	// wrong-footed once it has eleven peers, and that is what decides whether a
-	// fleet leaves Lanes switched on.
+	// fleet leaves Dibs switched on.
 	if share := float64(len(warnedWrongly)) / float64(len(agents)); share > 0.25 {
 		t.Errorf("%.0f%% of agents see a spurious warning; warnings stop meaning anything "+
 			"long before that", 100*share)

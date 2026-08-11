@@ -41,8 +41,8 @@ jobs:
       # This workflow used to list its own subset: vet, lint, race, panel, web,
       # and a coverage number that was printed and never compared. Meanwhile
       # README and CONTRIBUTING both said `task ci` is "the same set CI runs".
-      # It was not: guard, channel, sidecar, human-flow, minimal and the
-      # alternate lanesdev build never ran here, and the coverage floor was
+      # It was not: guard, space, sidecar, human-flow, minimal and the
+      # alternate dibdev build never ran here, and the coverage floor was
       # never enforced, so a tag could ship code that had passed a third of the
       # project's own gate.
       #

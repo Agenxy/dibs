@@ -5,18 +5,18 @@ import (
 	"time"
 )
 
-// A shared identifying ref matches even when the channel has no footprint.
+// A shared identifying ref matches even when the space has no footprint.
 //
 // The candidate filter required a scorer footprint on the CHANNEL before it
-// would compare refs, so a channel opened by an agent whose declaration
+// would compare refs, so a space opened by an agent whose declaration
 // predicted no files was invisible to ref matching. Two agents declaring
 // issue:42, in the same repository, with the same activity, opened two separate
-// channels: the exact duplication the product exists to prevent, failing in
+// spaces: the exact duplication the product exists to prevent, failing in
 // exactly the case a hand-written identifier is for: when the scorer has no
 // opinion.
 //
 // The comment on that filter already said declared facts must work without a
-// footprint. It was true of the caller's side and not of the channel's.
+// footprint. It was true of the caller's side and not of the space's.
 func TestASharedRefMatchesAChannelWithNoFootprint(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	now := time.Now()
@@ -36,28 +36,28 @@ func TestASharedRefMatchesAChannelWithNoFootprint(t *testing.T) {
 	owner := reg("owner")
 	reg("joiner")
 
-	// Open the channel, then declare the ref in a SLOT.
+	// Open the space, then declare the ref in a SLOT.
 	//
-	// A channel's refs come from its members' slots, not from the lane_open op, so
+	// A space's refs come from its members' slots, not from the open_space op, so
 	// declaring the ref on the open alone exercises nothing. Auto-opening from a
-	// declaration is the engine's job; at this layer the channel is created
+	// declaration is the engine's job; at this layer the space is created
 	// explicitly and the owner then declares, which reaches the same state.
 	if _, _, err := s.Apply(&Op{
-		Kind: OpLaneOpen, Token: owner, Channel: "ticket-42", Text: "implement ticket",
+		Kind: OpLaneOpen, Token: owner, Space: "ticket-42", Text: "implement ticket",
 	}, now); err != nil {
-		t.Fatalf("lane_open: %v", err)
+		t.Fatalf("open_space: %v", err)
 	}
 	if _, _, err := s.Apply(&Op{
 		Kind: OpSetSlot, Token: owner, Text: "implement ticket",
 		Refs: []string{"issue:42"},
 	}, now); err != nil {
-		t.Fatalf("owner set_slot: %v", err)
+		t.Fatalf("owner declare: %v", err)
 	}
-	lane := s.Channels["ticket-42"]
-	if lane == nil {
-		t.Fatal("setup: the channel was not opened")
+	agent := s.Spaces["ticket-42"]
+	if agent == nil {
+		t.Fatal("setup: the space was not opened")
 	}
-	if len(lane.Predicted) != 0 {
+	if len(agent.Predicted) != 0 {
 		t.Skip("this fixture produced a footprint; the no-footprint path is what is " +
 			"under test and a scorer change has made it unreachable here")
 	}
@@ -68,16 +68,16 @@ func TestASharedRefMatchesAChannelWithNoFootprint(t *testing.T) {
 
 	found := false
 	for _, m := range matches {
-		if m.Lane == lane.ID {
+		if m.Agent == agent.ID {
 			found = true
 			if len(m.SharedRefs) == 0 {
-				t.Errorf("matched %s but reported no shared refs: %+v", lane.ID, m)
+				t.Errorf("matched %s but reported no shared refs: %+v", agent.ID, m)
 			}
 		}
 	}
 	if !found {
-		t.Errorf("a channel sharing issue:42 was not matched because it had no scorer "+
-			"footprint: two agents on one ticket would open two channels. Got %+v",
+		t.Errorf("a space sharing issue:42 was not matched because it had no scorer "+
+			"footprint: two agents on one ticket would open two spaces. Got %+v",
 			matches)
 	}
 }

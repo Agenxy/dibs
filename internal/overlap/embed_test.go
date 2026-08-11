@@ -233,8 +233,8 @@ func TestEmbedScoresAFileByItsBestChunk(t *testing.T) {
 // counts (a file sharing no terms genuinely scores 0) and catastrophic here:
 // chunks at 0.70 and 0.83 become 0.84 and 1.00. Measured on a three-file
 // fixture before the fix, "writing release notes for the changelog" scored
-// 0.729 against an authentication lane: a false positive confident enough to
-// put every agent in one lane.
+// 0.729 against an authentication agent: a false positive confident enough to
+// put every agent in one agent.
 func TestEmbedRescalesAgainstTheQuerysOwnDistribution(t *testing.T) {
 	// Four chunks. The query is strongly about the first, mildly about the
 	// second, and unrelated to the rest, but every raw cosine is high, as real

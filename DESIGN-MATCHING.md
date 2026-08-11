@@ -5,7 +5,7 @@ Status: design proposal. This deliberately replaces parts of the matching model 
 
 ## Decision
 
-Lanes should stop treating duplicate-work detection as one similarity score.
+Dibs should stop treating duplicate-work detection as one similarity score.
 
 There are three different facts in play:
 
@@ -14,7 +14,7 @@ There are three different facts in play:
 3. two agents may touch the same implementation surface.
 
 Those facts have different meanings and justify different actions. A shared PR is a
-good reason to put agents in one coordination lane. Two writes to the same file are a
+good reason to put agents in one coordination agent. Two writes to the same file are a
 good reason to create awareness. Similar prose is a good reason to retrieve a
 candidate. Only the first is strong enough to act on without another judgement.
 
@@ -32,7 +32,7 @@ There should be no weighted sum in which enough weak signals can add up to an ex
 one. “Same repo + same branch + similar prose + two guessed files” must not become
 equivalent to “both named `github:org/repo:pr:1231`.”
 
-The unit of matching should be **one active slot against another active slot**. A lane
+The unit of matching should be **one active slot against another active slot**. An agent
 is the place matched work coordinates; it is not the unit whose ever-growing union of
 members, refs, and files should be classified.
 
@@ -42,7 +42,7 @@ The production reports are consistent with the implementation.
 
 `internal/overlap/lexical.go` turns individual declaration tokens into path postings,
 then expands those paths through commit-message history and co-change. The resulting
-paths are hypotheses. `internal/core/channel.go` compares the hypotheses with weighted
+paths are hypotheses. `internal/core/space.go` compares the hypotheses with weighted
 Jaccard and returns their intersection as `Shared`, which makes a hypothesis read like
 an observation. That is how “gate” becomes `pr-gate.yml` and then comes back as
 apparently concrete shared-file evidence.
@@ -58,15 +58,15 @@ The recent refs change is also not yet independent of the scorer:
 - `matchDeclaration` returns `matchedNoOpinion` when file prediction is empty before
   it asks the core about refs.
 - `MatchLanesRefs` says refs are decisive without a footprint, but skips a candidate
-  channel with no footprint before comparing the refs.
+  space with no footprint before comparing the refs.
 
 More importantly, `channelRefs` collects **every slot ref from every member of the
-lane**, not the slot that caused that member to join. An agent can join lane A, move
-another slot to objective B, and make B look like an objective of lane A. Similarly,
-`Channel.Predicted` is a max-union of recorded member predictions. It does not describe
+agent**, not the slot that caused that member to join. An agent can join agent A, move
+another slot to objective B, and make B look like an objective of agent A. Similarly,
+`Space.Predicted` is a max-union of recorded member predictions. It does not describe
 one current objective; it describes everything that has ever been folded into that
-lane. Matching against these unions creates contagion: one broad or false match makes
-the lane broader, making the next false match easier.
+agent. Matching against these unions creates contagion: one broad or false match makes
+the agent broader, making the next false match easier.
 
 The repository guard prevents some automatic joins but still surfaces generic
 cross-repository suggestions. `cwd` is being used as a late veto when repository
@@ -79,16 +79,16 @@ current tier 0 reports precision 0.33 and recall 0.50, while the declared rule r
 precision 1.00 and recall 0.50. Five pairs are an excellent regression fixture and not
 enough data to set a production threshold.
 
-## The relation Lanes should classify
+## The relation Dibs should classify
 
 “Overlap” should become a small relation vocabulary rather than a scalar presented as
 truth:
 
 | Relation | Meaning | Default action |
 |---|---|---|
-| `same_work_item` | Both slots name the same canonical work item or Lanes-issued coordination key | Put them in the same lane and say exactly why |
+| `same_work_item` | Both slots name the same canonical work item or Dibs-issued coordination key | Put them in the same agent and say exactly why |
 | `probable_duplicate` | Evidence suggests the same objective, but identity is not established | Interruptive suggestion; never auto-join by default |
-| `complementary` | Same work item or objective, different roles such as implement/review | Coordinate in one lane; never say “stand down” |
+| `complementary` | Same work item or objective, different roles such as implement/review | Coordinate in one agent; never say “stand down” |
 | `surface_collision` | Declared or observed implementation paths overlap, while objectives are different or unknown | Awareness only |
 | `related` | Worth reading or subscribing to, without a collision claim | Quiet candidate list |
 | `unrelated` | Positive contradictory evidence exists | No action |
@@ -112,7 +112,7 @@ score should not auto-join. I disagree that “declared” is the right long-ter
 The useful distinction is **what the evidence establishes**, not who stated it.
 
 Even exact identity establishes “coordinate here,” not “one of you is redundant.” An
-implementer and a reviewer should share a PR lane. They should not be told to stand
+implementer and a reviewer should share a PR agent. They should not be told to stand
 down. Duplicate wording requires compatible activities or an explicit human/agent
 decision in addition to work-item identity.
 
@@ -124,7 +124,7 @@ The classifier should receive the following normalized snapshot. Only `summary`,
 ```text
 WorkIntent
   slot_id                 stable id of this concurrent unit of work
-  summary                 current set_slot text
+  summary                 current declare text
   work_item?              one primary durable id or URL
   activity                investigate | design | implement | review | verify | document | operate | other
   paths[]                 narrow expected files/directories, repo-relative when possible
@@ -144,7 +144,7 @@ WorkIntent
 Keep `text`, but make it a summary rather than the primary machine key. Add:
 
 1. **`work_item`: optional, singular, and literal.** Its schema description should
-   say: “If the task already contains a PR, issue, incident, ticket, URL, or Lanes
+   say: “If the task already contains a PR, issue, incident, ticket, URL, or Dibs
    coordination key, copy it verbatim. Otherwise omit this field. Do not invent an
    id.” A single primary item is cheaper and more discriminating than a bag of refs.
 2. **`activity`: a required enum for new clients.** Selecting `implement` or `review`
@@ -166,7 +166,7 @@ If an agent truly has several primary work items, it should use several slots; r
 items can remain in `related_refs`. This keeps the unit being matched coherent.
 
 Do not ask for `cwd`, branch, host, model, harness, title, repository, confidence, or
-keywords. Lanes or the bridge already knows the first six, agents cannot calibrate
+keywords. Dibs or the bridge already knows the first six, agents cannot calibrate
 confidence, and keywords recreate the present problem. Do not add a routine
 `excludes` field: agents will rarely fill it. Ask for a negative judgement only when
 there is a concrete proposed match to judge.
@@ -181,7 +181,7 @@ The current tool description says to “ALWAYS pass refs.” Real tasks often ar
 no durable id. That instruction will increase fill rate by producing invented values
 such as `goal:green-main`, not by producing identity.
 
-Lanes should measure three rates separately: field presence, successful
+Dibs should measure three rates separately: field presence, successful
 canonicalization, and collision precision. Presence alone is a vanity metric.
 
 Canonicalization should be local and deterministic:
@@ -189,7 +189,7 @@ Canonicalization should be local and deterministic:
 - A full provider URL becomes a provider/repository/type/number tuple.
 - `pr:1231` is scoped by the derived repository identity; it must not collide with PR
   1231 in another repository.
-- A Lanes-issued coordination key is globally unambiguous on that board.
+- A Dibs-issued coordination key is globally unambiguous on that board.
 - Broad labels such as `goal:*` and `gate:*` remain asserted context unless their
   namespace is explicitly configured as unique.
 
@@ -200,7 +200,7 @@ silently upgraded to verified identity when ambiguous.
 Repository identity also needs normalization. Worktrees that share a Git common
 directory are one repository. Separate clones with the same normalized primary remote
 can be treated as the same project. With no remote, the real path of the Git common
-directory is the honest local identity; Lanes should report separate clones as
+directory is the honest local identity; Dibs should report separate clones as
 unknown rather than guessing from directory names. `worktree_id` is the real path of
 the individual checkout root. Raw `cwd` prefix comparison is not repository identity.
 
@@ -208,7 +208,7 @@ the individual checkout root. Raw `cwd` prefix comparison is not repository iden
 
 No field stays honest forever. Match only live slots, include age in the evidence, and
 make updating the existing `slot_id` the normal path. If the branch, HEAD, or observed
-path set moves far from the declaration, the next Lanes interaction should ask for a
+path set moves far from the declaration, the next Dibs interaction should ask for a
 refresh. It should not rewrite the declaration on the agent’s behalf.
 
 Absence is unknown, not negative. One missing `work_item` must not make a differing id
@@ -220,8 +220,8 @@ exist, so the pair may remain a quiet semantic candidate.
 
 | Signal | What it establishes | Use |
 |---|---|---|
-| Same canonical primary work item | Shared durable context | Exact candidate and auto-join to coordination lane |
-| Same Lanes-issued coordination key | Explicit decision to coordinate | Exact candidate and auto-join |
+| Same canonical primary work item | Shared durable context | Exact candidate and auto-join to coordination agent |
+| Same Dibs-issued coordination key | Explicit decision to coordinate | Exact candidate and auto-join |
 | Same free-form/context ref | Shared vocabulary or umbrella goal | Supporting evidence only |
 | Activity pair | Duplicate-like versus complementary work | Changes relation and wording |
 | Canonical `repo_id` | Whether path spaces are comparable | Gate path evidence; not a positive score |
@@ -232,10 +232,10 @@ exist, so the pair may remain a quiet semantic candidate.
 | Text-to-code retrieval | Possible implementation surface | Candidate retrieval only; always labelled inferred |
 | Co-change from a trusted seed path | Nearby implementation surface | Expand surface candidates; never promote a guessed seed into fact |
 | Historical path frequency | Whether a shared path is distinctive | Discount path-collision evidence, not objective identity |
-| Proven parent/child lineage | Whether two lanes are independent actors | Do not report a child as duplicating its parent’s assigned work |
+| Proven parent/child lineage | Whether two agents are independent actors | Do not report a child as duplicating its parent’s assigned work |
 | Prior explicit decline/feedback | A decision about this pair | Policy memory; never training truth if it was only an old model action |
 
-`model`, `harness`, `title`, and standing lane description should not enter the
+`model`, `harness`, `title`, and standing agent description should not enter the
 classifier. They are presentation metadata. Using them would introduce harness and
 role correlations that will fail as soon as a different fleet composition appears.
 `host` matters for ports, devices, and other exclusive resources, not for objective
@@ -243,7 +243,7 @@ identity.
 
 ### What “files touched” can honestly mean
 
-Lanes does not observe editor or shell tool calls, and its ledger records coordination
+Dibs does not observe editor or shell tool calls, and its ledger records coordination
 actions rather than all work an agent performed. It must not claim otherwise.
 
 The daemon can derive a useful path observation by snapshotting HEAD and worktree
@@ -252,7 +252,7 @@ status at slot creation and refresh:
 - In a unique worktree with one active slot, dirty paths and commits since the
   baseline can be attributed to that slot with stated provenance.
 - With several active slots in one agent/worktree, changes are worktree-level
-  observations unless the agent associates them with a slot; Lanes must not guess
+  observations unless the agent associates them with a slot; Dibs must not guess
   which slot produced them.
 - If multiple agents share one worktree, changes cannot be attributed to one agent.
   Report “shared worktree changed” rather than attaching the files to both.
@@ -292,14 +292,14 @@ slot is cheaper and safer than maintaining a large code-vector index. Optimize o
 when measured board size requires it.
 
 Candidates should be matched slot-to-slot. After classification, group results by the
-lane in which the matched slot coordinates. Do not classify against a lane-wide union.
+agent in which the matched slot coordinates. Do not classify against an agent-wide union.
 
 ### 3. Classify with a rule cascade
 
 Recommended initial policy:
 
 1. **Exact identity.** Same canonical work item or coordination key yields
-   `same_work_item`. Join the coordination lane. Use `activity` to say either
+   `same_work_item`. Join the coordination agent. Use `activity` to say either
    “possible duplicate implementation” or “complementary role.”
 2. **Contradictory identity.** Different canonical primary items suppress a duplicate
    action. If paths overlap, emit `surface_collision`; if semantics are high, keep a
@@ -315,7 +315,7 @@ Recommended initial policy:
 6. **Otherwise abstain.** No score is evidence of no collision.
 
 Directory breadth and path ubiquity should be computed from repository structure and
-edit history, not merely the current handful of live lanes. Directory comparisons
+edit history, not merely the current handful of live agents. Directory comparisons
 must understand ancestor/descendant overlap. Root directories and ubiquitous build
 files carry little weight. None of this changes a surface signal into objective
 identity.
@@ -375,7 +375,7 @@ Gold labels should come from:
    available at that earlier snapshot.
 3. **Curated real fleet cases.** Keep and grow `GoldenSet`, with rationale and the full
    contemporaneous input. Genericize only when the failure shape still reproduces.
-4. **Silver labels for mining only.** Shared refs, lane joins, leaves, and messages can
+4. **Silver labels for mining only.** Shared refs, agent joins, leaves, and messages can
    find cases to review. They are not truth by themselves, especially when the old
    classifier caused the join.
 
@@ -385,7 +385,7 @@ default.
 
 ### Sampling and splits
 
-Evaluate the state the classifier actually sees: on every `set_slot`, pair the new
+Evaluate the state the classifier actually sees: on every `declare`, pair the new
 slot with the active slots that existed at that time. Preserve the number of peers and
 the base rate. A dataset of arbitrary historical pairs will be dominated by easy
 random negatives and report a uselessly high score.
@@ -418,8 +418,8 @@ external-validity set. Model selection must not touch the production-incident go
 set.
 
 In addition to independent pair tests, replay complete fleet traces in order. The
-current lane-footprint union can turn one false match into later matches, which an
-independent pair benchmark cannot see. Stateful evaluation should measure bad lane
+current agent-footprint union can turn one false match into later matches, which an
+independent pair benchmark cannot see. Stateful evaluation should measure bad agent
 memberships, erroneous cluster growth, alert load, and whether slot updates remove
 stale evidence.
 
@@ -434,7 +434,7 @@ Report metrics at each action’s operating point, not one aggregate score:
 - recall of interruptive warnings, secondary to precision;
 - abstention/coverage;
 - confusion among duplicate, complementary, surface-only, and unrelated;
-- stateful lane impurity and maximum erroneous cluster size; and
+- stateful agent impurity and maximum erroneous cluster size; and
 - latency and resource cost.
 
 Do not optimize accuracy, AUROC, file recall, or MRR as the product metric. File
@@ -511,9 +511,9 @@ memory or startup cost.
 
 Ship a structural, precision-first matcher before another semantic threshold:
 
-1. Compare new slots to active slots, not to lane-wide unions.
+1. Compare new slots to active slots, not to agent-wide unions.
 2. Make normalized, repository-scoped primary work-item matching independent of file
-   prediction. Only canonical work items and Lanes-issued coordination keys
+   prediction. Only canonical work items and Dibs-issued coordination keys
    automatically coordinate.
 3. Add `activity`; distinguish same-item complementary work from duplicate work.
 4. Treat declared path ancestry as `surface_collision` awareness. Remove inferred

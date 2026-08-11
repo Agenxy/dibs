@@ -8,16 +8,16 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// Settings is the `[supervise]` table of `<dir>/lanes.toml`.
+// Settings is the `[supervise]` table of `<dir>/agents.toml`.
 //
 // It lives here, beside the thing it configures, because BOTH the daemon and
-// `lanes probe` need it and they are different binaries. Keeping it in the
+// `dibs probe` need it and they are different binaries. Keeping it in the
 // daemon meant the CLI could only be tuned by flags, so the same five
 // judgements existed in two forms, and an operator who set them in the file
 // found the command still using the defaults. Somebody demonstrating stall
 // detection then has to type
 //
-//	lanes probe --pid N --min-age 1s --min-duty 0.05
+//	dibs probe --pid N --min-age 1s --min-duty 0.05
 //
 // which is a configuration file spelled out loud on every invocation.
 //
@@ -47,7 +47,7 @@ type Settings struct {
 	// short life that fixed cost is a large share of it, which is why tuning
 	// MinAge down without raising this acquits everything.
 	MinDuty float64 `toml:"min_duty"`
-	// Off stops the DAEMON volunteering stall reports. `lanes probe` still
+	// Off stops the DAEMON volunteering stall reports. `dibs probe` still
 	// answers on demand; this is not a way to turn detection off, only a way to
 	// stop being told.
 	Off bool `toml:"off"`
@@ -65,7 +65,7 @@ func LoadSettings(dir string) Settings {
 	var doc struct {
 		Supervise Settings `toml:"supervise"`
 	}
-	b, err := os.ReadFile(filepath.Join(dir, "lanes.toml")) // #nosec G304 -- the operator's own data dir
+	b, err := os.ReadFile(filepath.Join(dir, "agents.toml")) // #nosec G304 -- the operator's own data dir
 	if err != nil {
 		return Settings{}
 	}

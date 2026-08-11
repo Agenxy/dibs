@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/agenxy/lanes/internal/core"
-	"github.com/agenxy/lanes/internal/humanauth"
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/humanauth"
 )
 
 // humanUnlock proves a human is at this machine and hands the panel the
@@ -28,7 +28,7 @@ import (
 // that an agent could have made. That constraint is the whole point of that
 // file: a parallel set of privileged human write paths would be a second
 // authorization surface into the state machine, unledgered unless each one
-// remembered to ledger, and invisible to `lanes verify`. There is nothing here
+// remembered to ledger, and invisible to `dibs verify`. There is nothing here
 // for core to learn about.
 //
 // The web board authenticates the same identity with the admin password behind
@@ -38,7 +38,7 @@ import (
 func (s *Server) humanUnlock(ctx context.Context, a *toolArgs) (core.Result, error) {
 	// The reason is shown inside the system sheet, so it says what is being
 	// approved rather than merely that something is.
-	reason := "act on the Lanes board as yourself"
+	reason := "act on the Dibs board as yourself"
 	if a.Note != "" {
 		reason = a.Note
 	}
@@ -54,7 +54,7 @@ func (s *Server) humanUnlock(ctx context.Context, a *toolArgs) (core.Result, err
 		if humanauth.Mocked() {
 			res["mocked"] = true
 			res["mocked_note"] = "NO HUMAN WAS CHECKED. This is a dev build with " +
-				"LANES_PRESENCE_MOCK set; the verdict was scripted. Nothing here is " +
+				"DIBS_PRESENCE_MOCK set; the verdict was scripted. Nothing here is " +
 				"evidence that the real presence check works"
 		}
 		return res, nil
@@ -102,11 +102,11 @@ func (s *Server) humanUnlock(ctx context.Context, a *toolArgs) (core.Result, err
 		// Unavailable is a different sentence, not a worse one. Asking somebody
 		// to try their finger again on a machine with no sensor is the kind of
 		// advice this project treats as a defect.
-		hint := "this Mac cannot check a fingerprint, so open the board with `lanes web` " +
+		hint := "this Mac cannot check a fingerprint, so open the board with `dibs web` " +
 			"and act there: it asks for the admin password instead"
 		if errors.Is(err, humanauth.ErrNoHelper) {
 			hint = "this build ships without the presence helper, so open the board with " +
-				"`lanes web` and act there: it asks for the admin password instead"
+				"`dibs web` and act there: it asks for the admin password instead"
 		}
 		return stamp(core.Result{
 			"unlocked": false,

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agenxy/lanes/internal/ledger"
+	"github.com/agenxy/dibs/internal/ledger"
 )
 
 // A process killed between the temp write and the rename leaves a .tmp-* file,

@@ -30,7 +30,7 @@ func TestReplayedMetadataIsBounded(t *testing.T) {
 		{"an oversized agent.title", &Op{Kind: OpRegisterLane, Agent: &AgentInfo{Title: longName}}},
 		// Bounded as a PATH, not a name: 128 bytes rejected working directories
 		// that real agents register from, and what it refused was the whole
-		// register_lane, not the field.
+		// register, not the field.
 		{"an oversized agent.cwd", &Op{Kind: OpRegisterLane, Agent: &AgentInfo{CWD: huge}}},
 		{"an oversized agent.project", &Op{Kind: OpRegisterLane, Agent: &AgentInfo{Project: longName}}},
 		{"an oversized agent.harness", &Op{Kind: OpRegisterLane, Agent: &AgentInfo{Harness: longName}}},
@@ -43,7 +43,7 @@ func TestReplayedMetadataIsBounded(t *testing.T) {
 	// The ordinary case still passes, at the size real callers send.
 	ok := &Op{
 		Kind: OpSetSlot,
-		Dirs: []string{"internal/core", "cmd/lanes"},
+		Dirs: []string{"internal/core", "cmd/dibs"},
 		Refs: []string{"internal/core/apply.go"},
 		// A hold is a host resource name, so the honest values are tiny.
 		Holds: []string{"port:8080", "lock:.git/index"},

@@ -7,7 +7,7 @@ import (
 )
 
 // A one-shot agent that re-registers under a taken name becomes a sibling, and
-// the mail addressed to the original is unreachable from the new lane. That is
+// the mail addressed to the original is unreachable from the new agent. That is
 // correct (a new session is a new agent) but it happened in silence, and two
 // real opencode agents lost an answer to it. The registration must say so.
 func TestRegisterUnderTakenNameWarnsAndNamesTheLostMail(t *testing.T) {
@@ -22,7 +22,7 @@ func TestRegisterUnderTakenNameWarnsAndNamesTheLostMail(t *testing.T) {
 		t.Fatalf("first register: %v", err)
 	}
 	if _, has := first["name_taken"]; has {
-		t.Fatalf("the first lane of a name is not a collision, got %v", first["name_taken"])
+		t.Fatalf("the first agent of a name is not a collision, got %v", first["name_taken"])
 	}
 	betaID, _ := first["lane_id"].(string)
 
@@ -54,27 +54,27 @@ func TestRegisterUnderTakenNameWarnsAndNamesTheLostMail(t *testing.T) {
 		t.Fatalf("second register: %v", err)
 	}
 	if id, _ := second["lane_id"].(string); id == betaID {
-		t.Fatalf("a different session must not silently take over lane %s", betaID)
+		t.Fatalf("a different session must not silently take over agent %s", betaID)
 	}
 	warn, _ := second["name_taken"].(string)
 	if warn == "" {
 		t.Fatal("registering under a taken name must warn: this is how the answer got lost")
 	}
 	if !strings.Contains(warn, betaID) {
-		t.Errorf("warning must name the sibling lane %q, got: %s", betaID, warn)
+		t.Errorf("warning must name the sibling agent %q, got: %s", betaID, warn)
 	}
 	if !strings.Contains(warn, "1 message") {
 		t.Errorf("warning must say how much mail is unreachable, got: %s", warn)
 	}
 	// The fix has to be one the caller can actually perform. This used to say
-	// "resume_lane", which is the standing-role path and does nothing for an
-	// ephemeral lane, so the warning correctly identified the problem and then
+	// "resume", which is the standing-role path and does nothing for an
+	// ephemeral agent, so the warning correctly identified the problem and then
 	// sent the agent somewhere that could not solve it. Point at the nonce, which
-	// reattaches any kind of lane, and at lane_merge for an agent that kept none.
+	// reattaches any kind of agent, and at merge_spaces for an agent that kept none.
 	if !strings.Contains(warn, "nonce") {
 		t.Errorf("warning must name the credential that reattaches, got: %s", warn)
 	}
-	if !strings.Contains(warn, "lane_merge") {
+	if !strings.Contains(warn, "merge_spaces") {
 		t.Errorf("warning must offer a route for an agent with no nonce, got: %s", warn)
 	}
 }
@@ -129,14 +129,14 @@ func TestWarningNamesTheSiblingHoldingMailNotTheNewest(t *testing.T) {
 	}
 	warn, _ := third["name_taken"].(string)
 	if !strings.Contains(warn, heldID) {
-		t.Errorf("warning must name %q, the lane holding the mail; got: %s", heldID, warn)
+		t.Errorf("warning must name %q, the agent holding the mail; got: %s", heldID, warn)
 	}
 	if !strings.Contains(warn, "1 message") {
 		t.Errorf("warning must report the unreachable mail; got: %s", warn)
 	}
 }
 
-// A closed lane is not a live sibling: its mail is nobody's pending business,
+// A closed agent is not a live sibling: its mail is nobody's pending business,
 // so reusing its name is ordinary, not a collision worth reporting.
 func TestClosedLaneDoesNotTriggerTheNameWarning(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
@@ -158,6 +158,6 @@ func TestClosedLaneDoesNotTriggerTheNameWarning(t *testing.T) {
 		t.Fatalf("re-register: %v", err)
 	}
 	if w, has := again["name_taken"]; has {
-		t.Errorf("closed lane must not read as a collision, got: %v", w)
+		t.Errorf("closed agent must not read as a collision, got: %v", w)
 	}
 }

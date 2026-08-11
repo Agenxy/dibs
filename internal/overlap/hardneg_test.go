@@ -38,7 +38,7 @@ func TestSharesFileCallsGenericOverlapRelated(t *testing.T) {
 	if distinctiveShare(runtime, cli, map[string]bool{"Justfile": true}) {
 		t.Error("a pair sharing ONLY a ubiquitous file must not count as related")
 	}
-	// The same two lanes, now genuinely overlapping.
+	// The same two agents, now genuinely overlapping.
 	cliTouchingRuntime := []string{"runtime/src/k7d/main.cpp", "cli/k7_cli/main.py"}
 	if !distinctiveShare(runtime, cliTouchingRuntime, map[string]bool{"Justfile": true}) {
 		t.Error("a pair sharing a real file must still count as related")

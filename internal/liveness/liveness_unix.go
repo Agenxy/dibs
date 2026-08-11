@@ -6,7 +6,7 @@ import (
 	"syscall"
 )
 
-// Poller answers "is this process alive?" for lane PID bindings, the coarsest
+// Poller answers "is this process alive?" for agent PID bindings, the coarsest
 // of the questions this package handles. Portable: kill(pid, 0). The engine's
 // sweep records its verdicts into the ledger so replay never re-probes.
 type Poller struct{}

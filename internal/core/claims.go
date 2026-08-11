@@ -22,11 +22,11 @@ func pathsOverlap(a, b string) bool {
 	return strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/")
 }
 
-// overlapping returns all live claims overlapping path, excluding a lane's own.
+// overlapping returns all live claims overlapping path, excluding an agent's own.
 func (s *State) overlapping(path, excludeLane string) []*Claim {
 	var out []*Claim
 	for _, c := range s.Claims {
-		if c.Lane != excludeLane && pathsOverlap(c.Path, path) {
+		if c.Agent != excludeLane && pathsOverlap(c.Path, path) {
 			out = append(out, c)
 		}
 	}
@@ -44,10 +44,10 @@ const (
 	SignalClaim         = "claim"          // someone asked to be left alone here
 )
 
-// SlotOverlap is another lane's activity that relates to what you just declared.
+// SlotOverlap is another agent's activity that relates to what you just declared.
 // Informational in every case: declaring work never fails.
 type SlotOverlap struct {
-	Lane   string   `json:"lane"`
+	Agent  string   `json:"agent"`
 	Signal string   `json:"signal"`
 	Kind   string   `json:"kind"`           // "slot" | "claim"
 	Text   string   `json:"text,omitempty"` // their slot text / claim note
@@ -59,15 +59,15 @@ type SlotOverlap struct {
 // Strong reports whether this overlap likely means duplicated effort.
 func (o SlotOverlap) Strong() bool { return o.Signal == SignalSameObjective }
 
-// differentProjects reports POSITIVE evidence that two lanes are in different
+// differentProjects reports POSITIVE evidence that two agents are in different
 // repositories. Absence of evidence is not difference: it returns false when it
-// cannot tell, so an unidentifiable lane keeps reporting exactly as before.
+// cannot tell, so an unidentifiable agent keeps reporting exactly as before.
 //
 // This gates shared REFS, and only refs. A ref is repository-scoped by nature:
 // "issue:42" and "pr:7" name something inside one project and nothing at all
 // outside it, so two agents in different repositories declaring "issue:42" are
 // not duplicating effort, they are using the same number. Reporting that as
-// same-objective, the STRONGEST signal Lanes emits, tells an agent to stop work
+// same-objective, the STRONGEST signal Dibs emits, tells an agent to stop work
 // that nothing else is doing. Paths need no such gate: a claim is an absolute
 // path, so two projects cannot collide on one.
 //
@@ -93,7 +93,7 @@ func (o SlotOverlap) Strong() bool { return o.Signal == SignalSameObjective }
 //     matters: `git subtree add` imports a vendor's whole history, so two
 //     unrelated projects that vendored the same dependency each carry their own
 //     root plus the shared one. Treating any commit in common as proof fused
-//     them and fired the strongest signal Lanes has between strangers.
+//     them and fired the strongest signal Dibs has between strangers.
 //
 // Anything else is unknown, and unknown warns. That covers a shallow clone,
 // which does not have its roots, paired with a remote that cannot be compared
@@ -103,7 +103,7 @@ func (o SlotOverlap) Strong() bool { return o.Signal == SignalSameObjective }
 // Two forks still count as one project: same remote, no; equal roots, yes. That
 // is deliberate. A fork normally has its tracker disabled and its references
 // name the upstream one, so both agents usually do mean the same issue 42.
-func differentProjects(a, b *Lane) bool {
+func differentProjects(a, b *Agent) bool {
 	if a == nil || b == nil || a.Agent == nil || b.Agent == nil {
 		return false
 	}
@@ -128,15 +128,15 @@ func differentProjects(a, b *Lane) bool {
 // is the whole of it. Intersection was tried and was wrong: see the subtree case
 // above, where sharing one imported root does not make two projects one.
 
-// overlapsFor finds other lanes related to a declaration. Objectives (shared
+// overlapsFor finds other agents related to a declaration. Objectives (shared
 // refs like "pr:1186", "gate:typos", "issue:1140") are the primary key; paths
 // are a weak secondary hint; claims are surfaced because someone asked.
 func (s *State) overlapsFor(refs, dirs []string, excludeLane string) []SlotOverlap {
-	me := s.Lanes[excludeLane]
+	me := s.Agents[excludeLane]
 	var out []SlotOverlap
 	seen := map[string]bool{}
 	add := func(o SlotOverlap) {
-		k := o.Lane + "\x00" + o.Signal + "\x00" + o.Path + "\x00" + strings.Join(o.Refs, ",")
+		k := o.Agent + "\x00" + o.Signal + "\x00" + o.Path + "\x00" + strings.Join(o.Refs, ",")
 		if !seen[k] {
 			seen[k] = true
 			out = append(out, o)
@@ -148,7 +148,7 @@ func (s *State) overlapsFor(refs, dirs []string, excludeLane string) []SlotOverl
 			want[r] = true
 		}
 	}
-	for _, l := range s.Lanes {
+	for _, l := range s.Agents {
 		if l.ID == excludeLane || l.Status == StatusClosed || l.Status == StatusArchived {
 			continue
 		}
@@ -159,7 +159,7 @@ func (s *State) overlapsFor(refs, dirs []string, excludeLane string) []SlotOverl
 	for _, d := range dirs {
 		for _, c := range s.overlapping(cleanPath(d), excludeLane) {
 			add(SlotOverlap{
-				Lane: c.Lane, Signal: SignalClaim, Kind: "claim",
+				Agent: c.Agent, Signal: SignalClaim, Kind: "claim",
 				Text: c.Note, Path: c.Path, Mode: c.Mode,
 			})
 		}
@@ -168,23 +168,23 @@ func (s *State) overlapsFor(refs, dirs []string, excludeLane string) []SlotOverl
 	return out
 }
 
-// slotOverlaps is one other lane's contribution: at most one overlap per slot,
+// slotOverlaps is one other agent's contribution: at most one overlap per slot,
 // strongest first. Lifted out of overlapsFor so that the ref gate, the path
 // fallback and the collector are each legible on their own.
-func slotOverlaps(me, them *Lane, want map[string]bool, dirs []string) []SlotOverlap {
+func slotOverlaps(me, them *Agent, want map[string]bool, dirs []string) []SlotOverlap {
 	scoped := !differentProjects(me, them)
 	var out []SlotOverlap
 	for _, sl := range them.Slots {
 		if shared := sharedRefs(want, sl.Refs); len(shared) > 0 && scoped {
 			out = append(out, SlotOverlap{
-				Lane: them.ID, Signal: SignalSameObjective, Kind: "slot",
+				Agent: them.ID, Signal: SignalSameObjective, Kind: "slot",
 				Text: sl.Text, Refs: shared,
 			})
 			continue // strong signal already reported for this slot
 		}
 		if p := firstOverlappingPath(dirs, sl.Dirs); p != "" {
 			out = append(out, SlotOverlap{
-				Lane: them.ID, Signal: SignalSamePaths, Kind: "slot",
+				Agent: them.ID, Signal: SignalSamePaths, Kind: "slot",
 				Text: sl.Text, Refs: sl.Refs, Path: p,
 			})
 		}
@@ -233,18 +233,18 @@ func overlapLess(a, b SlotOverlap) bool {
 	if a.Strong() != b.Strong() {
 		return a.Strong()
 	}
-	if a.Lane != b.Lane {
-		return a.Lane < b.Lane
+	if a.Agent != b.Agent {
+		return a.Agent < b.Agent
 	}
 	return a.Path < b.Path
 }
 
-// releaseClaims drops all claims held by lane, returning the released paths.
-func (s *State) releaseClaims(lane string) []string {
+// releaseClaims drops all claims held by agent, returning the released paths.
+func (s *State) releaseClaims(agent string) []string {
 	var kept []*Claim
 	var released []string
 	for _, c := range s.Claims {
-		if c.Lane == lane {
+		if c.Agent == agent {
 			released = append(released, c.Path)
 		} else {
 			kept = append(kept, c)

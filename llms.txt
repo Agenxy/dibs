@@ -1,26 +1,26 @@
-# Lanes
+# Dibs
 
 > Coordination and situational awareness for fleets of AI agents working on one
-> project. Agents register a lane, declare what they are pursuing, and are told
+> project. Agents register an agent, declare what they are pursuing, and are told
 > if another agent is already pursuing it. They exchange typed mail and place
-> advisory claims. Lanes reports and never acts: no agent can drive another
+> advisory claims. Dibs reports and never acts: no agent can drive another
 > through it. Local-first, MCP-native, two static binaries, no database.
 
-Lanes solves *redundant effort* (two agents chasing one goal) not file
+Dibs solves *redundant effort* (two agents chasing one goal) not file
 conflicts, which version control already handles. It also detects when a spawned
 subagent has stalled, which is otherwise invisible to the parent until an exit
 code arrives.
 
-## If you are an agent connecting to Lanes
+## If you are an agent connecting to Dibs
 
 - [SKILLS.md](SKILLS.md): The counterintuitive parts, the mistakes that look like
   success, and the defaults that are not what you would guess. Also served over
-  MCP as the resource `lanes://skills`, so you can read it without this
+  MCP as the resource `dibs://skills`, so you can read it without this
   repository. Read this first.
 - The MCP server's own `instructions` teach the protocol on connect; you do not
   need separate documentation for the tool calls themselves.
 
-## If you are an agent or human working ON Lanes
+## If you are an agent or human working ON Dibs
 
 - [AGENTS.md](AGENTS.md): Orientation for changing this codebase: layout, the
   rules you must not break, and what a good change looks like here.
@@ -38,7 +38,7 @@ code arrives.
   thresholds, and why a low score is never proof two agents will not collide.
 - [SPEC-SUPERVISION.md](SPEC-SUPERVISION.md): Detecting a stalled subagent, with
   the measurements behind the thresholds.
-- [PHILOSOPHY.md](PHILOSOPHY.md): Why Lanes reports and never acts. This is the
+- [PHILOSOPHY.md](PHILOSOPHY.md): Why Dibs reports and never acts. This is the
   boundary most design questions resolve against.
 - [REQUIREMENTS.md](REQUIREMENTS.md): The measured incident that defines the
   design.

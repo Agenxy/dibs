@@ -2,15 +2,15 @@
  * The human flow, end to end, against two real daemons.
  *
  * This suite exists because the panel's human actions were the only surface in
- * Lanes with no automated coverage at all, for an honest reason: they are gated
- * on a fingerprint, and no test can produce one. The `lanesdev` build tag adds a
+ * Dibs with no automated coverage at all, for an honest reason: they are gated
+ * on a fingerprint, and no test can produce one. The `dibdev` build tag adds a
  * scripted verdict so the flow becomes drivable, and the moment it did, the
  * flow had to be tested, because a mock that only ever gets used by hand is just
  * an untested security switch with a convenience feature attached.
  *
  * Two daemons run here, and the second one is the point:
  *
- *   dev     : built with `-tags lanesdev`, LANES_PRESENCE_MOCK set. Every
+ *   dev     : built with `-tags dibdev`, DIBS_PRESENCE_MOCK set. Every
  *              branch of the flow, including the two failure verdicts that a Mac
  *              with a working sensor cannot otherwise reach.
  *   release : the ordinary build, same environment variable, deliberately set
@@ -35,8 +35,8 @@ function check(name: string, ok: boolean, detail = "") {
 const DEV_ADDR = "127.0.0.1:47811"
 const REL_ADDR = "127.0.0.1:47812"
 
-const devBin = process.env.LANESD_DEV ?? `${process.cwd()}/bin/lanesd-dev`
-const relBin = process.env.LANESD ?? `${process.cwd()}/bin/lanesd`
+const devBin = process.env.LANESD_DEV ?? `${process.cwd()}/bin/dibd-dev`
+const relBin = process.env.DIBD ?? `${process.cwd()}/bin/dibd`
 
 type Node = { dir: string; addr: string; proc: ReturnType<typeof Bun.spawn>; secret: string }
 const nodes: Node[] = []
@@ -58,20 +58,20 @@ const nodes: Node[] = []
  * that a human is present, and that is independent of whether a sensor exists.
  */
 function isolate(bin: string): string {
-  const dir = mkdtempSync(join(tmpdir(), "lanes-nohelper-"))
-  const dest = join(dir, "lanesd")
+  const dir = mkdtempSync(join(tmpdir(), "agents-nohelper-"))
+  const dest = join(dir, "dibd")
   copyFileSync(bin, dest)
   return dest
 }
 
 function start(bin: string, addr: string, mock: string): Node {
-  const dir = mkdtempSync(join(tmpdir(), "lanes-human-"))
+  const dir = mkdtempSync(join(tmpdir(), "agents-human-"))
   const proc = Bun.spawn({
     cmd: [bin, "-dir", dir, "-addr", addr],
     // The variable is passed explicitly rather than inherited, so this file
     // states the hostile condition it is testing under instead of depending on
     // whatever the caller's shell happened to hold.
-    env: { ...process.env, LANES_PRESENCE_MOCK: mock, LANES_ALLOW_PARALLEL: "1" },
+    env: { ...process.env, DIBS_PRESENCE_MOCK: mock, DIBS_ALLOW_PARALLEL: "1" },
     stdout: "ignore", stderr: "ignore",
   })
   const node: Node = { dir, addr, proc, secret: "" }
@@ -91,7 +91,7 @@ let rpcId = 0
 async function rpc(node: Node, method: string, params: unknown): Promise<any> {
   const res = await fetch(`http://${node.addr}/mcp`, {
     method: "POST",
-    headers: { "content-type": "application/json", "X-Lanes-Local": node.secret },
+    headers: { "content-type": "application/json", "X-Dibs-Local": node.secret },
     body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
   })
   const body = (await res.json()) as any
@@ -136,12 +136,12 @@ function succeeded(r: any): boolean {
   return r && r._threw === undefined && r.code === undefined
 }
 
-/** Register a lane and fail loudly if it did not work. */
+/** Register an agent and fail loudly if it did not work. */
 async function enrol(n: Node, name: string, session: string): Promise<any> {
-  const r = textOf(await tool(n, "register_lane", {
+  const r = textOf(await tool(n, "register", {
     name, description: "human-flow e2e", session_id: session }))
   if (typeof r.token !== "string" || !r.token) {
-    throw new Error(`register_lane(${name}) returned no token: ${JSON.stringify(r)}`)
+    throw new Error(`register(${name}) returned no token: ${JSON.stringify(r)}`)
   }
   return r
 }
@@ -170,7 +170,7 @@ try {
   const relCaller = await enrol(rel, "prober", "human-e2e-rel")
   const refused = await attempt(rel, "human_unlock",
     { token: relCaller.token, note: "e2e boundary probe" })
-  check("a release daemon refuses to unlock with LANES_PRESENCE_MOCK=verified",
+  check("a release daemon refuses to unlock with DIBS_PRESENCE_MOCK=verified",
     refused.unlocked === false,
     `unlocked=${refused.unlocked}: an env var just spoke as the operator`)
   check("and it does not report itself as mocked",
@@ -217,8 +217,8 @@ try {
     // The two failures must not give the same advice. Telling somebody with no
     // sensor to try their finger again is the project's named failure mode.
     if (verdict === "unavailable") {
-      check("unavailable sends them to `lanes web`, not back to the sensor",
-        String(r.hint).includes("lanes web") && !String(r.hint).includes("again"),
+      check("unavailable sends them to `dibs web`, not back to the sensor",
+        String(r.hint).includes("dibs web") && !String(r.hint).includes("again"),
         `hint=${r.hint}`)
     } else {
       check("declined says nothing was sent",
@@ -234,44 +234,44 @@ try {
   console.log("\n  the unlocked token is an ordinary agent, not a superuser")
   const human = ok.token as string
 
-  const worker = textOf(await tool(dev, "register_lane", {
+  const worker = textOf(await tool(dev, "register", {
     name: "worker", description: "doing the work", session_id: "human-e2e-1" }))
-  await tool(dev, "ack_board", { token: worker.token })
-  await tool(dev, "lane_open", { token: worker.token, lane: "auth-work", topic: "auth" })
+  await tool(dev, "check_in", { token: worker.token })
+  await tool(dev, "open_space", { token: worker.token, agent: "auth-work", topic: "auth" })
 
-  const posted = await attempt(dev, "lane_post",
-    { token: human, lane: "auth-work", body: "how is this going?" })
+  const posted = await attempt(dev, "post",
+    { token: human, agent: "auth-work", body: "how is this going?" })
   // A refusal arrives as a SUCCESSFUL tool result carrying an error code, not as
   // a JSON-RPC error, so the assertion names the code. Testing for a thrown
   // exception here silently passed while the post was in fact succeeding.
-  check("posting to a lane the human has not joined is refused",
+  check("posting to an agent the human has not joined is refused",
     posted.code === "E_NOT_MEMBER",
     `the human token bypassed membership: ${JSON.stringify(posted).slice(0, 200)}`)
   check("and the refusal tells them how to proceed",
-    String(posted.hint).includes("lane_join"), `hint=${posted.hint}`)
+    String(posted.hint).includes("join_space"), `hint=${posted.hint}`)
 
-  const humanAck = await attempt(dev, "ack_board", { token: human })
+  const humanAck = await attempt(dev, "check_in", { token: human })
   check("the human can acknowledge the board", succeeded(humanAck),
     JSON.stringify(humanAck).slice(0, 200))
-  const joined = await attempt(dev, "lane_join", { token: human, lane: "auth-work" })
-  check("the human can join the lane", succeeded(joined),
+  const joined = await attempt(dev, "join_space", { token: human, agent: "auth-work" })
+  check("the human can join the agent", succeeded(joined),
     JSON.stringify(joined).slice(0, 200))
 
-  const posted2 = await attempt(dev, "lane_post",
-    { token: human, lane: "auth-work", body: "how is this going?" })
+  const posted2 = await attempt(dev, "post",
+    { token: human, agent: "auth-work", body: "how is this going?" })
   check("and then posting succeeds", succeeded(posted2),
     JSON.stringify(posted2).slice(0, 200))
 
   // Mail needs no membership, it is addressed, not broadcast, so the panel is
   // right to offer it unconditionally.
-  const sent = await attempt(dev, "send_message", {
+  const sent = await attempt(dev, "send", {
     token: human, to: worker.lane_id, type: "question",
     body: "Are you blocked?", op_id: "human-e2e-mail" })
   check("mail to a specific agent needs no membership",
     succeeded(sent), JSON.stringify(sent).slice(0, 200))
 
   // ── and it is ledgered like everything else ──────────────────────────────
-  // A parallel privileged write path would be invisible to `lanes verify`. The
+  // A parallel privileged write path would be invisible to `dibs verify`. The
   // point of routing the human through an ordinary agent token is that there is
   // nothing special to audit, so the audit must show ordinary records.
   const events = await attempt(dev, "events_since", { token: worker.token, since_serial: 0 })
@@ -279,18 +279,18 @@ try {
   // AND, not OR. As an OR either the post or the message could disappear from
   // the event stream while the check still reported the human's actions were
   // ledgered, and a missing write is exactly what this exists to catch.
-  check("the human's lane post is in the ledger",
-    stream.includes("lane.post"),
-    "no lane.post event in the stream at all")
+  check("the human's agent post is in the ledger",
+    stream.includes("agent.post"),
+    "no agent.post event in the stream at all")
   // The BODY is not in the stream, and that is the point of checking here: a
-  // lane post is public to the LANE, not to the board, and channel events carry
-  // no recipient, so a body in this stream is a body every authenticated lane
+  // agent post is public to the LANE, not to the board, and space events carry
+  // no recipient, so a body in this stream is a body every authenticated agent
   // can read, member or not.
   check("but its body is not, because the stream reaches non-members too",
     !stream.includes("how is this going?"),
     stream.slice(0, 240))
-  const laneView = await attempt(dev, "lane_read", { token: worker.token, lane: "auth-work" })
-  check("a member of the lane can read what the human posted",
+  const laneView = await attempt(dev, "read_space", { token: worker.token, agent: "auth-work" })
+  check("a member of the agent can read what the human posted",
     JSON.stringify(laneView).includes("how is this going?"),
     JSON.stringify(laneView).slice(0, 240))
   // Mail is checked in the INBOX, not the event stream, and that distinction is
@@ -304,7 +304,7 @@ try {
     JSON.stringify(box).slice(0, 240))
   check("and its body is NOT in the shared event stream, because mail is private",
     !stream.includes("Are you blocked?"),
-    "a private message body is readable from the lane event stream")
+    "a private message body is readable from the agent event stream")
 } catch (e) {
   failures++
   console.log(`\n  \x1b[31m✗ suite threw\x1b[0m. ${e}`)

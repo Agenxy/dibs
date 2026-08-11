@@ -13,7 +13,7 @@ import (
 // that does not notice publishes the wrong address, tells colleagues to write to
 // `sol`, and never finds out why the mail stops arriving.
 //
-// The suffix itself is correct and must stay. A stale or dormant lane still owns
+// The suffix itself is correct and must stay. A stale or dormant agent still owns
 // its mailbox, so handing its name to a newcomer would redirect somebody else's
 // mail, which is the failure the suffix exists to prevent. The defect was the
 // silence, not the rename.
@@ -45,12 +45,12 @@ func TestATakenNameIsExplainedRatherThanSilentlySuffixed(t *testing.T) {
 	}
 	id, _ := second["lane_id"].(string)
 	if id == "sol" {
-		t.Fatal("the second lane took the first one's name: mail addressed to sol " +
+		t.Fatal("the second agent took the first one's name: mail addressed to sol " +
 			"would now reach the wrong agent")
 	}
 	note, _ := second["name_note"].(string)
 	if note == "" {
-		t.Fatalf("lane %q was renamed with no explanation", id)
+		t.Fatalf("agent %q was renamed with no explanation", id)
 	}
 	for _, want := range []string{"sol", id, "reattach"} {
 		if !strings.Contains(note, want) {

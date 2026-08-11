@@ -8,12 +8,12 @@
  *   AppBridge + PostMessageTransport   (the real @modelcontextprotocol/ext-apps
  *                                       SDK that shipping hosts embed)
  *     ↕ HTTP
- *   lanesd                             (a real daemon on a scratch data dir)
+ *   dibd                             (a real daemon on a scratch data dir)
  *
  * Using the real AppBridge is the point. A rejected handshake is SILENT: the
  * SDK validates every frame with zod and validates ui/initialize against
  * McpUiInitializeRequestSchema, and a panel sending the wrong shape simply
- * never comes up, with no error anywhere. Lanes shipped exactly that bug once
+ * never comes up, with no error anywhere. Dibs shipped exactly that bug once
  * (clientInfo/capabilities where the spec wants appInfo/appCapabilities) and it
  * cost days to find by eye. Here it fails on the first assertion.
  *
@@ -45,10 +45,10 @@ function check(name: string, cond: boolean, detail = "") {
   else { failures++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ". " + detail : ""}`) }
 }
 
-const dir = mkdtempSync(join(tmpdir(), "lanes-e2e-"))
-const lanesd = process.env.LANESD ?? `${process.env.HOME}/.local/bin/lanesd`
+const dir = mkdtempSync(join(tmpdir(), "agents-e2e-"))
+const dibd = process.env.DIBD ?? `${process.env.HOME}/.local/bin/dibd`
 const daemon = Bun.spawn({
-  cmd: [lanesd, "-dir", dir, "-addr", DAEMON],
+  cmd: [dibd, "-dir", dir, "-addr", DAEMON],
   stdout: "ignore", stderr: "ignore",
 })
 
@@ -67,7 +67,7 @@ let secret = ""
 async function rpc(method: string, params: unknown): Promise<any> {
   const res = await fetch(`http://${DAEMON}/mcp`, {
     method: "POST",
-    headers: { "content-type": "application/json", "X-Lanes-Local": secret },
+    headers: { "content-type": "application/json", "X-Dibs-Local": secret },
     body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
   })
   const body = (await res.json()) as any
@@ -87,14 +87,14 @@ try {
   secret = (await Bun.file(join(dir, "local.secret")).text()).trim()
 
   // ── seed a board worth rendering ─────────────────────────────────────────
-  const me = textOf(await tool("register_lane", {
+  const me = textOf(await tool("register", {
     name: "reviewer", description: "reviewing the panel", session_id: "e2e-1" }))
-  await tool("ack_board", { token: me.token })
-  await tool("set_slot", { token: me.token, text: "running the panel e2e",
+  await tool("check_in", { token: me.token })
+  await tool("declare", { token: me.token, text: "running the panel e2e",
     refs: ["board_app.html"], dirs: ["internal/mcp"] })
-  const peer = textOf(await tool("register_lane", {
+  const peer = textOf(await tool("register", {
     name: "peer", description: "sends mail", session_id: "e2e-2" }))
-  await tool("ack_board", { token: peer.token })
+  await tool("check_in", { token: peer.token })
 
   const mail: Record<string, any> = {}
   for (const [key, type, body] of [
@@ -102,15 +102,15 @@ try {
     ["r", "request", "Approve the redesign?"],
     ["n", "notify", "For your information."],
   ] as const) {
-    mail[key] = textOf(await tool("send_message", { token: peer.token, to: me.lane_id,
+    mail[key] = textOf(await tool("send", { token: peer.token, to: me.lane_id,
       type, body, op_id: "e2e-" + key, deadline_s: 600 }))
   }
 
-  // A channel the reading agent is a member of, so the panel can mark it as
+  // A space the reading agent is a member of, so the panel can mark it as
   // the viewer's own: the one thing this surface knows that the operator
   // board deliberately does not.
-  await tool("lane_open", { token: me.token, lane: "panel-work", topic: "rendering the panel" })
-  await tool("lane_join", { token: peer.token, lane: "panel-work", score: 0.64, threshold: 0.33,
+  await tool("open_space", { token: me.token, agent: "panel-work", topic: "rendering the panel" })
+  await tool("join_space", { token: peer.token, agent: "panel-work", score: 0.64, threshold: 0.33,
     scorer_id: "lexical+cochange", evidence: ["internal/mcp/board_app.html"], auto: true })
 
   // ── the template, fetched the way a host fetches it ──────────────────────
@@ -118,7 +118,7 @@ try {
   // be served from a host's cache. Read it from the tool result rather than
   // pinning the literal: a test that hardcodes the version would have to be
   // edited on every panel change, which is the opposite of what it is for.
-  const panelURI: string = (await tool("show_board", { token: me.token }))
+  const panelURI: string = (await tool("board", { token: me.token }))
     ?._meta?.ui?.resourceUri
   const read = await rpc("resources/read", { uri: panelURI })
   const html: string = read.contents[0].text
@@ -128,10 +128,10 @@ try {
   check("no external origin in the template", !html.includes("https://fonts."))
   check("fonts are inlined", html.includes("data:font/woff2;base64,"))
 
-  const boardResult = await tool("show_board", { token: me.token })
-  check("show_board attaches the UI resource",
+  const boardResult = await tool("board", { token: me.token })
+  check("board attaches the UI resource",
     typeof boardResult?._meta?.ui?.resourceUri === "string" &&
-      /^ui:\/\/lanes\/board\/[0-9a-f]{12}$/.test(boardResult._meta.ui.resourceUri),
+      /^ui:\/\/agents\/board\/[0-9a-f]{12}$/.test(boardResult._meta.ui.resourceUri),
     boardResult?._meta?.ui?.resourceUri ?? "(none)")
   // Cache-busting is only real if the version tracks the bytes AND the panel
   // says which build it is: a host serving a cached panel is otherwise
@@ -139,23 +139,23 @@ try {
   check("the panel prints the build the URI names",
     html.includes("panel " + panelURI.split("/").pop()),
     panelURI)
-  check("show_board sends a private panel payload",
-    !!boardResult?._meta?.["com.lanes/panel"])
+  check("board sends a private panel payload",
+    !!boardResult?._meta?.["com.dibs/panel"])
   // structuredContent is model-facing, so the board must not be in it. What may
-  // be is the panel's bootstrap: the view, the lane id, and the caller's own
+  // be is the panel's bootstrap: the view, the agent id, and the caller's own
   // token, which is how the panel reaches the board on a host that drops _meta.
   // Asserting "undefined" instead of "carries no board" is what made the repair
   // for that host look like a contract violation.
   const boardBoot = boardResult?.structuredContent ?? {}
-  check("show_board does not duplicate the board into model context",
+  check("board does not duplicate the board into model context",
     boardBoot.board === undefined && boardBoot.inbox === undefined,
     JSON.stringify(boardBoot).slice(0, 200))
-  check("show_board bootstraps the panel with the caller's own token",
+  check("board bootstraps the panel with the caller's own token",
     boardBoot.act_token === me.token)
 
   const caps = (await rpc("initialize", {
     protocolVersion: "2025-11-25", capabilities: {},
-    clientInfo: { name: "lanes-panel-e2e", version: "1" },
+    clientInfo: { name: "agents-panel-e2e", version: "1" },
   })).capabilities
 
   // ── bundle the host and serve everything same-origin ─────────────────────
@@ -181,7 +181,7 @@ try {
         }
       }
       // Chrome always asks for this; an unanswered favicon would fail the
-      // "no uncaught errors" assertion for a reason that is not about Lanes.
+      // "no uncaught errors" assertion for a reason that is not about Dibs.
       if (url.pathname === "/favicon.ico") return new Response(null, { status: 204 })
       if (url.pathname === "/panel.html")
         return new Response(html, { headers: { "content-type": "text/html" } })
@@ -201,8 +201,8 @@ try {
   // ── a real browser ───────────────────────────────────────────────────────
   // Locally this drives the system Chrome, so nothing has to be downloaded.
   // CI sets PW_CHANNEL empty to use Playwright's own chromium instead.
-  const channel = process.env.PW_CHANNEL === undefined ? "chrome" : process.env.PW_CHANNEL
-  browser = await chromium.launch({ ...(channel ? { channel } : {}), headless: true })
+  const space = process.env.PW_CHANNEL === undefined ? "chrome" : process.env.PW_CHANNEL
+  browser = await chromium.launch({ ...(space ? { space } : {}), headless: true })
   const page = await browser.newPage({ viewport: { width: 1000, height: 900 } })
   const consoleErrors: string[] = []
   page.on("pageerror", (e) => consoleErrors.push(String(e)))
@@ -225,7 +225,7 @@ try {
       "a rejected handshake is silent: this is the assertion that catches it"))
 
   const probe1 = await page.evaluate("window.__probe") as any
-  check("AppBridge parsed our appInfo", probe1.appInfo?.name === "lanes-board",
+  check("AppBridge parsed our appInfo", probe1.appInfo?.name === "agents-board",
     JSON.stringify(probe1.appInfo))
   check("AppBridge parsed our appCapabilities", probe1.appCapabilities !== undefined)
   check("the SDK reported no protocol errors", probe1.errors.length === 0,
@@ -240,13 +240,13 @@ try {
 
   // ── deliver the payload through the SDK ──────────────────────────────────
   await page.evaluate((r) => (window as any).__deliver(r), boardResult)
-  // ── channels in the panel ────────────────────────────────────────────────
+  // ── spaces in the panel ────────────────────────────────────────────────
   {
-    await panel.locator('.views button[data-view="lanes"]').click()
-    const pane = panel.locator("#pane-lanes")
-    await pane.locator(".channel").first().waitFor({ timeout: 8000 })
+    await panel.locator('.views button[data-view="agents"]').click()
+    const pane = panel.locator("#pane-agents")
+    await pane.locator(".space").first().waitFor({ timeout: 8000 })
     const text = (await pane.textContent()) ?? ""
-    check("the panel lists the channel", text.includes("panel-work"), text.slice(0, 160))
+    check("the panel lists the space", text.includes("panel-work"), text.slice(0, 160))
     check("with its topic", text.includes("rendering the panel"), text.slice(0, 160))
     // The panel knows WHICH agent is reading; the operator board does not, and
     // passes selfId: null precisely so it cannot invent one.
@@ -256,14 +256,14 @@ try {
     const why = (await peer.getAttribute("data-why")) ?? ""
     check("an auto-joined peer carries its score", /0\.6/.test(why), why || "(no explanation)")
     // And a person can actually get to it. The evidence for an automatic join
-    // is the answer to "why is this agent in my lane": the question the whole
-    // channel model has to be able to answer, and it used to be a `title`,
+    // is the answer to "why is this agent in my agent": the question the whole
+    // space model has to be able to answer, and it used to be a `title`,
     // which shows nothing on a touch host and nothing to a keyboard.
     await peer.focus()
     // Located from the frame, not the pane: the popover lives in the top layer
     // on <body>, which is the entire reason it is never clipped by the
     // scrolling pane the mark sits in.
-    const tip = await panel.locator("#lanes-why").evaluate((el) => ({
+    const tip = await panel.locator("#agents-why").evaluate((el) => ({
       open: el.matches(":popover-open"), text: el.textContent ?? "",
     }))
     check("and the evidence is reachable without a mouse",
@@ -274,7 +274,7 @@ try {
     // and the state machine itself is pinned in TestAnAbandonedAnnouncementStaysOnTheBoard.
     await page.evaluate((r) => {
       const b = structuredClone(r)
-      const ch = b._meta["com.lanes/panel"].board.channels
+      const ch = b._meta["com.dibs/panel"].board.spaces
         .find((c: any) => c.id === "panel-work")
       ch.abandoned_announcements = 2
       ch.unacked_announcements = 1
@@ -348,7 +348,7 @@ try {
     // TestAnAnnouncementOwedOnlyByAbsenteesSaysSo; this is about RENDERING.
     await page.evaluate((r) => {
       const b = structuredClone(r)
-      const ch = b._meta["com.lanes/panel"].board.channels
+      const ch = b._meta["com.dibs/panel"].board.spaces
         .find((c: any) => c.id === "panel-work")
       ch.unacked_announcements = 1
       ch.blocked_announcements = 1
@@ -374,9 +374,9 @@ try {
   await panel.locator(".entry").first().waitFor({ timeout: 10000 })
 
   const names = await panel.locator(".entry .name").allTextContents()
-  check("renders every lane", names.includes("reviewer") && names.includes("peer"), names.join(","))
+  check("renders every agent", names.includes("reviewer") && names.includes("peer"), names.join(","))
   check("groups the roster", (await panel.locator(".band").count()) >= 1)
-  check("marks the caller's own lane", (await panel.locator(".entry.self").count()) === 1)
+  check("marks the caller's own agent", (await panel.locator(".entry.self").count()) === 1)
   check("renders the declared task",
     (await panel.locator(".task").first().textContent())?.includes("running the panel e2e") ?? false)
   check("renders slot paths", (await panel.locator(".path").allTextContents()).join(",").includes("board_app.html"))
@@ -408,7 +408,7 @@ try {
   await page.evaluate((r) => {
     const b = structuredClone(r)
     delete b.view
-    if (b._meta?.["com.lanes/panel"]) delete b._meta["com.lanes/panel"].view
+    if (b._meta?.["com.dibs/panel"]) delete b._meta["com.dibs/panel"].view
     ;(window as any).__deliver(b)
   }, boardResult)
   await Bun.sleep(100)
@@ -420,33 +420,33 @@ try {
     summaryMutations === 0, String(summaryMutations))
 
 
-  // A lane going out of touch is marked, once, on the way in.
+  // An agent going out of touch is marked, once, on the way in.
   //
   // This is the board's most consequential silent change: an agent stopped
   // answering and work may be queued behind it, and until now it restyled
   // between two frames, which nobody sees unless they are already looking at
   // that row. The two halves are tested together because the second is what
-  // keeps the first honest: marking a lane that was ALREADY stale when we first
+  // keeps the first honest: marking an agent that was ALREADY stale when we first
   // saw it would spend the operator's attention on history rather than news, and
   // would fire on every push forever.
   {
-    const laneOf = (b: any) => b._meta?.["com.lanes/panel"]?.board?.lanes ?? []
+    const laneOf = (b: any) => b._meta?.["com.dibs/panel"]?.board?.agents ?? []
     const withStatus = (r: any, id: string, status: string) => {
       const b = structuredClone(r)
       for (const l of laneOf(b)) if (l.id === id) l.status = status
       return b
     }
     const target = laneOf(boardResult).find((l: any) => l.status === "active")?.id
-    check("the fixture has an active lane to take out of touch", Boolean(target), String(target))
+    check("the fixture has an active agent to take out of touch", Boolean(target), String(target))
     if (target) {
       // Seen active first, so the next push is a real transition.
       await page.evaluate((r) => (window as any).__deliver(r), withStatus(boardResult, target, "active"))
       await Bun.sleep(80)
       await page.evaluate((r) => (window as any).__deliver(r), withStatus(boardResult, target, "stale"))
       await Bun.sleep(80)
-      const marked = await panel.locator(`.entry[data-lane="${target}"]`).first()
+      const marked = await panel.locator(`.entry[data-agent="${target}"]`).first()
         .evaluate((el) => el.classList.contains("went-quiet"))
-      check("a lane that goes out of touch is marked", marked,
+      check("an agent that goes out of touch is marked", marked,
         "the transition happened with no signal at all")
 
       // The gesture must be on the pseudo-element that RENDERS.
@@ -457,7 +457,7 @@ try {
       // the animation from a rule attached to a box that does not exist. So the
       // content is asserted first: a named animation on an unrendered
       // pseudo-element is precisely the shape of the bug this now catches.
-      const gesture = await panel.locator(`.entry[data-lane="${target}"]`).first()
+      const gesture = await panel.locator(`.entry[data-agent="${target}"]`).first()
         .evaluate((el) => {
           const pick = (which: string) => {
             const cs = getComputedStyle(el, which)
@@ -482,10 +482,10 @@ try {
       // kind is stamped on <html> for the duration, which is what the CSS keys
       // off, so that is the honest thing to observe, and it must be the
       // band kind specifically, not whatever the previous push left behind.
-      // Put the lane in a KNOWN band first, and let it settle.
+      // Put the agent in a KNOWN band first, and let it settle.
       //
       // This measurement used to rely on whatever the preceding blocks happened
-      // to leave behind, and failed about three runs in four: if the lane was
+      // to leave behind, and failed about three runs in four: if the agent was
       // already active, delivering active again is not a band change, so no
       // transition fires and the check reports an empty list. A view transition
       // in flight from an earlier push can also swallow the next one.
@@ -536,10 +536,10 @@ try {
             // collapsed to nothing: the same shape of bug it was added to catch.
             // The LANE group specifically. "any view-transition animation" was
             // still too loose: the pane transitions run at .34s in the same
-            // frame, so they satisfied the floor while the lane group itself was
-            // collapsed to .001ms. Lane idents are panel-lane-<encoded>.
+            // frame, so they satisfied the floor while the agent group itself was
+            // collapsed to .001ms. Agent idents are panel-agent-<encoded>.
             const pseudo = String((a.effect as any)?.pseudoElement ?? "")
-            if (!pseudo.includes("view-transition") || !pseudo.includes("panel-lane-")) continue
+            if (!pseudo.includes("view-transition") || !pseudo.includes("panel-agent-")) continue
             const d = Number(a.effect?.getTiming?.().duration ?? 0)
             if (d > longest) longest = d
           }
@@ -550,8 +550,8 @@ try {
         return { seen, ms: started && ended ? ended - started : 0, animMs: longest }
       }, withStatus(boardResult, target, "active"))
       const kindSeen = travel.seen
-      check("a lane changing band runs the travel transition",
-        kindSeen.includes("lane-band"),
+      check("an agent changing band runs the travel transition",
+        kindSeen.includes("agent-band"),
         `transitions seen: ${JSON.stringify(kindSeen)}`)
       // The declared duration is .62s. A generous floor: enough to catch a
       // transition collapsed to nothing, loose enough not to flake on a loaded
@@ -571,16 +571,16 @@ try {
       // the thing this feature exists to stop. So the name is asserted, and
       // asserted to be the SAME name before and after, which is what makes it a
       // travel rather than two unrelated elements.
-      const nameOf = () => panel.locator(`.entry[data-lane="${target}"]`).first()
+      const nameOf = () => panel.locator(`.entry[data-agent="${target}"]`).first()
         .evaluate((el) => getComputedStyle(el).viewTransitionName)
       const nameNow = await nameOf()
-      check("the travelling lane carries a view-transition name",
+      check("the travelling agent carries a view-transition name",
         typeof nameNow === "string" && nameNow !== "none" && nameNow !== "",
         `view-transition-name=${nameNow}`)
 
       // And it really does change group: the row must end up under a different
       // band heading than it started, or nothing travelled anywhere.
-      const bandOf = () => panel.locator(`.entry[data-lane="${target}"]`).first()
+      const bandOf = () => panel.locator(`.entry[data-agent="${target}"]`).first()
         .evaluate((el) => {
           let n: Element | null = el
           while (n) {
@@ -597,7 +597,7 @@ try {
       await Bun.sleep(300)
       const bandAfter = await bandOf()
       const nameAfter = await nameOf()
-      check("the lane actually moves to a different status band",
+      check("the agent actually moves to a different status band",
         bandBefore !== bandAfter && bandBefore !== "?" && bandAfter !== "?",
         `band went ${JSON.stringify(bandBefore)} -> ${JSON.stringify(bandAfter)}`)
       // Equality alone is not enough: with names removed entirely both sides read
@@ -607,7 +607,7 @@ try {
         nameAfter === nameNow && nameAfter !== "none" && nameAfter !== "",
         `${nameNow} -> ${nameAfter}`)
 
-      // Put the lane back where the next check expects to find it. Measuring the
+      // Put the agent back where the next check expects to find it. Measuring the
       // move required driving one, and leaving it driven made the following
       // "coming back" case deliver a state the panel was already in: no change,
       // so no transition, so a real feature reported as broken. A check that
@@ -631,8 +631,8 @@ try {
         obs.disconnect()
         return seen
       }, withStatus(boardResult, target, "stale"))
-      check("and so does a lane coming back",
-        backAgain.includes("lane-band"), `transitions seen: ${JSON.stringify(backAgain)}`)
+      check("and so does an agent coming back",
+        backAgain.includes("agent-band"), `transitions seen: ${JSON.stringify(backAgain)}`)
 
       // Already stale on arrival is not a change.
       await page.evaluate((r) => (window as any).__deliver(r), withStatus(boardResult, target, "active"))
@@ -641,17 +641,17 @@ try {
       for (const l of laneOf(fresh)) if (l.id === target) l.status = "stale"
       // Drop it from the previous frame entirely, so it ARRIVES stale.
       const without = structuredClone(boardResult)
-      if (without._meta?.["com.lanes/panel"]?.board) {
-        without._meta["com.lanes/panel"].board.lanes =
+      if (without._meta?.["com.dibs/panel"]?.board) {
+        without._meta["com.dibs/panel"].board.agents =
           laneOf(without).filter((l: any) => l.id !== target)
       }
       await page.evaluate((r) => (window as any).__deliver(r), without)
       await Bun.sleep(80)
       await page.evaluate((r) => (window as any).__deliver(r), fresh)
       await Bun.sleep(80)
-      const remarked = await panel.locator(`.entry[data-lane="${target}"]`).first()
+      const remarked = await panel.locator(`.entry[data-agent="${target}"]`).first()
         .evaluate((el) => el.classList.contains("went-quiet"))
-      check("a lane that arrives already stale is not marked", !remarked,
+      check("an agent that arrives already stale is not marked", !remarked,
         "history was announced as news")
     }
   }
@@ -659,14 +659,14 @@ try {
   // Real CSS: the live pip must actually be the live colour, not merely classed.
   const pipColour = await panel.locator(".entry.active .pip").first()
     .evaluate((el) => getComputedStyle(el).backgroundColor)
-  // WHY a lane stopped counting as live has to survive the panel's field
+  // WHY an agent stopped counting as live has to survive the panel's field
   // allowlist (trimBoard). It is dropped silently if it does not: a field
   // added to the board simply never reaches the panel, and nothing says so,
   // which is exactly what happened the first three times this was checked.
   {
     await page.evaluate((r) => {
       const b = structuredClone(r)
-      const l = b._meta["com.lanes/panel"].board.lanes
+      const l = b._meta["com.dibs/panel"].board.agents
         .find((x: any) => x.id === "peer")
       l.status = "stale"
       l.stale_reason = "process_exited"
@@ -674,7 +674,7 @@ try {
     }, boardResult)
     const dead = panel.locator(".entry", { has: panel.locator('.name:text-is("peer")') })
     await dead.locator(".tag.why").waitFor({ timeout: 5000 })
-    check("a crashed lane's row says WHY it is out of touch",
+    check("a crashed agent's row says WHY it is out of touch",
       (await dead.locator(".tag.why").innerText()).toLowerCase().includes("process gone"),
       await dead.innerText())
     check("and the panel's field allowlist did not drop it",
@@ -684,7 +684,7 @@ try {
     await panel.locator(".entry.self").first().waitFor({ timeout: 5000 })
   }
 
-  check("an active lane's pip is rendered in the live colour",
+  check("an active agent's pip is rendered in the live colour",
     pipColour !== "rgba(0, 0, 0, 0)" && pipColour !== "",
     pipColour)
 
@@ -742,7 +742,7 @@ try {
   await page.evaluate((r) => {
     const b = structuredClone(r)
     delete b.view
-    if (b._meta?.["com.lanes/panel"]) delete b._meta["com.lanes/panel"].view
+    if (b._meta?.["com.dibs/panel"]) delete b._meta["com.dibs/panel"].view
     ;(window as any).__deliver(b)
   }, boardResult)
   check("a redraw preserves focus in an empty reply",
@@ -787,7 +787,7 @@ try {
     // carries the same board data without asking for a tab change.
     const b = structuredClone(r)
     delete b.view
-    if (b._meta?.["com.lanes/panel"]) delete b._meta["com.lanes/panel"].view
+    if (b._meta?.["com.dibs/panel"]) delete b._meta["com.dibs/panel"].view
     ;(window as any).__deliver(b)
   }, boardResult)
   check("a redraw does not eat a half-written reply",
@@ -811,7 +811,7 @@ try {
   await Bun.sleep(700)
 
   const stateOf = async (s: number) =>
-    textOf(await tool("get_message", { token: me.token, msg_serial: s })).message
+    textOf(await tool("read_mail", { token: me.token, msg_serial: s })).message
   const answered = await stateOf(mail.q.msg_serial)
 
   // A redraw must not eat a reply that is half-written. The host pushes a board
@@ -854,11 +854,11 @@ try {
   await page.evaluate((r) => (window as any).__deliver({
     structuredContent: {
       view: "mail",
-      lane_id: r._meta["com.lanes/panel"].lane_id,
-      act_token: r._meta["com.lanes/panel"].act_token,
+      lane_id: r._meta["com.dibs/panel"].lane_id,
+      act_token: r._meta["com.dibs/panel"].act_token,
       inbox: { messages: [{
         serial: 999999, type: "request", from: "peer",
-        to: r._meta["com.lanes/panel"].lane_id,
+        to: r._meta["com.dibs/panel"].lane_id,
         body: "This serial does not exist.", state: "open",
       }] },
     },
@@ -875,7 +875,7 @@ try {
 
   // A mutation may succeed and the follow-up inbox refresh may fail. The action
   // is still sent; calling that a send failure invites a duplicate.
-  const refreshMail = textOf(await tool("send_message", {
+  const refreshMail = textOf(await tool("send", {
     token: peer.token, to: me.lane_id, type: "request",
     body: "Refresh-failure probe", op_id: "e2e-refresh-failure", deadline_s: 600,
   }))
@@ -927,7 +927,7 @@ try {
     `${probe2.toolCalls.length} calls`)
   // Every one of them carries the panel marker, THROUGH the real bridge.
   //
-  // The marker is what lets ack_board stop duplicating its checkpoint into
+  // The marker is what lets check_in stop duplicating its checkpoint into
   // structuredContent, and it is only worth anything if it survives the trip:
   // panel → postMessage → AppBridge → host. A flag the panel sets and the SDK
   // or the host strips would leave the duplicate on forever, and the only
@@ -935,7 +935,7 @@ try {
   // own during this run, not ones the test injected.
   check("every panel tool call carries the panel marker across the bridge",
     probe2.toolCalls.length > 0 &&
-      probe2.toolCalls.every((c: any) => c?._meta?.["com.lanes/panel-call"] === true),
+      probe2.toolCalls.every((c: any) => c?._meta?.["com.dibs/panel-call"] === true),
     `_meta on each: ${JSON.stringify(probe2.toolCalls.map((c: any) => c?._meta ?? null))}`)
   check("offers unread mail to the agent's context", probe2.modelContexts.length > 0)
   check("model context is framed as data, not instruction",
@@ -985,7 +985,7 @@ try {
   // This is the failure that shipped. Panel data travels in tool-result _meta,
   // which is where the spec puts it and which keeps the board out of model
   // context. A host that forwards none of it left the panel reading "awaiting
-  // board · No lanes yet" while the daemon held a full board, and nothing
+  // board · No agents yet" while the daemon held a full board, and nothing
   // failed anywhere: every assertion above passed, `content` carried a correct
   // summary throughout, and the only way to see it was to look at the panel.
   //
@@ -1008,17 +1008,17 @@ try {
     const filled = await fresh.locator("#pane-board .entry").first()
       .waitFor({ timeout: 10000 }).then(() => true).catch(() => false)
     const asked = (await page.evaluate(() => (window as any).__probe.toolCalls
-      .some((c: any) => c?.name === "show_board"))) as boolean
+      .some((c: any) => c?.name === "board"))) as boolean
     check("a host that drops _meta still fills the panel: it fetches the board",
       filled && asked, `filled=${filled} asked=${asked}`)
   }
 
-  // Route two: no proxy needed at all. ack_board already puts the board and
+  // Route two: no proxy needed at all. check_in already puts the board and
   // mailbox in ordinary content for the AGENT, so the state the panel is
   // waiting for has usually arrived in the one field every host forwards.
   {
     const fresh = await freshPanel()
-    const ack = await tool("ack_board", { token: me.token })
+    const ack = await tool("check_in", { token: me.token })
     await page.evaluate((r) => (window as any).__deliver({ content: r.content }), ack)
     const filled = await fresh.locator("#pane-board .entry").first()
       .waitFor({ timeout: 10000 }).then(() => true).catch(() => false)

@@ -1,7 +1,7 @@
 // Package mcp implements the MCP server surface (SPEC §12): primary contract
 // MCP 2026-07-28 (stateless: server/discover, per-request _meta validation),
 // with the SEP-sanctioned legacy 2025-11-25 path (initialize/ping) retained
-// for pre-2026 hosts. Lane tokens ride as tool arguments (normative);
+// for pre-2026 hosts. Agent tokens ride as tool arguments (normative);
 // Authorization: Bearer is the alternative for custom clients.
 package mcp
 
@@ -18,15 +18,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agenxy/lanes/internal/core"
-	"github.com/agenxy/lanes/internal/engine"
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
 )
 
-// logRPC enables per-request method logging (LANES_LOG_RPC=1). Useful for
+// logRPC enables per-request method logging (DIBS_LOG_RPC=1). Useful for
 // observing exactly which MCP methods a given host actually calls: e.g.
 // whether it opens a subscriptions/listen stream. Never logs params, which
-// carry lane tokens and message bodies.
-var logRPC = os.Getenv("LANES_LOG_RPC") != ""
+// carry agent tokens and message bodies.
+var logRPC = os.Getenv("DIBS_LOG_RPC") != ""
 
 // maxRequestBytes caps the HTTP body before it is read/decoded (A9.1): a 64 MiB
 // blob is ~85 MiB of base64 plus envelope, so 96 MiB admits a legal max put and
@@ -42,7 +42,7 @@ const maxRequestBytes = 96 << 20
 // distinction: mcp_types.version has HANDSHAKE_PROTOCOL_VERSIONS topping out
 // at 2025-11-25 and MODERN_PROTOCOL_VERSIONS holding 2026-07-28 alone.
 //
-// Lanes had one flat list, so `initialize` with protocolVersion 2026-07-28 was
+// Dibs had one flat list, so `initialize` with protocolVersion 2026-07-28 was
 // echoed straight back: the server agreeing to speak a stateless contract over
 // the very handshake that contract removed. A client doing that is confused, and
 // the correct answer is a counter-offer of the newest version the handshake CAN
@@ -52,7 +52,7 @@ var (
 	handshakeVersions = []string{"2025-11-25", "2025-06-18"}
 	// modernVersions use the stateless per-request envelope.
 	modernVersions = []string{"2026-07-28"}
-	// supportedVersions is everything Lanes speaks, for discovery and for the
+	// supportedVersions is everything Dibs speaks, for discovery and for the
 	// unsupported-version error that tells a client what to try instead.
 	supportedVersions = append(append([]string{}, modernVersions...), handshakeVersions...)
 )
@@ -103,7 +103,7 @@ func drained(dec *json.Decoder) error {
 // `params` by-position is legal JSON-RPC and illegal MCP: every method here
 // takes named arguments, so an array unmarshals into an empty struct and the
 // call proceeds with every field at its zero value. That is worse than a
-// rejection: register_lane with no name looked like a request to reject on
+// rejection: register with no name looked like a request to reject on
 // its merits rather than a caller sending the wrong shape.
 func validEnvelope(req *rpcRequest) *rpcError {
 	if req.JSONRPC != "2.0" {
@@ -134,7 +134,7 @@ type rpcError struct {
 // ServeHTTP implements streamable HTTP (POST only; attention is pull-shaped
 // via the await_events tool, SPEC §10).
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// GET with an event-stream Accept is the 2025-11-25 notification channel:
+	// GET with an event-stream Accept is the 2025-11-25 notification space:
 	// that revision subscribes with a POST and delivers on a separately-opened
 	// GET. Every other GET is still not a thing this endpoint does.
 	if r.Method == http.MethodGet {
@@ -204,7 +204,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// A panel proving it can reach us is worth remembering: it is what lets
-	// ack_board stop duplicating its checkpoint into structuredContent.
+	// check_in stop duplicating its checkpoint into structuredContent.
 	if req.Method == "tools/call" && isPanelCall(req.Params) {
 		s.sessions.notePanelCall(r)
 	}
@@ -219,13 +219,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // tagResult stamps resultType on results served over the stateless core.
 //
 // 2026-07-28 requires it, and the reference client ENFORCES it: the official
-// Python SDK rejected Lanes' tools/list outright with "ListToolsResult:
+// Python SDK rejected Dibs' tools/list outright with "ListToolsResult:
 // resultType. Field required". Every hand-rolled check had passed, because
 // both sides of them were written from the same reading of the spec. A real
 // conformant client was the only thing that could find this.
 //
 // "complete" is the tag for a final result. The other core value,
-// "input_required", belongs to multi-round-trip requests, which Lanes does not
+// "input_required", belongs to multi-round-trip requests, which Dibs does not
 // use: nothing it answers needs more input to finish.
 //
 // Applied ONLY on the modern path, and that restriction is load-bearing rather
@@ -373,7 +373,7 @@ func (s *Server) handledLegacySubscription(w http.ResponseWriter, r *http.Reques
 	return false
 }
 
-// logRequest emits one line per RPC when LANES_LOG_RPC is set.
+// logRequest emits one line per RPC when DIBS_LOG_RPC is set.
 //
 // Extracted from ServeHTTP because it is the bulk of that function's branching
 // and none of its decisions: a transport entry point should read as the order
@@ -411,7 +411,7 @@ func (s *Server) logRequest(r *http.Request, req *rpcRequest) {
 }
 
 // serveGET answers the one GET this endpoint has: the 2025-11-25 notification
-// channel. Extracted because ServeHTTP is a transport decision table and the
+// space. Extracted because ServeHTTP is a transport decision table and the
 // complexity ceiling correctly caught it growing another branch.
 func (s *Server) serveGET(w http.ResponseWriter, r *http.Request) {
 	if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
@@ -419,7 +419,7 @@ func (s *Server) serveGET(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Allow", "POST, GET")
-	http.Error(w, "GET /mcp is the notification channel; send Accept: text/event-stream",
+	http.Error(w, "GET /mcp is the notification space; send Accept: text/event-stream",
 		http.StatusNotAcceptable)
 }
 
@@ -434,7 +434,7 @@ func (s *Server) dispatch(
 			"capabilities": map[string]any{
 				"tools": map[string]any{},
 				// SEP-2575: advertise resource subscriptions so clients know they
-				// may open subscriptions/listen for lanes://inbox and lanes://board.
+				// may open subscriptions/listen for dibs://inbox and dibs://board.
 				"resources": map[string]any{"subscribe": true, "listChanged": true},
 			},
 			"serverInfo":   serverBuildInfo(),
@@ -464,26 +464,26 @@ func (s *Server) dispatch(
 		// carries its own hint.
 		return cacheable(map[string]any{"resources": []map[string]any{
 			{
-				"uri": "lanes://board", "name": "board", "description": "Full public board: all lanes, slots, claims",
+				"uri": "dibs://board", "name": "board", "description": "Full public board: all agents, slots, claims",
 				"mimeType": "application/json",
 			},
 			{
-				"uri": "lanes://inbox", "name": "inbox", "description": "Your lane's mailbox: subscribe via " +
-					"subscriptions/listen to be notified of new mail (requires a lane token in _meta['" +
+				"uri": "dibs://inbox", "name": "inbox", "description": "Your agent's mailbox: subscribe via " +
+					"subscriptions/listen to be notified of new mail (requires an agent token in _meta['" +
 					metaTokenKey + "'])",
 				"mimeType": "application/json",
 			},
 			{
-				"uri": "lanes://skills", "name": "skills",
-				"description": "How to work with Lanes well: the counterintuitive parts, the " +
+				"uri": "dibs://skills", "name": "skills",
+				"description": "How to work with Dibs well: the counterintuitive parts, the " +
 					"mistakes that look like success, and the defaults that are not what you would " +
 					"guess. Read this once on your first connection: it is short, and it is the " +
 					"difference between using the protocol and using it correctly.",
 				"mimeType": "text/markdown",
 			},
 			{
-				"uri": "lanes://plugin", "name": "plugin",
-				"description": "The Lanes plugin for YOUR harness: the actual files, plus " +
+				"uri": "dibs://plugin", "name": "plugin",
+				"description": "The Dibs plugin for YOUR harness: the actual files, plus " +
 					"an ordered setup procedure where every step carries its own check. " +
 					"Read it once on your first connection: on some harnesses it turns mail " +
 					"from something you must remember to poll for into something that " +
@@ -493,12 +493,12 @@ func (s *Server) dispatch(
 			uiResourceDescriptor(),
 		}}, ttlStatic, scopePublic), nil
 	case "resources/templates/list":
-		// Lanes has no templated resources: every URI it serves is concrete.
+		// Dibs has no templated resources: every URI it serves is concrete.
 		//
-		// An empty list rather than method-not-found, because Lanes ADVERTISES
+		// An empty list rather than method-not-found, because Dibs ADVERTISES
 		// the resources capability, and a client that takes that at its word is
 		// right to ask. Codex does, on every connection, and a -32601 surfaced
-		// to the model as "MCP server 'lanes' was not ready for this step",
+		// to the model as "MCP server 'agents' was not ready for this step",
 		// which reads as a broken server, mid-task, for a question that has a
 		// perfectly good empty answer.
 		return cacheable(map[string]any{"resourceTemplates": []map[string]any{}},
@@ -510,21 +510,21 @@ func (s *Server) dispatch(
 		}
 		_ = json.Unmarshal(req.Params, &p)
 		switch p.URI {
-		case "lanes://skills":
+		case "dibs://skills":
 			// No token required. It is documentation, identical for every
 			// caller, and gating it would mean an agent has to register before
 			// it can learn how to register well.
 			return cacheable(map[string]any{"contents": []map[string]any{
 				{"uri": p.URI, "mimeType": "text/markdown", "text": skillsDoc},
 			}}, ttlStatic, scopePublic), nil
-		case "lanes://plugin":
-			// Ungated, like lanes://skills, and for the same reason: an agent
+		case "dibs://plugin":
+			// Ungated, like dibs://skills, and for the same reason: an agent
 			// should not have to register before it can learn how to be set up
 			// properly. The payload is identical for every caller.
 			return cacheable(map[string]any{"contents": []map[string]any{
 				{"uri": p.URI, "mimeType": "application/json", "text": pluginDoc()},
 			}}, ttlStatic, scopePublic), nil
-		case "lanes://board":
+		case "dibs://board":
 			board, err := s.eng.Board(ctx)
 			if err != nil {
 				return nil, &rpcError{Code: -32603, Message: err.Error()}
@@ -535,10 +535,13 @@ func (s *Server) dispatch(
 			return cacheable(map[string]any{"contents": []map[string]any{
 				{"uri": p.URI, "mimeType": "application/json", "text": string(text)},
 			}}, ttlLive, scopePublic), nil
-		case "lanes://inbox":
+		case "dibs://inbox":
 			tok, _ := p.Meta[metaTokenKey].(string)
 			if tok == "" {
-				return nil, &rpcError{Code: -32602, Message: "lanes://inbox requires a lane token in _meta['" + metaTokenKey + "']"}
+				return nil, &rpcError{
+					Code:    -32602,
+					Message: "dibs://inbox requires an agent token in _meta['" + metaTokenKey + "']",
+				}
 			}
 			box, err := s.eng.InboxFor(ctx, tok)
 			if err != nil {
@@ -547,7 +550,7 @@ func (s *Server) dispatch(
 			text, _ := json.MarshalIndent(box, "", "  ")
 			// PRIVATE, and this is load-bearing rather than tidy: "public" tells
 			// shared gateways they may serve this response to a caller with a
-			// DIFFERENT authorization context. This is one lane's mail, keyed by
+			// DIFFERENT authorization context. This is one agent's mail, keyed by
 			// its token. Marking it public would be a disclosure bug.
 			return cacheable(map[string]any{"contents": []map[string]any{
 				{"uri": p.URI, "mimeType": "application/json", "text": string(text)},
@@ -624,8 +627,8 @@ type toolArgs struct {
 	Branch      string            `json:"branch"`
 	Host        string            `json:"host"`
 
-	// Channels (SPEC-CHANNELS.md). `lane` is the protocol name for a channel.
-	LaneID      string   `json:"lane"`
+	// Spaces (SPEC-CHANNELS.md). `agent` is the protocol name for a space.
+	LaneID      string   `json:"agent"`
 	Limit       int      `json:"limit"`
 	Topic       string   `json:"topic"`
 	Exclusive   bool     `json:"exclusive"`
@@ -718,14 +721,14 @@ func (s *Server) callTool(
 		// Either carrier counts: the stdio bridge injects _meta, a direct HTTP
 		// host is remembered from its initialize.
 		wantsUI := clientWantsUI(params) || sessionUI
-		if call.Name == "show_board" {
-			// show_board exists only to show the human. On a host with no
+		if call.Name == "board" {
+			// board exists only to show the human. On a host with no
 			// renderer it can show nothing, so say that rather than returning a
 			// payload nobody will look at: an agent that is told plainly will
-			// reach for ack_board or inbox instead of calling this again.
-			// show_board is the ONE tool whose detail the model genuinely does not
+			// reach for check_in or inbox instead of calling this again.
+			// board is the ONE tool whose detail the model genuinely does not
 			// need (the human is looking at it) so it gets a summary line, unlike
-			// ack_board/inbox which must keep their full result because the agent
+			// check_in/inbox which must keep their full result because the agent
 			// reads the board out of them.
 			//
 			// The PANEL PAYLOAD is not gated on a declared capability: the
@@ -797,7 +800,7 @@ func (s *Server) run(
 ) (core.Result, error) {
 	op := &core.Op{Token: a.Token}
 	switch name {
-	case "register_lane":
+	case "register":
 		if strings.TrimSpace(a.Name) == "" {
 			return nil, fmt.Errorf("name is required")
 		}
@@ -805,27 +808,27 @@ func (s *Server) run(
 		op.Kind, op.Name, op.Description, op.PID = core.OpRegisterLane, a.Name, a.Description, a.PID
 		op.Nonce, op.LaneKind, op.SessionID = a.Nonce, core.LaneKind(a.Kind), a.SessionID
 		op.Parent, op.ParentNonce = a.Parent, a.ParentNonce
-	case "resume_lane":
+	case "resume":
 		op.Kind, op.Nonce, op.ResumeID, op.PID = core.OpResumeLane, a.Nonce, a.ResumeID, a.PID
-	case "ack_board":
+	case "check_in":
 		op.Kind = core.OpAckBoard
-	case "update_lane":
+	case "update":
 		op.Kind, op.Description = core.OpUpdateLane, a.Description
 	case "vouch_child":
 		op.Kind, op.Nonce = core.OpVouchChild, a.Nonce
-	case "close_lane":
+	case "sign_off":
 		op.Kind = core.OpCloseLane
 	case "heartbeat":
 		op.Kind = core.OpHeartbeat
-	case "set_slot":
+	case "declare":
 		op.Kind, op.SlotID, op.Text, op.Dirs = core.OpSetSlot, a.SlotID, a.Text, a.Dirs
 		op.Refs, op.Activity, op.Holds = a.Refs, a.Activity, a.Holds
 		// Declaring work is also the moment to find out who else is doing it.
 		// Matching is additive and never blocks the declaration itself.
 		return s.eng.DoMatched(ctx, op)
-	case "clear_slot":
+	case "undeclare":
 		op.Kind, op.SlotID = core.OpClearSlot, a.SlotID
-	case "send_message":
+	case "send":
 		op.Kind, op.To, op.MsgType, op.Body = core.OpSendMessage, a.To, a.Type, a.Body
 		op.DeadlineSec, op.OpID, op.Attachments = a.DeadlineSec, a.OpID, a.Attachments
 	case "put_blob":
@@ -834,13 +837,13 @@ func (s *Server) run(
 		return s.eng.GetBlob(ctx, a.Token, a.Blob, a.As)
 	case "respond":
 		op.Kind, op.MsgSerial, op.Disposition, op.Body = core.OpRespond, a.MsgSerial, a.Disposition, a.Body
-	case "ack_message":
+	case "ack":
 		op.Kind, op.MsgSerial = core.OpAckMessage, a.MsgSerial
 	case "inbox":
 		return s.eng.Inbox(ctx, a.Token)
-	case "get_message":
+	case "read_mail":
 		return s.eng.GetMessage(ctx, a.Token, a.MsgSerial)
-	case "lane_read":
+	case "read_space":
 		return s.laneRead(ctx, a.Token, a.LaneID, a.Limit)
 	case "claim":
 		if err := mustBeAbsolute("claim path", a.Path); err != nil {
@@ -858,7 +861,7 @@ func (s *Server) run(
 		// cwd is canonicalised for the same reason the claim path is: it is
 		// compared as a string against the cwd the bridge recorded, and a
 		// harness that passes the alias the user typed (/tmp/x) would never
-		// match a lane registered from the resolved name (/private/tmp/x).
+		// match an agent registered from the resolved name (/private/tmp/x).
 		return s.eng.HookPoll(ctx, a.SessionID, a.Event, canonPath(a.CWD))
 	case "hook_session":
 		return s.eng.NoteChildSession(ctx, engine.Child{
@@ -875,47 +878,47 @@ func (s *Server) run(
 		})
 	case "guard_path":
 		return s.eng.GuardPath(ctx, a.SessionID, canonPath(a.Path), canonPath(a.CWD))
-	case "show_board":
+	case "board":
 		return s.showBoard(ctx, a.Token, a.View)
 	case "bind_session":
 		return s.eng.BindSession(ctx, a.Token, a.SessionID)
 
-	// Channels. The scoring fields are recorded, not recomputed: whatever
+	// Spaces. The scoring fields are recorded, not recomputed: whatever
 	// scorer produced them ran at the edge, and Apply takes them as fact so the
 	// ledger stays replayable (SPEC-CHANNELS.md §4.3).
-	case "lane_open":
-		op.Kind, op.Channel, op.Text, op.Exclusive = core.OpLaneOpen, a.LaneID, a.Topic, a.Exclusive
-		// A lane with no footprint can never be matched against, which would
+	case "open_space":
+		op.Kind, op.Space, op.Text, op.Exclusive = core.OpLaneOpen, a.LaneID, a.Topic, a.Exclusive
+		// An agent with no footprint can never be matched against, which would
 		// make it invisible to the auto-join that gives it its point.
 		return s.eng.OpenWithPrediction(ctx, op)
-	case "lane_join":
-		op.Kind, op.Channel = core.OpLaneJoin, a.LaneID
+	case "join_space":
+		op.Kind, op.Space = core.OpLaneJoin, a.LaneID
 		op.Score, op.Threshold = a.Score, a.Threshold
 		op.ScorerID, op.ScorerVersion, op.Evidence, op.Auto = a.ScorerID, a.ScorerVer, a.Evidence, a.Auto
-	case "lane_leave":
-		op.Kind, op.Channel = core.OpLaneLeave, a.LaneID
-	case "lane_subscribe":
-		op.Kind, op.Channel, op.Mode = core.OpLaneSubscribe, a.LaneID, a.Mode
-	case "lane_exclusive":
-		op.Kind, op.Channel, op.Mode = core.OpLaneExclusive, a.LaneID, a.Mode
-	case "lane_post":
-		op.Kind, op.Channel, op.Body = core.OpLanePost, a.LaneID, a.Body
-	case "lane_announce":
-		op.Kind, op.Channel, op.Body = core.OpLaneAnnounce, a.LaneID, a.Body
-	case "lane_ack":
+	case "leave_space":
+		op.Kind, op.Space = core.OpLaneLeave, a.LaneID
+	case "watch_space":
+		op.Kind, op.Space, op.Mode = core.OpLaneSubscribe, a.LaneID, a.Mode
+	case "lock_space":
+		op.Kind, op.Space, op.Mode = core.OpLaneExclusive, a.LaneID, a.Mode
+	case "post":
+		op.Kind, op.Space, op.Body = core.OpLanePost, a.LaneID, a.Body
+	case "announce":
+		op.Kind, op.Space, op.Body = core.OpLaneAnnounce, a.LaneID, a.Body
+	case "ack_announcement":
 		op.Kind, op.MsgSerial = core.OpLaneAck, a.MsgSerial
-	case "lane_force_release":
-		op.Kind, op.Channel, op.Note = core.OpLaneForceRelease, a.LaneID, a.Note
-	case "lane_evict":
-		op.Kind, op.Channel, op.To, op.Note = core.OpLaneEvict, a.LaneID, a.To, a.Note
-	case "lane_merge":
-		op.Kind, op.Channel, op.To, op.Note = core.OpLaneMerge, a.LaneID, a.To, a.Note
+	case "unlock_space":
+		op.Kind, op.Space, op.Note = core.OpLaneForceRelease, a.LaneID, a.Note
+	case "evict":
+		op.Kind, op.Space, op.To, op.Note = core.OpLaneEvict, a.LaneID, a.To, a.Note
+	case "merge_spaces":
+		op.Kind, op.Space, op.To, op.Note = core.OpLaneMerge, a.LaneID, a.To, a.Note
 	case "human_unlock":
 		return s.humanUnlock(ctx, a)
-	case "lane_close":
-		op.Kind, op.Channel, op.Note = core.OpLaneClose, a.LaneID, a.Note
-	case "lane_admit":
-		op.Kind, op.Channel, op.To, op.Note = core.OpLaneAdmit, a.LaneID, a.To, a.Note
+	case "close_space":
+		op.Kind, op.Space, op.Note = core.OpLaneClose, a.LaneID, a.Note
+	case "admit":
+		op.Kind, op.Space, op.To, op.Note = core.OpLaneAdmit, a.LaneID, a.To, a.Note
 		op.Score, op.Threshold, op.ScorerID = a.Score, a.Threshold, a.ScorerID
 	case "all_mail":
 		return s.eng.AllMail(ctx, a.Token)
@@ -929,7 +932,7 @@ func (s *Server) run(
 		return nil, fmt.Errorf("unknown tool %q", name)
 	}
 	res, err := s.eng.Do(ctx, op)
-	if err != nil || name != "register_lane" {
+	if err != nil || name != "register" {
 		return res, err
 	}
 	// A first registration is the one moment an agent has just told us what
@@ -938,7 +941,7 @@ func (s *Server) run(
 	// prompt to somebody who already decided is how a hint becomes noise.
 	// op.Agent is nil whenever the caller sent no agent block, which is most
 	// registrations: the field is descriptive and optional. Dereferencing it
-	// here took the daemon down on an ordinary register_lane.
+	// here took the daemon down on an ordinary register.
 	harness := ""
 	if op.Agent != nil {
 		harness = op.Agent.Harness
@@ -965,17 +968,17 @@ func (s *Server) run(
 // It was 3412 characters of protocol manual. Codex renders each tool with the
 // first 994 characters of this string prepended, so 40 tools carried 39,760
 // characters of the same text: 58% of everything that client showed the model
-// about Lanes was this paragraph, repeated, and it truncated the capability list.
+// about Dibs was this paragraph, repeated, and it truncated the capability list.
 //
 // Shortening it is not a workaround for that rendering, though it fixes it. It is
 // the rule already enforced on tool descriptions, applied to the place the rule
 // came from: orientation belongs in ONE payload, and this one is charged on every
-// connection while lanes://skills is charged once, when read. Everything removed
+// connection while dibs://skills is charged once, when read. Everything removed
 // here is in skills: verified section by section before deleting, including the
 // two-routes warning, which lives under a heading that does not use those words.
 //
 // What stays is only what an agent needs BEFORE its first call, and specifically
-// the two mistakes that are silent and expensive: naming a lane for the work
+// the two mistakes that are silent and expensive: naming an agent for the work
 // (your address is wrong from then on) and registering without a nonce (a
 // restart loses the mailbox).
 //
@@ -988,10 +991,10 @@ func (s *Server) run(
 // because it needs a host showing both tool namespaces.
 //
 //nolint:lll // agent-facing text; line breaks are semantic
-const serverInstructions = `Lanes coordinates the agents on this machine: who is working, on what, and where they are about to collide.
+const serverInstructions = `Dibs coordinates the agents on this machine: who is working, on what, and where they are about to collide.
 
-A lane is an AGENT, not a task. Name it for who you are ('reviewer', 'codex-1'): that name is your address; what you are DOING goes in set_slot.
+An agent is an AGENT, not a task. Name it for who you are ('reviewer', 'codex-1'): that name is your address; what you are DOING goes in declare.
 
-Start: register_lane(name, description, pid, nonce): keep the token, and invent a nonce: it is the only credential that survives a restart. Then ack_board() at the start of every activation, before you act.
+Start: register(name, description, pid, nonce): keep the token, and invent a nonce: it is the only credential that survives a restart. Then check_in() at the start of every activation, before you act.
 
-Read lanes://skills once: short, and it is the mistakes that look like success. lanes://plugin says if your harness can deliver mail instead of you polling.`
+Read dibs://skills once: short, and it is the mistakes that look like success. dibs://plugin says if your harness can deliver mail instead of you polling.`

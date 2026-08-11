@@ -1,5 +1,5 @@
 {
-  "name": "lanes-panel-e2e",
+  "name": "dibs-panel-e2e",
   "private": true,
   "description": "Headless end-to-end test for the MCP Apps board panel.",
   "dependencies": {

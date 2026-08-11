@@ -9,7 +9,7 @@ import (
 //
 // Ids were generated as "s" + (len+1). With s1, s2, s3 and s2 cleared, len is 2
 // and the next id is "s3", which already exists, so a new declaration silently
-// replaced a different piece of work, and the per-lane limit check waved it
+// replaced a different piece of work, and the per-agent limit check waved it
 // through because the id was not new. Nothing errored and nothing was logged:
 // an agent declared what it was doing and quietly erased what it had been.
 func TestClearingASlotDoesNotMakeTheNextOneOverwriteAnother(t *testing.T) {
@@ -23,7 +23,7 @@ func TestClearingASlotDoesNotMakeTheNextOneOverwriteAnother(t *testing.T) {
 	mustApply(t, s, &Op{Kind: OpClearSlot, Token: "tokB", SlotID: "s2"}, t0)
 	mustApply(t, s, &Op{Kind: OpSetSlot, Token: "tokB", Text: "fourth"}, t0)
 
-	slots := s.Lanes["builder"].Slots
+	slots := s.Agents["builder"].Slots
 	if len(slots) != 3 {
 		t.Fatalf("expected 3 slots after three sets, a clear and a set; got %d: %v", len(slots), slots)
 	}
@@ -42,12 +42,12 @@ func TestClearingASlotDoesNotMakeTheNextOneOverwriteAnother(t *testing.T) {
 	}
 }
 
-// An agent updating its focus calls set_slot again with new text, which is
+// An agent updating its focus calls declare again with new text, which is
 // exactly what the tool's own description invites, and that MINTS a slot every
-// time, so a lane that is simply working stacks declarations until it hits the
+// time, so an agent that is simply working stacks declarations until it hits the
 // cap and starts erroring.
 //
-// Lanes cannot know whether a second slot was intended, so it does not guess.
+// Dibs cannot know whether a second slot was intended, so it does not guess.
 // It says what it did and what to pass instead: told, not prevented, which is
 // the rule the rest of the board follows.
 func TestAddingASecondSlotSaysSo(t *testing.T) {

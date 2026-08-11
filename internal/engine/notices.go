@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // Things that happen TO an agent, which it would otherwise never hear about.
@@ -13,8 +13,8 @@ import (
 // `action: "awaiting_director"` and then, until this existed, nothing: ever.
 // It was admitted seconds later and had no way to know short of polling the
 // event stream on the off-chance. Same for an agent queued behind an exclusive
-// lane's owner: promoted when the owner left, and never told. Same for one a
-// director evicted: still believes it holds the lane.
+// agent's owner: promoted when the owner left, and never told. Same for one a
+// director evicted: still believes it holds the agent.
 //
 // All three are state changes the agent did not initiate and cannot predict,
 // and all three were silent. That is the same class of bug as a declaration
@@ -38,38 +38,38 @@ type notice struct {
 // noteEvent records the events an agent needs told about, so hookPoll can
 // deliver them. Called on the writer loop, from publish.
 //
-// Only events an agent did NOT cause: `lane.joined` for a self-service join is
+// Only events an agent did NOT cause: `agent.joined` for a self-service join is
 // the agent's own tool result and repeating it back is noise. The distinguishing
 // mark is in the data. `admitted_by` or `from_queue` mean somebody else moved
 // you.
 // joinedNotice distinguishes the joins somebody else caused from the ones the
 // agent asked for. Returns "" for a self-service join: that is the agent's own
-// tool result, and repeating it back trains agents to ignore the channel.
+// tool result, and repeating it back trains agents to ignore the space.
 func joinedNotice(ev core.Event) string {
-	lane, _ := ev.Data["lane_id"].(string)
+	agent, _ := ev.Data["lane_id"].(string)
 	if from, ok := ev.Data["merged_from"].(string); ok && from != "" {
-		// The source lane is GONE. An agent told only "you joined X" would keep
-		// addressing the lane it was working in, and every call would fail with a
-		// lane it has no reason to think should be missing.
+		// The source agent is GONE. An agent told only "you joined X" would keep
+		// addressing the agent it was working in, and every call would fail with a
+		// agent it has no reason to think should be missing.
 		by, _ := ev.Data["merged_by"].(string)
 		return fmt.Sprintf(
-			"lane %q was merged into lane %q by %s. %q no longer exists; "+
-				"you are a member of %q, so post and announce there", from, lane, by, from, lane,
+			"agent %q was merged into agent %q by %s. %q no longer exists; "+
+				"you are a member of %q, so post and announce there", from, agent, by, from, agent,
 		)
 	}
 	if by, ok := ev.Data["admitted_by"].(string); ok && by != "" {
 		return fmt.Sprintf(
-			// Names the tool. This used to end "read the lane first", which is
-			// advice pointing at nothing: there was no way to read a lane, and a
+			// Names the tool. This used to end "read the agent first", which is
+			// advice pointing at nothing: there was no way to read an agent, and a
 			// reviewing agent that took the instruction seriously had to ask a
-			// human what the lane was about.
-			"you were admitted to lane %q by %s: you may start; read it first with lane_read(%q)",
-			lane, by, lane,
+			// human what the agent was about.
+			"you were admitted to agent %q by %s: you may start; read it first with read_space(%q)",
+			agent, by, agent,
 		)
 	}
 	if q, ok := ev.Data["from_queue"].(bool); ok && q {
 		return fmt.Sprintf(
-			"you reached the front of the queue for lane %q and are now a member", lane,
+			"you reached the front of the queue for agent %q and are now a member", agent,
 		)
 	}
 	return ""
@@ -78,54 +78,54 @@ func joinedNotice(ev core.Event) string {
 func (e *Engine) noteEvent(ev core.Event) {
 	var who, text string
 	switch ev.Type {
-	case "lane.joined":
-		who, text = ev.Lane, joinedNotice(ev)
-	case "lane.absorbed":
-		// Your lane just gained another lane's members, its predicted footprint
+	case "agent.joined":
+		who, text = ev.Agent, joinedNotice(ev)
+	case "agent.absorbed":
+		// Your agent just gained another agent's members, its predicted footprint
 		// and its outstanding announcements, which you may now be required to
 		// acknowledge. You did not do this and cannot infer it.
-		lane, _ := ev.Data["lane_id"].(string)
+		agent, _ := ev.Data["lane_id"].(string)
 		from, _ := ev.Data["merged_from"].(string)
 		by, _ := ev.Data["merged_by"].(string)
 		gained, _ := ev.Data["gained"].(int)
-		who, text = ev.Lane, fmt.Sprintf(
-			"%s folded lane %q into %q: the lane you are in just gained %d member(s) "+
+		who, text = ev.Agent, fmt.Sprintf(
+			"%s folded agent %q into %q: the agent you are in just gained %d member(s) "+
 				"and anything %q had outstanding. Re-read %q before assuming it is still "+
-				"the work you joined", by, from, lane, gained, from, lane,
+				"the work you joined", by, from, agent, gained, from, agent,
 		)
-	case "lane.requeued":
-		// Still waiting, but on a different lane, and told so, rather than
-		// left holding a queue position in a lane that was deleted.
-		lane, _ := ev.Data["lane_id"].(string)
+	case "agent.requeued":
+		// Still waiting, but on a different agent, and told so, rather than
+		// left holding a queue position in an agent that was deleted.
+		agent, _ := ev.Data["lane_id"].(string)
 		from, _ := ev.Data["merged_from"].(string)
 		pos, _ := ev.Data["queue_position"].(int)
 		owner, _ := ev.Data["owner"].(string)
-		who, text = ev.Lane, fmt.Sprintf(
-			"lane %q was merged into lane %q, which %s holds exclusively. %q no "+
+		who, text = ev.Agent, fmt.Sprintf(
+			"agent %q was merged into agent %q, which %s holds exclusively. %q no "+
 				"longer exists and you are now position %d in %q's queue",
-			from, lane, owner, from, pos, lane,
+			from, agent, owner, from, pos, agent,
 		)
-	case "lane.evicted":
-		lane, _ := ev.Data["lane_id"].(string)
+	case "agent.evicted":
+		agent, _ := ev.Data["lane_id"].(string)
 		by, _ := ev.Data["by"].(string)
 		if q, _ := ev.Data["from_queue"].(bool); q {
 			// Never a member, so "stop work there" would be nonsense. What this
 			// agent needs to know is that waiting is pointless now.
-			who, text = ev.Lane, fmt.Sprintf(
-				"%s removed you from the queue for lane %q: you are no longer waiting "+
-					"for it and will not be admitted; find other work or ask %s why", by, lane, by,
+			who, text = ev.Agent, fmt.Sprintf(
+				"%s removed you from the queue for agent %q: you are no longer waiting "+
+					"for it and will not be admitted; find other work or ask %s why", by, agent, by,
 			)
 			break
 		}
-		who, text = ev.Lane, fmt.Sprintf(
-			"you were removed from lane %q by %s: stop work there and coordinate before resuming", lane, by,
+		who, text = ev.Agent, fmt.Sprintf(
+			"you were removed from agent %q by %s: stop work there and coordinate before resuming", agent, by,
 		)
-	case "lane.exclusive":
-		lane, _ := ev.Data["lane_id"].(string)
-		if owner, ok := ev.Data["owner"].(string); ok && owner == ev.Lane {
+	case "agent.exclusive":
+		agent, _ := ev.Data["lane_id"].(string)
+		if owner, ok := ev.Data["owner"].(string); ok && owner == ev.Agent {
 			return // you took it yourself; your own tool result already said so
 		} else {
-			who, text = ev.Lane, fmt.Sprintf("lane %q is now exclusive to %s", lane, owner)
+			who, text = ev.Agent, fmt.Sprintf("agent %q is now exclusive to %s", agent, owner)
 		}
 	}
 	if who == "" || text == "" {
@@ -173,8 +173,8 @@ func (e *Engine) pushNotice(who, text string, serial uint64) {
 // So this path now mutates NOTHING. Reading is free, repeatable and harmless,
 // which is the only property that makes a token-less endpoint safe to expose:
 // there is no state for a peer to spend. What bounds repetition is the agent's
-// own ack_board, which delivers these (see pendingNotices) and clears them,
-// and ack_board is already required once per activation.
+// own check_in, which delivers these (see pendingNotices) and clears them,
+// and check_in is already required once per activation.
 func (e *Engine) takeNotices(agent string) []notice {
 	all := e.notices[agent]
 	if len(all) == 0 {

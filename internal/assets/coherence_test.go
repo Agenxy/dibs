@@ -393,7 +393,7 @@ func TestNoMarkExplainsItselfOnlyToAMouse(t *testing.T) {
 // The first screen has to say what to do next.
 //
 // A person who has just started the daemon does not need to be told the board is
-// empty: they can see that. They need the next command. This was "No lanes", a
+// empty: they can see that. They need the next command. This was "No agents", a
 // sentence, and a row of four zeros: all true, none of it a way forward, on the
 // one screen where somebody decides whether the thing is real.
 //
@@ -409,12 +409,12 @@ func TestTheFirstScreenGivesTheNextCommand(t *testing.T) {
 	body := js[start:end]
 
 	// The command itself, not a description of it.
-	if !strings.Contains(body, "lanes mcp-config") {
+	if !strings.Contains(body, "dibs mcp-config") {
 		t.Error("the first screen must name the command that connects an agent")
 	}
 	// And the honest caveat: matching is off until it is configured, which is
 	// the single thing most likely to make somebody think the product is broken.
-	if !strings.Contains(body, "lanes calibrate") {
+	if !strings.Contains(body, "dibs calibrate") {
 		t.Error("the first screen must say matching needs calibrating. " +
 			"a board that silently never matches reads as a broken product")
 	}

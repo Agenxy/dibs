@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // The payload must carry only what board_app.html draws. It lives in the App's
@@ -17,7 +17,7 @@ func TestPanelPayloadCarriesOnlyRenderedFields(t *testing.T) {
 		"view":    "mail",
 		"board": core.Result{
 			"node": "n1", "serial": 42,
-			"lanes": []core.Result{{
+			"agents": []core.Result{{
 				"id": "opus-5", "name": "opus-5", "kind": "ephemeral", "status": "active",
 				"description": "d", "last_coordination_at": "t", "agent": map[string]any{"model": "m"},
 				// none of these are drawn:
@@ -52,17 +52,17 @@ func TestPanelPayloadCarriesOnlyRenderedFields(t *testing.T) {
 		}
 	}
 	// Trimming must not silently empty the board: the failure that shipped once
-	// was a core.Result assertion against a plain map, which dropped every lane.
+	// was a core.Result assertion against a plain map, which dropped every agent.
 	b := asMap(out["board"])
-	if b == nil || len(asMaps(b["lanes"])) != 1 {
-		t.Fatal("board lost its lanes in trimming")
+	if b == nil || len(asMaps(b["agents"])) != 1 {
+		t.Fatal("board lost its agents in trimming")
 	}
 	// Same payload, but with the board as a bare map: the shape the engine
-	// returns through ack_board.
-	in2 := core.Result{"board": map[string]any{"lanes": []any{
+	// returns through check_in.
+	in2 := core.Result{"board": map[string]any{"agents": []any{
 		map[string]any{"id": "x", "status": "active"},
 	}}}
-	if b2 := asMap(panelPayload(in2)["board"]); b2 == nil || len(asMaps(b2["lanes"])) != 1 {
+	if b2 := asMap(panelPayload(in2)["board"]); b2 == nil || len(asMaps(b2["agents"])) != 1 {
 		t.Fatal("bare map[string]any board was dropped")
 	}
 }
@@ -71,27 +71,27 @@ func TestPanelPayloadCarriesOnlyRenderedFields(t *testing.T) {
 // otherwise trimming would silently change what the model is told.
 func TestSummaryCountsSurviveTrimming(t *testing.T) {
 	res := core.Result{
-		"board": core.Result{"lanes": []core.Result{
+		"board": core.Result{"agents": []core.Result{
 			{"id": "a", "status": "active"}, {"id": "b", "status": "dormant"},
 		}},
 		"inbox": core.Result{"messages": []core.Result{{"serial": 1}, {"serial": 2}}},
 	}
 	text := showBoardResult(res, false, false)["content"].([]map[string]any)[0]["text"].(string)
-	for _, want := range []string{"2 lane(s)", "1 active", "2 unread"} {
+	for _, want := range []string{"2 agent(s)", "1 active", "2 unread"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("summary %q lost %q", text, want)
 		}
 	}
 }
 
-// ack_board is the awareness gate: the model reads the board out of its result
+// check_in is the awareness gate: the model reads the board out of its result
 // to learn what its peers are doing. An earlier version replaced that JSON with
-// a prose summary, which silently broke the thing Lanes exists to do. The
+// a prose summary, which silently broke the thing Dibs exists to do. The
 // agent's result must survive the panel being attached.
 func TestPanelNeverReplacesTheAgentsResult(t *testing.T) {
 	s := &Server{}
 	res := core.Result{
-		"board":        core.Result{"lanes": []core.Result{{"id": "a", "status": "active"}}},
+		"board":        core.Result{"agents": []core.Result{{"id": "a", "status": "active"}}},
 		"inbox":        core.Result{"messages": []core.Result{{"serial": 1}}},
 		"acked_serial": 9, "ok": true,
 	}
@@ -154,7 +154,7 @@ func TestPanelNeverReplacesTheAgentsResult(t *testing.T) {
 // This is the test that did not exist when it was needed. The panel's data
 // travels in _meta, which is correct and keeps the board out of model context,
 // and a host that forwards none of it left the panel on "awaiting board · No
-// lanes yet" while the daemon held three lanes. Nothing failed: `content` was a
+// agents yet" while the daemon held three agents. Nothing failed: `content` was a
 // correct 72-character summary the whole time, every assertion about the tool
 // result passed, and the only way to see it was to look at the panel.
 //
@@ -166,14 +166,14 @@ func TestPanelNeverReplacesTheAgentsResult(t *testing.T) {
 func TestPanelCanReachTheBoardOnAHostThatDropsMeta(t *testing.T) {
 	srv, _ := newServer(t)
 	const marker = "BOARD DETAIL THE BOOTSTRAP MUST NOT CARRY"
-	registered := toolCall(t, srv, "register_lane", map[string]any{
+	registered := toolCall(t, srv, "register", map[string]any{
 		"name": "panel-bootstrap", "description": marker,
 	})
 	token := registered["token"].(string)
 
 	// What the panel receives when the host forwards content + structuredContent
 	// and drops _meta entirely.
-	result := rawToolResult(t, srv, "show_board", map[string]any{"token": token})
+	result := rawToolResult(t, srv, "board", map[string]any{"token": token})
 	boot, ok := result["structuredContent"].(map[string]any)
 	if !ok {
 		t.Fatal("no bootstrap: a host that drops _meta leaves the panel with no way to fetch")
@@ -183,7 +183,7 @@ func TestPanelCanReachTheBoardOnAHostThatDropsMeta(t *testing.T) {
 		t.Fatalf("bootstrap act_token = %q, want the caller's own token", got)
 	}
 	// The token is the caller's own, so it is not new information reaching the
-	// model, but the board would be, and that is the cost show_board promises
+	// model, but the board would be, and that is the cost board promises
 	// not to charge.
 	blob, _ := json.Marshal(boot)
 	if strings.Contains(string(blob), marker) {
@@ -193,7 +193,7 @@ func TestPanelCanReachTheBoardOnAHostThatDropsMeta(t *testing.T) {
 	// The other half: the call the panel makes with that token has to answer with
 	// the board in ordinary content, since content is the one field every host
 	// forwards to the app.
-	fetched := rawToolResult(t, srv, "show_board", map[string]any{
+	fetched := rawToolResult(t, srv, "board", map[string]any{
 		"token": token, "detail": true,
 	})
 	text, _ := fetched["content"].([]any)[0].(map[string]any)["text"].(string)
@@ -208,7 +208,7 @@ func TestPanelCanReachTheBoardOnAHostThatDropsMeta(t *testing.T) {
 
 // A panel that has proved it can reach the daemon stops the duplicate.
 //
-// ack_board is called every activation and the board dominates its size, so
+// check_in is called every activation and the board dominates its size, so
 // sending it in both content and structuredContent charged the model two copies
 // of the fleet per turn. The duplication existed for one host shape: drops
 // _meta, forbids app tool calls, shows structuredContent instead of content,
@@ -216,7 +216,7 @@ func TestPanelCanReachTheBoardOnAHostThatDropsMeta(t *testing.T) {
 // starve the agent. A panel that has called a tool is proof we are not there.
 func TestTheCheckpointIsNotDuplicatedOnceThePanelCanFetch(t *testing.T) {
 	s := New(nil)
-	res := core.Result{"ok": true, "board": map[string]any{"lanes": []any{"a", "b"}}}
+	res := core.Result{"ok": true, "board": map[string]any{"agents": []any{"a", "b"}}}
 
 	unproved := s.panelResult(t.Context(), res, "board", "", true, false)
 	if _, ok := unproved["structuredContent"]; !ok {
@@ -237,21 +237,21 @@ func TestTheCheckpointIsNotDuplicatedOnceThePanelCanFetch(t *testing.T) {
 	}
 	// And the panel keeps its own carrier regardless.
 	if _, ok := proved["_meta"]; !ok {
-		t.Error("_meta was dropped too: the panel's private channel is not the duplicate")
+		t.Error("_meta was dropped too: the panel's private space is not the duplicate")
 	}
 }
 
 // The marker is what the panel actually sends, and nothing else trips it.
 func TestOnlyThePanelsOwnMarkerCountsAsAPanelCall(t *testing.T) {
-	yes := json.RawMessage(`{"name":"inbox","_meta":{"com.lanes/panel-call":true}}`)
+	yes := json.RawMessage(`{"name":"inbox","_meta":{"com.dibs/panel-call":true}}`)
 	if !isPanelCall(yes) {
 		t.Error("the panel's own marker was not recognised")
 	}
 	for _, no := range []string{
 		`{"name":"inbox"}`,
 		`{"name":"inbox","_meta":{}}`,
-		`{"name":"inbox","_meta":{"com.lanes/panel-call":false}}`,
-		`{"name":"inbox","_meta":{"com.lanes/panel-call":"true"}}`,
+		`{"name":"inbox","_meta":{"com.dibs/panel-call":false}}`,
+		`{"name":"inbox","_meta":{"com.dibs/panel-call":"true"}}`,
 		`not json`,
 	} {
 		if isPanelCall(json.RawMessage(no)) {

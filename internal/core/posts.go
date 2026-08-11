@@ -6,19 +6,19 @@ import (
 	"time"
 )
 
-// Post is one remark in a lane: traffic nobody must answer, which is exactly
+// Post is one remark in an agent: traffic nobody must answer, which is exactly
 // what distinguishes it from an Announcement (no Required, no Acked, no
 // retries). It is kept so it can be READ later, not so it can be enforced.
 //
-// Posts used to be stored nowhere. lane_post appended the text to an event and
+// Posts used to be stored nowhere. post appended the text to an event and
 // returned a serial, and that event was the only copy, so an agent that was
-// not polling at that moment never saw it, a restart lost it, and lane_read,
-// the tool whose whole job is "read the lane", did not return posts at all. It
+// not polling at that moment never saw it, a restart lost it, and read_space,
+// the tool whose whole job is "read the agent", did not return posts at all. It
 // looked like it worked only because the event reached everybody, including
 // agents with no business receiving it.
 type Post struct {
 	Serial uint64
-	From   string // the lane that called lane_post
+	From   string // the agent that called post
 	// OnBehalfOf is the membership holder the post is attributed to. A
 	// subagent's traffic is its parent's traffic (§8.2), so peers see one
 	// participant rather than a crowd; From stays so the detail is not lost.
@@ -28,7 +28,7 @@ type Post struct {
 }
 
 // PostHistory returns the most recent posts, oldest first, capped at limit.
-func (s *State) PostHistory(ch *Channel, limit int) []Result {
+func (s *State) PostHistory(ch *Space, limit int) []Result {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -47,21 +47,21 @@ func (s *State) PostHistory(ch *Channel, limit int) []Result {
 	return out
 }
 
-// carryPosts moves the source lane's remarks into the destination, because the
+// carryPosts moves the source agent's remarks into the destination, because the
 // source is deleted immediately afterwards and anything left behind is gone.
 //
 // This codebase has dropped a sibling collection on a destructive op twice,
 // merge and evict silently discarded queues, then announcements, and each time
-// the surviving lane looked correct while the history it should have absorbed
-// had simply ceased to exist. A merge is supposed to combine two lanes, so the
+// the surviving agent looked correct while the history it should have absorbed
+// had simply ceased to exist. A merge is supposed to combine two agents, so the
 // members who arrive should still be able to read what they were discussing.
-func (s *State) carryPosts(src, dst *Channel) {
+func (s *State) carryPosts(src, dst *Space) {
 	if len(src.Posts) == 0 {
 		return
 	}
 	merged := append(append([]Post(nil), dst.Posts...), src.Posts...)
 	// Serial order, so the combined history reads as one conversation rather
-	// than one lane's posts followed by the other's.
+	// than one agent's posts followed by the other's.
 	slices.SortStableFunc(merged, func(a, b Post) int {
 		return cmp.Compare(a.Serial, b.Serial)
 	})

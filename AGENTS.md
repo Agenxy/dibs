@@ -1,13 +1,13 @@
-# AGENTS.md: orientation for agents working on Lanes
+# AGENTS.md: orientation for agents working on Dibs
 
 Read `PHILOSOPHY.md` first; it is the decision procedure. This file is the map.
 `docs/ARCHITECTURE.md` is the territory: how it fits together, and the four bug
-classes that keep recurring here. If you are an agent *using* Lanes rather than
-changing it, you want `SKILLS.md` (also served over MCP as `lanes://skills`).
+classes that keep recurring here. If you are an agent *using* Dibs rather than
+changing it, you want `SKILLS.md` (also served over MCP as `dibs://skills`).
 
 ## What this repo is
 
-A Go daemon (`lanesd`) + CLI (`lanes`) implementing a local coordination service for
+A Go daemon (`dibd`) + CLI (`dibs`) implementing a local coordination service for
 fleets of AI agents. Agents connect over **MCP**. See `SPEC.md` (living, not frozen,
 change it when reality disagrees, and record why).
 
@@ -21,7 +21,7 @@ change it when reality disagrees, and record why).
 | `internal/mcp/` | MCP surface: tools, resources, `subscriptions/listen`. Dual-version (2026-07-28 + legacy). |
 | `internal/blobstore/` | Content-addressed attachment bytes, encrypted at rest. Outside the replay model by design. |
 | `internal/web/` | Human board (SSE + htmx; one ~320-line script in `internal/assets/board.js`, no framework or build step). |
-| `cmd/lanesd/` | Daemon + auth gate. `cmd/lanes/` | CLI. |
+| `cmd/dibd/` | Daemon + auth gate. `cmd/dibs/` | CLI. |
 
 ## Rules you must not break
 
@@ -33,7 +33,7 @@ change it when reality disagrees, and record why).
    Losing a derived view must not lose coordination state.
 4. **Advisory, not coercive.** Declaring work never fails. Don't add blocking semantics.
 5. **Don't drive harnesses.** No shelling out to agents, no prompt injection, no session
-   management. Lanes is pulled from, not a driver. (We built and deleted a shell-hook
+   management. Dibs is pulled from, not a driver. (We built and deleted a shell-hook
    version: see `WAKE-MECHANISMS.md` for why.)
 6. **Honesty in errors.** Every error carries a `hint` that tells a drifted agent the
    corrective call.
@@ -89,7 +89,7 @@ Things that have cost real time here, none of which are visible in the diff:
 - **`light-dark()` takes colours only.** Using it for a number or a keyword is
   invalid at substitution and falls back to `initial`: silently. This shipped a
   completely unreadable board past 155 passing browser checks.
-- **The channel e2e scores against this repo's own git history**, which changes
+- **The space e2e scores against this repo's own git history**, which changes
   with every commit. It measures its bar at runtime. Never assert an absolute
   score; assert the property.
 - **`SKILLS.md` has a copy at `internal/mcp/skills.md`** because `go:embed`
@@ -103,13 +103,13 @@ Things that have cost real time here, none of which are visible in the diff:
 
 | Doc | What it settles |
 |---|---|
-| `PHILOSOPHY.md` | What Lanes is, is not, and the test for any change |
+| `PHILOSOPHY.md` | What Dibs is, is not, and the test for any change |
 | `SPEC.md` | The protocol and its guarantees (living) |
 | `REQUIREMENTS.md` | The measured real-world failure that defines the requirements |
 | `WAKE-MECHANISMS.md` | How agents learn about events; what was rejected and why |
 | `SPEC-ATTACHMENTS.md` | Blob/attachment design |
 | `docs/ARCHITECTURE.md` | Structure, request path, invariants, recurring bug classes |
-| `SKILLS.md` | Agent-facing: how to USE Lanes well (served as `lanes://skills`) |
+| `SKILLS.md` | Agent-facing: how to USE Dibs well (served as `dibs://skills`) |
 
 ## Testing expectations
 

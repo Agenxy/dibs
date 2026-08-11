@@ -41,10 +41,10 @@ func TestApplyFoldsWhateverAdmitRejects(t *testing.T) {
 		now := time.Unix(1700000000, 0)
 		mustApply(t, s, &Op{Kind: OpRegisterLane, Name: "speaker", NewToken: "tok"}, now)
 		mustApply(t, s, &Op{Kind: OpAckBoard, Token: "tok"}, now)
-		mustApply(t, s, &Op{Kind: OpLaneOpen, Token: "tok", Channel: "work", Text: "w"}, now)
+		mustApply(t, s, &Op{Kind: OpLaneOpen, Token: "tok", Space: "work", Text: "w"}, now)
 
 		op := *proto
-		op.Token, op.Channel = "tok", "work"
+		op.Token, op.Space = "tok", "work"
 		if _, _, err := s.Apply(&op, now); err != nil {
 			t.Errorf("Apply refused to fold a %s that Admit rejects: %v\n"+
 				"  A ledger written before the rule existed now cannot be replayed, and the "+

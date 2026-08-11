@@ -1,6 +1,6 @@
 // Package adminpw hashes and verifies the human admin password that gates the
-// Lanes god-view (decrypted mail, web board). The password is never stored,
-// only a salted PBKDF2 hash, so an agent that reads ~/.lanes/admin.hash cannot
+// Dibs god-view (decrypted mail, web board). The password is never stored,
+// only a salted PBKDF2 hash, so an agent that reads ~/.agents/admin.hash cannot
 // recover it; only a human who knows the password can mint a god-view session.
 // Pure stdlib (crypto/pbkdf2, Go 1.24+), no dependencies.
 package adminpw

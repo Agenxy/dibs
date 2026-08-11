@@ -4,7 +4,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/agenxy/lanes/internal/build"
+	"github.com/agenxy/dibs/internal/build"
 )
 
 // daemonStarted is when this process began serving.
@@ -13,7 +13,7 @@ import (
 // actually have. In development both sides read `devel`, so comparing them
 // says nothing, and the failure that keeps happening is not a version mismatch
 // at all: it is a daemon that is still running code from before the last build.
-// `lanes` and `lanesd` are separate processes, and installing a new binary does
+// `dibs` and `dibd` are separate processes, and installing a new binary does
 // not restart the one already serving, so a fix can be built, installed, and
 // completely absent from every answer the board gives, with no error anywhere
 // and nothing on either side that disagrees.
@@ -28,7 +28,7 @@ var daemonStarted = time.Now()
 // serverBuildInfo is what the daemon says about itself, beyond a version.
 func serverBuildInfo() map[string]any {
 	info := map[string]any{
-		"name":       "lanes",
+		"name":       "agents",
 		"version":    build.Version,
 		"started_at": daemonStarted.UTC().Format(time.RFC3339),
 		// The panel's content hash, so "which panel is this daemon serving" is

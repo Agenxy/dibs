@@ -10,7 +10,7 @@ import "testing"
 // nothing in between and no warning.
 //
 // This is not hypothetical and it is not a test artifact: it began happening on
-// Lanes' own repository once its history passed a few hundred commits, which is
+// Dibs' own repository once its history passed a few hundred commits, which is
 // exactly the point at which an operator has enough data to trust the number.
 // Driven from a synthetic distribution rather than from git history, because a
 // test that reproduces this only when the repo happens to be large enough is a

@@ -25,7 +25,7 @@ type sessionStore struct {
 	//
 	// The streamable-HTTP transport is stateless, so a tools/call carries no
 	// clientInfo: only the handshake does. Without this, every harness that
-	// connects over HTTP rather than through the stdio bridge registers lanes
+	// connects over HTTP rather than through the stdio bridge registers agents
 	// with NO identity: a live codex run showed up on the board as `harness:
 	// null`, indistinguishable from a hand-rolled script. The bridge injects
 	// identity for the harnesses that use it; this is the same courtesy for the
@@ -36,7 +36,7 @@ type sessionStore struct {
 	// It is a capability discovered by success rather than declared: an app tool
 	// call arriving here proves the host permits them, and a host that permits
 	// them is not the one that drops _meta and shows structuredContent instead of
-	// content. That pairing is what makes ack_board's duplicate droppable: see
+	// content. That pairing is what makes check_in's duplicate droppable: see
 	// panelResult. Recorded per session because it is a property of the host on
 	// the other end of this connection, not of the daemon.
 	panelCalls map[string]bool
@@ -139,7 +139,7 @@ func isPanelCall(params json.RawMessage) bool {
 	if json.Unmarshal(params, &p) != nil {
 		return false
 	}
-	v, ok := p.Meta["com.lanes/panel-call"]
+	v, ok := p.Meta["com.dibs/panel-call"]
 	if !ok {
 		return false
 	}

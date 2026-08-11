@@ -1,6 +1,6 @@
 # Architecture
 
-How Lanes is put together, why it is put together that way, and what you need to
+How Dibs is put together, why it is put together that way, and what you need to
 know before changing it. If you are fixing a bug, the useful question is usually
 not "what does this code do" but "what was it supposed to do": this document is
 the second one.
@@ -39,8 +39,8 @@ back through it.
 ## Layout
 
 ```
-cmd/lanesd        the daemon: MCP server, web board, supervision sweep
-cmd/lanes         the CLI: board, doctor, probe, await, calibrate, admin
+cmd/dibd        the daemon: MCP server, web board, supervision sweep
+cmd/dibs         the CLI: board, doctor, probe, await, calibrate, admin
 
 internal/core     the PURE state machine. No I/O, no clock, no goroutines.
 internal/ledger   append-only hash-chained JSONL, fsync, replay
@@ -63,8 +63,8 @@ telling you the logic belongs in `engine`.
 ## The path of a request
 
 1. A surface (`internal/mcp`) decodes arguments and **authenticates**: the
-   coordination secret for the machine, plus a lane token for anything
-   lane-scoped.
+   coordination secret for the machine, plus an agent token for anything
+   agent-scoped.
 2. It builds a `core.Op`.
 3. `core.Admit` validates it. **This is the only place validation belongs.**
 4. `engine` sends it through the writer loop.
@@ -92,7 +92,7 @@ These are invariants, not preferences. Each was learned expensively.
 - **The writer loop never blocks.** No process scans, no network, no file reads
   inside it.
 - **A serial is never reused and never goes backwards.**
-- **Nothing acts on an agent's behalf.** Lanes reports. It will tell a parent its
+- **Nothing acts on an agent's behalf.** Dibs reports. It will tell a parent its
   subagent is stuck and hand back the resume command; it will not run it. See
   [PHILOSOPHY.md](../PHILOSOPHY.md): this one is the product, not an
   implementation detail.
@@ -136,7 +136,7 @@ number and a keyword, where it is only valid for colours, so it fell back to
 
 ## Coupling to look out for
 
-The channel end-to-end suite scores declarations against **this repository's own
+The space end-to-end suite scores declarations against **this repository's own
 git history**, which grows every time anyone commits. It therefore measures its
 join bar at runtime rather than hardcoding one: a fixed threshold passes until
 somebody makes a commit, then fails for a reason no contributor can act on. If
@@ -163,18 +163,18 @@ you add an assertion about an absolute score, it will rot. Assert the
 
 The MCP Apps panel and the web board share a design system
 (`internal/assets`) but are deliberately different products. The panel is **one
-lane's** own board and mailbox, authenticated by that lane's token, rendered in
+agent's** own board and mailbox, authenticated by that agent's token, rendered in
 a host's sandboxed iframe under a CSP with no external origins, so every asset
 is inlined, and a stylesheet fetched over the network would fail closed and
-silently. The web board is the **operator's** view over every lane and all mail,
+silently. The web board is the **operator's** view over every agent and all mail,
 behind the admin password.
 
 They answer different questions for different readers. What they share is what a
-lane, a message and an event *look* like.
+agent, a message and an event *look* like.
 
 ## Protocol versions
 
-Lanes targets **MCP 2026-07-28** (stateless core) and serves the legacy
+Dibs targets **MCP 2026-07-28** (stateless core) and serves the legacy
 **2025-11-25** path. Surveyed from harness sources on 2026-08-03, no shipping
 host negotiates 2026-07-28: Codex tops out at 2025-11-25 with the newer version
 behind an under-development flag, opencode at 2025-11-25, Gemini CLI at
@@ -199,7 +199,7 @@ that contract removed. The reference SDKs make the same split
 stamps `ttlMs` and `cacheScope` on every result the spec requires. `ttlMs` being
 wrong costs a stale read; `cacheScope` being wrong is a disclosure bug,
 `"public"` tells shared gateways and proxies they may serve a response to a
-caller in a *different authorization context*. So `lanes://inbox` is `private`
+caller in a *different authorization context*. So `dibs://inbox` is `private`
 and everything identical-for-all-callers is `public`, and
 `TestAPrivateMailboxIsNeverMarkedShareable` fails if that inverts.
 

@@ -5,21 +5,21 @@
  * WHY THIS TEST EXISTS, in the exact shape it has:
  *
  * The guard was correct in isolation from the day it was written. Every unit
- * test passed. It still let a live opencode agent overwrite a file another lane
- * held exclusively, because the two halves of Lanes disagreed about what to
- * call the session: the `lanes mcp-stdio` bridge registered the lane under an
+ * test passed. It still let a live opencode agent overwrite a file another agent
+ * held exclusively, because the two halves of Dibs disagreed about what to
+ * call the session: the `dibs mcp-stdio` bridge registered the agent under an
  * id it invented for itself, while opencode's plugin asked about opencode's own
  * session id. The daemon could not match them, failed open exactly as designed,
  * and the file was clobbered. No test on either side could see it: the bug
  * lived precisely in the gap between them.
  *
  * So this test spans the gap. It spawns the REAL bridge as a child of itself,
- * lets it register a lane with no session id at all, and then asks the guard
+ * lets it register an agent with no session id at all, and then asks the guard
  * questions as the REAL plugin: the actual module opencode loads, imported and
  * invoked with the argument shape opencode passes it. The bridge names the
  * session after its parent process; the plugin names it after its own. This
  * test IS that parent and that process, so if the two ever stop agreeing, the
- * lane the bridge registers stops being the lane the plugin speaks for, and the
+ * agent the bridge registers stops being the agent the plugin speaks for, and the
  * denials below turn back into silent allows.
  *
  * Run: bun internal/mcp/e2e/guard_e2e.ts
@@ -40,14 +40,14 @@ function check(name: string, cond: boolean, detail = "") {
 }
 
 const home = process.env.HOME
-const lanesd = process.env.LANESD ?? `${home}/.local/bin/lanesd`
-const lanesBin = process.env.LANES ?? `${home}/.local/bin/lanes`
+const dibd = process.env.DIBD ?? `${home}/.local/bin/dibd`
+const dibsBin = process.env.DIBS ?? `${home}/.local/bin/dibs`
 
-const dir = mkdtempSync(join(tmpdir(), "lanes-guard-e2e-"))
+const dir = mkdtempSync(join(tmpdir(), "agents-guard-e2e-"))
 const project = join(dir, "project")
 mkdirSync(project)
 
-const daemon = Bun.spawn({ cmd: [lanesd, "-dir", dir, "-addr", ADDR], stdout: "ignore", stderr: "ignore" })
+const daemon = Bun.spawn({ cmd: [dibd, "-dir", dir, "-addr", ADDR], stdout: "ignore", stderr: "ignore" })
 let bridge: ReturnType<typeof Bun.spawn> | undefined
 const cleanup = () => {
   try { bridge?.kill() } catch {}
@@ -56,11 +56,11 @@ const cleanup = () => {
 }
 process.on("exit", cleanup)
 
-// The plugin reads LANES_ADDR/LANES_DIR once, at module load, and caches the
+// The plugin reads DIBS_ADDR/DIBS_DIR once, at module load, and caches the
 // secret. Both must be set before the import below or it will talk to the
 // developer's real board instead of this scratch one.
-process.env.LANES_ADDR = ADDR
-process.env.LANES_DIR = dir
+process.env.DIBS_ADDR = ADDR
+process.env.DIBS_DIR = dir
 
 // ── wait for the daemon, then talk to it directly for setup ──────────────
 let secret = ""
@@ -73,7 +73,7 @@ let rpcId = 0
 async function call(name: string, args: Record<string, unknown>): Promise<any> {
   const res = await fetch(`http://${ADDR}/mcp`, {
     method: "POST",
-    headers: { "content-type": "application/json", "X-Lanes-Local": secret },
+    headers: { "content-type": "application/json", "X-Dibs-Local": secret },
     body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call", params: { name, arguments: args } }),
   })
   const body = await res.json() as any
@@ -83,9 +83,9 @@ async function call(name: string, args: Record<string, unknown>): Promise<any> {
 console.log("\nguard e2e")
 console.log("─".repeat(60))
 
-// ── the holder: a lane that has taken the project exclusively ────────────
-const holder = await call("register_lane", { name: "holder", session_id: "holder-session", cwd: project })
-await call("ack_board", { token: holder.token })
+// ── the holder: an agent that has taken the project exclusively ────────────
+const holder = await call("register", { name: "holder", session_id: "holder-session", cwd: project })
+await call("check_in", { token: holder.token })
 const claim = await call("claim", { token: holder.token, path: project, mode: "exclusive" })
 check("holder takes an exclusive claim", claim.granted === true, JSON.stringify(claim))
 
@@ -96,9 +96,9 @@ check("holder takes an exclusive claim", claim.granted === true, JSON.stringify(
 const EXPECTED = `host-${process.pid}`
 
 bridge = Bun.spawn({
-  cmd: [lanesBin, "mcp-stdio"],
+  cmd: [dibsBin, "mcp-stdio"],
   cwd: project,
-  env: { ...process.env, LANES_ADDR: ADDR, LANES_DIR: dir },
+  env: { ...process.env, DIBS_ADDR: ADDR, DIBS_DIR: dir },
   stdin: "pipe", stdout: "pipe", stderr: "ignore",
 })
 const send = (msg: unknown) => bridge!.stdin.write(JSON.stringify(msg) + "\n")
@@ -108,10 +108,10 @@ send({ jsonrpc: "2.0", id: 1, method: "initialize", params: {
 } })
 // Deliberately NO session_id, which is what models actually send.
 send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: {
-  name: "register_lane", arguments: { name: "intruder", description: "guard e2e" },
+  name: "register", arguments: { name: "intruder", description: "guard e2e" },
 } })
 
-// Read until the register_lane reply comes back.
+// Read until the register reply comes back.
 let intruderToken = ""
 {
   const reader = bridge.stdout.getReader()
@@ -135,16 +135,16 @@ let intruderToken = ""
   }
   reader.releaseLock()
 }
-check("bridge registered a lane", !!intruderToken)
+check("bridge registered an agent", !!intruderToken)
 
-// The lane went in under a session id nobody told the bridge. If it is not the
-// one this process computes, the plugin below is speaking for a different lane.
+// The agent went in under a session id nobody told the bridge. If it is not the
+// one this process computes, the plugin below is speaking for a different agent.
 const asIntruder = await call("guard_path", { session_id: EXPECTED, path: join(project, "f.txt"), cwd: project })
 check(`bridge session id is ${EXPECTED}`, asIntruder.decision === "deny",
   `guard answered "${asIntruder.decision}": the bridge named the session something else`)
 
 // ── the plugin: the real module opencode loads ───────────────────────────
-const { LanesPlugin } = await import("../../../plugins/opencode/lanes.ts")
+const { LanesPlugin } = await import("../../../plugins/opencode/dibs.ts")
 const hooks = await (LanesPlugin as any)({})
 const before = hooks["tool.execute.before"]
 
@@ -158,7 +158,7 @@ const fire = async (tool: string, args: Record<string, unknown>) => {
 }
 
 const denied = await fire("edit", { filePath: join(project, "protected.txt") })
-check("plugin blocks an edit inside another lane's exclusive claim", denied !== null)
+check("plugin blocks an edit inside another agent's exclusive claim", denied !== null)
 check("the refusal names the holder", !!denied && denied.includes("holder"), denied ?? "(allowed)")
 
 check("plugin blocks write as well as edit",
@@ -202,7 +202,7 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
 // indistinguishable in the reply, so a mismatched session id made the guard
 // silently inert and looked exactly like a clean board. That happened: the
 // opencode plugin sent its own session id while the bridge had registered the
-// lane under another, and the guard was inert for a day without a symptom.
+// agent under another, and the guard was inert for a day without a symptom.
 {
   const unknown = await call("guard_path", {
     session_id: "nobody-at-all", path: join(project, "protected.txt"), cwd: project,
@@ -224,21 +224,21 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
 
 // ── doctor must not cry wolf ────────────────────────────────────────────
 // A stdio-bridge config embeds no secret at all (it reads one from disk) so
-// "mentions lanes but lacks the current secret" flags every healthy stdio setup
+// "mentions agents but lacks the current secret" flags every healthy stdio setup
 // as broken. That false positive fired on this tool's first real run against a
 // working Claude Desktop config. A diagnostic people learn to ignore is worse
 // than no diagnostic.
 {
-  const cfgDir = mkdtempSync(join(tmpdir(), "lanes-doctorcfg-"))
+  const cfgDir = mkdtempSync(join(tmpdir(), "agents-doctorcfg-"))
   const write = (rel: string, body: string) => {
     mkdirSync(join(cfgDir, rel.split("/").slice(0, -1).join("/")), { recursive: true })
     Bun.write(join(cfgDir, rel), body)
   }
-  write(".codex/config.toml", `[mcp_servers.lanes]\ncommand = "lanes"\nargs = ["mcp-stdio"]\n`)
+  write(".codex/config.toml", `[mcp_servers.agents]\ncommand = "agents"\nargs = ["mcp-stdio"]\n`)
   await Bun.sleep(100)
   const run = Bun.spawnSync({
-    cmd: [lanesBin, "doctor"],
-    env: { ...process.env, HOME: cfgDir, LANES_DIR: dir, LANES_ADDR: ADDR },
+    cmd: [dibsBin, "doctor"],
+    env: { ...process.env, HOME: cfgDir, DIBS_DIR: dir, DIBS_ADDR: ADDR },
     stdout: "pipe", stderr: "pipe",
   })
   const out = new TextDecoder().decode(run.stdout) + new TextDecoder().decode(run.stderr)
@@ -249,8 +249,8 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
 
   const doctor = (): string => {
     const r = Bun.spawnSync({
-      cmd: [lanesBin, "doctor"],
-      env: { ...process.env, HOME: cfgDir, LANES_DIR: dir, LANES_ADDR: ADDR },
+      cmd: [dibsBin, "doctor"],
+      env: { ...process.env, HOME: cfgDir, DIBS_DIR: dir, DIBS_ADDR: ADDR },
       stdout: "pipe", stderr: "pipe",
     })
     return new TextDecoder().decode(r.stdout) + new TextDecoder().decode(r.stderr)
@@ -261,7 +261,7 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
   // it was written with a placeholder host, so the old check could not tell a
   // stale config from one belonging to somebody else's daemon at all.
   write(".codex/config.toml",
-    `[mcp_servers.lanes]\nurl = "http://${ADDR}/mcp"\nhttp_headers = { "X-Lanes-Local" = "${"d".repeat(64)}" }\n`)
+    `[mcp_servers.agents]\nurl = "http://${ADDR}/mcp"\nhttp_headers = { "X-Dibs-Local" = "${"d".repeat(64)}" }\n`)
   await Bun.sleep(100)
   const out2 = doctor()
   check("but a genuinely stale embedded secret IS reported",
@@ -272,7 +272,7 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
   // and told them to re-copy the block, which would have repointed a working
   // global setup at whichever scratch daemon happened to be running.
   write(".codex/config.toml",
-    `[mcp_servers.lanes]\nurl = "http://127.0.0.1:59999/mcp"\nhttp_headers = { "X-Lanes-Local" = "${"d".repeat(64)}" }\n`)
+    `[mcp_servers.agents]\nurl = "http://127.0.0.1:59999/mcp"\nhttp_headers = { "X-Dibs-Local" = "${"d".repeat(64)}" }\n`)
   await Bun.sleep(100)
   const out3 = doctor()
   check("a config for ANOTHER daemon is not called stale",
@@ -288,23 +288,23 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
 // a misconfigured guard indistinguishable from a board where nothing is claimed.
 // The daemon sees every call and whether it resolved, so it is the only party
 // that can tell. This is the failure that cost a day: opencode's plugin sent its
-// own session id while the bridge had registered the lane under another, and
+// own session id while the bridge had registered the agent under another, and
 // nothing anywhere said so.
 {
   const health = async () => {
-    const res = await fetch(`http://${ADDR}/api/hook-health`, { headers: { "X-Lanes-Local": secret } })
+    const res = await fetch(`http://${ADDR}/api/hook-health`, { headers: { "X-Dibs-Local": secret } })
     return await res.json() as any
   }
-  // Calls above already resolved (EXPECTED names a real lane), so this board is
+  // Calls above already resolved (EXPECTED names a real agent), so this board is
   // healthy, and must say so rather than warning about a working setup.
   const good = await health()
   check("a resolving guard reports ok", good.verdict === "ok", JSON.stringify(good).slice(0, 200))
   check("and counts what actually resolved", good.guard_resolved > 0, String(good.guard_resolved))
 
   // Now the poisoned case, on its own daemon so the counters are clean.
-  const dBad = mkdtempSync(join(tmpdir(), "lanes-inert-"))
+  const dBad = mkdtempSync(join(tmpdir(), "agents-inert-"))
   const ADDR2 = `127.0.0.1:${Number(PORT) + 5}`
-  const p2 = Bun.spawn({ cmd: [lanesd, "-dir", dBad, "-addr", ADDR2], stdout: "ignore", stderr: "ignore" })
+  const p2 = Bun.spawn({ cmd: [dibd, "-dir", dBad, "-addr", ADDR2], stdout: "ignore", stderr: "ignore" })
   try {
     let s2 = ""
     for (let i = 0; i < 60 && !s2; i++) {
@@ -312,18 +312,18 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
     }
     const ask = async (sid: string) => fetch(`http://${ADDR2}/mcp`, {
       method: "POST",
-      headers: { "content-type": "application/json", "X-Lanes-Local": s2 },
+      headers: { "content-type": "application/json", "X-Dibs-Local": s2 },
       body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call",
         params: { name: "guard_path", arguments: { session_id: sid, path: "/tmp/f.go", cwd: "/tmp" } } }),
     })
     const before = await (await fetch(`http://${ADDR2}/api/hook-health`,
-      { headers: { "X-Lanes-Local": s2 } })).json() as any
+      { headers: { "X-Dibs-Local": s2 } })).json() as any
     check("a daemon nothing has asked reports never-called",
       before.verdict === "never-called", JSON.stringify(before).slice(0, 160))
 
     for (let i = 0; i < 3; i++) await ask("a-session-nobody-registered")
     const after = await (await fetch(`http://${ADDR2}/api/hook-health`,
-      { headers: { "X-Lanes-Local": s2 } })).json() as any
+      { headers: { "X-Dibs-Local": s2 } })).json() as any
     check("hooks that never resolve are reported as an INERT guard",
       after.verdict === "never-resolved", JSON.stringify(after).slice(0, 160))
     check("and the hint says it looks like a board where nothing is claimed",
@@ -344,15 +344,15 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
 {
   // Vouched, because `parent` alone is a claim anybody can make. An agent that
   // merely declared parent:"holder" used to inherit the holder's memberships,
-  // skip an exclusive lane's queue, and be exempt from its claims right here,
+  // skip an exclusive agent's queue, and be exempt from its claims right here,
   // so the parent proves it with a one-time nonce only it can issue.
   await call("vouch_child", { token: holder.token, nonce: "child-nonce-0123456789abcdef" })
-  const child = await call("register_lane", {
+  const child = await call("register", {
     name: "child", session_id: "child-session", parent: "holder", cwd: project,
     parent_nonce: "child-nonce-0123456789abcdef",
   })
   await call("vouch_child", { token: child.token, nonce: "grand-nonce-0123456789abcdef" })
-  await call("register_lane", {
+  await call("register", {
     name: "grandchild", session_id: "grandchild-session", parent: "child", cwd: project,
     parent_nonce: "grand-nonce-0123456789abcdef",
   })
@@ -368,9 +368,9 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
 
   // And a lineage nobody vouched for buys nothing. Verified against a running
   // daemon before this existed: an agent registering with parent:"holder"
-  // posted into the holder's exclusive lane, skipped its queue, and got
+  // posted into the holder's exclusive agent, skipped its queue, and got
   // allow/no-claim for a path the holder held exclusively.
-  await call("register_lane", {
+  await call("register", {
     name: "impostor", session_id: "impostor-session", parent: "holder", cwd: project,
   })
   const faked = await call("guard_path", {
@@ -383,13 +383,13 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
   // stopped: the child asked not to be disturbed, and force_release is how a
   // parent overrules that deliberately.
   await call("vouch_child", { token: holder.token, nonce: "kid-nonce-0123456789abcdef" })
-  const kid = await call("register_lane", {
+  const kid = await call("register", {
     name: "kid", session_id: "kid-session", parent: "holder", cwd: project,
     parent_nonce: "kid-nonce-0123456789abcdef",
   })
   const kidDir = join(dir, "kid-area")
   mkdirSync(kidDir, { recursive: true })
-  await call("ack_board", { token: kid.token }) // claims require it
+  await call("check_in", { token: kid.token }) // claims require it
   const kidClaim = await call("claim", { token: kid.token, path: kidDir, mode: "exclusive" })
   check("the subagent's own claim was actually granted",
     kidClaim.granted === true, JSON.stringify(kidClaim).slice(0, 120))
@@ -405,11 +405,11 @@ const unknown = await call("guard_path", { session_id: "host-0", path: join(proj
 check("an unrecognised session is allowed, not blocked", unknown.decision === "allow", unknown.decision)
 
 // A stale holder is neither a clean allow nor a fair deny.
-await call("close_lane", { token: holder.token })
+await call("sign_off", { token: holder.token })
 const afterClose = await call("guard_path", { session_id: EXPECTED, path: join(project, "protected.txt"), cwd: project })
 check("a closed holder's claim stops blocking", afterClose.decision === "allow", afterClose.decision)
 
-// ── the stamp: does a spawned subagent inherit its parent's lane? ─────────
+// ── the stamp: does a spawned subagent inherit its parent's agent? ─────────
 //
 // opencode is the only harness of the four that can do this natively. Claude
 // Code and Codex expose a shell tool with no environment argument, so their
@@ -418,26 +418,26 @@ check("a closed holder's claim stops blocking", afterClose.decision === "allow",
 // `shell.env` hands over the map, so there is nothing to parse and nothing to
 // refuse.
 //
-// Uses the same session identity the guard proved above: the lane is
+// Uses the same session identity the guard proved above: the agent is
 // registered by the bridge under `host-<pid>`, NOT opencode's own sessionID,
 // and getting that wrong is what once made the guard useless in practice.
 {
   const shellEnv = hooks["shell.env"]
   const out = { env: {} as Record<string, string> }
   await shellEnv({ cwd: project, sessionID: "ses_opencode_native" }, out)
-  check("shell.env stamps the spawning lane into the environment",
-    out.env["LANES_PARENT"] === "intruder", out.env["LANES_PARENT"] ?? "(unset)")
+  check("shell.env stamps the spawning agent into the environment",
+    out.env["DIBS_PARENT"] === "intruder", out.env["DIBS_PARENT"] ?? "(unset)")
 
   // Never overwrite: the OUTERMOST parent is the one that can act on a stall,
   // so re-stamping at each level would reassign a child to its nearest
   // ancestor instead.
-  const nested = { env: { LANES_PARENT: "outer" } as Record<string, string> }
+  const nested = { env: { DIBS_PARENT: "outer" } as Record<string, string> }
   await shellEnv({ cwd: project, sessionID: "ses_opencode_native" }, nested)
-  check("an existing stamp is left alone", nested.env["LANES_PARENT"] === "outer",
-    nested.env["LANES_PARENT"])
+  check("an existing stamp is left alone", nested.env["DIBS_PARENT"] === "outer",
+    nested.env["DIBS_PARENT"])
 }
 
-// ── progress: the one harness Lanes cannot observe from outside ───────────
+// ── progress: the one harness Dibs cannot observe from outside ───────────
 //
 // opencode keeps sessions in SQLite, where byte growth measures WAL churn, and
 // its only append-only file is a single log SHARED by every run on the machine.

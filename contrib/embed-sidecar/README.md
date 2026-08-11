@@ -1,17 +1,17 @@
 # A minimal `/v1/embeddings` server
 
-**You probably do not need this.** Lanes talks to any OpenAI-compatible
+**You probably do not need this.** Dibs talks to any OpenAI-compatible
 embeddings service, and you likely already run one:
 
 ```bash
 ollama serve                                   # MLX-accelerated on Apple Silicon
 ollama pull qwen3-embedding
-lanesd -match-repo . -match-embed-url http://127.0.0.1:11434 \
+dibd -match-repo . -match-embed-url http://127.0.0.1:11434 \
        -match-embed-model qwen3-embedding
 ```
 
 vLLM, text-embeddings-inference, LM Studio, llama.cpp's server and hosted
-providers all work the same way. Lanes only ever calls `POST /v1/embeddings`.
+providers all work the same way. Dibs only ever calls `POST /v1/embeddings`.
 
 This directory exists for one case: **running an MLX model that your serving
 stack does not carry**, such as `codefuse-ai/F2LLM-v2-4B`. It is ~200 lines,
@@ -19,7 +19,7 @@ serves the standard endpoint, and is a reference implementation rather than a
 protocol of ours. `--backend hash --self-test` checks the contract with no model
 at all, which is how CI covers it.
 
-Lanes owns the repository index and the similarity maths. This serves vectors
+Dibs owns the repository index and the similarity maths. This serves vectors
 and nothing else.
 
 ```bash
@@ -29,14 +29,14 @@ python3 -m venv .venv && .venv/bin/pip install mlx mlx-embeddings
 
 ## What it is for
 
-Lanes' built-in scorer relates work by shared words and by files that change
+Dibs' built-in scorer relates work by shared words and by files that change
 together. That covers a great deal and cannot cover everything: two agents can
 be doing the same job in files with no shared vocabulary and no shared history.
 
-**Lanes** embeds the repository and uses the declaration to retrieve code, so
+**Dibs** embeds the repository and uses the declaration to retrieve code, so
 what it compares is predicted *file sets*, never two sentences: two tasks
 unrelated in English embed as unrelated in English, which is exactly the
-collision channels exist to catch (§0, §4.2).
+collision spaces exist to catch (§0, §4.2).
 
 This process does none of that. It turns text into vectors.
 
@@ -50,24 +50,24 @@ POST /v1/embeddings  {"model": "...", "input": ["...", "..."]}
 ```
 
 That is the OpenAI embeddings API verbatim, which is why any serving stack
-works and why nothing here is a Lanes protocol. Order matters: Lanes maps
+works and why nothing here is a Dibs protocol. Order matters: Dibs maps
 vectors back to chunks by `index`, so a reordered or short reply is rejected
 rather than allowed to misalign the index.
 
-Weights are raw similarities computed by Lanes. **Lanes renormalises them**, so
+Weights are raw similarities computed by Dibs. **Dibs renormalises them**, so
 a service returning distances rather than similarities cannot silently shift a
 calibrated threshold.
 
 ## Failure is a downgrade, not an outage
 
-If this process is absent, slow, or wrong, Lanes falls back to its built-in
-scorer and records `degraded` in the provenance of any lane membership that
+If this process is absent, slow, or wrong, Dibs falls back to its built-in
+scorer and records `degraded` in the provenance of any agent membership that
 resulted. Matching gets worse; nothing stops. A scorer that cannot answer is
 **not** evidence that two agents will not collide (§10.1).
 
 ## Which model? Measured, not assumed
 
-Every figure below is `lanes calibrate` on the Lanes repository, 60 commits,
+Every figure below is `dibs calibrate` on the Dibs repository, 60 commits,
 identical cases, identical metric. This is a **contamination-proof** benchmark:
 no published model has trained on a private repository's history.
 
@@ -114,8 +114,8 @@ model, no download and no network.
 ### Recompare on your own repository
 
 ```bash
-lanes calibrate                                   # tier 0
-lanes calibrate -embed-url http://127.0.0.1:8737  # whatever the sidecar is serving
+dibs calibrate                                   # tier 0
+dibs calibrate -embed-url http://127.0.0.1:8737  # whatever the sidecar is serving
 ```
 
 Restart the sidecar with `--model <name>` between runs. Two caveats:
@@ -133,7 +133,7 @@ A bigger model on a busier machine needs longer per batch than a small one, and
 the failure lands on the FIRST batch (`embedding chunk 0/449`) which reads
 like a broken service rather than a slow one.
 
-Lanes scales the deadline with batch size (a 64-chunk batch gets far longer than
+Dibs scales the deadline with batch size (a 64-chunk batch gets far longer than
 a one-word probe), and says which knob moves it:
 
 ```
@@ -152,6 +152,6 @@ highest-ranked 100%-zero-shot model under 8B on the live MTEB(Code, v1) board.
 Models ranking above it are either non-commercial or trained on a large share
 of that benchmark's own evaluation data.
 
-Do not take that as settled. Run `lanes calibrate` against your repository: a
+Do not take that as settled. Run `dibs calibrate` against your repository: a
 commit message is a task declaration and its changed files are the label, so
 your own git history is a benchmark no published model has trained on.

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // inlineThreshold is the A8 context-hygiene boundary: blobs at or below this
@@ -129,7 +129,7 @@ func mapBlobErr(err error) error {
 	return err
 }
 
-// authOnly runs just the read-path auth+rate+wake phases and returns the lane
+// authOnly runs just the read-path auth+rate+wake phases and returns the agent
 // id, so byte staging can be gated without a full domain op.
 func (e *Engine) authOnly(ctx context.Context, token string) (string, error) {
 	res, err := e.query(ctx, func() core.Result {

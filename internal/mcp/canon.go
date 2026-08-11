@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/agenxy/lanes/internal/core"
-	"github.com/agenxy/lanes/internal/paths"
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/paths"
 )
 
 // canonPath canonicalizes a path at ingress (SPEC §9), so that the string
@@ -30,7 +30,7 @@ func canonPath(p string) string { return paths.Canonical(p) }
 
 // mustBeAbsolute rejects a coordination path the caller never anchored.
 //
-// canonPath runs inside lanesd, whose working directory is wherever it was
+// canonPath runs inside dibd, whose working directory is wherever it was
 // started. `/` under launchd, and never the agent's. paths.Canonical therefore
 // turns "internal/mcp" into "/internal/mcp": a directory that does not exist,
 // that no other agent will ever name, and that overlaps nothing. claim answered

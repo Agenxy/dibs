@@ -1,7 +1,7 @@
 {
   "mcpServers": {
-    "lanes": {
-      "command": "lanes",
+    "agents": {
+      "command": "agents",
       "args": ["mcp-stdio"]
     }
   }

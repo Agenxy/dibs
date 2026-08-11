@@ -112,7 +112,7 @@ func syntheticRepo(t *testing.T) string {
 		"runtime/src/main.cpp", "runtime/CMakeLists.txt", "tools/ci/farm.py",
 		".github/workflows/pr-gate.yml", ".github/CODEOWNERS",
 		// Subsystem C: the internals the terse case is about.
-		"internal/core/channel.go", "internal/core/queue.go", "internal/engine/match.go",
+		"internal/core/space.go", "internal/core/queue.go", "internal/engine/match.go",
 	}
 	for _, f := range files {
 		p := filepath.Join(dir, f)
@@ -188,7 +188,7 @@ func TestGoldenSetOnTheTreeThatBrokeIt(t *testing.T) {
 
 // The SHIPPED pipeline is measured in internal/core, against EvidenceBetween and
 // Classify. The version that used to sit here rebuilt a lookalike of the engine's
-// logic and then asserted RECALL only, so surfacing every lane on the board would
+// logic and then asserted RECALL only, so surfacing every agent on the board would
 // have passed it, and it did pass while logging three false positives.
 //
 // The JOIN gate lives in internal/core (TestNoFalseAutomaticJoins), where it can

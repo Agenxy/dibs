@@ -7,7 +7,7 @@ import (
 
 // MatchPhase says why nothing happened.
 //
-// Silence is the worst answer a coordination service can give. `set_slot`
+// Silence is the worst answer a coordination service can give. `declare`
 // returned exactly `{"ok":true,"slot_id":"s1"}` whether:
 //
 //   - matching was never configured,
@@ -40,7 +40,7 @@ const (
 	// weaker, and presenting them as tier 2 would be a lie about how much is
 	// known (SPEC-CHANNELS.md §10.5).
 	MatchDegraded MatchPhase = "degraded"
-	// MatchNoThreshold means scoring works but no join bar was calibrated, so lanes
+	// MatchNoThreshold means scoring works but no join bar was calibrated, so agents
 	// are suggested and never joined. Looks identical to "broken" from outside.
 	MatchNoThreshold MatchPhase = "suggest-only"
 )
@@ -98,8 +98,8 @@ func (e *Engine) MatchStatus() MatchStatus {
 func matchHint(st MatchStatus) string {
 	switch st.Phase {
 	case MatchOff:
-		return "work-overlap matching is not configured; start lanesd with -match-repo <path> " +
-			"(or set [match] repo in lanes.toml) to have Lanes tell you who else is doing your work"
+		return "work-overlap matching is not configured; start dibd with -match-repo <path> " +
+			"(or set [match] repo in agents.toml) to have Dibs tell you who else is doing your work"
 	case MatchIndexing:
 		waited := time.Since(st.Since).Round(time.Second)
 		return "the repository is still being indexed (" + waited.String() + " so far); " +
@@ -108,10 +108,10 @@ func matchHint(st MatchStatus) string {
 	case MatchDegraded:
 		return "the embedding service is unreachable, so matching fell back to the built-in " +
 			"scorer: results are real but weaker. Check the service named in the daemon log, " +
-			"or run `lanes doctor`"
+			"or run `dibs doctor`"
 	case MatchNoThreshold:
-		return "no join threshold is set, so lanes are suggested and never joined automatically. " +
-			"Run `lanes calibrate` and pass -match-join <value>"
+		return "no join threshold is set, so agents are suggested and never joined automatically. " +
+			"Run `dibs calibrate` and pass -match-join <value>"
 	case MatchReady:
 		return ""
 	}

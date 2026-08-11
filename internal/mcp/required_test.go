@@ -25,7 +25,7 @@ func TestAMisnamedParameterIsNamed(t *testing.T) {
 		want       []string
 	}{
 		{
-			"lane_ack", `{"token":"t","serial":14}`,
+			"ack_announcement", `{"token":"t","serial":14}`,
 			[]string{"msg_serial", "serial", "does not take"},
 		},
 		{
@@ -35,7 +35,7 @@ func TestAMisnamedParameterIsNamed(t *testing.T) {
 		// A plain omission names what is missing and does not invent a culprit.
 		{"claim", `{"token":"t"}`, []string{"path", "mode"}},
 		// An explicit null is not an answer.
-		{"lane_ack", `{"token":"t","msg_serial":null}`, []string{"msg_serial"}},
+		{"ack_announcement", `{"token":"t","msg_serial":null}`, []string{"msg_serial"}},
 	} {
 		err := checkRequired(c.tool, json.RawMessage(c.args), "")
 		if err == nil {
@@ -56,12 +56,12 @@ func TestValidCallsAreNotRejected(t *testing.T) {
 	for _, c := range []struct {
 		tool, args, bearer string
 	}{
-		{"ack_board", `{"token":"t"}`, ""},
+		{"check_in", `{"token":"t"}`, ""},
 		// The token may come from the Authorization header instead of the
 		// arguments object, and the arguments object alone cannot see it.
-		{"ack_board", `{}`, "t"},
+		{"check_in", `{}`, "t"},
 		{"claim", `{"token":"t","path":"/x","mode":"exclusive"}`, ""},
-		{"lane_ack", `{"token":"t","msg_serial":14}`, ""},
+		{"ack_announcement", `{"token":"t","msg_serial":14}`, ""},
 		// hook_poll requires session_id, but an EMPTY one is legitimate: the
 		// documented fallback is that a harness whose session id differs from
 		// the registered one is found by cwd instead. Present-but-empty is an
@@ -112,7 +112,7 @@ func TestRequiredIsDerivedFromTheSchemasThemselves(t *testing.T) {
 func TestShippedHooksSatisfyTheSchemasTheyCall(t *testing.T) {
 	// EVERY shipped plugin, not one hardcoded path. Codex loads hooks from the
 	// same `hooks/hooks.json` layout as Claude Code: deliberately, its own
-	// feature flag calls them "Claude-style", so Lanes will ship more than one
+	// feature flag calls them "Claude-style", so Dibs will ship more than one
 	// of these, and a second plugin referencing a tool that does not exist would
 	// have sailed past a test that only ever opened the first.
 	files, _ := filepath.Glob("../../plugins/*/hooks/hooks.json")
@@ -176,8 +176,8 @@ func TestShippedHooksSatisfyTheSchemasTheyCall(t *testing.T) {
 // A tool the server HANDLES but does not DECLARE is a tool no agent can use.
 //
 // vouch_child was in exactly that state, and it mattered more than a missing
-// entry usually would. register_lane's `parent` parameter told agents "you
-// inherit its lanes and do not join, queue or count separately", but lineage
+// entry usually would. register's `parent` parameter told agents "you
+// inherit its agents and do not join, queue or count separately", but lineage
 // grants nothing unless the parent vouched with a one-time nonce, and
 // vouch_child, the only way to issue one, was absent from tools/list. So the
 // documented inheritance was unreachable: every subagent naming a parent got
@@ -223,9 +223,9 @@ func TestEveryDispatchedToolIsDeclared(t *testing.T) {
 //
 // The unknown-argument check used to live behind "and something required is
 // missing", so a WELL-FORMED call carrying a misnamed field was answered
-// {"ok": true} and changed nothing. update_lane accepts only "description";
-// update_lane(pid: 1234) reported success and did not touch the lane. Found by
-// driving a real board and wondering why three lanes stayed stale after I had
+// {"ok": true} and changed nothing. update accepts only "description";
+// update(pid: 1234) reported success and did not touch the agent. Found by
+// driving a real board and wondering why three agents stayed stale after I had
 // just pointed them at live processes.
 //
 // This is the worst failure this server can produce. An agent cannot see the
@@ -236,9 +236,9 @@ func TestAWellFormedCallWithAMisnamedFieldIsRefused(t *testing.T) {
 	for _, c := range []struct{ tool, args, want string }{
 		// The one that was actually found, and the shape of it: every required
 		// field present, so nothing was "missing", and a typo rides along free.
-		{"update_lane", `{"token":"t","pid":1234}`, "pid"},
-		{"update_lane", `{"token":"t","desc":"x"}`, "desc"},
-		{"set_slot", `{"token":"t","text":"x","urgency":"high"}`, "urgency"},
+		{"update", `{"token":"t","pid":1234}`, "pid"},
+		{"update", `{"token":"t","desc":"x"}`, "desc"},
+		{"declare", `{"token":"t","text":"x","urgency":"high"}`, "urgency"},
 	} {
 		err := checkRequired(c.tool, []byte(c.args), "")
 		if err == nil {
@@ -262,8 +262,8 @@ func TestAWellFormedCallWithAMisnamedFieldIsRefused(t *testing.T) {
 // valid work is a worse bug than the one it fixes.
 func TestValidCallsAreStillAccepted(t *testing.T) {
 	for _, c := range []struct{ tool, args string }{
-		{"update_lane", `{"token":"t","description":"new"}`},
-		{"set_slot", `{"token":"t","text":"doing the thing"}`},
+		{"update", `{"token":"t","description":"new"}`},
+		{"declare", `{"token":"t","text":"doing the thing"}`},
 		// Session-addressed hook tools do not declare "token" and our own
 		// shipped hooks send it: authentication is orthogonal to the domain
 		// schema and must not be read as a misnamed field.
@@ -278,7 +278,7 @@ func TestValidCallsAreStillAccepted(t *testing.T) {
 
 // Everything the bridge injects must be a parameter the tool declares.
 //
-// `lanes mcp-stdio` enriches register_lane with what it can discover about the
+// `dibs mcp-stdio` enriches register with what it can discover about the
 // caller: cwd, branch, host, harness, surface, session id, title. Three of
 // those (surface, harness, host) were never in the schema. The server stored
 // them anyway, so nothing looked broken; but no agent could discover them, no
@@ -289,19 +289,19 @@ func TestValidCallsAreStillAccepted(t *testing.T) {
 // A schema that under-describes its tool is not a smaller problem than one
 // that over-describes it. This pins the two together.
 func TestTheBridgeOnlySendsFieldsTheSchemaDeclares(t *testing.T) {
-	// Kept as a literal list rather than parsed out of cmd/lanes: this must
+	// Kept as a literal list rather than parsed out of cmd/dibs: this must
 	// fail when somebody ADDS an injection there, and a parser that follows
 	// the source automatically would simply agree with it.
 	injected := []string{
 		"pid", "cwd", "branch", "host", "harness", "surface", "session_id", "title",
 	}
 	known := map[string]bool{}
-	for _, p := range knownParams["register_lane"] {
+	for _, p := range knownParams["register"] {
 		known[p] = true
 	}
 	for _, f := range injected {
 		if !known[f] {
-			t.Errorf("the stdio bridge injects %q into register_lane and the schema does not declare it\n"+
+			t.Errorf("the stdio bridge injects %q into register and the schema does not declare it\n"+
 				"  the value is stored but undiscoverable, and strict argument checking will refuse\n"+
 				"  every call the bridge makes, which is every real harness", f)
 		}
@@ -309,7 +309,7 @@ func TestTheBridgeOnlySendsFieldsTheSchemaDeclares(t *testing.T) {
 	// And the check has to be looking at something. A typo in the tool name
 	// would make this pass against an empty set.
 	if len(known) < len(injected) {
-		t.Fatalf("register_lane declares %d params, fewer than the %d the bridge injects. "+
+		t.Fatalf("register declares %d params, fewer than the %d the bridge injects. "+
 			"this test is not reading the schema it thinks it is", len(known), len(injected))
 	}
 }
@@ -318,8 +318,8 @@ func TestTheBridgeOnlySendsFieldsTheSchemaDeclares(t *testing.T) {
 //
 // Claude Code treats a non-zero PreToolUse hook as a REJECTION: the tool call
 // is blocked. So a hook that shells out has the power to break every Bash
-// command the agent issues, and it exercised that power: a `lanes hook-spawn`
-// hook shipped against an older `lanes` binary that had no such subcommand,
+// command the agent issues, and it exercised that power: a `dibs hook-spawn`
+// hook shipped against an older `dibs` binary that had no such subcommand,
 // which exited 2 AND printed its usage text to stdout, where hook output is
 // parsed. Every Bash invocation in that session was rejected. Observed in a
 // real session, not reasoned about.

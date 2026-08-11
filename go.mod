@@ -1,4 +1,4 @@
-module github.com/agenxy/lanes
+module github.com/agenxy/dibs
 
 go 1.26
 
@@ -12,7 +12,7 @@ toolchain go1.26.5
 // neither is fixable: a moved tag is permanent. Use v0.0.1 or later.
 //
 // v0.0.1 is NOT merely v0.0.0 plus this line, which an earlier version of this
-// comment claimed: it also carries `lanes stop`, service-unit generation, a
+// comment claimed: it also carries `dibs stop`, service-unit generation, a
 // path-canonicalisation fix and documentation corrections. Saying otherwise
 // invited somebody to conclude the retraction was procedural and keep using a
 // version that fails to install.

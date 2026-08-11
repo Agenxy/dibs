@@ -34,7 +34,7 @@ import (
 // hidden a real regression behind an environmental excuse.
 func TestTheEnvironmentIsReadableForUserBinaries(t *testing.T) {
 	c := exec.Command(os.Args[0], "-test.run=TestHelperStaysAlive", "-test.timeout=90s")
-	c.Env = append(os.Environ(), "LANES_PARENT=sentinel-lane", "LANES_TEST_HELPER=1")
+	c.Env = append(os.Environ(), "DIBS_PARENT=sentinel-agent", "DIBS_TEST_HELPER=1")
 	if err := c.Start(); err != nil {
 		t.Fatalf("could not spawn a user binary to inspect: %v", err)
 	}
@@ -42,16 +42,16 @@ func TestTheEnvironmentIsReadableForUserBinaries(t *testing.T) {
 
 	// The child may exit quickly; read while it is certainly alive.
 	blob := EnvironOf(c.Process.Pid)
-	if !strings.Contains(blob, "LANES_PARENT=sentinel-lane") {
+	if !strings.Contains(blob, "DIBS_PARENT=sentinel-agent") {
 		if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 			t.Skipf("environment reading is not implemented for %s", runtime.GOOS)
 		}
-		t.Fatalf("a user-compiled binary did not expose LANES_PARENT.\n"+
-			"  This is the channel the whole attribution design rests on, and it is\n"+
+		t.Fatalf("a user-compiled binary did not expose DIBS_PARENT.\n"+
+			"  This is the space the whole attribution design rests on, and it is\n"+
 			"  supposed to work for exactly this kind of process.\n  got: %.200q", blob)
 	}
 	owner, via := attribute(c.Process.Pid, 0)
-	if owner != "sentinel-lane" || via != "env" {
+	if owner != "sentinel-agent" || via != "env" {
 		t.Errorf("the environment was readable and the stamp was ignored: owner=%q via=%q\n"+
 			"  reading it and not using it is the same outcome as not reading it", owner, via)
 	}
@@ -76,7 +76,7 @@ func TestNoProcessMeansNoEnvironment(t *testing.T) {
 // attribution that followed sampled a process that had already exited. The
 // symptom was "readable but ignored", which reads exactly like a broken regex.
 func TestHelperStaysAlive(t *testing.T) {
-	if os.Getenv("LANES_TEST_HELPER") == "" {
+	if os.Getenv("DIBS_TEST_HELPER") == "" {
 		t.Skip("not the helper invocation")
 	}
 	// Blocks until the parent kills it. A sleep would be banned here (and

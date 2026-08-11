@@ -47,7 +47,7 @@ func TestEmbeddedPluginsMatchTheRepository(t *testing.T) {
 				// for, and aborting the walk on the first one would hide the rest.
 				// The whole point is to list everything the payload is short of.
 				t.Errorf("plugins/%s/%s is not embedded: an agent installing from "+
-					"lanes://plugin would write an incomplete plugin. Copy it to "+
+					"dibs://plugin would write an incomplete plugin. Copy it to "+
 					"internal/plugins/%s (and remember go:embed needs all: for dotfiles)",
 					dir, rel, embedded)
 				return nil //nolint:nilerr // continue the walk; every gap should be named
@@ -90,7 +90,7 @@ func TestTheClaudeCodePluginCarriesItsManifestAndServer(t *testing.T) {
 		".claude-plugin/plugin.json",
 		".mcp.json",
 		"hooks/hooks.json",
-		"skills/lanes/SKILL.md",
+		"skills/dibs/SKILL.md",
 	} {
 		if _, has := p.Files[needed]; !has {
 			t.Errorf("claude-code payload is missing %s. %v", needed, keysOf(p.Files))
@@ -129,7 +129,7 @@ func TestEveryPluginIsActionable(t *testing.T) {
 
 // The harness name agents actually report must resolve.
 //
-// register_lane takes `harness` as free text and agents spell it differently.
+// register takes `harness` as free text and agents spell it differently.
 // Answering "no plugin exists" to a spelling variant would reproduce exactly the
 // gap this package closes, so the variants seen in the wild are pinned.
 func TestHarnessNamesResolveHowAgentsSpellThem(t *testing.T) {

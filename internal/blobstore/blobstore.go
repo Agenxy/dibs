@@ -23,8 +23,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/agenxy/lanes/internal/core"
-	"github.com/agenxy/lanes/internal/ledger"
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/ledger"
 )
 
 // tmpPrefix marks in-progress writes; reconcile never deletes them.

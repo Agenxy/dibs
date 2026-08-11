@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // aliveProber answers "yes, that process is running" for everything.
@@ -27,12 +27,12 @@ func laneWithPID(t *testing.T, id string, pid int, prober Prober) (*Engine, *cor
 // A healthy agent that has simply not spoken recently must not be reported as
 // possibly hung.
 //
-// The board renders a stale lane whose process is alive as "stale (no contact)
-// (hung?)". Because any lane reporting a PID was held to the 5-minute lane_ttl,
-// every Claude Code lane on a live fleet accused itself within five minutes of
+// The board renders a stale agent whose process is alive as "stale (no contact)
+// (hung?)". Because any agent reporting a PID was held to the 5-minute lane_ttl,
+// every Claude Code agent on a live fleet accused itself within five minutes of
 // its last tool call while its harness sat waiting for its human, and the
 // operator had set idle_ttl to 45m specifically to stop that, only for it to be
-// skipped because those lanes reported a PID.
+// skipped because those agents reported a PID.
 //
 // A PID is evidence about the PROCESS. For a harness-hosted agent the process
 // outlives the turn by design, so it says nothing about whether the agent is
@@ -43,29 +43,29 @@ func TestALiveProcessIsNotHeldToTheShortLease(t *testing.T) {
 
 	// Ten minutes of silence: past lane_ttl (5m), well inside idle_ttl (45m).
 	quiet := time.Now().Add(-10 * time.Minute)
-	s.Lanes["k7b"].LastCoordination = quiet
+	s.Agents["k7b"].LastCoordination = quiet
 	e.seen["k7b"] = quiet
 
 	e.sweep(time.Now())
 
-	if got := s.Lanes["k7b"].Status; got != core.StatusActive {
+	if got := s.Agents["k7b"].Status; got != core.StatusActive {
 		t.Fatalf("a live agent quiet for 10m was marked %q; lane_ttl=%v idle_ttl=%v",
 			got, limits.LaneTTL, limits.IdleTTL)
 	}
 }
 
-// Past idle_ttl, silence IS worth reporting: the fix must not make lanes
+// Past idle_ttl, silence IS worth reporting: the fix must not make agents
 // immortal. At 45 minutes with a live process, "hung?" is a fair question.
 func TestALiveProcessStillGoesStalePastIdleTTL(t *testing.T) {
 	e, s := laneWithPID(t, "k7b", 4242, aliveProber{})
 
 	quiet := time.Now().Add(-50 * time.Minute)
-	s.Lanes["k7b"].LastCoordination = quiet
+	s.Agents["k7b"].LastCoordination = quiet
 	e.seen["k7b"] = quiet
 
 	e.sweep(time.Now())
 
-	if got := s.Lanes["k7b"].Status; got == core.StatusActive {
+	if got := s.Agents["k7b"].Status; got == core.StatusActive {
 		t.Fatal("silence past idle_ttl must still be reported; the lease is not decorative")
 	}
 }
@@ -77,12 +77,12 @@ func TestAnUncheckablePIDKeepsTheShortLease(t *testing.T) {
 	e, s := laneWithPID(t, "orphan", 4242, nil)
 
 	quiet := time.Now().Add(-10 * time.Minute)
-	s.Lanes["orphan"].LastCoordination = quiet
+	s.Agents["orphan"].LastCoordination = quiet
 	e.seen["orphan"] = quiet
 
 	e.sweep(time.Now())
 
-	if got := s.Lanes["orphan"].Status; got == core.StatusActive {
+	if got := s.Agents["orphan"].Status; got == core.StatusActive {
 		t.Fatal("a PID nobody can probe must still be judged by the short lease")
 	}
 }

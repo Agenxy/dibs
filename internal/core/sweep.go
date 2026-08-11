@@ -21,7 +21,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 	// AlivePIDs is a positive-only set, so `alive[pid]` returns false for a
 	// process nobody looked at, and that false went into the LEDGER as
 	// proc_alive, a permanent record claiming a measurement that never
-	// happened. Boot marks lanes stale with no AlivePIDs at all; a sweep with
+	// happened. Boot marks agents stale with no AlivePIDs at all; a sweep with
 	// no prober configured reports every pid as alive. Neither is knowledge.
 	//
 	// SPEC §7's whole point is that crash, hang and unresponsiveness are
@@ -31,7 +31,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 	for _, p := range op.AlivePIDs {
 		alive[p] = true
 	}
-	probed := func(l *Lane) (isAlive, known bool) {
+	probed := func(l *Agent) (isAlive, known bool) {
 		if l.PID == 0 {
 			return false, false // no pid was ever given
 		}
@@ -46,20 +46,20 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 
 	// Sorted, because this loop EMITS EVENTS.
 	//
-	// Go randomises map iteration per process, so a sweep that marked eight lanes
+	// Go randomises map iteration per process, so a sweep that marked eight agents
 	// stale at one serial produced those eight events in one order live and a
 	// different order on cold replay. The replayed STATE was identical: this is
 	// not a fold failure, but the reconstructed event stream was not, and that
-	// stream is the audit history: `lanes log` and every events_since consumer
+	// stream is the audit history: `dibs log` and every events_since consumer
 	// reads it. An audit trail that reorders itself when re-derived is not one.
 	//
 	// Every map range in this file that appends to evs is sorted for the same
 	// reason. Ones that only mutate state are left alone: order cannot be
 	// observed there, and sorting them would be cost without meaning.
-	for _, laneID := range sortedKeys(s.Lanes) {
-		l := s.Lanes[laneID]
+	for _, laneID := range sortedKeys(s.Agents) {
+		l := s.Agents[laneID]
 		// Only the live statuses advance here. Closed, archived and unreachable
-		// lanes have nothing left to sweep: they are terminal, and adding empty
+		// agents have nothing left to sweep: they are terminal, and adding empty
 		// cases for them would imply a transition that does not exist.
 		//exhaustive:ignore // terminal statuses are intentionally inert
 		switch l.Status {
@@ -69,7 +69,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 			if !dead && !lapsed {
 				continue
 			}
-			// A lane that never gave a PID has told us nothing about a process, so
+			// An agent that never gave a PID has told us nothing about a process, so
 			// "lapsed" overstates what we know. A chat surface only touches the API
 			// when its human types; minutes of silence are its normal state, not a
 			// death. Say idle, and let the reader draw their own conclusion.
@@ -82,7 +82,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 			}
 			l.StaleReason = reason
 			released := s.releaseClaims(l.ID)
-			// Ownership, not membership: a lane must not stay locked behind an
+			// Ownership, not membership: an agent must not stay locked behind an
 			// agent that stopped answering.
 			evs = append(evs, s.yieldChannelOwnership(l.ID)...)
 			l.AckedSerial = 0 // gate re-arms per activation (SPEC §6)
@@ -90,25 +90,25 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 				l.Status = StatusDormant
 				l.DormantSince = now
 				evs = append(evs, Event{
-					Type: "lane.dormant", Lane: l.ID,
+					Type: "agent.dormant", Agent: l.ID,
 					Data: map[string]any{"reason": reason},
 				})
 			} else {
 				l.Status = StatusStale
 				l.StaleSince = now
 				// proc_alive only when a PID was actually given: alive[0] is the
-				// zero value, so reporting it for a PID-less lane says
+				// zero value, so reporting it for a PID-less agent says
 				// "proc_alive: false" about a process that was never claimed to
 				// exist: read by a human as "it crashed" when nothing did.
 				data := map[string]any{"reason": reason}
 				if isAlive, known := probed(l); known {
 					data["proc_alive"] = isAlive
 				}
-				evs = append(evs, Event{Type: "lane.stale", Lane: l.ID, Data: data})
+				evs = append(evs, Event{Type: "agent.stale", Agent: l.ID, Data: data})
 			}
 			for _, p := range released {
 				evs = append(evs, Event{
-					Type: "claim.expired", Lane: l.ID,
+					Type: "claim.expired", Agent: l.ID,
 					Data: map[string]any{"path": p, "cause": "lane_" + string(l.Status)},
 				})
 			}
@@ -117,7 +117,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 				l.Status = StatusArchived
 				l.ArchivedAt = now
 				l.Token, l.Nonce = "", ""
-				evs = append(evs, Event{Type: "lane.archived", Lane: l.ID})
+				evs = append(evs, Event{Type: "agent.archived", Agent: l.ID})
 				evs = append(evs, s.departAllChannels(l.ID)...)
 			}
 		case StatusDormant:
@@ -125,7 +125,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 				l.Status = StatusArchived
 				l.ArchivedAt = now
 				l.Token, l.Nonce = "", ""
-				evs = append(evs, Event{Type: "lane.archived", Lane: l.ID})
+				evs = append(evs, Event{Type: "agent.archived", Agent: l.ID})
 				evs = append(evs, s.departAllChannels(l.ID)...)
 			}
 		}
@@ -138,7 +138,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 	for _, c := range s.Claims {
 		if now.Sub(c.Renewed) > s.Limits.ClaimLease || now.Sub(c.Acquired) > s.Limits.ClaimMaxLife {
 			evs = append(evs, Event{
-				Type: "claim.expired", Lane: c.Lane,
+				Type: "claim.expired", Agent: c.Agent,
 				Data: map[string]any{"path": c.Path, "cause": "lease"},
 			})
 		} else {
@@ -157,7 +157,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 		if m.Terminal() || !m.Expecting() || m.Deadline.IsZero() || now.Before(m.Deadline) {
 			continue
 		}
-		to := s.Lanes[m.To]
+		to := s.Agents[m.To]
 		switch {
 		case to != nil && to.Status == StatusActive:
 			m.State = MsgStateExpiredSilent
@@ -168,7 +168,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 		// A clean close is a FOURTH fact, and it was being reported as a crash.
 		//
 		// SPEC §7's whole point is that crash, hang and unresponsiveness are
-		// different facts reported as such, but an agent that called close_lane
+		// different facts reported as such, but an agent that called sign_off
 		// finished deliberately and SAID so, and telling its correspondent
 		// "coordination lease lapsed … verify before touching its directories"
 		// is wrong in every clause. It sends somebody to inspect work that
@@ -181,12 +181,12 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 		// the detail already carries. It is the DETAIL a sender acts on.
 		case to != nil && to.finishedCleanly():
 			m.State = MsgStateExpiredDead
-			m.ExpireDetail = "recipient closed its lane before answering; it finished deliberately " +
+			m.ExpireDetail = "recipient closed its agent before answering; it finished deliberately " +
 				"and released its claims, so this is not a crash and there is nothing of its to " +
 				"verify: nobody will answer this now"
 		case to == nil:
 			m.State = MsgStateExpiredDead
-			m.ExpireDetail = "recipient's lane no longer exists: retired or pruned past its retention " +
+			m.ExpireDetail = "recipient's agent no longer exists: retired or pruned past its retention " +
 				"bound. Whether it finished or crashed is no longer recorded, so treat any " +
 				"directories it held as unverified"
 		default:
@@ -196,7 +196,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 		}
 		m.TerminalAt = now
 		evs = append(evs, Event{
-			Type: "message." + m.State, Lane: m.To, To: m.From,
+			Type: "message." + m.State, Agent: m.To, To: m.From,
 			Data: map[string]any{"msg_serial": m.Serial, "detail": m.ExpireDetail},
 		})
 	}
@@ -221,8 +221,8 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 			}
 		}
 		sort.Strings(silent)
-		evs = append(evs, Event{Type: "lane.announce_unacked", Lane: a.From, Data: map[string]any{
-			"lane_id": a.Channel, "serial": a.Serial, "silent": silent,
+		evs = append(evs, Event{Type: "agent.announce_unacked", Agent: a.From, Data: map[string]any{
+			"lane_id": a.Space, "serial": a.Serial, "silent": silent,
 			"detail": "redelivery gave up; this is loss of coordination, not agreement. " +
 				"verify with these agents before assuming they acted on it",
 		}})
@@ -252,8 +252,8 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 }
 
 // gc prunes replayable state deterministically (SPEC §4, §11): consumed
-// terminal messages; unconsumed terminal beyond per-lane retention (advancing
-// the recipient's loss watermark); archived lanes past retention (with their
+// terminal messages; unconsumed terminal beyond per-agent retention (advancing
+// the recipient's loss watermark); archived agents past retention (with their
 // nonces and dedup records); dedup records past the lesser-of bound.
 func (s *State) gc(now time.Time) ([]Event, bool) {
 	var evs []Event
@@ -277,14 +277,14 @@ func (s *State) gc(now time.Time) ([]Event, bool) {
 			perLane[m.To] = append(perLane[m.To], m)
 		}
 	}
-	for _, lane := range sortedKeys(perLane) {
-		ms := perLane[lane]
+	for _, agent := range sortedKeys(perLane) {
+		ms := perLane[agent]
 		if len(ms) <= s.Limits.TerminalRetention {
 			continue
 		}
 		sortMessages(ms)
 		evict := ms[:len(ms)-s.Limits.TerminalRetention]
-		l := s.Lanes[lane]
+		l := s.Agents[agent]
 		for _, m := range evict {
 			delete(s.Messages, m.Serial)
 			if l != nil && m.Serial >= l.TruncatedBefore {
@@ -293,15 +293,15 @@ func (s *State) gc(now time.Time) ([]Event, bool) {
 		}
 		if l != nil {
 			evs = append(evs, Event{
-				Type: "mailbox.truncated", Lane: lane,
+				Type: "mailbox.truncated", Agent: agent,
 				Data: map[string]any{"truncated_before_serial": l.TruncatedBefore, "evicted": len(evict)},
 			})
 		}
 	}
 
-	// Archived lanes past retention: remove lane, nonce, dedup records.
-	for _, id := range sortedKeys(s.Lanes) {
-		l := s.Lanes[id]
+	// Archived agents past retention: remove agent, nonce, dedup records.
+	for _, id := range sortedKeys(s.Agents) {
+		l := s.Agents[id]
 		if l.Status != StatusArchived {
 			continue
 		}
@@ -310,21 +310,21 @@ func (s *State) gc(now time.Time) ([]Event, bool) {
 		if l.ArchivedAt.IsZero() || now.Sub(l.ArchivedAt) <= s.Limits.ArchiveRetention {
 			continue
 		}
-		delete(s.Lanes, id)
+		delete(s.Agents, id)
 		for nonce, lid := range s.Nonces {
 			if lid == id {
 				delete(s.Nonces, nonce)
 			}
 		}
 		for k, rec := range s.Dedup {
-			if rec.Lane == id {
+			if rec.Agent == id {
 				delete(s.Dedup, k)
 			}
 		}
-		evs = append(evs, Event{Type: "lane.purged", Lane: id})
+		evs = append(evs, Event{Type: "agent.purged", Agent: id})
 	}
 
-	// Dedup records: lesser of window and per-lane cap (SPEC §4).
+	// Dedup records: lesser of window and per-agent cap (SPEC §4).
 	counts := map[string][]*DedupRec{}
 	for k, rec := range s.Dedup {
 		if now.Sub(rec.At) > s.Limits.DedupWindow {
@@ -332,11 +332,11 @@ func (s *State) gc(now time.Time) ([]Event, bool) {
 			pruned = true
 			continue
 		}
-		counts[rec.Lane] = append(counts[rec.Lane], rec)
+		counts[rec.Agent] = append(counts[rec.Agent], rec)
 	}
-	// Sorted by lane so eviction order does not depend on map iteration.
-	for _, lane := range sortedKeys(counts) {
-		recs := counts[lane]
+	// Sorted by agent so eviction order does not depend on map iteration.
+	for _, agent := range sortedKeys(counts) {
+		recs := counts[agent]
 		if len(recs) <= s.Limits.DedupPerLane {
 			continue
 		}
@@ -355,7 +355,7 @@ func (s *State) gc(now time.Time) ([]Event, bool) {
 			return strings.Compare(a.ID, b.ID)
 		})
 		for _, rec := range recs[:len(recs)-s.Limits.DedupPerLane] {
-			delete(s.Dedup, dedupKey(rec.Lane, rec.ID))
+			delete(s.Dedup, dedupKey(rec.Agent, rec.ID))
 			pruned = true
 		}
 	}
@@ -364,8 +364,8 @@ func (s *State) gc(now time.Time) ([]Event, bool) {
 
 // Board is the public snapshot (presentation fields are added by the engine).
 func (s *State) Board() map[string]any {
-	lanes := make([]map[string]any, 0, len(s.Lanes))
-	for _, l := range s.Lanes {
+	agents := make([]map[string]any, 0, len(s.Agents))
+	for _, l := range s.Agents {
 		if l.Status == StatusArchived || l.Status == StatusClosed {
 			continue
 		}
@@ -392,53 +392,53 @@ func (s *State) Board() map[string]any {
 			lm["stale_reason"] = l.StaleReason
 		}
 		// The name a human chose, when the id could not carry it. Without this a
-		// board of agents named in a non-Latin script reads `lane`, `lane-2`,
-		// `lane-3`: technically correct addresses that identify nobody.
+		// board of agents named in a non-Latin script reads `agent`, `agent-2`,
+		// `agent-3`: technically correct addresses that identify nobody.
 		if l.Name != "" && slug(l.Name) == "" {
 			lm["display_name"] = l.Name
 		}
 		if l.Parent != "" {
 			lm["parent"] = l.Parent
 		}
-		// Only when known: an empty object on every lane is payload the reader
+		// Only when known: an empty object on every agent is payload the reader
 		// and the model both pay for and neither uses.
 		if l.Agent != nil {
 			lm["agent"] = l.Agent
 		}
-		lanes = append(lanes, lm)
+		agents = append(agents, lm)
 	}
-	slices.SortFunc(lanes, func(a, b map[string]any) int {
+	slices.SortFunc(agents, func(a, b map[string]any) int {
 		return strings.Compare(a["id"].(string), b["id"].(string))
 	})
 	claims := make([]*Claim, len(s.Claims))
 	copy(claims, s.Claims)
 	slices.SortFunc(claims, func(a, b *Claim) int { return strings.Compare(a.Path, b.Path) })
-	channels := s.channelBoard()
-	out := map[string]any{"serial": s.Serial, "node": s.NodeID, "lanes": lanes, "claims": claims}
-	if len(channels) > 0 {
-		out["channels"] = channels
+	spaces := s.channelBoard()
+	out := map[string]any{"serial": s.Serial, "node": s.NodeID, "agents": agents, "claims": claims}
+	if len(spaces) > 0 {
+		out["spaces"] = spaces
 	}
 	return out
 }
 
-// laneSaid is the lane's announcement history for the board, newest last,
-// bounded so one chatty lane cannot dominate the payload.
+// laneSaid is the agent's announcement history for the board, newest last,
+// bounded so one chatty agent cannot dominate the payload.
 //
 // METADATA ONLY. This carried `body`, and the board it is embedded in is not
-// the operator's alone: Board() is what ack_board returns to EVERY agent on
+// the operator's alone: Board() is what check_in returns to EVERY agent on
 // every activation, and /api/board serves it to anything holding the
-// coordination secret. So every announcement body in every channel was handed
-// to agents that had joined none of them: the same defect as the lane.post
+// coordination secret. So every announcement body in every space was handed
+// to agents that had joined none of them: the same defect as the agent.post
 // event, on a wider surface, and reachable without even asking for it.
 //
 // Nothing consumed the body. The board renderer shows counts (unacked,
 // abandoned, blocked); no template, script or Go caller read `said[].body`. It
-// was cost with no reader, and the text still belongs to the lane: members and
-// subscribers get it from lane_read, which checks who is asking.
+// was cost with no reader, and the text still belongs to the agent: members and
+// subscribers get it from read_space, which checks who is asking.
 func (s *State) laneSaid(id string) []map[string]any {
 	var all []*Announcement
 	for _, a := range s.Announcements {
-		if a.Channel == id {
+		if a.Space == id {
 			all = append(all, a)
 		}
 	}
@@ -456,23 +456,23 @@ func (s *State) laneSaid(id string) []map[string]any {
 			"bytes": len(a.Body),
 			"at":    a.MadeAt, "state": a.State,
 			// How many still owe it: the count a reader needs to know whether
-			// this is settled or still hanging over the lane.
+			// this is settled or still hanging over the agent.
 			"owed": len(a.Required) - len(a.Acked),
 		})
 	}
 	return out
 }
 
-// channelBoard renders the channels half of the board payload.
+// channelBoard renders the spaces half of the board payload.
 //
-// Under "channels", NOT "lanes": the wire name for a channel is "lane"
+// Under "spaces", NOT "agents": the wire name for a space is "agent"
 // (SPEC-CHANNELS.md §1) but that key has meant "the agents" since v1, and
 // quietly changing what it holds would break every existing reader. The rename
-// lands with the Lane→Lane pass.
+// lands with the Agent→Agent pass.
 func (s *State) channelBoard() []map[string]any {
-	out := make([]map[string]any, 0, len(s.Channels))
+	out := make([]map[string]any, 0, len(s.Spaces))
 	for _, id := range s.channelIDs() {
-		ch := s.Channels[id]
+		ch := s.Spaces[id]
 		cm := map[string]any{
 			"id": ch.ID, "topic": ch.Topic, "members": s.memberBoard(ch),
 			"opened_by": ch.OpenedBy, "opened_at": ch.OpenedAt,
@@ -483,23 +483,23 @@ func (s *State) channelBoard() []map[string]any {
 		if len(ch.Queue) > 0 {
 			cm["queue"] = ch.Queue
 		}
-		// What was actually SAID in the lane, for the human's board.
+		// What was actually SAID in the agent, for the human's board.
 		//
 		// The board carried membership and an unacked COUNT, which tells an
 		// operator that something is outstanding and not what it is. A human
-		// could join a lane, broadcast into it, and see "1 awaiting ack": with
+		// could join an agent, broadcast into it, and see "1 awaiting ack": with
 		// no way anywhere in the interface to read the announcement they had
-		// just sent, or the ones the agents had. lane_read gave agents that and
+		// just sent, or the ones the agents had. read_space gave agents that and
 		// the board never called it.
 		//
-		// Bodies, not a count, because the whole reason a human joins a lane is
+		// Bodies, not a count, because the whole reason a human joins an agent is
 		// to see what the agents are saying to each other. The board is already
 		// behind the admin password (SECURITY.md): it shows decrypted mail, and
-		// lane traffic is no more private than that.
+		// agent traffic is no more private than that.
 		if said := s.laneSaid(ch.ID); len(said) > 0 {
 			cm["said"] = said
 		}
-		// Outstanding announcements are the one piece of channel state that is
+		// Outstanding announcements are the one piece of space state that is
 		// actionable at a glance, so it belongs on the board rather than behind
 		// a second call (§10.6: silence is never resolution).
 		waiting, abandoned, blocked := s.unackedIn(ch.ID)
@@ -514,7 +514,7 @@ func (s *State) channelBoard() []map[string]any {
 		if blocked > 0 {
 			cm["blocked_announcements"] = blocked
 		}
-		// Members that left a lane still owing an acknowledgement. Their
+		// Members that left an agent still owing an acknowledgement. Their
 		// requirement has to be dropped: waiting on somebody who is never
 		// coming back is how a board fills with things nobody can act on: but
 		// the fact that they never read it is not thereby untrue.
@@ -522,7 +522,7 @@ func (s *State) channelBoard() []map[string]any {
 			cm["departed_unacked"] = n
 		}
 		// Reported separately, and never folded into the same number: one means
-		// "Lanes is still asking", the other means "Lanes gave up and nobody
+		// "Dibs is still asking", the other means "Dibs gave up and nobody
 		// answered". Only the second needs a human.
 		if abandoned > 0 {
 			cm["abandoned_announcements"] = abandoned
@@ -532,14 +532,14 @@ func (s *State) channelBoard() []map[string]any {
 	return out
 }
 
-// memberBoard renders a channel's membership, each entry carrying WHY it is
+// memberBoard renders a space's membership, each entry carrying WHY it is
 // there: the explainability §10.3 requires, on the board itself rather than
 // fetched on demand.
-func (s *State) memberBoard(ch *Channel) []map[string]any {
+func (s *State) memberBoard(ch *Space) []map[string]any {
 	out := make([]map[string]any, 0, len(ch.Members))
 	for _, a := range sortedKeys(ch.Members) {
 		m := ch.Members[a]
-		mm := map[string]any{"agent": m.Lane, "auto": m.Auto}
+		mm := map[string]any{"agent": m.Agent, "auto": m.Auto}
 		if m.Score > 0 {
 			mm["score"] = m.Score
 			mm["threshold"] = m.Threshold
@@ -553,8 +553,8 @@ func (s *State) memberBoard(ch *Channel) []map[string]any {
 	return out
 }
 
-// unackedIn counts announcements in a channel that nobody has settled, split by
-// whether Lanes is still trying.
+// unackedIn counts announcements in a space that nobody has settled, split by
+// whether Dibs is still trying.
 //
 // The split matters and its absence was a bug. Only `open` was counted, so an
 // announcement that exhausted its retries and was marked `unacked` VANISHED
@@ -562,12 +562,12 @@ func (s *State) memberBoard(ch *Channel) []map[string]any {
 // constant's own comment claims it "stays visible, never dropped"; it did not.
 //
 // `abandoned` is the more urgent number: somebody was told something with
-// collision risk, never acknowledged it, and Lanes has stopped asking. Nobody
+// collision risk, never acknowledged it, and Dibs has stopped asking. Nobody
 // is coming back to that on their own.
-func (s *State) unackedIn(channel string) (waiting, abandoned, blocked int) {
+func (s *State) unackedIn(space string) (waiting, abandoned, blocked int) {
 	for _, ser := range s.announcementSerials() {
 		a := s.Announcements[ser]
-		if a.Channel != channel {
+		if a.Space != space {
 			continue
 		}
 		switch a.State {
@@ -593,11 +593,11 @@ func (s *State) unackedIn(channel string) (waiting, abandoned, blocked int) {
 	return waiting, abandoned, blocked
 }
 
-// departedUnackedIn counts members that left this lane owing an acknowledgement.
-func (s *State) departedUnackedIn(channel string) int {
+// departedUnackedIn counts members that left this agent owing an acknowledgement.
+func (s *State) departedUnackedIn(space string) int {
 	n := 0
 	for _, ser := range s.announcementSerials() {
-		if a := s.Announcements[ser]; a.Channel == channel {
+		if a := s.Announcements[ser]; a.Space == space {
 			n += len(a.DepartedUnacked)
 		}
 	}
@@ -612,7 +612,7 @@ func (s *State) blockedOnAbsentee(a *Announcement) bool {
 		if a.Acked[id] {
 			continue
 		}
-		l := s.Lanes[id]
+		l := s.Agents[id]
 		if l != nil && l.Status == StatusActive {
 			return false // somebody who could answer still might
 		}
@@ -624,7 +624,7 @@ func (s *State) blockedOnAbsentee(a *Announcement) bool {
 // sortedKeys gives map iteration a fixed order for anything that reaches a
 // board payload or an event.
 // sortedKeys is generic over the key type because the maps that need
-// deterministic traversal are keyed by both lane id and message serial, and a
+// deterministic traversal are keyed by both agent id and message serial, and a
 // second near-identical helper would be one more place to forget.
 func sortedKeys[K cmp.Ordered, V any](m map[K]V) []K {
 	out := make([]K, 0, len(m))
@@ -639,21 +639,21 @@ func sortedKeys[K cmp.Ordered, V any](m map[K]V) []K {
 //
 // The id is an ADDRESS: it goes on the wire, into every message envelope and
 // into urls, so it is restricted to ASCII. A name that survives none of that
-// still needs an id, and "lane" is the fallback.
+// still needs an id, and "agent" is the fallback.
 //
 // That fallback was silent, and should not be: an operator registering an agent
-// as 監視者 got an agent called `lane`, a second got `lane-2`, and nothing said
-// their names had been discarded. The original survives in Lane.Name; the
+// as 監視者 got an agent called `agent`, a second got `agent-2`, and nothing said
+// their names had been discarded. The original survives in Agent.Name; the
 // registration result now says when the id owes nothing to it, and the board
 // shows the name so a human can still tell who they are looking at.
 func laneID(s *State, name string) string {
 	base := slug(name)
 	if base == "" {
-		base = "lane"
+		base = "agent"
 	}
 	id := base
 	for i := 2; ; i++ {
-		if _, ok := s.Lanes[id]; !ok {
+		if _, ok := s.Agents[id]; !ok {
 			return id
 		}
 		id = base + "-" + itoa(i)
@@ -675,20 +675,20 @@ func slug(in string) string {
 
 func itoa(i int) string { return strconv.Itoa(i) }
 
-// siblingByName finds the live lane sharing this name that the caller most
-// needs to hear about. Closed and archived lanes are ignored: they hold no mail
+// siblingByName finds the live agent sharing this name that the caller most
+// needs to hear about. Closed and archived agents are ignored: they hold no mail
 // anyone is waiting on, so reusing their name is not a collision worth
 // reporting.
 //
-// A lane HOLDING MAIL always wins over one that is merely newer. That is the
+// An agent HOLDING MAIL always wins over one that is merely newer. That is the
 // whole point of the warning: naming the mailbox the caller cannot read. An
 // earlier version ranked purely by recency and, in the exact scenario this was
 // written for, pointed at an empty sibling while the lost answer sat in an older
 // one. Among equals, newest wins.
-func (s *State) siblingByName(name, exclude string) *Lane {
-	var best *Lane
+func (s *State) siblingByName(name, exclude string) *Agent {
+	var best *Agent
 	var bestMail int
-	for _, l := range s.Lanes {
+	for _, l := range s.Agents {
 		if l.ID == exclude || l.Name != name {
 			continue
 		}
@@ -704,11 +704,11 @@ func (s *State) siblingByName(name, exclude string) *Lane {
 	return best
 }
 
-// gcAnnouncements bounds settled announcement history per channel.
+// gcAnnouncements bounds settled announcement history per space.
 //
 // This was the one collection in replayed state with no bound. Announcements
-// were added on every lane_announce and removed only when an empty auto-opened
-// channel was reclaimed, and a standing channel a human opened is never
+// were added on every announce and removed only when an empty auto-opened
+// space was reclaimed, and a standing space a human opened is never
 // reclaimed, so its history grew for the life of the board and was replayed into
 // memory on every daemon start.
 //
@@ -728,7 +728,7 @@ func (s *State) gcAnnouncements() []Event {
 	settled := map[string][]*Announcement{}
 	for _, a := range s.Announcements {
 		if a.State == AnnounceAcked {
-			settled[a.Channel] = append(settled[a.Channel], a)
+			settled[a.Space] = append(settled[a.Space], a)
 		}
 	}
 	var evs []Event
@@ -743,7 +743,7 @@ func (s *State) gcAnnouncements() []Event {
 			delete(s.Announcements, a.Serial)
 		}
 		evs = append(evs, Event{
-			Type: "channel.history_truncated", Lane: ch,
+			Type: "space.history_truncated", Agent: ch,
 			Data: map[string]any{
 				"evicted": len(evict), "kept": keep,
 				"oldest_kept_serial": as[len(as)-keep].Serial,

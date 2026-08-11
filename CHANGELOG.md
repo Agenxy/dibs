@@ -1,6 +1,6 @@
 # Changelog
 
-Notable changes to Lanes. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
+Notable changes to Dibs. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
@@ -9,12 +9,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- `lanes completion <bash|zsh|fish>` prints a completion script, generated from
+- `dibs completion <bash|zsh|fish>` prints a completion script, generated from
   the verb table the CLI dispatches on so it cannot drift from the commands that
   exist. Thanks to @shaurya703 (#15).
-- `lanes man` renders the manual page from the same help text `lanes help`
-  prints, and releases ship `lanes.1` in the archive and the Homebrew cask, so
-  `man lanes` answers after an install. Thanks to @shaurya703 (#16).
+- `dibs man` renders the manual page from the same help text `dibs help`
+  prints, and releases ship `agents.1` in the archive and the Homebrew cask, so
+  `man agents` answers after an install. Thanks to @shaurya703 (#16).
 
 - Nine real Git configurations are now regression tests. Each builds actual
   repositories, registers agents through the actual server, and asserts on the
@@ -37,30 +37,30 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- **Lanes is now Apache 2.0**, relicensed from MIT. Both are permissive; Apache
+- **Dibs is now Apache 2.0**, relicensed from MIT. Both are permissive; Apache
   grants patent rights from contributors explicitly, terminates the licence of
   anyone who sues over the covered code, and states that no trademark rights come
   with it. `NOTICE` retains the MIT notice for the contributions made under it.
-- `lanes doctor` exits nonzero when it finds a problem, so a script can act on it
+- `dibs doctor` exits nonzero when it finds a problem, so a script can act on it
   rather than parsing the output. Thanks to @floze-the-genius (#6).
-- The Homebrew tap moved from `agenxy/homebrew-lanes` to `agenxy/homebrew-tap`,
-  so the install line is `brew install agenxy/tap/lanes` rather than repeating
+- The Homebrew tap moved from `agenxy/homebrew-agents` to `agenxy/homebrew-tap`,
+  so the install line is `brew install agenxy/tap/agents` rather than repeating
   the project name. GitHub keeps a redirect, so the old form still works and
   nobody who already tapped needs to act.
 - The README leads with a worked example of a collision being caught, and the
-  documentation says `lanes stop` wherever it used to say `pkill lanesd`.
-- The service identifier is `org.agenxy.lanes`.
+  documentation says `dibs stop` wherever it used to say `pkill dibd`.
+- The service identifier is `org.agenxy.dibs`.
 - An unstamped build reports `devel+<revision>` rather than a version number
   that names a release it is not.
 - Prose throughout uses ordinary punctuation.
 ### Fixed
 
 - A refused port said only `bind: address already in use`. It now names the
-  lanesd already holding the address, or says the holder is something else and
+  dibd already holding the address, or says the holder is something else and
   how to find it. It does not fall back to another port: clients resolve the
   daemon from a fixed address, so one that quietly moved would be a daemon
   nobody could find.
-- `com.lanes.lanesd` was missing from the labels the service installer checks
+- `com.agents.dibd` was missing from the labels the service installer checks
   before writing a new unit, so upgrading from that vintage could leave two jobs
   contending for one data directory.
 - Repository identity survives three Git configurations that previously made two
@@ -91,7 +91,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Roots are compared for EQUALITY rather than overlap. `git subtree add`
     imports a dependency's whole history, so two unrelated projects that vendored
     the same library share a root commit, and treating that as proof fired the
-    strongest signal Lanes has between strangers.
+    strongest signal Dibs has between strangers.
   - The remote outranks history, because history can legitimately differ inside
     one project: a `--single-branch` clone of an orphan branch, or a history
     rewritten by filter-repo, shares no commit with its sibling.
@@ -100,7 +100,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     name the upstream tracker.
 - A ref such as `issue:42` matched across repositories, so two agents in two
   projects were told they were pursuing the same objective: the strongest signal
-  Lanes emits, telling each to stop work nothing else was doing. Refs are
+  Dibs emits, telling each to stop work nothing else was doing. Refs are
   repository-scoped now, using an identity recorded at registration. The
   same-repository case, including two linked worktrees and two clones of one
   upstream, still reports as before.
@@ -112,37 +112,37 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   data directory. Characters XML cannot represent are refused.
 - The corrective commands printed when an older service unit is found were not
   shell-quoted, so a path containing a space was not runnable as shown.
-- `lanes stop --help --force` printed help and exited 0, while `--force --help`
+- `dibs stop --help --force` printed help and exited 0, while `--force --help`
   refused: an unknown argument is now refused whichever side of help it sits.
 - The em-dash removal replaced placeholder glyphs with commas in places that are
   not prose: a zero timestamp rendered as `seen , ` in the CLI and on the board,
   table cells meaning "not applicable" became `, `, and several comments and
   error strings were left starting mid-sentence.
 - Documentation promised automatic subagent stamping everywhere. The
-  `PreToolUse` stamp exists only where a harness offers a hook Lanes can use
-  without spawning a subprocess, which today means Claude Code. `lanes doctor`,
+  `PreToolUse` stamp exists only where a harness offers a hook Dibs can use
+  without spawning a subprocess, which today means Claude Code. `dibs doctor`,
   the README, `SKILLS.md` and `SPEC-SUPERVISION.md` now say so.
 - An agent whose working directory exceeded 128 bytes could not register at all.
   A cwd was bounded as if it were a name; it is a path. Any checkout a few levels
   inside a home directory hit it, and the refusal was of the whole
-  `register_lane`, not of the field.
+  `register`, not of the field.
 
-- `lanes stop --help` stopped the daemon. The dispatch discarded its arguments,
+- `dibs stop --help` stopped the daemon. The dispatch discarded its arguments,
   so asking a destructive command what it does performed it and exited 0.
-  `lanes configure --service --help` had the same defect and wrote a LaunchAgent.
+  `dibs configure --service --help` had the same defect and wrote a LaunchAgent.
 - Service units generated by `configure --service` mishandled ordinary paths. A
   directory containing `&` produced a plist launchd will not parse; on Linux,
   spaces split one path into several arguments, `%` expanded as a systemd
   specifier, and a newline could inject a second directive. Paths containing
   control characters are now refused rather than silently altered.
-- A relative `LANES_DIR` was written into the unit verbatim, so the service
+- A relative `DIBS_DIR` was written into the unit verbatim, so the service
   started against whatever it resolved to under the init system.
 - Upgrading from a unit written by an earlier version created a second job for
   the same data directory. The directory lock refuses the second, which looks
   like a service that will not start; `configure --service` now stops and says
   how to remove the old one.
 - `Daemon.IsStranger` canonicalised only one side of its comparison, so with
-  `LANES_DIR` set, or on a symlinked path, every daemon looked like a stranger
+  `DIBS_DIR` set, or on a symlinked path, every daemon looked like a stranger
   including itself.
 
 
@@ -155,10 +155,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- `lanes stop`, which stops the daemon for this data directory and leaves other
+- `dibs stop`, which stops the daemon for this data directory and leaves other
   daemons on the machine running. The documentation previously said
-  `pkill lanesd`, which ends every fleet on the host.
-- `lanes configure --service` writes a launchd or systemd unit, so the daemon
+  `pkill dibd`, which ends every fleet on the host.
+- `dibs configure --service` writes a launchd or systemd unit, so the daemon
   survives a closed terminal and a reboot.
 
 ## [0.0.0] - 2026-08-09
@@ -173,22 +173,22 @@ of changes from something earlier: there is no earlier.
 
 ### Coordination
 
-- Lanes, slots and advisory path claims over an append-only, hash-chained JSONL
+- Dibs, slots and advisory path claims over an append-only, hash-chained JSONL
   ledger. Replay is exact (`state == fold(ledger)`), so the persistence is the
-  audit history; `lanes verify` checks the chain.
+  audit history; `dibs verify` checks the chain.
 - Private mailboxes with typed messages: question, request, notify, handoff,
   with delivery receipts, deadlines and idempotent retries.
-- Ephemeral and persistent lanes; standing roles sleep as `dormant` with durable
+- Ephemeral and persistent agents; standing roles sleep as `dormant` with durable
   mailboxes and wake by resuming.
 - MCP-native: 40 advertised tools over the 2026-07-28 stateless contract, with
   the legacy 2025-11-25 path for current hosts. Five more are callable but not
   listed: the lifecycle hooks a harness invokes on the agent's behalf. A tool an
   agent cannot correctly call is not a capability, it is a trap.
-- A coordinator can retire a finished lane with `lane_close`. Auto-opened lanes
-  end themselves when their last member leaves; a lane a human opened outlives
+- A coordinator can retire a finished agent with `close_space`. Auto-opened agents
+  end themselves when their last member leaves; an agent a human opened outlives
   its members on purpose, and until now nothing could ever end one, so a board
-  accumulated finished lanes permanently and E_LANE_LIMIT advised a fix that did
-  not work for them. Refuses an occupied lane, and one holding an unacknowledged
+  accumulated finished agents permanently and E_LANE_LIMIT advised a fix that did
+  not work for them. Refuses an occupied agent, and one holding an unacknowledged
   announcement.
 - The human can act from the board panel, proving they are there with Touch ID
   (the admin password on machines without a sensor). **Binary releases do not
@@ -196,7 +196,7 @@ of changes from something earlier: there is no earlier.
   to sit beside the binaries, and the release pipeline builds Go; a Homebrew or
   archive install therefore falls back to the admin password, which is a
   supported path rather than a broken one. `task install`, or a build from
-  source on a Mac with the Xcode command line tools, produces it. Lanes reports
+  source on a Mac with the Xcode command line tools, produces it. Dibs reports
   the sensor as `unavailable` and sends you to the password: it never claims a
   human was checked when none was. What they get back is an
   ordinary agent identity, not a privileged one: every action is the same op an
@@ -213,18 +213,18 @@ of changes from something earlier: there is no earlier.
 - An agent whose chosen name is taken is told so, and told by what. Asking for
   `sol` and being handed `sol-4` used to be silent, so an agent could publish an
   address nobody could write to and never learn why the mail stopped. The suffix
-  itself stays, a stale lane still owns its mailbox, and giving its name away
+  itself stays, a stale agent still owns its mailbox, and giving its name away
   would redirect somebody else's mail, but the note names the holder, says
-  whether it is a live conflict or a retired lane holding an id the ledger still
-  refers to, and points at reattach if the older lane is in fact you.
-- Lanes-issued coordination keys. Opening or joining a lane hands the agent an
-  opaque key; declared back in `refs`, later work is matched to that lane exactly
+  whether it is a live conflict or a retired agent holding an id the ledger still
+  refers to, and points at reattach if the older agent is in fact you.
+- Dibs-issued coordination keys. Opening or joining an agent hands the agent an
+  opaque key; declared back in `refs`, later work is matched to that agent exactly
   instead of inferred from wording. Checked rather than trusted, a key the
   declaring agent does not hold is struck out, so copying one buys nothing, and
   inherited down a vouched parent/child lineage, which is what lets one
   coordination decision cover a whole fan-out of subagents.
 
-### Duplicate-work matching (channels)
+### Duplicate-work matching (spaces)
 
 - Agents declare work in their own words and are matched against work already in
   flight, using the repository's file layout and git co-change history. No model,
@@ -232,12 +232,12 @@ of changes from something earlier: there is no earlier.
 - Optional embedding tier behind one endpoint, so MLX, llama.cpp, Ollama or a
   hosted API all satisfy it. An unreachable service degrades to the built-in
   scorer and records `degraded` rather than failing.
-- `lanes calibrate` measures thresholds against your own repository's history and
+- `dibs calibrate` measures thresholds against your own repository's history and
   reports how much genuinely-related work clears the bar, not just a number.
   **Recalibrate if you measured a bar before this release**, because the runtime
-  now gates on the quantity calibration actually measures. `lanes calibrate`
+  now gates on the quantity calibration actually measures. `dibs calibrate`
   scores one declaration against another; the runtime used to score a declaration
-  against a lane's MERGED footprint, so the bar was measured on one thing and
+  against an agent's MERGED footprint, so the bar was measured on one thing and
   applied to another, and nothing said so. A candidate is now judged against the
   closest single live declaration: the same comparison, at last. The merged
   footprint was diluted by every other member, so the same pair scores higher
@@ -256,7 +256,7 @@ of changes from something earlier: there is no earlier.
 - Elapsed time is measured on a monotonic clock, so a sleeping machine does not
   read as a stalled fleet.
 - Attribution survives detaching, daemonisation and reparenting: in Claude
-  Code, a `PreToolUse` hook stamps a spawned command with its parent's lane.
+  Code, a `PreToolUse` hook stamps a spawned command with its parent's agent.
 - Reports and never acts: it hands back the command to resume a stalled child
   rather than running it.
 
@@ -265,12 +265,12 @@ of changes from something earlier: there is no earlier.
 - Live web board: server-rendered, SSE-streamed, dark/light, no framework and no
   build step. Gated on an admin password the agents do not hold.
 - Terminal board that degrades cleanly under pipes, redirection and `NO_COLOR`.
-- `lanes doctor`, which names the fix rather than only the fault.
+- `dibs doctor`, which names the fix rather than only the fault.
 - Board panel as an MCP App, which fills from whichever carrier a host actually
   forwards, tool-result `_meta`, ordinary content, or by fetching the board
   itself, and says so plainly when a host forwards none, rather than showing an
   empty board that looks like a server fault.
-- The MCP server DELIVERS its own plugin. `lanes://plugin` carries the actual
+- The MCP server DELIVERS its own plugin. `dibs://plugin` carries the actual
   files, manifest, hooks, skill, MCP server definition, so an agent with no
   network and no checkout can install one, and an ordered setup procedure where
   every step says how to check it took effect. On first registration an agent is
@@ -279,7 +279,7 @@ of changes from something earlier: there is no earlier.
   actually loaded are different claims, and only the daemon can tell them apart.
   Harnesses with hooks but no wake path are told mail is still pull-only there,
   rather than being invited to stop checking.
-- `ack_board` costs the model half what it did. It is the one tool every agent
+- `check_in` costs the model half what it did. It is the one tool every agent
   must call every activation, and it returned the whole checkpoint twice: once
   in `content` and again, identically, in `structuredContent`. The duplicate
   existed for hosts that drop `_meta` and forbid an app from calling tools, where
@@ -291,10 +291,10 @@ of changes from something earlier: there is no earlier.
   a panel from a screenshot is how the carrier bug survived a green suite, and
   `--unlock` drives the human lock so the unlocked panel is observable without a
   person putting a finger on a sensor.
-- The panel marks a lane going out of touch, once, as it happens: that agent's
+- The panel marks an agent going out of touch, once, as it happens: that agent's
   line to the board retracts and returns amber. It is the board's most
   consequential change and it used to occur in silence, between two frames. A
-  lane that changes state also TRAVELS to its new status group rather than
+  agent that changes state also TRAVELS to its new status group rather than
   vanishing from one and reappearing in another, so a change of state reads as
   one event instead of two unrelated edits: both directions, because recovery
   is worth seeing too.

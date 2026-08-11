@@ -2,9 +2,9 @@
    LANES. SHARED DESIGN SYSTEM
 
    One stylesheet for both surfaces: the MCP Apps panel and the web
-   board. They are DIFFERENT VIEWS: the panel is one lane's own
+   board. They are DIFFERENT VIEWS: the panel is one agent's own
    board and mailbox, the web board is the operator's god view over
-   every lane and all mail, but they are the same product and must
+   every agent and all mail, but they are the same product and must
    not look like two.
 
    Inlined into both by internal/assets. It is never fetched: the
@@ -41,7 +41,7 @@
   color-scheme: light dark;
 
   --h-neutral: 261;  /* every surface, every grey        */
-  --h-accent:  262;  /* structure: this view, this lane  */
+  --h-accent:  262;  /* structure: this view, this agent  */
   --h-live:    158;  /* an agent is alive                */
   --h-warn:     36;  /* needs attention, or unreachable  */
 
@@ -320,7 +320,7 @@ body {
   font-size: var(--t-meta); letter-spacing: .06em;
   color: var(--fg-3);
 }
-.context .lane-id { color: var(--fg-2); }
+.context .agent-id { color: var(--fg-2); }
 /* The separator belongs TO the item before it, so a wrap can never orphan one at
    the end of a line. As a standalone element it was its own flex item and did
    exactly that at 375px, reading as a truncated line. */
@@ -384,7 +384,7 @@ body {
 .band .hr { flex: 1; height: 1px; background: var(--line); }
 
 /* ── roster ────────────────────────────────────────────────────
-   A bare lane costs one row; a working lane earns more. That
+   A bare agent costs one row; a working agent earns more. That
    asymmetry is the design: fifteen idle agents must not out-shout
    the two that are doing something. */
 .entry {
@@ -430,13 +430,13 @@ body {
 .tag.self { color: var(--accent); border-color: var(--accent-dim); }
 /* A member that is not currently working. The chip is dimmed rather than
    coloured: it is context on somebody else's state, not something the reader
-   must act on, but a lane that lists a corpse identically to a live agent
+   must act on, but an agent that lists a corpse identically to a live agent
    answers "who is on this" wrongly. */
 .member.gone { opacity: .62; }
 .member-tag.gone { color: var(--warn); }
 /* WHY an agent stopped counting as live. Weighted by how much the reason
    actually tells you: an exited process is definitive and gets the warn
-   colour; a lapsed lease may be nothing worse than a long build; a lane that
+   colour; a lapsed lease may be nothing worse than a long build; an agent that
    never gave a pid has said nothing about a process at all, so it must not
    look like a death. */
 .tag.why.process_exited { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
@@ -557,7 +557,7 @@ body {
   max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .msg .att .size { color: var(--fg-2); }
-/* A fileref is a path the sender asserted. Lanes never opened it, so it is
+/* A fileref is a path the sender asserted. Dibs never opened it, so it is
    marked rather than presented with the same confidence as a stored blob. */
 .msg .att.fileref .advisory { color: var(--fg-2); font-style: italic; }
 .msg .reply {
@@ -659,8 +659,8 @@ body {
 .event:first-of-type { border-top: 0; }
 .event:hover { background: var(--bg-1); }
 .event .e-serial, .event .e-when { color: var(--fg-3); }
-.event .e-lane { color: var(--fg); }
-.event .e-lane i { color: var(--fg-3); font-style: normal; padding: 0 2px; }
+.event .e-agent { color: var(--fg); }
+.event .e-agent i { color: var(--fg-3); font-style: normal; padding: 0 2px; }
 .event .e-type { color: var(--fg-2); }
 .event.msg-ev .e-type { color: var(--accent); }
 .event.claim-ev .e-type { color: var(--warn); }
@@ -701,38 +701,38 @@ body {
   }
 }
 
-/* ── channels ────────────────────────────────────────────────────────────
-   A channel of work (SPEC-CHANNELS.md), not an agent. Deliberately quieter
-   than .entry: an agent is a who and reads as a row on the roster, a channel
+/* ── spaces ────────────────────────────────────────────────────────────
+   A space of work (SPEC-CHANNELS.md), not an agent. Deliberately quieter
+   than .entry: an agent is a who and reads as a row on the roster, a space
    is a where and reads as a container the agents sit inside. Reusing the
    roster's weight would make the board look like two rosters. */
-.channel {
+.space {
   border-top: 1px solid var(--line);
   padding: var(--s3) 0;
 }
-.channel:first-of-type { border-top: 0; }
-.channel:hover { background: var(--bg-1); }
+.space:first-of-type { border-top: 0; }
+.space:hover { background: var(--bg-1); }
 
-.channel > header {
+.space > header {
   display: flex; align-items: center; gap: var(--s2);
   margin-bottom: var(--s1);
 }
-.channel .grow { flex: 1; }
-.channel-id {
+.space .grow { flex: 1; }
+.space-id {
   font-family: var(--mono);
   font-size: var(--t-sm); letter-spacing: -.005em;
   color: var(--fg);
 }
-/* An exclusive channel is the one state that changes what another agent may
+/* An exclusive space is the one state that changes what another agent may
    do, so it is the only one that earns a colour. */
-.channel.exclusive .channel-id { color: var(--warn); }
-.channel.mine .channel-id { color: var(--accent); }
+.space.exclusive .space-id { color: var(--warn); }
+.space.mine .space-id { color: var(--accent); }
 
-.channel .count {
+.space .count {
   font-family: var(--mono); font-size: var(--t-meta);
   color: var(--fg-3); white-space: nowrap;
 }
-.channel-topic {
+.space-topic {
   margin: 0 0 var(--s2); font-size: var(--t-sm); line-height: 1.45;
   color: var(--fg-2);
 }
@@ -757,12 +757,12 @@ body {
 }
 .member[title] { border-bottom-style: dotted; }
 
-.channel-queue {
+.space-queue {
   margin: var(--s2) 0 0;
   font-family: var(--mono); font-size: var(--t-meta); color: var(--fg-3);
 }
 
-/* Reused by the channel header; scoped small so it never competes with the
+/* Reused by the space header; scoped small so it never competes with the
    status marks on the roster. */
 .pill {
   font-size: var(--t-micro); text-transform: uppercase; letter-spacing: .06em;
@@ -774,7 +774,7 @@ body {
 .pill.attn { color: var(--warn); border-color: rgba(222,122,96,.34); }
 
 /* Two facts that change how a row should be read, and are invisible without a
-   mark: a coordinator can act on lanes it does not own, and a subagent's work
+   mark: a coordinator can act on agents it does not own, and a subagent's work
    is really its parent's. Quieter than .tag: they qualify an agent rather
    than describing its state. */
 .badge {
@@ -797,7 +797,7 @@ body {
   padding: var(--s2) 0 var(--s3);
   border-bottom: 1px solid var(--line);
 }
-.compose.new-lane, .compose.new-msg {
+.compose.new-agent, .compose.new-msg {
   border-bottom: 0; border-top: 1px solid var(--line);
   margin-top: var(--s3); padding-top: var(--s3);
 }
@@ -867,7 +867,7 @@ body {
    only state on the board that nothing will resolve on its own, so it is the
    only one that gets a filled treatment rather than an outline. */
 /* A fact worth keeping, not an alarm: somebody left without reading an
-   announcement. The lane settled correctly; nobody needs to do anything
+   announcement. The agent settled correctly; nobody needs to do anything
    urgently. Lowest weight on the board so it does not compete with the marks
    that DO need a person. */
 .pill.quiet { color: var(--fg-3); border-color: var(--line-2); }
@@ -899,9 +899,9 @@ body {
    No override is needed: `color: var(--bg)` already flips with the theme and
    measures 6.45:1 dark and 5.25:1 light. Found by codex in cross-review. */
 
-/* What was said in a lane. Reads as a conversation, not a feed: the human joined
+/* What was said in an agent. Reads as a conversation, not a feed: the human joined
    to follow the work, and a list of counts is not following anything. */
-.channel-said {
+.space-said {
   list-style: none;
   margin: var(--s3) 0 0;
   padding: 0 0 0 var(--s3);
@@ -909,19 +909,19 @@ body {
   display: grid;
   gap: var(--s2);
 }
-.channel-said li {
+.space-said li {
   display: grid;
   grid-template-columns: auto 1fr auto;
   gap: var(--s2);
   align-items: baseline;
   font-size: var(--t-body);
 }
-.channel-said .said-from { color: var(--accent); font-family: var(--mono); }
-.channel-said .said-body { color: var(--fg); }
-.channel-said .said-state { color: var(--fg-3); font-size: var(--t-meta); white-space: nowrap; }
-.channel-said li.owed .said-state { color: var(--warn); }
+.space-said .said-from { color: var(--accent); font-family: var(--mono); }
+.space-said .said-body { color: var(--fg); }
+.space-said .said-state { color: var(--fg-3); font-size: var(--t-meta); white-space: nowrap; }
+.space-said li.owed .said-state { color: var(--warn); }
 @media (max-width: 40rem) {
-  .channel-said li { grid-template-columns: 1fr; gap: var(--s1); }
+  .space-said li { grid-template-columns: 1fr; gap: var(--s1); }
 }
 
 /* Content for screen readers only.
@@ -984,9 +984,9 @@ h2.band { margin: 0; font-weight: inherit; }
    scroll listener, no resize listener, no reflow, and it stays correct while
    the board redraws underneath it. position-try-fallbacks handles a mark near
    the top or the edge of the pane without anyone computing a flip. */
-#lanes-why {
+#agents-why {
   position: fixed;
-  position-anchor: --lanes-why;
+  position-anchor: --agents-why;
   position-area: block-start;
   position-try-fallbacks: flip-block, flip-inline, block-end span-inline-start;
   margin: 0;
@@ -1007,13 +1007,13 @@ h2.band { margin: 0; font-weight: inherit; }
   translate: 0 0;
   transition: opacity .14s var(--ease), translate .14s var(--ease), overlay .14s allow-discrete, display .14s allow-discrete;
 }
-#lanes-why:not(:popover-open) { opacity: 0; translate: 0 4px; }
-@starting-style { #lanes-why:popover-open { opacity: 0; translate: 0 4px; } }
+#agents-why:not(:popover-open) { opacity: 0; translate: 0 4px; }
+@starting-style { #agents-why:popover-open { opacity: 0; translate: 0 4px; } }
 
 /* An explanation must never be the reason somebody feels ill. */
 @media (prefers-reduced-motion: reduce) {
-  #lanes-why { transition-duration: .001ms; translate: none; }
-  #lanes-why:not(:popover-open) { translate: none; }
+  #agents-why { transition-duration: .001ms; translate: none; }
+  #agents-why:not(:popover-open) { translate: none; }
 }
 
 /* Where anchor positioning is not implemented, a popover defaults to the
@@ -1021,7 +1021,7 @@ h2.band { margin: 0; font-weight: inherit; }
    it to the bottom instead, as a status line: not the same design, but a
    deliberate one rather than whatever the default happened to be. */
 @supports not (position-area: block-start) {
-  #lanes-why {
+  #agents-why {
     position: fixed;
     inset: auto 0 var(--s4) 0;
     margin-inline: auto;
@@ -1084,7 +1084,7 @@ html[data-transition="tab-back"]::view-transition-new(board-view)    { animation
 /* Headings set their own measure rather than leaving a widow on line two, and
    prose avoids the single trailing word. Cheap, and it is most of the
    difference between text that was placed and text that was poured. */
-h1, h2, h3, .empty h3, .channel-topic { text-wrap: balance; }
+h1, h2, h3, .empty h3, .space-topic { text-wrap: balance; }
 p, .body, .msg-body, .said-body { text-wrap: pretty; }
 
 /* A composer sized by what is in it. `rows` is a guess that is wrong twice:
@@ -1166,14 +1166,14 @@ button, .act { padding-block: max(5px, calc((var(--ctl-h, 26px) - 1lh) / 2)); }
    onto every child on every redraw: layout read, style write, per element,
    several times a minute. `sibling-index()` is the same effect stated as a
    fact about position rather than computed and pushed in. The cap is what
-   stops a fifty-lane board from taking a second to finish arriving. */
+   stops a fifty-agent board from taking a second to finish arriving. */
 .view > *, .band-group > * {
   animation: rise .34s var(--ease) both;
   animation-delay: min(calc(sibling-index() * 16ms), 180ms);
 }
 
 /* ── The cadence trace ──────────────────────────────────────────────────────
-   How much a lane actually did, minute by minute, over the last ten.
+   How much an agent actually did, minute by minute, over the last ten.
 
    The board could always say what an agent IS: active, dormant, out of touch.
    That is a state derived from a timeout, and it cannot tell a healthy agent
@@ -1183,7 +1183,7 @@ button, .act { padding-block: max(5px, calc((var(--ctl-h, 26px) - 1lh) / 2)); }
 
    BINNED, after two rewrites that were wrong. First attempt: one mark per
    event on a linear axis: twenty-five actions inside six seconds all landed
-   in the same one-pixel column, so a busy lane drew the same single line as a
+   in the same one-pixel column, so a busy agent drew the same single line as a
    dead one. Second: a square-rooted time axis to give the recent end room,
    which cannot help, because events six seconds apart ARE simultaneous at this
    width and no transform separates them. Bins make collision the signal rather
@@ -1226,10 +1226,10 @@ button, .act { padding-block: max(5px, calc((var(--ctl-h, 26px) - 1lh) / 2)); }
   transition: block-size .45s var(--ease), opacity .45s var(--ease);
 }
 
-/* The lane you are reading is the one whose rhythm you care about. */
+/* The agent you are reading is the one whose rhythm you care about. */
 .entry.self .cadence i { background: var(--live); }
 
-/* A quiet lane must not still draw a confident bright rhythm. */
+/* A quiet agent must not still draw a confident bright rhythm. */
 .entry[data-recency="aging"] .cadence { opacity: .55; }
 .entry.stale .cadence, .entry.dormant .cadence { opacity: .4; }
 

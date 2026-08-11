@@ -34,7 +34,7 @@ type Blob struct {
 	Mime          string          `json:"mime,omitempty"`
 	CreatedSerial uint64          `json:"created_serial"`
 	CreatedAt     time.Time       `json:"created_at"`
-	Owners        map[string]bool `json:"owners"`         // lanes that have put this content (A6.1)
+	Owners        map[string]bool `json:"owners"`         // agents that have put this content (A6.1)
 	Pins          map[string]bool `json:"pins,omitempty"` // reserved: no pin op in v1
 }
 
@@ -69,18 +69,18 @@ func (s *State) blobRefs(id string) int {
 	return n
 }
 
-// blobAccessible enforces A6: fetchable only by an owner lane or the recipient
+// blobAccessible enforces A6: fetchable only by an owner agent or the recipient
 // of a live message referencing it. Does not reveal existence to others.
-func (s *State) blobAccessible(id, lane string) bool {
+func (s *State) blobAccessible(id, agent string) bool {
 	b := s.Blobs[id]
 	if b == nil {
 		return false
 	}
-	if b.Owners[lane] {
+	if b.Owners[agent] {
 		return true
 	}
 	for _, m := range s.Messages {
-		if m.To != lane {
+		if m.To != agent {
 			continue
 		}
 		for _, a := range m.Attachments {
@@ -92,22 +92,22 @@ func (s *State) blobAccessible(id, lane string) bool {
 	return false
 }
 
-// BlobAccessible reports whether lane may fetch id (A6). Exported for the engine.
-func (s *State) BlobAccessible(id, lane string) bool { return s.blobAccessible(id, lane) }
+// BlobAccessible reports whether agent may fetch id (A6). Exported for the engine.
+func (s *State) BlobAccessible(id, agent string) bool { return s.blobAccessible(id, agent) }
 
-// BlobWasEvicted reports that lane holds a live message naming id, but the blob
+// BlobWasEvicted reports that agent holds a live message naming id, but the blob
 // itself is gone: the store cap's last-resort pass drops referenced content
 // rather than exceed the bound.
 //
 // This separates "you may not have it" from "it no longer exists", which are
 // the same answer today and are not the same problem. Only ever consulted for a
 // caller that already holds the reference, so it is not an existence oracle.
-func (s *State) BlobWasEvicted(id, lane string) bool {
+func (s *State) BlobWasEvicted(id, agent string) bool {
 	if s.Blobs[id] != nil {
 		return false
 	}
 	for _, m := range s.Messages {
-		if m.To != lane && m.From != lane {
+		if m.To != agent && m.From != agent {
 			continue
 		}
 		for _, a := range m.Attachments {
@@ -119,13 +119,13 @@ func (s *State) BlobWasEvicted(id, lane string) bool {
 	return false
 }
 
-// laneBlobBytes sums the sizes of blobs a lane owns: the per-lane quota metric
+// laneBlobBytes sums the sizes of blobs an agent owns: the per-agent quota metric
 // (A9, fixes P1-3). A blob shared by N owners counts against each; content the
-// lane put is content it is accountable for.
-func (s *State) laneBlobBytes(lane string) int64 {
+// agent put is content it is accountable for.
+func (s *State) laneBlobBytes(agent string) int64 {
 	var total int64
 	for _, b := range s.Blobs {
-		if b.Owners[lane] {
+		if b.Owners[agent] {
 			total += b.Size
 		}
 	}
@@ -145,7 +145,7 @@ func (s *State) storeBytes() int64 {
 // of already-present content, with caller-scoped dedup (A6.1, fixes P1-1). The
 // engine has already made the bytes durable off-thread (A4.1) before this op,
 // so registration is bytes-free and pure.
-func (s *State) applyPutBlob(l *Lane, op *Op, now time.Time) (Result, []Event, error) {
+func (s *State) applyPutBlob(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	if op.Blob == "" {
 		return nil, nil, ErrNoID
 	}
@@ -165,7 +165,7 @@ func (s *State) applyPutBlob(l *Lane, op *Op, now time.Time) (Result, []Event, e
 		return Result{"blob": b.ID, "size": b.Size, "mime": b.Mime, "deduped": true}, nil, nil
 	}
 
-	// Per-lane quota: adding this content must not exceed the lane's budget.
+	// Per-agent quota: adding this content must not exceed the agent's budget.
 	addl := op.Size
 	if b != nil {
 		addl = b.Size // canonical size wins over caller-claimed
@@ -189,7 +189,7 @@ func (s *State) applyPutBlob(l *Lane, op *Op, now time.Time) (Result, []Event, e
 			Owners: map[string]bool{l.ID: true}, Pins: map[string]bool{},
 		}
 		s.Blobs[op.Blob] = b
-		evs = append(evs, Event{Type: "blob.registered", Lane: l.ID, Data: map[string]any{
+		evs = append(evs, Event{Type: "blob.registered", Agent: l.ID, Data: map[string]any{
 			"id": op.Blob, "size": op.Size, "mime": op.Mime,
 		}})
 		serial := s.finish(&evs, now)
@@ -201,14 +201,14 @@ func (s *State) applyPutBlob(l *Lane, op *Op, now time.Time) (Result, []Event, e
 	// supplied the plaintext, so this discloses nothing. A6.1).
 	b.Owners[l.ID] = true
 	return Result{"blob": b.ID, "size": b.Size, "mime": b.Mime, "deduped": false},
-		[]Event{{Type: "blob.owner_added", Lane: l.ID, Data: map[string]any{"id": b.ID}}}, nil
+		[]Event{{Type: "blob.owner_added", Agent: l.ID, Data: map[string]any{"id": b.ID}}}, nil
 }
 
 // gcBlobs is the deterministic, pure blob eviction pass (A5). It runs inside
 // the sweep (for TTL) and inside put_blob (to reclaim under cap pressure before
 // registering). Every decision is a pure function of (registry, live messages,
 // now), so replay reproduces it exactly: no recorded victims needed, unlike
-// lane liveness (which depends on impure PID probes). Bytes are deleted from
+// agent liveness (which depends on impure PID probes). Bytes are deleted from
 // disk afterward by the engine's reconcile pass, which diffs files vs registry.
 //
 // Policy (deterministic; created-order, not access-order: true LRU would
@@ -279,7 +279,7 @@ func (s *State) gcBlobs(now time.Time, reserve int64) []Event {
 // validateAttachments checks a send's attachment list against A6/A9 and returns
 // the normalized handles to store on the message. Blob handles are id-validated
 // and access-checked; filerefs are bounded but never opened (A2.1).
-func (s *State) validateAttachments(l *Lane, atts []Attachment) ([]Attachment, error) {
+func (s *State) validateAttachments(l *Agent, atts []Attachment) ([]Attachment, error) {
 	if len(atts) > s.Limits.MaxAttachments {
 		return nil, errTooLarge("attachments", s.Limits.MaxAttachments)
 	}

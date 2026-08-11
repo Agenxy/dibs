@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 func writeJSON(w http.ResponseWriter, v any, err error) {

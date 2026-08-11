@@ -8,7 +8,7 @@ import (
 
 // Push for the protocol every shipping client actually speaks.
 //
-// Lanes already had server-push: subscriptions/listen (SEP-2575), verified end
+// Dibs already had server-push: subscriptions/listen (SEP-2575), verified end
 // to end. But that is the 2026-07-28 method, and no shipping host negotiates
 // 2026-07-28, so the push capability existed for a protocol nobody speaks and
 // was absent from the one everybody does. Every real agent was left polling.
@@ -16,7 +16,7 @@ import (
 // 2025-11-25 does it in two parts rather than one:
 //
 //	POST resources/subscribe {uri}  : register interest, returns {}
-//	GET  /mcp  Accept: text/event-stream: the channel notifications arrive on
+//	GET  /mcp  Accept: text/event-stream: the space notifications arrive on
 //
 // The split is why this could not simply reuse serveSubscription: there, the
 // POST that subscribes IS the stream. Here the subscription outlives any single
@@ -26,15 +26,15 @@ import (
 //
 // # Still not driving anything
 //
-// The client opens the channel and asks. Lanes answers on a connection the
+// The client opens the space and asks. Dibs answers on a connection the
 // client owns and can close at any moment, which is the same shape as
 // await_events and the opposite of the shell-hook wrapper that was built and
 // deleted. Nothing here reaches into a harness.
 //
 // # Scoping
 //
-// lanes://board is public: every agent may watch it. lanes://inbox is one
-// lane's mail, so subscribing to it requires that lane's token, exactly as
+// dibs://board is public: every agent may watch it. dibs://inbox is one
+// agent's mail, so subscribing to it requires that agent's token, exactly as
 // reading it does. The token is remembered with the subscription because the
 // GET that opens the stream carries no body to put it in.
 
@@ -52,7 +52,7 @@ type legacySubs struct {
 type legacySub struct {
 	board bool
 	inbox bool
-	// token scopes the inbox subscription to one lane. Held here because the
+	// token scopes the inbox subscription to one agent. Held here because the
 	// GET carries no body; it is the same token the client already proved it
 	// holds when it subscribed.
 	token string
@@ -60,7 +60,7 @@ type legacySub struct {
 
 func newLegacySubs() *legacySubs { return &legacySubs{by: map[string]*legacySub{}} }
 
-// add records a subscription, returning false if the URI is not one Lanes
+// add records a subscription, returning false if the URI is not one Dibs
 // publishes.
 //
 // Unknown URIs are refused rather than silently accepted: a client that
@@ -78,9 +78,9 @@ func (l *legacySubs) add(session, uri, token string) bool {
 		l.by[session] = sub
 	}
 	switch uri {
-	case "lanes://board":
+	case "dibs://board":
 		sub.board = true
-	case "lanes://inbox":
+	case "dibs://inbox":
 		sub.inbox = true
 		sub.token = token
 	default:
@@ -100,9 +100,9 @@ func (l *legacySubs) remove(session, uri string) {
 		return
 	}
 	switch uri {
-	case "lanes://board":
+	case "dibs://board":
 		sub.board = false
-	case "lanes://inbox":
+	case "dibs://inbox":
 		sub.inbox, sub.token = false, ""
 	}
 }
@@ -140,17 +140,17 @@ func (s *Server) handleLegacySubscribe(r *http.Request, params json.RawMessage) 
 			"call initialize first and send the Mcp-Session-Id header it returns"}
 	}
 	token, _ := p.Meta[metaTokenKey].(string)
-	if p.URI == "lanes://inbox" && token == "" {
+	if p.URI == "dibs://inbox" && token == "" {
 		return nil, &rpcError{
 			Code: -32602,
-			Message: "lanes://inbox is one lane's mail; subscribing needs that lane's token in _meta['" +
+			Message: "dibs://inbox is one agent's mail; subscribing needs that agent's token in _meta['" +
 				metaTokenKey + "']",
 		}
 	}
 	if !s.legacy.add(session, p.URI, token) {
 		return nil, &rpcError{
 			Code:    -32602,
-			Message: "unknown resource " + p.URI + "; Lanes publishes lanes://board and lanes://inbox",
+			Message: "unknown resource " + p.URI + "; Dibs publishes dibs://board and dibs://inbox",
 		}
 	}
 	return map[string]any{}, nil
@@ -170,7 +170,7 @@ func (s *Server) handleLegacyUnsubscribe(r *http.Request, params json.RawMessage
 	return map[string]any{}
 }
 
-// serveLegacyStream is the GET side: the channel notifications arrive on.
+// serveLegacyStream is the GET side: the space notifications arrive on.
 //
 // Opened by the client, closed by the client. If it opens before anything is
 // subscribed that is fine and normal: the stream simply carries keepalives
@@ -179,14 +179,14 @@ func (s *Server) handleLegacyUnsubscribe(r *http.Request, params json.RawMessage
 func (s *Server) serveLegacyStream(w http.ResponseWriter, r *http.Request) {
 	session := r.Header.Get("Mcp-Session-Id")
 	if session == "" {
-		http.Error(w, "GET /mcp is the notification channel and needs a session; "+
+		http.Error(w, "GET /mcp is the notification space and needs a session; "+
 			"call initialize first and send the Mcp-Session-Id header it returns",
 			http.StatusBadRequest)
 		return
 	}
 	sub := s.legacy.get(session)
 
-	// Resolve the lane the inbox subscription belongs to, and the serial to
+	// Resolve the agent the inbox subscription belongs to, and the serial to
 	// start from, so nothing that happened between subscribing and connecting is
 	// missed.
 	laneID, since, err := s.eng.SubscribeInfo(r.Context(), sub.token)

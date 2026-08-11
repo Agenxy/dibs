@@ -4,12 +4,12 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/agenxy/lanes/internal/core"
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // The human's write surface.
 //
-// Every handler here does the same thing: fetch the operator's own lane token,
+// Every handler here does the same thing: fetch the operator's own agent token,
 // build the SAME op an agent would, and hand it to the engine. There is no
 // admin shortcut, no direct state mutation, and nothing in internal/core that
 // knows a human is involved.
@@ -17,19 +17,19 @@ import (
 // That is the design constraint, not an implementation detail. A parallel set of
 // privileged write paths would be a second authorization surface into the state
 // machine: unledgered unless each one remembered to ledger, invisible to
-// `lanes verify`, and impossible for an agent to reason about. Routing the human
-// through an ordinary lane means their post is an ordinary post, their question
+// `dibs verify`, and impossible for an agent to reason about. Routing the human
+// through an ordinary agent means their post is an ordinary post, their question
 // carries a real deadline, and the agent answering cannot tell it is talking to
 // a person. Which is correct: it should behave the same either way.
 //
 // AUTH is inherited. These routes sit behind the same session cookie as the
 // board itself, mintable only by proving the admin password
-// (cmd/lanesd/guard.go). Reaching this code means that already happened.
+// (cmd/dibd/guard.go). Reaching this code means that already happened.
 
 // act is the one shape every write endpoint accepts, so the browser has one
 // helper rather than seven.
 type act struct {
-	Lane        string `json:"lane"`        // channel id, for lane_* actions
+	Agent       string `json:"agent"`       // space id, for lane_* actions
 	To          string `json:"to"`          // agent id, for send
 	Body        string `json:"body"`        // message or post text
 	Type        string `json:"type"`        // notify | question | request | handoff
@@ -47,7 +47,7 @@ func (s *Server) registerActions(mux *http.ServeMux) {
 // apiMe tells the page which AGENT it is speaking as, or that it is only
 // watching, so the UI can mark the human's own memberships without guessing.
 //
-// The human is a participant, not a channel: they join the lanes agents open,
+// The human is a participant, not a space: they join the agents agents open,
 // and never need one of their own, and they need not be a participant at all.
 func (s *Server) apiMe(w http.ResponseWriter, r *http.Request) {
 	// Deliberately does NOT create. Watching the board is not participating:
@@ -56,8 +56,8 @@ func (s *Server) apiMe(w http.ResponseWriter, r *http.Request) {
 	// action, in apiAct.
 	agent := s.eng.HumanIdentity()
 	s.eng.HumanTouch(r.Context())
-	// "agent", not "lane": this is new surface and free to use the clear word.
-	// The board payload still says `lanes` for participants because that name is
+	// "agent", not "agent": this is new surface and free to use the clear word.
+	// The board payload still says `dibs` for participants because that name is
 	// frozen on disk (internal/ledger/wireformat_test.go).
 	writeActJSON(w, http.StatusOK, map[string]any{"agent": agent})
 }
@@ -101,15 +101,15 @@ func (a act) op(what, token string) (*core.Op, bool) {
 	op := &core.Op{Token: token}
 	switch what {
 	case "join":
-		op.Kind, op.Channel = core.OpLaneJoin, a.Lane
+		op.Kind, op.Space = core.OpLaneJoin, a.Agent
 	case "leave":
-		op.Kind, op.Channel = core.OpLaneLeave, a.Lane
+		op.Kind, op.Space = core.OpLaneLeave, a.Agent
 	case "post":
-		op.Kind, op.Channel, op.Body = core.OpLanePost, a.Lane, a.Body
+		op.Kind, op.Space, op.Body = core.OpLanePost, a.Agent, a.Body
 	case "announce":
-		op.Kind, op.Channel, op.Body = core.OpLaneAnnounce, a.Lane, a.Body
+		op.Kind, op.Space, op.Body = core.OpLaneAnnounce, a.Agent, a.Body
 	case "open":
-		op.Kind, op.Channel, op.Text = core.OpLaneOpen, a.Lane, a.Body
+		op.Kind, op.Space, op.Text = core.OpLaneOpen, a.Agent, a.Body
 	case "send":
 		op.Kind, op.To, op.Body = core.OpSendMessage, a.To, a.Body
 		op.MsgType, op.DeadlineSec = a.msgType(), a.deadline()
@@ -118,7 +118,7 @@ func (a act) op(what, token string) (*core.Op, bool) {
 		op.Disposition = a.disposition()
 	case "ack":
 		op.Kind, op.MsgSerial = core.OpAckMessage, a.Serial
-	case "lane_ack":
+	case "ack_announcement":
 		op.Kind, op.MsgSerial = core.OpLaneAck, a.Serial
 	default:
 		return nil, false

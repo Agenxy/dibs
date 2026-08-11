@@ -4,18 +4,18 @@ import "sort"
 
 // Ref matching: the DECLARED half of the matcher.
 //
-// Separated from channel.go because these functions answer one question: what
+// Separated from space.go because these functions answer one question: what
 // did two agents write down that names the same thing, and because that is the
 // question the scorer cannot answer. A ref is a fact an agent typed; a score is
 // a resemblance a model computed. When they disagree the ref should win, and the
-// bug that prompted this split was the ref never getting to speak: a channel
+// bug that prompted this split was the ref never getting to speak: a space
 // with no scorer footprint was discarded before its refs were ever read.
 
-// channelRefs is every objective id declared by the members of a lane.
-func (s *State) channelRefs(ch *Channel) map[string]bool {
+// channelRefs is every objective id declared by the members of an agent.
+func (s *State) channelRefs(ch *Space) map[string]bool {
 	out := map[string]bool{}
 	for agent := range ch.Members {
-		l := s.Lanes[agent]
+		l := s.Agents[agent]
 		if l == nil {
 			continue
 		}
@@ -28,9 +28,9 @@ func (s *State) channelRefs(ch *Channel) map[string]bool {
 	return out
 }
 
-// sharedRefsWith returns the objective ids both this lane and the declaring
+// sharedRefsWith returns the objective ids both this agent and the declaring
 // agent named, sorted. Nil when the agent declared none.
-func (s *State) sharedRefsWith(ch *Channel, mine map[string]bool) []string {
+func (s *State) sharedRefsWith(ch *Space, mine map[string]bool) []string {
 	if len(mine) == 0 {
 		return nil
 	}
@@ -44,18 +44,18 @@ func (s *State) sharedRefsWith(ch *Channel, mine map[string]bool) []string {
 	return out
 }
 
-// unmatchable reports whether a channel offers nothing to compare against.
+// unmatchable reports whether a space offers nothing to compare against.
 //
 // Refs are checked BEFORE a footprint is required, and the ordering is the whole
 // point. The caller-side guard already says declared facts must match even when
 // the scorer produced no footprint; that rule was applied only to the caller. A
-// channel whose own opener predicted no files was discarded two lines before
+// space whose own opener predicted no files was discarded two lines before
 // sharedRefsWith ran, so two agents declaring the same issue:42: same
-// repository, same activity: opened two channels. That is the case an
+// repository, same activity: opened two spaces. That is the case an
 // identifying ref exists to solve, failing exactly when the scorer had no
 // opinion, which is when a hand-written fact matters most.
 //
-// Nothing here inflates a match: a footprintless channel scores 0 from jaccard
+// Nothing here inflates a match: a footprintless space scores 0 from jaccard
 // and survives only on the shared ref, which worthless() then judges on its own
 // merits.
 func unmatchable(fp []PredFile, sharedRefs []string) bool {

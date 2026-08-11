@@ -25,8 +25,8 @@ func putBlob(t *testing.T, s *State, token, content string, now time.Time) Resul
 	return res
 }
 
-//nolint:unparam // returning the Lane keeps the helper usable from new tests
-func ackReg(t *testing.T, s *State, name, token string, now time.Time) *Lane {
+//nolint:unparam // returning the Agent keeps the helper usable from new tests
+func ackReg(t *testing.T, s *State, name, token string, now time.Time) *Agent {
 	t.Helper()
 	l := reg(t, s, name, token, now)
 	mustApply(t, s, &Op{Kind: OpAckBoard, Token: token}, now)
@@ -35,7 +35,7 @@ func ackReg(t *testing.T, s *State, name, token string, now time.Time) *Lane {
 
 // TestBlobDedupIsCallerScoped is the P1-1 fix: `deduped` reflects only whether
 // the CALLER already owned the content, never global existence, so it can't be
-// used as a cross-lane existence oracle.
+// used as a cross-agent existence oracle.
 func TestBlobDedupIsCallerScoped(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	ackReg(t, s, "alpha", "ta", t0)
@@ -142,7 +142,7 @@ func TestBlobMimeValidation(t *testing.T) {
 	}
 }
 
-// TestBlobPerLaneQuota is part of the P1-3 fix: one lane cannot exceed its store
+// TestBlobPerLaneQuota is part of the P1-3 fix: one agent cannot exceed its store
 // quota.
 func TestBlobPerLaneQuota(t *testing.T) {
 	lim := DefaultLimits()
@@ -275,17 +275,17 @@ func TestAnEvictedBlobIsNotReportedAsAnAccessProblem(t *testing.T) {
 	lim.BlobGraceWindow = 0
 	s := NewState("t", lim)
 	now := time.Unix(1700000000, 0)
-	reg := func(name, tok string) *Lane {
+	reg := func(name, tok string) *Agent {
 		t.Helper()
 		r, _, err := s.Apply(&Op{Kind: OpRegisterLane, Name: name, NewToken: tok}, now)
 		if err != nil {
 			t.Fatal(err)
 		}
 		id, _ := r["lane_id"].(string)
-		if _, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: s.Lanes[id].Token}, now); err != nil {
+		if _, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: s.Agents[id].Token}, now); err != nil {
 			t.Fatal(err)
 		}
-		return s.Lanes[id]
+		return s.Agents[id]
 	}
 	sender := reg("sender", "t1")
 	reg("recip", "t2")
