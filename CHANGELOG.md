@@ -5,6 +5,45 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-08-11
+
+### Changed
+
+- **Lanes is now Dibs.** The name collided with an established project in the
+  same niche, and described the opposite of what this does: everywhere else a
+  "lane" is an isolated parallel workstream, while here it was an agent's
+  identity on a shared board.
+  - The CLI is `dibs`, the daemon is `dibd`, the environment is `DIBS_*`, the
+    data directory is `~/.dibs`, and resources are `dibs://`.
+  - `brew install agenxy/tap/dibs`. The old cask still installs 0.0.2 and is
+    not updated further.
+- **A lane is now an agent, and a lane of work is now a space.** Both concepts
+  were called lanes, which is why the tool names never quite made sense. A space
+  is where semantically-related work congregates, and what draws agents into one
+  is a match rather than a rule, so "lane" was the wrong shape for it.
+- **Tool names are verb-first and drop the noun where nothing else could be
+  meant.** `register`, `resume`, `update`, `sign_off`, `check_in`, `board`,
+  `declare`, `undeclare`, `open_space`, `join_space`, `leave_space`,
+  `close_space`, `read_space`, `merge_spaces`, `watch_space`, `lock_space`,
+  `unlock_space`, `post`, `announce`, `ack_announcement`, `admit`, `evict`,
+  `send`, `read_mail`, `ack`.
+
+### Breaking
+
+- **A 0.0.2 board cannot be replayed by 0.0.3.** The ledger records op kinds by
+  name and those names changed, so the daemon refuses to start rather than serve
+  a board that disagrees with its own history. It says which word it found, the
+  one command that fixes it, and asks the agent reading it to tell you what was
+  set aside. Sorry: one clean break at 0.0.x beat two later.
+
+### Fixed
+
+- A ledger line that was valid JSON but carried no op panicked the daemon
+  instead of being reported as corruption.
+- `verify --json` dropped the corrective hint the prose keeps, so a board that
+  had never run reported `open …: no such file` and nothing else on the surface
+  agents read. Thanks to @shaurya703 (#17).
+
 ## [0.0.2] - 2026-08-11
 
 ### Added
