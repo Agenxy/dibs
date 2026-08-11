@@ -136,7 +136,8 @@ func TestAConfigWithNoURLIsAssumedToBeForThisDaemon(t *testing.T) {
 }
 
 // chain builds a small valid ledger, then lets a test damage it.
-func chain(t *testing.T, records int) (path string, lines []string) {
+func chain(t *testing.T) (path string, lines []string) {
+	const records = 5 // every caller wants the same fixture
 	t.Helper()
 	prev := ""
 	for i := 1; i <= records; i++ {
@@ -163,7 +164,7 @@ func chain(t *testing.T, records int) (path string, lines []string) {
 // file, started, and served it. Two tools, one file, opposite verdicts, on the
 // exact surface an operator checks after a crash.
 func TestATornFinalRecordIsNotAnIntegrityFailure(t *testing.T) {
-	path, lines := chain(t, 5)
+	path, lines := chain(t)
 	whole, err := verifyChain(path)
 	if err != nil || whole.Lines != 5 || whole.Torn {
 		t.Fatalf("precondition: want 5 clean lines, got %+v / %v", whole, err)
@@ -196,7 +197,7 @@ func TestATornFinalRecordIsNotAnIntegrityFailure(t *testing.T) {
 // so pointing only at the later one sends the reader to a line that is usually
 // intact.
 func TestRealDamageIsStillReportedAndNamesBothRecords(t *testing.T) {
-	path, lines := chain(t, 5)
+	path, lines := chain(t)
 	// Alter record 3 in place, keeping it valid JSON and the same length class.
 	lines[2] = strings.Replace(lines[2], `"e":"noop"`, `"e":"noOp"`, 1)
 	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
@@ -219,7 +220,7 @@ func TestRealDamageIsStillReportedAndNamesBothRecords(t *testing.T) {
 // A bad record in the MIDDLE is corruption even though it fails the same way a
 // torn tail does: the difference is only that the file continues past it.
 func TestUnparseableMidFileIsNotMistakenForATornTail(t *testing.T) {
-	path, lines := chain(t, 5)
+	path, lines := chain(t)
 	lines[2] = `{"s":3,"prev":` // valid-looking start, cut short, but not last
 	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
 		t.Fatal(err)
