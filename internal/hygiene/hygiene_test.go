@@ -136,7 +136,77 @@ func shebangIsShell(abs string) bool {
 	if !strings.HasPrefix(first, "#!") {
 		return false
 	}
-	return interpreterIsAShell(first)
+	return interpreterIsAShell(first) || mentionsAShell(first)
+}
+
+// mentionsAShell is the conservative second opinion: any fragment of the line
+// whose basename names a shell counts, however the line is quoted or escaped.
+//
+// The parser above reads a shebang the way env does, and there are forms where
+// that is CLEVERER than the kernel, which simply takes the first word. Rather
+// than model every disagreement, anything that cannot be shown to be
+// shell-free is treated as shell. A false positive here costs a rename or an
+// allowlist entry with a reason; a false negative is a shell script in the tree,
+// which is the thing this exists to prevent.
+func mentionsAShell(shebang string) bool {
+	for _, frag := range strings.FieldsFunc(shebang, func(r rune) bool {
+		return r == ' ' || r == '\t' || r == '\'' || r == '"' || r == '\\' || r == '=' || r == '/'
+	}) {
+		switch strings.ToLower(frag) {
+		case "sh", "bash", "zsh", "dash", "ksh", "ash", "csh", "tcsh", "fish":
+			return true
+		}
+	}
+	return false
+}
+
+// splitShebang splits on whitespace the way `env -S` does, honouring quotes and
+// backslash escapes.
+//
+// strings.Fields was not enough. `#!/usr/bin/env -S 'bash'` runs Bash, and the
+// parser saw a token `'bash'` whose basename is not a shell, so an executable
+// shell script passed the check. Anything that decides what a line MEANS has to
+// read it the way the thing executing it does.
+func splitShebang(line string) []string {
+	var (
+		out   []string
+		cur   strings.Builder
+		quote rune
+		esc   bool
+		open  bool
+	)
+	flush := func() {
+		if open {
+			out = append(out, cur.String())
+			cur.Reset()
+			open = false
+		}
+	}
+	for _, r := range line {
+		switch {
+		case esc:
+			cur.WriteRune(r)
+			open, esc = true, false
+		case r == '\\' && quote != '\'':
+			esc, open = true, true
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			} else {
+				cur.WriteRune(r)
+			}
+			open = true
+		case r == '\'' || r == '"':
+			quote, open = r, true
+		case r == ' ' || r == '\t':
+			flush()
+		default:
+			cur.WriteRune(r)
+			open = true
+		}
+	}
+	flush()
+	return out
 }
 
 // interpreterIsAShell parses a shebang into the program it will actually run.
@@ -146,7 +216,7 @@ func shebangIsShell(abs string) bool {
 // has to be read the way the kernel and env read it, which means walking past
 // env, its flags, and any VAR=VALUE assignments to reach the real interpreter.
 func interpreterIsAShell(shebang string) bool {
-	fields := strings.Fields(strings.TrimPrefix(shebang, "#!"))
+	fields := splitShebang(strings.TrimPrefix(shebang, "#!"))
 	for len(fields) > 0 {
 		word := fields[0]
 		fields = fields[1:]
@@ -157,7 +227,7 @@ func interpreterIsAShell(shebang string) bool {
 		// env's own flags, and the assignments it accepts before the command.
 		if strings.HasPrefix(word, "-") {
 			if rest, ok := strings.CutPrefix(word, "--split-string="); ok {
-				fields = append(strings.Fields(rest), fields...)
+				fields = append(splitShebang(rest), fields...)
 			}
 			continue
 		}

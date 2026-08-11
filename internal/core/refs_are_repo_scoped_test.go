@@ -111,11 +111,32 @@ func TestRefsOnlyCollideInsideOneRepository(t *testing.T) {
 			why:       "no history is not evidence of different history, and a miss costs more than a warning",
 		},
 		{
-			what:      "two forks of one upstream, which share history but not issues",
+			// Changed deliberately. Remote used to outrank history, and that lost
+			// real collisions: GitHub paths are case-insensitive and a renamed
+			// repository answers to both names, so one repository compared as
+			// two. Objects cannot be renamed, so history goes first, and forks
+			// come along with it. Usually the right answer anyway, since a
+			// fork's tracker is normally disabled and its refs name the upstream
+			// one, so both agents mean the same issue 42.
+			what:      "two forks of one upstream, which share history",
 			a:         &AgentInfo{CWD: "/w/api", RepoDir: "/w/api/.git", RepoRemote: "github.com/acme/api", RepoRoots: "aaa111"},
 			b:         &AgentInfo{CWD: "/w/fork", RepoDir: "/w/fork/.git", RepoRemote: "github.com/kim/api", RepoRoots: "aaa111"},
-			wantAlarm: false,
-			why:       "a fork has its own issue numbers, so the remote outranks the shared history",
+			wantAlarm: true,
+			why:       "shared history is the stronger fact, and a fork's refs usually name the upstream tracker",
+		},
+		{
+			what:      "one repository whose clones spell the remote with different case",
+			a:         &AgentInfo{CWD: "/w/a", RepoDir: "/w/a/.git", RepoRemote: "github.com/Agenxy/Lanes", RepoRoots: "aaa111"},
+			b:         &AgentInfo{CWD: "/w/b", RepoDir: "/w/b/.git", RepoRemote: "github.com/agenxy/lanes", RepoRoots: "aaa111"},
+			wantAlarm: true,
+			why:       "GitHub paths are case-insensitive, so these are two names for one repository",
+		},
+		{
+			what:      "one repository seen through a rename redirect",
+			a:         &AgentInfo{CWD: "/w/a", RepoDir: "/w/a/.git", RepoRemote: "github.com/agenxy/homebrew-lanes", RepoRoots: "aaa111"},
+			b:         &AgentInfo{CWD: "/w/b", RepoDir: "/w/b/.git", RepoRemote: "github.com/agenxy/homebrew-tap", RepoRoots: "aaa111"},
+			wantAlarm: true,
+			why:       "a renamed repository still serves its old path, so a stale clone url is not a different project",
 		},
 	} {
 		t.Run(tc.what, func(t *testing.T) {

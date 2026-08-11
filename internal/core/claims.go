@@ -76,16 +76,18 @@ func (o SlotOverlap) Strong() bool { return o.Signal == SignalSameObjective }
 //
 //  1. The Git common directory. Every linked worktree of one repository shares
 //     it, so an equal one is proof of sameness.
-//  2. The primary remote. Two clones of one upstream are one project and share
-//     its issue numbers; two different remotes are two projects, including two
-//     forks, whose issue 42 are genuinely different issues.
-//  3. The root commits. A clone whose origin has been removed and a repository
-//     created locally with `git init` present identically on the first two
-//     facts, and one is the same project while the other is a stranger. Only
-//     history separates them, and it does so cleanly: clones share a root
-//     commit however the remote has been edited since, and two independent
-//     histories never do, because a root commit hashes its own tree, author and
-//     timestamp.
+//  2. The root commits. Clones share one however the remote has been renamed,
+//     recased or removed since, and two independent histories never do, because
+//     a root commit hashes its own tree, author and timestamps.
+//  3. The primary remote, only when history cannot answer: a shallow clone does
+//     not have its root, and an unborn repository has no commits at all.
+//
+// A consequence worth stating: two forks of one project share a root commit and
+// are therefore treated as one, so `issue:42` in each will warn. That is the
+// intended reading. A fork usually has its issue tracker disabled and its
+// references point at the upstream tracker, so the two agents really are talking
+// about one issue. Where they are not, the cost is a warning somebody dismisses,
+// which is the cheap direction.
 //
 // Getting to three was not an aesthetic choice. With two, this had to pick which
 // case to be wrong about, and it picked the wrong one: an adversarial review
@@ -108,14 +110,25 @@ func differentProjects(a, b *Lane) bool {
 	if x.RepoDir == y.RepoDir {
 		return false // one repository, possibly through two linked worktrees
 	}
+	// HISTORY FIRST, then the remote. The order was the other way round and it
+	// was wrong: a remote string is a name for a repository, and one repository
+	// answers to several. GitHub paths are case-insensitive, so `Agenxy/Lanes`
+	// and `agenxy/lanes` are one repository that compared as two, and a renamed
+	// repository serves both its old and new paths, so a clone with a stale url
+	// compared as a stranger to a clone with the current one. Both were verified
+	// against real remotes, and both lost a genuine same-project collision.
+	//
+	// Objects cannot be renamed. Two repositories that share a root commit share
+	// a history, whatever their remotes are called today.
+	if x.RepoRoots != "" && y.RepoRoots != "" {
+		return !shareARootCommit(x.RepoRoots, y.RepoRoots)
+	}
+	// No history to compare, which means at least one is shallow or unborn. The
+	// remote is the only evidence left.
 	if x.RepoRemote != "" && y.RepoRemote != "" {
 		return x.RepoRemote != y.RepoRemote
 	}
-	// At least one has no remote to compare. Fall back to shared history.
-	if x.RepoRoots == "" || y.RepoRoots == "" {
-		return false // an unborn repository has no history to share; say nothing
-	}
-	return !shareARootCommit(x.RepoRoots, y.RepoRoots)
+	return false
 }
 
 // shareARootCommit reports whether two space-joined root commit lists intersect.
