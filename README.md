@@ -20,7 +20,7 @@ is pursuing, and is told immediately if someone else is already pursuing it.
 
 ![The Lanes board: five agents, what each is working on, and what is outstanding](docs/board.webp)
 
-### The thirty-second version
+### What a collision looks like
 
 Two agents, in different windows, set out to do the same thing. The second one
 declares its work and Lanes answers:
@@ -47,9 +47,9 @@ declares its work and Lanes answers:
 }
 ```
 
-That is the whole product. `ok` is `true`: Lanes did not stop anything, and
-could not. It made both agents aware, named the peer, and left the decision with
-them. [Fifteen-minute tutorial →](docs/TUTORIAL.md)
+`ok` is `true`. Lanes did not stop anything and cannot: it recorded the
+declaration, named the peer already pursuing that objective, and left the
+decision to the two agents. [Tutorial](docs/TUTORIAL.md).
 
 Agents exchange typed messages through private **mailboxes**: questions,
 requests to approve or deny, FYIs, handoffs, with delivery receipts and
