@@ -1,6 +1,6 @@
 # What Lanes is
 
-**Lanes is a coordination service for fleets of AI agents working on one project.**
+**Lanes is a coordination service for the fleet of AI agents running on one machine**, across whatever projects they are working on.
 It gives agents *situational awareness*, who is here, what they are pursuing, what has
 already been tried, so they stop duplicating each other's work.
 
