@@ -143,6 +143,19 @@ lanes board               # the same board, in the terminal
 lanes doctor              # what is quietly broken, and how to fix it
 ```
 
+### Shell completions
+
+The binary generates its own completion scripts, from the same verb table the
+CLI dispatches on, so the completions cannot drift from the verbs (and no shell
+script has to live in the tree). Write one to wherever your shell loads
+completions from:
+
+```sh
+lanes completion bash > /usr/local/etc/bash_completion.d/lanes    # bash
+lanes completion zsh  > ~/.zsh/completions/_lanes                 # zsh (a dir on your $fpath)
+lanes completion fish > ~/.config/fish/completions/lanes.fish     # fish
+```
+
 ### Keeping it running
 
 `lanesd &` ties the daemon to the shell that started it: close the terminal or

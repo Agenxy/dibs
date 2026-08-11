@@ -146,9 +146,8 @@ func TestRefScopingAcrossRealRepositories(t *testing.T) {
 		t.Run(tc.what, func(t *testing.T) {
 			a, b := tc.build()
 			srv, _ := newServer(t)
-			const ref = "issue:42"
-			mustDeclare(t, srv, "agent-a", a, ref)
-			res := mustDeclare(t, srv, "agent-b", b, ref)
+			mustDeclare(t, srv, "agent-a", a)
+			res := mustDeclare(t, srv, "agent-b", b)
 
 			blob, err := json.Marshal(res)
 			if err != nil {
@@ -170,7 +169,8 @@ func TestRefScopingAcrossRealRepositories(t *testing.T) {
 // mustDeclare registers an agent from a working directory and declares one ref.
 // Every step is checked: a probe that quietly fails to register reports "no
 // warning" and reads as a pass, which is how a check comes to prove nothing.
-func mustDeclare(t *testing.T, srv *httptest.Server, name, cwd, ref string) map[string]any {
+func mustDeclare(t *testing.T, srv *httptest.Server, name, cwd string) map[string]any {
+	const ref = "issue:42" // one ref throughout: what varies here is the repositories
 	t.Helper()
 	out := toolCall(t, srv, "register_lane", map[string]any{
 		"name": name, "cwd": cwd,
@@ -251,4 +251,134 @@ func (g *gitFixtures) clone(src, name string, extra ...string) string {
 	args := append([]string{"clone", "-q"}, extra...)
 	g.run(g.root, append(args, "file://"+src, dst)...)
 	return dst
+}
+
+// A daemon runs for weeks. `rm -rf project && git clone something-else project`
+// is an ordinary thing to do in that time, and repository identity is memoised
+// by path with no expiry, so the entry went on describing the repository that
+// used to be there. Both directions were wrong: the new project's agents were
+// compared against the old project's remote and roots.
+//
+// Reported by a review that reused a checkout path and drove both directions
+// through the real server, which is the only way to see it: the resolver is
+// correct in isolation and the cache is what serves the stale answer.
+func TestIdentityIsRereadWhenACheckoutPathIsReused(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is unavailable")
+	}
+
+	t.Run("a collision at a reused path is not missed", func(t *testing.T) {
+		g := &gitFixtures{t: t, git: git, root: t.TempDir()}
+		upstream := g.repo("upstream", "https://github.com/acme/upstream.git")
+		sibling := g.clone(upstream, "sibling")
+		reused := g.repo("reused", "https://github.com/acme/unrelated.git")
+
+		srv, _ := newServer(t)
+		primeIdentityCache(t, srv, "primer", reused)
+		mustDeclare(t, srv, "agent-a", sibling)
+
+		// Same path, different repository: now a clone of the same upstream.
+		if err := os.RemoveAll(reused); err != nil {
+			t.Fatal(err)
+		}
+		reused = g.clone(upstream, "reused")
+
+		if !warnedAboutSharedObjective(t, mustDeclare(t, srv, "agent-b", reused)) {
+			t.Error("two agents in one repository were not warned, because the identity " +
+				"cached for that path still described the repository deleted from it")
+		}
+	})
+
+	t.Run("a stranger at a reused path does not raise one", func(t *testing.T) {
+		g := &gitFixtures{t: t, git: git, root: t.TempDir()}
+		upstream := g.repo("upstream", "https://github.com/acme/upstream.git")
+		sibling := g.clone(upstream, "sibling")
+		reused := g.clone(upstream, "reused")
+
+		srv, _ := newServer(t)
+		primeIdentityCache(t, srv, "primer", reused)
+		mustDeclare(t, srv, "agent-a", sibling)
+
+		if err := os.RemoveAll(reused); err != nil {
+			t.Fatal(err)
+		}
+		reused = g.repo("reused", "https://github.com/acme/unrelated.git")
+
+		if warnedAboutSharedObjective(t, mustDeclare(t, srv, "agent-b", reused)) {
+			t.Error("an unrelated project was reported as duplicating work, because the " +
+				"identity cached for that path still described the clone deleted from it")
+		}
+	})
+}
+
+// primeIdentityCache registers an agent purely so the daemon resolves and
+// memoises that directory. Without this the second registration would be the
+// first time the path is seen and there would be nothing stale to catch.
+func primeIdentityCache(t *testing.T, srv *httptest.Server, name, cwd string) {
+	t.Helper()
+	out := toolCall(t, srv, "register_lane", map[string]any{
+		"name": name, "cwd": cwd, "nonce": "n-" + name + "-0123456789abcdef0123",
+	})
+	if token, _ := out["token"].(string); token == "" {
+		t.Fatalf("priming registration from %s failed: %v", cwd, out)
+	}
+}
+
+func warnedAboutSharedObjective(t *testing.T, result map[string]any) bool {
+	t.Helper()
+	blob, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Contains(string(blob), `"signal":"same-objective"`)
+}
+
+// The other half of the same bug, and the one I saw coming and left. Cached
+// identity was revalidated only when it said "this is a repository", so a
+// directory observed BEFORE `git init` was remembered as not-a-repository for
+// the life of the daemon.
+//
+// Asserted on the recorded FACTS rather than on a warning, and that distinction
+// is the point. A stale negative makes the answer unknown, and unknown warns, so
+// a collision test passes with the bug present and proves nothing. What is
+// actually broken is that the agent is filed as being nowhere: no project on the
+// board, and no identity for anything else to reason with.
+//
+// Predicting a hole and not closing it is a slower way of shipping it.
+func TestADirectoryThatBecomesARepositoryIsNoticed(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is unavailable")
+	}
+	g := &gitFixtures{t: t, git: git, root: t.TempDir()}
+
+	later := filepath.Join(g.root, "becomes-a-repo")
+	if err := os.MkdirAll(later, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	srv, _ := newServer(t)
+	primeIdentityCache(t, srv, "primer", later)
+
+	g.run(later, "init", "-q")
+	g.run(later, "remote", "add", "origin", "https://github.com/acme/upstream.git")
+	g.commit(later, "README.md")
+
+	out := toolCall(t, srv, "register_lane", map[string]any{
+		"name": "after-init", "cwd": later,
+		"nonce": "n-after-init-0123456789abcdef0123",
+	})
+	token, _ := out["token"].(string)
+	if token == "" {
+		t.Fatalf("registration failed: %v", out)
+	}
+	board, err := json.Marshal(toolCall(t, srv, "ack_board", map[string]any{"token": token}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(board), `"project":"becomes-a-repo"`) {
+		t.Errorf("an agent in a directory that became a repository is still filed as "+
+			"being nowhere: the daemon is remembering that the path used to be nothing.\n%s",
+			board)
+	}
 }

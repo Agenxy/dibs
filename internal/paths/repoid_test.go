@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -197,5 +198,44 @@ func TestProjectNameNamesTheProjectNotTheDirectory(t *testing.T) {
 	}
 	if got := ProjectName(""); got != "" {
 		t.Errorf("ProjectName(\"\") = %q, want \"\"", got)
+	}
+}
+
+// A path whose identity was refreshed must be usable from the cache afterwards.
+//
+// The first revalidation fix left `add` refusing to overwrite an existing key,
+// which was correct while entries could never go stale and wrong the moment they
+// could: a reused checkout path re-resolved correctly, failed to store the
+// answer, and kept the stale entry, so every later lookup invoked Git again and
+// the old value was never actually removed. Correctness survived; cost did not.
+// A passing suite says nothing about that, which is why it is asserted here.
+func TestARefreshedIdentityReplacesTheStaleEntry(t *testing.T) {
+	git := requireGit(t)
+	root := t.TempDir()
+	dir := filepath.Join(root, "reused")
+
+	initRepo(t, git, dir)
+	runGit(t, git, dir, "remote", "add", "origin", "https://github.com/acme/one.git")
+	if first := Identify(dir); !strings.Contains(first.remote, "one") {
+		t.Fatalf("fixture did not resolve: remote is %q", first.remote)
+	}
+
+	// Same path, a different repository.
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	initRepo(t, git, dir)
+	runGit(t, git, dir, "remote", "add", "origin", "https://github.com/acme/two.git")
+
+	refreshed := Identify(Canonical(dir))
+	if !strings.Contains(refreshed.remote, "two") {
+		t.Fatalf("the replaced checkout was not re-resolved: remote is %q", refreshed.remote)
+	}
+	entry, ok := identifiedRepos.entries[Canonical(dir)]
+	if !ok {
+		t.Fatal("nothing was cached for the path after a successful refresh")
+	}
+	if !strings.Contains(entry.id.remote, "two") {
+		t.Errorf("the cache still holds the previous repository: remote is %q", entry.id.remote)
 	}
 }

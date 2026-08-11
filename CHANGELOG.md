@@ -7,22 +7,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.0.2] - 2026-08-11
 
-### Changed
-
-- **Lanes is now Apache 2.0**, relicensed from MIT. Both are permissive; Apache
-  grants patent rights from contributors explicitly, terminates the licence of
-  anyone who sues over the covered code, and states that no trademark rights come
-  with it. `NOTICE` retains the MIT notice for the contributions made under it.
-- `lanes doctor` exits nonzero when it finds a problem, so a script can act on it
-  rather than parsing the output. Thanks to @floze-the-genius (#6).
-- The Homebrew tap moved from `agenxy/homebrew-lanes` to `agenxy/homebrew-tap`,
-  so the install line is `brew install agenxy/tap/lanes` rather than repeating
-  the project name. GitHub keeps a redirect, so the old form still works and
-  nobody who already tapped needs to act.
-- The README leads with a worked example of a collision being caught, and the
-  documentation says `lanes stop` wherever it used to say `pkill lanesd`.
-
 ### Added
+
+- `lanes completion <bash|zsh|fish>` prints a completion script, generated from
+  the verb table the CLI dispatches on so it cannot drift from the commands that
+  exist. Thanks to @shaurya703 (#15).
+- `lanes man` renders the manual page from the same help text `lanes help`
+  prints, and releases ship `lanes.1` in the archive and the Homebrew cask, so
+  `man lanes` answers after an install. Thanks to @shaurya703 (#16).
 
 - Nine real Git configurations are now regression tests. Each builds actual
   repositories, registers agents through the actual server, and asserts on the
@@ -43,14 +35,53 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   agent's working directory once, at registration, and recorded, so it names the
   project even when the agent is several directories inside it.
 
+### Changed
+
+- **Lanes is now Apache 2.0**, relicensed from MIT. Both are permissive; Apache
+  grants patent rights from contributors explicitly, terminates the licence of
+  anyone who sues over the covered code, and states that no trademark rights come
+  with it. `NOTICE` retains the MIT notice for the contributions made under it.
+- `lanes doctor` exits nonzero when it finds a problem, so a script can act on it
+  rather than parsing the output. Thanks to @floze-the-genius (#6).
+- The Homebrew tap moved from `agenxy/homebrew-lanes` to `agenxy/homebrew-tap`,
+  so the install line is `brew install agenxy/tap/lanes` rather than repeating
+  the project name. GitHub keeps a redirect, so the old form still works and
+  nobody who already tapped needs to act.
+- The README leads with a worked example of a collision being caught, and the
+  documentation says `lanes stop` wherever it used to say `pkill lanesd`.
+- The service identifier is `org.agenxy.lanes`.
+- An unstamped build reports `devel+<revision>` rather than a version number
+  that names a release it is not.
+- Prose throughout uses ordinary punctuation.
 ### Fixed
 
+- A refused port said only `bind: address already in use`. It now names the
+  lanesd already holding the address, or says the holder is something else and
+  how to find it. It does not fall back to another port: clients resolve the
+  daemon from a fixed address, so one that quietly moved would be a daemon
+  nobody could find.
+- `com.lanes.lanesd` was missing from the labels the service installer checks
+  before writing a new unit, so upgrading from that vintage could leave two jobs
+  contending for one data directory.
 - Repository identity survives three Git configurations that previously made two
   clones of one project look like strangers: a shallow clone (which does not have
   its root commit, so it now records none rather than a boundary), `git replace
   --graft` (identity is read with replacement objects disabled), and
   `url.*.insteadOf` (the effective remote is resolved instead of the configured
   string).
+- Repository identity is re-read when a directory becomes a repository. A path
+  observed before `git init` was remembered as not-a-repository for the life of
+  the daemon, so an agent there was filed as being nowhere: no project on the
+  board, and no identity for anything else to reason with.
+- Repository identity is re-read when a checkout path is reused. It was memoised
+  by path with no expiry, so after `rm -rf project && git clone something-else
+  project` a long-running daemon went on describing the repository that used to
+  be there, missing collisions inside the new project and inventing them against
+  the old. The Git common directory is now checked on every cache hit.
+- A shell reached through a tracked symlink is caught. A link named
+  `fixture-python` pointing at `/bin/zsh`, plus a file whose shebang named it,
+  ran under zsh while the check passed: both the walker and the reader follow
+  symlinks, so nothing ever saw the link itself.
 - Repository identity is decided by positive evidence in three forms: the same
   Git common directory, the same canonicalised remote, or equal root-commit sets.
   Root sets known on both sides and unequal mean different projects; everything
@@ -114,12 +145,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `LANES_DIR` set, or on a symlinked path, every daemon looked like a stranger
   including itself.
 
-### Changed
-
-- The service identifier is `org.agenxy.lanes`.
-- An unstamped build reports `devel+<revision>` rather than a version number
-  that names a release it is not.
-- Prose throughout uses ordinary punctuation.
 
 ## [0.0.1] - 2026-08-10
 
