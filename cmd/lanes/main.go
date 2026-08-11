@@ -65,6 +65,9 @@ setup:
   lanes man                print this manual as an mdoc(7) page, generated from
                            this very help text; releases run it to ship lanes.1
                            (--out FILE writes it, --date D pins the page date)
+  lanes completion SHELL   print verb completions for bash, zsh or fish,
+                           generated from the live verb table so the script
+                           cannot drift; the README says where each shell loads it
   lanes stop               stop the daemon serving THIS data directory, and only
                            that one, not "pkill lanesd", which also kills the
                            isolated daemons other fleets are running. SIGTERM, so
@@ -151,6 +154,8 @@ func main() {
 		err = watch(os.Args[2:])
 	case "man":
 		err = man(os.Args[2:])
+	case "completion":
+		err = completion(os.Args[2:])
 	case "configure":
 		err = configure(os.Args[2:])
 	case "monitor":
@@ -232,7 +237,8 @@ func parseFlags(fs *flag.FlagSet, args []string) error {
 // out of this file, so a verb added there and forgotten here is visible.
 var commands = []string{
 	"await", "probe", "watch", "monitor", "board", "log", "verify", "doctor",
-	"calibrate", "version", "help", "man", "configure", "messages", "web", "admin",
+	"calibrate", "version", "help", "man", "completion", "configure", "messages",
+	"web", "admin",
 	"mcp-config", "mcp-stdio", "hook-spawn",
 }
 
