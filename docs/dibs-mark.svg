@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="Dibs">
+  <title>Dibs</title>
+  <!-- A claim, not a route. Selection corners around a held point: this
+       region is spoken for. The old merge-arrow said "lane" and no longer
+       describes anything the product does. -->
+  <g fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="square">
+    <path d="M6 18 V6 H18"/>
+    <path d="M46 6 H58 V18"/>
+    <path d="M58 46 V58 H46"/>
+    <path d="M18 58 H6 V46"/>
+  </g>
+  <circle cx="32" cy="32" r="9" fill="#5b8dff"/>
+</svg>

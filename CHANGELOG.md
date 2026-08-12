@@ -5,6 +5,40 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The data directory really is `~/.dibs` now. The 0.0.3 notes below said so and
+  the code did not: the vocabulary rename turned every "lane" into an "agent"
+  and took `~/.lanes` with it, so two releases shipped writing to `~/.agents`, a
+  generic name in the user's home that any number of other tools could claim.
+  The same slip put a `.agents` directory inside your repository for monitor
+  state. An existing directory is still found and used, under either old name,
+  so no board moves and nothing is lost; `dibs doctor` names the one it opened
+  and gives you the `mv` if you want it.
+- `dibs mcp-config` published the Codex/TOML server block as `[mcp_servers.agents]`
+  while the JSON block correctly said `dibs`. Half of that command's output has
+  been wrong since 0.0.3.
+- `dibs mcp-config` panicked with a Go stack trace on a `local.secret` shorter
+  than 16 bytes, which is what a truncated or hand-edited one looks like.
+- The README's install line said `brew install agenxy/tap/agents`, naming a cask
+  that has never existed, so the first command a new reader runs did nothing.
+  It also omitted `brew trust agenxy/tap`, which Homebrew 6 requires before it
+  will load a cask from a third-party tap; without it the install fails with a
+  trust error.
+- The tap offered a stale `lanes` cask beside `dibs`, so `brew install
+  agenxy/tap/lanes` still resolved to 0.0.2. It is now a `tap_migrations.json`
+  entry, which moves an existing install across on the next `brew update`
+  instead of leaving it on a version that gets no releases.
+
+### Added
+
+- `task smoke`, in the gate: it runs the built binaries and asserts on what they
+  actually print, against expectations written by hand rather than generated
+  from the source. Everything above was invisible to a green suite because the
+  rename edited the fixtures and the code together, so the tests agreed with the
+  bug: `doctor_test.go` asserted `[mcp_servers.agents]`. A check the sweep cannot
+  reach is the only kind that can catch the sweep.
+
 ## [0.0.4] - 2026-08-11
 
 ### Fixed
