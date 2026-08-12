@@ -92,12 +92,18 @@ Node, no runtime dependencies.
 ### Homebrew (macOS)
 
 ```sh
-brew install agenxy/tap/agents
+brew trust agenxy/tap
+brew install agenxy/tap/dibs
 ```
 
+Homebrew 6 refuses to load casks from a tap you have not trusted, so the first
+line is not optional and the install fails with a trust error without it. It is
+a one-time thing per tap.
+
 `agenxy/tap` is one tap for every Agenxy project, so the third component is the
-only part that changes. The older `agenxy/agents/agents` still works: GitHub keeps
-a redirect, so nobody who already tapped has to do anything.
+only part that changes. `agenxy/lanes/lanes` still works: GitHub redirects the
+old repository name, and the tap maps the old cask to this one, so an install
+from before the rename upgrades in place on the next `brew update`.
 
 Installs both binaries. The cask clears the macOS quarantine flag on install:
 the binaries are cosign-signed for provenance but not Apple-notarised, and
@@ -136,7 +142,7 @@ would rather not use mise at all, `go build ./cmd/...` needs nothing but Go
 Then:
 
 ```sh
-dibd &                  # daemon on 127.0.0.1:4777, data in ~/.agents
+dibd &                  # daemon on 127.0.0.1:4777, data in ~/.dibs
 dibs mcp-config          # print the MCP host config (add to e.g. .mcp.json)
 dibs admin set-password  # once: the board is yours, not the agents'
 dibs web                 # print the live board URL
@@ -272,7 +278,7 @@ Working *on* Dibs rather than with it? [AGENTS.md](AGENTS.md) is the map,
   path, which, as of August 2026, is what every shipping host actually
   negotiates (see [below](#protocol-versions)). Both work; you need do nothing.
 - **Append-only, hash-chained ledger**: the persistence *is* the audit history.
-  `dibs verify` checks integrity; `tail -f ~/.agents/ledger.jsonl | jq` watches
+  `dibs verify` checks integrity; `tail -f ~/.dibs/ledger.jsonl | jq` watches
   live.
 - **Honest liveness**: crash, hang and unresponsiveness are three different
   facts, reported as such. Claim expiry is *loss of coordination*, never "safe to
@@ -583,7 +589,7 @@ same. Raise it if your fleet exchanges large build outputs.
 
 ### What Dibs writes to disk
 
-- `~/.agents/`: the data directory: ledger, keys, blobs. Move it with `-dir`.
+- `~/.dibs/`: the data directory: ledger, keys, blobs. Move it with `-dir`.
 - `~/.dibs-run/`: one small file per running daemon, so a second one can tell
   it is not alone and `dibs doctor` can report a fleet split across two boards.
   Nothing durable lives here; entries are removed when their daemon exits, and a

@@ -45,7 +45,7 @@ changing the other.
 └─────────────┘                                                 └───────┬──────────┘
       ▲                                                                 │ append + fsync
       │ agents CLI / web board (human view, decrypted)                   ▼
-      └──────────────────────────────────────────────────  ~/.agents/ledger.jsonl
+      └──────────────────────────────────────────────────  ~/.dibs/ledger.jsonl
 ```
 
 - **`dibd`**: single-threaded event loop; all mutations and reads execute sequentially
@@ -140,7 +140,7 @@ filesystem writes (§9). It is a **coordination generation**, not a fencing toke
     resume rate makes eviction there a non-issue in practice).
   - Torn final line: truncated on replay (expected crash artifact, not corruption).
 - **Encryption at rest**: message bodies, responses, and agent tokens sealed with
-  AES-256-GCM under `~/.agents/key` (0600). Public fields stay plaintext (`tail -f |
+  AES-256-GCM under `~/.dibs/key` (0600). Public fields stay plaintext (`tail -f |
   jq` remains a live public board). Snapshots retain private bodies only as ciphertext.
 - **Deterministic GC (makes replayed state bounded)**: sweeps prune, as pure functions
   of `(state, recorded now)`: terminal messages beyond per-agent retention (§11),
@@ -245,7 +245,7 @@ you can measure is never improved by asking.
 **Threat model (two rings, both stated):**
 
 - **Other OS users on the machine**: kept out by the **local access secret**,
-  `~/.agents/local.secret` (0600, CSPRNG), required on every HTTP request
+  `~/.dibs/local.secret` (0600, CSPRNG), required on every HTTP request
   (`X-Dibs-Local` header; cookie for the web board). Same-user agents and the CLI
   read it from disk; other users cannot. `dibs mcp-config` prints the host MCP
   config including the header. This is a *transport gate* (proves same-user), not an

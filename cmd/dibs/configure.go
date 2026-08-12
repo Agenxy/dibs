@@ -21,7 +21,7 @@ import (
 const serviceHelp = `dibs configure --service: keep the daemon running
 
   Writes an init-system unit for the data directory in DIBS_DIR (default
-  ~/.agents), so the daemon survives a closed terminal and a reboot:
+  ~/.dibs), so the daemon survives a closed terminal and a reboot:
 
     macOS   ~/Library/LaunchAgents/org.agenxy.dibs.plist
     Linux   $XDG_CONFIG_HOME/systemd/user/agents.service
@@ -50,7 +50,7 @@ func serviceCommand(rest []string) error {
 		default:
 			return fmt.Errorf("`dibs configure --service` takes no further arguments, "+
 				"and %q is not one. It writes a unit for the data directory in DIBS_DIR "+
-				"(or ~/.agents) and nothing else", a)
+				"(or ~/.dibs) and nothing else", a)
 		}
 	}
 	if help {
@@ -80,7 +80,7 @@ func configure(args []string) error {
 		// A flag is not a directory. `dibs configure --help` was taken as
 		// dir="--help": on a terminal the wizard created a directory literally
 		// named "--help", wrote dibs.toml into it, printed a tick and told you
-		// to run `dibd`: which reads ~/.agents and had never heard of it. Off a
+		// to run `dibd`: which reads ~/.dibs and had never heard of it. Off a
 		// terminal it advised writing "--help/dibs.toml", a corrective action
 		// that cannot work.
 		if strings.HasPrefix(args[0], "-") {

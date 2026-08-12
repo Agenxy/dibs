@@ -53,7 +53,7 @@ substitution fails, but replacing the file in place still works; closing that
 needs a signature check or an install root the user cannot write.
 
 That adversary can also read the agent tokens, the ledger, and
-`~/.agents/local.secret`, so presence is not the weakest thing it defeats. An
+`~/.dibs/local.secret`, so presence is not the weakest thing it defeats. An
 earlier version of this document claimed software cannot produce a fingerprint.
 That was wrong, and it is the kind of wrong that matters here: a security
 document that overstates a bound teaches people to rely on it.

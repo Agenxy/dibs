@@ -247,9 +247,9 @@ tasks:
   dev:
     desc: Run the daemon in the foreground on a dev data dir
     env:
-      DIBS_DIR: '{{.HOME}}/.agents-dev'
+      DIBS_DIR: '{{.HOME}}/.dibs-dev'
     cmds:
-      - go run ./cmd/dibd --dir $HOME/.agents-dev
+      - go run ./cmd/dibd --dir $HOME/.dibs-dev
 
   crosscompile:
     desc: Build every release target, so a portability break fails here not at tag time
@@ -262,6 +262,12 @@ tasks:
       - GOOS=darwin GOARCH=arm64 go build ./...
       - GOOS=darwin GOARCH=amd64 go build ./...
 
+  smoke:
+    desc: Run the built binaries and read what they say about themselves
+    deps: [build]
+    cmds:
+      - go run ./tools/smoke
+
   ci:
     desc: The full local gate chain (mirrors CI)
     cmds:
@@ -270,6 +276,7 @@ tasks:
       - task: test
       - task: test:dev
       - task: build
+      - task: smoke
       - task: test:panel
       - task: test:web
       - task: test:guard

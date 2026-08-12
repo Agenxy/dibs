@@ -65,7 +65,7 @@ claims: Dibs conveys a fact the sender asserted; verification is the reader's.
 
 ## A3. Blob store
 
-- **Location:** `~/.agents/blobs/<aa>/<sha256hex>` (sharded by the first hex byte of the
+- **Location:** `~/.dibs/blobs/<aa>/<sha256hex>` (sharded by the first hex byte of the
   id for filesystem sanity). Mode `0700` dir, `0600` files.
 - **Content addressing:** `id = "sha256:" + hex(sha256(plaintext))`, lowercase hex. The
   id is over the *plaintext*, so dedup and integrity apply to real content.
@@ -78,7 +78,7 @@ claims: Dibs conveys a fact the sender asserted; verification is the reader's.
   (SPEC §4), like message bodies. Readers on the filesystem see ciphertext; the id
   (a hash, not secret-derivable) is a safe filename.
 - **Not event-sourced.** The blob *store* (bytes) is durable side storage *outside* the
-  replay model: like `~/.agents/key`. What the ledger records is blob **metadata**
+  replay model: like `~/.dibs/key`. What the ledger records is blob **metadata**
   (A4). Replay never re-writes blob bytes; it reconstructs which blobs *should* exist.
   A `get_blob` whose bytes are missing returns `E_BLOB_UNAVAILABLE` with an honest
   reason (evicted / missing), never a hang or a lie.
@@ -241,7 +241,7 @@ supports (response-only; there is no unsolicited media push, and none is needed)
   `{type:"audio", …}`; else → `{type:"resource", resource:{blob:<base64>, mimeType}}`.
 - **Inline vs materialize (context hygiene):** inlining a large blob as base64 would
   bloat the agent's context. Default `as:"auto"` inlines only small media (≤ 256 KiB);
-  otherwise it **materializes** the decrypted bytes to a path under `~/.agents/out/` and
+  otherwise it **materializes** the decrypted bytes to a path under `~/.dibs/out/` and
   returns `{path, size, mime}` for the agent to open as a file. `as:"inline"` /
   `as:"path"` force either. Large binary/dataset attachments thus reach the agent as a
   *file path*, not a context-flooding blob.
