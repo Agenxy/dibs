@@ -113,18 +113,6 @@ func (g *authGate) redeemBootstrap(t string) (string, bool) {
 	return sess, true
 }
 
-// SessionStillValid re-checks a request's session mid-flight.
-//
-// The gate runs once, when a request enters it. An SSE stream is ONE long-lived
-// request, so a god-view connection opened a second before expiry kept
-// delivering decrypted mail indefinitely. Verified with a shortened TTL: a new
-// request with the same cookie got 401 while the already-open stream carried a
-// message sent after the deadline.
-//
-// Exported so the streaming handler can ask again as it goes; a deadline that
-// is only checked at the door is not a deadline.
-func (g *authGate) SessionStillValid(r *http.Request) bool { return g.validSession(r) }
-
 func (g *authGate) validSession(r *http.Request) bool {
 	c, err := r.Cookie("lanes_session")
 	if err != nil || c.Value == "" {

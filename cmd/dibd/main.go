@@ -250,9 +250,20 @@ func run() error {
 	if err != nil {
 		return bindFailure(listenAddr, err)
 	}
-	slog.Info("dibd up", "addr", listenAddr, "node", nodeID, "dir", *dir, "transport", tr.why,
-		"mcp", scheme+"://"+listenAddr+"/mcp", "board", scheme+"://"+listenAddr+"/",
-		"hint", "run `dibs web` for a board link, `dibs mcp-config` for the agent config")
+	// Roles are the one part of the config that grants standing privilege, and
+	// a typo in an agent name means the grant silently applies to nobody. Saying
+	// what it did lets an operator see that from the log rather than by reading
+	// the ledger, which is what describeDeclaredRoles was written for and was
+	// never called to do.
+	up := []any{
+		"addr", listenAddr, "node", nodeID, "dir", *dir, "transport", tr.why,
+		"mcp", scheme + "://" + listenAddr + "/mcp", "board", scheme + "://" + listenAddr + "/",
+	}
+	if roles := describeDeclaredRoles(cfg.Roles); roles != "" {
+		up = append(up, "roles", roles)
+	}
+	up = append(up, "hint", "run `dibs web` for a board link, `dibs mcp-config` for the agent config")
+	slog.Info("dibd up", up...)
 	serve := func() error { return srv.Serve(ln) }
 	if tr.certFile != "" {
 		serve = func() error { return srv.ServeTLS(ln, tr.certFile, tr.keyFile) }

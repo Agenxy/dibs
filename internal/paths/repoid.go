@@ -402,17 +402,6 @@ func identifyFile(path string) fileIdentity {
 	return fileIdentity{device: int64(st.Dev), inode: st.Ino}
 }
 
-// sameFile reports whether path is still the same file it was when observed.
-// An unobservable identity (no stat, or a platform that does not expose one)
-// counts as unchanged: this exists to catch a replaced checkout, not to make
-// identification fail where it cannot be verified.
-func sameFile(path string, observed fileIdentity) bool {
-	if observed == (fileIdentity{}) || path == "" {
-		return true
-	}
-	return identifyFile(path) == observed
-}
-
 func (c *repoIDCache) add(dir string, id RepoID) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
