@@ -568,8 +568,10 @@ func tccHint(cwd string) string {
 	}
 	return "this is inside a macOS protected folder (Desktop, Documents, Downloads). " +
 		"A daemon started by launchd is not granted access to those, and /usr/bin/git " +
-		"BLOCKS rather than failing, so the call times out. Grant dibd Full Disk Access " +
-		"in System Settings > Privacy & Security, or keep checkouts outside those folders"
+		"BLOCKS rather than failing, so the call times out. A checkout outside those " +
+		"folders needs no permission at all and is the better answer; granting dibd " +
+		"Full Disk Access also works, but a coordination daemon should not need it. " +
+		"Matching reads file paths and commit subjects, never file contents"
 }
 
 // protectedOnMacOS reports whether a path is inside a TCC-protected folder.

@@ -68,7 +68,6 @@ type Engine struct {
 	// onRepoSeen lets the daemon index the repositories agents actually work
 	// in, so matching does not depend on somebody setting a flag.
 	onRepoSeen func(repo string)
-	reposSeen  map[string]bool
 	// footprints backfills agents opened before the index was ready. Ephemeral:
 	// it is a cache of a prediction, never the record a join is replayed from.
 	footprints map[string][]core.PredFile

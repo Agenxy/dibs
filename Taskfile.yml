@@ -43,15 +43,44 @@ tasks:
       # a working one and whose signature verifies. It looks like a corrupt
       # download. Replacing the file gives a fresh inode and no cached verdict.
       - mkdir -p {{.DEST}}
-      - rm -f {{.DEST}}/agents {{.DEST}}/dibd {{.DEST}}/agents-presence
+      # The names here were rename collateral: this removed `agents`, which has
+      # never existed, and then copied over a live `dibs`, reusing exactly the
+      # inode the comment above says not to. The failure is a SIGKILL with no
+      # message, and it cost an hour before somebody read this line.
+      - rm -f {{.DEST}}/dibs {{.DEST}}/dibd {{.DEST}}/dibs-presence
       - cp bin/dibs bin/dibd {{.DEST}}/
       - task: install:presence
+        vars: { DEST: '{{.DEST}}' }
+      - task: install:sign
         vars: { DEST: '{{.DEST}}' }
       - '{{.DEST}}/dibs version'
       - |
         echo "installed to {{.DEST}}"
         echo "a running dibd keeps the old code until you restart it:"
         echo "  dibs stop && dibd &"
+
+  install:sign:
+    # Sign with a STABLE identity when one is configured, because macOS keys a
+    # privacy grant to the signature.
+    #
+    # An ad-hoc signature (the default) gets a fresh code-directory hash from
+    # every build, so the system treats each rebuild as a different program and
+    # any Files-and-Folders or Full Disk Access grant stops applying. On a
+    # machine where checkouts live under ~/Desktop that presents as matching
+    # working, then silently not working after the next install, with nothing to
+    # point at. Signing with a persistent identity keeps the grant across builds.
+    #
+    # Set DIBS_CODESIGN_IDENTITY to an identity from `security find-identity -v
+    # -p codesigning`. Unset, this does nothing and the Go toolchain's ad-hoc
+    # signature stands.
+    platforms: [darwin]
+    internal: true
+    status:
+      - test -z "$DIBS_CODESIGN_IDENTITY"
+    cmds:
+      - codesign --force --options runtime -i org.agenxy.dibs -s "$DIBS_CODESIGN_IDENTITY" {{.DEST}}/dibd
+      - codesign --force --options runtime -i org.agenxy.dibs.cli -s "$DIBS_CODESIGN_IDENTITY" {{.DEST}}/dibs
+      - echo "signed with $DIBS_CODESIGN_IDENTITY so privacy grants survive a rebuild"
 
   install:presence:
     # Beside the daemon, because humanauth looks beside its own executable rather

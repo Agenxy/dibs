@@ -1092,27 +1092,27 @@ func (e *Engine) OnRepoSeen(fn func(repo string)) {
 	e.onRepoSeen = fn
 }
 
-// noteRepoOf reports a newly seen repository to the daemon, at most once each.
+// noteRepoOf tells the daemon where a registering agent is working.
+//
+// Deliberately NOT deduplicated here. It used to be, and that was a bug with a
+// long fuse: the daemon already dedupes, and it does so correctly, releasing
+// its claim on a tree it could not read so a later attempt can retry. A second
+// permanent dedup in front of that turned the first failure into the last word.
+// Somebody granted the daemon access to the folder, registered again, and
+// nothing happened, because this map had already written the repository off for
+// the life of the process.
+//
+// One layer of dedup, owned by the side that knows whether the work succeeded.
 func (e *Engine) noteRepoOf(cwd string) {
 	if cwd == "" {
 		return
 	}
-	e.matchMu.Lock()
+	e.matchMu.RLock()
 	fn := e.onRepoSeen
-	if fn == nil {
-		e.matchMu.Unlock()
-		return
+	e.matchMu.RUnlock()
+	if fn != nil {
+		fn(cwd)
 	}
-	if e.reposSeen == nil {
-		e.reposSeen = map[string]bool{}
-	}
-	if e.reposSeen[cwd] {
-		e.matchMu.Unlock()
-		return
-	}
-	e.reposSeen[cwd] = true
-	e.matchMu.Unlock()
-	fn(cwd)
 }
 
 // cwdOfToken is where the holder of this token is working, or "".
