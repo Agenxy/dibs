@@ -129,10 +129,18 @@ func (d *diagnosis) run(verbose bool) error {
 	// Doctor exists to answer "why is it behaving like that", and reading a
 	// directory the current version would not have created is high on the list.
 	if inherited != "" {
-		warn("data directory is "+inherited+", named by an older version",
-			"nothing is wrong and nothing is required. To adopt the current name, "+
-				"stop the daemon and `mv "+inherited+" "+
-				filepath.Join(filepath.Dir(inherited), ".dibs")+"`")
+		fix := "nothing is wrong and nothing is required. To adopt the current name, " +
+			"stop the daemon and `mv " + inherited + " " +
+			filepath.Join(filepath.Dir(inherited), ".dibs") + "`"
+		// A service unit pins its data directory as a literal argument, so the
+		// move above would leave it starting against a path that is gone. Found
+		// by following this hint's own advice on a machine where `dibs configure
+		// --service` had written that path in.
+		if unit := unitPinning(inherited); unit != "" {
+			fix += ". " + unit + " pins the old path, so re-run `dibs configure " +
+				"--service` after moving, or the service starts against a directory that is gone"
+		}
+		warn("data directory is "+inherited+", named by an older version", fix)
 	}
 
 	// ── the daemon ───────────────────────────────────────────────────────

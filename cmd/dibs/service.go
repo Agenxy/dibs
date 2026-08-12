@@ -259,8 +259,42 @@ func writeLaunchAgent(daemon, dir string) error {
 	return nil
 }
 
+// legacySystemdUnits are unit names earlier versions wrote. `agents.service`
+// is rename collateral: the sweep that turned every "lane" into an "agent"
+// renamed the unit too, so Linux users were told to `systemctl --user enable
+// --now agents` for a product called dibs.
+var legacySystemdUnits = []string{"agents.service", "lanes.service"}
+
+// refuseIfLegacySystemdUnitExists is the systemd half of the launchd guard
+// above, and was missing: two units pointing at one data directory means the
+// directory lock refuses the second, which reads as a service that will not
+// start.
+func refuseIfLegacySystemdUnitExists(unitDir string) error {
+	for _, name := range legacySystemdUnits {
+		old := filepath.Join(unitDir, name)
+		// #nosec G703 -- unitDir is this process's own config home and name is a
+		// fixed constant; no caller-supplied path reaches here.
+		if _, err := os.Stat(old); err != nil {
+			continue
+		}
+		return fmt.Errorf("a unit from an earlier version is still installed: %s\n"+
+			"  Dibs now uses dibs.service. Writing the new one as well would leave two\n"+
+			"  units pointing at one data directory, and the directory lock refuses the\n"+
+			"  second, which looks like a service that will not start.\n\n"+
+			"  Remove the old one first:\n"+
+			"    systemctl --user disable --now %s\n"+
+			"    rm %s\n"+
+			"  then run this again", old, strings.TrimSuffix(name, ".service"), shellArg(old))
+	}
+	return nil
+}
+
 func writeSystemdUnit(daemon, dir string) error {
-	target := filepath.Join(configHome(), "systemd", "user", "agents.service")
+	unitDir := filepath.Join(configHome(), "systemd", "user")
+	if err := refuseIfLegacySystemdUnitExists(unitDir); err != nil {
+		return err
+	}
+	target := filepath.Join(unitDir, "dibs.service")
 	unit := `[Unit]
 Description=Dibs: coordination board for AI agents
 Documentation=https://github.com/agenxy/dibs
@@ -278,8 +312,8 @@ WantedBy=default.target
 	if err := writeUnit(target, unit); err != nil {
 		return err
 	}
-	fmt.Printf("wrote %s\n\nEnable and start it:\n  systemctl --user enable --now agents\n\n"+
-		"Logs: journalctl --user -u agents -f\n", target)
+	fmt.Printf("wrote %s\n\nEnable and start it:\n  systemctl --user enable --now dibs\n\n"+
+		"Logs: journalctl --user -u dibs -f\n", target)
 	return nil
 }
 
@@ -312,4 +346,48 @@ func writeUnit(target, body string) error {
 	// #nosec G306,G703 -- a unit file the init system must be able to read, at a
 	// path built from HOME and a fixed filename.
 	return os.WriteFile(target, []byte(body), 0o644)
+}
+
+// unitPinning reports the service unit that names dir as a literal argument,
+// or "" if none does.
+//
+// A unit records its data directory at install time. Advice to move that
+// directory is incomplete without this: the unit keeps starting the daemon
+// against the old path, which no longer exists, and the failure surfaces as a
+// service that will not come up rather than as a move that was half-finished.
+func unitPinning(dir string) string {
+	candidates := []string{
+		filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "org.agenxy.dibs.plist"),
+		filepath.Join(configHome(), "systemd", "user", "dibs.service"),
+	}
+	candidates = append(candidates, unitPinningLegacy()...)
+	for _, path := range candidates {
+		// #nosec G304,G703 -- every candidate is built in this file from the
+		// process's own HOME (or XDG_CONFIG_HOME) plus a fixed filename. `dir` is
+		// only ever compared against the contents, never joined into the path.
+		body, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		if strings.Contains(string(body), dir) {
+			return path
+		}
+	}
+	return ""
+}
+
+// unitPinningLegacy adds the units earlier versions installed, because the
+// machine most likely to hold an inherited data directory is the one still
+// running a unit from the version that made it.
+func unitPinningLegacy() []string {
+	var out []string
+	agents := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents")
+	for _, label := range legacyLabels {
+		out = append(out, filepath.Join(agents, label+".plist"))
+	}
+	systemd := filepath.Join(configHome(), "systemd", "user")
+	for _, name := range legacySystemdUnits {
+		out = append(out, filepath.Join(systemd, name))
+	}
+	return out
 }
