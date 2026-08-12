@@ -154,7 +154,7 @@ func Check(ctx context.Context, reason string) (Verdict, error) {
 // built for: an agent that wants to speak as the operator must raise a system
 // sheet on the operator's own Mac. It is NOT unforgeable by arbitrary code
 // already executing with the user's own privileges. That adversary can also
-// read the agent tokens, the ledger and ~/.agents/local.secret, so presence is not
+// read the agent tokens, the ledger and ~/.dibs/local.secret, so presence is not
 // the weakest link, but "software cannot produce a fingerprint" was the wrong
 // sentence and this one is the right one.
 //

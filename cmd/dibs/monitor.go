@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"syscall"
 	"time"
+
+	"github.com/agenxy/dibs/internal/paths"
 )
 
 // monitor is the engine behind a Claude Code plugin monitor (and any harness
@@ -32,7 +34,7 @@ import (
 func monitor(args []string) error {
 	fs := flag.NewFlagSet("monitor", flag.ContinueOnError)
 	agent := fs.String("agent", "", "own+watch a persistent agent by this name (default: project dir name)")
-	stateDir := fs.String("state-dir", "", "dir for the nonce+token (default: <project>/.agents)")
+	stateDir := fs.String("state-dir", "", "dir for the nonce+token (default: <project>/.dibs)")
 	desc := fs.String("desc", "coordination agent for this session", "agent description when registering")
 	watchOnly := fs.Bool("watch-only", false, "don't own an agent; watch using DIBS_TOKEN")
 	if err := parseFlags(fs, args); err != nil {
@@ -53,7 +55,7 @@ func monitor(args []string) error {
 		*agent = filepath.Base(project)
 	}
 	if *stateDir == "" {
-		*stateDir = filepath.Join(project, ".agents")
+		*stateDir = paths.ProjectStateDir(project)
 	}
 	secret, err := localSecret()
 	if err != nil {
@@ -136,7 +138,7 @@ func monitor(args []string) error {
 // Returns the agent token and its resolved agent id.
 func ensureLane(call mcpFn, name, desc, dir string) (string, string, error) {
 	// Fixed filenames: one agent per state-dir (per project), so the agent's
-	// skill can reference ./.agents/token without knowing the agent name.
+	// skill can reference ./.dibs/token without knowing the agent name.
 	noncePath := filepath.Join(dir, "nonce")
 	tokenPath := filepath.Join(dir, "token")
 	nonce := ""

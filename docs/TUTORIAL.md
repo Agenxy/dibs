@@ -28,7 +28,7 @@ dibd &
 ```
 
 That is the whole setup. It listens on `127.0.0.1:4777`, keeps its data in
-`~/.agents`, and creates a local secret on first run. There is no database to
+`~/.dibs`, and creates a local secret on first run. There is no database to
 provision and no config file you have to write.
 
 Check it:
@@ -67,7 +67,7 @@ dibs mcp-config
 }
 
 # Codex / ChatGPT desktop, add to ~/.codex/config.toml:
-[mcp_servers.agents]
+[mcp_servers.dibs]
 url = "http://127.0.0.1:4777/mcp"
 http_headers = { "X-Dibs-Local" = "bdb1354…" }
 ```
@@ -264,7 +264,7 @@ converging on the same code before either has said so in the same words.
 This is a daemon flag, so the daemon from step 1 has to be **restarted**. One
 daemon owns a data directory at a time; starting a second against the same
 directory refuses rather than quietly taking over,
-`another dibd already runs on ~/.agents (flock …): resource temporarily
+`another dibd already runs on ~/.dibs (flock …): resource temporarily
 unavailable`:
 
 ```sh
@@ -306,7 +306,7 @@ dibs doctor
 It names the fix, not just the fault:
 
 ```
-dibs doctor: data dir ~/.agents
+dibs doctor: data dir ~/.dibs
 
   ✓ local secret present
   ✓ daemon answering on 127.0.0.1:4777

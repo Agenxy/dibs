@@ -32,7 +32,7 @@ import { join } from "node:path"
 
 const HERE = import.meta.dir
 const DAEMON = process.env.DIBS_ADDR ?? "127.0.0.1:4777"
-const DIBS_DIR = process.env.DIBS_DIR ?? join(homedir(), ".agents")
+const DIBS_DIR = process.env.DIBS_DIR ?? join(homedir(), ".dibs")
 const PORT = Number(process.env.INSPECT_PORT ?? 4942)
 
 const argv = process.argv.slice(2)

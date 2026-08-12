@@ -116,7 +116,7 @@ func (d *diagnosis) prose(line string) {
 }
 
 func (d *diagnosis) run(verbose bool) error {
-	dir := paths.DataDir()
+	dir, inherited := paths.Resolve()
 
 	// Through the shared vocabulary rather than raw escape codes. The inline
 	// version wrote colour unconditionally, so `dibs doctor > report.txt`,
@@ -125,6 +125,15 @@ func (d *diagnosis) run(verbose bool) error {
 	ok, bad, warn := d.ok, d.bad, d.warn
 
 	d.prose(ui.Bold("dibs doctor") + ui.Dim(": data dir "+ui.Path(dir)) + "\n")
+
+	// Doctor exists to answer "why is it behaving like that", and reading a
+	// directory the current version would not have created is high on the list.
+	if inherited != "" {
+		warn("data directory is "+inherited+", named by an older version",
+			"nothing is wrong and nothing is required. To adopt the current name, "+
+				"stop the daemon and `mv "+inherited+" "+
+				filepath.Join(filepath.Dir(inherited), ".dibs")+"`")
+	}
 
 	// ── the daemon ───────────────────────────────────────────────────────
 	secretPath := filepath.Join(dir, "local.secret")

@@ -63,7 +63,7 @@ func stop(args []string) error {
 			help = true
 		default:
 			return fmt.Errorf("`dibs stop` takes no arguments, and %q is not one. "+
-				"it stops the daemon for the data directory in DIBS_DIR (or ~/.agents) "+
+				"it stops the daemon for the data directory in DIBS_DIR (or ~/.dibs) "+
 				"and nothing else. Refusing rather than guessing, because this is not "+
 				"an action to perform on a directory you did not mean", a)
 		}
@@ -77,7 +77,7 @@ func stop(args []string) error {
 
 const stopHelp = `dibs stop: stop the daemon serving this data directory
 
-  Stops ONLY the daemon registered against DIBS_DIR (default ~/.agents).
+  Stops ONLY the daemon registered against DIBS_DIR (default ~/.dibs).
   Other daemons on this machine are left running: Dibs is built so several
   isolated fleets can coexist, and "pkill dibd" ends all of them.
 
