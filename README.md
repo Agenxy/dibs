@@ -440,15 +440,24 @@ lines: this repository is 855 chunks and takes ~110s against a local Ollama. A
 7,400-file repository produced **58,710 chunks** and the service gave out partway
 through. Dibs fell back to tier 0 and said so, which is honest and is *not*
 equivalent, because tier 0 cannot relate work sharing neither words nor file
-history. If your repository is large, point `-match-repo` at the subtree your
-agents actually work in.
+history. If your repository is large, `-match-repo` can pre-warm a subtree instead of
+the whole tree.
 
-### One indexed repository, for now
+### Matching indexes itself
 
-`-match-repo` takes a single path, so the history-based half of matching is
-scored against one project. Coordination itself is unaffected and stays
-machine-wide: agents, claims, mail and spaces never belonged to a repository.
-What is limited is the extra signal.
+Nothing needs configuring. Every agent registers with a working directory, and
+the repository containing it is exactly the history worth mining, so each tree
+is indexed the first time an agent turns up in it, up to sixteen of them.
+
+One index per repository, and an agent is scored by the tree it is working in.
+That matters more than it sounds: a co-change model asked about a different
+project's sentence does not decline, it answers confidently and wrongly, which
+is worse than no matching at all. An agent in a tree that is not indexed simply
+gets no semantic suggestions, and still gets the shared-refs and shared-dirs
+signals, which are computed in the core and need no index.
+
+`-match-repo` survives only as a pre-warm, for a daemon started at login that
+should have an index ready before the first agent arrives.
 
 Agents working in a different tree are detected as such, and the matcher then
 declines to claim evidence rather than inventing it, because the only files two

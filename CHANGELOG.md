@@ -48,6 +48,25 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   entry, which moves an existing install across on the next `brew update`
   instead of leaving it on a version that gets no releases.
 
+### Changed
+
+- **Work-overlap matching is on by default, and indexes every repository your
+  agents work in.** It used to be gated behind `-match-repo`, so the feature
+  this product exists for was silent on every install that did not know to set
+  a flag. There was no constant to default that flag to, because the daemon
+  serves agents across every project open on the machine.
+
+  The fleet already knew the answer: every agent registers with a working
+  directory, and the tree containing it is exactly the history worth mining. So
+  each repository is indexed the first time an agent turns up in it, up to
+  sixteen, and there is one index per repository. An agent is scored by the tree
+  it is working in; an agent in a tree that is not indexed gets no semantic
+  suggestions rather than someone else's, because a co-change model asked about
+  another project's sentence answers confidently and wrongly.
+
+  `-match-repo` remains only as a pre-warm, for a daemon started at login that
+  should have an index ready before the first agent arrives. Closes #7.
+
 ### Added
 
 - `task smoke`, in the gate: it runs the built binaries and asserts on what they
