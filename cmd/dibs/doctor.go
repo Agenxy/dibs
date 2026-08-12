@@ -29,7 +29,7 @@ import (
 // anywhere the person or the agent could see it.
 //
 // The output names the FIX, not the fault. "Stale secret" leaves you exactly as
-// stuck; "the secret in ~/.codex/config.toml no longer matches: run `agents
+// stuck; "the secret in ~/.codex/config.toml no longer matches: run `dibs
 // mcp-config` and re-copy it" does not.
 func doctor(args []string) error {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
@@ -723,7 +723,7 @@ func checkPanelBuild(c *http.Client, secret string, ok reportFn, warn fixFn, pro
 	uri := fetchPanelURI(c, secret)
 	if uri == "" {
 		warn("could not read the board panel's resource",
-			"the daemon is up but did not list a `ui://agents/board/…` resource. "+
+			"the daemon is up but did not list a `ui://dibs/board/…` resource. "+
 				"rebuild and reinstall with `task install`, then restart `dibd`")
 		return
 	}
@@ -767,7 +767,7 @@ func fetchPanelURI(c *http.Client, secret string) string {
 		return ""
 	}
 	for _, r := range out.Result.Resources {
-		if strings.HasPrefix(r.URI, "ui://agents/board") {
+		if strings.HasPrefix(r.URI, "ui://dibs/board") {
 			return r.URI
 		}
 	}

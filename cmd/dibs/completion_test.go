@@ -29,7 +29,7 @@ func TestEveryDispatchedVerbIsCompletedInEveryShell(t *testing.T) {
 			// would satisfy strings.Contains while completing nothing.
 			word := regexp.MustCompile(`(^|[^a-z-])` + regexp.QuoteMeta(verb) + `($|[^a-z-])`)
 			if !word.MatchString(script) {
-				t.Errorf("`agents %s` is dispatched but missing from the %s completion:\n"+
+				t.Errorf("`dibs %s` is dispatched but missing from the %s completion:\n"+
 					"  a verb that does not complete does not exist to anyone who relies on\n"+
 					"  the completion to remember the verbs", verb, shell)
 			}

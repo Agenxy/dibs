@@ -18,6 +18,24 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `dibs mcp-config` published the Codex/TOML server block as `[mcp_servers.agents]`
   while the JSON block correctly said `dibs`. Half of that command's output has
   been wrong since 0.0.3.
+- The Claude Code plugin did not work at all. Its `.mcp.json` declared
+  `"command": "agents"`, a binary that has never existed, so the harness spawned
+  it, failed, and showed a server that never started. The Claude Desktop manifest
+  and the OpenCode README named the same missing binary.
+- The panel resource was advertised as `ui://agents/board` while every other
+  resource is `dibs://`.
+- The signature-verification command in the README passed
+  `--certificate-identity .../Agenxy/agents/...`, so anyone checking a release
+  signature got a mismatch and had every reason to think the artifact was bad.
+- On Linux `dibs configure --service` wrote `agents.service` and told the
+  operator to run `systemctl --user enable --now agents`. systemd also had no
+  guard against installing a second unit beside an old one, which launchd has
+  had since the `com.agents.dibd` incident: two units on one data directory
+  means the second fails the directory lock and reads as a service that will
+  not start.
+- `dibs doctor` told you to move an inherited data directory without mentioning
+  that a service unit pins that path, so following the advice left the daemon
+  starting against a directory that was gone.
 - `dibs mcp-config` panicked with a Go stack trace on a `local.secret` shorter
   than 16 bytes, which is what a truncated or hand-edited one looks like.
 - The README's install line said `brew install agenxy/tap/agents`, naming a cask

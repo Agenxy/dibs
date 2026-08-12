@@ -76,7 +76,7 @@ func daemonPath() (string, error) {
 	found, err := exec.LookPath("dibd")
 	if err != nil {
 		return "", fmt.Errorf("cannot find dibd beside %s or on PATH: install it first "+
-			"(`task install`, or the release archive)", "agents")
+			"(`task install`, or the release archive)", "dibs")
 	}
 	return found, nil
 }

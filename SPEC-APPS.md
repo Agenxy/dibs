@@ -62,7 +62,7 @@ calls `inbox` → the panel opens on that mail.
 
 | Piece | Where |
 |---|---|
-| `ui://agents/board` template, `text/html;profile=mcp-app` | `internal/mcp/board_app.html` (go:embed) |
+| `ui://dibs/board` template, `text/html;profile=mcp-app` | `internal/mcp/board_app.html` (go:embed) |
 | Resource listing + read | `internal/mcp/apps.go` |
 | `board` tool with `_meta.ui.resourceUri` | `internal/mcp/tools.go` |
 | Result shaping (`content` + `structuredContent`) | `showBoardResult` |
@@ -277,7 +277,7 @@ real.
 
 Against that host:
 
-- `resources/list` advertises `ui://agents/board` with the correct MIME type.
+- `resources/list` advertises `ui://dibs/board` with the correct MIME type.
 - `resources/read` returns the template plus `_meta.ui.csp` and `prefersBorder`.
 - `tools/list` carries `_meta.ui.resourceUri` and `visibility: ["model","app"]`.
 - `tools/call board` returns summary + `structuredContent` + `_meta.ui`.
@@ -300,7 +300,7 @@ the reference host; actions were proven through that same-origin driver.
 
 Earlier findings from the simulator era, all still guarded by tests:
 
-- `resources/list` advertises `ui://agents/board` with the correct MIME type.
+- `resources/list` advertises `ui://dibs/board` with the correct MIME type.
 - `resources/read` returns the template plus `_meta.ui.csp` and `prefersBorder`.
 - `tools/list` carries `_meta.ui.resourceUri` and `visibility: ["model","app"]`.
 - `tools/call board` returns summary + `structuredContent` + `_meta.ui`.

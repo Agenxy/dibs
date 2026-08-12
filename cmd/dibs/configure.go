@@ -24,7 +24,7 @@ const serviceHelp = `dibs configure --service: keep the daemon running
   ~/.dibs), so the daemon survives a closed terminal and a reboot:
 
     macOS   ~/Library/LaunchAgents/org.agenxy.dibs.plist
-    Linux   $XDG_CONFIG_HOME/systemd/user/agents.service
+    Linux   $XDG_CONFIG_HOME/systemd/user/dibs.service
 
   It writes the file and prints the command to load it. Registering a job that
   starts at login is a change to your machine, so you make it, not Dibs.

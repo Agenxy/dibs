@@ -58,7 +58,7 @@ dibs mcp-config
 # Claude Code and JSON-config hosts, add to .mcp.json:
 {
   "mcpServers": {
-    "agents": {
+    "dibs": {
       "headers": { "X-Dibs-Local": "bdb1354…" },
       "type": "http",
       "url": "http://127.0.0.1:4777/mcp"

@@ -131,7 +131,7 @@ try {
   const boardResult = await tool("board", { token: me.token })
   check("board attaches the UI resource",
     typeof boardResult?._meta?.ui?.resourceUri === "string" &&
-      /^ui:\/\/agents\/board\/[0-9a-f]{12}$/.test(boardResult._meta.ui.resourceUri),
+      /^ui:\/\/dibs\/board\/[0-9a-f]{12}$/.test(boardResult._meta.ui.resourceUri),
     boardResult?._meta?.ui?.resourceUri ?? "(none)")
   // Cache-busting is only real if the version tracks the bytes AND the panel
   // says which build it is: a host serving a cached panel is otherwise

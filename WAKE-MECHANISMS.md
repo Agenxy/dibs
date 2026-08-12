@@ -8,7 +8,7 @@ coordination *service* agents use, not a harness.
 support `type: "mcp_tool"`: a lifecycle hook calls a tool on the MCP connection the
 model already holds, and the tool's `hookSpecificOutput.additionalContext` is injected
 into the model's context. No shell, no second process, no polling. Dibs ships this in
-its plugin (`plugins/agents/hooks/hooks.json` → `hook_poll`).
+its plugin (`plugins/claude-code/hooks/hooks.json` → `hook_poll`).
 
 **Amended 2026-07-26: opencode is the second, and it was driven live.** An
 in-process opencode plugin on the `chat.message` hook injects mail as a synthetic

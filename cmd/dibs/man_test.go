@@ -25,7 +25,7 @@ func TestEveryDispatchedVerbHasAManPageEntry(t *testing.T) {
 	}
 	for _, verb := range verbs {
 		if !strings.Contains(page, ".It Cm "+verb) {
-			t.Errorf("`agents %s` is dispatched but has no entry on the man page:\n"+
+			t.Errorf("`dibs %s` is dispatched but has no entry on the man page:\n"+
 				"  a man page that skips a verb documents a different program", verb)
 		}
 	}

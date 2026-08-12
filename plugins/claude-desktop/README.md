@@ -41,7 +41,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`
 ```json
 {
   "mcpServers": {
-    "agents": { "command": "agents", "args": ["mcp-stdio"] }
+    "dibs": { "command": "dibs", "args": ["mcp-stdio"] }
   }
 }
 ```
