@@ -117,7 +117,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the verb table the CLI dispatches on so it cannot drift from the commands that
   exist. Thanks to @shaurya703 (#15).
 - `dibs man` renders the manual page from the same help text `dibs help`
-  prints, and releases ship `agents.1` in the archive and the Homebrew cask, so
+  prints, and releases ship `lanes.1` in the archive and the Homebrew cask, so
   `man dibs` answers after an install. Thanks to @shaurya703 (#16).
 
 - Nine real Git configurations are now regression tests. Each builds actual
@@ -148,7 +148,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `dibs doctor` exits nonzero when it finds a problem, so a script can act on it
   rather than parsing the output. Thanks to @floze-the-genius (#6).
 - The Homebrew tap moved from `agenxy/homebrew-agents` to `agenxy/homebrew-tap`,
-  so the install line is `brew install agenxy/tap/agents` rather than repeating
+  so the install line is `brew install agenxy/tap/lanes` rather than repeating
   the project name. GitHub keeps a redirect, so the old form still works and
   nobody who already tapped needs to act.
 - The README leads with a worked example of a collision being caught, and the

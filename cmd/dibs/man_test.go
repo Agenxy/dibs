@@ -64,7 +64,7 @@ func TestManPageLintsCleanUnderMandoc(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(t.TempDir(), "agents.1")
+	path := filepath.Join(t.TempDir(), "dibs.1")
 	if err := os.WriteFile(path, []byte(page), 0o600); err != nil {
 		t.Fatal(err)
 	}
