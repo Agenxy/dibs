@@ -58,6 +58,10 @@ linters:
     rules:
       - path: cmd/
         linters: [forbidigo]
+      # tools/ holds standalone programs, same as cmd/: a binary whose whole job
+      # is to report to a terminal has nowhere to report but stdout.
+      - path: tools/
+        linters: [forbidigo]
       - path: _test\.go
         linters: [funlen, gocognit, cyclop, lll, gosec]
 
