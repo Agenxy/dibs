@@ -210,5 +210,31 @@ func (s *Server) serveLegacyStream(w http.ResponseWriter, r *http.Request) {
 	// subID nil: a legacy notifications/resources/updated carries only the uri.
 	// There is no subscription id in 2025-11-25: that is a 2026 concept, and
 	// inventing one here would put a field in the payload no client expects.
-	s.pump(r, sseStream{w: w, fl: flusher}, ch, nil, laneID, sub.inbox, sub.board)
+	s.pump(r, sseStream{w: w, fl: flusher}, ch, nil, s.legacyWants(r, session, laneID, sub.token))
+}
+
+// legacyWants reads this session's subscription state fresh on every event.
+//
+// The agent is resolved from whichever token the session last subscribed with,
+// and re-resolved when that token changes. A stream opened before any subscribe
+// has no token at all, so there is nothing to resolve until one arrives: that
+// is the ordering the transport explicitly allows and the captured-at-open
+// version could never serve.
+//
+// A token that no longer authenticates resolves to no agent, which delivers
+// nothing rather than delivering someone else's mail. Failing closed is the
+// only safe direction here.
+func (s *Server) legacyWants(r *http.Request, session, laneID, token string) wantsFunc {
+	return func() (string, bool, bool) {
+		sub := s.legacy.get(session)
+		if sub.token != token {
+			token, laneID = sub.token, ""
+			if sub.token != "" {
+				if id, _, err := s.eng.SubscribeInfo(r.Context(), sub.token); err == nil {
+					laneID = id
+				}
+			}
+		}
+		return laneID, sub.inbox, sub.board
+	}
 }

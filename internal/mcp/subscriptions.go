@@ -121,12 +121,27 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *
 
 	ch, cancel := s.eng.Subscribe(since)
 	defer cancel()
-	s.pump(r, stream, ch, req.ID, laneID, wantInbox, wantBoard)
+	// Fixed for the lifetime of the stream: 2026-07-28 carries the whole
+	// subscription in the listen call, so there is nothing to re-read.
+	s.pump(r, stream, ch, req.ID, func() (string, bool, bool) {
+		return laneID, wantInbox, wantBoard
+	})
 }
 
 // pump forwards resource-change notifications until the client disconnects.
+// wantsFunc reports what a stream should deliver RIGHT NOW: the agent whose
+// inbox it follows, and whether it follows the inbox and the board at all.
+//
+// A function rather than three values captured when the stream opened, because
+// the legacy transport lets a client subscribe and unsubscribe while its stream
+// is already open. Captured values meant a subscribe AFTER the GET was never
+// noticed and an unsubscribe never took effect: the stream kept delivering what
+// the client had asked to stop hearing, and stayed silent about what it had
+// just asked for.
+type wantsFunc func() (laneID string, inbox, board bool)
+
 func (s *Server) pump(r *http.Request, stream sseStream, ch <-chan core.Event,
-	subID json.RawMessage, laneID string, wantInbox, wantBoard bool,
+	subID json.RawMessage, wants wantsFunc,
 ) {
 	keepalive := time.NewTicker(25 * time.Second)
 	defer keepalive.Stop()
@@ -143,6 +158,7 @@ func (s *Server) pump(r *http.Request, stream sseStream, ch <-chan core.Event,
 			if !open {
 				return
 			}
+			laneID, wantInbox, wantBoard := wants()
 			if uri := matchedURI(ev, laneID, wantInbox, wantBoard); uri != "" {
 				if !stream.send(resourceUpdated(uri, subID)) {
 					return

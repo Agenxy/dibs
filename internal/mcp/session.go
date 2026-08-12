@@ -41,6 +41,14 @@ type sessionStore struct {
 	// the other end of this connection, not of the daemon.
 	panelCalls map[string]bool
 	fifo       []string
+	// onEvict is told when a session is forgotten, so state kept ELSEWHERE
+	// against the same id goes with it.
+	//
+	// Legacy subscriptions were the case: that map had no ceiling of its own
+	// and nothing removed from it, so it outgrew this store's 512 and kept
+	// growing. Two lifetimes for one session is how they come to disagree, so
+	// there is one, and it is this one.
+	onEvict func(id string)
 }
 
 // maxSessions bounds the map: a long-running daemon must not grow one entry per
@@ -60,6 +68,18 @@ func (s *sessionStore) create(wantsUI bool, ci *clientInfoJSON) string {
 		return ""
 	}
 	id := hex.EncodeToString(b)
+	evicted := s.insert(id, wantsUI, ci)
+	// Outside the lock. The callback takes another map's lock, and holding two
+	// at once here is a deadlock waiting for the first caller who happens to
+	// take them in the other order.
+	if evicted != "" && s.onEvict != nil {
+		s.onEvict(evicted)
+	}
+	return id
+}
+
+// insert records the session and returns the id evicted to make room, if any.
+func (s *sessionStore) insert(id string, wantsUI bool, ci *clientInfoJSON) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.ui[id] = wantsUI
@@ -67,14 +87,15 @@ func (s *sessionStore) create(wantsUI bool, ci *clientInfoJSON) string {
 		s.client[id] = *ci
 	}
 	s.fifo = append(s.fifo, id)
-	if len(s.fifo) > maxSessions {
-		drop := s.fifo[0]
-		s.fifo = s.fifo[1:]
-		delete(s.ui, drop)
-		delete(s.client, drop)
-		delete(s.panelCalls, drop)
+	if len(s.fifo) <= maxSessions {
+		return ""
 	}
-	return id
+	evicted := s.fifo[0]
+	s.fifo = s.fifo[1:]
+	delete(s.ui, evicted)
+	delete(s.client, evicted)
+	delete(s.panelCalls, evicted)
+	return evicted
 }
 
 // clientFor returns what this session said it was at initialize, or nil.
