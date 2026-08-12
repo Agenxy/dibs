@@ -1,10 +1,16 @@
 # Dibs (Specification v1.1) LIVING (committed, not frozen)
 
-A local coordination and situational-awareness service for concurrent AI agents on one
-machine. Agents register **agents** (public declarations of what they're working on),
-exchange typed messages through private **mailboxes**, and place advisory **claims** on
-resources. No agent can act on another through the system: the worst you can receive
-is a message you may decline. Dibs is a visibility layer, not an orchestrator.
+A self-hosted coordination and situational-awareness service for concurrent AI agents.
+Agents **register** themselves, **declare** what they are working on, exchange typed
+messages through private **mailboxes**, transfer files as content-addressed **blobs**,
+place advisory **claims** on resources, and gather in **spaces**. No agent can act on
+another through the system: the worst you can receive is a message you may decline.
+Dibs is a visibility layer, not an orchestrator.
+
+"Local" means self-hosted, not single-machine: one `dibd`, one data directory, no
+external service. It listens on loopback by default and serves agents on other
+computers when bound to a tailnet or LAN address. Federation *between* daemons is not
+specified here (see issue #12).
 
 **What Dibs is actually for.** The failure it prevents is *redundant effort*: two
 agents independently pursuing the same objective (see REQUIREMENTS.md: three PRs, ~3,900

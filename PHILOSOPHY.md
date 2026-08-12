@@ -1,8 +1,14 @@
 # What Dibs is
 
-**Dibs is a coordination service for the fleet of AI agents running on one machine**, across whatever projects they are working on.
+**Dibs keeps a fleet of AI agents in the loop about each other**, across whatever
+projects they are working on and whatever machines they are running on.
 It gives agents *situational awareness*, who is here, what they are pursuing, what has
-already been tried, so they stop duplicating each other's work.
+already been tried, so they stop duplicating each other's work, and the means to act on
+what they learn: mail, files, claims, spaces.
+
+One `dibd` serves the fleet. It is self-hosted and answers to nobody else: no account,
+no external service, no telemetry. That is what "local" means here, and it does not
+mean the agents must share a computer.
 
 It is a **service agents pull from**, never a harness that drives them. Nothing in Dibs
 can make an agent do anything; the strongest thing you can receive is a message you may
