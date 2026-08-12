@@ -131,7 +131,7 @@ func TestSystemdUnitCannotBeInjectedThroughAPath(t *testing.T) {
 	if err := writeSystemdUnit(daemon, dir); err != nil {
 		t.Fatal(err)
 	}
-	body, err := os.ReadFile(filepath.Join(home, "cfg", "systemd", "user", "agents.service"))
+	body, err := os.ReadFile(filepath.Join(home, "cfg", "systemd", "user", "dibs.service"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestSystemdUnitDoesNotExpandVariablesFromAPath(t *testing.T) {
 	if err := writeSystemdUnit(daemon, dir); err != nil {
 		t.Fatal(err)
 	}
-	body, err := os.ReadFile(filepath.Join(home, "cfg", "systemd", "user", "agents.service"))
+	body, err := os.ReadFile(filepath.Join(home, "cfg", "systemd", "user", "dibs.service"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,5 +314,82 @@ func TestShellArgSurvivesQuotesAndExpansions(t *testing.T) {
 		if got := shellArg(in); got != want {
 			t.Errorf("shellArg(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// The unit a Linux user is told to start must be named for the product.
+//
+// The rename swept the systemd unit along with everything else, so the file was
+// `agents.service` and the printed instruction was `systemctl --user enable
+// --now agents`, for a product called dibs. Same class as the four naming bugs
+// that reached releases: correct code, wrong noun, invisible to a suite whose
+// fixtures the same sweep rewrote. Asserted against a literal, so a future
+// rename has to come and change it deliberately.
+func TestSystemdUnitIsNamedForTheProduct(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+
+	if err := writeSystemdUnit(filepath.Join(home, "bin", "dibd"), filepath.Join(home, ".dibs")); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(home, ".config", "systemd", "user", "dibs.service")
+	if _, err := os.Stat(want); err != nil {
+		t.Errorf("no unit at %s: a Linux user following the printed command starts nothing", want)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".config", "systemd", "user", "agents.service")); err == nil {
+		t.Error("still writing agents.service")
+	}
+}
+
+// A second unit beside an old one is two daemons contending for one directory
+// lock, which presents as a service that will not start. launchd has refused
+// this since the com.agents.dibd incident; systemd never did.
+func TestSystemdRefusesToCreateASecondUnit(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	unitDir := filepath.Join(home, ".config", "systemd", "user")
+	if err := os.MkdirAll(unitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, legacy := range legacySystemdUnits {
+		if err := os.WriteFile(filepath.Join(unitDir, legacy), []byte("[Unit]\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		err := writeSystemdUnit(filepath.Join(home, "bin", "dibd"), filepath.Join(home, ".dibs"))
+		if err == nil {
+			t.Errorf("wrote a second unit beside %s; both would point at one data directory", legacy)
+		}
+		if err != nil && !strings.Contains(err.Error(), legacy) {
+			t.Errorf("the refusal does not name %s, so the operator cannot act on it: %v", legacy, err)
+		}
+		_ = os.Remove(filepath.Join(unitDir, legacy))
+	}
+}
+
+// Advice to move the data directory is wrong if a unit pins the old path.
+func TestUnitPinningFindsTheServiceHoldingAnOldPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	old := filepath.Join(home, ".agents")
+
+	if got := unitPinning(old); got != "" {
+		t.Errorf("reported a unit (%s) when none is installed", got)
+	}
+
+	agents := filepath.Join(home, "Library", "LaunchAgents")
+	if err := os.MkdirAll(agents, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plist := filepath.Join(agents, "org.agenxy.dibs.plist")
+	if err := os.WriteFile(plist, []byte("<string>"+old+"</string>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := unitPinning(old); got != plist {
+		t.Errorf("unitPinning(%q) = %q, want %q: without this the hint tells the user to "+
+			"move a directory the service will still be looking for", old, got, plist)
 	}
 }
