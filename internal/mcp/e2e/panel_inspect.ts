@@ -90,7 +90,7 @@ if (!token) {
   await rpc("tools/call", { name: "check_in", arguments: { token } })
 }
 
-const read = await rpc("resources/read", { uri: "ui://agents/board" })
+const read = await rpc("resources/read", { uri: "ui://dibs/board" })
 const panelHTML: string = read.contents[0].text
 const caps = (await rpc("initialize", {
   protocolVersion: "2025-11-25",

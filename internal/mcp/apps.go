@@ -106,7 +106,7 @@ var panelBuild = func() string {
 // the two are indistinguishable from the outside, which is the failure mode
 // the content hash exists to prevent, arriving through the one door it was not
 // applied to. TestNoToolDeclaresTheUnhashedPanelURI holds this.
-const uiBoardBase = "ui://agents/board"
+const uiBoardBase = "ui://dibs/board"
 
 var uiBoardURI = uiBoardBase + "/" + panelBuild
 

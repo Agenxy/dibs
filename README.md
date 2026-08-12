@@ -203,7 +203,7 @@ launchctl load -w ~/Library/LaunchAgents/org.agenxy.dibs.plist
 **Linux (systemd user unit)**:
 
 ```sh
-dibs configure --service     # writes ~/.config/systemd/user/agents.service
+dibs configure --service     # writes ~/.config/systemd/user/dibs.service
 systemctl --user enable --now agents
 ```
 
@@ -227,7 +227,7 @@ one file, and every archive ships an SPDX SBOM.
 TAG=v0.0.1   # the release you downloaded
 cosign verify-blob checksums.txt \
   --bundle checksums.txt.bundle \
-  --certificate-identity "https://github.com/Agenxy/agents/.github/workflows/release.yml@refs/tags/$TAG" \
+  --certificate-identity "https://github.com/Agenxy/dibs/.github/workflows/release.yml@refs/tags/$TAG" \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com'
 ```
 

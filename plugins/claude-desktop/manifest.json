@@ -12,7 +12,7 @@
     "type": "binary",
     "entry_point": "agents",
     "mcp_config": {
-      "command": "agents",
+      "command": "dibs",
       "args": ["mcp-stdio"]
     }
   },

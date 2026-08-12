@@ -142,6 +142,38 @@ func run() int {
 		},
 	}
 
+	failed := runChecks(checks)
+
+	docs := checkDocs()
+	for _, p := range docs {
+		failed++
+		fmt.Printf("  FAIL docs: %s\n", p)
+	}
+	if len(docs) == 0 {
+		fmt.Println("  ok   every documented command is one the binary accepts")
+	}
+
+	plugins := checkPlugins()
+	for _, p := range plugins {
+		failed++
+		fmt.Printf("  FAIL plugins: %s\n", p)
+	}
+	if len(plugins) == 0 {
+		fmt.Println("  ok   every plugin payload spawns a binary we ship")
+	}
+
+	if failed > 0 {
+		fmt.Fprintf(os.Stderr, "\n%d smoke check(s) failed: the built binaries do not behave "+
+			"the way the docs and install instructions say they do.\nThis runs on the "+
+			"artifact, so a fixture that agrees with the bug cannot hide it here.\n", failed)
+		return 1
+	}
+	fmt.Printf("%d smoke checks passed\n", len(checks)+2)
+	return 0
+}
+
+// runChecks runs each check and prints its verdict, returning how many failed.
+func runChecks(checks []check) int {
 	failed := 0
 	for _, c := range checks {
 		// Output, not exit status: several of these are refusals and are
@@ -151,42 +183,32 @@ func run() int {
 			cmd.Env = append(os.Environ(), c.env...)
 		}
 		out, _ := cmd.CombinedOutput()
-		text := string(out)
-		var problems []string
-		for _, w := range c.want {
-			if !strings.Contains(text, w) {
-				problems = append(problems, fmt.Sprintf("missing %q", w))
-			}
-		}
-		for _, r := range c.reject {
-			if strings.Contains(text, r) {
-				problems = append(problems, fmt.Sprintf("still says %q", r))
-			}
-		}
+		problems := judgeOutput(string(out), c)
 		if len(problems) == 0 {
 			fmt.Printf("  ok   %s\n", c.what)
 			continue
 		}
 		failed++
 		fmt.Printf("  FAIL %s: %s\n       %s %v said:\n%s\n",
-			c.what, strings.Join(problems, "; "), c.bin, c.args, indent(text))
+			c.what, strings.Join(problems, "; "), c.bin, c.args, indent(string(out)))
 	}
-	for _, p := range checkDocs() {
-		failed++
-		fmt.Printf("  FAIL docs: %s\n", p)
-	}
-	if failed == 0 {
-		fmt.Println("  ok   every documented command is one the binary accepts")
-	}
+	return failed
+}
 
-	if failed > 0 {
-		fmt.Fprintf(os.Stderr, "\n%d smoke check(s) failed: the built binaries do not behave "+
-			"the way the docs and install instructions say they do.\nThis runs on the "+
-			"artifact, so a fixture that agrees with the bug cannot hide it here.\n", failed)
-		return 1
+// judgeOutput reports what one check's output got wrong.
+func judgeOutput(text string, c check) []string {
+	var problems []string
+	for _, w := range c.want {
+		if !strings.Contains(text, w) {
+			problems = append(problems, fmt.Sprintf("missing %q", w))
+		}
 	}
-	fmt.Printf("%d smoke checks passed\n", len(checks)+1)
-	return 0
+	for _, r := range c.reject {
+		if strings.Contains(text, r) {
+			problems = append(problems, fmt.Sprintf("still says %q", r))
+		}
+	}
+	return problems
 }
 
 // newHome builds a scratch home with just enough of a data directory that the

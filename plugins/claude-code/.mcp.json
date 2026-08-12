@@ -1,7 +1,7 @@
 {
   "mcpServers": {
-    "agents": {
-      "command": "agents",
+    "dibs": {
+      "command": "dibs",
       "args": ["mcp-stdio"]
     }
   }

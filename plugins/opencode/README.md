@@ -8,7 +8,7 @@ without Dibs driving anything**, and its hook is richer than Claude Code's.
 **1. The MCP server**, tools. In `~/.config/opencode/opencode.json`:
 
 ```json
-{ "mcp": { "agents": { "type": "remote", "url": "http://127.0.0.1:4777/mcp",
+{ "mcp": { "dibs": { "type": "remote", "url": "http://127.0.0.1:4777/mcp",
   "headers": { "X-Dibs-Local": "<contents of <data-dir>/local.secret>" } } } }
 ```
 
