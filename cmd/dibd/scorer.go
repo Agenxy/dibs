@@ -2,10 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -274,10 +278,14 @@ func (f *scorerFlags) install(ctx context.Context, eng *engine.Engine) {
 // is indistinguishable from one that is working and found nothing.
 func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo string) {
 	start := time.Now()
+	topCtx, cancelTop := context.WithTimeout(ctx, gitDeadline)
+	defer cancelTop()
 	// #nosec G204,G702 -- no shell is involved: exec.Command passes argv directly,
-	// so a path cannot inject arguments. The repository path comes from an
-	// operator flag or config, never from an agent.
-	root, err := exec.CommandContext(ctx, "git", "-C", repo, "rev-parse", "--show-toplevel").Output()
+	// so a path cannot inject arguments however it arrived. It now can arrive
+	// from an agent's own registration rather than only an operator flag, which
+	// is why that matters: -C takes the value as a working directory, never as
+	// part of a command line.
+	root, err := exec.CommandContext(topCtx, "git", "-C", repo, "rev-parse", "--show-toplevel").Output()
 	if err != nil {
 		// Every failure below sets a status as well as logging. A feature
 		// that silently switched itself off is indistinguishable from one
@@ -477,12 +485,24 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 	f.discoverMu.Unlock()
 
 	go func() {
-		if !isGitRepo(ctx, cwd) {
-			// Nothing to mine. Forget it, so the slot is not spent and a later
-			// agent from a real checkout still gets an index.
+		if err := repoReadable(ctx, cwd); err != nil {
+			// Forget it, so the slot is not spent and a later agent from a real
+			// checkout still gets an index.
 			f.discoverMu.Lock()
 			delete(f.indexed, cwd)
 			f.discoverMu.Unlock()
+			// SAY SO. The first version of this returned here in silence, and a
+			// daemon that cannot read the tree looked identical to one that had
+			// simply not been told about it: matching stayed off, doctor said
+			// "no repository indexed yet", and nothing anywhere named the cause.
+			// That is the failure mode this file's own comments warn about.
+			slog.Info("work-overlap matching skipped a tree it cannot read",
+				"cwd", cwd, "err", err, "likely", tccHint(cwd))
+			eng.SetMatchStatus(engine.MatchStatus{
+				Phase: engine.MatchOff,
+				Hint: "an agent registered from " + cwd + " but the daemon cannot read it (" +
+					err.Error() + "). " + tccHint(cwd),
+			})
 			return
 		}
 		f.bringUp(ctx, eng, cwd)
@@ -493,11 +513,76 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 // fleet, low enough that a stray registration cannot start unbounded work.
 const maxIndexedRepos = 16
 
-// isGitRepo reports whether cwd is inside a checkout, without the side effects
-// of a full bring-up, so a non-repository agent does not consume a slot.
-func isGitRepo(ctx context.Context, cwd string) bool {
+// repoReadable reports why a tree cannot be indexed, or nil if it can.
+//
+// Returns the error rather than a bool because the two reasons are completely
+// different problems for the operator: "not a git checkout" is nothing to fix,
+// while "operation not permitted" is a daemon that has been denied access to a
+// directory it was pointed at, and only the second deserves an explanation.
+func repoReadable(ctx context.Context, cwd string) error {
+	// BOUNDED, because git does not always fail: it hangs.
+	//
+	// On macOS /usr/bin/git is a shim that dispatches into the selected Xcode.
+	// Run from a launchd agent against a TCC-protected folder (Desktop,
+	// Documents, Downloads) it blocks on an access prompt that can never be
+	// shown to a background process, so it waits forever. Found on a real
+	// machine: a rev-parse child of the daemon sat there for four minutes, the
+	// indexing goroutine never returned, and every later registration was
+	// deduplicated against a tree that was still "in progress".
+	//
+	// Unbounded work behind a deduplicating latch is a permanent silent
+	// failure, which is the shape this file exists to avoid.
+	ctx, cancel := context.WithTimeout(ctx, gitDeadline)
+	defer cancel()
 	// #nosec G204 -- argv is passed directly, no shell; cwd comes from an
 	// agent's own registration and is only ever used as a working directory.
 	cmd := exec.CommandContext(ctx, "git", "-C", cwd, "rev-parse", "--show-toplevel")
-	return cmd.Run() == nil
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		return nil
+	}
+	if ctx.Err() != nil {
+		return fmt.Errorf("git did not answer within %s", gitDeadline)
+	}
+	if msg := strings.TrimSpace(string(out)); msg != "" {
+		return errors.New(msg)
+	}
+	return err
+}
+
+// gitDeadline bounds any git the daemon runs against a tree it was told about.
+// Long enough for a cold cache on a large repository, short enough that a hang
+// is reported rather than waited on.
+const gitDeadline = 20 * time.Second
+
+// tccHint explains the macOS case, which is the one that looks like a bug.
+//
+// A launchd agent does not inherit the Full Disk Access granted to the app that
+// installed it, so a daemon started at login is refused ~/Desktop, ~/Documents
+// and ~/Downloads while the same binary run from a terminal reads them fine.
+// Every git call against such a path fails, which empties the project label and
+// leaves matching with nothing to index, and none of that names the cause.
+func tccHint(cwd string) string {
+	if runtime.GOOS != "darwin" || !protectedOnMacOS(cwd) {
+		return "check the path exists and is a git checkout"
+	}
+	return "this is inside a macOS protected folder (Desktop, Documents, Downloads). " +
+		"A daemon started by launchd is not granted access to those, and /usr/bin/git " +
+		"BLOCKS rather than failing, so the call times out. Grant dibd Full Disk Access " +
+		"in System Settings > Privacy & Security, or keep checkouts outside those folders"
+}
+
+// protectedOnMacOS reports whether a path is inside a TCC-protected folder.
+func protectedOnMacOS(cwd string) bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	for _, name := range []string{"Desktop", "Documents", "Downloads"} {
+		guarded := filepath.Join(home, name)
+		if cwd == guarded || strings.HasPrefix(cwd, guarded+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }

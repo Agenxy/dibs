@@ -48,6 +48,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   entry, which moves an existing install across on the next `brew update`
   instead of leaving it on a version that gets no releases.
 
+### Fixed
+
+- A `git` the daemon ran against a tree could hang forever, and matching would
+  wait on it in silence. On macOS `/usr/bin/git` dispatches into Xcode, and from
+  a launchd agent against a protected folder (Desktop, Documents, Downloads) it
+  blocks on an access prompt that can never be shown to a background process, so
+  it never returns rather than failing. Found on a real machine: a `rev-parse`
+  child sat there for four minutes, the indexing goroutine never finished, and
+  because that repository was already latched as in-progress every later
+  registration was deduplicated against work that would never complete.
+
+  Every git the daemon runs is now bounded, and a tree it cannot read is named
+  in the log and in `dibs doctor` along with the likely cause, instead of
+  leaving matching quietly off. Unbounded work behind a deduplicating latch is a
+  permanent silent failure, which is the shape this codebase keeps paying for.
+
 ### Changed
 
 - **Work-overlap matching is on by default, and indexes every repository your
