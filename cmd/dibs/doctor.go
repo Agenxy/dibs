@@ -392,7 +392,7 @@ func checkMatching(client *http.Client, sec string, ok reportFn, warn fixFn) {
 	st := fetchMatchStatus(client, sec)
 	switch st.Phase {
 	case "off":
-		warn("work-overlap matching is off", st.Hint)
+		warn("work-overlap matching has no repository indexed yet", st.Hint)
 	case "indexing":
 		warn("still indexing: declarations made now will not be matched", st.Hint)
 	case "degraded":

@@ -58,9 +58,17 @@ type Engine struct {
 	// Work-overlap scoring (SPEC-CHANNELS.md). Guarded by its own mutex rather
 	// than the loop: Predict runs OFF the writer goroutine, because a model that
 	// takes a second would otherwise stall every other agent on the board.
-	matchMu  sync.RWMutex
-	scorer   overlap.Scorer
+	matchMu sync.RWMutex
+	scorer  overlap.Scorer
+	// scorers is one index per repository root. A co-change model only means
+	// anything inside the history it was mined from, so an agent is scored by
+	// the tree it is actually working in.
+	scorers  map[string]overlap.Scorer
 	matchCfg MatchConfig
+	// onRepoSeen lets the daemon index the repositories agents actually work
+	// in, so matching does not depend on somebody setting a flag.
+	onRepoSeen func(repo string)
+	reposSeen  map[string]bool
 	// footprints backfills agents opened before the index was ready. Ephemeral:
 	// it is a cache of a prediction, never the record a join is replayed from.
 	footprints map[string][]core.PredFile
@@ -263,6 +271,11 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 				return nil, err
 			}
 			op.NewToken = tok
+			// The fleet knows which trees it works in, so matching can index
+			// them without anybody configuring a path.
+			if op.Agent != nil {
+				e.noteRepoOf(op.Agent.CWD)
+			}
 		case core.OpResumeLane:
 			// Phase 3 for resumes: 1/10s per agent, keyed via nonce.
 			if id, ok := e.state.Nonces[op.Nonce]; ok {

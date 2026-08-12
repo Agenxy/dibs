@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/agenxy/dibs/internal/engine"
@@ -31,6 +32,10 @@ import (
 // Mining runs in the background: it shells out to git over potentially thousands
 // of commits, and the daemon must be answering agents long before that finishes.
 type scorerFlags struct {
+	// indexed is the set of trees already mined, keyed by the cwd that
+	// introduced them, so each repository is indexed exactly once.
+	discoverMu       sync.Mutex
+	indexed          map[string]bool
 	repo             string
 	join             float64
 	notify           float64
@@ -233,18 +238,32 @@ func (f *scorerFlags) applyEnv() {
 // coordination board that refuses to start because it could not read a git log
 // is a broken board, not a careful one.
 func (f *scorerFlags) install(ctx context.Context, eng *engine.Engine) {
-	repo := f.repo // already resolved: flag > env > file (applyConfig)
-	if repo == "" {
-		// Said once, at INFO, AND recorded as status so an agent asking "why was
-		// I not matched" gets the answer in its own tool result rather than in a
-		// log it cannot read.
-		eng.SetMatchStatus(engine.MatchStatus{Phase: engine.MatchOff})
-		slog.Info("work-overlap matching is off",
-			"enable", "-match-repo <path>, or [match] repo = \"…\" in dibs.toml")
+	// Matching is always on. It used to be gated on -match-repo, so the feature
+	// this product exists for was silent on every install that did not know to
+	// set a flag, and there was no constant to default that flag to: the daemon
+	// serves agents across every project open on the machine, so any baked-in
+	// path is wrong for most of them.
+	//
+	// The fleet already knows the answer. Every agent registers with a cwd, and
+	// the tree containing it is exactly the history worth mining, so each
+	// repository is indexed the first time an agent turns up in it. -match-repo
+	// survives only as a pre-warm: it indexes a tree before anybody registers,
+	// which is worth it for a daemon started by launchd at login and worth
+	// nothing otherwise.
+	eng.OnRepoSeen(func(cwd string) { f.indexDiscovered(ctx, eng, cwd) })
+
+	if repo := f.repo; repo != "" {
+		eng.SetMatchStatus(engine.MatchStatus{Phase: engine.MatchIndexing, Repo: repo})
+		go f.bringUp(ctx, eng, repo)
 		return
 	}
-	eng.SetMatchStatus(engine.MatchStatus{Phase: engine.MatchIndexing, Repo: repo})
-	go f.bringUp(ctx, eng, repo)
+	eng.SetMatchStatus(engine.MatchStatus{
+		Phase: engine.MatchOff,
+		Hint: "no repository indexed yet: each one is indexed when an agent first " +
+			"registers from it, so this turns itself on. -match-repo only pre-warms a tree",
+	})
+	slog.Info("work-overlap matching indexes each repository an agent registers from",
+		"pre-warm", "-match-repo <path>, or [match] repo = \"…\" in dibs.toml")
 }
 
 // bringUp indexes the repository and publishes the scorer.
@@ -296,7 +315,7 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 		return
 	}
 	scorer := f.withSidecar(ctx, lex)
-	eng.SetScorer(scorer, engine.MatchConfig{
+	eng.SetScorerForRepo(dir, scorer, engine.MatchConfig{
 		JoinThreshold: f.join, NotifyThreshold: f.notify, Deadline: f.deadline,
 		DirectorRequired: f.director,
 		AutoJoin:         f.autoJoin,
@@ -426,4 +445,59 @@ func (f *scorerFlags) withSidecar(ctx context.Context, base overlap.Scorer) over
 	}
 	slog.Info("embeddings service ready", "url", url, "model", model, "chunks", em.Chunks())
 	return em
+}
+
+// indexDiscovered indexes a repository an agent turned up in.
+//
+// Every distinct tree, not the first one: the daemon serves agents across every
+// project open on the machine, and an index built from project A answers
+// confident nonsense about project B's sentences. One scorer per repository is
+// the only shape that is correct for a fleet, and it is what removes the need
+// for anybody to name a repository at all.
+//
+// Bounded, because indexing is git log mining and a machine could in principle
+// have an agent registered from anywhere. Past the bound the tree is named in
+// the log rather than silently ignored.
+func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, cwd string) {
+	f.discoverMu.Lock()
+	if len(f.indexed) >= maxIndexedRepos {
+		f.discoverMu.Unlock()
+		slog.Info("work-overlap matching is at its repository ceiling; this tree is not indexed",
+			"cwd", cwd, "ceiling", maxIndexedRepos)
+		return
+	}
+	if f.indexed == nil {
+		f.indexed = map[string]bool{}
+	}
+	if f.indexed[cwd] {
+		f.discoverMu.Unlock()
+		return
+	}
+	f.indexed[cwd] = true
+	f.discoverMu.Unlock()
+
+	go func() {
+		if !isGitRepo(ctx, cwd) {
+			// Nothing to mine. Forget it, so the slot is not spent and a later
+			// agent from a real checkout still gets an index.
+			f.discoverMu.Lock()
+			delete(f.indexed, cwd)
+			f.discoverMu.Unlock()
+			return
+		}
+		f.bringUp(ctx, eng, cwd)
+	}()
+}
+
+// maxIndexedRepos bounds the number of trees mined. High enough for any real
+// fleet, low enough that a stray registration cannot start unbounded work.
+const maxIndexedRepos = 16
+
+// isGitRepo reports whether cwd is inside a checkout, without the side effects
+// of a full bring-up, so a non-repository agent does not consume a slot.
+func isGitRepo(ctx context.Context, cwd string) bool {
+	// #nosec G204 -- argv is passed directly, no shell; cwd comes from an
+	// agent's own registration and is only ever used as a working directory.
+	cmd := exec.CommandContext(ctx, "git", "-C", cwd, "rev-parse", "--show-toplevel")
+	return cmd.Run() == nil
 }

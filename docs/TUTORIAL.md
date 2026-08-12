@@ -269,7 +269,7 @@ unavailable`:
 
 ```sh
 dibs stop                                  # this daemon, not every daemon
-dibd -match-repo /path/to/your/repo &
+dibd &
 ```
 
 Not `pkill dibd`: Dibs is built to let you run several isolated daemons on
@@ -280,13 +280,15 @@ the agents, their declarations and their mail are all still there: the state
 *is* the ledger, which is why stopping the daemon is not an event anything has
 to recover from.
 
-Until you do, `declare` will keep telling you it is off:
+Matching needs no configuration. Each repository is indexed the first time an
+agent registers from it, so until an agent has arrived `declare` says so rather
+than pretending:
 
 ```json
 { "matching": "off",
-  "matching_hint": "work-overlap matching is not configured; start dibd with
-    -match-repo <path> (or set [match] repo in dibs.toml) to have Dibs tell
-    you who else is doing your work" }
+  "matching_hint": "no repository indexed yet: each one is indexed when an
+    agent first registers from it, so this turns itself on. -match-repo only
+    pre-warms a tree" }
 ```
 
 Indexing takes a moment on first start. To see how well it scores against your

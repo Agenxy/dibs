@@ -126,6 +126,80 @@ func (e *Engine) scorerAndCfg() (overlap.Scorer, MatchConfig) {
 	return e.scorer, e.matchCfg
 }
 
+// scorerFor returns the index built from the tree this agent is working in.
+//
+// One scorer per repository, because a co-change model is only meaningful
+// inside the history it was mined from: asking an index of project A which
+// files project B's sentence predicts returns confident nonsense. Agents in
+// different projects are already prevented from matching each other
+// (differentProjects in core), and this is the same rule one level down.
+//
+// An agent whose cwd is in no indexed tree gets no scorer and therefore no
+// semantic suggestions. It still gets the shared-refs and shared-dirs signals,
+// which are computed in the pure core and need no index at all.
+func (e *Engine) scorerFor(cwd string) (overlap.Scorer, MatchConfig) {
+	e.matchMu.RLock()
+	defer e.matchMu.RUnlock()
+	if len(e.scorers) == 0 {
+		return e.scorer, e.matchCfg
+	}
+	best, bestLen := overlap.Scorer(nil), -1
+	for repo, s := range e.scorers {
+		// Longest matching root wins, so a nested checkout is scored by its own
+		// index rather than by the parent it happens to sit inside.
+		if inMatchedRepo(cwd, repo) && len(repo) > bestLen {
+			best, bestLen = s, len(repo)
+		}
+	}
+	if best == nil {
+		return nil, e.matchCfg
+	}
+	cfg := e.matchCfg
+	cfg.Repo = e.repoOf(best, bestLen)
+	return best, cfg
+}
+
+// repoOf recovers the root a chosen scorer was built from.
+func (e *Engine) repoOf(s overlap.Scorer, wantLen int) string {
+	for repo, have := range e.scorers {
+		if have == s && len(repo) == wantLen {
+			return repo
+		}
+	}
+	return ""
+}
+
+// SetScorerForRepo publishes the index for one repository. Thresholds are
+// shared: they are a policy about how confident a match must be, not a property
+// of any one tree.
+func (e *Engine) SetScorerForRepo(repo string, s overlap.Scorer, cfg MatchConfig) {
+	e.matchMu.Lock()
+	defer e.matchMu.Unlock()
+	if e.scorers == nil {
+		e.scorers = map[string]overlap.Scorer{}
+	}
+	e.scorers[repo] = s
+	cfg.Repo = repo
+	e.matchCfg = cfg
+	if e.scorer == nil {
+		// Keep the single-scorer accessors working for callers with no agent in
+		// hand, such as Predict from the human CLI.
+		e.scorer = s
+	}
+}
+
+// IndexedRepos lists the trees currently indexed, for status and for doctor.
+func (e *Engine) IndexedRepos() []string {
+	e.matchMu.RLock()
+	defer e.matchMu.RUnlock()
+	out := make([]string, 0, len(e.scorers))
+	for repo := range e.scorers {
+		out = append(out, repo)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // Suggestion is one agent offered to an agent that just declared work.
 type Suggestion struct {
 	Agent   string   `json:"agent"`
@@ -194,7 +268,7 @@ func (e *Engine) matchDeclaration(
 	ctx context.Context, token string, decl core.Slot,
 ) ([]Suggestion, matchOutcome) {
 	declaration, declRefs, declDirs := decl.Text, decl.Refs, decl.Dirs
-	scorer, cfg := e.scorerAndCfg()
+	scorer, cfg := e.scorerFor(e.cwdOfToken(token))
 	if scorer == nil || (declaration == "" && len(declRefs) == 0) {
 		// No scorer at all: the phase already says "off", and that hint is more
 		// useful than either of the two outcomes here.
@@ -996,4 +1070,62 @@ func (e *Engine) backfillFootprints(ctx context.Context, scorer overlap.Scorer) 
 		out[k] = v
 	}
 	return out
+}
+
+// OnRepoSeen is told, once per repository, where a registering agent is working.
+//
+// Work-overlap matching used to require -match-repo and was therefore OFF on
+// every install that did not know to set it, which is the headline feature
+// silent by default. There is no sensible constant to default the flag to: the
+// daemon serves agents across every project open on the machine, so any repo
+// baked in would be wrong for most of them.
+//
+// The agents know, though. Each one registers with a cwd, and the repository
+// containing it is exactly the tree whose history is worth mining. So the
+// daemon learns the answer from the fleet instead of from configuration.
+//
+// Called on the engine's own goroutine, so the callback must not block: the
+// daemon's implementation hands the path to an indexer and returns.
+func (e *Engine) OnRepoSeen(fn func(repo string)) {
+	e.matchMu.Lock()
+	defer e.matchMu.Unlock()
+	e.onRepoSeen = fn
+}
+
+// noteRepoOf reports a newly seen repository to the daemon, at most once each.
+func (e *Engine) noteRepoOf(cwd string) {
+	if cwd == "" {
+		return
+	}
+	e.matchMu.Lock()
+	fn := e.onRepoSeen
+	if fn == nil {
+		e.matchMu.Unlock()
+		return
+	}
+	if e.reposSeen == nil {
+		e.reposSeen = map[string]bool{}
+	}
+	if e.reposSeen[cwd] {
+		e.matchMu.Unlock()
+		return
+	}
+	e.reposSeen[cwd] = true
+	e.matchMu.Unlock()
+	fn(cwd)
+}
+
+// cwdOfToken is where the holder of this token is working, or "".
+func (e *Engine) cwdOfToken(token string) string {
+	if token == "" {
+		return ""
+	}
+	l, errRes := e.authRead(token, time.Now())
+	if errRes != nil || l == nil {
+		return ""
+	}
+	if l.Agent == nil {
+		return ""
+	}
+	return l.Agent.CWD
 }
