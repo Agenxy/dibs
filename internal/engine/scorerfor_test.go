@@ -83,18 +83,21 @@ func TestAnAgentOutsideEveryIndexedTreeIsNotScored(t *testing.T) {
 // The repository is learned from the agents, so the callback must actually fire
 // on registration. Without it nothing is ever indexed and matching is off for
 // everyone, which is the state this whole change exists to end.
-func TestRegisteringReportsItsRepositoryOnce(t *testing.T) {
+func TestRegisteringReportsItsRepositoryEveryTime(t *testing.T) {
 	e := &Engine{}
 	var seen []string
 	e.OnRepoSeen(func(repo string) { seen = append(seen, repo) })
 
 	e.noteRepoOf("/work/api")
-	e.noteRepoOf("/work/api") // same tree again: already known
+	e.noteRepoOf("/work/api") // reported again: the DAEMON decides whether to act
 	e.noteRepoOf("/work/web")
 	e.noteRepoOf("") // an agent that reported no cwd
 
-	if len(seen) != 2 || seen[0] != "/work/api" || seen[1] != "/work/web" {
-		t.Errorf("reported %v, want each distinct cwd exactly once and no blanks", seen)
+	// Every non-empty cwd is passed on. Deduplicating here would mean a tree
+	// that failed once could never be retried, which is exactly what happened
+	// when somebody granted the daemon access and re-registered.
+	if len(seen) != 3 || seen[0] != "/work/api" || seen[2] != "/work/web" {
+		t.Errorf("reported %v, want every non-empty cwd passed through", seen)
 	}
 }
 

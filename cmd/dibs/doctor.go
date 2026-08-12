@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -201,6 +202,7 @@ func (d *diagnosis) run(verbose bool) error {
 	checkGit(verbose, ok, bad)
 	checkSupervision(verbose, ok, warn)
 	checkOneDaemon(verbose, ok, warn)
+	checkCodeSignature(ok, warn)
 
 	if d.json {
 		// The tally is a rendering of counts the document already carries, and
@@ -826,4 +828,40 @@ func underDir(path, dir string) bool {
 	}
 	rel, err := filepath.Rel(rd, rp)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
+// checkCodeSignature reports an ad-hoc signed daemon on macOS.
+//
+// macOS keys a privacy grant to a program's code signature. The Go toolchain
+// signs ad-hoc, which produces a fresh code-directory hash from every build, so
+// the system treats each rebuild as a different program and any Files-and-
+// Folders or Full Disk Access grant silently stops applying.
+//
+// That is invisible and expensive: matching indexes a checkout under ~/Desktop,
+// works, and then stops after the next install, with the daemon reporting only
+// that it cannot read the tree. Diagnosed here rather than left to be
+// rediscovered, because the symptom points at the wrong thing every time.
+func checkCodeSignature(ok reportFn, warn fixFn) {
+	if runtime.GOOS != "darwin" {
+		return
+	}
+	daemon, err := exec.LookPath("dibd")
+	if err != nil {
+		return // a missing daemon is already reported by the checks above
+	}
+	// #nosec G204 -- no shell: exec.Command passes argv directly, and daemon is
+	// whatever exec.LookPath resolved on this PATH, never caller-supplied text.
+	out, err := exec.Command("codesign", "-dv", "--verbose=2", daemon).CombinedOutput()
+	if err != nil {
+		return // nothing to say if codesign itself is unavailable
+	}
+	if !strings.Contains(string(out), "Signature=adhoc") {
+		ok("dibd is signed with a stable identity, so privacy grants survive a rebuild")
+		return
+	}
+	warn("dibd is ad-hoc signed, so a macOS privacy grant will not survive the next install",
+		"only matters if your checkouts live under Desktop, Documents or Downloads, where "+
+			"the daemon needs permission to read them. Sign with a persistent identity so the "+
+			"grant sticks: pick one from `security find-identity -v -p codesigning` and "+
+			"reinstall with DIBS_CODESIGN_IDENTITY=<identity> task install")
 }

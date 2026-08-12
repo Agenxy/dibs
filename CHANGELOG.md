@@ -7,6 +7,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- A repository the daemon could not read was written off for the life of the
+  process. Dedup lived in two places: the daemon's, which releases a tree it
+  failed to read so a later attempt retries, and the engine's, which never
+  cleared. Granting the daemon access and registering again therefore did
+  nothing, which is the exact situation the retry existed for.
+- `task install` removed `$DEST/agents`, a name that has never existed, and then
+  copied over the live `dibs`. That reuses the inode, macOS invalidates the
+  cached signature, and every later run is SIGKILLed with no message: precisely
+  the failure the comment directly above that line warns about.
+
+
 - The data directory really is `~/.dibs` now. The 0.0.3 notes below said so and
   the code did not: the vocabulary rename turned every "lane" into an "agent"
   and took `~/.lanes` with it, so two releases shipped writing to `~/.agents`, a
@@ -84,6 +95,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   should have an index ready before the first agent arrives. Closes #7.
 
 ### Added
+
+- `task install` honours `DIBS_CODESIGN_IDENTITY`, signing both binaries with a
+  persistent identity. macOS keys a privacy grant to a code signature, and the
+  Go toolchain signs ad-hoc, so every rebuild is a different program to the
+  system and any Files-and-Folders or Full Disk Access grant silently stops
+  applying. That matters when checkouts live under Desktop, Documents or
+  Downloads, where the daemon needs permission to read them at all.
+- `dibs doctor` reports an ad-hoc signed daemon and says what it costs, because
+  the symptom (matching worked, then quietly stopped after an install) points at
+  everything except the signature.
+
 
 - `task smoke`, in the gate: it runs the built binaries and asserts on what they
   actually print, against expectations written by hand rather than generated
