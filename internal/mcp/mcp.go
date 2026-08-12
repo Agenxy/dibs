@@ -71,7 +71,12 @@ type Server struct {
 
 // New returns an MCP server over eng.
 func New(eng *engine.Engine) *Server {
-	return &Server{eng: eng, sessions: newSessionStore(), legacy: newLegacySubs()}
+	srv := &Server{eng: eng, sessions: newSessionStore(), legacy: newLegacySubs()}
+	// One lifetime for a session. When the store forgets an id, whatever the
+	// legacy transport is holding against it goes too: that map has no ceiling
+	// of its own, and nothing else ever removed from it.
+	srv.sessions.onEvict = srv.legacy.drop
+	return srv
 }
 
 type rpcRequest struct {
@@ -703,7 +708,13 @@ func (s *Server) callTool(
 	}
 	res, err := s.run(ctx, call.Name, &a, params, sessionClient)
 	if err != nil {
-		payload := map[string]any{"error": err.Error()}
+		// An unstructured error used to go out as a bare {"error": "..."} with no
+		// hint, which is the one place this surface broke its own honesty rule:
+		// every error carries the corrective call. There isn't one here, so it
+		// says that plainly and tells the agent what IS worth doing.
+		payload := map[string]any{
+			"code": "E_INTERNAL", "message": err.Error(), "hint": core.ReportHint,
+		}
 		var ce *core.Error
 		if errors.As(err, &ce) {
 			payload = map[string]any{"code": ce.Code, "message": ce.Msg, "hint": ce.Hint}
@@ -997,4 +1008,6 @@ An agent is an AGENT, not a task. Name it for who you are ('reviewer', 'codex-1'
 
 Start: register(name, description, pid, nonce): keep the token, and invent a nonce: it is the only credential that survives a restart. Then check_in() at the start of every activation, before you act.
 
-Read dibs://skills once: short, and it is the mistakes that look like success. dibs://plugin says if your harness can deliver mail instead of you polling.`
+Read dibs://skills once: short, and it is the mistakes that look like success. dibs://plugin says if your harness can deliver mail instead of you polling.
+
+Something Dibs did that no hint explains? Ask your human about reporting it.`

@@ -194,6 +194,27 @@ and whether re-running it is safe.
 
 So a stall notice is *information*, not an instruction. Read it, decide, act.
 
+## When Dibs is the thing that is broken
+
+Most errors here name the call that fixes them. `E_MUST_ACK_BOARD` means call
+`check_in` first; `E_BAD_TOKEN` tells you how to get your own agent back rather
+than becoming `yourname-2`. Those are yours to act on, and they are not worth
+reporting: they are the protocol working.
+
+`E_INTERNAL` is different. It means Dibs did something no hint explains, so
+there is nothing for you to do differently, and you are the only witness to what
+you called and what came back.
+
+When that happens, ask your human whether to open an issue at
+<https://github.com/Agenxy/dibs/issues>. Say what tool you called, the
+arguments, what you expected, and what arrived. If they are happy for you to go
+further, a fix is welcome too: `AGENTS.md` is the map, `task ci` is the gate,
+and a patch from an agent is read the same as a patch from anyone.
+
+Ask first rather than filing directly. Not deference: your human knows whether
+the work on this machine is something they want described in a public tracker,
+and you do not.
+
 ## Protocol version: what is actually true today
 
 Dibs targets **MCP 2026-07-28** (stateless core) and also serves the legacy
