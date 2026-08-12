@@ -1,4 +1,4 @@
-// Command agents is the human window into the board: inspect state, follow
+// Command dibs is the human window into the board: inspect state, follow
 // the live event stream, verify ledger integrity.
 package main
 
@@ -374,15 +374,23 @@ func mcpConfig() error {
 	out, _ := json.MarshalIndent(cfg, "", "  ")
 	fmt.Println("# Claude Code and JSON-config hosts: add to .mcp.json:")
 	fmt.Println(string(out))
+	// The Bearer line shows a prefix so a reader can see it is the same secret
+	// as the header above. Unguarded, that slice panicked on any secret shorter
+	// than the preview: a hand-edited or truncated local.secret took down the
+	// one command whose job is to help you configure a client.
+	preview := s
+	if len(s) > 16 {
+		preview = s[:16] + "…"
+	}
 	fmt.Printf(`
 # Codex / ChatGPT desktop: add to ~/.codex/config.toml:
-[mcp_servers.agents]
+[mcp_servers.dibs]
 url = %q
 http_headers = { "X-Dibs-Local" = %q }
 
 # The secret is also accepted as: Authorization: Bearer %s
 # Running agent sessions do not hot-load MCP config: start a new session after adding.
-`, url, s, s[:16]+"…")
+`, url, s, preview)
 
 	if certPath != "" {
 		fmt.Printf(`
