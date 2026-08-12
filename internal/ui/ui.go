@@ -136,10 +136,6 @@ func Pad(s string, width int) string {
 	return s
 }
 
-// Enabled reports whether colour is actually being emitted, for callers that
-// want to vary layout rather than just colour.
-func Enabled() bool { return r.ColorProfile() != 0 /* termenv.Ascii */ }
-
 // SetOutput repoints the renderer, for tests and for commands that write
 // somewhere other than stdout.
 func SetOutput(w io.Writer) { r = lipgloss.NewRenderer(w) }

@@ -77,13 +77,6 @@ func (e *Engine) HookPoll(ctx context.Context, sessionID, event, cwd string) (co
 	})
 }
 
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "…"
-}
-
 // BindSession attaches a harness session id to the caller's agent, so lifecycle
 // hooks can find it later.
 func (e *Engine) BindSession(ctx context.Context, token, sessionID string) (core.Result, error) {
