@@ -110,6 +110,26 @@ var (
 	}
 )
 
+// ReportHint is for errors that mean DIBS misbehaved, rather than errors that
+// name a corrective call the agent can make.
+//
+// Every error above tells a drifted agent what to do instead, which is the
+// honesty rule in AGENTS.md. An unstructured error has no such answer: nothing
+// the agent does differently will help, and it is the only witness to what it
+// called and what came back. That is worth a report, and an agent that hit it
+// is better placed to write one than anybody who reads the ledger afterwards.
+//
+// Deliberately NOT attached to the errors above. An agent told to file an issue
+// every time it drifts would file issues about its own mistakes, and a tracker
+// full of "I forgot to check_in" buries the defects that are real. Asking the
+// human first is not deference for its own sake: they know whether this machine's
+// work is something they want described in public.
+const ReportHint = "this looks like a defect in Dibs rather than something you did, " +
+	"and there is no corrective call to make. Ask your human whether to report it at " +
+	"https://github.com/Agenxy/dibs/issues with the tool you called, the arguments, and " +
+	"what you expected. If they are happy for you to go further, a fix is welcome too: " +
+	"AGENTS.md is the map and contributions from agents are read the same as anyone's"
+
 // ErrTooLargeBlob reports an oversize blob against the byte cap.
 func ErrTooLargeBlob(limit int) *Error {
 	return errf(
