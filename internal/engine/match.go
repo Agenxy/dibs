@@ -100,18 +100,6 @@ var DefaultMatchConfig = MatchConfig{
 	Deadline:        1500 * time.Millisecond,
 }
 
-// SetScorer installs the work-overlap scorer. Safe to call at any time; nil
-// disables matching entirely, which is the state Dibs ships in.
-func (e *Engine) SetScorer(s overlap.Scorer, cfg MatchConfig) {
-	e.matchMu.Lock()
-	defer e.matchMu.Unlock()
-	e.scorer = s
-	if cfg.Deadline <= 0 {
-		cfg.Deadline = DefaultMatchConfig.Deadline
-	}
-	e.matchCfg = cfg
-}
-
 // matchRepo is the indexed repository, for turning declared absolute paths into
 // the relative form the index names files by.
 func (e *Engine) matchRepo() string {
@@ -143,30 +131,27 @@ func (e *Engine) scorerFor(cwd string) (overlap.Scorer, MatchConfig) {
 	if len(e.scorers) == 0 {
 		return e.scorer, e.matchCfg
 	}
-	best, bestLen := overlap.Scorer(nil), -1
+	// Longest matching root wins, so a nested checkout is scored by its own
+	// index rather than by the parent it happens to sit inside. The root is
+	// kept here rather than recovered afterwards: searching the map for the
+	// scorer we just chose meant comparing interface values with ==, which
+	// panics outright on any implementation whose dynamic type is not
+	// comparable, and it was a second scan for something already in hand.
+	var (
+		best     overlap.Scorer
+		bestRepo string
+	)
 	for repo, s := range e.scorers {
-		// Longest matching root wins, so a nested checkout is scored by its own
-		// index rather than by the parent it happens to sit inside.
-		if inMatchedRepo(cwd, repo) && len(repo) > bestLen {
-			best, bestLen = s, len(repo)
+		if inMatchedRepo(cwd, repo) && len(repo) > len(bestRepo) {
+			best, bestRepo = s, repo
 		}
 	}
 	if best == nil {
 		return nil, e.matchCfg
 	}
 	cfg := e.matchCfg
-	cfg.Repo = e.repoOf(best, bestLen)
+	cfg.Repo = bestRepo
 	return best, cfg
-}
-
-// repoOf recovers the root a chosen scorer was built from.
-func (e *Engine) repoOf(s overlap.Scorer, wantLen int) string {
-	for repo, have := range e.scorers {
-		if have == s && len(repo) == wantLen {
-			return repo
-		}
-	}
-	return ""
 }
 
 // SetScorerForRepo publishes the index for one repository. Thresholds are
@@ -264,11 +249,15 @@ func declarationOf(op *core.Op) core.Slot {
 	}
 }
 
+// cwd is passed in rather than resolved here because the scorer has to be
+// chosen before the loop trip below, and DoMatched has already paid for that
+// lookup: prediction, path relativisation and matching then all speak about the
+// same tree instead of three possibly different ones.
 func (e *Engine) matchDeclaration(
-	ctx context.Context, token string, decl core.Slot,
+	ctx context.Context, token, cwd string, decl core.Slot,
 ) ([]Suggestion, matchOutcome) {
 	declaration, declRefs, declDirs := decl.Text, decl.Refs, decl.Dirs
-	scorer, cfg := e.scorerFor(e.cwdOfToken(token))
+	scorer, cfg := e.scorerFor(cwd)
 	if scorer == nil || (declaration == "" && len(declRefs) == 0) {
 		// No scorer at all: the phase already says "off", and that hint is more
 		// useful than either of the two outcomes here.
@@ -777,6 +766,29 @@ func (e *Engine) attemptJoin(ctx context.Context, token string, m core.LaneMatch
 // that nothing can ever match against.
 func (e *Engine) Predict(ctx context.Context, declaration string) ([]core.PredFile, string, string) {
 	scorer, cfg := e.scorerAndCfg()
+	return e.predictWith(ctx, scorer, cfg, declaration)
+}
+
+// predictIn predicts using the index built from the tree at cwd, and reports
+// which tree that was so the caller can relativise declared paths against the
+// same one.
+//
+// Split from Predict because the declare path must not use the global scorer.
+// That field holds whichever repository was indexed FIRST, so on a machine with
+// more than one project every other agent's footprint was predicted from a
+// history it has nothing to do with, and op.Predicted is persisted: the wrong
+// answer went into the ledger and became what later comparisons matched on.
+func (e *Engine) predictIn(
+	ctx context.Context, cwd, declaration string,
+) ([]core.PredFile, string) {
+	scorer, cfg := e.scorerFor(cwd)
+	pred, _, _ := e.predictWith(ctx, scorer, cfg, declaration)
+	return pred, cfg.Repo
+}
+
+func (e *Engine) predictWith(
+	ctx context.Context, scorer overlap.Scorer, cfg MatchConfig, declaration string,
+) ([]core.PredFile, string, string) {
 	if scorer == nil || declaration == "" {
 		return nil, "", ""
 	}
@@ -848,15 +860,21 @@ func (e *Engine) DoMatched(ctx context.Context, op *core.Op) (core.Result, error
 	// never shrinks. Predicting first is what makes slot-to-slot comparison
 	// possible at all, and it costs nothing extra: the same prediction is reused
 	// below instead of being computed twice.
+	// Resolved once, before anything uses it, so the prediction, the paths it
+	// is relativised against and the match all speak about the same tree.
+	// matchRepo() cannot serve here: it returns whichever repository was
+	// indexed LAST, so declared dirs were being made relative to a root the
+	// declaring agent may never have seen.
+	cwd := e.cwdForToken(ctx, op.Token)
 	if len(op.Predicted) == 0 && op.Text != "" {
-		op.Predicted, _, _ = e.Predict(ctx, op.Text)
-		op.Predicted = withDeclaredDirs(op.Predicted, op.Dirs, e.matchRepo())
+		pred, repo := e.predictIn(ctx, cwd, op.Text)
+		op.Predicted = withDeclaredDirs(pred, op.Dirs, repo)
 	}
 	res, err := e.Do(ctx, op)
 	if err != nil {
 		return nil, err
 	}
-	sug, outcome := e.matchDeclaration(ctx, op.Token, declarationOf(op))
+	sug, outcome := e.matchDeclaration(ctx, op.Token, cwd, declarationOf(op))
 	annotateMatching(res, sug, outcome, e.MatchStatus())
 	return res, nil
 }
@@ -1115,17 +1133,31 @@ func (e *Engine) noteRepoOf(cwd string) {
 	}
 }
 
-// cwdOfToken is where the holder of this token is working, or "".
-func (e *Engine) cwdOfToken(token string) string {
+// cwdForToken is where the holder of this token is working, or "".
+//
+// On the loop, and read-only. The first version called authRead directly from
+// matchDeclaration, which runs on the CALLER's goroutine after Do has already
+// dispatched into the writer loop: authRead writes e.seen, so two agents
+// declaring at once was a concurrent map write, which Go turns into a fatal
+// error that takes the whole board down. Every other authRead caller goes
+// through query for exactly this reason.
+//
+// It does not use authRead even now. That function also spends a rate-limit
+// token, and asking where an agent works is not an action the agent took.
+func (e *Engine) cwdForToken(ctx context.Context, token string) string {
 	if token == "" {
 		return ""
 	}
-	l, errRes := e.authRead(token, time.Now())
-	if errRes != nil || l == nil {
+	res, err := e.query(ctx, func() core.Result {
+		l := e.state.LaneByToken(token)
+		if l == nil || l.Agent == nil {
+			return core.Result{}
+		}
+		return core.Result{"cwd": l.Agent.CWD}
+	})
+	if err != nil {
 		return ""
 	}
-	if l.Agent == nil {
-		return ""
-	}
-	return l.Agent.CWD
+	cwd, _ := res["cwd"].(string)
+	return cwd
 }
