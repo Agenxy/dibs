@@ -41,6 +41,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rather than the first fifty records, and its words are checked against the
   core rather than a second hand-maintained list.
 
+- An argument that did not decode was refused with no `hint`, the one rule this
+  surface exists to keep: the agent was told what was wrong and nothing about
+  what to do instead. A `register` carrying the pre-0.0.3 nested `agent` object
+  got "agent must be a string, got object" and no way to learn the current
+  shape. Those three protocol errors now name the call that answers the
+  question, as do an unknown resource and an unknown method.
+
 - A coordinator claim that presented the right secret spent it even when the op
   was then refused, leaving the board with no coordinator and no way to appoint
   one short of restarting the daemon. Checking the secret and spending it are
