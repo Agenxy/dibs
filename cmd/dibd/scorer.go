@@ -542,7 +542,8 @@ func repoReadable(ctx context.Context, cwd string) error {
 		return nil
 	}
 	if ctx.Err() != nil {
-		return fmt.Errorf("git did not answer within %s", gitDeadline)
+		return fmt.Errorf("git did not answer within %s (if a permission dialog is "+
+			"on screen, answering it and registering again is all that is needed)", gitDeadline)
 	}
 	if msg := strings.TrimSpace(string(out)); msg != "" {
 		return errors.New(msg)
@@ -551,9 +552,17 @@ func repoReadable(ctx context.Context, cwd string) error {
 }
 
 // gitDeadline bounds any git the daemon runs against a tree it was told about.
-// Long enough for a cold cache on a large repository, short enough that a hang
-// is reported rather than waited on.
-const gitDeadline = 20 * time.Second
+//
+// Generous on purpose. The first call against a protected folder on macOS puts
+// a permission dialog on the user's screen, and that is a PERSON deciding, not
+// a hang. A 20-second bound killed the git while the dialog was still up, which
+// left the prompt with no process to grant to: the permission could never be
+// given, and the daemon had made the thing it was diagnosing impossible to fix.
+//
+// So the deadline is long enough to read and answer a dialog, and a genuinely
+// hung git costs this once per repository and is then reported. Waiting a few
+// minutes once beats making the grant unobtainable.
+const gitDeadline = 4 * time.Minute
 
 // tccHint explains the macOS case, which is the one that looks like a bug.
 //

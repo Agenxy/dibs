@@ -7,6 +7,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The bound on git calls made the permission it needed impossible to grant. A
+  first call against a macOS protected folder puts a dialog on the user's
+  screen, and macOS shows that dialog on behalf of the requesting process: a
+  20-second timeout killed git while the dialog was still up, leaving the prompt
+  with nothing to grant to. The deadline is now four minutes, which is a person
+  reading a dialog rather than a hang, and the error says that answering it and
+  registering again is all that is needed.
+- The daemon identified itself to macOS as `a.out`, the Go toolchain's default,
+  so any privacy grant was recorded against a name shared with every other
+  ad-hoc binary. `task install` now always sets `org.agenxy.dibs`, whether or
+  not a signing identity is configured.
+
+
 - A repository the daemon could not read was written off for the life of the
   process. Dedup lived in two places: the daemon's, which releases a tree it
   failed to read so a later attempt retries, and the engine's, which never
