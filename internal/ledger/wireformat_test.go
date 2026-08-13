@@ -84,14 +84,14 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	// The op payload: the union of every tag that reached disk above.
 	wantOp := map[string]bool{
 		"kind": true, "agent": true, "name": true, "pid": true, "token": true,
-		"nonce": true, "lane_kind": true, "session_id": true, "agent_id": true,
+		"nonce": true, "agent_kind": true, "session_id": true, "agent_id": true,
 		"slot_id": true, "text": true, "dirs": true, "refs": true,
 		"to": true, "msg_type": true, "body": true, "deadline_sec": true, "op_id": true,
 		"path": true, "mode": true, "note": true,
 		"space": true, "exclusive": true, "predicted": true,
 		"score": true, "threshold": true, "scorer_id": true, "scorer_version": true,
 		"evidence": true, "auto": true,
-		"stale_lanes": true, "alive_pids": true,
+		"stale_agents": true, "alive_pids": true,
 	}
 
 	seenEnvelope := map[string]bool{}

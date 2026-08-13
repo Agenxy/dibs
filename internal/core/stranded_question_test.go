@@ -11,7 +11,7 @@ import "testing"
 // answer that became impossible in the first second, while the board knew:
 // resume refuses a closed agent with E_AGENT_CLOSED, and Gone() is
 // documented as "never comes back".
-func TestClosingALaneEndsTheQuestionsItWillNeverAnswer(t *testing.T) {
+func TestClosingASpaceEndsTheQuestionsItWillNeverAnswer(t *testing.T) {
 	st := NewState("test", DefaultLimits())
 	now := t0
 	reg := func(name string) string {

@@ -24,7 +24,7 @@ and nothing else.
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install mlx mlx-embeddings
-.venv/bin/python lanes_embed.py --model codefuse-ai/F2LLM-v2-4B --port 8737
+.venv/bin/python dibs_embed.py --model codefuse-ai/F2LLM-v2-4B --port 8737
 ```
 
 ## What it is for

@@ -22,7 +22,7 @@ import (
 // The union still FINDS candidates, which is what breadth is good for. It no
 // longer judges them: the score comes from the closest single live declaration,
 // which is the thing an agent can actually be duplicating.
-func TestALaneDoesNotGetEasierToMatchAsItGrows(t *testing.T) {
+func TestASpaceDoesNotGetEasierToMatchAsItGrows(t *testing.T) {
 	newcomer := Slot{
 		Text: "auth token refresh", Dirs: []string{"/repo/auth"},
 		Predicted: fp("auth/token.go", "auth/session.go"),
@@ -149,7 +149,7 @@ func addMember(t *testing.T, s *State, ch *Space, id string, sl Slot, now time.T
 //
 // So the two cases must stay apart: compared-and-unalike is a zero, never-
 // measured falls back to the only footprint that exists.
-func TestALaneWithNoMemberDeclarationIsStillFindable(t *testing.T) {
+func TestASpaceWithNoMemberDeclarationIsStillFindable(t *testing.T) {
 	s, a := chState(t, "opener", "newcomer")
 	do(t, s, &Op{
 		Kind: OpSpaceOpen, Token: a["opener"].Token, Space: "guard-work",
@@ -202,7 +202,7 @@ func TestALaneWithNoMemberDeclarationIsStillFindable(t *testing.T) {
 // Empty agents are not a transient state to wait out: an agent a human opened
 // outlives its members on purpose, and only auto-opened ones are ever reclaimed.
 // So they stay joinable by name; they just stop claiming to be occupied.
-func TestAnEmptyLaneIsNotSomebodyElsesWork(t *testing.T) {
+func TestAnEmptySpaceIsNotSomebodyElsesWork(t *testing.T) {
 	s, a := chState(t, "opener", "newcomer")
 	do(t, s, &Op{
 		Kind: OpSpaceOpen, Token: a["opener"].Token, Space: "abandoned",

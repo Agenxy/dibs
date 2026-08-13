@@ -26,13 +26,13 @@ so this script does not have to know its conventions.
 
     # real use (Apple Silicon):
     pip install mlx mlx-lm
-    ./lanes_embed.py --repo /path/to/repo --port 8737
+    ./dibs_embed.py --repo /path/to/repo --port 8737
     dibd -match-repo /path/to/repo -match-join 0.33 \\
            -match-embed-url http://127.0.0.1:8737
 
     # contract check, no model needed:
-    ./lanes_embed.py --repo . --port 8737 --backend hash
-    ./lanes_embed.py --self-test
+    ./dibs_embed.py --repo . --port 8737 --backend hash
+    ./dibs_embed.py --self-test
 
 The default model is F2LLM-v2-4B: Apache 2.0, and the measured winner of a
 four-way comparison run with `dibs calibrate` on this repository's own git

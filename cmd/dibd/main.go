@@ -393,7 +393,7 @@ func portOf(addr string) string {
 //
 // It reads the LEDGER, not the replay error, and that is the whole point. The
 // obvious version matched the retired name in the error text and would never
-// have fired: `register_lane` no longer matches the actor-free cases in Apply,
+// have fired: `register` no longer matches the actor-free cases in Apply,
 // so it falls through to actor resolution and dies as E_BAD_TOKEN, an error
 // that never mentions the kind at all.
 //

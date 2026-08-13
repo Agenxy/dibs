@@ -144,7 +144,7 @@ func TestBlobMimeValidation(t *testing.T) {
 
 // TestBlobPerLaneQuota is part of the P1-3 fix: one agent cannot exceed its store
 // quota.
-func TestBlobPerLaneQuota(t *testing.T) {
+func TestBlobPerSpaceQuota(t *testing.T) {
 	lim := DefaultLimits()
 	lim.PerAgentBlobBytes = 10
 	s := NewState("n1", lim)

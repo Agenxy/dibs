@@ -14,7 +14,7 @@ import (
 // It carried every announcement body from every space. An agent that had
 // joined nothing received them all, without asking, on the one call it is
 // required to make before it does anything else.
-func TestTheBoardCarriesNoLaneText(t *testing.T) {
+func TestTheBoardCarriesNoSpaceText(t *testing.T) {
 	st := NewState("test", DefaultLimits())
 	now := t0
 	reg := func(name string) string {

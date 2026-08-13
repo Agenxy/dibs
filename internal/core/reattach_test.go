@@ -213,7 +213,7 @@ func TestNonceForADifferentNameIsRefused(t *testing.T) {
 
 // Reattach keys on session AND name, so a different agent in the same session,
 // or the same name in another session, still gets its own agent.
-func TestReattachDoesNotCollapseDistinctLanes(t *testing.T) {
+func TestReattachDoesNotCollapseDistinctSpaces(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	now := time.Now()
 	a, _, _ := s.Apply(&Op{Kind: OpRegister, Name: "writer", SessionID: "ses_1", NewToken: "t1"}, now)

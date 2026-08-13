@@ -212,9 +212,9 @@ def seed_project(proj: Path) -> None:
 
 
 PROMPT = (
-    "Call lanes_register_lane with your name, then lanes_ack_board with the token, "
-    'then lanes_set_slot describing your work as "fixing the token validation retry '
-    'loop in auth". Report what lanes_set_slot returned, verbatim.'
+    "Call dibs_register with your name, then dibs_check_in with the token, "
+    'then dibs_declare describing your work as "fixing the token validation retry '
+    'loop in auth". Report what dibs_declare returned, verbatim.'
 )
 
 
@@ -676,18 +676,18 @@ def crashed_agent_never_inherits(work: Path) -> None:
     it only ever showed up for real crashes.
 
     A crash here is a real one (the lease lapses and the sweep notices) on its
-    own daemon with a short lane_ttl, so the rest of the fleet is not aged out
+    own daemon with a short agent_ttl, so the rest of the fleet is not aged out
     underneath this check.
     """
     cdir = work / "crash"
     cdir.mkdir(parents=True, exist_ok=True)
-    (cdir / "dibs.toml").write_text('[limits]\nlane_ttl = "6s"\n')
+    (cdir / "dibs.toml").write_text('[limits]\nagent_ttl = "6s"\n')
     d = Daemon(cdir, PORT + 9, log=cdir / "log")
     if not d.secret:
         no("crash daemon", "never started")
         d.stop()
         return
-    ok("a daemon honours [limits] lane_ttl from dibs.toml")
+    ok("a daemon honours [limits] agent_ttl from dibs.toml")
     try:
         owner = d.agent("cr-owner", pid=os.getpid())
         crashed = d.agent("cr-crashed", pid=os.getpid())
@@ -707,7 +707,7 @@ def crashed_agent_never_inherits(work: Path) -> None:
         status = next((agent.get("status", "") for agent in d.board(owner).get("agents", [])
                        if agent["id"] == "cr-crashed"), "")
         if status != "stale":
-            no("crash detection", f"cr-crashed is '{status}' after 14s at lane_ttl=6s")
+            no("crash detection", f"cr-crashed is '{status}' after 14s at agent_ttl=6s")
             return
         ok("a silent agent is detected as crashed (stale), while busy ones stay active")
         d.tool("leave_space", {"token": owner, "agent": "cr-agent"})

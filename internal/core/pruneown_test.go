@@ -4,7 +4,7 @@ import "testing"
 
 // An agent may tidy up after itself, and after children it vouched for.
 //
-// The board had no way for an agent to remove a record it created: prune_lane
+// The board had no way for an agent to remove a record it created: prune
 // exists but is admin-only, so an agent that spawned three subagents left three
 // rows behind it forever and could only ask a human to clear them. That is a
 // poor fit for a tool whose whole claim is that agents drive it.

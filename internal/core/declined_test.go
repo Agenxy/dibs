@@ -11,7 +11,7 @@ import (
 // Reported from a live fleet by an agent that left an agent it did not belong in
 // and posted its reasons on the way out: "my very next declare auto-joined me
 // again, score UP from 0.1651 to 0.2289, same generic evidence."
-func TestLeavingALaneStopsItAutoJoiningYouAgain(t *testing.T) {
+func TestLeavingASpaceStopsItAutoJoiningYouAgain(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	t0 := time.Now()
 	reg(t, s, "builder", "t-builder", t0)

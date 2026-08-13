@@ -17,7 +17,7 @@ import (
 // So this pins the property rather than the width: whatever the longest op grows
 // to, there is a separator. A test that only checked the current constant would
 // pass again the day somebody adds a longer op kind.
-func TestTheOpNeverRunsIntoTheLane(t *testing.T) {
+func TestTheOpNeverRunsIntoTheSpace(t *testing.T) {
 	when := time.Date(2026, 8, 7, 11, 5, 36, 0, time.UTC)
 	for _, op := range []string{
 		"activity_checkpoint",        // the exact width of the column

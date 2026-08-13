@@ -144,8 +144,8 @@ check(`bridge session id is ${EXPECTED}`, asIntruder.decision === "deny",
   `guard answered "${asIntruder.decision}": the bridge named the session something else`)
 
 // ── the plugin: the real module opencode loads ───────────────────────────
-const { LanesPlugin } = await import("../../../plugins/opencode/dibs.ts")
-const hooks = await (LanesPlugin as any)({})
+const { DibsPlugin } = await import("../../../plugins/opencode/dibs.ts")
+const hooks = await (DibsPlugin as any)({})
 const before = hooks["tool.execute.before"]
 
 // The argument shape is opencode's own, from session/tools.ts:

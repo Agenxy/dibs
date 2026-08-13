@@ -31,7 +31,7 @@ const ADDR = process.env["DIBS_ADDR"] ?? "127.0.0.1:4777"
 const DIR = process.env["DIBS_DIR"] ?? `${homedir()}/.agents`
 
 /** Tool names are prefixed so they never collide with pi's built-ins. */
-const PREFIX = "lanes_"
+const PREFIX = "dibs_"
 
 /**
  * Read once and remember. The daemon rewrites the secret only when the data
@@ -162,7 +162,7 @@ async function gitBranch(cwd: string): Promise<string> {
  * hook_poll names the agent whether or not it has news, precisely so a caller
  * that wants the RELATIONSHIP rather than the mail can ask for it.
  */
-async function laneOf(sessionID: string): Promise<string | null> {
+async function spaceOf(sessionID: string): Promise<string | null> {
   const r = await rpc(
     "tools/call",
     { name: "hook_poll", arguments: { session_id: sessionID, event: "tool_call", cwd: process.cwd() } },
@@ -294,7 +294,7 @@ async function clientInfo() {
 export default function (pi: ExtensionAPI) {
   let registered = false
 
-  async function registerLanesTools(notify?: (m: string, level: string) => void) {
+  async function registerDibsTools(notify?: (m: string, level: string) => void) {
     if (registered) return
     const tools = await listTools()
     if (tools.length === 0) {
@@ -355,7 +355,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     try {
-      await registerLanesTools((m, l) => ctx.ui?.notify?.(m, l as any))
+      await registerDibsTools((m, l) => ctx.ui?.notify?.(m, l as any))
     } catch {
       // A coordination board that is down must never stop pi from starting.
     }
@@ -391,7 +391,7 @@ export default function (pi: ExtensionAPI) {
       const cmd = event?.input?.command
       if (typeof cmd !== "string" || cmd.includes("DIBS_PARENT=")) return
       if (!stampable(cmd)) return
-      const agent = await laneOf(sessionIdOf(ctx))
+      const agent = await spaceOf(sessionIdOf(ctx))
       if (agent) event.input.command = `DIBS_PARENT=${agent} ${cmd}`
     } catch {
       // Leave the command exactly as the agent wrote it.
@@ -401,7 +401,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (_event, ctx) => {
     // Tools may not be registered yet if the daemon started after pi did.
     try {
-      await registerLanesTools()
+      await registerDibsTools()
     } catch {
       /* keep going: mail delivery does not depend on the tool surface */
     }

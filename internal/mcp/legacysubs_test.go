@@ -37,7 +37,7 @@ func TestLegacyClientReceivesPushWithoutPolling(t *testing.T) {
 // dibs://inbox is private, and the GET that opens the stream carries no body,
 // so the token is proven once, at subscribe time, and remembered. If that check
 // were missing, any session could open a space onto somebody else's mail.
-func TestLegacyInboxSubscriptionRequiresTheLanesToken(t *testing.T) {
+func TestLegacyInboxSubscriptionRequiresTheSpacesToken(t *testing.T) {
 	srv, _ := newServer(t)
 	body := `{"jsonrpc":"2.0","id":1,"method":"resources/subscribe","params":{"uri":"dibs://inbox"}}`
 	req, _ := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader(body))

@@ -8,7 +8,7 @@ import (
 // A crashed agent cannot close itself: sign_off needs the agent's own token,
 // which a dead agent no longer has. Without prune the board accumulates debris
 // nobody can clear.
-func TestPruneClearsDebrisButNeverLiveLanes(t *testing.T) {
+func TestPruneClearsDebrisButNeverLiveSpaces(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	now := time.Now()
 	for _, n := range []string{"live", "gone-a", "gone-b"} {
@@ -41,7 +41,7 @@ func TestPruneClearsDebrisButNeverLiveLanes(t *testing.T) {
 }
 
 // Naming an agent prunes exactly that one, live or not: the human said so.
-func TestPruneNamedLaneAndUnknownLane(t *testing.T) {
+func TestPruneNamedSpaceAndUnknownLane(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	now := time.Now()
 	_, _, _ = s.Apply(&Op{Kind: OpRegister, Name: "a", NewToken: "t1"}, now)

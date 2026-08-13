@@ -418,7 +418,7 @@ func TestEveryPathThatClearsANoticeDeliversItFirst(t *testing.T) {
 // pruned. A reclaimed agent's footprint would therefore be handed to whatever
 // opened the id next, matching the new agent on the OLD agent's files, and the
 // "already backfilled" guard meant it never got its own. It also grew forever.
-func TestTheFootprintCacheForgetsReclaimedLanes(t *testing.T) {
+func TestTheFootprintCacheForgetsReclaimedSpaces(t *testing.T) {
 	e := &Engine{footprints: map[string][]core.PredFile{
 		"reclaimed":  {{Path: "old/gone.go", Weight: 1}},
 		"still-here": {{Path: "live/work.go", Weight: 1}},
@@ -448,7 +448,7 @@ func TestTheFootprintCacheForgetsReclaimedLanes(t *testing.T) {
 // The first test supplied an already-absent id, which is the easy half: it
 // proved the sweep can delete, not that deletion ever happens in time. So
 // invalidation is driven by the event that ends the agent, which has no window.
-func TestAReopenedLaneIdDoesNotInheritTheOldFootprint(t *testing.T) {
+func TestAReopenedSpaceIdDoesNotInheritTheOldFootprint(t *testing.T) {
 	e := &Engine{footprints: map[string][]core.PredFile{
 		"shared-id": {{Path: "old/gone.go", Weight: 1}},
 	}}
@@ -471,7 +471,7 @@ func TestAReopenedLaneIdDoesNotInheritTheOldFootprint(t *testing.T) {
 // A merge deletes the SOURCE agent, and its id is carried as `from`. Using
 // `agent_id` would silently forget nothing, because on this event agent_id names
 // the coordinator who did the merge.
-func TestAMergedAwayLaneAlsoLosesItsFootprint(t *testing.T) {
+func TestAMergedAwaySpaceAlsoLosesItsFootprint(t *testing.T) {
 	e := &Engine{footprints: map[string][]core.PredFile{
 		"absorbed": {{Path: "old/gone.go", Weight: 1}},
 	}}
@@ -491,7 +491,7 @@ func TestAMergedAwayLaneAlsoLosesItsFootprint(t *testing.T) {
 // an agent called i-am-fixing-the-retry-loop-when-tokens-fail-to-refresh. That id
 // is what another agent passes to join_space, what a human reads on the board,
 // and what a projector shows to a room. Unusable as all three.
-func TestALaneIsNamedForTheWorkNotTheSentence(t *testing.T) {
+func TestASpaceIsNamedForTheWorkNotTheSentence(t *testing.T) {
 	for _, c := range []struct{ declaration, want string }{
 		{"I am fixing the retry loop when tokens fail to refresh", "fixing retry loop tokens fail"},
 		{"tidying up the CSS on the board", "tidying up css board"},
@@ -519,7 +519,7 @@ func TestALaneIsNamedForTheWorkNotTheSentence(t *testing.T) {
 // opening an agent for genuinely different work, and told it "you are not working
 // alone" about work it had stopped doing. The bar for "you already coordinate on
 // this" must be the bar used for "this is worth mentioning at all".
-func TestOnlyRelevantMembershipSuppressesANewLane(t *testing.T) {
+func TestOnlyRelevantMembershipSuppressesANewSpace(t *testing.T) {
 	faint := []core.AgentMatch{{Agent: "old", Score: 0.02, AlreadyIn: true}}
 	if alreadyCoordinating(faint, 0.15) {
 		t.Error("a faint overlap with an agent you are in must not block an agent for new work")

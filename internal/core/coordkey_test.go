@@ -6,14 +6,14 @@ import (
 	"testing"
 )
 
-// theLane is the agent these tests coordinate in; its name carries no meaning
+// theSpace is the agent these tests coordinate in; its name carries no meaning
 // beyond being something an agent could plausibly have written.
-const theLane = "auth-work"
+const theSpace = "auth-work"
 
 // openSpaceWith gets an agent into an agent and returns the key it was issued.
 func openSpaceWith(t *testing.T, s *State, token string) string {
 	t.Helper()
-	res := mustApply(t, s, &Op{Kind: OpSpaceOpen, Token: token, Space: theLane, Text: "the work"}, testNow)
+	res := mustApply(t, s, &Op{Kind: OpSpaceOpen, Token: token, Space: theSpace, Text: "the work"}, testNow)
 	key, _ := res["key"].(string)
 	if key == "" {
 		t.Fatal("opening an agent issued no coordination key")
@@ -24,7 +24,7 @@ func openSpaceWith(t *testing.T, s *State, token string) string {
 // The mechanism is worth nothing unless the agent is actually handed the key.
 // It was "decorative" precisely because the exact-match path existed and nothing
 // ever reached it.
-func TestOpeningALaneIssuesAKeyToItsOpener(t *testing.T) {
+func TestOpeningASpaceIssuesAKeyToItsOpener(t *testing.T) {
 	s, a := chState(t, "alpha", "beta")
 	key := openSpaceWith(t, s, a["alpha"].Token)
 
@@ -95,7 +95,7 @@ func TestAKeyYouDoNotHoldIsStruckOut(t *testing.T) {
 
 // Joining is one of the three ways a key is legitimately acquired, so the
 // joiner must both receive it and pass validation with it.
-func TestJoiningALaneGrantsItsKey(t *testing.T) {
+func TestJoiningASpaceGrantsItsKey(t *testing.T) {
 	s, a := chState(t, "alpha", "beta")
 	key := openSpaceWith(t, s, a["alpha"].Token)
 
@@ -116,7 +116,7 @@ func TestJoiningALaneGrantsItsKey(t *testing.T) {
 // Two boards must not issue the same key, and one board must not issue it
 // twice. "globally unambiguous on that board" is the property that lets a key
 // stand in for identity at all.
-func TestKeysAreUniquePerLaneAndPerBoard(t *testing.T) {
+func TestKeysAreUniquePerSpaceAndPerBoard(t *testing.T) {
 	seen := map[string]bool{}
 	for _, node := range []string{"node-a", "node-b"} {
 		for serial := uint64(1); serial <= 50; serial++ {
@@ -242,7 +242,7 @@ func TestAVouchedChildHoldsItsParentsKeyWithoutJoiningAnything(t *testing.T) {
 // exactly, on the key rather than on any resemblance between what they wrote.
 // The wording is deliberately unlike the parent's, so a semantic match cannot
 // be what produces the result.
-func TestAChildsWorkMatchesItsParentsLaneOnTheKeyAlone(t *testing.T) {
+func TestAChildsWorkMatchesItsParentsSpaceOnTheKeyAlone(t *testing.T) {
 	s, a := chState(t, "parent")
 	key := openSpaceWith(t, s, a["parent"].Token)
 	const cwd = "/repo"
@@ -295,9 +295,9 @@ func TestAChildsWorkMatchesItsParentsLaneOnTheKeyAlone(t *testing.T) {
 func TestTheBoardNeverShowsACoordinationKey(t *testing.T) {
 	s, a := chState(t, "alpha", "beta")
 	key := openSpaceWith(t, s, a["alpha"].Token)
-	mustApply(t, s, &Op{Kind: OpSpaceJoin, Token: a["beta"].Token, Space: theLane}, testNow)
+	mustApply(t, s, &Op{Kind: OpSpaceJoin, Token: a["beta"].Token, Space: theSpace}, testNow)
 	mustApply(t, s, &Op{
-		Kind: OpSpaceAnnounce, Token: a["alpha"].Token, Space: theLane,
+		Kind: OpSpaceAnnounce, Token: a["alpha"].Token, Space: theSpace,
 		Body: "something worth acknowledging",
 	}, testNow)
 
@@ -310,7 +310,7 @@ func TestTheBoardNeverShowsACoordinationKey(t *testing.T) {
 	}
 	// Guard the guard: if the key stopped being derivable, or the agent never
 	// opened, the search above would pass by finding nothing at all.
-	if !strings.Contains(string(blob), theLane) {
+	if !strings.Contains(string(blob), theSpace) {
 		t.Fatal("the agent is not on the board; this check would then be vacuous")
 	}
 	if !strings.HasPrefix(key, coordKeyNS+":") {

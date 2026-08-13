@@ -9,7 +9,7 @@ import (
 // A chat surface only touches the API when its human types, so minutes of
 // silence are its normal state. Reporting proc_alive:false for an agent that never
 // claimed a process reads as "it crashed" when nothing did.
-func TestStaleLaneWithoutPIDIsIdleNotDead(t *testing.T) {
+func TestStaleSpaceWithoutPIDIsIdleNotDead(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	now := time.Now()
 	_, _, _ = s.Apply(&Op{Kind: OpRegister, Name: "chat", NewToken: "t1"}, now)
@@ -37,7 +37,7 @@ func TestStaleLaneWithoutPIDIsIdleNotDead(t *testing.T) {
 }
 
 // With a PID we can actually check, so the stricter reading is earned.
-func TestStaleLaneWithPIDKeepsLeaseSemantics(t *testing.T) {
+func TestStaleSpaceWithPIDKeepsLeaseSemantics(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	now := time.Now()
 	_, _, _ = s.Apply(&Op{Kind: OpRegister, Name: "agent", PID: 4242, NewToken: "t1"}, now)
@@ -97,7 +97,7 @@ func TestIdleTTLIsLongerThanLeaseTTL(t *testing.T) {
 // Losing your context must not lose your mailbox, so the weak path survives for
 // agents that have nothing better, and those are TOLD so. An agent that
 // registered with a nonce has a real secret, and that is what reclaims it.
-func TestALaneWithARealCredentialIsNotReclaimedByAGuessableOne(t *testing.T) {
+func TestASpaceWithARealCredentialIsNotReclaimedByAGuessableOne(t *testing.T) {
 	s := NewState("t", DefaultLimits())
 	now := time.Unix(1700000000, 0)
 	const nonce = "real-secret-0123456789abcdef"

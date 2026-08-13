@@ -1,7 +1,7 @@
 // Package engine runs the single-writer event loop: every mutation and read
 // from every transport executes sequentially in one goroutine over the pure
 // core. Request phases (SPEC §2): transport/auth → structural → rate →
-// domain; a call passing 1–3 wakes a sleeping agent via a ledgered wake_lane
+// domain; a call passing 1–3 wakes a sleeping agent via a ledgered wake
 // even if phase 4 rejects. The engine ledgers exactly the ops that advanced
 // the serial: the two cannot disagree by construction.
 package engine
@@ -208,7 +208,7 @@ func (e *Engine) Run(ctx context.Context) {
 
 // boot applies SPEC §7's evidence rule: grace to boot+TTL only for agents whose
 // durable coordination checkpoint is within one TTL; the rest transition now,
-// ledgered, healed later by wake_lane if the agent lives.
+// ledgered, healed later by wake if the agent lives.
 func (e *Engine) boot(now time.Time) {
 	op := &core.Op{Kind: core.OpSweep}
 	for id, l := range e.state.Agents {

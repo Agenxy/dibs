@@ -430,13 +430,13 @@ try {
   // saw it would spend the operator's attention on history rather than news, and
   // would fire on every push forever.
   {
-    const laneOf = (b: any) => b._meta?.["com.dibs/panel"]?.board?.agents ?? []
+    const spaceOf = (b: any) => b._meta?.["com.dibs/panel"]?.board?.agents ?? []
     const withStatus = (r: any, id: string, status: string) => {
       const b = structuredClone(r)
-      for (const l of laneOf(b)) if (l.id === id) l.status = status
+      for (const l of spaceOf(b)) if (l.id === id) l.status = status
       return b
     }
-    const target = laneOf(boardResult).find((l: any) => l.status === "active")?.id
+    const target = spaceOf(boardResult).find((l: any) => l.status === "active")?.id
     check("the fixture has an active agent to take out of touch", Boolean(target), String(target))
     if (target) {
       // Seen active first, so the next push is a real transition.
@@ -638,12 +638,12 @@ try {
       await page.evaluate((r) => (window as any).__deliver(r), withStatus(boardResult, target, "active"))
       await Bun.sleep(80)
       const fresh = structuredClone(boardResult)
-      for (const l of laneOf(fresh)) if (l.id === target) l.status = "stale"
+      for (const l of spaceOf(fresh)) if (l.id === target) l.status = "stale"
       // Drop it from the previous frame entirely, so it ARRIVES stale.
       const without = structuredClone(boardResult)
       if (without._meta?.["com.dibs/panel"]?.board) {
         without._meta["com.dibs/panel"].board.agents =
-          laneOf(without).filter((l: any) => l.id !== target)
+          spaceOf(without).filter((l: any) => l.id !== target)
       }
       await page.evaluate((r) => (window as any).__deliver(r), without)
       await Bun.sleep(80)

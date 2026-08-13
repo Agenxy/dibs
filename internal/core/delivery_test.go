@@ -15,7 +15,7 @@ import (
 // agent it was reaching for saw nothing. Two full reports were lost that way
 // before anybody noticed, and only then because a THIRD space happened to
 // mention it.
-func TestSendToSupersededLaneWarnsAndNamesTheLiveOne(t *testing.T) {
+func TestSendToSupersededSpaceWarnsAndNamesTheLiveOne(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	t0 := time.Now()
 
@@ -59,7 +59,7 @@ func TestSendToSupersededLaneWarnsAndNamesTheLiveOne(t *testing.T) {
 // A dormant agent with NO live sibling is a standing role asleep between
 // activations. That is what persistent agents are for, so this must not be
 // refused, but the sender still deserves to know nothing is owed to it.
-func TestSendToDormantLaneDeliversWithNotice(t *testing.T) {
+func TestSendToDormantSpaceDeliversWithNotice(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	t0 := time.Now()
 	mustApply(t, s, &Op{
@@ -87,7 +87,7 @@ func TestSendToDormantLaneDeliversWithNotice(t *testing.T) {
 
 // The common case must stay quiet. A warning on every ordinary send is noise, and
 // noise is what makes real warnings invisible.
-func TestSendToActiveLaneIsNotWarned(t *testing.T) {
+func TestSendToActiveSpaceIsNotWarned(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	t0 := time.Now()
 	reg(t, s, "a", "ta", t0)

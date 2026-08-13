@@ -14,7 +14,7 @@ import (
 // The three cases are not interchangeable, and the third is the one that must
 // never be mistaken for the others: an agent that never gave a PID has said
 // nothing about a process at all.
-func TestALaneRecordsWhyItStoppedCountingAsLive(t *testing.T) {
+func TestASpaceRecordsWhyItStoppedCountingAsLive(t *testing.T) {
 	for _, tc := range []struct {
 		name, want string
 		pid        int
