@@ -86,6 +86,20 @@ Things that have cost real time here, none of which are visible in the diff:
 - **A parameter you declare but never read is invisible from outside.** The call
   succeeds and the effect silently does not happen; the schema is the only thing
   an agent can see. `TestEveryDeclaredParameterIsReadByAHandler` enforces this.
+- **Renaming an op's json TAG is a silent data-loss bug, not a rename.** A
+  retired op *kind* stops the fold, loudly. A retired *field* stops nothing: the
+  op applies with that field zero and replay reports success. `lane_kind` →
+  `agent_kind` shipped in every release to v0.0.4 and silently demoted every
+  persistent agent to ephemeral on upgrade. Rename the Go identifier freely; the
+  tag is frozen, and `TestLedgerFieldNamesAreFrozen` fingerprints the list
+  because the same sweep that renames tags will happily rewrite the list that
+  guards them, which is exactly how this got through.
+- **A sweep rewrites the tests and comments that exist to catch the sweep.**
+  After any find-and-replace across the tree, read the diff of every *guard*
+  first: frozen-string tables, retired-vocabulary lists, fixtures, and the prose
+  explaining why they must not change. One of those comments was left reading
+  "renames the participant from `Agent` to `Agent`", and the guard beneath it had
+  been turned into a list of the current vocabulary.
 - **`light-dark()` takes colours only.** Using it for a number or a keyword is
   invalid at substitution and falls back to `initial`: silently. This shipped a
   completely unreadable board past 155 passing browser checks.
