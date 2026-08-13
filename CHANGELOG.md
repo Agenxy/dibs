@@ -14,22 +14,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with nothing to grant to. The deadline is now four minutes, which is a person
   reading a dialog rather than a hang, and the error says that answering it and
   registering again is all that is needed.
+
 - The daemon identified itself to macOS as `a.out`, the Go toolchain's default,
   so any privacy grant was recorded against a name shared with every other
   ad-hoc binary. `task install` now always sets `org.agenxy.dibs`, whether or
   not a signing identity is configured.
-
 
 - A repository the daemon could not read was written off for the life of the
   process. Dedup lived in two places: the daemon's, which releases a tree it
   failed to read so a later attempt retries, and the engine's, which never
   cleared. Granting the daemon access and registering again therefore did
   nothing, which is the exact situation the retry existed for.
+
 - `task install` removed `$DEST/agents`, a name that has never existed, and then
   copied over the live `dibs`. That reuses the inode, macOS invalidates the
   cached signature, and every later run is SIGKILLed with no message: precisely
   the failure the comment directly above that line warns about.
-
 
 - The data directory really is `~/.dibs` now. The 0.0.3 notes below said so and
   the code did not: the vocabulary rename turned every "lane" into an "agent"
@@ -39,40 +39,47 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   state. An existing directory is still found and used, under either old name,
   so no board moves and nothing is lost; `dibs doctor` names the one it opened
   and gives you the `mv` if you want it.
+
 - `dibs mcp-config` published the Codex/TOML server block as `[mcp_servers.agents]`
   while the JSON block correctly said `dibs`. Half of that command's output has
   been wrong since 0.0.3.
+
 - The Claude Code plugin did not work at all. Its `.mcp.json` declared
   `"command": "agents"`, a binary that has never existed, so the harness spawned
   it, failed, and showed a server that never started. The Claude Desktop manifest
   and the OpenCode README named the same missing binary.
+
 - The panel resource was advertised as `ui://agents/board` while every other
   resource is `dibs://`.
+
 - The signature-verification command in the README passed
   `--certificate-identity .../Agenxy/agents/...`, so anyone checking a release
   signature got a mismatch and had every reason to think the artifact was bad.
+
 - On Linux `dibs configure --service` wrote `agents.service` and told the
   operator to run `systemctl --user enable --now agents`. systemd also had no
   guard against installing a second unit beside an old one, which launchd has
   had since the `com.agents.dibd` incident: two units on one data directory
   means the second fails the directory lock and reads as a service that will
   not start.
+
 - `dibs doctor` told you to move an inherited data directory without mentioning
   that a service unit pins that path, so following the advice left the daemon
   starting against a directory that was gone.
+
 - `dibs mcp-config` panicked with a Go stack trace on a `local.secret` shorter
   than 16 bytes, which is what a truncated or hand-edited one looks like.
+
 - The README's install line said `brew install agenxy/tap/agents`, naming a cask
   that has never existed, so the first command a new reader runs did nothing.
   It also omitted `brew trust agenxy/tap`, which Homebrew 6 requires before it
   will load a cask from a third-party tap; without it the install fails with a
   trust error.
+
 - The tap offered a stale `lanes` cask beside `dibs`, so `brew install
   agenxy/tap/lanes` still resolved to 0.0.2. It is now a `tap_migrations.json`
   entry, which moves an existing install across on the next `brew update`
   instead of leaving it on a version that gets no releases.
-
-### Fixed
 
 - A `git` the daemon ran against a tree could hang forever, and matching would
   wait on it in silence. On macOS `/usr/bin/git` dispatches into Xcode, and from
@@ -115,10 +122,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   system and any Files-and-Folders or Full Disk Access grant silently stops
   applying. That matters when checkouts live under Desktop, Documents or
   Downloads, where the daemon needs permission to read them at all.
+
 - `dibs doctor` reports an ad-hoc signed daemon and says what it costs, because
   the symptom (matching worked, then quietly stopped after an install) points at
   everything except the signature.
-
 
 - `task smoke`, in the gate: it runs the built binaries and asserts on what they
   actually print, against expectations written by hand rather than generated
