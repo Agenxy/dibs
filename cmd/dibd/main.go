@@ -201,6 +201,9 @@ func run() error {
 	// Roles the operator declared. On the admin path, because the daemon IS the
 	// admin path: an agent still cannot promote itself.
 	keepDeclaredRolesApplied(ctx, eng, cfg.Roles)
+	// After declared roles are applied, so a board configured with a coordinator
+	// is not offered a claim it does not need.
+	installCoordinatorClaim(eng, *dir, st.HasCoordinator())
 	startSupervision(ctx, eng, cfg.Supervise)
 	// Indexing shells out to git across thousands of commits; the daemon must be
 	// answering agents long before that finishes, so it lands asynchronously.

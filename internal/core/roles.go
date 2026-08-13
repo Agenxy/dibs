@@ -207,3 +207,16 @@ func (s *State) applyVouchChild(l *Agent, op *Op) (Result, []Event, error) {
 			" and parent_nonce=<nonce>. It is consumed on first use.",
 	}, []Event{{Type: "agent.vouched_child", Agent: l.ID}}, nil
 }
+
+// HasCoordinator reports whether any live agent already holds the role.
+//
+// Asked once at startup, to decide whether a launch claim is worth minting: a
+// board that has settled the question must not offer to settle it again.
+func (s *State) HasCoordinator() bool {
+	for _, l := range s.Agents {
+		if l.Status != StatusClosed && l.IsCoordinator() {
+			return true
+		}
+	}
+	return false
+}

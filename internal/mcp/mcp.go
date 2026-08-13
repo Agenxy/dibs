@@ -838,6 +838,10 @@ func (s *Server) run(
 		op.Kind = core.OpSignOff
 	case "prune":
 		op.Kind, op.To = core.OpPruneOwn, a.AgentRef
+	case "claim_coordinator":
+		// The secret rides in `nonce`: it is the same shape of thing, a
+		// credential the caller holds and the daemon checks.
+		op.Kind, op.Nonce = core.OpClaimCoordinator, a.Nonce
 	case "heartbeat":
 		op.Kind = core.OpHeartbeat
 	case "declare":

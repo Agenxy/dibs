@@ -131,6 +131,13 @@ func boundStrings(max int, what string, vals []string) error {
 type Op struct {
 	Kind string `json:"kind"`
 
+	// ClaimVerified records that the engine checked a coordinator claim against
+	// the daemon's own data directory. An impure input, so the VERDICT is
+	// recorded rather than the secret, and replay applies the same decision
+	// without reading a file that may since have been consumed (SPEC §2, §4).
+	// Blanked on ingress like AgentID: an agent cannot assert it.
+	ClaimVerified bool `json:"claim_verified,omitempty"`
+
 	// Actor resolution. Token authenticates (live path); Agent is set by Apply
 	// and used on replay (the engine blanks it on ingress: unforgeable).
 	Token   string `json:"-"`
@@ -256,6 +263,10 @@ const (
 	// it would be applied to ops that older code already accepted. No ledger
 	// anywhere contains this kind, so there is nothing to be retroactive about.
 	OpPruneOwn = "prune_own"
+	// OpClaimCoordinator is the bootstrap: the agent that started this daemon
+	// takes the coordinator role by presenting a secret only the daemon's own
+	// data directory holds.
+	OpClaimCoordinator = "claim_coordinator"
 	// OpVouchChild is how a parent proves it really is spawning a subagent.
 	OpVouchChild   = "vouch_child"
 	OpForceRelease = "force_release"
@@ -369,6 +380,8 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		l.SessionID = op.SessionID
 		res = Result{"ok": true, "agent": l.ID, "session_id": l.SessionID}
 		evs = []Event{{Type: "agent.updated", Agent: l.ID}}
+	case OpClaimCoordinator:
+		return s.applyClaimCoordinator(op, l, now)
 	case OpPruneOwn:
 		return s.applyPruneOwn(op, l, now)
 	case OpSignOff:
@@ -921,6 +934,52 @@ func (s *State) applyAckBoard(l *Agent, _ time.Time) (Result, []Event) {
 //
 // op.To names a single agent; empty means "every agent that is not live", which is
 // the common case after a day's work.
+// applyClaimCoordinator promotes the agent that started this daemon.
+//
+// Roles were human-only, which left a fleet with no human at the keyboard
+// unable to ever have a coordinator: force_release, close_space and clearing
+// another agent's debris were permanently unreachable. That is a poor fit for a
+// tool whose claim is that agents drive it.
+//
+// The claim is not a security boundary and does not pretend to be one. Every
+// agent already shares one coordination secret, so agent-to-agent isolation is
+// "a bar to raise, not a wall" (SECURITY.md), and an agent that can reach the
+// daemon can already impersonate any other. What the claim buys is
+// DELIBERATENESS: the role is taken by an explicit act, once, by something that
+// could read the daemon's own data directory, rather than assumed.
+//
+// Persistent only, so the role is durable by construction. An ephemeral agent
+// that claimed and then signed off would take the role into a closed record and
+// leave the board with no coordinator and no claim left to make.
+func (s *State) applyClaimCoordinator(op *Op, actor *Agent, now time.Time) (Result, []Event, error) {
+	if !op.ClaimVerified {
+		return nil, nil, errf("E_BAD_CLAIM",
+			"the claim secret is in `coordinator.claim` in the daemon's data directory, "+
+				"readable by whoever started it. It is consumed by the first successful claim",
+			"coordinator claim rejected")
+	}
+	if actor.Kind != KindPersistent {
+		return nil, nil, errf("E_NOT_PERSISTENT",
+			"register with kind \"persistent\" and a nonce first: the role has to outlive "+
+				"this process, and an ephemeral record takes it away when it signs off",
+			"agent %s is ephemeral", actor.ID)
+	}
+	actor.Role = RoleCoordinator
+	// LEDGERED, via finish. This reaches Apply through the actor-op switch and
+	// so escapes the finishing path ordinary ops take, which is the same escape
+	// applyPrune documents above and the same bug: without it the serial never
+	// moves, the engine never appends, and replay undoes the grant. Measured
+	// end to end before it was caught here: the claim returned role=coordinator,
+	// the daemon restarted, and the agent was a member again with the claim
+	// re-minted, because the board had no memory of ever settling the question.
+	evs := []Event{{
+		Type: "agent.role", Agent: actor.ID,
+		Data: map[string]any{"role": RoleCoordinator, "via": "launch claim"},
+	}}
+	serial := s.finish(&evs, now)
+	return Result{"ok": true, "agent_id": actor.ID, "role": RoleCoordinator, "serial": serial}, evs, nil
+}
+
 // applyPruneOwn lets an agent remove a record it is responsible for.
 //
 // Itself, or a child it VOUCHED for. Never a peer, and that restriction is the

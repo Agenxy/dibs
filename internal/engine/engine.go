@@ -68,6 +68,11 @@ type Engine struct {
 	// onRepoSeen lets the daemon index the repositories agents actually work
 	// in, so matching does not depend on somebody setting a flag.
 	onRepoSeen func(repo string)
+	// verifyClaim answers whether a presented coordinator claim is the one this
+	// daemon minted, and consumes it. Guarded separately: it is installed once
+	// at startup and read on the loop.
+	claimMu     sync.RWMutex
+	verifyClaim func(secret string) bool
 	// footprints backfills agents opened before the index was ready. Ephemeral:
 	// it is a cache of a prediction, never the record a join is replayed from.
 	footprints map[string][]core.PredFile
@@ -229,6 +234,9 @@ func (e *Engine) boot(now time.Time) {
 // exec runs the request phases for a mutating op.
 func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	op.AgentID = "" // replay-only actor field; never trusted from ingress
+	// Same rule: the claim VERDICT is the engine's to record, never the
+	// caller's to assert. Checked below, after the actor is known.
+	op.ClaimVerified = false
 
 	// Ingress-only validation. Deliberately NOT inside Apply: Apply is also the
 	// fold that replays the ledger, so a rule added there binds history
@@ -298,6 +306,19 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 				return nil, core.ErrRateLimited // admitted nothing; no wake
 			}
 			e.wakeIfSleeping(actor, now)
+		}
+	}
+
+	// The one impure input this op has: does the caller hold the secret from the
+	// daemon's data directory. Answered here, recorded in the op, so replay
+	// applies the same decision without re-reading a file that the first
+	// successful claim consumed.
+	if op.Kind == core.OpClaimCoordinator {
+		e.claimMu.RLock()
+		verify := e.verifyClaim
+		e.claimMu.RUnlock()
+		if verify != nil {
+			op.ClaimVerified = verify(op.Nonce)
 		}
 	}
 

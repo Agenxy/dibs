@@ -19,7 +19,6 @@ func reg(t *testing.T, s *State, name, token string, now time.Time) *Agent {
 	return s.Agents[res["agent_id"].(string)]
 }
 
-//nolint:unparam // returning the Agent keeps the helper usable from new tests
 func regPersistent(t *testing.T, s *State, name, token, nonce string, now time.Time) *Agent {
 	t.Helper()
 	res, _, err := s.Apply(&Op{
