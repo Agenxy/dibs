@@ -572,12 +572,19 @@ func (s *Server) dispatch(
 			if strings.HasPrefix(p.URI, uiBoardBase) {
 				return readUIBoard(), nil
 			}
-			return nil, &rpcError{Code: -32002, Message: "unknown resource " + p.URI}
+			return nil, &rpcError{
+				Code: -32002, Message: "unknown resource " + p.URI,
+				Data: hint("call resources/list: it names every resource this server serves"),
+			}
 		}
 	case "tools/call":
 		return s.callTool(ctx, req.Params, bearerToken, sessionUI, sessionClient, panelFetches)
 	default:
-		return nil, &rpcError{Code: -32601, Message: "method not found: " + req.Method}
+		return nil, &rpcError{
+			Code: -32601, Message: "method not found: " + req.Method,
+			Data: hint("this server speaks MCP: initialize, tools/list, tools/call, " +
+				"resources/list, resources/read, subscriptions/listen"),
+		}
 	}
 }
 
@@ -661,6 +668,28 @@ type toolArgs struct {
 // type system at an agent, and buries the one useful word. A live glm-4.6 run
 // hit exactly this by sending `"pid": "$$"`; it recovered, but only by shelling
 // out to echo the value.
+// hint wraps a corrective call as the `data` of a protocol error.
+//
+// A tool error carries its hint in the result payload, but an argument that
+// does not decode never reaches a handler to produce one, so these three
+// -32602s were the last errors on this surface with no corrective call at all:
+// the agent is told what is wrong and nothing about what to do instead. A
+// register call carrying the pre-0.0.3 nested `agent` object got
+// `agent must be a string, got object` and no way to learn the current shape.
+func hint(s string) map[string]any { return map[string]any{"hint": s} }
+
+// schemaHint names where the argument shapes actually live. The schema is the
+// only thing an agent can see, so it is the only honest answer.
+func schemaHint(tool string) string {
+	if tool == "" {
+		return "call tools/list: it returns every tool's inputSchema, which is the " +
+			"authority on argument names and types"
+	}
+	return "call tools/list and read the inputSchema of " + tool + ": it names every " +
+		"parameter this tool takes and the type of each. Parameters are flat; " +
+		"only the ones the schema declares are read"
+}
+
 func argErr(err error) string {
 	var ute *json.UnmarshalTypeError
 	if errors.As(err, &ute) {
@@ -696,12 +725,18 @@ func (s *Server) callTool(
 		Args json.RawMessage `json:"arguments"`
 	}
 	if err := json.Unmarshal(params, &call); err != nil {
-		return nil, &rpcError{Code: -32602, Message: "bad params: " + err.Error()}
+		return nil, &rpcError{
+			Code: -32602, Message: "bad params: " + err.Error(),
+			Data: hint(schemaHint("")),
+		}
 	}
 	var a toolArgs
 	if len(call.Args) > 0 {
 		if err := json.Unmarshal(call.Args, &a); err != nil {
-			return nil, &rpcError{Code: -32602, Message: "bad arguments: " + argErr(err)}
+			return nil, &rpcError{
+				Code: -32602, Message: "bad arguments: " + argErr(err),
+				Data: hint(schemaHint(call.Name)),
+			}
 		}
 	}
 	if a.Token == "" {
@@ -711,7 +746,10 @@ func (s *Server) callTool(
 	// omitted parameter arrived as a zero value and the handler answered about
 	// it as though the caller had sent it.
 	if err := checkRequired(call.Name, call.Args, bearerToken); err != nil {
-		return nil, &rpcError{Code: -32602, Message: err.Error()}
+		return nil, &rpcError{
+			Code: -32602, Message: err.Error(),
+			Data: hint(schemaHint(call.Name)),
+		}
 	}
 	res, err := s.run(ctx, call.Name, &a, params, sessionClient)
 	if err != nil {
