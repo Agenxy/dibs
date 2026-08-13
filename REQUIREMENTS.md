@@ -80,7 +80,7 @@ Requirements:
 - **Grace scales with what can actually be checked.** An agent with a PID can be
   probed directly, so a short lease is safe: death is detected by the prober,
   not the clock. An agent without one can only be judged by silence, and gets
-  `IdleTTL` (45m) instead of `LaneTTL` (5m).
+  `IdleTTL` (45m) instead of `AgentTTL` (5m).
 - **Staleness is a statement about coordination, never about health.** Dibs
   knows an agent has not spoken. It does not know why, and must not imply it.
 

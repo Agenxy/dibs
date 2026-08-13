@@ -11,7 +11,7 @@ freeze holds, and spaces are inert until `dibd -match-repo` is passed.
 | §3 auto-join on `declare`, notify band, explicit join | **built** |
 | §3 opening the first agent when nothing matches | **built**: was the missing half: matching only compared against agents that already existed, so on an empty board two agents declaring identical work were both told they had the field to themselves |
 | §3 matching on `claim` as well as `declare` | **not built**: `claim` declares a path, `declare` declares the work; only the latter is scored today |
-| §7 `scorer`, `announce_retry`, `announce_max_retries`, `lane_exclusive_default`, `subagent_inherit` as CONFIG KEYS | **not built**: the behaviours exist and match the documented defaults; the keys do not, and `dibd` refuses to start on an unknown one |
+| §7 `scorer`, `announce_retry`, `announce_max_retries`, `space_exclusive_default`, `subagent_inherit` as CONFIG KEYS | **not built**: the behaviours exist and match the documented defaults; the keys do not, and `dibd` refuses to start on an unknown one |
 | §4 Scorer interface; tier 0 (paths + git co-change) | **built** |
 | §4 tier 2 embedding sidecar / tier 3 hosted | **built**, client (`dibd -match-embed-url`) *and* the sidecar itself (`contrib/embed-sidecar/`, MLX + F2LLM-v2-4B, measured best of four, see that README) |
 | §4 tier 1 director-agent scorer | **withdrawn**: see below |
@@ -543,7 +543,7 @@ driving the harness, which Dibs does not do (PHILOSOPHY.md).
 | `announce_retry` | 120 s | redelivery interval | no, fixed |
 | `announce_max_retries` | 5 | then mark `unacked` | no, fixed |
 | `scorer` | `auto` | highest available tier | no, selected from what is reachable |
-| `lane_exclusive_default` | `false` | first member takes exclusivity automatically | no, always false; pass `exclusive` to `open_space` |
+| `space_exclusive_default` | `false` | first member takes exclusivity automatically | no, always false; pass `exclusive` to `open_space` |
 | `subagent_inherit` | `true` | subagents inherit their parent's agents | no, always on (a vouched child inherits; see §8.2) |
 
 The **Settable** column is not decoration. `dibd` rejects an unknown key and

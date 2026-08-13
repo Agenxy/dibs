@@ -27,7 +27,7 @@ import (
 // cannot read. Three earlier attempts to fake an agent that way produced a
 // confident false negative. A user-compiled binary named `codex` is what a real
 // harness is.
-func TestAStalledAgentReachesTheLaneThatSpawnedIt(t *testing.T) {
+func TestAStalledAgentReachesTheSpaceThatSpawnedIt(t *testing.T) {
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("no go toolchain to build the stand-in agent")
 	}

@@ -118,7 +118,7 @@ func TestBadDeadlineDoesNotStopTheDaemon(t *testing.T) {
 // the TTL (a long build, a slow test run: no Dibs calls for its duration) is
 // declared dead and loses an agent it is still working in. 5m suits chatty
 // agents and nothing else, which is why it is a knob.
-func TestLaneTTLIsConfigurable(t *testing.T) {
+func TestAgentTTLIsConfigurable(t *testing.T) {
 	base := core.DefaultLimits()
 	got, err := LimitsConfig{AgentTTL: "20m"}.apply(base)
 	if err != nil {
@@ -139,7 +139,7 @@ func TestLaneTTLIsConfigurable(t *testing.T) {
 // A bad value must be an ERROR, never a silent fallback: an operator who wrote
 // agent_ttl = "10" and got the 5-minute default back would be debugging phantom
 // crashes with no idea the setting had been ignored.
-func TestABadLaneTTLIsRefusedWithTheFix(t *testing.T) {
+func TestABadAgentTTLIsRefusedWithTheFix(t *testing.T) {
 	for _, bad := range []string{"10", "soon", "-3m", "1s"} {
 		_, err := LimitsConfig{AgentTTL: bad}.apply(core.DefaultLimits())
 		if err == nil {
@@ -165,7 +165,7 @@ func TestUnknownConfigKeysAreRefusedNotIgnored(t *testing.T) {
 	for _, tc := range []struct{ name, body, want string }{
 		{"typo'd table", "[limit]\nagent_ttl = \"9m\"\n", "agent_ttl"},
 		{"right key, wrong table", "[match]\nagent_ttl = \"9m\"\n", "agent_ttl"},
-		{"misspelled key", "[limits]\nlane_tt1 = \"9m\"\n", "lane_tt1"},
+		{"misspelled key", "[limits]\nagent_tt1 = \"9m\"\n", "agent_tt1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()

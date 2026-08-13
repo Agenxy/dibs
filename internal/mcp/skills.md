@@ -53,7 +53,7 @@ one.
 
 ## Two sets of Dibs tools is still one board
 
-If your host shows both `lanes__*` and `plugin_lanes_lanes__*`, pick either,
+If your host shows both `dibs__*` and `plugin_dibs_dibs__*`, pick either,
 they are two routes to the same daemon. Every result carries a `node` id; identical
 `node` means identical board. What you must not do is register through both, which
 makes you two agents who cannot read each other's mail.

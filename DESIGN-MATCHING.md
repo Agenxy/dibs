@@ -57,7 +57,7 @@ The recent refs change is also not yet independent of the scorer:
 
 - `matchDeclaration` returns `matchedNoOpinion` when file prediction is empty before
   it asks the core about refs.
-- `MatchLanesRefs` says refs are decisive without a footprint, but skips a candidate
+- `MatchAgentsRefs` says refs are decisive without a footprint, but skips a candidate
   space with no footprint before comparing the refs.
 
 More importantly, `channelRefs` collects **every slot ref from every member of the

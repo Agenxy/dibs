@@ -99,7 +99,7 @@ not a Dibs-side feature: recorded here so the option is not rediscovered later.
 ## Running Codex on a non-OpenAI provider
 
 Everything above is about Codex↔Dibs, and that half works: Codex connects over
-streamable HTTP and enumerates every tool into an `mcp__lanes` namespace,
+streamable HTTP and enumerates every tool into an `mcp__dibs` namespace,
 confirmed from a captured request payload.
 
 Driving Codex against **OpenRouter** is a different matter, and the obstacles
@@ -114,16 +114,16 @@ next person will hit them in this order:
    did not remove it in testing.
 
 3. **`namespace`-typed tools are rejected too.** Codex groups MCP tools into
-   `{type:"namespace", name:"mcp__lanes", tools:[…]}`, an OpenAI Responses-API
+   `{type:"namespace", name:"mcp__dibs", tools:[…]}`, an OpenAI Responses-API
    type OpenRouter does not accept. Codex does this **unconditionally**,
    `codex-rs/core/src/tools/spec_plan.rs` has no flag to flatten it.
 
-   Flattening them in a proxy into plain functions named `mcp__lanes__<tool>`
+   Flattening them in a proxy into plain functions named `mcp__dibs__<tool>`
    (Codex's own `MCP_TOOL_NAME_DELIMITER = "__"`) clears the 400, and the model
    then emits exactly the right call:
 
    ```
-   ERROR codex_core::tools::router: error=unsupported call: mcp__lanes__register_lane
+   ERROR codex_core::tools::router: error=unsupported call: mcp__dibs__register
    ```
 
 4. **…which Codex itself then rejects.** Its registry resolves tools by

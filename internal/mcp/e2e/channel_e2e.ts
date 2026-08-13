@@ -517,14 +517,14 @@ let annSerial = 0
   const PW = "space-e2e-password"
   adminCLI(["admin", "set-password"], `${PW}\n${PW}\n`)
 
-  const dirLane = await call("register", { name: "director", session_id: "s-director" })
-  await call("check_in", { token: dirLane.token })
+  const dirSpace = await call("register", { name: "director", session_id: "s-director" })
+  await call("check_in", { token: dirSpace.token })
   const grantOut = adminCLI(["admin", "coordinator", "director"], `${PW}\n`)
   check("a human can grant the coordinator role", /coordinator/i.test(grantOut) && !/error/i.test(grantOut),
     grantOut.trim().slice(0, 160))
 
   const r = await call("unlock_space", {
-    token: dirLane.token, space: "stuck", note: "owner's machine died",
+    token: dirSpace.token, space: "stuck", note: "owner's machine died",
   })
   check("a director can unstick an agent whose owner is gone", r.released === true, JSON.stringify(r))
   check("and the former owner is named, never silent", r.former_owner === "stuck-owner", String(r.former_owner))
@@ -545,12 +545,12 @@ let annSerial = 0
   const closerOwner = await agent("closer-owner")
   await call("open_space", { token: closerOwner, space: "finished", topic: "work that ended" })
 
-  const occupied = await fails("close_space", { token: dirLane.token, space: "finished" })
+  const occupied = await fails("close_space", { token: dirSpace.token, space: "finished" })
   check("a coordinator may not close an agent with somebody in it",
     /member/i.test(occupied), occupied.slice(0, 200) || "(allowed!)")
 
   await call("leave_space", { token: closerOwner, space: "finished" })
-  const stillThere = await board(dirLane.token)
+  const stillThere = await board(dirSpace.token)
   check("a human-opened agent is not reclaimed when it empties",
     (stillThere.board?.spaces ?? []).some((c: any) => c.id === "finished"))
 
@@ -570,10 +570,10 @@ let annSerial = 0
   await call("open_space", { token: closerOwner, space: "finished-2", topic: "more work that ended" })
   await call("leave_space", { token: closerOwner, space: "finished-2" })
   const closed = await call("close_space", {
-    token: dirLane.token, space: "finished-2", note: "done with it",
+    token: dirSpace.token, space: "finished-2", note: "done with it",
   })
   check("a coordinator can retire somebody else's finished agent", closed.closed === true, JSON.stringify(closed))
-  const gone = await board(dirLane.token)
+  const gone = await board(dirSpace.token)
   check("and it is actually gone from the board",
     !(gone.board?.spaces ?? []).some((c: any) => c.id === "finished" || c.id === "finished-2"))
 }
@@ -1168,23 +1168,23 @@ let annSerial = 0
   await call("join_space", { token: away.token, space: "bl-agent" })
   const ann = await call("announce", { token: say.token, space: "bl-agent", body: "bl-space: FREEZE" })
 
-  const laneOf = async (tok: string) =>
+  const spaceOf = async (tok: string) =>
     ((await board(tok)).board?.spaces ?? []).find((c: any) => c.id === "bl-agent")
 
   check("the announcement is outstanding while somebody can still answer",
-    (await laneOf(say.token))?.unacked_announcements === 1, JSON.stringify(await laneOf(say.token)))
+    (await spaceOf(say.token))?.unacked_announcements === 1, JSON.stringify(await spaceOf(say.token)))
   check("and is not reported as blocked yet",
-    (await laneOf(say.token))?.blocked_announcements === undefined)
+    (await spaceOf(say.token))?.blocked_announcements === undefined)
 
   doomed.kill()
   await doomed.exited
   // The one who could answer answers, leaving only the agent that is gone.
   await call("ack_announcement", { token: here.token, msg_serial: ann.serial })
   for (let i = 0; i < 50; i++) {
-    if ((await laneOf(say.token))?.blocked_announcements === 1) break
+    if ((await spaceOf(say.token))?.blocked_announcements === 1) break
     await Bun.sleep(200)
   }
-  const whose = await laneOf(say.token)
+  const whose = await spaceOf(say.token)
   check("once only an absentee owes it, the board says it is BLOCKED",
     whose?.blocked_announcements === 1, JSON.stringify(whose))
   check("while still counting as outstanding, because it is",
@@ -1213,9 +1213,9 @@ let annSerial = 0
 
   // The only member that owed it leaves without reading it.
   await call("sign_off", { token: quit.token })
-  const laneOf = async (tok: string) =>
+  const spaceOf = async (tok: string) =>
     ((await board(tok)).board?.spaces ?? []).find((c: any) => c.id === "du-agent")
-  const whose = await laneOf(say.token)
+  const whose = await spaceOf(say.token)
   check("the agent does not wait forever on an agent that left",
     (whose?.unacked_announcements ?? 0) === 0, JSON.stringify(whose))
   check("but the member that never read it is recorded",

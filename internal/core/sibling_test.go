@@ -138,7 +138,7 @@ func TestWarningNamesTheSiblingHoldingMailNotTheNewest(t *testing.T) {
 
 // A closed agent is not a live sibling: its mail is nobody's pending business,
 // so reusing its name is ordinary, not a collision worth reporting.
-func TestClosedLaneDoesNotTriggerTheNameWarning(t *testing.T) {
+func TestClosedSpaceDoesNotTriggerTheNameWarning(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	t0 := time.Now()
 	if _, _, err := s.Apply(&Op{

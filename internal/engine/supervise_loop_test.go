@@ -41,7 +41,7 @@ func agentOwning(t *testing.T, id string) *Engine {
 // The report must reach the agent that spawned the child, and must say what
 // Dibs did NOT do: a supervisor that reads as though it intervened invites a
 // parent to assume the problem is handled.
-func TestAStallIsReportedToTheLaneThatSpawnedIt(t *testing.T) {
+func TestAStallIsReportedToTheSpaceThatSpawnedIt(t *testing.T) {
 	e := agentOwning(t, "builder")
 	a := liveness.Agent{PID: 48620, Harness: "codex", Owner: "builder", Via: "env"}
 

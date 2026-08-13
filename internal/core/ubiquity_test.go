@@ -98,7 +98,7 @@ func TestRareSharedFilesKeepTheirWeight(t *testing.T) {
 
 // With one agent there is nothing to compare against, so nothing is discounted.
 // Discounting on a board of one would make the very first match unreachable.
-func TestSingleLaneIsNotDiscounted(t *testing.T) {
+func TestSingleSpaceIsNotDiscounted(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	agent(t, s, "only", "the first agent", []string{"Justfile", "src/main.go"})
 	got := s.MatchAgentsWith("newcomer", fp("Justfile", "src/main.go"), nil, 5)

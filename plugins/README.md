@@ -61,7 +61,7 @@ the mechanism Dibs uses in Claude Code, but `HookHandlerConfig` offers only
 flip it. Re-check on upgrade.
 
 **Codex reaches Dibs; its model provider is what blocks execution.** Codex
-connects over streamable HTTP and enumerates every tool into an `mcp__lanes`
+connects over streamable HTTP and enumerates every tool into an `mcp__dibs`
 namespace: that half is proven from a captured request payload. But it sends
 the tool list using OpenAI Responses-API types (`web_search` as a server tool,
 and `namespace`-typed groups) that OpenRouter's Responses shim rejects with

@@ -73,7 +73,7 @@ func TestSessionCookieIsSecureOnlyOverTLS(t *testing.T) {
 
 		var found *http.Cookie
 		for _, c := range rec.Result().Cookies() {
-			if c.Name == "lanes_session" {
+			if c.Name == "dibs_session" {
 				found = c
 			}
 		}

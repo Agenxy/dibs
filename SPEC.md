@@ -77,7 +77,7 @@ State is partitioned into three tiers, and the tier boundary is normative:
 2. **Engine-ephemeral state**: lease freshness touches (from reads/heartbeats), rate
    buckets, parked long-polls, the event ring. Never replayed, never trusted across
    restart. Ephemeral facts influence replayable state only by being **recorded as
-   decisions inside ledgered ops** (sweep's `stale_lanes`/`dead_lanes`, wake ops).
+   decisions inside ledgered ops** (sweep's `stale_agents`/`dead_agents`, wake ops).
 3. **Presentation annotations**: `last_seen` (freshest activity incl. reads) and
    `proc_alive`. These appear in board/CLI/web *views*, computed live by the engine at
    read time. They are **not replayable state**, not in the agent's ledgered schema, and
@@ -87,7 +87,7 @@ State is partitioned into three tiers, and the tier boundary is normative:
 **Ledgered wake transitions:** an agent's `status` is replayable state, so *nothing
 unledgered may change it*: including reads. When an authenticated call (read or
 write) arrives for a `dormant` or `stale` agent, the engine first commits a
-**`wake_lane`** op (event `agent.awoke` / `agent.recovered`), then serves the call.
+**`wake`** op (event `agent.awoke` / `agent.recovered`), then serves the call.
 A wake also **clears `acked_serial`**: each activation must re-pass the awareness
 gate before `declare`/`claim` (§6).
 
@@ -165,7 +165,7 @@ filesystem writes (§9). It is a **coordination generation**, not a fencing toke
   forever. A long-lived board wanting a fresh start archives the directory and
   starts a new one.
 
-Ledgered op kinds: `register, resume, wake_lane, activity_checkpoint,
+Ledgered op kinds: `register, resume, wake, activity_checkpoint,
 check_in, update, sign_off, heartbeat` (recovery only), `declare,
 undeclare, send, respond, ack, claim` (incl. renewals), `release,
 sweep` (only when it changed state), `mark_delivered`.
@@ -177,7 +177,7 @@ Every descriptive field on an agent, `cwd`, `branch`, `model`, `harness`,
 Models do not. Driving real harnesses against real models settled this:
 
 ```
-lanes_register_lane {"cwd":"","branch":"","model":"","session_id":"","pid":0,
+dibs_register {"cwd":"","branch":"","model":"","session_id":"","pid":0,
                      "name":"oc-alpha","description":"opencode agent A"}
 ```
 
@@ -293,7 +293,7 @@ you can measure is never improved by asking.
     `{superseded: true, activation: <original>}` **without** a token: recoverability
     never resurrects a credential that has already been rotated out.
   - **Exception to the general wake rule (§2), by design**: `resume` performs
-    its own wake atomically inside the resume op: no separate `wake_lane` precedes
+    its own wake atomically inside the resume op: no separate `wake` precedes
     it. One activation = one serial.
   - **Resuming an active agent is legal** (take-over of a wedged or superseded
     activation: the standing-role reality) but rate-limited to 1 per 10 s per agent
@@ -352,7 +352,7 @@ agent's next activation (its harness, a schedule, or a human). `dibs watch --exe
 - **Implicit heartbeat**: every authenticated call (reads included) refreshes the
   ephemeral lease. Explicit `heartbeat` is for otherwise-idle agents; ledgered only
   when it wakes/recovers an agent.
-- **Sweep decisions are recorded** (`stale_lanes`, `dead_lanes`, `alive_pids`),
+- **Sweep decisions are recorded** (`stale_agents`, `dead_agents`, `alive_pids`),
   replay applies decisions, never re-probes (§2). Quiet sweeps are unledgered.
 - **Lifecycle clocks run from ledgered transitions, not ledgered activity.** The
   sweep that marks an agent `stale`/`dormant` is a ledgered op recording
@@ -374,7 +374,7 @@ agent's next activation (its harness, a schedule, or a human). `dibs watch --exe
 - **Restart grace, cumulatively bounded**: at boot, an agent gets grace to
   `boot + TTL` **only if its `last_coordination_at` is within one TTL**; otherwise
   the boot sweep immediately ledgers its `stale`/`dormant` transition: healed, if
-  the agent is in fact alive, by its next call's `wake_lane`. A crash-looping
+  the agent is in fact alive, by its next call's `wake`. A crash-looping
   daemon cannot keep an abandoned agent active: the abandoned agent makes no calls,
   so `last_coordination_at` ages past TTL and the first boot after that transitions
   it. Incoming mail and other agents' activity are irrelevant by construction (§6).
@@ -382,12 +382,12 @@ agent's next activation (its harness, a schedule, or a human). `dibs watch --exe
 - **Lifecycles**:
   - ephemeral: `active → stale` (lease lapse or process death; claims released,
     gate re-armed) `→ archived` after 30 min grace (token + nonce invalidated).
-    `stale → active` only via ledgered `wake_lane`.
+    `stale → active` only via ledgered `wake`.
   - persistent: `active → dormant` (lease lapse or process death: for a standing
     role, process exit is an expected end of activation; claims released, slots and
     mailbox retained, gate re-armed) `→ archived` after `dormancy_max` (30 days from
     the ledgered `dormant_since` transition). `dormant → active` via ledgered
-    `wake_lane` (any authenticated call) or `resume`.
+    `wake` (any authenticated call) or `resume`.
 - **Deadline diagnosis cascade**: expiry records `expired_unanswered` (recipient
   active), `expired_recipient_dormant` (persistent recipient asleep: visible in its
   inbox on wake, past deadline, within §8 retention bounds), or
@@ -562,7 +562,7 @@ Read-only work needs no claim.
 | event ring | 65,536 | `E_CURSOR_TOO_OLD` → §10 checkpoint |
 
 A rejected domain op is never ledgered and receives no serial of its own: though a
-phase-4 rejection may legitimately have caused a *preceding* `wake_lane` or
+phase-4 rejection may legitimately have caused a *preceding* `wake` or
 `activity_checkpoint` serial (§2 wake phases: the admitted attempt is real, even
 when its operation fails).
 

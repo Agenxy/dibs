@@ -289,10 +289,10 @@ try {
   check("but its body is not, because the stream reaches non-members too",
     !stream.includes("how is this going?"),
     stream.slice(0, 240))
-  const laneView = await attempt(dev, "read_space", { token: worker.token, space: "auth-work" })
+  const spaceView = await attempt(dev, "read_space", { token: worker.token, space: "auth-work" })
   check("a member of the agent can read what the human posted",
-    JSON.stringify(laneView).includes("how is this going?"),
-    JSON.stringify(laneView).slice(0, 240))
+    JSON.stringify(spaceView).includes("how is this going?"),
+    JSON.stringify(spaceView).slice(0, 240))
   // Mail is checked in the INBOX, not the event stream, and that distinction is
   // the design rather than a workaround. A message is private to sender and
   // recipient, so a body appearing in a stream any member can read would be the

@@ -211,7 +211,7 @@ tasks:
   test:sidecar:
     desc: "Embedding sidecar contract check: no model, no repository needed"
     cmds:
-      - python3 contrib/embed-sidecar/lanes_embed.py --self-test
+      - python3 contrib/embed-sidecar/dibs_embed.py --self-test
 
   fleet:
     desc: "Real harnesses + real models + a human on one board (costs model calls)"

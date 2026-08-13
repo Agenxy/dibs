@@ -124,7 +124,7 @@ func TestChannelStateIsReplayable(t *testing.T) {
 
 // ── exclusivity and the queue ────────────────────────────────────────────
 
-func TestExclusiveLaneQueuesRatherThanRefuses(t *testing.T) {
+func TestExclusiveSpaceQueuesRatherThanRefuses(t *testing.T) {
 	s, a := chState(t, "owner", "second", "third")
 	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["owner"].Token, Space: "hot", Text: "hot work", Exclusive: true})
 
@@ -212,7 +212,7 @@ func TestStaleOwnerYieldsExclusivityButKeepsMembership(t *testing.T) {
 	}
 }
 
-func TestOnlyTheFirstMemberMayTakeALaneExclusively(t *testing.T) {
+func TestOnlyTheFirstMemberMayTakeASpaceExclusively(t *testing.T) {
 	s, a := chState(t, "alpha", "beta")
 	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["alpha"].Token, Space: "shared", Text: "t"})
 	do(t, s, &Op{Kind: OpSpaceJoin, Token: a["beta"].Token, Space: "shared"})
@@ -222,7 +222,7 @@ func TestOnlyTheFirstMemberMayTakeALaneExclusively(t *testing.T) {
 	}
 }
 
-func TestNonOwnerCannotReleaseSomeoneElsesLane(t *testing.T) {
+func TestNonOwnerCannotReleaseSomeoneElsesSpace(t *testing.T) {
 	s, a := chState(t, "owner", "other")
 	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["owner"].Token, Space: "hot", Text: "t", Exclusive: true})
 	do(t, s, &Op{Kind: OpSpaceJoin, Token: a["other"].Token, Space: "hot"}) // queued
@@ -359,7 +359,7 @@ func TestOnlyMembersMaySpeak(t *testing.T) {
 
 // ── ids and gating ───────────────────────────────────────────────────────
 
-func TestChannelIDsAreNormalisedSoOneTopicIsOneLane(t *testing.T) {
+func TestChannelIDsAreNormalisedSoOneTopicIsOneSpace(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{"Auth Refactor", "auth-refactor"},
 		{"auth-refactor", "auth-refactor"},
@@ -545,7 +545,7 @@ func makeCoordinator(t *testing.T, s *State, agent string) {
 // The whole point of the role: unsticking an agent whose owner is gone. And it
 // must never be silent: the former owner is named, exactly as force_release on
 // a directory claim is (SPEC §9).
-func TestDirectorCanUnstickALaneAndIsNeverSilent(t *testing.T) {
+func TestDirectorCanUnstickASpaceAndIsNeverSilent(t *testing.T) {
 	s, a := chState(t, "owner", "director", "waiter")
 	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["owner"].Token, Space: "hot", Text: "t", Exclusive: true})
 	do(t, s, &Op{Kind: OpSpaceJoin, Token: a["waiter"].Token, Space: "hot"}) // queued
@@ -718,7 +718,7 @@ func TestReattachingKeepsEverythingTheAgentHeld(t *testing.T) {
 // done, so each waited on the other. All the while post from that subagent
 // already worked, because speaking is exactly what the inherited membership is
 // for.
-func TestASubagentInheritsItsParentsLaneRatherThanQueueingBehindIt(t *testing.T) {
+func TestASubagentInheritsItsParentsSpaceRatherThanQueueingBehindIt(t *testing.T) {
 	s := NewState("t", DefaultLimits())
 	reg := func(name, parent string) *Agent {
 		t.Helper()
@@ -809,7 +809,7 @@ func TestACrashedAgentIsNeverPromotedToOwner(t *testing.T) {
 // And when nobody waiting can take it, the agent must not sit locked-open with a
 // queue nothing will ever drain: that is the same "waiting forever" bug in
 // another dress.
-func TestALaneNobodyCanTakeIsReleasedRatherThanStranded(t *testing.T) {
+func TestASpaceNobodyCanTakeIsReleasedRatherThanStranded(t *testing.T) {
 	s, a := chState(t, "owner", "crashed")
 	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["owner"].Token, Space: "hot", Text: "w", Exclusive: true})
 	do(t, s, &Op{Kind: OpSpaceJoin, Token: a["crashed"].Token, Space: "hot"})
@@ -878,7 +878,7 @@ func TestEvictingSomebodyWhoIsNotThereSaysSoUsefully(t *testing.T) {
 // §11's open question, answered by a human-granted coordinator rather than by a
 // score: merging is destructive to context, and a threshold is the wrong thing
 // to trust with it.
-func TestDirectorCanMergeTwoLanesThatDriftedIntoOneJob(t *testing.T) {
+func TestDirectorCanMergeTwoSpacesThatDriftedIntoOneJob(t *testing.T) {
 	s, a := chState(t, "director", "alpha", "beta")
 	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["alpha"].Token, Space: "auth-a", Text: "auth work"})
 	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["beta"].Token, Space: "auth-b", Text: "also auth work"})
@@ -909,7 +909,7 @@ func TestDirectorCanMergeTwoLanesThatDriftedIntoOneJob(t *testing.T) {
 //
 // Where the queue goes depends on the destination, and both answers give the
 // agent what it was waiting for: dst is open here, so waiting is over.
-func TestMergingIntoAnOpenLaneAdmitsTheAgentsThatWereWaiting(t *testing.T) {
+func TestMergingIntoAnOpenSpaceAdmitsTheAgentsThatWereWaiting(t *testing.T) {
 	s, a := chState(t, "director", "owner", "waiter", "host")
 	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["owner"].Token, Space: "src", Text: "work", Exclusive: true})
 	do(t, s, &Op{Kind: OpSpaceJoin, Token: a["waiter"].Token, Space: "src"}) // queued behind owner
@@ -930,7 +930,7 @@ func TestMergingIntoAnOpenLaneAdmitsTheAgentsThatWereWaiting(t *testing.T) {
 
 // The other half: dst is exclusive, so the agent is still blocked, but blocked
 // on an agent that exists, in a queue it can be promoted out of.
-func TestMergingIntoAnExclusiveLaneKeepsTheWaitersQueued(t *testing.T) {
+func TestMergingIntoAnExclusiveSpaceKeepsTheWaitersQueued(t *testing.T) {
 	s, a := chState(t, "director", "owner", "waiter", "host")
 	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["owner"].Token, Space: "src", Text: "work", Exclusive: true})
 	do(t, s, &Op{Kind: OpSpaceJoin, Token: a["waiter"].Token, Space: "src"})
@@ -955,7 +955,7 @@ func TestMergingIntoAnExclusiveLaneKeepsTheWaitersQueued(t *testing.T) {
 // board: invisible on the source because it is gone, invisible on the
 // destination because it names the wrong id: while still obliging its members
 // to acknowledge it. That is the abandoned-announcement failure mode exactly.
-func TestMergeCarriesOutstandingAnnouncementsToTheSurvivingLane(t *testing.T) {
+func TestMergeCarriesOutstandingAnnouncementsToTheSurvivingSpace(t *testing.T) {
 	s, a := chState(t, "director", "owner", "other", "host")
 	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["owner"].Token, Space: "src", Text: "work"})
 	do(t, s, &Op{Kind: OpSpaceJoin, Token: a["other"].Token, Space: "src"})
@@ -981,7 +981,7 @@ func TestMergeCarriesOutstandingAnnouncementsToTheSurvivingLane(t *testing.T) {
 	}
 }
 
-func TestMergingALaneIntoItselfIsRefused(t *testing.T) {
+func TestMergingASpaceIntoItselfIsRefused(t *testing.T) {
 	s, a := chState(t, "director")
 	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["director"].Token, Space: "x", Text: "t"})
 	makeCoordinator(t, s, "director")
@@ -1033,7 +1033,7 @@ func TestAdmittingIsCoordinatorOnlyAndRefusesADeadAgent(t *testing.T) {
 // or "security review" agent that agents register into and drop out of as they
 // come and go, so emptying an agent must not destroy it, and the next agent to
 // arrive must find the same agent rather than a fresh one with no history.
-func TestALaneSurvivesEveryMemberLeaving(t *testing.T) {
+func TestASpaceSurvivesEveryMemberLeaving(t *testing.T) {
 	s, a := chState(t, "alpha", "beta")
 	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["alpha"].Token, Space: "release", Text: "the standing release agent"})
 	do(t, s, &Op{Kind: OpSpaceJoin, Token: a["beta"].Token, Space: "release"})
@@ -1340,7 +1340,7 @@ func TestAPromotedAgentKeepsWhyItWasMatched(t *testing.T) {
 // there. Eviction is the sharpest version: it tells the agent to stop work and
 // coordinate before resuming, while still nagging it to acknowledge that agent's
 // traffic.
-func TestLeavingALaneEndsWhatThatLaneAskedOfYou(t *testing.T) {
+func TestLeavingASpaceEndsWhatThatSpaceAskedOfYou(t *testing.T) {
 	s, a := chState(t, "sender", "leaver", "evicted", "stays", "dir")
 	makeCoordinator(t, s, "dir")
 	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["sender"].Token, Space: "work", Text: "t"})
@@ -1388,7 +1388,7 @@ func TestLeavingALaneEndsWhatThatLaneAskedOfYou(t *testing.T) {
 //
 // Raised by an independent reviewer (GPT-5.6-sol); confirmed by replaying the
 // merge and listing who each event was addressed to.
-func TestAMergeWakesTheLaneThatAbsorbedTheOtherOne(t *testing.T) {
+func TestAMergeWakesTheSpaceThatAbsorbedTheOtherOne(t *testing.T) {
 	s, a := chState(t, "dir", "srcowner", "dstowner", "dstmember")
 	makeCoordinator(t, s, "dir")
 	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["srcowner"].Token, Space: "src", Text: "src work"})
@@ -1594,7 +1594,7 @@ func TestAWaiterCarriedInByAMergeBringsItsFootprint(t *testing.T) {
 // wrong key and the missing value became "". Every one returned a serial and a
 // must_ack count, so the sending side looked fine while the agent filled with
 // obligations that said nothing.
-func TestALaneIsReadableAndAnAnnouncementMustSaySomething(t *testing.T) {
+func TestASpaceIsReadableAndAnAnnouncementMustSaySomething(t *testing.T) {
 	s, a := chState(t, "early", "member", "late", "outsider")
 
 	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["early"].Token, Space: "work", Text: "the refactor"})
@@ -1671,7 +1671,7 @@ func TestALaneIsReadableAndAnAnnouncementMustSaySomething(t *testing.T) {
 // window into an agent it is no longer part of. Eviction in particular is how a
 // human removes an agent that is doing the wrong thing: if it could still read
 // the agent afterwards, the removal would be cosmetic.
-func TestReadingALaneEndsWhenMembershipDoes(t *testing.T) {
+func TestReadingASpaceEndsWhenMembershipDoes(t *testing.T) {
 	s, a := chState(t, "owner", "leaver", "removed", "director")
 	makeCoordinator(t, s, "director")
 
@@ -1733,12 +1733,12 @@ func TestAWrongKindErrorNamesWhatTheSerialActuallyIs(t *testing.T) {
 // generous only while a human chose every agent. Once a declaration opens one
 // automatically, a fleet working through 64 unrelated tasks exhausts the board
 // permanently, and every later declaration silently gets nothing.
-func TestALaneEndsWhenItsLastMemberLeaves(t *testing.T) {
+func TestASpaceEndsWhenItsLastMemberLeaves(t *testing.T) {
 	s, a := chState(t, "one", "two")
 
 	// Auto, because that is the agent this test is about and the only kind that
 	// may be reclaimed. An agent a human opened on purpose outlives its members,
-	// see TestALaneSurvivesEveryMemberLeaving, which this used to contradict.
+	// see TestASpaceSurvivesEveryMemberLeaving, which this used to contradict.
 	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["one"].Token, Space: "w", Text: "work", Auto: true})
 	do(t, s, &Op{Kind: OpSpaceJoin, Token: a["two"].Token, Space: "w"})
 
@@ -1761,7 +1761,7 @@ func TestALaneEndsWhenItsLastMemberLeaves(t *testing.T) {
 // An announcement nobody acknowledged is the record that something was never
 // answered. Reclaiming the agent under it would delete that record, which is the
 // same silent-loss failure the announcement machinery exists to prevent.
-func TestALaneWithAnUnansweredAnnouncementIsNotReclaimed(t *testing.T) {
+func TestASpaceWithAnUnansweredAnnouncementIsNotReclaimed(t *testing.T) {
 	s, a := chState(t, "one", "two")
 
 	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["one"].Token, Space: "w", Text: "work"})
@@ -1792,7 +1792,7 @@ func TestALaneWithAnUnansweredAnnouncementIsNotReclaimed(t *testing.T) {
 //
 // Neither change was wrong alone. Automatic reclamation created dead ids;
 // read_space gave them a reader. This is the seam between them.
-func TestAReclaimedLaneLeavesNothingBehindForTheNextOne(t *testing.T) {
+func TestAReclaimedSpaceLeavesNothingBehindForTheNextOne(t *testing.T) {
 	s, a := chState(t, "first", "stranger")
 
 	// Auto: reused ids are a property of agents Dibs names from a declaration,
@@ -1832,7 +1832,7 @@ func TestAReclaimedLaneLeavesNothingBehindForTheNextOne(t *testing.T) {
 
 // Two parts of this file believe opposite things, and only one of them runs.
 //
-// TestALaneSurvivesEveryMemberLeaving says an empty agent must persist, because
+// TestASpaceSurvivesEveryMemberLeaving says an empty agent must persist, because
 // standing agents, "release", "security review", are the point: agents drop in
 // and out and must find the same agent with its history. reclaimFinishedAgents
 // says "the last member leaving is what ends an agent" and deletes exactly those
@@ -1842,7 +1842,7 @@ func TestAReclaimedLaneLeavesNothingBehindForTheNextOne(t *testing.T) {
 // test protects survives only until the next sweep tick, which is minutes: and
 // the agent that comes back finds a stranger's fresh agent under the same name,
 // with none of the history it was promised.
-func TestAStandingLaneSurvivesTheSweepThatReclaimsFinishedOnes(t *testing.T) {
+func TestAStandingSpaceSurvivesTheSweepThatReclaimsFinishedOnes(t *testing.T) {
 	s, a := chState(t, "alpha", "beta")
 	do(t, s, &Op{
 		Kind: OpSpaceOpen, Token: a["alpha"].Token, Space: "release",
@@ -1858,7 +1858,7 @@ func TestAStandingLaneSurvivesTheSweepThatReclaimsFinishedOnes(t *testing.T) {
 	ch := s.Spaces["release"]
 	if ch == nil {
 		t.Fatal("the standing agent was reclaimed by the sweep; an agent returning to it " +
-			"finds nothing, which is what TestALaneSurvivesEveryMemberLeaving forbids")
+			"finds nothing, which is what TestASpaceSurvivesEveryMemberLeaving forbids")
 	}
 	if ch.Topic != "the standing release agent" {
 		t.Errorf("the agent's identity did not survive the sweep: %q", ch.Topic)
@@ -1873,7 +1873,7 @@ func TestAStandingLaneSurvivesTheSweepThatReclaimsFinishedOnes(t *testing.T) {
 // advised "leave_space the ones you are done with", which does nothing at all for
 // exactly these. Naming a corrective action that does not work is this
 // codebase's most persistent failure mode; this was another instance.
-func TestACoordinatorCanCloseAFinishedLane(t *testing.T) {
+func TestACoordinatorCanCloseAFinishedSpace(t *testing.T) {
 	s, a := chState(t, "boss", "worker", "stranger")
 	a["boss"].Role = RoleCoordinator
 	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["worker"].Token, Space: "standing", Text: "work"})
@@ -1919,7 +1919,7 @@ func TestACoordinatorCanCloseAFinishedLane(t *testing.T) {
 // could never end, and the refusal it got described its own agent as "another
 // agent's". Telling somebody they may not touch their own thing, in words about
 // somebody else's, is worse than the missing power was.
-func TestTheAgentThatOpenedALaneCanCloseIt(t *testing.T) {
+func TestTheAgentThatOpenedASpaceCanCloseIt(t *testing.T) {
 	s, a := chState(t, "opener", "stranger")
 	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["opener"].Token, Space: "mine", Text: "my work"})
 	do(t, s, &Op{Kind: OpSpaceLeave, Token: a["opener"].Token, Space: "mine"})
@@ -1946,7 +1946,7 @@ func TestTheAgentThatOpenedALaneCanCloseIt(t *testing.T) {
 
 // ...but ownership is not a bypass of the other two guards. An opener may not
 // close an agent somebody is standing in, any more than a coordinator may.
-func TestAnOpenerStillCannotCloseAnOccupiedLane(t *testing.T) {
+func TestAnOpenerStillCannotCloseAnOccupiedSpace(t *testing.T) {
 	s, a := chState(t, "opener", "peer")
 	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["opener"].Token, Space: "busy", Text: "work"})
 	do(t, s, &Op{Kind: OpSpaceJoin, Token: a["peer"].Token, Space: "busy"})

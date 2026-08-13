@@ -90,7 +90,7 @@ func TestAckBoardKeepsRecoveryKeysInEveryModelFacingShape(t *testing.T) {
 // board already carried both identities. Keep the count for compatibility and
 // add names at the MCP boundary; this deliberately does NOT mutate membership
 // or acknowledge anything merely because the agent was read.
-func TestLaneReadNamesItsMembers(t *testing.T) {
+func TestSpaceReadNamesItsMembers(t *testing.T) {
 	srv, _ := newServer(t)
 	alpha := toolCall(t, srv, "register", map[string]any{"name": "alpha"})
 	beta := toolCall(t, srv, "register", map[string]any{"name": "beta"})

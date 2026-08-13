@@ -223,17 +223,17 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 	// would still fail on the draws where the walk happens to miss one.
 	apply(t, st, led, &core.Op{
 		Kind: core.OpSpaceOpen, Token: "seedtokaa",
-		Space: "seedlane", Text: "seeded work",
+		Space: "seedspace", Text: "seeded work",
 	}, now)
 	accepted[core.OpSpaceOpen]++
 	apply(t, st, led, &core.Op{
 		Kind: core.OpSpaceJoin, Token: "seedtokba",
-		Space: "seedlane", Score: 0.66, ScorerID: "seed",
+		Space: "seedspace", Score: 0.66, ScorerID: "seed",
 	}, now)
 	accepted[core.OpSpaceJoin]++
 	seeded := apply(t, st, led, &core.Op{
 		Kind: core.OpSpaceAnnounce, Token: "seedtokaa",
-		Space: "seedlane", Body: "seeded announcement",
+		Space: "seedspace", Body: "seeded announcement",
 	}, now)
 	accepted[core.OpSpaceAnnounce]++
 	if ser, ok := seeded["serial"].(uint64); ok {
@@ -246,7 +246,7 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 	accepted[core.OpSpaceAck]++
 	apply(t, st, led, &core.Op{
 		Kind: core.OpSpaceLeave, Token: "seedtokba",
-		Space: "seedlane",
+		Space: "seedspace",
 	}, now)
 	accepted[core.OpSpaceLeave]++
 
@@ -869,7 +869,7 @@ func TestDirectorReplayDeterminism(t *testing.T) {
 // one op that is ledgered only when it changed something, so "the sweep removed
 // an agent" and "the sweep did nothing" have to be distinguishable in the ledger,
 // not merely in memory.
-func TestReclaimedLanesStayReclaimedAcrossReplay(t *testing.T) {
+func TestReclaimedSpacesStayReclaimedAcrossReplay(t *testing.T) {
 	led, path := newLedger(t)
 	st := core.NewState("test", core.DefaultLimits())
 
@@ -929,7 +929,7 @@ func TestReclaimedLanesStayReclaimedAcrossReplay(t *testing.T) {
 //
 // Found by an agent reading the ledger of a candidate build, not by reading the
 // code: from inside the daemon the two surfaces look identical.
-func TestLaneTrafficIsSealedAtRestLikeMail(t *testing.T) {
+func TestSpaceTrafficIsSealedAtRestLikeMail(t *testing.T) {
 	led, path := newLedger(t)
 	st := core.NewState("test", core.DefaultLimits())
 

@@ -58,7 +58,7 @@ func mustNotClaimSolitude(t *testing.T, where, s string) {
 // agent had declared minutes earlier. That is the most damaging thing this
 // product can get wrong: the whole promise is that you find out somebody is
 // already doing it, so a false all-clear is worse than no answer at all.
-func TestTheOpenedLaneHintDoesNotClaimSolitude(t *testing.T) {
+func TestTheOpenedSpaceHintDoesNotClaimSolitude(t *testing.T) {
 	st := core.NewState("test", core.DefaultLimits())
 	e := New(st, &memLedger{}, deadProber{})
 	ctx, cancel := context.WithCancel(context.Background())

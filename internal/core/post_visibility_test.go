@@ -20,7 +20,7 @@ import (
 // Both halves have to hold together. Removing the body from the event without
 // giving posts a home makes them write-only, which is a quieter failure than
 // the leak it fixes.
-func TestAPostGoesToTheLaneAndNotTheBoard(t *testing.T) {
+func TestAPostGoesToTheSpaceAndNotTheBoard(t *testing.T) {
 	st := NewState("test", DefaultLimits())
 	now := t0
 

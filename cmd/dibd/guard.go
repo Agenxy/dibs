@@ -114,7 +114,7 @@ func (g *authGate) redeemBootstrap(t string) (string, bool) {
 }
 
 func (g *authGate) validSession(r *http.Request) bool {
-	c, err := r.Cookie("lanes_session")
+	c, err := r.Cookie("dibs_session")
 	if err != nil || c.Value == "" {
 		return false
 	}
@@ -279,7 +279,7 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 				// over plain HTTP is never sent back, which would break the loopback board
 				// rather than protect it. HttpOnly and SameSite=Strict are unconditional.
 				http.SetCookie(w, &http.Cookie{
-					Name: "lanes_session", Value: sess, Path: "/",
+					Name: "dibs_session", Value: sess, Path: "/",
 					HttpOnly: true, SameSite: http.SameSiteStrictMode,
 					// Secure only when the connection actually is: the daemon
 					// serves plain HTTP on loopback and TLS on any reachable

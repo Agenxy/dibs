@@ -153,7 +153,7 @@ type Op struct {
 	// actually spawned a child can hand it a secret: same process, same trust
 	// domain, and nobody else has it.
 	ParentNonce string    `json:"parent_nonce,omitempty"`
-	AgentKind   AgentKind `json:"lane_kind,omitempty"`
+	AgentKind   AgentKind `json:"agent_kind,omitempty"`
 
 	// declare / undeclare
 	SlotID string   `json:"slot_id,omitempty"`
@@ -192,8 +192,8 @@ type Op struct {
 	// state), so like every other impure sweep input it arrives RECORDED,
 	// replay marks exactly the same announcements without counting anything.
 	GiveUpAnnounce []uint64 `json:"give_up_announce,omitempty"`
-	DeadAgents     []string `json:"dead_lanes,omitempty"`
-	StaleAgents    []string `json:"stale_lanes,omitempty"`
+	DeadAgents     []string `json:"dead_agents,omitempty"`
+	StaleAgents    []string `json:"stale_agents,omitempty"`
 	AlivePIDs      []int    `json:"alive_pids,omitempty"`
 
 	// mark_delivered: ledgered pending→delivered receipts
@@ -250,7 +250,7 @@ const (
 	OpGrantRole          = "grant_role"
 	OpPrune              = "prune"
 	// OpPruneOwn is an agent tidying up after ITSELF: its own record, or a
-	// child it vouched for. A new kind rather than a token-bearing prune_lane,
+	// child it vouched for. A new kind rather than a token-bearing prune,
 	// because the ownership rule below has to live in Apply (it depends on
 	// state, which Admit cannot see) and a rule added to Apply is retroactive:
 	// it would be applied to ops that older code already accepted. No ledger
@@ -373,7 +373,7 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		return s.applyPruneOwn(op, l, now)
 	case OpSignOff:
 		res, evs = s.applyClose(l, now)
-	case OpHeartbeat: // unreachable when sleeping (wake_lane precedes); no-op
+	case OpHeartbeat: // unreachable when sleeping (wake precedes); no-op
 		res, evs = Result{"ok": true, "agent_id": l.ID}, nil
 	case OpSetSlot:
 		res, evs, err = s.applySetSlot(l, op)

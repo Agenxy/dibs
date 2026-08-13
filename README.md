@@ -428,7 +428,7 @@ a hosted API all satisfy it:
 
 ```sh
 pip install mlx mlx-embeddings
-contrib/embed-sidecar/lanes_embed.py --repo . --port 8737
+contrib/embed-sidecar/dibs_embed.py --repo . --port 8737
 dibd -match-repo . -match-join 0.33 -match-embed-url http://127.0.0.1:8737
 ```
 

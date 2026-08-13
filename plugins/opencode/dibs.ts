@@ -246,7 +246,7 @@ function partID(): string {
   return `prt_${hex}${rand}`
 }
 
-export const LanesPlugin: Plugin = async () => {
+export const DibsPlugin: Plugin = async () => {
   return {
     /**
      * Refuse an edit that would trample a peer's exclusive claim.
@@ -328,4 +328,4 @@ export const LanesPlugin: Plugin = async () => {
   }
 }
 
-export default LanesPlugin
+export default DibsPlugin
