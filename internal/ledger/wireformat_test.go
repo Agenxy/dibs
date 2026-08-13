@@ -1,6 +1,8 @@
 package ledger
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"sort"
@@ -22,14 +24,22 @@ import (
 // because the bytes are unchanged: the hash chain protects the LINES, not the
 // meaning of the keys inside them.
 //
-// This is not hypothetical. SPEC-CHANNELS.md §1 renames the participant from
-// `Agent` to `Agent`, which is 196 Go identifiers, several of which carry
-// `json:"agent"`. A careless rename does exactly the above. The compiler cannot
-// help: both spellings compile.
+// This is not hypothetical, and it is no longer even a warning: it happened
+// here. The rename of the participant from `Lane` to `Agent` touched 196 Go
+// identifiers, several carrying `json:"lane_kind"`. The compiler cannot help,
+// because both spellings compile, and neither could this test, because the
+// same text sweep that renamed the tags rewrote the frozen list below to match,
+// along with the sentence you are reading, which said "from `Agent` to `Agent`"
+// until someone read it. Every release up to v0.0.4 wrote `lane_kind`; the
+// build after it read `agent_kind`; this test passed throughout, and every
+// persistent agent on an upgraded board came back ephemeral.
 //
-// So: the wire names are asserted against a literal list. Changing one requires
-// changing this file, which is the point. A Go identifier may be renamed freely;
-// the tag it carries may not.
+// So the list is fingerprinted. A literal list defends against a careless
+// rename; a fingerprint defends against a thorough one, because a sweep that
+// rewrites the words will not rewrite the hash. Updating the wire format now
+// takes two deliberate edits, and that is the entire point of it.
+//
+// A Go identifier may be renamed freely; the tag it carries may not.
 func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	led, path := newLedger(t)
 	st := core.NewState("test", core.DefaultLimits())
@@ -161,6 +171,38 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		sort.Strings(got)
 		t.Logf("op fields actually written: %s", strings.Join(got, " "))
 	}
+
+	// The fingerprint. See the doc comment: this is what a text sweep cannot
+	// keep in step with, and it is the only reason a rename has to be noticed.
+	if got := fingerprint(wantOp); got != frozenOpFingerprint {
+		t.Errorf("the frozen op-field list changed.\n"+
+			"  got  %s\n  want %s\n\n"+
+			"  If you renamed a tag: every ledger written before the change replays\n"+
+			"  with that field silently zero. Put the old tag back.\n"+
+			"  If you genuinely added a field, this is deliberate: set\n"+
+			"    frozenOpFingerprint = %q", got, frozenOpFingerprint, got)
+	}
+	if got := fingerprint(wantEnvelope); got != frozenEnvelopeFingerprint {
+		t.Errorf("the frozen envelope-field list changed: got %s, want %s",
+			got, frozenEnvelopeFingerprint)
+	}
+}
+
+// Fingerprints of the frozen sets above. Deliberately not derived from anything
+// at build time: a value a sweep can recompute defends nothing.
+const (
+	frozenOpFingerprint       = "sha256:a6b92b35ecc6140e"
+	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
+)
+
+func fingerprint(set map[string]bool) string {
+	keys := make([]string, 0, len(set))
+	for k := range set {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	sum := sha256.Sum256([]byte(strings.Join(keys, ",")))
+	return "sha256:" + hex.EncodeToString(sum[:])[:16]
 }
 
 func opKind(op map[string]json.RawMessage) string {

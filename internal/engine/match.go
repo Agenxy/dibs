@@ -1165,9 +1165,14 @@ func (e *Engine) cwdForToken(ctx context.Context, token string) string {
 // SetCoordinatorClaim installs the check for a launch-time coordinator claim.
 //
 // The daemon owns the secret because it owns the data directory; the engine
-// only asks whether a presented one is right, and consumes it on success so the
-// claim can be made once. Kept off the core, which cannot read files.
-func (e *Engine) SetCoordinatorClaim(verify func(secret string) bool) {
+// only asks whether a presented one is right. Kept off the core, which cannot
+// read files.
+//
+// verify returns the answer AND the function that spends the claim, which the
+// engine calls only once the op has been ledgered. Two phases, because a claim
+// that is right is not yet a claim that succeeded: core refuses an ephemeral
+// claimant, and a single-use secret spent on a refusal strands the board.
+func (e *Engine) SetCoordinatorClaim(verify func(secret string) (bool, func())) {
 	e.claimMu.Lock()
 	defer e.claimMu.Unlock()
 	e.verifyClaim = verify
