@@ -58,26 +58,42 @@ func newCoordinatorClaim(dir string, alreadyHas bool) *coordinatorClaim {
 	return &coordinatorClaim{path: path, secret: secret}
 }
 
-// verify reports whether presented is the minted secret, and consumes it.
+// verify reports whether presented is the minted secret, in constant time, and
+// returns the function that spends it.
 //
-// Constant time, and single use: the file is removed on success so a second
-// agent cannot take the role by reading a secret left lying about.
-func (c *coordinatorClaim) verify(presented string) bool {
+// Checking and spending are separate because holding the secret is not the only
+// thing a claim has to survive: core refuses the op if the claimant is
+// ephemeral, closed, or already holds a role, and a claim spent on a refusal is
+// gone with nobody holding the role and no way to mint another short of
+// restarting the daemon. That is not a hypothetical either. It is what happened
+// on the first real claim this code ever served.
+func (c *coordinatorClaim) verify(presented string) (bool, func()) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.secret == "" || presented == "" {
-		return false
+		return false, nil
 	}
 	if subtle.ConstantTimeCompare([]byte(c.secret), []byte(presented)) != 1 {
-		return false
+		return false, nil
 	}
+	return true, c.spend
+}
+
+// spend consumes the claim, once the op it authorised has been ledgered.
+//
+// Single use: the file goes so a second agent cannot take the role by reading a
+// secret left lying about. Nothing guards the window between verify and spend
+// because there is none to guard: both run on the engine's single writer, with
+// the apply between them.
+func (c *coordinatorClaim) spend() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.secret = ""
 	if err := os.Remove(c.path); err != nil && !os.IsNotExist(err) {
 		slog.Warn("claimed coordinator but could not remove the claim file",
 			"path", c.path, "err", err)
 	}
 	slog.Info("coordinator claimed by the agent that started this daemon")
-	return true
 }
 
 // installCoordinatorClaim wires the claim to the engine.

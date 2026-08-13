@@ -5,7 +5,46 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **A board written by v0.0.4 or earlier is no longer opened.** `dibd` now says
+  so on startup and names the record it will not read. Set the file aside
+  (`mv ~/.dibs/ledger.jsonl ~/.dibs/ledger.jsonl.old`) and start it again; your
+  work is untouched, the coordination history is not. This is the same clean
+  break the 0.0.2 notes describe, applied to the half of the rename that was
+  missed, and it is the last one.
+
 ### Fixed
+
+- **Upgrading silently demoted every persistent agent to ephemeral.** The
+  vocabulary rename changed op field names as well as op kinds, and a renamed
+  field does not fail: `lane_kind` was simply not read, so the op applied with
+  the field zero and replay reported success over a board that had quietly lost
+  its persistent agents (no nonce resume, no coordinator eligibility) while a
+  replayed `sweep` that recorded `dead_lanes` marked nobody dead. Every release
+  up to v0.0.4 wrote those names. `state == fold(ledger)` was broken with
+  nothing raised anywhere, which is the one outcome a hash-chained ledger exists
+  to prevent, so the daemon now refuses the ledger instead of misreading it.
+
+  The test that froze the on-disk field names had been guarding this since
+  v0.0.0. The sweep rewrote its frozen list to match the new tags, and the
+  comment explaining why the list must never be rewritten, which it left saying
+  "renames the participant from `Agent` to `Agent`". The list is now
+  fingerprinted, so a sweep that rewrites the words fails on the hash it cannot
+  recompute.
+
+- The startup check for an outdated board listed the vocabulary it had just been
+  renamed *to*, so it recognised `register` and `declare` as obsolete words: on
+  any replay failure it told the owner their current board came from 0.0.2 and
+  to move it aside. It also only ran when replay had already failed, which the
+  case above never does. It now runs before the fold, reads the whole ledger
+  rather than the first fifty records, and its words are checked against the
+  core rather than a second hand-maintained list.
+
+- A coordinator claim that presented the right secret spent it even when the op
+  was then refused, leaving the board with no coordinator and no way to appoint
+  one short of restarting the daemon. Checking the secret and spending it are
+  now separate: the claim is consumed once the grant is ledgered.
 
 - The bound on git calls made the permission it needed impossible to grant. A
   first call against a macOS protected folder puts a dialog on the user's

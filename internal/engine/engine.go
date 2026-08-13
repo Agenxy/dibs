@@ -69,10 +69,11 @@ type Engine struct {
 	// in, so matching does not depend on somebody setting a flag.
 	onRepoSeen func(repo string)
 	// verifyClaim answers whether a presented coordinator claim is the one this
-	// daemon minted, and consumes it. Guarded separately: it is installed once
-	// at startup and read on the loop.
+	// daemon minted, and returns the function that spends it once the op it
+	// authorised has been ledgered. Guarded separately: it is installed once at
+	// startup and read on the loop.
 	claimMu     sync.RWMutex
-	verifyClaim func(secret string) bool
+	verifyClaim func(secret string) (bool, func())
 	// footprints backfills agents opened before the index was ready. Ephemeral:
 	// it is a cache of a prediction, never the record a join is replayed from.
 	footprints map[string][]core.PredFile
@@ -313,18 +314,26 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// daemon's data directory. Answered here, recorded in the op, so replay
 	// applies the same decision without re-reading a file that the first
 	// successful claim consumed.
+	var spendClaim func()
 	if op.Kind == core.OpClaimCoordinator {
 		e.claimMu.RLock()
 		verify := e.verifyClaim
 		e.claimMu.RUnlock()
 		if verify != nil {
-			op.ClaimVerified = verify(op.Nonce)
+			op.ClaimVerified, spendClaim = verify(op.Nonce)
 		}
 	}
 
 	res, err := e.applyAndLedger(op, now)
 	if err != nil {
 		return nil, err
+	}
+	// After the apply, never before it. Holding the secret is not sufficient:
+	// core still refuses an ephemeral or closed claimant, and a single-use claim
+	// spent on a refusal leaves the board with no coordinator and no way to
+	// appoint one.
+	if spendClaim != nil {
+		spendClaim()
 	}
 	if actor != nil {
 		e.seen[actor.ID] = now

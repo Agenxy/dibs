@@ -147,11 +147,13 @@ func run() error {
 			"anyone and the hash chain is intact",
 			"bytes", bytes, "offset", at)
 	}
+	// Before the fold, not after it. A ledger from an older release can replay
+	// perfectly and still be wrong: see oldVocabularyFailure.
+	if old := oldVocabularyFailure(*dir); old != nil {
+		return old
+	}
 	n, err := led.Replay(st)
 	if err != nil {
-		if old := oldVocabularyFailure(*dir); old != nil {
-			return old
-		}
 		// A record the fold refuses is the one failure this daemon cannot shrug
 		// off: state IS the ledger, so a line that will not apply means every
 		// line after it describes a board that can no longer be reconstructed.
@@ -391,57 +393,88 @@ func portOf(addr string) string {
 	return addr
 }
 
-// oldVocabularyFailure explains a ledger written before the rename, or returns
-// nil if that is not what went wrong.
+// oldVocabularyFailure explains a ledger written by a release before this one,
+// or returns nil if this build can fold what is there.
 //
-// It reads the LEDGER, not the replay error, and that is the whole point. The
-// obvious version matched the retired name in the error text and would never
-// have fired: `register` no longer matches the actor-free cases in Apply,
-// so it falls through to actor resolution and dies as E_BAD_TOKEN, an error
-// that never mentions the kind at all.
+// It reads the LEDGER, not a replay error, and it runs BEFORE the fold. Both are
+// load-bearing, for different reasons, and both were wrong when this shipped.
 //
-// DELETE AT 0.1.0, along with the apology. By then nobody carries a 0.0.2
-// ledger forward and this is a list of words kept alive by no one remembering
-// what it was for.
+// Reading the ledger: the obvious version matched the retired word in the error
+// text and would never have fired. `register_lane` no longer matches the
+// actor-free cases in Apply, so it falls through to actor resolution and dies as
+// E_BAD_TOKEN, an error that never names the kind at all.
+//
+// Running before the fold: a retired op KIND fails replay, loudly. A retired
+// FIELD name fails nothing. The record still applies, with that field silently
+// zero, and Replay reports success over a board that is quietly wrong. v0.0.4
+// and earlier wrote `lane_kind`; this build reads `agent_kind`, so every
+// persistent agent in such a ledger folds back as EPHEMERAL, losing nonce resume
+// and coordinator eligibility, and a `sweep` that recorded `dead_lanes` folds
+// back having marked nobody dead. That is `state == fold(ledger)` broken with no
+// error anywhere to hang a check on, which is why this cannot be gated on one.
+// It was found by a persistent agent coming back ephemeral on a real board.
+//
+// It reads the whole ledger rather than a cheap prefix, because a partial scan
+// answers "clean" for a board it has not looked at, and a false clean here is
+// the exact failure being prevented. Boot already reads every line to fold it.
+//
+// DELETE AT 0.1.0, along with the apology. By then nobody carries a 0.0.x ledger
+// forward and this is a list of words kept alive by no one remembering what it
+// was for.
 func oldVocabularyFailure(dir string) error {
 	ledgerPath := filepath.Join(dir, "ledger.jsonl")
 	word := retiredVocabulary(ledgerPath)
 	if word == "" {
 		return nil
 	}
-	return fmt.Errorf("this board was written by 0.0.2, before Lanes became Dibs.\n"+
-		"  Its records say %q, which 0.0.3 no longer knows.\n\n"+
+	return fmt.Errorf("this board was written by an older Dibs, back when an agent was a lane.\n"+
+		"  Its records say %q, which this build no longer reads. Some of those\n"+
+		"  records would still fold, into a board that disagrees with them: that is\n"+
+		"  why this stops here rather than opening something subtly wrong.\n\n"+
 		"  If you are an agent reading this, you can fix it:\n"+
-		"    mv %s %[2]s.0.0.2\n"+
+		"    mv %s %[2]s.old\n"+
 		"  then start dibd again, and TELL YOUR HUMAN the old board was set aside\n"+
 		"  and why. Their work is untouched; the coordination history is not.\n\n"+
 		"  Sorry: one clean break at 0.0.x beat two later", word, ledgerPath)
 }
 
-// retiredVocabulary reports the 0.0.2 word a ledger opens with, if it opens
-// with one, so the failure can say what actually happened.
+// retiredOpKinds are op kinds no build after v0.0.4 writes. Replay refuses
+// these on its own; they are listed so the refusal can say what happened.
 //
-// It reads the LEDGER, not the error, and that is the whole point. The obvious
-// version matched the retired name in the error text and would never have
-// fired: `register` no longer matches the actor-free cases in Apply, so it
-// falls through to actor resolution and dies as E_BAD_TOKEN, an error that
-// never mentions the kind at all. The first fixture written for this looked
-// unrealistic and was in fact showing the true failure.
+// Every word here must be one this build NO LONGER writes. The list shipped
+// naming the words it had just been renamed TO: `register`, `check_in`,
+// `declare`, because the sweep that renamed the vocabulary rewrote this table
+// along with everything else. A guard whose trigger fires on the current
+// vocabulary tells a person their perfectly good board is obsolete and to move
+// it aside. TestTheRetiredWordsAreRetired is what keeps that from recurring.
+var retiredOpKinds = map[string]bool{
+	"register_lane": true, "resume_lane": true, "wake_lane": true,
+	"ack_board": true, "update_lane": true, "close_lane": true,
+	"set_slot": true, "clear_slot": true, "send_message": true,
+	"ack_message": true, "prune_lane": true,
+}
+
+// retiredOpFields are op FIELD names no build after v0.0.4 writes.
 //
-// DELETE AT 0.1.0. By then nobody carries a 0.0.2 ledger forward and this is a
+// These are the dangerous half. An unknown kind stops the fold; an unknown
+// field is simply not read, so the op applies with that field zero and nothing
+// reports anything. `lane_kind` is why this exists: every release up to v0.0.4
+// wrote it, this build reads `agent_kind`, and the difference is every
+// persistent agent on an upgraded board folding back as ephemeral.
+var retiredOpFields = map[string]bool{
+	"lane":        true, // → agent_id
+	"lane_kind":   true, // → agent_kind
+	"dead_lanes":  true, // → dead_agents
+	"stale_lanes": true, // → stale_agents
+	"channel":     true, // → space
+}
+
+// retiredVocabulary reports the first retired word in a ledger, or "".
+//
+// DELETE AT 0.1.0. By then nobody carries a 0.0.x ledger forward and this is a
 // list of words kept alive by no one remembering what it was for. The apology
 // has a shelf life too.
 func retiredVocabulary(ledgerPath string) string {
-	retired := map[string]bool{
-		"register": true, "resume": true, "check_in": true,
-		"update": true, "sign_off": true, "declare": true,
-		"undeclare": true, "send": true, "ack": true,
-		"open_space": true, "join_space": true, "leave_space": true,
-		"watch_space": true, "lock_space": true, "post": true,
-		"announce": true, "ack_announcement": true, "unlock_space": true,
-		"evict": true, "merge_spaces": true, "close_space": true,
-		"admit": true,
-	}
 	f, err := os.Open(ledgerPath) // #nosec G304 -- the daemon's own data directory
 	if err != nil {
 		return ""
@@ -449,14 +482,26 @@ func retiredVocabulary(ledgerPath string) string {
 	defer func() { _ = f.Close() }()
 	scan := bufio.NewScanner(f)
 	scan.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	for i := 0; scan.Scan() && i < 50; i++ {
+	for scan.Scan() {
+		// Into a map, so a field this build has no struct member for is still
+		// visible. Decoding into core.Op is what hides these by construction.
 		var rec struct {
-			Op struct {
-				Kind string `json:"kind"`
-			} `json:"op"`
+			Op map[string]json.RawMessage `json:"op"`
 		}
-		if json.Unmarshal(scan.Bytes(), &rec) == nil && retired[rec.Op.Kind] {
-			return rec.Op.Kind
+		if json.Unmarshal(scan.Bytes(), &rec) != nil {
+			continue
+		}
+		var kind string
+		if raw, ok := rec.Op["kind"]; ok {
+			_ = json.Unmarshal(raw, &kind)
+		}
+		if retiredOpKinds[kind] {
+			return kind
+		}
+		for field := range rec.Op {
+			if retiredOpFields[field] {
+				return field
+			}
 		}
 	}
 	return ""
