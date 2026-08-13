@@ -42,6 +42,10 @@ tasks:
       # SIGKILLed: exit 137, no message, from a file that is byte-identical to
       # a working one and whose signature verifies. It looks like a corrupt
       # download. Replacing the file gives a fresh inode and no cached verdict.
+      # Before anything is replaced: an ad-hoc install revokes a macOS
+      # permission the user had to click, and the only signal was a printed
+      # note that scrolled past. It happened twice in one session.
+      - go run ./tools/signcheck
       - mkdir -p {{.DEST}}
       # The names here were rename collateral: this removed `agents`, which has
       # never existed, and then copied over a live `dibs`, reusing exactly the
