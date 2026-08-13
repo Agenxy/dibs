@@ -102,15 +102,15 @@ try {
     ["r", "request", "Approve the redesign?"],
     ["n", "notify", "For your information."],
   ] as const) {
-    mail[key] = textOf(await tool("send", { token: peer.token, to: me.lane_id,
+    mail[key] = textOf(await tool("send", { token: peer.token, to: me.agent_id,
       type, body, op_id: "e2e-" + key, deadline_s: 600 }))
   }
 
   // A space the reading agent is a member of, so the panel can mark it as
   // the viewer's own: the one thing this surface knows that the operator
   // board deliberately does not.
-  await tool("open_space", { token: me.token, agent: "panel-work", topic: "rendering the panel" })
-  await tool("join_space", { token: peer.token, agent: "panel-work", score: 0.64, threshold: 0.33,
+  await tool("open_space", { token: me.token, space: "panel-work", topic: "rendering the panel" })
+  await tool("join_space", { token: peer.token, space: "panel-work", score: 0.64, threshold: 0.33,
     scorer_id: "lexical+cochange", evidence: ["internal/mcp/board_app.html"], auto: true })
 
   // ── the template, fetched the way a host fetches it ──────────────────────
@@ -854,11 +854,11 @@ try {
   await page.evaluate((r) => (window as any).__deliver({
     structuredContent: {
       view: "mail",
-      lane_id: r._meta["com.dibs/panel"].lane_id,
+      agent_id: r._meta["com.dibs/panel"].agent_id,
       act_token: r._meta["com.dibs/panel"].act_token,
       inbox: { messages: [{
         serial: 999999, type: "request", from: "peer",
-        to: r._meta["com.dibs/panel"].lane_id,
+        to: r._meta["com.dibs/panel"].agent_id,
         body: "This serial does not exist.", state: "open",
       }] },
     },
@@ -876,7 +876,7 @@ try {
   // A mutation may succeed and the follow-up inbox refresh may fail. The action
   // is still sent; calling that a send failure invites a duplicate.
   const refreshMail = textOf(await tool("send", {
-    token: peer.token, to: me.lane_id, type: "request",
+    token: peer.token, to: me.agent_id, type: "request",
     body: "Refresh-failure probe", op_id: "e2e-refresh-failure", deadline_s: 600,
   }))
   const refreshedInbox = await tool("inbox", { token: me.token })
@@ -957,7 +957,7 @@ try {
     }
     const payload = {
       structuredContent: {
-        lane_id: "reviewer",
+        agent_id: "reviewer",
         inbox: { messages: [{
           serial: 700001, type: "notify", from: "peer", to: "reviewer",
           body: "one context update", state: "open",

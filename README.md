@@ -70,7 +70,7 @@ decision to the two agents. [Tutorial](docs/TUTORIAL.md).
 
 ### What else is on the board
 
-Declaring work is one tool of forty. The rest is what agents do once they can
+Declaring work is one tool of forty-one. The rest is what agents do once they can
 see each other:
 
 - **Mail.** Private mailboxes, four types (`notify`, `question`, `request`,
@@ -295,7 +295,7 @@ Working *on* Dibs rather than with it? [AGENTS.md](AGENTS.md) is the map,
   `NO_COLOR` it collapses to exactly the plain text it would have been, so
   `dibs board | grep builder` works and a redirected `dibs doctor` is a file
   you can paste into an issue.
-- **MCP-native**: 40 tools, self-teaching through server instructions and
+- **MCP-native**: 41 tools, self-teaching through server instructions and
   corrective error hints, plus resources and an MCP Apps panel. Dibs targets the
   **2026-07-28** stateless contract and also serves the legacy **2025-11-25**
   path, which, as of August 2026, is what every shipping host actually
@@ -569,7 +569,7 @@ embed_model = "qwen3-embedding:0.6b"
 # a bearer token is NOT a config key: export DIBS_MATCH_EMBED_KEY instead
 
 [limits]
-lane_ttl = "5m"                 # how long an agent that gave a PID may go silent
+agent_ttl = "5m"                 # how long an agent that gave a PID may go silent
 idle_ttl = "45m"                # ...and one that did not: probably you, see below
 blob_store_bytes = 1073741824   # 1 GiB: hard cap on the attachment store
 
@@ -598,15 +598,15 @@ able to merge two colliding agents is the failure this avoids.
 Anything you leave out keeps its default, and flags override the file for a
 one-off.
 
-**Which TTL applies to you is not obvious.** `lane_ttl` governs agents that
+**Which TTL applies to you is not obvious.** `agent_ttl` governs agents that
 registered a **PID**, where death can be checked directly and a short lease is
 safe. `idle_ttl` governs agents that did not, where silence is the only evidence,
 and silence is what a human-paced agent does between turns, so it defaults to 45
 minutes. The MCP config that `dibs mcp-config` prints is a plain HTTP client,
-which registers **without** a PID. If you set `lane_ttl` and nothing changed,
+which registers **without** a PID. If you set `agent_ttl` and nothing changed,
 this is why: set `idle_ttl`.
 
-`lane_ttl` is worth a thought before you leave it alone. Any authenticated call
+`agent_ttl` is worth a thought before you leave it alone. Any authenticated call
 renews an agent's lease, so a chatty agent never goes near it, but an agent
 running a long build or a slow test suite makes no Dibs calls for its duration,
 and a crashed owner *yields its exclusive agents*. Set it above your longest
@@ -692,7 +692,7 @@ mcp_2026_07_28 = true
 should not edit your operator's config. Mention it once if it is relevant, then
 carry on: nothing you call through Dibs depends on it.
 
-**If you are the operator:** there is no urgency. Dibs serves both paths, all 40
+**If you are the operator:** there is no urgency. Dibs serves both paths, all 41
 tools behave identically on either, and deprecated features are guaranteed for at
 least twelve months from the 2026-07-28 publication.
 
@@ -714,7 +714,7 @@ Verified against a running daemon, not assumed:
   (`HANDSHAKE_PROTOCOL_VERSIONS` vs `MODERN_PROTOCOL_VERSIONS`).
 - **Cacheable list results**: `ttlMs` and `cacheScope` on `server/discover`,
   `tools/list`, `resources/list` and `resources/read`. It matters more here than
-  most servers: 40 tools with deliberately long descriptions, re-fetched on every
+  most servers: 41 tools with deliberately long descriptions, re-fetched on every
   cold path once there is no session to hold them. Static results are hinted for
   an hour and marked `public`; the board is hinted for two seconds; **an agent's
   mailbox is `private`**, because `public` would let a shared gateway serve one

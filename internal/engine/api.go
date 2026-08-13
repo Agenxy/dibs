@@ -37,7 +37,7 @@ func (e *Engine) send(ctx context.Context, req request) (core.Result, error) {
 // ephemeral touch, durable checkpoint coalescing. Must run inside the loop.
 // Returns nil (with an error result set) if the caller is not authenticated.
 func (e *Engine) authRead(token string, now time.Time) (*core.Agent, core.Result) {
-	l := e.state.LaneByToken(token)
+	l := e.state.AgentByToken(token)
 	if l == nil {
 		return nil, core.Result{"error": core.ErrBadToken}
 	}
@@ -54,7 +54,7 @@ func (e *Engine) authRead(token string, now time.Time) (*core.Agent, core.Result
 // the current serial to stream from, and (if an agent token is supplied) the
 // authenticated agent id so an inbox subscription can be scoped to it. An empty
 // token is allowed (board-only subscription); a bad token errors.
-func (e *Engine) SubscribeInfo(ctx context.Context, token string) (laneID string, since uint64, err error) {
+func (e *Engine) SubscribeInfo(ctx context.Context, token string) (agentID string, since uint64, err error) {
 	res, qerr := e.query(ctx, func() core.Result {
 		now := time.Now()
 		if token == "" {
@@ -64,7 +64,7 @@ func (e *Engine) SubscribeInfo(ctx context.Context, token string) (laneID string
 		if errRes != nil {
 			return errRes
 		}
-		return core.Result{"lane_id": l.ID, "since": e.state.Serial}
+		return core.Result{"agent_id": l.ID, "since": e.state.Serial}
 	})
 	if qerr != nil {
 		return "", 0, qerr
@@ -72,9 +72,9 @@ func (e *Engine) SubscribeInfo(ctx context.Context, token string) (laneID string
 	if e2, ok := res["error"].(error); ok {
 		return "", 0, e2
 	}
-	laneID, _ = res["lane_id"].(string)
+	agentID, _ = res["agent_id"].(string)
 	since, _ = res["since"].(uint64)
-	return laneID, since, nil
+	return agentID, since, nil
 }
 
 // InboxFor returns the caller's decrypted mailbox for a resources/read of
@@ -193,13 +193,13 @@ func (e *Engine) Inbox(ctx context.Context, token string) (core.Result, error) {
 	})
 }
 
-// LaneRead returns an agent's announcement history to one of its members.
+// SpaceRead returns an agent's announcement history to one of its members.
 //
 // A read, not an op: it changes nothing, and in particular it does not acknowledge
 // anything. Reading what an agent has said and accepting an obligation it placed on
 // you are separate acts, and collapsing them would let a context-recovery read
 // silently discharge an ack the agent never accounted for.
-func (e *Engine) LaneRead(ctx context.Context, token, agent string, limit int) (core.Result, error) {
+func (e *Engine) SpaceRead(ctx context.Context, token, agent string, limit int) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
 		l, errRes := e.authRead(token, time.Now())
 		if errRes != nil {
@@ -224,8 +224,8 @@ func (e *Engine) LaneRead(ctx context.Context, token, agent string, limit int) (
 			return core.Result{"error": err}
 		}
 		res := core.Result{
-			"lane_id": ch.ID, "topic": ch.Topic, "members": len(ch.Members),
-			"announcements": e.state.LaneHistory(ch, l.ID, limit),
+			"agent_id": ch.ID, "topic": ch.Topic, "members": len(ch.Members),
+			"announcements": e.state.SpaceHistory(ch, l.ID, limit),
 			// Posts are here because this is the only place they can be read.
 			// The agent.post event carries metadata only (SPEC §10), so without
 			// this a remark was write-only: delivered once to whoever happened

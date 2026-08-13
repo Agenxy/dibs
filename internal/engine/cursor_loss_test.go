@@ -28,7 +28,7 @@ func TestAStaleCursorIsRefusedOnBothReadPaths(t *testing.T) {
 	defer cancel()
 	go e.Run(ctx)
 
-	res, err := e.Do(ctx, &core.Op{Kind: core.OpRegisterLane, Name: "alpha"})
+	res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "alpha"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestAFirstCursorIsNotTreatedAsLoss(t *testing.T) {
 	defer cancel()
 	go e.Run(ctx)
 
-	res, err := e.Do(ctx, &core.Op{Kind: core.OpRegisterLane, Name: "alpha"})
+	res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "alpha"})
 	if err != nil {
 		t.Fatal(err)
 	}

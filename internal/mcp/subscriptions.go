@@ -94,7 +94,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *
 			return
 		}
 	}
-	laneID, since, err := s.eng.SubscribeInfo(r.Context(), token)
+	agentID, since, err := s.eng.SubscribeInfo(r.Context(), token)
 	if err != nil {
 		writeRPC(w, http.StatusOK, req.ID, nil, rpcErrFrom(err))
 		return
@@ -124,7 +124,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *
 	// Fixed for the lifetime of the stream: 2026-07-28 carries the whole
 	// subscription in the listen call, so there is nothing to re-read.
 	s.pump(r, stream, ch, req.ID, func() (string, bool, bool) {
-		return laneID, wantInbox, wantBoard
+		return agentID, wantInbox, wantBoard
 	})
 }
 
@@ -138,7 +138,7 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *
 // noticed and an unsubscribe never took effect: the stream kept delivering what
 // the client had asked to stop hearing, and stayed silent about what it had
 // just asked for.
-type wantsFunc func() (laneID string, inbox, board bool)
+type wantsFunc func() (agentID string, inbox, board bool)
 
 func (s *Server) pump(r *http.Request, stream sseStream, ch <-chan core.Event,
 	subID json.RawMessage, wants wantsFunc,
@@ -158,8 +158,8 @@ func (s *Server) pump(r *http.Request, stream sseStream, ch <-chan core.Event,
 			if !open {
 				return
 			}
-			laneID, wantInbox, wantBoard := wants()
-			if uri := matchedURI(ev, laneID, wantInbox, wantBoard); uri != "" {
+			agentID, wantInbox, wantBoard := wants()
+			if uri := matchedURI(ev, agentID, wantInbox, wantBoard); uri != "" {
 				if !stream.send(resourceUpdated(uri, subID)) {
 					return
 				}
@@ -169,8 +169,8 @@ func (s *Server) pump(r *http.Request, stream sseStream, ch <-chan core.Event,
 }
 
 // matchedURI returns the subscribed resource URI an event changed, or "".
-func matchedURI(ev core.Event, laneID string, wantInbox, wantBoard bool) string {
-	if wantInbox && ev.To == laneID && strings.HasPrefix(ev.Type, "message.") {
+func matchedURI(ev core.Event, agentID string, wantInbox, wantBoard bool) string {
+	if wantInbox && ev.To == agentID && strings.HasPrefix(ev.Type, "message.") {
 		return "dibs://inbox"
 	}
 	if wantBoard && isBoardEvent(ev) {

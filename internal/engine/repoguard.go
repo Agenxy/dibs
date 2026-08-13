@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	lanespaths "github.com/agenxy/dibs/internal/paths"
+	dibspaths "github.com/agenxy/dibs/internal/paths"
 )
 
 // An agent working in a different repository cannot be duplicating work in this
@@ -52,8 +52,8 @@ func inMatchedRepo(agentCWD, matchRepo string) bool {
 	if agentCWD == "" || matchRepo == "" {
 		return true // no evidence either way; do not gate on ignorance
 	}
-	repo := lanespaths.Canonical(matchRepo)
-	cwd := lanespaths.Canonical(agentCWD)
+	repo := dibspaths.Canonical(matchRepo)
+	cwd := dibspaths.Canonical(agentCWD)
 	if repo == "" || cwd == "" {
 		return true
 	}

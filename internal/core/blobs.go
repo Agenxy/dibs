@@ -119,10 +119,10 @@ func (s *State) BlobWasEvicted(id, agent string) bool {
 	return false
 }
 
-// laneBlobBytes sums the sizes of blobs an agent owns: the per-agent quota metric
+// agentBlobBytes sums the sizes of blobs an agent owns: the per-agent quota metric
 // (A9, fixes P1-3). A blob shared by N owners counts against each; content the
 // agent put is content it is accountable for.
-func (s *State) laneBlobBytes(agent string) int64 {
+func (s *State) agentBlobBytes(agent string) int64 {
 	var total int64
 	for _, b := range s.Blobs {
 		if b.Owners[agent] {
@@ -170,7 +170,7 @@ func (s *State) applyPutBlob(l *Agent, op *Op, now time.Time) (Result, []Event, 
 	if b != nil {
 		addl = b.Size // canonical size wins over caller-claimed
 	}
-	if s.laneBlobBytes(l.ID)+addl > int64(s.Limits.PerLaneBlobBytes) {
+	if s.agentBlobBytes(l.ID)+addl > int64(s.Limits.PerAgentBlobBytes) {
 		return nil, nil, ErrQuota
 	}
 

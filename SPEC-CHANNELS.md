@@ -560,7 +560,7 @@ This table previously listed all eight as though they were configuration. The
 behaviours are real and match the defaults shown; only the keys are absent. The
 full set the daemon accepts is `[match]`: `repo`, `join_threshold`,
 `notify_threshold`, `director_required`, `deadline`, `embed_url`, `embed_model`,
-`embed_query_prefix`, `embed_doc_prefix`; `[limits]`: `lane_ttl`,
+`embed_query_prefix`, `embed_doc_prefix`; `[limits]`: `agent_ttl`,
 `blob_store_bytes`; `[match]` also takes `history` (how many commits `calibrate`
 and the co-change scorer read).
 

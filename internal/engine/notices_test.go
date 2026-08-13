@@ -26,13 +26,13 @@ func TestEveryEventDoneToAnAgentProducesANotice(t *testing.T) {
 	}{{
 		name: "admitted by a director after a gated declaration",
 		ev: core.Event{Type: "agent.joined", Agent: "worker", Serial: 1, Data: map[string]any{
-			"lane_id": "auth", "admitted_by": "director",
+			"agent_id": "auth", "admitted_by": "director",
 		}},
 		want: []string{"admitted", "auth", "director"},
 	}, {
 		name: "promoted off an exclusive space's queue",
 		ev: core.Event{Type: "agent.joined", Agent: "worker", Serial: 2, Data: map[string]any{
-			"lane_id": "auth", "from_queue": true,
+			"agent_id": "auth", "from_queue": true,
 		}},
 		want: []string{"queue", "auth", "member"},
 	}, {
@@ -40,20 +40,20 @@ func TestEveryEventDoneToAnAgentProducesANotice(t *testing.T) {
 		// leaves the agent addressing a deleted agent.
 		name: "carried into another agent by a merge",
 		ev: core.Event{Type: "agent.joined", Agent: "worker", Serial: 3, Data: map[string]any{
-			"lane_id": "auth", "merged_from": "auth-b", "merged_by": "director",
+			"agent_id": "auth", "merged_from": "auth-b", "merged_by": "director",
 		}},
 		want: []string{"auth-b", "merged", "auth", "no longer exists"},
 	}, {
 		name: "still queued, but on the surviving agent after a merge",
 		ev: core.Event{Type: "agent.requeued", Agent: "worker", Serial: 4, Data: map[string]any{
-			"lane_id": "auth", "merged_from": "auth-b", "merged_by": "director",
+			"agent_id": "auth", "merged_from": "auth-b", "merged_by": "director",
 			"queue_position": 2, "owner": "holder",
 		}},
 		want: []string{"auth-b", "no longer exists", "position 2", "holder"},
 	}, {
 		name: "evicted by a director",
 		ev: core.Event{Type: "agent.evicted", Agent: "worker", Serial: 5, Data: map[string]any{
-			"lane_id": "auth", "by": "director",
+			"agent_id": "auth", "by": "director",
 		}},
 		want: []string{"removed", "auth", "director", "stop work"},
 	}, {
@@ -61,7 +61,7 @@ func TestEveryEventDoneToAnAgentProducesANotice(t *testing.T) {
 		// it, and you may now owe acknowledgements you never saw arrive.
 		name: "your agent absorbed another",
 		ev: core.Event{Type: "agent.absorbed", Agent: "worker", Serial: 8, Data: map[string]any{
-			"lane_id": "auth", "merged_from": "auth-b", "merged_by": "director", "gained": 3,
+			"agent_id": "auth", "merged_from": "auth-b", "merged_by": "director", "gained": 3,
 		}},
 		want: []string{"auth-b", "auth", "director", "3 member"},
 	}, {
@@ -69,13 +69,13 @@ func TestEveryEventDoneToAnAgentProducesANotice(t *testing.T) {
 		// agent needs to know is that waiting is now pointless.
 		name: "removed from an agent's queue",
 		ev: core.Event{Type: "agent.evicted", Agent: "worker", Serial: 7, Data: map[string]any{
-			"lane_id": "auth", "by": "director", "from_queue": true,
+			"agent_id": "auth", "by": "director", "from_queue": true,
 		}},
 		want: []string{"queue", "auth", "director", "will not be admitted"},
 	}, {
 		name: "somebody else took the agent exclusively",
 		ev: core.Event{Type: "agent.exclusive", Agent: "worker", Serial: 6, Data: map[string]any{
-			"lane_id": "auth", "owner": "holder",
+			"agent_id": "auth", "owner": "holder",
 		}},
 		want: []string{"auth", "exclusive", "holder"},
 	}}
@@ -104,11 +104,11 @@ func TestEveryEventDoneToAnAgentProducesANotice(t *testing.T) {
 func TestSelfCausedChangesProduceNoNotice(t *testing.T) {
 	for _, ev := range []core.Event{
 		// Joined an agent by itself: no admitted_by, no from_queue, no merge.
-		{Type: "agent.joined", Agent: "worker", Data: map[string]any{"lane_id": "auth"}},
+		{Type: "agent.joined", Agent: "worker", Data: map[string]any{"agent_id": "auth"}},
 		// Took exclusivity itself.
-		{Type: "agent.exclusive", Agent: "worker", Data: map[string]any{"lane_id": "auth", "owner": "worker"}},
+		{Type: "agent.exclusive", Agent: "worker", Data: map[string]any{"agent_id": "auth", "owner": "worker"}},
 		// Ordinary traffic, which the inbox already carries.
-		{Type: "agent.post", Agent: "worker", Data: map[string]any{"lane_id": "auth"}},
+		{Type: "agent.post", Agent: "worker", Data: map[string]any{"agent_id": "auth"}},
 	} {
 		e := &Engine{}
 		e.noteEvent(ev)
@@ -126,7 +126,7 @@ func TestNoticesAreBoundedAndKeepTheNewest(t *testing.T) {
 	for i := 1; i <= maxNotices+5; i++ {
 		e.noteEvent(core.Event{
 			Type: "agent.evicted", Agent: "worker", Serial: uint64(i),
-			Data: map[string]any{"lane_id": "auth", "by": "director"},
+			Data: map[string]any{"agent_id": "auth", "by": "director"},
 		})
 	}
 	got := e.takeNotices("worker")
@@ -167,7 +167,7 @@ func TestTheTokenLessWakePathCannotSpendAnything(t *testing.T) {
 	e := &Engine{}
 	e.noteEvent(core.Event{
 		Type: "agent.joined", Agent: "victim", Serial: 1,
-		Data: map[string]any{"lane_id": "auth", "admitted_by": "director"},
+		Data: map[string]any{"agent_id": "auth", "admitted_by": "director"},
 	})
 
 	// A peer hammers the victim's session. Every read must be identical, because
@@ -207,11 +207,11 @@ func TestAnnouncementsCanBePulled(t *testing.T) {
 	now := time.Unix(1700000000, 0)
 	tok := map[string]string{}
 	for _, n := range []string{"sender", "member"} {
-		res, _, err := st.Apply(&core.Op{Kind: core.OpRegisterLane, Name: n, NewToken: "tok-" + n}, now)
+		res, _, err := st.Apply(&core.Op{Kind: core.OpRegister, Name: n, NewToken: "tok-" + n}, now)
 		if err != nil {
 			t.Fatal(err)
 		}
-		id, _ := res["lane_id"].(string)
+		id, _ := res["agent_id"].(string)
 		tok[n] = id
 		if _, _, err := st.Apply(&core.Op{Kind: core.OpAckBoard, Token: st.Agents[id].Token}, now); err != nil {
 			t.Fatal(err)
@@ -225,9 +225,9 @@ func TestAnnouncementsCanBePulled(t *testing.T) {
 		}
 		return r
 	}
-	ap(&core.Op{Kind: core.OpLaneOpen, Token: st.Agents["sender"].Token, Space: "L", Text: "work"})
-	ap(&core.Op{Kind: core.OpLaneJoin, Token: st.Agents["member"].Token, Space: "L"})
-	r := ap(&core.Op{Kind: core.OpLaneAnnounce, Token: st.Agents["sender"].Token, Space: "L", Body: "FREEZE auth/retry.go"})
+	ap(&core.Op{Kind: core.OpSpaceOpen, Token: st.Agents["sender"].Token, Space: "L", Text: "work"})
+	ap(&core.Op{Kind: core.OpSpaceJoin, Token: st.Agents["member"].Token, Space: "L"})
+	r := ap(&core.Op{Kind: core.OpSpaceAnnounce, Token: st.Agents["sender"].Token, Space: "L", Body: "FREEZE auth/retry.go"})
 	serial := r["serial"].(uint64)
 
 	owed := st.UnackedFor("member")
@@ -253,7 +253,7 @@ func TestAnnouncementsCanBePulled(t *testing.T) {
 		t.Fatalf("the sender does not owe itself an ack, got %d", n)
 	}
 	// Acking clears it, through the pull path too.
-	ap(&core.Op{Kind: core.OpLaneAck, Token: st.Agents["member"].Token, MsgSerial: serial})
+	ap(&core.Op{Kind: core.OpSpaceAck, Token: st.Agents["member"].Token, MsgSerial: serial})
 	if n := len(st.UnackedFor("member")); n != 0 {
 		t.Fatalf("acking must clear the obligation, still %d outstanding", n)
 	}
@@ -267,19 +267,19 @@ func TestAckBoardCarriesWhatYouOwe(t *testing.T) {
 	st := core.NewState("t", core.DefaultLimits())
 	now := time.Unix(1700000000, 0)
 	for _, n := range []string{"sender", "member"} {
-		res, _, err := st.Apply(&core.Op{Kind: core.OpRegisterLane, Name: n, NewToken: "tok-" + n}, now)
+		res, _, err := st.Apply(&core.Op{Kind: core.OpRegister, Name: n, NewToken: "tok-" + n}, now)
 		if err != nil {
 			t.Fatal(err)
 		}
-		id, _ := res["lane_id"].(string)
+		id, _ := res["agent_id"].(string)
 		if _, _, err := st.Apply(&core.Op{Kind: core.OpAckBoard, Token: st.Agents[id].Token}, now); err != nil {
 			t.Fatal(err)
 		}
 	}
 	for _, op := range []*core.Op{
-		{Kind: core.OpLaneOpen, Token: st.Agents["sender"].Token, Space: "L", Text: "work"},
-		{Kind: core.OpLaneJoin, Token: st.Agents["member"].Token, Space: "L"},
-		{Kind: core.OpLaneAnnounce, Token: st.Agents["sender"].Token, Space: "L", Body: "FREEZE auth/retry.go"},
+		{Kind: core.OpSpaceOpen, Token: st.Agents["sender"].Token, Space: "L", Text: "work"},
+		{Kind: core.OpSpaceJoin, Token: st.Agents["member"].Token, Space: "L"},
+		{Kind: core.OpSpaceAnnounce, Token: st.Agents["sender"].Token, Space: "L", Body: "FREEZE auth/retry.go"},
 	} {
 		if _, _, err := st.Apply(op, now); err != nil {
 			t.Fatalf("%s: %v", op.Kind, err)
@@ -316,11 +316,11 @@ func TestTheWakePathNamesWhatIsWaitingWithoutQuotingIt(t *testing.T) {
 	st := core.NewState("t", core.DefaultLimits())
 	now := time.Unix(1700000000, 0)
 	for _, n := range []string{"victim", "peer"} {
-		res, _, err := st.Apply(&core.Op{Kind: core.OpRegisterLane, Name: n, NewToken: "tok-" + n}, now)
+		res, _, err := st.Apply(&core.Op{Kind: core.OpRegister, Name: n, NewToken: "tok-" + n}, now)
 		if err != nil {
 			t.Fatal(err)
 		}
-		id, _ := res["lane_id"].(string)
+		id, _ := res["agent_id"].(string)
 		if _, _, err := st.Apply(&core.Op{Kind: core.OpAckBoard, Token: st.Agents[id].Token}, now); err != nil {
 			t.Fatal(err)
 		}
@@ -369,7 +369,7 @@ func TestEveryPathThatClearsANoticeDeliversItFirst(t *testing.T) {
 	e := &Engine{}
 	e.noteEvent(core.Event{
 		Type: "agent.joined", Agent: "worker", Serial: 1,
-		Data: map[string]any{"lane_id": "auth", "admitted_by": "director"},
+		Data: map[string]any{"agent_id": "auth", "admitted_by": "director"},
 	})
 
 	delivered := e.pendingNotices("worker")
@@ -456,7 +456,7 @@ func TestAReopenedLaneIdDoesNotInheritTheOldFootprint(t *testing.T) {
 	// The agent ends...
 	e.publish([]core.Event{{
 		Type: "agent.reclaimed",
-		Data: map[string]any{"lane_id": "shared-id", "topic": "the old work"},
+		Data: map[string]any{"agent_id": "shared-id", "topic": "the old work"},
 	}})
 	// ...and the id is immediately taken again, so a live-set sweep would see
 	// it as present and skip it.
@@ -469,7 +469,7 @@ func TestAReopenedLaneIdDoesNotInheritTheOldFootprint(t *testing.T) {
 }
 
 // A merge deletes the SOURCE agent, and its id is carried as `from`. Using
-// `lane_id` would silently forget nothing, because on this event lane_id names
+// `agent_id` would silently forget nothing, because on this event agent_id names
 // the coordinator who did the merge.
 func TestAMergedAwayLaneAlsoLosesItsFootprint(t *testing.T) {
 	e := &Engine{footprints: map[string][]core.PredFile{
@@ -499,15 +499,15 @@ func TestALaneIsNamedForTheWorkNotTheSentence(t *testing.T) {
 		// Already terse: unchanged, not padded.
 		{"blob eviction", "blob eviction"},
 	} {
-		if got := laneName(c.declaration); got != c.want {
-			t.Errorf("laneName(%q) = %q, want %q", c.declaration, got, c.want)
+		if got := spaceName(c.declaration); got != c.want {
+			t.Errorf("spaceName(%q) = %q, want %q", c.declaration, got, c.want)
 		}
 	}
 
 	// A declaration that is ALL filler is still a declaration. Naming an agent ""
 	// would be worse than naming it badly: cleanID would reject it and the
 	// agent would never open, silently.
-	if got := laneName("I am just working on it"); got == "" {
+	if got := spaceName("I am just working on it"); got == "" {
 		t.Error("an all-filler declaration must still yield a name, or the agent never opens")
 	}
 }
@@ -520,16 +520,16 @@ func TestALaneIsNamedForTheWorkNotTheSentence(t *testing.T) {
 // alone" about work it had stopped doing. The bar for "you already coordinate on
 // this" must be the bar used for "this is worth mentioning at all".
 func TestOnlyRelevantMembershipSuppressesANewLane(t *testing.T) {
-	faint := []core.LaneMatch{{Agent: "old", Score: 0.02, AlreadyIn: true}}
+	faint := []core.AgentMatch{{Agent: "old", Score: 0.02, AlreadyIn: true}}
 	if alreadyCoordinating(faint, 0.15) {
 		t.Error("a faint overlap with an agent you are in must not block an agent for new work")
 	}
-	real := []core.LaneMatch{{Agent: "old", Score: 0.40, AlreadyIn: true}}
+	real := []core.AgentMatch{{Agent: "old", Score: 0.40, AlreadyIn: true}}
 	if !alreadyCoordinating(real, 0.15) {
 		t.Error("a real overlap with an agent you are in must not spawn a duplicate")
 	}
 	// Somebody else's agent never suppresses: that is a match, not a membership.
-	theirs := []core.LaneMatch{{Agent: "theirs", Score: 0.90, AlreadyIn: false}}
+	theirs := []core.AgentMatch{{Agent: "theirs", Score: 0.90, AlreadyIn: false}}
 	if alreadyCoordinating(theirs, 0.15) {
 		t.Error("an agent you are NOT in is a suggestion, not a reason to stay silent")
 	}

@@ -86,7 +86,7 @@ func TestAStalledAgentReachesTheLaneThatSpawnedIt(t *testing.T) {
 	// logic.
 	s := core.NewState("n1", core.DefaultLimits())
 	if _, _, err := s.Apply(&core.Op{
-		Kind: core.OpRegisterLane, Name: "builder", NewToken: "tok",
+		Kind: core.OpRegister, Name: "builder", NewToken: "tok",
 	}, time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -140,8 +140,8 @@ func TestAStalledAgentReachesTheLaneThatSpawnedIt(t *testing.T) {
 		t.Fatalf("classifier: %s. %s", v.State, v.Why)
 	}
 	if !e.reportStallLocked(*mine, v, "") {
-		t.Fatalf("reportStallLocked declined to deliver for owner=%q; laneForOwner said %q",
-			mine.Owner, e.laneForOwner(mine.Owner))
+		t.Fatalf("reportStallLocked declined to deliver for owner=%q; agentForOwner said %q",
+			mine.Owner, e.agentForOwner(mine.Owner))
 	}
 	e.notices = nil // reset; the sweep must do this itself
 	e.superviseOnce(ctx, cfg, map[int][]liveness.Sample{}, map[int]bool{})

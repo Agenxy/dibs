@@ -33,7 +33,7 @@ func (l *Agent) IsAdmin() bool { return l.Role == RoleAdmin }
 func (s *State) applyGrantRole(op *Op, now time.Time) (Result, []Event, error) {
 	l, ok := s.Agents[op.To]
 	if !ok {
-		return nil, nil, errf("E_NO_LANE", "check the board for live agents", "no agent %q", op.To)
+		return nil, nil, errf("E_NO_AGENT", "check the board for live agents", "no agent %q", op.To)
 	}
 	role := op.Mode
 	if role != RoleMember && role != RoleCoordinator && role != RoleAdmin {
@@ -73,9 +73,9 @@ func (s *State) applyForceRelease(l *Agent, op *Op) (Result, []Event, error) {
 	return nil, nil, errf("E_NO_CLAIM", "list claims via the board", "no claim on %q", path)
 }
 
-// LiveLanesExcept returns every live agent other than one, sorted: the engine
+// LiveAgentsExcept returns every live agent other than one, sorted: the engine
 // uses it to fan a broadcast out deterministically.
-func (s *State) LiveLanesExcept(id string) []*Agent {
+func (s *State) LiveAgentsExcept(id string) []*Agent {
 	out := make([]*Agent, 0, len(s.Agents))
 	for _, l := range s.Agents {
 		if l.ID == id || l.Status == StatusClosed || l.Status == StatusArchived {
@@ -83,11 +83,11 @@ func (s *State) LiveLanesExcept(id string) []*Agent {
 		}
 		out = append(out, l)
 	}
-	sortLanesByID(out)
+	sortAgentsByID(out)
 	return out
 }
 
-func sortLanesByID(ls []*Agent) {
+func sortAgentsByID(ls []*Agent) {
 	for i := 1; i < len(ls); i++ {
 		for j := i; j > 0 && ls[j-1].ID > ls[j].ID; j-- {
 			ls[j-1], ls[j] = ls[j], ls[j-1]
@@ -95,9 +95,9 @@ func sortLanesByID(ls []*Agent) {
 	}
 }
 
-// LaneBySession finds the agent bound to a harness session id. Used by lifecycle
+// AgentBySession finds the agent bound to a harness session id. Used by lifecycle
 // hooks, which know their session but hold no agent token.
-func (s *State) LaneBySession(sid string) *Agent {
+func (s *State) AgentBySession(sid string) *Agent {
 	if sid == "" {
 		return nil
 	}
@@ -109,7 +109,7 @@ func (s *State) LaneBySession(sid string) *Agent {
 	return nil
 }
 
-// LaneForHook resolves the agent a lifecycle hook is speaking for.
+// AgentForHook resolves the agent a lifecycle hook is speaking for.
 //
 // A hook knows what its OWN harness calls the session. That is not always what
 // the agent registered with: the stdio bridge supplies `bridge-<pid>-<random>`
@@ -124,8 +124,8 @@ func (s *State) LaneBySession(sid string) *Agent {
 // agent sits in that directory. Two agents in one checkout is precisely the case
 // where guessing would attribute an edit to the wrong agent, and a wrong
 // attribution here means allowing a write that should have been refused.
-func (s *State) LaneForHook(sid, cwd string) *Agent {
-	if l := s.LaneBySession(sid); l != nil {
+func (s *State) AgentForHook(sid, cwd string) *Agent {
+	if l := s.AgentBySession(sid); l != nil {
 		return l
 	}
 	// A session id that was SUPPLIED and matched nothing is positive evidence

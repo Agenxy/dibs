@@ -60,7 +60,7 @@ func TestALaneDoesNotGetEasierToMatchAsItGrows(t *testing.T) {
 		// forgets. This is what the newcomer used to be compared against.
 		ch.Predicted = mergePredicted(ch.Predicted, fp("auth/token.go"))
 		s.Spaces = map[string]*Space{"agent": ch}
-		got := s.MatchLanesEvidence("newcomer", newcomer, "/repo", "/repo", nil, nil, 5)
+		got := s.MatchAgentsEvidence("newcomer", newcomer, "/repo", "/repo", nil, nil, 5)
 		if len(got) == 0 {
 			return 0
 		}
@@ -101,7 +101,7 @@ func TestTheRightMemberIsStillFound(t *testing.T) {
 	}, now)
 	s.Spaces = map[string]*Space{"agent": ch}
 
-	got := s.MatchLanesEvidence("newcomer", Slot{
+	got := s.MatchAgentsEvidence("newcomer", Slot{
 		Text: "token refresh work", Dirs: []string{"/repo/auth"},
 		Predicted: fp("auth/token.go", "auth/session.go"),
 	}, "/repo", "/repo", nil, nil, 5)
@@ -127,7 +127,7 @@ func TestTheRightMemberIsStillFound(t *testing.T) {
 func addMember(t *testing.T, s *State, ch *Space, id string, sl Slot, now time.Time) {
 	t.Helper()
 	if _, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: id, NewToken: "tok-" + id,
+		Kind: OpRegister, Name: id, NewToken: "tok-" + id,
 		Agent: &AgentInfo{CWD: "/repo"},
 	}, now); err != nil {
 		t.Fatal(err)
@@ -152,7 +152,7 @@ func addMember(t *testing.T, s *State, ch *Space, id string, sl Slot, now time.T
 func TestALaneWithNoMemberDeclarationIsStillFindable(t *testing.T) {
 	s, a := chState(t, "opener", "newcomer")
 	do(t, s, &Op{
-		Kind: OpLaneOpen, Token: a["opener"].Token, Space: "guard-work",
+		Kind: OpSpaceOpen, Token: a["opener"].Token, Space: "guard-work",
 		Text:      "claim guard denies edits to claimed paths",
 		Predicted: fp("internal/core/claims.go", "internal/core/guard.go"),
 	})
@@ -165,7 +165,7 @@ func TestALaneWithNoMemberDeclarationIsStillFindable(t *testing.T) {
 		Text:      "guard path enforcement for exclusive claims",
 		Predicted: fp("internal/core/claims.go", "internal/core/guard.go"),
 	}
-	got := s.MatchLanesEvidence(a["newcomer"].ID, mine, "", "", nil, nil, 5)
+	got := s.MatchAgentsEvidence(a["newcomer"].ID, mine, "", "", nil, nil, 5)
 	if len(got) == 0 {
 		t.Fatal("an agent opened for work nobody has declared yet is invisible forever")
 	}
@@ -183,7 +183,7 @@ func TestALaneWithNoMemberDeclarationIsStillFindable(t *testing.T) {
 		Text:      "something else entirely",
 		Predicted: fp("totally/unrelated.go"),
 	}}
-	got = s.MatchLanesEvidence(a["newcomer"].ID, mine, "", "", nil, nil, 5)
+	got = s.MatchAgentsEvidence(a["newcomer"].ID, mine, "", "", nil, nil, 5)
 	for _, m := range got {
 		if m.Agent == "guard-work" && m.Score > 0 {
 			t.Errorf("a measured, unalike member still scored %v off the agent's union", m.Score)
@@ -205,22 +205,22 @@ func TestALaneWithNoMemberDeclarationIsStillFindable(t *testing.T) {
 func TestAnEmptyLaneIsNotSomebodyElsesWork(t *testing.T) {
 	s, a := chState(t, "opener", "newcomer")
 	do(t, s, &Op{
-		Kind: OpLaneOpen, Token: a["opener"].Token, Space: "abandoned",
+		Kind: OpSpaceOpen, Token: a["opener"].Token, Space: "abandoned",
 		Text: "rotating the refresh token", Predicted: fp("auth/token.go"),
 	})
 	mine := Slot{Text: "rotating the refresh token", Predicted: fp("auth/token.go")}
 
 	// While somebody is in it, it is a real match: otherwise this test could
 	// pass by breaking matching altogether.
-	if got := s.MatchLanesEvidence(a["newcomer"].ID, mine, "", "", nil, nil, 5); len(got) == 0 {
+	if got := s.MatchAgentsEvidence(a["newcomer"].ID, mine, "", "", nil, nil, 5); len(got) == 0 {
 		t.Fatal("an occupied agent doing identical work did not match; the check below proves nothing")
 	}
 
-	do(t, s, &Op{Kind: OpLaneLeave, Token: a["opener"].Token, Space: "abandoned"})
+	do(t, s, &Op{Kind: OpSpaceLeave, Token: a["opener"].Token, Space: "abandoned"})
 	if _, alive := s.Spaces["abandoned"]; !alive {
 		t.Fatal("the agent was reclaimed; this test needs one that persists while empty")
 	}
-	for _, m := range s.MatchLanesEvidence(a["newcomer"].ID, mine, "", "", nil, nil, 5) {
+	for _, m := range s.MatchAgentsEvidence(a["newcomer"].ID, mine, "", "", nil, nil, 5) {
 		if m.Agent == "abandoned" {
 			t.Errorf("an empty agent was offered as a match (members=%d, score=%v)",
 				m.Members, m.Score)
@@ -232,7 +232,7 @@ func TestAnEmptyLaneIsNotSomebodyElsesWork(t *testing.T) {
 	ch := s.Spaces["abandoned"]
 	ch.Queue = []string{a["opener"].ID}
 	found := false
-	for _, m := range s.MatchLanesEvidence(a["newcomer"].ID, mine, "", "", nil, nil, 5) {
+	for _, m := range s.MatchAgentsEvidence(a["newcomer"].ID, mine, "", "", nil, nil, 5) {
 		if m.Agent == "abandoned" {
 			found = true
 		}

@@ -95,7 +95,7 @@ func TestPortsAreSwappable(t *testing.T) {
 	defer cancel()
 	go e.Run(ctx)
 
-	res, err := e.Do(ctx, &core.Op{Kind: core.OpRegisterLane, Name: "alpha"})
+	res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "alpha"})
 	if err != nil {
 		t.Fatalf("register through swapped ports: %v", err)
 	}

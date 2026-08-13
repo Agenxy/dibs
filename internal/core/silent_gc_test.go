@@ -77,7 +77,7 @@ func TestExpiredDedupRecordsAreRecordedToo(t *testing.T) {
 func TestDedupEvictionIsDeterministicWhenTimestampsTie(t *testing.T) {
 	build := func() *State {
 		s := NewState("n1", DefaultLimits())
-		s.Limits.DedupPerLane = 2
+		s.Limits.DedupPerAgent = 2
 		at := time.Now().Add(-time.Minute) // identical for every record
 		for _, id := range []string{"op-1", "op-2", "op-3", "op-4", "op-5"} {
 			s.Dedup[dedupKey("a", id)] = &DedupRec{Agent: "a", ID: id, At: at}

@@ -32,7 +32,7 @@ func (e *Engine) Broadcast(ctx context.Context, token, msgType, body string) (co
 			return core.Result{"error": core.ErrNotCoordinator}
 		}
 		ids := []string{}
-		for _, to := range e.state.LiveLanesExcept(l.ID) {
+		for _, to := range e.state.LiveAgentsExcept(l.ID) {
 			ids = append(ids, to.ID)
 		}
 		return core.Result{"ids": ids}

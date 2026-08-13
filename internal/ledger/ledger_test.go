@@ -85,10 +85,10 @@ func TestReplayDeterminism(t *testing.T) {
 	led, path := newLedger(t)
 	st := core.NewState("test", core.DefaultLimits())
 
-	apply(t, st, led, &core.Op{Kind: core.OpRegisterLane, Name: "alpha", NewToken: "ta"}, t0)
+	apply(t, st, led, &core.Op{Kind: core.OpRegister, Name: "alpha", NewToken: "ta"}, t0)
 	apply(t, st, led, &core.Op{
-		Kind: core.OpRegisterLane, Name: "rev", NewToken: "tr",
-		Nonce: "nonce-r", LaneKind: core.KindPersistent,
+		Kind: core.OpRegister, Name: "rev", NewToken: "tr",
+		Nonce: "nonce-r", AgentKind: core.KindPersistent,
 	}, t0.Add(time.Second))
 	apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: "ta"}, t0.Add(2*time.Second))
 	apply(t, st, led, &core.Op{Kind: core.OpSetSlot, Token: "ta", Text: "building"}, t0.Add(3*time.Second))
@@ -98,8 +98,8 @@ func TestReplayDeterminism(t *testing.T) {
 	}, t0.Add(4*time.Second))
 	apply(t, st, led, &core.Op{Kind: core.OpClaim, Token: "ta", Path: "/repo", Mode: core.ClaimExclusive}, t0.Add(5*time.Second))
 	// Dormancy, resume with rotation, wake, checkpoint, consumption.
-	apply(t, st, led, &core.Op{Kind: core.OpSweep, StaleLanes: []string{"rev"}}, t0.Add(10*time.Minute))
-	apply(t, st, led, &core.Op{Kind: core.OpResumeLane, Nonce: "nonce-r", ResumeID: "r1", NewToken: "tr2", PID: 99}, t0.Add(20*time.Minute))
+	apply(t, st, led, &core.Op{Kind: core.OpSweep, StaleAgents: []string{"rev"}}, t0.Add(10*time.Minute))
+	apply(t, st, led, &core.Op{Kind: core.OpResume, Nonce: "nonce-r", ResumeID: "r1", NewToken: "tr2", PID: 99}, t0.Add(20*time.Minute))
 	apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: "tr2"}, t0.Add(21*time.Minute))
 	apply(t, st, led, &core.Op{Kind: core.OpRespond, Token: "tr2", MsgSerial: 5, Disposition: "answer", Body: "yes"}, t0.Add(22*time.Minute))
 	apply(t, st, led, &core.Op{Kind: core.OpActivityCheckpoint, Token: "ta"}, t0.Add(23*time.Minute))
@@ -112,7 +112,7 @@ func TestReplayDeterminism(t *testing.T) {
 	if !reflect.DeepEqual(st.Board(), st2.Board()) {
 		t.Fatal("board mismatch after replay")
 	}
-	if st2.LaneByToken("tr2") == nil || st2.LaneByToken("tr") != nil {
+	if st2.AgentByToken("tr2") == nil || st2.AgentByToken("tr") != nil {
 		t.Fatal("token rotation lost in replay")
 	}
 	if st2.Agents["rev"].Activation != 1 {
@@ -130,10 +130,10 @@ func TestEncryptionAtRestIncludesNonce(t *testing.T) {
 	led, path := newLedger(t)
 	st := core.NewState("test", core.DefaultLimits())
 	apply(t, st, led, &core.Op{
-		Kind: core.OpRegisterLane, Name: "a", NewToken: "super-secret-token",
-		Nonce: "super-secret-nonce", LaneKind: core.KindPersistent,
+		Kind: core.OpRegister, Name: "a", NewToken: "super-secret-token",
+		Nonce: "super-secret-nonce", AgentKind: core.KindPersistent,
 	}, t0)
-	apply(t, st, led, &core.Op{Kind: core.OpRegisterLane, Name: "b", NewToken: "tb"}, t0)
+	apply(t, st, led, &core.Op{Kind: core.OpRegister, Name: "b", NewToken: "tb"}, t0)
 	apply(t, st, led, &core.Op{
 		Kind: core.OpSendMessage, Token: "super-secret-token", To: "b",
 		MsgType: core.MsgNotify, Body: "the private body",
@@ -156,7 +156,7 @@ func TestEncryptionAtRestIncludesNonce(t *testing.T) {
 func TestTornTailTruncation(t *testing.T) {
 	led, path := newLedger(t)
 	st := core.NewState("test", core.DefaultLimits())
-	apply(t, st, led, &core.Op{Kind: core.OpRegisterLane, Name: "a", NewToken: "ta"}, t0)
+	apply(t, st, led, &core.Op{Kind: core.OpRegister, Name: "a", NewToken: "ta"}, t0)
 	apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: "ta"}, t0)
 	_ = led.Close()
 
@@ -177,7 +177,7 @@ func TestHashChainDetectsTampering(t *testing.T) {
 	led, path := newLedger(t)
 	st := core.NewState("test", core.DefaultLimits())
 	for _, n := range []string{"a", "b", "c"} {
-		apply(t, st, led, &core.Op{Kind: core.OpRegisterLane, Name: n, NewToken: "t" + n}, t0)
+		apply(t, st, led, &core.Op{Kind: core.OpRegister, Name: n, NewToken: "t" + n}, t0)
 	}
 	_ = led.Close()
 	raw, _ := os.ReadFile(path)
@@ -214,7 +214,7 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 	// to trust it.
 	for i, n := range []string{"seedа", "seedb", "seedc"} {
 		tok := "seedtok" + itoa(i)
-		apply(t, st, led, &core.Op{Kind: core.OpRegisterLane, Name: n, NewToken: tok}, now)
+		apply(t, st, led, &core.Op{Kind: core.OpRegister, Name: n, NewToken: tok}, now)
 		apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: tok}, now)
 		tokens = append(tokens, tok)
 	}
@@ -222,33 +222,33 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 	// so these four are covered on EVERY seed, and a guard that ignored them
 	// would still fail on the draws where the walk happens to miss one.
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneOpen, Token: "seedtokaa",
+		Kind: core.OpSpaceOpen, Token: "seedtokaa",
 		Space: "seedlane", Text: "seeded work",
 	}, now)
-	accepted[core.OpLaneOpen]++
+	accepted[core.OpSpaceOpen]++
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneJoin, Token: "seedtokba",
+		Kind: core.OpSpaceJoin, Token: "seedtokba",
 		Space: "seedlane", Score: 0.66, ScorerID: "seed",
 	}, now)
-	accepted[core.OpLaneJoin]++
+	accepted[core.OpSpaceJoin]++
 	seeded := apply(t, st, led, &core.Op{
-		Kind: core.OpLaneAnnounce, Token: "seedtokaa",
+		Kind: core.OpSpaceAnnounce, Token: "seedtokaa",
 		Space: "seedlane", Body: "seeded announcement",
 	}, now)
-	accepted[core.OpLaneAnnounce]++
+	accepted[core.OpSpaceAnnounce]++
 	if ser, ok := seeded["serial"].(uint64); ok {
 		announceSerials = append(announceSerials, ser)
 	}
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneAck, Token: "seedtokba",
+		Kind: core.OpSpaceAck, Token: "seedtokba",
 		MsgSerial: announceSerials[0],
 	}, now)
-	accepted[core.OpLaneAck]++
+	accepted[core.OpSpaceAck]++
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneLeave, Token: "seedtokba",
+		Kind: core.OpSpaceLeave, Token: "seedtokba",
 		Space: "seedlane",
 	}, now)
-	accepted[core.OpLaneLeave]++
+	accepted[core.OpSpaceLeave]++
 
 	for i := 0; i < 1500; i++ {
 		now = now.Add(time.Duration(rng.Intn(30000)) * time.Millisecond)
@@ -256,9 +256,9 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 		switch k := rng.Intn(40); {
 		case k == 0 && len(tokens) < 15:
 			tok := "tok" + itoa(len(tokens))
-			op = &core.Op{Kind: core.OpRegisterLane, Name: "agent" + tok, NewToken: tok}
+			op = &core.Op{Kind: core.OpRegister, Name: "agent" + tok, NewToken: tok}
 			if rng.Intn(3) == 0 {
-				op.LaneKind = core.KindPersistent
+				op.AgentKind = core.KindPersistent
 				op.Nonce = "nonce-" + tok
 				nonces[tok] = op.Nonce
 			}
@@ -281,7 +281,7 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 				Path: "/p" + pick(rng, tokens), Mode: pickMode(rng),
 			}
 		case k == 8:
-			op = &core.Op{Kind: core.OpSweep, StaleLanes: staleSubset(rng, st)}
+			op = &core.Op{Kind: core.OpSweep, StaleAgents: staleSubset(rng, st)}
 		case k == 9:
 			op = &core.Op{Kind: core.OpAckMessage, Token: pick(rng, tokens), MsgSerial: uint64(rng.Intn(int(st.Serial + 1)))}
 		case k == 10:
@@ -292,12 +292,12 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 		case k == 11:
 			tok := pick(rng, tokens)
 			if n, ok := nonces[tok]; ok {
-				op = &core.Op{Kind: core.OpResumeLane, Nonce: n, ResumeID: "r" + itoa(i), NewToken: tok} // rotate to same token: keeps map valid
+				op = &core.Op{Kind: core.OpResume, Nonce: n, ResumeID: "r" + itoa(i), NewToken: tok} // rotate to same token: keeps map valid
 			} else {
 				op = &core.Op{Kind: core.OpHeartbeat, Token: tok}
 			}
 		case k == 12:
-			op = &core.Op{Kind: core.OpWakeLane, Token: pick(rng, tokens)}
+			op = &core.Op{Kind: core.OpWake, Token: pick(rng, tokens)}
 		// Spaces (SPEC-CHANNELS.md). Included here because this is the
 		// load-bearing determinism gate (SPEC §17), and space membership is
 		// the one piece of state decided by an IMPURE input: a similarity
@@ -305,13 +305,13 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 		// value, this is the test that catches it.
 		case k == 14:
 			op = &core.Op{
-				Kind: core.OpLaneOpen, Token: pick(rng, tokens),
+				Kind: core.OpSpaceOpen, Token: pick(rng, tokens),
 				Space: "agent" + itoa(rng.Intn(6)), Text: "topic",
 				Exclusive: rng.Intn(3) == 0,
 			}
 		case k == 15:
 			op = &core.Op{
-				Kind: core.OpLaneJoin, Token: pick(rng, tokens),
+				Kind: core.OpSpaceJoin, Token: pick(rng, tokens),
 				Space: "agent" + itoa(rng.Intn(6)),
 				Score: rng.Float64(), Threshold: 0.327,
 				ScorerID: "lexical+cochange", ScorerVersion: "1",
@@ -319,23 +319,23 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 			}
 		case k == 16:
 			op = &core.Op{
-				Kind: core.OpLaneAnnounce, Token: pick(rng, tokens),
+				Kind: core.OpSpaceAnnounce, Token: pick(rng, tokens),
 				Space: "agent" + itoa(rng.Intn(6)), Body: "announcement",
 			}
 		case k == 17:
 			op = &core.Op{
-				Kind: core.OpLaneAck, Token: pick(rng, tokens),
+				Kind: core.OpSpaceAck, Token: pick(rng, tokens),
 				MsgSerial: uint64(rng.Intn(int(st.Serial + 1))),
 			}
 		case k == 18:
 			op = &core.Op{
-				Kind: core.OpLaneExclusive, Token: pick(rng, tokens),
+				Kind: core.OpSpaceExclusive, Token: pick(rng, tokens),
 				Space: "agent" + itoa(rng.Intn(6)),
 				Mode:  []string{"exclusive", "release"}[rng.Intn(2)],
 			}
 		case k == 19:
 			op = &core.Op{
-				Kind: core.OpLaneLeave, Token: pick(rng, tokens),
+				Kind: core.OpSpaceLeave, Token: pick(rng, tokens),
 				Space: "agent" + itoa(rng.Intn(6)),
 			}
 		// The four below were absent from this walk, and all four turned out to
@@ -345,13 +345,13 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 		// whatever the rest of the suite says about it.
 		case k == 13:
 			op = &core.Op{
-				Kind: core.OpLaneSubscribe, Token: pick(rng, tokens),
+				Kind: core.OpSpaceSubscribe, Token: pick(rng, tokens),
 				Space: "agent" + itoa(rng.Intn(6)),
 				Mode:  []string{"", "release"}[rng.Intn(2)],
 			}
 		case k == 20:
 			op = &core.Op{
-				Kind: core.OpLanePost, Token: pick(rng, tokens),
+				Kind: core.OpSpacePost, Token: pick(rng, tokens),
 				Space: "agent" + itoa(rng.Intn(6)), Body: "post",
 			}
 		case k == 21:
@@ -361,7 +361,7 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 			if n, ok := nonces[tok]; ok {
 				fresh := "re" + itoa(i)
 				op = &core.Op{
-					Kind: core.OpRegisterLane, Name: "agent" + tok,
+					Kind: core.OpRegister, Name: "agent" + tok,
 					Nonce: n, NewToken: fresh,
 				}
 				tokens = append(tokens, fresh)
@@ -376,7 +376,7 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 			// Late, and rarely: pruning early would empty the board and starve
 			// every other branch of agents to act on.
 			if rng.Intn(8) == 0 {
-				op = &core.Op{Kind: core.OpPruneLane, To: "agent" + pick(rng, tokens)}
+				op = &core.Op{Kind: core.OpPrune, To: "agent" + pick(rng, tokens)}
 			} else {
 				op = &core.Op{Kind: core.OpBindSession, Token: pick(rng, tokens), SessionID: "s" + itoa(i)}
 			}
@@ -388,16 +388,16 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 			continue // rejected ops are never ledgered
 		}
 		accepted[op.Kind]++
-		if op.Kind == core.OpLaneAnnounce {
+		if op.Kind == core.OpSpaceAnnounce {
 			if ser, ok := res["serial"].(uint64); ok {
 				announceSerials = append(announceSerials, ser)
 			}
 		}
 		// Promote the first agent that opens an agent, so the director branches
 		// have somebody to run as.
-		if coordinator == "" && op.Kind == core.OpLaneOpen {
-			agent, _ := res["lane_id"].(string)
-			owner := st.LaneByToken(op.Token)
+		if coordinator == "" && op.Kind == core.OpSpaceOpen {
+			agent, _ := res["agent_id"].(string)
+			owner := st.AgentByToken(op.Token)
 			if owner != nil && agent != "" {
 				if _, gerr := applyE(st, led, &core.Op{
 					Kind: core.OpGrantRole,
@@ -446,8 +446,8 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 	// that exercised spaces HARDER finished with fewer. Counting accepted ops
 	// measures the thing the gate is actually for.
 	for _, kind := range []string{
-		core.OpLaneOpen, core.OpLaneJoin, core.OpLaneLeave, core.OpLaneAnnounce,
-		core.OpLaneSubscribe, core.OpLanePost, core.OpBindSession, core.OpPruneLane,
+		core.OpSpaceOpen, core.OpSpaceJoin, core.OpSpaceLeave, core.OpSpaceAnnounce,
+		core.OpSpaceSubscribe, core.OpSpacePost, core.OpBindSession, core.OpPrune,
 	} {
 		if accepted[kind] == 0 {
 			t.Errorf("%s was never accepted in 1500 ops: the gate is not covering it", kind)
@@ -571,8 +571,8 @@ func TestBlobReplayDeterminism(t *testing.T) {
 	led, path := newLedger(t)
 	st := core.NewState("test", core.DefaultLimits())
 
-	apply(t, st, led, &core.Op{Kind: core.OpRegisterLane, Name: "alpha", NewToken: "ta"}, t0)
-	apply(t, st, led, &core.Op{Kind: core.OpRegisterLane, Name: "beta", NewToken: "tb"}, t0)
+	apply(t, st, led, &core.Op{Kind: core.OpRegister, Name: "alpha", NewToken: "ta"}, t0)
+	apply(t, st, led, &core.Op{Kind: core.OpRegister, Name: "beta", NewToken: "tb"}, t0)
 	apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: "ta"}, t0)
 	// Two agents put the SAME content: registered then owner_added.
 	body := "the-generated-dataset-bytes"
@@ -645,43 +645,43 @@ func TestChannelReplayDeterminism(t *testing.T) {
 	st := core.NewState("test", core.DefaultLimits())
 
 	for i, n := range []string{"alpha", "beta", "gamma"} {
-		apply(t, st, led, &core.Op{Kind: core.OpRegisterLane, Name: n, NewToken: "t" + n},
+		apply(t, st, led, &core.Op{Kind: core.OpRegister, Name: n, NewToken: "t" + n},
 			t0.Add(time.Duration(i)*time.Second))
 		apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: "t" + n},
 			t0.Add(time.Duration(i)*time.Second+500*time.Millisecond))
 	}
 
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneOpen, Token: "talpha",
+		Kind: core.OpSpaceOpen, Token: "talpha",
 		Space: "auth-refactor", Text: "reworking the auth middleware",
 	}, t0.Add(10*time.Second))
 	// An auto-join carrying a recorded score and its evidence.
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneJoin, Token: "tbeta", Space: "auth-refactor",
+		Kind: core.OpSpaceJoin, Token: "tbeta", Space: "auth-refactor",
 		Score: 0.8137, Threshold: 0.327, ScorerID: "lexical+cochange", ScorerVersion: "1",
 		Evidence: []string{"internal/mcp/identity.go", "internal/core/roles.go"}, Auto: true,
 	},
 		t0.Add(11*time.Second))
 	ann := apply(t, st, led, &core.Op{
-		Kind: core.OpLaneAnnounce, Token: "talpha",
+		Kind: core.OpSpaceAnnounce, Token: "talpha",
 		Space: "auth-refactor", Body: "renaming AgentInfo.Token",
 	}, t0.Add(12*time.Second))
 	annSerial, ok := ann["serial"].(uint64)
 	if !ok {
 		t.Fatalf("announce must return its serial, got %v", ann)
 	}
-	apply(t, st, led, &core.Op{Kind: core.OpLaneAck, Token: "tbeta", MsgSerial: annSerial}, t0.Add(13*time.Second))
+	apply(t, st, led, &core.Op{Kind: core.OpSpaceAck, Token: "tbeta", MsgSerial: annSerial}, t0.Add(13*time.Second))
 	// A second, exclusive space with somebody queued behind it.
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneOpen, Token: "tgamma",
+		Kind: core.OpSpaceOpen, Token: "tgamma",
 		Space: "hot", Text: "single-writer work", Exclusive: true,
 	}, t0.Add(14*time.Second))
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneJoin, Token: "talpha", Space: "hot",
+		Kind: core.OpSpaceJoin, Token: "talpha", Space: "hot",
 		Score: 0.91, Threshold: 0.327, ScorerID: "lexical+cochange",
 	}, t0.Add(15*time.Second))
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLanePost, Token: "tbeta",
+		Kind: core.OpSpacePost, Token: "tbeta",
 		Space: "auth-refactor", Body: "halfway through",
 	}, t0.Add(16*time.Second))
 	_ = led.Close()
@@ -763,7 +763,7 @@ func TestDirectorReplayDeterminism(t *testing.T) {
 	st := core.NewState("test", core.DefaultLimits())
 
 	for i, n := range []string{"owner", "waiter", "boss", "stray"} {
-		apply(t, st, led, &core.Op{Kind: core.OpRegisterLane, Name: n, NewToken: "t" + n},
+		apply(t, st, led, &core.Op{Kind: core.OpRegister, Name: n, NewToken: "t" + n},
 			t0.Add(time.Duration(i)*time.Second))
 		apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: "t" + n},
 			t0.Add(time.Duration(i)*time.Second+500*time.Millisecond))
@@ -775,7 +775,7 @@ func TestDirectorReplayDeterminism(t *testing.T) {
 		Kind: core.OpVouchChild, Token: "towner", Nonce: "helper-nonce-0123456789abcdef",
 	}, t0.Add(4500*time.Millisecond))
 	apply(t, st, led, &core.Op{
-		Kind: core.OpRegisterLane, Name: "helper",
+		Kind: core.OpRegister, Name: "helper",
 		NewToken: "thelper", Parent: "owner", ParentNonce: "helper-nonce-0123456789abcdef",
 	}, t0.Add(5*time.Second))
 	apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: "thelper"}, t0.Add(6*time.Second))
@@ -784,40 +784,40 @@ func TestDirectorReplayDeterminism(t *testing.T) {
 		t0.Add(7*time.Second))
 
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneOpen, Token: "towner",
+		Kind: core.OpSpaceOpen, Token: "towner",
 		Space: "locked", Text: "single-writer", Exclusive: true,
 	}, t0.Add(8*time.Second))
-	apply(t, st, led, &core.Op{Kind: core.OpLaneJoin, Token: "twaiter", Space: "locked"},
+	apply(t, st, led, &core.Op{Kind: core.OpSpaceJoin, Token: "twaiter", Space: "locked"},
 		t0.Add(9*time.Second))
 	// The subagent speaks in its parent's agent without ever joining.
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLanePost, Token: "thelper",
+		Kind: core.OpSpacePost, Token: "thelper",
 		Space: "locked", Body: "from the helper",
 	}, t0.Add(10*time.Second))
 	// The director unsticks it.
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneForceRelease, Token: "tboss",
+		Kind: core.OpSpaceForceRelease, Token: "tboss",
 		Space: "locked", Note: "owner gone",
 	}, t0.Add(11*time.Second))
 
 	// A second agent, an eviction, and a merge.
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneOpen, Token: "tstray",
+		Kind: core.OpSpaceOpen, Token: "tstray",
 		Space: "side", Text: "adjacent",
 	}, t0.Add(12*time.Second))
-	apply(t, st, led, &core.Op{Kind: core.OpLaneJoin, Token: "twaiter", Space: "side"},
+	apply(t, st, led, &core.Op{Kind: core.OpSpaceJoin, Token: "twaiter", Space: "side"},
 		t0.Add(13*time.Second))
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneEvict, Token: "tboss",
+		Kind: core.OpSpaceEvict, Token: "tboss",
 		Space: "side", To: "waiter", Note: "wrong agent",
 	}, t0.Add(14*time.Second))
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneMerge, Token: "tboss",
+		Kind: core.OpSpaceMerge, Token: "tboss",
 		Space: "side", To: "locked", Note: "same job",
 	}, t0.Add(15*time.Second))
 	// An announcement the sweep later gives up on.
 	ann := apply(t, st, led, &core.Op{
-		Kind: core.OpLaneAnnounce, Token: "towner",
+		Kind: core.OpSpaceAnnounce, Token: "towner",
 		Space: "locked", Body: "nobody will answer this",
 	}, t0.Add(16*time.Second))
 	serial, ok := ann["serial"].(uint64)
@@ -874,7 +874,7 @@ func TestReclaimedLanesStayReclaimedAcrossReplay(t *testing.T) {
 	st := core.NewState("test", core.DefaultLimits())
 
 	for i, n := range []string{"alpha", "beta"} {
-		apply(t, st, led, &core.Op{Kind: core.OpRegisterLane, Name: n, NewToken: "t" + n},
+		apply(t, st, led, &core.Op{Kind: core.OpRegister, Name: n, NewToken: "t" + n},
 			t0.Add(time.Duration(i)*time.Second))
 		apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: "t" + n},
 			t0.Add(time.Duration(i)*time.Second+500*time.Millisecond))
@@ -883,14 +883,14 @@ func TestReclaimedLanesStayReclaimedAcrossReplay(t *testing.T) {
 	// agent Dibs opened from a declaration is reclaimable: one a human opened on
 	// purpose outlives its members, which is what standing agents are for.
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneOpen, Token: "talpha", Space: "abandoned", Text: "work nobody kept",
+		Kind: core.OpSpaceOpen, Token: "talpha", Space: "abandoned", Text: "work nobody kept",
 		Auto: true,
 	}, t0.Add(10*time.Second))
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneOpen, Token: "tbeta", Space: "kept", Text: "work with somebody in it",
+		Kind: core.OpSpaceOpen, Token: "tbeta", Space: "kept", Text: "work with somebody in it",
 	}, t0.Add(11*time.Second))
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneLeave, Token: "talpha", Space: "abandoned",
+		Kind: core.OpSpaceLeave, Token: "talpha", Space: "abandoned",
 	}, t0.Add(12*time.Second))
 	apply(t, st, led, &core.Op{Kind: core.OpSweep}, t0.Add(13*time.Second))
 
@@ -934,15 +934,15 @@ func TestLaneTrafficIsSealedAtRestLikeMail(t *testing.T) {
 	st := core.NewState("test", core.DefaultLimits())
 
 	for i, n := range []string{"alpha", "beta"} {
-		apply(t, st, led, &core.Op{Kind: core.OpRegisterLane, Name: n, NewToken: "t" + n},
+		apply(t, st, led, &core.Op{Kind: core.OpRegister, Name: n, NewToken: "t" + n},
 			t0.Add(time.Duration(i)*time.Second))
 		apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: "t" + n},
 			t0.Add(time.Duration(i)*time.Second+500*time.Millisecond))
 	}
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneOpen, Token: "talpha", Space: "w", Text: "work",
+		Kind: core.OpSpaceOpen, Token: "talpha", Space: "w", Text: "work",
 	}, t0.Add(10*time.Second))
-	apply(t, st, led, &core.Op{Kind: core.OpLaneJoin, Token: "tbeta", Space: "w"},
+	apply(t, st, led, &core.Op{Kind: core.OpSpaceJoin, Token: "tbeta", Space: "w"},
 		t0.Add(11*time.Second))
 
 	const (
@@ -954,10 +954,10 @@ func TestLaneTrafficIsSealedAtRestLikeMail(t *testing.T) {
 		Kind: core.OpSendMessage, Token: "talpha", To: "beta", MsgType: "notify", Body: mail,
 	}, t0.Add(12*time.Second))
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneAnnounce, Token: "talpha", Space: "w", Body: announce,
+		Kind: core.OpSpaceAnnounce, Token: "talpha", Space: "w", Body: announce,
 	}, t0.Add(13*time.Second))
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLanePost, Token: "talpha", Space: "w", Body: post,
+		Kind: core.OpSpacePost, Token: "talpha", Space: "w", Body: post,
 	}, t0.Add(14*time.Second))
 	_ = led.Close()
 
@@ -1027,7 +1027,7 @@ func TestATornFinalRecordIsReportedNotJustSwallowed(t *testing.T) {
 	led, path := newLedger(t)
 	st := core.NewState("test", core.DefaultLimits())
 	now := t0
-	apply(t, st, led, &core.Op{Kind: core.OpRegisterLane, Name: "a", NewToken: "tok"}, now)
+	apply(t, st, led, &core.Op{Kind: core.OpRegister, Name: "a", NewToken: "tok"}, now)
 	apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: "tok"}, now)
 	apply(t, st, led, &core.Op{Kind: core.OpSetSlot, Token: "tok", Text: "work"}, now)
 	_ = led.Close()

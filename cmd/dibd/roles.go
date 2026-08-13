@@ -57,7 +57,7 @@ type RolesConfig struct {
 // keepDeclaredRolesApplied grants the declared roles, and keeps granting them.
 //
 // A role can only be attached to an agent that EXISTS: core.applyGrantRole
-// answers E_NO_LANE otherwise, and on a fresh daemon no agent exists yet. A
+// answers E_NO_AGENT otherwise, and on a fresh daemon no agent exists yet. A
 // one-shot grant at startup would therefore do nothing at all on exactly the
 // board where the operator most needs it, and would do it silently, which is the
 // failure shape this project works hardest to avoid.
@@ -111,7 +111,7 @@ func applyDeclaredRoles(ctx context.Context, eng *engine.Engine, c RolesConfig) 
 				// fresh board, not a misconfiguration, so it is logged at debug
 				// and retried on the next tick. Anything else is worth seeing.
 				var cerr *core.Error
-				if errors.As(err, &cerr) && cerr.Code == "E_NO_LANE" {
+				if errors.As(err, &cerr) && cerr.Code == "E_NO_AGENT" {
 					slog.Debug("declared role is waiting for its agent to register",
 						"agent", agent, "role", spec.role)
 					continue

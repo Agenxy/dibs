@@ -20,15 +20,15 @@ func TestSendToSupersededLaneWarnsAndNamesTheLiveOne(t *testing.T) {
 	t0 := time.Now()
 
 	// The agent that will be superseded, and a sender.
-	mustApply(t, s, &Op{Kind: OpRegisterLane, Name: "orchestrator", SessionID: "s1", NewToken: "t-old"}, t0)
+	mustApply(t, s, &Op{Kind: OpRegister, Name: "orchestrator", SessionID: "s1", NewToken: "t-old"}, t0)
 	reg(t, s, "builder", "t-builder", t0)
 
 	// It goes dormant, and the same agent comes back as a sibling.
 	s.Agents["orchestrator"].Status = StatusDormant
 	again := mustApply(t, s, &Op{
-		Kind: OpRegisterLane, Name: "orchestrator", SessionID: "s2", NewToken: "t-new",
+		Kind: OpRegister, Name: "orchestrator", SessionID: "s2", NewToken: "t-new",
 	}, t0.Add(time.Hour))
-	liveID := again["lane_id"].(string)
+	liveID := again["agent_id"].(string)
 	if liveID == "orchestrator" {
 		t.Fatal("setup: expected a sibling agent")
 	}
@@ -63,7 +63,7 @@ func TestSendToDormantLaneDeliversWithNotice(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	t0 := time.Now()
 	mustApply(t, s, &Op{
-		Kind: OpRegisterLane, Name: "nightly", SessionID: "s1", NewToken: "t-n",
+		Kind: OpRegister, Name: "nightly", SessionID: "s1", NewToken: "t-n",
 	}, t0)
 	reg(t, s, "sender", "t-s", t0)
 	s.Agents["nightly"].Status = StatusDormant

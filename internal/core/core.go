@@ -11,26 +11,26 @@ import (
 	"time"
 )
 
-// LaneKind distinguishes session-scoped agents from standing roles (SPEC §6).
-type LaneKind string
+// AgentKind distinguishes session-scoped agents from standing roles (SPEC §6).
+type AgentKind string
 
 // Agent kinds.
 const (
-	KindEphemeral  LaneKind = "ephemeral"
-	KindPersistent LaneKind = "persistent"
+	KindEphemeral  AgentKind = "ephemeral"
+	KindPersistent AgentKind = "persistent"
 )
 
-// LaneStatus is the lifecycle state of an agent.
-type LaneStatus string
+// AgentStatus is the lifecycle state of an agent.
+type AgentStatus string
 
 // Agent lifecycle states. Unreachable is reserved for v2 federation.
 const (
-	StatusActive      LaneStatus = "active"
-	StatusStale       LaneStatus = "stale"   // ephemeral: coordination lost
-	StatusDormant     LaneStatus = "dormant" // persistent: expected sleep
-	StatusClosed      LaneStatus = "closed"
-	StatusArchived    LaneStatus = "archived"
-	StatusUnreachable LaneStatus = "unreachable"
+	StatusActive      AgentStatus = "active"
+	StatusStale       AgentStatus = "stale"   // ephemeral: coordination lost
+	StatusDormant     AgentStatus = "dormant" // persistent: expected sleep
+	StatusClosed      AgentStatus = "closed"
+	StatusArchived    AgentStatus = "archived"
+	StatusUnreachable AgentStatus = "unreachable"
 )
 
 // Message types.
@@ -86,13 +86,13 @@ const (
 
 // Limits bounds every resource in the system (SPEC §11). All enforced in Apply.
 type Limits struct {
-	MaxLanes           int `json:"max_lanes"`
-	MaxPersistentLanes int `json:"max_persistent_lanes"`
-	MaxSlotsPerLane    int `json:"max_slots_per_lane"`
-	MaxClaimsPerLane   int `json:"max_claims_per_lane"`
-	MaxClaimsGlobal    int `json:"max_claims_global"`
-	MaxMailboxDepth    int `json:"max_mailbox_depth"`
-	TerminalRetention  int `json:"terminal_retention"` // unconsumed terminal msgs kept per agent
+	MaxAgents           int `json:"max_agents"`
+	MaxPersistentAgents int `json:"max_persistent_agents"`
+	MaxSlotsPerAgent    int `json:"max_slots_per_agent"`
+	MaxClaimsPerAgent   int `json:"max_claims_per_agent"`
+	MaxClaimsGlobal     int `json:"max_claims_global"`
+	MaxMailboxDepth     int `json:"max_mailbox_depth"`
+	TerminalRetention   int `json:"terminal_retention"` // unconsumed terminal msgs kept per agent
 	// AnnouncementRetention bounds SETTLED announcements kept per space.
 	//
 	// Every other collection in replayed state has a bound and this one did not:
@@ -117,14 +117,14 @@ type Limits struct {
 	MaxDirs       int `json:"max_dirs"`
 	MaxIDBytes    int `json:"max_id_bytes"` // nonce / op_id / resume_id
 	// Attachments & blob store (SPEC-ATTACHMENTS A9).
-	MaxBlobSize      int           `json:"max_blob_size"`
-	MaxAttachments   int           `json:"max_attachments"`
-	BlobStoreBytes   int           `json:"blob_store_bytes"`    // global cap
-	PerLaneBlobBytes int           `json:"per_lane_blob_bytes"` // per-agent quota (P1-3)
-	MaxFilerefHash   int           `json:"max_fileref_hash"`
-	DedupPerLane     int           `json:"dedup_per_lane"`
-	DedupWindow      time.Duration `json:"dedup_window"`
-	LaneTTL          time.Duration `json:"lane_ttl"`
+	MaxBlobSize       int           `json:"max_blob_size"`
+	MaxAttachments    int           `json:"max_attachments"`
+	BlobStoreBytes    int           `json:"blob_store_bytes"`     // global cap
+	PerAgentBlobBytes int           `json:"per_agent_blob_bytes"` // per-agent quota (P1-3)
+	MaxFilerefHash    int           `json:"max_fileref_hash"`
+	DedupPerAgent     int           `json:"dedup_per_agent"`
+	DedupWindow       time.Duration `json:"dedup_window"`
+	AgentTTL          time.Duration `json:"agent_ttl"`
 	// IdleTTL applies to agents that gave no PID, where silence is the only
 	// signal available and a human-paced surface is silent by nature.
 	IdleTTL          time.Duration `json:"idle_ttl"`
@@ -150,13 +150,13 @@ type Limits struct {
 // DefaultLimits are the SPEC §11 defaults.
 func DefaultLimits() Limits {
 	return Limits{
-		MaxLanes:           64,
-		MaxPersistentLanes: 16,
-		MaxSlotsPerLane:    32,
-		MaxClaimsPerLane:   32,
-		MaxClaimsGlobal:    256,
-		MaxMailboxDepth:    256,
-		TerminalRetention:  128,
+		MaxAgents:           64,
+		MaxPersistentAgents: 16,
+		MaxSlotsPerAgent:    32,
+		MaxClaimsPerAgent:   32,
+		MaxClaimsGlobal:     256,
+		MaxMailboxDepth:     256,
+		TerminalRetention:   128,
 		// Comfortably above read_space's default page of 50, so garbage collection
 		// never truncates history a reader could otherwise still page through.
 		AnnouncementRetention: 128,
@@ -171,11 +171,11 @@ func DefaultLimits() Limits {
 		MaxBlobSize:           64 * 1024 * 1024, // 64 MiB
 		MaxAttachments:        8,
 		BlobStoreBytes:        1024 * 1024 * 1024, // 1 GiB
-		PerLaneBlobBytes:      256 * 1024 * 1024,  // 256 MiB
+		PerAgentBlobBytes:     256 * 1024 * 1024,  // 256 MiB
 		MaxFilerefHash:        128,
-		DedupPerLane:          256,
+		DedupPerAgent:         256,
 		DedupWindow:           24 * time.Hour,
-		LaneTTL:               5 * time.Minute,
+		AgentTTL:              5 * time.Minute,
 		IdleTTL:               45 * time.Minute,
 		StaleGrace:            30 * time.Minute,
 		DormancyMax:           30 * 24 * time.Hour,
@@ -331,13 +331,13 @@ type AgentInfo struct {
 // Agent is a participant on the board: an identity, a mailbox and a heartbeat.
 // (SPEC-CHANNELS.md §1 renames this to `agent`; the rename is a separate pass.)
 type Agent struct {
-	ID          string   `json:"id"`
-	Kind        LaneKind `json:"kind"`
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	PID         int      `json:"pid,omitempty"`
-	ProcStart   int64    `json:"proc_start,omitempty"` // unix ms; defeats PID reuse
-	Status      LaneStatus
+	ID          string    `json:"id"`
+	Kind        AgentKind `json:"kind"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	PID         int       `json:"pid,omitempty"`
+	ProcStart   int64     `json:"proc_start,omitempty"` // unix ms; defeats PID reuse
+	Status      AgentStatus
 	// SessionID binds the agent to its harness session, so a lifecycle hook that
 	// knows only "${session_id}" can find the right mailbox without carrying a
 	// token through config. Set at registration; never a credential on its own,
@@ -417,7 +417,7 @@ type Agent struct {
 	// just be a long build, and an agent that never gave a PID has told us
 	// nothing about a process at all.
 	//
-	// Replay-safe: every input to it (DeadLanes, StaleLanes, the agent's own
+	// Replay-safe: every input to it (DeadAgents, StaleAgents, the agent's own
 	// PID) is recorded in the sweep op, never probed during Apply.
 	StaleReason string `json:"stale_reason,omitempty"`
 
@@ -558,7 +558,7 @@ type Claim struct {
 }
 
 // DedupRec is one identified-op record (SPEC §4): bounded by the lesser of
-// DedupWindow and DedupPerLane, digest-bound against payload reuse.
+// DedupWindow and DedupPerAgent, digest-bound against payload reuse.
 type DedupRec struct {
 	Agent      string    `json:"agent"`
 	ID         string    `json:"id"` // op_id or resume_id
@@ -588,8 +588,8 @@ type State struct {
 	Agents   map[string]*Agent
 	Messages map[uint64]*Message // keyed by send serial
 	Claims   []*Claim
-	Nonces   map[string]string    // nonce → lane_id
-	Dedup    map[string]*DedupRec // key: lane_id + "\x00" + id
+	Nonces   map[string]string    // nonce → agent_id
+	Dedup    map[string]*DedupRec // key: agent_id + "\x00" + id
 	Blobs    map[string]*Blob     // id → registry entry (bytes live in blobstore)
 
 	// Spaces of work, and the announcements awaiting acknowledgement in them
@@ -614,9 +614,9 @@ func NewState(nodeID string, lim Limits) *State {
 	}
 }
 
-// LaneByToken resolves an auth token, or nil. Constant-time comparison per
-// candidate; the map walk is bounded by MaxLanes.
-func (s *State) LaneByToken(tok string) *Agent {
+// AgentByToken resolves an auth token, or nil. Constant-time comparison per
+// candidate; the map walk is bounded by MaxAgents.
+func (s *State) AgentByToken(tok string) *Agent {
 	if tok == "" {
 		return nil
 	}

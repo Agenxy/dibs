@@ -47,10 +47,10 @@ type Space struct {
 	// "security review": outlives its members by design: agents drop in and out
 	// and must find the same agent with its history. An agent opened automatically
 	// for one declaration has no such claim, and reclaiming those is what keeps a
-	// fleet from exhausting MaxLanes on work that finished hours ago.
+	// fleet from exhausting MaxAgents on work that finished hours ago.
 	//
 	// Without the distinction the codebase believed both at once: one test
-	// asserted an empty agent persists, reclaimFinishedLanes deleted exactly those
+	// asserted an empty agent persists, reclaimFinishedAgents deleted exactly those
 	// agents, and the test passed only because it never swept. A standing agent
 	// really did disappear at the next tick.
 	Auto bool
@@ -238,26 +238,26 @@ const (
 
 // Op kinds for spaces. Wire names follow SPEC-CHANNELS.md, not the Go types.
 const (
-	OpLaneOpen      = "open_space"
-	OpLaneJoin      = "join_space"
-	OpLaneLeave     = "leave_space"
-	OpLaneSubscribe = "watch_space"
-	OpLaneExclusive = "lock_space"
-	OpLanePost      = "post"
-	OpLaneAnnounce  = "announce"
-	OpLaneAck       = "ack_announcement"
+	OpSpaceOpen      = "open_space"
+	OpSpaceJoin      = "join_space"
+	OpSpaceLeave     = "leave_space"
+	OpSpaceSubscribe = "watch_space"
+	OpSpaceExclusive = "lock_space"
+	OpSpacePost      = "post"
+	OpSpaceAnnounce  = "announce"
+	OpSpaceAck       = "ack_announcement"
 
 	// Director powers: the coordinator role applied to spaces (§8.1).
-	OpLaneForceRelease = "unlock_space"
-	OpLaneEvict        = "evict"
-	OpLaneMerge        = "merge_spaces"
-	OpLaneClose        = "close_space"
-	OpLaneAdmit        = "admit"
+	OpSpaceForceRelease = "unlock_space"
+	OpSpaceEvict        = "evict"
+	OpSpaceMerge        = "merge_spaces"
+	OpSpaceClose        = "close_space"
+	OpSpaceAdmit        = "admit"
 )
 
 // ── open ─────────────────────────────────────────────────────────────────
 
-func (s *State) applyLaneOpen(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+func (s *State) applySpaceOpen(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	if l.AckedSerial == 0 {
 		return nil, nil, ErrMustAck
 	}
@@ -271,8 +271,8 @@ func (s *State) applyLaneOpen(l *Agent, op *Op, now time.Time) (Result, []Event,
 	if _, exists := s.Spaces[id]; exists {
 		return nil, nil, errf("E_LANE_EXISTS", "join it instead of opening it", "agent %s already exists", id)
 	}
-	if len(s.Spaces) >= s.Limits.MaxLanes {
-		return nil, nil, errf("E_LANE_LIMIT",
+	if len(s.Spaces) >= s.Limits.MaxAgents {
+		return nil, nil, errf("E_AGENT_LIMIT",
 			"an agent Dibs opened from a declaration is reclaimed once its last member "+
 				"leaves, so leave_space the ones you are done with. An agent somebody "+
 				"opened by name outlives its members on purpose: standing agents are "+
@@ -287,7 +287,7 @@ func (s *State) applyLaneOpen(l *Agent, op *Op, now time.Time) (Result, []Event,
 	}
 	s.Spaces[id] = ch
 	evs := []Event{{Type: "agent.opened", Agent: l.ID, Data: map[string]any{
-		"lane_id": id, "topic": op.Text,
+		"agent_id": id, "topic": op.Text,
 	}}}
 	// The opener is a member. An agent whose creator is not in it is an agent
 	// nobody is working in, which is not a thing worth having.
@@ -297,7 +297,7 @@ func (s *State) applyLaneOpen(l *Agent, op *Op, now time.Time) (Result, []Event,
 	if op.Exclusive {
 		ch.Owner = l.ID
 		evs = append(evs, Event{Type: "agent.exclusive", Agent: l.ID, Data: map[string]any{
-			"lane_id": id, "owner": l.ID,
+			"agent_id": id, "owner": l.ID,
 		}})
 	}
 	s.finish(&evs, now)
@@ -306,7 +306,7 @@ func (s *State) applyLaneOpen(l *Agent, op *Op, now time.Time) (Result, []Event,
 	// handed is a mechanism nobody can use, which is what "the join path is
 	// decorative" meant.
 	return Result{
-		"lane_id": id, "exclusive": op.Exclusive, "key": ch.Key,
+		"agent_id": id, "exclusive": op.Exclusive, "key": ch.Key,
 		"key_hint": "declare this in `refs` on later declare calls and Dibs will " +
 			"match you to this agent exactly, instead of guessing from your wording",
 	}, evs, nil
@@ -351,16 +351,16 @@ func (ch *Space) promote(agent string, serial uint64) {
 	ch.Predicted = mergePredicted(ch.Predicted, m.Predicted)
 }
 
-func (s *State) applyLaneJoin(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+func (s *State) applySpaceJoin(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	if l.AckedSerial == 0 {
 		return nil, nil, ErrMustAck
 	}
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {
-		return nil, nil, errf("E_NO_LANE", "open_space it, or list agents first", "no agent %s", op.Space)
+		return nil, nil, errf("E_NO_AGENT", "open_space it, or list agents first", "no agent %s", op.Space)
 	}
 	if _, already := ch.Members[l.ID]; already {
-		return Result{"lane_id": ch.ID, "joined": true, "already": true, "key": ch.Key}, nil, nil
+		return Result{"agent_id": ch.ID, "joined": true, "already": true, "key": ch.Key}, nil, nil
 	}
 	// A subagent already speaks here through its parent, and SPEC-CHANNELS.md
 	// §8.2 is explicit that it must not join, queue or count separately.
@@ -373,7 +373,7 @@ func (s *State) applyLaneJoin(l *Agent, op *Op, now time.Time) (Result, []Event,
 	// because speaking is what the inherited membership is for.
 	if under := s.speaksFor(ch, l.ID); under != "" {
 		return Result{
-			"lane_id": ch.ID, "joined": true, "already": true, "under": under,
+			"agent_id": ch.ID, "joined": true, "already": true, "under": under,
 			"detail": "you are in this agent through " + under +
 				", the agent that spawned you: subagents inherit agents rather than " +
 				"joining them, so you can post and announce here already and do not " +
@@ -389,7 +389,7 @@ func (s *State) applyLaneJoin(l *Agent, op *Op, now time.Time) (Result, []Event,
 		for i, q := range ch.Queue {
 			if q == l.ID {
 				return Result{
-					"lane_id": ch.ID, "joined": false, "queued": true,
+					"agent_id": ch.ID, "joined": false, "queued": true,
 					"queue_position": i + 1, "owner": ch.Owner,
 				}, nil, nil
 			}
@@ -400,12 +400,12 @@ func (s *State) applyLaneJoin(l *Agent, op *Op, now time.Time) (Result, []Event,
 		}
 		ch.Pending[l.ID] = memberFromOp(l.ID, op, 0) // serial filled in on promotion
 		evs := []Event{{Type: "agent.queued", Agent: l.ID, To: ch.Owner, Data: map[string]any{
-			"lane_id": ch.ID, "queue_position": len(ch.Queue), "owner": ch.Owner,
+			"agent_id": ch.ID, "queue_position": len(ch.Queue), "owner": ch.Owner,
 			"score": op.Score,
 		}}}
 		s.finish(&evs, now)
 		return Result{
-			"lane_id": ch.ID, "joined": false, "queued": true,
+			"agent_id": ch.ID, "joined": false, "queued": true,
 			"queue_position": len(ch.Queue), "owner": ch.Owner,
 			"hint": "the space is exclusive; send its owner a request, or wait to be admitted",
 		}, evs, nil
@@ -416,13 +416,13 @@ func (s *State) applyLaneJoin(l *Agent, op *Op, now time.Time) (Result, []Event,
 	ch.Predicted = mergePredicted(ch.Predicted, op.Predicted)
 	delete(ch.Subs, l.ID) // membership supersedes subscription
 	evs := []Event{{Type: "agent.joined", Agent: l.ID, Data: map[string]any{
-		"lane_id": ch.ID, "auto": op.Auto, "score": op.Score,
+		"agent_id": ch.ID, "auto": op.Auto, "score": op.Score,
 		"threshold": op.Threshold, "scorer": m.ScorerID, "evidence": op.Evidence,
 		"members": len(ch.Members),
 	}}}
 	s.finish(&evs, now)
 	return Result{
-		"lane_id": ch.ID, "joined": true, "members": len(ch.Members),
+		"agent_id": ch.ID, "joined": true, "members": len(ch.Members),
 		"topic": ch.Topic, "auto": op.Auto, "score": op.Score, "key": ch.Key,
 		"key_hint": "declare this in `refs` on later declare calls and Dibs will " +
 			"match you to this agent exactly, instead of guessing from your wording",
@@ -431,10 +431,10 @@ func (s *State) applyLaneJoin(l *Agent, op *Op, now time.Time) (Result, []Event,
 
 // ── leave ────────────────────────────────────────────────────────────────
 
-func (s *State) applyLaneExclusive(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+func (s *State) applySpaceExclusive(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {
-		return nil, nil, errf("E_NO_LANE", "open or join it first", "no agent %s", op.Space)
+		return nil, nil, errf("E_NO_AGENT", "open or join it first", "no agent %s", op.Space)
 	}
 	if _, ok := ch.Members[l.ID]; !ok {
 		return nil, nil, errf("E_NOT_MEMBER", "join_space first", "not a member of %s", ch.ID)
@@ -446,7 +446,7 @@ func (s *State) applyLaneExclusive(l *Agent, op *Op, now time.Time) (Result, []E
 		}
 		evs := s.releaseExclusive(ch, "released by its owner")
 		s.finish(&evs, now)
-		return Result{"lane_id": ch.ID, "exclusive": ch.Owner != ""}, evs, nil
+		return Result{"agent_id": ch.ID, "exclusive": ch.Owner != ""}, evs, nil
 	}
 	if ch.Owner != "" && ch.Owner != l.ID {
 		return nil, nil, errf("E_LANE_EXCLUSIVE", "request access from the owner, or queue",
@@ -460,10 +460,10 @@ func (s *State) applyLaneExclusive(l *Agent, op *Op, now time.Time) (Result, []E
 	}
 	ch.Owner = l.ID
 	evs := []Event{{Type: "agent.exclusive", Agent: l.ID, Data: map[string]any{
-		"lane_id": ch.ID, "owner": l.ID,
+		"agent_id": ch.ID, "owner": l.ID,
 	}}}
 	s.finish(&evs, now)
-	return Result{"lane_id": ch.ID, "exclusive": true, "owner": l.ID}, evs, nil
+	return Result{"agent_id": ch.ID, "exclusive": true, "owner": l.ID}, evs, nil
 }
 
 func (s *State) releaseExclusive(ch *Space, why string) []Event {
@@ -477,7 +477,7 @@ func (s *State) releaseExclusive(ch *Space, why string) []Event {
 	former := ch.Owner
 	ch.Owner = ""
 	evs := []Event{{Type: "agent.released", Agent: former, Data: map[string]any{
-		"lane_id": ch.ID, "former_owner": former, "cause": why,
+		"agent_id": ch.ID, "former_owner": former, "cause": why,
 		"caution": "the owner's coordination signal ended; this is not proof its work stopped",
 	}}}
 	// Everyone waiting is admitted at once: the thing they were waiting for is
@@ -488,7 +488,7 @@ func (s *State) releaseExclusive(ch *Space, why string) []Event {
 		}
 		ch.promote(q, s.Serial+1)
 		evs = append(evs, Event{Type: "agent.joined", Agent: q, Data: map[string]any{
-			"lane_id": ch.ID, "from_queue": true,
+			"agent_id": ch.ID, "from_queue": true,
 		}})
 	}
 	ch.Queue = nil
@@ -497,7 +497,7 @@ func (s *State) releaseExclusive(ch *Space, why string) []Event {
 
 // ── traffic ──────────────────────────────────────────────────────────────
 
-func (s *State) applyLanePost(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+func (s *State) applySpacePost(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	ch, err := s.memberChannel(l, op)
 	if err != nil {
 		return nil, nil, err
@@ -522,7 +522,7 @@ func (s *State) applyLanePost(l *Agent, op *Op, now time.Time) (Result, []Event,
 	// The serial is what a reader needs. Members and subscribers fetch the text
 	// with read_space, which checks who is asking.
 	evs := []Event{{Type: "agent.post", Agent: speaker, Data: map[string]any{
-		"lane_id": ch.ID, "from": l.ID, "on_behalf_of": speaker,
+		"agent_id": ch.ID, "from": l.ID, "on_behalf_of": speaker,
 		"bytes":    len(op.Body),
 		"audience": len(ch.Members) + len(ch.Subs),
 	}}}
@@ -536,10 +536,10 @@ func (s *State) applyLanePost(l *Agent, op *Op, now time.Time) (Result, []Event,
 	if excess := len(ch.Posts) - s.Limits.PostRetention; excess > 0 {
 		ch.Posts = append([]Post(nil), ch.Posts[excess:]...)
 	}
-	return Result{"lane_id": ch.ID, "serial": serial}, evs, nil
+	return Result{"agent_id": ch.ID, "serial": serial}, evs, nil
 }
 
-func (s *State) applyLaneAnnounce(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+func (s *State) applySpaceAnnounce(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	// The awareness gate (SPEC §6) applies here above all.
 	//
 	// An announcement is the strongest thing an agent can do to an agent: it
@@ -574,7 +574,7 @@ func (s *State) applyLaneAnnounce(l *Agent, op *Op, now time.Time) (Result, []Ev
 	// Metadata only, for the same reason as agent.post above: an announcement is
 	// the loudest thing on the board and its text still belongs to the agent.
 	evs := []Event{{Type: "agent.announce", Agent: speaker, Data: map[string]any{
-		"lane_id": ch.ID, "from": l.ID, "on_behalf_of": speaker,
+		"agent_id": ch.ID, "from": l.ID, "on_behalf_of": speaker,
 		"bytes":    len(op.Body),
 		"must_ack": len(req),
 	}}}
@@ -584,7 +584,7 @@ func (s *State) applyLaneAnnounce(l *Agent, op *Op, now time.Time) (Result, []Ev
 		Acked: map[string]bool{}, Required: req, MadeAt: evs[0].TS,
 		State: stateFor(req),
 	}
-	return Result{"lane_id": ch.ID, "serial": serial, "must_ack": len(req)}, evs, nil
+	return Result{"agent_id": ch.ID, "serial": serial, "must_ack": len(req)}, evs, nil
 }
 
 // An announcement nobody has to acknowledge is already settled; leaving it
@@ -596,7 +596,7 @@ func stateFor(req map[string]bool) string {
 	return AnnounceOpen
 }
 
-func (s *State) applyLaneAck(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+func (s *State) applySpaceAck(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	a := s.Announcements[op.MsgSerial]
 	if a == nil {
 		return nil, nil, errf("E_NO_ANNOUNCE", "check the serial", "no announcement at serial %d", op.MsgSerial)
@@ -610,12 +610,12 @@ func (s *State) applyLaneAck(l *Agent, op *Op, now time.Time) (Result, []Event, 
 	a.Acked[l.ID] = true
 	outstanding := len(a.Required) - len(a.Acked)
 	evs := []Event{{Type: "agent.acked", Agent: l.ID, To: a.From, Data: map[string]any{
-		"lane_id": a.Space, "serial": a.Serial, "outstanding": outstanding,
+		"agent_id": a.Space, "serial": a.Serial, "outstanding": outstanding,
 	}}}
 	if outstanding == 0 {
 		a.State = AnnounceAcked
 		evs = append(evs, Event{Type: "agent.announce_settled", Agent: a.From, Data: map[string]any{
-			"lane_id": a.Space, "serial": a.Serial,
+			"agent_id": a.Space, "serial": a.Serial,
 		}})
 	}
 	s.finish(&evs, now)
@@ -675,7 +675,7 @@ func (s *State) UnackedFor(agent string) []Result {
 	return out
 }
 
-// LaneHistory returns what has been ANNOUNCED in an agent, for a member.
+// SpaceHistory returns what has been ANNOUNCED in an agent, for a member.
 //
 // This did not exist, and its absence was found the way these things are found:
 // a reviewing agent joined an agent, could see neither the announcement that had
@@ -693,7 +693,7 @@ func (s *State) UnackedFor(agent string) []Result {
 //
 // Members only. An announcement's body is for the agent, not for anyone who can
 // name it, which is the same rule the wake path follows.
-func (s *State) LaneHistory(ch *Space, agent string, limit int) []Result {
+func (s *State) SpaceHistory(ch *Space, agent string, limit int) []Result {
 	if limit <= 0 {
 		limit = 50
 	}
@@ -739,7 +739,7 @@ func (s *State) MemberChannel(l *Agent, name string) (*Space, error) {
 func (s *State) memberChannel(l *Agent, op *Op) (*Space, error) {
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {
-		return nil, errf("E_NO_LANE", "open_space or join_space first", "no agent %s", op.Space)
+		return nil, errf("E_NO_AGENT", "open_space or join_space first", "no agent %s", op.Space)
 	}
 	if s.speaksFor(ch, l.ID) == "" {
 		return nil, errf("E_NOT_MEMBER", "join_space first: subscribers read, members speak",
@@ -867,10 +867,10 @@ func (s *State) yieldChannelOwnership(agent string) []Event {
 	return evs
 }
 
-// reclaimFinishedLanes deletes agents nobody is in and nobody owes anything to.
+// reclaimFinishedAgents deletes agents nobody is in and nobody owes anything to.
 //
 // Dibs had no way to end. `merge_spaces` was the only path that removed one, and
-// E_LANE_LIMIT told the operator to "close a finished agent first": naming a
+// E_AGENT_LIMIT told the operator to "close a finished agent first": naming a
 // corrective action that did not exist, which is this codebase's most persistent
 // failure mode in yet another place.
 //
@@ -890,7 +890,7 @@ func (s *State) yieldChannelOwnership(agent string) []Event {
 // standing agents that outliving your members is FOR: an agent returning to
 // "release" found nothing, and the test protecting that property passed only
 // because it never ran a sweep.
-func (s *State) reclaimFinishedLanes() []Event {
+func (s *State) reclaimFinishedAgents() []Event {
 	var evs []Event
 	for _, id := range s.channelIDs() {
 		ch := s.Spaces[id]
@@ -920,7 +920,7 @@ func (s *State) reclaimFinishedLanes() []Event {
 		// The agent's announcements go with it.
 		//
 		// Reclaiming the space alone left them keyed by an agent id that no
-		// longer existed, and LaneHistory selects purely by that id, so the
+		// longer existed, and SpaceHistory selects purely by that id, so the
 		// moment anyone opened an agent with the same id (and ids are derived from
 		// the declaration, so identical work reuses one), read_space handed a
 		// stranger the previous agent's announcement bodies. Members-only content
@@ -941,7 +941,7 @@ func (s *State) reclaimFinishedLanes() []Event {
 		}
 		delete(s.Spaces, id)
 		evs = append(evs, Event{Type: "agent.reclaimed", Data: map[string]any{
-			"lane_id": id, "topic": ch.Topic,
+			"agent_id": id, "topic": ch.Topic,
 			"why": "the last member left and nothing is outstanding",
 		}})
 	}
@@ -1012,7 +1012,7 @@ func (s *State) releaseAcks(agent string, want func(*Announcement) bool) []Event
 			an.State = AnnounceUnacked
 		}
 		evs = append(evs, Event{Type: "agent.announce_settled", Agent: an.From, Data: map[string]any{
-			"lane_id": an.Space, "serial": an.Serial, "state": an.State,
+			"agent_id": an.Space, "serial": an.Serial, "state": an.State,
 			"cause":    "remaining members departed without acknowledging",
 			"departed": append([]string(nil), an.DepartedUnacked...),
 		}})
@@ -1046,8 +1046,8 @@ func (s *State) announcementSerials() []uint64 {
 
 // ── matching ─────────────────────────────────────────────────────────────
 
-// LaneMatch is one candidate agent for a piece of declared work.
-type LaneMatch struct {
+// AgentMatch is one candidate agent for a piece of declared work.
+type AgentMatch struct {
 	Agent     string     `json:"agent"`
 	Topic     string     `json:"topic"`
 	Score     float64    `json:"score"`
@@ -1253,29 +1253,29 @@ func identifyingRef(ref string) bool {
 	return false
 }
 
-// MatchLanesWith is MatchLanes with a footprint overlay for agents whose own is
+// MatchAgentsWith is MatchAgents with a footprint overlay for agents whose own is
 // empty: those opened before a scorer finished indexing. Still pure: the
 // overlay is computed at the edge and handed in, exactly like the score.
-func (s *State) MatchLanesWith(agent string, pred []PredFile, overlay map[string][]PredFile, limit int) []LaneMatch {
-	return s.MatchLanesRefs(agent, pred, nil, overlay, limit)
+func (s *State) MatchAgentsWith(agent string, pred []PredFile, overlay map[string][]PredFile, limit int) []AgentMatch {
+	return s.MatchAgentsRefs(agent, pred, nil, overlay, limit)
 }
 
-// MatchLanesRefs is MatchLanesWith plus the objective ids the declaring agent
+// MatchAgentsRefs is MatchAgentsWith plus the objective ids the declaring agent
 // gave, so a match can report DECLARED overlap alongside the inferred score. See
-// LaneMatch.SharedRefs.
-func (s *State) MatchLanesRefs(
+// AgentMatch.SharedRefs.
+func (s *State) MatchAgentsRefs(
 	agent string, pred []PredFile, refs []string, overlay map[string][]PredFile, limit int,
-) []LaneMatch {
-	return s.MatchLanesEvidence(agent, Slot{Refs: refs, Predicted: pred}, "", "", nil, overlay, limit)
+) []AgentMatch {
+	return s.MatchAgentsEvidence(agent, Slot{Refs: refs, Predicted: pred}, "", "", nil, overlay, limit)
 }
 
-// MatchLanesEvidence is the full form: it carries the declaring SLOT and the
+// MatchAgentsEvidence is the full form: it carries the declaring SLOT and the
 // agent's location, so every match can report typed evidence computed against
 // each member's own live declaration rather than the agent's accumulated union.
-func (s *State) MatchLanesEvidence(
+func (s *State) MatchAgentsEvidence(
 	agent string, mine Slot, myCWD, repo string, lens RepoLens,
 	overlay map[string][]PredFile, limit int,
-) []LaneMatch {
+) []AgentMatch {
 	// A coordination key the declaring agent does not hold is struck out before
 	// anything is compared, here rather than at ingress: the declaration is
 	// stored exactly as the agent wrote it, and only what Dibs will ACT on is
@@ -1297,7 +1297,7 @@ func (s *State) MatchLanesEvidence(
 		return nil
 	}
 	discount := s.ubiquityDiscount(overlay)
-	var out []LaneMatch
+	var out []AgentMatch
 	for _, id := range s.channelIDs() {
 		ch := s.Spaces[id]
 		if !occupied(ch) {
@@ -1318,7 +1318,7 @@ func (s *State) MatchLanesEvidence(
 			continue
 		}
 		_, in := ch.Members[agent]
-		out = append(out, LaneMatch{
+		out = append(out, AgentMatch{
 			Agent: ch.ID, Topic: ch.Topic, Score: score, Shared: shared,
 			Members: len(ch.Members), Owner: ch.Owner, AlreadyIn: in,
 			Declined: ch.Declined[agent], SharedRefs: sharedRefs,
@@ -1483,40 +1483,40 @@ func (s *State) directorOf(l *Agent, op *Op) (*Space, error) {
 	}
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {
-		return nil, errf("E_NO_LANE", "check the agent id", "no agent %s", op.Space)
+		return nil, errf("E_NO_AGENT", "check the agent id", "no agent %s", op.Space)
 	}
 	return ch, nil
 }
 
-// applyLaneForceRelease strips exclusivity from an agent the caller does not own.
+// applySpaceForceRelease strips exclusivity from an agent the caller does not own.
 //
 // For the case the queue cannot solve on its own: an owner whose agent is gone
 // but whose agent is still locked. The holder is named in the event, so this is
 // never silent: same rule as force_release on a directory claim (SPEC §9).
-func (s *State) applyLaneForceRelease(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+func (s *State) applySpaceForceRelease(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	ch, err := s.directorOf(l, op)
 	if err != nil {
 		return nil, nil, err
 	}
 	if ch.Owner == "" {
-		return Result{"lane_id": ch.ID, "released": false, "reason": "not exclusive"}, nil, nil
+		return Result{"agent_id": ch.ID, "released": false, "reason": "not exclusive"}, nil, nil
 	}
 	former := ch.Owner
 	evs := []Event{{Type: "agent.force_released", Agent: l.ID, To: former, Data: map[string]any{
-		"lane_id": ch.ID, "former_owner": former, "by": l.ID, "note": op.Note,
+		"agent_id": ch.ID, "former_owner": former, "by": l.ID, "note": op.Note,
 		"caution": "a coordinator released this; the former owner may still be working: verify",
 	}}}
 	evs = append(evs, s.releaseExclusive(ch, "forced by a coordinator")...)
 	s.finish(&evs, now)
-	return Result{"lane_id": ch.ID, "released": true, "former_owner": former}, evs, nil
+	return Result{"agent_id": ch.ID, "released": true, "former_owner": former}, evs, nil
 }
 
-// applyLaneEvict removes an agent from an agent it should not be in.
+// applySpaceEvict removes an agent from an agent it should not be in.
 //
 // This is also how "move an agent between agents" works: evict, and the agent
 // joins the right one. A single move op would have to guess which agent is right,
 // and getting that wrong silently relocates somebody's work.
-func (s *State) applyLaneEvict(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+func (s *State) applySpaceEvict(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	ch, err := s.directorOf(l, op)
 	if err != nil {
 		return nil, nil, err
@@ -1538,29 +1538,29 @@ func (s *State) applyLaneEvict(l *Agent, op *Op, now time.Time) (Result, []Event
 		if i := slices.Index(ch.Queue, target); i >= 0 {
 			ch.Queue = slices.Delete(ch.Queue, i, i+1)
 			evs := []Event{{Type: "agent.evicted", Agent: target, To: target, Data: map[string]any{
-				"lane_id": ch.ID, "by": l.ID, "note": op.Note, "from_queue": true,
+				"agent_id": ch.ID, "by": l.ID, "note": op.Note, "from_queue": true,
 				"detail": "a coordinator removed you from this agent's queue; you are no " +
 					"longer waiting for it and will not be admitted",
 			}}}
 			s.finish(&evs, now)
-			return Result{"lane_id": ch.ID, "evicted": true, "agent": target, "from_queue": true}, evs, nil
+			return Result{"agent_id": ch.ID, "evicted": true, "agent": target, "from_queue": true}, evs, nil
 		}
 		return Result{
-			"lane_id": ch.ID, "evicted": false, "reason": "not a member",
+			"agent_id": ch.ID, "evicted": false, "reason": "not a member",
 			"detail": "nobody by that name is in this agent or waiting for it; check " +
 				"the agent id against the board",
 		}, nil, nil
 	}
 	evs := []Event{{Type: "agent.evicted", Agent: target, To: target, Data: map[string]any{
-		"lane_id": ch.ID, "by": l.ID, "note": op.Note,
+		"agent_id": ch.ID, "by": l.ID, "note": op.Note,
 		"detail": "a coordinator removed you from this agent; your work is untouched",
 	}}}
 	evs = append(evs, s.departChannel(ch, target)...)
 	s.finish(&evs, now)
-	return Result{"lane_id": ch.ID, "evicted": true, "agent": target}, evs, nil
+	return Result{"agent_id": ch.ID, "evicted": true, "agent": target}, evs, nil
 }
 
-// applyLaneMerge folds one agent into another when they drifted into the same
+// applySpaceMerge folds one agent into another when they drifted into the same
 // work: the case SPEC-CHANNELS.md §11 leaves open, resolved by a human-granted
 // coordinator rather than by a score, because merging is destructive to context
 // and a threshold is the wrong thing to trust with it.
@@ -1663,13 +1663,13 @@ func mergeNotices(src, dst *Space, by string, wasHere []string) []Event {
 			continue // the coordinator did this; its own tool result said so
 		}
 		evs = append(evs, Event{Type: "agent.absorbed", Agent: id, Data: map[string]any{
-			"lane_id": dst.ID, "merged_from": src.ID, "merged_by": by,
+			"agent_id": dst.ID, "merged_from": src.ID, "merged_by": by,
 			"gained": len(src.Members),
 		}})
 	}
 	base := func() map[string]any {
 		return map[string]any{
-			"lane_id": dst.ID, "merged_from": src.ID, "merged_by": by,
+			"agent_id": dst.ID, "merged_from": src.ID, "merged_by": by,
 			"members": len(dst.Members),
 		}
 	}
@@ -1694,13 +1694,13 @@ func mergeNotices(src, dst *Space, by string, wasHere []string) []Event {
 	return evs
 }
 
-// applyLaneClose retires a finished agent that nothing will ever reclaim.
+// applySpaceClose retires a finished agent that nothing will ever reclaim.
 //
-// Auto-opened agents end by themselves: reclaimFinishedLanes deletes them once
+// Auto-opened agents end by themselves: reclaimFinishedAgents deletes them once
 // the last member leaves. Dibs a human opened deliberately do NOT, and that is
 // correct: outliving your members is what a standing agent is FOR. The gap was
 // that nothing could end one either, ever, by any path. A board accumulated
-// finished agents permanently, and E_LANE_LIMIT advised "leave_space the ones you
+// finished agents permanently, and E_AGENT_LIMIT advised "leave_space the ones you
 // are done with", which does nothing for exactly these: naming a corrective
 // action that does not work is this codebase's most persistent failure mode, and
 // this was another instance of it.
@@ -1708,7 +1708,7 @@ func mergeNotices(src, dst *Space, by string, wasHere []string) []Event {
 // A coordinator can now say so explicitly. That fits the director rule: every
 // director power is one an agent owner already has over its own agent: with the
 // honest caveat that for THIS one no owner had it either. It is the same
-// decision reclaimFinishedLanes makes automatically, made on purpose by somebody
+// decision reclaimFinishedAgents makes automatically, made on purpose by somebody
 // accountable, and ledgered under their name.
 //
 // Deliberately refuses an OCCUPIED agent rather than emptying it. Closing an agent
@@ -1717,10 +1717,10 @@ func mergeNotices(src, dst *Space, by string, wasHere []string) []Event {
 // an unacknowledged announcement: it is the record that something went
 // unanswered, and the board renders announcements through their agent, so closing
 // over one hides evidence rather than settling it.
-func (s *State) applyLaneClose(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+func (s *State) applySpaceClose(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {
-		return nil, nil, errf("E_NO_LANE", "check the agent id", "no agent %s", op.Space)
+		return nil, nil, errf("E_NO_AGENT", "check the agent id", "no agent %s", op.Space)
 	}
 	// The agent that OPENED an agent may retire it, without the coordinator role.
 	//
@@ -1755,7 +1755,7 @@ func (s *State) applyLaneClose(l *Agent, op *Op, now time.Time) (Result, []Event
 				"agent %s has an announcement nobody has acknowledged", ch.ID)
 		}
 	}
-	// Its announcements go with it, for the reason reclaimFinishedLanes gives:
+	// Its announcements go with it, for the reason reclaimFinishedAgents gives:
 	// leaving them keyed by a dead id hands the next agent with that id a
 	// stranger's history. Safe because every one of them is settled.
 	for serial, a := range s.Announcements {
@@ -1765,21 +1765,21 @@ func (s *State) applyLaneClose(l *Agent, op *Op, now time.Time) (Result, []Event
 	}
 	delete(s.Spaces, ch.ID)
 	evs := []Event{{Type: "agent.closed", Agent: l.ID, Data: map[string]any{
-		"lane_id": ch.ID, "topic": ch.Topic, "by": l.ID, "note": op.Note,
+		"agent_id": ch.ID, "topic": ch.Topic, "by": l.ID, "note": op.Note,
 		"why": "closed by a coordinator; it was empty and everything in it was settled",
 	}}}
 	s.finish(&evs, now)
-	return Result{"lane_id": ch.ID, "closed": true, "topic": ch.Topic}, evs, nil
+	return Result{"agent_id": ch.ID, "closed": true, "topic": ch.Topic}, evs, nil
 }
 
-func (s *State) applyLaneMerge(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+func (s *State) applySpaceMerge(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	src, err := s.directorOf(l, op)
 	if err != nil {
 		return nil, nil, err
 	}
 	dst := s.Spaces[cleanID(op.To)]
 	if dst == nil {
-		return nil, nil, errf("E_NO_LANE", "check the destination agent id", "no agent %s", op.To)
+		return nil, nil, errf("E_NO_AGENT", "check the destination agent id", "no agent %s", op.To)
 	}
 	if dst.ID == src.ID {
 		return nil, nil, errf("E_BAD_ARG", "name two different agents", "cannot merge %s into itself", src.ID)
@@ -1829,7 +1829,7 @@ func (s *State) applyLaneMerge(l *Agent, op *Op, now time.Time) (Result, []Event
 	}, evs, nil
 }
 
-// applyLaneAdmit adds another agent to an agent, on a coordinator's authority.
+// applySpaceAdmit adds another agent to an agent, on a coordinator's authority.
 //
 // This is the approval half of `director_required` (SPEC-CHANNELS.md §8.1): with
 // the gate on, scoring stops auto-joining and an agent waits to be admitted, so
@@ -1839,7 +1839,7 @@ func (s *State) applyLaneMerge(l *Agent, op *Op, now time.Time) (Result, []Event
 // The recorded score travels through unchanged when the director is acting on a
 // match, so a gated join is exactly as explainable as an automatic one; §10.3
 // does not weaken because a human-granted role was in the loop.
-func (s *State) applyLaneAdmit(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+func (s *State) applySpaceAdmit(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	ch, err := s.directorOf(l, op)
 	if err != nil {
 		return nil, nil, err
@@ -1850,10 +1850,10 @@ func (s *State) applyLaneAdmit(l *Agent, op *Op, now time.Time) (Result, []Event
 	}
 	t := s.Agents[target]
 	if t == nil || t.Status == StatusClosed || t.Status == StatusArchived {
-		return nil, nil, errf("E_NO_LANE", "check the board for live agents", "no live agent %q", target)
+		return nil, nil, errf("E_NO_AGENT", "check the board for live agents", "no live agent %q", target)
 	}
 	if _, already := ch.Members[target]; already {
-		return Result{"lane_id": ch.ID, "admitted": true, "already": true}, nil, nil
+		return Result{"agent_id": ch.ID, "admitted": true, "already": true}, nil, nil
 	}
 	ch.Members[target] = &Membership{
 		Agent: target, Score: op.Score, Threshold: op.Threshold,
@@ -1864,12 +1864,12 @@ func (s *State) applyLaneAdmit(l *Agent, op *Op, now time.Time) (Result, []Event
 	delete(ch.Subs, target)
 	dequeue(ch, target)
 	evs := []Event{{Type: "agent.joined", Agent: target, To: target, Data: map[string]any{
-		"lane_id": ch.ID, "admitted_by": l.ID, "members": len(ch.Members),
+		"agent_id": ch.ID, "admitted_by": l.ID, "members": len(ch.Members),
 		"score": op.Score, "note": op.Note,
 	}}}
 	s.finish(&evs, now)
 	return Result{
-		"lane_id": ch.ID, "admitted": true, "agent": target,
+		"agent_id": ch.ID, "admitted": true, "agent": target,
 		"members": len(ch.Members),
 	}, evs, nil
 }

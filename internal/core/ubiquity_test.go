@@ -50,32 +50,32 @@ func TestUbiquitousFilesDoNotCarryTheMatch(t *testing.T) {
 
 	// An agent declaring CLI work, which also happens to touch the common files.
 	decl := fp(append(append([]string{}, cliFiles...), common...)...)
-	got := s.MatchLanesWith("newcomer", decl, nil, 5)
+	got := s.MatchAgentsWith("newcomer", decl, nil, 5)
 	if len(got) == 0 {
 		t.Fatal("expected matches")
 	}
 
-	byLane := map[string]float64{}
+	byAgent := map[string]float64{}
 	for _, m := range got {
-		byLane[m.Agent] = m.Score
+		byAgent[m.Agent] = m.Score
 	}
 	// The right agent still wins, and by a clear margin: that is the part the
 	// discount must not break.
-	if byLane["cli"] <= byLane["runtime"] {
+	if byAgent["cli"] <= byAgent["runtime"] {
 		t.Fatalf("the genuinely-matching agent must rank first: cli=%.3f runtime=%.3f",
-			byLane["cli"], byLane["runtime"])
+			byAgent["cli"], byAgent["runtime"])
 	}
 	// And the unrelated agents must not clear a calibrated join bar on shared
 	// build files alone. 0.064 is the bar measured on the repository where this
 	// was reported.
 	const joinBar = 0.064
-	if byLane["runtime"] >= joinBar {
+	if byAgent["runtime"] >= joinBar {
 		t.Errorf("unrelated agent still auto-joinable on generic files: runtime=%.3f >= %.3f",
-			byLane["runtime"], joinBar)
+			byAgent["runtime"], joinBar)
 	}
-	if byLane["web"] >= joinBar {
+	if byAgent["web"] >= joinBar {
 		t.Errorf("unrelated agent still auto-joinable on generic files: web=%.3f >= %.3f",
-			byLane["web"], joinBar)
+			byAgent["web"], joinBar)
 	}
 }
 
@@ -87,7 +87,7 @@ func TestRareSharedFilesKeepTheirWeight(t *testing.T) {
 	agent(t, s, "ui", "ui", []string{"web/app.ts", "Justfile"})
 	agent(t, s, "docs", "docs", []string{"docs/readme.md", "Justfile"})
 	// Declaring exactly the auth agent's distinctive file.
-	got := s.MatchLanesWith("newcomer", fp("internal/auth/token.go", "Justfile"), nil, 5)
+	got := s.MatchAgentsWith("newcomer", fp("internal/auth/token.go", "Justfile"), nil, 5)
 	if len(got) == 0 || got[0].Agent != "auth" {
 		t.Fatalf("a distinctive shared file must dominate: %+v", got)
 	}
@@ -101,7 +101,7 @@ func TestRareSharedFilesKeepTheirWeight(t *testing.T) {
 func TestSingleLaneIsNotDiscounted(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	agent(t, s, "only", "the first agent", []string{"Justfile", "src/main.go"})
-	got := s.MatchLanesWith("newcomer", fp("Justfile", "src/main.go"), nil, 5)
+	got := s.MatchAgentsWith("newcomer", fp("Justfile", "src/main.go"), nil, 5)
 	if len(got) != 1 || got[0].Score < 0.99 {
 		t.Fatalf("an identical footprint on a one-agent board must match fully: %+v", got)
 	}
@@ -120,7 +120,7 @@ func agent(t *testing.T, s *State, id, topic string, files []string) {
 	ch := &Space{ID: id, Topic: topic, Members: map[string]*Membership{}}
 	member := id + "-owner"
 	if _, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: member, NewToken: "tok-" + member,
+		Kind: OpRegister, Name: member, NewToken: "tok-" + member,
 	}, time.Now()); err != nil {
 		t.Fatal(err)
 	}

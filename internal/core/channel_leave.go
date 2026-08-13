@@ -12,10 +12,10 @@ import (
 // Everything that depended on them has to be put right in the same step, or the
 // fleet wedges behind an agent that is already gone.
 
-func (s *State) applyLaneLeave(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+func (s *State) applySpaceLeave(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {
-		return nil, nil, errf("E_NO_LANE", "nothing to leave", "no agent %s", op.Space)
+		return nil, nil, errf("E_NO_AGENT", "nothing to leave", "no agent %s", op.Space)
 	}
 	if _, ok := ch.Members[l.ID]; !ok {
 		// Waiting in the queue is not membership, but it is not nothing either,
@@ -34,16 +34,16 @@ func (s *State) applyLaneLeave(l *Agent, op *Op, now time.Time) (Result, []Event
 			}
 			ch.Declined[l.ID] = true
 			evs := []Event{{Type: "agent.left", Agent: l.ID, Data: map[string]any{
-				"lane_id": ch.ID, "from_queue": true, "waiting": len(ch.Queue),
+				"agent_id": ch.ID, "from_queue": true, "waiting": len(ch.Queue),
 			}}}
 			s.finish(&evs, now)
 			return Result{
-				"lane_id": ch.ID, "left": true, "was": "queued",
+				"agent_id": ch.ID, "left": true, "was": "queued",
 				"note": "you were waiting for this agent, not in it: you are out of the " +
 					"queue and will not be admitted; join_space if you change your mind",
 			}, evs, nil
 		}
-		return Result{"lane_id": ch.ID, "left": false, "reason": "not a member"}, nil, nil
+		return Result{"agent_id": ch.ID, "left": false, "reason": "not a member"}, nil, nil
 	}
 	evs := s.departChannel(ch, l.ID)
 	// Deliberate, so it sticks. See Space.Declined: this is set HERE rather
@@ -55,7 +55,7 @@ func (s *State) applyLaneLeave(l *Agent, op *Op, now time.Time) (Result, []Event
 	ch.Declined[l.ID] = true
 	s.finish(&evs, now)
 	return Result{
-		"lane_id": ch.ID, "left": true,
+		"agent_id": ch.ID, "left": true,
 		"note": "you will not be auto-joined here again: join_space if you change your mind",
 	}, evs, nil
 }
@@ -81,7 +81,7 @@ func (s *State) departChannel(ch *Space, agent string) []Event {
 	var evs []Event
 	evs = append(evs, s.dropAckRequirementsIn(ch.ID, agent)...)
 	evs = append(evs, Event{Type: "agent.left", Agent: agent, Data: map[string]any{
-		"lane_id": ch.ID, "members": len(ch.Members),
+		"agent_id": ch.ID, "members": len(ch.Members),
 	}})
 	dequeue(ch, agent) // an agent that left is not waiting
 	if ch.Owner != agent {
@@ -92,8 +92,8 @@ func (s *State) departChannel(ch *Space, agent string) []Event {
 	// that the work is safe to take.
 	ch.Owner = ""
 	evs = append(evs, Event{Type: "agent.released", Agent: agent, Data: map[string]any{
-		"lane_id": ch.ID,
-		"caution": "the owner's coordination signal ended; this is not proof its work stopped",
+		"agent_id": ch.ID,
+		"caution":  "the owner's coordination signal ended; this is not proof its work stopped",
 	}})
 	if len(ch.Queue) == 0 {
 		return evs
@@ -118,9 +118,9 @@ func (s *State) departChannel(ch *Space, agent string) []Event {
 		ch.promote(next, s.Serial+1)
 		ch.Owner = next
 		return append(evs, Event{Type: "agent.joined", Agent: next, Data: map[string]any{
-			"lane_id": ch.ID, "from_queue": true, "members": len(ch.Members),
+			"agent_id": ch.ID, "from_queue": true, "members": len(ch.Members),
 		}}, Event{Type: "agent.exclusive", Agent: next, Data: map[string]any{
-			"lane_id": ch.ID, "owner": next,
+			"agent_id": ch.ID, "owner": next,
 		}})
 	}
 	// Nobody waiting can take it. Leaving the agent locked-open with a queue that

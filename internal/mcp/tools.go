@@ -145,6 +145,23 @@ var toolDefs = func() []map[string]any {
 			"inputSchema": obj(map[string]any{"token": tok}, "token"),
 		},
 		{
+			"name": "prune", "description": "Remove a FINISHED agent record you are " +
+				"responsible for: your own, or a child you vouched for. Tidying up after " +
+				"yourself, not board administration. It will not touch a peer, because an " +
+				"agent that could remove peers could delete the row saying somebody else is " +
+				"already doing its work, which is the one thing this board exists to show " +
+				"you. It will not touch an ACTIVE agent either: sign_off is how an agent " +
+				"stops, and this is how the record is tidied afterwards. Somebody else's " +
+				"debris is a human's call.",
+			"inputSchema": obj(map[string]any{
+				"token": tok,
+				"agent": map[string]any{
+					"type":        "string",
+					"description": "id of the finished agent to remove: yourself, or a child you vouched for",
+				},
+			}, "token", "agent"),
+		},
+		{
 			"name": "heartbeat", "description": "Renew your lease while idle. Any authenticated call also renews it implicitly.",
 			"inputSchema": obj(map[string]any{"token": tok}, "token"),
 		},
@@ -399,25 +416,25 @@ var toolDefs = func() []map[string]any {
 		// same WORK, which is the collision that actually destroys things.
 		{
 			"name": "open_space",
-			"description": "Open an agent: a space for one piece of work that several agents may need. Name it for the " +
+			"description": "Open a space for one piece of work that several agents may need. Name it for the " +
 				"WORK ('auth-refactor'), not for yourself. You become its first member. Set exclusive if nobody else should " +
 				"work here; others will queue rather than be refused.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
-				"agent": str("agent id, named for the work (e.g. auth-refactor)"),
+				"space": str("space id, named for the WORK (e.g. auth-refactor), never for an agent"),
 				"topic": str("one line: what this work is"),
 				"exclusive": map[string]any{"type": "boolean", "description": "take it exclusively; others queue or request " +
 					"access"},
-			}, "token", "agent", "topic"),
+			}, "token", "space", "topic"),
 		},
 		{
 			"name": "join_space",
-			"description": "Join an agent, declaring you are working on that. Members collide, so join only what you are " +
+			"description": "Join a space, declaring you are working on that. Members collide, so join only what you are " +
 				"actually working on. If the space is exclusive you are QUEUED instead, and told your position and who owns it " +
 				",  send them a request, or wait to be admitted.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
-				"agent": str("agent id to join"),
+				"space": str("space id to join"),
 				// Scoring provenance. Supplied by whatever matched the work; it is
 				// RECORDED, never recomputed, so the ledger stays replayable and
 				// "why am I here" stays answerable years later.
@@ -433,72 +450,72 @@ var toolDefs = func() []map[string]any {
 					"type":        "boolean",
 					"description": "true if matched automatically rather than chosen",
 				},
-			}, "token", "agent"),
+			}, "token", "space"),
 		},
 		{
 			"name": "leave_space",
-			"description": "Leave an agent when you are done with that work. If you held it exclusively this releases it and " +
+			"description": "Leave a space when you are done with that work. If you held it exclusively this releases it and " +
 				"admits whoever is next in the queue: leaving promptly is what keeps a fleet from waiting on you. " +
 				"Also how you give up a place in an exclusive space's queue: call it while waiting and you will not be " +
 				"admitted later.",
-			"inputSchema": obj(map[string]any{"token": tok, "agent": str("agent id")}, "token", "agent"),
+			"inputSchema": obj(map[string]any{"token": tok, "space": str("space id")}, "token", "space"),
 		},
 		{
 			"name": "watch_space",
-			"description": "Watch an agent's traffic WITHOUT joining it. Subscribers see everything " +
+			"description": "Watch a space's traffic WITHOUT joining it. Subscribers see everything " +
 				"and collide with nobody: this is how you keep an eye on adjacent work you are " +
 				"not doing. mode=release to unsubscribe.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "agent": str("agent id"),
+				"token": tok, "space": str("space id"),
 				"mode": map[string]any{"type": "string", "enum": []string{"subscribe", "release"}},
-			}, "token", "agent"),
+			}, "token", "space"),
 		},
 		{
 			"name": "lock_space",
-			"description": "Take or release exclusivity on an agent you are in. Only the first member may take it. " +
+			"description": "Take or release exclusivity on a space you are in. Only the first member may take it. " +
 				"mode=release hands it back and admits everyone waiting. Exclusivity is a coordination signal; pair it with " +
 				"claim() if you need edits actually blocked.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "agent": str("agent id"),
+				"token": tok, "space": str("space id"),
 				"mode": map[string]any{"type": "string", "enum": []string{"exclusive", "release"}},
-			}, "token", "agent"),
+			}, "token", "space"),
 		},
 		{
 			"name": "post",
-			"description": "Post an FYI to an agent: progress, notes, anything for the record. " +
+			"description": "Post an FYI to a space: progress, notes, anything for the record. " +
 				"Nobody has to acknowledge it, and members and subscribers read it with read_space " +
 				"whenever they get to it. Use announce instead when others MUST know, " +
 				"or the post will be skimmed past.",
 			"inputSchema": obj(
-				map[string]any{"token": tok, "agent": str("agent id"), "body": str("what you want the agent to know")}, "token",
-				"agent", "body",
+				map[string]any{"token": tok, "space": str("space id"), "body": str("what you want the agent to know")}, "token",
+				"space", "body",
 			),
 		},
 		{
 			"name": "announce",
-			"description": "Announce something every member of the agent MUST know: an interface " +
+			"description": "Announce something every member of the space MUST know: an interface " +
 				"change, a rename, anything with collision risk. Members are required to " +
 				"acknowledge, and are re-prompted until they do. Use sparingly: announce " +
 				"everything and it becomes noise nobody reads. Requires check_in() first, " +
-				"because this obliges everyone else to answer you: read what the agent has " +
+				"because this obliges everyone else to answer you: read what the space has " +
 				"already been told before adding to it.",
 			"inputSchema": obj(
-				map[string]any{"token": tok, "agent": str("agent id"), "body": str("what everyone must know")}, "token", "agent",
+				map[string]any{"token": tok, "space": str("space id"), "body": str("what everyone must know")}, "token", "space",
 				"body",
 			),
 		},
 		{
 			"name": "read_space",
-			"description": "Read an agent you are a member of or subscribed to: its topic, what has been ANNOUNCED " +
-				"in it, and what has been POSTED. This is what 'read the agent first' means: call it when you join, " +
+			"description": "Read a space you are a member of or subscribed to: its topic, what has been ANNOUNCED " +
+				"in it, and what has been POSTED. This is what 'read the space first' means: call it when you join, " +
 				"and again after losing context. It is also the only way to read a post: the event stream says a post " +
 				"happened and never what it said. Each announcement says whether an acknowledgement is OWED by you, " +
 				"already done, or not required (announced before you joined: you can see it, you do not owe it). " +
 				"Reading acknowledges NOTHING; use ack_announcement for that.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "agent": str("the agent id"),
+				"token": tok, "space": str("the space id"),
 				"limit": num("most recent N announcements and posts (default 50)"),
-			}, "token", "agent"),
+			}, "token", "space"),
 		},
 		{
 			"name": "ack_announcement",
@@ -511,14 +528,14 @@ var toolDefs = func() []map[string]any {
 
 		{
 			"name": "unlock_space",
-			"description": "COORDINATOR ONLY. Strip exclusivity from an agent whose owner is gone, " +
+			"description": "COORDINATOR ONLY. Strip exclusivity from a space whose owner is gone, " +
 				"admitting everyone queued behind it. The former owner is named in the event; this " +
 				"is never silent. Their coordination signal ended, which is NOT proof their work " +
 				"stopped: prefer asking them first.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "agent": str("agent id to unstick"),
+				"token": tok, "space": str("space id to unstick"),
 				"note": str("why: the former owner and the board both see this"),
-			}, "token", "agent"),
+			}, "token", "space"),
 		},
 		{
 			"name": "evict",
@@ -527,9 +544,9 @@ var toolDefs = func() []map[string]any {
 				"remove cannot be promoted into it later. This is also how you MOVE an agent: " +
 				"evict, and it joins the right agent. The agent is told, and its work is untouched.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "agent": str("agent id"), "to": str("the agent to remove"),
+				"token": tok, "space": str("space id"), "to": str("the agent to remove"),
 				"note": str("why: the evicted agent sees this"),
-			}, "token", "agent", "to"),
+			}, "token", "space", "to"),
 		},
 		{
 			"name": "admit",
@@ -537,10 +554,10 @@ var toolDefs = func() []map[string]any {
 				"step when the board is configured to require one, and is also how you pull " +
 				"somebody into work they belong in but did not match.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "agent": str("agent id"), "to": str("the agent to admit"),
+				"token": tok, "space": str("space id"), "to": str("the agent to admit"),
 				"note":  str("why"),
 				"score": map[string]any{"type": "number", "description": "the match score, if you are acting on one"},
-			}, "token", "agent", "to"),
+			}, "token", "space", "to"),
 		},
 		{
 			"name": "human_unlock",
@@ -559,35 +576,35 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "close_space",
-			"description": "COORDINATOR ONLY. Retire a finished CHANNEL of work, not an " +
+			"description": "COORDINATOR ONLY. Retire a finished SPACE of work, not an " +
 				"agent, and not you: leaving the board yourself is `sign_off`, which takes " +
-				"no id. Dibs opened automatically " +
+				"no id. Spaces opened automatically " +
 				"from a declaration end by themselves once their last member leaves; an agent a " +
 				"human opened does NOT, deliberately: outliving its members is what a standing " +
 				"agent is for, so without this nothing could ever end one and a board accumulated " +
-				"finished agents permanently. Refuses an agent that still has members or anyone " +
+				"finished agents permanently. Refuses a space that still has members or anyone " +
 				"queued (evict them first if you mean to: closing is tidying, not eviction), and " +
 				"refuses one holding an announcement nobody has acknowledged, because the board " +
 				"shows announcements through their agent and closing would hide it rather than " +
 				"settle it.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "agent": str("agent id to close"),
+				"token": tok, "space": str("space id to close"),
 				"note": str("why you are closing it"),
-			}, "token", "agent"),
+			}, "token", "space"),
 		},
 		{
 			"name": "merge_spaces",
-			"description": "COORDINATOR ONLY. Fold one agent into another when the two drifted into " +
+			"description": "COORDINATOR ONLY. Fold one space into another when the two drifted into " +
 				"the same job. Everything moves across: members, subscribers, outstanding " +
 				"announcements, and anyone queued for exclusive access: who are admitted if the " +
 				"destination is open, or keep their place in its queue if it is not. Everyone " +
-				"moved is told the source agent is gone. The source agent disappears. Deliberately " +
+				"moved is told the source space is gone. The source space disappears. Deliberately " +
 				"a human-granted decision rather than an automatic one: merging is destructive " +
 				"to context.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "agent": str("agent id to merge FROM (it disappears)"),
+				"token": tok, "space": str("space id to merge FROM (it disappears)"),
 				"to": str("agent id to merge INTO"), "note": str("why"),
-			}, "token", "agent", "to"),
+			}, "token", "space", "to"),
 		},
 
 		{

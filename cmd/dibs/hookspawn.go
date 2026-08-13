@@ -56,7 +56,7 @@ func hookSpawn(args []string) error {
 	// agent's shell command: if it cannot decide, the command must proceed
 	// untouched, and a non-zero exit or a stray line on stdout is a way to break
 	// work that the agent cannot diagnose.
-	if out := stampFor(os.Stdin, laneForSession); out != "" {
+	if out := stampFor(os.Stdin, agentForSession); out != "" {
 		fmt.Println(out)
 	}
 	return nil
@@ -171,12 +171,12 @@ func safeToPrefix(cmd string) bool {
 	return !strings.ContainsAny(t, "\n\r")
 }
 
-// laneForSession asks the daemon which agent owns a harness session.
+// agentForSession asks the daemon which agent owns a harness session.
 //
 // Via hook_poll, which is the existing token-less lifecycle-hook path: a hook
 // has no agent token, and inventing a second unauthenticated endpoint for this
 // would widen the surface that path was carefully narrowed to.
-func laneForSession(sessionID, cwd string) string {
+func agentForSession(sessionID, cwd string) string {
 	if sessionID == "" {
 		return ""
 	}

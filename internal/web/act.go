@@ -101,15 +101,15 @@ func (a act) op(what, token string) (*core.Op, bool) {
 	op := &core.Op{Token: token}
 	switch what {
 	case "join":
-		op.Kind, op.Space = core.OpLaneJoin, a.Agent
+		op.Kind, op.Space = core.OpSpaceJoin, a.Agent
 	case "leave":
-		op.Kind, op.Space = core.OpLaneLeave, a.Agent
+		op.Kind, op.Space = core.OpSpaceLeave, a.Agent
 	case "post":
-		op.Kind, op.Space, op.Body = core.OpLanePost, a.Agent, a.Body
+		op.Kind, op.Space, op.Body = core.OpSpacePost, a.Agent, a.Body
 	case "announce":
-		op.Kind, op.Space, op.Body = core.OpLaneAnnounce, a.Agent, a.Body
+		op.Kind, op.Space, op.Body = core.OpSpaceAnnounce, a.Agent, a.Body
 	case "open":
-		op.Kind, op.Space, op.Text = core.OpLaneOpen, a.Agent, a.Body
+		op.Kind, op.Space, op.Text = core.OpSpaceOpen, a.Agent, a.Body
 	case "send":
 		op.Kind, op.To, op.Body = core.OpSendMessage, a.To, a.Body
 		op.MsgType, op.DeadlineSec = a.msgType(), a.deadline()
@@ -119,7 +119,7 @@ func (a act) op(what, token string) (*core.Op, bool) {
 	case "ack":
 		op.Kind, op.MsgSerial = core.OpAckMessage, a.Serial
 	case "ack_announcement":
-		op.Kind, op.MsgSerial = core.OpLaneAck, a.Serial
+		op.Kind, op.MsgSerial = core.OpSpaceAck, a.Serial
 	default:
 		return nil, false
 	}

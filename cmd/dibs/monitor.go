@@ -72,7 +72,7 @@ func monitor(args []string) error {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return err
 		}
-		token, _, err = ensureLane(call, *agent, *desc, dir)
+		token, _, err = ensureAgent(call, *agent, *desc, dir)
 		if err != nil {
 			return err
 		}
@@ -133,10 +133,10 @@ func monitor(args []string) error {
 	}
 }
 
-// ensureLane registers (or resumes) a persistent agent by name, keyed by a
+// ensureAgent registers (or resumes) a persistent agent by name, keyed by a
 // nonce persisted in dir, and writes the resulting token to <name>.token.
 // Returns the agent token and its resolved agent id.
-func ensureLane(call mcpFn, name, desc, dir string) (string, string, error) {
+func ensureAgent(call mcpFn, name, desc, dir string) (string, string, error) {
 	// Fixed filenames: one agent per state-dir (per project), so the agent's
 	// skill can reference ./.dibs/token without knowing the agent name.
 	noncePath := filepath.Join(dir, "nonce")
@@ -175,11 +175,11 @@ func ensureLane(call mcpFn, name, desc, dir string) (string, string, error) {
 	if token == "" {
 		return "", "", fmt.Errorf("register/resume returned no token: %v", res)
 	}
-	laneID, _ := res["lane_id"].(string)
+	agentID, _ := res["agent_id"].(string)
 	if err := os.WriteFile(tokenPath, []byte(token), 0o600); err != nil {
 		return "", "", err
 	}
-	return token, laneID, nil
+	return token, agentID, nil
 }
 
 // --- shared MCP call helper (used by monitor) ---

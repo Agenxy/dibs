@@ -27,17 +27,17 @@ func TestALaneRecordsWhyItStoppedCountingAsLive(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s := NewState("t", DefaultLimits())
 			now := time.Unix(1700000000, 0)
-			res, _, err := s.Apply(&Op{Kind: OpRegisterLane, Name: "a", NewToken: "tok", PID: tc.pid}, now)
+			res, _, err := s.Apply(&Op{Kind: OpRegister, Name: "a", NewToken: "tok", PID: tc.pid}, now)
 			if err != nil {
 				t.Fatal(err)
 			}
-			id, _ := res["lane_id"].(string)
+			id, _ := res["agent_id"].(string)
 
 			op := &Op{Kind: OpSweep}
 			if tc.dead {
-				op.DeadLanes = []string{id}
+				op.DeadAgents = []string{id}
 			} else {
-				op.StaleLanes = []string{id}
+				op.StaleAgents = []string{id}
 			}
 			if _, _, err := s.Apply(op, now); err != nil {
 				t.Fatal(err)
@@ -64,13 +64,13 @@ func TestReturningClearsTheReason(t *testing.T) {
 	s := NewState("t", DefaultLimits())
 	now := time.Unix(1700000000, 0)
 	res, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "a", NewToken: "tok", PID: 4242, SessionID: "sess",
+		Kind: OpRegister, Name: "a", NewToken: "tok", PID: 4242, SessionID: "sess",
 	}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, _ := res["lane_id"].(string)
-	if _, _, err := s.Apply(&Op{Kind: OpSweep, DeadLanes: []string{id}}, now); err != nil {
+	id, _ := res["agent_id"].(string)
+	if _, _, err := s.Apply(&Op{Kind: OpSweep, DeadAgents: []string{id}}, now); err != nil {
 		t.Fatal(err)
 	}
 	if s.Agents[id].StaleReason == "" {
@@ -78,7 +78,7 @@ func TestReturningClearsTheReason(t *testing.T) {
 	}
 	// Re-registering with the same name + session is how an agent comes back.
 	if _, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "a", NewToken: "tok2", SessionID: "sess",
+		Kind: OpRegister, Name: "a", NewToken: "tok2", SessionID: "sess",
 	}, now); err != nil {
 		t.Fatal(err)
 	}
@@ -128,15 +128,15 @@ func TestExpiryTellsTheTruthAboutWhyNobodyAnswered(t *testing.T) {
 			s := NewState("t", DefaultLimits())
 			reg := func(name, tok, nonce string) *Agent {
 				t.Helper()
-				op := &Op{Kind: OpRegisterLane, Name: name, NewToken: tok, PID: 42}
+				op := &Op{Kind: OpRegister, Name: name, NewToken: tok, PID: 42}
 				if nonce != "" {
-					op.LaneKind, op.Nonce = KindPersistent, nonce
+					op.AgentKind, op.Nonce = KindPersistent, nonce
 				}
 				r, _, err := s.Apply(op, now)
 				if err != nil {
 					t.Fatal(err)
 				}
-				id, _ := r["lane_id"].(string)
+				id, _ := r["agent_id"].(string)
 				if _, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: s.Agents[id].Token}, now); err != nil {
 					t.Fatal(err)
 				}
@@ -159,11 +159,11 @@ func TestExpiryTellsTheTruthAboutWhyNobodyAnswered(t *testing.T) {
 
 			switch tc.arrange {
 			case "stale", "dormant":
-				if _, _, err := s.Apply(&Op{Kind: OpSweep, DeadLanes: []string{"target"}}, now); err != nil {
+				if _, _, err := s.Apply(&Op{Kind: OpSweep, DeadAgents: []string{"target"}}, now); err != nil {
 					t.Fatal(err)
 				}
 			case "closed":
-				if _, _, err := s.Apply(&Op{Kind: OpCloseLane, Token: s.Agents["target"].Token}, now); err != nil {
+				if _, _, err := s.Apply(&Op{Kind: OpSignOff, Token: s.Agents["target"].Token}, now); err != nil {
 					t.Fatal(err)
 				}
 			case "gone":
@@ -218,11 +218,11 @@ func TestANameThatCannotBecomeAnIDIsNotDiscardedSilently(t *testing.T) {
 	s := NewState("t", DefaultLimits())
 	now := time.Unix(1700000000, 0)
 
-	res, _, err := s.Apply(&Op{Kind: OpRegisterLane, Name: "監視者", NewToken: "t1"}, now)
+	res, _, err := s.Apply(&Op{Kind: OpRegister, Name: "監視者", NewToken: "t1"}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, _ := res["lane_id"].(string)
+	id, _ := res["agent_id"].(string)
 	if id != "agent" {
 		t.Fatalf("precondition: nothing in that name is addressable, got %q", id)
 	}
@@ -255,7 +255,7 @@ func TestANameThatCannotBecomeAnIDIsNotDiscardedSilently(t *testing.T) {
 	}
 
 	// An ASCII name needs neither: no note, and no second name to render.
-	res2, _, err := s.Apply(&Op{Kind: OpRegisterLane, Name: "builder", NewToken: "t2"}, now)
+	res2, _, err := s.Apply(&Op{Kind: OpRegister, Name: "builder", NewToken: "t2"}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,17 +298,17 @@ func TestProcAliveIsOnlyRecordedWhenSomethingActuallyLooked(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := NewState("t", DefaultLimits())
-			r, _, err := s.Apply(&Op{Kind: OpRegisterLane, Name: "a", NewToken: "t1", PID: 4242}, now)
+			r, _, err := s.Apply(&Op{Kind: OpRegister, Name: "a", NewToken: "t1", PID: 4242}, now)
 			if err != nil {
 				t.Fatal(err)
 			}
-			id, _ := r["lane_id"].(string)
+			id, _ := r["agent_id"].(string)
 			op := &Op{Kind: OpSweep, AlivePIDs: tc.alivePIDs}
 			if tc.dead {
-				op.DeadLanes = []string{id}
+				op.DeadAgents = []string{id}
 			}
 			if tc.stale {
-				op.StaleLanes = []string{id}
+				op.StaleAgents = []string{id}
 			}
 			_, evs, err := s.Apply(op, now)
 			if err != nil {

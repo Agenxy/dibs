@@ -27,7 +27,7 @@ import (
 func (e *Engine) GuardPath(ctx context.Context, sessionID, path, cwd string) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
 		agent := ""
-		if l := e.state.LaneForHook(sessionID, cwd); l != nil {
+		if l := e.state.AgentForHook(sessionID, cwd); l != nil {
 			agent = l.ID
 		}
 		// Counted whether or not it resolved: a guard that never resolves is

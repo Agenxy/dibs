@@ -62,7 +62,7 @@ func (e *Engine) HumanIdentity() string {
 	if e.human.token == "" {
 		return ""
 	}
-	if e.state.LaneByToken(e.human.token) == nil {
+	if e.state.AgentByToken(e.human.token) == nil {
 		e.human.token, e.human.agent = "", ""
 		return ""
 	}
@@ -84,7 +84,7 @@ func (e *Engine) HumanIdentity() string {
 // (The Go type is still `core.Agent` because the ledger's wire name for a
 // participant is frozen as `agent`. That collision is documented at the top of
 // internal/core/space.go, and it is easy to fall into: this function was
-// called HumanLane until a reader pointed out it reads as "the human gets a
+// called HumanAgent until a reader pointed out it reads as "the human gets a
 // space", which is the opposite of what it does.)
 //
 // PERSISTENT, and registered with a stable nonce, so the same person reattaches
@@ -98,7 +98,7 @@ func (e *Engine) HumanAgent(ctx context.Context) (agent, token string, err error
 		// Confirm the identity still exists: an admin prune, or a data directory
 		// swapped underneath us, would otherwise leave a token that authorises
 		// nothing and fails on the next action with a bare bad-token error.
-		if l := e.state.LaneByToken(e.human.token); l != nil {
+		if l := e.state.AgentByToken(e.human.token); l != nil {
 			return e.human.agent, e.human.token, nil
 		}
 		e.human.token, e.human.agent = "", ""
@@ -106,9 +106,9 @@ func (e *Engine) HumanAgent(ctx context.Context) (agent, token string, err error
 
 	name := humanName()
 	res, err := e.Do(ctx, &core.Op{
-		Kind: core.OpRegisterLane, Name: name,
+		Kind: core.OpRegister, Name: name,
 		Description: "the human at the board",
-		LaneKind:    core.KindPersistent,
+		AgentKind:   core.KindPersistent,
 		Nonce:       "human:" + name,
 		SessionID:   "human:" + name,
 		PID:         os.Getpid(),
@@ -120,7 +120,7 @@ func (e *Engine) HumanAgent(ctx context.Context) (agent, token string, err error
 		return "", "", err
 	}
 	tok, _ := res["token"].(string)
-	id, _ := res["lane_id"].(string)
+	id, _ := res["agent_id"].(string)
 	if tok == "" || id == "" {
 		return "", "", core.ErrBadToken
 	}
@@ -149,7 +149,7 @@ func (e *Engine) HumanTouch(ctx context.Context) {
 		return
 	}
 	_, _ = e.query(ctx, func() core.Result {
-		if l := e.state.LaneByToken(tok); l != nil {
+		if l := e.state.AgentByToken(tok); l != nil {
 			e.seen[l.ID] = time.Now()
 		}
 		return core.Result{}

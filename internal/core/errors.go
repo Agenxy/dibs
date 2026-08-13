@@ -39,8 +39,8 @@ var (
 		Code: "E_MAILBOX_FULL", Msg: "recipient mailbox is at capacity",
 		Hint: "retry later; the recipient has unprocessed messages",
 	}
-	ErrLaneLimit = &Error{
-		Code: "E_LANE_LIMIT", Msg: "maximum number of agents reached",
+	ErrAgentLimit = &Error{
+		Code: "E_AGENT_LIMIT", Msg: "maximum number of agents reached",
 		Hint: "wait for stale agents to be archived or ask the human to raise limits",
 	}
 	ErrRateLimited = &Error{

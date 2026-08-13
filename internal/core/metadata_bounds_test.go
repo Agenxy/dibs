@@ -27,13 +27,13 @@ func TestReplayedMetadataIsBounded(t *testing.T) {
 		{"an oversized hold", &Op{Kind: OpSetSlot, Holds: []string{huge}}},
 		{"too many holds", &Op{Kind: OpSetSlot, Holds: many}},
 		{"an oversized session_id", &Op{Kind: OpBindSession, SessionID: longName}},
-		{"an oversized agent.title", &Op{Kind: OpRegisterLane, Agent: &AgentInfo{Title: longName}}},
+		{"an oversized agent.title", &Op{Kind: OpRegister, Agent: &AgentInfo{Title: longName}}},
 		// Bounded as a PATH, not a name: 128 bytes rejected working directories
 		// that real agents register from, and what it refused was the whole
 		// register, not the field.
-		{"an oversized agent.cwd", &Op{Kind: OpRegisterLane, Agent: &AgentInfo{CWD: huge}}},
-		{"an oversized agent.project", &Op{Kind: OpRegisterLane, Agent: &AgentInfo{Project: longName}}},
-		{"an oversized agent.harness", &Op{Kind: OpRegisterLane, Agent: &AgentInfo{Harness: longName}}},
+		{"an oversized agent.cwd", &Op{Kind: OpRegister, Agent: &AgentInfo{CWD: huge}}},
+		{"an oversized agent.project", &Op{Kind: OpRegister, Agent: &AgentInfo{Project: longName}}},
+		{"an oversized agent.harness", &Op{Kind: OpRegister, Agent: &AgentInfo{Harness: longName}}},
 	} {
 		if err := Admit(tc.op, lim); err == nil {
 			t.Errorf("%s was admitted: it would sit in the ledger forever", tc.what)
@@ -63,7 +63,7 @@ func TestReplayedMetadataIsBounded(t *testing.T) {
 	if len(deep) <= lim.MaxNameBytes {
 		t.Fatalf("the fixture is no longer long enough to exercise the bound (%d bytes)", len(deep))
 	}
-	if err := Admit(&Op{Kind: OpRegisterLane, Agent: &AgentInfo{CWD: deep}}, lim); err != nil {
+	if err := Admit(&Op{Kind: OpRegister, Agent: &AgentInfo{CWD: deep}}, lim); err != nil {
 		t.Errorf("an agent in an ordinary deep checkout could not register: %v", err)
 	}
 }
@@ -77,7 +77,7 @@ func TestTheNewBoundsDoNotBindHistory(t *testing.T) {
 	st := NewState("test", lim)
 
 	tok := "t1"
-	if _, _, err := st.Apply(&Op{Kind: OpRegisterLane, Name: "a", NewToken: tok}, t0); err != nil {
+	if _, _, err := st.Apply(&Op{Kind: OpRegister, Name: "a", NewToken: tok}, t0); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := st.Apply(&Op{Kind: OpAckBoard, Token: tok}, t0); err != nil {

@@ -20,7 +20,7 @@ func TestAnEnormousDeadlineClampsRatherThanWrapping(t *testing.T) {
 
 	reg := func(name string) string {
 		if _, _, err := s.Apply(&Op{
-			Kind: OpRegisterLane, Name: name, NewToken: "t-" + name, SessionID: name,
+			Kind: OpRegister, Name: name, NewToken: "t-" + name, SessionID: name,
 		}, now); err != nil {
 			t.Fatalf("register %s: %v", name, err)
 		}

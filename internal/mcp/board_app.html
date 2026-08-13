@@ -2008,7 +2008,7 @@ function render(params) {
       if (!message || Board.TERMINAL.has(message.state)) state.errors.delete(serial)
     }
   }
-  if (d.lane_id) state.agent = d.lane_id
+  if (d.agent_id) state.agent = d.agent_id
   if (d.act_token) state.token = d.act_token
   if (d.events) state.events = d.events
 

@@ -46,7 +46,7 @@ type notice struct {
 // agent asked for. Returns "" for a self-service join: that is the agent's own
 // tool result, and repeating it back trains agents to ignore the space.
 func joinedNotice(ev core.Event) string {
-	agent, _ := ev.Data["lane_id"].(string)
+	agent, _ := ev.Data["agent_id"].(string)
 	if from, ok := ev.Data["merged_from"].(string); ok && from != "" {
 		// The source agent is GONE. An agent told only "you joined X" would keep
 		// addressing the agent it was working in, and every call would fail with a
@@ -84,7 +84,7 @@ func (e *Engine) noteEvent(ev core.Event) {
 		// Your agent just gained another space's members, its predicted footprint
 		// and its outstanding announcements, which you may now be required to
 		// acknowledge. You did not do this and cannot infer it.
-		agent, _ := ev.Data["lane_id"].(string)
+		agent, _ := ev.Data["agent_id"].(string)
 		from, _ := ev.Data["merged_from"].(string)
 		by, _ := ev.Data["merged_by"].(string)
 		gained, _ := ev.Data["gained"].(int)
@@ -96,7 +96,7 @@ func (e *Engine) noteEvent(ev core.Event) {
 	case "agent.requeued":
 		// Still waiting, but on a different agent, and told so, rather than
 		// left holding a queue position in an agent that was deleted.
-		agent, _ := ev.Data["lane_id"].(string)
+		agent, _ := ev.Data["agent_id"].(string)
 		from, _ := ev.Data["merged_from"].(string)
 		pos, _ := ev.Data["queue_position"].(int)
 		owner, _ := ev.Data["owner"].(string)
@@ -106,7 +106,7 @@ func (e *Engine) noteEvent(ev core.Event) {
 			from, agent, owner, from, pos, agent,
 		)
 	case "agent.evicted":
-		agent, _ := ev.Data["lane_id"].(string)
+		agent, _ := ev.Data["agent_id"].(string)
 		by, _ := ev.Data["by"].(string)
 		if q, _ := ev.Data["from_queue"].(bool); q {
 			// Never a member, so "stop work there" would be nonsense. What this
@@ -121,7 +121,7 @@ func (e *Engine) noteEvent(ev core.Event) {
 			"you were removed from agent %q by %s: stop work there and coordinate before resuming", agent, by,
 		)
 	case "agent.exclusive":
-		agent, _ := ev.Data["lane_id"].(string)
+		agent, _ := ev.Data["agent_id"].(string)
 		if owner, ok := ev.Data["owner"].(string); ok && owner == ev.Agent {
 			return // you took it yourself; your own tool result already said so
 		} else {

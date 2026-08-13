@@ -22,7 +22,7 @@ import (
 func TestAckBoardAlwaysAnswersWithBothKeys(t *testing.T) {
 	st := core.NewState("n1", core.DefaultLimits())
 	if _, _, err := st.Apply(&core.Op{
-		Kind: core.OpRegisterLane, Name: "solo", NewToken: "tok-solo",
+		Kind: core.OpRegister, Name: "solo", NewToken: "tok-solo",
 	}, time.Now()); err != nil {
 		t.Fatal(err)
 	}

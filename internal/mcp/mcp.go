@@ -632,8 +632,15 @@ type toolArgs struct {
 	Branch      string            `json:"branch"`
 	Host        string            `json:"host"`
 
-	// Spaces (SPEC-CHANNELS.md). `agent` is the protocol name for a space.
-	LaneID      string   `json:"agent"`
+	// Spaces (SPEC-CHANNELS.md). The parameter is `space`, because it names one.
+	//
+	// It was `agent`, which is what a lane became when lanes were renamed: the
+	// concept split into agents and spaces and this half kept the wrong word.
+	// open_space then advertised "agent id, named for the work", telling an
+	// agent to do the one thing every other line of the docs says never to do.
+	SpaceID string `json:"space"`
+	// AgentRef targets an actual agent, for the tools that act on one.
+	AgentRef    string   `json:"agent"`
 	Limit       int      `json:"limit"`
 	Topic       string   `json:"topic"`
 	Exclusive   bool     `json:"exclusive"`
@@ -816,19 +823,21 @@ func (s *Server) run(
 			return nil, fmt.Errorf("name is required")
 		}
 		op.Agent = agentInfo(params, a, sessionClient)
-		op.Kind, op.Name, op.Description, op.PID = core.OpRegisterLane, a.Name, a.Description, a.PID
-		op.Nonce, op.LaneKind, op.SessionID = a.Nonce, core.LaneKind(a.Kind), a.SessionID
+		op.Kind, op.Name, op.Description, op.PID = core.OpRegister, a.Name, a.Description, a.PID
+		op.Nonce, op.AgentKind, op.SessionID = a.Nonce, core.AgentKind(a.Kind), a.SessionID
 		op.Parent, op.ParentNonce = a.Parent, a.ParentNonce
 	case "resume":
-		op.Kind, op.Nonce, op.ResumeID, op.PID = core.OpResumeLane, a.Nonce, a.ResumeID, a.PID
+		op.Kind, op.Nonce, op.ResumeID, op.PID = core.OpResume, a.Nonce, a.ResumeID, a.PID
 	case "check_in":
 		op.Kind = core.OpAckBoard
 	case "update":
-		op.Kind, op.Description = core.OpUpdateLane, a.Description
+		op.Kind, op.Description = core.OpUpdate, a.Description
 	case "vouch_child":
 		op.Kind, op.Nonce = core.OpVouchChild, a.Nonce
 	case "sign_off":
-		op.Kind = core.OpCloseLane
+		op.Kind = core.OpSignOff
+	case "prune":
+		op.Kind, op.To = core.OpPruneOwn, a.AgentRef
 	case "heartbeat":
 		op.Kind = core.OpHeartbeat
 	case "declare":
@@ -855,7 +864,7 @@ func (s *Server) run(
 	case "read_mail":
 		return s.eng.GetMessage(ctx, a.Token, a.MsgSerial)
 	case "read_space":
-		return s.laneRead(ctx, a.Token, a.LaneID, a.Limit)
+		return s.spaceRead(ctx, a.Token, a.SpaceID, a.Limit)
 	case "claim":
 		if err := mustBeAbsolute("claim path", a.Path); err != nil {
 			return nil, err
@@ -898,38 +907,38 @@ func (s *Server) run(
 	// scorer produced them ran at the edge, and Apply takes them as fact so the
 	// ledger stays replayable (SPEC-CHANNELS.md §4.3).
 	case "open_space":
-		op.Kind, op.Space, op.Text, op.Exclusive = core.OpLaneOpen, a.LaneID, a.Topic, a.Exclusive
+		op.Kind, op.Space, op.Text, op.Exclusive = core.OpSpaceOpen, a.SpaceID, a.Topic, a.Exclusive
 		// An agent with no footprint can never be matched against, which would
 		// make it invisible to the auto-join that gives it its point.
 		return s.eng.OpenWithPrediction(ctx, op)
 	case "join_space":
-		op.Kind, op.Space = core.OpLaneJoin, a.LaneID
+		op.Kind, op.Space = core.OpSpaceJoin, a.SpaceID
 		op.Score, op.Threshold = a.Score, a.Threshold
 		op.ScorerID, op.ScorerVersion, op.Evidence, op.Auto = a.ScorerID, a.ScorerVer, a.Evidence, a.Auto
 	case "leave_space":
-		op.Kind, op.Space = core.OpLaneLeave, a.LaneID
+		op.Kind, op.Space = core.OpSpaceLeave, a.SpaceID
 	case "watch_space":
-		op.Kind, op.Space, op.Mode = core.OpLaneSubscribe, a.LaneID, a.Mode
+		op.Kind, op.Space, op.Mode = core.OpSpaceSubscribe, a.SpaceID, a.Mode
 	case "lock_space":
-		op.Kind, op.Space, op.Mode = core.OpLaneExclusive, a.LaneID, a.Mode
+		op.Kind, op.Space, op.Mode = core.OpSpaceExclusive, a.SpaceID, a.Mode
 	case "post":
-		op.Kind, op.Space, op.Body = core.OpLanePost, a.LaneID, a.Body
+		op.Kind, op.Space, op.Body = core.OpSpacePost, a.SpaceID, a.Body
 	case "announce":
-		op.Kind, op.Space, op.Body = core.OpLaneAnnounce, a.LaneID, a.Body
+		op.Kind, op.Space, op.Body = core.OpSpaceAnnounce, a.SpaceID, a.Body
 	case "ack_announcement":
-		op.Kind, op.MsgSerial = core.OpLaneAck, a.MsgSerial
+		op.Kind, op.MsgSerial = core.OpSpaceAck, a.MsgSerial
 	case "unlock_space":
-		op.Kind, op.Space, op.Note = core.OpLaneForceRelease, a.LaneID, a.Note
+		op.Kind, op.Space, op.Note = core.OpSpaceForceRelease, a.SpaceID, a.Note
 	case "evict":
-		op.Kind, op.Space, op.To, op.Note = core.OpLaneEvict, a.LaneID, a.To, a.Note
+		op.Kind, op.Space, op.To, op.Note = core.OpSpaceEvict, a.SpaceID, a.To, a.Note
 	case "merge_spaces":
-		op.Kind, op.Space, op.To, op.Note = core.OpLaneMerge, a.LaneID, a.To, a.Note
+		op.Kind, op.Space, op.To, op.Note = core.OpSpaceMerge, a.SpaceID, a.To, a.Note
 	case "human_unlock":
 		return s.humanUnlock(ctx, a)
 	case "close_space":
-		op.Kind, op.Space, op.Note = core.OpLaneClose, a.LaneID, a.Note
+		op.Kind, op.Space, op.Note = core.OpSpaceClose, a.SpaceID, a.Note
 	case "admit":
-		op.Kind, op.Space, op.To, op.Note = core.OpLaneAdmit, a.LaneID, a.To, a.Note
+		op.Kind, op.Space, op.To, op.Note = core.OpSpaceAdmit, a.SpaceID, a.To, a.Note
 		op.Score, op.Threshold, op.ScorerID = a.Score, a.Threshold, a.ScorerID
 	case "all_mail":
 		return s.eng.AllMail(ctx, a.Token)
