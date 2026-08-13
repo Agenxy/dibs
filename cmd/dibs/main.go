@@ -222,13 +222,13 @@ func parseFlags(fs *flag.FlagSet, args []string) error {
 	fs.SetOutput(io.Discard)
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			fmt.Println("usage: agents " + fs.Name())
+			fmt.Println("usage: dibs " + fs.Name())
 			fs.SetOutput(os.Stdout)
 			fs.PrintDefaults()
 			return flag.ErrHelp
 		}
-		fmt.Fprintf(os.Stderr, "agents %s: %v\n", fs.Name(), err)
-		fmt.Fprintf(os.Stderr, "  agents %s --help   lists the flags it takes\n", fs.Name())
+		fmt.Fprintf(os.Stderr, "dibs %s: %v\n", fs.Name(), err)
+		fmt.Fprintf(os.Stderr, "  dibs %s --help   lists the flags it takes\n", fs.Name())
 		os.Exit(2)
 	}
 	return nil

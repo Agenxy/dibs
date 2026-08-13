@@ -162,13 +162,20 @@ func run() int {
 		fmt.Println("  ok   every plugin payload spawns a binary we ship")
 	}
 
+	helpFailed, err := helpPass()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "smoke: could not check per-verb help: %v\n", err)
+		return 1
+	}
+	failed += helpFailed
+
 	if failed > 0 {
 		fmt.Fprintf(os.Stderr, "\n%d smoke check(s) failed: the built binaries do not behave "+
 			"the way the docs and install instructions say they do.\nThis runs on the "+
 			"artifact, so a fixture that agrees with the bug cannot hide it here.\n", failed)
 		return 1
 	}
-	fmt.Printf("%d smoke checks passed\n", len(checks)+2)
+	fmt.Printf("%d smoke checks passed\n", len(checks)+3)
 	return 0
 }
 

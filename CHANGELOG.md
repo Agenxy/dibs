@@ -41,6 +41,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rather than the first fifty records, and its words are checked against the
   core rather than a second hand-maintained list.
 
+- Every subcommand's `--help` said `usage: agents <verb>`, and every bad-flag
+  error told you to run `agents <verb> --help`. The string lives in one shared
+  helper that no named smoke check goes through, so eleven checks on individual
+  commands all passed over it. The harness now runs `--help` for every verb the
+  binary reports, plus the bad-flag path, matching a stale name only in command
+  position: a looser rule failed two verbs on prose that legitimately says
+  "agents".
+
 - An argument that did not decode was refused with no `hint`, the one rule this
   surface exists to keep: the agent was told what was wrong and nothing about
   what to do instead. A `register` carrying the pre-0.0.3 nested `agent` object
