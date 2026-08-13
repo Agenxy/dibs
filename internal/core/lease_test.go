@@ -12,9 +12,9 @@ import (
 func TestStaleLaneWithoutPIDIsIdleNotDead(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	now := time.Now()
-	_, _, _ = s.Apply(&Op{Kind: OpRegisterLane, Name: "chat", NewToken: "t1"}, now)
+	_, _, _ = s.Apply(&Op{Kind: OpRegister, Name: "chat", NewToken: "t1"}, now)
 
-	_, evs, err := s.Apply(&Op{Kind: OpSweep, StaleLanes: []string{"chat"}}, now)
+	_, evs, err := s.Apply(&Op{Kind: OpSweep, StaleAgents: []string{"chat"}}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestStaleLaneWithoutPIDIsIdleNotDead(t *testing.T) {
 func TestStaleLaneWithPIDKeepsLeaseSemantics(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	now := time.Now()
-	_, _, _ = s.Apply(&Op{Kind: OpRegisterLane, Name: "agent", PID: 4242, NewToken: "t1"}, now)
+	_, _, _ = s.Apply(&Op{Kind: OpRegister, Name: "agent", PID: 4242, NewToken: "t1"}, now)
 
 	// Giving a PID is not the same as having it CHECKED, and this used to
 	// conflate them: a sweep that probed nothing still recorded
@@ -50,7 +50,7 @@ func TestStaleLaneWithPIDKeepsLeaseSemantics(t *testing.T) {
 	// So the verdict appears only when something measured it. The lease still
 	// governs the transition either way: that is what "keeps lease semantics"
 	// means here.
-	_, evs, _ := s.Apply(&Op{Kind: OpSweep, StaleLanes: []string{"agent"}}, now)
+	_, evs, _ := s.Apply(&Op{Kind: OpSweep, StaleAgents: []string{"agent"}}, now)
 	for _, e := range evs {
 		if e.Type != "agent.stale" {
 			continue
@@ -65,7 +65,7 @@ func TestStaleLaneWithPIDKeepsLeaseSemantics(t *testing.T) {
 
 	// And when the sweep DID probe, the verdict is there.
 	_, evs2, _ := s.Apply(&Op{
-		Kind: OpSweep, StaleLanes: []string{"agent"}, AlivePIDs: []int{4242},
+		Kind: OpSweep, StaleAgents: []string{"agent"}, AlivePIDs: []int{4242},
 	}, now)
 	for _, e := range evs2 {
 		if e.Type != "agent.stale" {
@@ -80,8 +80,8 @@ func TestStaleLaneWithPIDKeepsLeaseSemantics(t *testing.T) {
 // The grace period must differ, or a human-paced agent flaps forever.
 func TestIdleTTLIsLongerThanLeaseTTL(t *testing.T) {
 	l := DefaultLimits()
-	if l.IdleTTL <= l.LaneTTL {
-		t.Fatalf("IdleTTL %v must exceed LaneTTL %v", l.IdleTTL, l.LaneTTL)
+	if l.IdleTTL <= l.AgentTTL {
+		t.Fatalf("IdleTTL %v must exceed AgentTTL %v", l.IdleTTL, l.AgentTTL)
 	}
 }
 
@@ -103,18 +103,18 @@ func TestALaneWithARealCredentialIsNotReclaimedByAGuessableOne(t *testing.T) {
 	const nonce = "real-secret-0123456789abcdef"
 
 	guarded, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "guarded", NewToken: "t1",
+		Kind: OpRegister, Name: "guarded", NewToken: "t1",
 		SessionID: "guarded-sess", Nonce: nonce,
 	}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	guardedID, _ := guarded["lane_id"].(string)
+	guardedID, _ := guarded["agent_id"].(string)
 	before := s.Agents[guardedID].Token
 
 	// Name and session id are both knowable. They must not be enough.
 	taken, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "guarded", NewToken: "stolen", SessionID: "guarded-sess",
+		Kind: OpRegister, Name: "guarded", NewToken: "stolen", SessionID: "guarded-sess",
 	}, now)
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +129,7 @@ func TestALaneWithARealCredentialIsNotReclaimedByAGuessableOne(t *testing.T) {
 	// An agent with only a session id keeps working: losing context must not
 	// lose your mailbox, but it is told what that costs.
 	plain, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "plain", NewToken: "t2", SessionID: "plain-sess",
+		Kind: OpRegister, Name: "plain", NewToken: "t2", SessionID: "plain-sess",
 	}, now)
 	if err != nil {
 		t.Fatal(err)
@@ -139,7 +139,7 @@ func TestALaneWithARealCredentialIsNotReclaimedByAGuessableOne(t *testing.T) {
 		t.Errorf("an agent reclaimable by a guessable pair must be told so, and told the fix; got %q", note)
 	}
 	back, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "plain", NewToken: "t3", SessionID: "plain-sess",
+		Kind: OpRegister, Name: "plain", NewToken: "t3", SessionID: "plain-sess",
 	}, now)
 	if err != nil {
 		t.Fatal(err)

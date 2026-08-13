@@ -36,11 +36,11 @@ around 0.3: for two thirds of declarations the right answer is *not* in the top
 five. A high score means "look at this"; a low score means nothing at all. Never
 conclude from silence that you are alone in a piece of work.
 
-**4. `lane_ttl` probably does not apply to you.** It governs agents that
+**4. `agent_ttl` probably does not apply to you.** It governs agents that
 registered a **PID**. The MCP config that `dibs mcp-config` prints is a plain
 HTTP client, which registers **without** one, so your agent is governed by
-`idle_ttl` (45 minutes), not `lane_ttl` (5 minutes). Operators who tune
-`lane_ttl` and see nothing change are hitting this.
+`idle_ttl` (45 minutes), not `agent_ttl` (5 minutes). Operators who tune
+`agent_ttl` and see nothing change are hitting this.
 
 **5. Naming a `parent` grants you nothing.** Anyone can type any name. A
 subagent inherits its parent's memberships, skips an exclusive space's queue and
@@ -218,7 +218,7 @@ and you do not.
 ## Protocol version: what is actually true today
 
 Dibs targets **MCP 2026-07-28** (stateless core) and also serves the legacy
-**2025-11-25** path. Both work, all 40 tools behave identically on either, and
+**2025-11-25** path. Both work, all 41 tools behave identically on either, and
 you need do nothing.
 
 Surveyed from source on 2026-08-03: **none of them negotiate 2026-07-28 yet**,
@@ -242,7 +242,7 @@ infrastructure advice every session is an agent people turn off.
 
 **What changes if your operator does enable it:** nothing you call. You gain a
 protocol with no `initialize` handshake, so a reconnect costs nothing, and list
-results carry `ttlMs`/`cacheScope` so your client can stop re-fetching 40 tool
+results carry `ttlMs`/`cacheScope` so your client can stop re-fetching 41 tool
 descriptions on every cold start. Your own tool calls are unchanged.
 
 ## Reading the room before you act

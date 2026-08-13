@@ -190,7 +190,7 @@ func (e *Engine) reportStall(ctx context.Context, a liveness.Agent, v liveness.V
 // would BLOCK rather than fail. That cost five minutes of CI earlier in this
 // work, and the fix is structural rather than remembered.
 func (e *Engine) reportStallLocked(a liveness.Agent, v liveness.Verdict, transcript string) bool {
-	agent := e.laneForOwner(a.Owner)
+	agent := e.agentForOwner(a.Owner)
 	if agent == "" {
 		return false
 	}
@@ -216,18 +216,18 @@ func (e *Engine) reportStallLocked(a liveness.Agent, v liveness.Verdict, transcr
 	return true
 }
 
-// laneForOwner resolves an attribution to an agent on the board.
+// agentForOwner resolves an attribution to an agent on the board.
 //
 // The owner may be an agent id already (the DIBS_PARENT rung) or a harness
 // session id (the session rungs), so both are tried. Called on the writer loop.
-func (e *Engine) laneForOwner(owner string) string {
+func (e *Engine) agentForOwner(owner string) string {
 	if owner == "" || e.state == nil {
 		return ""
 	}
 	if l, ok := e.state.Agents[owner]; ok {
 		return l.ID
 	}
-	if l := e.state.LaneForHook(owner, ""); l != nil {
+	if l := e.state.AgentForHook(owner, ""); l != nil {
 		return l.ID
 	}
 	return ""

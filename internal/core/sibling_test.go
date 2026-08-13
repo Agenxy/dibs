@@ -15,7 +15,7 @@ func TestRegisterUnderTakenNameWarnsAndNamesTheLostMail(t *testing.T) {
 	t0 := time.Now()
 
 	first, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "beta", NewToken: "t1",
+		Kind: OpRegister, Name: "beta", NewToken: "t1",
 		SessionID: "bridge-1",
 	}, t0)
 	if err != nil {
@@ -24,11 +24,11 @@ func TestRegisterUnderTakenNameWarnsAndNamesTheLostMail(t *testing.T) {
 	if _, has := first["name_taken"]; has {
 		t.Fatalf("the first agent of a name is not a collision, got %v", first["name_taken"])
 	}
-	betaID, _ := first["lane_id"].(string)
+	betaID, _ := first["agent_id"].(string)
 
 	// Someone writes to beta.
 	asker, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "alpha", NewToken: "t2",
+		Kind: OpRegister, Name: "alpha", NewToken: "t2",
 		SessionID: "bridge-2",
 	}, t0)
 	if err != nil {
@@ -47,13 +47,13 @@ func TestRegisterUnderTakenNameWarnsAndNamesTheLostMail(t *testing.T) {
 
 	// A NEW session of the same agent: new bridge, new session_id, same name.
 	second, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "beta", NewToken: "t3",
+		Kind: OpRegister, Name: "beta", NewToken: "t3",
 		SessionID: "bridge-3",
 	}, t0.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("second register: %v", err)
 	}
-	if id, _ := second["lane_id"].(string); id == betaID {
+	if id, _ := second["agent_id"].(string); id == betaID {
 		t.Fatalf("a different session must not silently take over agent %s", betaID)
 	}
 	warn, _ := second["name_taken"].(string)
@@ -88,16 +88,16 @@ func TestWarningNamesTheSiblingHoldingMailNotTheNewest(t *testing.T) {
 
 	// "worker" holds the mail...
 	held, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "worker", NewToken: "t1",
+		Kind: OpRegister, Name: "worker", NewToken: "t1",
 		SessionID: "b1",
 	}, t0)
 	if err != nil {
 		t.Fatalf("register held: %v", err)
 	}
-	heldID, _ := held["lane_id"].(string)
+	heldID, _ := held["agent_id"].(string)
 
 	if _, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "asker", NewToken: "t2",
+		Kind: OpRegister, Name: "asker", NewToken: "t2",
 		SessionID: "b2",
 	}, t0); err != nil {
 		t.Fatalf("register asker: %v", err)
@@ -114,14 +114,14 @@ func TestWarningNamesTheSiblingHoldingMailNotTheNewest(t *testing.T) {
 
 	// ...and a NEWER, empty namesake exists.
 	if _, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "worker", NewToken: "t3",
+		Kind: OpRegister, Name: "worker", NewToken: "t3",
 		SessionID: "b3",
 	}, t0.Add(time.Minute)); err != nil {
 		t.Fatalf("register empty sibling: %v", err)
 	}
 
 	third, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "worker", NewToken: "t4",
+		Kind: OpRegister, Name: "worker", NewToken: "t4",
 		SessionID: "b4",
 	}, t0.Add(2*time.Minute))
 	if err != nil {
@@ -142,16 +142,16 @@ func TestClosedLaneDoesNotTriggerTheNameWarning(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	t0 := time.Now()
 	if _, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "worker", NewToken: "t1",
+		Kind: OpRegister, Name: "worker", NewToken: "t1",
 		SessionID: "b1",
 	}, t0); err != nil {
 		t.Fatalf("register: %v", err)
 	}
-	if _, _, err := s.Apply(&Op{Kind: OpCloseLane, Token: "t1"}, t0); err != nil {
+	if _, _, err := s.Apply(&Op{Kind: OpSignOff, Token: "t1"}, t0); err != nil {
 		t.Fatalf("close: %v", err)
 	}
 	again, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "worker", NewToken: "t2",
+		Kind: OpRegister, Name: "worker", NewToken: "t2",
 		SessionID: "b2",
 	}, t0.Add(time.Minute))
 	if err != nil {

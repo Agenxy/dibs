@@ -237,10 +237,10 @@ try {
   const worker = textOf(await tool(dev, "register", {
     name: "worker", description: "doing the work", session_id: "human-e2e-1" }))
   await tool(dev, "check_in", { token: worker.token })
-  await tool(dev, "open_space", { token: worker.token, agent: "auth-work", topic: "auth" })
+  await tool(dev, "open_space", { token: worker.token, space: "auth-work", topic: "auth" })
 
   const posted = await attempt(dev, "post",
-    { token: human, agent: "auth-work", body: "how is this going?" })
+    { token: human, space: "auth-work", body: "how is this going?" })
   // A refusal arrives as a SUCCESSFUL tool result carrying an error code, not as
   // a JSON-RPC error, so the assertion names the code. Testing for a thrown
   // exception here silently passed while the post was in fact succeeding.
@@ -253,19 +253,19 @@ try {
   const humanAck = await attempt(dev, "check_in", { token: human })
   check("the human can acknowledge the board", succeeded(humanAck),
     JSON.stringify(humanAck).slice(0, 200))
-  const joined = await attempt(dev, "join_space", { token: human, agent: "auth-work" })
+  const joined = await attempt(dev, "join_space", { token: human, space: "auth-work" })
   check("the human can join the space", succeeded(joined),
     JSON.stringify(joined).slice(0, 200))
 
   const posted2 = await attempt(dev, "post",
-    { token: human, agent: "auth-work", body: "how is this going?" })
+    { token: human, space: "auth-work", body: "how is this going?" })
   check("and then posting succeeds", succeeded(posted2),
     JSON.stringify(posted2).slice(0, 200))
 
   // Mail needs no membership, it is addressed, not broadcast, so the panel is
   // right to offer it unconditionally.
   const sent = await attempt(dev, "send", {
-    token: human, to: worker.lane_id, type: "question",
+    token: human, to: worker.agent_id, type: "question",
     body: "Are you blocked?", op_id: "human-e2e-mail" })
   check("mail to a specific agent needs no membership",
     succeeded(sent), JSON.stringify(sent).slice(0, 200))
@@ -289,7 +289,7 @@ try {
   check("but its body is not, because the stream reaches non-members too",
     !stream.includes("how is this going?"),
     stream.slice(0, 240))
-  const laneView = await attempt(dev, "read_space", { token: worker.token, agent: "auth-work" })
+  const laneView = await attempt(dev, "read_space", { token: worker.token, space: "auth-work" })
   check("a member of the agent can read what the human posted",
     JSON.stringify(laneView).includes("how is this going?"),
     JSON.stringify(laneView).slice(0, 240))

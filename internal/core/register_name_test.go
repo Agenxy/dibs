@@ -22,14 +22,14 @@ func TestATakenNameIsExplainedRatherThanSilentlySuffixed(t *testing.T) {
 	now := time.Now()
 
 	first, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "sol", Description: "first",
+		Kind: OpRegister, Name: "sol", Description: "first",
 		NewToken: "t1", SessionID: "s1",
 	}, now)
 	if err != nil {
 		t.Fatalf("first register: %v", err)
 	}
-	if got, _ := first["lane_id"].(string); got != "sol" {
-		t.Fatalf("first lane_id = %q, want sol", got)
+	if got, _ := first["agent_id"].(string); got != "sol" {
+		t.Fatalf("first agent_id = %q, want sol", got)
 	}
 	if _, noted := first["name_note"]; noted {
 		t.Errorf("the first registration got a name note but nothing was taken: %v",
@@ -37,13 +37,13 @@ func TestATakenNameIsExplainedRatherThanSilentlySuffixed(t *testing.T) {
 	}
 
 	second, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "sol", Description: "second, different session",
+		Kind: OpRegister, Name: "sol", Description: "second, different session",
 		NewToken: "t2", SessionID: "s2",
 	}, now)
 	if err != nil {
 		t.Fatalf("second register: %v", err)
 	}
-	id, _ := second["lane_id"].(string)
+	id, _ := second["agent_id"].(string)
 	if id == "sol" {
 		t.Fatal("the second agent took the first one's name: mail addressed to sol " +
 			"would now reach the wrong agent")

@@ -113,58 +113,58 @@ func TestBadDeadlineDoesNotStopTheDaemon(t *testing.T) {
 	}
 }
 
-// LaneTTL decides when a silent agent is treated as crashed, and a stale owner
+// AgentTTL decides when a silent agent is treated as crashed, and a stale owner
 // YIELDS its exclusive agents, so an agent that is merely busy for longer than
 // the TTL (a long build, a slow test run: no Dibs calls for its duration) is
 // declared dead and loses an agent it is still working in. 5m suits chatty
 // agents and nothing else, which is why it is a knob.
 func TestLaneTTLIsConfigurable(t *testing.T) {
 	base := core.DefaultLimits()
-	got, err := LimitsConfig{LaneTTL: "20m"}.apply(base)
+	got, err := LimitsConfig{AgentTTL: "20m"}.apply(base)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.LaneTTL != 20*time.Minute {
-		t.Fatalf("want 20m, got %s", got.LaneTTL)
+	if got.AgentTTL != 20*time.Minute {
+		t.Fatalf("want 20m, got %s", got.AgentTTL)
 	}
 	// Everything else is a safety bound, not a preference, and must be untouched.
 	if got.ClaimLease != base.ClaimLease || got.ArchiveRetention != base.ArchiveRetention {
 		t.Fatal("[limits] must not disturb bounds it does not name")
 	}
-	if unset, err := (LimitsConfig{}).apply(base); err != nil || unset.LaneTTL != base.LaneTTL {
-		t.Fatalf("an absent table keeps the defaults, got %s / %v", unset.LaneTTL, err)
+	if unset, err := (LimitsConfig{}).apply(base); err != nil || unset.AgentTTL != base.AgentTTL {
+		t.Fatalf("an absent table keeps the defaults, got %s / %v", unset.AgentTTL, err)
 	}
 }
 
 // A bad value must be an ERROR, never a silent fallback: an operator who wrote
-// lane_ttl = "10" and got the 5-minute default back would be debugging phantom
+// agent_ttl = "10" and got the 5-minute default back would be debugging phantom
 // crashes with no idea the setting had been ignored.
 func TestABadLaneTTLIsRefusedWithTheFix(t *testing.T) {
 	for _, bad := range []string{"10", "soon", "-3m", "1s"} {
-		_, err := LimitsConfig{LaneTTL: bad}.apply(core.DefaultLimits())
+		_, err := LimitsConfig{AgentTTL: bad}.apply(core.DefaultLimits())
 		if err == nil {
-			t.Fatalf("lane_ttl = %q must be refused, not silently ignored", bad)
+			t.Fatalf("agent_ttl = %q must be refused, not silently ignored", bad)
 		}
-		if !strings.Contains(err.Error(), "lane_ttl") {
+		if !strings.Contains(err.Error(), "agent_ttl") {
 			t.Fatalf("the error must name the setting, got: %v", err)
 		}
 	}
 	// And the message has to show what a good value looks like.
-	_, err := LimitsConfig{LaneTTL: "10"}.apply(core.DefaultLimits())
+	_, err := LimitsConfig{AgentTTL: "10"}.apply(core.DefaultLimits())
 	if !strings.Contains(err.Error(), `"5m"`) {
 		t.Fatalf("the error must show the shape it wants, got: %v", err)
 	}
 }
 
 // A key TOML did not recognise is a key that did nothing, and silently ignoring
-// it is the worst outcome available: `[limit]` for `[limits]`, or lane_ttl
+// it is the worst outcome available: `[limit]` for `[limits]`, or agent_ttl
 // under `[match]`, parses cleanly, changes nothing, and leaves the operator
 // certain they configured something. They then debug the behaviour they were
 // trying to change, with the setting sitting right there in the file.
 func TestUnknownConfigKeysAreRefusedNotIgnored(t *testing.T) {
 	for _, tc := range []struct{ name, body, want string }{
-		{"typo'd table", "[limit]\nlane_ttl = \"9m\"\n", "lane_ttl"},
-		{"right key, wrong table", "[match]\nlane_ttl = \"9m\"\n", "lane_ttl"},
+		{"typo'd table", "[limit]\nagent_ttl = \"9m\"\n", "agent_ttl"},
+		{"right key, wrong table", "[match]\nagent_ttl = \"9m\"\n", "agent_ttl"},
 		{"misspelled key", "[limits]\nlane_tt1 = \"9m\"\n", "lane_tt1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -183,7 +183,7 @@ func TestUnknownConfigKeysAreRefusedNotIgnored(t *testing.T) {
 	}
 	// And a correct file still loads, or the check is worse than the bug.
 	dir := t.TempDir()
-	body := "addr = \"127.0.0.1:4999\"\n[match]\nrepo = \"/tmp\"\n[limits]\nlane_ttl = \"9m\"\n"
+	body := "addr = \"127.0.0.1:4999\"\n[match]\nrepo = \"/tmp\"\n[limits]\nagent_ttl = \"9m\"\n"
 	if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestUnknownConfigKeysAreRefusedNotIgnored(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a valid file must load: %v", err)
 	}
-	if c.Addr != "127.0.0.1:4999" || c.Match.Repo != "/tmp" || c.Limits.LaneTTL != "9m" {
+	if c.Addr != "127.0.0.1:4999" || c.Match.Repo != "/tmp" || c.Limits.AgentTTL != "9m" {
 		t.Fatalf("every table must still decode: %+v", c)
 	}
 }
@@ -208,16 +208,16 @@ func TestBlobStoreCapIsConfigurable(t *testing.T) {
 	if got.BlobStoreBytes != 4<<30 {
 		t.Fatalf("want 4GiB, got %d", got.BlobStoreBytes)
 	}
-	// Set alongside a lane_ttl, both must land: the early return for an absent
-	// lane_ttl used to skip this one entirely.
-	both, err := LimitsConfig{LaneTTL: "9m", BlobStoreBytes: 2 << 30}.apply(base)
+	// Set alongside a agent_ttl, both must land: the early return for an absent
+	// agent_ttl used to skip this one entirely.
+	both, err := LimitsConfig{AgentTTL: "9m", BlobStoreBytes: 2 << 30}.apply(base)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if both.LaneTTL != 9*time.Minute || both.BlobStoreBytes != 2<<30 {
-		t.Fatalf("both settings must apply, got %s / %d", both.LaneTTL, both.BlobStoreBytes)
+	if both.AgentTTL != 9*time.Minute || both.BlobStoreBytes != 2<<30 {
+		t.Fatalf("both settings must apply, got %s / %d", both.AgentTTL, both.BlobStoreBytes)
 	}
-	if unset, err := (LimitsConfig{LaneTTL: "9m"}).apply(base); err != nil ||
+	if unset, err := (LimitsConfig{AgentTTL: "9m"}).apply(base); err != nil ||
 		unset.BlobStoreBytes != base.BlobStoreBytes {
 		t.Fatalf("an absent cap keeps the default, got %d / %v", unset.BlobStoreBytes, err)
 	}
@@ -412,11 +412,11 @@ func TestPrecedenceIsFlagThenEnvThenFile_AndZeroIsAValue(t *testing.T) {
 	})
 }
 
-// idle_ttl is settable, and refused when unusable: like lane_ttl.
+// idle_ttl is settable, and refused when unusable: like agent_ttl.
 //
 // It governs the configuration Dibs itself tells people to use: `agents
 // mcp-config` prints a plain HTTP client, which registers without a PID, so an
-// operator who set lane_ttl and pointed that client at the daemon changed
+// operator who set agent_ttl and pointed that client at the daemon changed
 // nothing and waited 45 minutes for a lapse they thought they had configured to
 // five. The knob existed in core.Limits and had no way in.
 func TestIdleTTLIsConfigurableAndValidated(t *testing.T) {
@@ -429,21 +429,21 @@ func TestIdleTTLIsConfigurableAndValidated(t *testing.T) {
 	if got.IdleTTL != 90*time.Second {
 		t.Errorf("idle_ttl = %v, want 90s", got.IdleTTL)
 	}
-	// ...and lane_ttl is untouched by it.
-	if got.LaneTTL != base.LaneTTL {
-		t.Errorf("setting idle_ttl changed lane_ttl to %v", got.LaneTTL)
+	// ...and agent_ttl is untouched by it.
+	if got.AgentTTL != base.AgentTTL {
+		t.Errorf("setting idle_ttl changed agent_ttl to %v", got.AgentTTL)
 	}
 
 	// Both keys at once, since they are independent knobs.
-	both, err := LimitsConfig{LaneTTL: "2m", IdleTTL: "30m"}.apply(base)
+	both, err := LimitsConfig{AgentTTL: "2m", IdleTTL: "30m"}.apply(base)
 	if err != nil {
 		t.Fatalf("setting both was refused: %v", err)
 	}
-	if both.LaneTTL != 2*time.Minute || both.IdleTTL != 30*time.Minute {
-		t.Errorf("got agent=%v idle=%v", both.LaneTTL, both.IdleTTL)
+	if both.AgentTTL != 2*time.Minute || both.IdleTTL != 30*time.Minute {
+		t.Errorf("got agent=%v idle=%v", both.AgentTTL, both.IdleTTL)
 	}
 
-	// A bad value is an ERROR, never a silent fallback: the same rule lane_ttl
+	// A bad value is an ERROR, never a silent fallback: the same rule agent_ttl
 	// follows, and for the same reason: a setting that looks accepted and was
 	// ignored is debugged as phantom crashes.
 	if _, err := (LimitsConfig{IdleTTL: "10"}).apply(base); err == nil {

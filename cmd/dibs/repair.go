@@ -21,7 +21,7 @@ import (
 // correctly refuses to start. Correctly: and, until now, terminally: the
 // operator got one wrapped Go error and no next step, on the one failure where
 // the entire product is unavailable until it is resolved. A real board hit
-// exactly this (`replay apply serial 416: E_LANE_CLOSED`) and there was nothing
+// exactly this (`replay apply serial 416: E_AGENT_CLOSED`) and there was nothing
 // to type.
 //
 // The recovery is the only one the hash chain permits. Each record hashes its

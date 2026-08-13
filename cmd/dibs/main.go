@@ -182,7 +182,7 @@ func main() {
 		// costs. `dibs borad 2>/dev/null` was byte-identical to `dibs --help`,
 		// so a typo in a script looked like success. And telling a reader to go
 		// and find the verb they believe they just typed is not help: the same
-		// reasoning as nearestLanesHint, which answers a misaddressed message
+		// reasoning as nearestAgentsHint, which answers a misaddressed message
 		// with the closest live agent rather than the whole board.
 		fmt.Fprintf(os.Stderr, "dibs: unknown command %q\n", os.Args[1])
 		if near := nearestCommand(os.Args[1]); near != "" {
@@ -465,7 +465,7 @@ type (
 		Text string   `json:"text"`
 		Dirs []string `json:"dirs,omitempty"`
 	}
-	boardLane struct {
+	boardAgent struct {
 		ID          string      `json:"id"`
 		Name        string      `json:"name,omitempty"`
 		Description string      `json:"description,omitempty"`
@@ -507,7 +507,7 @@ type (
 	boardView struct {
 		Serial uint64         `json:"serial"`
 		Node   string         `json:"node"`
-		Agents []boardLane    `json:"agents"`
+		Agents []boardAgent   `json:"agents"`
 		Claims []boardClaim   `json:"claims"`
 		Spaces []boardChannel `json:"spaces"`
 	}
@@ -529,7 +529,7 @@ func board(args []string) error {
 		// lists are pinned to [] rather than null, because "no agents" is a
 		// normal state a script iterates over, not an absent fact.
 		if b.Agents == nil {
-			b.Agents = []boardLane{}
+			b.Agents = []boardAgent{}
 		}
 		if b.Claims == nil {
 			b.Claims = []boardClaim{}
@@ -574,7 +574,7 @@ func board(args []string) error {
 		fmt.Println("\n" + ui.Dim("no agents registered: agents appear here the moment they call register"))
 	}
 	printAgents(b.Agents)
-	printLanesOfWork(b.Spaces)
+	printSpacesOfWork(b.Spaces)
 	printClaims(b.Claims)
 	return nil
 }
@@ -1017,7 +1017,7 @@ func verify(args []string) error {
 }
 
 // printAgents lists who is on the board and whether they are working.
-func printAgents(agents []boardLane) {
+func printAgents(agents []boardAgent) {
 	if len(agents) == 0 {
 		return
 	}
@@ -1067,7 +1067,7 @@ func printAgents(agents []boardLane) {
 // in a non-Latin script gets `agent`: and a fleet of them reads `agent`,
 // `agent-2`, `agent-3`: correct addresses that identify nobody. Where the name
 // could not become the id, show both.
-func agentLabel(l boardLane) string {
+func agentLabel(l boardAgent) string {
 	if l.DisplayName == "" {
 		return l.ID
 	}
@@ -1076,7 +1076,7 @@ func agentLabel(l boardLane) string {
 
 // agentStatus weights liveness the same way the browser board does: working is
 // good, a dead process is worth noticing, anything else is context.
-func agentStatus(l boardLane) string {
+func agentStatus(l boardAgent) string {
 	status := l.Status + staleNote(l.StaleReason)
 	if l.Status == "stale" && l.ProcAlive {
 		status += " (hung?)"
@@ -1090,8 +1090,8 @@ func agentStatus(l boardLane) string {
 	return ui.Dim(status)
 }
 
-// printLanesOfWork lists the spaces: what work exists and who is in it.
-func printLanesOfWork(chans []boardChannel) {
+// printSpacesOfWork lists the spaces: what work exists and who is in it.
+func printSpacesOfWork(chans []boardChannel) {
 	if len(chans) == 0 {
 		return
 	}
@@ -1108,7 +1108,7 @@ func printLanesOfWork(chans []boardChannel) {
 			lock = "  " + ui.Attn("exclusive to "+c.Owner)
 		}
 		fmt.Printf("  %s  %s%s\n", ui.Accent(ui.Pad(c.ID, chW)), c.Topic, lock)
-		if roster := laneRoster(c.Members); roster != "" {
+		if roster := spaceRoster(c.Members); roster != "" {
 			fmt.Println("    " + ui.Dim("in: ") + roster)
 		}
 		if len(c.Queue) > 0 {
@@ -1120,10 +1120,10 @@ func printLanesOfWork(chans []boardChannel) {
 	}
 }
 
-// laneRoster names who is in an agent, carrying the score that put an
+// spaceRoster names who is in an agent, carrying the score that put an
 // auto-matched agent there. §10.3 wants every auto-join explainable without a
 // second call.
-func laneRoster(members []boardMember) string {
+func spaceRoster(members []boardMember) string {
 	if len(members) == 0 {
 		return ""
 	}
@@ -1186,7 +1186,7 @@ func printClaims(claims []boardClaim) {
 // at a glance.
 func opStyle(kind string) string {
 	switch kind {
-	case "unlock_space", "evict", "merge_spaces", "prune_lane", "force_release":
+	case "unlock_space", "evict", "merge_spaces", "prune", "force_release":
 		return ui.Alarm(kind) // a coordinator overrode somebody
 	case "announce", "claim", "lock_space":
 		return ui.Attn(kind) // obliges or blocks others

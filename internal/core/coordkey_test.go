@@ -10,10 +10,10 @@ import (
 // beyond being something an agent could plausibly have written.
 const theLane = "auth-work"
 
-// openLaneWith gets an agent into an agent and returns the key it was issued.
-func openLaneWith(t *testing.T, s *State, token string) string {
+// openSpaceWith gets an agent into an agent and returns the key it was issued.
+func openSpaceWith(t *testing.T, s *State, token string) string {
 	t.Helper()
-	res := mustApply(t, s, &Op{Kind: OpLaneOpen, Token: token, Space: theLane, Text: "the work"}, testNow)
+	res := mustApply(t, s, &Op{Kind: OpSpaceOpen, Token: token, Space: theLane, Text: "the work"}, testNow)
 	key, _ := res["key"].(string)
 	if key == "" {
 		t.Fatal("opening an agent issued no coordination key")
@@ -26,7 +26,7 @@ func openLaneWith(t *testing.T, s *State, token string) string {
 // ever reached it.
 func TestOpeningALaneIssuesAKeyToItsOpener(t *testing.T) {
 	s, a := chState(t, "alpha", "beta")
-	key := openLaneWith(t, s, a["alpha"].Token)
+	key := openSpaceWith(t, s, a["alpha"].Token)
 
 	if !strings.HasPrefix(key, "key:") {
 		t.Errorf("key %q does not use the key: namespace", key)
@@ -48,7 +48,7 @@ func TestOpeningALaneIssuesAKeyToItsOpener(t *testing.T) {
 // treated as having coordinated. Issued is not enough; it must be held.
 func TestAKeyYouDoNotHoldIsStruckOut(t *testing.T) {
 	s, a := chState(t, "alpha", "beta")
-	key := openLaneWith(t, s, a["alpha"].Token)
+	key := openSpaceWith(t, s, a["alpha"].Token)
 
 	if !s.holdsCoordKey(a["alpha"].ID, key) {
 		t.Fatal("the opener does not hold the key it was issued")
@@ -97,9 +97,9 @@ func TestAKeyYouDoNotHoldIsStruckOut(t *testing.T) {
 // joiner must both receive it and pass validation with it.
 func TestJoiningALaneGrantsItsKey(t *testing.T) {
 	s, a := chState(t, "alpha", "beta")
-	key := openLaneWith(t, s, a["alpha"].Token)
+	key := openSpaceWith(t, s, a["alpha"].Token)
 
-	res := mustApply(t, s, &Op{Kind: OpLaneJoin, Token: a["beta"].Token, Space: "auth-work"}, testNow)
+	res := mustApply(t, s, &Op{Kind: OpSpaceJoin, Token: a["beta"].Token, Space: "auth-work"}, testNow)
 	if got, _ := res["key"].(string); got != key {
 		t.Errorf("join returned key %q, want the agent's own %q", got, key)
 	}
@@ -107,7 +107,7 @@ func TestJoiningALaneGrantsItsKey(t *testing.T) {
 		t.Error("a member does not hold its agent's key")
 	}
 	// And leaving gives it up: coordination that ended is not coordination.
-	mustApply(t, s, &Op{Kind: OpLaneLeave, Token: a["beta"].Token, Space: "auth-work"}, testNow)
+	mustApply(t, s, &Op{Kind: OpSpaceLeave, Token: a["beta"].Token, Space: "auth-work"}, testNow)
 	if s.holdsCoordKey(a["beta"].ID, key) {
 		t.Error("an agent that left the agent still holds its key")
 	}
@@ -146,8 +146,8 @@ func TestKeysAreUniquePerLaneAndPerBoard(t *testing.T) {
 // between them IS the mechanism, so measuring either by itself measures nothing.
 func TestAHeldKeyMatchesExactlyAndAForgedOneDoesNot(t *testing.T) {
 	s, a := chState(t, "alpha", "beta", "mallory")
-	key := openLaneWith(t, s, a["alpha"].Token)
-	mustApply(t, s, &Op{Kind: OpLaneJoin, Token: a["beta"].Token, Space: "auth-work"}, testNow)
+	key := openSpaceWith(t, s, a["alpha"].Token)
+	mustApply(t, s, &Op{Kind: OpSpaceJoin, Token: a["beta"].Token, Space: "auth-work"}, testNow)
 
 	// Both members are in one repository and both declare the key. Repo identity
 	// has to be known or Classify will not let ANY identifier act.
@@ -163,7 +163,7 @@ func TestAHeldKeyMatchesExactlyAndAForgedOneDoesNot(t *testing.T) {
 	ch.Predicted = mergePredicted(nil, fp("auth/token.go"))
 
 	mine := Slot{Text: "the same work, described differently", Refs: []string{key}}
-	got := s.MatchLanesEvidence(a["beta"].ID, mine, cwd, cwd, nil, nil, 5)
+	got := s.MatchAgentsEvidence(a["beta"].ID, mine, cwd, cwd, nil, nil, 5)
 	if len(got) == 0 {
 		t.Fatal("two agents holding one coordination key did not match at all")
 	}
@@ -178,7 +178,7 @@ func TestAHeldKeyMatchesExactlyAndAForgedOneDoesNot(t *testing.T) {
 	// Mallory declares the identical string, having coordinated with nobody.
 	// The agent may still surface on other evidence: that is discovery doing its
 	// job, but never as the same work item, and never citing the key.
-	forged := s.MatchLanesEvidence(a["mallory"].ID,
+	forged := s.MatchAgentsEvidence(a["mallory"].ID,
 		Slot{Text: "unrelated work", Refs: []string{key}}, cwd, cwd, nil, nil, 5)
 	for _, m := range forged {
 		if m.Relation == RelationSameItem {
@@ -208,10 +208,10 @@ func TestAHeldKeyMatchesExactlyAndAForgedOneDoesNot(t *testing.T) {
 // coordination decision, made once, covering every agent it produced.
 func TestAVouchedChildHoldsItsParentsKeyWithoutJoiningAnything(t *testing.T) {
 	s, a := chState(t, "parent", "stranger")
-	key := openLaneWith(t, s, a["parent"].Token)
+	key := openSpaceWith(t, s, a["parent"].Token)
 
 	child := spawnChild(t, s, a["parent"].Token, a["parent"].ID, "n-1")
-	childID, _ := child["lane_id"].(string)
+	childID, _ := child["agent_id"].(string)
 	if childID == "" {
 		t.Fatal("no child agent")
 	}
@@ -226,10 +226,10 @@ func TestAVouchedChildHoldsItsParentsKeyWithoutJoiningAnything(t *testing.T) {
 	// by burning a one-time secret the parent issued; naming a parent is a claim
 	// anybody could make about anybody.
 	liar := do(t, s, &Op{
-		Kind: OpRegisterLane, Name: "liar", NewToken: "tok-liar",
+		Kind: OpRegister, Name: "liar", NewToken: "tok-liar",
 		Parent: a["parent"].ID,
 	}) // no ParentNonce
-	liarID, _ := liar["lane_id"].(string)
+	liarID, _ := liar["agent_id"].(string)
 	if s.holdsCoordKey(liarID, key) {
 		t.Error("an unvouched agent inherited a key by merely naming a parent")
 	}
@@ -244,7 +244,7 @@ func TestAVouchedChildHoldsItsParentsKeyWithoutJoiningAnything(t *testing.T) {
 // be what produces the result.
 func TestAChildsWorkMatchesItsParentsLaneOnTheKeyAlone(t *testing.T) {
 	s, a := chState(t, "parent")
-	key := openLaneWith(t, s, a["parent"].Token)
+	key := openSpaceWith(t, s, a["parent"].Token)
 	const cwd = "/repo"
 	a["parent"].Agent = &AgentInfo{CWD: cwd}
 
@@ -255,13 +255,13 @@ func TestAChildsWorkMatchesItsParentsLaneOnTheKeyAlone(t *testing.T) {
 	s.Spaces["auth-work"].Predicted = mergePredicted(nil, fp("auth/token.go"))
 
 	child := spawnChild(t, s, a["parent"].Token, a["parent"].ID, "n-1")
-	childID, _ := child["lane_id"].(string)
+	childID, _ := child["agent_id"].(string)
 	s.Agents[childID].Agent = &AgentInfo{CWD: cwd}
 
-	got := s.MatchLanesEvidence(childID,
+	got := s.MatchAgentsEvidence(childID,
 		Slot{Text: "writing the migration notes for widgets", Refs: []string{key}},
 		cwd, cwd, nil, nil, 5)
-	var found *LaneMatch
+	var found *AgentMatch
 	for i := range got {
 		if got[i].Agent == "auth-work" {
 			found = &got[i]
@@ -294,10 +294,10 @@ func TestAChildsWorkMatchesItsParentsLaneOnTheKeyAlone(t *testing.T) {
 // checked field by field would be updated in the same edit that broke it.
 func TestTheBoardNeverShowsACoordinationKey(t *testing.T) {
 	s, a := chState(t, "alpha", "beta")
-	key := openLaneWith(t, s, a["alpha"].Token)
-	mustApply(t, s, &Op{Kind: OpLaneJoin, Token: a["beta"].Token, Space: theLane}, testNow)
+	key := openSpaceWith(t, s, a["alpha"].Token)
+	mustApply(t, s, &Op{Kind: OpSpaceJoin, Token: a["beta"].Token, Space: theLane}, testNow)
 	mustApply(t, s, &Op{
-		Kind: OpLaneAnnounce, Token: a["alpha"].Token, Space: theLane,
+		Kind: OpSpaceAnnounce, Token: a["alpha"].Token, Space: theLane,
 		Body: "something worth acknowledging",
 	}, testNow)
 
@@ -335,11 +335,11 @@ func TestTheBoardNeverShowsACoordinationKey(t *testing.T) {
 // not testing what it claims; this constructs the state directly.
 func TestAnAutomaticJoinGrantsTheKeyAsWell(t *testing.T) {
 	s, a := chState(t, "alpha", "beta")
-	key := openLaneWith(t, s, a["alpha"].Token)
+	key := openSpaceWith(t, s, a["alpha"].Token)
 
 	// Auto is what declare's matcher sets when it joins on its own initiative.
 	res := mustApply(t, s, &Op{
-		Kind: OpLaneJoin, Token: a["beta"].Token, Space: "auth-work",
+		Kind: OpSpaceJoin, Token: a["beta"].Token, Space: "auth-work",
 		Auto: true, Score: 0.9, Threshold: 0.33, ScorerID: "test",
 		Evidence: []string{"issue:4242"},
 	}, testNow)

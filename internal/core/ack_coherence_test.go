@@ -18,7 +18,7 @@ func TestAckBoardsCheckpointAgreesWithItself(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	now := time.Now()
 	res, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "worker", NewToken: "w1", SessionID: "s1",
+		Kind: OpRegister, Name: "worker", NewToken: "w1", SessionID: "s1",
 	}, now)
 	if err != nil {
 		t.Fatalf("setup: %v", err)

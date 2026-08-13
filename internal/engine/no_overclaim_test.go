@@ -65,7 +65,7 @@ func TestTheOpenedLaneHintDoesNotClaimSolitude(t *testing.T) {
 	defer cancel()
 	go e.Run(ctx)
 
-	res, err := e.Do(ctx, &core.Op{Kind: core.OpRegisterLane, Name: "alpha"})
+	res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "alpha"})
 	if err != nil {
 		t.Fatalf("setup: register: %v", err)
 	}
@@ -74,10 +74,10 @@ func TestTheOpenedLaneHintDoesNotClaimSolitude(t *testing.T) {
 		t.Fatalf("setup: ack: %v", err)
 	}
 
-	sug := e.openFirstLane(ctx, tok, "reviewing the matcher end to end",
+	sug := e.openFirstSpace(ctx, tok, "reviewing the matcher end to end",
 		overlap.Prediction{ScorerID: "test"}, nil)
 	if sug == nil {
-		t.Fatal("openFirstLane returned nothing; this test cannot see the hint it guards")
+		t.Fatal("openFirstSpace returned nothing; this test cannot see the hint it guards")
 	}
 	mustNotClaimSolitude(t, "the opened-agent hint", sug.Hint)
 	low := strings.ToLower(sug.Hint)
@@ -93,11 +93,11 @@ func TestTheOpenedLaneHintDoesNotClaimSolitude(t *testing.T) {
 
 // The summary line an agent reads alongside the suggestions must not either.
 func TestTheMatchSummaryDoesNotClaimSolitude(t *testing.T) {
-	opened := lanesHint([]Suggestion{{Agent: "w", Action: "opened"}})
+	opened := agentsHint([]Suggestion{{Agent: "w", Action: "opened"}})
 	mustNotClaimSolitude(t, "the opened summary", opened)
 	if !strings.Contains(strings.ToLower(opened), "threshold") {
 		t.Errorf("the opened summary does not say a measurement happened: %q", opened)
 	}
 	// The no-suggestions case has always been honest; pin it so it stays that way.
-	mustNotClaimSolitude(t, "the empty summary", lanesHint(nil))
+	mustNotClaimSolitude(t, "the empty summary", agentsHint(nil))
 }

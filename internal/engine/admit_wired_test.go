@@ -26,7 +26,7 @@ func TestAdmitIsActuallyOnTheIngressPath(t *testing.T) {
 	defer cancel()
 	go e.Run(ctx)
 
-	res, err := e.Do(ctx, &core.Op{Kind: core.OpRegisterLane, Name: "alpha"})
+	res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "alpha"})
 	if err != nil {
 		t.Fatalf("setup: register: %v", err)
 	}
@@ -36,13 +36,13 @@ func TestAdmitIsActuallyOnTheIngressPath(t *testing.T) {
 	}
 
 	if _, err := e.Do(ctx, &core.Op{
-		Kind: core.OpLaneOpen, Token: tok, Space: "w", Text: "work",
+		Kind: core.OpSpaceOpen, Token: tok, Space: "w", Text: "work",
 	}); err != nil {
 		t.Fatalf("setup: opening an agent: %v", err)
 	}
 
 	_, err = e.Do(ctx, &core.Op{
-		Kind: core.OpLaneAnnounce, Token: tok, Space: "w", Body: "   ",
+		Kind: core.OpSpaceAnnounce, Token: tok, Space: "w", Body: "   ",
 	})
 	if err == nil {
 		t.Fatal("an empty announcement reached the ledger: core.Admit is not wired " +
@@ -54,7 +54,7 @@ func TestAdmitIsActuallyOnTheIngressPath(t *testing.T) {
 
 	// And a real one still gets through, or the gate is worse than none.
 	if _, err := e.Do(ctx, &core.Op{
-		Kind: core.OpLaneAnnounce, Token: tok, Space: "w", Body: "freezing auth/retry.go",
+		Kind: core.OpSpaceAnnounce, Token: tok, Space: "w", Body: "freezing auth/retry.go",
 	}); err != nil {
 		t.Errorf("a legitimate announcement was refused: %v", err)
 	}

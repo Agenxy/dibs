@@ -32,7 +32,7 @@ func panelPayload(raw core.Result) core.Result {
 		}
 	}
 	out := core.Result{}
-	for _, k := range []string{"view", "lane_id", "act_token"} {
+	for _, k := range []string{"view", "agent_id", "act_token"} {
 		if v, ok := in[k]; ok {
 			out[k] = v
 		}
@@ -65,10 +65,10 @@ func panelPayload(raw core.Result) core.Result {
 	return out
 }
 
-// laneFields / slotFields / msgFields are what board_app.html actually renders.
+// agentFields / slotFields / msgFields are what board_app.html actually renders.
 // Adding a field here without using it in the template is how payloads rot.
 var (
-	laneFields = []string{
+	agentFields = []string{
 		"id", "name", "kind", "status", "description", "last_coordination_at", "agent",
 		// WHY an agent stopped counting as live. Without it the panel shows
 		// "out of touch" beside a last-contact time of "now", which reads as a
@@ -83,7 +83,7 @@ var (
 )
 
 // channelFields / memberFields are what the Dibs tab renders. Same discipline
-// as laneFields: a field added here and not drawn is payload rot.
+// as agentFields: a field added here and not drawn is payload rot.
 var (
 	channelFields = []string{
 		"id", "topic", "owner", "queue",
@@ -118,7 +118,7 @@ func trimBoard(b map[string]any) core.Result {
 	}
 	var agents []map[string]any
 	for _, raw := range asMaps(b["agents"]) {
-		l := pick(raw, laneFields)
+		l := pick(raw, agentFields)
 		var slots []map[string]any
 		for _, s := range asMaps(raw["slots"]) {
 			slots = append(slots, pick(s, slotFields))

@@ -279,7 +279,7 @@ you can measure is never improved by asking.
   roles. `resume_id` (client-generated per attempt, ≥64-bit) makes it a **complete
   activation boundary**:
   - Verifies the nonce (constant-time); fails on closed/archived
-    (`E_LANE_CLOSED`/`E_NO_LANE`) or unknown nonce (`E_BAD_NONCE`).
+    (`E_AGENT_CLOSED`/`E_NO_AGENT`) or unknown nonce (`E_BAD_NONCE`).
   - **Rotates the token** and increments the agent's `activation` generation: the
     rotation takes effect atomically at the resume op's serial: ops carrying the old
     token that execute after it fail `E_BAD_TOKEN` (all validation happens inside
@@ -305,10 +305,10 @@ you can measure is never improved by asking.
 
 ## 6. Dibs, slots, and the awareness gate
 
-**Agent**: replayable: `{lane_id, kind, name, description, pid?, status,
+**Agent**: replayable: `{agent_id, kind, name, description, pid?, status,
 created_serial, acked_serial, activation, last_coordination_at,
 stale_since?/dormant_since?, slots}`; presentation (view-only, §2): `last_seen,
-proc_alive`. Public; writable only by token holder. `lane_id` = uniquified name
+proc_alive`. Public; writable only by token holder. `agent_id` = uniquified name
 slug. `activation` is a generation counter incremented by each `resume` (§5).
 `last_coordination_at` is the agent's **latest durable coordination checkpoint**: a
 conservative lower bound on its own last accepted authenticated call (it may trail
@@ -346,7 +346,7 @@ agent's next activation (its harness, a schedule, or a human). `dibs watch --exe
 | Signal | Mechanism | PROVES | Does NOT prove |
 |---|---|---|---|
 | `dead` | `kill(pid,0)` per sweep + (pid, start-time) identity | The registered process is gone. Caveat: an unreaped zombie still *appears alive* to `kill(0)`; true zombie detection arrives with kqueue `NOTE_EXIT`/pidfd (v1.1) | That its children or in-flight effects stopped |
-| `stale`/`dormant` | Lease lapse: no authenticated call for `lane_ttl` (default 5 min) if the agent gave a PID, or `idle_ttl` (default 45 min) if it did not, silence is weaker evidence than a dead process, and a token-only HTTP client never gives one | The agent stopped *coordinating* | That it stopped *working*, `stale + proc:alive` renders as "hung?", a hint, never a verdict |
+| `stale`/`dormant` | Lease lapse: no authenticated call for `agent_ttl` (default 5 min) if the agent gave a PID, or `idle_ttl` (default 45 min) if it did not, silence is weaker evidence than a dead process, and a token-only HTTP client never gives one | The agent stopped *coordinating* | That it stopped *working*, `stale + proc:alive` renders as "hung?", a hint, never a verdict |
 | `expired_unanswered` | Deadline passed, recipient active | This message wasn't answered | Anything about recipient health |
 
 - **Implicit heartbeat**: every authenticated call (reads included) refreshes the
@@ -542,7 +542,7 @@ Read-only work needs no claim.
 | Resource | Default | On exceed |
 |---|---|---|
 | ops per agent | 10/s, burst 30 | `E_RATE_LIMITED` (no wake, no ledger) |
-| live agents / persistent agents | 64 / 16 | `E_LANE_LIMIT` |
+| live agents / persistent agents | 64 / 16 | `E_AGENT_LIMIT` |
 | slots per agent | 32 | `E_SLOT_LIMIT` |
 | claims per agent / global | 32 / 256 | `E_CLAIM_LIMIT` |
 | mailbox depth (non-terminal) | 256 | §8 backpressure |
@@ -603,7 +603,7 @@ counting a document; this line said 17 for two minor versions.
 
 | Tool | Purpose |
 |---|---|
-| `register(name, description?, pid?, nonce?, kind?)` | → `{lane_id, token, serial, board}`; nonce required for `kind: persistent` |
+| `register(name, description?, pid?, nonce?, kind?)` | → `{agent_id, token, serial, board}`; nonce required for `kind: persistent` |
 | `resume(nonce, resume_id, pid?)` | reactivate a persistent agent: rotates token, bumps activation generation, rebinds PID, wakes, re-arms gate; idempotent per resume_id (§5) |
 | `check_in()` | pass the awareness gate (per activation); → atomic `{board, inbox, serial}` checkpoint (§10) |
 | `update(description)` / `sign_off()` | lifecycle |
@@ -619,8 +619,8 @@ counting a document; this line said 17 for two minor versions.
 
 **Errors**: structured `{code, message, hint}` tool results (`isError: true`); `hint`
 names the corrective action. Codes: the §11 set plus `E_BAD_TOKEN, E_MUST_ACK_BOARD,
-E_NO_LANE, E_NO_SLOT, E_NO_MESSAGE, E_NO_CLAIM, E_MSG_FINAL, E_BAD_TYPE, E_BAD_MODE,
-E_BAD_DISPOSITION, E_BAD_NONCE, E_NONCE_IN_USE, E_OP_ID_CONFLICT, E_LANE_CLOSED,
+E_NO_AGENT, E_NO_SLOT, E_NO_MESSAGE, E_NO_CLAIM, E_MSG_FINAL, E_BAD_TYPE, E_BAD_MODE,
+E_BAD_DISPOSITION, E_BAD_NONCE, E_NONCE_IN_USE, E_OP_ID_CONFLICT, E_AGENT_CLOSED,
 E_CURSOR_TOO_OLD`.
 
 **Resources**: `dibs://board`. Mailboxes are deliberately not resources.
@@ -701,7 +701,7 @@ binaries (`dibd` and `dibs`) both CGO_ENABLED=0 and byte-reproducible.
 ledgered wake transitions; ephemeral + persistent agents; resume; awareness gate
 per activation; mailbox (full state machine, read_mail, op_id dedup,
 dormant-recipient semantics); claims (§9 matrix); bounded liveness with bounded
-restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (40 tools);
+restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (41 tools);
 local access secret + Origin validation; CLI (board/messages/log/verify/mcp-config);
 SSE web board; static binaries (`dibd` + `dibs`, no cgo, no runtime deps).
 

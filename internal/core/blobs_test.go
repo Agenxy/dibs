@@ -146,7 +146,7 @@ func TestBlobMimeValidation(t *testing.T) {
 // quota.
 func TestBlobPerLaneQuota(t *testing.T) {
 	lim := DefaultLimits()
-	lim.PerLaneBlobBytes = 10
+	lim.PerAgentBlobBytes = 10
 	s := NewState("n1", lim)
 	ackReg(t, s, "alpha", "ta", t0)
 	putBlob(t, s, "ta", "12345", t0) // 5 bytes ok
@@ -188,7 +188,7 @@ func TestBlobTTLEviction(t *testing.T) {
 func TestBlobCapEviction(t *testing.T) {
 	lim := DefaultLimits()
 	lim.BlobStoreBytes = 30
-	lim.PerLaneBlobBytes = 1000
+	lim.PerAgentBlobBytes = 1000
 	lim.BlobGraceWindow = time.Minute
 	s := NewState("n1", lim)
 	ackReg(t, s, "alpha", "ta", t0)
@@ -277,11 +277,11 @@ func TestAnEvictedBlobIsNotReportedAsAnAccessProblem(t *testing.T) {
 	now := time.Unix(1700000000, 0)
 	reg := func(name, tok string) *Agent {
 		t.Helper()
-		r, _, err := s.Apply(&Op{Kind: OpRegisterLane, Name: name, NewToken: tok}, now)
+		r, _, err := s.Apply(&Op{Kind: OpRegister, Name: name, NewToken: tok}, now)
 		if err != nil {
 			t.Fatal(err)
 		}
-		id, _ := r["lane_id"].(string)
+		id, _ := r["agent_id"].(string)
 		if _, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: s.Agents[id].Token}, now); err != nil {
 			t.Fatal(err)
 		}

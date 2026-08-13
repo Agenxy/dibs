@@ -98,11 +98,11 @@ func TestLaneReadNamesItsMembers(t *testing.T) {
 	toolCall(t, srv, "check_in", map[string]any{"token": ta})
 	toolCall(t, srv, "check_in", map[string]any{"token": tb})
 	toolCall(t, srv, "open_space", map[string]any{
-		"token": ta, "agent": "shared-work", "topic": "coordinate the shared work",
+		"token": ta, "space": "shared-work", "topic": "coordinate the shared work",
 	})
-	toolCall(t, srv, "join_space", map[string]any{"token": tb, "agent": "shared-work"})
+	toolCall(t, srv, "join_space", map[string]any{"token": tb, "space": "shared-work"})
 
-	read := toolCall(t, srv, "read_space", map[string]any{"token": ta, "agent": "shared-work"})
+	read := toolCall(t, srv, "read_space", map[string]any{"token": ta, "space": "shared-work"})
 	rawNames, ok := read["member_names"].([]any)
 	if !ok {
 		t.Fatalf("read_space member_names = %T, want an array of agent names; result: %v",

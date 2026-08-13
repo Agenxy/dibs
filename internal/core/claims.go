@@ -23,10 +23,10 @@ func pathsOverlap(a, b string) bool {
 }
 
 // overlapping returns all live claims overlapping path, excluding an agent's own.
-func (s *State) overlapping(path, excludeLane string) []*Claim {
+func (s *State) overlapping(path, excludeAgent string) []*Claim {
 	var out []*Claim
 	for _, c := range s.Claims {
-		if c.Agent != excludeLane && pathsOverlap(c.Path, path) {
+		if c.Agent != excludeAgent && pathsOverlap(c.Path, path) {
 			out = append(out, c)
 		}
 	}
@@ -131,8 +131,8 @@ func differentProjects(a, b *Agent) bool {
 // overlapsFor finds other agents related to a declaration. Objectives (shared
 // refs like "pr:1186", "gate:typos", "issue:1140") are the primary key; paths
 // are a weak secondary hint; claims are surfaced because someone asked.
-func (s *State) overlapsFor(refs, dirs []string, excludeLane string) []SlotOverlap {
-	me := s.Agents[excludeLane]
+func (s *State) overlapsFor(refs, dirs []string, excludeAgent string) []SlotOverlap {
+	me := s.Agents[excludeAgent]
 	var out []SlotOverlap
 	seen := map[string]bool{}
 	add := func(o SlotOverlap) {
@@ -149,7 +149,7 @@ func (s *State) overlapsFor(refs, dirs []string, excludeLane string) []SlotOverl
 		}
 	}
 	for _, l := range s.Agents {
-		if l.ID == excludeLane || l.Status == StatusClosed || l.Status == StatusArchived {
+		if l.ID == excludeAgent || l.Status == StatusClosed || l.Status == StatusArchived {
 			continue
 		}
 		for _, o := range slotOverlaps(me, l, want, dirs) {
@@ -157,7 +157,7 @@ func (s *State) overlapsFor(refs, dirs []string, excludeLane string) []SlotOverl
 		}
 	}
 	for _, d := range dirs {
-		for _, c := range s.overlapping(cleanPath(d), excludeLane) {
+		for _, c := range s.overlapping(cleanPath(d), excludeAgent) {
 			add(SlotOverlap{
 				Agent: c.Agent, Signal: SignalClaim, Kind: "claim",
 				Text: c.Note, Path: c.Path, Mode: c.Mode,

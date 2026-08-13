@@ -12,24 +12,24 @@ var t0 = time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
 
 func reg(t *testing.T, s *State, name, token string, now time.Time) *Agent {
 	t.Helper()
-	res, _, err := s.Apply(&Op{Kind: OpRegisterLane, Name: name, NewToken: token}, now)
+	res, _, err := s.Apply(&Op{Kind: OpRegister, Name: name, NewToken: token}, now)
 	if err != nil {
 		t.Fatalf("register %s: %v", name, err)
 	}
-	return s.Agents[res["lane_id"].(string)]
+	return s.Agents[res["agent_id"].(string)]
 }
 
 //nolint:unparam // returning the Agent keeps the helper usable from new tests
 func regPersistent(t *testing.T, s *State, name, token, nonce string, now time.Time) *Agent {
 	t.Helper()
 	res, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: name, NewToken: token,
-		Nonce: nonce, LaneKind: KindPersistent,
+		Kind: OpRegister, Name: name, NewToken: token,
+		Nonce: nonce, AgentKind: KindPersistent,
 	}, now)
 	if err != nil {
 		t.Fatalf("register persistent %s: %v", name, err)
 	}
-	return s.Agents[res["lane_id"].(string)]
+	return s.Agents[res["agent_id"].(string)]
 }
 
 func mustApply(t *testing.T, s *State, op *Op, now time.Time) Result {
@@ -52,8 +52,8 @@ func TestAwarenessGatePerActivation(t *testing.T) {
 	mustApply(t, s, &Op{Kind: OpSetSlot, Token: "tokA", Text: "w"}, t0)
 
 	// Gate re-arms on the stale transition (SPEC §6).
-	mustApply(t, s, &Op{Kind: OpSweep, StaleLanes: []string{"alpha"}}, t0.Add(10*time.Minute))
-	mustApply(t, s, &Op{Kind: OpWakeLane, Token: "tokA"}, t0.Add(11*time.Minute))
+	mustApply(t, s, &Op{Kind: OpSweep, StaleAgents: []string{"alpha"}}, t0.Add(10*time.Minute))
+	mustApply(t, s, &Op{Kind: OpWake, Token: "tokA"}, t0.Add(11*time.Minute))
 	if _, _, err := s.Apply(&Op{Kind: OpSetSlot, Token: "tokA", Text: "w2"}, t0.Add(11*time.Minute)); !errors.Is(err, ErrMustAck) {
 		t.Fatalf("gate must re-arm per activation: got %v", err)
 	}
@@ -62,12 +62,12 @@ func TestAwarenessGatePerActivation(t *testing.T) {
 func TestWakeIsLedgeredTransition(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	reg(t, s, "a", "ta", t0)
-	mustApply(t, s, &Op{Kind: OpSweep, StaleLanes: []string{"a"}}, t0.Add(6*time.Minute))
+	mustApply(t, s, &Op{Kind: OpSweep, StaleAgents: []string{"a"}}, t0.Add(6*time.Minute))
 	if s.Agents["a"].Status != StatusStale {
 		t.Fatal("setup: agent should be stale")
 	}
 	before := s.Serial
-	_, evs, err := s.Apply(&Op{Kind: OpWakeLane, Token: "ta"}, t0.Add(7*time.Minute))
+	_, evs, err := s.Apply(&Op{Kind: OpWake, Token: "ta"}, t0.Add(7*time.Minute))
 	if err != nil || len(evs) != 1 || evs[0].Type != "agent.recovered" {
 		t.Fatalf("wake: evs=%v err=%v", evs, err)
 	}
@@ -76,7 +76,7 @@ func TestWakeIsLedgeredTransition(t *testing.T) {
 	}
 	// Idempotent wake on an active agent: unchanged, no serial.
 	before = s.Serial
-	_, evs, _ = s.Apply(&Op{Kind: OpWakeLane, Token: "ta"}, t0.Add(8*time.Minute))
+	_, evs, _ = s.Apply(&Op{Kind: OpWake, Token: "ta"}, t0.Add(8*time.Minute))
 	if evs != nil || s.Serial != before {
 		t.Fatal("wake on active agent must be a serial-free no-op")
 	}
@@ -87,14 +87,14 @@ func TestPersistentLifecycleAndResume(t *testing.T) {
 	regPersistent(t, s, "reviewer", "tok1", "nonce-secret-1", t0)
 
 	// Persistent registration without nonce is refused.
-	if _, _, err := s.Apply(&Op{Kind: OpRegisterLane, Name: "x", NewToken: "tx", LaneKind: KindPersistent}, t0); err == nil {
+	if _, _, err := s.Apply(&Op{Kind: OpRegister, Name: "x", NewToken: "tx", AgentKind: KindPersistent}, t0); err == nil {
 		t.Fatal("persistent without nonce must fail")
 	}
 
 	// Lease lapse → dormant (not stale), mailbox retained, claims released.
 	mustApply(t, s, &Op{Kind: OpAckBoard, Token: "tok1"}, t0)
 	mustApply(t, s, &Op{Kind: OpClaim, Token: "tok1", Path: "/w", Mode: ClaimExclusive}, t0)
-	mustApply(t, s, &Op{Kind: OpSweep, StaleLanes: []string{"reviewer"}}, t0.Add(10*time.Minute))
+	mustApply(t, s, &Op{Kind: OpSweep, StaleAgents: []string{"reviewer"}}, t0.Add(10*time.Minute))
 	l := s.Agents["reviewer"]
 	if l.Status != StatusDormant || len(s.Claims) != 0 || l.AckedSerial != 0 {
 		t.Fatalf("dormant transition wrong: status=%s claims=%d acked=%d", l.Status, len(s.Claims), l.AckedSerial)
@@ -102,13 +102,13 @@ func TestPersistentLifecycleAndResume(t *testing.T) {
 
 	// resume: rotation + generation + rebind, atomic.
 	res := mustApply(t, s, &Op{
-		Kind: OpResumeLane, Nonce: "nonce-secret-1", ResumeID: "r1",
+		Kind: OpResume, Nonce: "nonce-secret-1", ResumeID: "r1",
 		NewToken: "tok2", PID: 4242,
 	}, t0.Add(24*time.Hour))
 	if res["token"] != "tok2" || res["activation"].(uint64) != 1 {
 		t.Fatalf("resume result: %v", res)
 	}
-	if s.LaneByToken("tok1") != nil {
+	if s.AgentByToken("tok1") != nil {
 		t.Fatal("old token must be invalid after rotation")
 	}
 	if l.Status != StatusActive || l.PID != 4242 {
@@ -117,7 +117,7 @@ func TestPersistentLifecycleAndResume(t *testing.T) {
 
 	// Idempotent retry with same resume_id → same token (generation unchanged).
 	res = mustApply(t, s, &Op{
-		Kind: OpResumeLane, Nonce: "nonce-secret-1", ResumeID: "r1",
+		Kind: OpResume, Nonce: "nonce-secret-1", ResumeID: "r1",
 		NewToken: "tok3-ignored",
 	}, t0.Add(24*time.Hour+time.Minute))
 	if res["token"] != "tok2" || res["resumed"] != true {
@@ -125,8 +125,8 @@ func TestPersistentLifecycleAndResume(t *testing.T) {
 	}
 
 	// A later resume supersedes: old resume_id retry yields no token.
-	mustApply(t, s, &Op{Kind: OpResumeLane, Nonce: "nonce-secret-1", ResumeID: "r2", NewToken: "tok4"}, t0.Add(25*time.Hour))
-	res = mustApply(t, s, &Op{Kind: OpResumeLane, Nonce: "nonce-secret-1", ResumeID: "r1", NewToken: "ignored"}, t0.Add(25*time.Hour+time.Minute))
+	mustApply(t, s, &Op{Kind: OpResume, Nonce: "nonce-secret-1", ResumeID: "r2", NewToken: "tok4"}, t0.Add(25*time.Hour))
+	res = mustApply(t, s, &Op{Kind: OpResume, Nonce: "nonce-secret-1", ResumeID: "r1", NewToken: "ignored"}, t0.Add(25*time.Hour+time.Minute))
 	if res["superseded"] != true {
 		t.Fatalf("stale resume retry must be superseded: %v", res)
 	}
@@ -135,7 +135,7 @@ func TestPersistentLifecycleAndResume(t *testing.T) {
 	}
 
 	// Dormancy max runs from the ledgered transition → archived.
-	mustApply(t, s, &Op{Kind: OpSweep, StaleLanes: []string{"reviewer"}}, t0.Add(26*time.Hour))
+	mustApply(t, s, &Op{Kind: OpSweep, StaleAgents: []string{"reviewer"}}, t0.Add(26*time.Hour))
 	mustApply(t, s, &Op{Kind: OpSweep}, t0.Add(26*time.Hour).Add(DefaultLimits().DormancyMax+time.Hour))
 	if s.Agents["reviewer"].Status != StatusArchived {
 		t.Fatalf("dormancy max must archive, got %s", s.Agents["reviewer"].Status)
@@ -323,7 +323,7 @@ func TestExpiryDiagnosisTriad(t *testing.T) {
 	mustApply(t, s, &Op{Kind: OpRespond, Token: "tb", MsgSerial: qActive, Disposition: "decline"}, t0.Add(30*time.Second))
 	later := t0.Add(2 * time.Minute)
 	mustApply(t, s, &Op{Kind: OpHeartbeat, Token: "tb"}, later.Add(-time.Second))
-	mustApply(t, s, &Op{Kind: OpSweep, StaleLanes: []string{"p"}}, later)
+	mustApply(t, s, &Op{Kind: OpSweep, StaleAgents: []string{"p"}}, later)
 	if got := s.Messages[qDead].State; got != MsgStateExpiredSilent {
 		t.Fatalf("active recipient expiry = %s", got)
 	}
@@ -337,16 +337,16 @@ func TestExpiryDiagnosisTriad(t *testing.T) {
 
 func TestNonceRetryWindowAndInUse(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
-	res, _, err := s.Apply(&Op{Kind: OpRegisterLane, Name: "a", NewToken: "t1", Nonce: "nx"}, t0)
+	res, _, err := s.Apply(&Op{Kind: OpRegister, Name: "a", NewToken: "t1", Nonce: "nx"}, t0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// Response-loss retry within one TTL: original result.
-	res2, _, err := s.Apply(&Op{Kind: OpRegisterLane, Name: "a", NewToken: "t2-ignored", Nonce: "nx"}, t0.Add(time.Minute))
+	res2, _, err := s.Apply(&Op{Kind: OpRegister, Name: "a", NewToken: "t2-ignored", Nonce: "nx"}, t0.Add(time.Minute))
 	if err != nil || res2["token"] != "t1" || res2["resumed"] != true {
 		t.Fatalf("retry within window: %v %v", res2, err)
 	}
-	if res2["lane_id"] != res["lane_id"] {
+	if res2["agent_id"] != res["agent_id"] {
 		t.Fatal("retry must return the same agent")
 	}
 	// Outside the window, same name: the nonce is the recovery credential, so
@@ -354,15 +354,15 @@ func TestNonceRetryWindowAndInUse(t *testing.T) {
 	// refusing. Refusing here is what stranded four agents' mail on a live fleet:
 	// the agent had kept its nonce exactly as advised and was told, by its own
 	// credential, that it was somebody else.
-	res3, _, err := s.Apply(&Op{Kind: OpRegisterLane, Name: "a", NewToken: "t3", Nonce: "nx"}, t0.Add(10*time.Minute))
+	res3, _, err := s.Apply(&Op{Kind: OpRegister, Name: "a", NewToken: "t3", Nonce: "nx"}, t0.Add(10*time.Minute))
 	if err != nil {
 		t.Fatalf("outside the window the nonce must recover the agent: %v", err)
 	}
-	if res3["lane_id"] != res["lane_id"] || res3["reattached"] != true || res3["token"] != "t3" {
+	if res3["agent_id"] != res["agent_id"] || res3["reattached"] != true || res3["token"] != "t3" {
 		t.Fatalf("want reattach to the same agent with a rotated token, got %v", res3)
 	}
 	// A DIFFERENT name is still refused: a nonce recovers one identity.
-	_, _, err = s.Apply(&Op{Kind: OpRegisterLane, Name: "b", NewToken: "t4", Nonce: "nx"}, t0.Add(20*time.Minute))
+	_, _, err = s.Apply(&Op{Kind: OpRegister, Name: "b", NewToken: "t4", Nonce: "nx"}, t0.Add(20*time.Minute))
 	var ce *Error
 	if !asErr(err, &ce) || ce.Code != "E_NONCE_IN_USE" {
 		t.Fatalf("want E_NONCE_IN_USE for a second identity, got %v", err)

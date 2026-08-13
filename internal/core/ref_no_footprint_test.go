@@ -23,7 +23,7 @@ func TestASharedRefMatchesAChannelWithNoFootprint(t *testing.T) {
 
 	reg := func(name string) string {
 		_, _, err := s.Apply(&Op{
-			Kind: OpRegisterLane, Name: name, NewToken: "tok-" + name, SessionID: name,
+			Kind: OpRegister, Name: name, NewToken: "tok-" + name, SessionID: name,
 		}, now)
 		if err != nil {
 			t.Fatalf("register %s: %v", name, err)
@@ -43,7 +43,7 @@ func TestASharedRefMatchesAChannelWithNoFootprint(t *testing.T) {
 	// declaration is the engine's job; at this layer the space is created
 	// explicitly and the owner then declares, which reaches the same state.
 	if _, _, err := s.Apply(&Op{
-		Kind: OpLaneOpen, Token: owner, Space: "ticket-42", Text: "implement ticket",
+		Kind: OpSpaceOpen, Token: owner, Space: "ticket-42", Text: "implement ticket",
 	}, now); err != nil {
 		t.Fatalf("open_space: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestASharedRefMatchesAChannelWithNoFootprint(t *testing.T) {
 			"under test and a scorer change has made it unreachable here")
 	}
 
-	matches := s.MatchLanesEvidence("joiner", Slot{
+	matches := s.MatchAgentsEvidence("joiner", Slot{
 		Text: "fix the same ticket", Refs: []string{"issue:42"},
 	}, "", "", nil, nil, 10)
 

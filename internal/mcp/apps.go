@@ -169,7 +169,7 @@ func (s *Server) showBoard(ctx context.Context, token, view string) (core.Result
 	if strings.TrimSpace(token) == "" {
 		return nil, core.ErrBadToken
 	}
-	laneID, _, err := s.eng.SubscribeInfo(ctx, token)
+	agentID, _, err := s.eng.SubscribeInfo(ctx, token)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +177,7 @@ func (s *Server) showBoard(ctx context.Context, token, view string) (core.Result
 	if err != nil {
 		return nil, err
 	}
-	out := core.Result{"board": board, "lane_id": laneID}
+	out := core.Result{"board": board, "agent_id": agentID}
 	if view == "mail" || view == "board" || view == "activity" {
 		out["view"] = view
 	}
@@ -365,7 +365,7 @@ func showBoardResult(res core.Result, detail, declaredUI bool) map[string]any {
 // See board_app.html's fetchBoard.
 func panelBootstrap(payload core.Result) core.Result {
 	out := core.Result{}
-	for _, k := range []string{"view", "lane_id", "act_token"} {
+	for _, k := range []string{"view", "agent_id", "act_token"} {
 		if v, ok := payload[k]; ok {
 			out[k] = v
 		}
@@ -514,9 +514,9 @@ func (s *Server) panelState(ctx context.Context, res core.Result, view, token st
 	if token != "" {
 		out["act_token"] = token
 	}
-	if _, ok := out["lane_id"]; !ok && token != "" {
+	if _, ok := out["agent_id"]; !ok && token != "" {
 		if id, _, err := s.eng.SubscribeInfo(ctx, token); err == nil {
-			out["lane_id"] = id
+			out["agent_id"] = id
 		}
 	}
 	if view != "" {

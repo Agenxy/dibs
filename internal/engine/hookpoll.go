@@ -30,7 +30,7 @@ const AnnounceRetry = 120 * time.Second
 // it with its own token, so a hook firing can never silently swallow a message.
 func (e *Engine) HookPoll(ctx context.Context, sessionID, event, cwd string) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
-		l := e.state.LaneForHook(sessionID, cwd)
+		l := e.state.AgentForHook(sessionID, cwd)
 		e.noteHook("poll", l != nil)
 		if l == nil {
 			// Not an error: most sessions have no agent, and a hook that fails

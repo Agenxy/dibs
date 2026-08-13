@@ -84,7 +84,7 @@ func Admit(op *Op, lim Limits) error {
 		}
 	}
 	switch op.Kind {
-	case OpLaneAnnounce:
+	case OpSpaceAnnounce:
 		// An announcement with nothing in it obliges every member to
 		// acknowledge nothing, and re-pings them until they do. The UPPER bound
 		// on a body was checked and the lower one was not.
@@ -102,7 +102,7 @@ func Admit(op *Op, lim Limits) error {
 					"obliges every member to acknowledge it, and an empty one obliges "+
 					"them to acknowledge nothing")
 		}
-	case OpLanePost:
+	case OpSpacePost:
 		// A post obliges nobody, so an empty one is noise rather than a false
 		// obligation, but it is still an event delivered to every member, and
 		// the cause is the same slip.
@@ -152,8 +152,8 @@ type Op struct {
 	// Parent alone is a claim anyone can make; this is the proof. A parent that
 	// actually spawned a child can hand it a secret: same process, same trust
 	// domain, and nobody else has it.
-	ParentNonce string   `json:"parent_nonce,omitempty"`
-	LaneKind    LaneKind `json:"lane_kind,omitempty"`
+	ParentNonce string    `json:"parent_nonce,omitempty"`
+	AgentKind   AgentKind `json:"lane_kind,omitempty"`
 
 	// declare / undeclare
 	SlotID string   `json:"slot_id,omitempty"`
@@ -192,8 +192,8 @@ type Op struct {
 	// state), so like every other impure sweep input it arrives RECORDED,
 	// replay marks exactly the same announcements without counting anything.
 	GiveUpAnnounce []uint64 `json:"give_up_announce,omitempty"`
-	DeadLanes      []string `json:"dead_lanes,omitempty"`
-	StaleLanes     []string `json:"stale_lanes,omitempty"`
+	DeadAgents     []string `json:"dead_lanes,omitempty"`
+	StaleAgents    []string `json:"stale_lanes,omitempty"`
 	AlivePIDs      []int    `json:"alive_pids,omitempty"`
 
 	// mark_delivered: ledgered pending→delivered receipts
@@ -228,14 +228,14 @@ type Op struct {
 
 // Op kinds.
 const (
-	OpRegisterLane       = "register"
-	OpResumeLane         = "resume"
-	OpWakeLane           = "wake_lane"
+	OpRegister           = "register"
+	OpResume             = "resume"
+	OpWake               = "wake"
 	OpActivityCheckpoint = "activity_checkpoint"
 	OpAckBoard           = "check_in"
-	OpUpdateLane         = "update"
+	OpUpdate             = "update"
 	OpBindSession        = "bind_session"
-	OpCloseLane          = "sign_off"
+	OpSignOff            = "sign_off"
 	OpHeartbeat          = "heartbeat"
 	OpSetSlot            = "declare"
 	OpClearSlot          = "undeclare"
@@ -248,7 +248,14 @@ const (
 	OpMarkDelivered      = "mark_delivered"
 	OpPutBlob            = "put_blob"
 	OpGrantRole          = "grant_role"
-	OpPruneLane          = "prune_lane"
+	OpPrune              = "prune"
+	// OpPruneOwn is an agent tidying up after ITSELF: its own record, or a
+	// child it vouched for. A new kind rather than a token-bearing prune_lane,
+	// because the ownership rule below has to live in Apply (it depends on
+	// state, which Admit cannot see) and a rule added to Apply is retroactive:
+	// it would be applied to ops that older code already accepted. No ledger
+	// anywhere contains this kind, so there is nothing to be retroactive about.
+	OpPruneOwn = "prune_own"
 	// OpVouchChild is how a parent proves it really is spawning a subagent.
 	OpVouchChild   = "vouch_child"
 	OpForceRelease = "force_release"
@@ -261,9 +268,9 @@ type Result map[string]any
 // with a non-nil event slice or a mutating kind, the engine ledgers the op.
 func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	switch op.Kind {
-	case OpRegisterLane:
+	case OpRegister:
 		return s.applyRegister(op, now)
-	case OpResumeLane:
+	case OpResume:
 		return s.applyResume(op, now)
 	case OpSweep:
 		return s.applySweep(op, now)
@@ -273,7 +280,7 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		// Admin-only: the engine admits this solely on the human's admin path,
 		// so no agent token is consulted and no agent can promote itself.
 		return s.applyGrantRole(op, now)
-	case OpPruneLane:
+	case OpPrune:
 		// Admin-only, same path. Closing another agent is a human's call: an agent
 		// that crashed cannot close itself, and no agent should be able to
 		// evict a peer.
@@ -282,7 +289,7 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 
 	// Actor ops. Live path: token. Replay path: recorded Agent (engine blanks
 	// Agent on ingress, so it cannot be forged).
-	l := s.LaneByToken(op.Token)
+	l := s.AgentByToken(op.Token)
 	if l == nil && op.Token == "" && op.AgentID != "" {
 		l = s.Agents[op.AgentID]
 	}
@@ -290,14 +297,14 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		return nil, nil, ErrBadToken
 	}
 	if l.Status == StatusClosed {
-		return nil, nil, errf("E_LANE_CLOSED", "register a new agent", "agent %s is closed", l.ID)
+		return nil, nil, errf("E_AGENT_CLOSED", "register a new agent", "agent %s is closed", l.ID)
 	}
 	op.AgentID = l.ID
 
 	// Heartbeat on an active agent touches no replayable state (never
 	// ledgered; the engine tracks the ephemeral lease). SPEC §2.
 	if op.Kind == OpHeartbeat && l.Status == StatusActive {
-		return Result{"ok": true, "lane_id": l.ID}, nil, nil
+		return Result{"ok": true, "agent_id": l.ID}, nil, nil
 	}
 
 	var res Result
@@ -306,39 +313,39 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	switch op.Kind {
 	case OpVouchChild:
 		res, evs, err = s.applyVouchChild(l, op)
-	case OpLaneOpen:
-		res, evs, err = s.applyLaneOpen(l, op, now)
-	case OpLaneJoin:
-		res, evs, err = s.applyLaneJoin(l, op, now)
-	case OpLaneLeave:
-		res, evs, err = s.applyLaneLeave(l, op, now)
-	case OpLaneSubscribe:
-		res, evs, err = s.applyLaneSubscribe(l, op, now)
-	case OpLaneExclusive:
-		res, evs, err = s.applyLaneExclusive(l, op, now)
-	case OpLanePost:
-		res, evs, err = s.applyLanePost(l, op, now)
-	case OpLaneAnnounce:
-		res, evs, err = s.applyLaneAnnounce(l, op, now)
-	case OpLaneAck:
-		res, evs, err = s.applyLaneAck(l, op, now)
-	case OpLaneForceRelease:
-		res, evs, err = s.applyLaneForceRelease(l, op, now)
-	case OpLaneEvict:
-		res, evs, err = s.applyLaneEvict(l, op, now)
-	case OpLaneMerge:
-		res, evs, err = s.applyLaneMerge(l, op, now)
-	case OpLaneClose:
-		res, evs, err = s.applyLaneClose(l, op, now)
-	case OpLaneAdmit:
-		res, evs, err = s.applyLaneAdmit(l, op, now)
-	case OpWakeLane:
+	case OpSpaceOpen:
+		res, evs, err = s.applySpaceOpen(l, op, now)
+	case OpSpaceJoin:
+		res, evs, err = s.applySpaceJoin(l, op, now)
+	case OpSpaceLeave:
+		res, evs, err = s.applySpaceLeave(l, op, now)
+	case OpSpaceSubscribe:
+		res, evs, err = s.applySpaceSubscribe(l, op, now)
+	case OpSpaceExclusive:
+		res, evs, err = s.applySpaceExclusive(l, op, now)
+	case OpSpacePost:
+		res, evs, err = s.applySpacePost(l, op, now)
+	case OpSpaceAnnounce:
+		res, evs, err = s.applySpaceAnnounce(l, op, now)
+	case OpSpaceAck:
+		res, evs, err = s.applySpaceAck(l, op, now)
+	case OpSpaceForceRelease:
+		res, evs, err = s.applySpaceForceRelease(l, op, now)
+	case OpSpaceEvict:
+		res, evs, err = s.applySpaceEvict(l, op, now)
+	case OpSpaceMerge:
+		res, evs, err = s.applySpaceMerge(l, op, now)
+	case OpSpaceClose:
+		res, evs, err = s.applySpaceClose(l, op, now)
+	case OpSpaceAdmit:
+		res, evs, err = s.applySpaceAdmit(l, op, now)
+	case OpWake:
 		res, evs, err = s.applyWake(l)
 	case OpActivityCheckpoint:
 		res, evs = Result{"ok": true}, []Event{} // state effect: LastCoordination below
 	case OpAckBoard:
 		res, evs = s.applyAckBoard(l, now)
-	case OpUpdateLane:
+	case OpUpdate:
 		if len(op.Description) > s.Limits.MaxDescBytes {
 			err = errTooLarge("description", s.Limits.MaxDescBytes)
 			break
@@ -362,10 +369,12 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		l.SessionID = op.SessionID
 		res = Result{"ok": true, "agent": l.ID, "session_id": l.SessionID}
 		evs = []Event{{Type: "agent.updated", Agent: l.ID}}
-	case OpCloseLane:
+	case OpPruneOwn:
+		return s.applyPruneOwn(op, l, now)
+	case OpSignOff:
 		res, evs = s.applyClose(l, now)
 	case OpHeartbeat: // unreachable when sleeping (wake_lane precedes); no-op
-		res, evs = Result{"ok": true, "lane_id": l.ID}, nil
+		res, evs = Result{"ok": true, "agent_id": l.ID}, nil
 	case OpSetSlot:
 		res, evs, err = s.applySetSlot(l, op)
 	case OpClearSlot:
@@ -460,7 +469,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 		len(op.Nonce) > s.Limits.MaxIDBytes {
 		return nil, nil, errTooLarge("name/description/nonce", s.Limits.MaxNameBytes)
 	}
-	kind := op.LaneKind
+	kind := op.AgentKind
 	if kind == "" {
 		kind = KindEphemeral
 	}
@@ -477,9 +486,9 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	if op.Nonce != "" {
 		if id, ok := s.Nonces[op.Nonce]; ok {
 			l := s.Agents[id]
-			if l != nil && l.Status == StatusActive && now.Sub(l.LastCoordination) <= s.Limits.LaneTTL && l.CreatedSerial > 0 {
+			if l != nil && l.Status == StatusActive && now.Sub(l.LastCoordination) <= s.Limits.AgentTTL && l.CreatedSerial > 0 {
 				return Result{
-					"lane_id": id, "token": l.Token, "serial": s.Serial,
+					"agent_id": id, "token": l.Token, "serial": s.Serial,
 					"resumed": true, "board": s.Board(),
 				}, nil, nil
 			}
@@ -543,7 +552,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				}}}
 				serial := s.finish(&evs, now)
 				return Result{
-					"lane_id": l.ID, "token": l.Token, "serial": serial,
+					"agent_id": l.ID, "token": l.Token, "serial": serial,
 					"reattached": true, "via": "nonce", "board": s.Board(),
 					"session_id": l.SessionID,
 				}, evs, nil
@@ -611,7 +620,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				}}}
 				serial := s.finish(&evs, now)
 				return Result{
-					"lane_id": l.ID, "token": l.Token, "serial": serial,
+					"agent_id": l.ID, "token": l.Token, "serial": serial,
 					"reattached": true, "via": "session_id", "board": s.Board(),
 					"session_id": l.SessionID,
 				}, evs, nil
@@ -628,10 +637,10 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 			}
 		}
 	}
-	if live >= s.Limits.MaxLanes || (kind == KindPersistent && persistent >= s.Limits.MaxPersistentLanes) {
-		return nil, nil, ErrLaneLimit
+	if live >= s.Limits.MaxAgents || (kind == KindPersistent && persistent >= s.Limits.MaxPersistentAgents) {
+		return nil, nil, ErrAgentLimit
 	}
-	id := laneID(s, op.Name)
+	id := agentID(s, op.Name)
 	// Lineage is claimed and proven separately. An unproven parent is displayed
 	// and grants nothing; a vouched one inherits its parent's agents, skips an
 	// exclusive queue, and is exempt from the parent's claims in the guard.
@@ -659,7 +668,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	serial := s.finish(&evs, now)
 	l.CreatedSerial = serial
 	res := Result{
-		"lane_id": id, "token": op.NewToken, "serial": serial, "board": s.Board(),
+		"agent_id": id, "token": op.NewToken, "serial": serial, "board": s.Board(),
 		"gate": "call check_in to acknowledge the board before declare or claim",
 	}
 	// Hand back the session_id the agent was actually filed under.
@@ -801,21 +810,21 @@ func (s *State) applyResume(op *Op, now time.Time) (Result, []Event, error) {
 	}
 	l := s.Agents[id]
 	if l == nil || l.Status == StatusArchived {
-		return nil, nil, errf("E_NO_LANE", "the agent was archived; register a new one", "agent for nonce is gone")
+		return nil, nil, errf("E_NO_AGENT", "the agent was archived; register a new one", "agent for nonce is gone")
 	}
 	if l.Status == StatusClosed {
-		return nil, nil, errf("E_LANE_CLOSED", "register a new agent", "agent %s is closed", id)
+		return nil, nil, errf("E_AGENT_CLOSED", "register a new agent", "agent %s is closed", id)
 	}
 	// Generation-aware idempotent retry (SPEC §5): same resume_id returns the
 	// original token iff the generation is unchanged; else superseded.
 	if rec, exists := s.Dedup[dedupKey(id, op.ResumeID)]; exists {
 		if rec.Activation == l.Activation {
 			return Result{
-				"lane_id": id, "token": rec.Token, "activation": l.Activation,
+				"agent_id": id, "token": rec.Token, "activation": l.Activation,
 				"serial": s.Serial, "board": s.Board(), "resumed": true,
 			}, nil, nil
 		}
-		return Result{"lane_id": id, "superseded": true, "activation": rec.Activation}, nil, nil
+		return Result{"agent_id": id, "superseded": true, "activation": rec.Activation}, nil, nil
 	}
 	l.Token = op.NewToken
 	l.Activation++
@@ -830,7 +839,7 @@ func (s *State) applyResume(op *Op, now time.Time) (Result, []Event, error) {
 	evs := []Event{{Type: "agent.resumed", Agent: id, Data: map[string]any{"activation": l.Activation}}}
 	serial := s.finish(&evs, now)
 	return Result{
-		"lane_id": id, "token": op.NewToken, "activation": l.Activation,
+		"agent_id": id, "token": op.NewToken, "activation": l.Activation,
 		"serial": serial, "board": s.Board(),
 		"gate": "call check_in before declare or claim",
 	}, evs, nil
@@ -912,12 +921,47 @@ func (s *State) applyAckBoard(l *Agent, _ time.Time) (Result, []Event) {
 //
 // op.To names a single agent; empty means "every agent that is not live", which is
 // the common case after a day's work.
+// applyPruneOwn lets an agent remove a record it is responsible for.
+//
+// Itself, or a child it VOUCHED for. Never a peer, and that restriction is the
+// whole point rather than caution: an agent able to prune peers can delete the
+// row that would have told it somebody else is already doing its work, which is
+// the alarm this system exists to raise, switched off from the inside. Vouching
+// is what makes a parent accountable for a child (SPEC-CHANNELS §8.2), so it is
+// also what entitles the parent to clean up after it.
+//
+// Only finished agents. Pruning a working agent would release its claims and
+// blank its token underneath it, which is coercion; sign_off is how an agent
+// stops, and this is how the record is tidied afterwards.
+func (s *State) applyPruneOwn(op *Op, actor *Agent, now time.Time) (Result, []Event, error) {
+	target := s.Agents[op.To]
+	if target == nil {
+		return nil, nil, errf("E_NO_AGENT", "check the id on the board", "no agent %q", op.To)
+	}
+	mine := target.ID == actor.ID ||
+		(target.Parent == actor.ID && target.ParentProven)
+	if !mine {
+		return nil, nil, errf("E_NOT_YOURS",
+			"you can prune your own record and children you vouched for. Ask a human "+
+				"to remove somebody else's: `dibs admin prune`",
+			"agent %q is not yours to prune", target.ID)
+	}
+	if target.Status == StatusActive {
+		return nil, nil, errf("E_AGENT_ACTIVE",
+			"let it finish, or sign_off first: pruning a working agent would release "+
+				"its claims underneath it",
+			"agent %q is still active", target.ID)
+	}
+	_, evs := s.applyClose(target, now)
+	return Result{"ok": true, "pruned": target.ID}, evs, nil
+}
+
 func (s *State) applyPrune(op *Op, now time.Time) (Result, []Event, error) {
 	var targets []*Agent
 	if op.To != "" {
 		l := s.Agents[op.To]
 		if l == nil {
-			return nil, nil, errf("E_NO_LANE", "check the id on the board", "no agent %q", op.To)
+			return nil, nil, errf("E_NO_AGENT", "check the id on the board", "no agent %q", op.To)
 		}
 		targets = append(targets, l)
 	} else {
@@ -973,7 +1017,7 @@ func (s *State) applyClose(l *Agent, now time.Time) (Result, []Event) {
 // an agent that asked a question with a ten-minute deadline waited the whole
 // ten minutes for an answer that became impossible in the first second, while
 // the board knew: a closed agent cannot resume (resume returns
-// E_LANE_CLOSED) and Gone() is documented as "never comes back".
+// E_AGENT_CLOSED) and Gone() is documented as "never comes back".
 //
 // Ten minutes of an agent blocking on a certainty is the cost, and it is paid
 // by the one participant who did nothing wrong.
@@ -1020,7 +1064,7 @@ func (s *State) applySetSlot(l *Agent, op *Op) (Result, []Event, error) {
 			}
 		}
 	}
-	if _, exists := l.Slots[id]; !exists && len(l.Slots) >= s.Limits.MaxSlotsPerLane {
+	if _, exists := l.Slots[id]; !exists && len(l.Slots) >= s.Limits.MaxSlotsPerAgent {
 		return nil, nil, errf("E_SLOT_LIMIT", "undeclare an old slot first", "agent has %d slots (max)", len(l.Slots))
 	}
 	if len(op.Refs) > s.Limits.MaxDirs {
@@ -1098,9 +1142,9 @@ func (s *State) applyClearSlot(l *Agent, op *Op) (Result, []Event, error) {
 		[]Event{{Type: "slot.cleared", Agent: l.ID, Data: map[string]any{"slot_id": op.SlotID}}}, nil
 }
 
-// nearestLanesHint lists live agents, closest-looking first, so a misaddressed
+// nearestAgentsHint lists live agents, closest-looking first, so a misaddressed
 // message can be fixed in one step instead of a board round trip.
-func nearestLanesHint(s *State, want string) string {
+func nearestAgentsHint(s *State, want string) string {
 	var near, live []string
 	w := strings.ToLower(want)
 	for id, l := range s.Agents {
@@ -1171,7 +1215,7 @@ func (s *State) applySend(l *Agent, op *Op, now time.Time) (Result, []Event, err
 		// on with another call, and it already told us who it meant: an agent
 		// that addressed "claude" and was told to go looking gave up instead,
 		// rather than guessing which of the live agents was the right one.
-		return nil, nil, errf("E_NO_LANE", nearestLanesHint(s, op.To), "no live agent %q", op.To)
+		return nil, nil, errf("E_NO_AGENT", nearestAgentsHint(s, op.To), "no live agent %q", op.To)
 	}
 	switch op.MsgType {
 	case MsgNotify, MsgQuestion, MsgRequest, MsgHandoff:
@@ -1466,9 +1510,9 @@ func (s *State) applyClaim(l *Agent, op *Op, now time.Time) (Result, []Event, er
 			mine++
 		}
 	}
-	if mine >= s.Limits.MaxClaimsPerLane || total >= s.Limits.MaxClaimsGlobal {
+	if mine >= s.Limits.MaxClaimsPerAgent || total >= s.Limits.MaxClaimsGlobal {
 		return nil, nil, errf("E_CLAIM_LIMIT", "release claims you no longer need", "claim limit reached (%d/agent, %d "+
-			"global)", s.Limits.MaxClaimsPerLane, s.Limits.MaxClaimsGlobal)
+			"global)", s.Limits.MaxClaimsPerAgent, s.Limits.MaxClaimsGlobal)
 	}
 	cl := &Claim{Agent: l.ID, Path: path, Mode: op.Mode, Note: op.Note, Acquired: now, Renewed: now}
 	s.Claims = append(s.Claims, cl)

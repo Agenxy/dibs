@@ -92,7 +92,7 @@ async function measureTheBar(): Promise<number> {
     // The same two declarations the assertions use, in the same order.
     const a = await mk("m-one"), b = await mk("m-two")
     await c("declare", { token: a, text: "enforcing exclusive claims in the guard" })
-    await c("open_space", { token: a, agent: "guard-work", topic: "claim guard denies edits to claimed paths" })
+    await c("open_space", { token: a, space: "guard-work", topic: "claim guard denies edits to claimed paths" })
     const r = await c("declare", { token: b, text: "guard path enforcement for exclusive claims" })
     const m = (r.agents ?? []).find((l: any) => l.agent === "guard-work")
     if (!m || typeof m.score !== "number" || !(m.score > 0)) {
@@ -227,14 +227,14 @@ const gamma = await agent("gamma")
 
 // ── open and join ────────────────────────────────────────────────────────
 {
-  const r = await call("open_space", { token: alpha, agent: "Auth Refactor", topic: "reworking auth middleware" })
-  check("open_space normalises the id so one topic is one agent", r.lane_id === "auth-refactor", r.lane_id)
+  const r = await call("open_space", { token: alpha, space: "Auth Refactor", topic: "reworking auth middleware" })
+  check("open_space normalises the id so one topic is one agent", r.agent_id === "auth-refactor", r.agent_id)
 }
 
 // §4.3: the property that quietly destroys the ledger if it breaks.
 {
   const r = await call("join_space", {
-    token: beta, agent: "auth-refactor",
+    token: beta, space: "auth-refactor",
     score: 0.8137, threshold: 0.327,
     scorer_id: "lexical+cochange", scorer_version: "1",
     evidence: ["internal/mcp/identity.go", "internal/core/roles.go"], auto: true,
@@ -248,26 +248,26 @@ const gamma = await agent("gamma")
 
 // ── exclusivity queues rather than refuses (§5) ──────────────────────────
 {
-  await call("open_space", { token: gamma, agent: "hot", topic: "single-writer work", exclusive: true })
-  const r = await call("join_space", { token: alpha, agent: "hot", score: 0.91 })
+  await call("open_space", { token: gamma, space: "hot", topic: "single-writer work", exclusive: true })
+  const r = await call("join_space", { token: alpha, space: "hot", score: 0.91 })
   check("joining an exclusive space queues rather than refusing", r.queued === true && r.joined === false,
     JSON.stringify(r))
   check("the queue tells you your position", r.queue_position === 1, String(r.queue_position))
   check("the queue names the owner so you can ask them", r.owner === "gamma", r.owner)
   check("and says what to do next", typeof r.hint === "string" && r.hint.length > 0, r.hint)
 
-  const again = await call("join_space", { token: alpha, agent: "hot" })
+  const again = await call("join_space", { token: alpha, space: "hot" })
   check("re-asking does not queue you twice", again.queue_position === 1, String(again.queue_position))
 }
 
 // ── announce requires acks; post does not ───────────────────────────────
 let annSerial = 0
 {
-  const r = await call("announce", { token: alpha, agent: "auth-refactor", body: "renaming AgentInfo.Token" })
+  const r = await call("announce", { token: alpha, space: "auth-refactor", body: "renaming AgentInfo.Token" })
   annSerial = r.serial
   check("announce requires an ack from every other member", r.must_ack === 1, JSON.stringify(r))
 
-  const post = await call("post", { token: alpha, agent: "auth-refactor", body: "halfway done" })
+  const post = await call("post", { token: alpha, space: "auth-refactor", body: "halfway done" })
   check("post is delivered without requiring anything", typeof post.serial === "number")
 }
 
@@ -278,17 +278,17 @@ let annSerial = 0
 
 // ── membership is what collides; subscription is free ───────────────────
 {
-  const r = await call("watch_space", { token: gamma, agent: "auth-refactor" })
+  const r = await call("watch_space", { token: gamma, space: "auth-refactor" })
   check("subscribing works without joining", r.subscribed === true, JSON.stringify(r))
 
-  const err = await fails("post", { token: gamma, agent: "auth-refactor", body: "hello" })
+  const err = await fails("post", { token: gamma, space: "auth-refactor", body: "hello" })
   check("a subscriber may read but not speak", err.includes("E_NOT_MEMBER"), err || "(allowed!)")
 }
 
 // ── leaving hands the agent on ───────────────────────────────────────────
 {
-  await call("leave_space", { token: gamma, agent: "hot" })
-  const r = await call("join_space", { token: alpha, agent: "hot" })
+  await call("leave_space", { token: gamma, space: "hot" })
+  const r = await call("join_space", { token: alpha, space: "hot" })
   check("the queued agent is admitted once the owner leaves",
     r.joined === true || r.already === true, JSON.stringify(r))
 }
@@ -296,7 +296,7 @@ let annSerial = 0
 // ── the awareness gate still applies (SPEC §6) ──────────────────────────
 {
   const fresh = await call("register", { name: "ungreeted", session_id: "s-ungreeted" })
-  const err = await fails("open_space", { token: fresh.token, agent: "somewhere", topic: "t" })
+  const err = await fails("open_space", { token: fresh.token, space: "somewhere", topic: "t" })
   check("spaces respect the awareness gate", /E_MUST_ACK|check_in/i.test(err), err || "(allowed!)")
 }
 
@@ -342,7 +342,7 @@ let annSerial = 0
   let first: any = {}
   for (let i = 0; i < 60; i++) {
     first = await call("declare", { token: solo, slot_id: "s1", text: work })
-    if (first.agents || first.lanes_hint) break
+    if (first.agents || first.agents_hint) break
     await Bun.sleep(250)
   }
   const born = (first.agents ?? []).find((l: any) => l.action === "opened")
@@ -374,10 +374,10 @@ let annSerial = 0
   // First agent declares, then opens an agent for that work.
   await call("declare", { token: one, text: "enforcing exclusive claims in the guard" })
   const opened = await call("open_space", {
-    token: one, agent: "guard-work", topic: "claim guard denies edits to claimed paths",
+    token: one, space: "guard-work", topic: "claim guard denies edits to claimed paths",
   })
   check("an agent opened from a topic gets a footprint to match against",
-    opened.lane_id === "guard-work", JSON.stringify(opened))
+    opened.agent_id === "guard-work", JSON.stringify(opened))
 
   // Second agent declares OVERLAPPING work, in different words, naming no agent.
   const r = await call("declare", { token: two, text: "guard path enforcement for exclusive claims" })
@@ -393,8 +393,8 @@ let annSerial = 0
       guard.action === "consider", `action=${guard.action} score=${guard.score}`)
     check("and the proposal names what WOULD make it automatic",
       typeof guard.hint === "string" && guard.hint.includes("refs"), String(guard.hint))
-    check("and the agent is told to read the agent before starting",
-      typeof r.lanes_hint === "string" && r.lanes_hint.length > 0, r.lanes_hint)
+    check("and the agent is told to read the space before starting",
+      typeof r.agents_hint === "string" && r.agents_hint.length > 0, r.agents_hint)
   }
 
   // Unrelated work must NOT be dragged in: the failure mode that collapses
@@ -414,9 +414,9 @@ let annSerial = 0
   const speaker = await agent("announcer")
   const listener = await call("register", { name: "listener", session_id: "sess-listener" })
   await call("check_in", { token: listener.token })
-  await call("open_space", { token: speaker, agent: "wake-test", topic: "wake path check" })
-  await call("join_space", { token: listener.token, agent: "wake-test" })
-  await call("announce", { token: speaker, agent: "wake-test", body: "INTERFACE CHANGED: Token is now Secret" })
+  await call("open_space", { token: speaker, space: "wake-test", topic: "wake path check" })
+  await call("join_space", { token: listener.token, space: "wake-test" })
+  await call("announce", { token: speaker, space: "wake-test", body: "INTERFACE CHANGED: Token is now Secret" })
 
   const poll = await call("hook_poll", { session_id: "sess-listener", event: "Stop" })
   const ctxText: string = poll?.hookSpecificOutput?.additionalContext ?? ""
@@ -465,7 +465,7 @@ let annSerial = 0
 // ── subagents inherit, and cost nothing (§8.2) ──────────────────────────
 {
   const par = await agent("parent-agent")
-  await call("open_space", { token: par, agent: "sub-work", topic: "work with a helper" })
+  await call("open_space", { token: par, space: "sub-work", topic: "work with a helper" })
   await call("vouch_child", { token: par, nonce: "helper-nonce-0123456789abcdef" })
   // A subagent names its parent at registration and joins nothing.
   const sub = await call("register", {
@@ -477,7 +477,7 @@ let annSerial = 0
   })
   await call("check_in", { token: sub.token })
 
-  const posted = await call("post", { token: sub.token, agent: "sub-work", body: "progress" })
+  const posted = await call("post", { token: sub.token, space: "sub-work", body: "progress" })
   check("a subagent may speak in its parent's agent without joining",
     typeof posted.serial === "number", JSON.stringify(posted))
 
@@ -492,11 +492,11 @@ let annSerial = 0
 {
   const owner = await agent("stuck-owner")
   const waiter = await agent("stuck-waiter")
-  await call("open_space", { token: owner, agent: "stuck", topic: "locked work", exclusive: true })
-  await call("join_space", { token: waiter, agent: "stuck" }) // queues
+  await call("open_space", { token: owner, space: "stuck", topic: "locked work", exclusive: true })
+  await call("join_space", { token: waiter, space: "stuck" }) // queues
 
   // Without the role, every director power is refused.
-  const denied = await fails("unlock_space", { token: waiter, agent: "stuck" })
+  const denied = await fails("unlock_space", { token: waiter, space: "stuck" })
   check("director powers are refused without the granted role",
     denied.includes("E_NOT_COORDINATOR"), denied || "(allowed!)")
 
@@ -524,7 +524,7 @@ let annSerial = 0
     grantOut.trim().slice(0, 160))
 
   const r = await call("unlock_space", {
-    token: dirLane.token, agent: "stuck", note: "owner's machine died",
+    token: dirLane.token, space: "stuck", note: "owner's machine died",
   })
   check("a director can unstick an agent whose owner is gone", r.released === true, JSON.stringify(r))
   check("and the former owner is named, never silent", r.former_owner === "stuck-owner", String(r.former_owner))
@@ -543,34 +543,34 @@ let annSerial = 0
   // human act through the admin CLI, and a unit test that sets Role directly
   // proves nothing about whether an agent can reach this over MCP.
   const closerOwner = await agent("closer-owner")
-  await call("open_space", { token: closerOwner, agent: "finished", topic: "work that ended" })
+  await call("open_space", { token: closerOwner, space: "finished", topic: "work that ended" })
 
-  const occupied = await fails("close_space", { token: dirLane.token, agent: "finished" })
+  const occupied = await fails("close_space", { token: dirLane.token, space: "finished" })
   check("a coordinator may not close an agent with somebody in it",
     /member/i.test(occupied), occupied.slice(0, 200) || "(allowed!)")
 
-  await call("leave_space", { token: closerOwner, agent: "finished" })
+  await call("leave_space", { token: closerOwner, space: "finished" })
   const stillThere = await board(dirLane.token)
   check("a human-opened agent is not reclaimed when it empties",
     (stillThere.board?.spaces ?? []).some((c: any) => c.id === "finished"))
 
   // A STRANGER: neither coordinator nor the agent that opened it.
   const stranger = await agent("closer-stranger")
-  const refusedRole = await fails("close_space", { token: stranger, agent: "finished" })
+  const refusedRole = await fails("close_space", { token: stranger, space: "finished" })
   check("a stranger may not close somebody else's agent",
     refusedRole.includes("E_NOT_COORDINATOR"), refusedRole.slice(0, 200) || "(allowed!)")
 
   // The agent that OPENED it may retire it without the role: open_space is
   // unprivileged, so an agent an agent could create and never end was a hole, and
   // the refusal called its own agent "another agent's".
-  const byOwner = await call("close_space", { token: closerOwner, agent: "finished", note: "mine, done" })
+  const byOwner = await call("close_space", { token: closerOwner, space: "finished", note: "mine, done" })
   check("the agent that opened an agent can close it", byOwner.closed === true, JSON.stringify(byOwner))
 
   // And a coordinator can retire one that is not theirs.
-  await call("open_space", { token: closerOwner, agent: "finished-2", topic: "more work that ended" })
-  await call("leave_space", { token: closerOwner, agent: "finished-2" })
+  await call("open_space", { token: closerOwner, space: "finished-2", topic: "more work that ended" })
+  await call("leave_space", { token: closerOwner, space: "finished-2" })
   const closed = await call("close_space", {
-    token: dirLane.token, agent: "finished-2", note: "done with it",
+    token: dirLane.token, space: "finished-2", note: "done with it",
   })
   check("a coordinator can retire somebody else's finished agent", closed.closed === true, JSON.stringify(closed))
   const gone = await board(dirLane.token)
@@ -663,7 +663,7 @@ let annSerial = 0
     // mismatch became a failure. The bar was always being applied to a scenario
     // it had not measured.
     await c3("declare", { token: first, text: "enforcing exclusive claims in the guard" })
-    await c3("open_space", { token: first, agent: "guard-work", topic: "claim guard denies edits to claimed paths" })
+    await c3("open_space", { token: first, space: "guard-work", topic: "claim guard denies edits to claimed paths" })
 
     // Wait for an ELIGIBLE match, not merely a visible one.
     //
@@ -749,7 +749,7 @@ let annSerial = 0
     }
     const one = await mk("hi-one")
     const two = await mk("hi-two")
-    await call2("open_space", { token: one, agent: "guard-work", topic: "claim guard denies edits to claimed paths" })
+    await call2("open_space", { token: one, space: "guard-work", topic: "claim guard denies edits to claimed paths" })
 
     // Retry while the async index finishes; the daemon serves before it is ready.
     let sug: any
@@ -840,7 +840,7 @@ let annSerial = 0
       }
       const one = await mk("embed-one")
       const two = await mk("embed-two")
-      await c3("open_space", { token: one, agent: "guard-work", topic: "deny edits to exclusively claimed paths" })
+      await c3("open_space", { token: one, space: "guard-work", topic: "deny edits to exclusively claimed paths" })
 
       // The daemon answers while indexing runs, which is itself part of the
       // contract, so poll rather than waiting for a ready signal.
@@ -924,7 +924,7 @@ let annSerial = 0
       return r.token
     }
     const dir = await mk("director", "dsid")
-    await c5("open_space", { token: dir, agent: "auth-work", topic: "token validation and retry in auth" })
+    await c5("open_space", { token: dir, space: "auth-work", topic: "token validation and retry in auth" })
     // Only a human may grant the role; no agent can promote itself.
     Bun.spawnSync({ cmd: [process.env.DIBS ?? `${home}/.local/bin/dibs`, "admin", "set-password"],
                     stdin: new TextEncoder().encode("dir-e2e-12345\ndir-e2e-12345\n"),
@@ -949,7 +949,7 @@ let annSerial = 0
     check("and names the tool that unblocks it",
       /admit/.test(String(m?.hint)), String(m?.hint))
 
-    await c5("admit", { token: dir, agent: "auth-work", to: "worker" })
+    await c5("admit", { token: dir, space: "auth-work", to: "worker" })
     const poll = await c5("hook_poll", { session_id: "wsid", event: "Stop" })
     const txt: string = poll?.hookSpecificOutput?.additionalContext ?? ""
     check("the admitted agent is TOLD, through the wake path",
@@ -981,7 +981,7 @@ let annSerial = 0
       !/admitted to agent/.test(settled?.hookSpecificOutput?.additionalContext ?? ""),
       String(settled?.hookSpecificOutput?.additionalContext ?? "").slice(0, 120))
 
-    await c5("evict", { token: dir, agent: "auth-work", to: "worker" })
+    await c5("evict", { token: dir, space: "auth-work", to: "worker" })
     const ev = await c5("hook_poll", { session_id: "wsid", event: "Stop" })
     check("eviction reaches the agent too, with what to do about it",
       /removed from agent "auth-work"/.test(ev?.hookSpecificOutput?.additionalContext ?? "") &&
@@ -1009,11 +1009,11 @@ let annSerial = 0
   // Actionable guidance is the invariant; WHICH field carries it depends on the
   // outcome. This asserted `matching_hint` specifically, and started failing the
   // moment a declaration that matched nothing began opening an agent instead of
-  // falling through: the guidance moved to `lanes_hint` and got better, while
+  // falling through: the guidance moved to `agents_hint` and got better, while
   // the check reported a regression. Assert the property, not the field.
-  const guidance = String(r.lanes_hint ?? r.matching_hint ?? "")
+  const guidance = String(r.agents_hint ?? r.matching_hint ?? "")
   check("and always says what to do about it",
-    guidance.length > 20, JSON.stringify({ lanes_hint: r.lanes_hint, matching_hint: r.matching_hint }))
+    guidance.length > 20, JSON.stringify({ agents_hint: r.agents_hint, matching_hint: r.matching_hint }))
   // "I compared you and found nothing" and "I could form no opinion" are
   // different facts. Reporting the second as the first is a confident claim
   // built on no evidence: tier 0 reads FILE PATHS, so a declaration naming no
@@ -1095,13 +1095,13 @@ let annSerial = 0
   // joiner rather than admitting it, so "a member who owes an acknowledgement"
   // and "an agent waiting in a queue" have to live in different agents. Built
   // without a coordinator so this block stands on its own.
-  await call("open_space", { token: own.token, agent: "re-locked", topic: "single-writer work", exclusive: true })
-  const queued = await call("join_space", { token: wait.token, agent: "re-locked" })
+  await call("open_space", { token: own.token, space: "re-locked", topic: "single-writer work", exclusive: true })
+  const queued = await call("join_space", { token: wait.token, space: "re-locked" })
   check("the waiter is queued behind the owner", queued.queued === true, JSON.stringify(queued))
 
-  await call("open_space", { token: own.token, agent: "re-agent", topic: "work that outlives a session" })
-  await call("join_space", { token: mem.token, agent: "re-agent" })
-  const ann = await call("announce", { token: own.token, agent: "re-agent", body: "re-agent: FREEZE the parser" })
+  await call("open_space", { token: own.token, space: "re-agent", topic: "work that outlives a session" })
+  await call("join_space", { token: mem.token, space: "re-agent" })
+  const ann = await call("announce", { token: own.token, space: "re-agent", body: "re-space: FREEZE the parser" })
 
   // All three lose context and come back the documented way: same name, same
   // session id, fresh token.
@@ -1135,12 +1135,12 @@ let annSerial = 0
   // The strongest act in the system IS gated. A reattached agent has read
   // nothing, and an announcement obliges every member to answer it.
   const early = await fails("announce", {
-    token: own2.token, agent: "re-agent", body: "should not land",
+    token: own2.token, space: "re-agent", body: "should not land",
   })
   check("but announcing before reading the board is refused",
     /E_MUST_ACK_BOARD/.test(early), early.slice(0, 160))
   await call("check_in", { token: own2.token })
-  const after = await call("announce", { token: own2.token, agent: "re-agent", body: "now it lands" })
+  const after = await call("announce", { token: own2.token, space: "re-agent", body: "now it lands" })
   check("and allowed once it has", typeof after.serial === "number", JSON.stringify(after).slice(0, 120))
   // Posting stays ungated on purpose: a remark obliges nobody.
   await call("check_in", { token: wait2.token })
@@ -1163,10 +1163,10 @@ let annSerial = 0
   const away = await call("register", { name: "bl-absent", session_id: "bl3", pid: doomed.pid })
   await call("check_in", { token: away.token })
 
-  await call("open_space", { token: say.token, agent: "bl-agent", topic: "work with an absentee" })
-  await call("join_space", { token: here.token, agent: "bl-agent" })
-  await call("join_space", { token: away.token, agent: "bl-agent" })
-  const ann = await call("announce", { token: say.token, agent: "bl-agent", body: "bl-agent: FREEZE" })
+  await call("open_space", { token: say.token, space: "bl-agent", topic: "work with an absentee" })
+  await call("join_space", { token: here.token, space: "bl-agent" })
+  await call("join_space", { token: away.token, space: "bl-agent" })
+  const ann = await call("announce", { token: say.token, space: "bl-agent", body: "bl-space: FREEZE" })
 
   const laneOf = async (tok: string) =>
     ((await board(tok)).board?.spaces ?? []).find((c: any) => c.id === "bl-agent")
@@ -1205,10 +1205,10 @@ let annSerial = 0
   await call("check_in", { token: say.token })
   const quit = await call("register", { name: "du-quitter", session_id: "du2" })
   await call("check_in", { token: quit.token })
-  await call("open_space", { token: say.token, agent: "du-agent", topic: "work with a leaver" })
-  await call("join_space", { token: quit.token, agent: "du-agent" })
+  await call("open_space", { token: say.token, space: "du-agent", topic: "work with a leaver" })
+  await call("join_space", { token: quit.token, space: "du-agent" })
   const ann = await call("announce", {
-    token: say.token, agent: "du-agent", body: "du-agent: FREEZE the tokenizer",
+    token: say.token, space: "du-agent", body: "du-space: FREEZE the tokenizer",
   })
 
   // The only member that owed it leaves without reading it.

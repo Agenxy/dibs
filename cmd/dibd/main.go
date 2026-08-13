@@ -160,7 +160,7 @@ func run() error {
 		//
 		// What was wrong was saying so in one wrapped Go error and exiting 1. A
 		// real board did this (an op accepted live that replay rejected) and the
-		// operator was left with `replay: replay apply serial 416: E_LANE_CLOSED`
+		// operator was left with `replay: replay apply serial 416: E_AGENT_CLOSED`
 		// and no next step at all: a fault with no corrective action, on the one
 		// surface where the whole product is unavailable until it is resolved.
 		return fmt.Errorf("%w\n\n"+

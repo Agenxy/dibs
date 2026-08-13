@@ -27,7 +27,7 @@ func TestSweepEmitsEventsInADeterministicOrder(t *testing.T) {
 			"order-4", "order-5", "order-6", "order-7",
 		} {
 			if _, _, err := s.Apply(&Op{
-				Kind: OpRegisterLane, Name: name, NewToken: "t-" + name, SessionID: name,
+				Kind: OpRegister, Name: name, NewToken: "t-" + name, SessionID: name,
 			}, now); err != nil {
 				t.Fatalf("register %s: %v", name, err)
 			}
@@ -43,7 +43,7 @@ func TestSweepEmitsEventsInADeterministicOrder(t *testing.T) {
 			"order-0", "order-1", "order-2", "order-3",
 			"order-4", "order-5", "order-6", "order-7",
 		}
-		_, evs, err := s.applySweep(&Op{Kind: OpSweep, StaleLanes: stale}, time.Now())
+		_, evs, err := s.applySweep(&Op{Kind: OpSweep, StaleAgents: stale}, time.Now())
 		if err != nil {
 			t.Fatalf("sweep: %v", err)
 		}

@@ -26,7 +26,7 @@ func TestAPostGoesToTheLaneAndNotTheBoard(t *testing.T) {
 
 	reg := func(name string) string {
 		tok := "tok-" + name
-		if _, _, err := st.Apply(&Op{Kind: OpRegisterLane, Name: name, NewToken: tok}, now); err != nil {
+		if _, _, err := st.Apply(&Op{Kind: OpRegister, Name: name, NewToken: tok}, now); err != nil {
 			t.Fatalf("register %s: %v", name, err)
 		}
 		if _, _, err := st.Apply(&Op{Kind: OpAckBoard, Token: tok}, now); err != nil {
@@ -37,21 +37,21 @@ func TestAPostGoesToTheLaneAndNotTheBoard(t *testing.T) {
 	author, member, watcher, outsider := reg("author"), reg("member"), reg("watcher"), reg("outsider")
 
 	if _, _, err := st.Apply(&Op{
-		Kind: OpLaneOpen, Token: author, Space: "work", Text: "the topic",
+		Kind: OpSpaceOpen, Token: author, Space: "work", Text: "the topic",
 	}, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := st.Apply(&Op{
-		Kind: OpLaneJoin, Token: member, Space: "work", Score: 0.9, ScorerID: "t",
+		Kind: OpSpaceJoin, Token: member, Space: "work", Score: 0.9, ScorerID: "t",
 	}, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := st.Apply(&Op{Kind: OpLaneSubscribe, Token: watcher, Space: "work"}, now); err != nil {
+	if _, _, err := st.Apply(&Op{Kind: OpSpaceSubscribe, Token: watcher, Space: "work"}, now); err != nil {
 		t.Fatal(err)
 	}
 
 	const secret = "THE-BODY-OF-THE-POST"
-	_, evs, err := st.Apply(&Op{Kind: OpLanePost, Token: author, Space: "work", Body: secret}, now)
+	_, evs, err := st.Apply(&Op{Kind: OpSpacePost, Token: author, Space: "work", Body: secret}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestAPostGoesToTheLaneAndNotTheBoard(t *testing.T) {
 
 	ch := st.Spaces["work"]
 	readable := func(tok string) (bool, error) {
-		l := st.LaneByToken(tok)
+		l := st.AgentByToken(tok)
 		c, err := st.ReaderChannel(l, "work")
 		if err != nil {
 			return false, err
@@ -95,7 +95,7 @@ func TestAPostGoesToTheLaneAndNotTheBoard(t *testing.T) {
 			t.Errorf("%s cannot read the post: it is write-only", who.name)
 		}
 	}
-	if _, err := st.ReaderChannel(st.LaneByToken(outsider), "work"); err == nil {
+	if _, err := st.ReaderChannel(st.AgentByToken(outsider), "work"); err == nil {
 		t.Error("an outsider was allowed to read an agent it neither joined nor subscribed to")
 	}
 
@@ -114,18 +114,18 @@ func TestPostHistoryIsBounded(t *testing.T) {
 	now := t0
 
 	tok := "t"
-	if _, _, err := st.Apply(&Op{Kind: OpRegisterLane, Name: "a", NewToken: tok}, now); err != nil {
+	if _, _, err := st.Apply(&Op{Kind: OpRegister, Name: "a", NewToken: tok}, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := st.Apply(&Op{Kind: OpAckBoard, Token: tok}, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := st.Apply(&Op{Kind: OpLaneOpen, Token: tok, Space: "w", Text: "t"}, now); err != nil {
+	if _, _, err := st.Apply(&Op{Kind: OpSpaceOpen, Token: tok, Space: "w", Text: "t"}, now); err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 40; i++ {
 		if _, _, err := st.Apply(&Op{
-			Kind: OpLanePost, Token: tok, Space: "w", Body: "post " + itoa(i),
+			Kind: OpSpacePost, Token: tok, Space: "w", Body: "post " + itoa(i),
 		}, now); err != nil {
 			t.Fatal(err)
 		}
@@ -151,7 +151,7 @@ func TestAMergeCarriesThePostsAcross(t *testing.T) {
 
 	reg := func(name string) string {
 		tok := "tok-" + name
-		if _, _, err := st.Apply(&Op{Kind: OpRegisterLane, Name: name, NewToken: tok}, now); err != nil {
+		if _, _, err := st.Apply(&Op{Kind: OpRegister, Name: name, NewToken: tok}, now); err != nil {
 			t.Fatalf("register %s: %v", name, err)
 		}
 		if _, _, err := st.Apply(&Op{Kind: OpAckBoard, Token: tok}, now); err != nil {
@@ -164,18 +164,18 @@ func TestAMergeCarriesThePostsAcross(t *testing.T) {
 		t.Fatal(err)
 	}
 	for tok, agent := range map[string]string{boss: "src", other: "dst"} {
-		if _, _, err := st.Apply(&Op{Kind: OpLaneOpen, Token: tok, Space: agent, Text: "t"}, now); err != nil {
+		if _, _, err := st.Apply(&Op{Kind: OpSpaceOpen, Token: tok, Space: agent, Text: "t"}, now); err != nil {
 			t.Fatal(err)
 		}
 		if _, _, err := st.Apply(&Op{
-			Kind: OpLanePost, Token: tok, Space: agent, Body: "said in " + agent,
+			Kind: OpSpacePost, Token: tok, Space: agent, Body: "said in " + agent,
 		}, now); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	if _, _, err := st.Apply(&Op{
-		Kind: OpLaneMerge, Token: boss, Space: "src", To: "dst",
+		Kind: OpSpaceMerge, Token: boss, Space: "src", To: "dst",
 	}, now); err != nil {
 		t.Fatalf("merge: %v", err)
 	}

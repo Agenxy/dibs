@@ -18,7 +18,7 @@ func TestAnAgentIsNotBlockedByItsOwnParentsClaim(t *testing.T) {
 	now := time.Unix(1700000000, 0)
 	reg := func(name, parent string) *Agent {
 		t.Helper()
-		op := &Op{Kind: OpRegisterLane, Name: name, NewToken: "tok-" + name, Parent: parent}
+		op := &Op{Kind: OpRegister, Name: name, NewToken: "tok-" + name, Parent: parent}
 		if parent != "" {
 			// The parent vouches. Without this the lineage is a bare claim and
 			// grants nothing, which is the whole point: an agent that merely
@@ -36,7 +36,7 @@ func TestAnAgentIsNotBlockedByItsOwnParentsClaim(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		id, _ := r["lane_id"].(string)
+		id, _ := r["agent_id"].(string)
 		l := s.Agents[id]
 		if _, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: l.Token}, now); err != nil {
 			t.Fatal(err)
@@ -74,7 +74,7 @@ func TestAParentIsStillStoppedByItsSubagentsClaim(t *testing.T) {
 	now := time.Unix(1700000000, 0)
 	reg := func(name, parent string) *Agent {
 		t.Helper()
-		op := &Op{Kind: OpRegisterLane, Name: name, NewToken: "tok-" + name, Parent: parent}
+		op := &Op{Kind: OpRegister, Name: name, NewToken: "tok-" + name, Parent: parent}
 		if parent != "" {
 			// The parent vouches. Without this the lineage is a bare claim and
 			// grants nothing, which is the whole point: an agent that merely
@@ -92,7 +92,7 @@ func TestAParentIsStillStoppedByItsSubagentsClaim(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		id, _ := r["lane_id"].(string)
+		id, _ := r["agent_id"].(string)
 		l := s.Agents[id]
 		if _, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: l.Token}, now); err != nil {
 			t.Fatal(err)
@@ -144,25 +144,25 @@ func TestAnUnknownSessionIsNotAttributedToItsNeighbour(t *testing.T) {
 	s := NewState("t", DefaultLimits())
 	now := time.Unix(1700000000, 0)
 	res, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "registered", NewToken: "t1", SessionID: "sess-A",
+		Kind: OpRegister, Name: "registered", NewToken: "t1", SessionID: "sess-A",
 		Agent: &AgentInfo{CWD: "/repo"},
 	}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, _ := res["lane_id"].(string)
+	id, _ := res["agent_id"].(string)
 
 	// The owner is found by its own session id.
-	if l := s.LaneForHook("sess-A", "/repo"); l == nil || l.ID != id {
+	if l := s.AgentForHook("sess-A", "/repo"); l == nil || l.ID != id {
 		t.Fatal("the real owner must still be resolved by its session id")
 	}
 	// A hook that genuinely does not know its session id is still matched by
 	// directory: that is what the fallback is FOR, and it stays.
-	if l := s.LaneForHook("", "/repo"); l == nil || l.ID != id {
+	if l := s.AgentForHook("", "/repo"); l == nil || l.ID != id {
 		t.Fatal("a hook sending no session id must still be matched by directory")
 	}
 	// But a session that named itself and matched nothing is somebody else.
-	if l := s.LaneForHook("some-other-session", "/repo"); l != nil {
+	if l := s.AgentForHook("some-other-session", "/repo"); l != nil {
 		t.Fatalf("an unknown session must not inherit a neighbour's identity, got %q", l.ID)
 	}
 }
@@ -173,13 +173,13 @@ func TestAStrangerIsNotHandedTheClaimHoldersIdentity(t *testing.T) {
 	s := NewState("t", DefaultLimits())
 	now := time.Unix(1700000000, 0)
 	res, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "holder", NewToken: "t1", SessionID: "sess-A",
+		Kind: OpRegister, Name: "holder", NewToken: "t1", SessionID: "sess-A",
 		Agent: &AgentInfo{CWD: "/repo"},
 	}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, _ := res["lane_id"].(string)
+	id, _ := res["agent_id"].(string)
 	if _, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: s.Agents[id].Token}, now); err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestAStrangerIsNotHandedTheClaimHoldersIdentity(t *testing.T) {
 	// Resolved as the holder itself, the guard would allow and say "no claim".
 	// Resolved as nobody, it still allows (failing open is deliberate) but
 	// the reason is honest, and the caller can tell the two apart.
-	stranger := s.LaneForHook("some-other-session", "/repo")
+	stranger := s.AgentForHook("some-other-session", "/repo")
 	if stranger != nil {
 		t.Fatalf("precondition: the stranger must not resolve, got %q", stranger.ID)
 	}
@@ -201,7 +201,7 @@ func TestAStrangerIsNotHandedTheClaimHoldersIdentity(t *testing.T) {
 	}
 	// And the holder's claim genuinely does stop a DIFFERENT registered agent.
 	if _, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "other", NewToken: "t2", SessionID: "sess-B",
+		Kind: OpRegister, Name: "other", NewToken: "t2", SessionID: "sess-B",
 	}, now); err != nil {
 		t.Fatal(err)
 	}
@@ -227,11 +227,11 @@ func TestLineageGrantsNothingUntilTheParentVouchesForIt(t *testing.T) {
 	now := time.Unix(1700000000, 0)
 	mk := func(name, tok string) *Agent {
 		t.Helper()
-		r, _, err := s.Apply(&Op{Kind: OpRegisterLane, Name: name, NewToken: tok}, now)
+		r, _, err := s.Apply(&Op{Kind: OpRegister, Name: name, NewToken: tok}, now)
 		if err != nil {
 			t.Fatal(err)
 		}
-		id, _ := r["lane_id"].(string)
+		id, _ := r["agent_id"].(string)
 		if _, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: s.Agents[id].Token}, now); err != nil {
 			t.Fatal(err)
 		}
@@ -246,7 +246,7 @@ func TestLineageGrantsNothingUntilTheParentVouchesForIt(t *testing.T) {
 
 	// An impostor simply says so. Recorded as a claim, granting nothing.
 	if _, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "impostor", NewToken: "t2", Parent: "victim",
+		Kind: OpRegister, Name: "impostor", NewToken: "t2", Parent: "victim",
 	}, now); err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +268,7 @@ func TestLineageGrantsNothingUntilTheParentVouchesForIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "realchild", NewToken: "t3",
+		Kind: OpRegister, Name: "realchild", NewToken: "t3",
 		Parent: "victim", ParentNonce: nonce,
 	}, now); err != nil {
 		t.Fatal(err)
@@ -283,7 +283,7 @@ func TestLineageGrantsNothingUntilTheParentVouchesForIt(t *testing.T) {
 	// One-time. A proof that can be replayed is a standing capability, and this
 	// one grants another agent's guard exemption.
 	if _, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "replay", NewToken: "t4",
+		Kind: OpRegister, Name: "replay", NewToken: "t4",
 		Parent: "victim", ParentNonce: nonce,
 	}, now); err != nil {
 		t.Fatal(err)

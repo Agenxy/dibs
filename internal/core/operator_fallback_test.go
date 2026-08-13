@@ -25,14 +25,14 @@ func TestAMissingRecipientPointsAtTheOperator(t *testing.T) {
 
 	// The human's agent, as engine.HumanAgent creates it.
 	if _, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "operator", Description: "the human at the board",
-		LaneKind: KindPersistent, Nonce: "human:operator", NewToken: "h1", SessionID: "human:operator",
+		Kind: OpRegister, Name: "operator", Description: "the human at the board",
+		AgentKind: KindPersistent, Nonce: "human:operator", NewToken: "h1", SessionID: "human:operator",
 		Agent: &AgentInfo{Harness: "dibs web", Surface: "web"},
 	}, now); err != nil {
 		t.Fatalf("setup: human agent: %v", err)
 	}
 	res, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "worker", NewToken: "w1", SessionID: "s1",
+		Kind: OpRegister, Name: "worker", NewToken: "w1", SessionID: "s1",
 	}, now)
 	if err != nil {
 		t.Fatalf("setup: worker: %v", err)
@@ -73,7 +73,7 @@ func TestNoOperatorMeansNoFallbackIsClaimed(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	now := time.Now()
 	res, _, err := s.Apply(&Op{
-		Kind: OpRegisterLane, Name: "worker", NewToken: "w1", SessionID: "s1",
+		Kind: OpRegister, Name: "worker", NewToken: "w1", SessionID: "s1",
 	}, now)
 	if err != nil {
 		t.Fatalf("setup: %v", err)

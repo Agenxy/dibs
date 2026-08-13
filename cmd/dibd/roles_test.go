@@ -21,10 +21,10 @@ func TestRolesDeclaredInConfigAreGrantedAtStartup(t *testing.T) {
 	eng, ctx := testEngine(t)
 
 	// The agents must exist: a role attaches to an agent, and core answers
-	// E_NO_LANE otherwise. That is exactly why the real path re-applies on a
+	// E_NO_AGENT otherwise. That is exactly why the real path re-applies on a
 	// ticker instead of granting once at startup.
-	registerLane(t, eng, "orchestrator")
-	registerLane(t, eng, "fleet-lead")
+	registerAgent(t, eng, "orchestrator")
+	registerAgent(t, eng, "fleet-lead")
 	applyDeclaredRoles(ctx, eng, RolesConfig{
 		Coordinator: []string{"orchestrator"},
 		Admin:       []string{"fleet-lead"},
@@ -48,7 +48,7 @@ func TestRolesDeclaredInConfigAreGrantedAtStartup(t *testing.T) {
 func TestNoRolesDeclaredGrantsNothing(t *testing.T) {
 	eng, ctx := testEngine(t)
 	applyDeclaredRoles(ctx, eng, RolesConfig{})
-	registerLane(t, eng, "orchestrator")
+	registerAgent(t, eng, "orchestrator")
 	if holdsRole(t, eng, "orchestrator", core.RoleCoordinator) {
 		t.Error("an agent was granted coordinator from an EMPTY [roles] table; the default " +
 			"install must hand nobody breadth it did not ask for")
@@ -67,10 +67,10 @@ func TestABadRoleEntryDoesNotStopTheDaemon(t *testing.T) {
 	// in the config must not take the daemon down with it.
 }
 
-func registerLane(t *testing.T, eng *engine.Engine, name string) {
+func registerAgent(t *testing.T, eng *engine.Engine, name string) {
 	t.Helper()
 	if _, err := eng.Do(context.Background(),
-		&core.Op{Kind: core.OpRegisterLane, Name: name}); err != nil {
+		&core.Op{Kind: core.OpRegister, Name: name}); err != nil {
 		t.Fatalf("registering %s: %v", name, err)
 	}
 }
@@ -126,7 +126,7 @@ func holdsRole(t *testing.T, eng *engine.Engine, agent, role string) bool {
 // layer and this is the invariant underneath it.
 func TestAnAgentStillCannotPromoteItself(t *testing.T) {
 	eng, _ := testEngine(t)
-	reg, err := eng.Do(context.Background(), &core.Op{Kind: core.OpRegisterLane, Name: "climber"})
+	reg, err := eng.Do(context.Background(), &core.Op{Kind: core.OpRegister, Name: "climber"})
 	if err != nil {
 		t.Fatal(err)
 	}

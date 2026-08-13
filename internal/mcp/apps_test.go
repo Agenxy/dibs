@@ -23,8 +23,8 @@ func TestShowBoardSplitsModelAndUIPayloads(t *testing.T) {
 				{"id": "b", "status": "dormant"},
 			},
 		},
-		"inbox":   core.Result{"messages": []core.Result{{"serial": 1}, {"serial": 2}}},
-		"lane_id": "a",
+		"inbox":    core.Result{"messages": []core.Result{{"serial": 1}, {"serial": 2}}},
+		"agent_id": "a",
 	}
 	out := showBoardResult(res, false, false)
 
@@ -272,7 +272,7 @@ func TestShowBoardCarriesTheBoardToAHostThatSaysItRenders(t *testing.T) {
 			"node": "n1", "serial": 7,
 			"agents": []core.Result{{"id": "a", "status": "active"}},
 		},
-		"lane_id": "a", "act_token": "tok",
+		"agent_id": "a", "act_token": "tok",
 	}
 
 	// Declared: the board must be reachable without _meta and without a fetch.

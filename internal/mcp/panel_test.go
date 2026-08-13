@@ -13,8 +13,8 @@ import (
 // result; invisible transport is not permission for unbounded transport.
 func TestPanelPayloadCarriesOnlyRenderedFields(t *testing.T) {
 	in := core.Result{
-		"lane_id": "opus-5",
-		"view":    "mail",
+		"agent_id": "opus-5",
+		"view":     "mail",
 		"board": core.Result{
 			"node": "n1", "serial": 42,
 			"agents": []core.Result{{
@@ -46,7 +46,7 @@ func TestPanelPayloadCarriesOnlyRenderedFields(t *testing.T) {
 			t.Errorf("payload leaks %q: it is not drawn by the panel", leaked)
 		}
 	}
-	for _, needed := range []string{"opus-5", "active", "question", "lane_id", "view"} {
+	for _, needed := range []string{"opus-5", "active", "question", "agent_id", "view"} {
 		if !strings.Contains(s, needed) {
 			t.Errorf("payload dropped %q, which the panel renders", needed)
 		}

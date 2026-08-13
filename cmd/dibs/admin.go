@@ -70,7 +70,7 @@ func adminCmd(args []string) error {
 		if len(args) > 1 {
 			agent = args[1]
 		}
-		return adminOnly("admin prune", func() error { return pruneLanes(agent) })
+		return adminOnly("admin prune", func() error { return pruneAgents(agent) })
 	case "repair-ledger":
 		// Not adminOnly's password gate: the daemon cannot start, so there is no
 		// board to authenticate against. The file is the operator's own, this
@@ -82,13 +82,13 @@ func adminCmd(args []string) error {
 			// `dibs admin coordinator $LANE && echo granted` with $LANE unset
 			// printed "granted" and granted nothing, and the next
 			// coordinator-gated call failed with no reason to suspect the grant.
-			// A misspelt agent NAME already fails loudly with E_NO_LANE, so a
+			// A misspelt agent NAME already fails loudly with E_NO_AGENT, so a
 			// missing one must too.
 			return fmt.Errorf("`dibs admin %s` needs an agent name: dibs admin %s <agent>\n"+
 				"  `dibs board` lists the agents on this board", args[0], args[0])
 		}
 		role, agent := args[0], args[1]
-		return adminOnly("admin "+role, func() error { return setLaneRole(agent, role) })
+		return adminOnly("admin "+role, func() error { return setAgentRole(agent, role) })
 	default:
 		// A mistyped verb granted nothing and exited 0, which reads as done.
 		// Bare `dibs admin` is a genuine request for the list and still prints
@@ -114,10 +114,10 @@ An admin gets the god view, mail included: grant it only to an agent you trust
 as you trust yourself. Either way, only a human can grant it: agents can never
 promote themselves.`
 
-// setLaneRole calls the god-view admin endpoint, which requires the local
+// setAgentRole calls the god-view admin endpoint, which requires the local
 // secret AND the admin password. That is the whole point: promotion is a human
 // decision, so it travels the human's path.
-func pruneLanes(agent string) error {
+func pruneAgents(agent string) error {
 	pass, err := promptAdminForGodView()
 	if err != nil {
 		return err
@@ -154,7 +154,7 @@ func pruneLanes(agent string) error {
 	return nil
 }
 
-func setLaneRole(agent, role string) error {
+func setAgentRole(agent, role string) error {
 	pass, err := promptAdminForGodView()
 	if err != nil {
 		return err

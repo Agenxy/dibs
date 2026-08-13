@@ -20,11 +20,11 @@ import "time"
 //
 // The coordination key is deliberately NOT the caller's to see here. The key is
 // held by membership and is the one identity claim Dibs can verify, so it goes
-// to members only; LaneRead decides that, using MemberChannel.
+// to members only; SpaceRead decides that, using MemberChannel.
 func (s *State) ReaderChannel(l *Agent, name string) (*Space, error) {
 	ch := s.Spaces[cleanID(name)]
 	if ch == nil {
-		return nil, errf("E_NO_LANE", "open_space or join_space first", "no agent %s", name)
+		return nil, errf("E_NO_AGENT", "open_space or join_space first", "no agent %s", name)
 	}
 	if s.speaksFor(ch, l.ID) == "" && !ch.Subs[l.ID] {
 		return nil, errf("E_NOT_MEMBER", "join_space to take part, or watch_space to watch",
@@ -33,7 +33,7 @@ func (s *State) ReaderChannel(l *Agent, name string) (*Space, error) {
 	return ch, nil
 }
 
-// applyLaneSubscribe IS ledgered, though the argument for not ledgering it was
+// applySpaceSubscribe IS ledgered, though the argument for not ledgering it was
 // tempting enough that it shipped that way: subscribing changes what one agent
 // is shown, not what the fleet agreed, and nothing about it can collide.
 //
@@ -48,34 +48,34 @@ func (s *State) ReaderChannel(l *Agent, name string) (*Space, error) {
 // The subscriber also gets the behaviour it already assumed: a subscription
 // outlives a daemon restart, rather than silently lapsing while read_space keeps
 // working from the pre-restart process's memory.
-func (s *State) applyLaneSubscribe(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+func (s *State) applySpaceSubscribe(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {
-		return nil, nil, errf("E_NO_LANE", "nothing to subscribe to", "no agent %s", op.Space)
+		return nil, nil, errf("E_NO_AGENT", "nothing to subscribe to", "no agent %s", op.Space)
 	}
 	if _, isMember := ch.Members[l.ID]; isMember {
-		return Result{"lane_id": ch.ID, "subscribed": false, "reason": "already a member"}, nil, nil
+		return Result{"agent_id": ch.ID, "subscribed": false, "reason": "already a member"}, nil, nil
 	}
 	if op.Mode == "release" {
 		if !ch.Subs[l.ID] {
 			// Nothing changed, so nothing to ledger. Unsubscribing twice is not
 			// an error: it is the same request arriving after a retry.
-			return Result{"lane_id": ch.ID, "subscribed": false}, nil, nil
+			return Result{"agent_id": ch.ID, "subscribed": false}, nil, nil
 		}
 		delete(ch.Subs, l.ID)
 		evs := []Event{{Type: "agent.unsubscribed", Agent: l.ID, Data: map[string]any{
-			"lane_id": ch.ID,
+			"agent_id": ch.ID,
 		}}}
 		s.finish(&evs, now)
-		return Result{"lane_id": ch.ID, "subscribed": false}, evs, nil
+		return Result{"agent_id": ch.ID, "subscribed": false}, evs, nil
 	}
 	if ch.Subs[l.ID] {
-		return Result{"lane_id": ch.ID, "subscribed": true, "topic": ch.Topic}, nil, nil
+		return Result{"agent_id": ch.ID, "subscribed": true, "topic": ch.Topic}, nil, nil
 	}
 	ch.Subs[l.ID] = true
 	evs := []Event{{Type: "agent.subscribed", Agent: l.ID, Data: map[string]any{
-		"lane_id": ch.ID, "topic": ch.Topic,
+		"agent_id": ch.ID, "topic": ch.Topic,
 	}}}
 	s.finish(&evs, now)
-	return Result{"lane_id": ch.ID, "subscribed": true, "topic": ch.Topic}, evs, nil
+	return Result{"agent_id": ch.ID, "subscribed": true, "topic": ch.Topic}, evs, nil
 }

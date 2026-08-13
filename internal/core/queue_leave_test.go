@@ -18,7 +18,7 @@ func TestAQueuedAgentCanActuallyLeaveTheQueue(t *testing.T) {
 	now := t0
 	reg := func(name string) string {
 		tok := "tok-" + name
-		if _, _, err := st.Apply(&Op{Kind: OpRegisterLane, Name: name, NewToken: tok}, now); err != nil {
+		if _, _, err := st.Apply(&Op{Kind: OpRegister, Name: name, NewToken: tok}, now); err != nil {
 			t.Fatalf("register %s: %v", name, err)
 		}
 		if _, _, err := st.Apply(&Op{Kind: OpAckBoard, Token: tok}, now); err != nil {
@@ -29,13 +29,13 @@ func TestAQueuedAgentCanActuallyLeaveTheQueue(t *testing.T) {
 	holder, quitter, stayer := reg("holder"), reg("quitter"), reg("stayer")
 
 	if _, _, err := st.Apply(&Op{
-		Kind: OpLaneOpen, Token: holder, Space: "excl", Text: "t", Exclusive: true,
+		Kind: OpSpaceOpen, Token: holder, Space: "excl", Text: "t", Exclusive: true,
 	}, now); err != nil {
 		t.Fatal(err)
 	}
 	for _, tok := range []string{quitter, stayer} {
 		if _, _, err := st.Apply(&Op{
-			Kind: OpLaneJoin, Token: tok, Space: "excl", Score: 0.9, ScorerID: "t",
+			Kind: OpSpaceJoin, Token: tok, Space: "excl", Score: 0.9, ScorerID: "t",
 		}, now); err != nil {
 			t.Fatal(err)
 		}
@@ -45,7 +45,7 @@ func TestAQueuedAgentCanActuallyLeaveTheQueue(t *testing.T) {
 		t.Fatalf("precondition: expected 2 queued, got %v", ch.Queue)
 	}
 
-	res, _, err := st.Apply(&Op{Kind: OpLaneLeave, Token: quitter, Space: "excl"}, now)
+	res, _, err := st.Apply(&Op{Kind: OpSpaceLeave, Token: quitter, Space: "excl"}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestAQueuedAgentCanActuallyLeaveTheQueue(t *testing.T) {
 
 	// The agent frees. The one that stayed gets in; the one that left does not.
 	if _, _, err := st.Apply(&Op{
-		Kind: OpLaneExclusive, Token: holder, Space: "excl", Mode: "release",
+		Kind: OpSpaceExclusive, Token: holder, Space: "excl", Mode: "release",
 	}, now); err != nil {
 		t.Fatal(err)
 	}

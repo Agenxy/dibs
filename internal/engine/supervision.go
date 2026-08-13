@@ -95,7 +95,7 @@ func (e *Engine) noteChild(c Child, now time.Time) core.Result {
 	// in internal/liveness, not a replacement: two agents in one repo share a
 	// cwd, and the environment does not.
 	if c.Parent == "" && e.state != nil {
-		if l := e.state.LaneForHook(c.SessionID, c.CWD); l != nil {
+		if l := e.state.AgentForHook(c.SessionID, c.CWD); l != nil {
 			c.Parent = l.ID
 		}
 	}

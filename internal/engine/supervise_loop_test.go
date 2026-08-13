@@ -23,16 +23,16 @@ func stall() liveness.Verdict {
 // with a hidden name.
 //
 //nolint:unparam // every caller wants "builder" today; the parameter is what
-func laneOwning(t *testing.T, id string) *Engine {
+func agentOwning(t *testing.T, id string) *Engine {
 	t.Helper()
 	s := core.NewState("n1", core.DefaultLimits())
 	res, _, err := s.Apply(&core.Op{
-		Kind: core.OpRegisterLane, Name: id, NewToken: "tok-" + id,
+		Kind: core.OpRegister, Name: id, NewToken: "tok-" + id,
 	}, time.Now())
 	if err != nil {
 		t.Fatalf("register %s: %v", id, err)
 	}
-	if got, _ := res["lane_id"].(string); got != id {
+	if got, _ := res["agent_id"].(string); got != id {
 		t.Fatalf("agent registered as %q, not %q: the test's premise is wrong", got, id)
 	}
 	return &Engine{state: s}
@@ -42,7 +42,7 @@ func laneOwning(t *testing.T, id string) *Engine {
 // Dibs did NOT do: a supervisor that reads as though it intervened invites a
 // parent to assume the problem is handled.
 func TestAStallIsReportedToTheLaneThatSpawnedIt(t *testing.T) {
-	e := laneOwning(t, "builder")
+	e := agentOwning(t, "builder")
 	a := liveness.Agent{PID: 48620, Harness: "codex", Owner: "builder", Via: "env"}
 
 	if !e.reportStallLocked(a, stall(), "") {
@@ -70,7 +70,7 @@ func TestAStallIsReportedToTheLaneThatSpawnedIt(t *testing.T) {
 // on it while the one that can hears nothing, which is worse than the silence
 // it replaces. It is still visible to a human through `dibs probe`.
 func TestAnUnattributableStallIsNotMisdelivered(t *testing.T) {
-	e := laneOwning(t, "builder")
+	e := agentOwning(t, "builder")
 	orphan := liveness.Agent{PID: 999, Harness: "codex", Owner: "", Via: ""}
 	if e.reportStallLocked(orphan, stall(), "") {
 		t.Error("an unattributable child was reported to somebody")
@@ -90,7 +90,7 @@ func TestAnUnattributableStallIsNotMisdelivered(t *testing.T) {
 // "silent for 41 minutes" after a lid was shut for 38 of them draws exactly the
 // wrong conclusion.
 func TestSleepIsReportedSeparatelyFromSilence(t *testing.T) {
-	e := laneOwning(t, "builder")
+	e := agentOwning(t, "builder")
 	v := stall()
 	v.Slept = 38 * time.Minute
 	e.reportStallLocked(liveness.Agent{PID: 5, Harness: "claude", Owner: "builder"}, v, "")
@@ -109,7 +109,7 @@ func TestSleepIsReportedSeparatelyFromSilence(t *testing.T) {
 // declining to run it: a parent told "your subagent is stuck" and left to work
 // out the incantation has been handed a problem instead of a decision.
 func TestAStallReportOffersTheWayBack(t *testing.T) {
-	e := laneOwning(t, "builder")
+	e := agentOwning(t, "builder")
 	a := liveness.Agent{PID: 900, Harness: "codex", Owner: "builder", Via: "env"}
 	transcript := "/home/x/.codex/sessions/2026/06/08/" +
 		"rollout-2026-06-08T08-03-00-019ea7c2-2c77-76a1-bde1-7635418cfb20.jsonl"

@@ -37,8 +37,8 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	// Representative of every op family that carries payload, so the frozen set
 	// below covers the tags that actually reach disk.
 	apply(t, st, led, &core.Op{
-		Kind: core.OpRegisterLane, Name: "alpha", NewToken: "ta",
-		Nonce: "n-a", LaneKind: core.KindPersistent, PID: 42, SessionID: "s-1",
+		Kind: core.OpRegister, Name: "alpha", NewToken: "ta",
+		Nonce: "n-a", AgentKind: core.KindPersistent, PID: 42, SessionID: "s-1",
 		Agent: &core.AgentInfo{Harness: "test", CWD: "/tmp", Host: "h"},
 	}, t0)
 	apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: "ta"}, t0.Add(time.Second))
@@ -50,24 +50,24 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		Kind: core.OpClaim, Token: "ta", Path: "/repo",
 		Mode: core.ClaimExclusive, Note: "mine",
 	}, t0.Add(3*time.Second))
-	apply(t, st, led, &core.Op{Kind: core.OpRegisterLane, Name: "beta", NewToken: "tb"}, t0.Add(4*time.Second))
+	apply(t, st, led, &core.Op{Kind: core.OpRegister, Name: "beta", NewToken: "tb"}, t0.Add(4*time.Second))
 	apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: "tb"}, t0.Add(5*time.Second))
 	apply(t, st, led, &core.Op{
 		Kind: core.OpSendMessage, Token: "ta", To: "beta",
 		MsgType: core.MsgQuestion, Body: "?", OpID: "op-1", DeadlineSec: 60,
 	}, t0.Add(6*time.Second))
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneOpen, Token: "ta", Space: "work",
+		Kind: core.OpSpaceOpen, Token: "ta", Space: "work",
 		Text: "a topic", Exclusive: true,
 		Predicted: []core.PredFile{{Path: "a.go", Weight: 1}},
 	}, t0.Add(7*time.Second))
 	apply(t, st, led, &core.Op{
-		Kind: core.OpLaneJoin, Token: "tb", Space: "work",
+		Kind: core.OpSpaceJoin, Token: "tb", Space: "work",
 		Score: 0.8, Threshold: 0.3, ScorerID: "s", ScorerVersion: "1",
 		Evidence: []string{"a.go"}, Auto: true,
 	}, t0.Add(8*time.Second))
 	apply(t, st, led, &core.Op{
-		Kind: core.OpSweep, StaleLanes: []string{"beta"},
+		Kind: core.OpSweep, StaleAgents: []string{"beta"},
 		AlivePIDs: []int{42},
 	}, t0.Add(9*time.Second))
 	_ = led.Close()
@@ -172,21 +172,32 @@ func opKind(op map[string]json.RawMessage) string {
 // The op KIND strings are the other half of the on-disk contract: they are
 // matched by value in Apply's switch, so a renamed constant makes every
 // historical op of that kind fall through to "unknown" and stop replaying.
+// Re-frozen at "wake" and "prune" on 2026-08-12, deliberately.
+//
+// A board written before this cannot be replayed by a version after it, and
+// that is the second such break in this file's history. It was taken because
+// "lane" is not a concept in Dibs any more and carrying the word in the
+// persisted format to avoid one migration would mean carrying it forever.
+//
+// The blast radius was measured rather than assumed: these are the only two op
+// kinds whose value still contained the old noun, and a real board of 96 ops
+// contained neither. A ledger is affected only if it ever recorded a
+// stalled-subagent wake or an admin prune.
 func TestOpKindStringsAreFrozen(t *testing.T) {
 	for name, got := range map[string]string{
-		"OpRegisterLane": core.OpRegisterLane, "OpResumeLane": core.OpResumeLane,
-		"OpWakeLane": core.OpWakeLane, "OpAckBoard": core.OpAckBoard,
-		"OpUpdateLane": core.OpUpdateLane, "OpCloseLane": core.OpCloseLane,
+		"OpRegister": core.OpRegister, "OpResume": core.OpResume,
+		"OpWake": core.OpWake, "OpAckBoard": core.OpAckBoard,
+		"OpUpdate": core.OpUpdate, "OpSignOff": core.OpSignOff,
 		"OpHeartbeat": core.OpHeartbeat, "OpSetSlot": core.OpSetSlot,
 		"OpClearSlot": core.OpClearSlot, "OpSendMessage": core.OpSendMessage,
 		"OpClaim": core.OpClaim, "OpRelease": core.OpRelease,
 		"OpSweep": core.OpSweep, "OpMarkDelivered": core.OpMarkDelivered,
 		"OpPutBlob": core.OpPutBlob, "OpGrantRole": core.OpGrantRole,
-		"OpPruneLane": core.OpPruneLane, "OpForceRelease": core.OpForceRelease,
-		"OpLaneOpen": core.OpLaneOpen, "OpLaneJoin": core.OpLaneJoin,
-		"OpLaneLeave": core.OpLaneLeave, "OpLaneSubscribe": core.OpLaneSubscribe,
-		"OpLaneExclusive": core.OpLaneExclusive, "OpLanePost": core.OpLanePost,
-		"OpLaneAnnounce": core.OpLaneAnnounce, "OpLaneAck": core.OpLaneAck,
+		"OpPrune": core.OpPrune, "OpForceRelease": core.OpForceRelease,
+		"OpSpaceOpen": core.OpSpaceOpen, "OpSpaceJoin": core.OpSpaceJoin,
+		"OpSpaceLeave": core.OpSpaceLeave, "OpSpaceSubscribe": core.OpSpaceSubscribe,
+		"OpSpaceExclusive": core.OpSpaceExclusive, "OpSpacePost": core.OpSpacePost,
+		"OpSpaceAnnounce": core.OpSpaceAnnounce, "OpSpaceAck": core.OpSpaceAck,
 	} {
 		// FROZEN AGAIN, at new values, and the break was deliberate.
 		//
@@ -202,19 +213,19 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		// a new constant, and an existing one keeps its string forever, because
 		// every ledger already written is read by every version that follows.
 		want := map[string]string{
-			"OpRegisterLane": "register", "OpResumeLane": "resume",
-			"OpWakeLane": "wake_lane", "OpAckBoard": "check_in",
-			"OpUpdateLane": "update", "OpCloseLane": "sign_off",
+			"OpRegister": "register", "OpResume": "resume",
+			"OpWake": "wake", "OpAckBoard": "check_in",
+			"OpUpdate": "update", "OpSignOff": "sign_off",
 			"OpHeartbeat": "heartbeat", "OpSetSlot": "declare",
 			"OpClearSlot": "undeclare", "OpSendMessage": "send",
 			"OpClaim": "claim", "OpRelease": "release",
 			"OpSweep": "sweep", "OpMarkDelivered": "mark_delivered",
 			"OpPutBlob": "put_blob", "OpGrantRole": "grant_role",
-			"OpPruneLane": "prune_lane", "OpForceRelease": "force_release",
-			"OpLaneOpen": "open_space", "OpLaneJoin": "join_space",
-			"OpLaneLeave": "leave_space", "OpLaneSubscribe": "watch_space",
-			"OpLaneExclusive": "lock_space", "OpLanePost": "post",
-			"OpLaneAnnounce": "announce", "OpLaneAck": "ack_announcement",
+			"OpPrune": "prune", "OpForceRelease": "force_release",
+			"OpSpaceOpen": "open_space", "OpSpaceJoin": "join_space",
+			"OpSpaceLeave": "leave_space", "OpSpaceSubscribe": "watch_space",
+			"OpSpaceExclusive": "lock_space", "OpSpacePost": "post",
+			"OpSpaceAnnounce": "announce", "OpSpaceAck": "ack_announcement",
 		}[name]
 		if got != want {
 			t.Errorf("%s = %q, must stay %q: every ledger written since 0.0.3 uses "+

@@ -137,7 +137,7 @@ func (e *Engine) authOnly(ctx context.Context, token string) (string, error) {
 		if errRes != nil {
 			return errRes
 		}
-		return core.Result{"lane_id": l.ID}
+		return core.Result{"agent_id": l.ID}
 	})
 	if err != nil {
 		return "", err
@@ -145,7 +145,7 @@ func (e *Engine) authOnly(ctx context.Context, token string) (string, error) {
 	if e2, ok := res["error"].(error); ok {
 		return "", e2
 	}
-	id, _ := res["lane_id"].(string)
+	id, _ := res["agent_id"].(string)
 	return id, nil
 }
 

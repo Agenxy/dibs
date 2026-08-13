@@ -195,7 +195,7 @@ type Suggestion struct {
 	Shared  []string `json:"shared,omitempty"`
 	Action  string   `json:"action"` // joined | queued | consider | awaiting_director
 	// SharedRefs are objective ids both sides declared: the difference between
-	// knowing and guessing. See core.LaneMatch.SharedRefs.
+	// knowing and guessing. See core.AgentMatch.SharedRefs.
 	SharedRefs []string `json:"shared_refs,omitempty"`
 	// Relation and Evidence are what the decision actually rested on. Absent from
 	// the wire, an agent sees an action with no reason and cannot check it: and
@@ -299,10 +299,10 @@ func (e *Engine) matchDeclaration(
 	lens := e.repoLensForBoard(ctx)
 
 	// One trip onto the loop to read the board coherently.
-	var matches []core.LaneMatch
+	var matches []core.AgentMatch
 	var self, selfCWD string
 	_, _ = e.query(ctx, func() core.Result {
-		l := e.state.LaneByToken(token)
+		l := e.state.AgentByToken(token)
 		if l == nil {
 			return core.Result{}
 		}
@@ -312,7 +312,7 @@ func (e *Engine) matchDeclaration(
 		}
 		mine := decl
 		mine.Predicted = recorded
-		matches = e.state.MatchLanesEvidence(l.ID, mine, selfCWD, cfg.Repo, lens, overlay, 5)
+		matches = e.state.MatchAgentsEvidence(l.ID, mine, selfCWD, cfg.Repo, lens, overlay, 5)
 		return core.Result{}
 	})
 	// An unresolvable token is the only genuine dead end here. NO MATCHES is not
@@ -343,7 +343,7 @@ func (e *Engine) matchDeclaration(
 		if alreadyCoordinating(matches, cfg.NotifyThreshold) {
 			return nil, matchedAlreadyIn
 		}
-		if s := e.openFirstLane(ctx, token, declaration, pred, recorded); s != nil {
+		if s := e.openFirstSpace(ctx, token, declaration, pred, recorded); s != nil {
 			return []Suggestion{*s}, matchedNothing
 		}
 	}
@@ -352,7 +352,7 @@ func (e *Engine) matchDeclaration(
 
 // suggestionsFor turns scored agents into what the agent is told, joining it to
 // the ones above the bar as it goes.
-func (e *Engine) suggestionsFor(ctx context.Context, token string, matches []core.LaneMatch,
+func (e *Engine) suggestionsFor(ctx context.Context, token string, matches []core.AgentMatch,
 	cfg MatchConfig, pred overlap.Prediction, recorded []core.PredFile, selfCWD string,
 ) []Suggestion {
 	// Positive evidence that this agent is working somewhere else entirely.
@@ -411,7 +411,7 @@ func (e *Engine) suggestionsFor(ctx context.Context, token string, matches []cor
 
 // withheldReason explains a match that will not be joined automatically no
 // matter what the policy says, or "" when nothing stands in the way.
-func withheldReason(m core.LaneMatch, foreign bool, cwd, repo string) string {
+func withheldReason(m core.AgentMatch, foreign bool, cwd, repo string) string {
 	if m.Declined {
 		return "not joined automatically: you left this agent deliberately, and Dibs does not " +
 			"put an agent back somewhere it walked out of. join_space if you have changed your mind."
@@ -431,7 +431,7 @@ func withheldReason(m core.LaneMatch, foreign bool, cwd, repo string) string {
 // similarity was dropped before its relation was ever considered: two agents
 // needing port:8080 for unrelated work score 0.0 on prose and were discarded one
 // line after their contention had been correctly computed. Found end-to-end.
-func tooWeakToMention(m core.LaneMatch, notify float64) bool {
+func tooWeakToMention(m core.AgentMatch, notify float64) bool {
 	switch m.Relation {
 	case core.RelationSameItem, core.RelationSameSurface, core.RelationContended:
 		return false // rests on something the agents declared, not on a score
@@ -446,7 +446,7 @@ func tooWeakToMention(m core.LaneMatch, notify float64) bool {
 // An action with no reason cannot be checked by the agent it is aimed at: and
 // the two agents who caught this system's false positives did it by reading the
 // evidence, not the score.
-func explain(m core.LaneMatch) string {
+func explain(m core.AgentMatch) string {
 	why := m.Evidence.Strongest()
 	if why == "" {
 		return ""
@@ -478,7 +478,7 @@ func relationLead(r core.Relation) string {
 // Declared overlap is a fact both agents wrote down; inferred overlap is a
 // scorer's opinion, and the agents proved better at judging those than the bar
 // was. See MatchConfig.AutoJoin.
-func shouldAutoJoin(cfg MatchConfig, m core.LaneMatch) bool {
+func shouldAutoJoin(cfg MatchConfig, m core.AgentMatch) bool {
 	switch cfg.AutoJoin {
 	case AutoJoinNever:
 		return false
@@ -566,7 +566,7 @@ func relativeTo(dir, repo string) string {
 // the agents this declaration matched. If it is, its work already has a home and
 // a second agent for the same thing is noise: an agent that refines its slot
 // text must not spawn an agent per edit.
-func alreadyCoordinating(matches []core.LaneMatch, notify float64) bool {
+func alreadyCoordinating(matches []core.AgentMatch, notify float64) bool {
 	for _, m := range matches {
 		// RELEVANT membership, not any membership. This counted a match at any
 		// score above zero, so an agent that moved on to genuinely different
@@ -586,7 +586,7 @@ func alreadyCoordinating(matches []core.LaneMatch, notify float64) bool {
 	return false
 }
 
-// laneName turns a declaration into a short, readable agent name.
+// spaceName turns a declaration into a short, readable agent name.
 //
 // Keeps the first few words that carry meaning and drops the ones that do not:
 // an agent writes "I am fixing the retry loop when tokens fail to refresh" and
@@ -597,7 +597,7 @@ func alreadyCoordinating(matches []core.LaneMatch, notify float64) bool {
 //
 // Deliberately dumb: no stemming, no model, no cleverness that could differ
 // between builds. The TOPIC keeps the declaration verbatim, so nothing is lost.
-func laneName(declaration string) string {
+func spaceName(declaration string) string {
 	// Filler carries no information about the work. Kept short and literal
 	// rather than exhaustive: this only has to make ids readable, and a longer
 	// list is a longer thing to be subtly wrong about.
@@ -635,7 +635,7 @@ func laneName(declaration string) string {
 	return strings.Join(kept, " ")
 }
 
-// openFirstLane creates the agent a declaration deserves when none exists yet,
+// openFirstSpace creates the agent a declaration deserves when none exists yet,
 // with the declaration as its topic and its predicted files as its footprint.
 //
 // The footprint is the point: an agent with none can never be matched against, so
@@ -645,7 +645,7 @@ func laneName(declaration string) string {
 // declared its work successfully, so an agent limit, an id collision with a
 // human-named agent, or a lost race with another agent declaring the same thing
 // costs a suggestion, never the declaration.
-func (e *Engine) openFirstLane(ctx context.Context, token, declaration string,
+func (e *Engine) openFirstSpace(ctx context.Context, token, declaration string,
 	pred overlap.Prediction, recorded []core.PredFile,
 ) *Suggestion {
 	// The topic keeps the declaration, bounded: it is what a reader sees to
@@ -663,7 +663,7 @@ func (e *Engine) openFirstLane(ctx context.Context, token, declaration string,
 	// types into join_space, a human reads on the board, and a projector shows to
 	// a room. An agent is named for the WORK, not for the sentence somebody used
 	// to describe it.
-	name := laneName(declaration)
+	name := spaceName(declaration)
 	// A slug collision must not disable bootstrapping for that wording forever.
 	//
 	// The agent id is derived from the declaration, so an unrelated agent a human
@@ -680,7 +680,7 @@ func (e *Engine) openFirstLane(ctx context.Context, token, declaration string,
 			attempted = fmt.Sprintf("%s %d", name, attempt)
 		}
 		res, err = e.Do(ctx, &core.Op{
-			Kind: core.OpLaneOpen, Token: token, Space: attempted, Text: topic,
+			Kind: core.OpSpaceOpen, Token: token, Space: attempted, Text: topic,
 			Predicted: recorded, ScorerID: pred.ScorerID, ScorerVersion: pred.Version,
 			// Dibs opened this, not an agent, so it may be reclaimed when it
 			// empties, and an agent somebody opened deliberately may not.
@@ -697,7 +697,7 @@ func (e *Engine) openFirstLane(ctx context.Context, token, declaration string,
 	if err != nil {
 		return nil
 	}
-	id, _ := res["lane_id"].(string)
+	id, _ := res["agent_id"].(string)
 	if id == "" {
 		return nil
 	}
@@ -728,11 +728,11 @@ func (e *Engine) openFirstLane(ctx context.Context, token, declaration string,
 // A join that FAILS is not an error the agent needs to see: the suggestion still
 // stands, and it can join by hand. Losing the whole match because the agent
 // turned exclusive a moment ago would be worse than telling the agent about it.
-func (e *Engine) attemptJoin(ctx context.Context, token string, m core.LaneMatch,
+func (e *Engine) attemptJoin(ctx context.Context, token string, m core.AgentMatch,
 	cfg MatchConfig, pred overlap.Prediction, recorded []core.PredFile,
 ) (action string, position int, key string) {
 	res, err := e.Do(ctx, &core.Op{
-		Kind: core.OpLaneJoin, Token: token, Space: m.Agent,
+		Kind: core.OpSpaceJoin, Token: token, Space: m.Agent,
 		Score: m.Score, Threshold: cfg.JoinThreshold,
 		ScorerID: pred.ScorerID, ScorerVersion: pred.Version,
 		Evidence: predPaths(m.Shared), Auto: true,
@@ -891,7 +891,7 @@ func annotateMatching(res core.Result, sug []Suggestion, outcome matchOutcome, s
 		if st.Phase == MatchDegraded {
 			res["matching_hint"] = st.Hint
 		}
-		res["lanes_hint"] = lanesHint(sug)
+		res["agents_hint"] = agentsHint(sug)
 		return
 	}
 	switch {
@@ -914,7 +914,7 @@ func annotateMatching(res core.Result, sug []Suggestion, outcome matchOutcome, s
 	}
 }
 
-// lanesHint is the one line a model will actually read. A bare array of scored
+// agentsHint is the one line a model will actually read. A bare array of scored
 // objects gets skimmed past; naming the action and the peer does not.
 //
 // Two things here were reported as wrong by agents on a live fleet, and both were.
@@ -930,7 +930,7 @@ func annotateMatching(res core.Result, sug []Suggestion, outcome matchOutcome, s
 // agent that believes it will stand down real work: the report came from one that
 // had been told this at 0.196 on four generic build files. The claim is now
 // scaled to the evidence, which is all the score ever supported.
-func lanesHint(sug []Suggestion) string {
+func agentsHint(sug []Suggestion) string {
 	joined, consider, opened := 0, 0, 0
 	var top float64
 	for _, s := range sug {
@@ -988,10 +988,10 @@ func (e *Engine) OpenWithPrediction(ctx context.Context, op *core.Op) (core.Resu
 	return e.Do(ctx, op)
 }
 
-// lanesNeedingFootprints reads the board once, coherently, and reports both the
+// agentsNeedingFootprints reads the board once, coherently, and reports both the
 // agents still missing a footprint and which agents exist at all: the second so
 // the cache can forget the ones that do not.
-func (e *Engine) lanesNeedingFootprints(ctx context.Context) (need map[string]string, live map[string]bool) {
+func (e *Engine) agentsNeedingFootprints(ctx context.Context) (need map[string]string, live map[string]bool) {
 	_, _ = e.query(ctx, func() core.Result {
 		live = make(map[string]bool, len(e.state.Spaces))
 		for id, ch := range e.state.Spaces {
@@ -1063,7 +1063,7 @@ func (e *Engine) forgetDeadFootprints(live map[string]bool) {
 // deriving a missing one here, at the edge, from the agent's topic costs nothing
 // in determinism, and it is computed once per agent, not per declaration.
 func (e *Engine) backfillFootprints(ctx context.Context, scorer overlap.Scorer) map[string][]core.PredFile {
-	need, live := e.lanesNeedingFootprints(ctx)
+	need, live := e.agentsNeedingFootprints(ctx)
 	for id, topic := range need {
 		p, err := scorer.Predict(ctx, topic, 40)
 		if err != nil || len(p.Files) == 0 {
@@ -1149,7 +1149,7 @@ func (e *Engine) cwdForToken(ctx context.Context, token string) string {
 		return ""
 	}
 	res, err := e.query(ctx, func() core.Result {
-		l := e.state.LaneByToken(token)
+		l := e.state.AgentByToken(token)
 		if l == nil || l.Agent == nil {
 			return core.Result{}
 		}

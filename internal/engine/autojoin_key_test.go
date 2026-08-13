@@ -35,7 +35,7 @@ func TestTheMatcherCarriesTheCoordinationKeyOutOfAnAutoJoin(t *testing.T) {
 	go e.Run(ctx)
 
 	reg := func(name string) string {
-		res, err := e.Do(ctx, &core.Op{Kind: core.OpRegisterLane, Name: name})
+		res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: name})
 		if err != nil {
 			t.Fatalf("setup: register %s: %v", name, err)
 		}
@@ -48,7 +48,7 @@ func TestTheMatcherCarriesTheCoordinationKeyOutOfAnAutoJoin(t *testing.T) {
 	owner, joiner := reg("alpha"), reg("beta")
 
 	opened, err := e.Do(ctx, &core.Op{
-		Kind: core.OpLaneOpen, Token: owner, Space: "auth-work", Text: "auth",
+		Kind: core.OpSpaceOpen, Token: owner, Space: "auth-work", Text: "auth",
 	})
 	if err != nil {
 		t.Fatalf("setup: open_space: %v", err)
@@ -59,7 +59,7 @@ func TestTheMatcherCarriesTheCoordinationKeyOutOfAnAutoJoin(t *testing.T) {
 	}
 
 	action, _, key := e.attemptJoin(ctx, joiner,
-		core.LaneMatch{Agent: "auth-work", Score: 0.9},
+		core.AgentMatch{Agent: "auth-work", Score: 0.9},
 		MatchConfig{JoinThreshold: 0.33},
 		overlap.Prediction{ScorerID: "test"}, nil)
 

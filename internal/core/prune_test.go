@@ -12,7 +12,7 @@ func TestPruneClearsDebrisButNeverLiveLanes(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	now := time.Now()
 	for _, n := range []string{"live", "gone-a", "gone-b"} {
-		if _, _, err := s.Apply(&Op{Kind: OpRegisterLane, Name: n, NewToken: "tok-" + n}, now); err != nil {
+		if _, _, err := s.Apply(&Op{Kind: OpRegister, Name: n, NewToken: "tok-" + n}, now); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -20,7 +20,7 @@ func TestPruneClearsDebrisButNeverLiveLanes(t *testing.T) {
 	s.Agents["gone-a"].Status = StatusStale
 	s.Agents["gone-b"].Status = StatusDormant
 
-	res, _, err := s.Apply(&Op{Kind: OpPruneLane}, now)
+	res, _, err := s.Apply(&Op{Kind: OpPrune}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,10 +44,10 @@ func TestPruneClearsDebrisButNeverLiveLanes(t *testing.T) {
 func TestPruneNamedLaneAndUnknownLane(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	now := time.Now()
-	_, _, _ = s.Apply(&Op{Kind: OpRegisterLane, Name: "a", NewToken: "t1"}, now)
-	_, _, _ = s.Apply(&Op{Kind: OpRegisterLane, Name: "b", NewToken: "t2"}, now)
+	_, _, _ = s.Apply(&Op{Kind: OpRegister, Name: "a", NewToken: "t1"}, now)
+	_, _, _ = s.Apply(&Op{Kind: OpRegister, Name: "b", NewToken: "t2"}, now)
 
-	if _, _, err := s.Apply(&Op{Kind: OpPruneLane, To: "a"}, now); err != nil {
+	if _, _, err := s.Apply(&Op{Kind: OpPrune, To: "a"}, now); err != nil {
 		t.Fatal(err)
 	}
 	if s.Agents["a"].Status != StatusClosed {
@@ -56,7 +56,7 @@ func TestPruneNamedLaneAndUnknownLane(t *testing.T) {
 	if s.Agents["b"].Status != StatusActive {
 		t.Error("prune of one agent touched another")
 	}
-	if _, _, err := s.Apply(&Op{Kind: OpPruneLane, To: "nope"}, now); err == nil {
+	if _, _, err := s.Apply(&Op{Kind: OpPrune, To: "nope"}, now); err == nil {
 		t.Error("pruning an unknown agent should error, not succeed silently")
 	}
 }

@@ -138,7 +138,7 @@ try {
   await tool("declare", { token: a.token, text: "rendering the web board", dirs: ["internal/web"] })
   const b = await tool("register", { name: "checker", description: "peer", session_id: "w2" })
   await tool("check_in", { token: b.token })
-  await tool("send", { token: b.token, to: a.lane_id, type: "question",
+  await tool("send", { token: b.token, to: a.agent_id, type: "question",
     body: "Does the web board render?", op_id: "w-q", deadline_s: 600 })
   // A message WITH an attachment, because the server has always carried them
   // and neither human surface drew them: a message saying "see the attached
@@ -147,20 +147,20 @@ try {
   const blob = await tool("put_blob", { token: b.token,
     data: Buffer.from("evidence for the web board").toString("base64"),
     mime: "text/plain" })
-  await tool("send", { token: b.token, to: a.lane_id, type: "notify",
+  await tool("send", { token: b.token, to: a.agent_id, type: "notify",
     body: "Evidence attached.", op_id: "w-att",
     attachments: [{ blob: blob.blob ?? blob.id }] })
   // Two spaces, because one cannot hold every state worth drawing: an
   // exclusive space QUEUES a second agent rather than admitting it, so an agent
   // with a scored member and an agent with a queue have to be different agents.
-  await tool("open_space", { token: a.token, agent: "web-render", topic: "drawing the operator board" })
-  await tool("join_space", { token: b.token, agent: "web-render", score: 0.71, threshold: 0.33,
+  await tool("open_space", { token: a.token, space: "web-render", topic: "drawing the operator board" })
+  await tool("join_space", { token: b.token, space: "web-render", score: 0.71, threshold: 0.33,
     scorer_id: "lexical+cochange", evidence: ["internal/web/web.go"], auto: true })
-  await tool("open_space", { token: a.token, agent: "web-locked", topic: "single-writer work", exclusive: true })
-  await tool("join_space", { token: b.token, agent: "web-locked", score: 0.42 })
+  await tool("open_space", { token: a.token, space: "web-locked", topic: "single-writer work", exclusive: true })
+  await tool("join_space", { token: b.token, space: "web-locked", score: 0.42 })
   // A subagent and a coordinator, so the board has the two facts that change
   // how a row should be read.
-  const sub = await tool("register", { name: "helper", session_id: "w3", parent: a.lane_id })
+  const sub = await tool("register", { name: "helper", session_id: "w3", parent: a.agent_id })
   await tool("check_in", { token: sub.token })
 
   // An agent that CRASHED, so the board has to draw the state a fleet actually
@@ -176,7 +176,7 @@ try {
     name: "ghost", description: "was refactoring auth", session_id: "w4", pid: doomed.pid,
   })
   await tool("check_in", { token: ghost.token })
-  await tool("join_space", { token: ghost.token, agent: "web-render", score: 0.55 })
+  await tool("join_space", { token: ghost.token, space: "web-render", score: 0.55 })
   doomed.kill()
   await doomed.exited
 
@@ -186,7 +186,7 @@ try {
   check("admin password can be set non-interactively", setOut.includes("admin password set"))
   // Only possible AFTER the password exists: promotion travels the human's
   // path, which is the whole point of the role.
-  const grantOut = cli(["admin", "coordinator", b.lane_id], `${PASSWORD}\n`)
+  const grantOut = cli(["admin", "coordinator", b.agent_id], `${PASSWORD}\n`)
   check("a coordinator can be promoted from the CLI",
     !/error/i.test(grantOut), grantOut.trim().slice(0, 120))
 
@@ -816,7 +816,7 @@ try {
     // The event announces that a post happened and deliberately does NOT carry
     // its text: space events have no recipient, so a body here goes to every
     // authenticated agent on the board, member or not (SPEC §10).
-    await expectEvent(a.token, "agent.post", (e) => e.data?.lane_id === "web-render")
+    await expectEvent(a.token, "agent.post", (e) => e.data?.agent_id === "web-render")
     check("posting reaches the board as an event", true)
 
     const seen = await tool("events_since", { token: a.token, since_serial: 0 })
@@ -827,7 +827,7 @@ try {
 
     // The point of all of it: an AGENT can see what the human said. Through
     // read_space, which checks who is asking.
-    const read = await tool("read_space", { token: a.token, agent: "web-render" })
+    const read = await tool("read_space", { token: a.token, space: "web-render" })
     check("an agent reads the human's post in the agent",
       (read.posts ?? []).some((p: any) => (p.body ?? "").includes("humans are here too")),
       JSON.stringify(read.posts ?? []).slice(0, 200))

@@ -23,10 +23,10 @@ import (
 // here rather than at somebody's next daemon restart.
 func TestApplyFoldsWhateverAdmitRejects(t *testing.T) {
 	rejected := []*Op{
-		{Kind: OpLaneAnnounce, Body: ""},
-		{Kind: OpLaneAnnounce, Body: "   "},
-		{Kind: OpLanePost, Body: ""},
-		{Kind: OpLanePost, Body: "\n\t "},
+		{Kind: OpSpaceAnnounce, Body: ""},
+		{Kind: OpSpaceAnnounce, Body: "   "},
+		{Kind: OpSpacePost, Body: ""},
+		{Kind: OpSpacePost, Body: "\n\t "},
 	}
 
 	for _, proto := range rejected {
@@ -39,9 +39,9 @@ func TestApplyFoldsWhateverAdmitRejects(t *testing.T) {
 		// Same op, replayed out of a ledger written before the rule existed.
 		s := NewState("replay", DefaultLimits())
 		now := time.Unix(1700000000, 0)
-		mustApply(t, s, &Op{Kind: OpRegisterLane, Name: "speaker", NewToken: "tok"}, now)
+		mustApply(t, s, &Op{Kind: OpRegister, Name: "speaker", NewToken: "tok"}, now)
 		mustApply(t, s, &Op{Kind: OpAckBoard, Token: "tok"}, now)
-		mustApply(t, s, &Op{Kind: OpLaneOpen, Token: "tok", Space: "work", Text: "w"}, now)
+		mustApply(t, s, &Op{Kind: OpSpaceOpen, Token: "tok", Space: "work", Text: "w"}, now)
 
 		op := *proto
 		op.Token, op.Space = "tok", "work"
@@ -57,10 +57,10 @@ func TestApplyFoldsWhateverAdmitRejects(t *testing.T) {
 // tool becomes unusable in the name of tidiness.
 func TestAdmitPassesOrdinaryTraffic(t *testing.T) {
 	for _, op := range []*Op{
-		{Kind: OpLaneAnnounce, Body: "freezing auth/retry.go until Friday"},
-		{Kind: OpLanePost, Body: "picked this up"},
+		{Kind: OpSpaceAnnounce, Body: "freezing auth/retry.go until Friday"},
+		{Kind: OpSpacePost, Body: "picked this up"},
 		// A single character is a real message; only nothing-at-all is not.
-		{Kind: OpLaneAnnounce, Body: "?"},
+		{Kind: OpSpaceAnnounce, Body: "?"},
 		// Every other kind passes untouched.
 		{Kind: OpAckBoard},
 		{Kind: OpClaim, Path: "/x", Mode: "exclusive"},
@@ -73,7 +73,7 @@ func TestAdmitPassesOrdinaryTraffic(t *testing.T) {
 
 	// The error has to say which parameter, because the fault that produced
 	// this rule was a body sent under the wrong key.
-	err := Admit(&Op{Kind: OpLaneAnnounce, Body: ""}, DefaultLimits())
+	err := Admit(&Op{Kind: OpSpaceAnnounce, Body: ""}, DefaultLimits())
 	if err == nil || !strings.Contains(err.Error(), "body") {
 		t.Errorf("the error must name `body`, which is the mistake it exists to catch: %v", err)
 	}

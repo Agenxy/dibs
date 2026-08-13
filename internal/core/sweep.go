@@ -38,7 +38,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 		if alive[l.PID] {
 			return true, true
 		}
-		if slices.Contains(op.DeadLanes, l.ID) {
+		if slices.Contains(op.DeadAgents, l.ID) {
 			return false, true
 		}
 		return false, false // lease lapsed, but nobody looked at the process
@@ -56,16 +56,16 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 	// Every map range in this file that appends to evs is sorted for the same
 	// reason. Ones that only mutate state are left alone: order cannot be
 	// observed there, and sorting them would be cost without meaning.
-	for _, laneID := range sortedKeys(s.Agents) {
-		l := s.Agents[laneID]
+	for _, agentID := range sortedKeys(s.Agents) {
+		l := s.Agents[agentID]
 		// Only the live statuses advance here. Closed, archived and unreachable
 		// agents have nothing left to sweep: they are terminal, and adding empty
 		// cases for them would imply a transition that does not exist.
 		//exhaustive:ignore // terminal statuses are intentionally inert
 		switch l.Status {
 		case StatusActive:
-			dead := slices.Contains(op.DeadLanes, l.ID)
-			lapsed := slices.Contains(op.StaleLanes, l.ID)
+			dead := slices.Contains(op.DeadAgents, l.ID)
+			lapsed := slices.Contains(op.StaleAgents, l.ID)
 			if !dead && !lapsed {
 				continue
 			}
@@ -109,7 +109,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 			for _, p := range released {
 				evs = append(evs, Event{
 					Type: "claim.expired", Agent: l.ID,
-					Data: map[string]any{"path": p, "cause": "lane_" + string(l.Status)},
+					Data: map[string]any{"path": p, "cause": "agent_" + string(l.Status)},
 				})
 			}
 		case StatusStale:
@@ -131,7 +131,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 		}
 	}
 
-	evs = append(evs, s.reclaimFinishedLanes()...)
+	evs = append(evs, s.reclaimFinishedAgents()...)
 
 	// Claim lease expiry: renewable lease + hard max life.
 	var kept []*Claim
@@ -222,7 +222,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 		}
 		sort.Strings(silent)
 		evs = append(evs, Event{Type: "agent.announce_unacked", Agent: a.From, Data: map[string]any{
-			"lane_id": a.Space, "serial": a.Serial, "silent": silent,
+			"agent_id": a.Space, "serial": a.Serial, "silent": silent,
 			"detail": "redelivery gave up; this is loss of coordination, not agreement. " +
 				"verify with these agents before assuming they acted on it",
 		}})
@@ -266,7 +266,7 @@ func (s *State) gc(now time.Time) ([]Event, bool) {
 
 	// Consumed terminal messages go immediately; unconsumed terminal beyond
 	// retention are evicted oldest-first with the watermark advanced.
-	perLane := map[string][]*Message{}
+	perAgent := map[string][]*Message{}
 	for serial, m := range s.Messages {
 		if m.Terminal() && m.Consumed && now.Sub(m.TerminalAt) > s.Limits.ConsumedRetention {
 			delete(s.Messages, serial) // sender had its read window (real-agent finding)
@@ -274,11 +274,11 @@ func (s *State) gc(now time.Time) ([]Event, bool) {
 			continue
 		}
 		if m.Terminal() {
-			perLane[m.To] = append(perLane[m.To], m)
+			perAgent[m.To] = append(perAgent[m.To], m)
 		}
 	}
-	for _, agent := range sortedKeys(perLane) {
-		ms := perLane[agent]
+	for _, agent := range sortedKeys(perAgent) {
+		ms := perAgent[agent]
 		if len(ms) <= s.Limits.TerminalRetention {
 			continue
 		}
@@ -337,7 +337,7 @@ func (s *State) gc(now time.Time) ([]Event, bool) {
 	// Sorted by agent so eviction order does not depend on map iteration.
 	for _, agent := range sortedKeys(counts) {
 		recs := counts[agent]
-		if len(recs) <= s.Limits.DedupPerLane {
+		if len(recs) <= s.Limits.DedupPerAgent {
 			continue
 		}
 		// Tie-broken by ID, because timestamps collide.
@@ -354,7 +354,7 @@ func (s *State) gc(now time.Time) ([]Event, bool) {
 			}
 			return strings.Compare(a.ID, b.ID)
 		})
-		for _, rec := range recs[:len(recs)-s.Limits.DedupPerLane] {
+		for _, rec := range recs[:len(recs)-s.Limits.DedupPerAgent] {
 			delete(s.Dedup, dedupKey(rec.Agent, rec.ID))
 			pruned = true
 		}
@@ -421,7 +421,7 @@ func (s *State) Board() map[string]any {
 	return out
 }
 
-// laneSaid is the agent's announcement history for the board, newest last,
+// spaceSaid is the agent's announcement history for the board, newest last,
 // bounded so one chatty agent cannot dominate the payload.
 //
 // METADATA ONLY. This carried `body`, and the board it is embedded in is not
@@ -435,7 +435,7 @@ func (s *State) Board() map[string]any {
 // abandoned, blocked); no template, script or Go caller read `said[].body`. It
 // was cost with no reader, and the text still belongs to the agent: members and
 // subscribers get it from read_space, which checks who is asking.
-func (s *State) laneSaid(id string) []map[string]any {
+func (s *State) spaceSaid(id string) []map[string]any {
 	var all []*Announcement
 	for _, a := range s.Announcements {
 		if a.Space == id {
@@ -496,7 +496,7 @@ func (s *State) channelBoard() []map[string]any {
 		// to see what the agents are saying to each other. The board is already
 		// behind the admin password (SECURITY.md): it shows decrypted mail, and
 		// agent traffic is no more private than that.
-		if said := s.laneSaid(ch.ID); len(said) > 0 {
+		if said := s.spaceSaid(ch.ID); len(said) > 0 {
 			cm["said"] = said
 		}
 		// Outstanding announcements are the one piece of space state that is
@@ -635,7 +635,7 @@ func sortedKeys[K cmp.Ordered, V any](m map[K]V) []K {
 	return out
 }
 
-// laneID derives an addressable id from an agent's chosen name.
+// agentID derives an addressable id from an agent's chosen name.
 //
 // The id is an ADDRESS: it goes on the wire, into every message envelope and
 // into urls, so it is restricted to ASCII. A name that survives none of that
@@ -646,7 +646,7 @@ func sortedKeys[K cmp.Ordered, V any](m map[K]V) []K {
 // their names had been discarded. The original survives in Agent.Name; the
 // registration result now says when the id owes nothing to it, and the board
 // shows the name so a human can still tell who they are looking at.
-func laneID(s *State, name string) string {
+func agentID(s *State, name string) string {
 	base := slug(name)
 	if base == "" {
 		base = "agent"

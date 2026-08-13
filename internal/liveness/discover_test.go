@@ -49,11 +49,11 @@ func TestAttributionPatternsMatchWhatIsReallyThere(t *testing.T) {
 	}
 
 	// The explicit marker wins, and its value is space-free by construction.
-	if m := lanesParent.FindStringSubmatch(`FOO=1 DIBS_PARENT=reviewer BAR=2`); len(m) != 2 || m[1] != "reviewer" {
+	if m := agentsParent.FindStringSubmatch(`FOO=1 DIBS_PARENT=reviewer BAR=2`); len(m) != 2 || m[1] != "reviewer" {
 		t.Errorf("DIBS_PARENT not recovered: %v", m)
 	}
 	// It must not match a variable that merely ends with the name.
-	if lanesParent.MatchString(`MY_DIBS_PARENT=wrong`) {
+	if agentsParent.MatchString(`MY_DIBS_PARENT=wrong`) {
 		t.Error("matched MY_DIBS_PARENT; the marker must be its own variable")
 	}
 	if m := explicitSession.FindStringSubmatch(`CLAUDE_SESSION_ID=abc-123 X=1`); len(m) != 2 || m[1] != "abc-123" {

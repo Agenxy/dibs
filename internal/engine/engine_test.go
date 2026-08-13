@@ -27,7 +27,7 @@ func TestOneOpAllocatesExactlyOneSerial(t *testing.T) {
 	s := core.NewState("n1", core.DefaultLimits())
 	now := time.Now()
 	if _, _, err := s.Apply(&core.Op{
-		Kind: core.OpRegisterLane, Name: "serialprobe", NewToken: "tok",
+		Kind: core.OpRegister, Name: "serialprobe", NewToken: "tok",
 	}, now); err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -36,10 +36,10 @@ func TestOneOpAllocatesExactlyOneSerial(t *testing.T) {
 	}
 
 	for _, op := range []*core.Op{
-		{Kind: core.OpLaneOpen, Token: "tok", Space: "serial-work", Text: "work"},
+		{Kind: core.OpSpaceOpen, Token: "tok", Space: "serial-work", Text: "work"},
 		{Kind: core.OpSetSlot, Token: "tok", Text: "declaring something"},
-		{Kind: core.OpLaneAnnounce, Token: "tok", Space: "serial-work", Body: "heads up"},
-		{Kind: core.OpLaneLeave, Token: "tok", Space: "serial-work"},
+		{Kind: core.OpSpaceAnnounce, Token: "tok", Space: "serial-work", Body: "heads up"},
+		{Kind: core.OpSpaceLeave, Token: "tok", Space: "serial-work"},
 	} {
 		before := s.Serial
 		if _, evs, err := s.Apply(op, now); err != nil {

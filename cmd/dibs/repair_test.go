@@ -45,13 +45,13 @@ func poisonedBoard(t *testing.T) (dir string, lastGood uint64, records int) {
 		records++
 		return nil
 	}
-	if err := write(&core.Op{Kind: core.OpRegisterLane, Name: "probe", NewToken: "tok"}); err != nil {
+	if err := write(&core.Op{Kind: core.OpRegister, Name: "probe", NewToken: "tok"}); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	if err := write(&core.Op{Kind: core.OpAckBoard, Token: "tok"}); err != nil {
 		t.Fatalf("ack: %v", err)
 	}
-	if err := write(&core.Op{Kind: core.OpCloseLane, Token: "tok"}); err != nil {
+	if err := write(&core.Op{Kind: core.OpSignOff, Token: "tok"}); err != nil {
 		t.Fatalf("close: %v", err)
 	}
 	lastGood = st.Serial
@@ -59,7 +59,7 @@ func poisonedBoard(t *testing.T) (dir string, lastGood uint64, records int) {
 	// The poison: a SECOND close of the same agent, appended without applying.
 	// That is exactly what a live board ended up holding: an op the fold
 	// refuses, sitting in a chain that verifies.
-	if err := led.Append(st.Serial+1, now, &core.Op{Kind: core.OpCloseLane, Token: "tok"}); err != nil {
+	if err := led.Append(st.Serial+1, now, &core.Op{Kind: core.OpSignOff, Token: "tok"}); err != nil {
 		t.Fatalf("append poison: %v", err)
 	}
 	records++
@@ -155,7 +155,7 @@ func TestRepairRefusesToRepairAHealthyLedger(t *testing.T) {
 	}
 	st := core.NewState("test-node", core.DefaultLimits())
 	now := time.Unix(1700000000, 0)
-	op := &core.Op{Kind: core.OpRegisterLane, Name: "probe", NewToken: "tok"}
+	op := &core.Op{Kind: core.OpRegister, Name: "probe", NewToken: "tok"}
 	if _, _, aerr := st.Apply(op, now); aerr != nil {
 		t.Fatalf("apply: %v", aerr)
 	}

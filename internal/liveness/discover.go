@@ -71,7 +71,7 @@ func attribute(pid, ppid int) (owner, via string) {
 	env := EnvironOf(pid)
 	// 1. An explicit marker beats every inference. A harness hook, or a parent
 	//    that cares, sets this once and every descendant inherits it.
-	if m := lanesParent.FindStringSubmatch(env); len(m) == 2 {
+	if m := agentsParent.FindStringSubmatch(env); len(m) == 2 {
 		return m[1], "env"
 	}
 	// 2. The harness's own session identity, however it leaks it. Dibs already
@@ -211,9 +211,9 @@ func EnvironOf(pid int) string {
 	return string(out)
 }
 
-// lanesParent matches the explicit marker. Its value is an agent id, which is
+// agentsParent matches the explicit marker. Its value is an agent id, which is
 // ASCII and space-free by construction, so \S+ is exact rather than hopeful.
-var lanesParent = regexp.MustCompile(`\bDIBS_PARENT=(\S+)`)
+var agentsParent = regexp.MustCompile(`\bDIBS_PARENT=(\S+)`)
 
 // explicitSession matches the session variables a harness may export directly.
 var explicitSession = regexp.MustCompile(`\b(?:CLAUDE|CODEX|OPENCODE)_SESSION_ID=(\S+)`)

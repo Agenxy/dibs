@@ -9,14 +9,14 @@ import "testing"
 // for precisely this case, but it does not run until the deadline elapses. So
 // an agent that asked with a ten-minute deadline blocked for ten minutes on an
 // answer that became impossible in the first second, while the board knew:
-// resume refuses a closed agent with E_LANE_CLOSED, and Gone() is
+// resume refuses a closed agent with E_AGENT_CLOSED, and Gone() is
 // documented as "never comes back".
 func TestClosingALaneEndsTheQuestionsItWillNeverAnswer(t *testing.T) {
 	st := NewState("test", DefaultLimits())
 	now := t0
 	reg := func(name string) string {
 		tok := "tok-" + name
-		if _, _, err := st.Apply(&Op{Kind: OpRegisterLane, Name: name, NewToken: tok}, now); err != nil {
+		if _, _, err := st.Apply(&Op{Kind: OpRegister, Name: name, NewToken: tok}, now); err != nil {
 			t.Fatalf("register %s: %v", name, err)
 		}
 		if _, _, err := st.Apply(&Op{Kind: OpAckBoard, Token: tok}, now); err != nil {
@@ -41,7 +41,7 @@ func TestClosingALaneEndsTheQuestionsItWillNeverAnswer(t *testing.T) {
 		t.Fatal("precondition: the question should be pending")
 	}
 
-	_, evs, err := st.Apply(&Op{Kind: OpCloseLane, Token: answerer}, now)
+	_, evs, err := st.Apply(&Op{Kind: OpSignOff, Token: answerer}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestAnsweringADepartedAskerSaysSo(t *testing.T) {
 	now := t0
 	reg := func(name string) string {
 		tok := "tok-" + name
-		if _, _, err := st.Apply(&Op{Kind: OpRegisterLane, Name: name, NewToken: tok}, now); err != nil {
+		if _, _, err := st.Apply(&Op{Kind: OpRegister, Name: name, NewToken: tok}, now); err != nil {
 			t.Fatalf("register %s: %v", name, err)
 		}
 		if _, _, err := st.Apply(&Op{Kind: OpAckBoard, Token: tok}, now); err != nil {
@@ -102,7 +102,7 @@ func TestAnsweringADepartedAskerSaysSo(t *testing.T) {
 	}
 	serial, _ := sent["msg_serial"].(uint64)
 
-	if _, _, err := st.Apply(&Op{Kind: OpCloseLane, Token: asker}, now); err != nil {
+	if _, _, err := st.Apply(&Op{Kind: OpSignOff, Token: asker}, now); err != nil {
 		t.Fatal(err)
 	}
 

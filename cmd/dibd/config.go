@@ -40,7 +40,7 @@ type Config struct {
 // changes. Everything else in core.Limits is a safety bound rather than a
 // preference, and is deliberately not exposed.
 type LimitsConfig struct {
-	// LaneTTL is how long an agent may go silent before it is treated as
+	// AgentTTL is how long an agent may go silent before it is treated as
 	// crashed. It matters more than it looks: a stale owner YIELDS its
 	// exclusive agents, so an agent that is merely busy: a long build, a slow
 	// tool call, a big test run makes no Dibs calls for its duration: can be
@@ -50,14 +50,14 @@ type LimitsConfig struct {
 	// want more; fleets that want fast crash detection want less. There is no
 	// value that is right for both, which is why this is a knob and not a
 	// better constant.
-	LaneTTL string `toml:"lane_ttl"`
+	AgentTTL string `toml:"agent_ttl"`
 
-	// IdleTTL is lane_ttl's counterpart for agents that gave no PID, where
+	// IdleTTL is agent_ttl's counterpart for agents that gave no PID, where
 	// silence is the only evidence available.
 	//
 	// It needs its own knob because it governs the configuration Dibs itself
 	// tells people to use: `dibs mcp-config` prints a plain HTTP client, which
-	// registers without a pid, so an operator who sets lane_ttl and points that
+	// registers without a pid, so an operator who sets agent_ttl and points that
 	// client at the daemon changes nothing and waits 45 minutes for a lapse
 	// they thought they had configured to 5.
 	IdleTTL string `toml:"idle_ttl"`
@@ -132,11 +132,11 @@ type MatchConfig struct {
 // apply folds the [limits] table over the defaults.
 //
 // A bad value is an ERROR, never a silent fallback: an operator who wrote
-// lane_ttl = "10" (meaning minutes, in a field that takes a duration) and got
+// agent_ttl = "10" (meaning minutes, in a field that takes a duration) and got
 // the 5-minute default back would be debugging phantom crashes with no idea the
 // setting had been ignored.
 func (c LimitsConfig) apply(base core.Limits) (core.Limits, error) {
-	if err := applyTTL("lane_ttl", c.LaneTTL, &base.LaneTTL); err != nil {
+	if err := applyTTL("agent_ttl", c.AgentTTL, &base.AgentTTL); err != nil {
 		return base, err
 	}
 	if err := applyTTL("idle_ttl", c.IdleTTL, &base.IdleTTL); err != nil {
@@ -162,11 +162,11 @@ func applyTTL(key, raw string, dst *time.Duration) error {
 			key, raw, err,
 		)
 	}
-	if d < minLaneTTL {
+	if d < minAgentTTL {
 		return fmt.Errorf(
 			"[limits] %s = %q is below the %s floor: agents renew their lease at "+
 				"half the TTL, so anything shorter marks healthy agents crashed between "+
-				"their own keepalives", key, raw, minLaneTTL,
+				"their own keepalives", key, raw, minAgentTTL,
 		)
 	}
 	*dst = d
@@ -193,8 +193,8 @@ func (c LimitsConfig) applyBlobCap(base *core.Limits) error {
 	return nil
 }
 
-// minLaneTTL is the floor below which crash detection stops meaning anything.
-const minLaneTTL = 5 * time.Second
+// minAgentTTL is the floor below which crash detection stops meaning anything.
+const minAgentTTL = 5 * time.Second
 
 // loadConfig reads <dir>/dibs.toml if present. A missing file is not an error,
 // zero config is the supported default, not a degraded mode.
@@ -217,7 +217,7 @@ func loadConfig(dir string) (Config, error) {
 	// A key TOML did not recognise is a key that did nothing.
 	//
 	// Silently ignoring it is the worst outcome available: `[limit]` for
-	// `[limits]`, or `lane_ttl` under `[match]`, parses cleanly, changes
+	// `[limits]`, or `agent_ttl` under `[match]`, parses cleanly, changes
 	// nothing, and leaves the operator certain they configured something. They
 	// then debug the behaviour they were trying to change. Decode reports what
 	// it could not place, so say so and name it.

@@ -19,7 +19,7 @@ func TestTheBoardCarriesNoLaneText(t *testing.T) {
 	now := t0
 	reg := func(name string) string {
 		tok := "tok-" + name
-		if _, _, err := st.Apply(&Op{Kind: OpRegisterLane, Name: name, NewToken: tok}, now); err != nil {
+		if _, _, err := st.Apply(&Op{Kind: OpRegister, Name: name, NewToken: tok}, now); err != nil {
 			t.Fatalf("register %s: %v", name, err)
 		}
 		if _, _, err := st.Apply(&Op{Kind: OpAckBoard, Token: tok}, now); err != nil {
@@ -31,19 +31,19 @@ func TestTheBoardCarriesNoLaneText(t *testing.T) {
 	reg("outsider")
 
 	if _, _, err := st.Apply(&Op{
-		Kind: OpLaneOpen, Token: insider, Space: "secret", Text: "t",
+		Kind: OpSpaceOpen, Token: insider, Space: "secret", Text: "t",
 	}, now); err != nil {
 		t.Fatal(err)
 	}
 	const announced = "THE-ANNOUNCEMENT-TEXT"
 	const posted = "THE-POST-TEXT"
 	if _, _, err := st.Apply(&Op{
-		Kind: OpLaneAnnounce, Token: insider, Space: "secret", Body: announced,
+		Kind: OpSpaceAnnounce, Token: insider, Space: "secret", Body: announced,
 	}, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := st.Apply(&Op{
-		Kind: OpLanePost, Token: insider, Space: "secret", Body: posted,
+		Kind: OpSpacePost, Token: insider, Space: "secret", Body: posted,
 	}, now); err != nil {
 		t.Fatal(err)
 	}

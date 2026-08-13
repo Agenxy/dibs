@@ -103,7 +103,7 @@ Example:
 	}
 	cfgPath := filepath.Join(dir, "dibs.toml")
 
-	fmt.Println("\nLanes: setup")
+	fmt.Println("\nAgents: setup")
 	fmt.Println("─────────────")
 	if _, err := os.Stat(cfgPath); err == nil { //nolint:gosec // G703: see above
 		fmt.Printf("\n%s already exists. Continuing will overwrite it.\n", cfgPath)
