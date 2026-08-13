@@ -61,7 +61,7 @@ type manSection struct {
 // sections and its environment line.
 //
 // The shapes it relies on are the ones styledUsage already relies on: a verb
-// line starts with two spaces and "agents ", its continuations are indented
+// line starts with two spaces and "dibs ", its continuations are indented
 // further, a heading ends with a colon (possibly after wrapping), and the
 // environment block opens with "env:". A new line shape in the usage text
 // breaks the styling too, so the two cannot rot apart silently.
