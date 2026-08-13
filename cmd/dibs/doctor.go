@@ -13,6 +13,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -845,9 +846,20 @@ func checkCodeSignature(ok reportFn, warn fixFn) {
 	if runtime.GOOS != "darwin" {
 		return
 	}
-	daemon, err := exec.LookPath("dibd")
-	if err != nil {
-		return // a missing daemon is already reported by the checks above
+	// The RUNNING daemon, not whatever is first on this shell's PATH.
+	//
+	// The launchd unit pins an absolute path, which need not be what LookPath
+	// finds. Reporting on the wrong binary is worse than not reporting: after
+	// installing a stable-identity build to one directory while the service
+	// still runs an ad-hoc one from another, this said grants would survive when
+	// for the daemon actually serving they would not. That misdiagnosis is the
+	// exact thing this check exists to prevent.
+	daemon := runningDaemonPath()
+	if daemon == "" {
+		var err error
+		if daemon, err = exec.LookPath("dibd"); err != nil {
+			return // a missing daemon is already reported by the checks above
+		}
 	}
 	// #nosec G204 -- no shell: exec.Command passes argv directly, and daemon is
 	// whatever exec.LookPath resolved on this PATH, never caller-supplied text.
@@ -864,4 +876,29 @@ func checkCodeSignature(ok reportFn, warn fixFn) {
 			"the daemon needs permission to read them. Sign with a persistent identity so the "+
 			"grant sticks: pick one from `security find-identity -v -p codesigning` and "+
 			"reinstall with DIBS_CODESIGN_IDENTITY=<identity> task install")
+}
+
+// runningDaemonPath is the executable behind the daemon serving this data
+// directory, or "" if it cannot be determined.
+func runningDaemonPath() string {
+	daemons, err := paths.LiveDaemons()
+	if err != nil {
+		return ""
+	}
+	dir := paths.DataDir()
+	for _, d := range daemons {
+		if d.Unknown || d.IsStranger(dir) || d.PID <= 0 {
+			continue
+		}
+		// #nosec G204 -- argv passed directly, no shell; the pid comes from this
+		// user's own run registry and is formatted as a decimal integer.
+		out, err := exec.Command("ps", "-p", strconv.Itoa(d.PID), "-o", "comm=").Output()
+		if err != nil {
+			return ""
+		}
+		if path := strings.TrimSpace(string(out)); path != "" {
+			return path
+		}
+	}
+	return ""
 }

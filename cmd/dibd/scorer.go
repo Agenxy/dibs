@@ -36,10 +36,14 @@ import (
 // Mining runs in the background: it shells out to git over potentially thousands
 // of commits, and the daemon must be answering agents long before that finishes.
 type scorerFlags struct {
-	// indexed is the set of trees already mined, keyed by the cwd that
-	// introduced them, so each repository is indexed exactly once.
+	// indexed is the set of repository ROOTS already mined; rootOf memoises the
+	// cwd-to-root resolution so a registration from a known subdirectory costs
+	// no subprocess. Keyed by cwd, one checkout was mined once per subdirectory
+	// an agent happened to register from, and sixteen of those exhausted the
+	// ceiling so no other project could be indexed at all.
 	discoverMu       sync.Mutex
 	indexed          map[string]bool
+	rootOf           map[string]string
 	repo             string
 	join             float64
 	notify           float64
@@ -312,12 +316,21 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 		slog.Warn("work-overlap matching disabled: "+what, "repo", dir, "err", err)
 	}
 
-	cc, err := overlap.MineCoChange(ctx, dir, overlap.CoChangeOptions{MaxCommits: f.history})
+	// Bounded like the rev-parse above. These were left on the daemon's own
+	// context, so the hang this deadline exists to stop was still reachable one
+	// call later: git log against a folder the daemon may not read blocks rather
+	// than failing, and a blocked mine holds the tree latched forever. The
+	// commit that added the deadline claimed every git was bounded; these two
+	// were not.
+	workCtx, cancelWork := context.WithTimeout(ctx, gitDeadline)
+	defer cancelWork()
+
+	cc, err := overlap.MineCoChange(workCtx, dir, overlap.CoChangeOptions{MaxCommits: f.history})
 	if err != nil {
 		offBecause("could not read git history", err)
 		return
 	}
-	lex, err := overlap.NewLexical(ctx, dir, cc)
+	lex, err := overlap.NewLexical(workCtx, dir, cc)
 	if err != nil {
 		offBecause("could not list files", err)
 		return
@@ -467,35 +480,23 @@ func (f *scorerFlags) withSidecar(ctx context.Context, base overlap.Scorer) over
 // have an agent registered from anywhere. Past the bound the tree is named in
 // the log rather than silently ignored.
 func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, cwd string) {
+	// Cheap path first: a cwd already resolved to an indexed tree needs no git
+	// at all, so a busy fleet does not spawn a subprocess per registration.
 	f.discoverMu.Lock()
-	if len(f.indexed) >= maxIndexedRepos {
-		f.discoverMu.Unlock()
-		slog.Info("work-overlap matching is at its repository ceiling; this tree is not indexed",
-			"cwd", cwd, "ceiling", maxIndexedRepos)
-		return
-	}
-	if f.indexed == nil {
-		f.indexed = map[string]bool{}
-	}
-	if f.indexed[cwd] {
+	if root, known := f.rootOf[cwd]; known && f.indexed[root] {
 		f.discoverMu.Unlock()
 		return
 	}
-	f.indexed[cwd] = true
 	f.discoverMu.Unlock()
 
 	go func() {
-		if err := repoReadable(ctx, cwd); err != nil {
-			// Forget it, so the slot is not spent and a later agent from a real
-			// checkout still gets an index.
-			f.discoverMu.Lock()
-			delete(f.indexed, cwd)
-			f.discoverMu.Unlock()
-			// SAY SO. The first version of this returned here in silence, and a
-			// daemon that cannot read the tree looked identical to one that had
-			// simply not been told about it: matching stayed off, doctor said
-			// "no repository indexed yet", and nothing anywhere named the cause.
-			// That is the failure mode this file's own comments warn about.
+		// Resolved BEFORE the dedup, because the unit of work is a repository
+		// and cwd is not one. Keyed by cwd, agents in three subdirectories of
+		// one checkout mined the same history three times, and sixteen such
+		// agents exhausted the ceiling so no other project could ever be
+		// indexed at all.
+		root, err := repoRootOf(ctx, cwd)
+		if err != nil {
 			slog.Info("work-overlap matching skipped a tree it cannot read",
 				"cwd", cwd, "err", err, "likely", tccHint(cwd))
 			eng.SetMatchStatus(engine.MatchStatus{
@@ -505,7 +506,29 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 			})
 			return
 		}
-		f.bringUp(ctx, eng, cwd)
+
+		f.discoverMu.Lock()
+		if f.rootOf == nil {
+			f.rootOf = map[string]string{}
+		}
+		f.rootOf[cwd] = root
+		if f.indexed == nil {
+			f.indexed = map[string]bool{}
+		}
+		if f.indexed[root] {
+			f.discoverMu.Unlock()
+			return
+		}
+		if len(f.indexed) >= maxIndexedRepos {
+			f.discoverMu.Unlock()
+			slog.Info("work-overlap matching is at its repository ceiling; this tree is not indexed",
+				"repo", root, "ceiling", maxIndexedRepos)
+			return
+		}
+		f.indexed[root] = true
+		f.discoverMu.Unlock()
+
+		f.bringUp(ctx, eng, root)
 	}()
 }
 
@@ -519,7 +542,7 @@ const maxIndexedRepos = 16
 // different problems for the operator: "not a git checkout" is nothing to fix,
 // while "operation not permitted" is a daemon that has been denied access to a
 // directory it was pointed at, and only the second deserves an explanation.
-func repoReadable(ctx context.Context, cwd string) error {
+func repoRootOf(ctx context.Context, cwd string) (string, error) {
 	// BOUNDED, because git does not always fail: it hangs.
 	//
 	// On macOS /usr/bin/git is a shim that dispatches into the selected Xcode.
@@ -539,16 +562,16 @@ func repoReadable(ctx context.Context, cwd string) error {
 	cmd := exec.CommandContext(ctx, "git", "-C", cwd, "rev-parse", "--show-toplevel")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		return nil
+		return strings.TrimSpace(string(out)), nil
 	}
 	if ctx.Err() != nil {
-		return fmt.Errorf("git did not answer within %s (if a permission dialog is "+
+		return "", fmt.Errorf("git did not answer within %s (if a permission dialog is "+
 			"on screen, answering it and registering again is all that is needed)", gitDeadline)
 	}
 	if msg := strings.TrimSpace(string(out)); msg != "" {
-		return errors.New(msg)
+		return "", errors.New(msg)
 	}
-	return err
+	return "", err
 }
 
 // gitDeadline bounds any git the daemon runs against a tree it was told about.
