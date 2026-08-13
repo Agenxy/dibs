@@ -1,0 +1,87 @@
+package main
+
+import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"sync"
+
+	"github.com/agenxy/dibs/internal/engine"
+)
+
+// coordinatorClaim is the bootstrap secret for the launch-time coordinator
+// claim (SPEC §10).
+//
+// A fleet with no human at the keyboard could never have a coordinator: roles
+// were granted only through the admin path, so force_release, close_space and
+// clearing another agent's debris were permanently out of reach. This is how
+// the agent that started the daemon takes the role.
+//
+// The secret lives in the data directory, 0600, beside the local secret the
+// same agents already read to talk to us at all. That is deliberate and it is
+// not a claim of strong isolation: SECURITY.md is explicit that every agent
+// shares one coordination secret and that agent-to-agent isolation is a bar,
+// not a wall. What this buys is that the role is TAKEN, once, deliberately, by
+// something that could read the daemon's own directory, instead of being
+// assumed by whoever asks first.
+type coordinatorClaim struct {
+	path string
+
+	mu     sync.Mutex
+	secret string // emptied once claimed, so the claim is single-use
+}
+
+// newCoordinatorClaim mints one unless the board already has a coordinator.
+func newCoordinatorClaim(dir string, alreadyHas bool) *coordinatorClaim {
+	path := filepath.Join(dir, "coordinator.claim")
+	if alreadyHas {
+		// Nothing to bootstrap. Remove a stale file so a claim cannot be made
+		// against a board that already settled the question.
+		_ = os.Remove(path)
+		return &coordinatorClaim{path: path}
+	}
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		slog.Warn("could not mint a coordinator claim", "err", err)
+		return &coordinatorClaim{path: path}
+	}
+	secret := hex.EncodeToString(b)
+	if err := os.WriteFile(path, []byte(secret+"\n"), 0o600); err != nil {
+		slog.Warn("could not write the coordinator claim", "path", path, "err", err)
+		return &coordinatorClaim{path: path}
+	}
+	slog.Info("no coordinator on this board; the agent that started this daemon can claim it",
+		"how", "claim_coordinator(nonce: the contents of "+path+")")
+	return &coordinatorClaim{path: path, secret: secret}
+}
+
+// verify reports whether presented is the minted secret, and consumes it.
+//
+// Constant time, and single use: the file is removed on success so a second
+// agent cannot take the role by reading a secret left lying about.
+func (c *coordinatorClaim) verify(presented string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.secret == "" || presented == "" {
+		return false
+	}
+	if subtle.ConstantTimeCompare([]byte(c.secret), []byte(presented)) != 1 {
+		return false
+	}
+	c.secret = ""
+	if err := os.Remove(c.path); err != nil && !os.IsNotExist(err) {
+		slog.Warn("claimed coordinator but could not remove the claim file",
+			"path", c.path, "err", err)
+	}
+	slog.Info("coordinator claimed by the agent that started this daemon")
+	return true
+}
+
+// installCoordinatorClaim wires the claim to the engine.
+func installCoordinatorClaim(eng *engine.Engine, dir string, alreadyHas bool) {
+	c := newCoordinatorClaim(dir, alreadyHas)
+	eng.SetCoordinatorClaim(c.verify)
+}

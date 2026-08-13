@@ -145,6 +145,22 @@ var toolDefs = func() []map[string]any {
 			"inputSchema": obj(map[string]any{"token": tok}, "token"),
 		},
 		{
+			"name": "claim_coordinator", "description": "Take the coordinator role, if you " +
+				"are the agent that started this daemon. Read `coordinator.claim` from its data " +
+				"directory and pass the contents as `nonce`. It exists only when the board has " +
+				"no coordinator yet, and the first successful claim consumes it. You must be " +
+				"registered as kind \"persistent\" with a nonce of your own, because the role " +
+				"has to outlive this process: an ephemeral agent would take it away when it " +
+				"signs off, leaving the board with no coordinator and no claim left to make. " +
+				"Coordinator lets you force_release a stuck claim, close a finished space, and " +
+				"clear other agents' debris. This is deliberateness, not a wall: every agent on " +
+				"a machine already shares one coordination secret (see SECURITY.md).",
+			"inputSchema": obj(map[string]any{
+				"token": tok,
+				"nonce": str("the contents of coordinator.claim from the daemon's data directory"),
+			}, "token", "nonce"),
+		},
+		{
 			"name": "prune", "description": "Remove a FINISHED agent record you are " +
 				"responsible for: your own, or a child you vouched for. Tidying up after " +
 				"yourself, not board administration. It will not touch a peer, because an " +

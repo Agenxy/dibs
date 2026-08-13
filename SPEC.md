@@ -701,7 +701,7 @@ binaries (`dibd` and `dibs`) both CGO_ENABLED=0 and byte-reproducible.
 ledgered wake transitions; ephemeral + persistent agents; resume; awareness gate
 per activation; mailbox (full state machine, read_mail, op_id dedup,
 dormant-recipient semantics); claims (§9 matrix); bounded liveness with bounded
-restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (41 tools);
+restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (42 tools);
 local access secret + Origin validation; CLI (board/messages/log/verify/mcp-config);
 SSE web board; static binaries (`dibd` + `dibs`, no cgo, no runtime deps).
 

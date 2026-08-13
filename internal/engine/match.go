@@ -1161,3 +1161,14 @@ func (e *Engine) cwdForToken(ctx context.Context, token string) string {
 	cwd, _ := res["cwd"].(string)
 	return cwd
 }
+
+// SetCoordinatorClaim installs the check for a launch-time coordinator claim.
+//
+// The daemon owns the secret because it owns the data directory; the engine
+// only asks whether a presented one is right, and consumes it on success so the
+// claim can be made once. Kept off the core, which cannot read files.
+func (e *Engine) SetCoordinatorClaim(verify func(secret string) bool) {
+	e.claimMu.Lock()
+	defer e.claimMu.Unlock()
+	e.verifyClaim = verify
+}
