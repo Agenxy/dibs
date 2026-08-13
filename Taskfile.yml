@@ -75,12 +75,23 @@ tasks:
     # signature stands.
     platforms: [darwin]
     internal: true
-    status:
-      - test -z "$DIBS_CODESIGN_IDENTITY"
+    vars:
+      # Ad-hoc unless an identity is given. Either way the IDENTIFIER is set:
+      # the Go toolchain leaves it as `a.out`, so the daemon presents itself to
+      # the system under a name shared with every other ad-hoc binary, and any
+      # grant recorded against it is recorded against that.
+      SIGNER: '{{if .DIBS_CODESIGN_IDENTITY}}{{.DIBS_CODESIGN_IDENTITY}}{{else}}-{{end}}'
     cmds:
-      - codesign --force --options runtime -i org.agenxy.dibs -s "$DIBS_CODESIGN_IDENTITY" {{.DEST}}/dibd
-      - codesign --force --options runtime -i org.agenxy.dibs.cli -s "$DIBS_CODESIGN_IDENTITY" {{.DEST}}/dibs
-      - echo "signed with $DIBS_CODESIGN_IDENTITY so privacy grants survive a rebuild"
+      - codesign --force -i org.agenxy.dibs -s '{{.SIGNER}}' {{.DEST}}/dibd
+      - codesign --force -i org.agenxy.dibs.cli -s '{{.SIGNER}}' {{.DEST}}/dibs
+      - |
+        if [ -n "$DIBS_CODESIGN_IDENTITY" ]; then
+          echo "signed with $DIBS_CODESIGN_IDENTITY so privacy grants survive a rebuild"
+        else
+          echo "ad-hoc signed. A macOS privacy grant will not survive the next install:"
+          echo "  set DIBS_CODESIGN_IDENTITY to an identity from"
+          echo "  security find-identity -v -p codesigning" 
+        fi
 
   install:presence:
     # Beside the daemon, because humanauth looks beside its own executable rather
