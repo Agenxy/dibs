@@ -122,10 +122,21 @@ func judge(path, key string, child any) []string {
 	// same key for the server DEFINITION object, and flagging that was this
 	// check's first false alarm.
 	if id, isRef := child.(string); key == "server" && isRef {
-		if want := "plugin:" + serverName + ":" + serverName; id != want {
-			return []string{fmt.Sprintf("%s: hook references server %q, but this plugin publishes %q.\n"+
+		// Two legitimate spellings, because harnesses name servers differently:
+		// a Claude Code plugin hosts its server under `plugin:<plugin>:<server>`,
+		// while Codex resolves the `[mcp_servers.<name>]` key from config.toml.
+		// Both must still name US. What this catches is a reference to something
+		// that is not Dibs at all, which is how every hook in the Claude Code
+		// plugin came to point at `plugin:agents:agents` and silently never run.
+		valid := map[string]bool{
+			serverName: true,
+			"plugin:" + serverName + ":" + serverName: true,
+		}
+		if !valid[id] {
+			return []string{fmt.Sprintf("%s: hook references server %q, which is not this product.\n"+
+				"      Expected %q (Codex, config.toml) or %q (Claude Code plugin).\n"+
 				"      A hook pointed at a server that does not exist never runs, and says nothing.",
-				path, id, want)}
+				path, id, serverName, "plugin:"+serverName+":"+serverName)}
 		}
 		return nil
 	}
