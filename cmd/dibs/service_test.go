@@ -393,3 +393,87 @@ func TestUnitPinningFindsTheServiceHoldingAnOldPath(t *testing.T) {
 			"move a directory the service will still be looking for", old, got, plist)
 	}
 }
+
+// A unit pins an absolute path, so doctor has to be able to read it back out.
+//
+// Install the daemon from a Go workspace once and from `task install` later,
+// and the service goes on starting the first one forever: the daemon answers,
+// every other check passes against it, and every fix shipped since that build
+// is simply not running. Nothing reported it, because nothing compared the two.
+func TestTheUnitsPinnedDaemonIsReadable(t *testing.T) {
+	for _, tc := range []struct {
+		name, file, body, want string
+	}{
+		{
+			name: "launchd plist", file: "Library/LaunchAgents/org.agenxy.dibs.plist",
+			body: `<plist version="1.0"><dict>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/someone/go/bin/dibd</string>
+    <string>-dir</string>
+    <string>/Users/someone/.dibs</string>
+  </array>
+</dict></plist>`,
+			want: "/Users/someone/go/bin/dibd",
+		},
+		{
+			name: "systemd unit", file: ".config/systemd/user/dibs.service",
+			body: "[Service]\nExecStart=/home/someone/.local/bin/dibd -dir /home/someone/.dibs\n",
+			want: "/home/someone/.local/bin/dibd",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+			path := filepath.Join(home, tc.file)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(tc.body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			unit, daemon := unitDaemon()
+			if daemon != tc.want {
+				t.Errorf("pinned daemon = %q, want %q: doctor cannot compare what it cannot read", daemon, tc.want)
+			}
+			if unit != path {
+				t.Errorf("unit = %q, want %q", unit, path)
+			}
+		})
+	}
+}
+
+// No unit is not a fault: `configure --service` is optional.
+func TestNoUnitReportsNothingToCompare(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+
+	if unit, daemon := unitDaemon(); unit != "" || daemon != "" {
+		t.Errorf("invented a unit: %q %q", unit, daemon)
+	}
+}
+
+// Two spellings of one file are not a mismatch. A symlinked install would
+// otherwise be reported as a wrong daemon on every doctor run, and a check that
+// cries wolf is a check people stop reading.
+func TestSameBinarySeesThroughASymlink(t *testing.T) {
+	dir := t.TempDir()
+	real := filepath.Join(dir, "dibd")
+	if err := os.WriteFile(real, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "dibd-link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+
+	if !sameBinary(real, link) {
+		t.Error("a symlink to the same file was reported as a different daemon")
+	}
+	if sameBinary(real, filepath.Join(dir, "nope")) {
+		t.Error("a path that does not exist matched a real one")
+	}
+}

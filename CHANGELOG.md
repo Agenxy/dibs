@@ -55,6 +55,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   position: a looser rule failed two verbs on prose that legitimately says
   "agents".
 
+- `dibs doctor` did not notice that the service starts a different daemon than
+  the one installed. A unit records an absolute path, so installing from a Go
+  workspace once and from `task install` later leaves the service starting the
+  first build forever: the daemon answers, every other check passes against it,
+  and every fix shipped since is not running. It is checked now, with the `rm`
+  and the re-run that fixes it.
+
 - The coordinator could not clear another agent's debris, which is the thing its
   own rationale names. `prune` routes to `prune_own`, which refused every peer,
   and the admin `prune` op is reachable only from the human path, so the role
