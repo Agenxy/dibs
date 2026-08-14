@@ -296,6 +296,27 @@ func clientLabel(params json.RawMessage) string {
 	return ci.Name + "/" + ci.Version
 }
 
+// resourceNotFoundCode returns the error code this REQUEST's revision expects
+// for an unknown resource.
+//
+// 2026-07-28 moved it from -32002 to -32602, to stop inventing a code where
+// JSON-RPC already has "invalid params" (spec, server/resources.mdx: clients
+// SHOULD still accept -32002 for backwards compatibility). Dibs serves both
+// revisions from one handler, so neither constant is right on its own: a
+// hardcoded -32602 misreports to every 2025-11-25 client still connecting
+// through `initialize`, and a hardcoded -32002 is simply the old spec.
+//
+// Keyed on the per-request version rather than a server-wide setting, because
+// under 2026-07-28 there is no session to hold one: the revision arrives in
+// _meta on each request, and two clients on different revisions are served
+// concurrently.
+func resourceNotFoundCode(params json.RawMessage) int {
+	if metaVersion(params) == "2026-07-28" {
+		return -32602
+	}
+	return -32002
+}
+
 func metaVersion(params json.RawMessage) string {
 	var p struct {
 		Meta map[string]any `json:"_meta"`
@@ -573,7 +594,7 @@ func (s *Server) dispatch(
 				return readUIBoard(), nil
 			}
 			return nil, &rpcError{
-				Code: -32002, Message: "unknown resource " + p.URI,
+				Code: resourceNotFoundCode(req.Params), Message: "unknown resource " + p.URI,
 				Data: hint("call resources/list: it names every resource this server serves"),
 			}
 		}
