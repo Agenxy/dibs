@@ -10,7 +10,7 @@
 
   "server": {
     "type": "binary",
-    "entry_point": "agents",
+    "entry_point": "dibs",
     "mcp_config": {
       "command": "dibs",
       "args": ["mcp-stdio"]
