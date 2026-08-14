@@ -66,6 +66,35 @@ surfaces to the HUMAN rather than to the agent it is addressed to, which is how
 this was noticed: a person watching their own Codex prompt fill up with mail for
 `codex-primary`.
 
+### When a Codex hook takes effect (traced, not assumed)
+
+Codex does NOT require a session restart to pick up new hooks, and saying it
+does was our error. `Session::refresh_runtime_config`
+(`core/src/session/mod.rs:1701`) rebuilds the hooks config and calls
+`HooksRegistry::reconfigured`, which is documented as preserving in-flight
+background hooks while applying a refreshed configuration, then stores it into
+the LIVE session.
+
+What triggers it is the part that matters, and it is narrower than "any config
+change". `reload_user_config` (`app-server/src/request_processors/config_processor.rs:295`)
+walks every live thread and refreshes each, and it has exactly two callers:
+
+| Trigger | Path |
+|---|---|
+| `ConfigBatchWrite` with `reload_user_config: true`, when the edits are not session-defaults-only | `config_processor.rs:157` |
+| `experimental_feature_enablement_set`, when something actually changed | `config_processor.rs:172` |
+
+Both are mutations made THROUGH Codex's own app-server API. We found no watcher
+on `config.toml` (the app-server ships `codex-file-watcher`, used by
+`skills_watcher`), so a hand-edited TOML is not known to refresh a running
+thread.
+
+The practical consequence for setup instructions: telling someone to edit
+`~/.codex/config.toml` means telling them to restart, while a hook installed
+through the app-server API applies to every running thread immediately. That is
+the deeper integration worth having, and it is a harness capability we are not
+using yet.
+
 The historical reasoning is kept below, because it is why we refused to solve it
 with a `command` hook, and that refusal still stands.
 
