@@ -94,7 +94,7 @@ async function measureTheBar(): Promise<number> {
     await c("declare", { token: a, text: "enforcing exclusive claims in the guard" })
     await c("open_space", { token: a, space: "guard-work", topic: "claim guard denies edits to claimed paths" })
     const r = await c("declare", { token: b, text: "guard path enforcement for exclusive claims" })
-    const m = (r.agents ?? []).find((l: any) => l.agent === "guard-work")
+    const m = (r.spaces ?? []).find((l: any) => l.space === "guard-work")
     if (!m || typeof m.score !== "number" || !(m.score > 0)) {
       throw new Error(`could not measure a score for the guard pair: ${JSON.stringify(r).slice(0, 300)}`)
     }
@@ -155,7 +155,7 @@ async function call(name: string, args: Record<string, unknown>): Promise<any> {
     throw new Error(`${name}: ${body.result.content?.[0]?.text ?? "unknown tool error"}`)
   }
   const out = JSON.parse(body.result.content[0].text)
-  if (Array.isArray(out?.agents)) seenSuggestions.push(...out.agents)
+  if (Array.isArray(out?.spaces)) seenSuggestions.push(...out.spaces)
   return out
 }
 /**
@@ -342,15 +342,15 @@ let annSerial = 0
   let first: any = {}
   for (let i = 0; i < 60; i++) {
     first = await call("declare", { token: solo, slot_id: "s1", text: work })
-    if (first.agents || first.agents_hint) break
+    if (first.spaces || first.spaces_hint) break
     await Bun.sleep(250)
   }
-  const born = (first.agents ?? []).find((l: any) => l.action === "opened")
+  const born = (first.spaces ?? []).find((l: any) => l.action === "opened")
   check("declaring work nobody is doing OPENS the first agent, per SPEC-CHANNELS §3",
     born !== undefined, JSON.stringify(first).slice(0, 260))
 
   const second = await call("declare", { token: peer, text: work })
-  const met = (second.agents ?? []).find((l: any) => l.agent === born?.agent)
+  const met = (second.spaces ?? []).find((l: any) => l.space === born?.space)
   // A SCORE is a proposal now, not a membership: two agents caught false
   // auto-joins from the inside that no threshold had, so the decision belongs to
   // whoever is better at it. The agent must still be SURFACED: that is the part
@@ -365,8 +365,8 @@ let annSerial = 0
   // yourself": to an agent standing in an agent with the peer it names.
   const again = await call("declare", { token: solo, text: work + ", plus tests" })
   check("refreshing a slot does not spawn a second agent for the same work",
-    (again.agents ?? []).every((l: any) => l.action !== "opened"),
-    JSON.stringify(again.agents ?? []).slice(0, 200))
+    (again.spaces ?? []).every((l: any) => l.action !== "opened"),
+    JSON.stringify(again.spaces ?? []).slice(0, 200))
   check("and never claims solitude to an agent that is already coordinating",
     !/field to yourself/.test(String(again.matching_hint ?? "")),
     String(again.matching_hint ?? ""))
@@ -381,8 +381,8 @@ let annSerial = 0
 
   // Second agent declares OVERLAPPING work, in different words, naming no agent.
   const r = await call("declare", { token: two, text: "guard path enforcement for exclusive claims" })
-  const agents: any[] = r.agents ?? []
-  const guard = agents.find((l) => l.agent === "guard-work")
+  const agents: any[] = r.spaces ?? []
+  const guard = agents.find((l) => l.space === "guard-work")
   check("declaring related work surfaces the agent already doing it",
     guard !== undefined, JSON.stringify(r).slice(0, 300))
   if (guard) {
@@ -394,16 +394,16 @@ let annSerial = 0
     check("and the proposal names what WOULD make it automatic",
       typeof guard.hint === "string" && guard.hint.includes("refs"), String(guard.hint))
     check("and the agent is told to read the space before starting",
-      typeof r.agents_hint === "string" && r.agents_hint.length > 0, r.agents_hint)
+      typeof r.spaces_hint === "string" && r.spaces_hint.length > 0, r.spaces_hint)
   }
 
   // Unrelated work must NOT be dragged in: the failure mode that collapses
   // every agent into one agent.
   const three = await agent("matcher-three")
   const u = await call("declare", { token: three, text: "restyling the web board fonts and stylesheet" })
-  const dragged = (u.agents ?? []).find((l: any) => l.agent === "guard-work" && l.action === "joined")
+  const dragged = (u.spaces ?? []).find((l: any) => l.space === "guard-work" && l.action === "joined")
   check("unrelated work is not auto-joined into the guard agent", dragged === undefined,
-    JSON.stringify(u.agents ?? []).slice(0, 200))
+    JSON.stringify(u.spaces ?? []).slice(0, 200))
 }
 
 // ── announcements ride the wake path (§6) ───────────────────────────────
@@ -589,7 +589,7 @@ let annSerial = 0
   const joinedBelowBar = seenSuggestions.filter((s) => s.action === "joined" && s.score < JOIN_BAR)
   check("nothing was ever auto-joined below the configured threshold",
     joinedBelowBar.length === 0,
-    JSON.stringify(joinedBelowBar.map((s: any) => ({ agent: s.agent, score: s.score }))).slice(0, 300))
+    JSON.stringify(joinedBelowBar.map((s: any) => ({ space: s.space, score: s.score }))).slice(0, 300))
   // INVERTED deliberately. Nothing is auto-joined on a score alone any more; only
   // DECLARED overlap does that. So the invariant to police is the opposite one:
   // every automatic join must point at something both agents actually stated.
@@ -597,7 +597,7 @@ let annSerial = 0
     (s: any) => s.action === "joined" && (s.shared_refs ?? []).length === 0)
   check("nothing was auto-joined on a score alone",
     joinedOnScoreAlone.length === 0,
-    JSON.stringify(joinedOnScoreAlone.map((s: any) => ({ agent: s.agent, score: s.score }))).slice(0, 300))
+    JSON.stringify(joinedOnScoreAlone.map((s: any) => ({ space: s.space, score: s.score }))).slice(0, 300))
 }
 
 // ── director_required: matching advises, admission decides (§8.1) ───────
@@ -688,7 +688,7 @@ let annSerial = 0
         token: second, slot_id: "s1",
         text: "guard path enforcement for exclusive claims",
       })
-      const m = (r.agents ?? []).find((l: any) => l.agent === "guard-work")
+      const m = (r.spaces ?? []).find((l: any) => l.space === "guard-work")
       if (m) sug = m
       if (m && m.action !== "consider") break
       await Bun.sleep(250)
@@ -755,7 +755,7 @@ let annSerial = 0
     let sug: any
     for (let i = 0; i < 60; i++) {
       const r = await call2("declare", { token: two, text: "guard path enforcement for exclusive claims" })
-      sug = (r.agents ?? []).find((l: any) => l.agent === "guard-work")
+      sug = (r.spaces ?? []).find((l: any) => l.space === "guard-work")
       if (sug) break
       await Bun.sleep(250)
     }
@@ -847,7 +847,7 @@ let annSerial = 0
       let sug: any
       for (let i = 0; i < 90; i++) {
         const r = await c3("declare", { token: two, text: "guard path enforcement for exclusive claims" })
-        sug = (r.agents ?? []).find((l: any) => l.agent === "guard-work")
+        sug = (r.spaces ?? []).find((l: any) => l.space === "guard-work")
         if (sug) break
         await Bun.sleep(2000)
       }
@@ -940,10 +940,10 @@ let annSerial = 0
     let decl: any
     for (let i = 0; i < 90; i++) {
       decl = await c5("declare", { token: worker, text: "fixing the token validation retry loop" })
-      if ((decl.agents ?? []).length) break
+      if ((decl.spaces ?? []).length) break
       await Bun.sleep(1000)
     }
-    const m = (decl.agents ?? []).find((l: any) => l.agent === "auth-work")
+    const m = (decl.spaces ?? []).find((l: any) => l.space === "auth-work")
     check("a director gate holds the match instead of joining it",
       m?.action === "awaiting_director", JSON.stringify(m ?? {}).slice(0, 200))
     check("and names the tool that unblocks it",
@@ -1009,11 +1009,11 @@ let annSerial = 0
   // Actionable guidance is the invariant; WHICH field carries it depends on the
   // outcome. This asserted `matching_hint` specifically, and started failing the
   // moment a declaration that matched nothing began opening an agent instead of
-  // falling through: the guidance moved to `agents_hint` and got better, while
+  // falling through: the guidance moved to `spaces_hint` and got better, while
   // the check reported a regression. Assert the property, not the field.
-  const guidance = String(r.agents_hint ?? r.matching_hint ?? "")
+  const guidance = String(r.spaces_hint ?? r.matching_hint ?? "")
   check("and always says what to do about it",
-    guidance.length > 20, JSON.stringify({ agents_hint: r.agents_hint, matching_hint: r.matching_hint }))
+    guidance.length > 20, JSON.stringify({ spaces_hint: r.spaces_hint, matching_hint: r.matching_hint }))
   // "I compared you and found nothing" and "I could form no opinion" are
   // different facts. Reporting the second as the first is a confident claim
   // built on no evidence: tier 0 reads FILE PATHS, so a declaration naming no

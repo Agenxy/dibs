@@ -73,6 +73,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and every fix shipped since is not running. It is checked now, with the `rm`
   and the re-run that fixes it.
 
+- **`declare` told agents that an AGENT had been opened for their work.** Agents
+  are not opened; spaces are. The result key was `agents`, each entry carried
+  its space id under `agent`, and the hint read "no existing agent cleared the
+  match threshold, so one was opened for this work" — leaving a declaring agent
+  to work out whether Dibs had just invented a peer for it. They are `spaces`,
+  `space` and `spaces_hint` now, matching the board resource, which has said
+  `spaces` all along. Found by declaring work and reading the answer.
+
 - **`dibs log` silently dropped every registration.** The reader typed the op's
   `agent` field as a string, but on a `register` it is the descriptor object
   (harness, model, cwd), so those lines failed to parse; a line that failed to

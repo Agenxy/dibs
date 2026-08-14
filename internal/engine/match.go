@@ -185,9 +185,16 @@ func (e *Engine) IndexedRepos() []string {
 	return out
 }
 
-// Suggestion is one agent offered to an agent that just declared work.
+// Suggestion is one SPACE offered to an agent that just declared work.
+//
+// The field carried a space id under the name `agent` for as long as the
+// vocabulary rename has existed, and the result keys said `agents` too, so a
+// declaring agent was told "no existing agent cleared the match threshold, so
+// one was opened for this work". Agents are not opened; spaces are. An agent
+// reading that has to decide whether Dibs invented a peer for it, and the
+// answer it lands on is anybody's guess.
 type Suggestion struct {
-	Agent   string   `json:"agent"`
+	Space   string   `json:"space"`
 	Topic   string   `json:"topic"`
 	Score   float64  `json:"score"`
 	Members int      `json:"members"`
@@ -364,7 +371,7 @@ func (e *Engine) suggestionsFor(ctx context.Context, token string, matches []cor
 			continue
 		}
 		s := Suggestion{
-			Agent: m.Agent, Topic: m.Topic, Score: round4(m.Score),
+			Space: m.Agent, Topic: m.Topic, Score: round4(m.Score),
 			Members: m.Members, Owner: m.Owner, Shared: predPaths(m.Shared),
 			Action: "consider",
 		}
@@ -702,7 +709,7 @@ func (e *Engine) openFirstSpace(ctx context.Context, token, declaration string,
 		return nil
 	}
 	return &Suggestion{
-		Agent: id, Topic: topic, Action: "opened", Members: 1,
+		Space: id, Topic: topic, Action: "opened", Members: 1,
 		// Says what was MEASURED, not what it implies.
 		//
 		// This read "nobody else is declaring work like this yet", which is a
@@ -715,7 +722,7 @@ func (e *Engine) openFirstSpace(ctx context.Context, token, declaration string,
 		//
 		// A reviewer took it at face value and reported being alone on work
 		// another agent had declared minutes earlier.
-		Hint: "no existing agent cleared the match threshold, so one was opened for " +
+		Hint: "no existing space cleared the match threshold, so one was opened for " +
 			"this work: the next agent whose declaration does clear it joins you here " +
 			"instead of duplicating. A miss is not proof you are alone: recall is " +
 			"partial, so declare refs (pr:, issue:, key:) if you want to be found " +
@@ -885,13 +892,13 @@ func (e *Engine) DoMatched(ctx context.Context, op *core.Op) (core.Result, error
 func annotateMatching(res core.Result, sug []Suggestion, outcome matchOutcome, st MatchStatus) {
 	res["matching"] = st.Phase
 	if len(sug) > 0 {
-		res["agents"] = sug
+		res["spaces"] = sug
 		// A degraded scorer's results are real but weaker, and saying so is what
 		// stops a thin match being read as a confident one.
 		if st.Phase == MatchDegraded {
 			res["matching_hint"] = st.Hint
 		}
-		res["agents_hint"] = agentsHint(sug)
+		res["spaces_hint"] = spacesHint(sug)
 		return
 	}
 	switch {
@@ -914,7 +921,7 @@ func annotateMatching(res core.Result, sug []Suggestion, outcome matchOutcome, s
 	}
 }
 
-// agentsHint is the one line a model will actually read. A bare array of scored
+// spacesHint is the one line a model will actually read. A bare array of scored
 // objects gets skimmed past; naming the action and the peer does not.
 //
 // Two things here were reported as wrong by agents on a live fleet, and both were.
@@ -930,7 +937,7 @@ func annotateMatching(res core.Result, sug []Suggestion, outcome matchOutcome, s
 // agent that believes it will stand down real work: the report came from one that
 // had been told this at 0.196 on four generic build files. The claim is now
 // scaled to the evidence, which is all the score ever supported.
-func agentsHint(sug []Suggestion) string {
+func spacesHint(sug []Suggestion) string {
 	joined, consider, opened := 0, 0, 0
 	var top float64
 	for _, s := range sug {
@@ -965,7 +972,7 @@ func agentsHint(sug []Suggestion) string {
 	case opened > 0:
 		// "No agent existed" overstates the same way: what happened is that nothing
 		// cleared the threshold, which is a statement about the measurement.
-		return "no existing agent cleared the match threshold, so one was opened for " +
+		return "no existing space cleared the match threshold, so one was opened for " +
 			"you: the next agent whose declaration does clear it joins you here " +
 			"instead of duplicating. A miss is not proof nobody else is on this"
 	default:
