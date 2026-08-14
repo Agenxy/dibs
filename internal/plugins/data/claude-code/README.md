@@ -28,8 +28,8 @@ plugin gives every Claude Code session in a project:
 ## Install
 
 ```
-/plugin marketplace add agenxy/agents         # this repo
-/plugin install agents@agents
+/plugin marketplace add agenxy/dibs         # this repo
+/plugin install dibs@dibs
 ```
 
 Then restart the session (plugins load at launch). The MCP tools and the lifecycle hooks

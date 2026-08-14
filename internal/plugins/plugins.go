@@ -106,17 +106,19 @@ var catalog = []struct {
 		buys: "mail is DELIVERED instead of polled. A SessionStart hook and a " +
 			"PreToolUse hook call the wake path for you, so a question addressed to " +
 			"your agent appears in your context on your next tool call rather than " +
-			"waiting until you remember to check inbox. Also installs the agents " +
+			"waiting until you remember to check inbox. Also installs the dibs " +
 			"skill, so the protocol is in context when it is relevant and absent " +
 			"when it is not.",
-		install: "claude plugin marketplace add agenxy/agents && claude plugin install agents",
-		root:    "~/.claude/plugins/agents",
+		install: "claude plugin marketplace add agenxy/dibs && claude plugin install dibs@dibs",
+		root:    "~/.claude/plugins/dibs",
 		setup: []Step{
 			{
-				Do: "Install the plugin: `claude plugin marketplace add agenxy/agents && " +
-					"claude plugin install agents`. If you have no network or no checkout, " +
-					"write the files in `files` below under ~/.claude/plugins/agents/ " +
-					"instead: they are the whole plugin.",
+				Do: "Install the plugin: `claude plugin marketplace add agenxy/dibs && " +
+					"claude plugin install dibs@dibs`. If you cannot run that yourself, ASK " +
+					"YOUR OPERATOR to: it is their machine and many harnesses will not let " +
+					"an agent change their own configuration. If you have no network or no " +
+					"checkout, write the files in `files` below under " +
+					"~/.claude/plugins/dibs/ instead: they are the whole plugin.",
 				Check: "the files exist at the paths in `files`, with the same contents",
 				IfNot: "nothing else here will work; the hooks are what the rest depends on",
 			},
