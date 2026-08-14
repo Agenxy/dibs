@@ -14,6 +14,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   break the 0.0.2 notes describe, applied to the half of the rename that was
   missed, and it is the last one.
 
+### Security
+
+- Go 1.26.6, which closes six standard-library advisories the 1.26.5 toolchain
+  is subject to, four of them reachable from code this daemon runs
+  (`http.Server.Serve`, `ServeTLS`, `http.Client.Do`).
+
 ### Fixed
 
 - **Upgrading silently demoted every persistent agent to ephemeral.** The
@@ -48,6 +54,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   binary reports, plus the bad-flag path, matching a stale name only in command
   position: a looser rule failed two verbs on prose that legitimately says
   "agents".
+
+- The coordinator could not clear another agent's debris, which is the thing its
+  own rationale names. `prune` routes to `prune_own`, which refused every peer,
+  and the admin `prune` op is reachable only from the human path, so the role
+  granted nothing an ordinary agent did not already have. A coordinator may now
+  prune a record that has stopped. Not a live one: an agent that can delete a
+  working peer's row can delete the evidence that somebody else is already on
+  the objective, and no role gets that.
+
+- The vocabulary rename left `LANES(1)` as the title of the generated man page
+  and `agents` as the command it documents, four wire error codes reading
+  `E_LANE_*` on a surface with no lanes in it, and their messages rewritten into
+  nonsense: closing a space refused with "an agent with agents in it is
+  somebody's working context". The codes are `E_SPACE_*` and the messages talk
+  about spaces again.
 
 - An argument that did not decode was refused with no `hint`, the one rule this
   surface exists to keep: the agent was told what was wrong and nothing about

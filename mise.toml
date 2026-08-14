@@ -1,5 +1,5 @@
 [tools]
-go = "1.26.5"
+go = "1.26.6"
 # Pinned for the same reason Go is: `task ci` runs `golangci-lint run`, and an
 # unpinned linter means the gate passes on one machine and fails on another for
 # reasons unrelated to the code. Without this line a clean checkout cannot run
@@ -34,12 +34,12 @@ syft = "1.50.0"
 cosign = "3.1.3"
 
 # Reproducible, system-isolated Go toolchain (the "uv for Go"):
-#  - mise installs+pins go 1.26.5 under ~/.local/share/mise, never the system Go
+#  - mise installs+pins go 1.26.6 under ~/.local/share/mise, never the system Go
 #  - GOTOOLCHAIN pins the exact build toolchain; combined with go.mod's
-#    `toolchain go1.26.5`, any `go` invocation resolves to exactly 1.26.5
+#    `toolchain go1.26.6`, any `go` invocation resolves to exactly 1.26.6
 #    (auto-downloading it if absent), independent of whatever Go is on PATH.
 #  - go.sum + the content-addressed, hash-verified module cache make deps
 #    reproducible without a per-project cache (Go's cache is already hermetic,
 #    unlike Python site-packages, so no .venv equivalent is needed).
 [env]
-GOTOOLCHAIN = "go1.26.5"
+GOTOOLCHAIN = "go1.26.6"

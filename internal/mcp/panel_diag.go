@@ -20,7 +20,7 @@ const minimalPanelHTML = `<!doctype html>
 <meta charset="utf-8">
 <title>Dibs</title>
 <div style="font:600 14px system-ui;padding:20px;color:#0a0;border:2px solid #0a0;border-radius:10px;margin:12px">
-  LANES PANEL: RENDERED
+  DIBS PANEL: RENDERED
   <div style="font:400 12px system-ui;color:#666;margin-top:8px">
     Static HTML only: no scripts, no fonts, no external resources.
     If you can read this, the host renders MCP Apps and the fault is in the

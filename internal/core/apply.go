@@ -997,12 +997,21 @@ func (s *State) applyPruneOwn(op *Op, actor *Agent, now time.Time) (Result, []Ev
 	if target == nil {
 		return nil, nil, errf("E_NO_AGENT", "check the id on the board", "no agent %q", op.To)
 	}
+	// The coordinator is the one agent that may tidy somebody else's record, and
+	// only debris: the active check below still applies to it, unconditionally.
+	//
+	// That split is the whole design. An agent that can prune a LIVE peer can
+	// delete the row that would have told it somebody else is already pursuing
+	// its objective, which is the single thing this board exists to show, so no
+	// role gets that. A record whose agent has stopped shows nothing and blocks
+	// the tidying that the role was created for: a fleet with nobody at the
+	// keyboard could otherwise never clear debris at all.
 	mine := target.ID == actor.ID ||
 		(target.Parent == actor.ID && target.ParentProven)
-	if !mine {
+	if !mine && !actor.IsCoordinator() {
 		return nil, nil, errf("E_NOT_YOURS",
-			"you can prune your own record and children you vouched for. Ask a human "+
-				"to remove somebody else's: `dibs admin prune`",
+			"you can prune your own record and children you vouched for. Ask the "+
+				"coordinator, or a human (`dibs admin prune`), to remove somebody else's",
 			"agent %q is not yours to prune", target.ID)
 	}
 	if target.Status == StatusActive {

@@ -75,3 +75,55 @@ func TestPruningAnActiveAgentIsRefused(t *testing.T) {
 		t.Errorf("the active child's status changed to %v", got)
 	}
 }
+
+// The coordinator may clear another agent's debris. That is what the role is for.
+//
+// The role was added so a fleet with nobody at the keyboard could tidy up, and
+// it shipped unable to do the one thing named in its own rationale: `prune`
+// routes to prune_own, prune_own refused every peer, and OpPrune is reachable
+// only from the human admin path. Found by claiming the role and then failing
+// to clear two dead probe records off a real board.
+func TestTheCoordinatorCanPruneSomebodyElsesDebris(t *testing.T) {
+	s := NewState("n1", DefaultLimits())
+	boss := regPersistent(t, s, "boss", "tok-boss", "boss-nonce-0123456789abcdef", t0)
+	mustApply(t, s, &Op{Kind: OpClaimCoordinator, Token: boss.Token, ClaimVerified: true}, t0)
+	other := reg(t, s, "other", "tok-other", t0)
+	mustApply(t, s, &Op{Kind: OpSignOff, Token: other.Token}, t0)
+
+	got := mustApply(t, s, &Op{Kind: OpPruneOwn, Token: boss.Token, To: other.ID}, t0)
+	if got["pruned"] != other.ID {
+		t.Errorf("pruned %v, want %s: the coordinator cannot clear the board", got["pruned"], other.ID)
+	}
+}
+
+// Not even the coordinator prunes a LIVE agent.
+//
+// This is the half that must not move. A role that can delete a working agent's
+// row can delete the evidence that somebody else is already on the objective,
+// which is the one thing the board exists to show. Debris is tidying; a live
+// record is the alarm, and the alarm is not switchable off from inside.
+func TestNotEvenTheCoordinatorPrunesALiveAgent(t *testing.T) {
+	s := NewState("n1", DefaultLimits())
+	boss := regPersistent(t, s, "boss", "tok-boss", "boss-nonce-0123456789abcdef", t0)
+	mustApply(t, s, &Op{Kind: OpClaimCoordinator, Token: boss.Token, ClaimVerified: true}, t0)
+	other := reg(t, s, "other", "tok-other", t0)
+
+	if _, _, err := s.Apply(&Op{Kind: OpPruneOwn, Token: boss.Token, To: other.ID}, t0); err == nil {
+		t.Fatal("the coordinator pruned a working agent: it can now silence the overlap alarm")
+	}
+	if s.Agents[other.ID].Status != StatusActive {
+		t.Error("the live agent's status changed despite the refusal")
+	}
+}
+
+// An ordinary agent still cannot prune a peer, coordinator or not.
+func TestAPlainAgentStillCannotPruneAPeersDebris(t *testing.T) {
+	s := NewState("n1", DefaultLimits())
+	mine := reg(t, s, "mine", "tok-mine", t0)
+	other := reg(t, s, "other", "tok-other", t0)
+	mustApply(t, s, &Op{Kind: OpSignOff, Token: other.Token}, t0)
+
+	if _, _, err := s.Apply(&Op{Kind: OpPruneOwn, Token: mine.Token, To: other.ID}, t0); err == nil {
+		t.Fatal("a member pruned a peer: the role check is not doing anything")
+	}
+}
