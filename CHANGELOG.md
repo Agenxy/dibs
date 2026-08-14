@@ -62,6 +62,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and every fix shipped since is not running. It is checked now, with the `rm`
   and the re-run that fixes it.
 
+- A `prune` was never written down, so the record came back on the next restart
+  holding its old token. `prune_own` closed the agent in memory and returned
+  without advancing the serial, and the engine ledgers exactly when the serial
+  moves. The admin `prune` carried a comment about this same fault, three
+  functions further down the same file. Every op that changes replayable state
+  is now covered by one test that asserts the serial moved, because saying it in
+  prose has failed three times: `prune`, `claim_coordinator`, `prune_own`.
+
 - The coordinator could not clear another agent's debris, which is the thing its
   own rationale names. `prune` routes to `prune_own`, which refused every peer,
   and the admin `prune` op is reachable only from the human path, so the role
