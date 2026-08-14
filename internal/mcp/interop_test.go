@@ -214,3 +214,38 @@ func TestResultTypeIsPresentOnlyOnTheStatelessCore(t *testing.T) {
 		}
 	}
 }
+
+// An unknown resource answers with the code the CALLER's revision expects.
+//
+// 2026-07-28 moved resource-not-found from -32002 to -32602, on the grounds
+// that JSON-RPC already has "invalid params" and MCP should stop minting codes
+// beside it. Dibs serves both revisions from one handler, so the code cannot be
+// a constant: a 2025-11-25 client that matches on -32002 sees an unrecognised
+// failure, and a 2026-07-28 client is owed the new one.
+func TestResourceNotFoundUsesTheCallersRevisionsCode(t *testing.T) {
+	srv, _ := newServer(t)
+
+	for _, tc := range []struct {
+		version string
+		want    float64
+	}{
+		{version: "2026-07-28", want: -32602},
+		{version: "2025-11-25", want: -32002},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			params := map[string]any{"uri": "dibs://no-such-resource"}
+			if tc.version == "2026-07-28" {
+				params["_meta"] = map[string]any{"io.modelcontextprotocol/protocolVersion": tc.version}
+			}
+			out := rpc(t, srv, tc.version, "resources/read", params)
+
+			rpcErr, ok := out["error"].(map[string]any)
+			if !ok {
+				t.Fatalf("setup: an unknown resource did not fail: %v", out)
+			}
+			if got := rpcErr["code"]; got != tc.want {
+				t.Errorf("code = %v, want %v for %s", got, tc.want, tc.version)
+			}
+		})
+	}
+}

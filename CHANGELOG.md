@@ -62,6 +62,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and every fix shipped since is not running. It is checked now, with the `rm`
   and the re-run that fixes it.
 
+- An unknown resource answered `-32002` to every caller. 2026-07-28 moved
+  resource-not-found to `-32602`, on the grounds that JSON-RPC already has
+  "invalid params". Dibs serves both revisions from one handler, so the code is
+  now the one the calling revision expects, rather than a constant that is wrong
+  for half of them.
+
 - A `prune` was never written down, so the record came back on the next restart
   holding its old token. `prune_own` closed the agent in memory and returned
   without advancing the serial, and the engine ledgers exactly when the serial
