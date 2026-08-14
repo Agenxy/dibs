@@ -472,8 +472,45 @@ http_headers = { "X-Dibs-Local" = %q }
 #       Python           : SSL_CERT_FILE=%s
 #       curl (testing)   : curl --cacert %s ...
 `, certPath, certPath, certPath, certPath)
+		printRemoteRecipe()
 	}
 	return nil
+}
+
+// printRemoteRecipe is the setup for agents on OTHER machines.
+//
+// The blocks above hand a client an https URL and ask it to trust a
+// self-signed certificate. That works when the runtime exposes a knob for it,
+// and plenty do not: the config is accepted, the connection is refused, and the
+// agent reports a server that will not start. Every one of those knobs is also
+// process-wide, so trusting this daemon means changing how that whole harness
+// verifies every other TLS connection it makes.
+//
+// The bridge avoids all of it. `dibs mcp-stdio` speaks stdio to the harness and
+// verified TLS to the daemon, trusting exactly the certificate this machine
+// recorded and nothing else, so the harness needs no TLS configuration and no
+// certificate of its own. It is also the only shape some harnesses accept.
+func printRemoteRecipe() {
+	fmt.Printf(`
+# ── Agents on ANOTHER machine ───────────────────────────────────────────────
+# Do not paste the URL above there: it asks that harness to trust a
+# self-signed certificate, which many runtimes cannot be told to do, and the
+# ones that can are told process-wide. Run dibs on that machine instead and
+# let it hold the trust:
+#
+#   1. install dibs, then record this daemon's certificate:
+#        dibs trust %s
+#      compare what it prints against `+"`dibs fingerprint`"+` run HERE. They must match.
+#
+#   2. copy this machine's %s to the same path there.
+#
+#   3. point the harness at the bridge, with the address of this daemon:
+#        {"mcpServers": {"dibs": {"command": "dibs", "args": ["mcp-stdio"],
+#                                 "env": {"DIBS_ADDR": %q}}}}
+#
+# The bridge verifies the certificate itself, so nothing else on that machine
+# has its TLS behaviour changed.
+`, addr(), filepath.Join(paths.DataDir(), "local.secret"), addr())
 }
 
 func fileExists(p string) bool {
@@ -535,15 +572,23 @@ type (
 		Dirs []string `json:"dirs,omitempty"`
 	}
 	boardAgent struct {
-		ID          string      `json:"id"`
-		Name        string      `json:"name,omitempty"`
-		Description string      `json:"description,omitempty"`
-		DisplayName string      `json:"display_name,omitempty"`
-		Status      string      `json:"status"`
-		ProcAlive   bool        `json:"proc_alive"`
-		StaleReason string      `json:"stale_reason,omitempty"`
-		LastSeen    time.Time   `json:"last_seen"`
-		Slots       []boardSlot `json:"slots"`
+		ID          string    `json:"id"`
+		Name        string    `json:"name,omitempty"`
+		Description string    `json:"description,omitempty"`
+		DisplayName string    `json:"display_name,omitempty"`
+		Status      string    `json:"status"`
+		ProcAlive   bool      `json:"proc_alive"`
+		StaleReason string    `json:"stale_reason,omitempty"`
+		LastSeen    time.Time `json:"last_seen"`
+		// Host is which machine the agent is on, blank when it is this one.
+		//
+		// On a single-machine board it is noise, which is why it was never
+		// shown. On a fleet it is the first thing a person asks: four computers
+		// of agents, and a board that will not say which is which answers the
+		// wrong question. Blank for local agents so the common case stays as
+		// quiet as it was.
+		Host  string      `json:"host,omitempty"`
+		Slots []boardSlot `json:"slots"`
 	}
 	boardClaim struct {
 		Agent   string    `json:"agent"`
@@ -1137,10 +1182,14 @@ func printAgents(agents []boardAgent) {
 		}
 	}
 	for _, l := range agents {
+		where := ""
+		if l.Host != "" {
+			where = " on " + l.Host
+		}
 		fmt.Printf("  %s  %s  %s\n",
 			ui.Accent(ui.Pad(agentLabel(l), nameW)),
 			ui.Pad(agentStatus(l), statusW),
-			ui.Dim("seen "+ago(l.LastSeen)))
+			ui.Dim("seen "+ago(l.LastSeen)+where))
 		if l.Description != "" {
 			fmt.Println("    " + ui.Dim(l.Description))
 		}

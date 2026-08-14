@@ -73,6 +73,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A remote agent's pid was probed on the wrong machine.** The sweep and the
+  board both asked this kernel whether a pid was alive, with no check that the
+  agent was on this host, so a healthy agent on another machine was declared
+  dead and its claims released, and an unrelated local process holding the same
+  number reported it alive on evidence about a different program. The stdio
+  bridge registers with its own pid, so every remote agent arrives carrying one
+  that means nothing on the server: the fault was armed by the same change that
+  made remote agents possible. A pid is now evidence only where it can be
+  observed; a remote agent falls through to the lease, where silence is judged
+  by the clock. An unknown host still counts as local, so existing boards are
+  unaffected.
+
 - **The CLI could not talk to its own daemon off loopback.** Every request was
   built as `"http://" + addr()`, in eighteen places, while the daemon serves TLS
   on any address another machine can reach. So the moment a daemon was moved to

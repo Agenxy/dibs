@@ -11,6 +11,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -467,7 +468,25 @@ func (e *Engine) sweep(now time.Time) {
 		// ledgered as proc_alive:true. Absence of a prober is absence of
 		// evidence; the lease still governs liveness, and the event simply
 		// omits a verdict nobody reached.
-		if l.PID != 0 && e.prober != nil {
+		// A pid is only evidence on the machine that owns it.
+		//
+		// The prober asks this kernel about this pid. For an agent on another
+		// host that question is not merely unanswerable, it is answered WRONGLY
+		// in both directions: nothing local holding that number marks a healthy
+		// remote agent dead and releases its claims, and any unrelated local
+		// process holding it reports the remote agent alive on evidence about a
+		// completely different program.
+		//
+		// This is not hypothetical the moment a fleet spans machines: the stdio
+		// bridge registers with its OWN pid (mcpstdio_identity.go), which is a
+		// number on the client's machine, so every remote agent arrives carrying
+		// one that means nothing here.
+		//
+		// An unknown host is treated as local, which is what it has always been
+		// and keeps every existing board behaving exactly as before. A remote
+		// agent falls through to the lease below, where silence is judged by the
+		// clock: weaker evidence, and the only honest kind available from here.
+		if l.PID != 0 && e.prober != nil && e.ownsHost(l) {
 			if !e.prober.Alive(l.PID) {
 				op.DeadAgents = append(op.DeadAgents, id)
 				continue
@@ -677,3 +696,27 @@ func (e *Engine) exhaustedAnnouncements() []uint64 {
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
 	return out
 }
+
+// ownsHost reports whether this daemon can observe the agent's process itself.
+//
+// Empty means unknown, and unknown means local: every agent registered before
+// hosts were recorded, and every agent on this machine whose harness does not
+// report one, must keep being probed exactly as before.
+func (e *Engine) ownsHost(a *core.Agent) bool {
+	if a.Agent == nil || a.Agent.Host == "" {
+		return true
+	}
+	return strings.EqualFold(a.Agent.Host, thisHost())
+}
+
+// thisHost is the daemon's own hostname, resolved once. A failure to read it
+// yields "", which compares equal to nothing and therefore probes nothing
+// remote: the safe direction, since the cost of not probing is a slower verdict
+// while the cost of probing wrongly is closing a working agent.
+var thisHost = sync.OnceValue(func() string {
+	h, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	return h
+})

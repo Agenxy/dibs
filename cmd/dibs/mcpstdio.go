@@ -42,7 +42,13 @@ func mcpStdio(_ []string) error {
 	client := daemonClient(75 * time.Second)
 	// No timeout: this one is meant to stay open. A deadline here is a stream
 	// that dies on the hour with nothing to say about why.
-	streamClient := &http.Client{}
+	//
+	// Built through daemonClient so it carries the same trusted certificates as
+	// every other request. A bare client here verified against the system roots
+	// alone, so against a remote daemon with a self-signed certificate the
+	// ordinary calls succeeded and the push stream silently did not: the agent
+	// would poll forever and nothing would say why.
+	streamClient := daemonClient(0)
 	out := &syncWriter{w: bufio.NewWriter(os.Stdout)}
 	defer out.flush()
 	var streams sync.WaitGroup

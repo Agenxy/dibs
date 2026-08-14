@@ -312,7 +312,22 @@ func (e *Engine) decoratedBoard() core.Result {
 		}
 		lm["last_seen"] = seen
 		lm["status"] = l.Status
-		if l.PID != 0 && e.prober != nil {
+		// Which machine, hoisted to the row.
+		//
+		// It was only ever nested inside the descriptor, which is right for one
+		// machine and wrong for a fleet: "which of my four computers is this
+		// agent on" is the first question a board with remote agents has to
+		// answer, and every reader had to know to dig for it. Omitted when the
+		// agent is here, so a single-machine board reads exactly as before.
+		if l.Agent != nil && l.Agent.Host != "" && !e.ownsHost(l) {
+			lm["host"] = l.Agent.Host
+		}
+		// Probed only where the pid means something. The same rule as the
+		// sweep, and for the same reason: this asks THIS kernel about a number
+		// that, for a remote agent, belongs to a process on another machine. It
+		// would report a healthy remote agent as dead, or as alive on evidence
+		// about an unrelated local process.
+		if l.PID != 0 && e.prober != nil && e.ownsHost(l) {
 			lm["proc_alive"] = e.prober.Alive(l.PID)
 		}
 	}
