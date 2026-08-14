@@ -107,6 +107,34 @@ func judge(path, key string, child any) []string {
 		}
 		return nil
 	}
+	// A hook payload REFERENCES a server by id, and nothing checked that the id
+	// resolves to anything. Every hook in the Claude Code plugin named
+	// `plugin:agents:agents`, a server that has not existed since the rename, so
+	// mail injection, the session report and the claim guard were all wired to
+	// nothing. Silently: a hook whose server is unknown does not fail loudly,
+	// it just never runs, and the agent it should have woken has no way to tell
+	// the difference between "no mail" and "never asked".
+	//
+	// Found when a coordinator with two unread messages, one of them a request
+	// with a deadline, was never notified and only saw them by calling check_in
+	// by hand.
+	// Only a STRING `server` is a reference. claude-desktop's manifest uses the
+	// same key for the server DEFINITION object, and flagging that was this
+	// check's first false alarm.
+	if id, isRef := child.(string); key == "server" && isRef {
+		if want := "plugin:" + serverName + ":" + serverName; id != want {
+			return []string{fmt.Sprintf("%s: hook references server %q, but this plugin publishes %q.\n"+
+				"      A hook pointed at a server that does not exist never runs, and says nothing.",
+				path, id, want)}
+		}
+		return nil
+	}
+	if key == "entry_point" {
+		if name, _ := child.(string); name != "" && !namesAShippedBinary(name) {
+			return []string{fmt.Sprintf("%s: entry_point %q does not name a binary this project ships.", path, name)}
+		}
+		return nil
+	}
 	if !serverKeys[key] {
 		return nil
 	}

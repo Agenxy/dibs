@@ -541,23 +541,16 @@ func checkLedgerAndBoard(dir string, ok reportFn, bad, warn fixFn) {
 // callable, so a listing-based check reported the daemon as older than its own
 // plugins and told the reader to restart a daemon that was already current.
 // Exactly the false alarm this function exists to prevent, produced by it.
+// wantServer is the id a Claude Code plugin hook must address: plugin:<plugin>:<server>.
+const wantServer = "plugin:dibs:dibs"
+
 func checkPluginsMatchDaemon(c *http.Client, secret string, served map[string]bool, ok reportFn, warn fixFn) {
-	roots := []string{
-		filepath.Join(paths.DataDir(), "..", ".claude", "plugins"), // unusual, but cheap to try
-		"plugins",
-	}
-	wanted := map[string]string{} // tool -> the file that asks for it
-	for _, root := range roots {
-		matches, _ := filepath.Glob(filepath.Join(root, "*", "hooks", "hooks.json"))
-		for _, f := range matches {
-			raw, err := os.ReadFile(f) // #nosec G304 -- a repo path from a glob
-			if err != nil {
-				continue
-			}
-			for _, m := range regexp.MustCompile(`"tool"\s*:\s*"([a-z_]+)"`).FindAllStringSubmatch(string(raw), -1) {
-				wanted[m[1]] = f
-			}
-		}
+	wanted, misaddressed := scanShippedHooks()
+	for id, file := range misaddressed {
+		warn("a shipped hook is addressed to a server that does not exist",
+			file+" names "+id+", but this plugin publishes "+wantServer+". A hook pointed "+
+				"at an unknown server never runs and reports nothing: mail is not injected "+
+				"and the claim guard does not fire. Reinstall the plugin to pick up the fix")
 	}
 	if len(wanted) == 0 {
 		return // not running from a checkout; nothing to compare
@@ -569,8 +562,8 @@ func checkPluginsMatchDaemon(c *http.Client, secret string, served map[string]bo
 		}
 		missing = append(missing, tool)
 	}
-	if len(missing) == 0 {
-		ok("shipped hooks match the running daemon")
+	if len(missing) == 0 && len(misaddressed) == 0 {
+		ok("shipped hooks name tools this daemon serves, on the server it publishes")
 		return
 	}
 	sort.Strings(missing)
@@ -948,4 +941,47 @@ func sameBinary(a, b string) bool {
 	ea, _ := filepath.EvalSymlinks(a)
 	eb, _ := filepath.EvalSymlinks(b)
 	return ea != "" && ea == eb
+}
+
+// scanShippedHooks reads the hook payloads this checkout (or install) ships and
+// reports what they ask of the daemon: the tools they name, and any server id
+// that is not the one this plugin publishes.
+//
+// Split out from the check so the check reads as its decision rather than as a
+// file walk, and so the two questions it asks stay visibly separate: a hook can
+// name a tool that exists and still be addressed to a server that does not.
+func scanShippedHooks() (wanted, misaddressed map[string]string) {
+	wanted, misaddressed = map[string]string{}, map[string]string{}
+	roots := []string{
+		filepath.Join(paths.DataDir(), "..", ".claude", "plugins"), // unusual, but cheap to try
+		"plugins",
+	}
+	tool := regexp.MustCompile(`"tool"\s*:\s*"([a-z_]+)"`)
+	server := regexp.MustCompile(`"server"\s*:\s*"([^"]+)"`)
+	for _, root := range roots {
+		matches, _ := filepath.Glob(filepath.Join(root, "*", "hooks", "hooks.json"))
+		for _, f := range matches {
+			raw, err := os.ReadFile(f) // #nosec G304 -- a repo path from a glob
+			if err != nil {
+				continue
+			}
+			for _, m := range tool.FindAllStringSubmatch(string(raw), -1) {
+				wanted[m[1]] = f
+			}
+			// The tool name is only half of a hook's address. Every hook in the
+			// Claude Code plugin named server `plugin:agents:agents`, which has
+			// not existed since the rename, and the check passed the whole time:
+			// the tools it asks for ARE served, they were simply addressed to
+			// nothing. A hook whose server is unknown does not fail loudly, it
+			// never runs, so mail injection and the claim guard were off with a
+			// tick beside them. Found when a coordinator holding two unread
+			// messages, one a request with a deadline, was never woken.
+			for _, m := range server.FindAllStringSubmatch(string(raw), -1) {
+				if m[1] != wantServer {
+					misaddressed[m[1]] = f
+				}
+			}
+		}
+	}
+	return wanted, misaddressed
 }

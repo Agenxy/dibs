@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "mcp_tool",
-            "server": "plugin:agents:agents",
+            "server": "plugin:dibs:dibs",
             "tool": "hook_poll",
             "input": {
               "session_id": "${session_id}",
@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "mcp_tool",
-            "server": "plugin:agents:agents",
+            "server": "plugin:dibs:dibs",
             "tool": "hook_session",
             "input": {
               "session_id": "${session_id}",
@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "mcp_tool",
-            "server": "plugin:agents:agents",
+            "server": "plugin:dibs:dibs",
             "tool": "hook_poll",
             "input": {
               "session_id": "${session_id}",
@@ -56,7 +56,7 @@
         "hooks": [
           {
             "type": "mcp_tool",
-            "server": "plugin:agents:agents",
+            "server": "plugin:dibs:dibs",
             "tool": "hook_session",
             "input": {
               "session_id": "${session_id}",
@@ -74,7 +74,7 @@
         "hooks": [
           {
             "type": "mcp_tool",
-            "server": "plugin:agents:agents",
+            "server": "plugin:dibs:dibs",
             "tool": "hook_poll",
             "input": {
               "session_id": "${session_id}",
@@ -90,7 +90,7 @@
         "hooks": [
           {
             "type": "mcp_tool",
-            "server": "plugin:agents:agents",
+            "server": "plugin:dibs:dibs",
             "tool": "hook_session",
             "input": {
               "session_id": "${session_id}",
@@ -119,7 +119,7 @@
         "hooks": [
           {
             "type": "mcp_tool",
-            "server": "plugin:agents:agents",
+            "server": "plugin:dibs:dibs",
             "tool": "guard_path",
             "input": {
               "session_id": "${session_id}",
