@@ -158,10 +158,17 @@ var catalog = []struct {
 		root: "~/.codex",
 		setup: []Step{
 			{
-				Do: "Nothing is required: you are connected and every tool works. Do NOT " +
-					"install a hook that shells out to fetch mail: that would make Dibs " +
-					"drive your harness, which this project refuses on purpose.",
-				Check: "call check_in and confirm it returns a board",
+				Do: "Install the hook so mail is delivered instead of polled: copy " +
+					"`hooks.json` from `files` below into your Codex config folder " +
+					"(alongside config.toml). It uses the `mcp_tool` handler, which calls " +
+					"Dibs over the MCP connection you already hold: no subprocess, so " +
+					"nothing here lets Dibs drive your harness. If you cannot write that " +
+					"file, ASK YOUR OPERATOR. Do NOT substitute a `command` hook that " +
+					"shells out to fetch mail: that is the thing this project refuses.",
+				Check: "call spawned_agents: if your own session_id is listed, the " +
+					"SessionStart hook reached this daemon",
+				IfNot: "you are still fine, but pull-only: mail waits until you call " +
+					"check_in or await_events yourself",
 			},
 			{
 				Do: "Set a pull rhythm instead of waiting to be woken: check_in at the " +

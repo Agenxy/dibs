@@ -20,6 +20,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is subject to, four of them reachable from code this daemon runs
   (`http.Server.Serve`, `ServeTLS`, `http.Client.Do`).
 
+### Added
+
+- **Codex agents can be woken.** Mail is delivered into the session instead of
+  waiting for the agent to poll, using Codex's `mcp_tool` hook handler: it calls
+  Dibs over the MCP connection the model already holds, with no subprocess, so
+  nothing here lets Dibs drive a harness. This was refused for as long as the
+  only reachable handler was `command`; that variant now exists, and the doc
+  that said it did not ends with the instruction to re-check, which is how it
+  was found. Deliberately limited to `SessionStart` and `Stop`: a tool matcher
+  guessed wrong fails silently, and Codex's tool names are not verified here yet.
+
 ### Fixed
 
 - **Upgrading silently demoted every persistent agent to ephemeral.** The
