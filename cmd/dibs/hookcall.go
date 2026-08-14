@@ -24,7 +24,7 @@ func callHookTool(tool string, args map[string]any, out any) error {
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": tool, "arguments": args},
 	})
-	req, err := http.NewRequest(http.MethodPost, "http://"+addr()+"/mcp", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, origin()+"/mcp", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -32,7 +32,7 @@ func callHookTool(tool string, args map[string]any, out any) error {
 	req.Header.Set("Accept", "application/json, text/event-stream")
 	req.Header.Set("X-Dibs-Local", secret)
 
-	resp, err := (&http.Client{Timeout: 2 * time.Second}).Do(req)
+	resp, err := daemonClient(2 * time.Second).Do(req)
 	if err != nil {
 		return err
 	}

@@ -7,6 +7,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A fleet can span machines.** `dibs trust <host:port>` records the certificate
+  a remote daemon serves, and `dibs fingerprint` prints what that daemon serves,
+  so the two can be compared by eye before anything relies on it. The pairing is
+  ssh's, for the same reason: the daemon signs its own certificate and stands up
+  no CA, so the first connection has nothing to verify against and the answer is
+  to look once and record it. It costs the operator nothing extra, because a
+  second machine already needs the coordination secret carried across by hand
+  and the fingerprint travels on the same trip. Trusting one daemon trusts only
+  that daemon: a machine holding the secret but not the certificate is still
+  refused, and so is one that trusts a different certificate.
+
 - **Codex agents can be woken.** Mail is delivered into the session instead of
   waiting for the agent to poll, using Codex's `mcp_tool` hook handler: it calls
   Dibs over the MCP connection the model already holds, with no subprocess, so
@@ -61,6 +72,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   should have an index ready before the first agent arrives. Closes #7.
 
 ### Fixed
+
+- **The CLI could not talk to its own daemon off loopback.** Every request was
+  built as `"http://" + addr()`, in eighteen places, while the daemon serves TLS
+  on any address another machine can reach. So the moment a daemon was moved to
+  serve a fleet, `dibs board`, `dibs doctor` and the rest failed against a daemon
+  that was working perfectly. The client now derives the scheme from the same
+  rule the server applies, so the two agree by construction.
+
+- **The self-signed certificate was refused by every Apple client.** It was
+  issued for ten years, and macOS and iOS reject any TLS server certificate
+  valid for more than 398 days, reporting it as "certificate is not standards
+  compliant" and declining to connect at all. The one path that exists to let a
+  second machine reach the daemon without a CA therefore did not work on the
+  operating system Dibs is mostly run from. Now 365 days, with replacement 30
+  days before expiry, because a bounded life that nothing renews is just a later
+  outage.
+
+- A refused certificate was reported as **"dibd not running"**. Those need
+  opposite actions, and the wrong one was given on exactly the path where
+  somebody is bringing up a second machine and has no other signal: they would
+  go hunting for a dead process that is alive and well.
 
 - **Upgrading silently demoted every persistent agent to ephemeral.** The
   vocabulary rename changed op field names as well as op kinds, and a renamed

@@ -159,8 +159,8 @@ func (d *diagnosis) run(verbose bool) error {
 	}
 	sec := strings.TrimSpace(string(secret))
 
-	client := &http.Client{Timeout: 4 * time.Second}
-	req, _ := http.NewRequest(http.MethodPost, "http://"+addr()+"/mcp",
+	client := daemonClient(4 * time.Second)
+	req, _ := http.NewRequest(http.MethodPost, origin()+"/mcp",
 		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`))
 	req.Header.Set("content-type", "application/json")
 	req.Header.Set("X-Dibs-Local", sec)
@@ -455,7 +455,7 @@ func checkHooks(client *http.Client, sec string, ok reportFn, bad, warn fixFn) {
 		Verdict         string `json:"verdict"`
 		Hint            string `json:"hint"`
 	}
-	req, err := http.NewRequest(http.MethodGet, "http://"+addr()+"/api/hook-health", nil)
+	req, err := http.NewRequest(http.MethodGet, origin()+"/api/hook-health", nil)
 	if err != nil {
 		return
 	}
@@ -675,7 +675,7 @@ type matchStatusJSON struct {
 // fetchMatchStatus asks the daemon why matching is or is not working. Failure
 // to answer is itself an answer: an older daemon has no such endpoint.
 func fetchMatchStatus(c *http.Client, secret string) matchStatusJSON {
-	req, err := http.NewRequest(http.MethodGet, "http://"+addr()+"/api/match-status", nil)
+	req, err := http.NewRequest(http.MethodGet, origin()+"/api/match-status", nil)
 	if err != nil {
 		return matchStatusJSON{}
 	}
@@ -738,7 +738,7 @@ func checkPanelBuild(c *http.Client, secret string, ok reportFn, warn fixFn, pro
 // fetchPanelURI returns the versioned URI of the board panel template, which
 // carries the hash of the template being served. Empty when it cannot be read.
 func fetchPanelURI(c *http.Client, secret string) string {
-	req, err := http.NewRequest(http.MethodPost, "http://"+addr()+"/mcp",
+	req, err := http.NewRequest(http.MethodPost, origin()+"/mcp",
 		strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"resources/list","params":{}}`))
 	if err != nil {
 		return ""
@@ -781,7 +781,7 @@ func fetchPanelURI(c *http.Client, secret string) string {
 func servesTool(c *http.Client, secret, name string) bool {
 	body := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"` +
 		name + `","arguments":{}}}`
-	req, err := http.NewRequest(http.MethodPost, "http://"+addr()+"/mcp", strings.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, origin()+"/mcp", strings.NewReader(body))
 	if err != nil {
 		return false
 	}

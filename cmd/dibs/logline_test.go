@@ -76,3 +76,37 @@ func TestEveryLedgerRecordRendersIncludingRegistrations(t *testing.T) {
 		})
 	}
 }
+
+// The client must speak the scheme the daemon serves.
+//
+// Every request in this binary was built as "http://" + addr(), in eighteen
+// places. That is right for loopback and wrong for everything else: the daemon
+// serves plaintext on loopback and TLS on any other address, so moving a daemon
+// off 127.0.0.1 to serve a second machine broke its own CLI against a daemon
+// that was working perfectly.
+//
+// The rule is not duplicated policy, it is the SAME rule read from the same
+// side: loopback is plaintext, anything reachable by another host is TLS.
+func TestTheClientDerivesTheSchemeTheDaemonServes(t *testing.T) {
+	for _, tc := range []struct {
+		name, dibsAddr, want string
+	}{
+		{name: "default is loopback plaintext", dibsAddr: "", want: "http://127.0.0.1:4777"},
+		{name: "explicit loopback", dibsAddr: "127.0.0.1:4777", want: "http://127.0.0.1:4777"},
+		{name: "localhost by name", dibsAddr: "localhost:4777", want: "http://localhost:4777"},
+		{name: "a LAN address gets TLS", dibsAddr: "192.168.1.205:4777", want: "https://192.168.1.205:4777"},
+		{name: "any routable address gets TLS", dibsAddr: "10.0.0.9:4799", want: "https://10.0.0.9:4799"},
+		{name: "a hostname is not assumed local", dibsAddr: "studio.internal:4777", want: "https://studio.internal:4777"},
+		// The one case the rule cannot infer: a daemon deliberately serving
+		// plaintext off-loopback. An explicit scheme wins.
+		{name: "an explicit scheme wins", dibsAddr: "http://10.0.0.9:4777", want: "http://10.0.0.9:4777"},
+		{name: "explicit https on loopback wins too", dibsAddr: "https://127.0.0.1:4777", want: "https://127.0.0.1:4777"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DIBS_ADDR", tc.dibsAddr)
+			if got := origin(); got != tc.want {
+				t.Errorf("origin() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}

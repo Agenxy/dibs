@@ -1,6 +1,13 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -490,5 +497,109 @@ func TestTheDaemonAnnouncesItselfOnlyAfterItHasThePort(t *testing.T) {
 		t.Error("dibd announces itself BEFORE binding, so a port collision prints\n" +
 			"  success and then failure, which has already fooled this project's own\n" +
 			"  setup checks twice")
+	}
+}
+
+// The certificate must be one CLIENTS will accept, not merely one we can make.
+//
+// It was issued for ten years. Every Apple platform refuses a TLS server
+// certificate whose validity exceeds 398 days, reporting it as "certificate is
+// not standards compliant" and declining to connect at all, so the self-signed
+// path existed to let a second machine reach the daemon and did not work on the
+// operating system this is mostly run from. Found by pointing a Mac at a daemon
+// on a routable address and reading why it refused.
+func TestTheSelfSignedCertIsOneAppleWillAccept(t *testing.T) {
+	const appleMaxDays = 398
+
+	dir := t.TempDir()
+	certFile, _, err := ensureSelfSignedCert(dir, "192.168.1.205:4777")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	cert := parseCert(t, certFile)
+
+	days := int(cert.NotAfter.Sub(cert.NotBefore).Hours() / 24)
+	if days > appleMaxDays {
+		t.Errorf("certificate is valid for %d days; Apple refuses anything over %d, "+
+			"so no macOS or iOS client can connect at all", days, appleMaxDays)
+	}
+	if days < 30 {
+		t.Errorf("certificate is valid for only %d days: reissuing that often is its own outage", days)
+	}
+}
+
+// An expired certificate on disk must not be served forever.
+//
+// The old check was os.Stat on both files, which answers "does one exist" and
+// never "is it any good". That was nearly the same question at a ten-year life
+// and is not at a bounded one: the failure would land on every client, on every
+// other machine, at the same moment, with nothing having changed on either side.
+func TestAnExpiringCertificateIsReplaced(t *testing.T) {
+	dir := t.TempDir()
+	certFile, keyFile, err := ensureSelfSignedCert(dir, "192.168.1.205:4777")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	first := parseCert(t, certFile).SerialNumber.String()
+
+	if !usableCert(certFile, keyFile) {
+		t.Fatal("a freshly issued certificate was judged unusable")
+	}
+
+	// Rewind it to inside the renewal window by reissuing with a near NotAfter.
+	writeCertExpiring(t, certFile, keyFile, time.Now().Add(24*time.Hour))
+	if usableCert(certFile, keyFile) {
+		t.Error("a certificate expiring tomorrow was judged usable, so it is served " +
+			"until it fails on every client at once")
+	}
+
+	certFile2, _, err := ensureSelfSignedCert(dir, "192.168.1.205:4777")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parseCert(t, certFile2).SerialNumber.String() == first {
+		t.Error("the expiring certificate was reused rather than replaced")
+	}
+}
+
+func parseCert(t *testing.T, path string) *x509.Certificate {
+	t.Helper()
+	blob, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, _ := pem.Decode(blob)
+	if block == nil {
+		t.Fatalf("%s is not PEM", path)
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cert
+}
+
+// writeCertExpiring replaces the stored certificate with one expiring at t.
+func writeCertExpiring(t *testing.T, certFile, keyFile string, notAfter time.Time) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := x509.Certificate{
+		SerialNumber: big.NewInt(42),
+		Subject:      pkix.Name{CommonName: "dibs"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     notAfter,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(keyFile); err != nil {
+		t.Fatal(err)
 	}
 }
