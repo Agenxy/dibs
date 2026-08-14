@@ -204,6 +204,7 @@ func (d *diagnosis) run(verbose bool) error {
 	checkSupervision(verbose, ok, warn)
 	checkOneDaemon(verbose, ok, warn)
 	checkCodeSignature(ok, warn)
+	checkServiceBinary(ok, warn)
 
 	if d.json {
 		// The tally is a rendering of counts the document already carries, and
@@ -901,4 +902,50 @@ func runningDaemonPath() string {
 		}
 	}
 	return ""
+}
+
+// checkServiceBinary reports a unit that starts a different daemon than the one
+// installed.
+//
+// The unit pins an absolute path. Install the daemon somewhere else, or install
+// it the first time from a Go workspace and later from `task install`, and the
+// service keeps starting the old build indefinitely. Nothing reports it: the
+// daemon answers, doctor says the daemon answers, and every fix shipped after
+// that build is simply not running. Found on the machine this was written on,
+// where the unit still pinned a dibd in ~/go/bin from an earlier install while
+// every check above passed against a hand-started current one.
+func checkServiceBinary(ok reportFn, warn fixFn) {
+	unit, pinned := unitDaemon()
+	if unit == "" || pinned == "" {
+		return // no service installed: `configure --service` is optional
+	}
+	want, err := daemonPath()
+	if err != nil {
+		return // already reported by the checks above
+	}
+	if sameBinary(pinned, want) {
+		ok("the service starts the dibd you have installed")
+		return
+	}
+	detail := "it pins " + pinned + ", but the dibd you have installed is " + want
+	if _, err := os.Stat(pinned); err != nil {
+		detail = "it pins " + pinned + ", which does not exist; the dibd you have installed is " + want
+	}
+	warn("the service would start a different daemon than the one installed",
+		detail+". Every fix since that build is not running when the service starts it. "+
+			"Rewrite the unit: rm "+unit+" && dibs configure --service, then load it with "+
+			"the command that prints")
+}
+
+// sameBinary compares two paths by inode where it can, so a symlink or a
+// ./bin/../bin spelling is not reported as a mismatch.
+func sameBinary(a, b string) bool {
+	sa, erra := os.Stat(a)
+	sb, errb := os.Stat(b)
+	if erra == nil && errb == nil {
+		return os.SameFile(sa, sb)
+	}
+	ea, _ := filepath.EvalSymlinks(a)
+	eb, _ := filepath.EvalSymlinks(b)
+	return ea != "" && ea == eb
 }

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"unicode/utf8"
@@ -390,4 +391,36 @@ func unitPinningLegacy() []string {
 		out = append(out, filepath.Join(systemd, name))
 	}
 	return out
+}
+
+// unitDaemon returns the unit file that starts the daemon and the binary it
+// pins, or empty strings if no unit is installed.
+//
+// A unit records an ABSOLUTE path that outlives the shell that wrote it, which
+// is what makes this worth reporting: install the daemon somewhere new and the
+// service keeps starting the old build forever, with nothing anywhere saying
+// so. daemonPath's own comment calls that out as the failure it exists to
+// avoid, and it avoids it only at the moment the unit is written.
+func unitDaemon() (unit, daemon string) {
+	candidates := []string{
+		filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "org.agenxy.dibs.plist"),
+		filepath.Join(configHome(), "systemd", "user", "dibs.service"),
+	}
+	candidates = append(candidates, unitPinningLegacy()...)
+	// Any absolute path ending in the daemon's name, which covers the plist's
+	// <string> element and systemd's ExecStart= alike.
+	pin := regexp.MustCompile(`(/[^\s<>"']+/dibd)\b`)
+	for _, path := range candidates {
+		// #nosec G304,G703 -- every candidate is built here from this process's
+		// own HOME (or XDG_CONFIG_HOME) plus a fixed filename; no caller-supplied
+		// text reaches the path, exactly as in unitPinning above.
+		body, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		if m := pin.FindSubmatch(body); m != nil {
+			return path, string(m[1])
+		}
+	}
+	return "", ""
 }
