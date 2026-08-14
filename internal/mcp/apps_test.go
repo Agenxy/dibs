@@ -557,3 +557,52 @@ func TestWithoutDetailTheBoardStaysOutOfModelContext(t *testing.T) {
 		}
 	}
 }
+
+// The tool must not tell an agent the human saw something it cannot know they saw.
+//
+// `board` appended "Shown to the human in the board panel." to every result,
+// unconditionally: the function was not even passed the answer. So on a host
+// that renders no panel, the agent is told the board was put in front of its
+// human, and repeats that in its own words. The human sees nothing and is told
+// they were shown something.
+//
+// That happened here, between a real agent and a real person, in this
+// repository's own session: the agent called board, relayed the sentence, and
+// the human replied that no panel had appeared.
+//
+// Neither branch may overclaim. A denial would be just as wrong, because the
+// reference host declares nothing and renders from _meta regardless: what is
+// known is that it was SENT, and whether the host said it can draw it.
+func TestTheBoardNeverClaimsAHumanSawIt(t *testing.T) {
+	res := core.Result{"act_token": "tok-a", "agent_id": "a", "board": map[string]any{
+		"agents": []any{map[string]any{"id": "a", "status": "active"}},
+	}}
+
+	t.Run("host declares no panel support", func(t *testing.T) {
+		text := modelTextOf(t, showBoardResult(res, false, false))
+		if strings.Contains(text, "Shown to the human") {
+			t.Errorf("claimed the human saw a board on a host that renders none: %q", text)
+		}
+		if !strings.Contains(text, "may not see it") {
+			t.Errorf("did not tell the agent the display is uncertain: %q", text)
+		}
+	})
+
+	t.Run("host declares panel support", func(t *testing.T) {
+		text := modelTextOf(t, showBoardResult(res, false, true))
+		if !strings.Contains(text, "Shown to the human") {
+			t.Errorf("a host that says it renders panels should be reported plainly: %q", text)
+		}
+	})
+}
+
+// modelTextOf pulls the one line the model actually reads.
+func modelTextOf(t *testing.T, out map[string]any) string {
+	t.Helper()
+	content, ok := out["content"].([]map[string]any)
+	if !ok || len(content) == 0 {
+		t.Fatalf("setup: no content in the result: %v", out)
+	}
+	text, _ := content[0]["text"].(string)
+	return text
+}
