@@ -5,21 +5,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Changed
-
-- **A board written by v0.0.4 or earlier is no longer opened.** `dibd` now says
-  so on startup and names the record it will not read. Set the file aside
-  (`mv ~/.dibs/ledger.jsonl ~/.dibs/ledger.jsonl.old`) and start it again; your
-  work is untouched, the coordination history is not. This is the same clean
-  break the 0.0.2 notes describe, applied to the half of the rename that was
-  missed, and it is the last one.
-
-### Security
-
-- Go 1.26.6, which closes six standard-library advisories the 1.26.5 toolchain
-  is subject to, four of them reachable from code this daemon runs
-  (`http.Server.Serve`, `ServeTLS`, `http.Client.Do`).
-
 ### Added
 
 - **Codex agents can be woken.** Mail is delivered into the session instead of
@@ -30,6 +15,50 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that said it did not ends with the instruction to re-check, which is how it
   was found. Deliberately limited to `SessionStart` and `Stop`: a tool matcher
   guessed wrong fails silently, and Codex's tool names are not verified here yet.
+
+- `task install` honours `DIBS_CODESIGN_IDENTITY`, signing both binaries with a
+  persistent identity. macOS keys a privacy grant to a code signature, and the
+  Go toolchain signs ad-hoc, so every rebuild is a different program to the
+  system and any Files-and-Folders or Full Disk Access grant silently stops
+  applying. That matters when checkouts live under Desktop, Documents or
+  Downloads, where the daemon needs permission to read them at all.
+
+- `dibs doctor` reports an ad-hoc signed daemon and says what it costs, because
+  the symptom (matching worked, then quietly stopped after an install) points at
+  everything except the signature.
+
+- `task smoke`, in the gate: it runs the built binaries and asserts on what they
+  actually print, against expectations written by hand rather than generated
+  from the source. Everything above was invisible to a green suite because the
+  rename edited the fixtures and the code together, so the tests agreed with the
+  bug: `doctor_test.go` asserted `[mcp_servers.agents]`. A check the sweep cannot
+  reach is the only kind that can catch the sweep.
+
+### Changed
+
+- **A board written by v0.0.4 or earlier is no longer opened.** `dibd` now says
+  so on startup and names the record it will not read. Set the file aside
+  (`mv ~/.dibs/ledger.jsonl ~/.dibs/ledger.jsonl.old`) and start it again; your
+  work is untouched, the coordination history is not. This is the same clean
+  break the 0.0.2 notes describe, applied to the half of the rename that was
+  missed, and it is the last one.
+
+- **Work-overlap matching is on by default, and indexes every repository your
+  agents work in.** It used to be gated behind `-match-repo`, so the feature
+  this product exists for was silent on every install that did not know to set
+  a flag. There was no constant to default that flag to, because the daemon
+  serves agents across every project open on the machine.
+
+  The fleet already knew the answer: every agent registers with a working
+  directory, and the tree containing it is exactly the history worth mining. So
+  each repository is indexed the first time an agent turns up in it, up to
+  sixteen, and there is one index per repository. An agent is scored by the tree
+  it is working in; an agent in a tree that is not indexed gets no semantic
+  suggestions rather than someone else's, because a co-change model asked about
+  another project's sentence answers confidently and wrongly.
+
+  `-match-repo` remains only as a pre-warm, for a daemon started at login that
+  should have an index ready before the first agent arrives. Closes #7.
 
 ### Fixed
 
@@ -76,7 +105,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`declare` told agents that an AGENT had been opened for their work.** Agents
   are not opened; spaces are. The result key was `agents`, each entry carried
   its space id under `agent`, and the hint read "no existing agent cleared the
-  match threshold, so one was opened for this work" — leaving a declaring agent
+  match threshold, so one was opened for this work", leaving a declaring agent
   to work out whether Dibs had just invented a peer for it. They are `spaces`,
   `space` and `spaces_hint` now, matching the board resource, which has said
   `spaces` all along. Found by declaring work and reading the answer.
@@ -244,44 +273,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   leaving matching quietly off. Unbounded work behind a deduplicating latch is a
   permanent silent failure, which is the shape this codebase keeps paying for.
 
-### Changed
+### Security
 
-- **Work-overlap matching is on by default, and indexes every repository your
-  agents work in.** It used to be gated behind `-match-repo`, so the feature
-  this product exists for was silent on every install that did not know to set
-  a flag. There was no constant to default that flag to, because the daemon
-  serves agents across every project open on the machine.
-
-  The fleet already knew the answer: every agent registers with a working
-  directory, and the tree containing it is exactly the history worth mining. So
-  each repository is indexed the first time an agent turns up in it, up to
-  sixteen, and there is one index per repository. An agent is scored by the tree
-  it is working in; an agent in a tree that is not indexed gets no semantic
-  suggestions rather than someone else's, because a co-change model asked about
-  another project's sentence answers confidently and wrongly.
-
-  `-match-repo` remains only as a pre-warm, for a daemon started at login that
-  should have an index ready before the first agent arrives. Closes #7.
-
-### Added
-
-- `task install` honours `DIBS_CODESIGN_IDENTITY`, signing both binaries with a
-  persistent identity. macOS keys a privacy grant to a code signature, and the
-  Go toolchain signs ad-hoc, so every rebuild is a different program to the
-  system and any Files-and-Folders or Full Disk Access grant silently stops
-  applying. That matters when checkouts live under Desktop, Documents or
-  Downloads, where the daemon needs permission to read them at all.
-
-- `dibs doctor` reports an ad-hoc signed daemon and says what it costs, because
-  the symptom (matching worked, then quietly stopped after an install) points at
-  everything except the signature.
-
-- `task smoke`, in the gate: it runs the built binaries and asserts on what they
-  actually print, against expectations written by hand rather than generated
-  from the source. Everything above was invisible to a green suite because the
-  rename edited the fixtures and the code together, so the tests agreed with the
-  bug: `doctor_test.go` asserted `[mcp_servers.agents]`. A check the sweep cannot
-  reach is the only kind that can catch the sweep.
+- Go 1.26.6, which closes six standard-library advisories the 1.26.5 toolchain
+  is subject to, four of them reachable from code this daemon runs
+  (`http.Server.Serve`, `ServeTLS`, `http.Client.Do`).
 
 ## [0.0.4] - 2026-08-11
 
@@ -474,7 +470,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `Daemon.IsStranger` canonicalised only one side of its comparison, so with
   `DIBS_DIR` set, or on a symlinked path, every daemon looked like a stranger
   including itself.
-
 
 ## [0.0.1] - 2026-08-10
 
