@@ -93,11 +93,11 @@ func TestTheOpenedSpaceHintDoesNotClaimSolitude(t *testing.T) {
 
 // The summary line an agent reads alongside the suggestions must not either.
 func TestTheMatchSummaryDoesNotClaimSolitude(t *testing.T) {
-	opened := agentsHint([]Suggestion{{Agent: "w", Action: "opened"}})
+	opened := spacesHint([]Suggestion{{Space: "w", Action: "opened"}})
 	mustNotClaimSolitude(t, "the opened summary", opened)
 	if !strings.Contains(strings.ToLower(opened), "threshold") {
 		t.Errorf("the opened summary does not say a measurement happened: %q", opened)
 	}
 	// The no-suggestions case has always been honest; pin it so it stays that way.
-	mustNotClaimSolitude(t, "the empty summary", agentsHint(nil))
+	mustNotClaimSolitude(t, "the empty summary", spacesHint(nil))
 }
