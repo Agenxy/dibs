@@ -73,6 +73,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and every fix shipped since is not running. It is checked now, with the `rm`
   and the re-run that fixes it.
 
+- **`dibs log` silently dropped every registration.** The reader typed the op's
+  `agent` field as a string, but on a `register` it is the descriptor object
+  (harness, model, cwd), so those lines failed to parse; a line that failed to
+  parse was skipped without a word. On the board this was written against, 100
+  ledger records rendered as 86 rows. An agent joining is the event people come
+  to the log to confirm, and a peer reported a new agent it could corroborate
+  nowhere. An unreadable record now says so and costs one line instead of
+  vanishing.
+
 - **`board` told the agent the human had seen the board, on hosts that render no
   panel.** The sentence was appended unconditionally: the function was not even
   passed the answer. So the agent reports "I've shown you the board" and the

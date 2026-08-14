@@ -651,9 +651,37 @@ type ledgerRow struct {
 	T  time.Time `json:"t"`
 	E  string    `json:"e"`
 	Op struct {
-		Agent string `json:"agent"`
-		To    string `json:"to"`
+		// RawMessage because `agent` carries two shapes. On most ops it is an
+		// agent id; on `register` it is the DESCRIPTOR object (harness, model,
+		// cwd, repo). Typed as a string, every register line failed to
+		// unmarshal, and the reader dropped any line it could not parse without
+		// a word: 100 ledger records rendered as 86 rows, with every
+		// registration among the missing.
+		//
+		// That is the worst failure an audit surface has. An agent joining is
+		// the event people go to the log to confirm, and a peer reported exactly
+		// that: a new agent it could not corroborate anywhere.
+		Agent   json.RawMessage `json:"agent"`
+		AgentID string          `json:"agent_id"`
+		Name    string          `json:"name"`
+		To      string          `json:"to"`
 	} `json:"op"`
+}
+
+// actor names the agent a row is about, from whichever field carries it.
+//
+// Preference order is most-specific first: a plain `agent` string is the id on
+// the ops that have one, `agent_id` is the id an op names explicitly, and on a
+// register the only thing present is the requested `name`.
+func (r ledgerRow) actor() string {
+	var id string
+	if json.Unmarshal(r.Op.Agent, &id) == nil && id != "" {
+		return id
+	}
+	if r.Op.AgentID != "" {
+		return r.Op.AgentID
+	}
+	return r.Op.Name
 }
 
 // logRecord is one row as `dibs log --json` emits it: one object per line,
@@ -674,9 +702,9 @@ type logRecord struct {
 // so the two renderings cannot drift.
 func renderRow(rec ledgerRow, asJSON bool) string {
 	if !asJSON {
-		return logLine(rec.S, rec.T, rec.E, rec.Op.Agent, rec.Op.To)
+		return logLine(rec.S, rec.T, rec.E, rec.actor(), rec.Op.To)
 	}
-	out, _ := json.Marshal(logRecord{Serial: rec.S, Time: rec.T, Op: rec.E, Agent: rec.Op.Agent, To: rec.Op.To})
+	out, _ := json.Marshal(logRecord{Serial: rec.S, Time: rec.T, Op: rec.E, Agent: rec.actor(), To: rec.Op.To})
 	return string(out)
 }
 
@@ -726,9 +754,14 @@ func logCmd(args []string) error {
 		var lines []string
 		for sc.Scan() {
 			var rec ledgerRow
-			if json.Unmarshal(sc.Bytes(), &rec) == nil {
-				lines = append(lines, renderRow(rec, *asJSON))
+			if err := json.Unmarshal(sc.Bytes(), &rec); err != nil {
+				// Never silently. A dropped row is a record that happened and
+				// cannot be seen, which is precisely what an audit log must not
+				// do; say so and keep going, so one bad line costs one line.
+				lines = append(lines, ui.Warn("  (unreadable ledger record skipped: "+err.Error()+")"))
+				continue
 			}
+			lines = append(lines, renderRow(rec, *asJSON))
 		}
 		if err := sc.Err(); err != nil {
 			return err
