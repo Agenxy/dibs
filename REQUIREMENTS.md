@@ -111,3 +111,73 @@ Requirements:
   reject empty input itself, and say why.
 - **The local secret is a reachability proof, not an identity.** It says the
   caller is on this machine. Participation requires an agent.
+
+## R12: an upgrade must not interrupt the fleet
+
+Dibs is for agents that run for days. That makes the cost of an update a
+product decision, not an operational detail: an operator who watches one
+upgrade break a running fleet will stay on an old build to avoid repeating it,
+and a coordination service that everyone is afraid to update is worse than one
+that is briefly unavailable.
+
+What a restart actually costs was measured rather than assumed. **State is never
+at risk**: `state == fold(ledger)`, so a restarted daemon *rebuilds* the board
+from the log rather than losing it. Replaying 139 ops took 4-8ms, and shutdown
+already drains in-flight requests. The window a client can see is therefore
+short, and the thing that hurt was not its length: it was that nothing survived
+it. A call in flight died with `connection refused`, and an open
+`subscriptions/listen` stream ended silently, which for a subscriber is
+indistinguishable from nothing having happened.
+
+Requirements:
+
+- **An upgrade must not require agents to re-register, re-declare, or resume by
+  hand.** The ledger already guarantees this; anything that breaks it is a bug
+  in the same class as a lost op.
+- **A client must wait out the restart window rather than fail through it**,
+  bounded, so a daemon that is never coming back still surfaces as an error an
+  agent can act on instead of a hang.
+- **Only a request that provably never arrived may be re-sent.** A refused dial
+  means the daemon never received it, so re-sending cannot duplicate an effect.
+  A timeout may have been received and acted on: it is an error, not a retry.
+  This is the whole safety argument, and it is what keeps "survive an upgrade"
+  from meaning "silently duplicate work".
+- **A subscription is re-established by re-issuing the caller's own request**,
+  never by reconstructing what we think it wanted. The harness decided what it
+  subscribed to; a restart does not make that our decision.
+- **Downtime must stay proportional to replay.** Replay is milliseconds on an
+  ordinary board. If a board ever grows to where it is not, that is a defect to
+  fix here (a snapshot, or a warm handover that replays before taking the write
+  lock), not a cost to pass to the fleet.
+- **Never let a user believe an update risks their state.** The fear is the
+  failure: it is what keeps people on old builds. Say plainly that the board is
+  the ledger and a restart replays it.
+
+## R13: a result must claim only what the server knows
+
+`board` appended "Shown to the human in the board panel." to every result. It
+was appended unconditionally, by a function that was not passed the answer, so
+on a host that renders no panel the agent was told its human had been shown the
+board. The agent then repeats that in its own words, and the human is looking at
+an empty thread being told they were shown something. An agent cannot correct
+for a result that lies to it.
+
+The same defect has a quieter form: `detail=true` was honoured only in
+`content`, which is exactly the carrier a `structuredContent` host drops, so the
+one documented way for an agent to read the board returned a summary and the
+agent's own token. That one is worse than a missing feature, because the agent
+learns to route around the tool: it went back to querying the daemon over plain
+HTTP and would have kept doing so.
+
+Requirements:
+
+- **A result states what the server did, not what it hopes happened elsewhere.**
+  Where the outcome depends on the host, report what was sent and what the host
+  declared it can render.
+- **Uncertainty is not licence to claim the negative either.** The reference host
+  declares nothing and renders anyway, so "not shown" would be its own false
+  claim. Say what is known.
+- **A declared parameter must take effect on every carrier the host may choose.**
+  A flag that works only on the carrier this host discards is indistinguishable
+  from a flag that does nothing, and the schema is the only thing an agent can
+  see.
