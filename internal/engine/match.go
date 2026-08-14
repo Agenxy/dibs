@@ -690,7 +690,7 @@ func (e *Engine) openFirstSpace(ctx context.Context, token, declaration string,
 			break
 		}
 		var ce *core.Error
-		if !errors.As(err, &ce) || ce.Code != "E_LANE_EXISTS" {
+		if !errors.As(err, &ce) || ce.Code != "E_SPACE_EXISTS" {
 			return nil // a limit, a closed agent, anything else: not ours to retry
 		}
 	}

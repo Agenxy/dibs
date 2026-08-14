@@ -179,7 +179,7 @@ func hookDigest(agent string, mail, announced, notices []string) string {
 		// Something happened TO this agent that it did not do and could not have
 		// inferred: admitted, promoted, evicted. First, because it changes what
 		// the agent may do next.
-		b.WriteString("  LANE: " + line + "\n")
+		b.WriteString("  AGENT: " + line + "\n")
 	}
 	for _, line := range mail {
 		b.WriteString("  " + line + "\n")

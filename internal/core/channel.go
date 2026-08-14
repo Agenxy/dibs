@@ -269,7 +269,7 @@ func (s *State) applySpaceOpen(l *Agent, op *Op, now time.Time) (Result, []Event
 		return nil, nil, errTooLarge("topic", s.Limits.MaxBodyBytes)
 	}
 	if _, exists := s.Spaces[id]; exists {
-		return nil, nil, errf("E_LANE_EXISTS", "join it instead of opening it", "agent %s already exists", id)
+		return nil, nil, errf("E_SPACE_EXISTS", "join it instead of opening it", "space %s already exists", id)
 	}
 	if len(s.Spaces) >= s.Limits.MaxAgents {
 		return nil, nil, errf("E_AGENT_LIMIT",
@@ -449,13 +449,13 @@ func (s *State) applySpaceExclusive(l *Agent, op *Op, now time.Time) (Result, []
 		return Result{"agent_id": ch.ID, "exclusive": ch.Owner != ""}, evs, nil
 	}
 	if ch.Owner != "" && ch.Owner != l.ID {
-		return nil, nil, errf("E_LANE_EXCLUSIVE", "request access from the owner, or queue",
+		return nil, nil, errf("E_SPACE_EXCLUSIVE", "request access from the owner, or queue",
 			"%s is already exclusive to %s", ch.ID, ch.Owner)
 	}
 	// Only the FIRST member may take an agent exclusively (§5). Letting the
 	// fourth arrival lock out the three already working is not coordination.
 	if len(ch.Members) > 1 && ch.Owner == "" {
-		return nil, nil, errf("E_LANE_SHARED", "ask the other members to leave, or coordinate in the agent",
+		return nil, nil, errf("E_SPACE_SHARED", "ask the other members to leave, or coordinate in the space",
 			"%s already has %d members; exclusivity is for the first", ch.ID, len(ch.Members))
 	}
 	ch.Owner = l.ID
@@ -1741,10 +1741,10 @@ func (s *State) applySpaceClose(l *Agent, op *Op, now time.Time) (Result, []Even
 		}
 	}
 	if occupied(ch) {
-		return nil, nil, errf("E_LANE_OCCUPIED",
-			"evict the members first, or leave it: an agent with agents in it is "+
+		return nil, nil, errf("E_SPACE_OCCUPIED",
+			"evict the members first, or leave it: a space with agents in it is "+
 				"somebody's working context, not clutter",
-			"agent %s still has %d member(s) and %d queued",
+			"space %s still has %d member(s) and %d queued",
 			ch.ID, len(ch.Members), len(ch.Queue))
 	}
 	for _, a := range s.Announcements {

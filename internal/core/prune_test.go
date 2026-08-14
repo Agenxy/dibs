@@ -41,7 +41,7 @@ func TestPruneClearsDebrisButNeverLiveSpaces(t *testing.T) {
 }
 
 // Naming an agent prunes exactly that one, live or not: the human said so.
-func TestPruneNamedSpaceAndUnknownLane(t *testing.T) {
+func TestPruneNamedSpaceAndUnknownAgent(t *testing.T) {
 	s := NewState("n1", DefaultLimits())
 	now := time.Now()
 	_, _, _ = s.Apply(&Op{Kind: OpRegister, Name: "a", NewToken: "t1"}, now)
