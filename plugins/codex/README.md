@@ -45,7 +45,31 @@ the flag resolved `true` via `codex features list`:
 Codex marks it "under development": it gates unfinished work, not a protocol
 switch. Do not assume 2026 support from the flag's presence.
 
-## Waking an agent: not possible here without a subprocess
+## Waking an agent: now possible, as of the `mcp_tool` hook variant
+
+**This section's conclusion has flipped.** It said mail was pull-only here
+because `HookHandlerConfig` had no way to reach Dibs, and ended by telling the
+next reader to re-check that enum on upgrade, because one new variant would
+change the answer. It has:
+
+```rust
+#[serde(rename = "mcp_tool")]
+McpTool { server: String, tool: String, input: ..., timeout_sec: ..., status_message: ... }
+```
+
+That is the same mechanism the Claude Code plugin uses: a hook that calls a tool
+over the MCP connection the model already holds. No subprocess, so nothing here
+turns Dibs into a harness driver, and the objection below no longer applies.
+
+Until this is wired, Codex mail is pull-only in practice and a wake digest
+surfaces to the HUMAN rather than to the agent it is addressed to, which is how
+this was noticed: a person watching their own Codex prompt fill up with mail for
+`codex-primary`.
+
+The historical reasoning is kept below, because it is why we refused to solve it
+with a `command` hook, and that refusal still stands.
+
+## Why we would not use a `command` hook (still true)
 
 Codex has lifecycle hooks and they **do** support `additionalContext` injection,
 the same mechanism Dibs uses in Claude Code. But `HookHandlerConfig`
