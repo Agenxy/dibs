@@ -62,6 +62,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and every fix shipped since is not running. It is checked now, with the `rm`
   and the re-run that fixes it.
 
+- `board(detail: true)` returned a summary instead of the board on the host most
+  likely to be running. `detail` reached only `content`, and a host that shows
+  the model `structuredContent` INSTEAD of `content` drops exactly that, so the
+  one documented way for an agent to read the board on purpose answered with one
+  sentence and the agent's own token. Found by an agent that wanted the board,
+  asked for detail, got nothing usable, and went back to querying the daemon
+  over plain HTTP: the tool taught it not to use the tool.
+
+- `subscriptions/listen` did not work through `dibs mcp-stdio`, which is how the
+  Claude Code plugin and every other stdio harness connects. The bridge read
+  each response to completion before writing it, so a stream that never ends
+  hung until a 75-second timeout killed it, silently. Push notifications were
+  therefore a direct-HTTP-only feature while the plugin path polled, and nothing
+  on either side said so. The bridge now streams that one call on its own
+  goroutine, unwrapping SSE frames into JSON-RPC lines, with stdout serialised
+  because notifications interleave with replies.
+
 - An unknown resource answered `-32002` to every caller. 2026-07-28 moved
   resource-not-found to `-32602`, on the grounds that JSON-RPC already has
   "invalid params". Dibs serves both revisions from one handler, so the code is
