@@ -4,11 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -68,23 +70,16 @@ func mcpStdio(_ []string) error {
 		// send anything else for as long as it is subscribed.
 		if methodOf(line) == "subscriptions/listen" {
 			req.Header.Set("Accept", "text/event-stream")
-			// The body is closed by the goroutine below. bodyclose cannot
-			// follow a body whose owner outlives this scope, which is exactly
-			// what a long-lived stream is.
-			resp, err := streamClient.Do(req) //nolint:bodyclose // closed in the goroutine below
-			if err != nil {
-				return fmt.Errorf("%w (is dibd running?)", err)
-			}
+			listen := bytes.Clone(line)
 			streams.Add(1)
 			go func() {
 				defer streams.Done()
-				defer func() { _ = resp.Body.Close() }()
-				pumpSSE(resp.Body, out)
+				followStream(streamClient, url, secret, listen, out)
 			}()
 			continue
 		}
 
-		resp, err := client.Do(req)
+		resp, err := doWithRestartGrace(client, req, line)
 		if err != nil {
 			return fmt.Errorf("%w (is dibd running?)", err)
 		}
@@ -155,5 +150,85 @@ func pumpSSE(body io.Reader, out *syncWriter) {
 		if data = bytes.TrimSpace(data); len(data) > 0 {
 			out.line(data)
 		}
+	}
+}
+
+// upgradeGrace is how long a call waits for a daemon that is restarting.
+//
+// An upgrade is drain, swap, start: the old daemon finishes what it is holding
+// and the new one replays the ledger before it binds. Replay is milliseconds on
+// an ordinary board, so the window a client can see is short and, crucially,
+// it is a window in which NOTHING WAS RECEIVED: the connection was refused.
+//
+// That distinction is what makes waiting safe rather than reckless. A refused
+// dial means the request never reached the daemon, so re-sending it cannot
+// duplicate an effect; anything that did reach it is not retried here at all.
+// Without this an upgrade turns every in-flight agent call into a hard error,
+// and an operator who has watched that happen once will stay on an old build
+// rather than risk it, which is the real cost of a disruptive update.
+const upgradeGrace = 10 * time.Second
+
+// dialFailed reports a request that never reached the daemon: connection
+// refused, or the listener gone between the drain and the rebind. Any other
+// error may have been received and acted on, and is returned untouched.
+func dialFailed(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET)
+}
+
+// doWithRestartGrace sends one request, waiting out a daemon that is restarting.
+func doWithRestartGrace(client *http.Client, req *http.Request, body []byte) (*http.Response, error) {
+	deadline := time.Now().Add(upgradeGrace)
+	for {
+		resp, err := client.Do(req)
+		if err == nil || !dialFailed(err) || time.Now().After(deadline) {
+			return resp, err
+		}
+		time.Sleep(150 * time.Millisecond)
+		// A request body is read once, so it has to be rebuilt for the retry.
+		next, buildErr := http.NewRequest(http.MethodPost, req.URL.String(), bytes.NewReader(body))
+		if buildErr != nil {
+			return nil, err
+		}
+		next.Header = req.Header.Clone()
+		req = next
+	}
+}
+
+// followStream keeps a subscriptions/listen stream open across a daemon
+// restart, re-issuing the caller's own listen request each time it ends.
+//
+// A stream is the one thing a restart cannot hand back on its own: the harness
+// asked to be told about changes once, and if that ends silently it simply
+// stops hearing, with nothing to notice. Re-issuing the ORIGINAL request is
+// what keeps this honest: whatever the harness subscribed to is what it gets
+// again, decided by the harness rather than reconstructed here.
+func followStream(client *http.Client, url, secret string, listen []byte, out *syncWriter) {
+	deadline := time.Now().Add(upgradeGrace)
+	for {
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(listen))
+		if err != nil {
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Dibs-Local", secret)
+		req.Header.Set("Accept", "text/event-stream")
+
+		resp, err := client.Do(req)
+		switch {
+		case err == nil:
+			pumpSSE(resp.Body, out)
+			_ = resp.Body.Close()
+			// The stream ended. A daemon that is going away closes it, so try
+			// again: the grace window restarts, because this stream did work.
+			deadline = time.Now().Add(upgradeGrace)
+		case dialFailed(err) && time.Now().Before(deadline):
+			// Not up yet.
+		default:
+			return
+		}
+		time.Sleep(150 * time.Millisecond)
 	}
 }
