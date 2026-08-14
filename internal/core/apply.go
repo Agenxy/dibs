@@ -1020,8 +1020,20 @@ func (s *State) applyPruneOwn(op *Op, actor *Agent, now time.Time) (Result, []Ev
 				"its claims underneath it",
 			"agent %q is still active", target.ID)
 	}
+	// LEDGERED, for the reason spelled out on applyPrune above, which this
+	// managed to reproduce anyway: closing an agent blanks its token and
+	// releases its claims, and without finish() the serial never moves, so the
+	// engine never appends and replay undoes all of it. The caller is told the
+	// prune succeeded and the record is back after the next restart, stale
+	// rather than closed, holding its old token again.
+	//
+	// Watched happen on a real board: two dead probes pruned, gone from the
+	// board, and back three minutes later when the daemon restarted. The five
+	// tests below were green throughout, because in-process state is exactly
+	// what a prune with no ledger record gets right.
 	_, evs := s.applyClose(target, now)
-	return Result{"ok": true, "pruned": target.ID}, evs, nil
+	serial := s.finish(&evs, now)
+	return Result{"ok": true, "pruned": target.ID, "serial": serial}, evs, nil
 }
 
 func (s *State) applyPrune(op *Op, now time.Time) (Result, []Event, error) {

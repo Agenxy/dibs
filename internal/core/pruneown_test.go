@@ -127,3 +127,30 @@ func TestAPlainAgentStillCannotPruneAPeersDebris(t *testing.T) {
 		t.Fatal("a member pruned a peer: the role check is not doing anything")
 	}
 }
+
+// The prune must be LEDGERED, or the record comes back.
+//
+// Every test above passed while prune_own closed the agent in memory and wrote
+// nothing down: the serial never moved, so the engine never appended, and a
+// restart replayed a board where the prune had not happened. Caught on a real
+// board, not here, by restarting the daemon three minutes after two probe
+// records had visibly gone. applyPrune carries the same comment for the same
+// reason, which is what makes this the second time.
+//
+// In-process state is exactly what an unledgered prune gets right, so the
+// serial is what has to be asserted.
+func TestPruningAdvancesTheSerial(t *testing.T) {
+	s := NewState("n1", DefaultLimits())
+	parent := reg(t, s, "parent", "tok-parent", t0)
+	res := spawnChild(t, s, parent.Token, parent.ID, "nonce-child-0123456789abcdef")
+	childID := res["agent_id"].(string)
+	mustApply(t, s, &Op{Kind: OpSignOff, Token: "tok-helper"}, t0)
+	before := s.Serial
+
+	mustApply(t, s, &Op{Kind: OpPruneOwn, Token: parent.Token, To: childID}, t0)
+
+	if s.Serial == before {
+		t.Fatal("the serial did not move, so the engine will not ledger the prune and the " +
+			"record returns on the next restart, holding its old token")
+	}
+}
