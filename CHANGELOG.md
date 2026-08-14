@@ -62,6 +62,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and every fix shipped since is not running. It is checked now, with the `rm`
   and the re-run that fixes it.
 
+- **`board` told the agent the human had seen the board, on hosts that render no
+  panel.** The sentence was appended unconditionally: the function was not even
+  passed the answer. So the agent reports "I've shown you the board" and the
+  human is looking at nothing. It now says what is actually known, which is that
+  the board was SENT and whether the host claims it can draw it. It does not
+  claim the opposite either: the reference host declares nothing and renders
+  from `_meta` regardless.
+
 - `board(detail: true)` returned a summary instead of the board on the host most
   likely to be running. `detail` reached only `content`, and a host that shows
   the model `structuredContent` INSTEAD of `content` drops exactly that, so the

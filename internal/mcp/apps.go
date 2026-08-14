@@ -193,7 +193,7 @@ func (s *Server) showBoard(ctx context.Context, token, view string) (core.Result
 // It reads the JSON-normalised payload, not the engine's typed structs: asserting
 // `[]any` against a typed slice silently yields zero, which is how an earlier
 // version of this reported "0 agents" while handing the UI seven.
-func boardSummary(sc map[string]any) string {
+func boardSummary(sc map[string]any, declaredUI bool) string {
 	b, _ := sc["board"].(map[string]any)
 	agents, _ := b["agents"].([]any)
 	var live int
@@ -208,7 +208,24 @@ func boardSummary(sc map[string]any) string {
 	if n := inboxCount(sc["inbox"]); n > 0 {
 		msg += fmt.Sprintf("; %d unread message(s)", n)
 	}
-	return msg + ". Shown to the human in the board panel."
+	if declaredUI {
+		return msg + ". Shown to the human in the board panel."
+	}
+	// This host did not declare that it renders panels, so whether anything
+	// reached the human is not known here, and saying it did is the one thing
+	// this must not do.
+	//
+	// It said it anyway, unconditionally, with no parameter for the answer. A
+	// human watching this exact tool call see nothing was told by their agent
+	// that the board had been put in front of them, because the tool told the
+	// agent so. An agent cannot correct for a result that lies to it, and it
+	// will repeat the claim in its own words, which is worse than silence.
+	//
+	// Not a denial either: the reference host declares nothing and renders from
+	// _meta regardless, so "not shown" would be its own false claim. What is
+	// true is that it was SENT, and that the agent has a way to see it itself.
+	return msg + ". Sent to their panel; this host declares no panel support, so " +
+		"they may not see it."
 }
 
 // inboxCount counts messages in either shape a mailbox arrives in, through a
@@ -287,7 +304,7 @@ func showBoardResult(res core.Result, detail, declaredUI bool) map[string]any {
 	full, _ := json.Marshal(res)
 	var fullMap map[string]any
 	_ = json.Unmarshal(full, &fullMap)
-	modelText := boardSummary(fullMap)
+	modelText := boardSummary(fullMap, declaredUI)
 	if detail {
 		modelText = string(full)
 	}
@@ -303,7 +320,7 @@ func showBoardResult(res core.Result, detail, declaredUI bool) map[string]any {
 		// INSTEAD of content, so a bootstrap that carried only plumbing replaced
 		// the one sentence board owes the agent: it read its own token back
 		// and learned nothing about the board.
-		boot["summary"] = boardSummary(fullMap)
+		boot["summary"] = boardSummary(fullMap, declaredUI)
 
 		// And so does the board itself when the agent asked for it.
 		//
