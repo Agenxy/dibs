@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -135,5 +136,45 @@ func TestAStallReportOffersTheWayBack(t *testing.T) {
 	e.reportStallLocked(a, stall(), "")
 	if strings.Contains(e.notices["builder"][0].Text, "resume") {
 		t.Error("offered a resume command with no transcript to derive one from")
+	}
+}
+
+// A pid is evidence only on the machine that owns it.
+//
+// The prober asks THIS kernel about a pid. For an agent on another host the
+// answer is not merely unavailable, it is wrong in both directions: nothing
+// local holding that number marks a healthy remote agent dead and releases its
+// claims, and any unrelated local process holding it reports the remote agent
+// alive on evidence about a different program entirely.
+//
+// Armed the moment a fleet spans machines, because the stdio bridge registers
+// with its OWN pid, which is a number on the client's machine.
+func TestARemotePidIsNotProbedLocally(t *testing.T) {
+	local, err := os.Hostname()
+	if err != nil {
+		t.Skip("no hostname on this machine")
+	}
+
+	for _, tc := range []struct {
+		name      string
+		host      string
+		wantProbe bool
+	}{
+		{name: "this machine", host: local, wantProbe: true},
+		{name: "this machine, different case", host: strings.ToUpper(local), wantProbe: true},
+		{name: "unknown host is treated as local", host: "", wantProbe: true},
+		{name: "another machine is never probed", host: "MacMarine", wantProbe: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := &Engine{}
+			a := &core.Agent{PID: 4242}
+			if tc.host != "" {
+				a.Agent = &core.AgentInfo{Host: tc.host}
+			}
+
+			if got := e.ownsHost(a); got != tc.wantProbe {
+				t.Errorf("ownsHost(host=%q) = %v, want %v", tc.host, got, tc.wantProbe)
+			}
+		})
 	}
 }
