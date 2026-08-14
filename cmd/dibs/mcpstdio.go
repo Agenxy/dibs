@@ -38,8 +38,8 @@ func mcpStdio(_ []string) error {
 	if err != nil {
 		return fmt.Errorf("no local secret yet: start dibd once first: %w", err)
 	}
-	url := "http://" + addr() + "/mcp"
-	client := &http.Client{Timeout: 75 * time.Second}
+	url := origin() + "/mcp"
+	client := daemonClient(75 * time.Second)
 	// No timeout: this one is meant to stay open. A deadline here is a stream
 	// that dies on the hour with nothing to say about why.
 	streamClient := &http.Client{}
@@ -81,7 +81,7 @@ func mcpStdio(_ []string) error {
 
 		resp, err := doWithRestartGrace(client, req, line)
 		if err != nil {
-			return fmt.Errorf("%w (is dibd running?)", err)
+			return reachErr(err)
 		}
 		body, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()

@@ -4,12 +4,14 @@ package main
 
 import (
 	"bufio"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -41,6 +43,11 @@ agent-safe (agent-scoped or public, fine to run from any agent):
   dibs log [--follow]     public event stream (private bodies stay encrypted;
                            --json: one object per event)
   dibs verify [path]      verify ledger hash chain (--json)
+  dibs trust <host:port>  accept a remote daemon's certificate, so this machine
+                           can reach a board on another one (compare against
+                           dibs fingerprint run over there before relying on it)
+  dibs fingerprint        this daemon's certificate fingerprint, to read out to
+                           a machine that is trusting it
   dibs doctor             find what is quietly broken: stale harness secrets,
                            matching that is off or still indexing, a ledger that
                            will not replay. Names the fix, not just the fault
@@ -138,6 +145,10 @@ func main() {
 		err = verify(os.Args[2:])
 	case "stop":
 		err = stop(os.Args[2:])
+	case "trust":
+		err = trustCmd(os.Args[2:])
+	case "fingerprint":
+		err = fingerprintCmd(os.Args[2:])
 	case "doctor":
 		err = doctor(os.Args[2:])
 	case "calibrate":
@@ -291,23 +302,81 @@ func editDistance(a, b string) int {
 }
 
 func addr() string {
-	if a := os.Getenv("DIBS_ADDR"); a != "" {
-		return a
+	a := os.Getenv("DIBS_ADDR")
+	if a == "" {
+		return "127.0.0.1:4777"
 	}
-	return "127.0.0.1:4777"
+	// A scheme is accepted here so one variable can carry a whole origin, but
+	// callers that want host:port get host:port.
+	if _, rest, found := strings.Cut(a, "://"); found {
+		return rest
+	}
+	return a
+}
+
+// origin is the daemon's base URL, scheme included.
+//
+// The scheme is NOT a separate setting, because it is not a free choice: the
+// daemon serves plaintext on loopback and TLS on anything else (see
+// resolveTransport in cmd/dibd/config.go), so a client that guessed the other
+// way simply cannot connect. Deriving it from the same rule means the two
+// agree by construction rather than by the operator configuring both to match.
+//
+// Every request in this binary used to be built as origin(), in
+// eighteen places. That is correct for loopback and wrong for every other
+// address, so the moment a daemon was moved off 127.0.0.1 to serve a second
+// machine, its own CLI could no longer talk to it: `dibs board`, `dibs doctor`
+// and the rest failed against a daemon that was working perfectly.
+//
+// An explicit scheme in DIBS_ADDR wins, for the one case the rule cannot infer:
+// a daemon deliberately serving plaintext off-loopback (insecure_plaintext).
+// The two schemes, named rather than written inline. A find-and-replace over
+// `"http://" + addr()` is exactly how this function's own body was turned into
+// a call to itself, which recursed until the stack ran out. Constants are not
+// tidiness here; they are what puts this out of a sweep's reach.
+const (
+	schemePlain = "http://"
+	schemeTLS   = "https://"
+)
+
+func origin() string {
+	if a := os.Getenv("DIBS_ADDR"); a != "" {
+		if scheme, _, found := strings.Cut(a, "://"); found {
+			return scheme + "://" + addr()
+		}
+	}
+	if isLoopbackHostPort(addr()) {
+		return schemePlain + addr()
+	}
+	return schemeTLS + addr()
+}
+
+// isLoopbackHostPort mirrors the daemon's own loopback test. A host it cannot
+// parse is treated as remote: assuming plaintext for something unrecognised is
+// the failure that cannot be undone by a retry.
+func isLoopbackHostPort(hostPort string) bool {
+	host, _, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		host = hostPort
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
 }
 
 func get(path string, v any) error {
-	req, err := http.NewRequest(http.MethodGet, "http://"+addr()+path, nil)
+	req, err := http.NewRequest(http.MethodGet, origin()+path, nil)
 	if err != nil {
 		return err
 	}
 	if s, err := localSecret(); err == nil {
 		req.Header.Set("X-Dibs-Local", s)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := daemonClient(0).Do(req)
 	if err != nil {
-		return fmt.Errorf("%w (is dibd running?)", err)
+		return reachErr(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
@@ -328,7 +397,7 @@ func localSecret() (string, error) {
 // getGodView fetches a god-view endpoint (decrypted mail) using the local
 // secret plus the admin password header.
 func getGodView(path, adminPass string, v any) error {
-	req, err := http.NewRequest(http.MethodGet, "http://"+addr()+path, nil)
+	req, err := http.NewRequest(http.MethodGet, origin()+path, nil)
 	if err != nil {
 		return err
 	}
@@ -336,9 +405,9 @@ func getGodView(path, adminPass string, v any) error {
 		req.Header.Set("X-Dibs-Local", s)
 	}
 	req.Header.Set("X-Dibs-Admin", adminPass)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := daemonClient(0).Do(req)
 	if err != nil {
-		return fmt.Errorf("%w (is dibd running?)", err)
+		return reachErr(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
@@ -423,15 +492,15 @@ func webURL() error {
 	}
 	// Mint a one-time bootstrap token: local secret (same-user) + admin
 	// password (human). The durable secret never enters the URL.
-	req, err := http.NewRequest(http.MethodPost, "http://"+addr()+"/bootstrap", nil)
+	req, err := http.NewRequest(http.MethodPost, origin()+"/bootstrap", nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("X-Dibs-Local", s)
 	req.Header.Set("X-Dibs-Admin", adminPass)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := daemonClient(0).Do(req)
 	if err != nil {
-		return fmt.Errorf("%w (is dibd running?)", err)
+		return reachErr(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != 200 {
@@ -1323,12 +1392,12 @@ func warnIfDirIsNotTheAddressedDaemon(what string) {
 	if err != nil {
 		return
 	}
-	req, rerr := http.NewRequest(http.MethodGet, "http://"+addr()+"/healthz", nil)
+	req, rerr := http.NewRequest(http.MethodGet, origin()+"/healthz", nil)
 	if rerr != nil {
 		return
 	}
 	req.Header.Set("X-Dibs-Local", secret)
-	resp, derr := (&http.Client{Timeout: 2 * time.Second}).Do(req)
+	resp, derr := daemonClient(2 * time.Second).Do(req)
 	if derr != nil {
 		return // nothing listening; the file is all there is
 	}
@@ -1373,3 +1442,44 @@ func printTail(lines []string, limit int, asJSON bool) {
 		fmt.Println(l)
 	}
 }
+
+// reachErr explains why the daemon could not be reached, distinguishing the
+// two cases an operator must not confuse.
+//
+// "Nothing is listening" and "something is listening but I will not trust its
+// certificate" need completely different actions, and the second was reported
+// as the first: a daemon serving TLS perfectly well was described as not
+// running, on the exact setup path where somebody is bringing up a second
+// machine and has no other signal to go on. They would go looking for a dead
+// process that is alive.
+//
+// The daemon self-signs off loopback by design (it stands up no CA and depends
+// on no VPN), so an unknown-authority error is the EXPECTED first contact from
+// a new machine, not a fault. It is a prompt to carry the fingerprint over,
+// which is the same trip that carries the secret.
+func reachErr(err error) error {
+	var unknownAuthority x509.UnknownAuthorityError
+	var certInvalid x509.CertificateInvalidError
+	var hostErr x509.HostnameError
+	switch {
+	case errors.As(err, &unknownAuthority), errors.As(err, &certInvalid):
+		return fmt.Errorf("%w\n\n"+
+			"  Something IS listening on %s: the certificate is what was refused.\n"+
+			"  dibd signs its own certificate off loopback, so this is what first\n"+
+			"  contact from a new machine looks like, not a failure.\n\n"+
+			"  Trust it the same way you got the secret, by carrying it across:\n"+
+			"    dibs trust %s", err, addr(), addr())
+	case errors.As(err, &hostErr):
+		return fmt.Errorf("%w\n\n"+
+			"  The daemon is reachable but its certificate names a different host.\n"+
+			"  Use the address the certificate was issued for, or delete\n"+
+			"  tls-cert.pem on that machine so it reissues for the one you use", err)
+	}
+	// The plain case. Written with a named format string so a find-and-replace
+	// over the old wording cannot turn this line into a call to the function it
+	// is inside, which is how this recursed to a stack overflow twice while
+	// being written.
+	return fmt.Errorf(notRunningFmt, err)
+}
+
+const notRunningFmt = "%w (is dibd running?)"

@@ -272,10 +272,8 @@ func resolveTransport(dir, addr string, c Config) (transport, error) {
 func ensureSelfSignedCert(dir, addr string) (string, string, error) {
 	certFile := filepath.Join(dir, "tls-cert.pem")
 	keyFile := filepath.Join(dir, "tls-key.pem")
-	if _, err := os.Stat(certFile); err == nil {
-		if _, err := os.Stat(keyFile); err == nil {
-			return certFile, keyFile, nil
-		}
+	if usableCert(certFile, keyFile) {
+		return certFile, keyFile, nil
 	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -293,7 +291,7 @@ func ensureSelfSignedCert(dir, addr string) (string, string, error) {
 		SerialNumber:          serial,
 		Subject:               pkix.Name{CommonName: "dibs"},
 		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().AddDate(10, 0, 0),
+		NotAfter:              time.Now().Add(certLifetime),
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
@@ -337,4 +335,50 @@ func superviseSettings(c liveness.Settings) engine.SuperviseSettings {
 		Config: c.Apply(liveness.DefaultConfig()),
 		Every:  c.Cadence(),
 	}
+}
+
+// certLifetime is bounded by what CLIENTS will accept, not by what is
+// convenient to reissue.
+//
+// This was ten years, and every Apple platform refuses a TLS server
+// certificate whose validity exceeds 398 days: macOS reports it as "certificate
+// is not standards compliant" and will not connect at all. So the one thing the
+// self-signed path exists for, letting a second machine reach the daemon
+// without anybody standing up a CA, did not work on the operating system this
+// is mostly run from. Found by pointing a Mac at a daemon on another address
+// and reading why it refused.
+//
+// 365 days, comfortably inside the cap and a round number a person can reason
+// about, with rotation below so the shorter life is not a new failure.
+const certLifetime = 365 * 24 * time.Hour
+
+// certRenewBefore is how early a certificate is replaced. A cert that expires
+// while the daemon is up would otherwise turn every agent on every other
+// machine away at once, with nothing having changed on either side.
+const certRenewBefore = 30 * 24 * time.Hour
+
+// usableCert reports whether the stored pair can still be served.
+//
+// The old check was os.Stat on both files, which answers "does a certificate
+// exist" and never "is it any good". With a ten-year life that was nearly the
+// same question. With a bounded life it is not: an expired certificate on disk
+// would be served forever, and the failure surfaces on the CLIENTS, all of
+// them, at once.
+func usableCert(certFile, keyFile string) bool {
+	if _, err := os.Stat(keyFile); err != nil {
+		return false
+	}
+	pemBytes, err := os.ReadFile(certFile) // #nosec G304 -- the daemon's own data directory
+	if err != nil {
+		return false
+	}
+	block, _ := pem.Decode(pemBytes)
+	if block == nil {
+		return false
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false
+	}
+	return time.Now().Before(cert.NotAfter.Add(-certRenewBefore))
 }

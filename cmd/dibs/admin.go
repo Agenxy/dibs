@@ -123,7 +123,7 @@ func pruneAgents(agent string) error {
 		return err
 	}
 	body, _ := json.Marshal(map[string]string{"agent": agent})
-	req, err := http.NewRequest(http.MethodPost, "http://"+addr()+"/api/admin/prune", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, origin()+"/api/admin/prune", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -132,9 +132,9 @@ func pruneAgents(agent string) error {
 	}
 	req.Header.Set("X-Dibs-Admin", pass)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := daemonClient(0).Do(req)
 	if err != nil {
-		return fmt.Errorf("%w (is dibd running?)", err)
+		return reachErr(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)
@@ -160,7 +160,7 @@ func setAgentRole(agent, role string) error {
 		return err
 	}
 	body, _ := json.Marshal(map[string]string{"agent": agent, "role": role})
-	req, err := http.NewRequest(http.MethodPost, "http://"+addr()+"/api/admin/role", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, origin()+"/api/admin/role", bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -169,9 +169,9 @@ func setAgentRole(agent, role string) error {
 	}
 	req.Header.Set("X-Dibs-Admin", pass)
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := daemonClient(0).Do(req)
 	if err != nil {
-		return fmt.Errorf("%w (is dibd running?)", err)
+		return reachErr(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(resp.Body)
@@ -202,12 +202,12 @@ func confirmDirIsTheAddressedDaemon() error {
 	if err != nil {
 		return nil // no directory yet; nothing to disagree with
 	}
-	req, err := http.NewRequest(http.MethodGet, "http://"+addr()+"/healthz", nil)
+	req, err := http.NewRequest(http.MethodGet, origin()+"/healthz", nil)
 	if err != nil {
 		return nil
 	}
 	req.Header.Set("X-Dibs-Local", secret)
-	resp, err := (&http.Client{Timeout: 2 * time.Second}).Do(req)
+	resp, err := daemonClient(2 * time.Second).Do(req)
 	if err != nil {
 		return nil // nothing listening; an offline set-password is fine
 	}

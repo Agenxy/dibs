@@ -40,13 +40,13 @@ func await(args []string) error {
 			"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 			"params": map[string]any{"name": tool, "arguments": callArgs},
 		})
-		req, err := http.NewRequest(http.MethodPost, "http://"+addr()+"/mcp", bytes.NewReader(body))
+		req, err := http.NewRequest(http.MethodPost, origin()+"/mcp", bytes.NewReader(body))
 		if err != nil {
 			return nil, err
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Dibs-Local", secret)
-		client := &http.Client{Timeout: 75 * time.Second}
+		client := daemonClient(75 * time.Second)
 		resp, err := client.Do(req)
 		if err != nil {
 			return nil, err
