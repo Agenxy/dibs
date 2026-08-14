@@ -305,6 +305,23 @@ func showBoardResult(res core.Result, detail, declaredUI bool) map[string]any {
 		// and learned nothing about the board.
 		boot["summary"] = boardSummary(fullMap)
 
+		// And so does the board itself when the agent asked for it.
+		//
+		// detail=true was honoured only in `content`, which is precisely the
+		// carrier this host drops. So the one documented way for an agent to
+		// read the board on purpose returned a summary and its own token back,
+		// on the host most likely to be running. Found by an agent that wanted
+		// the board, passed detail=true, got a sentence, and went back to
+		// talking to the daemon over plain HTTP instead: the tool taught it not
+		// to use the tool.
+		//
+		// Ungated, unlike the panel duplicate below: detail is a request from
+		// the MODEL, and what the host declares about rendering panels for the
+		// human has no bearing on whether the agent gets what it asked for.
+		if detail {
+			boot["board"] = fullMap
+		}
+
 		// And on a host that says it renders panels, the BOARD goes with it.
 		//
 		// This tool exists for one purpose: put the board in front of the human.

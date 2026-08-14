@@ -494,3 +494,66 @@ func TestTheMinimalPanelIsServableAndIdentified(t *testing.T) {
 		t.Errorf("the minimal panel is not served as an MCP App template: %v", res)
 	}
 }
+
+// detail=true must reach the model whatever carrier the host prefers.
+//
+// The board tool is deliberately cheap: it shows the human a panel and returns
+// the agent one summary line. detail=true is the documented way for an agent to
+// ask for the board itself. It was honoured only in `content`, and a host that
+// shows the model structuredContent INSTEAD of content drops exactly that, so
+// the agent got a sentence and its own token back.
+//
+// Found by using it. An agent on this very host wanted the board, passed
+// detail=true, got nothing usable, and went back to querying the daemon over
+// plain HTTP: the tool taught it not to use the tool, which is the most
+// expensive kind of bug a tool surface can have.
+func TestDetailReachesTheModelOnAStructuredContentHost(t *testing.T) {
+	// act_token is what makes a bootstrap possible at all; without it
+	// panelBootstrap returns nil and there is no structuredContent to test.
+	res := core.Result{
+		"act_token": "tok-alpha", "agent_id": "alpha",
+		"agents": []any{
+			map[string]any{"id": "alpha", "status": "active"},
+			map[string]any{"id": "beta", "status": "active"},
+		},
+	}
+
+	// declaredUI=true is the host that prefers structuredContent.
+	out := showBoardResult(res, true, true)
+
+	// core.Result, not map[string]any: the dynamic type in the interface is the
+	// named type, and asserting the underlying one silently fails.
+	sc, ok := out["structuredContent"].(core.Result)
+	if !ok {
+		t.Fatalf("setup: no structuredContent to inspect: %v", out)
+	}
+	board, ok := sc["board"]
+	if !ok {
+		t.Fatal("detail=true did not put the board in structuredContent, so on this host " +
+			"the agent asked for the board and received a summary")
+	}
+	blob, _ := json.Marshal(board)
+	for _, want := range []string{"alpha", "beta"} {
+		if !strings.Contains(string(blob), want) {
+			t.Errorf("the board carried to the model is missing %q: %s", want, blob)
+		}
+	}
+}
+
+// Without detail the tool stays cheap: a summary, and no board in model context.
+// That default is the reason the tool is worth calling when a human asks to look.
+func TestWithoutDetailTheBoardStaysOutOfModelContext(t *testing.T) {
+	res := core.Result{
+		"act_token": "tok-alpha", "agent_id": "alpha",
+		"agents": []any{map[string]any{"id": "alpha", "status": "active"}},
+	}
+
+	out := showBoardResult(res, false, true)
+
+	if sc, ok := out["structuredContent"].(core.Result); ok {
+		if _, present := sc["board"]; present {
+			t.Error("the full board was sent to the model without detail=true: the tool is " +
+				"no longer cheap, which is its whole justification")
+		}
+	}
+}
