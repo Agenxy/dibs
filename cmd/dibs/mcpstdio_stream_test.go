@@ -4,9 +4,14 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // A listen stream reaches the harness as JSON-RPC lines, not as SSE frames.
@@ -100,3 +105,48 @@ func TestConcurrentWritersNeverInterleaveALine(t *testing.T) {
 
 // newBufWriter adapts a buffer for syncWriter in tests.
 func newBufWriter(b *bytes.Buffer) *bufio.Writer { return bufio.NewWriter(b) }
+
+// A call issued while the daemon is restarting must survive it.
+//
+// Dibs is for long-running agents, so an upgrade cannot be a thing that costs
+// them their in-flight work: an operator who watches one update break a fleet
+// will stay on an old build to avoid repeating it, which is how a coordination
+// service ends up permanently out of date. Nothing is lost across a restart
+// (state IS the ledger, and the daemon replays it in milliseconds), but the
+// call in flight used to hard-fail with "connection refused".
+//
+// Only a refused dial is waited out, and that is the whole safety argument: it
+// means the request never reached the daemon, so re-sending it cannot duplicate
+// an effect. Anything the daemon may have received is returned untouched.
+func TestOnlyAnUnreachedRequestIsWaitedOut(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "connection refused: never arrived", err: syscall.ECONNREFUSED, want: true},
+		{name: "connection reset: listener went away", err: syscall.ECONNRESET, want: true},
+		{name: "wrapped refusal", err: fmt.Errorf("post: %w", syscall.ECONNREFUSED), want: true},
+		{name: "timeout: may have been received and acted on", err: os.ErrDeadlineExceeded, want: false},
+		{name: "no error", err: nil, want: false},
+		{name: "anything else", err: errors.New("tls: bad record"), want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := dialFailed(tc.err); got != tc.want {
+				t.Errorf("dialFailed(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+// The grace window is bounded: a daemon that is gone for good must surface as
+// an error, not as an agent hanging forever on a machine with no daemon.
+func TestTheRestartGraceIsBounded(t *testing.T) {
+	if upgradeGrace <= 0 {
+		t.Fatal("no grace window: an upgrade breaks every call in flight")
+	}
+	if upgradeGrace > time.Minute {
+		t.Errorf("grace of %v: a daemon that is never coming back leaves the agent hanging "+
+			"with no error to act on", upgradeGrace)
+	}
+}
