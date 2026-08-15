@@ -5,6 +5,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Published to the official MCP Registry as `io.github.agenxy/dibs`, on the same
+  tag trigger as the release, so the registry entry, the GitHub release and the
+  Homebrew cask cannot drift from each other. The registry is where a harness or
+  an agent looks up a server it has never heard of, which for this product is
+  the audience that matters: the tap serves people who already know the name.
+  The publisher is pinned and checksummed rather than piped from a `latest`
+  redirect, because that job holds `id-token: write`.
+
 ## [0.0.5] - 2026-08-14
 
 ### Added
