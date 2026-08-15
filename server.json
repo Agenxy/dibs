@@ -1,6 +1,6 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.agenxy/dibs",
+  "name": "io.github.Agenxy/dibs",
   "title": "Dibs",
   "description": "Tells an AI agent when another is already doing its work. Board, typed mail, directory claims.",
   "version": "0.0.5",
