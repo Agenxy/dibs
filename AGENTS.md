@@ -125,6 +125,25 @@ Things that have cost real time here, none of which are visible in the diff:
 | `docs/ARCHITECTURE.md` | Structure, request path, invariants, recurring bug classes |
 | `SKILLS.md` | Agent-facing: how to USE Dibs well (served as `dibs://skills`) |
 
+## Distribution
+
+Releases are cut by tagging: the workflow re-runs the whole gate against the tagged
+commit, then publishes signed artifacts, updates the Homebrew cask in `agenxy/homebrew-tap`,
+and publishes `server.json` to the official MCP Registry as `io.github.Agenxy/dibs`.
+Nothing here needs a human between the tag and the release, and no source is updated by
+hand: if the three ever disagree, that is a bug in the pipeline, not a chore.
+
+**We do not pay to be listed** (PHILOSOPHY.md rule 8). Several MCP directories now gate
+submission behind a fee, and the answer is no every time, however good the traffic
+numbers look. Free listings, PRs to community lists, and registries that index from the
+official one are the whole strategy. When a directory says "publish to the Official MCP
+Registry and we will pick you up", that is the strategy working.
+
+Before submitting to a community list, READ ITS RULES. Several set a minimum age or star
+count and auto-close everything else; submitting anyway spends a maintainer's attention
+to no purpose and is the kind of thing that gets a project remembered for the wrong
+reason.
+
 ## Testing expectations
 
 Behavioural tests, not coverage theatre. Every guarantee in `SPEC.md` that can be tested
