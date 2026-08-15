@@ -160,7 +160,9 @@ task install                 # build + install to ~/.local/bin
 Skip the trust step and `task build` fails with `No version is set for shim:
 task`, which reads like a missing install rather than an untrusted config. If you
 would rather not use mise at all, `go build ./cmd/...` needs nothing but Go
-1.26.5.
+1.26.6. On an earlier patch release, `GOTOOLCHAIN=local go build ./cmd/...`
+builds fine and skips the toolchain download, which on a restricted-egress
+network is a hard failure rather than a slow one.
 
 Then:
 
@@ -419,6 +421,26 @@ two terms with any query, roughly **half the corpus**: and the gain survives at
 +26% to +49% over no history at all. Smaller, and real: near-duplicates
 contribute to the improvement rather than being it.
 `TestHistoryGainSurvivesAPunitiveHoldout` asserts this rather than describing it.
+
+### Where overlap actually appears in the response
+
+Two mechanisms, two keys. `declare`'s response is the primary integration
+surface, so it is worth naming them explicitly:
+
+| Mechanism | Key | Also carries |
+|---|---|---|
+| **Exact signals**: a shared `refs:` entry, a shared directory | `overlaps` | `warning` |
+| **Scorer matching**: related work sharing no literal signal | `spaces` | `spaces_hint` |
+
+They are independent: a declaration can produce either, both, or neither.
+`overlaps` needs no index and no threshold, so it works on the first
+declaration and across machines. `spaces` needs the repository indexed and a
+`notify_threshold` above zero, and reports `matching: "indexing"` while the
+index is still building.
+
+An operator integrating against Dibs logged `overlaps` and `suggestions`, saw
+empty results three times, and concluded matching was broken. It was working
+and writing to `spaces`, a key nothing had told them to read.
 
 ### Semantic matching
 

@@ -247,7 +247,12 @@ var toolDefs = func() []map[string]any {
 				"same message).",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "to": str("recipient agent id"),
-				"type": map[string]any{"type": "string", "enum": []string{"notify", "question", "request", "handoff"}},
+				"type": map[string]any{
+					"type": "string", "enum": []string{"notify", "question", "request", "handoff"},
+					"description": "notify: no reply needed. question: you want an answer. " +
+						"request: you want a decision, approve or deny. handoff: you are giving " +
+						"the work away and expect them to take it",
+				},
 				"body": str("message body"), "deadline_s": num("response deadline in seconds (default 600; max 7200, or 7 " +
 					"days to persistent agents)"),
 				"op_id": str("client-generated id for safe retries (optional, recommended)"),
@@ -645,8 +650,13 @@ var toolDefs = func() []map[string]any {
 				"send for anything targeted.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
-				"type":  map[string]any{"type": "string", "enum": []string{"notify", "question", "request", "handoff"}},
-				"body":  str("message body"),
+				"type": map[string]any{
+					"type": "string", "enum": []string{"notify", "question", "request", "handoff"},
+					"description": "notify: no reply needed. question: you want an answer. " +
+						"request: you want a decision, approve or deny. handoff: you are giving " +
+						"the work away and expect them to take it",
+				},
+				"body": str("message body"),
 			}, "token", "type", "body"),
 		},
 		{

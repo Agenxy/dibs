@@ -198,7 +198,7 @@ type gitFixtures struct {
 func (g *gitFixtures) run(dir string, args ...string) {
 	g.t.Helper()
 	cmd := exec.Command(g.git, append([]string{"-C", dir}, args...)...) // #nosec G204
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0",
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0",
 		"GIT_AUTHOR_NAME=Fixture", "GIT_AUTHOR_EMAIL=fixture@example.invalid",
 		"GIT_COMMITTER_NAME=Fixture", "GIT_COMMITTER_EMAIL=fixture@example.invalid")
 	if out, err := cmd.CombinedOutput(); err != nil {

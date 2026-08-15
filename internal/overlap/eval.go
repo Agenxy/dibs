@@ -216,6 +216,9 @@ type Calibration struct {
 	// same, and anything presenting them should say which.
 	Degenerate   bool `json:"degenerate,omitempty"`
 	Join, Notify float64
+	// NegAboveNotify is how many UNRELATED pairs clear the notify bar: the
+	// false-mention rate the suggestion buys, in the units it was measured in.
+	NegAboveNotify int
 	// Pairs is how many unrelated pairs the percentile was taken over. Zero
 	// means nothing was measured and Join/Notify are defaults.
 	Pairs int
@@ -501,7 +504,25 @@ func CalibrateWith(ctx context.Context, deployed, heldOut Scorer, cases []EvalCa
 	// suggest-only band that is merely narrow is still useful. Calibration
 	// carries Degenerate so callers can say so out loud instead of presenting a
 	// derived number as measured.
-	c := Calibration{Join: join, Notify: notify, Pairs: len(neg), Positives: len(pos), Degenerate: degenerate}
+	// What the notify bar COSTS, measured on the same population it came from.
+	//
+	// The suggestion says what to set and, until now, not what setting it means.
+	// An operator evaluating Dibs put the measured notify value into a config,
+	// watched an office-chore declaration surface as a candidate for unrelated
+	// engineering work, and had to discover experimentally that the bar admits a
+	// large share of unrelated pairs by construction. That number is already in
+	// hand here; withholding it is the one place calibrate undersells its own
+	// tradeoff, in a tool whose honesty is otherwise the best thing about it.
+	var negAbove int
+	for _, v := range neg {
+		if v >= notify {
+			negAbove++
+		}
+	}
+	c := Calibration{
+		Join: join, Notify: notify, Pairs: len(neg), Positives: len(pos), Degenerate: degenerate,
+		NegAboveNotify: negAbove,
+	}
 	c.PosMedian, c.PosAboveJoin = describePositives(pos, join)
 	return c, nil
 }

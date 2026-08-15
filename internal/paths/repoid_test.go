@@ -147,7 +147,7 @@ func runGit(t *testing.T, git, dir string, args ...string) {
 	t.Helper()
 	argv := append([]string{"-C", dir}, args...)
 	cmd := exec.Command(git, argv...)
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0")
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v\n%s", args, err, output)
 	}
