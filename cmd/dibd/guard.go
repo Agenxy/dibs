@@ -308,6 +308,23 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 			}
 		}
 
+		// Liveness is open, and only liveness.
+		//
+		// Everything else here needs the coordination secret, which is right for
+		// anything that reveals the board. "Is the process up" reveals nothing:
+		// gating it meant the only way to supervise Dibs was to give a
+		// monitoring system the same secret every agent authenticates with, and
+		// an operator evaluating Dibs said so. The test for an open endpoint is
+		// what it adds to what an attacker already has, and anyone who can reach
+		// this port already learns the daemon is up by connecting to it.
+		//
+		// Cleaned, like godViewPath, so /livez/ and /x/../livez resolve here
+		// rather than sliding past into the authenticated tier.
+		if path.Clean("/"+r.URL.Path) == "/livez" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		if godViewPath(r.URL.Path) {
 			// Decrypted mail must never be cached to disk / bfcache, and must
 			// never leak via Referer.

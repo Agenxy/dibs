@@ -169,3 +169,42 @@ func TestEveryAdminPathIsGatedIncludingOnesNotWrittenYet(t *testing.T) {
 		}
 	}
 }
+
+// Liveness must not require the coordination secret.
+//
+// Everything else on this daemon does, correctly: it reveals the board. "Is the
+// process up" does not, and gating it meant the only way to supervise Dibs was
+// to hand a monitoring system the same secret every agent authenticates with.
+// An operator evaluating Dibs raised it, and the workaround they named is why
+// it matters: the secret spreads to something with no business holding it.
+//
+// Driven through the real gate rather than a helper, because the question is
+// what an unauthenticated request actually gets.
+func TestLivenessIsReachableWithoutTheSecret(t *testing.T) {
+	gate := newAuthGate("the-secret", filepath.Join(t.TempDir(), "admin.hash"))
+	served := gate.wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok\n"))
+	}))
+
+	for _, tc := range []struct {
+		path string
+		want int
+	}{
+		{path: "/livez", want: http.StatusOK},
+		// Path variants must resolve to the same decision, not slide past it.
+		{path: "/livez/", want: http.StatusOK},
+		{path: "/x/../livez", want: http.StatusOK},
+		// The surfaces that DO reveal the board stay closed.
+		{path: "/api/board", want: http.StatusUnauthorized},
+		{path: "/mcp", want: http.StatusUnauthorized},
+		{path: "/api/logs", want: http.StatusUnauthorized},
+	} {
+		t.Run(tc.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			served.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+			if rec.Code != tc.want {
+				t.Errorf("GET %s without the secret = %d, want %d", tc.path, rec.Code, tc.want)
+			}
+		})
+	}
+}
