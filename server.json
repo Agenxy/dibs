@@ -1,0 +1,12 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.agenxy/dibs",
+  "title": "Dibs",
+  "description": "Coordination for fleets of AI agents: a shared board of who is working on what, typed mailboxes between agents, directory claims, and overlap detection that tells an agent when somebody else is already pursuing its objective. Local-first and advisory, never coercive.",
+  "version": "0.0.5",
+  "websiteUrl": "https://github.com/Agenxy/dibs",
+  "repository": {
+    "url": "https://github.com/Agenxy/dibs",
+    "source": "github"
+  }
+}

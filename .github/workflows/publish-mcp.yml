@@ -1,0 +1,75 @@
+# Publish the server entry to the official MCP Registry.
+#
+# This is how AGENTS find Dibs. The Homebrew tap serves people who already know
+# the name; the registry is where a harness or an agent looks up MCP servers it
+# has never heard of, which for this product is the audience that matters.
+#
+# Runs on the same trigger as the release, so the registry entry, the GitHub
+# release and the Homebrew cask all track a tag and cannot drift from each
+# other. The version is taken FROM THE TAG rather than read from server.json, so
+# a stamped file that somebody forgot to bump cannot publish a lie.
+name: Publish to MCP Registry
+
+on:
+  push:
+    tags: ["v*"]
+  # So an already-tagged version can be published without moving the tag, which
+  # this project does not do. Also the recovery path when the registry is down
+  # at release time: the artifacts are already out, only this step needs redoing.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (defaults to the latest release tag)"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC proves we own the io.github.agenxy namespace
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      # PINNED and CHECKSUMMED, not piped from a redirect.
+      #
+      # The registry's own guide suggests `curl -L .../latest/download/... | tar
+      # xz`. This job holds id-token: write, and `latest` is a moving target, so
+      # that would let whoever controls that asset run code with our OIDC
+      # identity and no version recorded. release.yml already refuses the same
+      # shape for mise, with the reasoning written out; this matches it.
+      - name: Install mcp-publisher (pinned)
+        env:
+          VERSION: 1.8.1
+          SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
+        run: |
+          set -euo pipefail
+          url="https://github.com/modelcontextprotocol/registry/releases/download/v${VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          curl -fsSL "$url" -o mcp-publisher.tar.gz
+          echo "${SHA256}  mcp-publisher.tar.gz" | sha256sum -c -
+          tar xzf mcp-publisher.tar.gz mcp-publisher
+          chmod +x mcp-publisher
+
+      # The tag is the truth. server.json carries a version so the file is valid
+      # on its own and readable in the tree, but what gets published is whatever
+      # was actually released.
+      - name: Stamp the released version into server.json
+        run: |
+          set -euo pipefail
+          ref="${{ inputs.tag || github.ref_name }}"
+          version="${ref#v}"
+          jq --arg v "$version" '.version = $v' server.json > server.tmp
+          mv server.tmp server.json
+          echo "publishing version $version"
+          cat server.json
+
+      - name: Authenticate to the MCP Registry
+        run: ./mcp-publisher login github-oidc
+
+      - name: Publish
+        run: ./mcp-publisher publish
