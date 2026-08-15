@@ -336,8 +336,27 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 		return
 	}
 	scorer := f.withSidecar(ctx, lex)
+
+	// Calibrate the notify bar unless the operator set one.
+	//
+	// Nothing else in Dibs asks a human to measure something it can measure
+	// itself. The daemon already finds the repository, indexes it unprompted and
+	// holds the scorer and the corpus; it then stopped one step short and asked
+	// for two numbers to be read off `dibs calibrate` and typed into a TOML.
+	//
+	// The reason that mattered more than it looks: an unset notify threshold is
+	// ZERO, and a zero bar mentions every scored match, related or not. So the
+	// untouched default was not "off pending calibration", it was the loudest
+	// possible setting, and the feature's first impression was noise. Measuring
+	// is strictly safer than that, not riskier.
+	//
+	// Only notify. join stays at 0 unless asked for, because auto-JOINING on a
+	// measured-but-unreviewed number is a different risk: a wrong mention costs
+	// a glance, a wrong join costs an agent's membership.
+	notify := f.notifyFor(workCtx, dir, cc, scorer)
+
 	eng.SetScorerForRepo(dir, scorer, engine.MatchConfig{
-		JoinThreshold: f.join, NotifyThreshold: f.notify, Deadline: f.deadline,
+		JoinThreshold: f.join, NotifyThreshold: notify, Deadline: f.deadline,
 		DirectorRequired: f.director,
 		AutoJoin:         f.autoJoin,
 		// The tree the index was built from, so auto-join can ask whether the
@@ -636,4 +655,62 @@ func protectedOnMacOS(cwd string) bool {
 		}
 	}
 	return false
+}
+
+// notifyFor is the notify bar to run with: the operator's if they set one,
+// otherwise a measured one.
+func (f *scorerFlags) notifyFor(
+	ctx context.Context, dir string, cc *overlap.CoChange, deployed overlap.Scorer,
+) float64 {
+	if f.notify != 0 {
+		return f.notify
+	}
+	cal, ok := f.calibrateNotify(ctx, dir, cc, deployed)
+	if !ok {
+		return f.notify
+	}
+	slog.Info("work-overlap matching calibrated itself",
+		"repo", dir, "notify", fmt.Sprintf("%.3f", cal.Notify),
+		"unrelated_pairs_also_mentioned", fmt.Sprintf("%d of %d", cal.NegAboveNotify, cal.Pairs),
+		"join", "0 (opt in with -match-join)",
+		"override", "-match-notify, or [match] notify_threshold in dibs.toml")
+	return cal.Notify
+}
+
+// calibrateNotify measures a notify threshold on the repository just indexed.
+//
+// The same measurement `dibs calibrate` performs, on the same corpus, at a cost
+// the daemon has already paid for by indexing: milliseconds on a small
+// repository, a couple of seconds on a large one, against the hundreds of
+// milliseconds indexing itself took.
+//
+// A failure returns false and changes nothing. It is reported at INFO rather
+// than swallowed, because "matching is loud" and "matching could not measure
+// its own bar" are the same symptom from outside and only one of them is
+// actionable.
+func (f *scorerFlags) calibrateNotify(
+	ctx context.Context, dir string, cc *overlap.CoChange, deployed overlap.Scorer,
+) (overlap.Calibration, bool) {
+	cases, err := overlap.SampleCommits(ctx, dir, 200, 25, 0)
+	if err != nil || len(cases) == 0 {
+		slog.Info("work-overlap matching could not calibrate itself; every scored match "+
+			"will be mentioned until a notify threshold is set",
+			"repo", dir, "err", err, "fix", "dibs calibrate, then -match-notify <value>")
+		return overlap.Calibration{}, false
+	}
+	// Held out, for the same reason `dibs calibrate` holds out: scoring a
+	// commit against an index that contains it measures memorisation.
+	holdOut := make([]string, 0, len(cases))
+	for _, c := range cases {
+		holdOut = append(holdOut, c.Message)
+	}
+	heldOut, err := overlap.NewLexicalHolding(ctx, dir, cc, holdOut)
+	if err != nil {
+		return overlap.Calibration{}, false
+	}
+	cal, err := overlap.CalibrateWith(ctx, deployed, heldOut, cases)
+	if err != nil || cal.Pairs == 0 {
+		return overlap.Calibration{}, false
+	}
+	return cal, true
 }

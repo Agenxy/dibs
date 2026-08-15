@@ -219,6 +219,9 @@ type Calibration struct {
 	// NegAboveNotify is how many UNRELATED pairs clear the notify bar: the
 	// false-mention rate the suggestion buys, in the units it was measured in.
 	NegAboveNotify int
+	// NotifyFloored reports that Notify came from the join/2 floor rather than
+	// from the median, so a caller can say which rule it is showing.
+	NotifyFloored bool
 	// Pairs is how many unrelated pairs the percentile was taken over. Zero
 	// means nothing was measured and Join/Notify are defaults.
 	Pairs int
@@ -471,6 +474,16 @@ func CalibrateWith(ctx context.Context, deployed, heldOut Scorer, cases []EvalCa
 	sort.Float64s(neg)
 	join, notify, degenerate := thresholdsFrom(neg)
 
+	// Which rule actually produced Notify, so the caller can LABEL it correctly.
+	//
+	// It always said "median of the same". On this repository the median is
+	// 0.000 and the floor produces 0.199, so the label named a rule that had not
+	// been applied. An operator evaluating Dibs read it, correctly inferred from
+	// "median" that about half of unrelated pairs must clear the bar, and filed
+	// that as a finding. They were reasoning soundly from what we told them; the
+	// premise was ours and it was false.
+	flooredAtHalfJoin := false
+
 	// A well-discriminating scorer scores MOST unrelated pairs at exactly zero,
 	// which drags the median to zero, and a notify threshold of zero notifies
 	// about every agent on the board, which is worse than not notifying at all.
@@ -480,6 +493,7 @@ func CalibrateWith(ctx context.Context, deployed, heldOut Scorer, cases []EvalCa
 	// keeps notify meaningfully below it while staying above the noise.
 	if half := join / 2; notify < half {
 		notify = half
+		flooredAtHalfJoin = true
 	}
 	// The 95th-percentile rule fixes the false-positive rate at 5% and lets the
 	// true-positive rate fall where it may. That suits a scorer whose unrelated
@@ -521,7 +535,7 @@ func CalibrateWith(ctx context.Context, deployed, heldOut Scorer, cases []EvalCa
 	}
 	c := Calibration{
 		Join: join, Notify: notify, Pairs: len(neg), Positives: len(pos), Degenerate: degenerate,
-		NegAboveNotify: negAbove,
+		NegAboveNotify: negAbove, NotifyFloored: flooredAtHalfJoin,
 	}
 	c.PosMedian, c.PosAboveJoin = describePositives(pos, join)
 	return c, nil
