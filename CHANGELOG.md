@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-08-14
+
 ### Added
 
 - `GET /livez`, unauthenticated, answering only that the daemon is up.
