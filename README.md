@@ -108,6 +108,14 @@ that defines the design.
 
 ## Install
 
+Listed in the official [MCP Registry](https://registry.modelcontextprotocol.io)
+as `io.github.Agenxy/dibs`, which is where a harness or an agent looks up a
+server it has not been told about:
+
+```sh
+curl 'https://registry.modelcontextprotocol.io/v0/servers?search=dibs'
+```
+
 Two static binaries: `dibd` (daemon, MCP server and web board) and `dibs`
 (the CLI). Both `CGO_ENABLED=0`, byte-for-byte reproducible. No database, no
 Node, no runtime dependencies.
@@ -115,8 +123,9 @@ Node, no runtime dependencies.
 ### Homebrew (macOS)
 
 ```sh
+brew tap agenxy/tap
 brew trust agenxy/tap
-brew install agenxy/tap/dibs
+brew install dibs
 ```
 
 Homebrew 6 refuses to load casks from a tap you have not trusted, so the first
