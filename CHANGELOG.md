@@ -47,6 +47,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Matching calibrates its own notify threshold.** The daemon already found the
+  repository, indexed it unprompted, and held the scorer and the corpus; it then
+  stopped one step short and asked a human to run `dibs calibrate`, read a
+  number, and type it into a TOML. Measured cost of the step it declined to
+  take: 120ms on this repository, against the indexing it had already done.
+
+  What made that worse than it looks: an unset notify threshold is ZERO, and a
+  zero bar mentions every scored match, related or not. The untouched default
+  was not "off pending calibration", it was the loudest possible setting, so the
+  feature's first impression was noise. Measuring is strictly safer.
+
+  Only the notify bar. `join` stays at 0 unless asked for, because auto-JOINING
+  on a measured-but-unreviewed number is a different risk: a wrong mention costs
+  a glance, a wrong join costs an agent's membership. What was adopted is logged
+  with the false-mention rate it buys and the flag that overrides it.
+
 - **A board written by v0.0.4 or earlier is no longer opened.** `dibd` now says
   so on startup and names the record it will not read. Set the file aside
   (`mv ~/.dibs/ledger.jsonl ~/.dibs/ledger.jsonl.old`) and start it again; your
@@ -88,6 +104,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `~/.gitconfig` still applied: on a machine that signs commits, `go test ./...`
   popped a GUI credential prompt mid-run and failed naming a signer the
   contributor had never heard of. The fixtures now pin `GIT_CONFIG_GLOBAL` too.
+
+- **`dibs calibrate` mislabelled where its notify number came from.** It always
+  said "(median of the same)", but Notify is `max(median, join/2)` and a
+  well-discriminating scorer drags the median to zero, so on this repository the
+  floor produced 0.199 while the label named a rule that had not been applied.
+  An operator read it, correctly inferred from "median" that about half of
+  unrelated pairs must clear the bar, and filed that as a finding: sound
+  reasoning from a false premise that was ours. The label now names the rule
+  that actually ran.
 
 - `dibs calibrate` said what to set and not what it costs. It now prints the
   false-mention rate the suggested `notify_threshold` buys, measured on the same

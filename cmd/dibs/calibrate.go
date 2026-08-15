@@ -288,6 +288,14 @@ func printThresholds(cal overlap.Calibration) {
 		fmt.Printf("  join_threshold    %s   %s\n", ui.Good(fmt.Sprintf("%.3f", cal.Join)),
 			ui.Dim(fmt.Sprintf("(95th pct of %d unrelated pairs)", cal.Pairs)))
 		notifyNote := "(median of the same)"
+		// Name the rule that actually ran. The median is often ZERO on a scorer
+		// that discriminates well, so the floor is the common case, not the
+		// exception, and calling it "the median" misdescribes the number in the
+		// one place an operator decides whether to trust it.
+		if cal.NotifyFloored {
+			notifyNote = "(half the join bar: the median of unrelated pairs was lower, " +
+				"and a notify bar at that median fires on nearly everything)"
+		}
 		if cal.Degenerate {
 			// The UI claimed this floor before the code applied it. Now it does,
 			// and it says so only when it actually happened.
