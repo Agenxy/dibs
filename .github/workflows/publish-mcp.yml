@@ -18,8 +18,8 @@ on:
   # at release time: the artifacts are already out, only this step needs redoing.
   workflow_dispatch:
     inputs:
-      tag:
-        description: "Tag to publish (defaults to the latest release tag)"
+      version:
+        description: "Version to publish, e.g. 0.0.5 (defaults to the latest release)"
         required: false
 
 permissions:
@@ -32,9 +32,12 @@ jobs:
       id-token: write # OIDC proves we own the io.github.agenxy namespace
       contents: read
     steps:
+      # Checks out whatever ref this ran from: the tag on a tag push, the branch
+      # on a manual dispatch. NOT the version being published, which was the
+      # first thing that broke here: dispatching v0.0.5 checked out a tag that
+      # predated server.json, and jq failed on a file that did not exist yet.
+      # The manifest describes the server; the version says which release it is.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          ref: ${{ inputs.tag || github.ref }}
 
       # PINNED and CHECKSUMMED, not piped from a redirect.
       #
@@ -59,10 +62,20 @@ jobs:
       # on its own and readable in the tree, but what gets published is whatever
       # was actually released.
       - name: Stamp the released version into server.json
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          ref="${{ inputs.tag || github.ref_name }}"
-          version="${ref#v}"
+          if [ -n "${{ inputs.version }}" ]; then
+            version="${{ inputs.version }}"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            # A dispatch with no version publishes whatever is currently released,
+            # which is the only answer that cannot invent a version nobody shipped.
+            version="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName')"
+          fi
+          version="${version#v}"
           jq --arg v "$version" '.version = $v' server.json > server.tmp
           mv server.tmp server.json
           echo "publishing version $version"
