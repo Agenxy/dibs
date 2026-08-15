@@ -7,6 +7,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `GET /livez`, unauthenticated, answering only that the daemon is up.
+  Everything else needs the coordination secret, which is right for anything
+  that reveals the board and wrong for liveness: supervising Dibs meant handing
+  a monitoring system the same secret every agent authenticates with. It leaks
+  strictly less than opening a TCP connection to the port already does.
+
 - **A fleet can span machines.** `dibs trust <host:port>` records the certificate
   a remote daemon serves, and `dibs fingerprint` prints what that daemon serves,
   so the two can be compared by eye before anything relies on it. The pairing is

@@ -86,6 +86,21 @@ func New(eng *engine.Engine) (*Server, error) {
 // Register mounts all web routes on mux.
 func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /{$}", s.index)
+	// Liveness, for whatever supervises this process.
+	//
+	// Everything else here needs the coordination secret, which is correct for
+	// anything that reveals the board, and wrong for "is it up": the honest
+	// alternative was handing the secret that every agent authenticates with to
+	// a monitoring system that has no business holding it. An operator
+	// evaluating Dibs raised exactly that.
+	//
+	// It answers up and nothing else. That leaks strictly less than the fact
+	// anyone can already learn by opening a TCP connection to this port, which
+	// is the test for whether an unauthenticated endpoint is safe.
+	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write([]byte("ok\n"))
+	})
 	// A board people leave open all day beside their editor. Without this the
 	// tab shows the browser's blank-page glyph, which is what an unfinished tool
 	// looks like.
