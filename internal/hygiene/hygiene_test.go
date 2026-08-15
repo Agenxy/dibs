@@ -435,3 +435,38 @@ func TestNoCompiledBinariesHaveEnteredTheTree(t *testing.T) {
 		}
 	})
 }
+
+// A release must reach the people who install it.
+//
+// Every release to v0.0.4 was a DRAFT. A draft's artifacts are visible only to
+// accounts with push access, while the tag it names is public, so the Homebrew
+// cask pointed at `releases/download/v0.0.4/...` and that URL answered 404 for
+// everyone except the owner. The first command in the README had never worked
+// for anybody else, and nothing failed: the tag existed, the workflow was
+// green, the cask was updated, and the artifacts were unreachable.
+//
+// That is the shape this repository keeps finding: a thing that is true
+// everywhere except where somebody stands. So it is asserted, in the file that
+// decides it, rather than left to be noticed by a stranger who cannot install.
+func TestReleasesArePublishedAndReachTheTap(t *testing.T) {
+	blob, err := os.ReadFile(filepath.Join(repoRoot(t), ".goreleaser.yml"))
+	if err != nil {
+		t.Skip("no .goreleaser.yml here")
+	}
+	cfg := string(blob)
+
+	if strings.Contains(cfg, "draft: true") {
+		t.Error("releases are drafted, so their artifacts are unreachable to everyone " +
+			"without push access while the tag they name is public. `brew install` and " +
+			"every download URL 404 for the people the release is for")
+	}
+	// The cask is how a release becomes installable; a release nothing publishes
+	// to is the same invisibility by another route.
+	if !strings.Contains(cfg, "homebrew_casks:") {
+		t.Error("nothing publishes a Homebrew cask, so `brew install agenxy/tap/dibs` " +
+			"cannot track releases")
+	}
+	if !strings.Contains(cfg, "name: homebrew-tap") {
+		t.Error("the cask does not name the tap repository it must be pushed to")
+	}
+}
