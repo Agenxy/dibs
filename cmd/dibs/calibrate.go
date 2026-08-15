@@ -294,8 +294,19 @@ func printThresholds(cal overlap.Calibration) {
 			notifyNote = "(derived as join/2: the unrelated pairs scored too alike " +
 				"for a median to differ from the 95th percentile)"
 		}
-		fmt.Printf("  notify_threshold  %s   %s\n\n", ui.Good(fmt.Sprintf("%.3f", cal.Notify)),
+		fmt.Printf("  notify_threshold  %s   %s\n", ui.Good(fmt.Sprintf("%.3f", cal.Notify)),
 			ui.Dim(notifyNote))
+		// What that bar costs, said out loud. See NegAboveNotify: the number was
+		// always measured and never shown, so the only way to learn it was to
+		// run the fleet and watch unrelated work get mentioned.
+		if cal.Pairs > 0 {
+			rate := 100 * float64(cal.NegAboveNotify) / float64(cal.Pairs)
+			fmt.Printf("  %s\n\n", ui.Dim(fmt.Sprintf(
+				"at this bar ~%.0f%% of unrelated pairs are also mentioned (%d of %d)",
+				rate, cal.NegAboveNotify, cal.Pairs)))
+		} else {
+			fmt.Println()
+		}
 	}
 	printSeparation(cal)
 	warnIfZeroJoin(cal)

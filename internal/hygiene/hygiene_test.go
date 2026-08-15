@@ -8,6 +8,8 @@
 package hygiene
 
 import (
+	"bytes"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -320,6 +322,16 @@ func walk(t *testing.T, root string, visit func(rel, abs string)) {
 	if err != nil {
 		t.Skip("git is unavailable, so the tracked file list cannot be established")
 	}
+	// A release tarball is not a checkout, and repository hygiene is not a
+	// property a tarball can have. These assertions failed there with "listing
+	// tracked files: exit status 128", which reads like a broken machine: an
+	// operator building from a tarball hit exactly this and spent time telling
+	// it apart from a real failure. Skipping is the honest outcome, and it is
+	// distinct from git being absent, which is skipped above for its own reason.
+	if err := exec.Command(git, "-C", root, "rev-parse", "--is-inside-work-tree").Run(); err != nil { // #nosec G204
+		t.Skip("not a git work tree (a release tarball, most likely): repository " +
+			"hygiene is only meaningful in a checkout")
+	}
 	out, err := exec.Command(git, "-C", root, "ls-files", "-z").Output() // #nosec G204
 	if err != nil {
 		t.Fatalf("listing tracked files: %v", err)
@@ -369,4 +381,57 @@ func repoRoot(t *testing.T) string {
 		}
 		dir = parent
 	}
+}
+
+// No compiled binary may be committed.
+//
+// An 11.6 MB Mach-O executable named `dibs` sat tracked at the repository root
+// for two commits. It arrived the way these always do: a bare `go build
+// ./cmd/dibs` writes ./dibs into the working directory, and the next `git add
+// -A` swept it in with everything else.
+//
+// It was found by an operator auditing Dibs before trusting it with a fleet,
+// who called it "the single strongest trust smell available": an unexplained
+// committed executable is exactly the shape of a supply-chain compromise, and
+// nothing in the tree lets a reader verify it. They deleted it and built from
+// source. That is the correct response, and the cost of earning it back is much
+// higher than the cost of this test. It also dominated the source tarball.
+//
+// Detected by CONTENT, not by name or extension: a binary committed as
+// `helper`, `tool` or `dibs` has no extension to match on, and the whole point
+// is to catch the file nobody meant to add.
+func TestNoCompiledBinariesHaveEnteredTheTree(t *testing.T) {
+	// The magic numbers for the executable formats a Go build can produce.
+	magics := map[string][]byte{
+		"ELF":               {0x7f, 'E', 'L', 'F'},
+		"Mach-O 64":         {0xcf, 0xfa, 0xed, 0xfe},
+		"Mach-O 64 (BE)":    {0xfe, 0xed, 0xfa, 0xcf},
+		"Mach-O universal":  {0xca, 0xfe, 0xba, 0xbe},
+		"PE (Windows .exe)": {'M', 'Z'},
+	}
+
+	root := repoRoot(t)
+	walk(t, root, func(rel, abs string) {
+		f, err := os.Open(abs) // #nosec G304 -- a tracked path under the repo root
+		if err != nil {
+			return
+		}
+		defer func() { _ = f.Close() }()
+		head := make([]byte, 4)
+		n, _ := io.ReadFull(f, head)
+		if n < 2 {
+			return
+		}
+		for format, magic := range magics {
+			if len(magic) <= n && bytes.HasPrefix(head[:n], magic) {
+				t.Errorf("%s is a committed %s executable.\n"+
+					"  Nobody auditing this repository can verify it, and it is the exact\n"+
+					"  shape of a supply-chain compromise. Releases ship signed binaries\n"+
+					"  with SBOMs; the tree ships source. Untrack it and add it to\n"+
+					"  .gitignore: a bare `go build ./cmd/dibs` writes ./dibs, which is how\n"+
+					"  the last one arrived.", rel, format)
+				return
+			}
+		}
+	})
 }

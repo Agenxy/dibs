@@ -490,6 +490,23 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 	f.discoverMu.Unlock()
 
 	go func() {
+		// Say that work has STARTED, before any of it happens.
+		//
+		// Indexing begins when an agent first registers from a repository, and
+		// the daemon serves `declare` immediately, so a declaration in the first
+		// moments used to be answered `matching: "off"` with a hint reading "no
+		// repository indexed yet". Both are literally true and together they
+		// read as "you have not configured this", so the honest response is to
+		// go and configure something. The correct response was to wait a second.
+		//
+		// An operator evaluating Dibs lost real time to exactly this and said
+		// so: they went looking for a configuration error that did not exist.
+		// The state to report it with already existed and nothing ever entered
+		// it, which is the worst arrangement of the two.
+		eng.SetMatchStatus(engine.MatchStatus{
+			Phase: engine.MatchIndexing, Repo: cwd, Since: time.Now(),
+		})
+
 		// Resolved BEFORE the dedup, because the unit of work is a repository
 		// and cwd is not one. Keyed by cwd, agents in three subdirectories of
 		// one checkout mined the same history three times, and sixteen such

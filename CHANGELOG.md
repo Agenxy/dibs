@@ -73,6 +73,46 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An 11.6 MB compiled binary was committed at the repository root.** A bare
+  `go build ./cmd/dibs` writes `./dibs`, and the next `git add -A` swept it in.
+  An operator auditing Dibs before trusting it with a fleet called it "the single
+  strongest trust smell available": an unexplained committed executable is the
+  shape of a supply-chain compromise and nothing in the tree lets a reader verify
+  it, so they deleted it and built from source. It also dominated the source
+  tarball. Untracked, ignored, and a hygiene test now detects committed
+  executables by CONTENT rather than by name, because the file nobody meant to
+  add has no extension to match on.
+
+- **Test fixtures inherited the operator's global git config.** They set
+  `GIT_CONFIG_NOSYSTEM=1`, which suppresses only the *system* config, so
+  `~/.gitconfig` still applied: on a machine that signs commits, `go test ./...`
+  popped a GUI credential prompt mid-run and failed naming a signer the
+  contributor had never heard of. The fixtures now pin `GIT_CONFIG_GLOBAL` too.
+
+- `dibs calibrate` said what to set and not what it costs. It now prints the
+  false-mention rate the suggested `notify_threshold` buys, measured on the same
+  population the threshold came from: on this repository, 39% of unrelated pairs
+  clear it. That number was always computed and never shown, so the only way to
+  learn it was to run a fleet and watch unrelated work get mentioned.
+
+- `declare` reported `matching: "off"` during the first second after an agent
+  registers, while the repository was still being indexed. "Off" plus "no
+  repository indexed yet" reads as "you have not configured this", so the honest
+  response is to go configure something; the correct response was to wait. The
+  `indexing` state already existed and nothing ever entered it.
+
+- Repository-hygiene tests failed with `exit status 128` when run from a release
+  tarball rather than a checkout, which reads like a broken machine. They skip
+  outside a work tree, where the property they assert cannot exist.
+
+- The `type` parameter on `send` carried its enum with an empty description, so
+  a client rendering per-parameter help showed a blank for the one parameter
+  whose values need explaining.
+
+- The README said `go build` needs "nothing but Go 1.26.5" while `go.mod` pins
+  toolchain 1.26.6, which triggers a download that fails hard on a
+  restricted-egress network. It names 1.26.6 and mentions `GOTOOLCHAIN=local`.
+
 - **A remote agent's pid was probed on the wrong machine.** The sweep and the
   board both asked this kernel whether a pid was alive, with no check that the
   agent was on this host, so a healthy agent on another machine was declared

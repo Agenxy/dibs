@@ -28,3 +28,6 @@ __pycache__/
 # never as a checked-in binary: one was committed once and it embedded the
 # builder's home directory in every path the Go toolchain bakes in.
 /covergate
+/dibs
+/dibd
+/dibs-presence
