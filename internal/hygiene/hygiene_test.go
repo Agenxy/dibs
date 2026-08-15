@@ -9,12 +9,16 @@ package hygiene
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -468,5 +472,92 @@ func TestReleasesArePublishedAndReachTheTap(t *testing.T) {
 	}
 	if !strings.Contains(cfg, "name: homebrew-tap") {
 		t.Error("the cask does not name the tap repository it must be pushed to")
+	}
+}
+
+// server.json must satisfy the registry's constraints BEFORE a tag reaches it.
+//
+// The first publish failed at the registry on `expected length <= 100` for
+// description, after authenticating, installing the publisher and stamping the
+// version. Every one of those steps worked; the payload was wrong, and the only
+// thing that said so was a 422 from a remote service at the end of a release.
+//
+// The constraints are read from the SCHEMA the manifest declares, not copied
+// into this test, so tightening one upstream fails here rather than in the
+// registry. Offline, the schema cannot be fetched and the check skips: a
+// release must not depend on a network fetch to be gated, and the registry
+// itself is the backstop for the case this cannot see.
+func TestTheRegistryManifestWouldBeAccepted(t *testing.T) {
+	blob, err := os.ReadFile(filepath.Join(repoRoot(t), "server.json"))
+	if err != nil {
+		t.Skip("no server.json here")
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(blob, &doc); err != nil {
+		t.Fatalf("server.json is not JSON: %v", err)
+	}
+	schemaURL, _ := doc["$schema"].(string)
+	if schemaURL == "" {
+		t.Fatal("server.json declares no $schema, so nothing can check it")
+	}
+
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Get(schemaURL) // #nosec G107 -- the URL the manifest itself declares
+	if err != nil {
+		t.Skipf("cannot reach the schema (offline?): %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	var schema struct {
+		Definitions struct {
+			ServerDetail struct {
+				Required   []string `json:"required"`
+				Properties map[string]struct {
+					MaxLength int    `json:"maxLength"`
+					MinLength int    `json:"minLength"`
+					Pattern   string `json:"pattern"`
+				} `json:"properties"`
+			} `json:"ServerDetail"`
+		} `json:"definitions"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&schema); err != nil {
+		t.Skipf("schema did not decode: %v", err)
+	}
+	sd := schema.Definitions.ServerDetail
+	if len(sd.Properties) == 0 {
+		t.Skip("schema shape changed; the registry remains the backstop")
+	}
+
+	for _, req := range sd.Required {
+		if _, ok := doc[req]; !ok {
+			t.Errorf("server.json is missing %q, which the registry requires", req)
+		}
+	}
+	for key, val := range doc {
+		if key == "$schema" {
+			continue
+		}
+		rule, known := sd.Properties[key]
+		if !known {
+			t.Errorf("server.json carries %q, which the schema does not define", key)
+			continue
+		}
+		s, isString := val.(string)
+		if !isString {
+			continue
+		}
+		if rule.MaxLength > 0 && len(s) > rule.MaxLength {
+			t.Errorf("%s is %d characters; the registry accepts at most %d. "+
+				"It fails at publish time, after a tag is already cut",
+				key, len(s), rule.MaxLength)
+		}
+		if rule.MinLength > 0 && len(s) < rule.MinLength {
+			t.Errorf("%s is shorter than the registry's minimum of %d", key, rule.MinLength)
+		}
+		if rule.Pattern != "" {
+			ok, err := regexp.MatchString(rule.Pattern, s)
+			if err == nil && !ok {
+				t.Errorf("%s = %q does not match the registry's pattern %s", key, s, rule.Pattern)
+			}
+		}
 	}
 }
