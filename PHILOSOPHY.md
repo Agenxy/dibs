@@ -91,6 +91,14 @@ API", not "fork it."
    semantic verdicts it cannot justify. Return ranked candidates and let the model judge.
 7. **No sprawl.** Every component must earn its place against the pillars. When in doubt,
    expose an API and let someone else build it.
+8. **Sovereign, and that includes distribution.** Dibs stands up no CA, depends on no VPN,
+   and requires no account or subscription to install or run: `resolveTransport` states the
+   inward half of this, and the outward half is the same rule. **We do not pay to be
+   listed.** Directories that gate a listing behind a fee are declined, not negotiated,
+   however good their traffic looks: a project that buys placement has made its
+   discoverability someone else's lever. Paying for infrastructure we genuinely must own,
+   a domain, hosting, is not the same thing and is fine. This is Agenxy doctrine, not a
+   Dibs preference, and it applies to every repository under the org.
 
 ## The test for any proposed change
 
