@@ -326,6 +326,8 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		res, evs, err = s.applyVouchChild(l, op)
 	case OpSpaceOpen:
 		res, evs, err = s.applySpaceOpen(l, op, now)
+	case OpSpaceRetitle:
+		res, evs, err = s.applySpaceRetitle(l, op, now)
 	case OpSpaceJoin:
 		res, evs, err = s.applySpaceJoin(l, op, now)
 	case OpSpaceLeave:
@@ -357,12 +359,7 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	case OpAckBoard:
 		res, evs = s.applyAckBoard(l, now)
 	case OpUpdate:
-		if len(op.Description) > s.Limits.MaxDescBytes {
-			err = errTooLarge("description", s.Limits.MaxDescBytes)
-			break
-		}
-		l.Description = op.Description
-		res, evs = Result{"ok": true}, []Event{{Type: "agent.updated", Agent: l.ID}}
+		res, evs, err = s.applyUpdate(l, op)
 	case OpBindSession:
 		// A LEDGERED write, because it is a write.
 		//
@@ -758,6 +755,25 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 			id + ": register with an ASCII name if you want a meaningful one. Your original " +
 			"name is kept and shown to humans on the board."
 	}
+	// A name that says nothing. Not an error: a name is advisory, and refusing
+	// one would be coercion over a label.
+	//
+	// It is worth saying anyway, because the cost lands on somebody who is not
+	// here. An agent picks its name in its first seconds, before it knows what
+	// it will be doing, so "agent", "claude-1" and "worker" are exactly what a
+	// cold start produces; then a human opens a board of nine agents and every
+	// row is a synonym for "an agent". The register result is the one moment
+	// this can be said to the party that can fix it, and `update` is now the fix,
+	// so say both.
+	if generic := genericAgentName(op.Name); generic != "" {
+		res["naming"] = "\"" + op.Name + "\" names your species, not you: on a board of " +
+			"nine agents every row would read as a synonym for \"an agent\", and the human " +
+			"reading it cannot tell which of them to interrupt. Name yourself for the ROLE " +
+			"you hold (reviewer, ledger-surgeon, docs) or the seat you occupy, not for the " +
+			"model or the harness running you: those are already on the board beside your " +
+			"name. Your id is fixed at " + id + ", but the name is not: call update(name=…) " +
+			"once you know what you are, and put the rest in description."
+	}
 	// An agent whose only recovery credential is a session id is reclaimable by
 	// anyone who learns that id, and the bridge derives it from a process id
 	// that any same-user program can enumerate. Say so, rather than letting the
@@ -809,6 +825,119 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 			", which moves this agent's mail and slots onto that one."
 	}
 	return res, evs, nil
+}
+
+// genericAgentName reports the placeholder a name reduces to, or "".
+//
+// The test is deliberately narrow: the whole name, minus a trailing counter,
+// must BE a placeholder. "reviewer-2" and "claude-code-linter" are specific
+// enough to pick out of a roster and are left alone; "claude-2" and "agent" are
+// not. Naming yourself after the model or the harness is the same failure in a
+// different coat, because both are already shown next to the name.
+func genericAgentName(name string) string {
+	base := strings.ToLower(strings.TrimSpace(name))
+	base = strings.TrimRight(base, "0123456789")
+	base = strings.TrimRight(base, "-_ .")
+	switch base {
+	case "agent", "assistant", "ai", "bot", "model", "llm",
+		"worker", "helper", "runner", "task", "job", "session", "instance",
+		"main", "default", "temp", "tmp", "test", "dev", "me", "user", "new",
+		"claude", "claude-code", "codex", "gpt", "opus", "sonnet", "haiku",
+		"gemini", "cursor", "copilot", "opencode", "pi", "hermes", "anthropic":
+		return base
+	}
+	return ""
+}
+
+// applyUpdate revises what an agent SAYS ABOUT ITSELF: its display name, its
+// description, and the self-reported half of its identity.
+//
+// The ID is not among them, deliberately. An id is an ADDRESS: mail, claims,
+// space membership and every hint that names an agent are keyed on it, and a
+// mutable address is a message delivered to the wrong agent, or to nobody. So a
+// rename here changes the label a human reads and nothing about where things
+// arrive, and the result says so in the same breath rather than leaving the
+// caller to discover it the hard way.
+//
+// Why this exists at all: an agent picks its name in its first seconds, before
+// it knows what it is going to be doing, and "agent" or "claude-1" is what that
+// produces. The board then carries that name for the agent's whole life. Making
+// the descriptive half mutable is the difference between a roster a human can
+// read and a list of placeholders.
+//
+// Note the asymmetry in what an empty value means. Description clears, because
+// that is what it has always done and ledgers already hold `update` ops with an
+// empty description whose recorded effect was to clear it: making empty mean
+// "leave alone" would silently re-fold that history into a different state.
+// Name and the identity fields are new here, so no ledger has them set, and
+// merge-when-non-empty is free of that constraint AND is the useful semantic:
+// an agent updating its branch must not have to restate its model.
+func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
+	if len(op.Description) > s.Limits.MaxDescBytes {
+		return nil, nil, errTooLarge("description", s.Limits.MaxDescBytes)
+	}
+	if len(op.Name) > s.Limits.MaxNameBytes {
+		return nil, nil, errTooLarge("name", s.Limits.MaxNameBytes)
+	}
+	res := Result{"ok": true, "id": l.ID}
+	// Taking a live agent's name is refused, not suffixed. Register suffixes
+	// because a new agent has no history to protect; here both agents already
+	// exist, and two live agents sharing a name is not cosmetic: liveSiblingOf
+	// redirects a dead agent's mail to a same-named live one, so a rename onto
+	// somebody else's name is a mail-redirection primitive.
+	if op.Name != "" && op.Name != l.Name {
+		if other := s.siblingByName(op.Name, l.ID); other != nil {
+			return nil, nil, errf("E_NAME_TAKEN",
+				"pick another name, or leave name out and update only your description",
+				"the name %q belongs to %s, which is still on the board: two live agents "+
+					"sharing a name redirects mail between them", op.Name, other.ID)
+		}
+		res["renamed_from"] = l.Name
+		res["address"] = "your id is still " + l.ID + " and that is what others address: " +
+			"a rename changes the label humans read, never where your mail arrives"
+		l.Name = op.Name
+	}
+	l.Description = op.Description
+	if op.Agent != nil {
+		res["identity"] = l.mergeIdentity(op.Agent)
+	}
+	res["name"], res["description"] = l.Name, l.Description
+	return res, []Event{{Type: "agent.updated", Agent: l.ID}}, nil
+}
+
+// mergeIdentity overlays the self-reported identity fields an agent may revise,
+// and returns the ones it actually changed.
+//
+// Only the self-reported half is settable. Harness and Version come from the
+// MCP handshake: the CLIENT states those, which is the one part of an identity
+// that is not the model's word for itself, and letting the model overwrite them
+// would throw away the only trustworthy field on the board. Project, RepoDir,
+// RepoRemote and RepoRoots are resolved from the filesystem by the server and
+// compared by the fold; an agent asserting them could make its work look like
+// it lives in a repository it has never touched.
+func (a *Agent) mergeIdentity(in *AgentInfo) []string {
+	if a.Agent == nil {
+		a.Agent = &AgentInfo{}
+	}
+	var changed []string
+	for _, f := range []struct {
+		name string
+		dst  *string
+		src  string
+	}{
+		{"model", &a.Agent.Model, in.Model},
+		{"provider", &a.Agent.Provider, in.Provider},
+		{"effort", &a.Agent.Effort, in.Effort},
+		{"surface", &a.Agent.Surface, in.Surface},
+		{"title", &a.Agent.Title, in.Title},
+		{"branch", &a.Agent.Branch, in.Branch},
+	} {
+		if f.src != "" && f.src != *f.dst {
+			*f.dst = f.src
+			changed = append(changed, f.name)
+		}
+	}
+	return changed
 }
 
 // applyResume is the explicit activation op for standing roles (SPEC §5):

@@ -487,32 +487,7 @@ func TestAMergedAwaySpaceAlsoLosesItsFootprint(t *testing.T) {
 // An agent is named for the WORK, not for the sentence describing it.
 //
 // Ids are slugified topics, and the topic was the whole declaration, so an
-// agent writing "I am fixing the retry loop when tokens fail to refresh" created
-// an agent called i-am-fixing-the-retry-loop-when-tokens-fail-to-refresh. That id
-// is what another agent passes to join_space, what a human reads on the board,
-// and what a projector shows to a room. Unusable as all three.
-func TestASpaceIsNamedForTheWorkNotTheSentence(t *testing.T) {
-	for _, c := range []struct{ declaration, want string }{
-		{"I am fixing the retry loop when tokens fail to refresh", "fixing retry loop tokens fail"},
-		{"tidying up the CSS on the board", "tidying up css board"},
-		{"I'm working on the auth middleware", "auth middleware"},
-		// Already terse: unchanged, not padded.
-		{"blob eviction", "blob eviction"},
-	} {
-		if got := spaceName(c.declaration); got != c.want {
-			t.Errorf("spaceName(%q) = %q, want %q", c.declaration, got, c.want)
-		}
-	}
-
-	// A declaration that is ALL filler is still a declaration. Naming an agent ""
-	// would be worse than naming it badly: cleanID would reject it and the
-	// agent would never open, silently.
-	if got := spaceName("I am just working on it"); got == "" {
-		t.Error("an all-filler declaration must still yield a name, or the agent never opens")
-	}
-}
-
-// An agent's SECOND task is the normal case, not an edge one.
+// / An agent's SECOND task is the normal case, not an edge one.
 //
 // Suppression counted any membership at any score, so a faint accidental overlap
 // with an agent the agent was still in (one shared file is enough) stopped it

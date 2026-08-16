@@ -246,6 +246,7 @@ const (
 	OpSpacePost      = "post"
 	OpSpaceAnnounce  = "announce"
 	OpSpaceAck       = "ack_announcement"
+	OpSpaceRetitle   = "retitle_space"
 
 	// Director powers: the coordinator role applied to spaces (§8.1).
 	OpSpaceForceRelease = "unlock_space"
@@ -254,6 +255,46 @@ const (
 	OpSpaceClose        = "close_space"
 	OpSpaceAdmit        = "admit"
 )
+
+// applySpaceRetitle replaces a space's topic, so a member can redact it.
+//
+// There was no way to change a topic at all. An agent in a private repository
+// declared richly, as dibs://skills tells it to, and the wording became a
+// durable board object; the only remedy it could find was destroying the space,
+// which also destroys the coordination the space exists for. Its operator had
+// to notice the leak, which is not a check anybody should depend on a human for.
+//
+// Any MEMBER may retitle, not only the opener. The agent that needs to redact is
+// whichever one wrote something it should not have, and in an auto-opened space
+// the opener and the author are the same agent anyway. Membership is the
+// existing boundary for reading a space; it is the right one for editing its
+// label.
+//
+// The old topic is NOT recorded in the result or the event. Every other op here
+// reports what changed, and doing that faithfully would republish the exact
+// string somebody just asked to remove, into the ledger and the activity feed.
+func (s *State) applySpaceRetitle(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+	ch := s.Spaces[op.Space]
+	if ch == nil {
+		return nil, nil, errf("E_NO_SPACE", "check the id on the board", "no space %q", op.Space)
+	}
+	if ch.Members[l.ID] == nil {
+		return nil, nil, errf("E_NOT_A_MEMBER",
+			"join the space first: its members are who may change what it says about itself",
+			"agent %q is not a member of space %q", l.ID, op.Space)
+	}
+	if len(op.Text) > s.Limits.MaxNameBytes {
+		return nil, nil, errTooLarge("topic", s.Limits.MaxNameBytes)
+	}
+	ch.Topic = op.Text
+	evs := []Event{{
+		Type: "agent.retitled", Agent: l.ID,
+		// The NEW topic only, never the old one. See above.
+		Data: map[string]any{"agent_id": op.Space, "topic": op.Text},
+	}}
+	serial := s.finish(&evs, now)
+	return Result{"ok": true, "space": op.Space, "topic": op.Text, "serial": serial}, evs, nil
+}
 
 // ── open ─────────────────────────────────────────────────────────────────
 

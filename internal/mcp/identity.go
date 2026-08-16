@@ -90,6 +90,30 @@ func agentInfo(params json.RawMessage, a *toolArgs, session *clientInfoJSON) *co
 	return info
 }
 
+// selfReported is the half of an identity an agent may revise about itself.
+//
+// Deliberately not agentInfo(): that one resolves the project and the repo
+// identity from the filesystem, which is a Git call, and it reads clientInfo
+// from the handshake. Neither belongs on `update`. The repo half is resolved by
+// the server and compared by the fold, so an agent must not be able to assert
+// it; harness and version are the client's word rather than the model's, which
+// is the one part of the board that is not self-description; and the Git call
+// is affordable once per agent at registration, not on every revision.
+func selfReported(a *toolArgs) *core.AgentInfo {
+	info := &core.AgentInfo{
+		Model:    a.Model,
+		Provider: a.Provider,
+		Effort:   a.Effort,
+		Surface:  a.Surface,
+		Title:    a.Title,
+		Branch:   a.Branch,
+	}
+	if *info == (core.AgentInfo{}) {
+		return nil
+	}
+	return info
+}
+
 // clientIdentity pulls the human-facing harness name and version out of either
 // the 2026 per-request _meta clientInfo or a legacy initialize's clientInfo.
 // Prefers `title` ("Claude Code") over `name` ("claude-code"): the board is

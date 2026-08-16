@@ -75,7 +75,7 @@ func TestTheOpenedSpaceHintDoesNotClaimSolitude(t *testing.T) {
 	}
 
 	sug := e.openFirstSpace(ctx, tok, "reviewing the matcher end to end",
-		overlap.Prediction{ScorerID: "test"}, nil)
+		nil, "", overlap.Prediction{ScorerID: "test"}, nil)
 	if sug == nil {
 		t.Fatal("openFirstSpace returned nothing; this test cannot see the hint it guards")
 	}

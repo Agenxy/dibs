@@ -35,6 +35,24 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:dibs:dibs",
+            "tool": "hook_poll",
+            "input": {
+              "session_id": "${session_id}",
+              "event": "${hook_event_name}",
+              "cwd": "${cwd}"
+            },
+            "timeout": 5,
+            "statusMessage": "Checking Dibs"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [

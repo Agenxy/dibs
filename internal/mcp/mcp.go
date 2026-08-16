@@ -890,7 +890,8 @@ func (s *Server) run(
 	case "check_in":
 		op.Kind = core.OpAckBoard
 	case "update":
-		op.Kind, op.Description = core.OpUpdate, a.Description
+		op.Kind, op.Name, op.Description = core.OpUpdate, a.Name, a.Description
+		op.Agent = selfReported(a)
 	case "vouch_child":
 		op.Kind, op.Nonce = core.OpVouchChild, a.Nonce
 	case "sign_off":
@@ -998,6 +999,8 @@ func (s *Server) run(
 		op.Kind, op.Space, op.To, op.Note = core.OpSpaceMerge, a.SpaceID, a.To, a.Note
 	case "human_unlock":
 		return s.humanUnlock(ctx, a)
+	case "retitle_space":
+		op.Kind, op.Space, op.Text = core.OpSpaceRetitle, a.SpaceID, a.Text
 	case "close_space":
 		op.Kind, op.Space, op.Note = core.OpSpaceClose, a.SpaceID, a.Note
 	case "admit":
@@ -1034,7 +1037,7 @@ func (s *Server) run(
 	// asked about. SessionStart fires before the agent's first turn, so this is
 	// already known by the time it registers.
 	hooksLive := s.eng.HookTrafficSeen(ctx, a.SessionID)
-	return attachPluginHint(res, harness, reattached, hooksLive), nil
+	return attachPluginHint(res, harness, reattached, hooksLive, a.SessionID != ""), nil
 }
 
 // serverInstructions is the text every agent reads on connect.
@@ -1076,9 +1079,9 @@ func (s *Server) run(
 //nolint:lll // agent-facing text; line breaks are semantic
 const serverInstructions = `Dibs coordinates the agents on this machine: who is working, on what, and where they are about to collide.
 
-An agent is an AGENT, not a task. Name it for who you are ('reviewer', 'codex-1'): that name is your address; what you are DOING goes in declare.
+An agent is an AGENT, not a task. Name it for the ROLE you hold ('reviewer', 'release'), never your model or harness; what you DO goes in declare. update() revises both.
 
-Start: register(name, description, pid, nonce): keep the token, and invent a nonce: it is the only credential that survives a restart. Then check_in() at the start of every activation, before you act.
+Start: register(name, description, pid, nonce): keep the token, and invent a nonce: it is the only credential that survives a restart. Then check_in() at the start of every activation.
 
 Read dibs://skills once: short, and it is the mistakes that look like success. dibs://plugin says if your harness can deliver mail instead of you polling.
 

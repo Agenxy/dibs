@@ -2,8 +2,11 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -350,7 +353,7 @@ func (e *Engine) matchDeclaration(
 		if alreadyCoordinating(matches, cfg.NotifyThreshold) {
 			return nil, matchedAlreadyIn
 		}
-		if s := e.openFirstSpace(ctx, token, declaration, pred, recorded); s != nil {
+		if s := e.openFirstSpace(ctx, token, declaration, declRefs, cfg.Repo, pred, recorded); s != nil {
 			return []Suggestion{*s}, matchedNothing
 		}
 	}
@@ -604,42 +607,80 @@ func alreadyCoordinating(matches []core.AgentMatch, notify float64) bool {
 //
 // Deliberately dumb: no stemming, no model, no cleverness that could differ
 // between builds. The TOPIC keeps the declaration verbatim, so nothing is lost.
-func spaceName(declaration string) string {
-	// Filler carries no information about the work. Kept short and literal
-	// rather than exhaustive: this only has to make ids readable, and a longer
-	// list is a longer thing to be subtly wrong about.
-	skip := map[string]bool{
-		"i": true, "im": true, "am": true, "is": true, "are": true, "the": true,
-		"a": true, "an": true, "to": true, "of": true, "in": true, "on": true,
-		"for": true, "and": true, "with": true, "when": true, "that": true,
-		"this": true, "it": true, "its": true, "my": true, "we": true, "our": true,
-		"be": true, "been": true, "will": true, "just": true, "some": true,
-		"working": true, "work": true, "doing": true, "going": true,
-	}
-	var kept []string
-	for _, w := range strings.Fields(strings.ToLower(declaration)) {
-		w = strings.Trim(w, ".,;:!?\"'()[]{}")
-		// Apostrophes are INTERIOR, so trimming the ends leaves "i'm" intact and
-		// it misses the filler list: the id came out as "i'm auth middleware".
-		// Dropping them folds contractions onto their bare forms, which is what
-		// the list is written in.
-		w = strings.ReplaceAll(w, "'", "")
-		w = strings.ReplaceAll(w, "\u2019", "")
-		if w == "" || skip[w] {
+// spaceID names a space WITHOUT quoting the declaration that opened it.
+//
+// It used to be a slug of the prose, and that leaked. An agent working in a
+// private repository followed dibs://skills, which tells you to declare richly,
+// and its declaration became a permanent board object whose ID contained a
+// hostname, a service-account name, internal paths and its employer's CI
+// topology, readable by every other agent on the machine including ones in
+// unrelated repositories. Their operator spotted it and told them to remove it,
+// which is not a check anybody should be relying on a human for. There was no
+// way to redact it either: the only remedy was destroying the space.
+//
+// It also contradicted the loudest rule in skills, "an agent is an AGENT, not a
+// task, never name it for what you are doing", while Dibs derived a permanent
+// id from exactly that.
+//
+// So the id comes from what the agent DELIBERATELY published as an identifier:
+//
+//	refs first    an id like `issue:42` or `pr:1186` was typed as an id. It is
+//	              already shared with whoever else is on that item, which is the
+//	              whole point of declaring it, and it says nothing about the
+//	              contents of anybody's tree.
+//	repo second   the project name, which is already on the board in every
+//	              agent's descriptor, plus a short digest of the declaration for
+//	              uniqueness. The digest is one-way: it distinguishes without
+//	              disclosing.
+//	neither       a bare digest. Opaque, and still stable for the same wording.
+//
+// The topic still carries the declaration, because a space nobody can read the
+// purpose of is not worth joining, and the same text is already visible in the
+// agent's own slot. What changed is that it is no longer baked into a permanent
+// identifier, and `retitle_space` can now redact it.
+func spaceID(declaration string, refs []string, repo string) string {
+	// An identifying ref beats everything: the agent chose to publish it.
+	for _, r := range refs {
+		kind, value, ok := strings.Cut(r, ":")
+		if !ok || value == "" {
 			continue
 		}
-		kept = append(kept, w)
-		if len(kept) == 5 {
-			break
+		switch strings.ToLower(strings.TrimSpace(kind)) {
+		case "issue", "pr", "incident", "ticket", "key", "epic", "story":
+			if id := slug(kind + " " + value); id != "" {
+				return id
+			}
 		}
 	}
-	if len(kept) == 0 {
-		// Every word was filler, which is a real declaration ("just working on
-		// it") even if an unhelpful one. Fall back rather than open a nameless
-		// agent, and let cleanID truncate.
-		return declaration
+	digest := sha256.Sum256([]byte(declaration))
+	short := hex.EncodeToString(digest[:])[:6]
+	if project := filepath.Base(strings.TrimSpace(repo)); project != "" &&
+		project != "." && project != string(filepath.Separator) {
+		if p := slug(project); p != "" {
+			return p + "-work-" + short
+		}
 	}
-	return strings.Join(kept, " ")
+	return "work-" + short
+}
+
+// slug reduces text to an id-safe form. Used only on values that are already
+// identifiers (a ref, a project name), never on a declaration.
+func slug(s string) string {
+	var b strings.Builder
+	lastDash := true
+	for _, r := range strings.ToLower(s) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastDash = false
+		default:
+			if !lastDash {
+				b.WriteByte('-')
+				lastDash = true
+			}
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 // openFirstSpace creates the agent a declaration deserves when none exists yet,
@@ -653,7 +694,7 @@ func spaceName(declaration string) string {
 // human-named agent, or a lost race with another agent declaring the same thing
 // costs a suggestion, never the declaration.
 func (e *Engine) openFirstSpace(ctx context.Context, token, declaration string,
-	pred overlap.Prediction, recorded []core.PredFile,
+	refs []string, repo string, pred overlap.Prediction, recorded []core.PredFile,
 ) *Suggestion {
 	// The topic keeps the declaration, bounded: it is what a reader sees to
 	// understand what the agent is FOR, and what the next agent reads before
@@ -662,15 +703,8 @@ func (e *Engine) openFirstSpace(ctx context.Context, token, declaration string,
 	if len(topic) > 120 {
 		topic = strings.TrimSpace(topic[:120]) + "…"
 	}
-	// The agent's TOPIC is the declaration verbatim; its NAME is not.
-	//
-	// Ids are slugified topics, so naming an agent after a whole first-person
-	// sentence produced things like
-	// "i-am-fixing-the-retry-loop-when-tokens-fail-to-refresh": the id an agent
-	// types into join_space, a human reads on the board, and a projector shows to
-	// a room. An agent is named for the WORK, not for the sentence somebody used
-	// to describe it.
-	name := spaceName(declaration)
+	// The id is NOT slugged from the declaration. See spaceID.
+	name := spaceID(declaration, refs, repo)
 	// A slug collision must not disable bootstrapping for that wording forever.
 	//
 	// The agent id is derived from the declaration, so an unrelated agent a human

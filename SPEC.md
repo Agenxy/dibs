@@ -606,7 +606,8 @@ counting a document; this line said 17 for two minor versions.
 | `register(name, description?, pid?, nonce?, kind?)` | → `{agent_id, token, serial, board}`; nonce required for `kind: persistent` |
 | `resume(nonce, resume_id, pid?)` | reactivate a persistent agent: rotates token, bumps activation generation, rebinds PID, wakes, re-arms gate; idempotent per resume_id (§5) |
 | `check_in()` | pass the awareness gate (per activation); → atomic `{board, inbox, serial}` checkpoint (§10) |
-| `update(description)` / `sign_off()` | lifecycle |
+| `update(name?, description?, title?, branch?, model?, provider?, effort?, surface?)` | revise what the agent says about ITSELF. The id is immutable (it is the address every message, claim and membership keys on), so a rename moves the label only, and a name another live agent holds is refused (`E_NAME_TAKEN`) rather than suffixed. `harness`/`version` are not settable: the client states them at the handshake, which is the only part of an identity that is not self-reported. Empty `description` clears, because already-ledgered `update` ops did that; the fields added later merge when non-empty, so replay of old ops is unchanged |
+| `sign_off()` | lifecycle |
 | `heartbeat()` | renew lease while idle (implicit on every call) |
 | `declare(slot_id?, text, dirs?)` / `undeclare(slot_id)` | declare/end work units |
 | `send(to, type, body, deadline_s?, op_id?)` | → `msg_serial`; `op_id` = durable dedup (§4) |
@@ -617,11 +618,24 @@ counting a document; this line said 17 for two minor versions.
 | `claim(path, mode, note?)` / `release(path)` | §9 |
 | `events_since(since_serial)` / `await_events(since_serial, timeout_s?)` | §10 |
 
+**`waiting`**: every authenticated result from a mutating call carries a `waiting`
+string when the caller has unread mail, an unacknowledged announcement, or a
+pending agent update. Counts and the corrective call (`inbox`) only, never
+content: the body stays behind the authenticated mailbox. Absent when there is
+nothing, and absent on `check_in`, which has just returned the inbox itself.
+
+This is a delivery guarantee, not a convenience. Push delivery through lifecycle
+hooks is conditional on the harness having hooks, the plugin being installed and
+loaded before the session began, and the agent having registered with the
+session id the hook quotes; a tool result is the only channel that exists
+unconditionally, and it cannot be misrouted, because it returns down the
+connection the caller authenticated on.
+
 **Errors**: structured `{code, message, hint}` tool results (`isError: true`); `hint`
 names the corrective action. Codes: the §11 set plus `E_BAD_TOKEN, E_MUST_ACK_BOARD,
 E_NO_AGENT, E_NO_SLOT, E_NO_MESSAGE, E_NO_CLAIM, E_MSG_FINAL, E_BAD_TYPE, E_BAD_MODE,
-E_BAD_DISPOSITION, E_BAD_NONCE, E_NONCE_IN_USE, E_OP_ID_CONFLICT, E_AGENT_CLOSED,
-E_CURSOR_TOO_OLD`.
+E_BAD_DISPOSITION, E_BAD_NONCE, E_NAME_TAKEN, E_NONCE_IN_USE, E_OP_ID_CONFLICT,
+E_AGENT_CLOSED, E_CURSOR_TOO_OLD`.
 
 **Resources**: `dibs://board`. Mailboxes are deliberately not resources.
 
@@ -701,7 +715,7 @@ binaries (`dibd` and `dibs`) both CGO_ENABLED=0 and byte-reproducible.
 ledgered wake transitions; ephemeral + persistent agents; resume; awareness gate
 per activation; mailbox (full state machine, read_mail, op_id dedup,
 dormant-recipient semantics); claims (§9 matrix); bounded liveness with bounded
-restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (42 tools);
+restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (43 tools);
 local access secret + Origin validation; CLI (board/messages/log/verify/mcp-config);
 SSE web board; static binaries (`dibd` + `dibs`, no cgo, no runtime deps).
 

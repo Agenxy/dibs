@@ -312,7 +312,7 @@ dibs doctor: data dir ~/.dibs
 
   ✓ local secret present
   ✓ daemon answering on 127.0.0.1:4777
-  ✓ 42 tools published
+  ✓ 43 tools published
   ! work-overlap matching is off
       → start dibd with -match-repo <path> (or set [match] repo in
         dibs.toml) to have Dibs tell you who else is doing your work

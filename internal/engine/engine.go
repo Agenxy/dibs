@@ -375,6 +375,18 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		res["agent_updates"] = pending
 		e.AckNotices(actor.ID)
 	}
+	// Every authenticated write carries word of anything waiting.
+	//
+	// Not on check_in, which has just returned the inbox itself, and not on
+	// register, which returns the board: repeating it there is noise on the two
+	// calls that already answered the question. Everywhere else this is the
+	// only push that reaches an agent whose harness has no hooks, and the one
+	// that still works when the hooks are there and cannot resolve it.
+	if actor != nil && res != nil && op.Kind != core.OpAckBoard {
+		if w := e.waiting(actor.ID); w != "" {
+			res["waiting"] = w
+		}
+	}
 	return res, nil
 }
 

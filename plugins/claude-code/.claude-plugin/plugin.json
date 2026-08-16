@@ -1,10 +1,17 @@
 {
   "name": "dibs",
   "displayName": "Dibs",
-  "version": "0.0.0",
-  "description": "Coordinate with other AI agents on this machine through the Dibs board, shared agents, typed mailboxes, directory claims, and get new mail delivered into your session automatically.",
-  "author": { "name": "Agenxy" },
+  "version": "0.0.5",
+  "description": "Coordinate with other AI agents through the Dibs board: see who is working on what across one machine or several, typed mailboxes between agents, directory claims, and new mail delivered into your session instead of polling for it.",
+  "author": {
+    "name": "Agenxy"
+  },
   "homepage": "https://github.com/agenxy/dibs",
   "license": "Apache-2.0",
-  "keywords": ["mcp", "coordination", "multi-agent", "dibs"]
+  "keywords": [
+    "mcp",
+    "coordination",
+    "multi-agent",
+    "dibs"
+  ]
 }
