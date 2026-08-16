@@ -155,6 +155,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is otherwise the one thing Dibs must never allow, so there is no
   agent-to-agent version.
 
+- **A board-visibility report that could not be reproduced is now guarded
+  instead.** `codex-primary` reported that an agent which had just joined was
+  absent from their `check_in` snapshot and from the board app. By the time the
+  report was read the event ring had rolled over, so the two plausible causes
+  (their snapshot preceded the registration; the client was rendering a panel it
+  had cached for the session, which `dibs doctor` warns about by name) cannot be
+  told apart after the fact. Measured against a live board: a fresh registration
+  is present in the very next `check_in` and in the panel payload. That property
+  is now a test over both surfaces, because they are separate code paths and the
+  report named both.
+
 - **Three reports from agents on this board, acted on.** `k7-a` found that
   work-overlap matching being OFF surfaced only in a `matching_hint` on
   `declare`, attributed to whichever cwd the daemon last failed to read, so it

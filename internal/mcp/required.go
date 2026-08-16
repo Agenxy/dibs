@@ -186,8 +186,30 @@ var synonyms = map[string]string{
 	"name":    "agent",
 }
 
+// wrongTool maps a (tool, argument) that means the caller wanted a DIFFERENT
+// tool, not a different parameter.
+//
+// k7-b reached for read_mail(agent:…) because read_mail reads like a lister,
+// and for check_in(view:…) because `view` is real on `board`. Both refusals were
+// correct and neither said where to go. Renaming read_mail would be the deeper
+// fix and is a breaking change for every installed plugin, so the surface stays
+// and the error carries the map.
+var wrongTool = map[string]map[string]string{
+	"read_mail": {
+		"agent": "inbox lists your mail; read_mail fetches ONE message by msg_serial",
+		"from":  "inbox lists your mail; read_mail fetches ONE message by msg_serial",
+	},
+	"check_in": {
+		"view":   "`view` belongs to board(view: board|mail|activity); check_in always returns the whole checkpoint",
+		"detail": "`detail` belongs to board(detail: true); check_in always returns the whole checkpoint",
+	},
+	"inbox": {
+		"msg_serial": "read_mail(msg_serial) fetches one message; inbox lists them",
+	},
+}
+
 // synonymHint names the parameter the caller probably meant, when this tool
-// actually has one.
+// actually has one, or the tool they probably wanted.
 func synonymHint(tool string, extra []string) string {
 	known := map[string]bool{}
 	for _, p := range knownParams[tool] {
@@ -195,6 +217,10 @@ func synonymHint(tool string, extra []string) string {
 	}
 	var found []string
 	for _, e := range extra {
+		if where, ok := wrongTool[tool][e]; ok {
+			found = append(found, where)
+			continue
+		}
 		if want, ok := synonyms[e]; ok && known[want] {
 			found = append(found, fmt.Sprintf("%q is %q here", e, want))
 		}

@@ -419,3 +419,27 @@ func TestARefusalNamesTheParameterTheCallerMeant(t *testing.T) {
 		t.Errorf("err = %v: it offered a parameter this tool does not take", err)
 	}
 }
+
+// An unknown argument sometimes means the caller wanted a different TOOL.
+//
+// k7-b called read_mail(agent:…) because read_mail reads like a lister when
+// `inbox` is the lister, and check_in(view:…) because `view` is real on `board`.
+// Both refusals were correct and neither said where to go. Renaming read_mail is
+// the deeper fix and breaks every installed plugin, so the surface stays and the
+// error carries the map.
+func TestARefusalNamesTheToolTheCallerWanted(t *testing.T) {
+	err := checkRequired("read_mail", []byte(`{"token":"t","agent":"k7-b"}`), "")
+	if err == nil {
+		t.Fatal("read_mail accepted an argument it does not declare")
+	}
+	if !strings.Contains(err.Error(), "inbox lists your mail") {
+		t.Errorf("err = %v: it refuses without naming the tool that does this", err)
+	}
+	err = checkRequired("check_in", []byte(`{"token":"t","view":"compact"}`), "")
+	if err == nil {
+		t.Fatal("check_in accepted an argument it does not declare")
+	}
+	if !strings.Contains(err.Error(), "board(view:") {
+		t.Errorf("err = %v: it does not say where `view` lives", err)
+	}
+}

@@ -199,6 +199,53 @@ silent.
   unstated. A fix an operator can perform in the wrong order is a fix that will
   eventually be performed in the wrong order.
 
+## R14: the bridge is the identity anchor, and the last hop is unattested
+
+Reported by `web-lead` on this board, and it is the most useful outside analysis
+Dibs has received. Its finding, verified in-tree: nonces are bearer secrets held
+as plain map keys, `pid` is client-supplied and taken on trust, the transport is
+`ListenAndServe` with no peer verification anywhere, and nothing persists a
+nonce agent-side, so for an LLM agent "remember it" means the context window,
+which means a transcript on disk, which means it is one compaction from gone.
+
+Their first proposal was a holder process to anchor identity. Their own
+follow-up deleted most of it: **the holder already exists.** The stdio bridge is
+spawned per client connection, is a real child of the harness, and its stdin is
+a pipe the harness owns, so who may write to it is enforced by the kernel rather
+than by convention. That is a stronger property than anything a new process
+would have provided, and Dibs already had it.
+
+The trust chain that follows:
+
+| hop | basis |
+|---|---|
+| agent → harness | soft; the harness runs the agent |
+| harness → bridge | **kernel**, pipe ownership |
+| bridge → daemon | **nothing** |
+
+Requirements:
+
+- **The bridge's lifetime must be bounded by its harness**, or the anchor is not
+  an anchor. Built: EOF plus a kernel parent-death bond (R12).
+- **The last hop is the whole remaining gap.** A unix socket with peer
+  attestation by audit token, not pid: pid reuse is real and Apple deprecated
+  pid-based checks. Holding the connection open makes liveness free and
+  revocation exact, with a TTL only as backstop.
+- **Granularity is per harness PROCESS, not per agent**, and must be described
+  that way. Two agents in one window share a bridge. "This window" is still a
+  unit a human can reason about in an approval prompt, and arguably a better one
+  than "this agent", which is a name anyone can type: Dibs' own argument about
+  `parent`.
+- **Agent identity stays cooperative, and SECURITY.md must say so plainly**
+  rather than implying otherwise. Two agents in one harness share a shell, so
+  anything one can execute the other can. No transport fixes that.
+- **A secrets broker MUST NOT ship before the attested hop**, or it is a vault
+  fronted by a bearer key in a log file.
+
+Not built. It is a security-critical transport change, and the honest sequence
+is to design it deliberately rather than append it to an evening that had
+already restarted this board four times.
+
 ## R13: a result must claim only what the server knows
 
 `board` appended "Shown to the human in the board panel." to every result. It
