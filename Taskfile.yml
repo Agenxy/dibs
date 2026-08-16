@@ -314,6 +314,24 @@ tasks:
     cmds:
       - go run ./tools/smoke
 
+  release:
+    # The last hand-edited step in a pipeline that has no other.
+    #
+    # A release used to mean: rename the changelog heading, remember the date,
+    # then edit four JSON manifests, and every one of those is a place to stop
+    # halfway. It drifted twice: the Claude Code manifest sat at 0.0.0 through
+    # five releases and the Claude Desktop one still did, both valid JSON,
+    # both passing every validator, neither caught by anything.
+    #
+    # Stamps and stops. Tagging publishes signed artifacts, moves the Homebrew
+    # cask and writes to the MCP registry, so it stays the owner's to perform;
+    # this prints the commands rather than running them.
+    desc: 'Stamp a release across the changelog and every manifest: task release VERSION=0.0.6'
+    requires:
+      vars: [VERSION]
+    cmds:
+      - go run ./tools/version -set {{.VERSION}}
+
   ci:
     desc: The full local gate chain (mirrors CI)
     cmds:

@@ -133,6 +133,19 @@ and publishes `server.json` to the official MCP Registry as `io.github.Agenxy/di
 Nothing here needs a human between the tag and the release, and no source is updated by
 hand: if the three ever disagree, that is a bug in the pipeline, not a chore.
 
+**`task release VERSION=0.0.6` is the one step before the tag.** It claims the
+changelog's `## [Unreleased]` section for that version and stamps every manifest that
+states one, then stops: tagging publishes, so it stays yours to do. Doing it by hand is
+how two manifests sat at `0.0.0` through five releases, and the tagged commit is now
+checked against its own tag, so the release fails rather than shipping a version no file
+in it names.
+
+**Trunk-based, deliberately: `main` is always the release candidate.** There are no
+release branches, and adding one would create a second place that has to agree with main
+about what is shipping, which is this repository's most expensive recurring bug (see the
+drift guards for `skills.md`, the plugin copies, the tool count, the vocabulary). Topic
+branches live hours, not weeks. What is going into the next version is `## [Unreleased]`.
+
 **We do not pay to be listed** (PHILOSOPHY.md rule 8). Several MCP directories now gate
 submission behind a fee, and the answer is no every time, however good the traffic
 numbers look. Free listings, PRs to community lists, and registries that index from the

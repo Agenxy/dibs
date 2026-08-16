@@ -54,6 +54,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A hygiene guard against the wreckage a find-and-replace leaves when one word
   used to mean two things, which is how the last one went.
 
+- **`task release VERSION=x.y.z`**, because the release pipeline had exactly one
+  hand-edited step left and it drifted twice. AGENTS.md says of that pipeline
+  that "no source is updated by hand: if the three ever disagree, that is a bug
+  in the pipeline, not a chore"; claiming the changelog's Unreleased section and
+  stamping four manifests was still a chore. It stamps and stops, because
+  tagging publishes signed artifacts, moves the Homebrew cask and writes to the
+  MCP registry, and that stays the owner's to perform. `internal/release` is the
+  one declaration of what carries a version, used by both the thing that writes
+  it and the thing that checks it, so a manifest cannot be stamped and unchecked
+  or checked and unstamped.
+
 - **`dibs upgrade`**: one command to move a running fleet onto a new build.
   R12 settled the client half of this (the bridge waits out the restart window
   and re-sends only requests that provably never arrived); this is the operator
@@ -100,6 +111,24 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   announced and this output is the kind of thing that lands in an issue. It now
   looks for `Dibs Local Codesign` by name, names nothing else, and says how to
   create one.
+
+- **The Claude Desktop manifest said version 0.0.0**, and no test could see it:
+  it had never been on anybody's list of things to stamp. A list of things to
+  keep in sync is itself a thing that falls out of sync, so the list is no
+  longer trusted. `TestNoVersionedManifestEscapesTheStamp` goes looking for the
+  thing it describes, failing on any JSON in the tree that states a version and
+  is neither stamped nor explicitly somebody else's. It found this one
+  immediately. The same manifest still carried the retired product name
+  `io.agents/agents` and described spaces as "shared agents".
+
+- **A tag is now checked against the changelog it ships.** The version guards
+  held the manifests to the changelog, which left the changelog itself
+  unverified: forgetting to claim the Unreleased section would publish a release
+  whose every manifest named the previous version, with a green gate, because
+  the manifests and the changelog agreed with each other about the wrong number.
+  The release workflow runs the gate against the tagged commit, so the check
+  fails the release rather than the developer, and is silent on an ordinary
+  checkout where there is no tag to disagree with.
 
 - **SPEC-CHANNELS.md is readable again.** The `lane` → `agent`/`space` rename
   ran over the document that defines the split, leaving a terminology table
