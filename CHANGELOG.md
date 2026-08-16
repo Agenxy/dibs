@@ -95,6 +95,33 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The stdio bridge upgrades itself in place, so a fix no longer waits for
+  every harness on the machine to restart.** A bridge is spawned once per
+  session and held for its lifetime, so installing a new `dibs` did nothing to
+  the one already running: an agent kept talking to the build it started with,
+  for days. Every bridge fix was therefore gated on restarting every harness,
+  which is precisely the ceremony R12 refuses to charge for a daemon upgrade and
+  has no better claim to here. The session-repair above rides in the bridge, so
+  the agent whose mail was going undelivered would have kept not receiving it
+  until its session ended.
+
+  `syscall.Exec` is the whole mechanism, and it works because of what exec does
+  not touch: the process keeps its pid and its file descriptors, so stdin and
+  stdout stay the pipes the harness is holding, and from the harness's side
+  nothing happened. It fires only between a reply and the next request, only
+  when this process's own read buffer is empty (buffered bytes live in memory,
+  not in the pipe, so an exec would discard a batched request), and it carries
+  the handshake identity and every open subscription across in the environment.
+  Subscriptions are re-issued as the caller's own request, never reconstructed,
+  which is the rule followStream already follows across a daemon restart.
+
+- **A bridge holding a subscription never exited when its harness closed
+  stdin.** `followStream` re-issues the listen every time the stream ends, which
+  is what keeps a subscription alive across a daemon restart and, with no way to
+  stop it, also kept it alive across the session going away: the bridge then
+  waited forever on a goroutine that reconnected forever. Found by closing stdin
+  on a bridge that had one.
+
 - **The wake path could not reach an agent that had no session, and nothing
   said so.** A lifecycle hook names an agent by the session id its harness
   quotes, and `AgentForHook` deliberately refuses the cwd fallback when a

@@ -177,6 +177,16 @@ silent.
   directory.** A machine may deliberately run isolated boards (SECURITY.md), and
   "is there a Dibs service here" is a different question from "is there one for
   this board".
+- **An upgrade must not require restarting the harnesses either.** A stdio
+  bridge is spawned once per session and held for its lifetime, so a new binary
+  reaches nothing already running: every bridge fix would otherwise be gated on
+  restarting every harness on the machine, which is the same ceremony this
+  requirement refuses for the daemon. The bridge replaces itself with
+  `syscall.Exec`, which keeps the pid and the file descriptors, so the harness's
+  pipes are untouched and from its side nothing happened. Only between a reply
+  and the next request, only when nothing is part-read, and carrying forward
+  everything an exec would otherwise discard: the handshake identity, and every
+  subscription, re-issued as the caller's own request.
 - **A service manager reporting success is not a daemon that is serving.** The
   only proof is the board answering, so nothing downstream may treat a restart
   as done before that: a start that returns cleanly and produces nothing is the
