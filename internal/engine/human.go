@@ -306,7 +306,7 @@ func (e *Engine) mayAdopt(l *core.Agent) bool {
 // Nothing here is content beyond what the sender wrote to this human, which
 // they are entitled to read: this is their own mailbox arriving by another
 // route, not a broadcast of somebody else's traffic.
-func (e *Engine) tellTheHuman(from, msgType, body string, serial uint64) {
+func (e *Engine) tellTheHuman(from, msgType, body string, serial uint64, choices []string) {
 	if !notify.Available() {
 		return
 	}
@@ -320,9 +320,13 @@ func (e *Engine) tellTheHuman(from, msgType, body string, serial uint64) {
 		// A request is literally "approve or deny", so ask it that way. An
 		// alert rather than a banner because a banner cannot carry buttons
 		// without an application bundle, which Dibs does not yet ship.
-		go e.answerForHuman(from, body, serial)
+		go e.approveForHuman(from, body, serial)
 	case core.MsgQuestion:
-		report(notify.Banner(title, "asks you a question", oneLine(body)))
+		// Answerable, not merely announced. A question that arrives as a banner
+		// is a notification that the board has something on it, which is what
+		// the board already was: the person still has to go and open it, and the
+		// asking agent waits out its deadline while they decide whether to.
+		go e.answerForHuman(from, body, serial, choices)
 	case core.MsgHandoff:
 		report(notify.Banner(title, "hands work to you", oneLine(body)))
 	default:
@@ -330,32 +334,125 @@ func (e *Engine) tellTheHuman(from, msgType, body string, serial uint64) {
 	}
 }
 
-// answerForHuman puts a request to the person and records what they said, as an
+// approveForHuman puts a request to the person and records what they said, as an
 // ordinary response from their own agent: the sender cannot tell it came from a
 // dialog rather than a tool call, which is the point. Everything the human does
 // on this board goes through the same ops an agent sends.
-func (e *Engine) answerForHuman(from, body string, serial uint64) {
+func (e *Engine) approveForHuman(from, body string, serial uint64) {
 	choice, err := notify.Ask("Dibs · "+from+" requests", oneLine(body), "Deny", "Later", "Approve")
 	if err != nil || choice == "" || choice == "Later" {
 		// Dismissed or deferred is not an answer, and inventing one would be
 		// answering on their behalf. The request stays open on the board.
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	_, token, err := e.HumanAgent(ctx)
-	if err != nil {
-		return
-	}
 	disposition := "deny"
 	if choice == "Approve" {
 		disposition = "approve"
 	}
-	_, _ = e.Do(ctx, &core.Op{
+	e.respondAsHuman(serial, disposition, "answered from the desktop notification")
+}
+
+// answerForHuman puts a question to the person and records their answer.
+//
+// Two shapes, because a question has two. When the asker enumerated the answers
+// they become the buttons, and answering is one press with nothing to type and
+// no window to find. When it did not, the notification offers to open a box,
+// and only then does anything take the screen.
+//
+// That order is the whole design. The alternative is to raise the text box on
+// arrival, which is a coordination service deciding that its optional question
+// outranks whatever the person was doing: the same reason Ask goes through the
+// bundle rather than a modal alert. Nothing here steals focus until the human
+// has pressed something asking it to.
+func (e *Engine) answerForHuman(from, body string, serial uint64, choices []string) {
+	title := "Dibs · " + from + " asks"
+	line := oneLine(body)
+	plan := planAnswer(choices)
+
+	pressed, err := notify.Ask(title, line, plan.Buttons...)
+	if err != nil || pressed == "" || pressed == deferButton {
+		// Dismissed or deferred is not an answer, and inventing one would be
+		// answering on their behalf. The question stays open on the board.
+		return
+	}
+	if plan.Then == "" {
+		e.respondAsHuman(serial, "answer", pressed) // the press WAS the answer
+		return
+	}
+
+	// Only now, after a press that asked for it, does anything take the screen.
+	var answer string
+	if plan.Then == thenPick {
+		answer, err = notify.Pick(title, line, choices...)
+	} else {
+		answer, err = notify.Prompt(title, line)
+	}
+	if err != nil || strings.TrimSpace(answer) == "" {
+		// Opening the box and closing it again is still not an answer.
+		return
+	}
+	e.respondAsHuman(serial, "answer", answer)
+}
+
+// How an answer is collected once the human has asked to give one.
+const (
+	thenPick   = "pick"   // a list, because the choices did not fit as buttons
+	thenPrompt = "prompt" // a text box, because there were no choices
+)
+
+// deferButton is the way out that is offered on every question and means
+// nothing: it exists so dismissing is a deliberate press rather than the only
+// thing a person can do with a notification they do not want to answer yet.
+const deferButton = "Later"
+
+// answerPlan is how a question will be put to the person: what the notification
+// carries, and what pressing it opens.
+type answerPlan struct {
+	Buttons []string
+	Then    string // "" when the press itself is the answer
+}
+
+// planAnswer decides the shape of the interaction, separately from performing
+// it, because performing it means osascript and a person at a keyboard and
+// neither is available to a test. The decision is the part with a rule in it.
+//
+// The rule: NOTHING opens without a press first. A question is by definition
+// something its asker can wait for, and a coordination service that raises a
+// text box over whatever the person was doing has decided otherwise on their
+// behalf. It is the same reason Ask goes through the application bundle instead
+// of a modal alert.
+//
+// Three buttons is what a notification carries, so up to three choices ARE the
+// buttons and answering is one press with nothing to type and no window to
+// find. A fourth cannot be, and rather than silently dropping it the
+// notification offers the list.
+func planAnswer(choices []string) answerPlan {
+	if n := len(choices); n > 0 && n <= 3 {
+		return answerPlan{Buttons: choices}
+	}
+	if len(choices) > 0 {
+		return answerPlan{Buttons: []string{deferButton, "Choose…"}, Then: thenPick}
+	}
+	return answerPlan{Buttons: []string{deferButton, "Answer…"}, Then: thenPrompt}
+}
+
+// respondAsHuman records the person's answer as an ordinary response from their
+// own agent. One place, because every path that answers on their behalf has to
+// mint the same identity and go through the same op.
+func (e *Engine) respondAsHuman(serial uint64, disposition, body string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, token, err := e.HumanAgent(ctx)
+	if err != nil {
+		slog.Warn("could not answer for the human; the message stays open", "msg", serial, "err", err)
+		return
+	}
+	if _, err := e.Do(ctx, &core.Op{
 		Kind: core.OpRespond, Token: token, MsgSerial: serial,
-		Disposition: disposition,
-		Body:        "answered from the desktop notification",
-	})
+		Disposition: disposition, Body: body,
+	}); err != nil {
+		slog.Warn("the human answered but the response did not land", "msg", serial, "err", err)
+	}
 }
 
 // oneLine keeps a notification readable. A banner truncates anyway, and a

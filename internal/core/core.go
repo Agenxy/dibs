@@ -525,6 +525,10 @@ type Message struct {
 	TerminalAt    time.Time    `json:"terminal_at,omitzero"` // when it reached a terminal state
 	ExpireDetail  string       `json:"expire_detail,omitempty"`
 	Attachments   []Attachment `json:"attachments,omitempty"` // blob handles + filerefs (A2)
+	// Choices is the answer space of a question, stated by its sender. Ledgered
+	// with the message because it is part of what was ASKED: a question whose
+	// options were lost on replay is a different question.
+	Choices []string `json:"choices,omitempty"`
 }
 
 // Terminal implements the exact SPEC §8 predicate, used consistently by
@@ -670,3 +674,12 @@ func constEq(a, b string) bool {
 	}
 	return v == 0
 }
+
+// MaxChoices bounds the answers a question may enumerate.
+//
+// Four, because the point of stating them is to make answering a press rather
+// than a composition, and a list long enough to need scrolling has given that
+// up. It is also what the delivery surfaces can render: a macOS notification
+// carries three buttons plus the implicit dismiss, so a question that fits here
+// is answerable in one gesture wherever it lands.
+const MaxChoices = 4

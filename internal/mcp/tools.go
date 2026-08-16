@@ -264,6 +264,12 @@ var toolDefs = func() []map[string]any {
 				"body": str("message body"), "deadline_s": num("response deadline in seconds (default 600; max 7200, or 7 " +
 					"days to persistent agents)"),
 				"op_id": str("client-generated id for safe retries (optional, recommended)"),
+				"choices": map[string]any{
+					"type": "array", "items": map[string]any{"type": "string"},
+					"description": "up to 4 answers this question accepts. State them and the " +
+						"answer is a press, not a composition; to the human they become the " +
+						"buttons on the notification",
+				},
 				"attachments": map[string]any{"type": "array", "description": "each is a blob " +
 					"{blob:'sha256:…'} from put_blob, or a fileref {path, size?, hash?} naming a " +
 					"local file (advisory, zero-copy)", "items": map[string]any{"type": "object", "properties": map[string]any{

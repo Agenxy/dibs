@@ -54,6 +54,16 @@ func Admit(op *Op, lim Limits) error {
 	if len(op.SessionID) > lim.MaxNameBytes {
 		return errTooLarge("session_id", lim.MaxNameBytes)
 	}
+	// A choice is a button label, so it is bounded as a name and there are few of
+	// them. Bounded here rather than in Apply for the reason at the top of this
+	// function: these strings are already in ledgers on disk, and a rule added to
+	// the fold is retroactive.
+	if len(op.Choices) > MaxChoices {
+		return errTooLarge("choices", MaxChoices)
+	}
+	if err := boundStrings(lim.MaxNameBytes, "choices", op.Choices); err != nil {
+		return err
+	}
 	if a := op.Agent; a != nil {
 		for field, v := range map[string]string{
 			"agent.harness": a.Harness, "agent.version": a.Version,
@@ -168,7 +178,10 @@ type Op struct {
 	// somebody who is simply not typing.
 	//
 	// A person's liveness is silence, not a process table entry.
-	NoProcess bool       `json:"no_process,omitempty"`
+	NoProcess bool `json:"no_process,omitempty"`
+	// Choices enumerates the answers a question will accept, so the answer space
+	// is stated by whoever knows it rather than guessed by whoever reads it.
+	Choices   []string   `json:"choices,omitempty"`
 	ProcStart int64      `json:"proc_start,omitempty"`
 	NewToken  string     `json:"token,omitempty"` // engine-generated; encrypted at rest
 	Nonce     string     `json:"nonce,omitempty"` // encrypted at rest
@@ -1564,7 +1577,7 @@ func (s *State) finishSend(
 	m := &Message{
 		Serial: serial, From: l.ID, To: to.ID, Type: op.MsgType, Body: op.Body,
 		State: MsgStatePending, Deadline: deadline, Attachments: op.Attachments,
-		SentAt: now,
+		SentAt: now, Choices: op.Choices,
 	}
 	s.Messages[serial] = m
 	evs := []Event{{Type: "message.sent", Agent: l.ID, To: to.ID, Data: map[string]any{

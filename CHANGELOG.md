@@ -49,6 +49,30 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   model's word for itself. `register` now also answers a placeholder name at the
   moment it is chosen.
 
+- **A question to the human is answerable from the notification.** It used to
+  raise a banner, which is a notification that the board has something on it:
+  the person still had to go and open the board, and the asking agent waited out
+  its deadline while they decided whether to. Requests have had approve/deny
+  buttons since notifications landed; questions had nothing.
+
+  `send` now takes `choices` (up to four). Up to three become the buttons
+  themselves, so answering is one press with nothing to type and no window to
+  find. A fourth does not fit on a notification, so that case, and a question
+  with no choices at all, offers `Later` and an opt-in, which then opens a list
+  or a text box.
+
+  Nothing takes the screen until the person has pressed something asking it to,
+  and that ordering is the design rather than a detail: raising a text box on
+  arrival is fewer steps and is a coordination service deciding that its
+  optional question outranks whatever they were doing. `planAnswer` is split
+  from the osascript that performs it so the rule is testable, because the part
+  with a rule in it is the part a rewrite loses.
+
+  The choices are on the MESSAGE and therefore in the ledger, not a property of
+  the notification that raised them: a question replayed without its options is
+  a different question. Agents see them in `inbox` like any other field, so an
+  enumerated answer space is worth stating whoever is receiving it.
+
 - **`retitle_space`**, so a topic can be redacted without destroying the space.
 
 - A hygiene guard against the wreckage a find-and-replace leaves when one word

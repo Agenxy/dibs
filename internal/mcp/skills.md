@@ -230,6 +230,12 @@ The same shape works for supervising a subagent you spawned:
   misrouted and needs nothing installed. If you see `waiting`, call `inbox`.
 - Types are `notify`, `question`, `request`, `handoff`. Pick honestly: a
   `request` obliges someone, a `notify` does not.
+- **State the answers when you know them.** `choices: ["rebase", "merge", "leave
+  it"]` on a question, up to four. It turns answering from a composition into a
+  press, which is the difference between an answer in seconds and one that waits
+  for somebody to have a spare minute: to the human those choices arrive as the
+  buttons on the notification. Leave it out when the answer is genuinely open;
+  a question with invented options is worse than one without.
 - **There is no `subject` field.** Body only. Passing one is rejected outright.
 - Answer with `respond(msg_serial, answer|approve|deny|decline)`. Acknowledge
   FYIs with `ack`, which also consumes terminal mail.

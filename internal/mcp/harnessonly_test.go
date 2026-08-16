@@ -3,6 +3,8 @@ package mcp
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -104,5 +106,51 @@ func TestNoToolLetsAnAgentSayItHasNoProcess(t *testing.T) {
 		t.Error("a tool declares `no_process`: an agent can now clear its own pid and " +
 			"stop being probed for crashes while still running as a process. It is the " +
 			"daemon's statement about a participant that has none, not a parameter")
+	}
+}
+
+// Every tool the Claude Desktop manifest advertises must still exist.
+//
+// That manifest names eight tools by hand, as the description a person reads
+// before installing. It is a second place that has to agree with the surface,
+// which is this project's most expensive recurring bug: the same file sat at
+// version 0.0.0 through five releases because it was on nobody's list, and the
+// tool names in it are guarded by nothing at all.
+//
+// A stale name here does not fail anything. The manifest is valid JSON, the
+// extension installs, and the user reads a promise of a tool that was renamed
+// two releases ago; they find out when an agent calls it. This is deliberately
+// not a check that the manifest lists ALL of them: it is a highlight reel, and
+// requiring the full 44 would make it useless as one. What it must not do is
+// advertise something that is not there.
+func TestTheDesktopManifestOnlyPromisesToolsThatExist(t *testing.T) {
+	body, err := os.ReadFile(filepath.Join("..", "..", "plugins", "claude-desktop", "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Tools []struct{ Name, Description string } `json:"tools"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Tools) == 0 {
+		t.Fatal("setup: the manifest names no tools, so this test proves nothing")
+	}
+	defined := map[string]bool{}
+	for _, td := range toolDefs {
+		name, _ := td["name"].(string)
+		defined[name] = true
+	}
+	for _, tool := range doc.Tools {
+		if !defined[tool.Name] {
+			t.Errorf("plugins/claude-desktop/manifest.json advertises %q, which no longer "+
+				"exists. Somebody installing the extension is promised a tool their agent "+
+				"cannot call", tool.Name)
+		}
+		if tool.Description == "" {
+			t.Errorf("the manifest lists %q with no description: the list is what a person "+
+				"reads to decide whether to install this", tool.Name)
+		}
 	}
 }

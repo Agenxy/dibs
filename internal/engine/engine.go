@@ -452,7 +452,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 			// Off the loop: an alert waits for somebody to press a button, and
 			// the single writer holding still for two minutes would stop the
 			// board while one person decides.
-			go e.tellTheHuman(from, op.MsgType, op.Body, serial)
+			go e.tellTheHuman(from, op.MsgType, op.Body, serial, op.Choices)
 		}
 	}
 	return res, nil
