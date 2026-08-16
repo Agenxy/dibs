@@ -51,6 +51,20 @@ type Engine struct {
 	// about something the agent genuinely has not acknowledged. Same category as
 	// `seen`.
 	announceSent map[string]time.Time
+	// wokeFor throttles the WAKE itself, keyed "agent\x00serial".
+	//
+	// An agent must learn about mail when it arrives, not when a human next
+	// types: that is the whole of situational awareness, and a fleet that waits
+	// for a person to kickstart its responsiveness is not agentic. So the wake
+	// fires for anything unread.
+	//
+	// What it must not do is fire for the SAME thing every turn. An agent that
+	// read a message and chose not to act on it has decided, and re-waking it
+	// each turn would be nagging an agent for exercising the judgement the
+	// digest explicitly grants it. So each message wakes once, and only work
+	// somebody is blocked on comes back, on the same retry the announcement
+	// reminder uses.
+	wokeFor map[string]time.Time
 	// announceTries counts how many times each reminder has been shown, keyed
 	// the same way. Ephemeral for the same reason: it is delivery bookkeeping,
 	// and the decision it feeds is recorded in the sweep op.
@@ -158,6 +172,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 		resumeAt: map[string]time.Time{},
 		streams:  map[chan core.Event]bool{}, seen: map[string]time.Time{},
 		announceSent: map[string]time.Time{}, announceTries: map[string]int{},
+		wokeFor: map[string]time.Time{},
 	}
 }
 

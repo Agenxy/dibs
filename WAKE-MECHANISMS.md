@@ -58,67 +58,57 @@ over plain HTTP (no stdio bridge in the way):
 Nobody speaks MCP 2026**, not even Codex alpha, which negotiates 2025-06-18. Codex never
 even calls `resources/list`, so Dibs' resources are invisible there; only tools reach it.
 
-## Urgency decides whether a wake extends a turn
+## A wake delivers; it does not instruct
 
-`additionalContext` on a `Stop` hook is not merely informative. Claude Code's
-own documentation: it *"keeps the conversation going"*, through the same loop
-protections as a blocking decision and an eight-continuation cap. So delivering
-every unread message on `Stop` meant every message prevented an agent from
-finishing, a plain FYI included, and eight of them in a row could burn eight
-turns before the harness overrode it.
+An agent hears about mail when it ARRIVES, not when somebody next types at it.
+A fleet that waits for a person to kickstart its responsiveness is not
+independent, and a time-sensitive request sitting unseen because nobody was at
+the keyboard is the failure this whole product exists to prevent.
 
-That is Dibs driving a harness, which PHILOSOPHY.md rule 5 forbids and which
-this document's whole argument is against. It was found by an operator reading
-the notice and asking the right question: *does this stop the agents?*
+This was got wrong once, in the other direction, and the reasoning is worth
+keeping because it is a plausible misreading of rule 5. `additionalContext` on a
+`Stop` hook does not merely inform: Claude Code's documentation says it "keeps
+the conversation going". That looked like driving the harness, so delivery was
+narrowed to work somebody was blocked on and everything else was held for the
+agent's next activation.
 
-The urgency is not guessed, because the sender already stated it by choosing a
-type. That is what the types are for:
+That reads the rule wrong. **Driving a harness means instructing it.** The
+digest says outright that it is coordination data from peers, not instructions,
+which the agent may act on or decline: the agency is in the content and in the
+agent's freedom to ignore it, never in withholding delivery until a human
+appears. Waking an agent so it can decide is the opposite of controlling it.
 
-| what is waiting | on `Stop` | why |
-|---|---|---|
-| `question`, `request` | **extends the turn** | somebody is blocked on the answer |
-| `handoff` | **extends the turn** | work its sender has stopped doing; the only thing between it and nobody doing it is this agent noticing |
-| unacknowledged announcement | **extends the turn** | announcements are the collision-risk grade by definition, and are redelivered until acked |
-| agent update (admitted, promoted, evicted, merged) | **extends the turn** | it changes what this agent may do NEXT, so acting without it is acting on a stale board |
-| `notify` | **queued** | nothing is waiting; it lands at the next activation |
+What genuinely deserved the name was **nagging**, and that is a different fix:
 
-Every other event is already a boundary, so everything is delivered there:
-`SessionStart` and `UserPromptSubmit` interrupt nothing. A queued message
-therefore reaches the agent at its next turn, or earlier still on the `waiting`
-line that every authenticated write carries.
+- **Each message wakes its recipient once.** An agent that read something and
+  chose not to act has exercised exactly the judgement the digest grants it, and
+  re-waking it every turn would be taking that back.
+- **Work somebody is BLOCKED on comes back**, on the same retry an
+  unacknowledged announcement uses. A question nobody has answered is not a
+  decision, it is a peer waiting, and the point of a deadline is that somebody
+  notices before it expires.
+- **`stop_hook_active` is honoured**, so a wake never continues a turn a wake
+  already continued. That is a loop guard, not a preference, and no setting
+  switches it off.
 
-`stop_hook_active` is passed from the harness and honoured: a wake never
-continues a turn that a wake already continued. Without it, unread mail an agent
-has not dealt with would extend every turn until the eight-continuation cap,
-which is the loop this mechanism must never become.
+The throttle is keyed per message and bounded by what is unread, so a mailbox
+that empties takes its entries with it.
 
-### The knob, and why the default is not `all`
-
-An unattended fleet is the case the default gets wrong. A queued message reaches
-an agent at its next activation, and an agent nobody prompts may not have one
-for hours, so on a machine running without a person the queue is where mail
-waits. That is an operator's judgement about their own fleet, not something a
-default can know:
+### The knob
 
 ```toml
 [wake]
-extend_turn_for = "urgent"   # default: only work somebody is waiting on
-# extend_turn_for = "all"    # anything unread; for a fleet with no human at it
+extend_turn_for = "all"      # default: anything unread wakes the agent, once
+# extend_turn_for = "urgent" # only work somebody is blocked on
 # extend_turn_for = "none"   # never extend a turn; systemMessage and `waiting` only
 ```
 
-`urgent` is the default because the alternative is coercive by construction and
-the cost of waiting is bounded: a notify is, by the sender's own choice of type,
-the grade that expects no reply.
-
-The loop guard is not part of the policy. `stop_hook_active` means this turn is
-already running because a wake continued it, and continuing again is a loop
-whatever the operator prefers.
+`all` is the default because the alternatives trade awareness for tokens, and
+that is a trade only the person paying should make deliberately.
 
 The human is told either way. `systemMessage` goes to the person on every poll
-with news, whatever was decided about the model, because *"your agent has mail
-it is not stopping for"* is exactly what an operator wants to know and it
-interrupts nobody.
+with news, whatever was decided about the model, because "your agent has mail"
+is exactly what an operator wants to know and it interrupts nobody.
 
 ## 2. Is 2026 support hidden behind a flag? No
 

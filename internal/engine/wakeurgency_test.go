@@ -3,68 +3,116 @@ package engine
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/agenxy/dibs/internal/core"
 )
 
-// A wake must not stop an agent from stopping unless somebody is waiting on it.
+// An agent hears about mail when it ARRIVES, not when a human next types.
 //
-// On Stop, `additionalContext` is not merely informative: Claude Code's own
-// documentation says it "keeps the conversation going", through the same loop
-// protections as a blocking decision and an eight-continuation cap. So every
-// piece of mail was extending a finished turn, a plain FYI included. That is
-// Dibs driving a harness, which PHILOSOPHY.md rule 5 forbids and which the wake
-// path exists specifically not to do. Reported by the operator, who saw the
-// notice and asked the right question: does this stop the agents?
+// This test previously asserted the opposite for an FYI, on the reasoning that
+// extending a turn is driving the harness. That reads the rule wrong. Driving a
+// harness means instructing it, and the digest says outright that it is
+// coordination data the agent may act on or decline: the agency is in the
+// content, not in withholding delivery. A fleet that waits for somebody to type
+// before its members hear anything is not independent, and a time-sensitive
+// request sitting unseen because nobody was at the keyboard is the failure this
+// product exists to prevent.
 //
-// The urgency is not guessed. The sender chose a type, and the types already
-// mean exactly this.
-func TestOnlyWorkSomebodyIsWaitingOnExtendsATurn(t *testing.T) {
-	for _, tc := range []struct {
-		name         string
-		msg          string
-		wantOnStop   bool
-		wantOnPrompt bool
-	}{
-		{"a question blocks its sender", core.MsgQuestion, true, true},
-		{"a request blocks its sender", core.MsgRequest, true, true},
-		{"a handoff is work nobody is doing", core.MsgHandoff, true, true},
-		{"an FYI waits for the next activation", core.MsgNotify, false, true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
+// Corrected by the operator, who put it better: "having to wait for a human to
+// kickstart the responsiveness to mail and requests takes the agency out of
+// agentic."
+func TestEveryKindOfMailWakesItsRecipientOnArrival(t *testing.T) {
+	for _, kind := range []string{core.MsgNotify, core.MsgQuestion, core.MsgRequest, core.MsgHandoff} {
+		t.Run(kind, func(t *testing.T) {
 			e, id := boardWithAgent(t)
 			ctx := context.Background()
 			sender := registerAgent(t, e, "sender")
 			if _, err := e.Do(ctx, &core.Op{
 				Kind: core.OpSendMessage, Token: sender, To: id,
-				MsgType: tc.msg, Body: "something",
+				MsgType: kind, Body: "something",
 			}); err != nil {
-				t.Fatalf("setup: send %s: %v", tc.msg, err)
+				t.Fatalf("setup: send %s: %v", kind, err)
 			}
-
-			stop, err := e.HookPoll(ctx, "sess-"+id, "Stop", "", false)
+			got, err := e.HookPoll(ctx, "sess-"+id, "Stop", "", false)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := stop["hookSpecificOutput"] != nil; got != tc.wantOnStop {
-				t.Errorf("Stop extended the turn = %v, want %v. A %s %s",
-					got, tc.wantOnStop, tc.msg,
-					map[bool]string{true: "must reach the agent now", false: "must not extend a finished turn"}[tc.wantOnStop])
+			if got["hookSpecificOutput"] == nil {
+				t.Errorf("a %s did not reach its recipient until somebody typed: that is not "+
+					"situational awareness, and nothing else was going to tell it", kind)
 			}
-			// The human is told either way: "your agent has mail it is not
-			// stopping for" is exactly what they want to know.
-			if stop["systemMessage"] == nil {
-				t.Error("the human was not told, whatever was decided about the model")
+			if got["systemMessage"] == nil {
+				t.Error("the human was not told")
 			}
+		})
+	}
+}
 
-			// A prompt boundary interrupts nothing, so everything lands there.
-			prompt, err := e.HookPoll(ctx, "sess-"+id, "UserPromptSubmit", "", false)
-			if err != nil {
+// It wakes ONCE. An agent that read something and chose not to act has
+// exercised the judgement the digest explicitly grants it, and re-waking it
+// every turn would be taking that back: nagging, which is the thing that
+// deserved the name "driving the harness" all along.
+func TestAWakeDoesNotNagAboutSomethingAlreadyDelivered(t *testing.T) {
+	e, id := boardWithAgent(t)
+	ctx := context.Background()
+	sender := registerAgent(t, e, "sender")
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: sender, To: id,
+		MsgType: core.MsgNotify, Body: "an FYI",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	first, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false)
+	if first["hookSpecificOutput"] == nil {
+		t.Fatal("the arrival did not wake it: this test cannot see what it guards")
+	}
+	second, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false)
+	if second["hookSpecificOutput"] != nil {
+		t.Error("the same FYI woke the agent twice: an agent that decided not to act on it " +
+			"would be interrupted every turn for the rest of its life")
+	}
+	// The human keeps being told, because "unread" is still true and it costs
+	// the agent nothing.
+	if second["systemMessage"] == nil {
+		t.Error("the human stopped being told as soon as the agent did")
+	}
+}
+
+// Work somebody is BLOCKED on comes back. A question nobody has answered is not
+// a decision, it is a peer waiting, and the point of a deadline is that
+// somebody notices before it expires.
+func TestBlockedWorkComesBackButAnFYIDoesNot(t *testing.T) {
+	for _, tc := range []struct {
+		kind   string
+		expect bool
+	}{
+		{core.MsgQuestion, true},
+		{core.MsgRequest, true},
+		{core.MsgNotify, false},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			e, id := boardWithAgent(t)
+			ctx := context.Background()
+			sender := registerAgent(t, e, "sender")
+			if _, err := e.Do(ctx, &core.Op{
+				Kind: core.OpSendMessage, Token: sender, To: id,
+				MsgType: tc.kind, Body: "waiting on you",
+			}); err != nil {
 				t.Fatal(err)
 			}
-			if got := prompt["hookSpecificOutput"] != nil; got != tc.wantOnPrompt {
-				t.Errorf("UserPromptSubmit delivered = %v, want %v: that event is already a "+
-					"boundary and interrupts nothing", got, tc.wantOnPrompt)
+			if !e.freshForWake(id, time.Now()) {
+				t.Fatal("the arrival did not wake it")
+			}
+			if e.freshForWake(id, time.Now()) {
+				t.Fatal("it woke twice in a row")
+			}
+			// A retry window later.
+			later := time.Now().Add(AnnounceRetry + time.Second)
+			if got := e.freshForWake(id, later); got != tc.expect {
+				t.Errorf("after %s, a %s came back = %v, want %v",
+					AnnounceRetry, tc.kind, got, tc.expect)
 			}
 		})
 	}
@@ -73,9 +121,9 @@ func TestOnlyWorkSomebodyIsWaitingOnExtendsATurn(t *testing.T) {
 // A wake must never continue a turn that a wake already continued.
 //
 // stop_hook_active is the harness saying "this turn is running because a stop
-// hook asked for it". Continuing again on the same unread mail is how a wake
-// becomes a loop, and Claude Code caps it at eight before overriding: eight
-// wasted turns rather than one.
+// hook asked for it". Continuing again is how a wake becomes a loop, and Claude
+// Code caps it at eight before overriding: eight wasted turns rather than one.
+// Not part of the policy, because it is a loop guard rather than a preference.
 func TestAWakeNeverContinuesATurnAWakeAlreadyContinued(t *testing.T) {
 	e, id := boardWithAgent(t)
 	ctx := context.Background()
@@ -86,25 +134,53 @@ func TestAWakeNeverContinuesATurnAWakeAlreadyContinued(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-
-	first, err := e.HookPoll(ctx, "sess-"+id, "Stop", "", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first["hookSpecificOutput"] == nil {
-		t.Fatal("a question did not reach the agent at all: this test cannot see what it guards")
-	}
 	again, err := e.HookPoll(ctx, "sess-"+id, "Stop", "", true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if again["hookSpecificOutput"] != nil {
-		t.Error("the turn was continued again while stop_hook_active was set: unread mail " +
-			"that the agent has not dealt with would extend every turn until the harness " +
-			"overrides at eight")
+		t.Error("a turn already continued by a wake was continued again")
 	}
 	if again["systemMessage"] == nil {
 		t.Error("the human stopped being told as soon as the model did")
+	}
+}
+
+// The operator can trade awareness for tokens, deliberately, in both directions.
+func TestTheOperatorCanNarrowOrSilenceTheWake(t *testing.T) {
+	e, id := boardWithAgent(t)
+	ctx := context.Background()
+	sender := registerAgent(t, e, "sender")
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: sender, To: id,
+		MsgType: core.MsgNotify, Body: "an FYI",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	e.SetWakePolicy(WakeUrgent)
+	if got, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false); got["hookSpecificOutput"] != nil {
+		t.Error("`urgent` extended a turn for an FYI")
+	}
+	e.SetWakePolicy(WakeNone)
+	quiet, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false)
+	if quiet["hookSpecificOutput"] != nil {
+		t.Error("`none` extended a turn")
+	}
+	if quiet["systemMessage"] == nil {
+		t.Error("`none` stopped telling the human, which is not what it means")
+	}
+	// And the default is awareness.
+	fresh, freshID := boardWithAgent(t)
+	s2 := registerAgent(t, fresh, "sender2")
+	if _, err := fresh.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: s2, To: freshID, MsgType: core.MsgNotify, Body: "x",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := fresh.HookPoll(ctx, "sess-"+freshID, "Stop", "", false); got["hookSpecificOutput"] == nil {
+		t.Error("the DEFAULT held an FYI back: a fleet with nobody at the keyboard would " +
+			"never hear about it")
 	}
 }
 
@@ -130,7 +206,6 @@ func boardWithAgent(t *testing.T) (*Engine, string) {
 	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
 		t.Fatal(err)
 	}
-	_ = tok
 	return e, id
 }
 
@@ -146,55 +221,4 @@ func registerAgent(t *testing.T, e *Engine, name string) string {
 		t.Fatal(err)
 	}
 	return tok
-}
-
-// An unattended fleet can choose to be woken for everything.
-//
-// The default holds an FYI until the agent's next activation, and an agent
-// nobody prompts may not have one for hours: on a machine running without a
-// person, the queue is where mail waits. That is the operator's call about
-// their own fleet, not something a default can know, so it is one config key.
-//
-// The loop guard is NOT part of the policy. stop_hook_active means this turn is
-// already running because a wake continued it, and continuing again is a loop
-// whatever the operator prefers.
-func TestAnUnattendedFleetCanBeWokenForEverything(t *testing.T) {
-	e, id := boardWithAgent(t)
-	ctx := context.Background()
-	sender := registerAgent(t, e, "sender")
-	if _, err := e.Do(ctx, &core.Op{
-		Kind: core.OpSendMessage, Token: sender, To: id,
-		MsgType: core.MsgNotify, Body: "an FYI",
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	if got, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false); got["hookSpecificOutput"] != nil {
-		t.Fatal("the default extended a turn for an FYI: this test cannot see what it guards")
-	}
-
-	e.SetWakePolicy(WakeAll)
-	got, err := e.HookPoll(ctx, "sess-"+id, "Stop", "", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got["hookSpecificOutput"] == nil {
-		t.Error("`all` did not deliver an FYI on Stop, so an unattended fleet has no way " +
-			"to be woken by one")
-	}
-	// Still never twice in a row: a preference cannot switch off a loop guard.
-	if again, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", true); again["hookSpecificOutput"] != nil {
-		t.Error("`all` continued a turn that a wake had already continued: the eight-" +
-			"continuation cap is the only thing left stopping the loop")
-	}
-
-	// And `none` is strictly pull-shaped, with the human still told.
-	e.SetWakePolicy(WakeNone)
-	quiet, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false)
-	if quiet["hookSpecificOutput"] != nil {
-		t.Error("`none` still extended a turn")
-	}
-	if quiet["systemMessage"] == nil {
-		t.Error("`none` stopped telling the human, which is not what it means")
-	}
 }

@@ -155,33 +155,30 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is otherwise the one thing Dibs must never allow, so there is no
   agent-to-agent version.
 
-- **A wake no longer stops an agent from stopping unless somebody is waiting on
-  it.** `additionalContext` on a `Stop` hook is not merely informative: Claude
-  Code's documentation says it "keeps the conversation going", through the same
-  loop protections as a blocking decision and an eight-continuation cap. So
-  every unread message was extending a finished turn, a plain FYI included, and
-  eight in a row could burn eight turns. That is Dibs driving a harness, which
-  PHILOSOPHY.md rule 5 forbids and which the wake path exists specifically not
-  to do. Found by an operator who read the notice and asked whether it stops the
-  agents.
+- **Mail wakes its recipient when it arrives, once.** An agent hearing about a
+  message only when somebody next types at it is not situational awareness, and
+  a time-sensitive request sitting unseen because nobody was at the keyboard is
+  the failure this product exists to prevent.
 
-  The urgency is not guessed: the sender stated it by choosing a type, which is
-  what the types are for. A question or request has somebody blocked on the
-  answer; a handoff is work its sender has stopped doing; an unacknowledged
-  announcement is the collision-risk grade by definition; an agent update
-  changes what the agent may do next. Those extend the turn. A notify waits for
-  the next activation, and arrives at `SessionStart`, `UserPromptSubmit`, or on
-  the `waiting` line every authenticated write already carries. `stop_hook_active`
-  is now passed from the harness and honoured, so a wake never continues a turn
-  that a wake already continued. The human is told either way.
+  This was got wrong in both directions first. `additionalContext` on a `Stop`
+  hook "keeps the conversation going", so every unread message extended a
+  finished turn, a plain FYI included, and eight in a row could burn eight
+  turns. Narrowing delivery to work somebody was blocked on fixed the symptom
+  and broke the point: driving a harness means INSTRUCTING it, and the digest
+  already says it is coordination data the agent may act on or decline. The
+  agency is in the content, not in withholding delivery until a human appears.
 
-- **`[wake] extend_turn_for`** decides which news may extend a turn: `urgent`
-  (default), `all`, or `none`. The default holds an FYI until the agent's next
-  activation, which is right when somebody is at the keyboard and wrong for an
-  unattended fleet, where there may be no next activation for hours. That is an
-  operator's judgement about their own machines. The loop guard is not part of
-  the policy: a wake never continues a turn a wake already continued, whatever
-  the setting.
+  What deserved the name was nagging, and that is a different fix. Each message
+  wakes its recipient once; work somebody is blocked on comes back on the same
+  retry an unacknowledged announcement uses, because a question nobody has
+  answered is a peer waiting rather than a decision; and `stop_hook_active` is
+  honoured, so a wake never continues a turn a wake already continued. That last
+  one is a loop guard rather than a preference, and no setting switches it off.
+
+  `[wake] extend_turn_for` is `all` by default, `urgent` for an operator who
+  would rather an FYI never cost a turn, `none` for one who wants Dibs strictly
+  pull-shaped. The alternatives trade awareness for tokens, which is a trade
+  only the person paying should make deliberately.
 
 - **A board-visibility report that could not be reproduced is now guarded
   instead.** `codex-primary` reported that an agent which had just joined was

@@ -39,17 +39,22 @@ type Config struct {
 
 // WakeConfig is the [wake] table.
 //
-// One key, because there is one real decision: an FYI arriving at the end of a
-// turn either extends that turn or waits for the next activation. The default
-// waits, because extending a finished turn to hand an agent something nobody is
-// waiting on is Dibs driving a harness.
+// One key, because there is one real decision: does an agent hear about mail
+// when it arrives, or when somebody next types at it.
 //
-// `all` exists for an UNATTENDED fleet. A queued message reaches an agent at
-// its next activation, and an agent nobody prompts may not have one for hours,
-// so on a machine running without a person the queue is where mail waits. That
-// is an operator's call about their own fleet, not something a default can know.
+// The default is when it arrives. A fleet that waits for a human to kickstart
+// its responsiveness is not agentic, and a time-sensitive request sitting
+// unseen because nobody was at the keyboard is the failure this product exists
+// to prevent. Waking is not driving: the digest says outright that it is
+// coordination data the agent may act on or decline. What Dibs must not do is
+// instruct.
+//
+// `urgent` is for an operator who would rather an FYI never cost a turn, and
+// `none` for one who wants Dibs strictly pull-shaped. Neither is the default,
+// because both trade away awareness for tokens and that is a trade only the
+// person paying should make deliberately.
 type WakeConfig struct {
-	// ExtendTurnFor is "urgent" (default), "all", or "none".
+	// ExtendTurnFor is "all" (default), "urgent", or "none".
 	ExtendTurnFor string `toml:"extend_turn_for"`
 }
 
@@ -57,13 +62,13 @@ type WakeConfig struct {
 func (w WakeConfig) policy() (engine.WakePhase, error) {
 	switch w.ExtendTurnFor {
 	case "":
-		return engine.WakeUrgent, nil
+		return engine.WakeAll, nil
 	case string(engine.WakeUrgent), string(engine.WakeAll), string(engine.WakeNone):
 		return engine.WakePhase(w.ExtendTurnFor), nil
 	default:
-		return "", fmt.Errorf("[wake] extend_turn_for = %q: use \"urgent\" (only work "+
-			"somebody is waiting on), \"all\" (anything unread, for an unattended fleet) "+
-			"or \"none\"", w.ExtendTurnFor)
+		return "", fmt.Errorf("[wake] extend_turn_for = %q: use \"all\" (default: anything "+
+			"unread wakes the agent once), \"urgent\" (only work somebody is blocked on) "+
+			"or \"none\" (never extend a turn)", w.ExtendTurnFor)
 	}
 }
 

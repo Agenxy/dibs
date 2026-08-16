@@ -85,8 +85,11 @@ func (e *Engine) HookPoll(ctx context.Context, sessionID, event, cwd string, sto
 		// content: the same rule the digest follows.
 		out["systemMessage"] = humanNotice(l.ID, mail, announced, notices)
 		// And the model's copy, only when it is worth extending a turn for.
-		if e.deliverToModel(event, e.somebodyIsWaiting(l.ID) ||
-			len(announced) > 0 || len(notices) > 0, stopActive) {
+		// Anything unread wakes the agent, once. An agent learns about mail when
+		// it arrives, not when a human next types.
+		fresh := e.freshForWake(l.ID, time.Now()) || len(announced) > 0 || len(notices) > 0
+		blocked := e.somebodyIsWaiting(l.ID) || len(announced) > 0 || len(notices) > 0
+		if e.deliverToModel(event, fresh, blocked, stopActive) {
 			out["hookSpecificOutput"] = map[string]any{
 				"hookEventName":     event,
 				"additionalContext": strings.TrimRight(hookDigest(l.ID, mail, announced, notices), "\n"),
@@ -346,17 +349,20 @@ func humanNotice(agent string, mail, announced, notices []string) string {
 //
 // Every other event is already a boundary. UserPromptSubmit and SessionStart
 // interrupt nothing, so everything is delivered there.
-func (e *Engine) deliverToModel(event string, urgent, stopActive bool) bool {
+func (e *Engine) deliverToModel(event string, fresh, blocked, stopActive bool) bool {
 	switch event {
 	case "Stop", "SubagentStop":
 		// Never twice in a row. stop_hook_active means this turn is ALREADY
 		// running because a stop hook continued it, and continuing again on the
 		// same unread mail is how a wake becomes a loop. This one is not
 		// configurable: it is a loop guard, not a preference.
-		if stopActive || e.WakePolicy() == WakeNone {
+		if stopActive || e.WakePolicy() == WakeNone || !fresh {
 			return false
 		}
-		return urgent || e.WakePolicy() == WakeAll
+		// `all` is the default: anything the agent has not been told wakes it.
+		// `urgent` narrows that to work somebody is blocked on, for an operator
+		// who would rather an FYI never cost a turn.
+		return e.WakePolicy() == WakeAll || blocked
 	default:
 		return true
 	}
@@ -366,17 +372,20 @@ func (e *Engine) deliverToModel(event string, urgent, stopActive bool) bool {
 type WakePhase string
 
 const (
-	// WakeUrgent is the default: only work somebody is waiting on.
-	WakeUrgent WakePhase = "urgent"
-	// WakeAll extends a turn for anything unread, including an FYI.
+	// WakeAll is the default: anything unread wakes the agent, once.
 	//
-	// For an UNATTENDED fleet, where nobody types and there may be no next
-	// activation for hours. A queued notify reaches an agent at its next
-	// activation, and an agent nobody prompts does not have one, so on a
-	// machine running without a person the queue is where mail goes to wait.
-	// The cost is the one this default exists to avoid: an FYI extends a turn
-	// that had finished.
+	// An agentic fleet is meant to be independent. Mail that waits for a human
+	// to type before its recipient hears about it is not situational awareness,
+	// and a time-sensitive request sitting unseen because nobody was at the
+	// keyboard is the failure this product exists to prevent. Waking is not
+	// driving: the digest says outright that it is coordination data the agent
+	// may act on or decline, and the agent still decides. What Dibs must not do
+	// is instruct.
 	WakeAll WakePhase = "all"
+	// WakeUrgent restricts the wake to work somebody is blocked on: questions,
+	// requests, handoffs, unacknowledged announcements, changes to the agent's
+	// own standing. For an operator who would rather an FYI never cost a turn.
+	WakeUrgent WakePhase = "urgent"
 	// WakeNone never extends a turn. For an operator who wants Dibs to be
 	// strictly pull-shaped, with the systemMessage and the `waiting` line as
 	// the only signals.
@@ -388,7 +397,7 @@ func (e *Engine) WakePolicy() WakePhase {
 	e.wake.mu.RLock()
 	defer e.wake.mu.RUnlock()
 	if e.wake.policy == "" {
-		return WakeUrgent
+		return WakeAll
 	}
 	return e.wake.policy
 }
@@ -417,4 +426,48 @@ func (e *Engine) somebodyIsWaiting(agent string) bool {
 type wakeState struct {
 	mu     sync.RWMutex
 	policy WakePhase
+}
+
+// freshForWake reports whether this agent has unread mail it has not already
+// been woken for, and records the wake.
+//
+// The wake fires on arrival, which is what makes a fleet independent of anyone
+// being at a keyboard. It fires ONCE per message, which is what stops it
+// nagging: an agent that read something and chose not to act has exercised the
+// judgement the digest explicitly grants it, and re-waking it every turn would
+// be taking that back.
+//
+// Work somebody is BLOCKED on is the exception, and comes back on the same
+// retry an unacknowledged announcement uses. A question with nobody answering
+// is not a decision, it is a peer waiting, and the whole point of a deadline is
+// that somebody notices before it expires.
+func (e *Engine) freshForWake(agent string, now time.Time) bool {
+	var woke bool
+	live := map[string]bool{}
+	for _, m := range e.state.Inbox(agent) {
+		if m.State != core.MsgStatePending && m.State != core.MsgStateDelivered {
+			continue
+		}
+		key := agent + "\x00" + strconv.FormatUint(m.Serial, 10)
+		live[key] = true
+		last, seen := e.wokeFor[key]
+		switch {
+		case !seen:
+			// Never announced to this agent: this is the arrival.
+		case m.Expecting() && now.Sub(last) >= AnnounceRetry:
+			// Somebody is still blocked, and the deadline is still running.
+		default:
+			continue
+		}
+		e.wokeFor[key] = now
+		woke = true
+	}
+	// Bounded by what is actually unread: a mailbox that empties takes its
+	// throttle entries with it, so this cannot grow with the ledger.
+	for key := range e.wokeFor {
+		if !live[key] && strings.HasPrefix(key, agent+"\x00") {
+			delete(e.wokeFor, key)
+		}
+	}
+	return woke
 }
