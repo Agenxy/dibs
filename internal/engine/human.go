@@ -443,9 +443,17 @@ func planAnswer(choices []string) answerPlan {
 		return answerPlan{Buttons: choices}
 	}
 	if len(choices) > 0 {
-		return answerPlan{Buttons: []string{deferButton, "Choose…"}, Then: thenPick}
+		return answerPlan{Buttons: []string{deferButton, "Pick one…"}, Then: thenPick}
 	}
-	return answerPlan{Buttons: []string{deferButton, "Answer…"}, Then: thenPrompt}
+	// "Write answer…", not "Answer".
+	//
+	// A button labelled Answer on a notification promises a field that is not
+	// there: you press it expecting to type, and the notification vanishes while
+	// a box opens somewhere else. Reported exactly that way, twice: "answer is
+	// misleading as I would assume I would put my answer somewhere". The verb
+	// now says what the press DOES, and the ellipsis keeps the platform's own
+	// promise that something further opens.
+	return answerPlan{Buttons: []string{deferButton, "Write answer…"}, Then: thenPrompt}
 }
 
 // respondAsHuman records the person's answer as an ordinary response from their
