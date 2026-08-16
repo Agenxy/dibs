@@ -243,17 +243,35 @@ agent, an idle one, and one that finished deliberately are three different facts
 with three different right responses, so the board says which: never a generic
 "offline".
 
-For the browser board, set an admin password once:
+For the browser board:
 
 ```sh
-dibs admin set-password
 dibs web
 ```
 
+On a Mac with Touch ID that is all of it: the daemon raises the system sheet,
+you touch the sensor, and it prints a single-use link. Everywhere else, set a
+password once and `dibs web` asks for it instead:
+
+```sh
+dibs admin set-password
+```
+
 The web board shows decrypted mail and can act as you, so it is gated on
-something the agents do not have. Every agent holds the coordination secret; none
-holds this. That is the whole reason the password exists, and why `dibs board`
-in the terminal needs none: it shows only what the board already shows.
+something the agents do not have. Every agent on this machine holds the
+coordination secret; none of them can produce your fingerprint, and none of them
+knows that password. That is the whole reason the gate exists, and why `dibs
+board` in the terminal needs neither: it shows only what the board already
+shows.
+
+Of the two, the fingerprint is the stronger claim, which is why it is preferred
+where it exists. A password proves possession of a secret an agent could in
+principle have been handed. Presence proves somebody is sitting here: an agent
+that tried it would raise the sheet on your own Mac, and you would decline.
+
+`dibs web --password` uses the password anyway, and a `dibs web` whose stdin is
+not a terminal never raises a sheet: a script that pipes a password is telling
+you it cannot reach a sensor.
 
 ## 7. Turn on work-overlap matching (optional)
 

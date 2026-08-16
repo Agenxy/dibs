@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agenxy/dibs/internal/humanauth"
 	"github.com/agenxy/dibs/internal/liveness"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/ui"
@@ -522,10 +523,31 @@ func checkLedgerAndBoard(dir string, ok reportFn, bad, warn fixFn) {
 	default:
 		ok(fmt.Sprintf("ledger chain intact (%d lines)", res.Lines))
 	}
-	if _, err := os.Stat(filepath.Join(dir, "admin.hash")); err != nil {
-		warn("no admin password set, so the web board cannot be opened",
-			"run `dibs admin set-password`")
-	} else {
+	// Two ways in, and this used to report only one of them.
+	//
+	// "no admin password set, so the web board cannot be opened" was a warning
+	// on every Mac with a working sensor, where the board opens on a fingerprint
+	// and always could have. It sent the operator to invent and store a
+	// credential in order to be trusted less than the fingerprint they already
+	// had. A check that names a fault the machine does not have costs exactly
+	// what the fault would have.
+	_, pwErr := os.Stat(filepath.Join(dir, "admin.hash"))
+	switch {
+	case humanauth.Available():
+		how := "`dibs web` unlocks the board with Touch ID"
+		if pwErr == nil {
+			how += ", and the admin password still works"
+		} else {
+			how += ". No admin password is needed here; set one only if you want a " +
+				"way in that does not use the sensor"
+		}
+		ok(how)
+	case pwErr != nil:
+		warn("no way to open the web board: this machine cannot check presence and "+
+			"no admin password is set",
+			"run `dibs admin set-password`. Touch ID would do instead, on a machine "+
+				"that has it")
+	default:
 		ok("admin password set. `dibs web` will open the board")
 	}
 }

@@ -161,7 +161,7 @@ tasks:
     # `test`.
     cmds:
       - go build -tags dibdev ./...
-      - go test -race -tags dibdev ./internal/humanauth/ ./internal/mcp/
+      - go test -race -tags dibdev ./internal/humanauth/ ./internal/mcp/ ./cmd/dibd/
 
   test:minimal:
     desc: "The stripped diagnostic panel: a serving mode the default suite never enters"

@@ -73,6 +73,29 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a different question. Agents see them in `inbox` like any other field, so an
   enumerated answer space is worth stating whoever is receiving it.
 
+- **Touch ID opens the web board, and no password is needed where it works.**
+  `dibs doctor` warned "no admin password set, so the web board cannot be
+  opened" on every Mac with a working sensor, and the remedy it named was to
+  invent and store a credential in order to be trusted LESS. The presence
+  machinery had existed since the panel's `human_unlock`, whose own comment says
+  it: a password proves possession of a secret an agent could in principle have
+  been handed, while a fingerprint proves somebody is sitting there. The gate
+  went on demanding the weaker of the two, and `guard.go` had carried a note
+  saying "presence upgrade can later replace the password" the whole time.
+
+  The check runs in the DAEMON, never in the client. A caller that reported "I
+  verified presence" would be asserting it, and every agent on the machine holds
+  the local secret needed to make that assertion. Presence is also still the
+  SECOND factor: same-user AND a person who consented just now.
+
+  The password stays, because presence is genuinely absent on Linux, on Macs
+  without the sensor, and in a headless session. Declined and unavailable are
+  answered differently, because the remedies are opposite: one is a person
+  saying no and the caller must stop, the other is a machine with nothing to ask
+  with and the caller must offer the password. And a `dibs web` whose stdin is
+  not a terminal never raises a sheet at all, since a script piping a password
+  is telling you it cannot reach a sensor. `dibs web --password` forces it.
+
 - **`retitle_space`**, so a topic can be redacted without destroying the space.
 
 - A hygiene guard against the wreckage a find-and-replace leaves when one word

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/adminpw"
+	"github.com/agenxy/dibs/internal/humanauth"
 	"github.com/agenxy/dibs/internal/web"
 )
 
@@ -52,10 +53,27 @@ func strconvItoa(n int) string { return strconv.Itoa(n) }
 // authGate enforces two trust tiers:
 //   - COORDINATION (agents, MCP tools, public board): the local secret via
 //     header. A same-user agent legitimately holds this.
-//   - GOD-VIEW (decrypted mail, web board): a session minted ONLY by proving the
-//     human ADMIN PASSWORD. The file secret is NOT sufficient, so an agent that
-//     read the secret file still cannot curl /api/messages. Presence upgrade
-//     (TouchID) can later replace the password on capable platforms.
+//   - GOD-VIEW (decrypted mail, web board): a session minted only by proving a
+//     HUMAN is here, by Touch ID where the machine can do it and by the admin
+//     PASSWORD where it cannot. The file secret is NOT sufficient on its own, so
+//     an agent that read the secret file still cannot curl /api/messages.
+//
+// Presence is preferred, and that is not a convenience. A password proves
+// possession of a secret an agent could in principle have been handed; a
+// fingerprint proves somebody is sitting there. internal/mcp/human.go has said
+// exactly that about the panel's unlock since it was written, and this gate
+// went on demanding the weaker of the two: a person with a working sensor had
+// to invent, store and type a password in order to be trusted less.
+//
+// The check runs HERE, in the daemon, never in the client. A caller that merely
+// asserted "I verified presence" would be forgeable by anything holding the
+// local secret, which is every agent on the machine: the whole point is that the
+// proof cannot be produced from inside the transport.
+//
+// The password stays, because presence genuinely is not always available: no
+// sensor, Linux, a headless session. Both are offered and the caller is told
+// which one this machine can do, rather than being asked for a finger it has no
+// way to read.
 type authGate struct {
 	secret        string
 	adminHashPath string
@@ -219,6 +237,53 @@ func (g *authGate) godViewAuthorized(r *http.Request) bool {
 	return false
 }
 
+// presenceBootstrap mints a god-view session against a fingerprint instead of a
+// password.
+//
+// The local secret has already been checked by the caller, so this is the
+// second factor and not the only one: same-user AND a person who consented just
+// now. An agent that tried it would raise the system sheet on the operator's own
+// Mac, with the reason below written on it, and the operator would decline.
+//
+// The three verdicts get three different answers because the remedies are
+// opposite, and collapsing them is how a person ends up retyping a password on a
+// machine that was willing to take their finger, or waiting for a sheet that
+// this machine can never show.
+func (g *authGate) presenceBootstrap(w http.ResponseWriter, r *http.Request) {
+	// Written on the system sheet, so the person is approving a thing rather
+	// than approving that something is happening.
+	const reason = "open the Dibs board, which shows every agent's decrypted mail"
+	verdict, err := humanauth.Check(r.Context(), reason)
+	if err != nil && verdict != humanauth.Unavailable {
+		http.Error(w, "presence check failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	switch verdict {
+	case humanauth.Verified:
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "application/json")
+		out := map[string]string{"bt": g.mintBootstrap(), "proof": "presence"}
+		// A dev build answering from a script says so, in the response, every
+		// time: the same rule internal/mcp/human.go holds. A mocked unlock that
+		// looked identical to a real one would be evidence of nothing, in exactly
+		// the artefact somebody would later cite as evidence it works.
+		if humanauth.Mocked() {
+			out["mocked"] = "NO HUMAN WAS CHECKED: scripted verdict from a dev build"
+		}
+		_ = json.NewEncoder(w).Encode(out)
+	case humanauth.Unavailable:
+		// Not a refusal, and it must not read as one. There is nobody to blame
+		// and nothing to retry; the answer is the other proof.
+		http.Error(w, "this machine cannot check presence: use the admin password "+
+			"(`dibs admin set-password`, then `dibs web`)", http.StatusPreconditionFailed)
+	case humanauth.Abandoned:
+		http.Error(w, "the presence check went away before anybody answered: nothing "+
+			"was unlocked", http.StatusRequestTimeout)
+	default: // Declined
+		http.Error(w, "presence was declined: nothing was unlocked", http.StatusUnauthorized)
+	}
+}
+
 func (g *authGate) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if o := r.Header.Get("Origin"); o != "" && !localOrigin(o) {
@@ -233,9 +298,19 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
+			// Presence first, when the caller asked for it. This blocks on a
+			// person for up to humanauth's own timeout, which is fine on an HTTP
+			// handler goroutine and would not be on the engine's single writer:
+			// nothing here touches it.
+			if r.Header.Get("X-Dibs-Presence") == "1" {
+				g.presenceBootstrap(w, r)
+				return
+			}
 			hash := g.adminHash()
 			if hash == "" {
-				http.Error(w, "no admin password set: run `dibs admin set-password` to enable the board", http.StatusForbidden)
+				http.Error(w, "no admin password set, and this request did not ask for a "+
+					"presence check: run `dibs web`, which uses Touch ID where the machine "+
+					"has it, or `dibs admin set-password` to set one", http.StatusForbidden)
 				return
 			}
 			// Throttle wrong-password attempts: the admin password guards all
