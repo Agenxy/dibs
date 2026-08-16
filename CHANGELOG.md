@@ -396,6 +396,43 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The board panel, first pass: quiet instrument.** It had four nested rail
+  systems down the left, an orbiting conic gradient with a blurred breathing
+  core for a connection indicator, a diagonal hatch under every line of type,
+  two coloured pools of light, glow on the figures and a halo on every live pip.
+  Read cold it was instrument-shaped costume, and this file already argued
+  twice, about the rail's cross-ticks and the metrics' corner brackets, that
+  ornament imitating instrumentation costs a surface the trust it is imitating.
+  The same argument finishes the job.
+
+  Monospace now means data and nothing else. It had been marking the node id,
+  "read only", group headings, badges, agent names, paths and counts: seven
+  roles, which is none. Headings and badges are words, so they are set as words.
+
+  Colour is spent once. "Out of touch" was warm on the heading, its count, every
+  affected row's edge and the figure in the summary; it is now the count at the
+  top, which says how many, and the edge on each row, which says which.
+
+  The four-cell metric deck is a sentence: `1/16 live · 0 unanswered · 11
+  declared · 1 out of touch`. The accessible label already read that way and
+  read better than what sighted readers were given.
+
+  And each agent is one line, opened on request. Sixteen agents spending four to
+  twelve lines each answered "who else is here and what are they on" only for
+  whoever scrolled: a well-written twelve-line declaration pushed the two agents
+  that needed attention off the screen. A native `details` carries it, so it is
+  keyboard operable and needs no script, and the text is clamped in CSS rather
+  than sliced, so the whole declaration stays selectable, searchable and read in
+  full by a screen reader. Which rows are open is held by each surface, because
+  both rebuild the roster wholesale on every board change and a `details` does
+  not survive that: expanding an agent and having the board tick would have
+  snapped it shut.
+
+  Two things were simply wrong and are fixed on the way past. The window title
+  read `Dibs) Board`, and `Dibs (3 waiting` with mail. And the tab whose id says
+  `agents` and whose label said `Dibs` renders SPACES: three names for one
+  thing, in the surface a person reads.
+
 - **A permission error now names the route to permission.** `E_NOT_COORDINATOR`
   and `E_NOT_ADMIN` stated the rule and stopped, which leaves a capable agent
   with nothing to do but give up or ask for the tool again. Every honesty hint

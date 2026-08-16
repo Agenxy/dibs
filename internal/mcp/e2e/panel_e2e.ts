@@ -377,9 +377,25 @@ try {
   check("renders every agent", names.includes("reviewer") && names.includes("peer"), names.join(","))
   check("groups the roster", (await panel.locator(".band").count()) >= 1)
   check("marks the caller's own agent", (await panel.locator(".entry.self").count()) === 1)
+  // The declaration LEADS the row now rather than sitting in a block below it,
+  // so this asserts the guarantee (a reader can see what the agent declared)
+  // instead of the element it used to live in.
   check("renders the declared task",
-    (await panel.locator(".task").first().textContent())?.includes("running the panel e2e") ?? false)
+    (await panel.locator(".entry.self .lede").first().textContent())?.includes("running the panel e2e") ?? false)
   check("renders slot paths", (await panel.locator(".path").allTextContents()).join(",").includes("board_app.html"))
+  // The detail is CLOSED but present. Clamping in CSS rather than truncating the
+  // string is what keeps a declaration findable by the browser's own search and
+  // readable in full to a screen reader; slicing the text would make the board
+  // quietly misreport what an agent said.
+  const disclosure = panel.locator(".entry.self details.says")
+  check("the rest of an agent's detail is a closed disclosure, not discarded",
+    (await disclosure.count()) === 1 && !(await disclosure.first().evaluate(
+      (d) => (d as HTMLDetailsElement).open)))
+  check("and opening it reveals the paths",
+    await disclosure.first().evaluate((d) => {
+      ;(d as HTMLDetailsElement).open = true
+      return !!d.querySelector(".said .path")
+    }))
   check("summary agrees with the board",
     ((await panel.locator(".metric .figure").first().textContent()) ?? "").includes("2"))
   const capsText = (await panel.locator("#ctx-caps").textContent()) ?? ""
@@ -449,30 +465,32 @@ try {
       check("an agent that goes out of touch is marked", marked,
         "the transition happened with no signal at all")
 
-      // The gesture must be on the pseudo-element that RENDERS.
+      // The gesture must be on something that RENDERS.
       //
-      // This check previously read animationName off ::before and passed for a
-      // week while nothing moved: the rail marker is ::after, ::before has
-      // `content: none` and never paints, and getComputedStyle happily reports
-      // the animation from a rule attached to a box that does not exist. So the
-      // content is asserted first: a named animation on an unrendered
-      // pseudo-element is precisely the shape of the bug this now catches.
+      // This check once read animationName off ::before and passed for a week
+      // while nothing moved: the marker was ::after, ::before had
+      // `content: none` and never painted, and getComputedStyle happily
+      // reported an animation from a rule attached to a box that did not exist.
+      //
+      // The gesture now runs on the row itself, which is why it went with the
+      // rail: there is no pseudo-element left to attach it to. That removes the
+      // bug class rather than guarding it, so this asserts the animation is on
+      // the element, and the ghost check below stays to catch anyone moving it
+      // back onto a pseudo that does not paint.
       const gesture = await panel.locator(`.entry[data-agent="${target}"]`).first()
         .evaluate((el) => {
-          const pick = (which: string) => {
+          const pick = (which?: string) => {
             const cs = getComputedStyle(el, which)
-            return { content: cs.content, animation: cs.animationName }
+            return { content: which ? cs.content : "element", animation: cs.animationName }
           }
-          return { before: pick("::before"), after: pick("::after") }
+          return { element: pick(), before: pick("::before"), after: pick("::after") }
         })
-      const painted = Object.values(gesture)
-        .filter((g) => g.content !== "none" && g.content !== "")
-      check("the mark animates a pseudo-element that actually renders",
-        painted.some((g) => g.animation === "panel-went-quiet"),
-        `rendered pseudo-elements carry ${JSON.stringify(painted.map((g) => g.animation))}; ` +
+      check("the went-quiet gesture runs on the row itself",
+        gesture.element.animation === "panel-went-quiet",
+        `the row carries ${JSON.stringify(gesture.element.animation)}; ` +
         `full state ${JSON.stringify(gesture)}`)
       const ghost = Object.entries(gesture)
-        .filter(([, g]) => g.animation === "panel-went-quiet" &&
+        .filter(([k, g]) => k !== "element" && g.animation === "panel-went-quiet" &&
           (g.content === "none" || g.content === ""))
       check("no went-quiet animation is attached to a pseudo-element that never paints",
         ghost.length === 0, `${JSON.stringify(ghost)}`)

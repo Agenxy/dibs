@@ -14,9 +14,6 @@
 .panel {
   container: agents-panel / inline-size;
   --panel-gutter: var(--s6);
-  --panel-rail-size: 30px;
-  --panel-rail-gap: var(--s3);
-  --panel-rail-reach: calc(var(--panel-rail-size) / 2 + var(--panel-rail-gap));
   --panel-register: var(--accent);
   --panel-record-signal: var(--line-3);
 }
@@ -24,17 +21,12 @@
 .panel .sheet {
   min-width: 0;
   isolation: isolate;
+  /* No coloured light. Two tinted pools, one accent and one green, sat under
+     the top of every board and tinted the type over them: light that means
+     nothing, on a surface whose only job is to be read accurately. What is left
+     is one neutral lift from the top edge, so the panel has an orientation and
+     no hue. */
   background:
-    radial-gradient(
-      circle at calc(var(--panel-gutter) + var(--panel-rail-size) / 2) var(--s7),
-      color-mix(in oklch, var(--panel-register) 9%, transparent),
-      transparent var(--s7)
-    ),
-    radial-gradient(
-      ellipse at 88% 7rem,
-      color-mix(in oklch, var(--live) 4%, transparent),
-      transparent 19rem
-    ),
     linear-gradient(
       180deg,
       color-mix(in oklch, var(--fg) 3%, transparent),
@@ -56,69 +48,19 @@
  * pseudo-element at z-index 0, so no text ever renders on top of a moving edge,
  * and it is dropped entirely at high contrast, where the whole point is that
  * nothing sits between the reader and the glyphs. */
-.panel .sheet::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background: repeating-linear-gradient(
-    45deg,
-    color-mix(in oklch, var(--fg) 1.6%, transparent) 0 1px,
-    transparent 1px 3px
-  );
-  mask-image: linear-gradient(180deg, var(--fg), transparent 32rem);
-}
-@media (prefers-contrast: more) {
-  .panel .sheet::after { display: none; }
-}
-
-/* The rail groups every status band and record under one origin, and that is
-   ALL it does now.
-   It used to carry fine cross-ticks, described here as giving it "scale". They
-   gave it the LOOK of scale: a ruler implies a measure, and nothing was being
-   measured: the marks were evenly spaced regardless of time, count or anything
-   else on screen. Read back by somebody who had not written it, the panel was
-   "sci-fi HUD costume", and they were right. An instrument that decorates itself
-   with instrument-shaped marks is harder to trust, not easier.
-   The continuous line stays because it is doing structural work. */
-.panel .sheet::before {
-  content: "";
-  position: absolute;
-  z-index: 0;
-  top: var(--s5);
-  bottom: var(--s5);
-  left: calc(
-    var(--panel-gutter) +
-    (var(--panel-rail-size) - var(--s3)) / 2
-  );
-  width: var(--s3);
-  pointer-events: none;
-  background:
-    linear-gradient(
-      90deg,
-      transparent calc(50% - .5px),
-      color-mix(in oklch, var(--panel-register) 48%, var(--line-2))
-        calc(50% - .5px) calc(50% + .5px),
-      transparent calc(50% + .5px)
-    ),
-    none;
-  mask-image: linear-gradient(
-    180deg,
-    transparent,
-    var(--fg) var(--s5),
-    var(--fg) calc(100% - var(--s7)),
-    transparent
-  );
-}
+/* The diagonal hatch is gone. It was texture standing in for substance: a
+   surface that looks machined is not the same as one that reads clearly, and
+   at a sidebar's width it put a moving edge under every line of type. */
+/* No rail. It grouped bands and records under one origin, which structure and
+   spacing already do, and it was the last of the instrument costume: a line
+   drawn down the side of a list does not measure the list. With it went the
+   cross-ticks into every record and the stubs into every band, which together
+   were four nested rail systems encoding one fact each already carried in
+   words. */
 .panel .sheet > * {
   position: relative;
   z-index: 1;
 }
-.panel :is(.hairline, .context, .summary, main, .foot) {
-  margin-left: calc(var(--panel-rail-size) + var(--panel-rail-gap));
-}
-
 /* A compact instrument deck, not a reduced web page. The register remains
    visually subordinate to the host, but bevelled corners keep it from becoming
    the generic pill control that appears in every other sidebar. */
@@ -145,43 +87,16 @@
   z-index: 0;
   corner-shape: bevel;
 }
-.panel .views button::after {
-  content: "";
-  position: absolute;
-  right: var(--s2);
-  bottom: var(--s1);
-  left: var(--s2);
-  height: 2px;
-  background:
-    linear-gradient(
-      90deg,
-      transparent,
-      var(--accent) 28% 72%,
-      transparent
-    );
-  box-shadow: 0 0 var(--s3) color-mix(in oklch, var(--accent) 58%, transparent);
-  clip-path: polygon(
-    0 50%,
-    var(--s1) 0,
-    calc(100% - var(--s1)) 0,
-    100% 50%,
-    calc(100% - var(--s1)) 100%,
-    var(--s1) 100%
-  );
-  transform: scaleX(0);
-  transform-origin: 0 50%;
-  transition: transform .2s var(--ease);
-}
+/* The selected tab had a filled, top-lit, accent-tinted background AND a
+   glowing bevelled underline beneath it. Two indicators for one state: the
+   second could only ever confirm what the first already said, and it was the
+   louder of the two. The fill stays, because it is the one that also gives
+   the control a hit area. */
 .panel .views button[aria-selected="true"] {
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in oklch, var(--accent) 13%, var(--bg-2)),
-      color-mix(in oklch, var(--accent) 5%, var(--bg-2))
-    );
-  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--fg) 7%, transparent);
+  background: var(--bg-2);
+  color: var(--fg);
+  box-shadow: inset 0 1px 0 color-mix(in oklch, var(--fg) 6%, transparent);
 }
-.panel .views button[aria-selected="true"]::after { transform: scaleX(1); }
 .panel .views button[data-view="mail"] .tally:not(.zero) {
   min-width: 1.4em;
   padding: 0 var(--s1);
@@ -205,20 +120,19 @@
    instrument, not four dashboard cards: internal rules establish the columns,
    a semantic register line warms only when one of the readings needs
    attention, and the chamfer survives at every host width. */
+/* The instrument deck is a line of text now.
+   It was a bevelled, inset-lit, four-column enclosure around four numbers, and
+   the enclosure was the loudest object on a panel whose job is to make an
+   agent's name easy to find. A frame that heavy is a claim that what is inside
+   it is the most important thing here; it never was. */
 .panel .summary {
   --panel-summary-signal: var(--accent);
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0;
-  padding: var(--s1);
-  border: 1px solid color-mix(in oklch, var(--line-2) 72%, transparent);
-  border-radius: calc(var(--r) * 2);
-  corner-shape: bevel;
-  background: color-mix(in oklch, var(--bg) 97%, var(--bg-1));
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklch, var(--fg) 5%, transparent),
-    inset 0 calc(var(--s1) * -1) var(--s4)
-      color-mix(in oklch, var(--bg) 18%, transparent);
+  padding: var(--s3) 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .panel .summary:has(.figure.attn) {
   --panel-summary-signal: var(--warn);
@@ -226,52 +140,23 @@
 .panel .summary:has(.figure.good):not(:has(.figure.attn)) {
   --panel-summary-signal: var(--live);
 }
-.panel .summary::before {
-  content: "";
-  position: absolute;
-  top: -1px;
-  right: var(--s4);
-  left: var(--s4);
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    color-mix(in oklch, var(--panel-summary-signal) 82%, transparent) 18% 34%,
-    transparent 62%
-  );
-}
-.panel .summary::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: calc(var(--panel-rail-reach) * -1);
-  width: var(--panel-rail-reach);
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    color-mix(in oklch, var(--panel-summary-signal) 72%, var(--line-2)),
-    var(--line-2)
-  );
-}
+/* the deck's signal hairline went with the deck */
+/* the summary's rail stub went with the rail */
 .panel .metric {
   position: relative;
   min-width: 0;
-  min-height: 56px;
-  padding: var(--s3) var(--s4);
+  padding: 0;
   border: 0;
-  border-left: 1px solid color-mix(in oklch, var(--line-2) 62%, transparent);
   border-radius: 0;
   background: transparent;
   box-shadow: none;
 }
-.panel .metric:first-child { border-left: 0; }
 /* The corner bracket that used to sit on every metric is gone. Four little
    L-marks framing four numbers said nothing about the numbers: they were
    costume, and on a surface whose whole job is to be believed, ornament that
    imitates instrumentation costs trust it cannot repay. The dividing rules
    between metrics do the separating; the figures do the talking. */
 .panel .metric .figure {
-  text-shadow: 0 0 var(--s4) color-mix(in oklch, currentColor 20%, transparent);
   font-variant-numeric: tabular-nums;
   letter-spacing: -.02em;
 }
@@ -283,7 +168,6 @@
    non-zero is the only thing lit. */
 .panel .metric.quiet .figure {
   color: var(--fg-3);
-  text-shadow: none;
 }
 /* The LABEL is deliberately left alone.
    It was dimmed to 72% of --fg-3 to push the whole cell back, which measured
@@ -381,26 +265,7 @@
 .panel :is(.entry, .space, .msg) + :is(.entry, .space, .msg) {
   border-top: 1px solid color-mix(in oklch, var(--line-2) 34%, transparent);
 }
-.panel :is(.entry, .space, .msg)::after {
-  content: "";
-  position: absolute;
-  top: var(--s4);
-  left: calc(var(--panel-rail-reach) * -1 - 2px);
-  width: calc(var(--panel-rail-reach) + 2px);
-  height: var(--s2);
-  pointer-events: none;
-  background:
-    radial-gradient(
-      circle at 2px 50%,
-      var(--panel-record-signal) 0 2px,
-      transparent 2px
-    ),
-    linear-gradient(
-      90deg,
-      var(--panel-record-signal),
-      var(--line-2)
-    ) 2px 50% / calc(100% - 2px) 1px no-repeat;
-}
+/* the per-record rail tick went with the rail */
 /* Three facts per record, and they were typeset as one.
  *
  * WHO this is (the name), WHAT it is doing right now (the declared slot), and
@@ -442,14 +307,17 @@
  * the information had been absorbed, and this board is read by somebody deciding
  * whether to intervene, not watched as a display. The steady amber marker is
  * what carries the state afterwards; the motion only carries the change. */
-.panel .entry.went-quiet::after {
-  transform-origin: 2px 50%;
+/* The change moved onto the row itself when the rail tick it used to ride went
+   away. Same rule as before: once, not forever. An agent going out of touch is
+   the most consequential thing this board can show and the one that used to
+   happen in total silence, so it gets a single sweep of warmth across the row
+   it happened to. The steady marker carries the state afterwards. */
+.panel .entry.went-quiet {
   animation: panel-went-quiet 1.05s var(--ease) both;
 }
 @keyframes panel-went-quiet {
-  0% { transform: scaleX(1); }
-  38% { transform: scaleX(.06); }
-  100% { transform: scaleX(1); }
+  0%, 100% { background: transparent; }
+  38% { background: color-mix(in oklch, var(--warn) 12%, transparent); }
 }
 .panel .entry.self { --panel-record-signal: var(--accent); }
 .panel .space.mine { --panel-record-signal: var(--accent); }
@@ -463,9 +331,10 @@
   background: color-mix(in oklch, var(--bg) 96%, var(--bg-1));
 }
 .panel .entry.active .pip {
-  box-shadow:
-    0 0 0 var(--s1) color-mix(in oklch, var(--live) 9%, transparent),
-    0 0 var(--s3) color-mix(in oklch, var(--live) 55%, transparent);
+  /* No halo. A 6px dot is already the strongest mark on a quiet row; wrapping
+     it in glow made "alive" shout on a board where the thing worth noticing is
+     the agent that is NOT. */
+  box-shadow: none;
 }
 /* The band separates two groups; it does not need to be an intermission.
    Shared spacing gives it a top pad plus a panel margin on top of that, which
@@ -480,78 +349,34 @@
   padding-block: var(--s4) var(--s1);
 }
 .panel .band:first-child { padding-top: var(--s2); }
-.panel .band::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: calc(var(--panel-rail-reach) * -1);
-  width: var(--panel-rail-reach);
-  height: 1px;
-  background: var(--line-2);
-}
-.panel .band.working::before { background: var(--live); }
-.panel .band.gone::before { background: var(--warn); }
+/* the band's rail stub went with the rail */
 .panel .event {
   border-radius: calc(var(--r) * 1.2);
 }
 
-/* Liveness as an orbital instrument: dormant is an open, quiet aperture;
-   attached is a closed field with a slow travelling charge. It says "the host
-   is continuously present" without borrowing the visual language of loading. */
-@property --panel-orbit {
-  syntax: "<angle>";
-  inherits: false;
-  initial-value: 0deg;
-}
+/* The connection indicator, which is also the panel's mark.
+   It was an "orbital instrument": a bevelled 30px aperture holding a conic
+   gradient that rotated forever, a blurred core that breathed, and a green
+   halo when attached. Read back cold it is a sci-fi prop, and the argument
+   against it is the one already made twice in this file about the rail's
+   cross-ticks and the metrics' corner brackets: ornament shaped like
+   instrumentation costs a surface the trust it is imitating.
+   What the reader needs from it is one bit, am I attached, which a dot and a
+   ring say without moving. Motion is spent elsewhere and only on change: the
+   live pip's single ring, and one sweep when an agent goes quiet. A mark that
+   spins forever is spending attention on a fact that has not changed since the
+   panel opened. */
 .panel .status-mark {
   position: relative;
   display: grid;
-  width: 30px;
-  height: 30px;
+  width: var(--s5);
+  height: var(--s5);
   place-items: center;
-  border: 1px solid color-mix(in oklch, var(--line-3) 66%, transparent);
+  border: 0;
   border-radius: 50%;
-  background:
-    radial-gradient(
-      circle at 50% 46%,
-      color-mix(in oklch, var(--fg-2) 12%, transparent),
-      transparent 54%
-    ),
-    color-mix(in oklch, var(--bg-1) 78%, transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklch, var(--fg) 7%, transparent),
-    inset 0 calc(var(--s1) * -1) var(--s3)
-      color-mix(in oklch, var(--bg) 25%, transparent),
-    0 var(--s2) var(--s4) color-mix(in oklch, var(--bg) 22%, transparent);
-}
-.panel .status-mark::before,
-.panel .status-mark::after {
-  content: "";
-  position: absolute;
-  border-radius: inherit;
-  pointer-events: none;
-}
-.panel .status-mark::before {
-  inset: 2px;
-  padding: 1px;
-  background: conic-gradient(
-    from var(--panel-orbit),
-    transparent 0 17%,
-    color-mix(in oklch, var(--fg-3) 58%, transparent) 24%,
-    transparent 31% 66%,
-    color-mix(in oklch, var(--fg-3) 32%, transparent) 72%,
-    transparent 79%
-  );
-  mask:
-    linear-gradient(var(--fg) 0 0) content-box,
-    linear-gradient(var(--fg) 0 0);
-  mask-composite: exclude;
-}
-.panel .status-mark::after {
-  inset: 8px;
-  background: color-mix(in oklch, var(--fg-3) 36%, transparent);
-  filter: blur(4px);
-  opacity: .45;
+  background: none;
+  box-shadow: none;
+  color: var(--fg-3);
 }
 .panel .status-mark svg {
   position: relative;
@@ -559,34 +384,12 @@
   width: 16px;
   height: 16px;
 }
-.panel .status-mark.live {
-  border-color: color-mix(in oklch, var(--live) 46%, var(--line));
-  box-shadow:
-    inset 0 1px 0 color-mix(in oklch, var(--fg) 9%, transparent),
-    inset 0 calc(var(--s1) * -1) var(--s3)
-      color-mix(in oklch, var(--bg) 24%, transparent),
-    0 0 var(--s4) color-mix(in oklch, var(--live) 22%, transparent),
-    0 var(--s2) var(--s5) color-mix(in oklch, var(--bg) 22%, transparent);
-}
-.panel .status-mark.live::before {
-  background: conic-gradient(
-    from var(--panel-orbit),
-    transparent 0 12%,
-    color-mix(in oklch, var(--live) 88%, transparent) 18%,
-    transparent 26% 58%,
-    color-mix(in oklch, var(--live) 44%, transparent) 65%,
-    transparent 72%
-  );
-  animation: panel-orbit 9s linear infinite;
-}
-.panel .status-mark.live::after {
-  background: var(--live);
-  opacity: .72;
-  animation: panel-core-breathe 3.6s var(--ease) infinite;
-}
-@keyframes panel-orbit { to { --panel-orbit: 1turn; } }
-@keyframes panel-core-breathe {
-  50% { opacity: .38; transform: scale(.72); }
+.panel .status-mark .ring { stroke: currentColor; }
+.panel .status-mark.live { color: var(--live); }
+.panel .status-mark.live .ring { stroke-dasharray: none; }
+.panel .status-mark.live .core { opacity: 1; }
+.panel .status-mark:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
 }
 
 /* Control density, in two numbers. */
@@ -668,8 +471,7 @@
     }
     .panel .sheet { padding: 0 var(--panel-gutter) var(--s6); }
     .panel .masthead > .views {
-      margin-left: calc(var(--panel-rail-size) + var(--panel-rail-gap));
-      width: calc(100% - var(--panel-rail-size) - var(--panel-rail-gap));
+      width: 100%;
     }
     .panel .event {
       grid-template-columns: 50px 1fr;
@@ -866,7 +668,7 @@
     </div>
     <nav class="views" role="tablist" aria-label="Dibs views">
       <button id="tab-board" data-view="board" role="tab" aria-controls="pane-board" aria-selected="true" tabindex="0">Board</button>
-      <button id="tab-agents" data-view="agents" role="tab" aria-controls="pane-agents" aria-selected="false" tabindex="-1">Dibs<span class="tally zero" id="tally-agents" aria-hidden="true">0</span></button>
+      <button id="tab-agents" data-view="agents" role="tab" aria-controls="pane-agents" aria-selected="false" tabindex="-1">Spaces<span class="tally zero" id="tally-agents" aria-hidden="true">0</span></button>
       <button id="tab-mail" data-view="mail" role="tab" aria-controls="pane-mail" aria-selected="false" tabindex="-1">Mail<span class="tally zero" id="tally-mail" aria-hidden="true">0</span></button>
       <button id="tab-activity" data-view="activity" role="tab" aria-controls="pane-activity" aria-selected="false" tabindex="-1">Activity<span class="tally zero" id="tally-act" aria-hidden="true">0</span></button>
     </nav>
@@ -1054,6 +856,15 @@ let state = {
   errors: new Map(),
   settled: new Map(),
   rendered: new Map(),
+  // Which agents the reader has opened.
+  //
+  // Held HERE rather than read off the DOM, because patchHTML replaces the
+  // roster's innerHTML whenever the board changes and a `details` element does
+  // not survive that: expanding an agent and then having the board tick would
+  // snap it shut, on a surface that ticks every time anything happens anywhere.
+  // The shared library is pure and holds no state, so each surface keeps its
+  // own and hands it in.
+  expanded: new Set(),
   received: false,
   // Set once every carrier has been tried and none produced a board, so the
   // panel can stop claiming one is on the way. Cleared the moment one arrives.
@@ -1291,7 +1102,7 @@ function drawSummary() {
     `${working} declared. ${stale} out of touch.`
   if (summary.getAttribute("aria-label") !== label)
     summary.setAttribute("aria-label", label)
-  document.title = unread ? `Dibs (${unread} waiting` : "Dibs) Board"
+  document.title = unread ? `Dibs · ${unread} waiting` : "Dibs · Board"
 }
 
 // ── actions ──────────────────────────────────────────────────
@@ -1843,6 +1654,7 @@ function draw() {
   patchHTML(boardEl, Board.rosterHTML(state.board?.agents, {
     selfId: state.agent,
     events: state.events,
+    expanded: state.expanded,
     empty: Board.emptyHTML("No agents yet",
       "Agents appear here the moment they register."),
   }))
@@ -1903,7 +1715,7 @@ function draw() {
   tl.textContent = chans.length
   tl.classList.toggle("zero", chans.length === 0)
   document.getElementById("tab-agents").setAttribute(
-    "aria-label", chans.length ? `Dibs, ${chans.length}` : "Dibs")
+    "aria-label", chans.length ? `Spaces, ${chans.length}` : "Spaces")
 
   const mailEl = document.getElementById("pane-mail")
   // A redraw must not eat a reply that is half-written.
@@ -2141,6 +1953,24 @@ function tab(which, { focus = false } = {}) {
     commitTab(which, { focus, fallbackMotion: !enhanced })
   })
 }
+// Remember which agents the reader opened.
+//
+// Capture phase, because `toggle` does not bubble: a listener on the container
+// would never hear it, which is the kind of thing that looks like it works
+// until the board redraws and every row a person opened is shut again.
+//
+// One listener on the document, bound once, rather than rebound on every
+// redraw: the rows it watches are replaced constantly and a per-row handler
+// would have to be reattached each time, which is how one gets missed.
+document.addEventListener("toggle", (e) => {
+  const d = e.target
+  if (!(d instanceof HTMLDetailsElement) || !d.classList.contains("says")) return
+  const id = d.closest("[data-agent]")?.dataset.agent
+  if (!id) return
+  if (d.open) state.expanded.add(id)
+  else state.expanded.delete(id)
+}, true)
+
 for (const btn of NAV) btn.onclick = () => tab(btn.dataset.view)
 document.querySelector(".views").onkeydown = (e) => {
   const current = NAV.indexOf(document.activeElement)

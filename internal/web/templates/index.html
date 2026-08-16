@@ -53,7 +53,7 @@
     </div>
     <nav class="views" role="tablist" aria-label="Board views">
       <button data-view="board" role="tab" aria-selected="true" aria-controls="pane-board" id="tab-board">Board</button>
-      <button data-view="agents" role="tab" aria-selected="false" aria-controls="pane-agents" id="tab-agents" tabindex="-1">Dibs<span class="tally zero" id="tally-agents">0</span></button>
+      <button data-view="agents" role="tab" aria-selected="false" aria-controls="pane-agents" id="tab-agents" tabindex="-1">Spaces<span class="tally zero" id="tally-agents">0</span></button>
       <button data-view="mail" role="tab" aria-selected="false" aria-controls="pane-mail" id="tab-mail" tabindex="-1">Mail<span class="tally zero" id="tally-mail">0</span></button>
       <button data-view="activity" role="tab" aria-selected="false" aria-controls="pane-activity" id="tab-activity" tabindex="-1">Activity<span class="tally zero" id="tally-act">0</span></button>
     </nav>
@@ -217,7 +217,21 @@ function flash(msg, bad) {
   flash._t = setTimeout(() => { el.textContent = ""; el.className = "flash" }, 6000)
 }
 
-let state = { board: {{.BoardJSON}}, messages: {{.MessagesJSON}}, events: {{.EventsJSON}} }
+let state = { board: {{.BoardJSON}}, messages: {{.MessagesJSON}}, events: {{.EventsJSON}},
+  // Which agents the reader opened. Held here because the roster is rebuilt
+  // from scratch on every board change and a `details` does not survive that.
+  expanded: new Set() }
+
+// Capture phase: `toggle` does not bubble, so a container listener never hears
+// it. Bound once, because the rows are replaced constantly.
+document.addEventListener("toggle", (e) => {
+  const d = e.target
+  if (!(d instanceof HTMLDetailsElement) || !d.classList.contains("says")) return
+  const id = d.closest("[data-agent]")?.dataset.agent
+  if (!id) return
+  if (d.open) state.expanded.add(id)
+  else state.expanded.delete(id)
+}, true)
 
 function drawSummary() {
   const agents = state.board?.agents || []
@@ -335,6 +349,9 @@ function drawPanes() {
   // surface can decline to answer the question.
   boardEl.innerHTML = Board.rosterHTML(b?.agents, {
     selfId: null,
+    // Same reason as the panel: this surface replaces the roster's innerHTML on
+    // every board change, so a `details` a reader opened does not survive one.
+    expanded: state.expanded,
     // The cadence trace is drawn from the event feed the board already has,
     // no new endpoint, no new poll, and the same events the Activity pane shows.
     events: state.events,
