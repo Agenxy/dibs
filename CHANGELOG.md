@@ -54,6 +54,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A hygiene guard against the wreckage a find-and-replace leaves when one word
   used to mean two things, which is how the last one went.
 
+- A hygiene guard against the wreckage a find-and-replace leaves when one word
+  used to mean two things, which is how the last one went.
+
 ### Fixed
 
 - **A declaration no longer publishes its own prose as a space id.** An
@@ -62,6 +65,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   board objects readable by agents in unrelated repositories, with no way to
   take them back. Ids now come from a ref where there is one (`issue:42` →
   `issue-42`) and otherwise from the project plus a digest.
+
+- **SPEC-CHANNELS.md is readable again.** The `lane` → `agent`/`space` rename
+  ran over the document that defines the split, leaving a terminology table
+  whose two rows were identical, a sentence with the same plural noun twice in a
+  row, and a passage warning about careless renames whose own example had been
+  renamed into two identical halves. The
+  same sweep reached `internal/web/act.go` and both board templates, which is
+  what the operator reads.
 
 ### Changed
 

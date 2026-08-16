@@ -561,3 +561,114 @@ func TestTheRegistryManifestWouldBeAccepted(t *testing.T) {
 		}
 	}
 }
+
+// The published version must be the same everywhere it is written down.
+//
+// The Claude Code plugin manifest said 0.0.0 while the project was at 0.0.5, so
+// anyone installing it, or reviewing it for the official plugin directory, saw a
+// version that had not existed since the first commit. Nothing failed: a stale
+// version is valid JSON, passes `claude plugin validate`, and installs fine.
+//
+// The owner's standing requirement is that public sources track main. That is
+// enforceable for the ones a release writes (the cask, the registry entry) and
+// was not for the ones a human edits, which is precisely where it drifted.
+func TestTheVersionIsTheSameInEveryManifest(t *testing.T) {
+	root := repoRoot(t)
+
+	// The newest released version, from the changelog: the only place in the
+	// tree that states it as prose rather than deriving it.
+	changelog, err := os.ReadFile(filepath.Join(root, "CHANGELOG.md"))
+	if err != nil {
+		t.Skip("no CHANGELOG.md")
+	}
+	m := regexp.MustCompile(`(?m)^## \[(\d+\.\d+\.\d+)\]`).FindStringSubmatch(string(changelog))
+	if m == nil {
+		t.Skip("no released version in the changelog yet")
+	}
+	released := m[1]
+
+	for _, rel := range []string{
+		"server.json",
+		"plugins/claude-code/.claude-plugin/plugin.json",
+		"internal/plugins/data/claude-code/.claude-plugin/plugin.json",
+	} {
+		blob, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			continue // not every manifest exists in every checkout
+		}
+		var doc struct {
+			Version string `json:"version"`
+		}
+		if json.Unmarshal(blob, &doc) != nil || doc.Version == "" {
+			continue
+		}
+		if doc.Version != released {
+			t.Errorf("%s says version %q, but the newest release is %q.\n"+
+				"  A stale version is valid JSON and installs fine, so nothing else catches it: "+
+				"the people who see it are the ones installing or reviewing.",
+				rel, doc.Version, released)
+		}
+	}
+}
+
+// The wreckage a find-and-replace leaves when one word used to mean two things.
+//
+// Dibs v1 called both concepts "lanes": the participant and the body of work it
+// joins. Splitting them into `agent` and `space` was a mechanical pass over the
+// prose, and a mechanical pass cannot tell the two apart, so it mapped both onto
+// one. SPEC-CHANNELS.md, the document that DEFINES the split, came out of it
+// with a terminology table whose two rows were identical, a sentence reading
+// "they join the agents agents open", and a passage warning about careless
+// renames whose example had itself been renamed into `json:"agent"` →
+// `json:"agent"`. It stayed that way through four releases, because prose has no
+// compiler and every test in the tree passed.
+//
+// A general "is this sentence right" check is not possible. These fragments are
+// not: each is a phrase that no correct sentence produces and that this exact
+// failure produces reliably. That makes the test cheap, specific, and free of
+// false positives, which is what lets it survive.
+func TestNoDocumentReadsLikeARenameRanOverIt(t *testing.T) {
+	// Each entry is a fragment plus what it means when it appears.
+	broken := []struct{ frag, why string }{
+		{"agents agents", "a plural noun doubled: one of these was `spaces`"},
+		{"agent agent", "a noun doubled: one of these was `space`"},
+		{"spaces spaces", "a plural noun doubled: one of these was `agents`"},
+		{"space space", "a noun doubled: one of these was `agent`"},
+		{"an agent's agent", "an agent does not have an agent; it has a space"},
+		{"a space's space", "a space does not have a space"},
+		{"a agent", "the article was left behind by a rename from a consonant word"},
+		{"an space", "the article was left behind by a rename from a vowel word"},
+		{"a announcement", "the article does not match the noun"},
+		{"an lane", "the article does not match the noun"},
+	}
+	// Whole words only. Without the boundaries "metadata agents" matches
+	// "a agent" across the join, which is the kind of false positive that gets
+	// a guard deleted rather than fixed.
+	pats := make([]*regexp.Regexp, len(broken))
+	for i, b := range broken {
+		pats[i] = regexp.MustCompile(`\b` + regexp.QuoteMeta(b.frag) + `\b`)
+	}
+	root := repoRoot(t)
+	walk(t, root, func(rel, abs string) {
+		// This file spells every fragment out in order to look for them.
+		if !checkedForProse(rel) || rel == "internal/hygiene/hygiene_test.go" {
+			return
+		}
+		body, err := os.ReadFile(abs) // #nosec G304 -- walking this repository
+		if err != nil || !utf8.Valid(body) {
+			return
+		}
+		for i, line := range strings.Split(string(body), "\n") {
+			low := strings.ToLower(line)
+			for j, b := range broken {
+				if !pats[j].MatchString(low) {
+					continue
+				}
+				t.Errorf("%s:%d reads %q: %s. A sweep cannot tell the participant "+
+					"from the work it joins, so re-read the sentence and pick the one "+
+					"the paragraph is about.\n  %s",
+					rel, i+1, b.frag, b.why, strings.TrimSpace(line))
+			}
+		}
+	})
+}
