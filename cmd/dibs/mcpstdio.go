@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"sync"
 	"syscall"
 	"time"
@@ -61,9 +62,35 @@ func mcpStdio(_ []string) error {
 	// away: `defer streams.Wait()` then waits on a goroutine that reconnects
 	// forever, so a bridge with an open subscription never exits on EOF. Found
 	// by closing stdin on a bridge that had one, which hung.
+	// One shutdown path, with three ways in, so no single one has to be
+	// airtight: stdin reaching EOF, the harness process exiting, or a signal.
 	ctx, endSession := context.WithCancel(context.Background())
-	defer streams.Wait()
 	defer endSession()
+	// Bounded, deliberately. `streams.Wait()` alone made the guarantee "this
+	// process exits IF its goroutines cooperate", and a bridge that fails to
+	// exit is one orphan per session holding a stream open against the daemon
+	// forever. The guarantee has to be that it exits.
+	defer waitBounded(&streams, 3*time.Second)
+
+	// A harness that dies while a sibling still holds the pipe's write end
+	// leaves stdin open forever, so EOF cannot be the only signal. The kernel
+	// is the one party that always knows.
+	//
+	// These paths EXIT rather than unwind, and that is the correction that
+	// makes the guarantee real. Cancelling a context does not interrupt a
+	// blocking read on stdin: the loop below is parked in that read and will
+	// never look at ctx again, so a polite shutdown is one the process never
+	// performs. Measured, with a sibling holding the write end: the bridge
+	// outlived a SIGKILLed harness indefinitely with its context already
+	// cancelled.
+	//
+	// Exiting is also simply correct here. Both paths mean the session is over:
+	// the harness is gone, or something is stopping this process on purpose.
+	// Nothing in flight is worth finishing for a client that is not there, so
+	// the only thing owed is the flush.
+	sigCtx, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	go endSessionWhenTheHarnessGoes(ctx, sigCtx, endSession, out)
 
 	// A Reader rather than a Scanner, for one reason: Buffered().
 	//
@@ -80,6 +107,9 @@ func mcpStdio(_ []string) error {
 	restoreCarried(ctx, streamClient, url, secret, out, &streams)
 
 	for {
+		if ctx.Err() != nil {
+			return nil // the harness went away
+		}
 		// Between a reply and the next request is the only quiescent point
 		// there is, so it is where an upgrade can happen without losing one.
 		if haveSelf {
@@ -349,4 +379,44 @@ func upgradeIfReplaced(in *bufio.Reader, self selfIdentity) selfIdentity {
 	// means carrying on and not trying this same binary again.
 	_ = upgradeBridge(now)
 	return now
+}
+
+// waitBounded waits for the stream goroutines, then gives up.
+//
+// Giving up is the point. Every goroutine here is cancelled through ctx and
+// should stop at once, and "should" is exactly the word that produced an
+// orphaned bridge in the first place: this process exiting must not depend on
+// any of them behaving. Whatever is still running goes with the process.
+func waitBounded(wg *sync.WaitGroup, limit time.Duration) {
+	done := make(chan struct{})
+	go func() { defer close(done); wg.Wait() }()
+	select {
+	case <-done:
+	case <-time.After(limit):
+	}
+}
+
+// endSessionWhenTheHarnessGoes ends this process when its harness does.
+//
+// It EXITS rather than unwinding, and that is what makes the guarantee real:
+// cancelling a context does not interrupt a blocking read on stdin, so the read
+// loop is parked in that read and will never look at ctx again. Measured, with
+// a sibling holding the pipe's write end, the bridge outlived a SIGKILLed
+// harness indefinitely with its context already cancelled.
+//
+// Exiting is also simply correct. Both triggers mean the session is over: the
+// harness is gone, or something is stopping this process deliberately. Nothing
+// in flight is worth finishing for a client that is not there, so the only
+// thing owed is the flush.
+func endSessionWhenTheHarnessGoes(ctx, sigCtx context.Context, endSession func(), out *syncWriter) {
+	gone := parentGone(ctx)
+	select {
+	case <-ctx.Done(): // ordinary EOF: the loop is returning on its own
+		return
+	case <-gone:
+	case <-sigCtx.Done():
+	}
+	endSession() // stop the streams before the process goes
+	out.flush()
+	os.Exit(0)
 }

@@ -112,6 +112,17 @@ Things that have cost real time here, none of which are visible in the diff:
 - **A failing probe is usually a broken probe.** Before concluding the product is
   broken, check that your measurement is sound: assert your setup steps
   succeeded. Three false alarms in one session came from this.
+- **A PASSING probe proves nothing until you have seen it fail.** The same
+  session that produced those three then wrote four consecutive versions of one
+  test that passed against the code they were written to catch: the fixture gave
+  a sibling the read end of a pipe instead of the write end; the next killed the
+  process under test instead of its parent; the next pointed the daemon at an
+  empty data directory, so it exited at once for want of a local secret. Each
+  looked like a green test of a real guarantee. For anything that asserts a
+  behaviour you have just added, run it against the commit before the fix and
+  watch it fail. `git worktree add --detach <dir> HEAD` makes that thirty
+  seconds, and it is the only thing that distinguishes a regression test from a
+  decoration.
 
 ## Where the reasoning lives
 

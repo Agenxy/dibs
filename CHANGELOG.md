@@ -115,6 +115,28 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Subscriptions are re-issued as the caller's own request, never reconstructed,
   which is the rule followStream already follows across a daemon restart.
 
+- **A bridge can no longer outlive its harness, by construction.** One bridge
+  exists per session, so a bridge that fails to exit is one orphan per session,
+  each holding a stream open against the daemon forever. EOF on stdin cannot
+  prevent that, because the bridge sees EOF only when the LAST holder of the
+  pipe's write end closes it, and a harness that also spawns shells hands each
+  one the same descriptors: a Claude Code killed while a Bash tool is running
+  leaves the write end open and the bridge waiting on a pipe nobody will write
+  to again. The lifetime is now bound to the PROCESS by the kernel, on both
+  supported platforms: `PR_SET_PDEATHSIG` on Linux, which holds even if the
+  bridge is wedged, and kqueue `EVFILT_PROC`/`NOTE_EXIT` on macOS. Both re-check
+  `getppid` afterwards, because the parent can die in the window before
+  registering, and a reparented process is an orphan by definition.
+
+  Those paths exit rather than unwind, which is the part that makes the
+  guarantee real: cancelling a context does not interrupt a blocking read on
+  stdin, so a bridge parked in that read never looks at the cancellation again.
+  Measured: with a sibling holding the write end, a bridge outlived a SIGKILLed
+  harness indefinitely with its context already cancelled. Shutdown also waits a
+  bounded time for its stream goroutines and then goes anyway, because the
+  guarantee has to be that the process exits, not that it exits if its
+  goroutines cooperate. SIGTERM and SIGINT end it cleanly, flushing first.
+
 - **A bridge holding a subscription never exited when its harness closed
   stdin.** `followStream` re-issues the listen every time the stream ends, which
   is what keeps a subscription alive across a daemon restart and, with no way to
