@@ -155,6 +155,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is otherwise the one thing Dibs must never allow, so there is no
   agent-to-agent version.
 
+- **Agents can reach the human, and the human is notified on the machine.** The
+  person is the one participant with no loop: no lifecycle hook fires for them
+  and no tool result reaches them, so mail addressed to them waited until they
+  next opened the board. The board now marks their row `human: true` so an agent
+  can find who to write to, and a message to that row raises a desktop
+  notification. A `request` carries **Deny / Later / Approve on the banner
+  itself**, and the button pressed comes back as an ordinary response from their
+  own agent: the sender cannot tell it came from a notification rather than a
+  tool call, which is the point.
+
+- **Dibs.app**, because a notification carries the identity of whoever posts it.
+  A daemon shelling out to `osascript` borrows Script Editor's name and icon, so
+  every message from an agent arrived branded "osascript"; there is no flag that
+  changes that, the poster's bundle IS the identity. The bundle also buys the
+  action buttons: `UNUserNotificationCenter` needs a bundle identifier and is
+  the only API that puts them on the banner. The product mark is rendered from
+  the same nine numbers as `icon.svg` (a rounded tile, three polylines, a dot)
+  rather than parsed, so producing an icon needs no build dependency, and a
+  guard keeps the two from diverging. `LSUIElement`, so notifying never bounces
+  a Dock icon or steals focus.
+
 - **Mail wakes its recipient when it arrives, once.** An agent hearing about a
   message only when somebody next types at it is not situational awareness, and
   a time-sensitive request sitting unseen because nobody was at the keyboard is

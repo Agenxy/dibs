@@ -600,9 +600,13 @@ type (
 		// Role, and whether whoever holds it can come back. A role held by an
 		// agent nobody can reattach to is a power the board shows as filled and
 		// nobody can use.
-		Role        string      `json:"role,omitempty"`
-		Unreachable bool        `json:"unreachable,omitempty"`
-		Slots       []boardSlot `json:"slots"`
+		Role        string `json:"role,omitempty"`
+		Unreachable bool   `json:"unreachable,omitempty"`
+		// Human marks the row that is the person at this machine, so an agent
+		// (or `dibs board`) can find who to write to without matching on a
+		// description string.
+		Human bool        `json:"human,omitempty"`
+		Slots []boardSlot `json:"slots"`
 	}
 	boardClaim struct {
 		Agent   string    `json:"agent"`

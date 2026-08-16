@@ -6,6 +6,26 @@ tasks:
     cmds: [task --list]
     silent: true
 
+  app:
+    # Dibs.app: the process that speaks to the person.
+    #
+    # A notification carries the identity of whoever posts it, so a daemon
+    # shelling out to osascript borrows Script Editor's name and icon. The
+    # bundle is what makes a message from an agent arrive as Dibs, and
+    # UNUserNotificationCenter (which needs a bundle id) is the only API that
+    # puts action buttons on the banner itself.
+    #
+    # macOS only. Elsewhere the daemon simply has no route to a desktop.
+    platforms: [darwin]
+    desc: Build Dibs.app, the notifier bundle with the product icon
+    sources:
+      - internal/notify/app/*.swift
+      - tools/appbundle/main.go
+    generates:
+      - bin/Dibs.app/Contents/MacOS/dibs-notify
+    cmds:
+      - go run ./tools/appbundle -o bin/Dibs.app -version {{.VERSION | default "0.0.0"}}
+
   presence:
     desc: >-
       Compile the Touch ID presence helper (macOS only). Separate from `build`
@@ -27,6 +47,7 @@ tasks:
       - go build -o bin/dibd ./cmd/dibd
       - go build -o bin/dibs ./cmd/dibs
       - task: presence
+      - task: app
 
   install:
     desc: Install both binaries to ~/.local/bin (replaces, never overwrites)
@@ -51,9 +72,11 @@ tasks:
       # never existed, and then copied over a live `dibs`, reusing exactly the
       # inode the comment above says not to. The failure is a SIGKILL with no
       # message, and it cost an hour before somebody read this line.
-      - rm -f {{.DEST}}/dibs {{.DEST}}/dibd {{.DEST}}/dibs-presence
+      - rm -rf {{.DEST}}/dibs {{.DEST}}/dibd {{.DEST}}/dibs-presence {{.DEST}}/Dibs.app
       - cp bin/dibs bin/dibd {{.DEST}}/
       - task: install:presence
+        vars: { DEST: '{{.DEST}}' }
+      - task: install:app
         vars: { DEST: '{{.DEST}}' }
       - task: install:sign
         vars: { DEST: '{{.DEST}}' }
@@ -98,6 +121,19 @@ tasks:
           echo "  set DIBS_CODESIGN_IDENTITY to an identity from"
           echo "  security find-identity -v -p codesigning" 
         fi
+
+  install:app:
+    # Beside the daemon, for the same reason the presence helper is: notify
+    # resolves it relative to its own executable rather than on PATH.
+    #
+    # Registered with Launch Services afterwards. Without that, macOS does not
+    # know the bundle exists and refuses it notification authorisation, which
+    # presents as a notifier that posts nothing and reports "cannot notify".
+    platforms: [darwin]
+    internal: true
+    cmds:
+      - cp -R bin/Dibs.app {{.DEST}}/
+      - /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f {{.DEST}}/Dibs.app
 
   install:presence:
     # Beside the daemon, because humanauth looks beside its own executable rather

@@ -299,6 +299,7 @@ func (e *Engine) Board(ctx context.Context) (core.Result, error) {
 
 func (e *Engine) decoratedBoard() core.Result {
 	b := e.state.Board()
+	human := e.HumanIdentity()
 	agents, _ := b["agents"].([]map[string]any)
 	for _, lm := range agents {
 		id, _ := lm["id"].(string)
@@ -312,6 +313,17 @@ func (e *Engine) decoratedBoard() core.Result {
 		}
 		lm["last_seen"] = seen
 		lm["status"] = l.Status
+		// Which row is the person.
+		//
+		// An agent that wants to reach the operator had no reliable way to find
+		// them: the human is an ordinary agent named after the OS user, so
+		// picking them out meant matching on a description string. Marked here
+		// rather than in the fold because who is at the keyboard is derived,
+		// non-replayable state: it is minted by a presence check and belongs to
+		// this daemon's run, not to the ledger.
+		if human != "" && id == human {
+			lm["human"] = true
+		}
 		// Which machine, hoisted to the row.
 		//
 		// It was only ever nested inside the descriptor, which is right for one

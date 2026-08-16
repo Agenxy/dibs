@@ -114,11 +114,11 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "vouch_child",
-			"description": "Vouch for a subagent you are about to spawn: YOU generate a one-time " +
-				"secret, register it here, and hand the same value to the child, which presents " +
-				"it as `parent_nonce`. Only then does naming you as `parent` grant anything: " +
-				"your space memberships, skipping an exclusive queue, and exemption from your " +
-				"own claims in the guard. Unvouched, a `parent` is ignored.",
+			"description": "Vouch for a subagent you are about to spawn: YOU generate a " +
+				"one-time secret, register it here, and hand the same value to the child, " +
+				"which presents it as `parent_nonce`. Only then does naming you as `parent` " +
+				"grant anything: your space memberships, skipping an exclusive queue, and " +
+				"exemption from your own claims. Unvouched, a `parent` is ignored.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"nonce": str("a secret you generate for this one child; hand it to the child, never publish it"),
@@ -169,11 +169,12 @@ var toolDefs = func() []map[string]any {
 			}, "token", "nonce"),
 		},
 		{
-			"name": "prune", "description": "Remove a FINISHED agent record you are responsible for: " +
-				"your own, or a child you vouched for. Tidying up after yourself, not board " +
-				"administration. Never a peer, because an agent that could remove peers could delete " +
-				"the row saying somebody else is already doing its work. Never an ACTIVE agent " +
-				"either: sign_off stops an agent, this tidies the record afterwards.",
+			"name": "prune", "description": "Remove a FINISHED agent record you are " +
+				"responsible for: your own, or a child you vouched for. Tidying up after " +
+				"yourself, not board administration. Never a peer, because an agent that " +
+				"could remove peers could delete the row saying somebody else is already " +
+				"doing its work. Never an ACTIVE one: sign_off stops an agent, this tidies " +
+				"the record.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"agent": map[string]any{
@@ -241,9 +242,12 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "send",
-			"description": "Send a message to another agent. Questions and requests carry a " +
-				"deadline; on expiry you get a diagnosis (alive-but-silent, dormant, gone). " +
-				"Pass op_id to make retries safe: same op_id + same content = one message.",
+			"description": "Send a message to another agent, or to the HUMAN: the board row " +
+				"marked `human: true` is the person here, and writing to it raises a desktop " +
+				"notification. A `request` to them shows approve/deny and their answer comes " +
+				"back as an ordinary response. Questions and requests carry a deadline; on " +
+				"expiry you get a diagnosis (alive-but-silent, dormant, gone). Pass op_id to " +
+				"make retries safe: same op_id + same content = one message.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "to": str("recipient agent id"),
 				"type": map[string]any{
@@ -577,12 +581,11 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "human_unlock",
-			"description": "FOR THE HUMAN, from the board panel. Proves a person is at this " +
-				"machine (Touch ID, or the admin password without it) and returns THEIR OWN " +
-				"agent token, so they can post, announce, message or broadcast with the " +
-				"ordinary tools, and adopt_agent an abandoned mailbox. It raises a fingerprint " +
-				"prompt, which is what makes the identity unforgeable. Returns unlocked:false " +
-				"with a reason if they decline or the machine cannot ask.",
+			"description": "FOR THE HUMAN, from the board panel. Proves a person is here " +
+				"(Touch ID, or the admin password without it) and returns THEIR OWN agent " +
+				"token, so they can post, announce, message, broadcast and adopt_agent with " +
+				"the ordinary tools. The fingerprint prompt is what makes the identity " +
+				"unforgeable. Returns unlocked:false with a reason if they decline.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"note": str("what the human is about to do, shown inside the system prompt " +
@@ -591,12 +594,11 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "adopt_agent",
-			"description": "Take over an ABANDONED mailbox: an agent that registered with " +
-				"neither a nonce nor a session id can never be reattached, and its mail keeps " +
-				"arriving where nobody can read it. Moves that mail onto a live agent; the " +
-				"source record and its history stay. Roles do not move (`dibs admin " +
-				"coordinator <agent>`). Needs the human here (human_unlock), a coordinator or " +
-				"an admin: taking another agent's mail is otherwise never allowed.",
+			"description": "Take over an ABANDONED mailbox: an agent registered with neither " +
+				"a nonce nor a session id can never be reattached, and its mail keeps arriving " +
+				"where nobody can read it. Moves that mail to a live agent; the source record " +
+				"and its history stay, and roles do not move. Needs the human here " +
+				"(human_unlock), a coordinator or an admin.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"agent": str("the abandoned agent whose mail to take over. Must not be active"),

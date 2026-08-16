@@ -2,12 +2,15 @@ package engine
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"os/user"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/notify"
 )
 
 // The human as a participant.
@@ -59,15 +62,36 @@ type humanState struct {
 func (e *Engine) HumanIdentity() string {
 	e.human.mu.Lock()
 	defer e.human.mu.Unlock()
-	if e.human.token == "" {
-		return ""
-	}
-	if e.state.AgentByToken(e.human.token) == nil {
+	if e.human.token != "" {
+		if e.state.AgentByToken(e.human.token) != nil {
+			return e.human.agent
+		}
 		e.human.token, e.human.agent = "", ""
-		return ""
 	}
-	return e.human.agent
+	// The token is this daemon RUN's; the identity is the board's.
+	//
+	// Holding only the token meant the human stopped being the human at every
+	// restart, until they unlocked again. Everything keyed off this then went
+	// quiet: the board stopped marking their row, and mail addressed to them
+	// stopped raising a notification, which is the one path that exists because
+	// the person is not in a loop to notice its absence.
+	//
+	// The registration itself is durable: it is in the ledger, minted with a
+	// known nonce. Recovering the id from that is reading what is already
+	// there, not registering anybody, so the rule above still holds: opening
+	// the board makes nobody a participant.
+	if id, ok := e.state.Nonces[humanNonce()]; ok {
+		if l := e.state.Agents[id]; l != nil && l.Status != core.StatusArchived {
+			return id
+		}
+	}
+	return ""
 }
+
+// humanNonce is the recovery credential the human's agent is registered with.
+// One place, because HumanAgent writes it and HumanIdentity reads it, and a
+// second spelling would make the human two different people.
+func humanNonce() string { return "human:" + humanName() }
 
 // HumanAgent returns the human's AGENT id and token, creating it on first use.
 //
@@ -109,8 +133,8 @@ func (e *Engine) HumanAgent(ctx context.Context) (agent, token string, err error
 		Kind: core.OpRegister, Name: name,
 		Description: "the human at the board",
 		AgentKind:   core.KindPersistent,
-		Nonce:       "human:" + name,
-		SessionID:   "human:" + name,
+		Nonce:       humanNonce(),
+		SessionID:   humanNonce(),
 		PID:         os.Getpid(),
 		Agent: &core.AgentInfo{
 			Harness: "dibs web", Surface: "web", Host: hostname(),
@@ -214,4 +238,92 @@ func (e *Engine) mayAdopt(l *core.Agent) bool {
 	// The human identity is minted by a presence check (Touch ID, or the admin
 	// password where there is no sensor), so holding it IS the proof.
 	return e.human.agent != "" && e.human.agent == l.ID
+}
+
+// tellTheHuman raises a desktop notification when a message lands for the
+// person, and offers the buttons a `request` is asking for.
+//
+// The human is the one participant who is not in a loop. Every other agent
+// learns about mail from a lifecycle hook or from the result of a call it was
+// making anyway; the person learns when they next look at the board, which on a
+// fleet that runs for days means "eventually, or not". A request addressed to
+// them then sits unanswered while its sender's deadline runs out.
+//
+// Off the writer loop, deliberately. An alert waits for a human to press a
+// button, and the single-writer goroutine holding still for two minutes would
+// stop the whole board while one person decides.
+//
+// Nothing here is content beyond what the sender wrote to this human, which
+// they are entitled to read: this is their own mailbox arriving by another
+// route, not a broadcast of somebody else's traffic.
+func (e *Engine) tellTheHuman(from, msgType, body string, serial uint64) {
+	if !notify.Available() {
+		return
+	}
+	// Logged because this path has no other evidence it ran. It happens on a
+	// goroutine, off the writer loop, and its whole output is a banner on
+	// somebody's screen: if it silently does nothing there is nothing to read.
+	slog.Info("notifying the human", "from", from, "type", msgType, "msg", serial)
+	title := "Dibs · " + from
+	switch msgType {
+	case core.MsgRequest:
+		// A request is literally "approve or deny", so ask it that way. An
+		// alert rather than a banner because a banner cannot carry buttons
+		// without an application bundle, which Dibs does not yet ship.
+		go e.answerForHuman(from, body, serial)
+	case core.MsgQuestion:
+		report(notify.Banner(title, "asks you a question", oneLine(body)))
+	case core.MsgHandoff:
+		report(notify.Banner(title, "hands work to you", oneLine(body)))
+	default:
+		report(notify.Banner(title, "says", oneLine(body)))
+	}
+}
+
+// answerForHuman puts a request to the person and records what they said, as an
+// ordinary response from their own agent: the sender cannot tell it came from a
+// dialog rather than a tool call, which is the point. Everything the human does
+// on this board goes through the same ops an agent sends.
+func (e *Engine) answerForHuman(from, body string, serial uint64) {
+	choice, err := notify.Ask("Dibs · "+from+" requests", oneLine(body), "Deny", "Later", "Approve")
+	if err != nil || choice == "" || choice == "Later" {
+		// Dismissed or deferred is not an answer, and inventing one would be
+		// answering on their behalf. The request stays open on the board.
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, token, err := e.HumanAgent(ctx)
+	if err != nil {
+		return
+	}
+	disposition := "deny"
+	if choice == "Approve" {
+		disposition = "approve"
+	}
+	_, _ = e.Do(ctx, &core.Op{
+		Kind: core.OpRespond, Token: token, MsgSerial: serial,
+		Disposition: disposition,
+		Body:        "answered from the desktop notification",
+	})
+}
+
+// oneLine keeps a notification readable. A banner truncates anyway, and a
+// multi-paragraph handoff rendered into one is unreadable rather than informative.
+func oneLine(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	const max = 180
+	if len(s) > max {
+		return s[:max] + "…"
+	}
+	return s
+}
+
+// report says when a notification could not be delivered. Silence here is the
+// failure mode this whole path exists to remove, so it must not fail silently
+// itself.
+func report(err error) {
+	if err != nil {
+		slog.Warn("could not notify the human; the message is still on the board", "err", err)
+	}
 }

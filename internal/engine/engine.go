@@ -437,6 +437,24 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 			res["waiting"] = w
 		}
 	}
+	// The person is the one participant with no loop of their own: no
+	// lifecycle hook fires for them and no tool result reaches them, so mail
+	// addressed to the human waits until they next open the board. On a fleet
+	// that runs for days that means "eventually, or not", while the sender's
+	// deadline runs down.
+	if op.Kind == core.OpSendMessage && res != nil {
+		if human := e.HumanIdentity(); human != "" && op.To == human {
+			serial, _ := res["msg_serial"].(uint64)
+			from := ""
+			if actor != nil {
+				from = actor.ID
+			}
+			// Off the loop: an alert waits for somebody to press a button, and
+			// the single writer holding still for two minutes would stop the
+			// board while one person decides.
+			go e.tellTheHuman(from, op.MsgType, op.Body, serial)
+		}
+	}
 	return res, nil
 }
 
