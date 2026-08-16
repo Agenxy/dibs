@@ -38,6 +38,18 @@ var toolDefs = func() []map[string]any {
 	str := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
 	num := func(desc string) map[string]any { return map[string]any{"type": "integer", "description": desc} }
 	tok := str("your agent token from register")
+	// The type decides what a message DOES, so it is described where an agent
+	// chooses it, once. send and broadcast carried separate copies of the same
+	// four sentences, which is a second copy that can drift and a cost every
+	// agent pays on every cold connection.
+	msgType := map[string]any{
+		"type": "string", "enum": []string{"notify", "question", "request", "handoff"},
+		"description": "what the message DOES, so pick for the effect. notify: no reply " +
+			"needed, arrives at their next activation, costs them nothing. question / " +
+			"request / handoff: WAKE the recipient now, so use them when somebody is " +
+			"genuinely waiting. A request to the HUMAN raises a notification with " +
+			"approve/deny buttons; the press returns as an ordinary response",
+	}
 
 	return []map[string]any{
 		{
@@ -242,25 +254,18 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "send",
-			"description": "Send a message to another agent, or to the HUMAN: the board row " +
-				"marked `human: true` is the person here, and writing to it raises a desktop " +
-				"notification. A `request` to them shows approve/deny and their answer comes " +
-				"back as an ordinary response. Questions and requests carry a deadline; on " +
-				"expiry you get a diagnosis (alive-but-silent, dormant, gone). Pass op_id to " +
-				"make retries safe: same op_id + same content = one message.",
+			"description": "Send a message to an agent, or to the HUMAN: the board row " +
+				"marked `human: true` is the person here, and writing to it notifies them on " +
+				"their machine. Questions and requests carry a deadline; on expiry you get a " +
+				"diagnosis (alive-but-silent, dormant, gone). op_id makes retries safe.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "to": str("recipient agent id"),
-				"type": map[string]any{
-					"type": "string", "enum": []string{"notify", "question", "request", "handoff"},
-					"description": "notify: no reply needed. question: you want an answer. " +
-						"request: you want a decision, approve or deny. handoff: you are giving " +
-						"the work away and expect them to take it",
-				},
+				"type": msgType,
 				"body": str("message body"), "deadline_s": num("response deadline in seconds (default 600; max 7200, or 7 " +
 					"days to persistent agents)"),
 				"op_id": str("client-generated id for safe retries (optional, recommended)"),
 				"attachments": map[string]any{"type": "array", "description": "each is a blob " +
-					"{blob:'sha256:…'} from put_blob, or a fileref {path, size?, hash?} naming a large " +
+					"{blob:'sha256:…'} from put_blob, or a fileref {path, size?, hash?} naming a " +
 					"local file (advisory, zero-copy)", "items": map[string]any{"type": "object", "properties": map[string]any{
 					"blob": str("blob id from put_blob"), "path": str("fileref: local file path"),
 					"size": num("fileref: size in bytes (advisory)"), "hash": str("fileref: content hash (advisory)"),
@@ -270,10 +275,10 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "put_blob",
-			"description": "Store attachment content in the encrypted blob store, addressed by hash; " +
-				"returns a blob id you attach to send. Give either data (base64) or path (a local " +
-				"file the daemon reads). Idempotent: same content ⇒ same id. For very large local " +
-				"files you do not want copied, attach a fileref {path} to send directly instead.",
+			"description": "Store attachment content in the encrypted blob store, addressed by " +
+				"hash; returns a blob id you attach to send. Give either data (base64) or path " +
+				"(a local file the daemon reads). Idempotent: same content ⇒ same id. For a " +
+				"large file you do not want copied, attach a fileref {path} to send instead.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "data": str("base64-encoded content (for inline/small data)"),
 				"path": str("local file path for the daemon to read and store"),
@@ -665,18 +670,13 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "broadcast",
-			"description": "COORDINATOR ONLY. Send one message to every other live agent at once: the same as writing to " +
-				"each by hand, so each recipient gets its own message it may decline. Use for fleet-wide direction; use " +
-				"send for anything targeted.",
+			"description": "COORDINATOR ONLY. One message to every other live agent: the same " +
+				"as writing to each by hand, so each may decline its own. Fleet-wide " +
+				"direction only; use send for anything targeted.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
-				"type": map[string]any{
-					"type": "string", "enum": []string{"notify", "question", "request", "handoff"},
-					"description": "notify: no reply needed. question: you want an answer. " +
-						"request: you want a decision, approve or deny. handoff: you are giving " +
-						"the work away and expect them to take it",
-				},
-				"body": str("message body"),
+				"type":  msgType,
+				"body":  str("message body"),
 			}, "token", "type", "body"),
 		},
 		{

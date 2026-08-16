@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -102,6 +103,40 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		"score": true, "threshold": true, "scorer_id": true, "scorer_version": true,
 		"evidence": true, "auto": true,
 		"stale_agents": true, "alive_pids": true,
+		"no_process": true, "adopt_authorised": true,
+		// Declared by core.Op and reachable on disk, though the fixture below
+		// does not exercise every one. They were entirely unfrozen until the
+		// type check underneath this list was added: seventeen tags, more than
+		// a third of the format, protected by nothing. A rename of any of them
+		// would have replayed as success with the field silently zero, which is
+		// the exact failure `lane_kind` -> `agent_kind` caused across every
+		// release to v0.0.4.
+		"description": true, "proc_start": true, "resume_id": true,
+		"parent": true, "parent_nonce": true, "claim_verified": true,
+		"activity": true, "holds": true, "disposition": true,
+		"msg_serial": true, "msg_serials": true, "attachments": true,
+		"blob": true, "mime": true, "size": true,
+		"dead_agents": true, "give_up_announce": true,
+	}
+
+	// Every tag the Op DECLARES, not merely the ones this fixture happens to
+	// write. The check below compares what reached disk, which protects a field
+	// once it is in use and is blind to one that is not yet: `no_process` and
+	// `adopt_authorised` were both added and neither tripped anything, because
+	// no op in the fixture set them. They are on disk the moment a human
+	// registers or a mailbox is adopted, so "not exercised here" is not the
+	// same as "not part of the format".
+	//
+	// A new wire field must be declared. That is the whole cost of the rule,
+	// and it is what stops the next one being invisible.
+	for _, tag := range declaredOpTags() {
+		if !wantOp[tag] {
+			t.Errorf("core.Op declares json tag %q, which is not in this test's frozen "+
+				"list. Every field that can reach disk is part of the on-disk format, "+
+				"whether or not this fixture writes it: add it here deliberately, and "+
+				"remember that RENAMING one later is silent data loss rather than a "+
+				"rename", tag)
+		}
 	}
 
 	seenEnvelope := map[string]bool{}
@@ -191,7 +226,7 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 // Fingerprints of the frozen sets above. Deliberately not derived from anything
 // at build time: a value a sweep can recompute defends nothing.
 const (
-	frozenOpFingerprint       = "sha256:a6b92b35ecc6140e"
+	frozenOpFingerprint       = "sha256:6401db30fb08625f"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 )
 
@@ -274,4 +309,24 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 				"this value, and Apply matches it by string", name, got, want)
 		}
 	}
+}
+
+// declaredOpTags lists every json tag on core.Op, so the frozen list above is
+// checked against the type rather than against whatever the fixture exercised.
+func declaredOpTags() []string {
+	var out []string
+	t := reflect.TypeOf(core.Op{})
+	for i := range t.NumField() {
+		tag := t.Field(i).Tag.Get("json")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		if i := strings.Index(tag, ","); i >= 0 {
+			tag = tag[:i]
+		}
+		if tag != "" {
+			out = append(out, tag)
+		}
+	}
+	return out
 }

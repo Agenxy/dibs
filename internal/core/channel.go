@@ -1519,8 +1519,11 @@ func jaccard(a, b []PredFile, discount map[string]float64) (float64, []PredFile)
 
 func (s *State) directorOf(l *Agent, op *Op) (*Space, error) {
 	if !l.IsCoordinator() {
-		return nil, errf("E_NOT_COORDINATOR", "ask a human to grant the coordinator role",
-			"only a coordinator may administer another agent's agent")
+		return nil, errf("E_NOT_COORDINATOR",
+			"ask for it rather than waiting to be given it: send(to: the board row marked "+
+				"`human: true`, type: \"request\", body: what you need it for) reaches the "+
+				"person as a notification with Approve on it",
+			"only a coordinator may administer another agent's space")
 	}
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {

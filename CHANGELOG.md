@@ -95,6 +95,26 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The human's row on the board reported `process gone` after every daemon
+  restart.** The human registers as a participant so agents have somewhere to
+  address a request, and it recorded `os.Getpid()`: the daemon's own pid, which
+  is the one pid guaranteed to be alive at the moment it is written and gone by
+  the next start. The liveness sweep then found a dead process and honestly
+  reported what it saw. A person is not a process, so `Op.NoProcess` now says
+  that a participant HAS none, which is different from omitting a pid and is
+  why it needed a field: omitting one means "unchanged", so nothing could ever
+  clear a pid recorded earlier.
+
+- **The wire-format guard was checking a third of the wire format.** Renaming an
+  op's json tag is silent data loss here (`lane_kind` → `agent_kind` demoted
+  every persistent agent on upgrade, in every release to v0.0.4), and
+  `TestLedgerFieldNamesAreFrozen` exists to catch exactly that. It fingerprinted
+  the tags a hand-written fixture happened to populate, so 17 tags, including
+  every field of `update` and `adopt_agent`, were free to be renamed by the next
+  sweep with the guard passing. It now reflects over `core.Op` itself, so a
+  field is guarded because it exists rather than because somebody remembered to
+  exercise it.
+
 - **The stdio bridge upgrades itself in place, so a fix no longer waits for
   every harness on the machine to restart.** A bridge is spawned once per
   session and held for its lifetime, so installing a new `dibs` did nothing to
@@ -339,6 +359,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   what the operator reads.
 
 ### Changed
+
+- **A permission error now names the route to permission.** `E_NOT_COORDINATOR`
+  and `E_NOT_ADMIN` stated the rule and stopped, which leaves a capable agent
+  with nothing to do but give up or ask for the tool again. Every honesty hint
+  in Dibs names the corrective call; these had none to name, because the
+  corrective call is a human's. So they now name the human: send them a
+  `request`, which raises a notification with Approve on it and returns their
+  answer as an ordinary response.
+
+- **Every message type says what it DOES to its recipient.** An agent choosing
+  between `notify`, `question`, `request` and `handoff` was choosing by tone, on
+  four labels that read as synonyms for "send". They now say which types wake
+  the recipient now and which arrive at their next activation, so an agent can
+  pick for the effect and structure the message for what it triggers.
 
 - `tools/list` is 34.0k characters for 44 tools, down from 36.2k for 42. Every
   agent pays it on every cold connection, and the reasoning behind a rule

@@ -152,16 +152,30 @@ type Op struct {
 	AgentID string `json:"agent_id,omitempty"`
 
 	// register / resume / update
-	Name        string     `json:"name,omitempty"`
-	Description string     `json:"description,omitempty"`
-	PID         int        `json:"pid,omitempty"`
-	ProcStart   int64      `json:"proc_start,omitempty"`
-	NewToken    string     `json:"token,omitempty"` // engine-generated; encrypted at rest
-	Nonce       string     `json:"nonce,omitempty"` // encrypted at rest
-	ResumeID    string     `json:"resume_id,omitempty"`
-	SessionID   string     `json:"session_id,omitempty"` // harness session, for hook lookup
-	Agent       *AgentInfo `json:"agent,omitempty"`      // who is behind the agent (descriptive only)
-	Parent      string     `json:"parent,omitempty"`     // the agent that spawned this one (§8.2)
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	PID         int    `json:"pid,omitempty"`
+	// NoProcess says this participant HAS no process, which is different from
+	// omitting a pid.
+	//
+	// An omitted pid means "unchanged", so an agent that reattaches without one
+	// keeps whatever it had: that rule protects an agent whose harness does not
+	// know its own pid, and it is right. It leaves no way to say that a pid
+	// recorded earlier was wrong, and the human at the board is exactly that
+	// case. Their agent was registered with the DAEMON's pid, so after a
+	// restart the sweep probed a dead process and reported a person as
+	// `process_exited`, which is both false and a grim thing to say about
+	// somebody who is simply not typing.
+	//
+	// A person's liveness is silence, not a process table entry.
+	NoProcess bool       `json:"no_process,omitempty"`
+	ProcStart int64      `json:"proc_start,omitempty"`
+	NewToken  string     `json:"token,omitempty"` // engine-generated; encrypted at rest
+	Nonce     string     `json:"nonce,omitempty"` // encrypted at rest
+	ResumeID  string     `json:"resume_id,omitempty"`
+	SessionID string     `json:"session_id,omitempty"` // harness session, for hook lookup
+	Agent     *AgentInfo `json:"agent,omitempty"`      // who is behind the agent (descriptive only)
+	Parent    string     `json:"parent,omitempty"`     // the agent that spawned this one (§8.2)
 	// ParentNonce is the one-time secret the parent issued for this child.
 	//
 	// Parent alone is a claim anyone can make; this is the proof. A parent that
@@ -565,7 +579,11 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				if op.Agent != nil {
 					l.Agent = op.Agent
 				}
-				if op.PID != 0 {
+				switch {
+				case op.NoProcess:
+					// Corrects a pid recorded earlier, which omitting one cannot.
+					l.PID, l.ProcStart = 0, 0
+				case op.PID != 0:
 					l.PID, l.ProcStart = op.PID, op.ProcStart
 				}
 				if op.SessionID != "" {

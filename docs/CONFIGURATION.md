@@ -1,7 +1,7 @@
 # Configuring Dibs: `dibs.toml`
 
 Every setting the daemon reads, in one place, with what happens if you leave it
-alone. It lives at `<data dir>/dibs.toml` — `~/.dibs/dibs.toml` unless you moved
+alone. It lives at `<data dir>/dibs.toml`: `~/.dibs/dibs.toml` unless you moved
 it, and `dibs doctor` prints the directory it actually opened.
 
 **Dibs runs correctly with no configuration file at all.** Nothing here is
@@ -39,7 +39,7 @@ addr = "100.72.14.3:4777"    # a tailnet address: agents on four machines, one b
 
 ---
 
-## `[wake]` — when an agent hears about mail
+## `[wake]`: when an agent hears about mail
 
 | Key | Default | What it decides |
 |---|---|---|
@@ -68,7 +68,7 @@ extend_turn_for = "urgent"   # an FYI should never cost a turn on this machine
 
 ---
 
-## `[limits]` — coordination timings
+## `[limits]`: coordination timings
 
 | Key | Default | What it decides |
 |---|---|---|
@@ -83,7 +83,7 @@ agent_ttl = "15m"    # these agents run long builds without saying anything
 
 ---
 
-## `[match]` — work-overlap detection
+## `[match]`: work-overlap detection
 
 Matching is **off until you point it at a repository**, because an index built
 from the wrong tree is worse than no index. Nothing here is inferred.
@@ -117,7 +117,7 @@ auto_join = "declared"
 
 ---
 
-## `[supervise]` — spawned-subagent liveness
+## `[supervise]`: spawned-subagent liveness
 
 Whether a subagent somebody spawned is still working, thinking, or stuck. It
 reports; it never acts.
@@ -138,7 +138,7 @@ off = true    # this machine's agents are supervised by something else
 
 ---
 
-## `[roles]` — standing coordinator and admin
+## `[roles]`: standing coordinator and admin
 
 | Key | Default | What it decides |
 |---|---|---|

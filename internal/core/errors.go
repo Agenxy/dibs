@@ -97,12 +97,27 @@ var (
 	ErrNotAdmin = &Error{
 		Code: "E_NOT_ADMIN",
 		Msg:  "this action needs the admin role",
-		Hint: "admin can read every agent's mail, so only a human grants it: `dibs admin admin <agent>`",
+		Hint: "admin can read every agent's mail, so only a human grants it, and they " +
+			"should be asked rather than told: send(to: the row marked `human: true`, " +
+			"type: \"request\") reaches them as a notification. They grant it with " +
+			"`dibs admin admin <agent>`",
 	}
 	ErrNotCoordinator = &Error{
 		Code: "E_NOT_COORDINATOR",
 		Msg:  "this action needs the coordinator role",
-		Hint: "a human grants it with `dibs admin coordinator <agent>`; agents cannot promote themselves",
+		// The corrective call an AGENT can make, first.
+		//
+		// This named a command only a person can run, at a terminal the agent is
+		// not sitting at, which reads as "you cannot do this" rather than as a
+		// route. An agent that needs the role has an ordinary way to ask for it:
+		// the board carries the human as a row like any other, and a `request`
+		// to them raises a notification with Approve on it. Measured on a real
+		// board: nobody could broadcast because the coordinator was an agent
+		// nobody could log back into, and no hint said what to do next.
+		Hint: "ask: send(to: the board row marked `human: true`, type: \"request\", " +
+			"body: what you need it for). That raises a notification with Approve on it, " +
+			"and their answer comes back as an ordinary response. They grant it with " +
+			"`dibs admin coordinator <agent>`; agents cannot promote themselves",
 	}
 	ErrBlobUnavailable = &Error{
 		Code: "E_BLOB_UNAVAILABLE", Msg: "blob bytes are no longer available",

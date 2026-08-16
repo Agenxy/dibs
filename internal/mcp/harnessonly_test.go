@@ -47,10 +47,35 @@ func TestToolListingStaysAffordable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const budget = 34000 // ~8.5k tokens
+	// Raised from 34000, deliberately, per this test's own rule: say what the
+	// agent gets for the tokens.
+	//
+	// The surface went from 42 tools to 44, adding `retitle_space` (redact a
+	// topic your declaration published, which had no remedy but destroying the
+	// space) and `adopt_agent` (recover a mailbox nobody can log back into,
+	// found holding six unread messages on this project's own board). The
+	// descriptions also gained what each message TYPE does to its recipient,
+	// which is what an agent needs in order to choose one deliberately rather
+	// than by tone.
+	//
+	// It is still SMALLER than it was: 36208 chars before any of this. Density
+	// is the number that matters and it improved by a tenth, which an absolute
+	// ceiling cannot see, so both are checked.
+	const (
+		budget  = 34500 // ~8.6k tokens
+		perTool = 800   // the average that keeps a description worth reading
+	)
 	if len(b) > budget {
 		t.Errorf("tools/list is %d chars (~%d tokens), over the %d budget. Every agent pays "+
 			"this on every cold connection", len(b), len(b)/4, budget)
 	}
-	t.Logf("tools/list: %d tools, %d chars (~%d tokens)", len(agentTools), len(b), len(b)/4)
+	// A ceiling alone punishes adding a well-written tool and permits bloating
+	// the ones already there. This catches the second.
+	if avg := len(b) / len(agentTools); avg > perTool {
+		t.Errorf("tools/list averages %d chars per tool, over %d: the surface is getting "+
+			"wordier rather than wider, and prose belongs in dibs://skills, which is "+
+			"fetched once", avg, perTool)
+	}
+	t.Logf("tools/list: %d tools, %d chars (~%d tokens), %d chars/tool",
+		len(agentTools), len(b), len(b)/4, len(b)/len(agentTools))
 }

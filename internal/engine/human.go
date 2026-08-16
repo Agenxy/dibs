@@ -135,7 +135,11 @@ func (e *Engine) HumanAgent(ctx context.Context) (agent, token string, err error
 		AgentKind:   core.KindPersistent,
 		Nonce:       humanNonce(),
 		SessionID:   humanNonce(),
-		PID:         os.Getpid(),
+		// No pid, deliberately. A person is not a process, and this used to be
+		// the DAEMON's pid: after a restart the sweep probed a dead process and
+		// reported the operator as `process_exited`. Their liveness is silence,
+		// governed by idle_ttl like any agent that registers without one.
+		NoProcess: true,
 		Agent: &core.AgentInfo{
 			Harness: "dibs web", Surface: "web", Host: hostname(),
 		},
