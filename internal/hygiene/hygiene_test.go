@@ -734,3 +734,57 @@ func TestATaggedCommitAgreesWithItsChangelog(t *testing.T) {
 		"that no file in it names. Run `task release VERSION=…` and move the tag onto "+
 		"the commit it produces", tags, want)
 }
+
+// The helper the daemon looks for must be the one the build produces.
+//
+// It was not, for the whole life of the rename. `humanauth.helperName` said
+// "agents-presence" while the Taskfile compiled and installed "dibs-presence",
+// so findHelper looked for a file that has never existed on any machine and
+// every presence check answered Unavailable. Touch ID is the one assertion in
+// Dibs that must not be forgeable by software, and it was silently off.
+//
+// Nothing could catch it: the Go tests never exec the helper, the Taskfile
+// never reads the constant, and the product's own message for the failure
+// ("this build ships without the presence helper") reads as a packaging
+// decision rather than a typo, so nobody went looking.
+//
+// Two files that must agree and no compiler between them is precisely what this
+// package is for.
+func TestThePresenceHelperIsTheOneThatGetsBuilt(t *testing.T) {
+	root := repoRoot(t)
+
+	src, err := os.ReadFile(filepath.Join(root, "internal/humanauth/presence.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`helperName = "([^"]+)"`).FindSubmatch(src)
+	if m == nil {
+		t.Fatal("presence.go no longer declares helperName; this guard cannot see what " +
+			"the daemon looks for")
+	}
+	want := string(m[1])
+
+	task, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Every place the Taskfile names a presence binary: the compile output and
+	// the install/remove lines. All of them have to be the same word.
+	names := regexp.MustCompile(`[\w./{}-]*/([a-z0-9]+-presence)\b`).FindAllStringSubmatch(string(task), -1)
+	if len(names) == 0 {
+		t.Fatal("the Taskfile no longer builds a presence helper; this guard cannot see " +
+			"what ships")
+	}
+	seen := map[string]bool{}
+	for _, n := range names {
+		seen[n[1]] = true
+	}
+	for name := range seen {
+		if name != want {
+			t.Errorf("the daemon execs %q but the build produces/installs %q. findHelper "+
+				"would look for a file that is never created, every presence check would "+
+				"answer Unavailable, and the human identity check would be silently off",
+				want, name)
+		}
+	}
+}

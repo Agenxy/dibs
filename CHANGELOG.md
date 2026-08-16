@@ -155,6 +155,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is otherwise the one thing Dibs must never allow, so there is no
   agent-to-agent version.
 
+- **Touch ID had been dead since the rename.** `humanauth.helperName` said
+  `agents-presence` while `task presence` compiled and installed
+  `dibs-presence`, so `findHelper` looked for a file that has never existed on
+  any machine and every presence check answered `Unavailable`. Three spellings
+  were in play, which is how it happened: `lanes-presence` (v1),
+  `agents-presence` (the intermediate rename), `dibs-presence` (what ships). The
+  one assertion in Dibs that must not be forgeable by software was silently off,
+  and the product's own message for it, "this build ships without the presence
+  helper", reads as a packaging decision rather than a typo, so nobody looked.
+  Nothing could catch it: the Go tests never exec the helper and the Taskfile
+  never reads the constant. `TestThePresenceHelperIsTheOneThatGetsBuilt` now
+  pins the two together.
+
 - **The hint shown when a name is taken named a call that cannot work.** It said
   to ask a coordinator to `merge_spaces <new> into <old>`, which takes SPACE ids
   where those are AGENT ids: following it fails with `E_NO_SPACE`. Lane-era
