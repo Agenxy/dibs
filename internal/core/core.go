@@ -529,6 +529,10 @@ type Message struct {
 	// with the message because it is part of what was ASKED: a question whose
 	// options were lost on replay is a different question.
 	Choices []string `json:"choices,omitempty"`
+	// Grant is the role this request asks for. Ledgered with the message because
+	// approving the message is what performs the grant: a request replayed
+	// without it would be an approval of nothing.
+	Grant string `json:"grant,omitempty"`
 }
 
 // Terminal implements the exact SPEC §8 predicate, used consistently by

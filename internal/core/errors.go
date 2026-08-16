@@ -94,13 +94,23 @@ var (
 		Code: "E_STORE_FULL", Msg: "blob store is full",
 		Hint: "retry shortly; the store evicts unreferenced blobs under pressure",
 	}
+	// ErrGrantNeedsHuman refuses a role request addressed to anything but the
+	// person. Two agents exchanging requests and approving each other's is
+	// self-promotion with one extra participant.
+	ErrGrantNeedsHuman = &Error{
+		Code: "E_GRANT_NEEDS_HUMAN",
+		Msg:  "a role can only be requested from the human",
+		Hint: "address it to the board row marked `human: true`. If no row is marked, " +
+			"nobody has opened the board on this machine yet and there is nobody to " +
+			"ask: send without `grant` and say what you need, or drop it",
+	}
 	ErrNotAdmin = &Error{
 		Code: "E_NOT_ADMIN",
 		Msg:  "this action needs the admin role",
-		Hint: "admin can read every agent's mail, so only a human grants it, and they " +
-			"should be asked rather than told: send(to: the row marked `human: true`, " +
-			"type: \"request\") reaches them as a notification. They grant it with " +
-			"`dibs admin admin <agent>`",
+		Hint: "admin reads every agent's mail, so unlike coordinator it is never " +
+			"granted by approving a notification: send(to: the row marked " +
+			"`human: true`, type: \"request\", body: what you need it for) to ask, and " +
+			"they run `dibs admin admin <agent>` themselves, on their own machine",
 	}
 	ErrNotCoordinator = &Error{
 		Code: "E_NOT_COORDINATOR",
@@ -114,10 +124,11 @@ var (
 		// to them raises a notification with Approve on it. Measured on a real
 		// board: nobody could broadcast because the coordinator was an agent
 		// nobody could log back into, and no hint said what to do next.
-		Hint: "ask: send(to: the board row marked `human: true`, type: \"request\", " +
-			"body: what you need it for). That raises a notification with Approve on it, " +
-			"and their answer comes back as an ordinary response. They grant it with " +
-			"`dibs admin coordinator <agent>`; agents cannot promote themselves",
+		Hint: "ask, and their yes IS the grant: send(to: the board row marked " +
+			"`human: true`, type: \"request\", grant: \"coordinator\", body: what you " +
+			"need it for). That raises a notification with Approve on it; pressing it " +
+			"promotes you and the answer comes back as an ordinary response. You still " +
+			"cannot promote yourself: only they can press it",
 	}
 	ErrBlobUnavailable = &Error{
 		Code: "E_BLOB_UNAVAILABLE", Msg: "blob bytes are no longer available",

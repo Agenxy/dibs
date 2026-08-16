@@ -181,7 +181,10 @@ type Op struct {
 	NoProcess bool `json:"no_process,omitempty"`
 	// Choices enumerates the answers a question will accept, so the answer space
 	// is stated by whoever knows it rather than guessed by whoever reads it.
-	Choices   []string   `json:"choices,omitempty"`
+	Choices []string `json:"choices,omitempty"`
+	// Grant is the role a request ASKS FOR, so that approving the request IS the
+	// grant rather than a note recording that somebody agreed one should happen.
+	Grant     string     `json:"grant,omitempty"`
 	ProcStart int64      `json:"proc_start,omitempty"`
 	NewToken  string     `json:"token,omitempty"` // engine-generated; encrypted at rest
 	Nonce     string     `json:"nonce,omitempty"` // encrypted at rest
@@ -1510,6 +1513,9 @@ func (s *State) applySend(l *Agent, op *Op, now time.Time) (Result, []Event, err
 	if len(op.Body) > s.Limits.MaxBodyBytes || len(op.OpID) > s.Limits.MaxIDBytes {
 		return nil, nil, errTooLarge("body/op_id", s.Limits.MaxBodyBytes)
 	}
+	if err := checkGrantRequest(op); err != nil {
+		return nil, nil, err
+	}
 	atts, err := s.validateAttachments(l, op.Attachments)
 	if err != nil {
 		return nil, nil, err
@@ -1577,7 +1583,7 @@ func (s *State) finishSend(
 	m := &Message{
 		Serial: serial, From: l.ID, To: to.ID, Type: op.MsgType, Body: op.Body,
 		State: MsgStatePending, Deadline: deadline, Attachments: op.Attachments,
-		SentAt: now, Choices: op.Choices,
+		SentAt: now, Choices: op.Choices, Grant: op.Grant,
 	}
 	s.Messages[serial] = m
 	evs := []Event{{Type: "message.sent", Agent: l.ID, To: to.ID, Data: map[string]any{
@@ -1693,6 +1699,26 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 			"E_BAD_DISPOSITION", "use answer|approve|deny|decline", "unknown disposition %q", op.Disposition,
 		)
 	}
+	// Approving a role request IS the grant.
+	//
+	// It used to record an agreement that one should happen, after which the
+	// person went to a terminal and typed `dibs admin coordinator <agent>`. Two
+	// steps for one decision, and the second is where it died: the approval sat
+	// answered on the board while the agent stayed unable to do the thing it had
+	// just been told it could.
+	//
+	// The authority is already checked, six lines up: a request can only be
+	// answered by the agent it was addressed to, and the engine refuses to send
+	// one carrying a grant to anybody but the human. Nothing here lets an agent
+	// promote itself. It lets a person's yes mean yes.
+	var granted *Agent
+	if st == MsgStateApproved && m.Grant != "" {
+		if granted = s.Agents[m.From]; granted == nil {
+			return nil, nil, errf("E_NO_AGENT",
+				"nothing was granted; the requester is gone",
+				"no agent %q to grant %q to", m.From, m.Grant)
+		}
+	}
 	m.State = st
 	m.Response = op.Body
 	m.Consumed = true // responding proves receipt (SPEC §8)
@@ -1714,10 +1740,60 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 		res["note"] = "recorded, but " + m.From + " closed its agent before this arrived. " +
 			"nobody will read this answer, and no follow-up is coming"
 	}
-	return res,
-		[]Event{{Type: "message." + st, Agent: l.ID, To: m.From, Data: map[string]any{
-			"msg_serial": m.Serial,
-		}}}, nil
+	evs := []Event{{Type: "message." + st, Agent: l.ID, To: m.From, Data: map[string]any{
+		"msg_serial": m.Serial,
+	}}}
+	if granted != nil {
+		granted.Role = m.Grant
+		res["granted"], res["to"] = m.Grant, granted.ID
+		evs = append(evs, Event{
+			Type: "agent.role_changed", Agent: granted.ID,
+			Data: map[string]any{"role": m.Grant, "via": "approved_request"},
+		})
+	}
+	return res, evs, nil
+}
+
+// checkGrantRequest rejects a role request that must not be answerable by a
+// press.
+//
+// ADMIN is refused, permanently and on purpose. Coordinator is breadth:
+// broadcast and force_release, and it deliberately cannot read anybody's mail.
+// Admin is the god view, every agent's decrypted mail included, and the entire
+// reason the board sits behind Touch ID or a password is that reading everyone's
+// mail is not a thing to hand over on a notification tapped between two others.
+// It stays on the human's own path.
+//
+// Refused on anything but a request, too. A notify carrying a grant would be a
+// role change with no decision attached, and a question is answered with prose,
+// so there would be no yes for the grant to hang on.
+//
+// Who may RECEIVE one is not decided here: core does not know that humans exist,
+// which is the rule that keeps this package a pure state machine. The engine
+// holds that check, next to the identity it already owns.
+func checkGrantRequest(op *Op) error {
+	if op.Grant == "" {
+		return nil
+	}
+	if op.MsgType != MsgRequest {
+		return errf("E_BAD_TYPE",
+			`send it as type "request": approving one is what performs the grant, `+
+				"and a request is the only type with an approve",
+			"a %s cannot carry a grant", op.MsgType)
+	}
+	switch op.Grant {
+	case RoleCoordinator, RoleMember:
+		return nil
+	case RoleAdmin:
+		return errf("E_BAD_ROLE",
+			"admin reads every agent's mail, so it is never granted by approving a "+
+				"notification: ask your human to run `dibs admin admin <you>` themselves",
+			"admin cannot be requested")
+	default:
+		return errf("E_BAD_ROLE",
+			"grant takes coordinator (broadcast + force_release) or member (hand it back)",
+			"unknown role %q", op.Grant)
+	}
 }
 
 // applyAckMessage: pending/delivered → acked (terminal + consumed for

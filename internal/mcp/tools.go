@@ -47,8 +47,8 @@ var toolDefs = func() []map[string]any {
 		"description": "what the message DOES, so pick for the effect. notify: no reply " +
 			"needed, arrives at their next activation, costs them nothing. question / " +
 			"request / handoff: WAKE the recipient now, so use them when somebody is " +
-			"genuinely waiting. A request to the HUMAN raises a notification with " +
-			"approve/deny buttons; the press returns as an ordinary response",
+			"genuinely waiting. To the HUMAN a request raises a notification with " +
+			"Approve on it, and the press returns as an ordinary response",
 	}
 
 	return []map[string]any{
@@ -168,13 +168,13 @@ var toolDefs = func() []map[string]any {
 			"inputSchema": obj(map[string]any{"token": tok}, "token"),
 		},
 		{
-			"name": "claim_coordinator", "description": "Take the coordinator role, if you " +
+			"name": "claim_coordinator", "description": "Take the coordinator role if you " +
 				"started this daemon: pass the contents of `coordinator.claim` from its data " +
-				"directory as `nonce`. It exists only while the board has no coordinator, and " +
-				"the first claim consumes it. You must be kind \"persistent\" with a nonce of " +
-				"your own, because the role outlives this process: an ephemeral agent would " +
-				"take it away on sign_off, leaving no coordinator and no claim to make. " +
-				"Coordinator can force_release a claim, close a space, and clear debris.",
+				"directory as `nonce`. It exists only while the board has no coordinator and " +
+				"the first claim consumes it, so if there already is one, ask them or ask " +
+				"the human (send with grant). You must be kind \"persistent\": the role " +
+				"outlives this process, and an ephemeral agent would take it away on " +
+				"sign_off. Coordinator can broadcast, force_release, and close a space.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"nonce": str("the contents of coordinator.claim from the daemon's data directory"),
@@ -255,20 +255,26 @@ var toolDefs = func() []map[string]any {
 		{
 			"name": "send",
 			"description": "Send a message to an agent, or to the HUMAN: the board row " +
-				"marked `human: true` is the person here, and writing to it notifies them on " +
-				"their machine. Questions and requests carry a deadline; on expiry you get a " +
-				"diagnosis (alive-but-silent, dormant, gone). op_id makes retries safe.",
+				"marked `human: true` is the person here, and writing to it notifies them " +
+				"on their machine. Questions and requests carry a deadline; on expiry you " +
+				"get a diagnosis (alive-but-silent, dormant, gone). op_id retries safely.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "to": str("recipient agent id"),
 				"type": msgType,
 				"body": str("message body"), "deadline_s": num("response deadline in seconds (default 600; max 7200, or 7 " +
 					"days to persistent agents)"),
 				"op_id": str("client-generated id for safe retries (optional, recommended)"),
+				"grant": map[string]any{
+					"type": "string", "enum": []string{"coordinator", "member"},
+					"description": "ask the HUMAN for a role, on a request. Their Approve IS " +
+						"the grant; nothing is left for them to run. admin is not offered: " +
+						"it reads every mailbox",
+				},
 				"choices": map[string]any{
 					"type": "array", "items": map[string]any{"type": "string"},
-					"description": "up to 4 answers this question accepts. State them and the " +
-						"answer is a press, not a composition; to the human they become the " +
-						"buttons on the notification",
+					"description": "up to 4 answers this question accepts. State them and " +
+						"answering is a press, not a composition; to the human they become " +
+						"the notification's buttons",
 				},
 				"attachments": map[string]any{"type": "array", "description": "each is a blob " +
 					"{blob:'sha256:…'} from put_blob, or a fileref {path, size?, hash?} naming a " +
@@ -619,12 +625,10 @@ var toolDefs = func() []map[string]any {
 		{
 			"name": "retitle_space",
 			"description": "Change what a space says it is about: the way to REDACT a topic " +
-				"without destroying the space. Any member may. A space opened automatically from " +
-				"your declaration takes its topic from your words, and those words are on the " +
-				"board for every agent on this machine, including ones in unrelated repositories. " +
-				"If you published something your repository would rather you had not, this is the " +
-				"fix: members and history survive, only the label changes. The old text is not " +
-				"echoed back anywhere, because reporting what changed would republish it.",
+				"without destroying the space, when a declaration published something your " +
+				"repository would rather it had not. Any member may. Members and history " +
+				"survive; only the label changes, and the old text is not echoed back " +
+				"anywhere, because reporting what changed would republish it.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"space": str("space id to retitle: the `space` value from declare or the board"),

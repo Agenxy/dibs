@@ -138,3 +138,77 @@ func TestTheRepairDoesNotMintAHuman(t *testing.T) {
 		t.Errorf("the board has %d agent(s) after repairing a board with none", n)
 	}
 }
+
+// Two agents must not be able to promote each other.
+//
+// core validates WHICH roles may be requested and on what message type. It
+// cannot validate the recipient, because core does not know that humans exist,
+// and that ignorance is what keeps it a pure state machine. So the recipient
+// rule lives in the engine, next to the identity it already owns, and this is
+// the test that it is actually there: without it, `a` requests coordinator from
+// `b`, `b` approves, and both are coordinators. That is self-promotion with one
+// extra participant, and it would defeat the whole reason a role is a human's
+// to give.
+func TestAnAgentCannotRequestARoleFromAnotherAgent(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	mk := func(name, nonce string) string {
+		res, err := e.Do(ctx, &core.Op{
+			Kind: core.OpRegister, Name: name, AgentKind: core.KindPersistent, Nonce: nonce,
+		})
+		if err != nil {
+			t.Fatal("setup:", err)
+		}
+		tok, _ := res["token"].(string)
+		if tok == "" {
+			t.Fatal("setup: no token for " + name)
+		}
+		return tok
+	}
+	ta := mk("a", "n-a")
+	mk("b", "n-b")
+
+	_, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: ta, To: "b", MsgType: core.MsgRequest,
+		Body: "promote me", Grant: core.RoleCoordinator,
+	})
+	if err == nil {
+		t.Fatal("an agent sent a role request to another agent: they can now promote " +
+			"each other by approving in turn")
+	}
+	// Refused at ingress, so nothing is written down.
+	if m := st.Messages; len(m) != 0 {
+		t.Errorf("the refused request was still ledgered as a message: %d present", len(m))
+	}
+}
+
+// And with no human on the board there is nobody to ask, which must be said
+// rather than silently accepted: a board nobody has opened has no `human: true`
+// row, and a request addressed at a guess would sit unanswered until it expired.
+func TestARoleRequestNeedsAHumanToExist(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	res, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "a", AgentKind: core.KindPersistent, Nonce: "n-a",
+	})
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	tok, _ := res["token"].(string)
+
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: tok, To: "a", MsgType: core.MsgRequest,
+		Body: "promote me", Grant: core.RoleCoordinator,
+	}); err == nil {
+		t.Error("a role request was accepted on a board with no human: addressed to " +
+			"itself, no less")
+	}
+}

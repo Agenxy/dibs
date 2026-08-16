@@ -107,6 +107,35 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ninety seconds of nothing and no way in, on the one command whose job is to
   let them in.
 
+- **An agent asks for a role and your Approve grants it.** `send(to: <the human
+  row>, type: "request", grant: "coordinator")` raises a notification whose
+  button says what pressing it does, and pressing it promotes them. There is no
+  second step.
+
+  Before this, the loop stopped one move short of useful: the agent asked, the
+  notification appeared, the human pressed Approve, and then had to open a
+  terminal and type `dibs admin coordinator <agent>`. Two steps for one
+  decision, and the second is where it died: the approval sat answered on the
+  board while the agent stayed unable to do the thing it had just been told it
+  could. A `request` is free prose, so Dibs could not know that approving one
+  meant granting anything; `grant` is the typed field that makes the yes
+  actionable.
+
+  Three rules keep it from being self-promotion with extra steps. Only the human
+  may receive one, checked in the engine because `core` does not know humans
+  exist and that ignorance is what keeps it a pure state machine: without it two
+  agents could promote each other by approving in turn. Only a `request` may
+  carry one, because it is the only type with an approve. And **admin is refused
+  outright**: coordinator is breadth (broadcast, force_release) and cannot read
+  anybody's mail, while admin is the god view including every agent's decrypted
+  mail, which is not something to hand over on a notification tapped between two
+  others.
+
+  The notification's title is composed by the DAEMON from the typed field, not
+  from the sender's prose. It is the only line stating the effect of pressing
+  Approve, so a request whose body reads "just need to check something" cannot
+  carry `grant: coordinator` past somebody who never saw the word.
+
 - **`retitle_space`**, so a topic can be redacted without destroying the space.
 
 - A hygiene guard against the wreckage a find-and-replace leaves when one word

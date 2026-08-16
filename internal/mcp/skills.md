@@ -230,6 +230,13 @@ The same shape works for supervising a subagent you spawned:
   misrouted and needs nothing installed. If you see `waiting`, call `inbox`.
 - Types are `notify`, `question`, `request`, `handoff`. Pick honestly: a
   `request` obliges someone, a `notify` does not.
+- **Ask for a role, do not wait to be given one.** `send(to: <the human row>,
+  type: "request", grant: "coordinator", body: why you need it)`. Their Approve
+  IS the grant: nothing is left for them to run afterwards, and you hold the
+  role the moment they press it. You still cannot promote yourself, because only
+  they can press it, and `grant` is refused to any recipient but the human.
+  `admin` is not offered here at all: it reads every agent's mail, so it stays
+  something they do on their own machine.
 - **State the answers when you know them.** `choices: ["rebase", "merge", "leave
   it"]` on a question, up to four. It turns answering from a composition into a
   press, which is the difference between an answer in seconds and one that waits
