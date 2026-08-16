@@ -458,6 +458,7 @@ func checkHooks(client *http.Client, sec string, ok reportFn, bad, warn fixFn) {
 		GuardResolved   int64  `json:"guard_resolved"`
 		GuardUnresolved int64  `json:"guard_unresolved"`
 		PollResolved    int64  `json:"poll_resolved"`
+		PollUnresolved  int64  `json:"poll_unresolved"`
 		Verdict         string `json:"verdict"`
 		Hint            string `json:"hint"`
 	}
@@ -486,6 +487,11 @@ func checkHooks(client *http.Client, sec string, ok reportFn, bad, warn fixFn) {
 	case "never-resolved", "guard-unresolved":
 		// A problem, not a warning: the guard is running and protecting nothing.
 		bad("hooks are reaching Dibs but resolving to NO agent: the guard is inert", h.Hint)
+	case "poll-partly-unresolved":
+		// A problem, not a warning. Mail that is never delivered is the failure
+		// this product exists to prevent, and it was reading as a tick.
+		bad(fmt.Sprintf("%d wake call(s) resolved to no agent: somebody's mail is not "+
+			"being delivered", h.PollUnresolved), h.Hint)
 	case "guard-mostly-unresolved":
 		bad(fmt.Sprintf("%d of %d guard calls did not resolve to an agent",
 			h.GuardUnresolved, h.GuardUnresolved+h.GuardResolved), h.Hint)

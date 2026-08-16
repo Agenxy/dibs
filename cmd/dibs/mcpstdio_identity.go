@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"strings"
+	"sync"
 )
 
 // enrichRegister fills in who the agent is, using the environment the harness
@@ -77,16 +78,34 @@ func enrichRegister(line []byte) []byte {
 		noteClientInfo(msg)
 		return line
 	}
-	// Every tools/call carries the renderer signal, so the server can decide
-	// per call whether a panel payload is worth sending.
-	if msg["method"] == "tools/call" && lastWantsUI {
+	// Every tools/call carries the renderer signal and this session's id, so
+	// the server can decide per call whether a panel payload is worth sending,
+	// and can attach an agent to the session it is actually running in.
+	//
+	// The session id used to ride on `register` alone, which is the one call an
+	// agent might not make through this bridge. Register out of band, or with a
+	// harness that was configured before the bridge existed, and the agent is
+	// on the board with no session for the rest of its life: every lifecycle
+	// hook then quotes a session id that matches nothing, AgentForHook returns
+	// nil, and mail is never pushed into that session. Measured on this
+	// machine, where 9 wake polls in a row resolved to no agent while the board
+	// held unread mail for the agent sitting in that very directory.
+	//
+	// Sending it on every call is what makes that self-healing: the first
+	// authenticated call the agent makes through this bridge is enough.
+	if msg["method"] == "tools/call" {
 		if params, ok := msg["params"].(map[string]any); ok {
 			meta, _ := params["_meta"].(map[string]any)
 			if meta == nil {
 				meta = map[string]any{}
 				params["_meta"] = meta
 			}
-			meta["com.dibs/ui"] = true
+			if lastWantsUI {
+				meta["com.dibs/ui"] = true
+			}
+			if sid := sessionID(); sid != "" {
+				meta["com.dibs/session"] = sid
+			}
 			if out, err := json.Marshal(msg); err == nil {
 				line = out
 			}
@@ -194,4 +213,26 @@ func enrichRegister(line []byte) []byte {
 		return line // never drop a request because enrichment failed
 	}
 	return out
+}
+
+// sessionID is the harness session this bridge is running inside, resolved once.
+//
+// Memoised because it is now sent on every tool call and resolving it is file
+// work: Claude Code's per-process sidecar, plus a bounded scan of the
+// transcript for the session title. Once per bridge process is the right
+// frequency for something that cannot change while the process lives.
+var sessionOnce struct {
+	sync.Once
+	id string
+}
+
+func sessionID() string {
+	sessionOnce.Do(func() {
+		if v := sessionContext(clientIs("claude"))["session_id"]; v != "" {
+			sessionOnce.id = v
+			return
+		}
+		sessionOnce.id = bridgeSessionID()
+	})
+	return sessionOnce.id
 }

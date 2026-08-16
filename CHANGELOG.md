@@ -95,6 +95,28 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The wake path could not reach an agent that had no session, and nothing
+  said so.** A lifecycle hook names an agent by the session id its harness
+  quotes, and `AgentForHook` deliberately refuses the cwd fallback when a
+  supplied session matches nothing, because without that refusal any
+  unregistered session in a shared directory was handed another agent's private
+  mail. Correct, and it means an agent that registered outside its harness's MCP
+  connection carries no session and can never be woken, however well the plugin
+  is installed. The stdio bridge sent the session id on `register` alone, which
+  is the one call such an agent never made through it; it now rides every tool
+  call, and the first authenticated one repairs the binding. The engine refuses
+  to overwrite a session an agent already has, so this is a repair and never a
+  redirection.
+
+  The second half is why it went unnoticed for days. `poll_unresolved` was
+  counted from the day the health check was written and never reached a verdict:
+  the check asked whether ANY call resolved, which a machine running several
+  agents always answers yes to. So one agent's wake path being completely dead
+  read `ok`, and `dibs doctor` printed "harness hooks resolving" while nine
+  consecutive polls for that session found nobody. A count nothing reads is not
+  a diagnostic, and a partial failure that reads as success is worse than one
+  that reads as nothing.
+
 - **A declaration no longer publishes its own prose as a space id.** An
   auto-opened space took its id from the words of the declaration, so a private
   repository's hostnames, service accounts and internal paths became durable

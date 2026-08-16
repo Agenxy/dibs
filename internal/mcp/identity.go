@@ -190,6 +190,19 @@ func clientWantsUI(params json.RawMessage) bool {
 	return v
 }
 
+// metaSession reads the harness session id the stdio bridge attaches to every
+// tool call. Empty when the caller is not behind the bridge.
+func metaSession(params json.RawMessage) string {
+	var p struct {
+		Meta map[string]any `json:"_meta"`
+	}
+	if json.Unmarshal(params, &p) != nil {
+		return ""
+	}
+	v, _ := p.Meta["com.dibs/session"].(string)
+	return v
+}
+
 // handshakeClient pulls clientInfo out of an initialize/server-discover so the
 // session store can remember it for the stateless calls that follow.
 func handshakeClient(params json.RawMessage) *clientInfoJSON {

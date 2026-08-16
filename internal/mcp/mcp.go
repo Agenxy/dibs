@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -63,6 +64,9 @@ const errUnsupportedProtocolVersion = -32022
 type Server struct {
 	eng      *engine.Engine
 	sessions *sessionStore
+	// adopted remembers the (token, session) pairs already reconciled, so the
+	// repair costs one loop round-trip per agent rather than one per call.
+	adopted sync.Map
 	// legacy holds 2025-11-25 resource subscriptions, which outlive the request
 	// that created them: that revision subscribes on a POST and delivers on a
 	// separately-opened GET, so the interest has to be remembered in between.
@@ -609,6 +613,41 @@ func (s *Server) dispatch(
 	}
 }
 
+// adoptSession binds the caller's harness session to its agent when the agent
+// has none, using the id the stdio bridge attaches to every call.
+//
+// This is the repair for an agent that registered outside its harness's MCP
+// connection. It has no session, so no lifecycle hook can name it, so nothing
+// ever wakes it: the wake path fires, resolves nobody, and says nothing. On
+// this machine that ran for days, with mail unread and `dibs doctor` reporting
+// hooks resolving perfectly, because for every other agent they were.
+//
+// Once per (token, session) per process. The engine refuses to overwrite a
+// session an agent already has, so this is a repair and never a redirection,
+// but there is no reason to pay a loop round-trip for it on every call.
+func (s *Server) adoptSession(ctx context.Context, token string, params json.RawMessage) {
+	sid := metaSession(params)
+	if token == "" || sid == "" {
+		return
+	}
+	key := token + "\x00" + sid
+	if _, seen := s.adopted.LoadOrStore(key, true); seen {
+		return
+	}
+	adopted, err := s.eng.AdoptSession(ctx, token, sid)
+	if err != nil {
+		// Never fail a tool call over this: the call the agent actually made is
+		// what it is waiting on, and an unbound session is the state it was
+		// already in. Forget the key so a later call tries again.
+		s.adopted.Delete(key)
+		return
+	}
+	if adopted {
+		slog.Info("attached an agent to its harness session; lifecycle hooks can now "+
+			"reach it", "session", sid)
+	}
+}
+
 type toolArgs struct {
 	Token       string            `json:"token"`
 	Name        string            `json:"name"`
@@ -772,6 +811,10 @@ func (s *Server) callTool(
 			Data: hint(schemaHint(call.Name)),
 		}
 	}
+	// Attach the agent to the session it is actually running in, if nothing
+	// has. Before the call, so `check_in`'s own answer already reflects it.
+	s.adoptSession(ctx, a.Token, params)
+
 	res, err := s.run(ctx, call.Name, &a, params, sessionClient)
 	if err != nil {
 		// An unstructured error used to go out as a bare {"error": "..."} with no

@@ -98,6 +98,25 @@ func (e *Engine) HookHealth() HookHealth {
 		h.Verdict = "guard-mostly-unresolved"
 		h.Hint = "most guard calls do not resolve to an agent, so most edits are " +
 			"unprotected. Some harness is sending a session id this board does not know"
+	case h.PollUnresolved > 0:
+		// Counted since this file was written, and never once reported.
+		//
+		// The verdict asked "did ANY call resolve", which a machine running
+		// several agents always answers yes to. So a board where one agent's
+		// wake path was completely dead read `ok`, and `dibs doctor` printed
+		// "harness hooks resolving", while nine consecutive polls for that
+		// session found nobody and its mail sat unread for days. A count that
+		// nothing reads is not a diagnostic, and this is the honesty rule
+		// applied to the daemon's own health: a partial failure that reads as
+		// success is worse than one that reads as nothing.
+		h.Verdict = "poll-partly-unresolved"
+		h.Hint = "some sessions are asking to be woken and this board cannot say " +
+			"which agent they are: that agent's mail is never pushed into it, however " +
+			"well the plugin is installed. It happens when an agent registers outside " +
+			"its harness's MCP connection, so it carries no session id. Current " +
+			"versions repair this on the agent's next call through the stdio bridge; " +
+			"if it persists, that agent should re-register with the same name and " +
+			"nonce from inside its harness"
 	default:
 		h.Verdict = "ok"
 	}

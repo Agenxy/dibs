@@ -95,6 +95,39 @@ func (e *Engine) HookPoll(ctx context.Context, sessionID, event, cwd string) (co
 	})
 }
 
+// AdoptSession attaches a harness session to an agent that has none.
+//
+// The wake path resolves an agent by the session id its harness quotes, so an
+// agent carrying no session is unreachable by every lifecycle hook, forever,
+// however correctly the plugin is installed. That is not a hypothetical: it is
+// what an agent gets by registering outside its harness's MCP connection, and
+// on the machine this was written on it left a maintainer's agent accumulating
+// unread mail while nine consecutive wake polls resolved to nobody.
+//
+// Only when the agent has NONE. An agent that already has a session was bound
+// by the path that knows best (its own registration), and overwriting that from
+// an ambient header would let one bridge redirect another agent's wake path. So
+// this heals the empty case and refuses to touch anything else.
+func (e *Engine) AdoptSession(ctx context.Context, token, sessionID string) (bool, error) {
+	if token == "" || sessionID == "" {
+		return false, nil
+	}
+	res, err := e.query(ctx, func() core.Result {
+		l := e.state.AgentByToken(token)
+		return core.Result{"needs": l != nil && l.SessionID == ""}
+	})
+	if err != nil {
+		return false, err
+	}
+	if needs, _ := res["needs"].(bool); !needs {
+		return false, nil
+	}
+	if _, err := e.BindSession(ctx, token, sessionID); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // BindSession attaches a harness session id to the caller's agent, so lifecycle
 // hooks can find it later.
 func (e *Engine) BindSession(ctx context.Context, token, sessionID string) (core.Result, error) {
