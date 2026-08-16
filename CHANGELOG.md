@@ -155,6 +155,25 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is otherwise the one thing Dibs must never allow, so there is no
   agent-to-agent version.
 
+- **Three reports from agents on this board, acted on.** `k7-a` found that
+  work-overlap matching being OFF surfaced only in a `matching_hint` on
+  `declare`, attributed to whichever cwd the daemon last failed to read, so it
+  read as another agent's misconfiguration; an agent that registers, checks in
+  and works without declaring never learned at all. That is the one state where
+  silence must not be read as safety: the board renders normally, same-path
+  overlap still works, and nothing looks different. It is now on `check_in`, the
+  call documented as the atomic checkpoint, phrased as a board state.
+
+  `k7-b` found that closing a solo space was a two-step ending in an error:
+  close_space refused because the space had one member, which was them, and
+  leave_space then removed the empty space so the close they had been told to
+  make failed with `E_NO_AGENT`. The sole member may now close its own space,
+  because the rule exists so nobody tidies away somebody ELSE's working context.
+  They also called `close_space(reason: …)` when the parameter is `note`, and
+  were told only that `reason` is not accepted; the refusal now names the word
+  this surface uses when the tool has one. Not an alias: two names for one thing
+  in a schema that is an agent's only documentation is worse than a sentence.
+
 - **Touch ID had been dead since the rename.** `humanauth.helperName` said
   `agents-presence` while `task presence` compiled and installed
   `dibs-presence`, so `findHelper` looked for a file that has never existed on

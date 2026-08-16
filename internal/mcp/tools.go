@@ -618,13 +618,13 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "close_space",
-			"description": "COORDINATOR ONLY. Retire a finished SPACE of work: not an agent, and " +
-				"not you (leaving the board yourself is `sign_off`, which takes no id). A space " +
-				"opened automatically from a declaration ends by itself once its last member " +
-				"leaves; one a human opened does NOT, deliberately, because outliving its members " +
-				"is what a standing space is for. Refuses a space with members or anyone queued " +
-				"(evict first: closing is tidying, not eviction), and refuses one holding an " +
-				"unacknowledged announcement, because closing would hide it rather than settle it.",
+			"description": "Retire a finished SPACE of work: not an agent, and not you " +
+				"(leaving the board is `sign_off`, which takes no id). Coordinator-only, except " +
+				"that the SOLE member may close its own space. A space opened automatically from " +
+				"a declaration ends by itself once its last member leaves; one a human opened " +
+				"does NOT, because outliving its members is what a standing space is for. " +
+				"Refuses a space with OTHER members or anyone queued, and one holding an " +
+				"unacknowledged announcement, which closing would hide rather than settle.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "space": str("space id to close"),
 				"note": str("why you are closing it"),

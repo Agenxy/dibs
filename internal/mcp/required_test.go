@@ -380,3 +380,42 @@ func TestCommandHooksCannotBreakTheToolTheyDecorate(t *testing.T) {
 			"would pass however dangerous the hooks became")
 	}
 }
+
+// The refusal should name the word this surface uses, when there is one.
+//
+// k7-b called close_space with `reason`, which is what it is called nearly
+// everywhere else, and was told only that `reason` is not accepted. The tool
+// does record why a space was closed; the parameter is `note`. The refusal was
+// correct and left them to guess, which is a hint that names the fault and not
+// the fix, and this repository's rule is that every error carries the
+// corrective call.
+//
+// Deliberately not an alias. Accepting both spellings would put two names for
+// one thing into a schema that is the ONLY documentation an agent has.
+func TestARefusalNamesTheParameterTheCallerMeant(t *testing.T) {
+	err := checkRequired("close_space", []byte(`{"token":"t","space":"s","reason":"done"}`), "")
+	if err == nil {
+		t.Fatal("close_space accepted an argument it does not declare")
+	}
+	if !strings.Contains(err.Error(), `"reason" is "note"`) {
+		t.Errorf("err = %v: it refuses without naming the word this tool uses", err)
+	}
+	// And a genuinely unknown argument is still just refused, with no invented
+	// suggestion: a wrong fix is worse than none.
+	err = checkRequired("close_space", []byte(`{"token":"t","space":"s","zzz":1}`), "")
+	if err == nil {
+		t.Fatal("an unknown argument was accepted")
+	}
+	if strings.Contains(err.Error(), " is ") {
+		t.Errorf("err = %v: it invented a suggestion for an argument with no counterpart", err)
+	}
+	// A synonym the tool does not have either must not be suggested: `note` is
+	// not a parameter of check_in, so nothing should be offered.
+	err = checkRequired("check_in", []byte(`{"token":"t","reason":"x"}`), "")
+	if err == nil {
+		t.Fatal("check_in accepted an argument it does not declare")
+	}
+	if strings.Contains(err.Error(), `is "note"`) {
+		t.Errorf("err = %v: it offered a parameter this tool does not take", err)
+	}
+}

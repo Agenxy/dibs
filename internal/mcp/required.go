@@ -115,8 +115,8 @@ func checkRequired(tool string, raw json.RawMessage, bearerToken string) error {
 		if len(extra) == 0 {
 			return nil
 		}
-		return fmt.Errorf("%s does not take %s: check the tool's schema; "+
-			"nothing was changed", tool, quoteList(extra))
+		return fmt.Errorf("%s does not take %s%s: check the tool's schema; "+
+			"nothing was changed", tool, quoteList(extra), synonymHint(tool, extra))
 	}
 
 	msg := fmt.Sprintf("%s needs %s", tool, quoteList(missing))
@@ -124,8 +124,8 @@ func checkRequired(tool string, raw json.RawMessage, bearerToken string) error {
 	// almost always the misnamed parameter: say so, rather than leaving them
 	// to diff two lists by eye.
 	if len(extra) > 0 {
-		msg += fmt.Sprintf(": you sent %s, which %s does not take",
-			quoteList(extra), tool)
+		msg += fmt.Sprintf(": you sent %s, which %s does not take%s",
+			quoteList(extra), tool, synonymHint(tool, extra))
 	}
 	return fmt.Errorf("%s", msg)
 }
@@ -161,4 +161,46 @@ func quoteList(xs []string) string {
 		return q[0]
 	}
 	return strings.Join(q[:len(q)-1], ", ") + " and " + q[len(q)-1]
+}
+
+// synonyms are the words agents reach for that this surface spells differently.
+//
+// Not aliases. Accepting both spellings would put a second name for one thing
+// into a schema that is the only documentation an agent has, and the schema
+// being the whole documentation is exactly why it must stay one word per
+// concept. What was missing is not tolerance, it is a sentence: k7-b called
+// close_space with `reason`, which records why a space was closed, and was told
+// only that `reason` is not accepted. The word they wanted was `note`, the tool
+// takes it, and nothing said so.
+var synonyms = map[string]string{
+	"reason":  "note",
+	"why":     "note",
+	"message": "body",
+	"content": "body",
+	"text":    "body",
+	"id":      "space",
+	"lane":    "space",
+	"channel": "space",
+	"target":  "agent",
+	"to":      "agent",
+	"name":    "agent",
+}
+
+// synonymHint names the parameter the caller probably meant, when this tool
+// actually has one.
+func synonymHint(tool string, extra []string) string {
+	known := map[string]bool{}
+	for _, p := range knownParams[tool] {
+		known[p] = true
+	}
+	var found []string
+	for _, e := range extra {
+		if want, ok := synonyms[e]; ok && known[want] {
+			found = append(found, fmt.Sprintf("%q is %q here", e, want))
+		}
+	}
+	if len(found) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(found, "; ") + ")"
 }

@@ -1781,7 +1781,16 @@ func (s *State) applySpaceClose(l *Agent, op *Op, now time.Time) (Result, []Even
 			return nil, nil, err
 		}
 	}
-	if occupied(ch) {
+	// The sole member closing its own space is not eviction.
+	//
+	// The rule exists so nobody tidies away somebody else's working context, and
+	// when the only occupant IS the caller there is no somebody else. Reported
+	// by k7-b from a live board: close_space refused because the space had one
+	// member, which was them; leave_space then removed the empty space outright,
+	// so the close they had been told to make failed with E_NO_AGENT. The
+	// documented path ended in an error and the working path was undocumented.
+	soleOccupant := len(ch.Queue) == 0 && len(ch.Members) == 1 && ch.Members[l.ID] != nil
+	if occupied(ch) && !soleOccupant {
 		return nil, nil, errf("E_SPACE_OCCUPIED",
 			"evict the members first, or leave it: a space with agents in it is "+
 				"somebody's working context, not clutter",

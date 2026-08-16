@@ -382,6 +382,28 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		}
 		res["agent_updates"] = pending
 		e.AckNotices(actor.ID)
+		// Whether overlap detection is working AT ALL, on the one call
+		// documented as the atomic checkpoint.
+		//
+		// It rode on `declare` alone, and only for the agent that happened to
+		// call it, attributed to whichever cwd the daemon last failed to read.
+		// Reported by k7-a from a live board: matching was off fleet-wide, the
+		// hint named ANOTHER agent's directory, and it read as somebody else's
+		// misconfiguration. An agent that registers, checks in and works
+		// without declaring never learned at all.
+		//
+		// This is the one state where silence must not be read as safety.
+		// dibs://skills already says a low score proves nothing; with matching
+		// off there is no score, the board renders normally, same-path overlap
+		// still works, and nothing looks different. So it belongs here, phrased
+		// as a property of the board rather than of the caller.
+		if st := e.MatchStatus(); st.Phase != MatchReady {
+			res["matching"] = st.Phase
+			res["matching_hint"] = "BOARD STATE, not something you did: work-overlap " +
+				"matching is " + string(st.Phase) + " for every agent here, so an absence of " +
+				"overlap warnings is not evidence that you are alone. Coordinate explicitly " +
+				"until it is back. " + st.Hint
+		}
 	}
 	// Every authenticated write carries word of anything waiting.
 	//
