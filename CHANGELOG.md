@@ -182,6 +182,28 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`task install` finds Dibs' own signing identity by name, so the macOS
+  permission prompt stops repeating.** macOS keys a Files-and-Folders grant to a
+  program's code signature; the Go toolchain signs ad-hoc, so every rebuild is a
+  different program and the grant stops applying. `tools/signcheck` has warned
+  about this and named the remedy since it was written, but the remedy only
+  worked if the operator then passed `DIBS_CODESIGN_IDENTITY` on every install
+  forever, and one install that forgot silently went back to ad-hoc and revoked
+  the grant again. A fix conditional on remembering is not one.
+
+  `tools/signid` resolves it: the environment variable if set, else Dibs' own
+  identity if it is actually in the keychain, else ad-hoc. Create the
+  certificate once and every later install keeps the grant, with nothing to set.
+
+  Measured on the machine this was written on: nine installs in one session,
+  nine permission prompts, and the operator asking why. The warning printed all
+  nine times, into output nobody was reading.
+
+  The install also says which of the two happened, in ONE line. It briefly said
+  both: `status:` is a task-level field rather than a per-command one, so two
+  guarded commands both ran and consecutive lines claimed the grant would and
+  would not survive.
+
 - **The human's row on the board reported `process gone` after every daemon
   restart.** The human registers as a participant so agents have somewhere to
   address a request, and it recorded `os.Getpid()`: the daemon's own pid, which

@@ -105,22 +105,39 @@ tasks:
     platforms: [darwin]
     internal: true
     vars:
-      # Ad-hoc unless an identity is given. Either way the IDENTIFIER is set:
-      # the Go toolchain leaves it as `a.out`, so the daemon presents itself to
-      # the system under a name shared with every other ad-hoc binary, and any
-      # grant recorded against it is recorded against that.
-      SIGNER: '{{if .DIBS_CODESIGN_IDENTITY}}{{.DIBS_CODESIGN_IDENTITY}}{{else}}-{{end}}'
+      # Resolved by tools/signid, not by a template conditional here.
+      #
+      # It answers DIBS_CODESIGN_IDENTITY if set, else Dibs' own identity if it
+      # is in the keychain, else "-" for ad-hoc. The middle case is the point:
+      # the operator creates the certificate once and every install after it
+      # keeps the privacy grant, instead of the fix applying only when somebody
+      # remembers an environment variable. Nine installs in one session, nine
+      # permission prompts, is what the old behaviour cost.
+      #
+      # Either way the IDENTIFIER is set: the Go toolchain leaves it as `a.out`,
+      # so the daemon would present itself to the system under a name shared
+      # with every other ad-hoc binary, and any grant recorded against it is
+      # recorded against that.
+      SIGNER:
+        sh: go run ./tools/signid
     cmds:
       - codesign --force -i org.agenxy.dibs -s '{{.SIGNER}}' {{.DEST}}/dibd
       - codesign --force -i org.agenxy.dibs.cli -s '{{.SIGNER}}' {{.DEST}}/dibs
-      - |
-        if [ -n "$DIBS_CODESIGN_IDENTITY" ]; then
-          echo "signed with $DIBS_CODESIGN_IDENTITY so privacy grants survive a rebuild"
-        else
-          echo "ad-hoc signed. A macOS privacy grant will not survive the next install:"
-          echo "  set DIBS_CODESIGN_IDENTITY to an identity from"
-          echo "  security find-identity -v -p codesigning" 
-        fi
+      # One message, chosen by template. `status:` is a TASK-level field, not a
+      # per-command one, so a pair of commands guarded by it printed BOTH: the
+      # install claimed in consecutive lines that the grant would and would not
+      # survive.
+      - cmd: >-
+          echo
+          {{if eq .SIGNER "-"}}"ad-hoc signed: a macOS privacy grant will NOT survive
+          the next install, so you will be asked for Desktop/Documents/Downloads
+          access again. Give Dibs an identity of its own, ONCE: Keychain Access ->
+          Certificate Assistant -> Create a Certificate, name it 'Dibs Local
+          Codesign', type Code Signing, self-signed. Every install after that finds
+          it by name, with no variable to set."{{else}}"signed as '{{.SIGNER}}', so
+          the macOS privacy grant survives this and every later install."{{end}}
+        platforms: [darwin]
+        silent: true
 
   install:app:
     # Beside the daemon, for the same reason the presence helper is: notify
