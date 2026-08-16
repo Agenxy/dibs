@@ -259,6 +259,22 @@ restarted daemon rebuilds the board rather than losing it, and the stdio bridge
 waits the window out (REQUIREMENTS.md R12). `dibs upgrade -n` says what it would
 do and changes nothing.
 
+### Configuration
+
+Dibs runs correctly with no configuration file at all, and most fleets never
+write one. Everything the daemon accepts is in
+**[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**, with what happens if you
+leave each setting alone.
+
+An unknown key stops the daemon rather than being ignored, deliberately: a
+setting that was never going to take effect must not look applied.
+
+```sh
+man dibs      # the CLI
+man 8 dibd    # the daemon: flags, files, what a restart costs
+dibs doctor   # what is actually in effect right now
+```
+
 ### Verifying what you downloaded
 
 Release artifacts are signed with [cosign](https://docs.sigstore.dev) in the

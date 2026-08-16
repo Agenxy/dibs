@@ -94,39 +94,44 @@ func (f *scorerFlags) markSetFlags() {
 	})
 }
 
-func registerScorerFlags() *scorerFlags {
+func registerScorerFlags() *scorerFlags { return registerScorerFlagsOn(flag.CommandLine) }
+
+// registerScorerFlagsOn declares the matching flags on a given set, so the
+// daemon's manual can walk the same declarations the daemon parses rather than
+// a second copy of them.
+func registerScorerFlagsOn(fs *flag.FlagSet) *scorerFlags {
 	f := defaultScorerFlags()
-	flag.StringVar(&f.repo, "match-repo", "",
+	fs.StringVar(&f.repo, "match-repo", "",
 		"repository to mine for work-overlap matching (enables agent auto-matching; run `dibs calibrate` first)")
-	flag.Float64Var(&f.join, "match-join", 0,
+	fs.Float64Var(&f.join, "match-join", 0,
 		"auto-join agents at or above this overlap score (0 = suggest only, never join)")
-	flag.Float64Var(&f.notify, "match-notify", 0,
+	fs.Float64Var(&f.notify, "match-notify", 0,
 		"mention agents at or above this overlap score")
-	flag.IntVar(&f.history, "match-history", 2000, "commits to mine for co-change history")
-	flag.DurationVar(&f.deadline, "match-deadline", 1500*time.Millisecond,
+	fs.IntVar(&f.history, "match-history", 2000, "commits to mine for co-change history")
+	fs.DurationVar(&f.deadline, "match-deadline", 1500*time.Millisecond,
 		"give up on scoring after this long; declaring work never blocks on it")
-	flag.StringVar(&f.embedURL, "match-embed-url", "",
+	fs.StringVar(&f.embedURL, "match-embed-url", "",
 		"OpenAI-compatible embeddings service for tier 2/3. Ollama, vLLM, TEI, "+
 			"LM Studio, llama.cpp's server, or a hosted provider. Dibs owns the index "+
 			"and only asks it to POST /v1/embeddings. Unreachable or slow degrades to "+
 			"the built-in scorer and says so")
-	flag.StringVar(&f.embedModel, "match-embed-model", "",
+	fs.StringVar(&f.embedModel, "match-embed-model", "",
 		"model name to request from that service (e.g. codefuse-ai/F2LLM-v2-4B)")
-	flag.StringVar(&f.embedQueryPrefix, "match-embed-query-prefix", "",
+	fs.StringVar(&f.embedQueryPrefix, "match-embed-query-prefix", "",
 		"marker prepended to a QUERY before embedding (default: inferred from the model name. "+
 			"qwen3-embedding, nomic-embed, e5, arctic-embed and each BGE generation are "+
 			"known). Retrieval "+
 			"models are asymmetric; addressing one without its markers roughly halves how well "+
 			"it separates related work from unrelated")
-	flag.StringVar(&f.embedDocPrefix, "match-embed-doc-prefix", "",
+	fs.StringVar(&f.embedDocPrefix, "match-embed-doc-prefix", "",
 		"marker prepended to a DOCUMENT before embedding (see -match-embed-query-prefix)")
-	flag.StringVar(&f.embedKey, "match-embed-key", "",
+	fs.StringVar(&f.embedKey, "match-embed-key", "",
 		"bearer token for a hosted embeddings endpoint")
-	flag.StringVar(&f.autoJoin, "match-auto-join", engine.AutoJoinDeclared,
+	fs.StringVar(&f.autoJoin, "match-auto-join", engine.AutoJoinDeclared,
 		"who decides a match becomes a membership: declared (default: join only on a shared "+
 			"ref, which both agents wrote down; everything else is proposed for the agent to "+
 			"judge), always, or never")
-	flag.BoolVar(&f.director, "match-director-required", false,
+	fs.BoolVar(&f.director, "match-director-required", false,
 		"gate every matched join on a coordinator admitting it (admit). "+
 			"Off by default: it serialises the fleet behind one agent")
 	return f

@@ -155,6 +155,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is otherwise the one thing Dibs must never allow, so there is no
   agent-to-agent version.
 
+- **docs/CONFIGURATION.md**: every setting the daemon accepts, in one place,
+  with what happens if you leave it alone. Twenty-four keys were spread across
+  five documents with no reference anywhere, and an unknown key stops the daemon
+  rather than being ignored, so a setting somebody reads about and cannot use is
+  not a small slip: it is a daemon that will not start, blamed on the manual
+  that suggested it. A guard checks both directions, reading the struct tags
+  rather than a list somebody maintains.
+
+- **`man 8 dibd`.** The daemon had no manual. It is what an operator installs as
+  a service, points at a listen address and configures with a file, while the
+  CLI, which is discoverable by typing `dibs help`, has had a page since it had
+  verbs. Generated from the daemon's own flags, which are now declared once for
+  both parsing and documentation, and both pages are checked with `mandoc
+  -Tlint` in CI. The CLI's page also stopped calling itself `agents.1`.
+
 - **Agents can reach the human, and the human is notified on the machine.** The
   person is the one participant with no loop: no lifecycle hook fires for them
   and no tool result reaches them, so mail addressed to them waited until they

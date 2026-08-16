@@ -52,25 +52,50 @@ func main() {
 	}
 }
 
-func run() error {
-	var (
-		dir = flag.String("dir", defaultDir(), "data directory")
+// registerDaemonFlags declares every flag in one place, so the manual can walk
+// them rather than repeat them. A flag added here appears in `dibd -man`
+// without anybody remembering to document it, which is the only arrangement
+// that stays true.
+// daemonOpts are the daemon's own flags, declared once so the manual walks the
+// same declarations run() parses. A second copy for documentation is a second
+// copy that loses.
+type daemonOpts struct {
+	dir           *string
+	allowParallel *bool
+	addr          *string
+	check         *bool
+}
+
+func registerDaemonFlags(fs *flag.FlagSet) (*daemonOpts, *scorerFlags) {
+	o := &daemonOpts{
+		dir: fs.String("dir", defaultDir(), "data directory"),
 		// Two daemons on one machine means two boards, and agents split across
 		// them cannot see each other while everything still appears to work.
 		// Off by default for that reason; SECURITY.md's isolation advice is the
 		// case where you genuinely want it.
-		allowParallel = flag.Bool("allow-parallel", false,
+		allowParallel: fs.Bool("allow-parallel", false,
 			"permit a second dibd on this machine (splits the fleet across two boards; "+
-				"intended for isolating agents you do not trust: see SECURITY.md)")
-		addr = flag.String("addr", "",
+				"intended for isolating agents you do not trust: see SECURITY.md)"),
+		addr: fs.String("addr", "",
 			"listen address (override; default 127.0.0.1:4777: set a tailnet/LAN IP to serve "+
-				"remote agents. TLS is handled automatically; see <dir>/dibs.toml to tune anything)")
+				"remote agents. TLS is handled automatically; see <dir>/dibs.toml to tune anything)"),
 		// The one question an upgrade has to answer BEFORE it stops anything.
-		check = flag.Bool("check", false,
+		check: fs.Bool("check", false,
 			"replay the board at -dir and exit, without serving: answers whether THIS build "+
-				"could take over from the daemon now running. `dibs upgrade` runs it first")
-	)
-	scorer := registerScorerFlags()
+				"could take over from the daemon now running. `dibs upgrade` runs it first"),
+	}
+	fs.Bool("man", false, "write this daemon's manual page (mdoc) to stdout and exit")
+	return o, registerScorerFlagsOn(fs)
+}
+
+func run() error {
+	// `-man` before anything else: it must work with no data directory, no
+	// configuration and no daemon, which is how somebody reads a manual.
+	if wantsMan() {
+		return manCmd(manArgs())
+	}
+	opts, scorer := registerDaemonFlags(flag.CommandLine)
+	dir, allowParallel, addr, check := opts.dir, opts.allowParallel, opts.addr, opts.check
 	flag.Parse()
 
 	if err := os.MkdirAll(*dir, 0o700); err != nil {
@@ -583,5 +608,26 @@ func checkReplay(dir string, cfg Config) error {
 	fmt.Printf("ok: %s replays %d record(s) to serial %d in %s (%d agent(s), %d space(s))\n",
 		build.Version, n, st.Serial, time.Since(start).Round(time.Microsecond),
 		len(st.Agents), len(st.Spaces))
+	return nil
+}
+
+// wantsMan spots `-man` before the flag package parses, because the manual must
+// not require a valid data directory or a config file to print.
+func wantsMan() bool {
+	for _, a := range os.Args[1:] {
+		if a == "-man" || a == "--man" {
+			return true
+		}
+	}
+	return false
+}
+
+// manArgs is everything after -man, so `dibd -man -out dibd.8` works.
+func manArgs() []string {
+	for i, a := range os.Args[1:] {
+		if a == "-man" || a == "--man" {
+			return os.Args[i+2:]
+		}
+	}
 	return nil
 }

@@ -788,3 +788,141 @@ func TestThePresenceHelperIsTheOneThatGetsBuilt(t *testing.T) {
 		}
 	}
 }
+
+// Every setting the daemon accepts must be documented, and nothing may be
+// documented that it does not accept.
+//
+// The daemon refuses an unknown key and stops, so a setting an operator reads
+// about and cannot use is not a small documentation slip: it is a daemon that
+// will not start, blamed on the manual that suggested it. And a key with no
+// entry is one nobody can discover, which for a knob whose whole reason to
+// exist is a case the default gets wrong means it may as well not be there.
+//
+// Twenty-four keys were spread across five documents when this was written,
+// with no reference anywhere. The reference is docs/CONFIGURATION.md; this is
+// what keeps it true.
+func TestEverySettingIsDocumentedAndEveryDocumentedSettingExists(t *testing.T) {
+	root := repoRoot(t)
+	doc, err := os.ReadFile(filepath.Join(root, "docs/CONFIGURATION.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference := string(doc)
+
+	// The keys the daemon really reads, taken from the struct tags rather than
+	// a list somebody maintains: a list would be one more thing to fall out of
+	// sync, which is the failure this test exists for.
+	tag := regexp.MustCompile("`toml:\"([a-z_]+)\"`")
+	declared := map[string]string{}
+	// Every file that declares settings, not just the one named config.go: the
+	// first version of this guard missed cmd/dibd/roles.go and reported the
+	// [roles] keys as undocumented inventions, which they are not.
+	for _, rel := range []string{
+		"cmd/dibd/config.go",
+		"cmd/dibd/roles.go",
+		"internal/liveness/settings.go",
+	} {
+		src, err := os.ReadFile(filepath.Join(root, rel)) // #nosec G304 -- a fixed path in this repository
+		if err != nil {
+			continue
+		}
+		for _, m := range tag.FindAllStringSubmatch(string(src), -1) {
+			declared[m[1]] = rel
+		}
+	}
+	if len(declared) < 10 {
+		t.Fatalf("found only %d settings; this guard is looking in the wrong place and "+
+			"would pass whatever the reference said", len(declared))
+	}
+	for key, where := range declared {
+		// The table names are headings, not settings: they are documented as
+		// the sections they introduce.
+		switch key {
+		case "match", "limits", "supervise", "roles", "wake":
+			continue
+		}
+		if !strings.Contains(reference, "`"+key+"`") {
+			t.Errorf("%s accepts %q and docs/CONFIGURATION.md does not mention it: an "+
+				"operator cannot discover a knob that exists for a case the default gets "+
+				"wrong", where, key)
+		}
+	}
+	// And the other direction: a documented key the daemon refuses stops the
+	// daemon, blamed on the manual that suggested it.
+	inDoc := regexp.MustCompile("(?m)^\\| `([a-z_]+)` \\|")
+	for _, m := range inDoc.FindAllStringSubmatch(reference, -1) {
+		if _, ok := declared[m[1]]; !ok {
+			t.Errorf("docs/CONFIGURATION.md documents %q, which the daemon does not "+
+				"accept: writing it into dibs.toml stops the daemon", m[1])
+		}
+	}
+}
+
+// Both binaries have a manual, and both manuals render.
+//
+// dibd had none. It is what an operator installs as a service, points at a
+// listen address and configures with a file, and `man dibd` found nothing: the
+// CLI is discoverable by typing `dibs help`, a daemon under launchd is
+// discoverable only by reading about it. The wrong way round.
+//
+// Rendered rather than merely generated, because an mdoc page that does not
+// parse is a page nobody can read, and the failure is invisible until somebody
+// types `man`.
+func TestBothBinariesShipAManualThatRenders(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the generators")
+	}
+	root := repoRoot(t)
+	for _, tc := range []struct{ pkg, flag, section string }{
+		{"./cmd/dibs", "man", "1"},
+		{"./cmd/dibd", "-man", "8"},
+	} {
+		gen := exec.Command("go", "run", tc.pkg, tc.flag)
+		// From the repository root: `go run ./cmd/...` is relative, and this
+		// test runs in its own package directory.
+		gen.Dir = root
+		out, err := gen.Output()
+		if err != nil {
+			t.Errorf("%s %s: %v", tc.pkg, tc.flag, err)
+			continue
+		}
+		page := string(out)
+		if !strings.Contains(page, ".Dt ") || !strings.Contains(page, ".Sh NAME") {
+			t.Errorf("%s produced something that is not an mdoc page:\n%.200s", tc.pkg, page)
+			continue
+		}
+		if !strings.Contains(page, " "+tc.section+"\n") {
+			t.Errorf("%s is not in section %s: a daemon in section 1 or a command in "+
+				"section 8 is filed where nobody looks", tc.pkg, tc.section)
+		}
+		// mandoc where it exists. Not required, because a contributor without
+		// it should still be able to run the suite, but the CI host has it and
+		// a page that stops linting should fail there.
+		if _, err := exec.LookPath("mandoc"); err != nil {
+			continue
+		}
+		// Named with its section: mandoc infers the section from the filename,
+		// and a page written to "page" lints against the wrong conventions.
+		f := filepath.Join(t.TempDir(), "dibs."+tc.section)
+		if err := os.WriteFile(f, out, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		lint, _ := exec.Command("mandoc", "-Tlint", f).CombinedOutput()
+		// "referenced manual not found" is a fact about what is INSTALLED on
+		// this machine, not about the page: dibd(8) correctly cross-references
+		// dibs(1), and dibs(1) is only on the system after a release installs
+		// it. Keeping it would make the suite pass or fail on whether somebody
+		// had run brew install.
+		var real []string
+		for _, line := range strings.Split(strings.TrimSpace(string(lint)), "\n") {
+			if line == "" || strings.Contains(line, "referenced manual not found") {
+				continue
+			}
+			real = append(real, line)
+		}
+		lint = []byte(strings.Join(real, "\n"))
+		if len(real) > 0 {
+			t.Errorf("%s does not lint clean:\n%s\n(page written to %s)", tc.pkg, lint, f)
+		}
+	}
+}
