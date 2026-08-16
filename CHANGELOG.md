@@ -182,6 +182,31 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Mail no longer rides on the human's prompt.** `UserPromptSubmit` fires when
+  a PERSON types, and its `additionalContext` is attached to their message, so
+  delivering a wake digest there made the operator the transport: an agent
+  learned that a peer was waiting when, and only when, its human happened to say
+  something. That is the failure Dibs exists to remove, shipped as a feature.
+  Worse, that path had no freshness throttle (only `Stop` did), so the same
+  unread message was attached to every prompt they sent until somebody read it.
+  Reported from a live fleet: "it's putting it on my plate to take an action for
+  them to notice, agents should be notified directly."
+
+  `Stop` still pushes and keeps its loop guard, `SessionStart` still tells a new
+  session what is waiting, and the `waiting` line still reaches an agent that
+  neither can. None of those need a person to type.
+
+- **The Codex plugin says how to wire its wake path, and stops contradicting
+  itself about whether one exists.** Codex reads hooks from `~/.codex/hooks.json`,
+  a different file from `config.toml`; nothing said so, so the MCP server got
+  configured and the hooks file never did. The README meanwhile carried two
+  sections: one announcing that the `mcp_tool` hook variant had arrived, and,
+  directly below it, one stating as current fact that "there is no `mcp_tool`
+  and no `http` variant". Both were checked in, and the shipped `hooks.json` was
+  written against the true one, so a reader had no way to tell which described
+  the product. This is the drift class this repository is most expensive at, in
+  the file whose whole job is to tell somebody how to install the thing.
+
 - **Pressing "Answer" on a notification now has somewhere to put the answer.**
   The notification comes from Dibs' application bundle, because only that API
   carries buttons and only a bundle carries an identity. The text box that

@@ -61,10 +61,28 @@ That is the same mechanism the Claude Code plugin uses: a hook that calls a tool
 over the MCP connection the model already holds. No subprocess, so nothing here
 turns Dibs into a harness driver, and the objection below no longer applies.
 
-Until this is wired, Codex mail is pull-only in practice and a wake digest
-surfaces to the HUMAN rather than to the agent it is addressed to, which is how
-this was noticed: a person watching their own Codex prompt fill up with mail for
-`codex-primary`.
+### Wiring it: `~/.codex/hooks.json`, not `config.toml`
+
+Codex reads hooks from **`~/.codex/hooks.json`**, a separate file from
+`config.toml`. Missing that is why this stayed unwired long after the variant
+existed: the MCP server was configured, the hooks file was never created, and
+nothing anywhere said a wake path was absent.
+
+Copy [hooks.json](hooks.json) to `~/.codex/hooks.json` (merge, if you already
+have one). No restart: Codex rebuilds its hook registry when the config changes.
+
+`dibs doctor` reports whether any harness has actually called this daemon's
+hooks, which is the only proof that a wake path is live rather than merely
+present on disk.
+
+**Until it is wired, Codex mail is pull-only and the wake digest surfaces to the
+HUMAN instead of the agent it is addressed to.** That is how this was noticed
+twice: a person watching their own Codex prompt fill up with mail for
+`codex-primary`, and later the same thing reported as "it's putting it on my
+plate to take an action for them to notice". Dibs no longer attaches the digest
+to a human's prompt on any harness (`UserPromptSubmit` carries nothing to the
+model), so an unwired Codex is now quiet rather than misdirected: quiet is
+honest, and `dibs doctor` names it.
 
 ### When a Codex hook takes effect (traced, not assumed)
 
@@ -100,27 +118,20 @@ with a `command` hook, and that refusal still stands.
 
 ## Why we would not use a `command` hook (still true)
 
-Codex has lifecycle hooks and they **do** support `additionalContext` injection,
-the same mechanism Dibs uses in Claude Code. But `HookHandlerConfig`
-(`codex-rs/config/src/hook_config.rs:149`) has exactly three variants:
+Codex's `HookHandlerConfig` once had exactly three variants, `command`, `prompt`
+and `agent`, and this file argued at length that none of them could reach Dibs
+without turning it into a harness driver. That argument was correct and is now
+history: `mcp_tool` exists, and the section above wires it.
 
-| Variant | Reaches Dibs? |
-|---|---|
-| `command` | yes, but it is a **subprocess**, which Dibs does not do |
-| `prompt` | no, empty struct; injects a prompt, calls nothing out |
-| `agent` | no, empty struct; spawns an agent, calls nothing out |
+What survives is the refusal it rested on. We will not close a gap with a
+`command` hook: a CLI reformatting mail into the harness's continuation protocol
+is Dibs driving the agent. See [PHILOSOPHY.md](https://github.com/agenxy/dibs/blob/main/PHILOSOPHY.md).
 
-There is **no `mcp_tool` and no `http` variant**, so unlike Claude Code there is no
-way for a Codex hook to call Dibs over the connection the model already holds.
-
-We will not close this with a `command` hook. A CLI reformatting mail into the
-harness's continuation protocol is Dibs driving the agent: a harness, not a
-service. See [PHILOSOPHY.md](https://github.com/agenxy/dibs/blob/main/PHILOSOPHY.md).
-
-**So in Codex, mail is pull-only:** `await_events` / `inbox`, at the agent's
-choosing. That is the honest floor, and it works today.
-
-Re-check `HookHandlerConfig` when upgrading Codex, one new variant flips this.
+This section is kept short deliberately. It previously stated, as current fact,
+that "there is no `mcp_tool` and no `http` variant", directly under a section
+explaining that `mcp_tool` had arrived. Both were checked in, and the shipped
+`hooks.json` was written against the true one, so a reader comparing the two
+had no way to tell which described the product.
 
 ### Plugins do not change this, but they are not the whole surface
 

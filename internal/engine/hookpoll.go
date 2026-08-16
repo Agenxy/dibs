@@ -351,6 +351,26 @@ func humanNotice(agent string, mail, announced, notices []string) string {
 // interrupt nothing, so everything is delivered there.
 func (e *Engine) deliverToModel(event string, fresh, blocked, stopActive bool) bool {
 	switch event {
+	case "UserPromptSubmit":
+		// The digest does NOT ride on the human's message.
+		//
+		// This event fires when a PERSON types. Its additionalContext is attached
+		// to their prompt, so delivering mail here makes the human the trigger:
+		// an agent learns that a peer is waiting when, and only when, its
+		// operator happens to say something. That is the failure Dibs exists to
+		// remove, restated as a feature, and the operator said so: "it's putting
+		// it on my plate to take an action for them to notice, agents should be
+		// notified directly."
+		//
+		// It was worse than a missed wake. There is no freshness throttle on
+		// this path, so the SAME unread message was attached to every prompt
+		// they sent until somebody read it.
+		//
+		// Stop is the real push and keeps its continuations; SessionStart tells a
+		// new session what is already waiting; the `waiting` line on every
+		// authenticated result reaches an agent that neither can. None of those
+		// need a person to type.
+		return false
 	case "Stop", "SubagentStop":
 		// Never twice in a row. stop_hook_active means this turn is ALREADY
 		// running because a stop hook continued it, and continuing again on the
