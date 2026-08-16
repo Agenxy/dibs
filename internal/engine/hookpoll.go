@@ -28,7 +28,7 @@ const AnnounceRetry = 120 * time.Second
 //
 // Nothing is consumed. Mail stays in the inbox until the agent reads and acts on
 // it with its own token, so a hook firing can never silently swallow a message.
-func (e *Engine) HookPoll(ctx context.Context, sessionID, event, cwd string) (core.Result, error) {
+func (e *Engine) HookPoll(ctx context.Context, sessionID, event, cwd string, stopActive bool) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
 		l := e.state.AgentForHook(sessionID, cwd)
 		e.noteHook("poll", l != nil)
@@ -64,34 +64,40 @@ func (e *Engine) HookPoll(ctx context.Context, sessionID, event, cwd string) (co
 			// into a model's context, so the silence that matters is unchanged.
 			return core.Result{"agent": l.ID}
 		}
-		b := hookDigest(l.ID, mail, announced, notices)
-		// Exactly the shape a hook consumer honours, so the text lands in the
-		// model's context rather than being shown as a raw JSON blob.
 		if event == "" {
 			event = "Stop"
 		}
-		return core.Result{
-			"hookSpecificOutput": map[string]any{
+		out := core.Result{}
+		// The other half of the same fact, addressed to the other party, and
+		// sent whatever is decided about the model.
+		//
+		// A human cannot see the board unless their host renders the MCP Apps
+		// panel, so everything Dibs does for them otherwise happens silently.
+		// `systemMessage` is the one channel a harness gives a hook that goes to
+		// the PERSON rather than the model: Claude Code shows it as "Stop says:
+		// …" and surfaces it as an SDKInformationalMessage under
+		// --output-format stream-json.
+		//
+		// Deliberately one line and deliberately not the digest. The model gets
+		// the actionable version; this is the ambient one, and a human who
+		// wanted detail has `dibs board`. Counts and senders only, never
+		// content: the same rule the digest follows.
+		out["systemMessage"] = humanNotice(l.ID, mail, announced, notices)
+		// And the model's copy, only when it is worth extending a turn for.
+		if deliverToModel(event, e.somebodyIsWaiting(l.ID) ||
+			len(announced) > 0 || len(notices) > 0, stopActive) {
+			out["hookSpecificOutput"] = map[string]any{
 				"hookEventName":     event,
-				"additionalContext": strings.TrimRight(b, "\n"),
-			},
-			// The other half of the same fact, addressed to the other party.
-			//
-			// A human running a CLI harness cannot see the board: it is an MCP
-			// Apps panel, and terminal hosts do not render those. So everything
-			// Dibs does for them happens silently, and the first they hear of a
-			// question addressed to their agent is when the agent mentions it,
-			// if it does. `systemMessage` is the one channel a harness gives a
-			// hook that goes to the PERSON rather than the model: Claude Code
-			// shows it in the transcript and surfaces it as an
-			// SDKInformationalMessage under --output-format stream-json.
-			//
-			// Deliberately one line and deliberately not the digest. The model
-			// gets the actionable version above; this is the ambient one, and a
-			// human who wanted the detail has `dibs board`. Nothing here is
-			// content: same rule as the digest, counts and senders only.
-			"systemMessage": humanNotice(l.ID, mail, announced, notices),
+				"additionalContext": strings.TrimRight(hookDigest(l.ID, mail, announced, notices), "\n"),
+			}
+		} else {
+			// Said out loud, because "the agent was not told" and "there was
+			// nothing to tell" must not look the same from outside.
+			out["queued"] = "informational only: held for this agent's next activation " +
+				"rather than extending a finished turn"
+			out["agent"] = l.ID
 		}
+		return out
 	})
 }
 
@@ -317,4 +323,49 @@ func humanNotice(agent string, mail, announced, notices []string) string {
 		return ""
 	}
 	return "Dibs · " + strings.Join(parts, ", ") + " for " + agent + " · dibs board to look"
+}
+
+// deliverToModel decides whether this news is worth extending a turn for.
+//
+// On Stop, `additionalContext` does not merely inform: Claude Code's own
+// documentation says it "keeps the conversation going", through the same loop
+// protections as a blocking decision and an eight-continuation cap. So every
+// piece of mail was preventing an agent from finishing, a plain FYI included.
+// That is Dibs driving a harness, which PHILOSOPHY.md rule 5 forbids and which
+// the wake path exists specifically not to do.
+//
+// Dibs already knows how urgent a thing is, because the sender said so when
+// they chose a type. A question or a request has somebody blocked on the
+// answer. A handoff is work its sender has stopped doing, so the only thing
+// between it and nobody doing it is this agent noticing. An unacknowledged
+// announcement carries collision risk by definition. An agent update changes
+// what this agent may do NEXT, so acting without it is acting on a stale board.
+// Those are worth a turn. A notify is not: it waits for the next activation,
+// which costs the sender nothing and the recipient nothing.
+//
+// Every other event is already a boundary. UserPromptSubmit and SessionStart
+// interrupt nothing, so everything is delivered there.
+func deliverToModel(event string, urgent, stopActive bool) bool {
+	switch event {
+	case "Stop", "SubagentStop":
+		// Never twice in a row. stop_hook_active means this turn is ALREADY
+		// running because a stop hook continued it, and continuing again on the
+		// same unread mail is how a wake becomes a loop.
+		return urgent && !stopActive
+	default:
+		return true
+	}
+}
+
+// somebodyIsWaiting reports whether any unread message expects a response.
+func (e *Engine) somebodyIsWaiting(agent string) bool {
+	for _, m := range e.state.Inbox(agent) {
+		if m.State != core.MsgStatePending && m.State != core.MsgStateDelivered {
+			continue
+		}
+		if m.Expecting() || m.Type == core.MsgHandoff {
+			return true
+		}
+	}
+	return false
 }

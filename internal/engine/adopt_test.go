@@ -42,7 +42,7 @@ func TestAnAgentWithNoSessionIsAttachedToTheOneItRunsIn(t *testing.T) {
 	const sid = "harness-session-1"
 
 	// Before: the hook quotes a session this board has never heard of.
-	if got, err := e.HookPoll(ctx, sid, "Stop", "/elsewhere"); err != nil {
+	if got, err := e.HookPoll(ctx, sid, "Stop", "/elsewhere", false); err != nil {
 		t.Fatalf("hook_poll: %v", err)
 	} else if got["agent"] != nil {
 		t.Fatalf("hook_poll resolved %v before anything bound the session", got["agent"])
@@ -57,7 +57,7 @@ func TestAnAgentWithNoSessionIsAttachedToTheOneItRunsIn(t *testing.T) {
 	}
 
 	// After: the same hook call, unchanged, now names the agent.
-	got, err := e.HookPoll(ctx, sid, "Stop", "/elsewhere")
+	got, err := e.HookPoll(ctx, sid, "Stop", "/elsewhere", false)
 	if err != nil {
 		t.Fatalf("hook_poll: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestAnAgentWithNoSessionIsAttachedToTheOneItRunsIn(t *testing.T) {
 	if again {
 		t.Error("an agent's existing session was overwritten from an ambient header")
 	}
-	if got, _ := e.HookPoll(ctx, sid, "Stop", "/elsewhere"); got["agent"] != "orphan" {
+	if got, _ := e.HookPoll(ctx, sid, "Stop", "/elsewhere", false); got["agent"] != "orphan" {
 		t.Error("the original binding was lost")
 	}
 }

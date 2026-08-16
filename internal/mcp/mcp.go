@@ -687,17 +687,23 @@ type toolArgs struct {
 	TurnID      string            `json:"turn_id"`
 	Progress    int64             `json:"progress"`
 	Event       string            `json:"event"`
-	View        string            `json:"view"`
-	Detail      bool              `json:"detail"`
-	Harness     string            `json:"harness"`
-	Model       string            `json:"model"`
-	Provider    string            `json:"provider"`
-	Surface     string            `json:"surface"`
-	Effort      string            `json:"effort"`
-	Title       string            `json:"title"`
-	CWD         string            `json:"cwd"`
-	Branch      string            `json:"branch"`
-	Host        string            `json:"host"`
+	// StopActive is the harness's stop_hook_active: this turn is already
+	// running because a stop hook continued it. Typed loosely because it
+	// arrives as the string a template substitution produced on one harness and
+	// as a JSON boolean on another, and refusing one spelling would silently
+	// disable the loop guard on that harness.
+	StopActive any    `json:"stop_hook_active"`
+	View       string `json:"view"`
+	Detail     bool   `json:"detail"`
+	Harness    string `json:"harness"`
+	Model      string `json:"model"`
+	Provider   string `json:"provider"`
+	Surface    string `json:"surface"`
+	Effort     string `json:"effort"`
+	Title      string `json:"title"`
+	CWD        string `json:"cwd"`
+	Branch     string `json:"branch"`
+	Host       string `json:"host"`
 
 	// Spaces (SPEC-CHANNELS.md). The parameter is `space`, because it names one.
 	//
@@ -992,7 +998,7 @@ func (s *Server) run(
 		// compared as a string against the cwd the bridge recorded, and a
 		// harness that passes the alias the user typed (/tmp/x) would never
 		// match an agent registered from the resolved name (/private/tmp/x).
-		return s.eng.HookPoll(ctx, a.SessionID, a.Event, canonPath(a.CWD))
+		return s.eng.HookPoll(ctx, a.SessionID, a.Event, canonPath(a.CWD), truthy(a.StopActive))
 	case "hook_session":
 		return s.eng.NoteChildSession(ctx, engine.Child{
 			SessionID: a.SessionID, CWD: canonPath(a.CWD), Model: a.Model,
@@ -1134,3 +1140,16 @@ Start: register(name, description, pid, nonce): keep the token, and invent a non
 Read dibs://skills once: short, and it is the mistakes that look like success. dibs://plugin says if your harness can deliver mail instead of you polling.
 
 Something Dibs did that no hint explains? Ask your human about reporting it.`
+
+// truthy reads a flag that may arrive as a bool or as the string a hook
+// template produced.
+func truthy(v any) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case string:
+		return t == "true" || t == "1"
+	default:
+		return false
+	}
+}

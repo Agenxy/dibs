@@ -347,6 +347,8 @@ var toolDefs = func() []map[string]any {
 				"event":      str("the hook event name, e.g. Stop"),
 				"cwd": str("the harness's working directory: used to find the agent when the harness's session id " +
 					"differs from the one the agent registered with"),
+				"stop_hook_active": str("the harness's stop_hook_active: pass it on Stop and " +
+					"SubagentStop so a wake never continues a turn that a wake already continued"),
 			}, "session_id"),
 		},
 		{

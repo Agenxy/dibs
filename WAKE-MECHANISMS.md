@@ -58,6 +58,45 @@ over plain HTTP (no stdio bridge in the way):
 Nobody speaks MCP 2026**, not even Codex alpha, which negotiates 2025-06-18. Codex never
 even calls `resources/list`, so Dibs' resources are invisible there; only tools reach it.
 
+## Urgency decides whether a wake extends a turn
+
+`additionalContext` on a `Stop` hook is not merely informative. Claude Code's
+own documentation: it *"keeps the conversation going"*, through the same loop
+protections as a blocking decision and an eight-continuation cap. So delivering
+every unread message on `Stop` meant every message prevented an agent from
+finishing, a plain FYI included, and eight of them in a row could burn eight
+turns before the harness overrode it.
+
+That is Dibs driving a harness, which PHILOSOPHY.md rule 5 forbids and which
+this document's whole argument is against. It was found by an operator reading
+the notice and asking the right question: *does this stop the agents?*
+
+The urgency is not guessed, because the sender already stated it by choosing a
+type. That is what the types are for:
+
+| what is waiting | on `Stop` | why |
+|---|---|---|
+| `question`, `request` | **extends the turn** | somebody is blocked on the answer |
+| `handoff` | **extends the turn** | work its sender has stopped doing; the only thing between it and nobody doing it is this agent noticing |
+| unacknowledged announcement | **extends the turn** | announcements are the collision-risk grade by definition, and are redelivered until acked |
+| agent update (admitted, promoted, evicted, merged) | **extends the turn** | it changes what this agent may do NEXT, so acting without it is acting on a stale board |
+| `notify` | **queued** | nothing is waiting; it lands at the next activation |
+
+Every other event is already a boundary, so everything is delivered there:
+`SessionStart` and `UserPromptSubmit` interrupt nothing. A queued message
+therefore reaches the agent at its next turn, or earlier still on the `waiting`
+line that every authenticated write carries.
+
+`stop_hook_active` is passed from the harness and honoured: a wake never
+continues a turn that a wake already continued. Without it, unread mail an agent
+has not dealt with would extend every turn until the eight-continuation cap,
+which is the loop this mechanism must never become.
+
+The human is told either way. `systemMessage` goes to the person on every poll
+with news, whatever was decided about the model, because *"your agent has mail
+it is not stopping for"* is exactly what an operator wants to know and it
+interrupts nobody.
+
 ## 2. Is 2026 support hidden behind a flag? No
 
 - Claude Code 2.1.219: `2026-07-28`, `server/discover`, `subscriptions/listen` → **0
