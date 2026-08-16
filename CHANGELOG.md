@@ -54,8 +54,33 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A hygiene guard against the wreckage a find-and-replace leaves when one word
   used to mean two things, which is how the last one went.
 
-- A hygiene guard against the wreckage a find-and-replace leaves when one word
-  used to mean two things, which is how the last one went.
+- **`dibs upgrade`**: one command to move a running fleet onto a new build.
+  R12 settled the client half of this (the bridge waits out the restart window
+  and re-sends only requests that provably never arrived); this is the operator
+  half. It runs the new binary against the ledger first, through a new
+  `dibd -check` that replays without serving and is safe against a board another
+  daemon is holding, and stops nothing unless that passes: a binary that cannot
+  fold the ledger the old one wrote is otherwise discovered only after the
+  daemon that could serve the board is gone. Then it repoints a service unit
+  pinning the wrong daemon, restarts through the service manager where there is
+  one, restores the address the daemon was bound to (a fleet spanning machines
+  is not on loopback, and coming back there would take every remote agent off
+  the board while every local check passed), and waits for the board before
+  reporting the serial and agent count it returned with. Anything that fails
+  between the stop and the start restarts the daemon on the build it was already
+  running. `--adopt-dir` also renames a data directory an older version named,
+  in the one order that works. `dibs doctor` now names this command instead of
+  handing back shell steps whose order was load-bearing and unstated.
+
+  Two rules in it were paid for on a live board, by the first real run. A
+  service unit is RELOADED before it is restarted, always: launchd reads a plist
+  at load time and holds the parsed definition, so rewriting the file changes
+  nothing it knows and `kickstart` exits 0 having scheduled the old program.
+  Unconditionally, because a plist edited by hand or by an earlier failed run
+  drifts the same way and presents identically. And a restart is not believed
+  until the BOARD answers: marking it done when the start call returned meant
+  the recovery could not fire on the one failure that matters, and the fleet
+  stayed down while the command reported the failure and exited.
 
 ### Fixed
 
@@ -65,6 +90,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   board objects readable by agents in unrelated repositories, with no way to
   take them back. Ids now come from a ref where there is one (`issue:42` →
   `issue-42`) and otherwise from the project plus a digest.
+
+- **`task install` no longer offers another project's signing identity.**
+  `tools/signcheck` listed every code-signing identity in the keychain and
+  proposed whichever came first. That is a cross-project dependency established
+  by accident, because a macOS privacy grant keyed to a certificate another
+  project owns is revoked the moment they rotate it; and printing the list is a
+  disclosure, since a keychain holds identities for work that has not been
+  announced and this output is the kind of thing that lands in an issue. It now
+  looks for `Dibs Local Codesign` by name, names nothing else, and says how to
+  create one.
 
 - **SPEC-CHANNELS.md is readable again.** The `lane` → `agent`/`space` rename
   ran over the document that defines the split, leaving a terminology table
@@ -81,8 +116,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   belongs in `dibs://skills`, which is fetched once, rather than in the
   description of every tool that follows from it. No corrective detail was
   dropped; the war stories moved.
-
-### Added
 
 - Published to the official MCP Registry as `io.github.agenxy/dibs`, on the same
   tag trigger as the release, so the registry entry, the GitHub release and the

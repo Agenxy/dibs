@@ -82,6 +82,13 @@ setup:
                            isolated daemons other fleets are running. SIGTERM, so
                            the ledger closes and claims are released; waits for
                            the process to go, so you can start a replacement
+  dibs upgrade            move the running daemon onto the dibd you have
+                           installed. Proves the new binary can rebuild this
+                           board BEFORE stopping anything, repoints a service
+                           unit pinning the wrong daemon, restarts, and checks
+                           the fleet came back at the same serial. No agent
+                           re-registers (-n dry-run; --adopt-dir also renames a
+                           data directory an older version named)
 
 human/admin (interactive terminal; the god-view needs the admin password):
   dibs messages           ALL mail, decrypted: prompts admin password
@@ -145,6 +152,8 @@ func main() {
 		err = verify(os.Args[2:])
 	case "stop":
 		err = stop(os.Args[2:])
+	case "upgrade":
+		err = upgradeCmd(os.Args[2:])
 	case "trust":
 		err = trustCmd(os.Args[2:])
 	case "fingerprint":

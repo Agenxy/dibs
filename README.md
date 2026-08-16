@@ -228,6 +228,37 @@ Not `pkill dibd`. Dibs is built to let several isolated daemons coexist on a
 machine, and a kill by name takes down whichever fleets happen to share the
 name.
 
+### Upgrading a running fleet
+
+After installing a new build, one command moves the daemon onto it:
+
+```sh
+dibs upgrade
+```
+
+It is deliberately not `dibs stop && dibd &`, because three things go wrong
+there and all three are silent. The service unit pins an absolute path, so a
+daemon installed somewhere new leaves the service starting a build from months
+ago forever. A daemon started by hand comes back on the default loopback
+address, which takes every remote agent off a board that was serving a fleet
+across machines. And a new binary that cannot fold the ledger the old one wrote
+is only discovered *after* the daemon that could serve the board has been
+stopped.
+
+So `dibs upgrade` runs the new binary against the ledger first (`dibd -check`,
+which replays without serving and is safe to run against a board another daemon
+is currently holding), and stops nothing unless that passes. Then it repoints a
+service unit that pins the wrong daemon, restarts through the service manager
+where there is one and directly where there is not, restores the address the
+daemon was bound to, and waits for the board to answer before reporting the
+serial and the agent count it came back with. Anything that fails between the
+stop and the start restarts the daemon on the build it was already running.
+
+Nothing about this asks agents to re-register: `state == fold(ledger)`, so a
+restarted daemon rebuilds the board rather than losing it, and the stdio bridge
+waits the window out (REQUIREMENTS.md R12). `dibs upgrade -n` says what it would
+do and changes nothing.
+
 ### Verifying what you downloaded
 
 Release artifacts are signed with [cosign](https://docs.sigstore.dev) in the

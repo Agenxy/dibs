@@ -131,16 +131,22 @@ func (d *diagnosis) run(verbose bool) error {
 	// Doctor exists to answer "why is it behaving like that", and reading a
 	// directory the current version would not have created is high on the list.
 	if inherited != "" {
+		// One command, not a recipe.
+		//
+		// This used to hand back `mv`, plus a second sentence about re-running
+		// `dibs configure --service` because a unit pins the old path as a
+		// literal argument. Both are right and the ORDER is load-bearing: the
+		// daemon has to be down for the move, and a unit rewritten before the
+		// move points at a directory that does not exist yet. An operator
+		// following two sentences in the wrong order ends up with a service that
+		// starts against a path that is gone, which is how this hint's own
+		// advice broke a machine.
 		fix := "nothing is wrong and nothing is required. To adopt the current name, " +
-			"stop the daemon and `mv " + inherited + " " +
-			filepath.Join(filepath.Dir(inherited), ".dibs") + "`"
-		// A service unit pins its data directory as a literal argument, so the
-		// move above would leave it starting against a path that is gone. Found
-		// by following this hint's own advice on a machine where `dibs configure
-		// --service` had written that path in.
+			"`dibs upgrade --adopt-dir`, which stops the daemon, moves the directory, " +
+			"repoints the service and starts it again in that order"
 		if unit := unitPinning(inherited); unit != "" {
-			fix += ". " + unit + " pins the old path, so re-run `dibs configure " +
-				"--service` after moving, or the service starts against a directory that is gone"
+			fix += " (" + unit + " pins the old path, so a bare `mv` would leave the " +
+				"service starting against a directory that is gone)"
 		}
 		warn("data directory is "+inherited+", named by an older version", fix)
 	}
@@ -865,11 +871,21 @@ func checkCodeSignature(ok reportFn, warn fixFn) {
 		ok("dibd is signed with a stable identity, so privacy grants survive a rebuild")
 		return
 	}
+	// An identity of DIBS' OWN, and named rather than chosen from a list.
+	//
+	// This used to say "pick one from `security find-identity`", which invites
+	// borrowing a certificate some unrelated project on the machine owns. A
+	// privacy grant keyed to somebody else's certificate is revoked the moment
+	// they rotate or delete it, and the symptom is matching quietly going off:
+	// the same invisible failure this check exists to catch, arrived at by
+	// following its own advice. tools/signcheck carries the same rule.
 	warn("dibd is ad-hoc signed, so a macOS privacy grant will not survive the next install",
 		"only matters if your checkouts live under Desktop, Documents or Downloads, where "+
-			"the daemon needs permission to read them. Sign with a persistent identity so the "+
-			"grant sticks: pick one from `security find-identity -v -p codesigning` and "+
-			"reinstall with DIBS_CODESIGN_IDENTITY=<identity> task install")
+			"the daemon needs permission to read them. Give Dibs a signing identity of its "+
+			"OWN, never one belonging to another project: Keychain Access → Certificate "+
+			"Assistant → Create a Certificate, named \"Dibs Local Codesign\", type Code "+
+			"Signing, self-signed, then reinstall with "+
+			"DIBS_CODESIGN_IDENTITY=\"Dibs Local Codesign\" task install")
 }
 
 // runningDaemonPath is the executable behind the daemon serving this data
@@ -926,8 +942,8 @@ func checkServiceBinary(ok reportFn, warn fixFn) {
 	}
 	warn("the service would start a different daemon than the one installed",
 		detail+". Every fix since that build is not running when the service starts it. "+
-			"Rewrite the unit: rm "+unit+" && dibs configure --service, then load it with "+
-			"the command that prints")
+			"`dibs upgrade` rewrites the unit and restarts onto the installed daemon, "+
+			"after checking that it can rebuild this board")
 }
 
 // sameBinary compares two paths by inode where it can, so a symlink or a

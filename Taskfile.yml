@@ -61,7 +61,7 @@ tasks:
       - |
         echo "installed to {{.DEST}}"
         echo "a running dibd keeps the old code until you restart it:"
-        echo "  dibs stop && dibd &"
+        echo "  dibs upgrade"
 
   install:sign:
     # Sign with a STABLE identity when one is configured, because macOS keys a
@@ -74,9 +74,11 @@ tasks:
     # working, then silently not working after the next install, with nothing to
     # point at. Signing with a persistent identity keeps the grant across builds.
     #
-    # Set DIBS_CODESIGN_IDENTITY to an identity from `security find-identity -v
-    # -p codesigning`. Unset, this does nothing and the Go toolchain's ad-hoc
-    # signature stands.
+    # Set DIBS_CODESIGN_IDENTITY to an identity of DIBS' OWN, not one borrowed
+    # from another project on the machine: a grant keyed to somebody else's
+    # certificate is silently revoked when they rotate or delete it. `tools/
+    # signcheck` says how to make one. Unset, this does nothing and the Go
+    # toolchain's ad-hoc signature stands.
     platforms: [darwin]
     internal: true
     vars:

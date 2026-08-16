@@ -24,7 +24,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 )
@@ -43,16 +42,17 @@ func run() int {
 	if len(guarded) == 0 {
 		return 0 // nothing here needs the grant
 	}
-	ids := identities()
-	if len(ids) == 0 {
-		// Nothing to sign with. Say what will happen, but do not block: the fix
-		// is not available to this machine yet.
+	if !haveIdentity(dibsIdentity) {
+		// No identity of Dibs' own. Say what will happen, and do not block: the
+		// fix is a certificate this machine does not have yet.
 		fmt.Fprintf(os.Stderr,
 			"signcheck: %s is in a macOS protected folder and dibd will be ad-hoc signed,\n"+
 				"  so any Desktop/Documents/Downloads permission you grant is revoked by the\n"+
-				"  next install. Create a signing identity in Keychain Access (a self-signed\n"+
-				"  code-signing certificate is enough) and set DIBS_CODESIGN_IDENTITY.\n",
-			guarded[0])
+				"  next install.\n\n"+
+				"  To keep the grant, give Dibs a signing identity of its own: Keychain Access →\n"+
+				"  Certificate Assistant → Create a Certificate, named %q, type Code\n"+
+				"  Signing, self-signed. `task install` finds it by name after that.\n",
+			guarded[0], dibsIdentity)
 		return 0
 	}
 	fmt.Fprintf(os.Stderr,
@@ -60,12 +60,39 @@ func run() int {
 			"  %s is inside a macOS protected folder, so dibd needs your permission to read it.\n"+
 			"  macOS ties that permission to the binary's signature, and an ad-hoc signature\n"+
 			"  changes on every build: you would be prompted again, exactly as before.\n\n"+
-			"  Install with an identity you already have:\n\n"+
+			"  Install with the identity Dibs already has:\n\n"+
 			"    DIBS_CODESIGN_IDENTITY=%q task install\n\n"+
-			"  Available: %s\n\n"+
 			"  Or accept the re-prompt: DIBS_ADHOC_OK=1 task install\n\n",
-		guarded[0], ids[0], strings.Join(ids, ", "))
+		guarded[0], dibsIdentity)
 	return 1
+}
+
+// dibsIdentity is the only signing identity this tool will name.
+//
+// It used to list every code-signing identity in the keychain and propose the
+// first one, which is wrong twice over.
+//
+// Borrowing another project's identity is not a convenience, it is a
+// cross-project dependency established by accident: Dibs' privacy grant would
+// then be keyed to a certificate some unrelated project owns, and rotating or
+// deleting it there silently revokes the grant here.
+//
+// And PRINTING the list is a disclosure. A keychain holds identities for work
+// that has not been announced, and this tool's output is the kind of thing that
+// gets pasted into an issue or captured in a CI log. Dibs has no business
+// naming anything but its own.
+const dibsIdentity = "Dibs Local Codesign"
+
+// haveIdentity reports whether the named identity is in the keychain.
+//
+// By name, never by position: `security` orders identities by keychain, and
+// "whatever is first" is how the wrong project's certificate got proposed.
+func haveIdentity(name string) bool {
+	out, err := exec.Command("security", "find-identity", "-v", "-p", "codesigning").Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), `"`+name+`"`)
 }
 
 // protectedPaths reports the trees this install would need permission for: the
@@ -92,20 +119,4 @@ func protectedPaths() []string {
 		}
 	}
 	return out
-}
-
-// identities lists code-signing identities in the keychain, newest first as
-// `security` reports them.
-func identities() []string {
-	out, err := exec.Command("security", "find-identity", "-v", "-p", "codesigning").Output()
-	if err != nil {
-		return nil
-	}
-	// Lines look like: `  1) A1B2C3… "Some Local Codesign"`
-	re := regexp.MustCompile(`\d+\)\s+[0-9A-F]+\s+"([^"]+)"`)
-	var names []string
-	for _, m := range re.FindAllStringSubmatch(string(out), -1) {
-		names = append(names, m[1])
-	}
-	return names
 }

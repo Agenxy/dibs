@@ -153,6 +153,42 @@ Requirements:
   failure: it is what keeps people on old builds. Say plainly that the board is
   the ledger and a restart replays it.
 
+The requirements above are the CLIENT half, and they were the half that was
+built first. The OPERATOR half is the same requirement seen from the other side:
+an upgrade is a sequence with an order, and every way of getting it wrong is
+silent.
+
+- **A replacement must prove it can rebuild the board BEFORE anything is
+  stopped.** A rule added to `core.Apply` instead of `core.Admit` is
+  retroactive, and a retired op vocabulary does the same at a different layer:
+  either turns an upgrade into a board that will not open, discovered only once
+  the daemon that *could* serve it is gone. `dibd -check` replays without
+  serving, which makes it safe to run against a board another daemon is holding,
+  and it must run from the NEW binary: the CLI's own fold measures the wrong
+  build.
+- **A daemon must come back the way it was running.** Address above all: a fleet
+  spanning machines is bound to a LAN or tailnet address, and a restart onto the
+  default loopback takes every remote agent off the board while every local
+  check still passes.
+- **Nothing that can fail may run between the stop and the start.** Whatever is
+  checkable belongs above the stop. What cannot be moved there must leave the
+  daemon restarted on the build it was already running.
+- **An upgrade must touch only the service unit that serves THIS data
+  directory.** A machine may deliberately run isolated boards (SECURITY.md), and
+  "is there a Dibs service here" is a different question from "is there one for
+  this board".
+- **A service manager reporting success is not a daemon that is serving.** The
+  only proof is the board answering, so nothing downstream may treat a restart
+  as done before that: a start that returns cleanly and produces nothing is the
+  case the recovery exists for, and it is the case that disables it if the
+  ordering is wrong. Reload a unit before restarting it, unconditionally,
+  because the loaded definition drifts from the file in more ways than the one
+  we happened to cause.
+- **A diagnosis names a command, not a recipe.** `dibs doctor` found all of the
+  above and handed each back as shell steps whose ORDER was load-bearing and
+  unstated. A fix an operator can perform in the wrong order is a fix that will
+  eventually be performed in the wrong order.
+
 ## R13: a result must claim only what the server knows
 
 `board` appended "Shown to the human in the board panel." to every result. It

@@ -330,6 +330,16 @@ func configHome() string {
 // writeUnit refuses to clobber. An operator who hand-tuned a unit: a different
 // port, an environment variable, a resource limit: should not lose it to a
 // command that reads as idempotent.
+// replaceUnits lets `dibs upgrade` rewrite a unit that already exists.
+//
+// Off for `dibs configure --service`, where refusing is right: that command is
+// how a unit is first installed, and silently overwriting one an operator had
+// tuned would be the surprise. Upgrade is the opposite case. It is repointing a
+// unit whose pinned daemon or data directory has moved, so the existing file is
+// precisely what is wrong, and refusing there leaves a stopped daemon and a
+// service that starts against a path that is gone.
+var replaceUnits bool
+
 func writeUnit(target, body string) error {
 	// target is built in this file from the process's own HOME (or
 	// XDG_CONFIG_HOME) plus a fixed filename. No caller-supplied path reaches
@@ -340,9 +350,21 @@ func writeUnit(target, body string) error {
 	if err := os.MkdirAll(parent, 0o750); err != nil { // #nosec G703
 		return err
 	}
-	if _, err := os.Stat(target); err == nil { // #nosec G703
+	if _, err := os.Stat(target); err == nil && !replaceUnits { // #nosec G703
 		return fmt.Errorf("%s already exists: delete it first if you want a fresh one, "+
 			"or edit it in place; refusing to overwrite a unit you may have tuned", target)
+	}
+	if replaceUnits {
+		// Keep the old one. This path is reached only from `dibs upgrade`, which
+		// is repointing a unit at a daemon or a directory that MOVED, and an
+		// operator who had tuned that file (an EnvironmentVariables block, a
+		// nice level) should get it back rather than discover the tuning gone.
+		// Best-effort: a unit that cannot be copied is still one worth
+		// rewriting, because the alternative is a service pinned to a path that
+		// no longer exists.
+		if body, err := os.ReadFile(target); err == nil { // #nosec G304,G703
+			_ = os.WriteFile(target+".replaced", body, 0o600) // #nosec G306,G703
+		}
 	}
 	// #nosec G306,G703 -- a unit file the init system must be able to read, at a
 	// path built from HOME and a fixed filename.

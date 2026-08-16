@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/blobstore"
+	"github.com/agenxy/dibs/internal/build"
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/ledger"
@@ -64,6 +65,10 @@ func run() error {
 		addr = flag.String("addr", "",
 			"listen address (override; default 127.0.0.1:4777: set a tailnet/LAN IP to serve "+
 				"remote agents. TLS is handled automatically; see <dir>/dibs.toml to tune anything)")
+		// The one question an upgrade has to answer BEFORE it stops anything.
+		check = flag.Bool("check", false,
+			"replay the board at -dir and exit, without serving: answers whether THIS build "+
+				"could take over from the daemon now running. `dibs upgrade` runs it first")
 	)
 	scorer := registerScorerFlags()
 	flag.Parse()
@@ -83,6 +88,12 @@ func run() error {
 	cfg, err := loadConfig(*dir)
 	if err != nil {
 		return fmt.Errorf("reading %s/dibs.toml: %w", *dir, err)
+	}
+	// Before the host slot, the listener, and anything else with a side effect.
+	// The whole value of this mode is that it can run against a board a
+	// different daemon is currently serving.
+	if *check {
+		return checkReplay(*dir, cfg)
 	}
 	// DIBS_ADDR sits between the flag and the config file, because the CLI
 	// already honours it and a daemon that ignored it silently bound the
@@ -505,4 +516,67 @@ func retiredVocabulary(ledgerPath string) string {
 		}
 	}
 	return ""
+}
+
+// checkReplay answers "could this build take over this board", and answers it
+// while the board is still being served by somebody else.
+//
+// It exists because the two ways a Dibs upgrade goes wrong are both invisible
+// until the new daemon starts, and by then the old one has been stopped. A rule
+// added to core.Apply instead of core.Admit is retroactive, so the fold refuses
+// records an older build wrote and accepted; a retired op VOCABULARY does the
+// same at a different layer. Either one turns an upgrade into a board that will
+// not open, on a machine whose whole fleet was coordinating through it minutes
+// earlier. Both have happened here.
+//
+// Running the check from the NEW binary is the point. `dibs` links its own copy
+// of core and could fold the ledger itself, but that measures the CLI's build,
+// and the binary the service is about to start is exactly the thing in doubt.
+//
+// Read-only in the sense that matters: no host slot (so it never collides with
+// the running daemon), no listener, no ops, and nothing appended. It opens the
+// ledger and the key because folding requires decrypting, and those files
+// already exist for any board worth checking.
+func checkReplay(dir string, cfg Config) error {
+	if _, err := os.Stat(filepath.Join(dir, "ledger.jsonl")); err != nil {
+		return fmt.Errorf("no board at %s: there is nothing to check", dir)
+	}
+	nodeID, err := loadOrCreateNodeID(filepath.Join(dir, "node_id"))
+	if err != nil {
+		return err
+	}
+	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
+	if err != nil {
+		return err
+	}
+	// Same order as run(): a retired vocabulary folds "successfully" into a
+	// board that disagrees with its own records, so it has to be caught first
+	// or the check passes on exactly the upgrade it exists to stop.
+	if old := oldVocabularyFailure(dir); old != nil {
+		return old
+	}
+	led, err := ledger.Open(filepath.Join(dir, "ledger.jsonl"), nodeID, box)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = led.Close() }()
+	limits, err := cfg.Limits.apply(core.DefaultLimits())
+	if err != nil {
+		return fmt.Errorf("reading %s/dibs.toml: %w", dir, err)
+	}
+	st := core.NewState(nodeID, limits)
+	start := time.Now()
+	n, err := led.Replay(st)
+	if err != nil {
+		return fmt.Errorf("this build cannot rebuild the board at %s: %w\n\n"+
+			"  Record %d will not apply. Do NOT stop the daemon now running: it is\n"+
+			"  serving a board this binary could not reconstruct, and stopping it is\n"+
+			"  what makes that unrecoverable.\n\n"+
+			"  Stay on the running build, and report this with `dibs verify %s`",
+			dir, err, st.Serial+1, dir)
+	}
+	fmt.Printf("ok: %s replays %d record(s) to serial %d in %s (%d agent(s), %d space(s))\n",
+		build.Version, n, st.Serial, time.Since(start).Round(time.Microsecond),
+		len(st.Agents), len(st.Spaces))
+	return nil
 }

@@ -1,0 +1,93 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// "too old to be asked" and "asked, and the answer was no" are opposite facts
+// that arrive identically: a non-zero exit with output on stderr. Only one of
+// them means the board is in trouble, and telling an operator the wrong one
+// during an upgrade is how a healthy fleet gets treated as a broken one. The
+// first real run of `dibs upgrade` did exactly that.
+func TestAnOldDaemonIsNotReportedAsAnUnrebuildableBoard(t *testing.T) {
+	old := []byte("flag provided but not defined: -check\nUsage of /usr/local/bin/dibd:\n  -addr string")
+	if !tooOldForCheck(old) {
+		t.Error("a daemon predating -check was read as a failed check")
+	}
+	// The shape the check itself fails with: it names the board, not the flag.
+	failed := []byte("this build cannot rebuild the board at /Users/x/.dibs: " +
+		"replay apply serial 416: E_AGENT_CLOSED")
+	if tooOldForCheck(failed) {
+		t.Error("a genuine replay failure was excused as an old binary, which would " +
+			"let the upgrade proceed onto a daemon that cannot serve the board")
+	}
+}
+
+// An unknown argument is a misunderstanding about a command that restarts a
+// daemon a fleet is talking to. `dibs stop --help` once performed the stop;
+// this one refuses rather than guessing, and refuses before anything runs.
+func TestUpgradeRefusesArgumentsItDoesNotUnderstand(t *testing.T) {
+	err := upgradeCmd([]string{"--force"})
+	if err == nil {
+		t.Fatal("an unrecognised flag was accepted by a command that restarts the daemon")
+	}
+	if !strings.Contains(err.Error(), "--force") {
+		t.Errorf("err = %v: it does not name the argument it refused", err)
+	}
+	// And help is help, whatever else was typed alongside it.
+	if err := upgradeCmd([]string{"--help"}); err != nil {
+		t.Errorf("--help returned %v", err)
+	}
+}
+
+// The adopted name sits BESIDE the inherited directory, never inside it.
+// Renaming ~/.agents to ~/.agents/.dibs would move a directory into itself.
+func TestTheAdoptedDirectoryIsASiblingNotAChild(t *testing.T) {
+	got := adoptedName("/Users/x/.agents")
+	if want := "/Users/x/.dibs"; got != want {
+		t.Errorf("adoptedName = %q, want %q", got, want)
+	}
+	if strings.HasPrefix(got, "/Users/x/.agents"+string(filepath.Separator)) {
+		t.Error("the target is inside the directory being moved")
+	}
+}
+
+// A service manager reporting success is not a daemon that is serving.
+//
+// `launchctl kickstart` exits 0 having merely SCHEDULED a spawn, and launchd
+// reads a plist at LOAD time: rewriting the file changes nothing it knows, so
+// it schedules the OLD program, which may not exist. Measured on a live board,
+// where the plist on disk named the new daemon while `launchctl print` showed
+// `program = ~/go/bin/dibd` and `active count = 0`, and the board stayed down.
+//
+// Two rules came out of that, and this pins the one a refactor would quietly
+// undo: the daemon is not considered restored until the BOARD answers, so the
+// recovery still fires when the start reported success and produced nothing.
+func TestARestartIsNotBelievedUntilTheBoardAnswers(t *testing.T) {
+	src, err := os.ReadFile("upgrade.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(src)
+	verify := strings.Index(body, "if err := p.verify(newDir); err != nil {")
+	restored := strings.Index(body, "\trestored = true\n")
+	if verify < 0 || restored < 0 {
+		t.Fatal("cutover no longer verifies the board or no longer marks the restart " +
+			"restored: re-read this test's reasoning before changing it")
+	}
+	if restored < verify {
+		t.Error("`restored = true` runs before the board is verified, so a start that " +
+			"reported success and served nothing would leave the fleet with no daemon " +
+			"and the recovery disabled: exactly the failure measured on a live board")
+	}
+	// And the unit is reloaded unconditionally, not only when this command
+	// rewrote it: a plist edited by hand, or by an earlier run that then
+	// failed, drifts the same way and presents identically.
+	if !strings.Contains(body, "func restartUnit(unit string) error {") ||
+		!strings.Contains(body, "if err := reloadUnit(unit); err != nil {") {
+		t.Error("restartUnit no longer reloads the unit before restarting it")
+	}
+}
