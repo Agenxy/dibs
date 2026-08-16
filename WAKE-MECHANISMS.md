@@ -92,6 +92,29 @@ continues a turn that a wake already continued. Without it, unread mail an agent
 has not dealt with would extend every turn until the eight-continuation cap,
 which is the loop this mechanism must never become.
 
+### The knob, and why the default is not `all`
+
+An unattended fleet is the case the default gets wrong. A queued message reaches
+an agent at its next activation, and an agent nobody prompts may not have one
+for hours, so on a machine running without a person the queue is where mail
+waits. That is an operator's judgement about their own fleet, not something a
+default can know:
+
+```toml
+[wake]
+extend_turn_for = "urgent"   # default: only work somebody is waiting on
+# extend_turn_for = "all"    # anything unread; for a fleet with no human at it
+# extend_turn_for = "none"   # never extend a turn; systemMessage and `waiting` only
+```
+
+`urgent` is the default because the alternative is coercive by construction and
+the cost of waiting is bounded: a notify is, by the sender's own choice of type,
+the grade that expects no reply.
+
+The loop guard is not part of the policy. `stop_hook_active` means this turn is
+already running because a wake continued it, and continuing again is a loop
+whatever the operator prefers.
+
 The human is told either way. `systemMessage` goes to the person on every poll
 with news, whatever was decided about the model, because *"your agent has mail
 it is not stopping for"* is exactly what an operator wants to know and it

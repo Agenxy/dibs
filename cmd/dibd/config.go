@@ -34,6 +34,37 @@ type Config struct {
 	Limits            LimitsConfig      `toml:"limits"`             // coordination timings
 	Supervise         liveness.Settings `toml:"supervise"`          // stalled-subagent detection
 	Roles             RolesConfig       `toml:"roles"`              // standing coordinator/admin agents
+	Wake              WakeConfig        `toml:"wake"`               // which news may extend an agent's turn
+}
+
+// WakeConfig is the [wake] table.
+//
+// One key, because there is one real decision: an FYI arriving at the end of a
+// turn either extends that turn or waits for the next activation. The default
+// waits, because extending a finished turn to hand an agent something nobody is
+// waiting on is Dibs driving a harness.
+//
+// `all` exists for an UNATTENDED fleet. A queued message reaches an agent at
+// its next activation, and an agent nobody prompts may not have one for hours,
+// so on a machine running without a person the queue is where mail waits. That
+// is an operator's call about their own fleet, not something a default can know.
+type WakeConfig struct {
+	// ExtendTurnFor is "urgent" (default), "all", or "none".
+	ExtendTurnFor string `toml:"extend_turn_for"`
+}
+
+// policy validates the setting and returns it.
+func (w WakeConfig) policy() (engine.WakePhase, error) {
+	switch w.ExtendTurnFor {
+	case "":
+		return engine.WakeUrgent, nil
+	case string(engine.WakeUrgent), string(engine.WakeAll), string(engine.WakeNone):
+		return engine.WakePhase(w.ExtendTurnFor), nil
+	default:
+		return "", fmt.Errorf("[wake] extend_turn_for = %q: use \"urgent\" (only work "+
+			"somebody is waiting on), \"all\" (anything unread, for an unattended fleet) "+
+			"or \"none\"", w.ExtendTurnFor)
+	}
 }
 
 // LimitsConfig is the [limits] table: the timings an operator's fleet actually

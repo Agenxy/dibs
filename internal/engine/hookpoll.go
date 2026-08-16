@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -84,7 +85,7 @@ func (e *Engine) HookPoll(ctx context.Context, sessionID, event, cwd string, sto
 		// content: the same rule the digest follows.
 		out["systemMessage"] = humanNotice(l.ID, mail, announced, notices)
 		// And the model's copy, only when it is worth extending a turn for.
-		if deliverToModel(event, e.somebodyIsWaiting(l.ID) ||
+		if e.deliverToModel(event, e.somebodyIsWaiting(l.ID) ||
 			len(announced) > 0 || len(notices) > 0, stopActive) {
 			out["hookSpecificOutput"] = map[string]any{
 				"hookEventName":     event,
@@ -345,16 +346,58 @@ func humanNotice(agent string, mail, announced, notices []string) string {
 //
 // Every other event is already a boundary. UserPromptSubmit and SessionStart
 // interrupt nothing, so everything is delivered there.
-func deliverToModel(event string, urgent, stopActive bool) bool {
+func (e *Engine) deliverToModel(event string, urgent, stopActive bool) bool {
 	switch event {
 	case "Stop", "SubagentStop":
 		// Never twice in a row. stop_hook_active means this turn is ALREADY
 		// running because a stop hook continued it, and continuing again on the
-		// same unread mail is how a wake becomes a loop.
-		return urgent && !stopActive
+		// same unread mail is how a wake becomes a loop. This one is not
+		// configurable: it is a loop guard, not a preference.
+		if stopActive || e.WakePolicy() == WakeNone {
+			return false
+		}
+		return urgent || e.WakePolicy() == WakeAll
 	default:
 		return true
 	}
+}
+
+// WakePhase is which news may extend a turn.
+type WakePhase string
+
+const (
+	// WakeUrgent is the default: only work somebody is waiting on.
+	WakeUrgent WakePhase = "urgent"
+	// WakeAll extends a turn for anything unread, including an FYI.
+	//
+	// For an UNATTENDED fleet, where nobody types and there may be no next
+	// activation for hours. A queued notify reaches an agent at its next
+	// activation, and an agent nobody prompts does not have one, so on a
+	// machine running without a person the queue is where mail goes to wait.
+	// The cost is the one this default exists to avoid: an FYI extends a turn
+	// that had finished.
+	WakeAll WakePhase = "all"
+	// WakeNone never extends a turn. For an operator who wants Dibs to be
+	// strictly pull-shaped, with the systemMessage and the `waiting` line as
+	// the only signals.
+	WakeNone WakePhase = "none"
+)
+
+// WakePolicy reports which news is allowed to extend a turn.
+func (e *Engine) WakePolicy() WakePhase {
+	e.wake.mu.RLock()
+	defer e.wake.mu.RUnlock()
+	if e.wake.policy == "" {
+		return WakeUrgent
+	}
+	return e.wake.policy
+}
+
+// SetWakePolicy applies the operator's `[wake] extend_turn_for` setting.
+func (e *Engine) SetWakePolicy(p WakePhase) {
+	e.wake.mu.Lock()
+	defer e.wake.mu.Unlock()
+	e.wake.policy = p
 }
 
 // somebodyIsWaiting reports whether any unread message expects a response.
@@ -368,4 +411,10 @@ func (e *Engine) somebodyIsWaiting(agent string) bool {
 		}
 	}
 	return false
+}
+
+// wakeState holds the operator's wake policy.
+type wakeState struct {
+	mu     sync.RWMutex
+	policy WakePhase
 }

@@ -205,6 +205,11 @@ func run() error {
 	led.OnEvents = nil // replay is done; live events flow through the engine
 	eng := engine.New(st, led, liveness.New(), history)
 	eng.SetBlobs(bs)
+	wake, err := cfg.Wake.policy()
+	if err != nil {
+		return fmt.Errorf("reading %s/dibs.toml: %w", *dir, err)
+	}
+	eng.SetWakePolicy(wake)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go eng.Run(ctx)

@@ -175,6 +175,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is now passed from the harness and honoured, so a wake never continues a turn
   that a wake already continued. The human is told either way.
 
+- **`[wake] extend_turn_for`** decides which news may extend a turn: `urgent`
+  (default), `all`, or `none`. The default holds an FYI until the agent's next
+  activation, which is right when somebody is at the keyboard and wrong for an
+  unattended fleet, where there may be no next activation for hours. That is an
+  operator's judgement about their own machines. The loop guard is not part of
+  the policy: a wake never continues a turn a wake already continued, whatever
+  the setting.
+
 - **A board-visibility report that could not be reproduced is now guarded
   instead.** `codex-primary` reported that an agent which had just joined was
   absent from their `check_in` snapshot and from the board app. By the time the

@@ -147,3 +147,54 @@ func registerAgent(t *testing.T, e *Engine, name string) string {
 	}
 	return tok
 }
+
+// An unattended fleet can choose to be woken for everything.
+//
+// The default holds an FYI until the agent's next activation, and an agent
+// nobody prompts may not have one for hours: on a machine running without a
+// person, the queue is where mail waits. That is the operator's call about
+// their own fleet, not something a default can know, so it is one config key.
+//
+// The loop guard is NOT part of the policy. stop_hook_active means this turn is
+// already running because a wake continued it, and continuing again is a loop
+// whatever the operator prefers.
+func TestAnUnattendedFleetCanBeWokenForEverything(t *testing.T) {
+	e, id := boardWithAgent(t)
+	ctx := context.Background()
+	sender := registerAgent(t, e, "sender")
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: sender, To: id,
+		MsgType: core.MsgNotify, Body: "an FYI",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false); got["hookSpecificOutput"] != nil {
+		t.Fatal("the default extended a turn for an FYI: this test cannot see what it guards")
+	}
+
+	e.SetWakePolicy(WakeAll)
+	got, err := e.HookPoll(ctx, "sess-"+id, "Stop", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["hookSpecificOutput"] == nil {
+		t.Error("`all` did not deliver an FYI on Stop, so an unattended fleet has no way " +
+			"to be woken by one")
+	}
+	// Still never twice in a row: a preference cannot switch off a loop guard.
+	if again, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", true); again["hookSpecificOutput"] != nil {
+		t.Error("`all` continued a turn that a wake had already continued: the eight-" +
+			"continuation cap is the only thing left stopping the loop")
+	}
+
+	// And `none` is strictly pull-shaped, with the human still told.
+	e.SetWakePolicy(WakeNone)
+	quiet, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false)
+	if quiet["hookSpecificOutput"] != nil {
+		t.Error("`none` still extended a turn")
+	}
+	if quiet["systemMessage"] == nil {
+		t.Error("`none` stopped telling the human, which is not what it means")
+	}
+}

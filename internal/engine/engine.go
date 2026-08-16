@@ -79,6 +79,11 @@ type Engine struct {
 	// it is a cache of a prediction, never the record a join is replayed from.
 	footprints map[string][]core.PredFile
 
+	// wake is the operator's policy for which news may extend an agent's turn.
+	// Guarded because it is read on every lifecycle hook and written once at
+	// startup, from a different goroutine.
+	wake wakeState
+
 	// matchStatus is why matching did or did not do anything, so a declaration
 	// never comes back silently ambiguous. See matchstatus.go.
 	matchStatus matchStatusState
