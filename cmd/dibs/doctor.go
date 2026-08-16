@@ -19,6 +19,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/humanauth"
 	"github.com/agenxy/dibs/internal/liveness"
+	"github.com/agenxy/dibs/internal/notify"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/ui"
 )
@@ -523,6 +524,21 @@ func checkLedgerAndBoard(dir string, ok reportFn, bad, warn fixFn) {
 	default:
 		ok(fmt.Sprintf("ledger chain intact (%d lines)", res.Lines))
 	}
+	// Whether a notification would actually be SEEN, which is not the same as
+	// whether one can be posted.
+	//
+	// Everything reported success while nothing appeared: a coordinator request
+	// was posted, macOS accepted it, an active Focus swallowed the banner, and
+	// the operator asked why they had seen nothing. This is the one path that
+	// exists because the person is not in a loop to notice its absence, so it
+	// must not be the one path that fails quietly.
+	if reaches, why := notify.Reach(); reaches {
+		ok("notifications reach you: a question or request from an agent raises one " +
+			"with buttons on it")
+	} else if why != "" {
+		warn("agents cannot reach you by notification", why)
+	}
+
 	// Two ways in, and this used to report only one of them.
 	//
 	// "no admin password set, so the web board cannot be opened" was a warning

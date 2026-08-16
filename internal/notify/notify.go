@@ -33,6 +33,7 @@ package notify
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"os/exec"
@@ -148,12 +149,47 @@ func Pick(title, body string, choices ...string) (string, error) {
 	if len(choices) == 0 {
 		return "", errors.New("nothing to choose from")
 	}
+	if out, ok := onScreen("--pick", append([]string{title, body}, choices...)...); ok {
+		return out, nil
+	}
 	return run(pick, append([]string{title, body}, choices...)...)
 }
 
 // Prompt asks for free text and returns it, or "" if dismissed.
 func Prompt(title, body string) (string, error) {
+	if out, ok := onScreen("--prompt", title, body); ok {
+		return out, nil
+	}
 	return run(prompt, title, body)
+}
+
+// onScreen runs the half of answering that needs a window, through the bundle.
+//
+// The notification already comes from there, because only that API carries
+// buttons and only a bundle carries an identity. The box that opens when
+// somebody presses "Answer…" did not: it was an osascript `display dialog`, and
+// a background LaunchAgent has no foreground application for a dialog to belong
+// to. Pressing the button dismissed the notification, osascript ran, and nothing
+// appeared. Reported exactly that way: "when I clicked answer it just went away,
+// there was nowhere to put an answer."
+//
+// ok=false means there is no bundle here, and the osascript path is still the
+// fallback: it works from a foreground process and this is a source build.
+func onScreen(mode string, args ...string) (string, bool) {
+	h := helper()
+	if h == "" {
+		return "", false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	// #nosec G204 -- h is resolved beside this binary; mode is a constant and
+	// the rest is argv data the helper never interprets.
+	out, err := exec.CommandContext(ctx, h, append([]string{mode}, args...)...).Output()
+	if err != nil {
+		// Cancelled, or sent empty. Both are "no answer", which is an answer.
+		return "", true
+	}
+	return strings.TrimSpace(string(out)), true
 }
 
 // Available reports whether a person can be reached from here at all, so a
@@ -183,4 +219,96 @@ func run(script string, args ...string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// Reach reports whether a notification raised right now would actually be seen,
+// and says why not when it would not.
+//
+// It exists because every layer reported success while nothing appeared. A
+// coordinator request was posted, macOS accepted it, an active Focus swallowed
+// the banner, and the operator asked why they had seen nothing. Dibs had no way
+// to tell them, and no way to tell an agent that its request had not been shown
+// to anybody: "delivered" and "seen" were the same word.
+//
+// Two things can silence it, and they need different sentences. Authorisation is
+// per bundle AND per signature, so an ad-hoc rebuild silently revokes it: the
+// remedy is a signing identity of Dibs' own. A Focus mode is the person's own
+// choice and is nobody's fault: the remedy is to allow Dibs to break through, or
+// to expect the ask in Notification Center rather than on screen.
+func Reach() (ok bool, why string) {
+	if !Available() {
+		return false, "this platform has no notification route"
+	}
+	h := helper()
+	if h == "" {
+		return false, "Dibs.app is not installed beside the binary, so notifications " +
+			"would be posted by osascript under Script Editor's name, without buttons"
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	// #nosec G204 -- h is resolved beside this binary; --status is a constant.
+	out, err := exec.CommandContext(ctx, h, "--status").Output()
+	switch strings.TrimSpace(string(out)) {
+	case "authorized":
+		// Allowed, which is not the same as visible.
+		if f := focusOn(); f != "" {
+			return false, "a Focus mode is on (" + f + "), which silences notifications. " +
+				"A question or request asks to break through as Time Sensitive; allow " +
+				"that for Dibs in System Settings > Notifications, or expect asks to " +
+				"wait in Notification Center"
+		}
+		return true, ""
+	case "denied":
+		return false, "notifications are turned off for Dibs in System Settings"
+	case "not-determined":
+		return false, "Dibs has never been granted notification permission. macOS ties " +
+			"that grant to the app's SIGNATURE, so an ad-hoc rebuild revokes it: give " +
+			"Dibs a signing identity of its own (see `task install`) or it will keep " +
+			"asking and keep being silent in between"
+	case "alerts-off":
+		return false, "Dibs holds notification permission with every alert style off, " +
+			"so nothing is ever shown"
+	}
+	if err != nil {
+		return false, "the notifier could not be asked: " + err.Error()
+	}
+	return false, "the notifier gave no answer"
+}
+
+// focusOn returns the active Focus mode's identifier, or "".
+//
+// Read from the file macOS keeps rather than asked of an API, because there is
+// no public one: NSUserNotificationCenter never exposed Focus, and Apple's
+// supported answer for an app is to set an interruption level and accept the
+// outcome. That is fine for DELIVERING and useless for DIAGNOSING, and this is
+// the diagnosis path. Missing or unreadable means "no Focus", which is the
+// honest reading: absence of evidence, and it only ever downgrades a warning.
+func focusOn() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	// #nosec G304 -- a fixed path under the user's own home directory.
+	b, err := os.ReadFile(filepath.Join(home, "Library", "DoNotDisturb", "DB", "Assertions.json"))
+	if err != nil {
+		return ""
+	}
+	var doc struct {
+		Data []struct {
+			Records []struct {
+				Details struct {
+					Mode string `json:"assertionDetailsModeIdentifier"`
+				} `json:"assertionDetails"`
+			} `json:"storeAssertionRecords"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(b, &doc) != nil || len(doc.Data) == 0 {
+		return ""
+	}
+	for _, r := range doc.Data[0].Records {
+		if m := r.Details.Mode; m != "" {
+			return strings.TrimPrefix(m, "com.apple.focus.")
+		}
+	}
+	return ""
 }

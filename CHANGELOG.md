@@ -182,6 +182,29 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Pressing "Answer" on a notification now has somewhere to put the answer.**
+  The notification comes from Dibs' application bundle, because only that API
+  carries buttons and only a bundle carries an identity. The text box that
+  opened when somebody pressed Answer did not: it was an osascript
+  `display dialog`, and a background LaunchAgent has no foreground application
+  for a dialog to belong to. So the press dismissed the notification, osascript
+  ran, and nothing appeared. Reported exactly that way: "when I clicked answer
+  it just went away, there was nowhere to put an answer." Both halves of
+  answering now come from the bundle, as a native alert that activates, because
+  stealing focus is correct one gesture after somebody asked for it.
+
+- **Dibs says when it cannot reach you, instead of reporting success into
+  silence.** A coordinator request was posted, macOS accepted it, an active
+  Focus mode swallowed the banner, and every layer reported success: the board
+  said "delivered", the agent waited out its deadline, and the operator asked
+  why they had seen nothing. The notifier's "authorisation refused" exit was
+  also being read as "the human did not answer", so a silenced Dibs and an
+  ignored one were the same value. `dibs doctor` now reports whether a
+  notification would actually be SEEN, naming the cause: a Focus mode, a
+  revoked grant, permission never asked for, or every alert style switched off.
+  A question or request also asks to break through Focus as Time Sensitive,
+  since buttons are the tell that somebody is blocked on the answer.
+
 - **`task install` finds Dibs' own signing identity by name, so the macOS
   permission prompt stops repeating.** macOS keys a Files-and-Folders grant to a
   program's code signature; the Go toolchain signs ad-hoc, so every rebuild is a
