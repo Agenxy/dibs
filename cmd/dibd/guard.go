@@ -308,9 +308,10 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 			}
 			hash := g.adminHash()
 			if hash == "" {
-				http.Error(w, "no admin password set, and this request did not ask for a "+
-					"presence check: run `dibs web`, which uses Touch ID where the machine "+
-					"has it, or `dibs admin set-password` to set one", http.StatusForbidden)
+				http.Error(w, "no admin password is set on this board: run "+
+					"`dibs admin set-password`. (Touch ID opens it without one, but this "+
+					"request did not ask for a presence check, or asked and did not get "+
+					"a person.)", http.StatusForbidden)
 				return
 			}
 			// Throttle wrong-password attempts: the admin password guards all

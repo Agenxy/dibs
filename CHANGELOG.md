@@ -90,11 +90,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
   The password stays, because presence is genuinely absent on Linux, on Macs
   without the sensor, and in a headless session. Declined and unavailable are
-  answered differently, because the remedies are opposite: one is a person
-  saying no and the caller must stop, the other is a machine with nothing to ask
-  with and the caller must offer the password. And a `dibs web` whose stdin is
-  not a terminal never raises a sheet at all, since a script piping a password
-  is telling you it cannot reach a sensor. `dibs web --password` forces it.
+  answered differently by the daemon, because they mean different things to
+  anything calling `/bootstrap`. And a `dibs web` whose stdin is not a terminal
+  never raises a sheet at all, since a script piping a password is telling you
+  it cannot reach a sensor. `dibs web --password` forces it.
+
+  `dibs web` falls back to the password on EVERY presence failure, not just on
+  an unavailable sensor. The tempting rule is to stop on a decline, so that
+  somebody who just said no is not immediately asked for a credential; it is
+  right about a real decline and wrong about everything it cannot be told apart
+  from. The helper reports "declined" for a cancel, a failed match and its own
+  timeout alike, so a sheet that never reached the screen looks exactly like a
+  refusal. That is not hypothetical: on the machine this was written on,
+  `evaluatePolicy` accepted the policy, reported Touch ID present and enrolled,
+  and never called back at all. Stopping there would leave the operator with
+  ninety seconds of nothing and no way in, on the one command whose job is to
+  let them in.
 
 - **`retitle_space`**, so a topic can be redacted without destroying the space.
 

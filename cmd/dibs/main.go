@@ -565,17 +565,29 @@ func webURL(args []string) error {
 	// and says nothing about whether somebody is sitting here.
 	if humanauth.Available() && !*usePassword && atATerminal() {
 		fmt.Fprintln(os.Stderr, "# Confirming it is you, on the system sheet.")
-		switch out, err := mintBoard(s, "", true); {
-		case err == nil:
+		out, err := mintBoard(s, "", true)
+		if err == nil {
 			return printBoardLink(out)
-		case errors.Is(err, errNoPresenceHere):
-			// The machine cannot do it after all: the helper was found and the
-			// sensor was not, or this is a headless session. Fall through and ask
-			// for the password rather than reporting a failure the person cannot
-			// act on.
-		default:
-			return err
 		}
+		// Any failure falls through to the password. This command must not
+		// dead-end.
+		//
+		// The tempting rule is to stop on a decline, on the grounds that somebody
+		// who just said no should not immediately be asked for a credential.
+		// That is right about a real decline and wrong about everything else it
+		// cannot be told apart from: the helper reports "declined" for a cancel,
+		// a failed match, AND for its own timeout, so a sheet that never reached
+		// the screen is indistinguishable from a person refusing one. Measured
+		// on the machine this was written on: evaluatePolicy accepted the policy,
+		// reported Touch ID present, and never called back at all.
+		//
+		// Stopping there would leave the operator with ninety seconds of nothing
+		// and no way in, on a command whose entire job is to let them in. So the
+		// reason is printed, plainly, and the other door is opened. A person who
+		// genuinely meant to cancel can press ctrl-c at the prompt, which costs
+		// them one keystroke; the alternative costs somebody their board.
+		fmt.Fprintf(os.Stderr, "# %v\n# Falling back to the admin password.\n",
+			strings.TrimSpace(err.Error()))
 	}
 	adminPass, err := promptAdminForGodView()
 	if err != nil {
@@ -596,8 +608,13 @@ func atATerminal() bool {
 }
 
 // errNoPresenceHere is the daemon saying this machine cannot check presence at
-// all: distinct from a person declining, because only one of them has a remedy.
-var errNoPresenceHere = errors.New("presence unavailable on this machine")
+// all.
+//
+// The CLI falls back on every failure, so it no longer branches on this, but the
+// distinction is still worth carrying: it is the one presence answer that is not
+// about a person, and it is what the daemon's 412 means to anything else that
+// learns to call /bootstrap.
+var errNoPresenceHere = errors.New("this machine cannot check presence")
 
 type boardGrant struct {
 	BT     string `json:"bt"`
