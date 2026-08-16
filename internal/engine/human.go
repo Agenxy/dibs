@@ -164,6 +164,52 @@ func (e *Engine) HumanAgent(ctx context.Context) (agent, token string, err error
 	return id, tok, nil
 }
 
+// RepairHumanProcess clears a pid recorded against the human by older code.
+//
+// The fix above stops the daemon writing its own pid into a person's row, but
+// it only fixes rows written after it, and the wrong pid is already in the
+// ledger of every board that ran the old build. Nothing heals it on its own:
+// the human's registration is written on an ACTION, so a person who reads their
+// board and closes it is told `process gone` about themselves forever, which is
+// both false and the exact opposite of the honesty the board is for.
+//
+// Gated on the row EXISTING and holding a pid, so it repairs and never
+// registers: a board whose operator has never acted still has no human on it,
+// which is the rule HumanIdentity's comment sets out. Gated on the pid so it is
+// a one-time correction rather than an op every daemon start, which would grow
+// the ledger by a record a day to say nothing.
+func (e *Engine) RepairHumanProcess(ctx context.Context) {
+	e.human.mu.Lock()
+	defer e.human.mu.Unlock()
+	id, ok := e.state.Nonces[humanNonce()]
+	if !ok {
+		return
+	}
+	l := e.state.Agents[id]
+	if l == nil || l.Status == core.StatusArchived || l.PID == 0 {
+		return
+	}
+	// An update, not a registration. Spelling a correction as a register looks
+	// natural and does nothing: register short-circuits a same-nonce retry
+	// inside one TTL and returns the original result without applying the op, so
+	// the repair silently succeeded and changed nothing on exactly the boards
+	// where the row was fresh. Update revises a participant's recorded facts,
+	// which is what this is.
+	//
+	// The description is restated because update takes what it is given: it is
+	// a full statement of what the participant says about itself, and omitting
+	// it clears it.
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpUpdate, Token: l.Token,
+		Description: "the human at the board",
+		NoProcess:   true,
+	}); err != nil {
+		// Not fatal and not worth failing a boot over: the board is wrong in one
+		// row until the operator next acts, which is where it was before.
+		slog.Warn("could not clear the stale pid on the human's row", "agent", id, "err", err)
+	}
+}
+
 // HumanTouch refreshes the human's liveness without writing anything.
 //
 // A person reading the board is present in every sense that matters, but they

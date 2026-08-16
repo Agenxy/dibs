@@ -105,6 +105,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   why it needed a field: omitting one means "unchanged", so nothing could ever
   clear a pid recorded earlier.
 
+  Boards that already ran the old build heal themselves at the next daemon
+  start, because nothing else would: the human's registration is rewritten only
+  when they ACT, so an operator who reads their board and closes it would be
+  told `process gone` about themselves indefinitely. The repair is an `update`
+  rather than a re-registration, which is a distinction that cost a debugging
+  round: `register` short-circuits a same-nonce retry inside one TTL and returns
+  the original result WITHOUT applying the op, which is right for a retried
+  registration and silently a no-op for a correction spelled as one. It fires
+  only on a board that already has a human, and only while a pid is recorded, so
+  it repairs rather than recruits and does not append a record a day to say
+  nothing.
+
 - **The wire-format guard was checking a third of the wire format.** Renaming an
   op's json tag is silent data loss here (`lane_kind` → `agent_kind` demoted
   every persistent agent on upgrade, in every release to v0.0.4), and

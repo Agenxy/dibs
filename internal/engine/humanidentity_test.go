@@ -62,3 +62,79 @@ func TestAnUnusedBoardHasNoHuman(t *testing.T) {
 			"put somebody on the roster", got)
 	}
 }
+
+// A person is not a process, and a row that says otherwise must heal itself.
+//
+// The human's registration used to carry `os.Getpid()`: the DAEMON's pid, which
+// is alive at the instant it is written and gone by the next start. The liveness
+// sweep then probed a dead process and honestly reported the operator as
+// `process gone`, on their own board, forever.
+//
+// Writing no pid fixes the rows written afterwards and nothing else. The bad pid
+// is in the ledger of every board that ran the old build, and the human's
+// registration is only rewritten when they ACT, so an operator who reads the
+// board and closes it is never repaired.
+//
+// This registers WITH a pid on purpose, which is what the old code did, and
+// requires the repair to clear it. Run it against the commit before the repair
+// and it fails on the last check, which is the only reason to trust it.
+func TestAPidRecordedAgainstTheHumanIsCleared(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	// Exactly the op the old build wrote, pid and all.
+	res, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: humanName(),
+		Description: "the human at the board",
+		AgentKind:   core.KindPersistent,
+		Nonce:       humanNonce(),
+		SessionID:   humanNonce(),
+		PID:         4242,
+	})
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	id, _ := res["agent_id"].(string)
+	if id == "" {
+		t.Fatal("setup: registering the human returned no id")
+	}
+	if st.Agents[id].PID != 4242 {
+		t.Fatalf("setup: the pid did not land, so this test cannot show it being "+
+			"cleared: PID = %d", st.Agents[id].PID)
+	}
+
+	e.RepairHumanProcess(ctx)
+
+	if got := st.Agents[id].PID; got != 0 {
+		t.Errorf("the human's row still records pid %d after the repair. The liveness "+
+			"sweep probes it, finds nothing, and reports the person at the keyboard as "+
+			"a dead process on their own board", got)
+	}
+}
+
+// The repair repairs; it must not recruit.
+//
+// It runs at every daemon start, and a board whose operator has never acted has
+// no human on it deliberately: reading the board makes nobody a participant.
+// A repair that registered one would put a permanent row, a mailbox and a
+// liveness lease on every board that was ever merely opened.
+func TestTheRepairDoesNotMintAHuman(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	e.RepairHumanProcess(ctx)
+
+	if got := e.HumanIdentity(); got != "" {
+		t.Errorf("HumanIdentity = %q after the repair ran on an unused board: it "+
+			"registered somebody rather than repairing somebody", got)
+	}
+	if n := len(st.Agents); n != 0 {
+		t.Errorf("the board has %d agent(s) after repairing a board with none", n)
+	}
+}

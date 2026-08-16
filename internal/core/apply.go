@@ -952,6 +952,18 @@ func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
 	if op.Agent != nil {
 		res["identity"] = l.mergeIdentity(op.Agent)
 	}
+	// A participant that HAS no process says so, which is the only way to clear
+	// a pid recorded earlier: omitting one means "unchanged", so the register
+	// path cannot express this at all. It is also the only path that reliably
+	// can, because register short-circuits a same-nonce retry inside one TTL and
+	// returns the original result without applying anything: correct for a
+	// retried registration, and silently a no-op for a correction spelled as
+	// one. Asked for by the human's row, which recorded the DAEMON's pid and so
+	// reported the operator as a dead process after every restart.
+	if op.NoProcess {
+		l.PID, l.ProcStart = 0, 0
+		res["process"] = "no process recorded: liveness is silence from here on"
+	}
 	res["name"], res["description"] = l.Name, l.Description
 	return res, []Event{{Type: "agent.updated", Agent: l.ID}}, nil
 }

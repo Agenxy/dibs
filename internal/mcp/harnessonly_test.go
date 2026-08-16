@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 )
@@ -78,4 +79,30 @@ func TestToolListingStaysAffordable(t *testing.T) {
 	}
 	t.Logf("tools/list: %d tools, %d chars (~%d tokens), %d chars/tool",
 		len(agentTools), len(b), len(b)/4, len(b)/len(agentTools))
+}
+
+// `no_process` is the daemon's word about a participant, never an agent's about
+// itself.
+//
+// It clears a recorded pid. A pid is what crash detection probes: with one, an
+// agent's lease lapses after agent_ttl (5m by default) and a dead process is
+// noticed almost immediately; without one, silence is the only evidence and it
+// has idle_ttl (45m). An agent that could send this could therefore shed crash
+// detection and hold its claims for nine times as long by saying it has no
+// process while running as one.
+//
+// It exists because a person genuinely has no process, and the daemon knows
+// which row is the person's. That is the whole of its legitimate use. This
+// fails the moment a tool declares it, which is the shape of change that would
+// otherwise arrive as a plausible-looking convenience.
+func TestNoToolLetsAnAgentSayItHasNoProcess(t *testing.T) {
+	b, err := json.Marshal(map[string]any{"tools": agentTools})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(b, []byte("no_process")) {
+		t.Error("a tool declares `no_process`: an agent can now clear its own pid and " +
+			"stop being probed for crashes while still running as a process. It is the " +
+			"daemon's statement about a participant that has none, not a parameter")
+	}
 }

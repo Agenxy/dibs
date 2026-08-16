@@ -244,6 +244,10 @@ func run() error {
 	// Roles the operator declared. On the admin path, because the daemon IS the
 	// admin path: an agent still cannot promote itself.
 	keepDeclaredRolesApplied(ctx, eng, cfg.Roles)
+	// Clears a pid an older build recorded against the operator's own row, which
+	// made every restart report them as a dead process. One op, once, and only
+	// on a board that already has a human on it.
+	eng.RepairHumanProcess(ctx)
 	// After declared roles are applied, so a board configured with a coordinator
 	// is not offered a claim it does not need.
 	installCoordinatorClaim(eng, *dir, st.HasCoordinator())
