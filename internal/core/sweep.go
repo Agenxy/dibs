@@ -384,6 +384,16 @@ func (s *State) Board() map[string]any {
 		// reader and the model both pay for and neither uses.
 		if l.Role != "" && l.Role != RoleMember {
 			lm["role"] = l.Role
+			// Whether that role is held by somebody who can come back.
+			//
+			// An agent registered with neither a nonce nor a session id cannot
+			// be reattached by anyone, ever, and a ROLE held by such an agent is
+			// a power the board says is filled and nobody can use. Shown only
+			// for roles, because that is where it changes what a reader should
+			// do; it names no credential, only whether one exists.
+			if l.Nonce == "" && l.SessionID == "" {
+				lm["unreachable"] = true
+			}
 		}
 		// Why it stopped counting as live. Without this the board says "out of
 		// touch" beside a last-contact time of "now" and leaves the reader to

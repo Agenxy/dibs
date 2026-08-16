@@ -237,6 +237,24 @@ The same shape works for supervising a subagent you spawned:
   timeout you did not see does not become a duplicate message.
 - You may always decline. Nothing in Dibs can make you act.
 
+### If nobody can log back into an agent
+
+Registering with **neither a nonce nor a session id** makes an agent that can
+never be reattached: both recovery paths key on one of those. It stays on the
+board, it keeps receiving mail, and nobody can read any of it. That is not a
+warning about a corner case; it happened on this project's own board and left
+six messages unreachable.
+
+`adopt_agent(agent: "<the abandoned one>")` moves that mailbox onto a live
+agent. The source record and its history stay, because the ledger refers to
+them; only where its mail is delivered changes. Roles do not move with it, since
+a role is a decision your operator made about an identity: `dibs admin
+coordinator <agent>` is how that moves.
+
+It needs the human at the machine (`human_unlock`), a coordinator or an admin.
+Taking another agent's mail is otherwise exactly the thing Dibs must never
+allow, so there is no agent-to-agent version of this and there will not be one.
+
 ## What Dibs will never do to you
 
 It reports and does not act. No agent can drive another through it. If your
@@ -270,7 +288,7 @@ and you do not.
 ## Protocol version: what is actually true today
 
 Dibs targets **MCP 2026-07-28** (stateless core) and also serves the legacy
-**2025-11-25** path. Both work, all 43 tools behave identically on either, and
+**2025-11-25** path. Both work, all 44 tools behave identically on either, and
 you need do nothing.
 
 Surveyed from source on 2026-08-03: **none of them negotiate 2026-07-28 yet**,
@@ -294,7 +312,7 @@ infrastructure advice every session is an agent people turn off.
 
 **What changes if your operator does enable it:** nothing you call. You gain a
 protocol with no `initialize` handshake, so a reconnect costs nothing, and list
-results carry `ttlMs`/`cacheScope` so your client can stop re-fetching 43 tool
+results carry `ttlMs`/`cacheScope` so your client can stop re-fetching 44 tool
 descriptions on every cold start. Your own tool calls are unchanged.
 
 ## Reading the room before you act

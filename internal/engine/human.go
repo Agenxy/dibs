@@ -193,3 +193,25 @@ func hostname() string {
 	}
 	return h
 }
+
+// mayAdopt reports whether this caller may take over an abandoned mailbox.
+//
+// Three ways, and no fourth. The human proven present at this machine, because
+// the mail is theirs and Touch ID is the one identity here that cannot be
+// asserted. An admin, who can already read every mailbox, so this grants
+// nothing new. A coordinator, whose whole job is clearing debris nobody else
+// can.
+//
+// Not "an agent in the same directory", which is the shape that keeps looking
+// reasonable and is exactly how AgentForHook once handed a stranger somebody
+// else's private mail.
+func (e *Engine) mayAdopt(l *core.Agent) bool {
+	if l.Role == "admin" || l.Role == "coordinator" {
+		return true
+	}
+	e.human.mu.Lock()
+	defer e.human.mu.Unlock()
+	// The human identity is minted by a presence check (Touch ID, or the admin
+	// password where there is no sensor), so holding it IS the proof.
+	return e.human.agent != "" && e.human.agent == l.ID
+}

@@ -66,16 +66,28 @@ func TestRegisterUnderTakenNameWarnsAndNamesTheLostMail(t *testing.T) {
 	if !strings.Contains(warn, "1 message") {
 		t.Errorf("warning must say how much mail is unreachable, got: %s", warn)
 	}
-	// The fix has to be one the caller can actually perform. This used to say
-	// "resume", which is the standing-role path and does nothing for an
-	// ephemeral agent, so the warning correctly identified the problem and then
-	// sent the agent somewhere that could not solve it. Point at the nonce, which
-	// reattaches any kind of agent, and at merge_spaces for an agent that kept none.
+	// The fix has to be one the caller can actually perform, and this warning has
+	// now been wrong about that twice.
+	//
+	// It first said "resume", the standing-role path, which does nothing for an
+	// ephemeral agent: the warning identified the problem correctly and then
+	// sent the agent somewhere that could not solve it. It was changed to
+	// merge_spaces, and THIS TEST pinned that in place, which is the reason it
+	// survived: merge_spaces takes SPACE ids and these are AGENT ids, so
+	// following it fails with E_NO_SPACE. Found by following it on a real board,
+	// at the exact moment six messages became unreachable.
+	//
+	// A test that asserts the presence of a named call is only as good as the
+	// call being right, so read this one before changing the string it guards.
 	if !strings.Contains(warn, "nonce") {
 		t.Errorf("warning must name the credential that reattaches, got: %s", warn)
 	}
-	if !strings.Contains(warn, "merge_spaces") {
+	if !strings.Contains(warn, "adopt_agent") {
 		t.Errorf("warning must offer a route for an agent with no nonce, got: %s", warn)
+	}
+	if strings.Contains(warn, "merge_spaces") {
+		t.Errorf("warning names merge_spaces, which takes SPACE ids: following it on these "+
+			"AGENT ids fails with E_NO_SPACE, got: %s", warn)
 	}
 }
 

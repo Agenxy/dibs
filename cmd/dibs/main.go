@@ -596,8 +596,13 @@ type (
 		// of agents, and a board that will not say which is which answers the
 		// wrong question. Blank for local agents so the common case stays as
 		// quiet as it was.
-		Host  string      `json:"host,omitempty"`
-		Slots []boardSlot `json:"slots"`
+		Host string `json:"host,omitempty"`
+		// Role, and whether whoever holds it can come back. A role held by an
+		// agent nobody can reattach to is a power the board shows as filled and
+		// nobody can use.
+		Role        string      `json:"role,omitempty"`
+		Unreachable bool        `json:"unreachable,omitempty"`
+		Slots       []boardSlot `json:"slots"`
 	}
 	boardClaim struct {
 		Agent   string    `json:"agent"`

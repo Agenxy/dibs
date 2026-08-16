@@ -138,6 +138,14 @@ type Op struct {
 	// Blanked on ingress like AgentID: an agent cannot assert it.
 	ClaimVerified bool `json:"claim_verified,omitempty"`
 
+	// AdoptAuthorised records that the ENGINE checked the caller may take over
+	// an abandoned mailbox: the human proven present at this machine, or an
+	// agent the operator promoted. Same rule as ClaimVerified: an impure
+	// authorisation decision is made once, at ingress, and the VERDICT is
+	// recorded so replay reaches the same answer without re-deciding it. Blanked
+	// on ingress like AgentID, so an agent cannot assert it.
+	AdoptAuthorised bool `json:"adopt_authorised,omitempty"`
+
 	// Actor resolution. Token authenticates (live path); Agent is set by Apply
 	// and used on replay (the engine blanks it on ingress: unforgeable).
 	Token   string `json:"-"`
@@ -263,6 +271,21 @@ const (
 	// it would be applied to ops that older code already accepted. No ledger
 	// anywhere contains this kind, so there is nothing to be retroactive about.
 	OpPruneOwn = "prune_own"
+	// OpAdoptAgent moves an abandoned agent's mail onto a live one.
+	//
+	// An agent that registered with neither a nonce nor a session id cannot be
+	// reattached by anybody, ever: both recovery paths key on one of those. Its
+	// mailbox then keeps accepting mail that no one can read. That is not a
+	// hypothetical: it happened on this project's own board, where six messages
+	// sat unreadable behind an identity nobody could become, and the hint shown
+	// at that exact moment named `merge_spaces`, which takes SPACE ids and would
+	// have failed with E_NO_SPACE.
+	//
+	// Deliberately not an agent-to-agent power. Taking another agent's mail is
+	// the definition of the thing Dibs must never allow, so the caller is
+	// authorised outside the fold (see Op.AdoptAuthorised) by the one party
+	// entitled to decide: the human at the machine, or somebody they promoted.
+	OpAdoptAgent = "adopt_agent"
 	// OpClaimCoordinator is the bootstrap: the agent that started this daemon
 	// takes the coordinator role by presenting a secret only the daemon's own
 	// data directory holds.
@@ -381,6 +404,8 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		return s.applyClaimCoordinator(op, l, now)
 	case OpPruneOwn:
 		return s.applyPruneOwn(op, l, now)
+	case OpAdoptAgent:
+		return s.applyAdoptAgent(op, l, now)
 	case OpSignOff:
 		res, evs = s.applyClose(l, now)
 	case OpHeartbeat: // unreachable when sleeping (wake precedes); no-op
@@ -818,11 +843,19 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 		if n := len(s.Inbox(sib.ID)); n > 0 {
 			msg += " It is holding " + itoa(n) + " message(s) you cannot read."
 		}
+		// The corrective call has to be one that EXISTS.
+		//
+		// This said "ask a coordinator to merge_spaces <new> into <old>", which
+		// is lane-era residue: merge_spaces takes SPACE ids and these are AGENT
+		// ids, so following it fails with E_NO_SPACE. It was printed at the one
+		// moment mail becomes unreachable, which is the worst place in the
+		// product for a hint to be wrong, and it was found by following it.
 		res["name_taken"] = msg + " If you ARE that agent returning, you can still get back in:" +
 			" register again with the same name and the nonce you kept, and you reattach to it" +
-			" instead of forking. If you kept no nonce, that agent is only reachable with its" +
-			" session_id: ask a coordinator to merge_spaces " + id + " into " + sib.ID +
-			", which moves this agent's mail and slots onto that one."
+			" instead of forking. If you kept no nonce and no session_id, nobody can become it" +
+			" again: its mail is recovered instead with adopt_agent(agent: \"" + sib.ID +
+			"\"), which moves that mailbox onto a live agent and needs the human at this" +
+			" machine (human_unlock) or a coordinator."
 	}
 	return res, evs, nil
 }
@@ -1779,4 +1812,68 @@ func (s *State) boardAtNextSerial() map[string]any {
 	b := s.Board()
 	b["serial"] = s.Serial + 1
 	return b
+}
+
+// applyAdoptAgent moves an abandoned agent's mail onto a live one.
+//
+// "Abandoned" is a state, not an opinion: the source must not be active. An
+// active agent is reading its own mail, and moving it would be theft dressed as
+// recovery. Everything else about the source is left alone, including its
+// record and its history, because the ledger refers to it and a board that
+// erased the origin of six messages would be lying about where they came from.
+//
+// The role is NOT transferred. A role is a decision the operator made about an
+// identity, and quietly carrying "coordinator" across on the strength of a
+// mailbox recovery would grant a power nobody granted: `dibs admin coordinator`
+// exists and is one command.
+func (s *State) applyAdoptAgent(op *Op, l *Agent, now time.Time) (Result, []Event, error) {
+	if !op.AdoptAuthorised {
+		return nil, nil, errf("E_NOT_PERMITTED",
+			"adopting another agent's mailbox is the human's call: unlock as yourself with "+
+				"human_unlock, or ask them to promote you with `dibs admin coordinator <you>`",
+			"adopt_agent requires the human at this machine, or a coordinator or admin")
+	}
+	from := s.Agents[op.To]
+	if from == nil {
+		return nil, nil, errf("E_NO_AGENT", "check the id on the board", "no agent %q", op.To)
+	}
+	into := l
+	if op.Space != "" { // adopting on somebody else's behalf
+		if into = s.Agents[op.Space]; into == nil {
+			return nil, nil, errf("E_NO_AGENT", "check the id on the board", "no agent %q", op.Space)
+		}
+	}
+	if from.ID == into.ID {
+		return nil, nil, errf("E_BAD_TARGET", "name the abandoned agent, not the one adopting it",
+			"an agent cannot adopt itself")
+	}
+	if from.Status == StatusActive {
+		return nil, nil, errf("E_AGENT_ACTIVE",
+			"an active agent is reading its own mail; there is nothing abandoned to recover",
+			"agent %q is still active", from.ID)
+	}
+	if into.Status == StatusClosed || into.Status == StatusArchived {
+		return nil, nil, errf("E_AGENT_CLOSED",
+			"adopt into an agent that can still read: a retired one receives nothing",
+			"agent %q is retired", into.ID)
+	}
+	var moved int
+	for _, m := range s.Messages {
+		if m.To != from.ID {
+			continue
+		}
+		m.To = into.ID
+		moved++
+	}
+	evs := []Event{{
+		Type: "agent.updated", Agent: into.ID,
+		Data: map[string]any{"adopted_from": from.ID, "messages": moved},
+	}}
+	serial := s.finish(&evs, now)
+	return Result{
+		"ok": true, "from": from.ID, "into": into.ID, "messages": moved,
+		"note": "read them with inbox. The source agent still exists and keeps its history: " +
+			"only where its mail is delivered has changed",
+		"serial": serial,
+	}, evs, nil
 }

@@ -51,10 +51,9 @@ var toolDefs = func() []map[string]any {
 				"with it. kind 'persistent' is for standing roles that sleep and return via resume.",
 			"inputSchema": obj(map[string]any{
 				"name": str("WHO YOU ARE: a stable name others address mail to ('reviewer', " +
-					"'codex-1'). NOT what you are doing: 'refactor-auth' is a task, and mail addressed " +
-					"to a task reads as nonsense; work goes in declare. Name yourself for the ROLE you " +
-					"hold, not for your model or harness, which are already shown beside it. You can " +
-					"change it later with update"),
+					"'codex-1'), never what you are doing: mail addressed to 'refactor-auth' " +
+					"reads as nonsense, and work goes in declare. Name yourself for the ROLE " +
+					"you hold, not your model or harness. update() changes it later"),
 				"description": str("one line on your standing purpose, e.g. 'reviewing PRs for the release'"),
 				"pid":         num("your process id, for crash detection (optional)"),
 				"kind": map[string]any{"type": "string", "enum": []string{"ephemeral", "persistent"}, "description": "ephemeral " +
@@ -62,14 +61,14 @@ var toolDefs = func() []map[string]any {
 				"nonce": str("random id >=128-bit that YOU generate: a secret, and KEEP IT. Required " +
 					"for persistent agents, advised for all: same name + same nonce = the same agent, " +
 					"with its mail, after your harness restarts"),
-				"session_id": str("your harness session id, if you know it: lets lifecycle hooks find " +
-					"your mailbox. Filled in for you when omitted and echoed back; it names the harness " +
-					"process, so it dies with it. Use a nonce to survive that"),
+				"session_id": str("your harness session id: lets lifecycle hooks find your " +
+					"mailbox, so mail is pushed to you rather than polled for. Filled in for " +
+					"you when omitted; it names the harness process, so it dies with it"),
 				"parent": str("the agent that spawned you, if you are a subagent. Pass `parent_nonce` " +
 					"too: without one, naming a parent grants nothing, because anyone can type any name"),
-				"parent_nonce": str("the one-time secret your parent issued via vouch_child. Proves the " +
-					"lineage `parent` claims: with it you speak under your parent's agent membership, " +
-					"skip an exclusive space's queue, and are exempt from its claims in the guard"),
+				"parent_nonce": str("the one-time secret your parent issued via vouch_child. " +
+					"Proves the lineage `parent` claims: with it you speak under your parent's " +
+					"memberships, skip an exclusive queue, and are exempt from its claims"),
 				"model": str("the model you are, e.g. 'claude-opus-5'. No harness puts this on the " +
 					"wire, so only you can say it"),
 				"provider": str("model provider, e.g. 'anthropic' (optional)"),
@@ -101,13 +100,12 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "check_in",
-			"description": "Acknowledge the board: required once per activation, before declare or " +
-				"claim. Returns one atomic checkpoint: the board, your inbox, your cursor serial, " +
-				"`announcements` you still owe an ack on, and `agent_updates`, anything that " +
-				"happened TO you in a space (admitted, promoted, evicted, merged) since you last " +
-				"checked. Neither is reconstructable after losing context, and this is the " +
-				"authoritative path for both: the wake hook only nudges. Also the recovery call " +
-				"after E_CURSOR_TOO_OLD. Shows the human the board.",
+			"description": "Acknowledge the board: required once per activation, before declare " +
+				"or claim. One atomic checkpoint: the board, your inbox, your cursor serial, " +
+				"`announcements` you owe an ack on, and `agent_updates`, whatever happened TO " +
+				"you in a space (admitted, promoted, evicted, merged) since you last checked. " +
+				"Neither survives losing context, and this is the authoritative path for both: " +
+				"the wake hook only nudges. Also the recovery after E_CURSOR_TOO_OLD.",
 			"inputSchema": obj(map[string]any{"token": tok}, "token"),
 			"_meta": map[string]any{"ui": map[string]any{
 				"resourceUri": uiBoardURI,
@@ -117,10 +115,10 @@ var toolDefs = func() []map[string]any {
 		{
 			"name": "vouch_child",
 			"description": "Vouch for a subagent you are about to spawn: YOU generate a one-time " +
-				"secret, register it here, and hand the same value to the child, which presents it " +
-				"as `parent_nonce`. Only then does naming you as `parent` grant it anything: your " +
-				"space memberships, skipping an exclusive space's queue, and exemption from your " +
-				"own exclusive claims in the guard. Unvouched, a `parent` is ignored.",
+				"secret, register it here, and hand the same value to the child, which presents " +
+				"it as `parent_nonce`. Only then does naming you as `parent` grant anything: " +
+				"your space memberships, skipping an exclusive queue, and exemption from your " +
+				"own claims in the guard. Unvouched, a `parent` is ignored.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"nonce": str("a secret you generate for this one child; hand it to the child, never publish it"),
@@ -158,14 +156,13 @@ var toolDefs = func() []map[string]any {
 			"inputSchema": obj(map[string]any{"token": tok}, "token"),
 		},
 		{
-			"name": "claim_coordinator", "description": "Take the coordinator role, if you are the " +
-				"agent that started this daemon: read `coordinator.claim` from its data directory " +
-				"and pass the contents as `nonce`. It exists only while the board has no " +
-				"coordinator, and the first successful claim consumes it. You must be kind " +
-				"\"persistent\" with a nonce of your own, because the role has to outlive this " +
-				"process: an ephemeral agent would take it away when it signs off, leaving no " +
-				"coordinator and no claim left to make. Coordinator can force_release a stuck " +
-				"claim, close a finished space, and clear other agents' debris.",
+			"name": "claim_coordinator", "description": "Take the coordinator role, if you " +
+				"started this daemon: pass the contents of `coordinator.claim` from its data " +
+				"directory as `nonce`. It exists only while the board has no coordinator, and " +
+				"the first claim consumes it. You must be kind \"persistent\" with a nonce of " +
+				"your own, because the role outlives this process: an ephemeral agent would " +
+				"take it away on sign_off, leaving no coordinator and no claim to make. " +
+				"Coordinator can force_release a claim, close a space, and clear debris.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"nonce": str("the contents of coordinator.claim from the daemon's data directory"),
@@ -207,16 +204,14 @@ var toolDefs = func() []map[string]any {
 					"including ones in unrelated repositories: say what the work IS, not the " +
 					"hostnames, accounts or internal paths it touches"), "refs": map[string]any{
 					"type":  "array",
-					"items": map[string]any{"type": "string"}, "description": "ids this work pursues. " +
-						"Two kinds, and the difference decides what Dibs may do: ids that NAME " +
-						"something (pr:1186, issue:1140, incident:db-down) are the duplicate-work " +
-						"key and can put you in a space automatically; labels like goal:green-main " +
-						"are context only, because two agents can share a goal while dividing the " +
-						"work. Give a real id when one exists; do not invent one. Strongest of all " +
-						"is the `key` a space handed you when you opened or joined it: Dibs issued " +
-						"that itself, so passing it back matches later work to that space exactly " +
-						"instead of guessing from your wording. read_space returns it if you lost " +
-						"it; a key you were never given is ignored",
+					"items": map[string]any{"type": "string"}, "description": "ids this work " +
+						"pursues, and the kind decides what Dibs may do. Ids that NAME something " +
+						"(pr:1186, issue:1140, incident:db-down) are the duplicate-work key and " +
+						"can put you in a space automatically; labels like goal:green-main are " +
+						"context only, since two agents can share a goal while dividing the work. " +
+						"Give a real id when one exists, never an invented one. Strongest is the " +
+						"`key` a space handed you: Dibs issued it, so passing it back matches " +
+						"later work exactly rather than guessing (read_space returns it)",
 				},
 				"dirs": map[string]any{
 					"type": "array", "items": map[string]any{"type": "string"},
@@ -247,8 +242,8 @@ var toolDefs = func() []map[string]any {
 		{
 			"name": "send",
 			"description": "Send a message to another agent. Questions and requests carry a " +
-				"deadline; on expiry you get a diagnosis (alive-but-silent vs dormant vs gone). " +
-				"Pass op_id to make retries safe (same op_id + same content = same message).",
+				"deadline; on expiry you get a diagnosis (alive-but-silent, dormant, gone). " +
+				"Pass op_id to make retries safe: same op_id + same content = one message.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "to": str("recipient agent id"),
 				"type": map[string]any{
@@ -318,14 +313,13 @@ var toolDefs = func() []map[string]any {
 			"inputSchema": obj(map[string]any{"token": tok, "msg_serial": num("serial of the message")}, "token", "msg_serial"),
 		},
 		{
-			"name": "inbox", "description": "Read your mailbox: unhandled messages plus finished ones " +
-				"you have not acknowledged. Marks pending messages delivered. Also returns " +
-				"`announcements` you still owe an ack on (ack_announcement each) and `agent_updates`, " +
-				"anything that happened TO you in a space. Reading either here consumes nothing (only " +
-				"check_in clears agent_updates), so this is how you find what you owe after losing " +
-				"context. A fileref (`path`) carries the sender's unverified claims about size and " +
-				"hash. `truncated_before_serial`: mail below it may have been evicted under retention " +
-				"bounds. Shows the human your mail panel.",
+			"name": "inbox", "description": "Read your mailbox: unhandled messages plus " +
+				"finished ones you have not acknowledged. Marks pending messages delivered. " +
+				"Also returns `announcements` you owe an ack on and `agent_updates`, whatever " +
+				"happened TO you in a space; reading either here consumes nothing, so this is " +
+				"how you find what you owe after losing context. A fileref (`path`) carries the " +
+				"sender's unverified claims. `truncated_before_serial`: mail below it may have " +
+				"been evicted under retention bounds.",
 			"inputSchema": obj(map[string]any{"token": tok}, "token"),
 			"_meta": map[string]any{"ui": map[string]any{
 				"resourceUri": uiBoardURI,
@@ -526,12 +520,12 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "read_space",
-			"description": "Read a space you are a member of or subscribed to: its topic, what was " +
-				"ANNOUNCED and what was POSTED. This is what \"read the space first\" means: call it " +
-				"when you join and again after losing context. It is also the only way to read a " +
-				"post, because the event stream says a post happened and never what it said. Each " +
-				"announcement says whether an ack is OWED by you, already done, or not required " +
-				"(announced before you joined). Reading acknowledges NOTHING: use ack_announcement.",
+			"description": "Read a space you belong to or watch: its topic, what was ANNOUNCED " +
+				"and what was POSTED. This is what \"read the space first\" means: call it when " +
+				"you join and again after losing context. It is the only way to read a post, " +
+				"because the event stream says one happened and never what it said. Each " +
+				"announcement says whether an ack is OWED, done, or not required. Reading " +
+				"acknowledges NOTHING: use ack_announcement.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "space": str("the space id"),
 				"limit": num("most recent N announcements and posts (default 50)"),
@@ -581,17 +575,31 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "human_unlock",
-			"description": "FOR THE HUMAN, from the board panel. Proves a person is at this machine " +
-				"(Touch ID, or the admin password without it) and returns THEIR OWN agent token, so " +
-				"they can post, announce, message or broadcast with the ordinary tools. An agent " +
-				"has no reason to call it: it raises a fingerprint prompt on the human's Mac, which " +
-				"is what makes the identity unforgeable. Returns unlocked:false with a reason if " +
-				"they decline or the machine cannot ask.",
+			"description": "FOR THE HUMAN, from the board panel. Proves a person is at this " +
+				"machine (Touch ID, or the admin password without it) and returns THEIR OWN " +
+				"agent token, so they can post, announce, message or broadcast with the " +
+				"ordinary tools, and adopt_agent an abandoned mailbox. It raises a fingerprint " +
+				"prompt, which is what makes the identity unforgeable. Returns unlocked:false " +
+				"with a reason if they decline or the machine cannot ask.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"note": str("what the human is about to do, shown inside the system prompt " +
 					"so they can see what they are approving"),
 			}, "token"),
+		},
+		{
+			"name": "adopt_agent",
+			"description": "Take over an ABANDONED mailbox: an agent that registered with " +
+				"neither a nonce nor a session id can never be reattached, and its mail keeps " +
+				"arriving where nobody can read it. Moves that mail onto a live agent; the " +
+				"source record and its history stay. Roles do not move (`dibs admin " +
+				"coordinator <agent>`). Needs the human here (human_unlock), a coordinator or " +
+				"an admin: taking another agent's mail is otherwise never allowed.",
+			"inputSchema": obj(map[string]any{
+				"token": tok,
+				"agent": str("the abandoned agent whose mail to take over. Must not be active"),
+				"into":  str("who receives it (default: you)"),
+			}, "token", "agent"),
 		},
 		{
 			"name": "retitle_space",
@@ -624,12 +632,12 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "merge_spaces",
-			"description": "COORDINATOR ONLY. Fold one space into another when the two drifted " +
-				"into the same job. Members, subscribers, outstanding announcements and anyone " +
-				"queued all move across (queued agents are admitted if the destination is open, " +
-				"else keep their place in its queue), everyone moved is told the source is gone, " +
-				"and the source disappears. Human-granted rather than automatic: merging is " +
-				"destructive to context.",
+			"description": "COORDINATOR ONLY. Fold one SPACE into another when the two drifted " +
+				"into the same job. Not for agents: an abandoned mailbox is adopt_agent. " +
+				"Members, subscribers, announcements and anyone queued move across (queued " +
+				"agents are admitted if the destination is open, else keep their place), " +
+				"everyone moved is told the source is gone, and the source disappears. " +
+				"Human-granted, because merging is destructive to context.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "space": str("space id to merge FROM (it disappears)"),
 				"to": str("space id to merge INTO"), "note": str("why"),

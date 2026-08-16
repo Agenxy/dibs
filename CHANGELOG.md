@@ -144,6 +144,31 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   waited forever on a goroutine that reconnected forever. Found by closing stdin
   on a bridge that had one.
 
+- **`adopt_agent`, for a mailbox nobody can log back into.** An agent that
+  registered with neither a nonce nor a session id can never be reattached, and
+  its mailbox keeps accepting mail no one can read. Found on this project's own
+  board, holding six unreachable messages. It moves that mail onto a live agent;
+  the source record and its history stay, because the ledger refers to them, and
+  roles do not move with it. Authorised outside the fold, by the human proven
+  present at the machine or somebody they promoted, and the verdict is recorded
+  in the op the way a coordinator claim already is: taking another agent's mail
+  is otherwise the one thing Dibs must never allow, so there is no
+  agent-to-agent version.
+
+- **The hint shown when a name is taken named a call that cannot work.** It said
+  to ask a coordinator to `merge_spaces <new> into <old>`, which takes SPACE ids
+  where those are AGENT ids: following it fails with `E_NO_SPACE`. Lane-era
+  residue, printed at the one moment mail becomes unreachable, which is the
+  worst place in the product for a hint to be wrong. Found by following it.
+
+- **A role held by an agent nobody can become now shows on the board and in
+  `dibs doctor`.** The coordinator role is what `force_release`, `close_space`
+  and clearing another agent's debris all key on, and held by an unreattachable
+  agent it is a power the board shows as filled and nobody can use. Not a
+  deadlock, which is what it looks like from inside: `dibs admin coordinator
+  <agent>` moves it and a `[roles]` block reapplies it on every start. The gap
+  was that nothing pointed at either.
+
 - **The wake path could not reach an agent that had no session, and nothing
   said so.** A lifecycle hook names an agent by the session id its harness
   quotes, and `AgentForHook` deliberately refuses the cwd fallback when a
@@ -211,7 +236,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- `tools/list` is 33.8k characters for 43 tools, down from 36.2k for 42. Every
+- `tools/list` is 34.0k characters for 44 tools, down from 36.2k for 42. Every
   agent pays it on every cold connection, and the reasoning behind a rule
   belongs in `dibs://skills`, which is fetched once, rather than in the
   description of every tool that follows from it. No corrective detail was

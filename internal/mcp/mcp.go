@@ -707,7 +707,10 @@ type toolArgs struct {
 	// agent to do the one thing every other line of the docs says never to do.
 	SpaceID string `json:"space"`
 	// AgentRef targets an actual agent, for the tools that act on one.
-	AgentRef    string   `json:"agent"`
+	AgentRef string `json:"agent"`
+	// Into is the agent RECEIVING something, distinct from AgentRef, which is
+	// the one being acted on.
+	Into        string   `json:"into"`
 	Limit       int      `json:"limit"`
 	Topic       string   `json:"topic"`
 	Exclusive   bool     `json:"exclusive"`
@@ -1042,6 +1045,8 @@ func (s *Server) run(
 		op.Kind, op.Space, op.To, op.Note = core.OpSpaceMerge, a.SpaceID, a.To, a.Note
 	case "human_unlock":
 		return s.humanUnlock(ctx, a)
+	case "adopt_agent":
+		op.Kind, op.To, op.Space = core.OpAdoptAgent, a.AgentRef, a.Into
 	case "retitle_space":
 		op.Kind, op.Space, op.Text = core.OpSpaceRetitle, a.SpaceID, a.Text
 	case "close_space":

@@ -239,6 +239,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// Same rule: the claim VERDICT is the engine's to record, never the
 	// caller's to assert. Checked below, after the actor is known.
 	op.ClaimVerified = false
+	op.AdoptAuthorised = false
 
 	// Ingress-only validation. Deliberately NOT inside Apply: Apply is also the
 	// fold that replays the ledger, so a rule added there binds history
@@ -323,6 +324,13 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		if verify != nil {
 			op.ClaimVerified, spendClaim = verify(op.Nonce)
 		}
+	}
+
+	// Who may take over an abandoned mailbox. Decided here, where the human's
+	// identity is known, and RECORDED, so replay does not have to re-decide it
+	// against a board whose roles have since changed.
+	if op.Kind == core.OpAdoptAgent && actor != nil {
+		op.AdoptAuthorised = e.mayAdopt(actor)
 	}
 
 	res, err := e.applyAndLedger(op, now)

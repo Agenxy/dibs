@@ -211,6 +211,9 @@ func (d *diagnosis) run(verbose bool) error {
 	checkOneDaemon(verbose, ok, warn)
 	checkCodeSignature(ok, warn)
 	checkServiceBinary(ok, warn)
+	if b, err := boardSnapshot(); err == nil {
+		checkCoordinatorIsReachable(b, ok, warn)
+	}
 
 	if d.json {
 		// The tally is a rendering of counts the document already carries, and
@@ -929,6 +932,58 @@ func runningDaemonPath() string {
 // that build is simply not running. Found on the machine this was written on,
 // where the unit still pinned a dibd in ~/go/bin from an earlier install while
 // every check above passed against a hand-started current one.
+// checkCoordinatorIsReachable reports a coordinator nobody can become.
+//
+// The role can only be granted by the operator, and it is what force_release,
+// close_space and clearing another agent's debris all key on. Held by an agent
+// that registered with neither a nonce nor a session id, it is held by an
+// identity no one can ever log back into, so the board has a coordinator on
+// paper and nobody able to act as one. Nothing said so: the board shows the
+// role, and the role looks filled.
+//
+// Not a deadlock, which is what it looks like from inside: `dibs admin
+// coordinator <agent>` moves it, and a `[roles]` block in dibs.toml reapplies
+// it on every start. The gap was that nothing pointed at either.
+// boardSnapshot reads the public board for the checks that need it.
+func boardSnapshot() (*boardView, error) {
+	var b boardView
+	if err := get("/api/board", &b); err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
+func checkCoordinatorIsReachable(b *boardView, ok reportFn, warn fixFn) {
+	var stuck []string
+	live := ""
+	for _, l := range b.Agents {
+		if l.Status == "active" && live == "" {
+			live = l.ID
+		}
+		if l.Role != "coordinator" {
+			continue
+		}
+		// Reattachable agents are fine however dormant they are: their operator
+		// comes back with the nonce and the role comes back with them.
+		if l.Status != "active" && l.Unreachable {
+			stuck = append(stuck, l.ID)
+		}
+	}
+	if len(stuck) == 0 {
+		return
+	}
+	if live == "" {
+		live = "<a live agent>"
+	}
+	warn("the coordinator is an agent nobody can become: "+strings.Join(stuck, ", "),
+		"it registered with neither a nonce nor a session id, so no one can reattach to it, "+
+			"and force_release, close_space and clearing another agent's debris all need a "+
+			"coordinator. Move the role to an agent that is here: `dibs admin coordinator "+
+			live+"`, or declare it in [roles] in dibs.toml so it survives a reset. Its mail "+
+			"is recovered separately, with adopt_agent")
+	_ = ok
+}
+
 func checkServiceBinary(ok reportFn, warn fixFn) {
 	unit, pinned := unitDaemon()
 	if unit == "" || pinned == "" {
