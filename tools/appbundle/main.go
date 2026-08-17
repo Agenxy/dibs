@@ -65,6 +65,12 @@ const plist = `<?xml version="1.0" encoding="UTF-8"?>
   <key>NSHumanReadableCopyright</key><string>Agenxy. Apache-2.0.</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
+  <!-- Correct metadata, and NOT a Focus bypass. An app cannot declare itself
+       into a Focus mode: the only things that break through are the Time
+       Sensitive entitlement, which Apple gates behind a paid developer
+       account, and the user adding Dibs to that mode's allowed apps. Dibs
+       escalates to a window instead, which Focus does not silence. -->
+  <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
 </dict>
 </plist>
 `

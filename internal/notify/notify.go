@@ -35,6 +35,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -157,9 +159,15 @@ func Ask(title, body string, buttons ...string) (string, error) {
 		// service that steals focus for every question is one people turn off,
 		// and that argument is why this is not the default.
 		args := append([]string{title, "", body}, buttons...)
-		if bannersAreSilenced() {
+		// Logged because the CHOICE is the thing nobody could see afterwards.
+		// The daemon recorded that it notified and never which channel it used,
+		// so "I did not get it" had no evidence attached and three different
+		// explanations that all looked identical from the outside.
+		if silenced := bannersAreSilenced(); silenced {
+			slog.Info("asking in a window", "why", "a focus mode is on and this build cannot mark a notification time-sensitive")
 			return askInAWindow(h, title, body, buttons)
 		}
+		slog.Info("asking on a banner", "focus", focusOn())
 		// #nosec G204 -- h is resolved beside this binary; the rest is argv data.
 		out, err := exec.CommandContext(ctx, h, args...).Output()
 		if err != nil {
@@ -487,7 +495,21 @@ func askInAWindow(helperPath, title, body string, buttons []string) (string, err
 	}
 	out, err := os.ReadFile(answer) // #nosec G304 -- a path this function just created
 	if err != nil {
-		return "", nil // nothing written: dismissed, or never drawn
+		// "Dismissed" and "never drawn" used to be the same answer here, and
+		// both were reported as a non-answer with no error. That is the one
+		// thing this project forbids everywhere else: an agent waited out its
+		// deadline, the operator saw nothing, and nothing anywhere said which
+		// of the two had happened. Reported as a failure, because a question
+		// nobody was shown is not a question somebody declined.
+		return "", fmt.Errorf("%w: the window left no answer, so it was dismissed "+
+			"without a press or never drawn at all", ErrNoAnswer)
 	}
 	return strings.TrimSpace(string(out)), nil
 }
+
+// ErrNoAnswer means nothing came back from a question that was asked.
+//
+// Deliberately distinct from ErrCannotNotify, which means the machine will not
+// notify at all. This one means we tried, and cannot tell whether a person
+// declined or never saw it.
+var ErrNoAnswer = errors.New("no answer")

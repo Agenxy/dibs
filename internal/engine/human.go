@@ -411,6 +411,15 @@ func (e *Engine) approveForHuman(from, who, body string, serial uint64, grant, a
 	if err != nil || choice == "" || choice == "Later" {
 		// Dismissed or deferred is not an answer, and inventing one would be
 		// answering on their behalf. The request stays open on the board.
+		//
+		// Said out loud when the ASK itself came back empty, because that is the
+		// case where the operator may never have been shown anything, and until
+		// this it was indistinguishable from a deliberate "not now". An agent
+		// then waited out its deadline against a question nobody saw.
+		if err != nil {
+			slog.Warn("the human was asked and nothing came back",
+				"from", from, "msg", serial, "err", err)
+		}
 		return
 	}
 	disposition := "deny"
