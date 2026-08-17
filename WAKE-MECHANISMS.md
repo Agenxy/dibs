@@ -59,8 +59,14 @@ Codex never even calls `resources/list`, so Dibs' resources are invisible there;
 tools reach it.
 
 **"Nobody speaks MCP 2026" was true when measured and is now false. Amended 2026-08-17.**
-Codex speaks 2026-07-28 today, and Dibs already interoperates with it over that revision,
-with no change on our side. Two conditions, and neither is the default:
+Codex runs entirely on 2026-07-28 against Dibs today. That took a fix here, and the
+correction is the useful part: Codex ASKED for 2026, was answered in the legacy era, and
+fell back to 2025 for every real call, because Dibs read the protocol version from an
+HTTP header that stdio does not have. For a day that looked exactly like a client without
+2026 support. See `TestStdioClientAskingFor2026IsServed2026`, and treat "the harness does
+not implement it" as a hypothesis needing a daemon log, not a conclusion.
+
+Two conditions on the Codex side, and neither is the default:
 
 1. the `mcp_2026_07_28` feature enabled, and
 2. `CODEX_MCP_PROTOCOL_VERSION=2026-07-28` in **that server's `env`** block.
