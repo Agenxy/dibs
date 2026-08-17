@@ -1,7 +1,7 @@
 # Getting help
 
 **Start with `dibs doctor`.** It exists for this: it names what is broken and
-the fix, not just the fault, and it redirects to a file you can paste anywhere.
+how to fix it, then writes a file you can paste anywhere.
 Stale harness secrets, matching that was never turned on, a data directory a
 second daemon is fighting over: it says all of those in one line.
 
