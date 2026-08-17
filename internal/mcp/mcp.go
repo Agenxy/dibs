@@ -7,6 +7,7 @@ package mcp
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -187,23 +188,38 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveSubscription(w, r, &req)
 		return
 	}
-	// 2026-07-28 version negotiation: if the header is present it must be a
-	// version we support AND match the _meta echo; legacy clients (no header,
-	// initialize flow) pass through.
-	if hv := r.Header.Get("MCP-Protocol-Version"); hv != "" {
-		if !supported(hv) {
-			writeRPC(w, http.StatusBadRequest, req.ID, nil, &rpcError{
-				Code: errUnsupportedProtocolVersion, Message: "unsupported protocol version",
-				Data: map[string]any{"supported": supportedVersions, "requested": hv},
-			})
-			return
-		}
-		if mv := metaVersion(req.Params); mv != "" && mv != hv {
-			writeRPC(w, http.StatusBadRequest, req.ID, nil, &rpcError{
-				Code: -32602, Message: "MCP-Protocol-Version header does not match _meta protocolVersion",
-			})
-			return
-		}
+	// 2026-07-28 version negotiation. A version the client STATED, in either
+	// place it may state one, must be a version we serve; where it states one
+	// twice the two must agree; legacy clients (no version at all, initialize
+	// flow) pass through.
+	//
+	// Reading only the header was the same blindness that kept stdio out of the
+	// modern era, one layer down and it outlived the first fix. Over HTTP an
+	// impossible version got -32022; over stdio, which has no header to read,
+	// the request was served as though we had agreed to it. That is worse than a
+	// wrong answer: the 2026 compatibility rules turn on WHICH error a probe
+	// gets, since a recognized modern error keeps a client on the modern path
+	// and anything else sends it back to `initialize`. Answering success says we
+	// agreed, and every later result is a mismatch neither side is checking.
+	hv := r.Header.Get("MCP-Protocol-Version")
+	mv := metaVersion(req.Params)
+	if hv != "" && mv != "" && mv != hv {
+		writeRPC(w, http.StatusBadRequest, req.ID, nil, &rpcError{
+			Code: -32602, Message: "MCP-Protocol-Version header does not match _meta protocolVersion",
+		})
+		return
+	}
+	// server/discover is exempt, and that is not an oversight. It is the
+	// negotiation call: the spec accepts a DiscoverResult carrying
+	// supportedVersions as a valid answer to a version we do not serve, and it
+	// is the friendlier of the two permitted behaviours, because it hands the
+	// client the list it needs to choose again instead of only a refusal.
+	if stated := cmp.Or(hv, mv); stated != "" && !supported(stated) && req.Method != "server/discover" {
+		writeRPC(w, http.StatusBadRequest, req.ID, nil, &rpcError{
+			Code: errUnsupportedProtocolVersion, Message: "unsupported protocol version",
+			Data: map[string]any{"supported": supportedVersions, "requested": stated},
+		})
+		return
 	}
 	// Hand the client a session on initialize and remember whether it said it
 	// can render, so later stateless calls can still be answered correctly.

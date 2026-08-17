@@ -108,3 +108,56 @@ func TestALegacyClientIsStillNotStamped(t *testing.T) {
 		})
 	}
 }
+
+// A version we do not serve must be REFUSED, however the client stated it.
+//
+// The same header-only blindness as above, one layer down, and it survived the
+// first fix: `tagResult` was corrected to read `_meta`, but the version
+// VALIDATION still looked only at `MCP-Protocol-Version`. So over HTTP an
+// unsupported version got `-32022`, and over stdio the request was served
+// silently as though we had agreed to it.
+//
+// That is worse than a wrong answer. The 2026 backward-compatibility rules
+// turn on which error a probe gets: a client that receives a RECOGNIZED modern
+// error such as UnsupportedProtocolVersionError "MUST NOT fall back to
+// initialize" and instead picks from the advertised list, while anything
+// unrecognized sends it back to the legacy handshake. Answering an impossible
+// version with success tells the client we agreed, and every later result is a
+// version mismatch neither side is checking.
+//
+// server/discover is deliberately exempt: it is the negotiation call, and the
+// spec accepts a DiscoverResult carrying supportedVersions as a valid answer to
+// a version we do not serve. That is the friendlier of the two permitted
+// behaviours, so it stays.
+func TestAnUnsupportedVersionIsRefusedOverStdioToo(t *testing.T) {
+	srv, cancel := newServer(t)
+	defer cancel()
+
+	for _, method := range []string{"tools/list", "resources/list"} {
+		t.Run(method, func(t *testing.T) {
+			out := rpcNoHeader(t, srv, `{"jsonrpc":"2.0","id":1,"method":"`+method+`","params":{"_meta":{`+
+				`"io.modelcontextprotocol/protocolVersion":"2027-01-01"}}}`)
+			e, _ := out["error"].(map[string]any)
+			if e == nil {
+				t.Fatalf("a version we do not serve was accepted silently over stdio: "+
+					"the client believes we agreed to 2027-01-01, and every result "+
+					"after this is an unchecked version mismatch (got %v)", out["result"])
+			}
+			if code, _ := e["code"].(float64); int(code) != errUnsupportedProtocolVersion {
+				t.Errorf("code = %v, want %d. The backward-compatibility rules turn on "+
+					"this exact code: a RECOGNIZED modern error keeps the client on the "+
+					"modern path, anything else sends it back to initialize",
+					e["code"], errUnsupportedProtocolVersion)
+			}
+		})
+	}
+
+	// The negotiation call still answers, so a client can learn what we do serve.
+	out := rpcNoHeader(t, srv, `{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{"_meta":{`+
+		`"io.modelcontextprotocol/protocolVersion":"2027-01-01"}}}`)
+	res, _ := out["result"].(map[string]any)
+	if res == nil || res["supportedVersions"] == nil {
+		t.Errorf("server/discover refused to advertise its versions to a client asking "+
+			"for one we lack, leaving it no way to pick a mutually supported one: %v", out)
+	}
+}
