@@ -7,14 +7,35 @@ Codex reaches Dibs as a plain MCP server over HTTP: no bridge, no adapter.
 In `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.agents]
+[mcp_servers.dibs]
+command = "/absolute/path/to/dibs"
+args = ["mcp-stdio"]
+```
+
+`dibs mcp-config` prints this with the real path filled in.
+
+**stdio rather than a url, and the difference is an identity.** The bridge is one
+process per session, and it is what remembers this agent's nonce, so a returning
+session reattaches to the same agent with its mail instead of forking a `-2`
+sibling that cannot read a word of its predecessor's. An HTTP client has no such
+process, and nothing else in the stack can hold that credential: the agent's own
+context is exactly what ends.
+
+This file used to print the url form, Codex took it, and the cost was invisible
+for months. A board carrying nine rows for five roles is what it looks like from
+outside.
+
+Use the url form only from ANOTHER machine, where a local bridge is not an
+option and a forked identity is the lesser problem:
+
+```toml
+[mcp_servers.dibs]
 url = "http://127.0.0.1:4777/mcp"
 http_headers = { "X-Dibs-Local" = "<contents of <data-dir>/local.secret>" }
 ```
 
-`dibs mcp-config` prints this for you. The secret rotates when the data dir is
-recreated; a stale value gives a 401 with no other symptom, so re-copy it if
-Codex suddenly sees zero tools.
+The secret rotates when the data dir is recreated; a stale value gives a 401
+with no other symptom, so re-copy it if Codex suddenly sees zero tools.
 
 ## Verified on a source build (`61a4488`, 2026-07-25)
 

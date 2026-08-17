@@ -462,15 +462,39 @@ func mcpConfig() error {
 	if len(s) > 16 {
 		preview = s[:16] + "…"
 	}
+	// STDIO for Codex, not HTTP, and the difference is an identity rather than a
+	// preference.
+	//
+	// This printed the HTTP form, and Codex took it, and the cost was invisible
+	// for months: an HTTP client has no per-session process, so there is nothing
+	// to remember an agent's nonce, so every returning session registers as a
+	// sibling that cannot read its predecessor's mail. A board carrying nine
+	// rows for five roles is what that looks like from outside.
+	//
+	// The bridge is a process per session with a filesystem, which is exactly
+	// what the credential needs and exactly what HTTP does not have. Codex has
+	// supported stdio all along; almost every other server in a real config uses
+	// it, and Dibs was the odd one out because this line said to be.
+	//
+	// The HTTP form stays documented below, because it is right for a client on
+	// another machine, where a local bridge is not an option and a forked
+	// identity is the lesser problem.
 	fmt.Printf(`
 # Codex / ChatGPT desktop: add to ~/.codex/config.toml:
 [mcp_servers.dibs]
-url = %q
-http_headers = { "X-Dibs-Local" = %q }
+command = %q
+args = ["mcp-stdio"]
 
-# The secret is also accepted as: Authorization: Bearer %s
+# stdio rather than a url, deliberately: the bridge is one process per session,
+# and it remembers this agent's nonce so a returning session reattaches to the
+# same identity instead of forking a "-2" sibling that cannot read its own mail.
+# An HTTP client has no such process. Use the url form only from another machine:
+#   url = %q
+#   http_headers = { "X-Dibs-Local" = %q }
+#   (the secret is also accepted as: Authorization: Bearer %s)
+#
 # Running agent sessions do not hot-load MCP config: start a new session after adding.
-`, url, s, preview)
+`, self(), url, s, preview)
 
 	if certPath != "" {
 		fmt.Printf(`
@@ -1657,3 +1681,20 @@ func reachErr(err error) error {
 }
 
 const notRunningFmt = "%w (is dibd running?)"
+
+// self names this executable for a config file somebody will paste.
+//
+// The absolute path, resolved through symlinks, because a config that says
+// "dibs" works only if the harness's PATH matches the shell's, and a harness
+// launched from Finder frequently has neither ~/.local/bin nor a Homebrew
+// prefix on it. That failure presents as a server that silently never starts.
+func self() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "dibs"
+	}
+	if resolved, rerr := filepath.EvalSymlinks(exe); rerr == nil {
+		return resolved
+	}
+	return exe
+}

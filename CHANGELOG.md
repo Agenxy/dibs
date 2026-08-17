@@ -7,6 +7,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Codex is configured over stdio, not HTTP, and that is an identity decision
+  rather than a preference.** `dibs mcp-config` printed the url form for Codex,
+  Codex took it, and the cost was invisible for months: an HTTP client has no
+  per-session process, so nothing holds the agent's nonce, so every returning
+  session registers as a sibling that cannot read its predecessor's mail. Codex
+  has supported stdio all along; in a real config almost every other server uses
+  it, and Dibs was the odd one out because this command said to be. The url form
+  is still documented for a client on another machine, where a local bridge is
+  not an option and a forked identity is the lesser problem.
+
 - **The stdio bridge keeps the nonce, so a returning agent is the same agent.**
   This is the product's central failure, and an agent building on Dibs said it
   better than the source did: "An agent cannot be relied on to carry a secret

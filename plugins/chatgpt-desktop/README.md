@@ -14,12 +14,16 @@ it, so this folder is deliberately thin and defers to
 Exactly the Codex configuration. `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.agents]
-url = "http://127.0.0.1:4777/mcp"
-http_headers = { "X-Dibs-Local" = "<contents of <data-dir>/local.secret>" }
+[mcp_servers.dibs]
+command = "/absolute/path/to/dibs"
+args = ["mcp-stdio"]
 ```
 
-`dibs mcp-config` prints this. A stale secret gives a 401 with no other symptom.
+`dibs mcp-config` prints this with the real path filled in. Use stdio rather
+than a url: the bridge is one process per session and it remembers this agent's
+nonce, so a returning session reattaches instead of forking a `-2` sibling. See
+[../codex/README.md](../codex/README.md) for the reasoning and for the url form,
+which is right only from another machine.
 
 ## What carries over from Codex, and what does not
 
