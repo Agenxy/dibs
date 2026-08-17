@@ -484,11 +484,19 @@ func mcpConfig() error {
 [mcp_servers.dibs]
 command = %q
 args = ["mcp-stdio"]
+# MCP 2026-07-28. Codex speaks it, but only when BOTH the mcp_2026_07_28
+# feature is enabled AND this exact variable is set on THIS server entry: the
+# feature alone leaves the connection on 2025-06-18, and a wrong value here is
+# a hard error rather than a fallback.
+env = { CODEX_MCP_PROTOCOL_VERSION = "2026-07-28" }
 
 # stdio rather than a url, deliberately: the bridge is one process per session,
 # and it remembers this agent's nonce so a returning session reattaches to the
 # same identity instead of forking a "-2" sibling that cannot read its own mail.
-# An HTTP client has no such process. Use the url form only from another machine:
+# That is a default and not a cage: an identity can also be pinned here with
+#   env = { DIBS_AGENT_NONCE = "..." }
+# which is what lets an HTTP client reattach too. Use the url form only from
+# another machine:
 #   url = %q
 #   http_headers = { "X-Dibs-Local" = %q }
 #   (the secret is also accepted as: Authorization: Bearer %s)

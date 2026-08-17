@@ -10,6 +10,11 @@ In `~/.codex/config.toml`:
 [mcp_servers.dibs]
 command = "/absolute/path/to/dibs"
 args = ["mcp-stdio"]
+# MCP 2026-07-28. Codex speaks it, but only when BOTH the `mcp_2026_07_28`
+# feature is enabled AND this exact variable is set on THIS server entry. The
+# feature alone leaves the connection on 2025-06-18, and a wrong value here is a
+# hard error rather than a fallback.
+env = { CODEX_MCP_PROTOCOL_VERSION = "2026-07-28" }
 ```
 
 `dibs mcp-config` prints this with the real path filled in.
@@ -17,9 +22,22 @@ args = ["mcp-stdio"]
 **stdio rather than a url, and the difference is an identity.** The bridge is one
 process per session, and it is what remembers this agent's nonce, so a returning
 session reattaches to the same agent with its mail instead of forking a `-2`
-sibling that cannot read a word of its predecessor's. An HTTP client has no such
-process, and nothing else in the stack can hold that credential: the agent's own
-context is exactly what ends.
+sibling that cannot read a word of its predecessor's. Measured on a real board
+before the bridge existed: nine rows for five roles.
+
+That is a default, not a cage. A nonce can also be pinned in this file
+(`env = { DIBS_AGENT_NONCE = "..." }`, or an `X-Dibs-Agent-Nonce` header over
+HTTP), which is what lets an HTTP client reattach at all. The bridge remains the
+automatic path for a harness that pins nothing, which is the common case.
+
+**Please do not send a patch moving this to HTTP for consistency with other
+harnesses.** It is the most reasonable-looking change in this directory and we
+would turn it down: stdio is not the legacy binding, MCP 2026-07-28 keeps both
+current and deprecates neither, Codex reaches 2026 over stdio end to end today,
+and the automatic identity path would be lost for every operator who pins
+nothing. The reasoning is in `CONTRIBUTING.md` under "Changes we will turn down"
+and in the transport section of `plugins/README.md`. If you think it is wrong,
+an issue is cheaper for you than the PR, and the argument is welcome.
 
 This file used to print the url form, Codex took it, and the cost was invisible
 for months. A board carrying nine rows for five roles is what it looks like from

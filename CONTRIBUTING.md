@@ -95,6 +95,51 @@ dependencies. The fleet scenario used to be 600 lines of bash that shelled out t
 `python3` seven times to parse its own JSON, which is what that rot looks like
 from the inside.
 
+## Changes we will turn down, and why we are telling you first
+
+Not a discouragement. These are the patches most likely to be proposed in good
+faith by someone who has read the code carefully, and the reasoning against them
+is not visible from the diff. Nobody should spend a weekend on one and find that
+out in review.
+
+If you think one of these is wrong, open an issue and argue it. That is a
+welcome conversation, and cheaper for you than the PR.
+
+**Unifying the harness transports.** Codex connects over stdio while other
+harnesses use HTTP, and that reads as an inconsistency to clean up. It is load
+bearing. The stdio bridge is one process per session with a filesystem, so it is
+what holds an agent's nonce across a context boundary; without it a returning
+session forks a sibling that cannot read its predecessor's mail. A real board
+carried nine rows for five roles before it existed. MCP 2026-07-28 also keeps
+both bindings current and deprecates neither, so there is no protocol argument
+either. See the transport section in `plugins/README.md`.
+
+**Making Dibs drive a harness.** A wake path that spawns a process to inject
+mail, steers a live turn over an app-server socket, or manages sessions through
+a harness SDK. All three work, and all three make Dibs a wrapper rather than a
+service. `WAKE-MECHANISMS.md` §6 records what was tried and deleted. The bar is
+that the harness pulls from us at a moment it chose.
+
+**Adding validation to `core.Apply`.** It is the fold that replays the ledger,
+so a rule added there binds ops that older code already accepted, and the daemon
+refuses to boot on its own history. Ingress validation goes in `core.Admit`.
+
+**Renaming a json struct tag.** The Go identifier is free to change; the tag is
+frozen. A retired op *kind* stops the fold loudly, a retired *field* stops
+nothing and replays as success with that field silently zero. `lane_kind` →
+`agent_kind` shipped in every release to v0.0.4 and quietly demoted every
+persistent agent to ephemeral on upgrade.
+
+**Shipping a hook a harness cannot run.** A plugin `hooks.json` using a handler
+type the target harness does not execute is not a wake path waiting to be wired:
+it is inert, and on some builds one unsupported entry rejects the whole file and
+takes the working entries with it. We shipped exactly that for Codex for three
+releases. Verify by watching a hook fire, not by finding the type in a source
+tree.
+
+**Paying for a listing.** Several MCP directories gate submission behind a fee.
+The answer is no every time, however good the traffic numbers look.
+
 ## Platform
 
 Developed and verified on macOS. The process-inspection layer in
