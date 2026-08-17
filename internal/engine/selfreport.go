@@ -252,9 +252,22 @@ func (e *Engine) coordinatorOrHuman() string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	res, err := e.query(ctx, func() core.Result {
-		to := e.state.CoordinatorID()
+		// A report needs a READER, which is not the same as needing a
+		// recipient. CoordinatorID answers "who holds the role", and on a board
+		// whose only coordinator is dormant that is an agent which may never
+		// come back: the report would be filed correctly into a mailbox nobody
+		// opens, which is this file's own failure mode with an extra step.
+		//
+		// So: a live coordinator first, then the human, then a dormant
+		// coordinator as the last resort, because a dormant standing agent may
+		// still wake and a person who is not at the keyboard may not.
+		live, dormant := e.coordinatorsByLiveness()
+		to := live
 		if to == "" {
 			to = e.humanIdentityLocked()
+		}
+		if to == "" {
+			to = dormant
 		}
 		return core.Result{"to": to}
 	})
@@ -263,4 +276,29 @@ func (e *Engine) coordinatorOrHuman() string {
 	}
 	to, _ := res["to"].(string)
 	return to
+}
+
+// coordinatorsByLiveness names the best live coordinator and the best dormant
+// one, each chosen by id so the answer is stable across calls: map iteration is
+// random, and a report that went to a different coordinator each time would be
+// a report nobody owns.
+//
+// Must run inside the loop.
+func (e *Engine) coordinatorsByLiveness() (live, dormant string) {
+	for id, l := range e.state.Agents {
+		if l.Status == core.StatusClosed || l.Status == core.StatusArchived ||
+			!l.IsCoordinator() {
+			continue
+		}
+		if l.Status == core.StatusActive {
+			if live == "" || id < live {
+				live = id
+			}
+			continue
+		}
+		if dormant == "" || id < dormant {
+			dormant = id
+		}
+	}
+	return live, dormant
 }

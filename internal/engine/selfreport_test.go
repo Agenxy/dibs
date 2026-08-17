@@ -1,8 +1,11 @@
 package engine
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // A fault report has to end on something the reader can DO.
@@ -61,4 +64,47 @@ func TestAReportWithoutARemedyIsRefused(t *testing.T) {
 		e.ReportFault(t.Context(), Fault{Kind: "x", What: "something went wrong"})
 	}()
 	<-done
+}
+
+// A fault report needs a READER, not merely a recipient.
+//
+// The first version asked CoordinatorID, which answers "who holds the role".
+// On a board whose only coordinator is dormant, that is an agent which may
+// never come back, so the report was filed correctly into a mailbox nobody
+// opens: this file's own failure mode, with an extra step. Measured on a real
+// board where the standing coordinator had been dormant for a day and the
+// operator was at the keyboard the whole time.
+func TestAFaultGoesToSomebodyWhoCanReadIt(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	humanID, _, err := e.HumanAgent(ctx)
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "boss", AgentKind: core.KindPersistent, Nonce: "n-b",
+	}); err != nil {
+		t.Fatal("setup:", err)
+	}
+	// The only coordinator is dormant, which is the case that mattered.
+	st.Agents["boss"].Role = core.RoleCoordinator
+	st.Agents["boss"].Status = core.StatusDormant
+
+	if got := e.coordinatorOrHuman(); got != humanID {
+		t.Errorf("the report goes to %q; the only coordinator is dormant and the "+
+			"human is right here. A report filed where nobody reads it is the bug "+
+			"this file exists to stop producing", got)
+	}
+
+	// With a live coordinator, it goes there: faults are the coordinator's job,
+	// and this must not become "always tell the human".
+	st.Agents["boss"].Status = core.StatusActive
+	if got := e.coordinatorOrHuman(); got != "boss" {
+		t.Errorf("the report goes to %q with a live coordinator available: "+
+			"administering the board is their role, not the operator's", got)
+	}
 }

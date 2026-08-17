@@ -235,6 +235,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A fault report goes to somebody who can READ it.** It asked
+  `CoordinatorID`, which answers "who holds the role". On a board whose only
+  coordinator is dormant, that is an agent which may never come back, so the
+  report was filed correctly into a mailbox nobody opens: this feature's own
+  failure mode, with an extra step. Measured here, where the standing
+  coordinator had been dormant for a day while the operator was at the keyboard
+  throughout, and Dibs' warning that it could not reach them by notification
+  went to the one row guaranteed not to see it. A live coordinator first, then
+  the human, then a dormant coordinator as a last resort.
+
 - **A request to a PERSON gets a person's deadline.** The default was ten
   minutes for every recipient. That is right for an agent: it is in a loop, it
   answers in seconds, and a stale question should expire rather than linger. A
