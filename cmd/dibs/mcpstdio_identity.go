@@ -165,6 +165,25 @@ func enrichRegister(line []byte) []byte {
 		args["pid"] = os.Getpid()
 		touched = true
 	}
+	// The NONCE, which is the credential the agent cannot be relied on to keep.
+	//
+	// See mcpstdio_nonce.go for why this belongs to the bridge. Briefly: the
+	// nonce exists to survive a context ending, and it is the agent's context
+	// that holds it, so it does not. The bridge is the only party here with a
+	// memory that spans sessions.
+	//
+	// Same rule as every other field above: what the agent supplied wins, and
+	// this only fills a blank. A supplied nonce is remembered too, so an agent
+	// that manages its own credential once does not have to manage it twice.
+	if _, had := args["nonce"]; !had {
+		enrichNonce(args)
+		if _, now := args["nonce"]; now {
+			touched = true
+		}
+	} else {
+		// Remembers what the agent supplied, so it need not manage it twice.
+		enrichNonce(args)
+	}
 	// DIBS_HARNESS names the harness when its MCP client will not.
 	//
 	// Most clients identify themselves at initialize and this never fires. Some

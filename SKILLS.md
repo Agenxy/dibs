@@ -230,6 +230,12 @@ The same shape works for supervising a subagent you spawned:
   misrouted and needs nothing installed. If you see `waiting`, call `inbox`.
 - Types are `notify`, `question`, `request`, `handoff`. Pick honestly: a
   `request` obliges someone, a `notify` does not.
+- **On a stdio bridge, your nonce is kept for you.** The bridge remembers it per
+  project and per name, so registering with the same name in the same checkout
+  reattaches you to the same agent with its mail, even after your context ended.
+  You can still supply your own; yours wins and is remembered too. This is the
+  fix for the thing that produces `-2` and `-3` rows: a nonce lives in the
+  context that the nonce exists to outlive, so it never survived.
 - **If your name was taken, ask for your old mailbox back.** Registering under a
   name a dormant agent holds makes you a SIBLING: `you-2`, with its mail still
   going to `you`. Reattaching with the same name and nonce is the clean fix;
