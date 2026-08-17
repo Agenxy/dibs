@@ -295,19 +295,31 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// ledger records the session the agent actually holds and replay reaches the
 	// same board without consulting a children map that no longer exists.
 	// See sessionjoin.go for why this is the register path and not hook_poll.
-	op.SessionAlias = "" // engine-joined, never accepted from ingress
-	switch op.Kind {
-	case core.OpRegister, core.OpUpdate:
-		if op.Agent != nil {
-			op.SessionAlias = announcedSession(e.children, e.state, op.Agent.CWD, now)
+	// A harness that NAMED its own thread is believed over anything inferred,
+	// once it is checked. Codex sends `threadId` on every tool call, and it is
+	// the id `codex resume` takes, so this is the identity rather than a
+	// correlation. Vetted, not trusted: see mayClaimSession.
+	if claimed := op.SessionAlias; claimed != "" {
+		if !e.mayClaimSession(claimed, op.Token) {
+			op.SessionAlias = ""
 		}
-	case core.OpAckBoard:
-		// check_in carries no cwd, so the agent's own registered one is used.
-		// This is the path that reaches agents ALREADY on the board: they have
-		// no reason to register again, and check_in is the one call they all
-		// make at the start of every activation.
-		if l := e.state.AgentByToken(op.Token); l != nil && l.Agent != nil {
-			op.SessionAlias = announcedSession(e.children, e.state, l.Agent.CWD, now)
+	}
+	if op.SessionAlias == "" {
+		switch op.Kind {
+		case core.OpRegister, core.OpUpdate:
+			if op.Agent != nil {
+				op.SessionAlias = announcedSession(e.children, e.state, op.Agent.CWD, now)
+			}
+		case core.OpAckBoard:
+			// check_in carries no cwd, so the agent's own registered one is used.
+			// This is the path that reaches agents ALREADY on the board: they
+			// have no reason to register again, and check_in is the one call
+			// they all keep making.
+			if l := e.state.AgentByToken(op.Token); l != nil && l.Agent != nil {
+				op.SessionAlias = announcedSession(e.children, e.state, l.Agent.CWD, now)
+			}
+		default:
+			op.SessionAlias = "" // no other op binds an identity
 		}
 	}
 

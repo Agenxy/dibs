@@ -126,3 +126,32 @@ func cleanDir(p string) string {
 	}
 	return p
 }
+
+// mayClaimSession reports whether a caller may bind a session id it named
+// itself.
+//
+// A harness volunteering "I am thread X" is an identity CLAIM arriving on an
+// authenticated connection, not proof. The rule is the one the announced
+// session already uses, for the same reason: a session another agent holds is
+// never taken, because binding it would move that agent's wake delivery onto
+// this one. Whoever holds it keeps it.
+//
+// Deliberately no cleverness beyond that. The claim is only reachable on an
+// authenticated call, the id it names is the harness's own, and the thing it
+// buys is that hooks and rings find this agent instead of nobody. An attacker
+// who can make authenticated calls as an agent can already read that agent's
+// mail directly.
+func (e *Engine) mayClaimSession(sid, token string) bool {
+	if sid == "" {
+		return false
+	}
+	if len(sid) > maxSessionIDBytes {
+		return false
+	}
+	holder := e.state.AgentBySession(sid)
+	if holder == nil {
+		return true // unclaimed
+	}
+	// Already ours is fine and idempotent; already somebody else's is not.
+	return e.state.AgentByToken(token) == holder
+}

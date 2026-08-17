@@ -1061,6 +1061,19 @@ func (s *Server) run(
 	params json.RawMessage, sessionClient *clientInfoJSON,
 ) (core.Result, error) {
 	op := &core.Op{Token: a.Token}
+	// The harness's own name for this thread, if it volunteered one.
+	//
+	// Codex puts `threadId` in _meta on every tools/call, unconditionally and
+	// for every server, and the value is the id `codex resume` takes. So the
+	// stable identity arrives on the connection the agent already holds: no
+	// hook, no directory guess, no second process. It was missed for a day
+	// because every inspection of _meta looked at the handshake, where it is
+	// absent, rather than at tool calls, where it is always present.
+	//
+	// Carried as a session ALIAS because that is what it is: another name for
+	// the session this agent is running in, alongside the `host-<ppid>` the
+	// bridge derives. The engine decides whether it may be bound.
+	op.SessionAlias = clientThreadID(params)
 	switch name {
 	case "register":
 		if strings.TrimSpace(a.Name) == "" {
@@ -1359,4 +1372,21 @@ func metaKeys(params json.RawMessage) string {
 	}
 	sort.Strings(keys)
 	return strings.Join(keys, ",")
+}
+
+// clientThreadID reads the harness's thread identifier out of a tool call's
+// _meta, or "".
+//
+// `threadId` is Codex's spelling. Kept to identifiers a harness sends about
+// ITSELF: this is an identity claim, and the engine treats it as one rather
+// than as proof.
+func clientThreadID(params json.RawMessage) string {
+	var p struct {
+		Meta map[string]any `json:"_meta"`
+	}
+	if len(params) == 0 || json.Unmarshal(params, &p) != nil {
+		return ""
+	}
+	v, _ := p.Meta["threadId"].(string)
+	return strings.TrimSpace(v)
 }
