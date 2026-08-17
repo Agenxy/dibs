@@ -222,7 +222,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	result, rpcErr := s.dispatch(r.Context(), &req, bearer(r), s.sessions.wantsUI(r),
 		s.sessions.clientFor(r), s.sessions.panelFetches(r))
-	writeRPC(w, http.StatusOK, req.ID, tagResult(result, r.Header.Get("MCP-Protocol-Version")), rpcErr)
+	writeRPC(w, http.StatusOK, req.ID, tagResult(result, requestEra(r, req.Params)), rpcErr)
 }
 
 // tagResult stamps resultType on results served over the stateless core.
@@ -242,6 +242,31 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // reject unknown keys, so stamping this on a 2025-11-25 answer would break the
 // clients that every host actually uses today to satisfy a client that none of
 // them are yet.
+// requestEra is the protocol revision THIS request is in, from either place a
+// client can state it.
+//
+// The header is the Streamable-HTTP way; `_meta` is the way 2026-07-28 defines,
+// because that revision is stateless and every request carries its own version.
+// Reading only the header meant STDIO could never reach the modern era at all:
+// that transport has no headers, so every stdio client asking for 2026 was
+// answered in the legacy one and, finding no `resultType`, fell back to 2025.
+//
+// Measured, with the real Codex Desktop binary over the stdio bridge: two
+// `server/discover` calls carrying `_meta` protocolVersion 2026-07-28, then an
+// `initialize` and every real call on the legacy path. From the outside that is
+// indistinguishable from a client without 2026 support, and it was read that
+// way for a day.
+//
+// The header still wins when present, and the two are already required to agree
+// (checked in ServeHTTP), so this widens where the era is FOUND without
+// widening what may claim it.
+func requestEra(r *http.Request, params json.RawMessage) string {
+	if v := r.Header.Get("MCP-Protocol-Version"); v != "" {
+		return v
+	}
+	return metaVersion(params)
+}
+
 func tagResult(result any, requestVersion string) any {
 	m, ok := result.(map[string]any)
 	if !ok || m == nil || !isModern(requestVersion) {
@@ -389,7 +414,7 @@ func writeRPC(w http.ResponseWriter, status int, id json.RawMessage, result any,
 // and because ServeHTTP is a transport decision table that the complexity
 // ceiling keeps honest.
 func (s *Server) handledLegacySubscription(w http.ResponseWriter, r *http.Request, req *rpcRequest) bool {
-	version := r.Header.Get("MCP-Protocol-Version")
+	version := requestEra(r, req.Params)
 	switch req.Method {
 	case "resources/subscribe":
 		res, rerr := s.handleLegacySubscribe(r, req.Params)
