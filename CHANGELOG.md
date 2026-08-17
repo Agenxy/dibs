@@ -235,6 +235,24 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A request to a PERSON gets a person's deadline.** The default was ten
+  minutes for every recipient. That is right for an agent: it is in a loop, it
+  answers in seconds, and a stale question should expire rather than linger. A
+  human is not in a loop, which is the premise this entire product rests on, and
+  this one default contradicted it.
+
+  Measured here, on the request that would have made the maintainer a
+  coordinator: sent, delivered, never seen because a Focus mode swallowed the
+  notification, and expired thirty minutes later as
+  `expired_recipient_dormant` while the operator was away from the machine. The
+  feature worked exactly as built. The clock was set for somebody else.
+
+  A day now, when the recipient is the human and the sender named no deadline.
+  Well inside the seven days a persistent recipient already allowed, so a sender
+  who wants longer can ask, and an explicit deadline still wins in both
+  directions. Agent-to-agent mail keeps the short default, because "every
+  deadline is a day" would leave stale questions on every board for a day apiece.
+
 - **A sibling shares the NAME, never the ROLE, and the resend advice did not say
   so.** Mail to a dormant agent returns "X is LIVE under the same name and is
   almost certainly who you meant. Resend to X." That is right when you meant a

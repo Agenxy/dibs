@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/agenxy/dibs/internal/core"
 )
@@ -313,5 +314,82 @@ func TestOnlyTheHumanCanApproveARoleGrant(t *testing.T) {
 	}
 	if st.Agents["asker"].IsCoordinator() {
 		t.Error("the asker was promoted with no human anywhere in the story")
+	}
+}
+
+// A person gets a person's deadline.
+//
+// The default is ten minutes: right for an agent in a loop, absurd for somebody
+// who answers when they next look at their machine. Measured on this board, on
+// the request that would have made the maintainer a coordinator: sent,
+// delivered, never seen because a Focus mode swallowed the notification, and
+// expired thirty minutes later as `expired_recipient_dormant` while the
+// operator was away. The feature worked; the clock was set for somebody else.
+func TestARequestToTheHumanOutlivesTheDefaultDeadline(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	humanID, _, err := e.HumanAgent(ctx)
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	r, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "asker", AgentKind: core.KindPersistent, Nonce: "n-a",
+	})
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	tok, _ := r["token"].(string)
+
+	sent, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: tok, To: humanID,
+		MsgType: core.MsgRequest, Body: "please approve",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	serial, _ := sent["msg_serial"].(uint64)
+	m := st.Messages[serial]
+	if m == nil {
+		t.Fatal("setup: the message was not stored")
+	}
+	got := m.Deadline.Sub(m.SentAt)
+	if got <= core.DefaultLimits().DefaultDeadline {
+		t.Errorf("a request to the human expires after %s, the same as one to an "+
+			"agent. A person is not in a loop, which is the premise the product "+
+			"rests on, and this default contradicts it", got)
+	}
+
+	// An agent recipient keeps the short default: this must not become "every
+	// deadline is a day", which would leave stale questions sitting on every
+	// board for a day apiece.
+	sent2, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: tok, To: "asker",
+		MsgType: core.MsgRequest, Body: "self",
+	})
+	if err == nil {
+		if m2 := st.Messages[sent2["msg_serial"].(uint64)]; m2 != nil {
+			if m2.Deadline.Sub(m2.SentAt) > core.DefaultLimits().DefaultDeadline {
+				t.Error("an agent-to-agent request also got the human's deadline")
+			}
+		}
+	}
+
+	// And an explicit deadline still wins, in both directions.
+	sent3, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: tok, To: humanID,
+		MsgType: core.MsgRequest, Body: "quick", DeadlineSec: 60,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m3 := st.Messages[sent3["msg_serial"].(uint64)]; m3 != nil {
+		if d := m3.Deadline.Sub(m3.SentAt); d > 5*time.Minute {
+			t.Errorf("an explicit 60s deadline became %s: the sender's word is still "+
+				"the sender's", d)
+		}
 	}
 }

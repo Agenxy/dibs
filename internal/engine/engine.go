@@ -288,6 +288,28 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		op.To = who
 	}
 
+	// A request to a PERSON gets a person's deadline.
+	//
+	// The default is ten minutes, which is right for an agent: it is in a loop,
+	// it answers in seconds, and a stale question should expire rather than
+	// linger. A human is not in a loop. That is the premise the whole product
+	// rests on, and this one default contradicted it.
+	//
+	// Measured on this board, on the request that would have made the
+	// maintainer a coordinator: sent, delivered, never seen because a Focus mode
+	// swallowed the notification, and expired thirty minutes later as
+	// `expired_recipient_dormant` while the operator was away from the machine.
+	// The feature worked. The clock was set for somebody else.
+	//
+	// Recorded into the op rather than decided at read time, which is the rule
+	// for every impure input here: replay must reach the same deadline, and who
+	// the human is can change.
+	if op.Kind == core.OpSendMessage && op.DeadlineSec == 0 && op.MsgType != core.MsgNotify {
+		if human := e.humanIdentityLocked(); human != "" && op.To == human {
+			op.DeadlineSec = int(humanDeadline / time.Second)
+		}
+	}
+
 	// A role is a human's to give.
 	//
 	// core validates WHICH roles may be requested and on what message type; it

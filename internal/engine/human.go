@@ -675,3 +675,15 @@ func said(who, body string) string {
 	}
 	return who + "\n" + line
 }
+
+// humanDeadline is how long a question or request to a PERSON waits before it
+// expires.
+//
+// A day, because that is the honest unit for somebody who answers when they
+// next look at their machine rather than on their next turn. Well inside the
+// seven days core allows a persistent recipient, so a sender who wants longer
+// can still ask for it, and a sender who wants shorter can still say so.
+//
+// Not forever: a request nobody answers has to end, or the board fills with
+// asks whose context is long gone and whose askers have moved on.
+const humanDeadline = 24 * time.Hour
