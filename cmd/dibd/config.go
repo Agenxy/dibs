@@ -56,6 +56,33 @@ type Config struct {
 type WakeConfig struct {
 	// ExtendTurnFor is "all" (default), "urgent", or "none".
 	ExtendTurnFor string `toml:"extend_turn_for"`
+
+	// NoticesWake decides whether situational awareness alone may extend a turn.
+	//
+	// A notice is something that happened TO an agent and that it could not
+	// infer: it was evicted, its request was approved, somebody joined the space
+	// it is working in. Useful, and not all of it is worth resuming a session
+	// for, which is the cost this setting exists to control.
+	//
+	// Waking an agent means extending a turn on a thread that may be long and
+	// whose prompt cache is cold, and on a fleet of idle sessions that is a real
+	// bill to pay for "somebody joined your space".
+	//
+	// ON by default even so, because "an agent is told what happened to it" is a
+	// guarantee this project already makes, in SPEC and in the browser suite,
+	// and quietly making a guarantee conditional to save tokens is the wrong way
+	// round: an operator who cares about the tokens can say so, and one who
+	// never reads this file keeps the behaviour the documentation promises.
+	//
+	// Set it false to make notices pull-only. Nothing is lost when you do: they
+	// queue, they ride along on any wake that happens for another reason, and
+	// they arrive in full at the agent's own check_in, which it makes once per
+	// activation anyway. What changes is latency, not delivery.
+	//
+	// Mail is unaffected either way: a peer waiting on an answer still wakes its
+	// recipient, because somebody is blocked on that and nobody is blocked on
+	// knowing who joined a space.
+	NoticesWake *bool `toml:"notices_wake"`
 }
 
 // policy validates the setting and returns it.

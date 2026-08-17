@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/agenxy/dibs/internal/core"
 )
@@ -80,6 +81,26 @@ func (e *Engine) noteEvent(ev core.Event) {
 	switch ev.Type {
 	case "agent.joined":
 		who, text = ev.Agent, joinedNotice(ev)
+		// And tell the people already in the space.
+		//
+		// This told the JOINER and nobody else, which answers "what did I just
+		// join" and leaves the answer to "who turned up in my space" to whoever
+		// re-reads the board. Somebody arriving in the space you are working in
+		// is the definition of a thing that happened to you and that you could
+		// not have inferred, which is what a notice is for. Asked for after a
+		// fleet ran for a day without anyone noticing a new member: "agents
+		// should be notified of things that concern them, including if another
+		// agent joins their space."
+		e.noteNewMember(ev)
+	case "message.approved", "message.denied", "message.answered", "message.declined":
+		// The ANSWER goes to whoever asked.
+		//
+		// A request approved is the single most consequential thing that can
+		// happen to an agent that asked for something: it may now do what it
+		// could not do a moment ago, and it had no way to learn that short of
+		// re-reading a message it had already sent. Nothing told it. Reported
+		// as: "when you approve an agent's request they should be notified."
+		who, text = ev.To, answeredNotice(ev)
 	case "agent.absorbed":
 		// Your agent just gained another space's members, its predicted footprint
 		// and its outstanding announcements, which you may now be required to
@@ -206,3 +227,70 @@ func (e *Engine) pendingNotices(agent string) []string {
 // AckNotices drops an agent's notices for good. Called on a TOKEN-authenticated
 // read, which is the only place we know the agent itself is asking.
 func (e *Engine) AckNotices(agent string) { delete(e.notices, agent) }
+
+// answeredNotice says what an answer to your own request means for you.
+//
+// The disposition alone ("approved") is not enough: the useful sentence is what
+// you may now do, or what you should stop waiting for. An approval that granted
+// a role or moved a mailbox says so, because those change what the next call
+// will do and the agent has no other way to find out.
+func answeredNotice(ev core.Event) string {
+	by := ev.Agent
+	serial, _ := ev.Data["msg_serial"].(uint64)
+	switch ev.Type {
+	case "message.approved":
+		s := fmt.Sprintf("%s APPROVED your request (msg %d)", by, serial)
+		if role, ok := ev.Data["granted"].(string); ok && role != "" {
+			return s + fmt.Sprintf(": you now hold the %s role. Re-read the board; "+
+				"calls that failed with E_NOT_%s will work now",
+				role, strings.ToUpper(role))
+		}
+		if from, ok := ev.Data["adopted"].(string); ok && from != "" {
+			return s + fmt.Sprintf(": %q's mail is now delivered to you. Call inbox: "+
+				"it is there now and was not before", from)
+		}
+		return s + ". Read it with read_mail to see what they said"
+	case "message.denied":
+		return fmt.Sprintf("%s DENIED your request (msg %d). Do not retry the same ask "+
+			"without new reasoning; read_mail has whatever they said", by, serial)
+	case "message.declined":
+		return fmt.Sprintf("%s declined to answer (msg %d): they are entitled to, and "+
+			"nothing is coming. Ask somebody else or proceed without it", by, serial)
+	default: // answered
+		return fmt.Sprintf("%s answered your question (msg %d): read_mail(%d)",
+			by, serial, serial)
+	}
+}
+
+// noteNewMember tells the existing members that somebody joined.
+//
+// Not the joiner, who already knows and gets joinedNotice, and not a member
+// who is the joiner. One line: who, and where. Whether that matters is the
+// reader's call, which is the whole posture of this product.
+func (e *Engine) noteNewMember(ev core.Event) {
+	// Guarded, because noteEvent runs on the event path and must not be able to
+	// take the daemon down over a notice. A zero-value Engine has no state at
+	// all, which is how the existing notice tests are built, and a nil map
+	// dereference here would be a panic in the writer's own goroutine.
+	if e.state == nil {
+		return
+	}
+	spaceID, _ := ev.Data["agent_id"].(string)
+	sp := e.state.Spaces[spaceID]
+	if sp == nil {
+		return
+	}
+	joiner := ev.Agent
+	auto, _ := ev.Data["auto"].(bool)
+	how := "joined"
+	if auto {
+		how = "was joined automatically, on a work-overlap match, to"
+	}
+	for member := range sp.Members {
+		if member == joiner {
+			continue
+		}
+		e.pushNotice(member,
+			fmt.Sprintf("%s %s the space %q you are in", joiner, how, spaceID), ev.Serial)
+	}
+}

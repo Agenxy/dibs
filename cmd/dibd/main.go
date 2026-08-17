@@ -236,6 +236,10 @@ func run() error {
 		return fmt.Errorf("reading %s/dibs.toml: %w", *dir, err)
 	}
 	eng.SetWakePolicy(wake)
+	// On unless the operator opted out: see WakeConfig.NoticesWake. A pointer so
+	// "unset" and "explicitly false" are distinguishable, which is the whole
+	// reason a bool setting with a true default needs one.
+	eng.SetNoticesWake(cfg.Wake.NoticesWake == nil || *cfg.Wake.NoticesWake)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go eng.Run(ctx)

@@ -101,3 +101,45 @@ func TestTheHumanIsToldWhoIsAsking(t *testing.T) {
 		t.Errorf("the agent's own text precedes the identity line:\n%s", msg)
 	}
 }
+
+// Situational awareness does not resume a session unless the operator says so.
+//
+// Waking an agent means reviving a thread that may be long and whose prompt
+// cache is cold. Paying that to deliver "somebody joined your space" is a bad
+// trade on a fleet with many idle sessions, which is why the default is off:
+// the notice queues, rides along on any wake that happens for another reason,
+// and arrives in full at the agent's own check_in, which it makes once per
+// activation anyway.
+//
+// Mail is deliberately unaffected. Somebody is blocked on an unanswered
+// question; nobody is blocked on knowing who joined a space.
+func TestANoticeAloneDoesNotWakeUnlessConfigured(t *testing.T) {
+	e := &Engine{}
+	e.SetWakePolicy(WakeAll)
+
+	// A notice, and nothing else: no fresh mail, nobody blocked.
+	if e.deliverToModel("Stop", false, false, false) {
+		t.Fatal("setup: a turn was extended with nothing waiting at all")
+	}
+	// ON by default, and the ZERO VALUE has to be the on one.
+	//
+	// "An agent is told what happened to it" is a guarantee this project makes
+	// in SPEC and in the browser suite. Defaulting to off would make it
+	// conditional on reading a config file, which is how a documented promise
+	// quietly stops being true. The first version of this setting did exactly
+	// that and four end-to-end checks caught it.
+	if !e.noticesWake() {
+		t.Error("an unconfigured engine does not wake on notices, so the guarantee " +
+			"holds only for operators who found the setting")
+	}
+
+	// And the operator can buy the tokens back.
+	e.SetNoticesWake(false)
+	if e.noticesWake() {
+		t.Error("notices_wake = false was ignored, so the cost control does nothing")
+	}
+	e.SetNoticesWake(true)
+	if !e.noticesWake() {
+		t.Error("turning it back on did not")
+	}
+}

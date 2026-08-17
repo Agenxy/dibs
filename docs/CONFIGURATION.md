@@ -44,6 +44,7 @@ addr = "100.72.14.3:4777"    # a tailnet address: agents on four machines, one b
 | Key | Default | What it decides |
 |---|---|---|
 | `extend_turn_for` | `all` | Which news may extend an agent's turn: `all`, `urgent`, `none`. |
+| `notices_wake` | `true` | Whether situational awareness alone may extend a turn. |
 
 `all` means anything unread wakes its recipient, once, when it arrives. A fleet
 that waits for somebody to type before its members hear anything is not
@@ -61,9 +62,28 @@ Each message wakes once either way, so an agent that read something and chose
 not to act is not asked again. Work somebody is blocked on comes back on the
 announcement retry. See [WAKE-MECHANISMS.md](../WAKE-MECHANISMS.md).
 
+`notices_wake` covers the other half: a **notice** is something that happened
+TO an agent and that it could not infer, such as being evicted, having a request
+approved, or another agent joining a space it is working in.
+
+On by default, because "an agent is told what happened to it" is a guarantee
+Dibs already makes, and a guarantee that holds only for operators who found a
+config file is not one.
+
+Turn it **off** to buy the tokens back. Extending a turn revives a thread that
+may be long and whose prompt cache is cold, and on a fleet of idle sessions that
+is a real bill to pay for "somebody joined your space". Nothing is lost when you
+do: notices queue, ride along on any wake that happens for another reason, and
+arrive in full at the agent's own `check_in`, which it makes once per activation
+anyway. What you give up is latency, not delivery.
+
+Mail is unaffected either way, because somebody is blocked on an unanswered
+question and nobody is blocked on knowing who joined a space.
+
 ```toml
 [wake]
 extend_turn_for = "urgent"   # an FYI should never cost a turn on this machine
+notices_wake = false         # ...and do not spend a turn on situational awareness
 ```
 
 ---

@@ -1724,6 +1724,11 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 	if granted != nil {
 		granted.Role = m.Grant
 		res["granted"], res["to"] = m.Grant, granted.ID
+		// On the message event too, not only in the result. The result reaches
+		// the RESPONDER; the requester learns about this from the event, and
+		// "approved" without "you are now coordinator" is the half that does not
+		// tell them what changed.
+		evs[0].Data["granted"] = m.Grant
 		evs = append(evs, Event{
 			Type: "agent.role_changed", Agent: granted.ID,
 			Data: map[string]any{"role": m.Grant, "via": "approved_request"},
@@ -1738,6 +1743,7 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 			}
 		}
 		res["adopted"], res["messages"] = adopted.ID, moved
+		evs[0].Data["adopted"] = adopted.ID
 		res["adopt_note"] = "the source agent keeps its history; only where its mail is " +
 			"delivered has changed"
 		evs = append(evs, Event{

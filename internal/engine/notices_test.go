@@ -509,3 +509,89 @@ func TestOnlyRelevantMembershipSuppressesANewSpace(t *testing.T) {
 		t.Error("an agent you are NOT in is a suggestion, not a reason to stay silent")
 	}
 }
+
+// An agent whose request is approved is told, and told what changed.
+//
+// It is the most consequential thing that can happen to an agent that asked for
+// something: it may now do what it could not a moment ago, and short of
+// re-reading a message it had already sent, nothing told it. "When you approve
+// an agent's request they should be notified."
+func TestTheAskerIsToldItsRequestWasApproved(t *testing.T) {
+	e := &Engine{}
+	e.noteEvent(core.Event{
+		Type: "message.approved", Agent: "boss", To: "asker", Serial: 9,
+		Data: map[string]any{"msg_serial": uint64(7), "granted": "coordinator"},
+	})
+	got := e.pendingNotices("asker")
+	if len(got) != 1 {
+		t.Fatalf("the asker was told %d things about its own approved request", len(got))
+	}
+	for _, want := range []string{"APPROVED", "coordinator", "boss"} {
+		if !strings.Contains(got[0], want) {
+			t.Errorf("the notice omits %q, so the agent knows it was approved and not "+
+				"what it may now do: %s", want, got[0])
+		}
+	}
+	// And the responder is not told about their own action.
+	if n := e.pendingNotices("boss"); len(n) != 0 {
+		t.Errorf("the responder was notified of its own decision: %v", n)
+	}
+}
+
+// A denial is a different sentence, because the right next move is different.
+func TestADenialSaysNotToRetryBlindly(t *testing.T) {
+	e := &Engine{}
+	e.noteEvent(core.Event{
+		Type: "message.denied", Agent: "boss", To: "asker", Serial: 9,
+		Data: map[string]any{"msg_serial": uint64(7)},
+	})
+	got := e.pendingNotices("asker")
+	if len(got) != 1 || !strings.Contains(got[0], "DENIED") {
+		t.Fatalf("a denied request produced %v", got)
+	}
+	if !strings.Contains(got[0], "retry") {
+		t.Errorf("the notice does not say what not to do next, which is the only "+
+			"thing distinguishing it from a bare status: %s", got[0])
+	}
+}
+
+// The agents already in a space are told when somebody joins it.
+//
+// This notified the JOINER and nobody else, which answers "what did I just
+// join" and leaves "who turned up in my space" to whoever happens to re-read
+// the board. Somebody arriving in the work you are doing is the definition of a
+// change you did not cause and could not infer, which is what a notice is for.
+// Asked for as situational awareness, after a fleet ran for a day without
+// anyone noticing a new member.
+func TestMembersAreToldWhenSomebodyJoinsTheirSpace(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	st.Spaces["auth"] = &core.Space{
+		ID: "auth",
+		Members: map[string]*core.Membership{
+			"incumbent": {}, "newcomer": {}, "quiet-one": {},
+		},
+	}
+	e := &Engine{state: st}
+	e.noteEvent(core.Event{
+		Type: "agent.joined", Agent: "newcomer", Serial: 5,
+		Data: map[string]any{"agent_id": "auth"},
+	})
+
+	for _, who := range []string{"incumbent", "quiet-one"} {
+		got := e.pendingNotices(who)
+		if len(got) != 1 {
+			t.Fatalf("%s was told %d things about a new member of the space it is "+
+				"working in", who, len(got))
+		}
+		if !strings.Contains(got[0], "newcomer") || !strings.Contains(got[0], "auth") {
+			t.Errorf("the notice does not say who joined what: %s", got[0])
+		}
+	}
+	// The joiner gets its own notice about joining, and must not also be told
+	// that it turned up.
+	for _, n := range e.pendingNotices("newcomer") {
+		if strings.Contains(n, "you are in") {
+			t.Errorf("the joiner was told about its own arrival: %s", n)
+		}
+	}
+}

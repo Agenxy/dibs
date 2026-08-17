@@ -87,8 +87,25 @@ func (e *Engine) HookPoll(ctx context.Context, sessionID, event, cwd string, sto
 		// And the model's copy, only when it is worth extending a turn for.
 		// Anything unread wakes the agent, once. An agent learns about mail when
 		// it arrives, not when a human next types.
-		fresh := e.freshForWake(l.ID, time.Now()) || len(announced) > 0 || len(notices) > 0
-		blocked := e.somebodyIsWaiting(l.ID) || len(announced) > 0 || len(notices) > 0
+		// A NOTICE is situational awareness, and whether it is worth resuming a
+		// session for is the operator's call, not ours.
+		//
+		// Waking an agent extends a turn on a thread that may be long and whose
+		// prompt cache is cold, which on a fleet of idle sessions is a real bill
+		// to pay for "somebody joined your space". ON by default even so, because
+		// "an agent is told what happened to it" is a guarantee this project
+		// already makes; an operator who would rather have the tokens sets
+		// `notices_wake = false`, and loses latency rather than delivery, since
+		// the notice still arrives in full at the agent's own check_in.
+		//
+		// Mail is deliberately unaffected: somebody is blocked on an unanswered
+		// question, and nobody is blocked on knowing who joined a space.
+		noticesCount := 0
+		if e.noticesWake() {
+			noticesCount = len(notices)
+		}
+		fresh := e.freshForWake(l.ID, time.Now()) || len(announced) > 0 || noticesCount > 0
+		blocked := e.somebodyIsWaiting(l.ID) || len(announced) > 0 || noticesCount > 0
 		if e.deliverToModel(event, fresh, blocked, stopActive) {
 			out["hookSpecificOutput"] = map[string]any{
 				"hookEventName":     event,
@@ -429,6 +446,21 @@ func (e *Engine) SetWakePolicy(p WakePhase) {
 	e.wake.policy = p
 }
 
+// SetNoticesWake applies `[wake] notices_wake`: whether situational awareness
+// alone may extend a turn. Off by default; see WakeConfig for the cost argument.
+func (e *Engine) SetNoticesWake(on bool) {
+	e.wake.mu.Lock()
+	defer e.wake.mu.Unlock()
+	e.wake.noticesOff = !on
+}
+
+// noticesWake reports the setting.
+func (e *Engine) noticesWake() bool {
+	e.wake.mu.Lock()
+	defer e.wake.mu.Unlock()
+	return !e.wake.noticesOff
+}
+
 // somebodyIsWaiting reports whether any unread message expects a response.
 func (e *Engine) somebodyIsWaiting(agent string) bool {
 	for _, m := range e.state.Inbox(agent) {
@@ -446,6 +478,11 @@ func (e *Engine) somebodyIsWaiting(agent string) bool {
 type wakeState struct {
 	mu     sync.RWMutex
 	policy WakePhase
+	// noticesOff inverts the setting so the ZERO VALUE is the documented
+	// behaviour. A plain `notices bool` would make an engine nobody configured
+	// silently quieter than the specification says, which is exactly the trap
+	// this field is shaped to avoid.
+	noticesOff bool
 }
 
 // freshForWake reports whether this agent has unread mail it has not already

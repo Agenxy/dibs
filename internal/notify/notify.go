@@ -39,6 +39,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -51,6 +52,15 @@ var ErrUnsupported = errors.New("no desktop notification route on this platform"
 // timeout bounds every prompt. An alert nobody answers must not hold a
 // goroutine, or an unattended machine accumulates one per message.
 const timeout = 2 * time.Minute
+
+// windowTimeout bounds the escalated ask, which is a WINDOW rather than a
+// banner and therefore stays put until somebody deals with it.
+//
+// Fifteen minutes, not two: a person who steps away from a window comes back to
+// it, which is the entire reason this path exists. Still bounded, because a
+// modal nobody ever answers is a process held open on an unattended machine and
+// a dialog in the way of whatever they do next.
+const windowTimeout = 15 * time.Minute
 
 // banner posts a notification. Arguments, never interpolation.
 const banner = `on run argv
@@ -134,8 +144,24 @@ func Ask(title, body string, buttons ...string) (string, error) {
 	if h := helper(); h != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), timeout+30*time.Second)
 		defer cancel()
+		// A banner nobody can see is not an ask.
+		//
+		// Where a Focus mode is active AND this build cannot mark a notification
+		// Time Sensitive, the banner is silenced by construction: it is delivered,
+		// macOS holds it in Notification Centre, and the person finds it whenever
+		// they next go looking, which for a request with a deadline is the same as
+		// never. Measured exactly that way, three times in one evening, on a
+		// request the operator had asked for twice.
+		//
+		// So escalate to a window, which Focus does not silence. Only then: a
+		// service that steals focus for every question is one people turn off,
+		// and that argument is why this is not the default.
+		args := append([]string{title, "", body}, buttons...)
+		if bannersAreSilenced() {
+			return askInAWindow(h, title, body, buttons)
+		}
 		// #nosec G204 -- h is resolved beside this binary; the rest is argv data.
-		out, err := exec.CommandContext(ctx, h, append([]string{title, "", body}, buttons...)...).Output()
+		out, err := exec.CommandContext(ctx, h, args...).Output()
 		if err != nil {
 			// Exit 2 means the machine WILL NOT notify: no authorisation, no
 			// bundle. That is not a person deferring, and collapsing the two is
@@ -283,10 +309,20 @@ func Reach() (ok bool, why string) {
 	case "authorized":
 		// Allowed, which is not the same as visible.
 		if f := focusOn(); f != "" {
-			return false, "a Focus mode is on (" + f + "), which silences notifications. " +
-				"A question or request asks to break through as Time Sensitive; allow " +
-				"that for Dibs in System Settings > Notifications, or expect asks to " +
-				"wait in Notification Center"
+			if bannersAreSilenced() {
+				// Do not advise enabling Time Sensitive here. macOS reports it as
+				// notSupported for this build, because it needs an entitlement Dibs
+				// does not carry, so that advice cannot be followed and sends
+				// somebody hunting a switch that is not there.
+				return false, "a Focus mode is on (" + f + ") and this build cannot mark " +
+					"a notification Time Sensitive, which is what would break through " +
+					"one. Banners are silenced by construction, so a question or " +
+					"request to you opens a WINDOW instead, which Focus does not " +
+					"silence. Passive notices still wait in Notification Center"
+			}
+			return false, "a Focus mode is on (" + f + "), which silences banners. A " +
+				"question or request asks to break through as Time Sensitive; allow " +
+				"that for Dibs in System Settings > Notifications if it is not already"
 		}
 		return true, ""
 	case "denied":
@@ -359,4 +395,79 @@ var ErrCannotNotify = errors.New("this machine will not show a notification")
 func notAuthorised(err error) bool {
 	var ee *exec.ExitError
 	return errors.As(err, &ee) && ee.ExitCode() == 2
+}
+
+// bannersAreSilenced reports whether a notification would be delivered and not
+// seen.
+//
+// Two conditions, and it takes both. A Focus mode suppresses banners; Time
+// Sensitive is what breaks through one, and it needs an entitlement this build
+// does not carry, so `timeSensitiveSetting` comes back notSupported. Either
+// alone is survivable. Together they mean a banner is silenced by construction,
+// which is a different thing from a person choosing not to answer.
+//
+// Deliberately conservative: anything it cannot determine reads as "not
+// silenced", so the quiet path stays the default and an escalation happens only
+// on positive evidence that the quiet path cannot work.
+func bannersAreSilenced() bool {
+	if focusOn() == "" {
+		return false
+	}
+	h := helper()
+	if h == "" {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	// #nosec G204 -- h is resolved beside this binary; --settings is a constant.
+	out, err := exec.CommandContext(ctx, h, "--settings").Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), "timeSensitive=0")
+}
+
+// askInAWindow puts the question on screen through the user's GUI session.
+//
+// The daemon is a LaunchAgent, and a process it forks directly has no route to
+// the WindowServer: the helper starts, finds nothing to draw into, and exits at
+// once. Measured three times, each looking like "the notification did not
+// appear", and each time the same helper run from an interactive shell drew the
+// window perfectly. That difference is the whole bug, and it is why the earlier
+// osascript prompt never appeared either.
+//
+// `launchctl asuser <uid>` runs it inside the user's Aqua session, which is
+// where a window can exist. The cost is that stdout does not come back, so the
+// answer is left in a file this side creates and reads. The file holds a button
+// label and nothing else: no token, no message body, nothing worth protecting
+// beyond not leaving litter.
+func askInAWindow(helperPath, title, body string, buttons []string) (string, error) {
+	f, err := os.CreateTemp("", "dibs-answer-*")
+	if err != nil {
+		return "", err
+	}
+	answer := f.Name()
+	_ = f.Close()
+	defer func() { _ = os.Remove(answer) }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), windowTimeout)
+	defer cancel()
+	argv := append([]string{
+		"asuser", strconv.Itoa(os.Getuid()), helperPath, "--ask", "--out", answer,
+		title, body,
+	}, buttons...)
+	// #nosec G204 -- launchctl is a fixed path, helperPath is resolved beside
+	// this binary, and the rest is argv data the helper never interprets.
+	if err := exec.CommandContext(ctx, "/bin/launchctl", argv...).Run(); err != nil {
+		// A dismissed window exits non-zero, which is an answer.
+		var ee *exec.ExitError
+		if !errors.As(err, &ee) {
+			return "", err
+		}
+	}
+	out, err := os.ReadFile(answer) // #nosec G304 -- a path this function just created
+	if err != nil {
+		return "", nil // nothing written: dismissed, or never drawn
+	}
+	return strings.TrimSpace(string(out)), nil
 }

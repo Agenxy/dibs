@@ -7,6 +7,33 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **An agent is told when its request is answered, and what changed.** Approval
+  is the most consequential thing that can happen to an agent that asked for
+  something: it may now do what it could not a moment ago, and short of
+  re-reading a message it had already sent, nothing told it. The notice names
+  the effect rather than the disposition, so an approved `grant` says "you now
+  hold the coordinator role" and an approved `adopt` says whose mail is now
+  yours. A denial says not to retry the same ask without new reasoning.
+
+- **The agents already in a space are told when somebody joins it.** This
+  notified the joiner and nobody else, which answers "what did I just join" and
+  leaves "who turned up in my space" to whoever re-reads the board. Somebody
+  arriving in the work you are doing is a change you did not cause and could not
+  infer, which is what a notice is for.
+
+- **`[wake] notices_wake`**, for the cost of the above. Extending a turn revives
+  a thread that may be long and whose prompt cache is cold, and on a fleet of
+  idle sessions that is a real bill to pay for "somebody joined your space".
+
+  On by default, and the first version had it off, which four end-to-end checks
+  caught immediately: "an agent is told what happened to it" is a guarantee this
+  project already makes, and one that holds only for operators who found a
+  config file is not a guarantee. The zero value is therefore the documented
+  behaviour, and the field is stored inverted so that stays true for an engine
+  nobody configured. Turning it off costs latency, not delivery: notices still
+  queue, still ride along on any other wake, and still arrive in full at the
+  agent's own `check_in`.
+
 - **Mail reaches an agent whose harness cannot push anything.** Every
   authenticated mutating result now carries a `waiting` line when the caller has
   unread mail, an unacknowledged announcement, or a pending agent update: counts

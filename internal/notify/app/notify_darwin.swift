@@ -119,6 +119,123 @@ func askOnScreen(_ heading: String, _ detail: String, choices: [String]) -> Int3
     return 0
 }
 
+// --delivered: post one notification, then ask macOS what it actually holds.
+//
+// Diagnosis, because "posted" and "visible" turned out to be different things
+// and nothing here could tell them apart. UNUserNotificationCenter accepts a
+// request and reports no error whether the banner is shown, silenced by a Focus
+// mode, or dropped for a reason it does not surface. getDeliveredNotifications
+// answers the only question that matters afterwards: is it in Notification
+// Centre, where a person could still find it, or nowhere at all.
+if args.first == "--delivered" {
+    let centre = UNUserNotificationCenter.current()
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+
+    centre.requestAuthorization(options: [.alert, .sound]) { granted, err in
+        guard granted else {
+            FileHandle.standardError.write(Data("authorisation refused: \(err?.localizedDescription ?? "")\n".utf8))
+            exit(2)
+        }
+        let c = UNMutableNotificationContent()
+        c.title = "Dibs · delivery probe"
+        c.body = "If you can see this, notifications are reaching the screen."
+        c.interruptionLevel = .timeSensitive
+        let id = "dibs-probe"
+        centre.add(UNNotificationRequest(identifier: id, content: c, trigger: nil)) { addErr in
+            if let addErr { print("add error: \(addErr.localizedDescription)") }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                centre.getDeliveredNotifications { delivered in
+                    print("delivered notifications held by macOS: \(delivered.count)")
+                    for n in delivered {
+                        print("  - \(n.request.identifier): \(n.request.content.title)")
+                    }
+                    centre.getNotificationSettings { st in
+                        print("authorization=\(st.authorizationStatus.rawValue) alert=\(st.alertSetting.rawValue) " +
+                              "notificationCentre=\(st.notificationCenterSetting.rawValue) " +
+                              "lockScreen=\(st.lockScreenSetting.rawValue) " +
+                              "timeSensitive=\(st.timeSensitiveSetting.rawValue)")
+                        exit(delivered.isEmpty ? 3 : 0)
+                    }
+                }
+            }
+        }
+    }
+    app.run()
+}
+
+// --ask: the same question as a banner, in a window that Focus cannot silence.
+//
+// A notification is the right shape and is not always available. Measured on the
+// machine this was written on: authorisation granted, alerts enabled, the
+// notification delivered and held by macOS, and never seen, because two Focus
+// modes were active and `timeSensitiveSetting` reports notSupported. Time
+// Sensitive is what breaks through Focus, and Apple gates it behind an
+// entitlement Dibs does not carry, signing being left to whoever installs it.
+//
+// So on that machine a request to the human could not be seen in time, by
+// construction, however correctly it was posted. This is the escalation: same
+// text, same buttons, as a window that activates. It is used only when the quiet
+// path is known to be silenced, never by default, because a service that steals
+// focus for every question is one people turn off.
+// --settings: the notification settings as one line, posting nothing.
+//
+// `--delivered` answers the same question by posting a probe, which is exactly
+// what a diagnostic must not do when the caller is deciding how to deliver a
+// real message.
+if args.first == "--settings" {
+    let centre = UNUserNotificationCenter.current()
+    let done = DispatchSemaphore(value: 0)
+    centre.getNotificationSettings { st in
+        print("authorization=\(st.authorizationStatus.rawValue) alert=\(st.alertSetting.rawValue) " +
+              "timeSensitive=\(st.timeSensitiveSetting.rawValue)")
+        done.signal()
+    }
+    _ = done.wait(timeout: .now() + 10)
+    exit(0)
+}
+
+if args.first == "--ask" {
+    // --out <path> may precede the rest: where to leave the answer.
+    var rest = Array(args.dropFirst())
+    var outPath: String?
+    if rest.first == "--out", rest.count >= 2 {
+        outPath = rest[1]
+        rest = Array(rest.dropFirst(2))
+    }
+    guard rest.count >= 3 else {
+        FileHandle.standardError.write("usage: dibs-notify --ask <title> <body> <button…>\n".data(using: .utf8)!)
+        exit(2)
+    }
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    app.activate(ignoringOtherApps: true)
+
+    let alert = NSAlert()
+    alert.messageText = rest[0]
+    alert.informativeText = rest[1]
+    alert.alertStyle = .informational
+    // Added in order, and AppKit puts the first button rightmost as the default,
+    // so the caller's last-is-default convention is preserved by reversing.
+    for title in Array(rest.dropFirst(2)).reversed() {
+        alert.addButton(withTitle: title)
+    }
+    let pressed = alert.runModal()
+    let index = pressed.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+    let buttons = Array(rest.dropFirst(2)).reversed().map { $0 }
+    guard index >= 0 && index < buttons.count else { exit(1) }
+    // Written to a FILE as well as stdout.
+    //
+    // The daemon launches this through `launchctl asuser`, which is what gives
+    // it a GUI session to draw in, and which does not carry our stdout back.
+    // The answer therefore has to be left somewhere the daemon can read it.
+    if let out = outPath {
+        try? buttons[index].write(toFile: out, atomically: true, encoding: .utf8)
+    }
+    print(buttons[index])
+    exit(0)
+}
+
 if args.first == "--prompt" || args.first == "--pick" {
     let rest = Array(args.dropFirst())
     guard rest.count >= 2 else {
