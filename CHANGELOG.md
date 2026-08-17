@@ -7,6 +7,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The stdio bridge keeps the nonce, so a returning agent is the same agent.**
+  This is the product's central failure, and an agent building on Dibs said it
+  better than the source did: "An agent cannot be relied on to carry a secret
+  across a context boundary." A persistent agent is told to keep a nonce,
+  because it is the only credential that survives a restart. Then its context
+  ends, which is the event the nonce exists for, and the nonce ends with it. The
+  next session registers under the same name with a fresh one, becomes a
+  SIBLING, and cannot read a word of its predecessor's mail.
+
+  Measured on a real board: nine rows for five roles. `dibs-maintainer`, `-2`,
+  `-3`. `codex-root`, `-2`. `codex-1`, `-2`. `web-lead`, `-2`. One created while
+  fixing the others; one agent reproduced it twice in a day, the second time
+  having been warned by the very response that created the first.
+
+  The bridge is the only participant with a memory that spans sessions, so it
+  keeps it: per project root and per name, stored 0600 under the data directory
+  rather than in a tree somebody might commit. A returning session reattaches
+  before the model has done anything. What the agent supplies still wins, and is
+  remembered too. This does not help HTTP clients, which have no bridge; that
+  gap is named rather than papered over.
+
 - **An agent is told when its request is answered, and what changed.** Approval
   is the most consequential thing that can happen to an agent that asked for
   something: it may now do what it could not a moment ago, and short of
