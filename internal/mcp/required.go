@@ -62,7 +62,7 @@ var knownParams = func() map[string][]string {
 //
 // bearerToken is passed because `token` may legitimately arrive in the HTTP
 // Authorization header instead of the arguments object.
-func checkRequired(tool string, raw json.RawMessage, bearerToken string) error {
+func checkRequired(tool string, raw json.RawMessage, bearerToken, agentNonce string) error {
 	req := requiredParams[tool]
 	if len(req) == 0 {
 		return nil
@@ -86,6 +86,13 @@ func checkRequired(tool string, raw json.RawMessage, bearerToken string) error {
 	}
 	if bearerToken != "" {
 		present["token"] = true
+	}
+	// A nonce carried by the transport counts as supplied, exactly like the
+	// bearer token above. It is the same fact in both cases: a credential the
+	// harness holds, presented where the harness can actually put it, rather
+	// than where only the model could. See identityFromTransport.
+	if agentNonce != "" {
+		present["nonce"] = true
 	}
 
 	var missing []string

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -134,6 +135,7 @@ func mcpStdio(_ []string) error {
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Dibs-Local", secret)
+		setPinnedIdentity(req)
 
 		// A listen call answers with a stream, not a reply, so it cannot be
 		// awaited on the loop that reads stdin: the harness would be unable to
@@ -419,4 +421,17 @@ func endSessionWhenTheHarnessGoes(ctx, sigCtx context.Context, endSession func()
 	endSession() // stop the streams before the process goes
 	out.flush()
 	os.Exit(0)
+}
+
+// setPinnedIdentity forwards an identity the operator pinned in the harness's
+// own config, to where every transport can carry it.
+//
+// stdio configs set env and HTTP configs set headers; the daemon reads one
+// thing either way, so reattaching stops depending on which transport a harness
+// happens to speak. The bridge's own nonce store stays as the automatic path
+// for a harness that pins nothing: ergonomics, no longer the mechanism.
+func setPinnedIdentity(req *http.Request) {
+	if n := strings.TrimSpace(os.Getenv("DIBS_AGENT_NONCE")); n != "" {
+		req.Header.Set("X-Dibs-Agent-Nonce", n)
+	}
 }

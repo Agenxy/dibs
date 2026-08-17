@@ -236,7 +236,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.handledLegacySubscription(w, r, &req) {
 		return
 	}
-	result, rpcErr := s.dispatch(r.Context(), &req, bearer(r), s.sessions.wantsUI(r),
+	result, rpcErr := s.dispatch(r.Context(), &req, bearer(r), identityFromTransport(r), s.sessions.wantsUI(r),
 		s.sessions.clientFor(r), s.sessions.panelFetches(r))
 	writeRPC(w, http.StatusOK, req.ID, tagResult(result, requestEra(r, req.Params)), rpcErr)
 }
@@ -396,6 +396,70 @@ func negotiateLegacy(params json.RawMessage) string {
 	return handshakeVersions[0]
 }
 
+// agentNonceHeader carries an agent's durable identity in transport metadata,
+// so that reattaching does not depend on which transport the harness happens to
+// speak.
+const agentNonceHeader = "X-Dibs-Agent-Nonce"
+
+// identityFromTransport returns the nonce the HARNESS presented, or "".
+//
+// The problem it solves is the product's oldest: an agent cannot carry a secret
+// across a context boundary. Its context ends, which is the event the nonce
+// exists for, and the nonce goes with it; the next session registers under the
+// same name with a new nonce, becomes a sibling, and cannot read a word of its
+// predecessor's mail. Measured on this board as nine rows for five roles.
+//
+// The stdio bridge solved it by REMEMBERING: it is a per-session process with a
+// filesystem, so it keeps the nonce and fills it in. That works, and it welded
+// identity to one transport. An HTTP client has no such process, so the same
+// agent on the same board could not reattach at all, and the transport choice
+// stopped being a choice: see #33.
+//
+// This is the same fact carried where every transport can carry it. A harness's
+// MCP server config is static and outlives any context, exactly like the
+// bridge's file, and it is the standard place credentials already live:
+//
+//	HTTP  headers = { "X-Dibs-Agent-Nonce" = "..." }
+//	stdio env     = { DIBS_AGENT_NONCE = "..." }   (the bridge forwards it)
+//
+// 2026-07-28 is what makes this the right shape rather than a workaround. That
+// revision removed connection-scoped sessions precisely so cross-call state
+// travels as explicit handles rather than as a property of the pipe, which is
+// the first time a server can offer identical semantics on every binding.
+//
+// The agent's own word still wins: a nonce passed as a tool argument is used in
+// preference to this, exactly as before. This fills a blank; it never overrides.
+// fillFromTransport supplies the credentials the HARNESS holds, for the fields
+// the agent left blank.
+//
+// Both are the same fact: a credential presented where a harness config can
+// actually put one, rather than where only the model could. The agent's own
+// word always wins; this only ever fills a blank.
+func (a *toolArgs) fillFromTransport(tool, bearerToken, agentNonce string) {
+	if a.Token == "" {
+		a.Token = bearerToken
+	}
+	if a.Nonce == "" && establishesIdentity(tool) {
+		a.Nonce = agentNonce
+	}
+}
+
+// establishesIdentity reports whether a tool's `nonce` means "who I am", so a
+// harness-presented identity may fill it in.
+//
+// Scoped, and the scope is the security boundary. `vouch_child` also takes a
+// `nonce`, and there it means the one-time secret a PARENT issued for one
+// specific child. Defaulting THAT from the caller's own identity would let any
+// agent vouch for a child it never spawned: a privilege escalation wearing a
+// convenience's clothes, and this repository has shipped that shape before.
+func establishesIdentity(tool string) bool {
+	return tool == "register" || tool == "resume"
+}
+
+func identityFromTransport(r *http.Request) string {
+	return strings.TrimSpace(r.Header.Get(agentNonceHeader))
+}
+
 func bearer(r *http.Request) string {
 	// The scheme is case-INSENSITIVE (RFC 9110 §11.1): "bearer", "BEARER" and
 	// "Bearer" are the same token, and a client sending any of them is correct.
@@ -495,7 +559,7 @@ func (s *Server) serveGET(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) dispatch(
-	ctx context.Context, req *rpcRequest, bearerToken string,
+	ctx context.Context, req *rpcRequest, bearerToken, agentNonce string,
 	sessionUI bool, sessionClient *clientInfoJSON, panelFetches bool,
 ) (any, *rpcError) {
 	switch req.Method {
@@ -648,7 +712,7 @@ func (s *Server) dispatch(
 			}
 		}
 	case "tools/call":
-		return s.callTool(ctx, req.Params, bearerToken, sessionUI, sessionClient, panelFetches)
+		return s.callTool(ctx, req.Params, bearerToken, agentNonce, sessionUI, sessionClient, panelFetches)
 	default:
 		return nil, &rpcError{
 			Code: -32601, Message: "method not found: " + req.Method,
@@ -834,7 +898,7 @@ func argErr(err error) string {
 }
 
 func (s *Server) callTool(
-	ctx context.Context, params json.RawMessage, bearerToken string, sessionUI bool,
+	ctx context.Context, params json.RawMessage, bearerToken, agentNonce string, sessionUI bool,
 	sessionClient *clientInfoJSON, panelFetches bool,
 ) (any, *rpcError) {
 	var call struct {
@@ -856,13 +920,11 @@ func (s *Server) callTool(
 			}
 		}
 	}
-	if a.Token == "" {
-		a.Token = bearerToken
-	}
+	a.fillFromTransport(call.Name, bearerToken, agentNonce)
 	// The schemas declare `required`; until this, nothing enforced it, so an
 	// omitted parameter arrived as a zero value and the handler answered about
 	// it as though the caller had sent it.
-	if err := checkRequired(call.Name, call.Args, bearerToken); err != nil {
+	if err := checkRequired(call.Name, call.Args, bearerToken, agentNonce); err != nil {
 		return nil, &rpcError{
 			Code: -32602, Message: err.Error(),
 			Data: hint(schemaHint(call.Name)),

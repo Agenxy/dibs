@@ -275,6 +275,29 @@ you can measure is never improved by asking.
     (`resumed: true`). Outside that window: `E_NONCE_IN_USE` with hint → `resume`.
   - *Recovery credential* for persistent agents via `resume`. **Treat a
     persistent agent's nonce as a secret equal to its token.**
+  - *Presented by the harness, on any transport.* An agent cannot carry a secret
+    across a context boundary. Its context ends, which is the event the nonce
+    exists for, and the nonce goes with it. So the nonce MAY arrive in transport
+    metadata instead of as a tool argument, from the one place that outlives a
+    context: the harness's own MCP server config.
+
+    | transport | where |
+    |---|---|
+    | Streamable HTTP | `headers = { "X-Dibs-Agent-Nonce" = "…" }` |
+    | stdio | `env = { DIBS_AGENT_NONCE = "…" }`, forwarded by the bridge |
+
+    Accepted only for `register` and `resume`, the calls where `nonce` means
+    "who I am". `vouch_child` also takes a `nonce`, and there it is a secret a
+    PARENT issued for one specific child; filling that from the caller's own
+    identity would let any agent vouch for a child it never spawned. An argument
+    the agent supplies always wins; this only fills a blank.
+
+    This is what makes the transport a free choice. Identity used to depend on
+    the stdio bridge being a per-session process with a filesystem, so an HTTP
+    client could not reattach at all, and "which transport" silently meant
+    "whether reattachment works". 2026-07-28 removed connection-scoped sessions
+    precisely so cross-call state travels as explicit handles rather than as a
+    property of the pipe; this is Dibs taking that up.
 - **`resume(nonce, resume_id, pid?)`**: the explicit activation op for standing
   roles. `resume_id` (client-generated per attempt, ≥64-bit) makes it a **complete
   activation boundary**:
