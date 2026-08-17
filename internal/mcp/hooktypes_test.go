@@ -12,32 +12,41 @@ import (
 // be wired. It is inert, and it can take working entries down with it.
 //
 // Dibs shipped `plugins/codex/hooks.json` using `type: "mcp_tool"` for three
-// releases. Codex never ran a single entry in it:
+// releases. Codex never ran a single entry in it, and the reason is worth
+// stating precisely, because "the type exists" was the whole of the evidence
+// that put it there.
 //
-//   - Codex Desktop 0.148.0-alpha.9 parses the file and then prints "skipping
-//     MCP tool hook in ~/.codex/hooks.json: MCP tool hooks are not supported
-//     yet", once per entry.
-//   - A build from codex main has no `mcp_tool` variant at all and rejects the
-//     WHOLE file with `unknown variant`, which is the part that makes this
-//     worse than a no-op: one unsupported entry disables the supported ones
-//     beside it.
+// On 2026-08-17, codex main parses `mcp_tool` hooks (since 2026-08-07) and its
+// hooks engine has a handler for them (since 2026-08-15), and they still do not
+// run: `core/src/session/mod.rs` passes `mcp_executor: None` when building the
+// HooksConfig for a real session, and the engine then drops every such handler
+// at startup. The shipped Desktop build reports the same outcome, once per
+// entry. On an older build the variant is absent entirely and the WHOLE file is
+// rejected, which is the part that makes this worse than a no-op: one
+// unsupported entry disables the supported ones beside it.
 //
-// The claim came from reading a Rust enum and writing the file against it. A
-// type in a source tree is not a feature, and nothing here checked. Worse, the
-// existing hook test globs `plugins/*/hooks/hooks.json`, and this file lived at
-// `plugins/codex/hooks.json`, so no test ever opened it: it was not that the
-// guard disagreed, it is that the guard could not see it.
+// A type in a source tree is not a feature, and nothing here checked. Worse,
+// the existing hook test globs `plugins/*/hooks/hooks.json`, and this file
+// lived at `plugins/codex/hooks.json`, so no test ever opened it: it was not
+// that the guard disagreed, it is that the guard could not see it.
 //
 // So this walks BOTH layouts, and it is a list of what each harness RUNS, not
-// of what its types are named.
+// of what its types are named. When Codex supplies that executor, move
+// `mcp_tool` into the codex row deliberately, having watched a hook fire.
 func TestShippedHooksUseOnlySupportedTypes(t *testing.T) {
 	// Measured against running binaries on 2026-08-17, not read from source.
-	// Claude Code documents five handler types and runs them; Codex's
-	// HookHandlerConfig has three, and its Desktop build skips `mcp_tool`
-	// explicitly as unimplemented.
+	// Claude Code documents five handler types and runs them. Codex declares
+	// `mcp_tool` and has an engine handler for it, but no session supplies the
+	// MCP executor it needs, so it is dropped at startup: declared is not run,
+	// and this table is about what runs.
 	supported := map[string]map[string]bool{
 		"claude-code": {"command": true, "http": true, "mcp_tool": true, "prompt": true, "agent": true},
-		"codex":       {"command": true, "prompt": true, "agent": true},
+		// Codex declares four and runs ONE. `prompt` and `agent` are empty
+		// structs that discovery skips by name ("prompt hooks are not supported
+		// yet"), and `mcp_tool` is dropped for want of an executor. Listing a
+		// declared-but-skipped type here would be the original mistake with a
+		// different spelling.
+		"codex": {"command": true},
 	}
 
 	var files []string

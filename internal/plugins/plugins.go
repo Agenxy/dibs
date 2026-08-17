@@ -150,16 +150,17 @@ var catalog = []struct {
 		harness: "codex",
 		dir:     "codex",
 		aliases: []string{"chatgpt-desktop", "chatgpt", "gpt"},
-		buys: "nothing to install, and no hook file: measured on Codex Desktop " +
-			"0.148.0-alpha.9, the `mcp_tool` handler parses and is then skipped as " +
-			"`not supported yet`, and on a build from codex main the variant does " +
-			"not exist and the whole file is rejected. The only handlers Codex " +
-			"runs are subprocesses, which Dibs will not be: a plugin that spawned " +
-			"a process to drive your harness would make Dibs a wrapper rather than " +
-			"a service. So on this harness mail is pull-only: call await_events or " +
-			"inbox when you choose. That is the honest floor and it works " +
-			"everywhere. Dibs shipped a hooks.json here for three releases and not " +
-			"one entry in it ever fired.",
+		buys: "nothing to install, and no hook file yet. Codex is close to being " +
+			"able to wake you: as of 2026-08-17 it parses `mcp_tool` hooks and its " +
+			"hooks engine has a handler for them, but no session supplies an MCP " +
+			"executor, so every such hook is dropped at startup. The only handler " +
+			"it actually runs is a subprocess, which Dibs will not be: a plugin " +
+			"that spawned a process to drive your harness would make Dibs a " +
+			"wrapper rather than a service, and the real mechanism is weeks away. " +
+			"So on this harness mail is pull-only: call await_events or inbox when " +
+			"you choose. That is the honest floor and it works everywhere. Dibs " +
+			"shipped a hooks.json here for three releases and not one entry in it " +
+			"ever fired.",
 		root: "~/.codex",
 		setup: []Step{
 			{

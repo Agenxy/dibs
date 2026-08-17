@@ -54,9 +54,32 @@ over plain HTTP (no stdio bridge in the way):
 | Copilot CLI | 1.0.75 | 2025-11-25 | none | tools only |
 | Pi | latest | **no MCP at all** | none | none |
 
-**Nobody sends `subscriptions/listen`, `resources/subscribe`, or `resources/read`.
-Nobody speaks MCP 2026**, not even Codex alpha, which negotiates 2025-06-18. Codex never
-even calls `resources/list`, so Dibs' resources are invisible there; only tools reach it.
+**Nobody sends `subscriptions/listen`, `resources/subscribe`, or `resources/read`.**
+Codex never even calls `resources/list`, so Dibs' resources are invisible there; only
+tools reach it.
+
+**"Nobody speaks MCP 2026" was true when measured and is now false. Amended 2026-08-17.**
+Codex speaks 2026-07-28 today, and Dibs already interoperates with it over that revision,
+with no change on our side. Two conditions, and neither is the default:
+
+1. the `mcp_2026_07_28` feature enabled, and
+2. `CODEX_MCP_PROTOCOL_VERSION=2026-07-28` in **that server's `env`** block.
+
+The stdio rule is exact (`codex-rs/rmcp-client/src/protocol_mode.rs`): the feature alone
+stays on 2025-06-18, and a wrong value is a hard error rather than a fallback. With both
+set, Codex sends `server/discover` instead of `initialize`. Verified twice, against a
+probe server that logged the raw method and against Dibs itself, where the agent then
+called `board` and got the real board back.
+
+**Claude Desktop carries the 2026 machinery too** (1.30096.5): an `era: "2026-07-28"`
+wire codec, a `>= "2026-07-28"` version predicate, and a switch mapping `server/discover`
+to that revision. Whether it negotiates 2026 with Dibs in practice is NOT yet measured,
+and the distinction matters here more than anywhere: this file has twice recorded a
+capability read out of a binary as though it were a behaviour. **Claude Code 2.1.219 does
+not**: its only protocol constants are 2025-03-26, 2025-06-18 and 2025-11-25.
+
+The lesson this table keeps teaching is that every row is true on its date and not after.
+Per-harness re-checks are tracked as issues rather than as prose here.
 
 ## A wake delivers; it does not instruct
 

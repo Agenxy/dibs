@@ -66,40 +66,65 @@ the flag resolved `true` via `codex features list`:
 Codex marks it "under development": it gates unfinished work, not a protocol
 switch. Do not assume 2026 support from the flag's presence.
 
-## Waking an agent: NOT possible here yet, measured three ways
+## Waking an agent: not yet, but it is being built, and we should wait for it
 
-**This section has flipped twice, and this time it was measured against running
-binaries rather than read out of a type.** It previously announced that the
-`mcp_tool` hook variant had arrived, quoting a Rust enum, and Dibs shipped a
-`hooks.json` written against it. That file never once fired.
+**This section has flipped twice on the strength of reading a type, so this
+time it is dated, and the evidence is runtime behaviour.**
 
-What the three checks say, on 2026-08-17:
+State on **2026-08-17**, against codex main `32a383c0` and the Codex Desktop
+`0.148.0-alpha.9` binary inside ChatGPT.app:
 
-| Checked | Result |
+| | |
 |---|---|
-| Codex Desktop `0.148.0-alpha.9`, the binary inside ChatGPT.app | parses the file, then prints `skipping MCP tool hook in ~/.codex/hooks.json: MCP tool hooks are not supported yet`, once per entry |
-| A build from codex main (`bb5054f`) | `HookHandlerConfig` has three variants: `command`, `prompt`, `agent`. No `mcp_tool`. It rejects the whole file: `unknown variant` |
-| `strings` over the Desktop binary | `mcp_tool` does not appear; the handler names present are `command`, `prompt`, `agent` |
+| `mcp_tool` hook config parsed | yes, since `81b9bc21` (2026-08-07, #37363) |
+| hooks engine has an `mcp_tool` handler | yes, since `85fc4def` (2026-08-15, #38705) |
+| a real session supplies an MCP executor | **no** |
+| so an `mcp_tool` hook actually runs | **no** |
 
-So the variant is at best declared and unimplemented, and on some builds absent.
-A hook written against it is not a wake path that needs wiring: it is inert, and
-because a parse failure rejects the WHOLE file, it can also take working entries
-down with it. Dibs therefore ships **no** `hooks.json` for Codex, and
-`TestShippedHooksUseOnlySupportedTypes` keeps it that way.
+The last wire is the missing one. `codex-rs/core/src/session/mod.rs` builds the
+`HooksConfig` for every real session and passes `mcp_executor: None`, set in the
+same commit that added the handler, and it is the only construction site outside
+the hooks crate. The engine then drops every `mcp_tool` handler at startup:
 
-The lesson is the one this repository keeps relearning: a type in a source tree
-is not a feature. The previous version of this section reasoned from an enum and
-told the reader to re-check it on upgrade; re-checking the enum was never enough,
-because the enum was not what decided the outcome.
+```rust
+if mcp_executor.is_none() {
+    ... "skipping MCP tool hook in {}: MCP invocation is not available yet"
+}
+```
 
-**Codex is pull-only.** `check_in` at the start of every activation, and
-`await_events` before blocking, which is what `dibs://skills` already tells every
-agent to do. Mail is never lost by this: it waits, and the `waiting` line on
-every authenticated result names it on the agent's next call.
+Observed on the shipped Desktop build as `skipping MCP tool hook in
+~/.codex/hooks.json: MCP tool hooks are not supported yet`, once per entry.
+Either way the hook does not fire.
 
-**The digest does not go to the human either.** `UserPromptSubmit` carries
-nothing to the model on any harness, so an unwired Codex is quiet rather than
-misdirected. Quiet is honest; `dibs doctor` names it.
+**So Dibs ships no `hooks.json` for Codex today**, because one that cannot run
+is not a wake path waiting to be wired: it is a warning per session, and on a
+build that rejects the variant outright it takes the whole file down with it.
+`TestShippedHooksUseOnlySupportedTypes` keeps it out until this table changes.
+
+**And we do not reach for the alternative.** Codex declares four handler types
+and runs exactly one. `prompt` and `agent` are empty structs, skipped by name
+("prompt hooks are not supported yet"); `mcp_tool` is dropped for want of an
+executor. That leaves `command`, a subprocess. Two commits in ten days say
+`mcp_tool` is landing in stages, so shipping subprocess glue now means shipping
+the thing `WAKE-MECHANISMS.md` §6 rejected in order to delete it again within
+weeks.
+
+**What to re-check, and it is not the enum.** The enum was there before any of
+this worked, and reading it is what produced two wrong conclusions. Check
+whether a session supplies an executor:
+
+```
+grep -rn "mcp_executor:" codex-rs/ | grep -v codex-rs/hooks/
+```
+
+When that stops saying `None`, Codex can wake an agent over the connection it
+already holds, and the file to restore is in this repository's history.
+
+**Until then Codex is pull-only.** `check_in` at the start of every activation,
+`await_events` before blocking, which is what `dibs://skills` already tells
+every agent. Mail is not lost: it waits, and the `waiting` line on every
+authenticated result names it on the next call. The digest does not reach the
+human either, on any harness.
 
 ### When a Codex hook takes effect (traced, not assumed)
 
