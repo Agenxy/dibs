@@ -54,9 +54,9 @@ week on the board this was written from.
 
 Two steps, in this order:
 
-1. `adopt_agent(agent: <the dormant row>, into: <the live one>)` — moves the
+1. `adopt_agent(agent: <the dormant row>, into: <the live one>)`: moves the
    mail. **The dormant row and its declarations survive this.**
-2. `prune(agent: <the dormant row>)` — removes the row, and with it any stale
+2. `prune(agent: <the dormant row>)`: removes the row, and with it any stale
    declaration it was still holding.
 
 Doing only the first leaves the mess that caused the report. Doing only the

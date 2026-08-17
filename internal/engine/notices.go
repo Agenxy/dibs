@@ -224,6 +224,30 @@ func (e *Engine) pendingNotices(agent string) []string {
 	return out
 }
 
+// clearNoticesFor drops the notices that pointed at one message, leaving the
+// rest outstanding.
+//
+// Narrower than AckNotices deliberately: reading one message says nothing about
+// the others, and clearing them all would swap a nagging channel for a lossy
+// one, which is the worse of the two failures.
+func (e *Engine) clearNoticesFor(agent string, serial uint64) {
+	all := e.notices[agent]
+	if len(all) == 0 {
+		return
+	}
+	kept := all[:0]
+	for _, n := range all {
+		if n.Serial != serial {
+			kept = append(kept, n)
+		}
+	}
+	if len(kept) == 0 {
+		delete(e.notices, agent)
+		return
+	}
+	e.notices[agent] = kept
+}
+
 // AckNotices drops an agent's notices for good. Called on a TOKEN-authenticated
 // read, which is the only place we know the agent itself is asking.
 func (e *Engine) AckNotices(agent string) { delete(e.notices, agent) }

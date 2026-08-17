@@ -274,6 +274,16 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 		if m.To == l.ID && m.State == core.MsgStatePending {
 			_, _ = e.applyAndLedger(&core.Op{Kind: core.OpMarkDelivered, MsgSerials: []uint64{serial}}, now)
 		}
+		// A notice that says "read_mail(N)" is answered by reading N.
+		//
+		// Only check_in used to clear notices, so following this one's own
+		// instruction left it outstanding and the wake path repeated it on every
+		// turn: "ring-demo APPROVED your request (msg 712). Read it with
+		// read_mail" delivered twice, after read_mail had already returned that
+		// message terminal and consumed. An instruction that does not clear when
+		// obeyed teaches an agent that the channel nags, and the notification
+		// channel is the one thing here that has to stay worth reading.
+		e.clearNoticesFor(l.ID, serial)
 		return core.Result{"message": m, "serial": e.state.Serial}
 	})
 }
