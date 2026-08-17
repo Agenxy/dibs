@@ -121,6 +121,9 @@ type Engine struct {
 	// human is the operator's own agent, so a person can join agents and speak in
 	// them through the same tools an agent uses. See human.go.
 	human humanState
+	// What Dibs has already told the coordinator about itself, so a fault that
+	// recurs every sweep does not become a message every sweep.
+	faults faultState
 }
 
 type request struct {

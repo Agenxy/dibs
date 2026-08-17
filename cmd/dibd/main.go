@@ -30,6 +30,7 @@ import (
 	"github.com/agenxy/dibs/internal/liveness"
 	"github.com/agenxy/dibs/internal/logs"
 	"github.com/agenxy/dibs/internal/mcp"
+	"github.com/agenxy/dibs/internal/notify"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/web"
 )
@@ -248,6 +249,14 @@ func run() error {
 	// made every restart report them as a dead process. One op, once, and only
 	// on a board that already has a human on it.
 	eng.RepairHumanProcess(ctx)
+	// Tell the coordinator, once, if this machine cannot get a notification in
+	// front of the person. Off the boot path: it shells out to the notifier, and
+	// the daemon must be answering agents long before anybody asks about
+	// notifications.
+	go func() {
+		reaches, why := notify.Reach()
+		eng.CheckReachability(ctx, reaches, why)
+	}()
 	// After declared roles are applied, so a board configured with a coordinator
 	// is not offered a claim it does not need.
 	installCoordinatorClaim(eng, *dir, st.HasCoordinator())

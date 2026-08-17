@@ -107,6 +107,31 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ninety seconds of nothing and no way in, on the one command whose job is to
   let them in.
 
+- **Dibs reports its own faults to the coordinator, and asks for a patch.** A
+  service that notices something wrong with itself and writes it to a log has
+  told nobody: the operator is not tailing it, which is the same premise this
+  whole product rests on. Faults now go to whoever holds the coordinator role,
+  or to the human when nobody does, as ordinary mail: same envelope, same
+  mailbox, same wake path, visible on the board and replayable. A private
+  channel for system messages would be a second delivery mechanism to keep
+  working and the first thing to rot.
+
+  Every report ends on something the reader can do, and what that is depends on
+  whose fault it is. Configuration gets the remedy precisely, because it is
+  theirs to apply, and still names the repository in case the remedy does not
+  work. A defect gets the repository, the failing path, and an invitation to
+  FIX it: the agent reading it is holding a reproducible fault in a Go codebase
+  with the path named, which is a better starting point than whoever reads the
+  issue later will have. Asking for a bug report gets a bug report; asking for a
+  patch sometimes gets a patch, and a contributor.
+
+  Dibs speaks as an ordinary participant to do it, minted on first fault rather
+  than at startup, so a board where nothing has gone wrong carries no row for
+  the thing that reports what goes wrong. A report without a remedy is refused
+  at the door, because that is an alarm and this is the file that exists to not
+  produce those. One report per kind per run, so a fault that recurs every sweep
+  does not become a message every sweep.
+
 - **An agent can ask for its old identity back, and approving moves the mail.**
   `send(to: "coordinator", type: "request", adopt: "<the abandoned id>")`. The
   approver's yes performs the adoption; there is nothing left to run.

@@ -328,9 +328,9 @@ func (e *Engine) tellTheHuman(from, msgType, body string, serial uint64, choices
 		// asking agent waits out its deadline while they decide whether to.
 		go e.answerForHuman(from, body, serial, choices)
 	case core.MsgHandoff:
-		report(notify.Banner(title, "hands work to you", oneLine(body)))
+		e.report(notify.Banner(title, "hands work to you", oneLine(body)))
 	default:
-		report(notify.Banner(title, "says", oneLine(body)))
+		e.report(notify.Banner(title, "says", oneLine(body)))
 	}
 }
 
@@ -492,8 +492,12 @@ func oneLine(s string) string {
 // report says when a notification could not be delivered. Silence here is the
 // failure mode this whole path exists to remove, so it must not fail silently
 // itself.
-func report(err error) {
+// A method now, so the failure reaches the coordinator and not only the log.
+// A log line is a report to nobody: the operator is not tailing it, which is
+// the same reason this whole notification path exists.
+func (e *Engine) report(err error) {
 	if err != nil {
 		slog.Warn("could not notify the human; the message is still on the board", "err", err)
+		e.reportNotifyFailure(err)
 	}
 }
