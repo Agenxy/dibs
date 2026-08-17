@@ -527,9 +527,10 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 		// so: they went looking for a configuration error that did not exist.
 		// The state to report it with already existed and nothing ever entered
 		// it, which is the worst arrangement of the two.
-		eng.SetMatchStatus(engine.MatchStatus{
-			Phase: engine.MatchIndexing, Repo: cwd, Since: time.Now(),
-		})
+		// Progress on ONE tree, which is not the board's phase: a fleet that has
+		// been matching for an hour must not report itself as starting up
+		// because a sixteenth agent joined from somewhere new.
+		eng.NoteIndexingTree(cwd)
 
 		// Resolved BEFORE the dedup, because the unit of work is a repository
 		// and cwd is not one. Keyed by cwd, agents in three subdirectories of
@@ -540,11 +541,16 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 		if err != nil {
 			slog.Info("work-overlap matching skipped a tree it cannot read",
 				"cwd", cwd, "err", err, "likely", tccHint(cwd))
-			eng.SetMatchStatus(engine.MatchStatus{
-				Phase: engine.MatchOff,
-				Hint: "an agent registered from " + cwd + " but the daemon cannot read it (" +
-					err.Error() + "). " + tccHint(cwd),
-			})
+			// That AGENT's tree, not the board's feature.
+			//
+			// This set the global phase to Off, so one agent starting in a
+			// directory macOS would not let the daemon read replaced a working
+			// index for every other repository with "matching is off". Reported
+			// by an agent that had lost the feature fleet-wide and traced it to
+			// here correctly.
+			eng.NoteUnreadableTree(cwd,
+				"an agent registered from "+cwd+" but the daemon cannot read it ("+
+					err.Error()+"). "+tccHint(cwd))
 			return
 		}
 

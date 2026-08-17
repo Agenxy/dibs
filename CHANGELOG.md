@@ -262,6 +262,35 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **One unreadable directory switched work-overlap matching off for the whole
+  board.** An agent registering from a tree macOS will not let the daemon read
+  set the GLOBAL phase to `off`, replacing a working index for every other
+  repository with "matching is off" and a hint pointing at one directory. A
+  fleet lost the feature for a day to it. Reported by an agent that had lost it
+  and traced the cause correctly.
+
+  A tree that cannot be read is now named in `unreadable` and belongs to the
+  agent that registered from it; the phase stays whatever the rest of the board
+  earned, and only goes `off` when nothing at all is indexed, because then the
+  two statements coincide.
+
+  The same shape two lines above it: every registration set the phase to
+  `indexing`, so a fleet that had been matching for an hour reported itself as
+  starting up whenever a new agent joined, and anything declaring in that window
+  was told matching was not ready.
+
+- **`task install` proves the signature is stable instead of asserting it.**
+  macOS ties a Files-and-Folders grant to a program's code-directory hash, so a
+  hash that moves silently revokes the permission and the operator is asked
+  again by a dialog that explains none of it. The stable identity fixed that;
+  nothing checked it was still true. It had been verified once, by hand, by
+  somebody who then promised it would not recur, which is precisely the kind of
+  claim this repository does not accept anywhere else. `tools/signstable`
+  records what each install signed and fails the next one if it changed, naming
+  both hashes and the two commands that diagnose it. Ad-hoc builds are exempt
+  and say so, because their hash changes by design and failing every install on
+  a machine with no identity would teach everyone to ignore the check.
+
 - **The panel no longer pushes anything into model context, and the daemon no
   longer gives it the material to.** `maybeShareMailWithAgent` called
   `ui/update-model-context` with the body of every unread message. It existed as

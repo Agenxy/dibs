@@ -127,6 +127,11 @@ tasks:
       # per-command one, so a pair of commands guarded by it printed BOTH: the
       # install claimed in consecutive lines that the grant would and would not
       # survive.
+      # Proves the promise rather than restating it: an install whose signature
+      # moved has just revoked the operator's folder permission, and they would
+      # otherwise find out from a dialog that explains nothing.
+      - cmd: go run ./tools/signstable {{.DEST}}
+        platforms: [darwin]
       - cmd: >-
           echo
           {{if eq .SIGNER "-"}}"ad-hoc signed: a macOS privacy grant will NOT survive
