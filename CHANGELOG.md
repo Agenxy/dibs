@@ -262,6 +262,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A guard against the leak that keeps coming back through a new door.** The
+  same defect has now appeared three times in three channels: the wake digest
+  listing each message with its text, `dibs://inbox` returning the whole
+  mailbox, and both reported by the operator watching their own prompt box fill
+  with mail addressed to an agent. `TestNoWakeSurfaceLeaksAMessageBody` asserts
+  the rule over every surface a host may attach to a human's turn, as a property
+  rather than three examples, because the failure keeps arriving somewhere
+  nobody thought to look. The rule is one sentence: these say who is waiting and
+  what kind, never what was said, and the content is fetched with a
+  token-authenticated call.
+
 - **A fault report goes to somebody who can READ it.** It asked
   `CoordinatorID`, which answers "who holds the role". On a board whose only
   coordinator is dormant, that is an agent which may never come back, so the
