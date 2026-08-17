@@ -94,11 +94,31 @@ notices_wake = false         # ...and do not spend a turn on situational awarene
 |---|---|---|
 | `agent_ttl` | `5m` | How long an agent **that registered a PID** may be silent before its lease lapses. Shorter is faster crash detection; longer suits agents that run long silent steps. |
 | `idle_ttl` | `45m` | The same for agents with **no PID**, where silence is the only evidence. This governs the config `dibs mcp-config` prints, so an operator who tunes `agent_ttl` and sees nothing change is hitting this one. |
+| `max_persistent_agents` | `16` | How many STANDING identities the board may hold. |
+| `max_agents` | `64` | How many live agents of any kind. |
 | `blob_store_bytes` | *(built-in)* | A hard cap on the attachment store. Over it, eviction drops referenced content rather than exceed the bound, so a recipient can hold a message naming a blob that is gone. |
+
+**`max_persistent_agents` is reached by accumulation, not by concurrency.** A
+persistent agent holds its slot while dormant, which is the point of one: its
+mailbox and memberships survive the harness restarting. So the ceiling fills up
+over days rather than at peak, and a fleet of sixteen standing roles meets the
+default of sixteen while the board holds sixteen agents of a possible
+sixty-four.
+
+Before raising it, read the number as a signal. That ceiling is usually reached
+because siblings accumulated: an agent that could not prove it was itself and
+registered again, leaving its predecessor holding a mailbox nobody reads.
+`adopt_agent` reclaims those, and on a stdio bridge they should stop appearing
+at all, because the bridge now keeps each agent's nonce. Raise it when the fleet
+genuinely runs that many standing roles.
+
+Raising it above `max_agents` is refused rather than accepted: the lower ceiling
+is the one that binds, so the setting would read as applied and do nothing.
 
 ```toml
 [limits]
-agent_ttl = "15m"    # these agents run long builds without saying anything
+agent_ttl = "15m"             # these agents run long builds without saying anything
+max_persistent_agents = 48    # this fleet really does run that many standing roles
 ```
 
 ---

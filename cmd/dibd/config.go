@@ -125,6 +125,27 @@ type LimitsConfig struct {
 	// they thought they had configured to 5.
 	IdleTTL string `toml:"idle_ttl"`
 
+	// MaxPersistentAgents caps standing identities, and needs a knob because a
+	// fleet's size is not a constant Dibs can guess.
+	//
+	// A persistent agent holds its slot while dormant. That is the point of one:
+	// its mailbox and memberships survive the harness restarting. The
+	// consequence is that the ceiling is reached by ACCUMULATION rather than by
+	// concurrency, and on a real board it was: sixteen standing roles against a
+	// default of sixteen, so registration was refused while the board held
+	// sixteen agents of a possible sixty-four.
+	//
+	// Exposed as configuration and not raised as a default, because the default
+	// being reached is usually a signal worth reading: siblings accumulate when
+	// agents cannot prove they are themselves, and the fix for that is to
+	// reclaim them rather than to make more room. A fleet that genuinely runs
+	// forty standing roles should say so here.
+	MaxPersistentAgents int `toml:"max_persistent_agents"`
+
+	// MaxAgents caps live agents of every kind. Its counterpart above is the one
+	// usually hit first, since ephemeral agents leave when they finish.
+	MaxAgents int `toml:"max_agents"`
+
 	// BlobStoreBytes caps the attachment store. It is a HARD bound: when the
 	// store is over it, eviction drops referenced content rather than exceed
 	// it, so a recipient can end up holding a message that names a blob which
@@ -205,7 +226,41 @@ func (c LimitsConfig) apply(base core.Limits) (core.Limits, error) {
 	if err := applyTTL("idle_ttl", c.IdleTTL, &base.IdleTTL); err != nil {
 		return base, err
 	}
+	if err := applyCount("max_persistent_agents", c.MaxPersistentAgents,
+		&base.MaxPersistentAgents); err != nil {
+		return base, err
+	}
+	if err := applyCount("max_agents", c.MaxAgents, &base.MaxAgents); err != nil {
+		return base, err
+	}
+	// A persistent ceiling above the total is not a smaller mistake than a bad
+	// duration: it reads as configured and the lower bound silently wins, so an
+	// operator who raised the wrong one waits for a change that cannot happen.
+	if base.MaxPersistentAgents > base.MaxAgents {
+		return base, fmt.Errorf(
+			"[limits] max_persistent_agents = %d exceeds max_agents = %d, so the "+
+				"lower ceiling is the one that binds and this setting would do nothing: "+
+				"raise max_agents too, or lower this",
+			base.MaxPersistentAgents, base.MaxAgents)
+	}
 	return base, c.applyBlobCap(&base)
+}
+
+// applyCount folds a positive integer limit over the default.
+//
+// Zero means unset, because a zero ceiling would refuse every registration and
+// is never what somebody meant to write. A negative is refused rather than
+// clamped: silently correcting a value the operator typed is how a setting ends
+// up meaning something other than it says.
+func applyCount(key string, raw int, dst *int) error {
+	if raw == 0 {
+		return nil
+	}
+	if raw < 0 {
+		return fmt.Errorf("[limits] %s = %d: a ceiling cannot be negative", key, raw)
+	}
+	*dst = raw
+	return nil
 }
 
 // applyTTL parses one duration limit, refusing anything unusable.

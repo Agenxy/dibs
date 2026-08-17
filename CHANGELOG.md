@@ -293,6 +293,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A full board refused registrations while naming the wrong ceiling.** One
+  static error read "maximum number of agents reached" for both caps, so an
+  operator hitting the PERSISTENT limit checked `max_agents`, found the board a
+  quarter full, and had been told something true and useless. Found by running
+  the thing: a board holding 16 agents of a possible 64 refused a new one,
+  because all 16 were persistent and that ceiling is 16. Each cap now names
+  itself, its number, and its own remedy, which differ: a full board wants
+  finished agents signed off, while a full persistent board usually means
+  siblings accumulated and wants them reclaimed.
+
+- **`max_persistent_agents` and `max_agents` are settable**, which the hint
+  above tells people to do and which was not previously possible. A persistent
+  ceiling above the total is refused rather than accepted, because the lower one
+  binds and the setting would otherwise read as applied while doing nothing.
+
 - **One unreadable directory switched work-overlap matching off for the whole
   board.** An agent registering from a tree macOS will not let the daemon read
   set the GLOBAL phase to `off`, replacing a working index for every other

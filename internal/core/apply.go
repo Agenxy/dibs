@@ -729,8 +729,35 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 			}
 		}
 	}
-	if live >= s.Limits.MaxAgents || (kind == KindPersistent && persistent >= s.Limits.MaxPersistentAgents) {
-		return nil, nil, ErrAgentLimit
+	// Name WHICH ceiling, and its number.
+	//
+	// Both cases returned one static error reading "maximum number of agents
+	// reached", which sent the reader to the wrong limit whenever it was the
+	// persistent one: measured on a board holding 16 of 64 agents, where
+	// registration was refused because all 16 were persistent and that cap is
+	// 16. An operator reading "maximum number of agents" against a board that is
+	// a quarter full has been told something true and useless.
+	//
+	// The remedy differs too, which is the better reason. A full board wants
+	// finished agents signed off; a full PERSISTENT board usually means standing
+	// identities accumulated as siblings, and the fix is to reclaim them rather
+	// than to raise anything.
+	if live >= s.Limits.MaxAgents {
+		return nil, nil, errf("E_AGENT_LIMIT",
+			"sign_off the agents that have finished, or ask the human to raise "+
+				"max_agents in dibs.toml",
+			"this board holds its maximum of %d live agents", s.Limits.MaxAgents)
+	}
+	if kind == KindPersistent && persistent >= s.Limits.MaxPersistentAgents {
+		return nil, nil, errf("E_AGENT_LIMIT",
+			"a standing identity holds its slot while dormant, which is the point of "+
+				"one, so this usually means siblings accumulated: an agent that could "+
+				"not prove it was itself and registered again. Reclaim them with "+
+				"adopt_agent, or ask the human to raise max_persistent_agents in "+
+				"dibs.toml. Registering as ephemeral works now and keeps no mailbox",
+			"this board holds its maximum of %d persistent agents (of %d agents in "+
+				"total, so it is the PERSISTENT ceiling you have hit)",
+			s.Limits.MaxPersistentAgents, s.Limits.MaxAgents)
 	}
 	id := agentID(s, op.Name)
 	// Lineage is claimed and proven separately. An unproven parent is displayed
