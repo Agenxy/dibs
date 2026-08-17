@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -531,7 +532,13 @@ func (s *Server) logRequest(r *http.Request, req *rpcRequest) {
 		attrs = append(attrs, "tool", toolName(req.Params),
 			"metaUI", clientWantsUI(req.Params),
 			"sessionUI", s.sessions.wantsUI(r),
-			"sid", r.Header.Get("Mcp-Session-Id") != "")
+			"sid", r.Header.Get("Mcp-Session-Id") != "",
+			// The KEYS a client puts in _meta, never their values. This is the
+			// diagnostic that answers "what does this harness actually tell us
+			// about itself", which was answered three times today by reading
+			// somebody's source and once by reading it wrong. Keys only: a value
+			// here could be anything, and this log is not the place to find out.
+			"metaKeys", metaKeys(req.Params))
 	}
 	if req.Method == "resources/read" {
 		// WHICH resource, because the panel URI carries the template's build.
@@ -1332,4 +1339,24 @@ func inboxSummary(box core.Result) core.Result {
 		}
 	}
 	return out
+}
+
+// metaKeys lists the _meta keys a client sent, sorted, for the RPC log.
+//
+// Keys, never values. A harness announcing what it knows about itself is the
+// thing worth seeing; what it knows might be private, and a debug log is the
+// wrong place to learn that.
+func metaKeys(params json.RawMessage) string {
+	var p struct {
+		Meta map[string]any `json:"_meta"`
+	}
+	if len(params) == 0 || json.Unmarshal(params, &p) != nil || len(p.Meta) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(p.Meta))
+	for k := range p.Meta {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ",")
 }
