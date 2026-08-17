@@ -20,6 +20,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -52,17 +53,40 @@ func run() {
 		return // nothing here needs the grant
 	}
 	if !haveIdentity(dibsIdentity) {
-		// No identity of Dibs' own. Say what will happen, and do not block: the
-		// fix is a certificate this machine does not have yet.
+		// MAKE one, rather than explaining how.
+		//
+		// The old text sent the operator to Keychain Access, through Certificate
+		// Assistant, to create a certificate with four fields set exactly right.
+		// Measured on the machine this was written on: they did not do it, and
+		// were then asked for Desktop access on every single install for a day,
+		// because every ad-hoc rebuild is a different program to macOS. An
+		// instruction nobody follows is a defect with extra steps.
+		//
+		// It is a self-signed code-signing certificate in the user's own login
+		// keychain. Nothing is trusted beyond this machine and nothing is sent
+		// anywhere: the point is only that the signature stops changing, so the
+		// privacy grant they give once keeps applying.
+		//
+		// The one step that cannot be silent is trust, which macOS gates behind
+		// the user's password. That prompt is correct and worth it: one
+		// authorisation, once, against a folder prompt on every install forever.
+		if err := createIdentity(); err != nil {
+			fmt.Fprintf(os.Stderr,
+				"signcheck: %s is in a macOS protected folder and dibd will be ad-hoc\n"+
+					"  signed, so any Desktop/Documents/Downloads permission you grant is\n"+
+					"  revoked by the next install.\n\n"+
+					"  Tried to create a signing identity for you and could not: %v\n\n"+
+					"  Do it by hand if you would rather: Keychain Access → Certificate\n"+
+					"  Assistant → Create a Certificate, named %q, type Code Signing,\n"+
+					"  self-signed. Every install finds it by name after that.\n",
+				guarded[0], err, dibsIdentity)
+			return
+		}
 		fmt.Fprintf(os.Stderr,
-			"signcheck: %s is in a macOS protected folder and dibd will be ad-hoc signed,\n"+
-				"  so any Desktop/Documents/Downloads permission you grant is revoked by the\n"+
-				"  next install.\n\n"+
-				"  To keep the grant, give Dibs a signing identity of its own: Keychain Access →\n"+
-				"  Certificate Assistant → Create a Certificate, named %q, type Code\n"+
-				"  Signing, self-signed. `task install` finds it by name after that.\n",
-			guarded[0], dibsIdentity)
-		return
+			"signcheck: created a signing identity named %q in your login keychain.\n"+
+				"  macOS ties a Files-and-Folders permission to a program's signature, and\n"+
+				"  the Go toolchain signs ad-hoc, so without this every install would ask\n"+
+				"  you for Desktop access again. It will not now.\n", dibsIdentity)
 	}
 	// The identity EXISTS, so the install is not ad-hoc: tools/signid resolves it
 	// by name with no variable set, which is the whole point of that tool.
@@ -129,4 +153,78 @@ func protectedPaths() []string {
 		}
 	}
 	return out
+}
+
+// createIdentity makes Dibs' own self-signed code-signing certificate and
+// trusts it for code signing, in the user's login keychain.
+//
+// Written as exec calls from Go rather than a shell script, per CONTRIBUTING:
+// this is a sequence with four failure points and a private key passing through
+// a temporary file, which is exactly the kind of thing that should not live in
+// untyped glue that continues past errors.
+//
+// The key never leaves this machine and the certificate is trusted only in the
+// user's own keychain. It is not an Apple identity and does not pretend to be:
+// its whole job is to be the SAME signature next time, so that a permission the
+// operator grants once keeps applying.
+func createIdentity() error {
+	dir, err := os.MkdirTemp("", "dibs-signing-*")
+	if err != nil {
+		return err
+	}
+	// The private key is in here. Remove it whatever happens.
+	defer func() { _ = os.RemoveAll(dir) }()
+
+	key := filepath.Join(dir, "key.pem")
+	crt := filepath.Join(dir, "cert.pem")
+	p12 := filepath.Join(dir, "bundle.p12")
+	const pass = "dibs-transient" // #nosec G101 -- guards a file deleted seconds later
+
+	steps := [][]string{
+		{
+			"openssl", "req", "-x509", "-newkey", "rsa:2048", "-sha256", "-days", "3650",
+			"-nodes", "-keyout", key, "-out", crt, "-subj", "/CN=" + dibsIdentity,
+			"-addext", "basicConstraints=critical,CA:FALSE",
+			"-addext", "keyUsage=critical,digitalSignature",
+			"-addext", "extendedKeyUsage=critical,codeSigning",
+		},
+		// -legacy, because macOS's Security framework rejects the PKCS#12 that
+		// OpenSSL 3 writes by default: "MAC verification failed during PKCS12
+		// import", which reads like a wrong password and is not one.
+		{
+			"openssl", "pkcs12", "-export", "-legacy", "-out", p12, "-inkey", key,
+			"-in", crt, "-passout", "pass:" + pass, "-name", dibsIdentity,
+		},
+		{
+			"security", "import", p12, "-k", loginKeychain(), "-P", pass,
+			"-T", "/usr/bin/codesign", "-A",
+		},
+		// The step that prompts. Without it the certificate is in the keychain
+		// and `security find-identity -p codesigning` will not list it, so
+		// codesign cannot use it and the whole exercise achieves nothing.
+		{
+			"security", "add-trusted-cert", "-r", "trustRoot", "-p", "codeSign",
+			"-k", loginKeychain(), crt,
+		},
+	}
+	for _, step := range steps {
+		// #nosec G204 -- every argument is a constant or a path this function
+		// created; nothing here comes from outside.
+		if out, err := exec.Command(step[0], step[1:]...).CombinedOutput(); err != nil {
+			return fmt.Errorf("%s: %w: %s", step[0], err, strings.TrimSpace(string(out)))
+		}
+	}
+	if !haveIdentity(dibsIdentity) {
+		return errors.New("the certificate was created but is not usable for code " +
+			"signing; the trust step may have been declined")
+	}
+	return nil
+}
+
+func loginKeychain() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "login.keychain-db"
+	}
+	return filepath.Join(home, "Library", "Keychains", "login.keychain-db")
 }

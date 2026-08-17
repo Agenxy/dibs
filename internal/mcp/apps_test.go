@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -607,44 +608,74 @@ func modelTextOf(t *testing.T, out map[string]any) string {
 	return text
 }
 
-// The panel never shares a message BODY with the host.
+// The panel never pushes anything into model context.
 //
-// `ui/update-model-context` hands text to the host, and the host renders it
-// where it likes: ChatGPT Desktop puts it in the operator's composer, under
-// "Included with your next message". The panel was sharing the full text of
-// every unread message, so one agent's private mail was pasted in front of
-// whoever was at the keyboard, repeatedly, for days.
+// It had a maybeShareMailWithAgent that called ui/update-model-context with the
+// full text of every unread message. It was written as the only push a host
+// with no lifecycle hooks could offer, and it did not do that job: by the Apps
+// contract this does not start a turn, which the code itself said, so the mail
+// surfaced when the HUMAN next typed. The human as transport, which is the
+// failure this product exists to remove, through the one door nobody watched.
 //
-// Reported four times in one evening. Three other surfaces were fixed first,
-// each of which looked like the cause, because this one is JavaScript inside
-// the panel and every search for the leak was over Go. Hence a test that reads
-// the panel source: the Go-side guard could not have caught it.
-func TestThePanelSharesNoMessageBodyWithTheHost(t *testing.T) {
+// What it actually did was put every unread message, in full, into the
+// operator's own composer, because a host renders what it is given. Reported
+// four times in one evening.
+//
+// Removed rather than trimmed. The panel shows a person their board; waking an
+// agent belongs to the lifecycle hooks and to the `waiting` line on every
+// authenticated result. A test on the source because this is JavaScript inside
+// the template, and the Go-side leak guard could not see it and did not.
+func TestThePanelPushesNothingIntoModelContext(t *testing.T) {
 	src := boardAppTemplate()
-	i := strings.Index(src, "maybeShareMailWithAgent")
-	if i < 0 {
-		t.Fatal("the model-context path is gone or renamed; re-point this test rather " +
-			"than deleting it: it guards a disclosure, not an implementation detail")
+	if strings.Contains(src, `"ui/update-model-context"`) {
+		t.Error("the panel calls ui/update-model-context. Whatever it sends, the host " +
+			"decides who reads it, and at least one host renders it into the human's " +
+			"own prompt box. Waking an agent is the hooks' job")
 	}
-	// The function body, generously bounded.
-	end := i + 2600
-	if end > len(src) {
-		end = len(src)
+	if strings.Contains(src, "maybeShareMailWithAgent()") {
+		t.Error("the model-context push is being called again")
 	}
-	body := src[i:end]
+}
 
-	// `m.body` is the field that carries what somebody wrote. Nothing on the
-	// path that reaches the host may interpolate it.
-	if strings.Contains(body, "${m.body}") || strings.Contains(body, "m.body}") {
-		t.Error("the panel interpolates a message body into the text it shares with " +
-			"the host. The host decides who reads that, and at least one puts it in " +
-			"the human's own prompt box")
+// The daemon never hands a message body to the panel.
+//
+// The panel shares what it is given with the host, and one host renders that in
+// the operator's own composer. Fixing the panel was not enough: MCP Apps
+// templates are cached by the host against their ui:// URI, so a session that
+// loaded it yesterday keeps running yesterday's JavaScript and keeps leaking,
+// with no way to invalidate from the server.
+//
+// So the bodies stop leaving the daemon. A cached panel cannot share what it
+// never received, which makes this the only version of the fix that is true
+// today rather than after every client has restarted.
+func TestThePanelPayloadCarriesNoMessageBody(t *testing.T) {
+	const secret = "SECRET-BODY-THE-PANEL-MUST-NOT-GET"
+	payload := core.Result{
+		"agent_id": "worker",
+		"inbox": []*core.Message{
+			{
+				Serial: 5, From: "peer", To: "worker", Type: core.MsgQuestion,
+				State: core.MsgStatePending, Body: secret, Response: secret,
+			},
+		},
 	}
-	// And it must still say enough to be worth sharing.
-	for _, want := range []string{"m.serial", "m.from", "read_mail"} {
-		if !strings.Contains(body, want) {
-			t.Errorf("the shared line omits %s, so an agent cannot tell what arrived "+
-				"or how to read it", want)
+	meta := panelMeta(payload)
+	blob, err := json.Marshal(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(blob, []byte(secret)) {
+		t.Errorf("the panel payload carries a message body. The panel shares what it "+
+			"is given with the host, and a cached panel cannot be fixed from here:\n%s", blob)
+	}
+	for _, want := range []string{"peer", "question", "worker"} {
+		if !bytes.Contains(blob, []byte(want)) {
+			t.Errorf("the payload omits %q, so the panel cannot render a mailbox at "+
+				"all:\n%s", want, blob)
 		}
+	}
+	// The AGENT's own result is untouched: it authenticated for it.
+	if payload["inbox"].([]*core.Message)[0].Body != secret {
+		t.Error("stripping the panel copy mutated the agent's own result")
 	}
 }

@@ -399,8 +399,11 @@ try {
   check("summary agrees with the board",
     ((await panel.locator(".metric .figure").first().textContent()) ?? "").includes("2"))
   const capsText = (await panel.locator("#ctx-caps").textContent()) ?? ""
-  check("model-context capability is described without claiming it wakes the agent",
-    capsText.includes("can add agent context") && !/wake/i.test(capsText), capsText)
+  // The panel no longer advertises a model-context power, because it no longer
+  // uses one. Claiming a capability it does not exercise is the kind of line a
+  // reader trusts and should not.
+  check("the panel claims no model-context power it does not use",
+    !capsText.includes("can add agent context") && !/wake/i.test(capsText), capsText)
   check("the context line has no orphaned literal separator",
     (await panel.locator(".context > .dot").count()) === 0)
   await page.evaluate(() => (window as any).__bridge.sendHostContextChange({
@@ -955,41 +958,25 @@ try {
     probe2.toolCalls.length > 0 &&
       probe2.toolCalls.every((c: any) => c?._meta?.["com.dibs/panel-call"] === true),
     `_meta on each: ${JSON.stringify(probe2.toolCalls.map((c: any) => c?._meta ?? null))}`)
-  check("offers unread mail to the agent's context", probe2.modelContexts.length > 0)
-  check("model context is framed as data, not instruction",
-    JSON.stringify(probe2.modelContexts).includes("may act on it or decline"))
-  check("model context names the future-turn limit instead of claiming a wake-up",
-    JSON.stringify(probe2.modelContexts).includes("future turn") &&
-      !/wake/i.test(JSON.stringify(probe2.modelContexts)))
+  // These three asserted that the panel pushed unread mail into model context,
+  // carefully framed as data and honest about not starting a turn. All true,
+  // and the feature was still wrong: by the Apps contract that push does not
+  // wake anybody, so the mail surfaced when the HUMAN next typed, and the host
+  // rendered it into their composer with every message body in it. The operator
+  // reported it four times in one evening. Waking an agent belongs to the
+  // lifecycle hooks; the panel shows a person their board.
+  check("the panel pushes nothing into model context",
+    probe2.modelContexts.length === 0,
+    `pushed ${probe2.modelContexts.length}: ${JSON.stringify(probe2.modelContexts).slice(0, 200)}`)
 
-  // Two identical pushes while the host is still accepting the first context
-  // update must produce one request, not two concurrent copies.
-  const contextsBefore = await page.evaluate(
-    () => (window as any).__probe.modelContexts.length) as number
-  await page.evaluate(() => {
-    const probe = (window as any).__probe
-    ;(window as any).__bridge.onupdatemodelcontext = async (req: any) => {
-      probe.modelContexts.push(req)
-      await new Promise((resolve) => setTimeout(resolve, 180))
-      return {}
-    }
-    const payload = {
-      structuredContent: {
-        agent_id: "reviewer",
-        inbox: { messages: [{
-          serial: 700001, type: "notify", from: "peer", to: "reviewer",
-          body: "one context update", state: "open",
-        }] },
-      },
-    }
-    ;(window as any).__deliver(payload)
-    ;(window as any).__deliver(payload)
-  })
-  await Bun.sleep(350)
-  const contextsAfter = await page.evaluate(
-    () => (window as any).__probe.modelContexts.length) as number
-  check("concurrent identical mail pushes share model context once",
-    contextsAfter - contextsBefore === 1, `${contextsBefore} -> ${contextsAfter}`)
+  // A coalescing check lived here: two identical pushes while the host was
+  // still accepting the first had to produce one request rather than two. It
+  // was a good check of a feature that should not have existed, and it goes
+  // with it. Delivering mail to a model is the lifecycle hooks' job; a panel
+  // that pushes into the operator's composer is not a delivery mechanism, it is
+  // a leak with a schedule.
+  //
+  // What replaces it is the assertion above: zero pushes, ever.
 
   // The host can tear the resource down cleanly; this also exercises pending
   // timer cleanup in the hand-written transport.

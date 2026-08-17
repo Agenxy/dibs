@@ -58,14 +58,10 @@ func (e *Engine) HookPoll(ctx context.Context, sessionID, event, cwd string, sto
 			//
 			// The agent's own re-registration is still what unlocks delivery. This
 			// only tells it that re-registering is worth doing.
-			if hint := e.reattachHint(sessionID, cwd); hint != "" {
-				return core.Result{"hookSpecificOutput": map[string]any{
-					"hookEventName": hookEvent(event), "additionalContext": hint,
-				}}
-			}
-			// Not an error: most sessions have no agent, and a hook that fails
-			// noisily on every turn would be worse than useless.
-			return core.Result{} // empty result ⇒ nothing injected
+			// Not an error when there is nothing to say: most sessions have no
+			// agent, and a hook that fails noisily on every turn would be worse
+			// than useless.
+			return unresolvedSession(e.reattachHint(sessionID, cwd), event)
 		}
 		mail := e.pendingMail(l.ID)
 		announced := e.dueAnnouncements(l.ID, time.Now())
@@ -112,7 +108,22 @@ func (e *Engine) HookPoll(ctx context.Context, sessionID, event, cwd string, sto
 		// the actionable version; this is the ambient one, and a human who
 		// wanted detail has `dibs board`. Counts and senders only, never
 		// content: the same rule the digest follows.
-		out["systemMessage"] = humanNotice(l.ID, mail, announced, notices)
+		// Not when the person is TYPING.
+		//
+		// systemMessage is ambient awareness for an operator who cannot see the
+		// board, and on Stop that is what it is: a line at the end of a turn
+		// saying what is outstanding. On UserPromptSubmit it fires the instant
+		// they press return, telling them about their AGENT's mail, which is not
+		// theirs to read and not theirs to act on. Reported as: "this just
+		// appeared when I prompted you."
+		//
+		// It is also the last place the human was still being used as the
+		// transport. The agent already learns about this from the `waiting` line
+		// on its very next tool result, which arrives mid-turn and needs nobody
+		// to type anything.
+		if event != "UserPromptSubmit" {
+			out["systemMessage"] = humanNotice(l.ID, mail, announced, notices)
+		}
 		// And the model's copy, only when it is worth extending a turn for.
 		// Anything unread wakes the agent, once. An agent learns about mail when
 		// it arrives, not when a human next types.
@@ -596,4 +607,19 @@ func hookEvent(event string) string {
 		return "SessionStart"
 	}
 	return event
+}
+
+// unresolvedSession answers a hook whose session matched no agent: the reattach
+// pointer when there is one, and silence otherwise.
+//
+// Split out because HookPoll is the busiest function in this file and this is a
+// separate decision with its own reasoning, not a step in answering a resolved
+// session.
+func unresolvedSession(hint, event string) core.Result {
+	if hint == "" {
+		return core.Result{} // empty result ⇒ nothing injected
+	}
+	return core.Result{"hookSpecificOutput": map[string]any{
+		"hookEventName": hookEvent(event), "additionalContext": hint,
+	}}
 }

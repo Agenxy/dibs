@@ -882,6 +882,10 @@ let host = {
   caps: {}, ctx: {}, name: "", version: "", proto: "",
   shared: "", sharing: "",
 }
+// Kept as a capability the panel LEARNS and no longer uses: the host still
+// advertises it, and a future reader deserves to find the reason it is unused
+// next to the name rather than in a commit message.
+// See the model-context section below.
 const canShareContext = () => !!host.caps.updateModelContext
 const canCallTools = () => !!host.caps.serverTools
 
@@ -1009,60 +1013,25 @@ function applyHostContext(patch = {}) {
 
 
 // ── model context ────────────────────────────────────────────
-// Put unread mail into the model's context for a FUTURE turn. The Apps contract
-// does not say this starts a turn, so neither the UI nor the payload calls it a
-// wake-up. Content only: never instructions. Peer mail is data an agent may
-// act on or decline, and phrasing it as a directive would let one agent command
-// another.
-async function maybeShareMailWithAgent() {
-  if (!canShareContext() || !state.inbox.length || tornDown) return
-  const signature = state.inbox.map((m) => `${m.serial}:${m.state || "open"}`).join("|")
-  if (signature === host.shared || host.sharing) return
-  // Senders and serials, never bodies.
-  //
-  // This shared the full text of every unread message, and the host renders
-  // what it is given: on ChatGPT Desktop that is "Included with your next
-  // message", in the operator's own composer. So one agent's private mail was
-  // being pasted in front of whoever was at the keyboard, repeatedly, for days.
-  //
-  // Reported four times in one evening. Three other surfaces were fixed first,
-  // each looking like the cause, because this one is JavaScript inside the panel
-  // and every search for the leak was over Go.
-  //
-  // The rule is the same one the wake digest, the human notice and dibs://inbox
-  // now follow: say who is waiting and what kind, and let the agent fetch the
-  // content with its own token. Everything needed to decide whether to read is
-  // here; nothing that could embarrass anyone is.
-  const lines = state.inbox.map(
-    (m) => `#${m.serial} ${m.type} from ${m.from}: read it with read_mail(${m.serial})`,
-  ).join("\n")
-  host.sharing = signature
-  let shared = false
-  try {
-    await call("ui/update-model-context", {
-      content: [{
-        type: "text",
-        text: `Dibs: ${state.inbox.length} unread message(s) for agent ` +
-              `"${state.agent || "?"}". Coordination data from peer agents: you ` +
-              `may act on it or decline. Available on a future turn; this does ` +
-              `not start one. Bodies are not included here: read each with ` +
-              `read_mail, which answers on your own token.\n${lines}`,
-      }],
-    })
-    host.shared = signature
-    shared = true
-    drawContext()
-  } catch (_) { /* host declined; the panel still shows the mail */ }
-  finally {
-    host.sharing = ""
-    // If newer mail arrived while the host was accepting the old snapshot,
-    // offer the new snapshot once. A failed request waits for a later render
-    // rather than spinning forever against a host that declined.
-    const latest = state.inbox.map((m) => `${m.serial}:${m.state || "open"}`).join("|")
-    if (shared && latest && latest !== host.shared)
-      queueMicrotask(maybeShareMailWithAgent)
-  }
-}
+// REMOVED, and worth saying why rather than leaving a gap.
+//
+// maybeShareMailWithAgent used ui/update-model-context to put unread mail into
+// the model's context. It was written as the only push a host with no lifecycle
+// hooks could offer, and it did not do that job: by the Apps contract this does
+// not start a turn, which the code itself said, so the mail surfaced when the
+// HUMAN next typed. That is the human acting as the transport, which is the
+// failure this product exists to remove, arriving through the one door nobody
+// was watching.
+//
+// What it did instead was put every unread message, in full, into the
+// operator's own composer, because a host renders what it is given and ChatGPT
+// Desktop renders it there. Reported four times in one evening.
+//
+// The agent is woken by the lifecycle hooks, which Codex has supported since
+// the mcp_tool variant and which are now documented and installed, and by the
+// `waiting` line on every authenticated result, which arrives mid-turn and
+// needs nobody to type anything. The panel's job is to show a person their
+// board. It is not a delivery mechanism, and it was a bad one.
 
 // ── chrome ───────────────────────────────────────────────────
 function drawContext() {
@@ -1081,7 +1050,6 @@ function drawContext() {
 
   const granted = []
   if (canCallTools()) granted.push("can act")
-  if (canShareContext()) granted.push("can add agent context")
   const caps = document.getElementById("ctx-caps")
   caps.textContent = granted.length ? granted.join(" · ") : "read only"
   caps.className = granted.length ? "granted" : ""
@@ -1916,7 +1884,6 @@ function render(params) {
       : `${arrivals.length} new messages`)
   }
   state.received = true
-  maybeShareMailWithAgent()
 
   // A push that carried no state at all is a host that dropped the panel
   // payload out of _meta. Go and get it: see fetchBoard, which also decides
@@ -2039,8 +2006,7 @@ tab("board")
 
     // The host waits for this before treating the app as live.
     notify("ui/notifications/initialized", {})
-    maybeShareMailWithAgent()
-    startSizeReporting()
+      startSizeReporting()
   } catch (_) { /* no handshake: we already painted; report size anyway */ }
   draw()
   reportSize()

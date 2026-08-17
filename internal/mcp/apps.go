@@ -415,8 +415,52 @@ func panelBootstrap(payload core.Result) core.Result {
 func panelMeta(payload core.Result) map[string]any {
 	return map[string]any{
 		"ui":             map[string]any{"resourceUri": uiBoardURI},
-		panelDataMetaKey: payload,
+		panelDataMetaKey: withoutBodies(payload),
 	}
+}
+
+// withoutBodies strips message text from the panel payload.
+//
+// The panel had been sharing every unread body with the host through
+// ui/update-model-context, which one host renders straight into the operator's
+// own composer. That was fixed in the panel, and the fix did not reach anybody:
+// MCP Apps templates are CACHED by the host against their ui:// URI, so a
+// session that loaded the panel yesterday keeps running yesterday's JavaScript
+// and keeps leaking. There is no way to invalidate that from here.
+//
+// So the bodies stop leaving the daemon. A cached panel cannot share what it
+// was never given, which makes this the only version of the fix that is true
+// today rather than after every client restarts.
+//
+// The panel does not lose the mail. It holds the caller's own token and calls
+// back over its own bridge, where results cannot enter model context at all;
+// that is the same route it already uses for board(detail:true). What changes
+// is that the body travels on the private path instead of the one the host is
+// entitled to redistribute.
+//
+// Serials, senders, types and states are kept: everything needed to render a
+// mailbox, decide what to open, and fetch it.
+func withoutBodies(payload core.Result) core.Result {
+	out := core.Result{}
+	for k, v := range payload {
+		out[k] = v
+	}
+	for _, key := range []string{"inbox", "messages"} {
+		msgs, ok := out[key].([]*core.Message)
+		if !ok {
+			continue
+		}
+		safe := make([]*core.Message, 0, len(msgs))
+		for _, m := range msgs {
+			// A copy: the original is the AGENT's result, delivered over its own
+			// authenticated connection, and it keeps its text.
+			c := *m
+			c.Body, c.Response = "", ""
+			safe = append(safe, &c)
+		}
+		out[key] = safe
+	}
+	return out
 }
 
 // panelResult attaches the board panel to a tool that already returns board or

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -141,5 +142,60 @@ func TestANoticeAloneDoesNotWakeUnlessConfigured(t *testing.T) {
 	e.SetNoticesWake(true)
 	if !e.noticesWake() {
 		t.Error("turning it back on did not")
+	}
+}
+
+// Nothing is said to the human at the moment they press return.
+//
+// UserPromptSubmit fires when a PERSON types. The model-facing digest was
+// removed from it because delivering mail there makes the operator the
+// transport; the human-facing line was left, and it told them about their
+// AGENT's mail on every prompt, which is not theirs to read and not theirs to
+// act on. Reported as: "this just appeared when I prompted you."
+func TestNothingIsSaidToTheHumanWhenTheyType(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	mk := func(name, nonce, sid string) string {
+		r, err := e.Do(ctx, &core.Op{
+			Kind: core.OpRegister, Name: name, AgentKind: core.KindPersistent,
+			Nonce: nonce, SessionID: sid,
+		})
+		if err != nil {
+			t.Fatal("setup:", err)
+		}
+		tok, _ := r["token"].(string)
+		return tok
+	}
+	senderTok := mk("sender", "n-s", "sid-s")
+	mk("worker", "n-w", "sid-w")
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: senderTok, To: "worker",
+		MsgType: core.MsgQuestion, Body: "anything",
+	}); err != nil {
+		t.Fatal("setup:", err)
+	}
+
+	typed, err := e.HookPoll(ctx, "sid-w", "UserPromptSubmit", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg, ok := typed["systemMessage"]; ok {
+		t.Errorf("the operator was told about their agent's mail at the moment they "+
+			"pressed return: %v", msg)
+	}
+
+	// Stop is where ambient awareness belongs: the turn is over, and a line
+	// saying what is outstanding is the whole reason this channel exists.
+	ended, err := e.HookPoll(ctx, "sid-w", "Stop", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := ended["systemMessage"]; !ok {
+		t.Error("nothing was said at the end of the turn either, so an operator who " +
+			"cannot see the board now hears nothing at all")
 	}
 }

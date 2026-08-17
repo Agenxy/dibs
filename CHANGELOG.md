@@ -262,21 +262,32 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **The board panel was pasting every unread message, in full, into the
-  operator's own prompt box.** `maybeShareMailWithAgent` called
-  `ui/update-model-context` with the BODY of every message in the mailbox, and a
-  host renders what it is given: ChatGPT Desktop puts it under "Included with
-  your next message", in the composer. So one agent's private mail sat in front
-  of whoever was at the keyboard, repeatedly, for days.
+- **The panel no longer pushes anything into model context, and the daemon no
+  longer gives it the material to.** `maybeShareMailWithAgent` called
+  `ui/update-model-context` with the body of every unread message. It existed as
+  the only push a host without lifecycle hooks could offer, and it did not do
+  that job: by the Apps contract it does not start a turn, which the code said
+  itself, so the mail surfaced when the HUMAN next typed. That is the operator
+  acting as the transport, which is the failure this product exists to remove,
+  arriving through the one door nobody was watching. What it did in practice was
+  put every unread message, in full, into their composer.
 
-  This is the fourth channel with the same defect and the one that was actually
-  causing the reports. The other three were fixed first, each looking like the
-  cause, because this one is JavaScript inside the panel and every search for
-  the leak was over Go. Its guard reads the panel source for that reason: the
-  Go-side property test could not have caught it and did not.
+  Removed, not trimmed. Waking an agent belongs to the lifecycle hooks and to
+  the `waiting` line on every authenticated result; a panel shows a person their
+  board.
 
-  Senders, types and serials now, with `read_mail(N)` to fetch each. Everything
-  needed to decide whether to read, nothing that could embarrass anyone.
+  Removing it was not enough on its own. MCP Apps templates are cached by the
+  host against their `ui://` URI, so a session that loaded the panel before the
+  fix keeps running the old JavaScript and keeps leaking, with nothing the
+  server can do about it. So the bodies also stop leaving the daemon: the panel
+  payload carries serials, senders, types and states, and the text travels only
+  on the panel's own authenticated bridge, where a host has no claim to it. A
+  cached panel cannot share what it was never given.
+
+  Four e2e checks asserted the old behaviour, carefully: that the push was
+  framed as data rather than instruction, that it never claimed to wake anyone,
+  and that concurrent pushes coalesced. All true, all of a feature that should
+  not have existed. They now assert zero pushes, with the reasoning kept.
 
 - **A guard against the leak that keeps coming back through a new door.** The
   same defect has now appeared three times in three channels: the wake digest
