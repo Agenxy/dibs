@@ -233,7 +233,27 @@ func onScreen(mode string, args ...string) (string, bool) {
 // Available reports whether a person can be reached from here at all, so a
 // caller can say "this build cannot notify you" once rather than failing
 // silently on every message.
-func Available() bool { return runtime.GOOS == "darwin" && !underTest() }
+func Available() bool { return runtime.GOOS == "darwin" && !underTest() && !silenced() }
+
+// silenced reports the operator's kill switch for this process and everything
+// it spawns. Split out so it is testable from inside a test binary, where
+// Available() is already false for a different reason and would prove nothing.
+func silenced() bool { return os.Getenv(silenceEnv) == "off" }
+
+// silenceEnv turns every notification off for a process and everything it
+// spawns.
+//
+// underTest() catches a test BINARY, and that is not enough: the end-to-end
+// suites spawn a real dibd, which is a production binary by every measure and
+// notifies accordingly. The operator watched fixture dialogs, "checker asks:
+// Should I proceed with the rename?", appear on their screen on every test run,
+// with buttons that answered a daemon about to be killed.
+//
+// Set on the test tasks in one place rather than at each of the five spawn
+// sites: the suites pass their whole environment to the daemons they start, so
+// one variable reaches all of them and a new suite inherits it without anybody
+// remembering. A spawn site that forgets is exactly how this came back.
+const silenceEnv = "DIBS_NOTIFY"
 
 // underTest reports whether this is a test binary, in which case nothing here
 // may reach a person.

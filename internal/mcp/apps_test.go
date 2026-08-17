@@ -679,3 +679,40 @@ func TestThePanelPayloadCarriesNoMessageBody(t *testing.T) {
 		t.Error("stripping the panel copy mutated the agent's own result")
 	}
 }
+
+// The payload the server ACTUALLY builds carries no body, whatever its shape.
+//
+// The first redaction matched two shapes: `inbox` and `messages` as a flat
+// []*core.Message. check_in nests the mailbox as inbox.messages, which is
+// neither, so the body went through untouched and the fix looked complete for
+// an hour. An independent reviewer found it by constructing the payload the
+// server builds rather than the one the earlier test imagined.
+//
+// This is the fifth instance of this leak and the second time the FIX was
+// shaped to the wrong data, which is why redaction now recurses instead of
+// matching shapes.
+func TestTheNestedPanelPayloadCarriesNoBodyEither(t *testing.T) {
+	const secret = "NESTED-BODY-MUST-NOT-ESCAPE"
+	nested := core.Result{
+		"agent_id": "worker",
+		"inbox": core.Result{"messages": []*core.Message{{
+			Serial: 5, From: "peer", To: "worker", Type: core.MsgQuestion,
+			State: core.MsgStatePending, Body: secret, Response: secret,
+		}}},
+		"deeper": map[string]any{"any": []any{core.Result{
+			"messages": []*core.Message{{Serial: 6, From: "p2", Body: secret}},
+		}}},
+	}
+	blob, err := json.Marshal(panelMeta(nested))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(blob, []byte(secret)) {
+		t.Errorf("a nested mailbox leaked its body to the panel:\n%s", blob)
+	}
+	for _, want := range []string{"peer", "question"} {
+		if !bytes.Contains(blob, []byte(want)) {
+			t.Errorf("the payload lost %q, so the panel cannot render a mailbox", want)
+		}
+	}
+}

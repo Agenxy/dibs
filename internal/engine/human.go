@@ -584,11 +584,26 @@ func (e *Engine) mayApproveGrant(actor *core.Agent, op *core.Op) error {
 		return nil // denying a grant needs no authority; it grants nothing
 	}
 	m := e.state.Messages[op.MsgSerial]
-	if m == nil || m.Grant == "" {
+	if m == nil {
 		return nil
 	}
-	if human := e.humanIdentityLocked(); human == "" || actor.ID != human {
+	human := e.humanIdentityLocked()
+	if m.Grant != "" && (human == "" || actor.ID != human) {
 		return core.ErrGrantNeedsHuman
+	}
+	// The same rule as adopt_agent, at the OTHER door.
+	//
+	// guardHumanMailbox covered the direct call and nothing else, so an agent
+	// could send a request carrying `adopt: <the human>`, a coordinator could
+	// approve it in good faith, and the operator's whole mailbox moved to the
+	// asker. Found by an independent reviewer constructing exactly that.
+	//
+	// The lesson is the shape rather than the instance: an effect with two entry
+	// points needs its rule at the effect, and this is the second escalation in
+	// one release from guarding a door instead. Both doors now consult this
+	// sentence, and there are only two.
+	if m.Adopt != "" && human != "" && m.Adopt == human && actor.ID != human {
+		return core.ErrHumanMailboxIsTheirs
 	}
 	return nil
 }

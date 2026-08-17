@@ -441,26 +441,69 @@ func panelMeta(payload core.Result) map[string]any {
 // Serials, senders, types and states are kept: everything needed to render a
 // mailbox, decide what to open, and fetch it.
 func withoutBodies(payload core.Result) core.Result {
-	out := core.Result{}
-	for k, v := range payload {
-		out[k] = v
-	}
-	for _, key := range []string{"inbox", "messages"} {
-		msgs, ok := out[key].([]*core.Message)
-		if !ok {
-			continue
-		}
-		safe := make([]*core.Message, 0, len(msgs))
-		for _, m := range msgs {
-			// A copy: the original is the AGENT's result, delivered over its own
-			// authenticated connection, and it keeps its text.
-			c := *m
-			c.Body, c.Response = "", ""
-			safe = append(safe, &c)
-		}
-		out[key] = safe
+	out, _ := redactBodies(payload).(core.Result)
+	if out == nil {
+		return core.Result{}
 	}
 	return out
+}
+
+// redactBodies walks the whole value and blanks every message body it finds,
+// whatever it is wrapped in.
+//
+// The first version matched two shapes, `inbox` and `messages` as a flat
+// []*core.Message, and the real payload is neither: check_in nests the mailbox
+// as inbox.messages, so the body went through untouched. An independent
+// reviewer found that by constructing the payload the server actually builds
+// rather than the one the test imagined.
+//
+// That is the fifth time this leak has been fixed and the second time the FIX
+// was shaped to the wrong data. So this stops matching shapes: it recurses, and
+// anything that is a Message gets blanked no matter where it sits. A new field
+// that happens to carry a mailbox is covered on the day it is added, which is
+// the only version of this guarantee that survives somebody restructuring a
+// result.
+func redactBodies(v any) any {
+	switch t := v.(type) {
+	case *core.Message:
+		if t == nil {
+			return t
+		}
+		// A copy: the original is the AGENT's own result, delivered over the
+		// connection it authenticated on, and it keeps its text.
+		c := *t
+		c.Body, c.Response = "", ""
+		return &c
+	case core.Message:
+		t.Body, t.Response = "", ""
+		return t
+	case []*core.Message:
+		out := make([]*core.Message, 0, len(t))
+		for _, m := range t {
+			out = append(out, redactBodies(m).(*core.Message))
+		}
+		return out
+	case core.Result:
+		out := core.Result{}
+		for k, val := range t {
+			out[k] = redactBodies(val)
+		}
+		return out
+	case map[string]any:
+		out := map[string]any{}
+		for k, val := range t {
+			out[k] = redactBodies(val)
+		}
+		return out
+	case []any:
+		out := make([]any, 0, len(t))
+		for _, val := range t {
+			out = append(out, redactBodies(val))
+		}
+		return out
+	default:
+		return v
+	}
 }
 
 // panelResult attaches the board panel to a tool that already returns board or

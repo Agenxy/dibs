@@ -168,6 +168,10 @@ tasks:
       - cp bin/dibs-presence {{.DEST}}/
 
   test:
+    env:
+      # No dialogs from a test run: these suites spawn real daemons,
+      # which notify like any other. See internal/notify silenceEnv.
+      DIBS_NOTIFY: "off"
     desc: Full test suite with race detector
     cmds:
       - go test -race ./...
@@ -195,6 +199,10 @@ tasks:
           Read it with git, in pieces if you need to. Work read-only."
 
   test:dev:
+    env:
+      # No dialogs from a test run: these suites spawn real daemons,
+      # which notify like any other. See internal/notify silenceEnv.
+      DIBS_NOTIFY: "off"
     desc: The dibdev-tagged code, which the default build excludes
     # `go test ./...` never compiles anything behind the dibdev tag, so the
     # presence mock and its tests would rot silently, and the thing that rots
@@ -216,6 +224,9 @@ tasks:
     # is worse than none, because it is reached for at the exact moment somebody
     # is already confused about which layer is broken.
     env:
+      # No dialogs from a test run: these suites spawn real daemons,
+      # which notify like any other. See internal/notify silenceEnv.
+      DIBS_NOTIFY: "off"
       DIBS_PANEL_MINIMAL: "1"
     cmds:
       - go test -count=1 ./internal/mcp/
@@ -224,6 +235,9 @@ tasks:
     desc: "The panel's human actions, end to end: needs a dev daemon, not a finger"
     deps: [build]
     env:
+      # No dialogs from a test run: these suites spawn real daemons,
+      # which notify like any other. See internal/notify silenceEnv.
+      DIBS_NOTIFY: "off"
       DIBS_ALLOW_PARALLEL: "1"
     cmds:
       # The dev daemon is built here rather than by `build`, so it never lands in
@@ -236,6 +250,9 @@ tasks:
 
   test:panel:
     env:
+      # No dialogs from a test run: these suites spawn real daemons,
+      # which notify like any other. See internal/notify silenceEnv.
+      DIBS_NOTIFY: "off"
       # These suites spawn several daemons at once by design. The
       # host-wide guard exists to stop a fleet being silently split
       # across two boards, which is not what an isolated test dir is.
@@ -260,6 +277,9 @@ tasks:
 
   test:web:
     env:
+      # No dialogs from a test run: these suites spawn real daemons,
+      # which notify like any other. See internal/notify silenceEnv.
+      DIBS_NOTIFY: "off"
       # These suites spawn several daemons at once by design. The
       # host-wide guard exists to stop a fleet being silently split
       # across two boards, which is not what an isolated test dir is.
@@ -272,6 +292,9 @@ tasks:
 
   test:guard:
     env:
+      # No dialogs from a test run: these suites spawn real daemons,
+      # which notify like any other. See internal/notify silenceEnv.
+      DIBS_NOTIFY: "off"
       # These suites spawn several daemons at once by design. The
       # host-wide guard exists to stop a fleet being silently split
       # across two boards, which is not what an isolated test dir is.
@@ -284,6 +307,9 @@ tasks:
 
   test:space:
     env:
+      # No dialogs from a test run: these suites spawn real daemons,
+      # which notify like any other. See internal/notify silenceEnv.
+      DIBS_NOTIFY: "off"
       # These suites spawn several daemons at once by design. The
       # host-wide guard exists to stop a fleet being silently split
       # across two boards, which is not what an isolated test dir is.
@@ -295,6 +321,10 @@ tasks:
       - DIBD=$PWD/bin/dibd DIBS=$PWD/bin/dibs MATCH_REPO=$PWD bun internal/mcp/e2e/channel_e2e.ts
 
   test:sidecar:
+    env:
+      # No dialogs from a test run: these suites spawn real daemons,
+      # which notify like any other. See internal/notify silenceEnv.
+      DIBS_NOTIFY: "off"
     desc: "Embedding sidecar contract check: no model, no repository needed"
     cmds:
       - python3 contrib/embed-sidecar/dibs_embed.py --self-test

@@ -393,3 +393,53 @@ func TestARequestToTheHumanOutlivesTheDefaultDeadline(t *testing.T) {
 		}
 	}
 }
+
+// The human's mailbox cannot be taken by approving a request for it either.
+//
+// guardHumanMailbox covered the direct adopt_agent call and nothing else, so an
+// agent could send a request carrying `adopt: <the human>`, a coordinator could
+// approve it in good faith, and the operator's whole mailbox moved to the
+// asker. Found by an independent reviewer.
+//
+// Second escalation in one release from guarding a door rather than the effect
+// behind it, which is the lesson worth keeping.
+func TestApprovingCannotAdoptTheHumansMailbox(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	humanID, _, err := e.HumanAgent(ctx)
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	mk := func(name, nonce string) string {
+		r, err := e.Do(ctx, &core.Op{
+			Kind: core.OpRegister, Name: name, AgentKind: core.KindPersistent, Nonce: nonce,
+		})
+		if err != nil {
+			t.Fatal("setup:", err)
+		}
+		tok, _ := r["token"].(string)
+		return tok
+	}
+	attacker, boss := mk("attacker", "n-a"), mk("boss", "n-b")
+	st.Agents["boss"].Role = core.RoleCoordinator
+	st.Agents[humanID].Status = core.StatusDormant
+
+	sent, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: attacker, To: "boss",
+		MsgType: core.MsgRequest, Body: "that mailbox is mine", Adopt: humanID,
+	})
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRespond, Token: boss, MsgSerial: sent["msg_serial"].(uint64),
+		Disposition: "approve",
+	}); err == nil {
+		t.Error("a coordinator approved a request that moved the OPERATOR's entire " +
+			"mailbox to the agent that asked for it")
+	}
+}

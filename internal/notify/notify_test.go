@@ -84,3 +84,34 @@ func TestAlertsRefuseAnImpossibleNumberOfButtons(t *testing.T) {
 		t.Error("a picker with nothing to choose from was accepted")
 	}
 }
+
+// A test run must not put a dialog on somebody's screen.
+//
+// underTest() catches a test BINARY and that is not enough: the end-to-end
+// suites spawn a real dibd, which is a production binary by every measure and
+// notifies accordingly. The operator watched fixture dialogs appear on every
+// test run, reading "checker asks: Should I proceed with the rename?", with
+// buttons that answered a daemon about to be killed.
+//
+// One variable, set on the test tasks, inherited by every daemon they spawn,
+// because the suites pass their whole environment down. Five spawn sites each
+// remembering is how this comes back.
+func TestNotificationsCanBeSilencedForATestRun(t *testing.T) {
+	t.Setenv("DIBS_NOTIFY", "off")
+	if !silenced() {
+		t.Error("DIBS_NOTIFY=off did not silence notifications, so a test run can " +
+			"still put a dialog in front of whoever is at the keyboard")
+	}
+	if Available() {
+		t.Error("Available() ignores the kill switch")
+	}
+	// Off for that value ONLY. A typo must not quietly disable the one path
+	// that exists because the person is not in a loop to notice its absence,
+	// which would be the same class of failure in the opposite direction.
+	for _, v := range []string{"on", "", "0", "false", "OFF"} {
+		t.Setenv("DIBS_NOTIFY", v)
+		if silenced() {
+			t.Errorf("DIBS_NOTIFY=%q silenced notifications; only \"off\" may", v)
+		}
+	}
+}
