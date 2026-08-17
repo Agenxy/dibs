@@ -100,3 +100,71 @@ func TestNoWakeSurfaceLeaksAMessageBody(t *testing.T) {
 	}
 	_ = time.Now
 }
+
+// A persistent agent returning in a NEW session is told it can reattach.
+//
+// This is the gap that made persistent agents unwakeable, which is the one
+// thing they exist for. AgentForHook resolves by session id; an agent that
+// registered yesterday holds a session id that died with yesterday's process,
+// so a new session of the same agent matches nothing and the hook injects
+// nothing. It cannot register its way out of that, because knowing to reattach
+// is precisely the thing it would have been told.
+//
+// Measured on a live board: three messages sat unread for an agent whose human
+// was actively using it, with hooks correctly installed and firing, and the
+// wake path resolving to nobody on every single turn.
+func TestAReturningSessionIsToldItCanReattach(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "returner", AgentKind: core.KindPersistent,
+		Nonce: "kept-nonce", SessionID: "yesterdays-session",
+		Agent: &core.AgentInfo{CWD: "/work/api"},
+	}); err != nil {
+		t.Fatal("setup:", err)
+	}
+	// Yesterday's process is gone.
+	st.Agents["returner"].Status = core.StatusDormant
+
+	res, err := e.HookPoll(ctx, "todays-session", "SessionStart", "/work/api", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, _ := res["hookSpecificOutput"].(map[string]any)
+	ctxText, _ := out["additionalContext"].(string)
+	if ctxText == "" {
+		t.Fatal("a returning session was told nothing, so a persistent agent stays " +
+			"unwakeable and its mail sits unread while its human uses it")
+	}
+	if !strings.Contains(ctxText, "returner") || !strings.Contains(ctxText, "nonce") {
+		t.Errorf("the hint does not name the agent or the credential that recovers "+
+			"it, so it is not actionable: %s", ctxText)
+	}
+	// And it must say NOTHING about that agent's mail: this session has not
+	// proved it is that agent, which is the whole reason the directory fallback
+	// is refused when a session id was supplied.
+	for _, forbidden := range []string{"unread", "message", "from "} {
+		if strings.Contains(ctxText, forbidden) {
+			t.Errorf("the hint mentions %q. The session has not proved it is that "+
+				"agent, and an earlier build answering a stranger by directory handed "+
+				"over another agent's mail: %s", forbidden, ctxText)
+		}
+	}
+}
+
+// A live agent is not offered up for reattachment: somebody is being it now,
+// and a second session joining would fork the identity rather than recover it.
+func TestALiveAgentIsNotOfferedForReattachment(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	st.Agents["busy"] = &core.Agent{
+		ID: "busy", Name: "busy", Status: core.StatusActive, Nonce: "n",
+		Agent: &core.AgentInfo{CWD: "/work/api"}, Slots: map[string]core.Slot{},
+	}
+	if got := st.ReattachableIn("/work/api"); len(got) != 0 {
+		t.Errorf("a live agent was offered for reattachment: %v", got)
+	}
+}

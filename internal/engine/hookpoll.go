@@ -34,6 +34,35 @@ func (e *Engine) HookPoll(ctx context.Context, sessionID, event, cwd string, sto
 		l := e.state.AgentForHook(sessionID, cwd)
 		e.noteHook("poll", l != nil)
 		if l == nil {
+			// A session that resolves to nobody may still BE somebody, returning.
+			//
+			// This is the gap that made persistent agents unwakeable, which is the
+			// one thing they exist for. AgentForHook matches on session id; a
+			// persistent agent that registered yesterday has a session id that
+			// died with yesterday's process, so a new session of the same agent
+			// matches nothing and the hook injects nothing. It cannot register
+			// itself out of that, because knowing to reattach is the thing it
+			// would have been told.
+			//
+			// Measured: three messages sat unread for an agent whose human was
+			// actively using it, with hooks correctly installed and firing, and
+			// the wake path reaching nobody on every turn.
+			//
+			// So an unresolved session is offered a POINTER, never mail. Names
+			// only, and only for agents in this working directory: no counts, no
+			// senders, no bodies, nothing that attributes one agent's traffic to
+			// a session that has not proved it is that agent. That distinction is
+			// load-bearing, and the reason AgentForHook refuses the directory
+			// fallback in the first place is that an earlier version handed a
+			// stranger another agent's mail including its text.
+			//
+			// The agent's own re-registration is still what unlocks delivery. This
+			// only tells it that re-registering is worth doing.
+			if hint := e.reattachHint(sessionID, cwd); hint != "" {
+				return core.Result{"hookSpecificOutput": map[string]any{
+					"hookEventName": hookEvent(event), "additionalContext": hint,
+				}}
+			}
 			// Not an error: most sessions have no agent, and a hook that fails
 			// noisily on every turn would be worse than useless.
 			return core.Result{} // empty result ⇒ nothing injected
@@ -527,4 +556,44 @@ func (e *Engine) freshForWake(agent string, now time.Time) bool {
 		}
 	}
 	return woke
+}
+
+// reattachHint tells an unresolved session that an agent of its own may be
+// waiting to be reclaimed, without telling it anything about that agent's mail.
+//
+// Deliberately thin. It names agents that were working in THIS directory and
+// are not currently live, and says how to become one again. It does not say
+// whether they have mail, how much, or from whom: this session has not proved
+// it is any of them, and the whole reason the directory fallback is refused
+// elsewhere is that an earlier build answered a stranger with another agent's
+// private messages.
+//
+// Empty when there is nothing useful to say, which is the common case: a
+// session in a directory nobody has ever coordinated from should see nothing at
+// all, and a hook that speaks on every turn is one people disable.
+func (e *Engine) reattachHint(sessionID, cwd string) string {
+	if sessionID == "" || cwd == "" {
+		return "" // the directory fallback already handles this case
+	}
+	names := e.state.ReattachableIn(cwd)
+	if len(names) == 0 {
+		return ""
+	}
+	if len(names) > 3 {
+		names = names[:3]
+	}
+	return "Dibs: this session is not registered, and " + strings.Join(names, ", ") +
+		" worked in this directory before and is idle now. If one of those is you " +
+		"returning, register with the SAME name and the nonce you kept: you reattach " +
+		"to it, and anything waiting for it becomes visible to you. Registering under " +
+		"a new name instead makes a sibling that cannot read its predecessor's mail. " +
+		"If none of them is you, register as yourself and ignore this."
+}
+
+// hookEvent defaults the event name, which some harnesses omit.
+func hookEvent(event string) string {
+	if event == "" {
+		return "SessionStart"
+	}
+	return event
 }
