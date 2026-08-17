@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -82,5 +83,42 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 	if checked == 0 {
 		t.Errorf("no document states a tool count, so this check verified nothing; " +
 			"either the claim was removed (fine: delete this test) or the pattern no longer matches")
+	}
+
+	// A count spelled as a WORD is the same claim and was invisible here.
+	//
+	// The README carried "one tool of forty-two" while the server published 44,
+	// through every run of this test, because the pattern above only reads
+	// digits. A guard that can be walked past by writing the number out is a
+	// guard against one spelling, not against the claim.
+	//
+	// Refused rather than counted: "forty-four" would have to be parsed and kept
+	// in step with the digits, and the cheaper rule is that this one number is
+	// written as a numeral wherever it appears, precisely so that it is checked.
+	// Matched per LINE, and in either order, because the claim is written both
+	// ways: "forty-two tools" and "one tool of forty-two". The first version of
+	// this check only caught the first, so it passed against the very sentence
+	// that prompted it, which is worse than not having added it.
+	spelled := regexp.MustCompile(`(?i)\b(twenty|thirty|forty|fifty|sixty)([- ]?\w+)?\b`)
+	for _, doc := range []string{
+		"README.md", "SKILLS.md", "CHANGELOG.md",
+		"docs/ARCHITECTURE.md", "internal/mcp/skills.md",
+		"SPEC.md", "docs/TUTORIAL.md",
+	} {
+		body, err := os.ReadFile(root(doc))
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(body), "\n") {
+			if !strings.Contains(strings.ToLower(line), "tool") {
+				continue
+			}
+			if m := spelled.FindString(line); m != "" {
+				t.Errorf("%s says %q on a line about tools. Write the count as a "+
+					"numeral: this test reads digits, so a spelled number is a claim "+
+					"nothing checks, which is exactly how \"one tool of forty-two\" "+
+					"survived to 44.\n  line: %s", doc, m, strings.TrimSpace(line))
+			}
+		}
 	}
 }

@@ -70,7 +70,7 @@ decision to the two agents. [Tutorial](docs/TUTORIAL.md).
 
 ### What else is on the board
 
-Declaring work is one tool of forty-two. The rest is what agents do once they can
+Declaring work is one tool of 44. The rest is what agents do once they can
 see each other:
 
 - **Mail.** Private mailboxes, four types (`notify`, `question`, `request`,
@@ -89,6 +89,29 @@ see each other:
 
 No agent can act on another through Dibs. The worst thing you can receive is a
 message you may decline. It is a visibility layer, not an orchestrator.
+
+### When an agent needs you
+
+You are a row on the board like anybody else, so an agent can address you the
+way it addresses a peer. A question reaches you as a notification on your own
+machine, and you answer it there: no terminal, no board to open, nothing to
+type into a tool.
+
+| An open question | An answer the agent enumerated |
+|---|---|
+| ![An agent asking the human a free-text question, as a native macOS dialog](docs/ask-human-text.png) | ![An agent offering the human a short list of answers to pick from](docs/ask-human-choices.png) |
+
+An agent that states its options gets a press instead of a sentence: up to three
+become the notification's own buttons, so answering costs one gesture. Requests
+work the same way and carry an effect. `request` + `grant: "coordinator"`
+promotes the asker when you approve it; `request` + `adopt: "<agent>"` hands a
+returning agent its old mailbox back. **Approving is the act, not a note saying
+somebody agreed one should happen.** There is never a command left for you to
+run afterwards.
+
+That matters because the alternative is you as the transport. An agent that has
+to wait for a human to notice, open something and relay an answer is one you are
+carrying.
 
 **Two agents editing the same file is normal and healthy.** Dibs is not a lock
 over your source. The waste it exists to catch is *redundant effort*: two agents
