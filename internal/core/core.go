@@ -343,6 +343,18 @@ type Agent struct {
 	// token through config. Set at registration; never a credential on its own,
 	// the connection is already authenticated.
 	SessionID string `json:"session_id,omitempty"`
+	// SessionAliases are the OTHER names this same session is known by, because
+	// the two halves of a harness do not always agree on one.
+	//
+	// The stdio bridge derives `host-<ppid>` from the process that spawned it,
+	// which is what an in-process plugin can also observe. A harness whose hooks
+	// are configured rather than in-process sends what IT calls the session
+	// instead: Codex passes a uuid. Both are truthfully the same session, and
+	// before this an agent could answer to exactly one of them, so mail was
+	// delivered to a name its own Stop hook never used and nothing was ever
+	// woken. Neither id is a credential; the connection is already
+	// authenticated, and these are only ever added by the daemon's own join.
+	SessionAliases []string `json:"session_aliases,omitempty"`
 	// Agent is who is behind this agent: harness, version, model, surface. In a
 	// large fleet "reviewer" is not enough; the human needs to know that it is
 	// Codex 0.145 rather than Opus 5 in Claude Desktop. Purely descriptive: it

@@ -96,7 +96,13 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	wantOp := map[string]bool{
 		"kind": true, "agent": true, "name": true, "pid": true, "token": true,
 		"nonce": true, "agent_kind": true, "session_id": true, "agent_id": true,
-		"slot_id": true, "text": true, "dirs": true, "refs": true,
+		// The OTHER name one harness session goes by, joined by the daemon at
+		// ingress. Frozen from the day it shipped, like every tag here: it
+		// records which agent a lifecycle hook resolves to, so renaming it later
+		// would silently unbind every agent on replay and wake nobody, reporting
+		// success throughout.
+		"session_alias": true,
+		"slot_id":       true, "text": true, "dirs": true, "refs": true,
 		"to": true, "msg_type": true, "body": true, "deadline_sec": true, "op_id": true,
 		"path": true, "mode": true, "note": true,
 		"space": true, "exclusive": true, "predicted": true,
@@ -226,7 +232,10 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 // Fingerprints of the frozen sets above. Deliberately not derived from anything
 // at build time: a value a sweep can recompute defends nothing.
 const (
-	frozenOpFingerprint       = "sha256:609beec52aa2d0b3"
+	// Updated deliberately when `session_alias` was added: one new tag, no
+	// rename. If you are here because a sweep moved this value, the sweep is the
+	// bug, and the tag it renamed is the data loss.
+	frozenOpFingerprint       = "sha256:644f727b01467102"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 )
 

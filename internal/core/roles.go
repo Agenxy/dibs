@@ -102,8 +102,19 @@ func (s *State) AgentBySession(sid string) *Agent {
 		return nil
 	}
 	for _, l := range s.Agents {
-		if l.SessionID == sid && l.Status != StatusArchived && l.Status != StatusClosed {
+		if l.Status == StatusArchived || l.Status == StatusClosed {
+			continue
+		}
+		if l.SessionID == sid {
 			return l
+		}
+		// Also the names the harness's OTHER half uses for this same session:
+		// the bridge says `host-<ppid>`, a configured hook says whatever the
+		// harness calls its session. See Agent.SessionAliases.
+		for _, alias := range l.SessionAliases {
+			if alias == sid {
+				return l
+			}
 		}
 	}
 	return nil
@@ -250,4 +261,42 @@ func (s *State) HasCoordinator() bool {
 		}
 	}
 	return false
+}
+
+// maxSessionAliases bounds what one agent accumulates. A session has two names
+// in the worst case seen (bridge and hook); the spare room is for a harness
+// that restarts its hooks under a new id without the agent re-registering.
+const maxSessionAliases = 8
+
+// bindHarnessSession records another name for this agent's harness session,
+// returning the id it stored or "" when nothing changed.
+//
+// Never an id a caller sent: no tool takes this parameter, so it arrives empty
+// from every caller and is filled only by the daemon's announced-session join
+// (see engine.announcedSession, which is also where the length bound lives). A
+// rule here would be retroactive, because this runs in the fold that replays
+// the ledger.
+//
+// Reachable from check_in and update as well as register because the agents it
+// fixes are already registered. An agent registered before the join existed has
+// no reason to ever register again; without this it stays unreachable by its
+// own harness's hooks forever, while every call it makes reports success.
+func (a *Agent) bindHarnessSession(sid string) string {
+	if sid == "" || sid == a.SessionID {
+		return ""
+	}
+	if a.SessionID == "" {
+		a.SessionID = sid
+		return sid
+	}
+	for _, x := range a.SessionAliases {
+		if x == sid {
+			return ""
+		}
+	}
+	a.SessionAliases = append(a.SessionAliases, sid)
+	if n := len(a.SessionAliases); n > maxSessionAliases {
+		a.SessionAliases = a.SessionAliases[n-maxSessionAliases:]
+	}
+	return sid
 }

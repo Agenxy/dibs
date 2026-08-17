@@ -190,14 +190,17 @@ type Op struct {
 	Grant string `json:"grant,omitempty"`
 	// Adopt is the ABANDONED agent a request asks to reclaim, so that approving
 	// it moves that mailbox rather than telling somebody they may go and do it.
-	Adopt     string     `json:"adopt,omitempty"`
-	ProcStart int64      `json:"proc_start,omitempty"`
-	NewToken  string     `json:"token,omitempty"` // engine-generated; encrypted at rest
-	Nonce     string     `json:"nonce,omitempty"` // encrypted at rest
-	ResumeID  string     `json:"resume_id,omitempty"`
-	SessionID string     `json:"session_id,omitempty"` // harness session, for hook lookup
-	Agent     *AgentInfo `json:"agent,omitempty"`      // who is behind the agent (descriptive only)
-	Parent    string     `json:"parent,omitempty"`     // the agent that spawned this one (§8.2)
+	Adopt     string `json:"adopt,omitempty"`
+	ProcStart int64  `json:"proc_start,omitempty"`
+	NewToken  string `json:"token,omitempty"` // engine-generated; encrypted at rest
+	Nonce     string `json:"nonce,omitempty"` // encrypted at rest
+	ResumeID  string `json:"resume_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"` // harness session, for hook lookup
+	// SessionAlias is another name this same harness session goes by, joined by
+	// the daemon at ingress. Never sent by a caller. See Agent.SessionAliases.
+	SessionAlias string     `json:"session_alias,omitempty"`
+	Agent        *AgentInfo `json:"agent,omitempty"`  // who is behind the agent (descriptive only)
+	Parent       string     `json:"parent,omitempty"` // the agent that spawned this one (§8.2)
 	// ParentNonce is the one-time secret the parent issued for this child.
 	//
 	// Parent alone is a claim anyone can make; this is the proof. A parent that
@@ -416,7 +419,7 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	case OpActivityCheckpoint:
 		res, evs = Result{"ok": true}, []Event{} // state effect: LastCoordination below
 	case OpAckBoard:
-		res, evs = s.applyAckBoard(l, now)
+		res, evs = s.applyAckBoard(l, op)
 	case OpUpdate:
 		res, evs, err = s.applyUpdate(l, op)
 	case OpBindSession:
@@ -628,6 +631,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				if op.SessionID != "" {
 					l.SessionID = op.SessionID // the new session owns it now
 				}
+				l.bindHarnessSession(op.SessionAlias)
 				// LEDGERED, like every other transition.
 				//
 				// This branch rotates the token, wakes the agent, re-arms the
@@ -706,6 +710,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				if op.PID != 0 {
 					l.PID, l.ProcStart = op.PID, op.ProcStart
 				}
+				l.bindHarnessSession(op.SessionAlias)
 				// Ledgered for the same reason as the nonce branch above.
 				evs := []Event{{Type: "agent.reattached", Agent: l.ID, Data: map[string]any{
 					"via": "session_id",
@@ -778,6 +783,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 		Slots: map[string]Slot{},
 	}
 	s.Agents[id] = l
+	l.bindHarnessSession(op.SessionAlias) // the name its hooks use, if different
 	if op.Nonce != "" {
 		s.Nonces[op.Nonce] = id
 	}
@@ -1030,6 +1036,9 @@ func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
 	if op.Agent != nil {
 		res["identity"] = l.mergeIdentity(op.Agent)
 	}
+	if sid := l.bindHarnessSession(op.SessionAlias); sid != "" {
+		res["session_id"] = sid
+	}
 	// A participant that HAS no process says so, which is the only way to clear
 	// a pid recorded earlier: omitting one means "unchanged", so the register
 	// path cannot express this at all. It is also the only path that reliably
@@ -1161,8 +1170,11 @@ func (s *State) applyWake(l *Agent) (Result, []Event, error) {
 // applyAckBoard is the atomic checkpoint (SPEC §10): awareness ack + delivery
 // transitions of returned pending mail, one op, one serial; snapshot is the
 // post-state.
-func (s *State) applyAckBoard(l *Agent, _ time.Time) (Result, []Event) {
+func (s *State) applyAckBoard(l *Agent, op *Op) (Result, []Event) {
 	evs := []Event{{Type: "board.acked", Agent: l.ID}}
+	// check_in is how an agent ALREADY on the board gets the name its hooks
+	// use: it is the one call they all keep making. See bindHarnessSession.
+	bound := l.bindHarnessSession(op.SessionAlias)
 	for _, m := range s.Inbox(l.ID) {
 		if m.State == MsgStatePending {
 			m.State = MsgStateDelivered
@@ -1194,6 +1206,9 @@ func (s *State) applyAckBoard(l *Agent, _ time.Time) (Result, []Event) {
 		"board": s.boardAtNextSerial(), "inbox": s.Inbox(l.ID), "messages": s.Inbox(l.ID),
 		"truncated_before_serial": l.TruncatedBefore,
 		"announcements":           s.UnackedFor(l.ID),
+		// Empty unless this call bound one: a binding nothing reports is a
+		// binding nobody can check.
+		"session_id": bound,
 	}, evs
 }
 

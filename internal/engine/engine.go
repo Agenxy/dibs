@@ -288,6 +288,29 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		op.To = who
 	}
 
+	// An agent whose bridge cannot see the harness session id adopts the one
+	// its harness announced from the same directory.
+	//
+	// Resolved at ingress and written INTO the op, like the two above, so the
+	// ledger records the session the agent actually holds and replay reaches the
+	// same board without consulting a children map that no longer exists.
+	// See sessionjoin.go for why this is the register path and not hook_poll.
+	op.SessionAlias = "" // engine-joined, never accepted from ingress
+	switch op.Kind {
+	case core.OpRegister, core.OpUpdate:
+		if op.Agent != nil {
+			op.SessionAlias = announcedSession(e.children, e.state, op.Agent.CWD, now)
+		}
+	case core.OpAckBoard:
+		// check_in carries no cwd, so the agent's own registered one is used.
+		// This is the path that reaches agents ALREADY on the board: they have
+		// no reason to register again, and check_in is the one call they all
+		// make at the start of every activation.
+		if l := e.state.AgentByToken(op.Token); l != nil && l.Agent != nil {
+			op.SessionAlias = announcedSession(e.children, e.state, l.Agent.CWD, now)
+		}
+	}
+
 	// A request to a PERSON gets a person's deadline.
 	//
 	// The default is ten minutes, which is right for an agent: it is in a loop,
