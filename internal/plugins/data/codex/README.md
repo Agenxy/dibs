@@ -66,44 +66,40 @@ the flag resolved `true` via `codex features list`:
 Codex marks it "under development": it gates unfinished work, not a protocol
 switch. Do not assume 2026 support from the flag's presence.
 
-## Waking an agent: now possible, as of the `mcp_tool` hook variant
+## Waking an agent: NOT possible here yet, measured three ways
 
-**This section's conclusion has flipped.** It said mail was pull-only here
-because `HookHandlerConfig` had no way to reach Dibs, and ended by telling the
-next reader to re-check that enum on upgrade, because one new variant would
-change the answer. It has:
+**This section has flipped twice, and this time it was measured against running
+binaries rather than read out of a type.** It previously announced that the
+`mcp_tool` hook variant had arrived, quoting a Rust enum, and Dibs shipped a
+`hooks.json` written against it. That file never once fired.
 
-```rust
-#[serde(rename = "mcp_tool")]
-McpTool { server: String, tool: String, input: ..., timeout_sec: ..., status_message: ... }
-```
+What the three checks say, on 2026-08-17:
 
-That is the same mechanism the Claude Code plugin uses: a hook that calls a tool
-over the MCP connection the model already holds. No subprocess, so nothing here
-turns Dibs into a harness driver, and the objection below no longer applies.
+| Checked | Result |
+|---|---|
+| Codex Desktop `0.148.0-alpha.9`, the binary inside ChatGPT.app | parses the file, then prints `skipping MCP tool hook in ~/.codex/hooks.json: MCP tool hooks are not supported yet`, once per entry |
+| A build from codex main (`bb5054f`) | `HookHandlerConfig` has three variants: `command`, `prompt`, `agent`. No `mcp_tool`. It rejects the whole file: `unknown variant` |
+| `strings` over the Desktop binary | `mcp_tool` does not appear; the handler names present are `command`, `prompt`, `agent` |
 
-### Wiring it: `~/.codex/hooks.json`, not `config.toml`
+So the variant is at best declared and unimplemented, and on some builds absent.
+A hook written against it is not a wake path that needs wiring: it is inert, and
+because a parse failure rejects the WHOLE file, it can also take working entries
+down with it. Dibs therefore ships **no** `hooks.json` for Codex, and
+`TestShippedHooksUseOnlySupportedTypes` keeps it that way.
 
-Codex reads hooks from **`~/.codex/hooks.json`**, a separate file from
-`config.toml`. Missing that is why this stayed unwired long after the variant
-existed: the MCP server was configured, the hooks file was never created, and
-nothing anywhere said a wake path was absent.
+The lesson is the one this repository keeps relearning: a type in a source tree
+is not a feature. The previous version of this section reasoned from an enum and
+told the reader to re-check it on upgrade; re-checking the enum was never enough,
+because the enum was not what decided the outcome.
 
-Copy [hooks.json](hooks.json) to `~/.codex/hooks.json` (merge, if you already
-have one). No restart: Codex rebuilds its hook registry when the config changes.
+**Codex is pull-only.** `check_in` at the start of every activation, and
+`await_events` before blocking, which is what `dibs://skills` already tells every
+agent to do. Mail is never lost by this: it waits, and the `waiting` line on
+every authenticated result names it on the agent's next call.
 
-`dibs doctor` reports whether any harness has actually called this daemon's
-hooks, which is the only proof that a wake path is live rather than merely
-present on disk.
-
-**Until it is wired, Codex mail is pull-only and the wake digest surfaces to the
-HUMAN instead of the agent it is addressed to.** That is how this was noticed
-twice: a person watching their own Codex prompt fill up with mail for
-`codex-primary`, and later the same thing reported as "it's putting it on my
-plate to take an action for them to notice". Dibs no longer attaches the digest
-to a human's prompt on any harness (`UserPromptSubmit` carries nothing to the
-model), so an unwired Codex is now quiet rather than misdirected: quiet is
-honest, and `dibs doctor` names it.
+**The digest does not go to the human either.** `UserPromptSubmit` carries
+nothing to the model on any harness, so an unwired Codex is quiet rather than
+misdirected. Quiet is honest; `dibs doctor` names it.
 
 ### When a Codex hook takes effect (traced, not assumed)
 
