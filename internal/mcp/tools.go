@@ -259,11 +259,14 @@ var toolDefs = func() []map[string]any {
 				"on their machine. Questions and requests carry a deadline; on expiry you " +
 				"get a diagnosis (alive-but-silent, dormant, gone). op_id retries safely.",
 			"inputSchema": obj(map[string]any{
-				"token": tok, "to": str("recipient agent id"),
+				"token": tok, "to": str("recipient agent id, or \"coordinator\" for " +
+					"whoever holds that role"),
 				"type": msgType,
 				"body": str("message body"), "deadline_s": num("response deadline in seconds (default 600; max 7200, or 7 " +
 					"days to persistent agents)"),
 				"op_id": str("client-generated id for safe retries (optional, recommended)"),
+				"adopt": str("on a request: ask to reclaim an ABANDONED agent of yours, " +
+					"by id. Their Approve moves its mail onto you"),
 				"grant": map[string]any{
 					"type": "string", "enum": []string{"coordinator", "member"},
 					"description": "ask the HUMAN for a role, on a request. Their Approve IS " +
@@ -611,11 +614,11 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "adopt_agent",
-			"description": "Take over an ABANDONED mailbox: an agent registered with neither " +
-				"a nonce nor a session id can never be reattached, and its mail keeps arriving " +
-				"where nobody can read it. Moves that mail to a live agent; the source record " +
-				"and its history stay, and roles do not move. Needs the human here " +
-				"(human_unlock), a coordinator or an admin.",
+			"description": "Take over an ABANDONED mailbox, moving its mail to a live " +
+				"agent; the source record and its history stay, and roles do not move. " +
+				"Needs the human here (human_unlock), a coordinator or an admin: without " +
+				"one, ASK instead, with send(to: \"coordinator\", type: \"request\", " +
+				"adopt: <the abandoned id>).",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"agent": str("the abandoned agent whose mail to take over. Must not be active"),

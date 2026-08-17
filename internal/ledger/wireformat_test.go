@@ -103,7 +103,7 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		"score": true, "threshold": true, "scorer_id": true, "scorer_version": true,
 		"evidence": true, "auto": true,
 		"stale_agents": true, "alive_pids": true,
-		"no_process": true, "adopt_authorised": true, "choices": true, "grant": true,
+		"no_process": true, "adopt_authorised": true, "choices": true, "grant": true, "adopt": true,
 		// Declared by core.Op and reachable on disk, though the fixture below
 		// does not exercise every one. They were entirely unfrozen until the
 		// type check underneath this list was added: seventeen tags, more than
@@ -226,7 +226,7 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 // Fingerprints of the frozen sets above. Deliberately not derived from anything
 // at build time: a value a sweep can recompute defends nothing.
 const (
-	frozenOpFingerprint       = "sha256:77bea881ec9020ad"
+	frozenOpFingerprint       = "sha256:609beec52aa2d0b3"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 )
 

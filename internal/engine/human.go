@@ -306,7 +306,7 @@ func (e *Engine) mayAdopt(l *core.Agent) bool {
 // Nothing here is content beyond what the sender wrote to this human, which
 // they are entitled to read: this is their own mailbox arriving by another
 // route, not a broadcast of somebody else's traffic.
-func (e *Engine) tellTheHuman(from, msgType, body string, serial uint64, choices []string, grant string) {
+func (e *Engine) tellTheHuman(from, msgType, body string, serial uint64, choices []string, grant, adopt string) {
 	if !notify.Available() {
 		return
 	}
@@ -320,7 +320,7 @@ func (e *Engine) tellTheHuman(from, msgType, body string, serial uint64, choices
 		// A request is literally "approve or deny", so ask it that way. An
 		// alert rather than a banner because a banner cannot carry buttons
 		// without an application bundle, which Dibs does not yet ship.
-		go e.approveForHuman(from, body, serial, grant)
+		go e.approveForHuman(from, body, serial, grant, adopt)
 	case core.MsgQuestion:
 		// Answerable, not merely announced. A question that arrives as a banner
 		// is a notification that the board has something on it, which is what
@@ -338,7 +338,7 @@ func (e *Engine) tellTheHuman(from, msgType, body string, serial uint64, choices
 // ordinary response from their own agent: the sender cannot tell it came from a
 // dialog rather than a tool call, which is the point. Everything the human does
 // on this board goes through the same ops an agent sends.
-func (e *Engine) approveForHuman(from, body string, serial uint64, grant string) {
+func (e *Engine) approveForHuman(from, body string, serial uint64, grant, adopt string) {
 	// The TITLE is the daemon's sentence, not the sender's.
 	//
 	// It is the only line on the notification that states the EFFECT of pressing
@@ -348,8 +348,11 @@ func (e *Engine) approveForHuman(from, body string, serial uint64, grant string)
 	// carry grant: coordinator and be approved by somebody who never saw the
 	// word. The body is still shown, as the reason, underneath.
 	title := "Dibs · " + from + " requests"
-	if grant != "" {
+	switch {
+	case grant != "":
 		title = "Dibs · make " + from + " " + grant + "?"
+	case adopt != "":
+		title = "Dibs · give " + adopt + "'s mail to " + from + "?"
 	}
 	choice, err := notify.Ask(title, oneLine(body), "Deny", "Later", "Approve")
 	if err != nil || choice == "" || choice == "Later" {

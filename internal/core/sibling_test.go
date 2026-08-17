@@ -82,8 +82,24 @@ func TestRegisterUnderTakenNameWarnsAndNamesTheLostMail(t *testing.T) {
 	if !strings.Contains(warn, "nonce") {
 		t.Errorf("warning must name the credential that reattaches, got: %s", warn)
 	}
-	if !strings.Contains(warn, "adopt_agent") {
-		t.Errorf("warning must offer a route for an agent with no nonce, got: %s", warn)
+	// The route has to be one THIS agent can take from where it is standing.
+	//
+	// It used to end on `adopt_agent`, which needs the human at the machine or a
+	// coordinator: an authority the agent reading this does not have and cannot
+	// get from here. So the honest reading was "your mail is gone", and the only
+	// reachable action was to carry on as a sibling. Every duplicate on a real
+	// board arrived exactly that way.
+	//
+	// Asking is an action it can take unaided, and approving the request
+	// performs the move, so that is what this now requires.
+	if !strings.Contains(warn, "adopt:") || !strings.Contains(warn, "request") {
+		t.Errorf("warning must offer a route the agent can take ITSELF: a request "+
+			"carrying `adopt:`, got: %s", warn)
+	}
+	if strings.Contains(warn, "adopt_agent(") {
+		t.Errorf("warning ends on adopt_agent, which needs the human at this machine "+
+			"or a coordinator: the agent reading this has neither, so it reads as "+
+			"'your mail is gone'. Tell it to ask, got: %s", warn)
 	}
 	if strings.Contains(warn, "merge_spaces") {
 		t.Errorf("warning names merge_spaces, which takes SPACE ids: following it on these "+

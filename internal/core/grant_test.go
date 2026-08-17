@@ -103,3 +103,104 @@ func TestOnlyARequestCanCarryAGrant(t *testing.T) {
 		}
 	}
 }
+
+// Approving a reclaim request MOVES the mail.
+//
+// The board this was written against had dibs-maintainer, -2 and -3; codex-root
+// and -2; codex-1 and -2. Every one is an agent that came back, could not prove
+// it was itself, and started again beside its own unread mail. The recovery
+// path existed and required an authority the returning agent could not have, so
+// the only reachable action was to carry on as a sibling.
+func TestApprovingAReclaimMovesTheMailbox(t *testing.T) {
+	s := NewState("n1", DefaultLimits())
+	reg(t, s, "old", "told", t0)
+	reg(t, s, "returned", "tr", t0)
+	reg(t, s, "boss", "tb", t0)
+	s.Agents["boss"].Role = RoleCoordinator
+
+	// Mail arrives for the identity nobody can log back into.
+	mustApply(t, s, &Op{
+		Kind: OpSendMessage, Token: "tb", To: "old", MsgType: MsgNotify, Body: "stranded",
+	}, t0)
+	s.Agents["old"].Status = StatusDormant
+
+	res := mustApply(t, s, &Op{
+		Kind: OpSendMessage, Token: "tr", To: "boss", MsgType: MsgRequest,
+		Body: "that was me before my harness restarted", Adopt: "old",
+	}, t0)
+	out := mustApply(t, s, &Op{
+		Kind: OpRespond, Token: "tb", MsgSerial: res["msg_serial"].(uint64),
+		Disposition: "approve", AdoptAuthorised: true,
+	}, t0)
+
+	if out["adopted"] != "old" {
+		t.Errorf("the approval did not report an adoption: %v", out)
+	}
+	var landed bool
+	for _, m := range s.Messages {
+		if m.Body == "stranded" && m.To == "returned" {
+			landed = true
+		}
+	}
+	if !landed {
+		t.Error("the stranded message is still addressed to the abandoned agent. An " +
+			"approval that only records agreement leaves the mail exactly where " +
+			"nobody can read it, which is the whole problem")
+	}
+}
+
+// Approving one still needs the authority that performing one needs.
+//
+// Without this, any agent could be asked to approve a reclaim and the mailbox
+// would move: two agents could hand each other anybody's mail.
+func TestApprovingAReclaimStillNeedsTheAuthority(t *testing.T) {
+	s := NewState("n1", DefaultLimits())
+	reg(t, s, "old", "told", t0)
+	reg(t, s, "returned", "tr", t0)
+	reg(t, s, "bystander", "tby", t0)
+	s.Agents["old"].Status = StatusDormant
+
+	res := mustApply(t, s, &Op{
+		Kind: OpSendMessage, Token: "tr", To: "bystander", MsgType: MsgRequest,
+		Body: "give me that mailbox", Adopt: "old",
+	}, t0)
+	// AdoptAuthorised is the engine's word, and it is false for an ordinary agent.
+	if _, _, err := s.Apply(&Op{
+		Kind: OpRespond, Token: "tby", MsgSerial: res["msg_serial"].(uint64),
+		Disposition: "approve",
+	}, t0); err == nil {
+		t.Error("an unauthorised agent approved a reclaim and moved somebody's mailbox")
+	}
+}
+
+// A role is a stable address even though the agents holding it are not.
+func TestTheCoordinatorRoleResolvesToOneStableAgent(t *testing.T) {
+	s := NewState("n1", DefaultLimits())
+	reg(t, s, "alpha", "ta", t0)
+	reg(t, s, "beta", "tb", t0)
+	if s.CoordinatorID() != "" {
+		t.Fatal("setup: a board with no coordinator named one")
+	}
+	s.Agents["beta"].Role = RoleCoordinator
+	s.Agents["alpha"].Role = RoleCoordinator
+
+	// Map iteration is random, so the same board must not answer differently on
+	// consecutive calls: mail addressed to a role would otherwise scatter across
+	// whoever happened to come out first.
+	first := s.CoordinatorID()
+	for range 20 {
+		if got := s.CoordinatorID(); got != first {
+			t.Fatalf("the role resolved to %q and then %q: mail addressed to it would "+
+				"land in different mailboxes on consecutive sends", first, got)
+		}
+	}
+	// A live holder is preferred, because addressing a role has to reach
+	// somebody who can answer.
+	s.Agents["alpha"].Status = StatusDormant
+	s.Agents["beta"].Status = StatusActive
+	if got := s.CoordinatorID(); got != "beta" {
+		t.Errorf("the role resolved to %q with a live holder available: on the board "+
+			"this was written against, the standing coordinator was an agent nobody "+
+			"could log back into", got)
+	}
+}

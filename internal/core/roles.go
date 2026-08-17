@@ -208,6 +208,37 @@ func (s *State) applyVouchChild(l *Agent, op *Op) (Result, []Event, error) {
 	}, []Event{{Type: "agent.vouched_child", Agent: l.ID}}, nil
 }
 
+// CoordinatorID names the agent an addressed role resolves to, preferring a
+// LIVE one.
+//
+// Map iteration is random, so "the first coordinator found" would be a different
+// agent on each call and mail addressed to the role would scatter across
+// however many hold it. Sorted by id after the liveness preference, so the
+// answer is stable: the same board answers the same way twice, which is what
+// makes it safe to record the resolution in the ledger.
+//
+// Preferring a live holder matters on a board like the one this was written
+// against, where the standing coordinator was an agent nobody could log back
+// into. Addressing the role has to reach somebody who can answer.
+func (s *State) CoordinatorID() string {
+	best, bestLive := "", false
+	for _, l := range s.Agents {
+		if l.Status == StatusClosed || l.Status == StatusArchived || !l.IsCoordinator() {
+			continue
+		}
+		live := l.Status == StatusActive
+		switch {
+		case best == "":
+		case live && !bestLive:
+		case live == bestLive && l.ID < best:
+		default:
+			continue
+		}
+		best, bestLive = l.ID, live
+	}
+	return best
+}
+
 // HasCoordinator reports whether any live agent already holds the role.
 //
 // Asked once at startup, to decide whether a launch claim is worth minting: a

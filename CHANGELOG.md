@@ -107,6 +107,34 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ninety seconds of nothing and no way in, on the one command whose job is to
   let them in.
 
+- **An agent can ask for its old identity back, and approving moves the mail.**
+  `send(to: "coordinator", type: "request", adopt: "<the abandoned id>")`. The
+  approver's yes performs the adoption; there is nothing left to run.
+
+  This is the fix for the duplicates a real board accumulates. `dibs-maintainer`,
+  `-2` and `-3`; `codex-root` and `-2`; `codex-1` and `-2`: every one is an agent
+  that came back, could not prove it was itself, and started again beside its own
+  unread mail. The recovery path already existed and needed the human at the
+  machine or a coordinator, which is an authority the returning agent does not
+  have and cannot get from where it is standing. So the honest reading of the
+  warning was "your mail is gone", and the only reachable action was to carry on
+  as a sibling. The warning now ends on something the agent can do unaided.
+
+  Approving one still needs exactly the authority that performing one needs,
+  recorded at ingress like every other verdict, so replay applies the decision
+  that was made rather than re-deciding it against a board whose roles have
+  moved on.
+
+- **`to: "coordinator"` addresses whoever holds the role.** An agent asking for
+  its identity back should not have to work out which of sixteen rows is the
+  coordinator today, or notice when it changes hands. Resolved at ingress, so
+  the ledger records the agent it actually went to: a message addressed to a
+  role and replayed after the role moved would otherwise be delivered to
+  somebody it was never sent to. A live holder wins over a dormant one, because
+  addressing a role has to reach somebody who can answer, and the result is
+  stable across calls: map iteration is random, and "the first one found" would
+  scatter a role's mail across however many hold it.
+
 - **An agent asks for a role and your Approve grants it.** `send(to: <the human
   row>, type: "request", grant: "coordinator")` raises a notification whose
   button says what pressing it does, and pressing it promotes them. There is no

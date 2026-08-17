@@ -667,6 +667,7 @@ type toolArgs struct {
 	DeadlineSec int               `json:"deadline_s"`
 	Choices     []string          `json:"choices"`
 	Grant       string            `json:"grant"`
+	Adopt       string            `json:"adopt"`
 	OpID        string            `json:"op_id"`
 	MsgSerial   uint64            `json:"msg_serial"`
 	Disposition string            `json:"disposition"`
@@ -969,7 +970,7 @@ func (s *Server) run(
 	case "send":
 		op.Kind, op.To, op.MsgType, op.Body = core.OpSendMessage, a.To, a.Type, a.Body
 		op.DeadlineSec, op.OpID, op.Attachments = a.DeadlineSec, a.OpID, a.Attachments
-		op.Choices, op.Grant = a.Choices, a.Grant
+		op.Choices, op.Grant, op.Adopt = a.Choices, a.Grant, a.Adopt
 	case "put_blob":
 		return s.putBlob(ctx, a)
 	case "get_blob":

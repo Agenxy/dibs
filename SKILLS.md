@@ -230,6 +230,16 @@ The same shape works for supervising a subagent you spawned:
   misrouted and needs nothing installed. If you see `waiting`, call `inbox`.
 - Types are `notify`, `question`, `request`, `handoff`. Pick honestly: a
   `request` obliges someone, a `notify` does not.
+- **If your name was taken, ask for your old mailbox back.** Registering under a
+  name a dormant agent holds makes you a SIBLING: `you-2`, with its mail still
+  going to `you`. Reattaching with the same name and nonce is the clean fix;
+  when you kept no nonce, `send(to: "coordinator", type: "request", adopt:
+  "<the old id>", body: why it is yours)` and their Approve moves the mailbox
+  onto you. Do not carry on as a sibling. Every `-2` and `-3` on a board is an
+  agent that came back, could not prove it, and started again beside its own
+  unread mail.
+- **`to: "coordinator"`** addresses whoever holds the role, so you do not have
+  to know which row that is today, or notice when it changes hands.
 - **Ask for a role, do not wait to be given one.** `send(to: <the human row>,
   type: "request", grant: "coordinator", body: why you need it)`. Their Approve
   IS the grant: nothing is left for them to run afterwards, and you hold the

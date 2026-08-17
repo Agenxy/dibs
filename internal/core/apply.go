@@ -184,7 +184,10 @@ type Op struct {
 	Choices []string `json:"choices,omitempty"`
 	// Grant is the role a request ASKS FOR, so that approving the request IS the
 	// grant rather than a note recording that somebody agreed one should happen.
-	Grant     string     `json:"grant,omitempty"`
+	Grant string `json:"grant,omitempty"`
+	// Adopt is the ABANDONED agent a request asks to reclaim, so that approving
+	// it moves that mailbox rather than telling somebody they may go and do it.
+	Adopt     string     `json:"adopt,omitempty"`
 	ProcStart int64      `json:"proc_start,omitempty"`
 	NewToken  string     `json:"token,omitempty"` // engine-generated; encrypted at rest
 	Nonce     string     `json:"nonce,omitempty"` // encrypted at rest
@@ -884,12 +887,24 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 		// ids, so following it fails with E_NO_SPACE. It was printed at the one
 		// moment mail becomes unreachable, which is the worst place in the
 		// product for a hint to be wrong, and it was found by following it.
+		// And the LAST line has to be one this agent can act on by itself.
+		//
+		// It ended on adopt_agent, which needs the human at the machine or a
+		// coordinator: an authority the agent reading it does not have and cannot
+		// get from where it is standing. So the honest reading was "you have lost
+		// your mail", and the reachable action was to carry on as a sibling.
+		// Every duplicate on a real board arrived this way: dibs-maintainer, -2
+		// and -3; codex-root and -2; codex-1 and -2.
+		//
+		// Asking IS an action it can take, and approving it performs the move.
 		res["name_taken"] = msg + " If you ARE that agent returning, you can still get back in:" +
 			" register again with the same name and the nonce you kept, and you reattach to it" +
 			" instead of forking. If you kept no nonce and no session_id, nobody can become it" +
-			" again: its mail is recovered instead with adopt_agent(agent: \"" + sib.ID +
-			"\"), which moves that mailbox onto a live agent and needs the human at this" +
-			" machine (human_unlock) or a coordinator."
+			" again, so ASK for its mail instead: send(to: \"coordinator\", type: \"request\"," +
+			" adopt: \"" + sib.ID + "\", body: why it is yours). Their Approve moves that" +
+			" mailbox onto you. Address the human's row instead if nobody holds the" +
+			" coordinator role. Do not carry on as a sibling: that is how a board fills up" +
+			" with -2 and -3."
 	}
 	return res, evs, nil
 }
@@ -1583,7 +1598,7 @@ func (s *State) finishSend(
 	m := &Message{
 		Serial: serial, From: l.ID, To: to.ID, Type: op.MsgType, Body: op.Body,
 		State: MsgStatePending, Deadline: deadline, Attachments: op.Attachments,
-		SentAt: now, Choices: op.Choices, Grant: op.Grant,
+		SentAt: now, Choices: op.Choices, Grant: op.Grant, Adopt: op.Adopt,
 	}
 	s.Messages[serial] = m
 	evs := []Event{{Type: "message.sent", Agent: l.ID, To: to.ID, Data: map[string]any{
@@ -1699,25 +1714,9 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 			"E_BAD_DISPOSITION", "use answer|approve|deny|decline", "unknown disposition %q", op.Disposition,
 		)
 	}
-	// Approving a role request IS the grant.
-	//
-	// It used to record an agreement that one should happen, after which the
-	// person went to a terminal and typed `dibs admin coordinator <agent>`. Two
-	// steps for one decision, and the second is where it died: the approval sat
-	// answered on the board while the agent stayed unable to do the thing it had
-	// just been told it could.
-	//
-	// The authority is already checked, six lines up: a request can only be
-	// answered by the agent it was addressed to, and the engine refuses to send
-	// one carrying a grant to anybody but the human. Nothing here lets an agent
-	// promote itself. It lets a person's yes mean yes.
-	var granted *Agent
-	if st == MsgStateApproved && m.Grant != "" {
-		if granted = s.Agents[m.From]; granted == nil {
-			return nil, nil, errf("E_NO_AGENT",
-				"nothing was granted; the requester is gone",
-				"no agent %q to grant %q to", m.From, m.Grant)
-		}
+	granted, adopted, err := s.decideRequestEffects(m, op, st)
+	if err != nil {
+		return nil, nil, err
 	}
 	m.State = st
 	m.Response = op.Body
@@ -1751,49 +1750,25 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 			Data: map[string]any{"role": m.Grant, "via": "approved_request"},
 		})
 	}
+	if adopted != nil {
+		into := s.Agents[m.From]
+		moved := 0
+		for _, msg := range s.Messages {
+			if msg.To == adopted.ID {
+				msg.To, moved = into.ID, moved+1
+			}
+		}
+		res["adopted"], res["messages"] = adopted.ID, moved
+		res["adopt_note"] = "the source agent keeps its history; only where its mail is " +
+			"delivered has changed"
+		evs = append(evs, Event{
+			Type: "agent.updated", Agent: into.ID,
+			Data: map[string]any{
+				"adopted_from": adopted.ID, "messages": moved, "via": "approved_request",
+			},
+		})
+	}
 	return res, evs, nil
-}
-
-// checkGrantRequest rejects a role request that must not be answerable by a
-// press.
-//
-// ADMIN is refused, permanently and on purpose. Coordinator is breadth:
-// broadcast and force_release, and it deliberately cannot read anybody's mail.
-// Admin is the god view, every agent's decrypted mail included, and the entire
-// reason the board sits behind Touch ID or a password is that reading everyone's
-// mail is not a thing to hand over on a notification tapped between two others.
-// It stays on the human's own path.
-//
-// Refused on anything but a request, too. A notify carrying a grant would be a
-// role change with no decision attached, and a question is answered with prose,
-// so there would be no yes for the grant to hang on.
-//
-// Who may RECEIVE one is not decided here: core does not know that humans exist,
-// which is the rule that keeps this package a pure state machine. The engine
-// holds that check, next to the identity it already owns.
-func checkGrantRequest(op *Op) error {
-	if op.Grant == "" {
-		return nil
-	}
-	if op.MsgType != MsgRequest {
-		return errf("E_BAD_TYPE",
-			`send it as type "request": approving one is what performs the grant, `+
-				"and a request is the only type with an approve",
-			"a %s cannot carry a grant", op.MsgType)
-	}
-	switch op.Grant {
-	case RoleCoordinator, RoleMember:
-		return nil
-	case RoleAdmin:
-		return errf("E_BAD_ROLE",
-			"admin reads every agent's mail, so it is never granted by approving a "+
-				"notification: ask your human to run `dibs admin admin <you>` themselves",
-			"admin cannot be requested")
-	default:
-		return errf("E_BAD_ROLE",
-			"grant takes coordinator (broadcast + force_release) or member (hand it back)",
-			"unknown role %q", op.Grant)
-	}
 }
 
 // applyAckMessage: pending/delivered → acked (terminal + consumed for

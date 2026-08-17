@@ -94,6 +94,19 @@ var (
 		Code: "E_STORE_FULL", Msg: "blob store is full",
 		Hint: "retry shortly; the store evicts unreferenced blobs under pressure",
 	}
+	// ErrNoCoordinator answers mail addressed to a role nobody holds.
+	//
+	// Silence would be worse than an error: the sender would believe it had
+	// asked somebody, and wait out a deadline against a mailbox that does not
+	// exist.
+	ErrNoCoordinator = &Error{
+		Code: "E_NO_COORDINATOR",
+		Msg:  "nobody holds the coordinator role on this board",
+		Hint: "address the human instead: the board row marked `human: true`. If you " +
+			"need the role yourself, ask them for it with " +
+			"send(to: <that row>, type: \"request\", grant: \"coordinator\")",
+	}
+
 	// ErrGrantNeedsHuman refuses a role request addressed to anything but the
 	// person. Two agents exchanging requests and approving each other's is
 	// self-promotion with one extra participant.

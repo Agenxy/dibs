@@ -533,6 +533,9 @@ type Message struct {
 	// approving the message is what performs the grant: a request replayed
 	// without it would be an approval of nothing.
 	Grant string `json:"grant,omitempty"`
+	// Adopt is the abandoned agent this request asks to reclaim, for the same
+	// reason and with the same consequence on approval.
+	Adopt string `json:"adopt,omitempty"`
 }
 
 // Terminal implements the exact SPEC §8 predicate, used consistently by

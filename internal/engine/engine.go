@@ -269,6 +269,22 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		return nil, err
 	}
 
+	// `to: "coordinator"` reaches whoever holds the role.
+	//
+	// An agent asking for its identity back does not know, and should not have
+	// to look up, which of sixteen rows is the coordinator today. The role is
+	// the address; the id is an implementation detail that changes when somebody
+	// hands the role over. Resolved at ingress, so the LEDGER records the agent
+	// it actually went to: a message addressed to a role, replayed after the
+	// role moved, would otherwise be delivered to somebody it was never sent to.
+	if op.Kind == core.OpSendMessage && op.To == core.RoleCoordinator {
+		who := e.state.CoordinatorID()
+		if who == "" {
+			return nil, core.ErrNoCoordinator
+		}
+		op.To = who
+	}
+
 	// A role is a human's to give.
 	//
 	// core validates WHICH roles may be requested and on what message type; it
@@ -366,6 +382,13 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// identity is known, and RECORDED, so replay does not have to re-decide it
 	// against a board whose roles have since changed.
 	if op.Kind == core.OpAdoptAgent && actor != nil {
+		op.AdoptAuthorised = e.mayAdopt(actor)
+	}
+	// Approving an adoption REQUEST needs the same authority as performing one,
+	// decided here for the same reason: recorded at ingress, so replay applies
+	// the decision that was made rather than re-deciding it against a board
+	// whose roles have moved on.
+	if op.Kind == core.OpRespond && actor != nil {
 		op.AdoptAuthorised = e.mayAdopt(actor)
 	}
 
@@ -468,7 +491,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 			// Off the loop: an alert waits for somebody to press a button, and
 			// the single writer holding still for two minutes would stop the
 			// board while one person decides.
-			go e.tellTheHuman(from, op.MsgType, op.Body, serial, op.Choices, op.Grant)
+			go e.tellTheHuman(from, op.MsgType, op.Body, serial, op.Choices, op.Grant, op.Adopt)
 		}
 	}
 	return res, nil
