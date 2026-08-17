@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // Tools an agent must never call are not advertised to agents, and are still
@@ -151,6 +153,48 @@ func TestTheDesktopManifestOnlyPromisesToolsThatExist(t *testing.T) {
 		if tool.Description == "" {
 			t.Errorf("the manifest lists %q with no description: the list is what a person "+
 				"reads to decide whether to install this", tool.Name)
+		}
+	}
+}
+
+// dibs://inbox publishes who is waiting, never what they said.
+//
+// A resource is APPLICATION-controlled: the MCP host decides what to do with
+// one, and attaching it to the user's next turn is an ordinary thing for a host
+// to do. This returned the whole mailbox, bodies included, so one agent's
+// private mail was rendered into its operator's prompt box, prefixed with the
+// resource's own name. Reported exactly that way: "it starts with inbox: and a
+// message from another agent."
+//
+// Two failures in one: mail reaching a reader it was not addressed to, and the
+// human put back in the loop as a relay. The subscription still has to work,
+// because that is a real wake path, so the resource keeps the SIGNAL and the
+// tool keeps the content.
+func TestTheInboxResourcePublishesNoMessageBodies(t *testing.T) {
+	const secret = "the-body-nobody-else-may-read"
+	summary := inboxSummary(core.Result{
+		"messages": []*core.Message{
+			{
+				Serial: 7, From: "peer", To: "me", Type: core.MsgQuestion,
+				State: core.MsgStatePending, Body: secret,
+			},
+		},
+	})
+	blob, err := json.Marshal(summary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(blob, []byte(secret)) {
+		t.Errorf("the inbox RESOURCE carries a message body. A host may attach a "+
+			"resource to the user's turn, so this is one agent's private mail "+
+			"rendered to whoever is at the keyboard:\n%s", blob)
+	}
+	// It must still be a usable wake signal, or the subscription says nothing
+	// and the fix has traded a disclosure for a silence.
+	for _, want := range []string{"peer", "question", "unread"} {
+		if !bytes.Contains(blob, []byte(want)) {
+			t.Errorf("the summary omits %q, so a subscriber cannot tell what arrived "+
+				"or decide whether to read it:\n%s", want, blob)
 		}
 	}
 }

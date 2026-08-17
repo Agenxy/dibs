@@ -577,11 +577,11 @@ func (s *Server) dispatch(
 			if err != nil {
 				return nil, rpcErrFrom(err)
 			}
-			text, _ := json.MarshalIndent(box, "", "  ")
+			text, _ := json.MarshalIndent(inboxSummary(box), "", "  ")
 			// PRIVATE, and this is load-bearing rather than tidy: "public" tells
 			// shared gateways they may serve this response to a caller with a
-			// DIFFERENT authorization context. This is one agent's mail, keyed by
-			// its token. Marking it public would be a disclosure bug.
+			// DIFFERENT authorization context. This is one agent's mailbox, keyed
+			// by its token. Marking it public would be a disclosure bug.
 			return cacheable(map[string]any{"contents": []map[string]any{
 				{"uri": p.URI, "mimeType": "application/json", "text": string(text)},
 			}}, ttlLive, scopePrivate), nil
@@ -1156,4 +1156,57 @@ func truthy(v any) bool {
 	default:
 		return false
 	}
+}
+
+// inboxSummary is what dibs://inbox answers: who is waiting, never what they
+// said.
+//
+// A RESOURCE is application-controlled. The MCP host decides what to do with
+// one, and attaching it to the user's next turn is an ordinary thing for a host
+// to do; ChatGPT Desktop does exactly that. This resource returned the whole
+// mailbox, bodies included, so one agent's private mail was being rendered into
+// its operator's prompt box, prefixed with the resource's name. Reported that
+// way: "messages are still coming into my prompt box... it starts with inbox:
+// and a message from another agent."
+//
+// Two things were wrong and both are fixed by the same change. The mail was
+// reaching a reader it was not addressed to, which is a confidentiality
+// failure however friendly the reader. And it put the human back in the loop as
+// a relay, which is the failure this whole product exists to remove.
+//
+// So the resource carries the SIGNAL and the tool carries the content: counts,
+// senders, types and serials, plus the call that reads them. That is the rule
+// Dibs already applies to the human's notification and to the `waiting` line,
+// "counts and senders only, never content", and this was the one place it was
+// not applied. The subscription still works and still says "there is new mail",
+// which is all a wake needs; a host that pastes this into a prompt now pastes a
+// nudge that discloses nothing.
+//
+// Bodies live in the `inbox` TOOL, which is model-controlled and returns down
+// the connection the agent authenticated on.
+func inboxSummary(box core.Result) core.Result {
+	out := core.Result{
+		"read_with": "call the `inbox` tool with your token; this resource carries " +
+			"the signal, not the mail",
+		"note": "senders and counts only. Bodies are never published here, because a " +
+			"resource is application-controlled and the host decides who sees it",
+	}
+	msgs, _ := box["messages"].([]*core.Message)
+	waiting := make([]map[string]any, 0, len(msgs))
+	for _, m := range msgs {
+		if m.Terminal() {
+			continue
+		}
+		waiting = append(waiting, map[string]any{
+			"serial": m.Serial, "from": m.From, "type": m.Type, "state": m.State,
+		})
+	}
+	out["unread"] = len(waiting)
+	out["waiting"] = waiting
+	if a, ok := box["announcements"]; ok {
+		if list, ok := a.([]core.Result); ok {
+			out["unacknowledged_announcements"] = len(list)
+		}
+	}
+	return out
 }

@@ -235,6 +235,69 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Confidentiality: `dibs://inbox` published message bodies to whoever the host
+  decided.** An MCP resource is APPLICATION-controlled: the host chooses what to
+  do with one, and attaching it to the user's next turn is an ordinary thing for
+  a host to do. This resource returned the whole mailbox, bodies included, so
+  one agent's private mail was rendered into its operator's prompt box, prefixed
+  with the resource's own name. Reported that way: "it starts with `inbox:` and
+  a message from another agent."
+
+  Two failures in one change: mail reaching a reader it was not addressed to,
+  and the human put back in the loop as a relay. The resource now carries the
+  SIGNAL and the tool carries the content: counts, senders, types and serials,
+  plus the call that reads them. That is the rule Dibs already applies to the
+  human's notification and to the `waiting` line, "counts and senders only,
+  never content", and this was the one place it was not applied. The
+  subscription still says "there is new mail", which is all a wake needs.
+
+- **Security: a role grant could be approved by an agent, not only by the
+  human.** The engine checked that a request carrying `grant` was ADDRESSED to
+  the human when it was sent, and approval trusted the recipient from then on.
+  Adoption rewrites the recipient of every message in a mailbox, and a
+  coordinator may adopt, so: an agent asks the human for coordinator, the
+  human's row goes dormant (which needs no arranging, since silence is a
+  person's whole liveness model), a coordinator adopts that mailbox, inherits
+  the pending request, and approves it. No human anywhere in the story. Closed
+  twice: the human's mailbox is not adoptable by anybody else, which the
+  coordinator boundary already implied and did not enforce, and approving a
+  grant re-checks the human at APPROVAL time.
+
+- **`op_id` dedup ignored the fields that carry the effect** (`grant`, `adopt`,
+  `choices`), so a retry reusing an op_id with a changed `grant` returned
+  `{"ok": true, "deduplicated": true}` over a message that granted nothing.
+
+- **Three new validation rules sat in `Apply` instead of `Admit`**, which makes
+  them retroactive replay rules: the day the accepted roles change is the day
+  the daemon refuses to boot on its own history. This is the mistake AGENTS.md
+  names first. The tests reinforced it by asserting rejection at `Apply`.
+
+- **Three new engine paths read core state off the single-writer loop**,
+  including one called from an HTTP handler. `e.human.mu` guards the cached
+  human fields and nothing in core, so those were data races and candidates for
+  a concurrent map read-and-write panic.
+
+- **A notification that could not be SHOWN was reported as one nobody
+  answered**, so a question the operator could never see was indistinguishable
+  from one they ignored, and the asker waited out its deadline.
+
+- **A fault was marked reported before it was delivered**, on four paths. The
+  startup reachability check is exactly when that bites, since it runs before
+  anybody has registered.
+
+- **The notification says WHO is asking.** "Dibs · make asker coordinator?" is
+  not enough to approve a privilege change on: a name is self-chosen and often
+  three variations of one word. It leads with the daemon-assigned id and where
+  the agent works, placed ABOVE the sender's own text.
+
+- **Tests can no longer notify a real person.** `go test ./...` put alerts on
+  the operator's screen carrying fixture text, with buttons that answered a
+  process which had already exited, and the product was then reported broken on
+  the evidence of its own test suite.
+
+- **`core.Message`'s json tags and two op-kind strings were frozen by nothing**,
+  though a message is state and state is a fold over the ledger.
+
 - **Mail no longer rides on the human's prompt.** `UserPromptSubmit` fires when
   a PERSON types, and its `additionalContext` is attached to their message, so
   delivering a wake digest there made the operator the transport: an agent
