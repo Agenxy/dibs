@@ -99,6 +99,24 @@ API", not "fork it."
    discoverability someone else's lever. Paying for infrastructure we genuinely must own,
    a domain, hosting, is not the same thing and is fine. This is Agenxy doctrine, not a
    Dibs preference, and it applies to every repository under the org.
+9. **MCP 2026 is the target; 2025 is a courtesy we are paying down.** The 2026
+   revision is where this protocol is going and where Dibs is going with it. The
+   legacy path exists for exactly one reason, that not every harness has
+   migrated yet, and it is a transitional cost rather than a design constraint.
+
+   Two consequences, and the second is the one that gets forgotten. New work is
+   designed the 2026 way FIRST and made to work on the legacy path afterwards,
+   never the reverse: a feature shaped around `initialize` and a long-lived
+   session is a feature that has to be redesigned when the session goes away.
+   And a capability that only the 2026 path can express is a reason to adopt it
+   sooner, not a reason to avoid the capability.
+
+   Where a 2025-only assumption is load-bearing, say so at the point it is made,
+   so the eventual removal is a deletion rather than an excavation. `dibs
+   mcp-config` recommending an HTTP url for Codex is what that costs when it is
+   left implicit: it worked, nothing failed, and it silently denied every Codex
+   agent a durable identity for months, because the reasoning lived in nobody's
+   head and in no file.
 
 ## The test for any proposed change
 

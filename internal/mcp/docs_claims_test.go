@@ -48,7 +48,13 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 	// version number. "v1.0 tool table" was read as a claim of "0 tools" and
 	// failed this test on a sentence that makes no numeric claim at all. A
 	// guard that fires on correct prose gets weakened by whoever hits it next.
-	claim := regexp.MustCompile(`(?:^|[^\w.])(\d+)\s+tools?\b`)
+	// Both orders. "44 tools" and "Tools (44)" are the same claim to a reader,
+	// and the second walked past this test while SPEC.md advertised 40 for four
+	// releases. That is the third spelling this check has been blind to: the
+	// first was a plain stale number, the second was "one tool of forty-two",
+	// and each was found by somebody reading rather than by the guard whose
+	// whole job it is.
+	claim := regexp.MustCompile(`(?:^|[^\w.])(\d+)\s+tools?\b|(?i)tools?\s*\((\d+)\)`)
 
 	checked := 0
 	for _, doc := range []string{
@@ -68,7 +74,13 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 			continue
 		}
 		for _, m := range claim.FindAllStringSubmatch(string(body), -1) {
-			n, err := strconv.Atoi(m[1])
+			// Whichever alternation matched: one group is the number, the other
+			// is empty.
+			digits := m[1]
+			if digits == "" {
+				digits = m[2]
+			}
+			n, err := strconv.Atoi(digits)
 			if err != nil {
 				continue
 			}

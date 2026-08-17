@@ -583,7 +583,7 @@ as load-bearing until the final ships and hosts migrate.
   initialized`/`ping` retained for 2025-11-25 hosts: today's clients work day one,
   and the legacy path sunsets when hosts migrate.
 
-**Tools (40).** All take `token` except `register`, `resume`,
+**Tools (44).** All take `token` except `register`, `resume`,
 `hook_poll` and `guard_path` (the last two are lifecycle-hook surfaces and have
 no token to give: see SECURITY.md).
 

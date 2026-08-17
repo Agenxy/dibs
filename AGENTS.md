@@ -72,6 +72,17 @@ Use **bun**, never npm, for any JS/TS work.
 harnesses: see `CONTRIBUTING.md` for why. Python with a `uv` shebang and PEP 723
 inline dependencies, or Go, or the existing runner.
 
+## Design for 2026, not for what shipped
+
+PHILOSOPHY.md rule 9 is a standing architectural position and not a compatibility
+note: **MCP 2026 is where this is going, and the 2025 path is a transitional
+courtesy to harnesses that have not migrated.** New work is designed the 2026 way
+first and made to work on the legacy path afterwards, never the reverse.
+
+The practical form of that rule: a feature shaped around `initialize` and a
+long-lived session has to be redesigned when the session goes away, and 2026 is
+stateless. When a 2025-only assumption is load-bearing, say so where it is made.
+
 ## Easy to miss
 
 Things that have cost real time here, none of which are visible in the diff:
@@ -112,6 +123,12 @@ Things that have cost real time here, none of which are visible in the diff:
 - **A failing probe is usually a broken probe.** Before concluding the product is
   broken, check that your measurement is sound: assert your setup steps
   succeeded. Three false alarms in one session came from this.
+- **A doc-count guard is only as good as the spellings it knows.** The tool
+  count appears in six documents and has now gone stale three times in three
+  different shapes: a plain wrong number, `one tool of forty-two`, and
+  `Tools (40)`. The check read `N tools` only, so two of those passed it for
+  months and were found by a person reading. When you add a claim a test
+  guards, add the SHAPE of the claim too.
 - **A PASSING probe proves nothing until you have seen it fail.** The same
   session that produced those three then wrote four consecutive versions of one
   test that passed against the code they were written to catch: the fixture gave
