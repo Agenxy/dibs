@@ -475,10 +475,14 @@ func (s *Server) dispatch(
 			"protocolVersion": negotiateLegacy(req.Params),
 			"capabilities": map[string]any{
 				"tools": map[string]any{},
-				// Advertise subscribe on the LEGACY path too: measured against real
-				// hosts (Claude Code 2.1.219, Codex 0.146.0-alpha.7), every client
-				// still takes this handshake (none speak 2026 yet) so advertising
-				// subscriptions only on server/discover would hide them entirely.
+				// Advertise subscribe on the LEGACY path too, because most clients
+				// still arrive here. That was once true of ALL of them and is no
+				// longer: on 2026-08-17, Claude Code 2.1.233 and Codex
+				// 0.148.0-alpha.9 both negotiate 2026-07-28 against this daemon and
+				// take server/discover instead. The dual advertisement is what keeps
+				// the ones that have not moved (2.1.219 was legacy-only) from losing
+				// subscriptions entirely. Dated deliberately: the previous version of
+				// this comment asserted "none speak 2026 yet" as a standing fact.
 				"resources": map[string]any{"subscribe": true, "listChanged": true},
 			},
 			"serverInfo":   serverBuildInfo(),
