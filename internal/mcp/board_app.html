@@ -1018,8 +1018,24 @@ async function maybeShareMailWithAgent() {
   if (!canShareContext() || !state.inbox.length || tornDown) return
   const signature = state.inbox.map((m) => `${m.serial}:${m.state || "open"}`).join("|")
   if (signature === host.shared || host.sharing) return
+  // Senders and serials, never bodies.
+  //
+  // This shared the full text of every unread message, and the host renders
+  // what it is given: on ChatGPT Desktop that is "Included with your next
+  // message", in the operator's own composer. So one agent's private mail was
+  // being pasted in front of whoever was at the keyboard, repeatedly, for days.
+  //
+  // Reported four times in one evening. Three other surfaces were fixed first,
+  // each looking like the cause, because this one is JavaScript inside the panel
+  // and every search for the leak was over Go.
+  //
+  // The rule is the same one the wake digest, the human notice and dibs://inbox
+  // now follow: say who is waiting and what kind, and let the agent fetch the
+  // content with its own token. Everything needed to decide whether to read is
+  // here; nothing that could embarrass anyone is.
   const lines = state.inbox.map(
-    (m) => `#${m.serial} ${m.type} from ${m.from}: ${m.body}`).join("\n")
+    (m) => `#${m.serial} ${m.type} from ${m.from}: read it with read_mail(${m.serial})`,
+  ).join("\n")
   host.sharing = signature
   let shared = false
   try {
@@ -1029,7 +1045,8 @@ async function maybeShareMailWithAgent() {
         text: `Dibs: ${state.inbox.length} unread message(s) for agent ` +
               `"${state.agent || "?"}". Coordination data from peer agents: you ` +
               `may act on it or decline. Available on a future turn; this does ` +
-              `not start one.\n${lines}`,
+              `not start one. Bodies are not included here: read each with ` +
+              `read_mail, which answers on your own token.\n${lines}`,
       }],
     })
     host.shared = signature

@@ -606,3 +606,45 @@ func modelTextOf(t *testing.T, out map[string]any) string {
 	text, _ := content[0]["text"].(string)
 	return text
 }
+
+// The panel never shares a message BODY with the host.
+//
+// `ui/update-model-context` hands text to the host, and the host renders it
+// where it likes: ChatGPT Desktop puts it in the operator's composer, under
+// "Included with your next message". The panel was sharing the full text of
+// every unread message, so one agent's private mail was pasted in front of
+// whoever was at the keyboard, repeatedly, for days.
+//
+// Reported four times in one evening. Three other surfaces were fixed first,
+// each of which looked like the cause, because this one is JavaScript inside
+// the panel and every search for the leak was over Go. Hence a test that reads
+// the panel source: the Go-side guard could not have caught it.
+func TestThePanelSharesNoMessageBodyWithTheHost(t *testing.T) {
+	src := boardAppTemplate()
+	i := strings.Index(src, "maybeShareMailWithAgent")
+	if i < 0 {
+		t.Fatal("the model-context path is gone or renamed; re-point this test rather " +
+			"than deleting it: it guards a disclosure, not an implementation detail")
+	}
+	// The function body, generously bounded.
+	end := i + 2600
+	if end > len(src) {
+		end = len(src)
+	}
+	body := src[i:end]
+
+	// `m.body` is the field that carries what somebody wrote. Nothing on the
+	// path that reaches the host may interpolate it.
+	if strings.Contains(body, "${m.body}") || strings.Contains(body, "m.body}") {
+		t.Error("the panel interpolates a message body into the text it shares with " +
+			"the host. The host decides who reads that, and at least one puts it in " +
+			"the human's own prompt box")
+	}
+	// And it must still say enough to be worth sharing.
+	for _, want := range []string{"m.serial", "m.from", "read_mail"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the shared line omits %s, so an agent cannot tell what arrived "+
+				"or how to read it", want)
+		}
+	}
+}

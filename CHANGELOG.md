@@ -262,6 +262,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The board panel was pasting every unread message, in full, into the
+  operator's own prompt box.** `maybeShareMailWithAgent` called
+  `ui/update-model-context` with the BODY of every message in the mailbox, and a
+  host renders what it is given: ChatGPT Desktop puts it under "Included with
+  your next message", in the composer. So one agent's private mail sat in front
+  of whoever was at the keyboard, repeatedly, for days.
+
+  This is the fourth channel with the same defect and the one that was actually
+  causing the reports. The other three were fixed first, each looking like the
+  cause, because this one is JavaScript inside the panel and every search for
+  the leak was over Go. Its guard reads the panel source for that reason: the
+  Go-side property test could not have caught it and did not.
+
+  Senders, types and serials now, with `read_mail(N)` to fetch each. Everything
+  needed to decide whether to read, nothing that could embarrass anyone.
+
 - **A guard against the leak that keeps coming back through a new door.** The
   same defect has now appeared three times in three channels: the wake digest
   listing each message with its text, `dibs://inbox` returning the whole
@@ -426,6 +442,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   revoked grant, permission never asked for, or every alert style switched off.
   A question or request also asks to break through Focus as Time Sensitive,
   since buttons are the tell that somebody is blocked on the answer.
+
+- **`signcheck` stopped refusing installs it no longer needs to refuse.** It
+  blocked an ad-hoc install whenever a usable identity sat unused in the
+  keychain, which was right when using one meant naming it in an environment
+  variable. `tools/signid` resolves it by name now, so that situation cannot
+  arise, and the refusal turned a solved problem into a blocked install. Two
+  tools that decide the same thing have to decide it the same way; this one was
+  left behind by the other, an hour after the other was written.
 
 - **`task install` finds Dibs' own signing identity by name, so the macOS
   permission prompt stops repeating.** macOS keys a Files-and-Folders grant to a

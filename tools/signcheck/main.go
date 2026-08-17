@@ -28,19 +28,28 @@ import (
 	"strings"
 )
 
-func main() { os.Exit(run()) }
+func main() { run() }
 
-func run() int {
+// run REPORTS; it no longer refuses.
+//
+// It used to stop an install that would have signed ad-hoc while a usable
+// identity sat unused in the keychain, which was the right call when using one
+// meant naming it in an environment variable. tools/signid resolves it by name
+// now, so that situation cannot arise: if the identity exists, the install uses
+// it. What is left is the case signid cannot fix, which is having no identity at
+// all, and the answer to that is a certificate this machine does not have yet
+// rather than a refusal.
+func run() {
 	if runtime.GOOS != "darwin" || os.Getenv("DIBS_CODESIGN_IDENTITY") != "" {
-		return 0
+		return
 	}
 	if os.Getenv("DIBS_ADHOC_OK") == "1" {
 		fmt.Println("signcheck: ad-hoc install allowed by DIBS_ADHOC_OK=1")
-		return 0
+		return
 	}
 	guarded := protectedPaths()
 	if len(guarded) == 0 {
-		return 0 // nothing here needs the grant
+		return // nothing here needs the grant
 	}
 	if !haveIdentity(dibsIdentity) {
 		// No identity of Dibs' own. Say what will happen, and do not block: the
@@ -53,18 +62,19 @@ func run() int {
 				"  Certificate Assistant → Create a Certificate, named %q, type Code\n"+
 				"  Signing, self-signed. `task install` finds it by name after that.\n",
 			guarded[0], dibsIdentity)
-		return 0
+		return
 	}
+	// The identity EXISTS, so the install is not ad-hoc: tools/signid resolves it
+	// by name with no variable set, which is the whole point of that tool.
+	//
+	// This used to refuse here, telling the operator to set
+	// DIBS_CODESIGN_IDENTITY, which was correct when the only way to use an
+	// identity was to name it and is now simply false. Two tools that decide the
+	// same thing have to decide it the same way; this one was left behind by the
+	// other and turned a solved problem into a blocked install.
 	fmt.Fprintf(os.Stderr,
-		"\nsigncheck: refusing to install ad-hoc, because it would revoke a permission you have to re-grant.\n\n"+
-			"  %s is inside a macOS protected folder, so dibd needs your permission to read it.\n"+
-			"  macOS ties that permission to the binary's signature, and an ad-hoc signature\n"+
-			"  changes on every build: you would be prompted again, exactly as before.\n\n"+
-			"  Install with the identity Dibs already has:\n\n"+
-			"    DIBS_CODESIGN_IDENTITY=%q task install\n\n"+
-			"  Or accept the re-prompt: DIBS_ADHOC_OK=1 task install\n\n",
-		guarded[0], dibsIdentity)
-	return 1
+		"signcheck: signing as %q, so the privacy grant survives this install.\n",
+		dibsIdentity)
 }
 
 // dibsIdentity is the only signing identity this tool will name.
