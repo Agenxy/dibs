@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"os/user"
@@ -59,7 +60,34 @@ type humanState struct {
 // liveness sweeps, all for looking.
 //
 // Empty means "not registered yet", which the board renders as observing.
+// HumanIdentity reads the board through the loop, so it is safe to call from an
+// HTTP handler or a reporting goroutine. In-loop callers want
+// humanIdentityLocked, which must not re-enter.
 func (e *Engine) HumanIdentity() string {
+	if e.ops == nil {
+		// A zero-value Engine has no loop; query would block forever rather than
+		// fail, which is the trap AGENTS.md warns about.
+		return e.humanIdentityLocked()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := e.query(ctx, func() core.Result {
+		return core.Result{"id": e.humanIdentityLocked()}
+	})
+	if err != nil {
+		return ""
+	}
+	id, _ := res["id"].(string)
+	return id
+}
+
+// humanIdentityLocked is the same answer for a caller already inside the loop.
+//
+// The split exists because HumanIdentity is called from BOTH sides: an HTTP
+// handler (off the loop, racing the writer) and the send path inside Do (on the
+// loop, where re-entering would deadlock). One function could not be correct for
+// both, and it was the off-loop callers that were quietly wrong.
+func (e *Engine) humanIdentityLocked() string {
 	e.human.mu.Lock()
 	defer e.human.mu.Unlock()
 	if e.human.token != "" {
@@ -179,16 +207,35 @@ func (e *Engine) HumanAgent(ctx context.Context) (agent, token string, err error
 // a one-time correction rather than an op every daemon start, which would grow
 // the ledger by a record a day to say nothing.
 func (e *Engine) RepairHumanProcess(ctx context.Context) {
-	e.human.mu.Lock()
-	defer e.human.mu.Unlock()
-	id, ok := e.state.Nonces[humanNonce()]
-	if !ok {
+	// The decision is read THROUGH the loop; only the answer comes back out.
+	//
+	// This read Nonces, Agents and a token directly, from a startup goroutine,
+	// while the writer was already serving. e.human.mu protects the cached human
+	// fields and nothing in core's maps, so that was a plain data race and a
+	// candidate for a concurrent map read-and-write panic. Found by an
+	// independent review before release.
+	ctx2, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	res, err := e.query(ctx2, func() core.Result {
+		id, ok := e.state.Nonces[humanNonce()]
+		if !ok {
+			return core.Result{}
+		}
+		l := e.state.Agents[id]
+		if l == nil || l.Status == core.StatusArchived || l.PID == 0 {
+			return core.Result{}
+		}
+		return core.Result{"id": id, "token": l.Token}
+	})
+	if err != nil {
 		return
 	}
-	l := e.state.Agents[id]
-	if l == nil || l.Status == core.StatusArchived || l.PID == 0 {
+	id, _ := res["id"].(string)
+	token, _ := res["token"].(string)
+	if id == "" || token == "" {
 		return
 	}
+	l := struct{ Token string }{token}
 	// An update, not a registration. Spelling a correction as a register looks
 	// natural and does nothing: register short-circuits a same-nonce retry
 	// inside one TTL and returns the original result without applying the op, so
@@ -306,7 +353,7 @@ func (e *Engine) mayAdopt(l *core.Agent) bool {
 // Nothing here is content beyond what the sender wrote to this human, which
 // they are entitled to read: this is their own mailbox arriving by another
 // route, not a broadcast of somebody else's traffic.
-func (e *Engine) tellTheHuman(from, msgType, body string, serial uint64, choices []string, grant, adopt string) {
+func (e *Engine) tellTheHuman(from, who, msgType, body string, serial uint64, choices []string, grant, adopt string) {
 	if !notify.Available() {
 		return
 	}
@@ -320,13 +367,13 @@ func (e *Engine) tellTheHuman(from, msgType, body string, serial uint64, choices
 		// A request is literally "approve or deny", so ask it that way. An
 		// alert rather than a banner because a banner cannot carry buttons
 		// without an application bundle, which Dibs does not yet ship.
-		go e.approveForHuman(from, body, serial, grant, adopt)
+		go e.approveForHuman(from, who, body, serial, grant, adopt)
 	case core.MsgQuestion:
 		// Answerable, not merely announced. A question that arrives as a banner
 		// is a notification that the board has something on it, which is what
 		// the board already was: the person still has to go and open it, and the
 		// asking agent waits out its deadline while they decide whether to.
-		go e.answerForHuman(from, body, serial, choices)
+		go e.answerForHuman(from, who, body, serial, choices)
 	case core.MsgHandoff:
 		e.report(notify.Banner(title, "hands work to you", oneLine(body)))
 	default:
@@ -338,7 +385,7 @@ func (e *Engine) tellTheHuman(from, msgType, body string, serial uint64, choices
 // ordinary response from their own agent: the sender cannot tell it came from a
 // dialog rather than a tool call, which is the point. Everything the human does
 // on this board goes through the same ops an agent sends.
-func (e *Engine) approveForHuman(from, body string, serial uint64, grant, adopt string) {
+func (e *Engine) approveForHuman(from, who, body string, serial uint64, grant, adopt string) {
 	// The TITLE is the daemon's sentence, not the sender's.
 	//
 	// It is the only line on the notification that states the EFFECT of pressing
@@ -354,7 +401,13 @@ func (e *Engine) approveForHuman(from, body string, serial uint64, grant, adopt 
 	case adopt != "":
 		title = "Dibs · give " + adopt + "'s mail to " + from + "?"
 	}
-	choice, err := notify.Ask(title, oneLine(body), "Deny", "Later", "Approve")
+	choice, err := notify.Ask(title, said(who, body), "Deny", "Later", "Approve")
+	if errors.Is(err, notify.ErrCannotNotify) {
+		// Nobody saw it. Say so, rather than letting the asker time out against a
+		// notification that never appeared.
+		e.reportNotifyFailure(err)
+		return
+	}
 	if err != nil || choice == "" || choice == "Later" {
 		// Dismissed or deferred is not an answer, and inventing one would be
 		// answering on their behalf. The request stays open on the board.
@@ -379,12 +432,16 @@ func (e *Engine) approveForHuman(from, body string, serial uint64, grant, adopt 
 // outranks whatever the person was doing: the same reason Ask goes through the
 // bundle rather than a modal alert. Nothing here steals focus until the human
 // has pressed something asking it to.
-func (e *Engine) answerForHuman(from, body string, serial uint64, choices []string) {
+func (e *Engine) answerForHuman(from, who, body string, serial uint64, choices []string) {
 	title := "Dibs · " + from + " asks"
-	line := oneLine(body)
+	line := said(who, body)
 	plan := planAnswer(choices)
 
 	pressed, err := notify.Ask(title, line, plan.Buttons...)
+	if errors.Is(err, notify.ErrCannotNotify) {
+		e.reportNotifyFailure(err)
+		return
+	}
 	if err != nil || pressed == "" || pressed == deferButton {
 		// Dismissed or deferred is not an answer, and inventing one would be
 		// answering on their behalf. The question stays open on the board.
@@ -500,4 +557,121 @@ func (e *Engine) report(err error) {
 		slog.Warn("could not notify the human; the message is still on the board", "err", err)
 		e.reportNotifyFailure(err)
 	}
+}
+
+// mayApproveGrant refuses a role grant approved by anybody but the person.
+//
+// The send-time check is not enough, and the gap is not obvious. The engine
+// verifies that a request carrying `grant` is ADDRESSED to the human when it is
+// sent. Adoption then rewrites the `to` of every message in a mailbox, and a
+// coordinator is allowed to adopt. So:
+//
+//  1. an agent asks the human for coordinator;
+//  2. the human's row goes dormant, which needs no help: they are a person, and
+//     silence is their whole liveness model;
+//  3. an existing coordinator adopts that mailbox, which it is permitted to do;
+//  4. the pending request is now addressed to the coordinator;
+//  5. it approves, and promotes the asker with no human anywhere in the story.
+//
+// Found by an independent review before release. The rule this restores is the
+// one the feature was built on: a role is a human's to give, and "addressed to
+// the human" has to be true at the moment somebody says yes, not merely at the
+// moment somebody asked.
+//
+// Refused at ingress, so nothing is ledgered and replay never sees it.
+func (e *Engine) mayApproveGrant(actor *core.Agent, op *core.Op) error {
+	if op.Disposition != "approve" {
+		return nil // denying a grant needs no authority; it grants nothing
+	}
+	m := e.state.Messages[op.MsgSerial]
+	if m == nil || m.Grant == "" {
+		return nil
+	}
+	if human := e.humanIdentityLocked(); human == "" || actor.ID != human {
+		return core.ErrGrantNeedsHuman
+	}
+	return nil
+}
+
+// guardHumanMailbox stops anybody but the person adopting the person's mail.
+//
+// core/roles.go states the coordinator boundary outright: "It gets no power to
+// *read* another agent's mail. Breadth, not intrusion." Adoption moves a
+// mailbox, and reading it afterwards is the point, so a coordinator adopting
+// the HUMAN's identity walks straight through that sentence and collects every
+// private message anybody ever sent the operator, plus any pending request
+// addressed to them.
+//
+// A person's row is dormant most of the time by design, since silence is their
+// entire liveness model, so "not active" is not a signal that their mail is
+// abandoned. It is the normal state of a human who is not currently typing.
+//
+// The human may still adopt their own identity, which is what recovery looks
+// like for them.
+func (e *Engine) guardHumanMailbox(actor *core.Agent, target string) error {
+	human := e.humanIdentityLocked()
+	if human == "" || target != human || actor.ID == human {
+		return nil
+	}
+	return core.ErrHumanMailboxIsTheirs
+}
+
+// whoIs describes the agent behind a request, for a person deciding whether to
+// say yes.
+//
+// "Dibs · make asker coordinator?" is not enough to approve a privilege change
+// on, and the operator said so on seeing one: "I don't know who the asker is,
+// that's a gap and security risk." A name is whatever the agent called itself,
+// chosen in its first seconds and changeable with `update`; on a board where
+// three rows are variations of one word it identifies nobody.
+//
+// So this composes the line from what makes the agent FINDABLE: the id the
+// daemon assigned and the board addresses, then where it is working and on what
+// machine. A person can match that against a window they have open.
+//
+// It is still, mostly, the agent's own word. The harness and cwd arrive from
+// the bridge but nothing stops an agent asserting them, and this must not imply
+// otherwise: the id is the only part the daemon issues, which is exactly why the
+// id leads and is never replaced by the display name. Read it as "who this
+// claims to be", and treat a request you cannot place as one to deny.
+func whoIs(l *core.Agent) string {
+	parts := []string{l.ID}
+	if l.Name != "" && l.Name != l.ID {
+		parts = append(parts, "(displayed as "+l.Name+")")
+	}
+	if a := l.Agent; a != nil {
+		where := a.Project
+		if where == "" {
+			where = a.CWD
+		}
+		switch {
+		case a.Harness != "" && where != "":
+			parts = append(parts, a.Harness+" in "+where)
+		case a.Harness != "":
+			parts = append(parts, a.Harness)
+		case where != "":
+			parts = append(parts, where)
+		}
+		if a.Branch != "" {
+			parts = append(parts, "on "+a.Branch)
+		}
+		if a.Host != "" {
+			parts = append(parts, "at "+a.Host)
+		}
+	}
+	return strings.Join(parts, " · ")
+}
+
+// said puts WHO above what they wrote.
+//
+// The identity line is composed by the daemon; the body is the agent's own
+// text. Keeping them on separate lines, in that order, means the first thing
+// read is the part the sender did not author. A request whose body says
+// "routine, just approve" cannot be the first thing a person sees.
+func said(who, body string) string {
+	line := oneLine(body)
+	if who == "" {
+		return line
+	}
+	return who + "\n" + line
 }

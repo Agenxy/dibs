@@ -299,7 +299,7 @@ func (e *Engine) Board(ctx context.Context) (core.Result, error) {
 
 func (e *Engine) decoratedBoard() core.Result {
 	b := e.state.Board()
-	human := e.HumanIdentity()
+	human := e.humanIdentityLocked()
 	agents, _ := b["agents"].([]map[string]any)
 	for _, lm := range agents {
 		id, _ := lm["id"].(string)

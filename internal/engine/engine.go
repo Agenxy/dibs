@@ -299,7 +299,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// pressing each other's buttons, which is self-promotion with one extra
 	// participant. Refused at ingress, so nothing is ledgered.
 	if op.Kind == core.OpSendMessage && op.Grant != "" {
-		if human := e.HumanIdentity(); human == "" || op.To != human {
+		if human := e.humanIdentityLocked(); human == "" || op.To != human {
 			return nil, core.ErrGrantNeedsHuman
 		}
 	}
@@ -386,6 +386,9 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// against a board whose roles have since changed.
 	if op.Kind == core.OpAdoptAgent && actor != nil {
 		op.AdoptAuthorised = e.mayAdopt(actor)
+		if err := e.guardHumanMailbox(actor, op.To); err != nil {
+			return nil, err
+		}
 	}
 	// Approving an adoption REQUEST needs the same authority as performing one,
 	// decided here for the same reason: recorded at ingress, so replay applies
@@ -393,6 +396,9 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// whose roles have moved on.
 	if op.Kind == core.OpRespond && actor != nil {
 		op.AdoptAuthorised = e.mayAdopt(actor)
+		if err := e.mayApproveGrant(actor, op); err != nil {
+			return nil, err
+		}
 	}
 
 	res, err := e.applyAndLedger(op, now)
@@ -485,16 +491,16 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// that runs for days that means "eventually, or not", while the sender's
 	// deadline runs down.
 	if op.Kind == core.OpSendMessage && res != nil {
-		if human := e.HumanIdentity(); human != "" && op.To == human {
+		if human := e.humanIdentityLocked(); human != "" && op.To == human {
 			serial, _ := res["msg_serial"].(uint64)
-			from := ""
+			from, who := "", ""
 			if actor != nil {
-				from = actor.ID
+				from, who = actor.ID, whoIs(actor)
 			}
 			// Off the loop: an alert waits for somebody to press a button, and
 			// the single writer holding still for two minutes would stop the
 			// board while one person decides.
-			go e.tellTheHuman(from, op.MsgType, op.Body, serial, op.Choices, op.Grant, op.Adopt)
+			go e.tellTheHuman(from, who, op.MsgType, op.Body, serial, op.Choices, op.Grant, op.Adopt)
 		}
 	}
 	return res, nil

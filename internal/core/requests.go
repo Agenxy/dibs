@@ -24,6 +24,14 @@ package core
 // checkGrantRequest rejects a role request that must not be answerable by a
 // press.
 //
+// Called from Admit, NOT from Apply, and that is the whole point of where it
+// sits. This is payload vocabulary: which roles are legal and on which message
+// type. Apply is also the fold that replays a ledger written by older code, so
+// a vocabulary rule enforced there is retroactive, and the day the accepted set
+// changes is the day the daemon refuses to boot on its own history. It was
+// written into Apply first and caught by review before release, which is the
+// fourth time this exact mistake has been made in this repository.
+//
 // ADMIN is refused, permanently and on purpose. Coordinator is breadth:
 // broadcast and force_release, and it deliberately cannot read anybody's mail.
 // Admin is the god view, every agent's decrypted mail included, and the entire

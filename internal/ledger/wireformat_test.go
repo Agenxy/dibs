@@ -303,11 +303,66 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 			"OpSpaceLeave": "leave_space", "OpSpaceSubscribe": "watch_space",
 			"OpSpaceExclusive": "lock_space", "OpSpacePost": "post",
 			"OpSpaceAnnounce": "announce", "OpSpaceAck": "ack_announcement",
+			// Added by 0.0.6 and unguarded until an independent review found the
+			// gap. A retired op KIND stops the fold loudly, which is the one
+			// mercy in this file, but only if the string is pinned here first.
+			"OpAdoptAgent": "adopt_agent", "OpSpaceRetitle": "retitle_space",
 		}[name]
 		if got != want {
 			t.Errorf("%s = %q, must stay %q: every ledger written since 0.0.3 uses "+
 				"this value, and Apply matches it by string", name, got, want)
 		}
+	}
+}
+
+// The MESSAGE is on disk too, and was guarded by nothing.
+//
+// This file froze core.Op's tags by reflection and stopped there, but a Message
+// is state, state is a fold over the ledger, and its fields are serialised with
+// it. Renaming one is the same silent data loss the whole file exists to stop:
+// the op applies, replay reports success, and the field is quietly zero. 0.0.6
+// added three of them (`choices`, `grant`, `adopt`), each of which decides what
+// approving a request DOES, so a rename would turn an approval into a no-op
+// that reports success.
+//
+// Found by an independent review before release, in the same pass that found
+// the two op kinds above.
+func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
+	frozen := map[string]bool{
+		"serial": true, "from": true, "to": true, "type": true, "body": true,
+		"state": true, "consumed": true, "deadline": true, "response": true,
+		"delivered_serial": true, "sent_at": true, "delivered_at": true,
+		"responded_serial": true, "acked_serial": true, "terminal_at": true,
+		"expire_detail": true, "attachments": true,
+		// 0.0.6.
+		"choices": true, "grant": true, "adopt": true,
+	}
+	var declared []string
+	mt := reflect.TypeOf(core.Message{})
+	for i := range mt.NumField() {
+		tag := mt.Field(i).Tag.Get("json")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		if c := strings.Index(tag, ","); c >= 0 {
+			tag = tag[:c]
+		}
+		if tag == "" {
+			continue
+		}
+		declared = append(declared, tag)
+		if !frozen[tag] {
+			t.Errorf("core.Message declares json tag %q, which is not frozen here. A "+
+				"message is state, and state is a fold over the ledger: renaming this "+
+				"later applies cleanly, replays cleanly, and silently zeroes the "+
+				"field. Add it deliberately", tag)
+		}
+	}
+	// The other half of the same loss: a field REMOVED is a field that stops
+	// being written, and every reader of an older ledger keeps expecting it.
+	if len(declared) != len(frozen) {
+		t.Errorf("core.Message declares %d tags and %d are frozen: a field was "+
+			"removed or renamed", len(declared), len(frozen))
 	}
 }
 

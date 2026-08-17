@@ -144,6 +144,19 @@ and publishes `server.json` to the official MCP Registry as `io.github.Agenxy/di
 Nothing here needs a human between the tag and the release, and no source is updated by
 hand: if the three ever disagree, that is a bug in the pipeline, not a chore.
 
+**Before the tag, a DIFFERENT model reads the whole release surface.** Not
+optional, and not the author's own review: several versions have been spent
+fixing things a careful reader would have caught, and the reader who misses them
+is reliably the one who wrote them. `task review:release` runs it against the
+last tag.
+
+The value is the second opinion, so run something that is not what wrote the
+code. What matters is what it is pointed at: this repository's recurring bug
+classes (validation in `Apply` instead of `Admit`, an op that changes state
+without advancing the serial, a renamed json tag, anything that reports success
+while doing nothing) and its newest authorisation paths. Fix what it finds, run
+`task ci`, and go round again until a pass turns up nothing worth fixing.
+
 **`task release VERSION=0.0.6` is the one step before the tag.** It claims the
 changelog's `## [Unreleased]` section for that version and stamps every manifest that
 states one, then stops: tagging publishes, so it stays yours to do. Doing it by hand is

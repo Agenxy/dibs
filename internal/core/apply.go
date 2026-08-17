@@ -58,6 +58,9 @@ func Admit(op *Op, lim Limits) error {
 	// them. Bounded here rather than in Apply for the reason at the top of this
 	// function: these strings are already in ledgers on disk, and a rule added to
 	// the fold is retroactive.
+	if err := checkGrantRequest(op); err != nil {
+		return err
+	}
 	if len(op.Choices) > MaxChoices {
 		return errTooLarge("choices", MaxChoices)
 	}
@@ -515,8 +518,25 @@ func dedupKey(agent, id string) string { return agent + "\x00" + id }
 // sendDigest binds a send's payload (recipient, type, body, deadline, and every
 // attachment handle) so op_id dedup rejects a retry that reused the id with
 // different content (SPEC §4).
+// sendDigest binds EVERY field that changes what the message does.
+//
+// op_id makes a retry safe by returning the original result when the payload
+// matches, and refusing with E_OP_ID_CONFLICT when it does not. That guarantee
+// is only as good as the list below: a field left out is a field an agent can
+// change while reusing an op_id, and the answer is `{"ok": true,
+// "deduplicated": true}` over a message that still carries the old value.
+//
+// grant and adopt were missing, which made that a privilege bug rather than a
+// nuisance: retry a plain request with `grant: "coordinator"` and the send
+// reports success while the stored request grants nothing, or drop `grant` from
+// a retry and the send reports success while approval still promotes somebody.
+// choices was missing too, so an answer space could be silently stale.
+//
+// Found by an independent review before release. The rule: if it reaches the
+// Message, it belongs here.
 func sendDigest(op *Op) string {
-	parts := []string{op.To, op.MsgType, op.Body, itoa(op.DeadlineSec)}
+	parts := []string{op.To, op.MsgType, op.Body, itoa(op.DeadlineSec), op.Grant, op.Adopt}
+	parts = append(parts, op.Choices...)
 	for _, a := range op.Attachments {
 		parts = append(parts, a.Blob, a.Path, a.Hash)
 	}
@@ -1527,9 +1547,6 @@ func (s *State) applySend(l *Agent, op *Op, now time.Time) (Result, []Event, err
 	}
 	if len(op.Body) > s.Limits.MaxBodyBytes || len(op.OpID) > s.Limits.MaxIDBytes {
 		return nil, nil, errTooLarge("body/op_id", s.Limits.MaxBodyBytes)
-	}
-	if err := checkGrantRequest(op); err != nil {
-		return nil, nil, err
 	}
 	atts, err := s.validateAttachments(l, op.Attachments)
 	if err != nil {

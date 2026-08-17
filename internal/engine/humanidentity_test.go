@@ -212,3 +212,106 @@ func TestARoleRequestNeedsAHumanToExist(t *testing.T) {
 			"itself, no less")
 	}
 }
+
+// A grant cannot be approved by whoever the mailbox ended up with.
+//
+// The send-time check ("addressed to the human") is not enough on its own, and
+// the gap took an independent review to see. Adoption rewrites the `to` of every
+// message in a mailbox, and a coordinator may adopt, so a pending request to a
+// dormant human could be inherited and approved by an agent. A person's row is
+// dormant whenever they are not typing, so step two needs no arranging.
+//
+// Two rules now close it, and this exercises both ends: the human's mailbox is
+// not adoptable at all, and approving a grant re-checks the human at APPROVAL
+// time rather than trusting a recipient that can be rewritten.
+func TestARoleCannotBeGrantedByInheritingTheHumansMailbox(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	// A human, and a coordinator who is not them.
+	humanID, humanTok, err := e.HumanAgent(ctx)
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	_ = humanTok
+	res, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "boss", AgentKind: core.KindPersistent, Nonce: "n-boss",
+	})
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	bossTok, _ := res["token"].(string)
+	st.Agents["boss"].Role = core.RoleCoordinator
+
+	// DORMANT, which is the whole point and is not an unusual state to arrange:
+	// a person's row goes quiet whenever they are not at the keyboard, because
+	// silence is their entire liveness model. Without this the test passes on a
+	// board with the bug in it, since adoption already refuses an ACTIVE source
+	// and the human had just registered.
+	st.Agents[humanID].Status = core.StatusDormant
+
+	// The coordinator tries to take the human's mailbox, which is the move that
+	// made the escalation reachable.
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpAdoptAgent, Token: bossTok, To: humanID,
+	}); err == nil {
+		t.Error("a coordinator adopted the HUMAN's mailbox. core/roles.go says the " +
+			"role gets 'no power to read another agent's mail. Breadth, not " +
+			"intrusion', and this collects every private message the operator ever " +
+			"received, plus any request awaiting their approval")
+	}
+}
+
+// And the approval-time check stands on its own, so the fix does not rest
+// entirely on adoption being blocked.
+func TestOnlyTheHumanCanApproveARoleGrant(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	humanID, _, err := e.HumanAgent(ctx)
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	mk := func(name, nonce string) string {
+		r, err := e.Do(ctx, &core.Op{
+			Kind: core.OpRegister, Name: name, AgentKind: core.KindPersistent, Nonce: nonce,
+		})
+		if err != nil {
+			t.Fatal("setup:", err)
+		}
+		tok, _ := r["token"].(string)
+		return tok
+	}
+	askerTok := mk("asker", "n-a")
+	bossTok := mk("boss", "n-b")
+	st.Agents["boss"].Role = core.RoleCoordinator
+
+	sent, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: askerTok, To: humanID,
+		MsgType: core.MsgRequest, Body: "promote me", Grant: core.RoleCoordinator,
+	})
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	serial, _ := sent["msg_serial"].(uint64)
+
+	// Simulate the mailbox having been inherited, which is what adoption does.
+	st.Messages[serial].To = "boss"
+
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRespond, Token: bossTok, MsgSerial: serial, Disposition: "approve",
+	}); err == nil {
+		t.Error("a coordinator approved a role grant addressed to the human. " +
+			"'Addressed to the human' has to be true when somebody says yes, not " +
+			"only when somebody asked")
+	}
+	if st.Agents["asker"].IsCoordinator() {
+		t.Error("the asker was promoted with no human anywhere in the story")
+	}
+}

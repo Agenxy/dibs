@@ -79,21 +79,26 @@ func (e *Engine) ReportFault(ctx context.Context, f Fault) {
 		slog.Warn("incomplete fault report suppressed", "kind", f.Kind)
 		return
 	}
+	// Marked seen when it is DELIVERED, never before.
+	//
+	// This set the flag first and returned early on four paths after it: no
+	// coordinator and no human on the board, the reporting identity failing to
+	// mint, the only recipient being itself, and the send erroring. Every one of
+	// those suppressed the fault permanently for the run while nobody had been
+	// told, which is the "a flag stood in for the work" bug this file was
+	// written to stop producing. The startup reachability check is exactly when
+	// it bites: it runs before any agent has registered, so the coordinator who
+	// joins a minute later never hears about it.
+	//
+	// Found by an independent review before release.
 	e.faults.mu.Lock()
-	if e.faults.seen == nil {
-		e.faults.seen = map[string]bool{}
-	}
 	already := e.faults.seen[f.Kind]
-	e.faults.seen[f.Kind] = true
 	e.faults.mu.Unlock()
 	if already {
 		return
 	}
 
-	to := e.state.CoordinatorID()
-	if to == "" {
-		to = e.HumanIdentity()
-	}
+	to := e.coordinatorOrHuman()
 	if to == "" {
 		// Nobody to tell. Said out loud, because "reported" and "there was
 		// nobody on the board" must not look the same from outside.
@@ -119,7 +124,14 @@ func (e *Engine) ReportFault(ctx context.Context, f Fault) {
 		Body:    faultBody(f),
 	}); err != nil {
 		slog.Warn("could not report a fault", "kind", f.Kind, "err", err)
+		return // not delivered, so not seen: the next attempt may find a reader
 	}
+	e.faults.mu.Lock()
+	if e.faults.seen == nil {
+		e.faults.seen = map[string]bool{}
+	}
+	e.faults.seen[f.Kind] = true
+	e.faults.mu.Unlock()
 }
 
 // faultBody writes the message. Kept separate from delivering it so the wording
@@ -224,4 +236,31 @@ func (e *Engine) reportNotifyFailure(err error) {
 		Remedy: "The message is still on the board and can be read there. " +
 			"`dibs doctor` says whether notifications can reach this machine at all.",
 	})
+}
+
+// coordinatorOrHuman names who a fault report goes to, reading the board
+// THROUGH the loop.
+//
+// e.state's maps belong to the single writer. Reading them from a reporting
+// goroutine is a data race and, on a busy board, a concurrent map read and write
+// panic: the daemon would crash while telling somebody about a smaller problem.
+// -race did not catch it because nothing exercised a report during traffic.
+//
+// Found by an independent review before release, alongside the same mistake in
+// two other new paths.
+func (e *Engine) coordinatorOrHuman() string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := e.query(ctx, func() core.Result {
+		to := e.state.CoordinatorID()
+		if to == "" {
+			to = e.humanIdentityLocked()
+		}
+		return core.Result{"to": to}
+	})
+	if err != nil {
+		return ""
+	}
+	to, _ := res["to"].(string)
+	return to
 }

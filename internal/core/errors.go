@@ -94,6 +94,18 @@ var (
 		Code: "E_STORE_FULL", Msg: "blob store is full",
 		Hint: "retry shortly; the store evicts unreferenced blobs under pressure",
 	}
+	// ErrHumanMailboxIsTheirs refuses an adoption of the operator's own identity.
+	//
+	// Their row is dormant whenever they are not typing, which is most of the
+	// time and is not evidence that anything is abandoned.
+	ErrHumanMailboxIsTheirs = &Error{
+		Code: "E_NOT_PERMITTED",
+		Msg:  "the human's mailbox is not adoptable",
+		Hint: "a person's row is dormant whenever they are not at the keyboard, which " +
+			"is not the same as abandoned. If you need something in there, ask them " +
+			"for it",
+	}
+
 	// ErrNoCoordinator answers mail addressed to a role nobody holds.
 	//
 	// Silence would be worse than an error: the sender would believe it had

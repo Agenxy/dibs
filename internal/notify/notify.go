@@ -137,6 +137,15 @@ func Ask(title, body string, buttons ...string) (string, error) {
 		// #nosec G204 -- h is resolved beside this binary; the rest is argv data.
 		out, err := exec.CommandContext(ctx, h, append([]string{title, "", body}, buttons...)...).Output()
 		if err != nil {
+			// Exit 2 means the machine WILL NOT notify: no authorisation, no
+			// bundle. That is not a person deferring, and collapsing the two is
+			// how a question nobody could see was reported as a question nobody
+			// answered, while the asking agent waited out its deadline. The
+			// helper documents the distinction; this end was throwing it away.
+			// Found by an independent review before release.
+			if notAuthorised(err) {
+				return "", ErrCannotNotify
+			}
 			return "", nil // dismissed or timed out: an answer, not a fault
 		}
 		return strings.TrimSpace(string(out)), nil
@@ -186,6 +195,9 @@ func onScreen(mode string, args ...string) (string, bool) {
 	// the rest is argv data the helper never interprets.
 	out, err := exec.CommandContext(ctx, h, append([]string{mode}, args...)...).Output()
 	if err != nil {
+		if notAuthorised(err) {
+			return "", false // fall through to the script path rather than lie
+		}
 		// Cancelled, or sent empty. Both are "no answer", which is an answer.
 		return "", true
 	}
@@ -195,7 +207,26 @@ func onScreen(mode string, args ...string) (string, bool) {
 // Available reports whether a person can be reached from here at all, so a
 // caller can say "this build cannot notify you" once rather than failing
 // silently on every message.
-func Available() bool { return runtime.GOOS == "darwin" }
+func Available() bool { return runtime.GOOS == "darwin" && !underTest() }
+
+// underTest reports whether this is a test binary, in which case nothing here
+// may reach a person.
+//
+// A test that notifies is not a test. `go test ./...` on this repository put
+// real alerts on the operator's screen, branded with a generic icon because a
+// test binary has no Dibs.app beside it to lend its identity, carrying fixture
+// text ("make asker coordinator?", "promote me") and buttons that answered a
+// process which had already moved on. They then reported the product as broken
+// on the evidence of its own test suite, which is worse than the noise: it
+// destroys the signal from the real thing.
+//
+// By binary name rather than by importing `testing`, which would pull the test
+// flags into the daemon. `go test` builds `<pkg>.test`, and `go run` never
+// produces that suffix.
+func underTest() bool {
+	self, err := os.Executable()
+	return err == nil && strings.HasSuffix(filepath.Base(self), ".test")
+}
 
 func run(script string, args ...string) (string, error) {
 	if !Available() {
@@ -311,4 +342,21 @@ func focusOn() string {
 		}
 	}
 	return ""
+}
+
+// ErrCannotNotify says the machine refused to show anything, as distinct from a
+// person who saw it and did not answer.
+//
+// The two were one value, and the cost was concrete: a request the operator
+// could not see was indistinguishable from one they ignored, so nothing was
+// reported and the asking agent waited out its deadline against a notification
+// that had never appeared.
+var ErrCannotNotify = errors.New("this machine will not show a notification")
+
+// notAuthorised reports the helper's exit-2 contract: authorisation refused, or
+// no bundle. Documented in internal/notify/app/notify_darwin.swift, where the
+// exit codes are the API.
+func notAuthorised(err error) bool {
+	var ee *exec.ExitError
+	return errors.As(err, &ee) && ee.ExitCode() == 2
 }

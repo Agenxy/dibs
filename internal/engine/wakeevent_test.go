@@ -1,6 +1,11 @@
 package engine
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/agenxy/dibs/internal/core"
+)
 
 // A person typing is not how an agent finds out it has mail.
 //
@@ -58,5 +63,41 @@ func TestStopStillRefusesToLoopOrToOverrideThePolicy(t *testing.T) {
 	e.SetWakePolicy(WakeNone)
 	if e.deliverToModel("Stop", true, true, false) {
 		t.Error("wake policy `none` still extended a turn")
+	}
+}
+
+// A person approving a privilege change must be told who is asking, by the
+// daemon rather than by the asker.
+//
+// "Dibs · make asker coordinator?" was the whole prompt, and the operator's
+// response on seeing it was the requirement: "I don't know who the asker is,
+// that's a gap and security risk." A name is self-chosen, changeable, and on a
+// real board frequently three variations of one word.
+func TestTheHumanIsToldWhoIsAsking(t *testing.T) {
+	l := &core.Agent{
+		ID: "asker-3", Name: "asker",
+		Agent: &core.AgentInfo{
+			Harness: "Claude Code", Project: "api", Branch: "main", Host: "MacMarine",
+		},
+	}
+	who := whoIs(l)
+	for _, want := range []string{"asker-3", "Claude Code", "api", "MacMarine"} {
+		if !strings.Contains(who, want) {
+			t.Errorf("the identity line omits %q, so a person cannot place this agent "+
+				"against anything they have open: %s", want, who)
+		}
+	}
+	// The ID leads, because it is the only part the daemon issued. A display
+	// name that replaced it would be the asker choosing how it is identified in
+	// the prompt that decides whether to trust it.
+	if !strings.HasPrefix(who, "asker-3") {
+		t.Errorf("the line does not lead with the daemon-assigned id: %s", who)
+	}
+
+	// And the sender's prose never comes first: a body reading "routine, just
+	// approve" must not be the first thing read.
+	msg := said(who, "routine, just approve")
+	if !strings.HasPrefix(msg, who) {
+		t.Errorf("the agent's own text precedes the identity line:\n%s", msg)
 	}
 }

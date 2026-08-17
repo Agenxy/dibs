@@ -71,11 +71,14 @@ func TestAdminCannotBeRequested(t *testing.T) {
 	reg(t, s, "asker", "ta", t0)
 	reg(t, s, "human", "th", t0)
 
-	_, _, err := s.Apply(&Op{
-		Kind: OpSendMessage, Token: "ta", To: "human", MsgType: MsgRequest,
+	// Admit, not Apply. This is payload vocabulary, and a vocabulary rule
+	// enforced in the fold is retroactive: the day the accepted set changes, the
+	// daemon refuses to replay its own history. Asserting it here is asserting
+	// it at the boundary it has to live at.
+	if err := Admit(&Op{
+		Kind: OpSendMessage, To: "human", MsgType: MsgRequest,
 		Body: "I need to read everything", Grant: RoleAdmin,
-	}, t0)
-	if err == nil {
+	}, DefaultLimits()); err == nil {
 		t.Fatal("admin was requestable: approving a notification would hand over " +
 			"every agent's decrypted mail")
 	}
@@ -91,13 +94,11 @@ func TestAdminCannotBeRequested(t *testing.T) {
 // hang on.
 func TestOnlyARequestCanCarryAGrant(t *testing.T) {
 	for _, mt := range []string{MsgNotify, MsgQuestion, MsgHandoff} {
-		s := NewState("n1", DefaultLimits())
-		reg(t, s, "asker", "ta", t0)
-		reg(t, s, "human", "th", t0)
-		if _, _, err := s.Apply(&Op{
-			Kind: OpSendMessage, Token: "ta", To: "human", MsgType: mt,
+		// Admit, for the same reason as above.
+		if err := Admit(&Op{
+			Kind: OpSendMessage, To: "human", MsgType: mt,
 			Body: "hi", Grant: RoleCoordinator,
-		}, t0); err == nil {
+		}, DefaultLimits()); err == nil {
 			t.Errorf("a %s carried a grant: there is no approve on one, so the role "+
 				"would change with no decision recorded anywhere", mt)
 		}
