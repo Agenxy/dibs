@@ -32,8 +32,18 @@ import (
 const maxNotices = 16
 
 type notice struct {
+	// Serial is the EVENT that produced this notice, used for ordering.
 	Serial uint64
-	Text   string
+	// Msg is the MESSAGE the notice points at, when it points at one, so that
+	// reading that message satisfies the instruction the notice gave.
+	//
+	// Distinct from Serial deliberately, and the distinction is the bug this
+	// field exists for: a notice saying "read_mail(746)" is produced by the
+	// respond event at serial 749. Clearing by the event serial never matches
+	// what the agent was told to read, so the notice survived being obeyed and
+	// the wake path repeated it every turn.
+	Msg  uint64
+	Text string
 }
 
 // noteEvent records the events an agent needs told about, so hookPoll can
@@ -152,7 +162,10 @@ func (e *Engine) noteEvent(ev core.Event) {
 	if who == "" || text == "" {
 		return
 	}
-	e.pushNotice(who, text, ev.Serial)
+	// The message this notice points at, when it points at one. ev.Serial is
+	// the event; msg_serial is what the agent is told to read.
+	msg, _ := ev.Data["msg_serial"].(uint64)
+	e.pushNoticeFor(who, text, ev.Serial, msg)
 }
 
 // pushNotice queues one thing an agent must be told, for the wake path.
@@ -163,6 +176,11 @@ func (e *Engine) noteEvent(ev core.Event) {
 // its own, but it is exactly what a notice is FOR: something that happened to
 // you which you could not have inferred.
 func (e *Engine) pushNotice(who, text string, serial uint64) {
+	e.pushNoticeFor(who, text, serial, 0)
+}
+
+// pushNoticeFor is pushNotice plus the message the notice refers to.
+func (e *Engine) pushNoticeFor(who, text string, serial, msg uint64) {
 	if who == "" || text == "" {
 		return
 	}
@@ -172,7 +190,7 @@ func (e *Engine) pushNotice(who, text string, serial uint64) {
 	// Bounded: an agent that never polls must not accumulate forever. The
 	// newest matter most: being told you were admitted an hour ago and then
 	// evicted is worse than being told only the eviction.
-	e.notices[who] = append(e.notices[who], notice{Serial: serial, Text: text})
+	e.notices[who] = append(e.notices[who], notice{Serial: serial, Msg: msg, Text: text})
 	if n := len(e.notices[who]); n > maxNotices {
 		e.notices[who] = e.notices[who][n-maxNotices:]
 	}
@@ -237,7 +255,10 @@ func (e *Engine) clearNoticesFor(agent string, serial uint64) {
 	}
 	kept := all[:0]
 	for _, n := range all {
-		if n.Serial != serial {
+		// Match on the MESSAGE the notice pointed at, not the event that
+		// produced it. Those differ by a few serials and matching the wrong one
+		// is why this cleared nothing the first time.
+		if n.Msg != serial {
 			kept = append(kept, n)
 		}
 	}

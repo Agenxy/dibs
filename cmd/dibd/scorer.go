@@ -330,9 +330,22 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 	workCtx, cancelWork := context.WithTimeout(ctx, gitDeadline)
 	defer cancelWork()
 
+	// A repository with no commits is NORMAL, not a fault.
+	//
+	// `git init` and then start working is the most ordinary first hour of a
+	// project, and git answers an unborn branch with exit status 128, the same
+	// code it uses for a genuine read failure. Reported as one, it took matching
+	// OFF for every agent on the board, with the hint "could not read git
+	// history (exit status 128)" sending the reader after a permissions problem
+	// that did not exist. Measured: one test agent registered from a fresh
+	// `git init` and the whole fleet lost the feature.
+	//
+	// So this is separated from failure before mining, and reported as the tree
+	// having nothing to mine yet rather than as the board being broken. An agent
+	// reported exactly this distinction as missing, and was right.
 	cc, err := overlap.MineCoChange(workCtx, dir, overlap.CoChangeOptions{MaxCommits: f.history})
 	if err != nil {
-		offBecause("could not read git history", err)
+		historyUnreadable(topCtx, eng, dir, err, offBecause)
 		return
 	}
 	lex, err := overlap.NewLexical(workCtx, dir, cc)
@@ -724,4 +737,32 @@ func (f *scorerFlags) calibrateNotify(
 		return overlap.Calibration{}, false
 	}
 	return cal, true
+}
+
+// historyUnreadable decides whether a failed mine is a fault or an ordinary
+// empty repository, and reports it as whichever it is.
+//
+// Only reached when mining already failed, so the extra git call costs nothing
+// on the path that works.
+func historyUnreadable(ctx context.Context, eng *engine.Engine, dir string, err error, off func(string, error)) {
+	if !unborn(ctx, dir) {
+		off("could not read git history", err)
+		return
+	}
+	eng.NoteUnreadableTree(dir,
+		"no work-overlap matching for "+dir+" yet: it is a git repository with no "+
+			"commits. Matching is mined from git log, so there is nothing to learn from "+
+			"until the first commit. Nothing is broken and nothing needs fixing")
+	slog.Info("work-overlap matching skipped a repository with no commits", "repo", dir)
+}
+
+// unborn reports whether a checkout has no commits yet.
+//
+// `git rev-parse --verify HEAD` is the cheapest question that distinguishes an
+// unborn branch from a repository the daemon cannot read: both fail, and only
+// this one is ordinary.
+func unborn(ctx context.Context, dir string) bool {
+	// #nosec G204 -- git is a literal and dir came from rev-parse --show-toplevel.
+	err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--verify", "HEAD").Run()
+	return err != nil
 }

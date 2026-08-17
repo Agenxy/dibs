@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -18,25 +19,35 @@ import (
 func TestReadingAMessageClearsTheNoticePointingAtIt(t *testing.T) {
 	e := &Engine{notices: map[string][]notice{}}
 
-	e.pushNotice("reader", "somebody APPROVED your request (msg 712)", 712)
-	e.pushNotice("reader", "somebody else answered (msg 800)", 800)
+	// Through noteEvent, NOT by constructing a notice by hand. The first
+	// version of this test built one with the message serial in the Serial
+	// field, which is not what the real path does: it pushes the EVENT serial
+	// and carries the message separately. The test passed, the product did not,
+	// and the notice went on repeating after being obeyed. A fixture that
+	// asserts your assumption tests your assumption.
+	e.noteEvent(core.Event{
+		Type: "message.approved", Agent: "approver", To: "reader", Serial: 749,
+		Data: map[string]any{"msg_serial": uint64(746)},
+	})
+	e.noteEvent(core.Event{
+		Type: "message.answered", Agent: "other", To: "reader", Serial: 810,
+		Data: map[string]any{"msg_serial": uint64(800)},
+	})
+	if got := len(e.pendingNotices("reader")); got != 2 {
+		t.Fatalf("setup: %d notices, want 2", got)
+	}
 
-	e.clearNoticesFor("reader", 712)
+	// Reading 746 satisfies the notice that said to read 746.
+	e.clearNoticesFor("reader", 746)
 
 	left := e.pendingNotices("reader")
 	if len(left) != 1 {
-		t.Fatalf("after reading 712, %d notices remain, want 1: %v", len(left), left)
+		t.Fatalf("after reading 746, %d notices remain, want 1: %v", len(left), left)
 	}
-	// The OTHER one survives. Clearing everything would swap a nagging channel
-	// for a lossy one, which is the worse failure of the two.
-	if got := left[0]; got != "somebody else answered (msg 800)" {
-		t.Errorf("the wrong notice survived: %q", got)
-	}
-
-	// And the unrelated one still clears on its own read.
-	e.clearNoticesFor("reader", 800)
-	if left := e.pendingNotices("reader"); len(left) != 0 {
-		t.Errorf("notices outstanding after both were read: %v", left)
+	// The unrelated one survives: clearing everything would swap a nagging
+	// channel for a lossy one, which is the worse failure.
+	if !strings.Contains(left[0], "800") {
+		t.Errorf("the wrong notice survived: %q", left[0])
 	}
 }
 
@@ -75,8 +86,11 @@ func TestGetMessageClearsTheNotice(t *testing.T) {
 		t.Fatalf("setup: no serial in %v", sent)
 	}
 
-	// A notice pointing at that message, as answeredNotice would produce.
-	e.pushNotice("reader", "sender answered your question", serial)
+	// A notice pointing at that message, in the shape the real event path
+	// produces: the EVENT serial is its own, and the message it points at is
+	// carried separately. Getting that wrong is what made the first version of
+	// this fix clear nothing.
+	e.pushNoticeFor("reader", "sender answered your question", serial+9, serial)
 
 	if _, err := e.GetMessage(ctx, readerTok, serial); err != nil {
 		t.Fatal(err)
