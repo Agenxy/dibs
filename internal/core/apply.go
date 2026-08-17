@@ -1637,48 +1637,10 @@ func (s *State) finishSend(
 	if expecting {
 		res["deadline"] = deadline
 	}
-	if to.Sleeping() {
-		// A sleeping agent that has been SUPERSEDED will never wake, so the
-		// reassurance below is false for it and has to be said differently.
-		//
-		// This is the case that lost two full bug reports on a live fleet. A
-		// restart forked every agent; agents addressed mail to the names they knew;
-		// those agents were dormant tombstones whose occupants were now alive under
-		// `-2` ids. Dibs accepted the mail and told the senders it would be seen
-		// "when it next wakes". Nobody was coming. The failure was invisible from
-		// both ends at once: the sender read success, the intended recipient saw
-		// nothing, and it took a third space to notice.
-		if live := s.liveSiblingOf(to); live != nil {
-			res["note"] = "delivered to " + to.ID + ", which is " + string(to.Status) +
-				", but " + live.ID + " is LIVE under the same name and is almost certainly who " +
-				"you meant. " + to.ID + " will not wake to read this. Resend to " + live.ID + "."
-		} else {
-			// The message is already committed by the time we get here, so the note
-			// must say what IS true, not warn about what might happen: it is queued
-			// and will be delivered; only the deadline is at risk.
-			res["note"] = "delivered to " + to.ID + ", which is currently " + string(to.Status) +
-				": it will see this when it next wakes. The message is not lost; only the response " +
-				"deadline is at risk, so re-send with a larger deadline_s if you need an answer, or " +
-				"use notify/handoff when you do not."
-		}
+	if n := s.sleepingNote(to); n != "" {
+		res["note"] = n
 	}
 	return res, evs, nil
-}
-
-// liveSiblingOf finds an active agent sharing this one's name.
-//
-// Deliberately NOT siblingByName, which ranks by how much mail an agent holds
-// because it answers a different question. "which mailbox can the caller not
-// read". Here the only thing that matters is which sibling is ALIVE, and
-// borrowing that ranking would quietly skip a live agent that happened to hold
-// less mail than a dead one.
-func (s *State) liveSiblingOf(to *Agent) *Agent {
-	for _, l := range s.Agents {
-		if l.ID != to.ID && l.Name == to.Name && l.Status == StatusActive {
-			return l
-		}
-	}
-	return nil
 }
 
 func (s *State) oldestDisplaceableNotify(agent string) *Message {

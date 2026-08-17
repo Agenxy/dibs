@@ -235,6 +235,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A sibling shares the NAME, never the ROLE, and the resend advice did not say
+  so.** Mail to a dormant agent returns "X is LIVE under the same name and is
+  almost certainly who you meant. Resend to X." That is right when you meant a
+  peer doing a job, and wrong when you meant an authority.
+
+  Found in the wild within an hour of the reclaim path shipping, by the first
+  agent to use it in earnest. It needed a coordinator to approve an adoption,
+  addressed the agent holding that role, found it dormant, followed this advice
+  to the live sibling, and asked an agent with no role at all. It opened by
+  telling that agent it held the coordinator role, because the note had said so
+  in everything but the word. Neither end could see that the authority had been
+  dropped in transit. The advice now says when the sibling lacks the role, what
+  that costs (approving an adoption or a grant, force_release, evict), and names
+  the human as the reachable alternative.
+
 - **Confidentiality: `dibs://inbox` published message bodies to whoever the host
   decided.** An MCP resource is APPLICATION-controlled: the host chooses what to
   do with one, and attaching it to the user's next turn is an ordinary thing for

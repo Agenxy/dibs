@@ -189,3 +189,44 @@ func TestClosedSpaceDoesNotTriggerTheNameWarning(t *testing.T) {
 		t.Errorf("closed agent must not read as a collision, got: %v", w)
 	}
 }
+
+// A sibling shares the NAME, never the role.
+//
+// The resend advice said the live sibling was "almost certainly who you meant",
+// which is right when you meant a person doing a job and wrong when you meant
+// an authority. Measured within an hour of the reclaim path shipping: an agent
+// needed a coordinator to approve an adoption, addressed the coordinator, found
+// it dormant, followed this advice to its live sibling, and asked an agent with
+// no role at all. It opened by telling that agent it held the role, because the
+// note had said so in everything but the word. Neither end could see that the
+// authority had been dropped in transit.
+func TestResendAdviceSaysWhenTheSiblingLacksTheRole(t *testing.T) {
+	s := NewState("n1", DefaultLimits())
+	reg(t, s, "boss", "tboss", t0)
+	reg(t, s, "sender", "ts", t0)
+	// A dormant coordinator, and a live sibling under the same name with no role.
+	s.Agents["boss"].Role = RoleCoordinator
+	s.Agents["boss"].Status = StatusDormant
+	s.Agents["boss-2"] = &Agent{
+		ID: "boss-2", Name: "boss", Status: StatusActive, Token: "tb2",
+		Slots: map[string]Slot{},
+	}
+
+	res := mustApply(t, s, &Op{
+		Kind: OpSendMessage, Token: "ts", To: "boss", MsgType: MsgRequest,
+		Body: "approve this adoption please",
+	}, t0)
+
+	note, _ := res["note"].(string)
+	if !strings.Contains(note, "boss-2") {
+		t.Fatalf("setup: the resend advice did not name the live sibling: %s", note)
+	}
+	if !strings.Contains(note, "does NOT") || !strings.Contains(note, "cannot act") {
+		t.Errorf("the advice sends an authority-seeking request to an agent with no "+
+			"role, without saying so. A sibling shares the name, not the role:\n%s", note)
+	}
+	if !strings.Contains(note, "human") {
+		t.Errorf("the advice names no reachable alternative, so the sender's only "+
+			"option is to ask somebody who cannot help:\n%s", note)
+	}
+}
