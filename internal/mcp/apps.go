@@ -31,6 +31,18 @@ import (
 //go:embed skills.md
 var skillsDoc string
 
+// staffDoc is what a role-holder needs and an ordinary agent does not, served
+// as dibs://staff.
+//
+// Separate from skills.md deliberately. Most agents never hold a role, and
+// putting the remediation powers in the document everybody reads on first
+// connection would spend the attention of the many on the concerns of the few.
+// It is referenced from the grant notice instead, which is the moment an agent
+// becomes able to use any of it.
+//
+//go:embed staff.md
+var staffDoc string
+
 //go:embed board_app.html
 var boardAppHTML string
 

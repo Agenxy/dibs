@@ -242,8 +242,8 @@ func answeredNotice(ev core.Event) string {
 		s := fmt.Sprintf("%s APPROVED your request (msg %d)", by, serial)
 		if role, ok := ev.Data["granted"].(string); ok && role != "" {
 			return s + fmt.Sprintf(": you now hold the %s role. Re-read the board; "+
-				"calls that failed with E_NOT_%s will work now",
-				role, strings.ToUpper(role))
+				"calls that failed with E_NOT_%s will work now. %s",
+				role, strings.ToUpper(role), staffBriefing(role))
 		}
 		if from, ok := ev.Data["adopted"].(string); ok && from != "" {
 			return s + fmt.Sprintf(": %q's mail is now delivered to you. Call inbox: "+
@@ -292,5 +292,29 @@ func (e *Engine) noteNewMember(ev core.Event) {
 		}
 		e.pushNotice(member,
 			fmt.Sprintf("%s %s the space %q you are in", joiner, how, spaceID), ev.Serial)
+	}
+}
+
+// staffBriefing tells a new role-holder what it can now DO.
+//
+// "Calls that failed will work now" is true and useless: it names no call. A
+// coordinator was granted the role, asked to reconcile three abandoned agents,
+// read `prune`'s description saying "never a peer", concluded the product could
+// not do it, and told the operator so. It could: the description was written for
+// ordinary agents and never mentioned the role. The powers existed and nothing
+// on the wire said so.
+//
+// So the grant carries the briefing, because that is the one moment the agent is
+// certain to be reading, and dibs://staff carries the rest.
+func staffBriefing(role string) string {
+	switch role {
+	case core.RoleCoordinator:
+		return "As coordinator you are STAFF, not a louder agent: you may adopt_agent " +
+			"an abandoned mailbox onto a live agent, prune a dormant peer's row and its " +
+			"stale declarations, force_release a claim, and evict or close a space. You " +
+			"still cannot READ another agent's mail: breadth, not intrusion. Read " +
+			"dibs://staff before using any of them."
+	default:
+		return "Read dibs://staff for what the role lets you do."
 	}
 }

@@ -181,17 +181,17 @@ var toolDefs = func() []map[string]any {
 			}, "token", "nonce"),
 		},
 		{
-			"name": "prune", "description": "Remove a FINISHED agent record you are " +
-				"responsible for: your own, or a child you vouched for. Tidying up after " +
-				"yourself, not board administration. Never a peer, because an agent that " +
-				"could remove peers could delete the row saying somebody else is already " +
-				"doing its work. Never an ACTIVE one: sign_off stops an agent, this tidies " +
-				"the record.",
+			"name": "prune", "description": "Remove a FINISHED agent record: your own, or " +
+				"a child you vouched for. A COORDINATOR may also prune a dormant peer, " +
+				"clearing its stale declarations (dibs://staff). Nobody else may: it would " +
+				"delete the row saying somebody else is doing that work. Never an ACTIVE " +
+				"one: sign_off stops an agent, this tidies the record.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"agent": map[string]any{
-					"type":        "string",
-					"description": "id of the finished agent to remove: yourself, or a child you vouched for",
+					"type": "string",
+					"description": "id of the finished agent to remove: yours, a vouched " +
+						"child, or a dormant peer if you are coordinator",
 				},
 			}, "token", "agent"),
 		},

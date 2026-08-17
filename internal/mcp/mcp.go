@@ -621,6 +621,14 @@ func (s *Server) dispatch(
 				"mimeType": "text/markdown",
 			},
 			{
+				"uri": "dibs://staff", "name": "staff",
+				"description": "For COORDINATORS and ADMINS: what the role lets you do, what it " +
+					"deliberately does not, and the two-step reconciliation for an agent that " +
+					"forked a sibling. Ordinary agents do not need it; role-holders do, and " +
+					"`prune`'s own description understates what a coordinator may prune.",
+				"mimeType": "text/markdown",
+			},
+			{
 				"uri": "dibs://plugin", "name": "plugin",
 				"description": "The Dibs plugin for YOUR harness: the actual files, plus " +
 					"an ordered setup procedure where every step carries its own check. " +
@@ -655,6 +663,14 @@ func (s *Server) dispatch(
 			// it can learn how to register well.
 			return cacheable(map[string]any{"contents": []map[string]any{
 				{"uri": p.URI, "mimeType": "text/markdown", "text": skillsDoc},
+			}}, ttlStatic, scopePublic), nil
+		case "dibs://staff":
+			// Ungated like the rest of the documentation. Reading what a
+			// coordinator may do grants nothing: every call it names is
+			// enforced at the call, and an agent that cannot use them is
+			// better off knowing who to ask than guessing.
+			return cacheable(map[string]any{"contents": []map[string]any{
+				{"uri": p.URI, "mimeType": "text/markdown", "text": staffDoc},
 			}}, ttlStatic, scopePublic), nil
 		case "dibs://plugin":
 			// Ungated, like dibs://skills, and for the same reason: an agent

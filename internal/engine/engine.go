@@ -512,10 +512,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		// as a property of the board rather than of the caller.
 		if st := e.MatchStatus(); st.Phase != MatchReady {
 			res["matching"] = st.Phase
-			res["matching_hint"] = "BOARD STATE, not something you did: work-overlap " +
-				"matching is " + string(st.Phase) + " for every agent here, so an absence of " +
-				"overlap warnings is not evidence that you are alone. Coordinate explicitly " +
-				"until it is back. " + st.Hint
+			res["matching_hint"] = matchingHint(st)
 		}
 	}
 	// Every authenticated write carries word of anything waiting.
@@ -893,3 +890,41 @@ var thisHost = sync.OnceValue(func() string {
 	}
 	return h
 })
+
+// matchingHint explains a non-ready matching phase WITHOUT calling a setting a
+// fault.
+//
+// One sentence used to cover all four, ending "Coordinate explicitly until it
+// is back". That is right for a fault and wrong for `suggest-only`, which is
+// the configured default and never "comes back" because it never left. The
+// cost was not cosmetic: an agent read it, concluded a board-wide feature was
+// down, spent a session diagnosing its own declaration as the cause, and filed
+// an outage that was not happening. A coordinator then repeated the diagnosis.
+// Two agents misled by one word.
+//
+// So the shared half stays, because it is true in every phase and it is the
+// one thing silence must not be read as, and the second half now depends on
+// whether anything is actually wrong.
+func matchingHint(st MatchStatus) string {
+	lead := "BOARD STATE, not something you did: work-overlap matching is " +
+		string(st.Phase) + " for every agent here, so an absence of overlap warnings " +
+		"is not evidence that you are alone. "
+	switch st.Phase {
+	case MatchNoThreshold:
+		// A CHOICE, not an outage. Overlaps are still found and reported; they
+		// are simply never acted on without a threshold to act at.
+		lead += "This is the default rather than a fault: overlaps are still " +
+			"detected and suggested, and nothing is joined automatically because no " +
+			"join threshold is configured. Nothing is broken and nothing is waiting " +
+			"to recover. "
+	case MatchIndexing:
+		lead += "This is temporary: the index is still being built, so coordinate " +
+			"explicitly until it finishes. "
+	default:
+		// off, degraded, or anything added later: treat as a fault, which is the
+		// safe reading for a phase this function has not been taught.
+		lead += "Something is wrong rather than unconfigured, so coordinate " +
+			"explicitly until it is back. "
+	}
+	return lead + st.Hint
+}
