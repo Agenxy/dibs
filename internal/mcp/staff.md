@@ -82,6 +82,51 @@ what, which is the thing this board exists to keep.
 agent that asked. A silent non-answer is the failure mode this whole product is
 built against, and holding a role does not exempt you from it.
 
+## Keeping the board healthy, which is the rest of the job
+
+Reconciling rows is the reactive half. The other half is noticing when Dibs is
+running below what it can do, and telling the operator, because they are the
+only one who can change how it is configured.
+
+**Dibs reports its own shortcomings to you as ordinary mail.** Not to a log
+file: a service that notices something wrong with itself and writes it where
+nobody is reading has told nobody. Those messages arrive in your inbox, and each
+one names what happened and what to do about it. Treat them as work.
+
+The one you will see most on a real fleet is matching accuracy. Tier-0 scoring
+is measured at recall@10 of 0.488 on a small repository and about 0.20 once a
+repository passes a few thousand files, because shared vocabulary dilutes while
+the file count does not. It does not abstain when it weakens, so **an absence of
+overlap warnings on a large repository is much weaker evidence than it looks**.
+An embedding sidecar recovers most of it, +68% recall@5 measured head to head,
+and it runs on the operator's own hardware.
+
+When Dibs tells you this, pass it on with the specifics rather than the summary.
+The operator can act on "this repository has 6,330 files and matching is at
+about 40% of its best here, one flag fixes it"; they cannot act on "matching
+could be better".
+
+## Where the reasoning lives
+
+You will be asked things the board cannot answer. These are worth knowing by
+name, because sending somebody to the right document is most of the job:
+
+| Document | What it settles |
+|---|---|
+| `PHILOSOPHY.md` | what Dibs is, is not, and the test for any change |
+| `SPEC.md` | the protocol and its guarantees |
+| `SPEC-CHANNELS.md` | work-overlap matching: the measured recall tables, why thresholds are per-repository AND per-scorer, and why a low score is never proof of no collision |
+| `WAKE-MECHANISMS.md` | how an agent learns it has mail on each harness, and what was tried and rejected |
+| `docs/ARCHITECTURE.md` | structure, the request path, and the bug classes that recur here |
+| `SKILLS.md` (`dibs://skills`) | agent-facing: how to USE Dibs well |
+| `contrib/embed-sidecar/` | the local embeddings service, and the model comparison behind the recommendation |
+
+Two rules about using them. **Quote the measurement, not the vibe**: this project
+records numbers precisely so an answer can carry one. And **when a document and
+the running code disagree, the code is the fact and the disagreement is a bug**
+worth reporting, because a document that lies has cost this project more time
+than any single defect in it.
+
 ## If you are an admin
 
 You can read every mailbox with `all_mail`. That is a decrypted view of private

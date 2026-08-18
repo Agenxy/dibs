@@ -355,6 +355,7 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 		return
 	}
 	scorer := f.withSidecar(ctx, lex)
+	f.recommendSidecar(ctx, eng, dir, lex.Files())
 
 	// Calibrate the notify bar unless the operator set one.
 	//
@@ -808,4 +809,58 @@ func repositoryOf(worktree string) string {
 		return worktree // the repository has no checkout of its own to mine
 	}
 	return primary
+}
+
+// sidecarWorthIt is where the built-in scorer stops being enough.
+//
+// Not a guess. SPEC-CHANNELS.md records tier-0 recall@10 measured across five
+// real repositories: 0.488 at 121 files, 0.229 at 1,142, and about 0.20 from
+// 6,000 upward. Recall roughly halves as a repository grows, because shared
+// vocabulary dilutes while the file count does not, and abstention stays near
+// zero throughout: the scorer is not giving up, it is answering less precisely,
+// which is worse. A thousand files is where the measurements first show it.
+const sidecarWorthIt = 1000
+
+// recommendSidecar tells the coordinator, and the operator when nobody holds
+// that role, that this repository is past what the built-in scorer does well.
+//
+// Dibs measures this at index time and used to keep it to itself. A fleet whose
+// matching is quietly at half its recall has no way to learn that: the board
+// looks the same, declarations are answered, and the absence of a warning reads
+// as "no overlap" rather than as "asked a scorer that is out of its depth". The
+// operator asked for exactly this to be surfaced, and the machinery already
+// existed for Dibs to report its own shortcomings as ordinary mail.
+//
+// Silent when a sidecar is configured, and once per repository per daemon run:
+// a recommendation repeated every index is an alarm, and the Kind dedupes it.
+func (f *scorerFlags) recommendSidecar(ctx context.Context, eng *engine.Engine, dir string, files int) {
+	if f.embedURL != "" || files < sidecarWorthIt {
+		return
+	}
+	eng.ReportFault(ctx, engine.Fault{
+		Kind:   "scorer-below-repo-size:" + dir,
+		Remedy: recommendationFor(f, dir, files),
+		What: fmt.Sprintf("%s has %d files, and the built-in scorer is measured well below its "+
+			"best at that size. Tier-0 recall@10 is 0.488 on a 121-file repository and about "+
+			"0.20 from 6,000 files upward, because shared vocabulary dilutes while the file "+
+			"count does not. Matching still answers; it answers less precisely, and an absence "+
+			"of overlap warnings here is weaker evidence than it looks.", dir, files),
+	})
+}
+
+// recommendationFor is the remedy text, separated so a test can assert it names
+// a command a reader can actually run. "Remedy is what to do. Required: a report
+// without one is an alarm."
+func recommendationFor(f *scorerFlags, dir string, files int) string {
+	_ = dir
+	_ = files
+	_ = f
+	return "Point Dibs at an embeddings service to raise it: `dibd -match-embed-url " +
+		"<url> -match-embed-model <name>`. Measured head to head on identical cases, tier 2 " +
+		"gains +68% recall@5 and +28% MRR, and the gain is at the TOP of the list, which is " +
+		"the part that decides whether two agents meet. It runs on your own hardware: " +
+		"contrib/embed-sidecar/ ships an MLX one, and Ollama, vLLM, TEI, LM Studio and " +
+		"llama.cpp's server all speak the endpoint. Then re-run `dibs calibrate`: thresholds " +
+		"are per-scorer as well as per-repository, so switching without recalibrating " +
+		"silently changes who gets matched. Full numbers in SPEC-CHANNELS.md."
 }
