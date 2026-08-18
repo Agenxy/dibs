@@ -17,6 +17,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/overlap"
+	"github.com/agenxy/dibs/internal/paths"
 )
 
 // Work-overlap scoring, installed at boot. See SPEC-CHANNELS.md.
@@ -622,7 +623,7 @@ func repoRootOf(ctx context.Context, cwd string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", cwd, "rev-parse", "--show-toplevel")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		return strings.TrimSpace(string(out)), nil
+		return repositoryOf(strings.TrimSpace(string(out))), nil
 	}
 	if ctx.Err() != nil {
 		return "", fmt.Errorf("git did not answer within %s (if a permission dialog is "+
@@ -765,4 +766,46 @@ func unborn(ctx context.Context, dir string) bool {
 	// #nosec G204 -- git is a literal and dir came from rev-parse --show-toplevel.
 	err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--verify", "HEAD").Run()
 	return err != nil
+}
+
+// repositoryOf collapses a linked worktree onto the repository it belongs to.
+//
+// THE BUG THIS FIXES, and it is not an edge case. `git rev-parse
+// --show-toplevel` answers with the WORKTREE, so two agents in two worktrees of
+// one repository were indexed under two different roots, scored by two
+// different models, and never compared with each other. They are editing the
+// same code. Worktrees are how a fleet parallelises work on ONE repository
+// precisely so its agents do not collide, so Dibs was blind exactly where it
+// was most needed, and mined the identical history once per worktree while
+// being so.
+//
+// The repository's own checkout is the natural key: every worktree shares its
+// common directory, and any worktree sees the full history, so one index serves
+// them all and their agents are scored against each other.
+//
+// Identify is the one that already knows this. The stdio bridge has resolved
+// worktrees to their parent for `repo_dir` all along while this file did not,
+// which is the disagreement issue #13 predicted, so this uses that
+// implementation rather than adding a third opinion. It is cached, so the
+// common case costs nothing.
+//
+// Falls back to the worktree whenever the answer is not a plain `<repo>/.git`:
+// a separate git dir or a bare repository has no primary checkout to mine, and
+// a wrong key is worse than an unshared one.
+func repositoryOf(worktree string) string {
+	if worktree == "" {
+		return worktree
+	}
+	common, _, _, ok := paths.Identify(worktree).Identity()
+	if !ok || filepath.Base(common) != ".git" {
+		return worktree
+	}
+	primary := filepath.Dir(common)
+	if primary == "" || primary == worktree {
+		return worktree
+	}
+	if fi, err := os.Stat(primary); err != nil || !fi.IsDir() {
+		return worktree // the repository has no checkout of its own to mine
+	}
+	return primary
 }
