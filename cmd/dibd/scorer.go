@@ -62,7 +62,7 @@ type scorerFlags struct {
 	// Without it, precedence was implemented as "is the value still its zero
 	// value?", which silently makes 0 mean "unset". For a threshold, 0 is a
 	// real setting: the -match-join help says so itself ("0 = suggest only,
-	// never join"). So `-match-join 0` lost to a file's 0.5 and the daemon
+	// never join"). So -match-join 0 lost to a file's 0.5 and the daemon
 	// auto-joined against an explicit instruction not to.
 	set map[string]bool
 	// degraded records that a configured embedding service could not be reached,
@@ -79,8 +79,8 @@ func defaultScorerFlags() *scorerFlags {
 }
 
 // markSetFlags records which match flags actually appeared on the command line.
-// flag.Visit walks only those, which is the one way to tell `-match-join 0`
-// from an absent -match-join.
+// flag.Visit walks only those, which is the one way to tell -match-deadline
+// from an absent -match-deadline.
 func (f *scorerFlags) markSetFlags() {
 	if f.set == nil {
 		// A scorerFlags built as a struct literal (tests, and any future caller
@@ -134,7 +134,7 @@ func registerScorerFlags() *scorerFlags {
 
 // applyConfig folds the [match] table in, under the flags.
 //
-// Precedence is flag > environment > file > default, matching how `addr` already
+// Precedence is flag > environment > file > default, matching how addr already
 // resolves. A flag has to win: overriding one setting for one run must never
 // require editing the file everything else reads from.
 func (f *scorerFlags) applyConfig(c MatchConfig) {
@@ -248,9 +248,9 @@ func (f *scorerFlags) applyEnv() {
 func (f *scorerFlags) install(ctx context.Context, eng *engine.Engine) {
 	// Matching is always on. It used to be gated on -match-repo, so the feature
 	// this product exists for was silent on every install that did not know to
-	// set a flag, and there was no constant to default that flag to: the daemon
-	// serves agents across every project open on the machine, so any baked-in
-	// path is wrong for most of them.
+	// set a flag, and there was no constant to default that flag to: the
+	// daemon serves agents across every project open on the machine, so any
+	// baked-in path is wrong for most of them.
 	//
 	// The fleet already knows the answer. Every agent registers with a cwd, and
 	// the tree containing it is exactly the history worth mining, so each
@@ -292,8 +292,8 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 	root, err := exec.CommandContext(topCtx, "git", "-C", repo, "rev-parse", "--show-toplevel").Output()
 	if err != nil {
 		// Every failure below sets a status as well as logging. A feature
-		// that silently switched itself off is indistinguishable from one
-		// that is working and found nothing.
+		// that silently switched itself off is indistinguishable from one that
+		// is working and found nothing.
 		eng.SetMatchStatus(engine.MatchStatus{
 			Phase: engine.MatchOff, Repo: repo,
 			Hint: "matching is off: " + repo + " is not a git repository. " +
@@ -500,10 +500,13 @@ func (f *scorerFlags) withSidecar(ctx context.Context, base overlap.Scorer) over
 // the log rather than silently ignored.
 func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, cwd string) {
 	// Cheap path first: a cwd already resolved to an indexed tree needs no git
-	// at all, so a busy fleet does not spawn a subprocess per registration.
+	// at all, so a busy fleet does not spawn a subprocess per registration. The
+	// eviction pass still runs in the background: a registration is the point at
+	// which a fleet has moved far enough for an idle repository to matter.
 	f.discoverMu.Lock()
 	if root, known := f.rootOf[cwd]; known && f.indexed[root] {
 		f.discoverMu.Unlock()
+		go f.evictUnused(ctx, eng, root)
 		return
 	}
 	f.discoverMu.Unlock()
@@ -512,16 +515,11 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 		// Say that work has STARTED, before any of it happens.
 		//
 		// Indexing begins when an agent first registers from a repository, and
-		// the daemon serves `declare` immediately, so a declaration in the first
-		// moments used to be answered `matching: "off"` with a hint reading "no
-		// repository indexed yet". Both are literally true and together they
-		// read as "you have not configured this", so the honest response is to
-		// go and configure something. The correct response was to wait a second.
-		//
-		// An operator evaluating Dibs lost real time to exactly this and said
-		// so: they went looking for a configuration error that did not exist.
-		// The state to report it with already existed and nothing ever entered
-		// it, which is the worst arrangement of the two.
+		// the daemon serves declare immediately, so a declaration in the first
+		// moments used to be answered matching: off with a hint reading no
+		// repository indexed yet. Both are literally true and together they
+		// read as you have not configured this, so the honest response is to go
+		// and configure something. The correct response was to wait a second.
 		eng.SetMatchStatus(engine.MatchStatus{
 			Phase: engine.MatchIndexing, Repo: cwd, Since: time.Now(),
 		})
@@ -529,8 +527,7 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 		// Resolved BEFORE the dedup, because the unit of work is a repository
 		// and cwd is not one. Keyed by cwd, agents in three subdirectories of
 		// one checkout mined the same history three times, and sixteen such
-		// agents exhausted the ceiling so no other project could ever be
-		// indexed at all.
+		// agents exhausted the ceiling so no other project could ever be indexed.
 		root, err := repoRootOf(ctx, cwd)
 		if err != nil {
 			slog.Info("work-overlap matching skipped a tree it cannot read",
@@ -548,6 +545,14 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 			f.rootOf = map[string]string{}
 		}
 		f.rootOf[cwd] = root
+		f.discoverMu.Unlock()
+
+		// Release indexes for repositories whose agents are all terminal before
+		// checking the ceiling. The current root is retained because this
+		// registration is the evidence that it is in use.
+		f.evictUnused(ctx, eng, root)
+
+		f.discoverMu.Lock()
 		if f.indexed == nil {
 			f.indexed = map[string]bool{}
 		}
@@ -557,8 +562,10 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 		}
 		if len(f.indexed) >= maxIndexedRepos {
 			f.discoverMu.Unlock()
+			hint := fmt.Sprintf("repository index ceiling reached (%d); no live-agent index was available to evict", maxIndexedRepos)
 			slog.Info("work-overlap matching is at its repository ceiling; this tree is not indexed",
-				"repo", root, "ceiling", maxIndexedRepos)
+				"repo", root, "ceiling", maxIndexedRepos, "hint", hint)
+			eng.SetMatchStatus(engine.MatchStatus{Phase: engine.MatchDegraded, Repo: root, Hint: hint})
 			return
 		}
 		f.indexed[root] = true
@@ -568,6 +575,53 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 	}()
 }
 
+// evictUnused releases derived repository indexes that no remaining agent can
+// resume. The core ledger remains authoritative; only the in-memory scorer and
+// discovery bookkeeping are dropped. Stale and dormant agents count as live
+// because they can resume without registering again.
+func (f *scorerFlags) evictUnused(ctx context.Context, eng *engine.Engine, keep string) {
+	cwds, err := eng.ActiveAgentCWDs(ctx)
+	if err != nil {
+		slog.Debug("work-overlap index eviction could not read active agents", "err", err)
+		return
+	}
+
+	live := map[string]bool{keep: true}
+	for _, cwd := range cwds {
+		f.discoverMu.Lock()
+		root, known := f.rootOf[cwd]
+		f.discoverMu.Unlock()
+		if !known {
+			root, err = repoRootOf(ctx, cwd)
+			if err != nil {
+				continue
+			}
+		}
+		live[root] = true
+	}
+
+	var evicted []string
+	f.discoverMu.Lock()
+	for root := range f.indexed {
+		if live[root] {
+			continue
+		}
+		delete(f.indexed, root)
+		for cwd, mapped := range f.rootOf {
+			if mapped == root {
+				delete(f.rootOf, cwd)
+			}
+		}
+		evicted = append(evicted, root)
+	}
+	f.discoverMu.Unlock()
+
+	for _, root := range evicted {
+		eng.RemoveScorerForRepo(root)
+		slog.Info("work-overlap matching evicted an idle repository index", "repo", root)
+	}
+}
+
 // maxIndexedRepos bounds the number of trees mined. High enough for any real
 // fleet, low enough that a stray registration cannot start unbounded work.
 const maxIndexedRepos = 16
@@ -575,8 +629,8 @@ const maxIndexedRepos = 16
 // repoReadable reports why a tree cannot be indexed, or nil if it can.
 //
 // Returns the error rather than a bool because the two reasons are completely
-// different problems for the operator: "not a git checkout" is nothing to fix,
-// while "operation not permitted" is a daemon that has been denied access to a
+// different problems for the operator: not a git checkout is nothing to fix,
+// while operation not permitted is a daemon that has been denied access to a
 // directory it was pointed at, and only the second deserves an explanation.
 func repoRootOf(ctx context.Context, cwd string) (string, error) {
 	// BOUNDED, because git does not always fail: it hangs.
@@ -587,7 +641,7 @@ func repoRootOf(ctx context.Context, cwd string) (string, error) {
 	// shown to a background process, so it waits forever. Found on a real
 	// machine: a rev-parse child of the daemon sat there for four minutes, the
 	// indexing goroutine never returned, and every later registration was
-	// deduplicated against a tree that was still "in progress".
+	// deduplicated against a tree that was still in progress.
 	//
 	// Unbounded work behind a deduplicating latch is a permanent silent
 	// failure, which is the shape this file exists to avoid.
@@ -601,8 +655,7 @@ func repoRootOf(ctx context.Context, cwd string) (string, error) {
 		return strings.TrimSpace(string(out)), nil
 	}
 	if ctx.Err() != nil {
-		return "", fmt.Errorf("git did not answer within %s (if a permission dialog is "+
-			"on screen, answering it and registering again is all that is needed)", gitDeadline)
+		return "", fmt.Errorf("git did not answer within %s (if a permission dialog is on screen, answering it and registering again is all that is needed)", gitDeadline)
 	}
 	if msg := strings.TrimSpace(string(out)); msg != "" {
 		return "", errors.New(msg)
@@ -611,38 +664,15 @@ func repoRootOf(ctx context.Context, cwd string) (string, error) {
 }
 
 // gitDeadline bounds any git the daemon runs against a tree it was told about.
-//
-// Generous on purpose. The first call against a protected folder on macOS puts
-// a permission dialog on the user's screen, and that is a PERSON deciding, not
-// a hang. A 20-second bound killed the git while the dialog was still up, which
-// left the prompt with no process to grant to: the permission could never be
-// given, and the daemon had made the thing it was diagnosing impossible to fix.
-//
-// So the deadline is long enough to read and answer a dialog, and a genuinely
-// hung git costs this once per repository and is then reported. Waiting a few
-// minutes once beats making the grant unobtainable.
 const gitDeadline = 4 * time.Minute
 
-// tccHint explains the macOS case, which is the one that looks like a bug.
-//
-// A launchd agent does not inherit the Full Disk Access granted to the app that
-// installed it, so a daemon started at login is refused ~/Desktop, ~/Documents
-// and ~/Downloads while the same binary run from a terminal reads them fine.
-// Every git call against such a path fails, which empties the project label and
-// leaves matching with nothing to index, and none of that names the cause.
 func tccHint(cwd string) string {
 	if runtime.GOOS != "darwin" || !protectedOnMacOS(cwd) {
 		return "check the path exists and is a git checkout"
 	}
-	return "this is inside a macOS protected folder (Desktop, Documents, Downloads). " +
-		"A daemon started by launchd is not granted access to those, and /usr/bin/git " +
-		"BLOCKS rather than failing, so the call times out. A checkout outside those " +
-		"folders needs no permission at all and is the better answer; granting dibd " +
-		"Full Disk Access also works, but a coordination daemon should not need it. " +
-		"Matching reads file paths and commit subjects, never file contents"
+	return "this is inside a macOS protected folder (Desktop, Documents, Downloads). A daemon started by launchd is not granted access to those, and /usr/bin/git BLOCKS rather than failing, so the call times out. A checkout outside those folders needs no permission at all and is the better answer; granting dibd Full Disk Access also works, but a coordination daemon should not need it. Matching reads file paths and commit subjects, never file contents"
 }
 
-// protectedOnMacOS reports whether a path is inside a TCC-protected folder.
 func protectedOnMacOS(cwd string) bool {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -655,62 +685,4 @@ func protectedOnMacOS(cwd string) bool {
 		}
 	}
 	return false
-}
-
-// notifyFor is the notify bar to run with: the operator's if they set one,
-// otherwise a measured one.
-func (f *scorerFlags) notifyFor(
-	ctx context.Context, dir string, cc *overlap.CoChange, deployed overlap.Scorer,
-) float64 {
-	if f.notify != 0 {
-		return f.notify
-	}
-	cal, ok := f.calibrateNotify(ctx, dir, cc, deployed)
-	if !ok {
-		return f.notify
-	}
-	slog.Info("work-overlap matching calibrated itself",
-		"repo", dir, "notify", fmt.Sprintf("%.3f", cal.Notify),
-		"unrelated_pairs_also_mentioned", fmt.Sprintf("%d of %d", cal.NegAboveNotify, cal.Pairs),
-		"join", "0 (opt in with -match-join)",
-		"override", "-match-notify, or [match] notify_threshold in dibs.toml")
-	return cal.Notify
-}
-
-// calibrateNotify measures a notify threshold on the repository just indexed.
-//
-// The same measurement `dibs calibrate` performs, on the same corpus, at a cost
-// the daemon has already paid for by indexing: milliseconds on a small
-// repository, a couple of seconds on a large one, against the hundreds of
-// milliseconds indexing itself took.
-//
-// A failure returns false and changes nothing. It is reported at INFO rather
-// than swallowed, because "matching is loud" and "matching could not measure
-// its own bar" are the same symptom from outside and only one of them is
-// actionable.
-func (f *scorerFlags) calibrateNotify(
-	ctx context.Context, dir string, cc *overlap.CoChange, deployed overlap.Scorer,
-) (overlap.Calibration, bool) {
-	cases, err := overlap.SampleCommits(ctx, dir, 200, 25, 0)
-	if err != nil || len(cases) == 0 {
-		slog.Info("work-overlap matching could not calibrate itself; every scored match "+
-			"will be mentioned until a notify threshold is set",
-			"repo", dir, "err", err, "fix", "dibs calibrate, then -match-notify <value>")
-		return overlap.Calibration{}, false
-	}
-	// Held out, for the same reason `dibs calibrate` holds out: scoring a
-	// commit against an index that contains it measures memorisation.
-	holdOut := make([]string, 0, len(cases))
-	for _, c := range cases {
-		holdOut = append(holdOut, c.Message)
-	}
-	heldOut, err := overlap.NewLexicalHolding(ctx, dir, cc, holdOut)
-	if err != nil {
-		return overlap.Calibration{}, false
-	}
-	cal, err := overlap.CalibrateWith(ctx, deployed, heldOut, cases)
-	if err != nil || cal.Pairs == 0 {
-		return overlap.Calibration{}, false
-	}
-	return cal, true
 }
