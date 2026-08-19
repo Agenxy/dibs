@@ -139,6 +139,40 @@ func (b *Box) EncryptOp(op *core.Op) error {
 			return err
 		}
 	}
+	// Choices are message CONTENT, and were the one piece of it left in the
+	// clear.
+	//
+	// They become recipient-scoped state on the message, exactly like the body
+	// beside them, and they are written by the same sender for the same reader.
+	// A question's body was sealed and its answers were not, so a copied ledger
+	// showed "Ship it / Hold for the audit / Escalate to legal" next to
+	// ciphertext: the alternatives are frequently the sensitive half, because
+	// they name what was actually on the table. Found by a pre-release review.
+	//
+	// Backward compatible in the direction that matters: open() passes
+	// plaintext through, so a ledger written before this reads exactly as
+	// before, and only new ops are sealed.
+	//
+	// A NEW slice, never in place. Append takes a shallow copy of the op before
+	// calling this (`enc := *op`), and a shallow copy of a struct shares the
+	// backing array of every slice in it. Sealing element by element would
+	// therefore write ciphertext into the caller's own op, which the engine
+	// still holds and core has already stored on the message: the board would
+	// start showing sealed strings as the answers to a live question. The
+	// scalar fields above are safe from this because assigning a string field
+	// on a copy cannot reach the original.
+	if len(op.Choices) > 0 {
+		sealed := make([]string, len(op.Choices))
+		for i, c := range op.Choices {
+			if c == "" {
+				continue
+			}
+			if sealed[i], err = b.seal(c); err != nil {
+				return err
+			}
+		}
+		op.Choices = sealed
+	}
 	return nil
 }
 
@@ -153,6 +187,11 @@ func (b *Box) DecryptOp(op *core.Op) error {
 	}
 	if op.Nonce, err = b.open(op.Nonce); err != nil {
 		return err
+	}
+	for i, c := range op.Choices {
+		if op.Choices[i], err = b.open(c); err != nil {
+			return err
+		}
 	}
 	return nil
 }

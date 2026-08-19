@@ -23,8 +23,24 @@ tasks:
       - tools/appbundle/main.go
     generates:
       - bin/Dibs.app/Contents/MacOS/dibs-notify
+    vars:
+      # The same identity `install` signs the binaries with.
+      #
+      # The bundle was signed ad hoc unless somebody had exported
+      # DIBS_CODESIGN_IDENTITY by hand, which is precisely the arrangement
+      # tools/signid exists to end: notification authorisation is remembered
+      # against the SIGNATURE, so an ad-hoc rebuild is a new app to macOS and
+      # the grant is asked for again. Dibs.app is the one component whose whole
+      # job is putting a notification in front of the person, and it was the one
+      # component left out of the stable identity. Found by a pre-release
+      # review.
+      #
+      # Computed here rather than duplicated in the Go tool, so there stays one
+      # answer to "which identity does this project sign with".
+      SIGNER:
+        sh: go run ./tools/signid
     cmds:
-      - go run ./tools/appbundle -o bin/Dibs.app -version {{.VERSION | default "0.0.0"}}
+      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/appbundle -o bin/Dibs.app -version {{.VERSION | default "0.0.0"}}
 
   presence:
     desc: >-

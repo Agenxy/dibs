@@ -259,24 +259,48 @@ func (p *plan) cutover() error {
 	// with no board and an error message is the worst outcome available here,
 	// and it is worse than whatever failed.
 	restored := false
+	// The directory recovery must use is the one that EXISTS when it runs.
+	//
+	// This passed p.dir unconditionally, and reconcile below may have already
+	// renamed the data directory: with --adopt-dir the recovery then pointed a
+	// daemon at a path that had just been moved out from under it, while
+	// printing that the board was unchanged. Tracked here and updated the
+	// moment the move succeeds.
+	recoverDir := p.dir
 	defer func() {
 		if !stopped || restored {
 			return
 		}
-		if err := startDaemon(p.installed, p.dir, p.unit, p.running); err != nil {
+		if err := startDaemon(p.installed, recoverDir, p.unit, p.running); err != nil {
 			fmt.Fprintf(os.Stderr, "\n%s could not restart the daemon after the failure "+
 				"above: start it with `%s -dir %s`: %v\n",
-				ui.Bold("AND:"), p.installed, p.dir, err)
+				ui.Bold("AND:"), p.installed, recoverDir, err)
 			return
 		}
-		fmt.Fprintf(os.Stderr, "\n%s the daemon was restarted on the build it was "+
-			"already running; the board is unchanged.\n", ui.Bold("recovered:"))
+		// SAY WHICH BUILD. This read "restarted on the build it was already
+		// running", which was never something this code could deliver: the
+		// upgrade replaces the binary in place and keeps no copy of the old one,
+		// so p.installed is the REPLACEMENT, and on the failure where the
+		// replacement is what is wrong this restarted the thing that had just
+		// failed and reported a rollback. An operator reading that goes looking
+		// for a different cause.
+		//
+		// Getting a board back up is still the right move, and it is what this
+		// does; the sentence now matches it. A recovery that puts the previous
+		// build back needs one to put back, which means keeping a copy across
+		// the replacement, and that is a change to how upgrade installs rather
+		// than a wording fix.
+		fmt.Fprintf(os.Stderr, "\n%s the daemon is serving again from %s on %s. This is "+
+			"the NEW build, not a rollback: the board is intact, but if the failure "+
+			"above was the new build itself, install the previous one before relying "+
+			"on it.\n", ui.Bold("recovered:"), recoverDir, filepath.Base(p.installed))
 	}()
 
 	newDir, err := p.reconcile()
 	if err != nil {
 		return err
 	}
+	recoverDir = newDir
 
 	step("starting " + filepath.Base(p.installed))
 	if err := startDaemon(p.installed, newDir, p.unit, p.running); err != nil {

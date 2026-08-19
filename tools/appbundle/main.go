@@ -140,10 +140,15 @@ func run() error {
 	if err := os.WriteFile(filepath.Join(out, "Contents", "Info.plist"), []byte(body), 0o600); err != nil {
 		return err
 	}
-	// Ad-hoc, so the bundle is a valid application and macOS will run it. A
-	// stable identity is the operator's to provide, for the same reason
-	// tools/signcheck gives: notification authorisation is remembered against
-	// the signature, so an ad-hoc rebuild asks again.
+	// Signed with whatever identity the caller selected, falling back to ad-hoc
+	// so the bundle is still a valid application macOS will run.
+	//
+	// The fallback used to be the only path in practice, because nothing set
+	// the variable: `task app` now passes tools/signid's answer, the same one
+	// `task install` signs the binaries with. That matters more here than
+	// anywhere else, since notification authorisation is remembered against the
+	// signature and this bundle exists to raise notifications: an ad-hoc
+	// rebuild is a different app to macOS, and the grant is asked for again.
 	// #nosec G204 -- identity() is DIBS_CODESIGN_IDENTITY or "-", and `out` is
 	// this tool's own -o flag. A build tool run by the maintainer.
 	if o, err := exec.Command("codesign", "--force", "--sign", identity(), out).CombinedOutput(); err != nil {

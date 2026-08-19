@@ -66,6 +66,20 @@ func TestTheAdoptedDirectoryIsASiblingNotAChild(t *testing.T) {
 // Two rules came out of that, and this pins the one a refactor would quietly
 // undo: the daemon is not considered restored until the BOARD answers, so the
 // recovery still fires when the start reported success and produced nothing.
+//
+// WHAT THIS DOES NOT PROVE, said plainly because a reader who skims it will
+// otherwise assume more. It reads the SOURCE for an ordering. It never runs a
+// failed cutover, never starts a daemon, and never shows the recovery putting a
+// board back. A pre-release review made exactly that criticism and it is
+// correct: two defects lived inside the recovery this test sits next to, a
+// directory that had been renamed out from under it and a message claiming a
+// rollback that never happens, and neither is the kind of thing an ordering
+// check can see. Proving those needs cutover's start, stop and verify to be
+// injectable, which is a refactor rather than a test.
+//
+// It is kept because the ordering is genuinely load-bearing and a structural
+// check catches a genuine regression class. It is not a behavioural guarantee
+// and must not be quoted as one.
 func TestARestartIsNotBelievedUntilTheBoardAnswers(t *testing.T) {
 	src, err := os.ReadFile("upgrade.go")
 	if err != nil {

@@ -13,7 +13,7 @@ import (
 // os.ReadFile for an error to decide whether anything came back. That error can
 // never arrive: the file exists because this code made it. So a helper that
 // crashed, was never installed, or drew no window at all left the file exactly
-// as created and the function returned ("", nil) — no answer and no error,
+// as created and the function returned ("", nil): no answer and no error,
 // which every caller treats as a deliberate "not now".
 //
 // The failure it was written to report was therefore the single case it could
