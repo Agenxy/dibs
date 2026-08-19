@@ -1,7 +1,9 @@
 # Dibs (Spaces) SPEC v1.2. IMPLEMENTED
 
-Extends SPEC.md §6, §8, §9. Nothing here changes v1 semantics; §18's scope
-freeze holds, and spaces are inert until `dibd -match-repo` is passed.
+Extends SPEC.md §6, §8, §9. Nothing here changes v1 semantics and §18's scope
+freeze holds. Spaces go live once a repository is indexed, which happens the
+first time an agent registers from one; `-match-repo` only pre-warms a tree
+before anybody arrives.
 
 ## Implementation status
 

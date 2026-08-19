@@ -34,7 +34,7 @@ It takes a few minutes and needs two things beyond Go:
   them `task install` skips it and Touch ID falls back to the admin password;
   nothing else is affected.
 
-Working on one area? The gate splits: `task test` (Go only, seconds),
+The gate splits, if you are working on one area: `task test` (Go only, seconds),
 `task test:panel`, `task test:web`, `task test:space`, `task test:guard`.
 Run the whole chain before opening a pull request.
 

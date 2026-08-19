@@ -96,7 +96,7 @@ the keyboard is the failure this whole product exists to prevent.
 
 This was got wrong once, in the other direction, and the reasoning is worth
 keeping because it is a plausible misreading of rule 5. `additionalContext` on a
-`Stop` hook does not merely inform: Claude Code's documentation says it "keeps
+`Stop` hook does more than inform. Claude Code's documentation says it "keeps
 the conversation going". That looked like driving the harness, so delivery was
 narrowed to work somebody was blocked on and everything else was held for the
 agent's next activation.

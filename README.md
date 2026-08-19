@@ -345,7 +345,7 @@ this README.
    you can read it without this repository, and it is also
    [SKILLS.md](SKILLS.md) here.
 
-A taste of what is in it, because these are the ones that cost the most:
+The ones that have cost agents the most time:
 
 - **An agent is an AGENT, not a task.** Its name is your address (`reviewer`, not
   `refactor-auth`), because mail sent to a task name reads as nonsense.
@@ -361,7 +361,7 @@ A taste of what is in it, because these are the ones that cost the most:
   exits when events arrive, so your harness wakes you. The shell watches; you
   sleep, spending nothing.
 
-Working *on* Dibs rather than with it? [AGENTS.md](AGENTS.md) is the map,
+If you are working *on* Dibs rather than with it, [AGENTS.md](AGENTS.md) is the map,
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) is the territory, and
 [llms.txt](llms.txt) indexes everything.
 
@@ -428,15 +428,23 @@ without asking; this example used to show bob JOINED, which the shipping default
 has never done. `-match-auto-join always` restores unconditional joining if you
 want it.
 
-### Turning it on
+### Tuning it
 
-Matching is **off until you point Dibs at a repository**, because the threshold
-is not something anyone can guess for you:
+Matching runs from the first agent registration, one index per repository, and
+the daemon measures its own notify threshold on the history it has just mined.
+There is nothing to switch on.
+
+What stays off is **joining**. `join_threshold` is 0 until you set it, so Dibs
+suggests and never moves anybody:
 
 ```sh
-dibs calibrate --repo .       # measures YOUR repo, prints two numbers
-dibd -match-repo . -match-join <join> -match-notify <notify> &
+dibs calibrate --repo .    # measures YOUR repo, prints two numbers
+dibd -match-join <join> &  # notify is measured for you; set it only to disagree
 ```
+
+`-match-repo` survives as a pre-warm: it indexes a tree before anybody registers
+from it, which is worth setting for a daemon started at login and worth nothing
+otherwise.
 
 **Stop any daemon already running first.** Dibs refuses to start a second one
 on the same machine, and names the one that is running. That is deliberate: two
@@ -454,8 +462,8 @@ Better still, put the numbers in `dibs.toml` and skip the flags entirely, which
 is what they are for.
 
 **Calibrate first.** Skipping it leaves `join_threshold` at zero, which means
-Dibs suggests agents and never joins one: deliberately, because auto-joining on
-a threshold nobody measured is how every agent ends up in a single agent. Measured
+Dibs suggests spaces and never joins one: deliberately, because auto-joining on
+a threshold nobody measured is how every agent ends up in a single space. Measured
 across five real repositories the calibrated threshold spans a factor of fifteen
 (0.022–0.327); there is no default that is not badly wrong somewhere.
 
@@ -479,11 +487,11 @@ rather than printing a number and hoping.
 
 **Recall@5 near 0.3 is not "solved".** It means that for roughly a third of
 declarations the right file is in the top five: enough to put two agents in the
-same agent often enough to be worth having, and nowhere near enough to trust
+same space often enough to be worth having, and nowhere near enough to trust
 blindly. SPEC-CHANNELS §10.1 governs: **a low score is never proof that two
 agents will not collide.**
 
-Those numbers are **held out**, and the reason matters more than the numbers.
+Those numbers are **held out**, and how they were measured is the part to read.
 `dibs calibrate` evaluates by using a commit message as the query and that
 commit's changed files as the answer, which is the exact pairing the history
 index is built from. Measured naively, this change took recall@5 from 0.288 to
@@ -514,8 +522,8 @@ surface, so it is worth naming them explicitly:
 They are independent: a declaration can produce either, both, or neither.
 `overlaps` needs no index and no threshold, so it works on the first
 declaration and across machines. `spaces` needs the repository indexed and a
-`notify_threshold` above zero, and reports `matching: "indexing"` while the
-index is still building.
+`notify_threshold` above zero, which the daemon measures for itself, and reports
+`matching: "indexing"` while the index is still building.
 
 An operator integrating against Dibs logged `overlaps` and `suggestions`, saw
 empty results three times, and concluded matching was broken. It was working
@@ -551,11 +559,11 @@ the repository containing it is exactly the history worth mining, so each tree
 is indexed the first time an agent turns up in it, up to sixteen of them.
 
 One index per repository, and an agent is scored by the tree it is working in.
-That matters more than it sounds: a co-change model asked about a different
-project's sentence does not decline, it answers confidently and wrongly, which
-is worse than no matching at all. An agent in a tree that is not indexed simply
-gets no semantic suggestions, and still gets the shared-refs and shared-dirs
-signals, which are computed in the core and need no index.
+A co-change model asked about a different project's sentence does not decline;
+it answers confidently and wrongly, which is worse than no matching at all. An
+agent in a tree that is not indexed simply gets no semantic suggestions, and
+still gets the shared-refs and shared-dirs signals, which are computed in the
+core and need no index.
 
 `-match-repo` survives only as a pre-warm, for a daemon started at login that
 should have an index ready before the first agent arrives.
@@ -571,7 +579,7 @@ indexed repository and warns when you are working outside it. Indexing several i
 Retrieval models are asymmetric: a task description and a chunk of code are not
 the same kind of text, and every serious one is trained with a marker saying
 which side it is being given. Dibs applies the right one automatically, keyed off
-the model name. It matters more than model size:
+the model name. Getting the marker wrong costs more than choosing a smaller model:
 
 | scorer (on this repo)     | recall@5 | MRR   | related work clearing the bar |
 |---------------------------|----------|-------|-------------------------------|
@@ -686,7 +694,7 @@ coordinator = ["orchestrator"]   # broadcast, force-release, merge, evict
 admin       = ["fleet-lead"]     # all of that, plus reading every agent's mail
 ```
 
-**Declaring a role in config is a human decision, and that is the whole point.**
+**Declaring a role in config is a human decision.**
 No agent can promote itself: `grant_role` is not an MCP tool, it is admitted only
 on the daemon's admin path, and a system op presented with an agent token is
 refused outright. The file is authority because you own the file: an agent
@@ -820,8 +828,8 @@ Verified against a running daemon, not assumed:
   *retired* the handshake. The reference SDKs encode the same split
   (`HANDSHAKE_PROTOCOL_VERSIONS` vs `MODERN_PROTOCOL_VERSIONS`).
 - **Cacheable list results**: `ttlMs` and `cacheScope` on `server/discover`,
-  `tools/list`, `resources/list` and `resources/read`. It matters more here than
-  most servers: 44 tools whose descriptions carry real corrective detail, re-fetched on every
+  `tools/list`, `resources/list` and `resources/read`. Dibs has more to re-fetch
+  than most servers: 44 tools whose descriptions carry real corrective detail, re-fetched on every
   cold path once there is no session to hold them. Static results are hinted for
   an hour and marked `public`; the board is hinted for two seconds; **an agent's
   mailbox is `private`**, because `public` would let a shared gateway serve one

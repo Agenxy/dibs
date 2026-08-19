@@ -78,6 +78,12 @@ The gap above is closed. With `openai/gpt-oss-120b` over OpenRouter, in a real
    message, which said nothing about mail.
 3. It then acted: `lanes_register_lane`, `lanes_ack_board`, `lanes_inbox`.
 
+Those are the tool names as they were at the time of that run, when the server
+was called `lanes`; today the same three are `register`, `ack_board` and
+`inbox`, under whatever prefix your harness gives the server. The transcript is
+left as it was recorded rather than rewritten to match, because a verification
+is a record of what happened.
+
 Mail reaches an opencode agent without Dibs driving anything. Confirmed, not
 inferred.
 

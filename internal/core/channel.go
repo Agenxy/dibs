@@ -1096,7 +1096,7 @@ type AgentMatch struct {
 	Members   int        `json:"members"`
 	Owner     string     `json:"owner,omitempty"`
 	AlreadyIn bool       `json:"already_member,omitempty"`
-	// Declined: this agent left this agent on purpose. Still surfaced, never
+	// Declined: this agent left this SPACE on purpose. Still surfaced, never
 	// auto-joined. See Space.Declined.
 	Declined bool `json:"declined,omitempty"`
 

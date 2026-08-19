@@ -394,7 +394,7 @@ func (e *Engine) suggestionsFor(ctx context.Context, token string, matches []cor
 		// happens: the policy would silently become advice.
 		if cfg.DirectorRequired && (aboveBar || len(m.SharedIDs) > 0) {
 			s.Action = "awaiting_director"
-			s.Hint = "a coordinator must admit you to this agent (admit); " +
+			s.Hint = "a coordinator must admit you to this space (admit); " +
 				"send one a request naming " + m.Agent
 			out = append(out, s)
 			continue
@@ -403,7 +403,7 @@ func (e *Engine) suggestionsFor(ctx context.Context, token string, matches []cor
 		if !shouldAutoJoin(cfg, m) {
 			if len(m.SharedIDs) == 0 && aboveBar {
 				s.Hint = "close enough to be worth your attention, but this is a SCORE, not a fact: " +
-					"the evidence is the shared files above. Read the agent with read_space and " +
+					"the evidence is the shared files above. Read the space with read_space and " +
 					"join_space if it is really your work. Declaring the same refs (pr:…, gate:…, " +
 					"incident:…) as another agent joins you automatically, because that is not a guess."
 			}
@@ -423,7 +423,7 @@ func (e *Engine) suggestionsFor(ctx context.Context, token string, matches []cor
 // matter what the policy says, or "" when nothing stands in the way.
 func withheldReason(m core.AgentMatch, foreign bool, cwd, repo string) string {
 	if m.Declined {
-		return "not joined automatically: you left this agent deliberately, and Dibs does not " +
+		return "not joined automatically: you left this space deliberately, and Dibs does not " +
 			"put an agent back somewhere it walked out of. join_space if you have changed your mind."
 	}
 	if foreign {
