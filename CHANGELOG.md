@@ -293,6 +293,50 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Two shipped plugins read the daemon's secret from a directory it left
+  behind, and failed silently when it was not there.** `plugins/opencode` and
+  `plugins/pi` defaulted `DIBS_DIR` to `~/.agents`. The daemon has used
+  `~/.dibs` since 0.0.3 and reads the old name only as a legacy directory, so on
+  any install made since, both plugins looked for `local.secret` where nothing
+  was. Neither says so: the read is wrapped, returns null, and every hook in
+  both files returns null on a null key. The agent registered no delivery hook,
+  nothing was logged, and mail simply never arrived, which is indistinguishable
+  from a quiet board. Both now resolve the way the daemon resolves, preferring
+  `~/.dibs` and falling back to the legacy directory only when that is the one
+  that exists.
+
+- **A missing SPACE said "no agent" and sent the agent to look at the roster.**
+  Nine call sites keyed on a space id answered `E_NO_AGENT`, while `E_NO_SPACE`
+  existed alongside them and was used in six others. The hints were the
+  expensive half: `join_space` against a space nobody had opened answered
+  `no agent ghost`, hint `open_space it, or list agents first`. Dibs holds that
+  every error carries a hint naming the corrective call; this named the wrong
+  noun and then the wrong call. `join`, `leave`, `post`, `watch`, `retitle`,
+  `close`, `merge` and both watch paths now answer `E_NO_SPACE`. `E_NO_SPACE`
+  was also missing from SPEC §12's list of codes, before any of this.
+
+- **Three hints told an agent to "read the agent with `read_space`".** The 0.0.3
+  rename left `core.AgentMatch.Agent` holding a space id, so everything written
+  about that field came out saying agent when it meant space. The field is now
+  `Space`, which is what the two rounds of repair above and below both trace
+  back to.
+
+- **The hermes plugin told the reader to install a binary that has never
+  existed** (`hermes mcp add agents --command "$(which agents)"`), six lines
+  above its own output showing `command: .../bin/dibs`. It and `plugins/pi`
+  also advertised a stale count of 25 against a server publishing 44 of them: no
+  plugin README was read by the tool-count guard, and hermes stated the number
+  in a shape the guard cannot match, so both halves had to be wrong for it to
+  survive. The guard now reads every plugin document.
+
+- **The README, the tutorial and SPEC-CHANNELS described matching as something
+  you switch on.** It has indexed every repository the fleet works in since
+  0.0.5, and measured its own notify threshold since. The README's section was
+  headed "Turning it on", SPEC-CHANNELS promised in its fourth line that spaces
+  are inert until `-match-repo` is passed, and the tutorial told the reader to
+  restart the daemon to set a flag that no longer does anything, including a
+  `dibs doctor` transcript showing a check the command has not printed since.
+
 - **A full board refused registrations while naming the wrong ceiling.** One
   static error read "maximum number of agents reached" for both caps, so an
   operator hitting the PERSISTENT limit checked `max_agents`, found the board a
