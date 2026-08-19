@@ -801,3 +801,29 @@ func (e *Engine) wouldTakeHumanIdentity(op *core.Op) bool {
 	}
 	return false
 }
+
+// refuseEmptyAdoption rejects an adoption whose source mailbox holds nothing.
+//
+// Split from exec so the decision can be tested without the loop, for the
+// reason AGENTS.md gives about e.query on a zero-value Engine. Runs ON the loop,
+// so it reads state directly.
+func (e *Engine) refuseEmptyAdoption(from string) error {
+	if from == "" {
+		return nil // a missing target is the fold's error to report, with its own hint
+	}
+	if src := e.state.Agents[from]; src == nil {
+		return nil
+	}
+	for _, m := range e.state.Messages {
+		if m.To == from {
+			return nil
+		}
+	}
+	return &core.Error{
+		Code: "E_NOTHING_TO_ADOPT",
+		Msg:  "agent " + from + " has no mail to move",
+		Hint: "nothing was changed. Adoption moves messages and records nothing else, " +
+			"so there is no effect to be had here. If the row itself is the problem, " +
+			"prune removes it; if you expected mail, check the id on the board",
+	}
+}

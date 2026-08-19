@@ -237,6 +237,12 @@ const (
 	// bug, and the tag it renamed is the data loss.
 	frozenOpFingerprint       = "sha256:644f727b01467102"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
+	// The Message list had no fingerprint, and the list it guards sits in the
+	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
+	// renames the adjacent `"grant": true` with it and this test goes on
+	// passing: the exact co-edited-guard failure AGENTS.md describes, in the
+	// guard written to stop it. Found by a pre-release review.
+	frozenMessageFingerprint = "sha256:fda0b5aee19d524a"
 )
 
 func fingerprint(set map[string]bool) string {
@@ -367,6 +373,19 @@ func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
 				"field. Add it deliberately", tag)
 		}
 	}
+	// The fingerprint, for the reason the constant gives: a text sweep can keep
+	// the tag and the list in step with each other, and cannot keep either in
+	// step with this.
+	if got := fingerprint(frozen); got != frozenMessageFingerprint {
+		t.Errorf("the frozen message-field list changed.\n"+
+			"  got  %s\n  want %s\n\n"+
+			"  If you renamed a tag: every ledger written before the change replays\n"+
+			"  with that field silently zero, and for `grant` or `adopt` that turns\n"+
+			"  an approval into a no-op that reports success. Put the old tag back.\n"+
+			"  If you genuinely added a field, this is deliberate: set\n"+
+			"    frozenMessageFingerprint = %q", got, frozenMessageFingerprint, got)
+	}
+
 	// The other half of the same loss: a field REMOVED is a field that stops
 	// being written, and every reader of an older ledger keeps expecting it.
 	if len(declared) != len(frozen) {

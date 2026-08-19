@@ -466,6 +466,28 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		if err := e.guardHumanMailbox(actor, op.To); err != nil {
 			return nil, err
 		}
+		// An adoption that would move nothing is refused, rather than ledgered.
+		//
+		// The fold records no adoption relationship: moving the messages IS the
+		// whole effect. So adopting an empty mailbox changed no replayable state
+		// and still advanced the serial and answered ok:true with "read them
+		// with inbox", which is advice about mail that does not exist. That
+		// breaks the rule this engine is built on in the direction nobody
+		// notices: an op ledgered though it changed nothing.
+		//
+		// Refused HERE and not in the fold, deliberately. Making Apply skip
+		// finish() would change which ops advance the serial, and every ledger
+		// already holding an empty adoption would replay with a different serial
+		// sequence from the one it was written with, taking every msg_serial and
+		// cursor that references it along. Ingress binds new ops and leaves
+		// history alone, which is the whole reason this check is at this end.
+		//
+		// Found by a pre-release review.
+		if op.AdoptAuthorised {
+			if err := e.refuseEmptyAdoption(op.To); err != nil {
+				return nil, err
+			}
+		}
 	}
 	// Approving an adoption REQUEST needs the same authority as performing one,
 	// decided here for the same reason: recorded at ingress, so replay applies

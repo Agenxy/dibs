@@ -16,7 +16,26 @@ import "time"
 //   - force_release: unstick a shared resource whose holder is gone, instead
 //     of waiting out a lease or restarting the daemon.
 //
-// It gets no power to *read* another agent's mail. Breadth, not intrusion.
+// It gets no power to read a LIVE agent's mail. Breadth, not intrusion:
+// `all_mail` is admin-only, and directing a fleet does not require reading its
+// private correspondence.
+//
+// One exception, stated here because a flat "no power to read another agent's
+// mail" was false and this is the file people quote. `adopt_agent` MOVES a
+// dormant agent's mailbox onto a live one, and reading it afterwards is the
+// entire point: it exists to rescue mail stranded in a row whose owner cannot
+// come back, which is this product's most reported failure. A coordinator may
+// perform it, so a coordinator can end up holding a dormant peer's messages.
+//
+// The limits that make that a rescue rather than a back door: the source must
+// be non-active, the human's row is refused outright on both the direct call
+// and the approve-a-request path, and every adoption is ledgered under the name
+// of whoever did it. It is still a real power over private content, granted on
+// STATUS rather than on any proof of continuity, and the honest description of
+// the role includes it. A pre-release review flagged the older sentence as an
+// authorisation contract that the implementation contradicted, and it was
+// right; `internal/mcp/staff.md` had already documented the edge for the agents
+// holding the role while this file went on denying it.
 
 // IsCoordinator reports whether the agent may use coordinator powers. Admin
 // implies coordinator: a role that could not do less than the tier below it
