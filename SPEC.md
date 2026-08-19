@@ -217,8 +217,8 @@ Two consequences were real bugs, both found only by running the harnesses:
   new bridge and correctly gets a new agent. Verified both ways.
 
   The id is `bridge-<pid>-<random>`, not bare PID: PIDs are recycled, and a
-  recycled PID would silently reattach a fresh agent onto a dead agent's agent
-  and its mail.
+  recycled PID would silently reattach a fresh session onto a dead agent and its
+  mail.
 
 - **`pid` was asked of the model, which cannot know it.** It drives the sweep's
   dead-agent detection, and arrived either absent (`0`, suppressing `proc_alive`

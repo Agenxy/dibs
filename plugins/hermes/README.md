@@ -10,17 +10,17 @@ Driven live against the daemon with a real model. Everything below is measured.
 Hermes has a first-class CLI for this: prefer it over hand-editing the config:
 
 ```bash
-hermes mcp add agents --command "$(which agents)" --args mcp-stdio
+hermes mcp add dibs --command "$(which dibs)" --args mcp-stdio
 ```
 
-It connects immediately, lists the tools it found (25), and asks which to
+It connects immediately, lists the 44 tools it found, and asks which to
 enable. `hermes mcp list` shows the result, `hermes mcp test` re-probes it.
 
 The resulting `~/.hermes/config.yaml` block:
 
 ```yaml
 mcp_servers:
-  agents:
+  dibs:
     command: /Users/you/.local/bin/dibs
     args:
       - mcp-stdio

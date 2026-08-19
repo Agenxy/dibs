@@ -56,8 +56,18 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 	// whole job it is.
 	claim := regexp.MustCompile(`(?:^|[^\w.])(\d+)\s+tools?\b|(?i)tools?\s*\((\d+)\)`)
 
-	checked := 0
-	for _, doc := range []string{
+	// ONE list, read by both checks below.
+	//
+	// There were two, identical and three lines apart, which is the arrangement
+	// this repository is most expensive at: a file added to one and not the
+	// other is checked for digits and not for words, and nothing says so. The
+	// plugin READMEs were in neither, and one of them advertised 25 while the
+	// server published 44. It survived because it ALSO used a shape no pattern
+	// here matches, "the tools it found (25)", where the number trails the noun
+	// with two words in between. Both halves had to be wrong for it to sit
+	// there, which is the usual arrangement. That sentence now reads "the 44
+	// tools it found", which this test can see.
+	docs := []string{
 		"README.md", "SKILLS.md", "CHANGELOG.md",
 		"docs/ARCHITECTURE.md", "internal/mcp/skills.md",
 		// Both carry the count and neither was guarded: SPEC.md states it as a
@@ -65,7 +75,16 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 		// prints it. A number in a transcript goes stale exactly like a number
 		// in a sentence, and is likelier to be believed.
 		"SPEC.md", "docs/TUTORIAL.md",
-	} {
+		// Every shipped plugin doc, because each one tells a reader what they
+		// will see on install.
+		"plugins/README.md", "plugins/hermes/README.md", "plugins/pi/README.md",
+		"plugins/opencode/README.md", "plugins/codex/README.md",
+		"plugins/claude-code/README.md", "plugins/claude-desktop/README.md",
+		"plugins/chatgpt-desktop/README.md",
+	}
+
+	checked := 0
+	for _, doc := range docs {
 		body, err := os.ReadFile(root(doc))
 		if err != nil {
 			// A document that has been renamed or removed should not fail this
@@ -112,11 +131,7 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 	// this check only caught the first, so it passed against the very sentence
 	// that prompted it, which is worse than not having added it.
 	spelled := regexp.MustCompile(`(?i)\b(twenty|thirty|forty|fifty|sixty)([- ]?\w+)?\b`)
-	for _, doc := range []string{
-		"README.md", "SKILLS.md", "CHANGELOG.md",
-		"docs/ARCHITECTURE.md", "internal/mcp/skills.md",
-		"SPEC.md", "docs/TUTORIAL.md",
-	} {
+	for _, doc := range docs {
 		body, err := os.ReadFile(root(doc))
 		if err != nil {
 			continue

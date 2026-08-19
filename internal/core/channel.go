@@ -1755,29 +1755,29 @@ func mergeNotices(src, dst *Space, by string, wasHere []string) []Event {
 // decision reclaimFinishedAgents makes automatically, made on purpose by somebody
 // accountable, and ledgered under their name.
 //
-// Deliberately refuses an OCCUPIED agent rather than emptying it. Closing an agent
+// Deliberately refuses an OCCUPIED space rather than emptying it. Closing a space
 // with members in it would evict them as a side effect of tidying up, and a
 // coordinator that wants that has evict, which says what it does. Same for
 // an unacknowledged announcement: it is the record that something went
-// unanswered, and the board renders announcements through their agent, so closing
+// unanswered, and the board renders announcements through their space, so closing
 // over one hides evidence rather than settling it.
 func (s *State) applySpaceClose(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {
 		return nil, nil, errf("E_NO_AGENT", "check the agent id", "no agent %s", op.Space)
 	}
-	// The agent that OPENED an agent may retire it, without the coordinator role.
+	// The agent that OPENED a space may retire it, without the coordinator role.
 	//
-	// open_space is unprivileged and advertised, so an agent could create an agent
+	// open_space is unprivileged and advertised, so an agent could create a space
 	// and then never end it, and the refusal it got said "only a coordinator may
-	// administer ANOTHER AGENT'S agent" about its own. Telling somebody they may
+	// administer ANOTHER AGENT'S space" about its own. Telling somebody they may
 	// not touch their own thing, in words describing somebody else's, is worse
 	// than the missing power.
 	//
 	// Narrower than directorOf on purpose, and placed here rather than in it:
-	// closing your own finished agent is not the same act as merging your agent
+	// closing your own finished space is not the same act as merging your space
 	// into a stranger's, and directorOf gates both. Every other guard below still
-	// applies: an opener cannot close an agent somebody is in, or one holding an
+	// applies: an opener cannot close a space somebody is in, or one holding an
 	// unanswered announcement, any more than a coordinator can.
 	if ch.OpenedBy != l.ID {
 		if _, err := s.directorOf(l, op); err != nil {

@@ -607,8 +607,13 @@ func TestNoDocumentReadsLikeARenameRanOverIt(t *testing.T) {
 		{"agent agent", "a noun doubled: one of these was `space`"},
 		{"spaces spaces", "a plural noun doubled: one of these was `agents`"},
 		{"space space", "a noun doubled: one of these was `agent`"},
-		{"an agent's agent", "an agent does not have an agent; it has a space"},
-		{"a space's space", "a space does not have a space"},
+		// No article. These read "an agent's agent" for as long as the guard has
+		// existed, and the damage in the tree read "a dead agent's agent", which
+		// the literal article walked straight past: four sites in SPEC.md and the
+		// pi plugin survived every run. A possessive takes any determiner, so
+		// pinning one spells out three quarters of the cases you are not checking.
+		{"agent's agent", "an agent does not have an agent; it has a space"},
+		{"space's space", "a space does not have a space"},
 		{"a agent", "the article was left behind by a rename from a consonant word"},
 		{"an space", "the article was left behind by a rename from a vowel word"},
 		{"a announcement", "the article does not match the noun"},
