@@ -588,9 +588,20 @@ func checkReplay(dir string, cfg Config) error {
 	if _, err := os.Stat(filepath.Join(dir, "ledger.jsonl")); err != nil {
 		return fmt.Errorf("no board at %s: there is nothing to check", dir)
 	}
-	nodeID, err := loadOrCreateNodeID(filepath.Join(dir, "node_id"))
-	if err != nil {
-		return err
+	// LOAD, never create. This is a question about a board, and asking it must
+	// not bring one into being: `dibs upgrade` runs this while the previous
+	// daemon may still be serving, so anything written here is written into a
+	// live data directory by a process that does not own it. A board missing
+	// either file is not a board this build could take over, which is the
+	// question, so saying so is the right answer rather than a failure.
+	nodeID, err := os.ReadFile(filepath.Join(dir, "node_id")) // #nosec G304 -- the operator's own -dir
+	if err != nil || len(nodeID) == 0 {
+		return fmt.Errorf("no node_id at %s: this is not a board a daemon has served, "+
+			"so there is nothing to check", dir)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "key")); err != nil {
+		return fmt.Errorf("no key at %s: the ledger is encrypted and cannot be "+
+			"replayed without it", dir)
 	}
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
 	if err != nil {
@@ -602,7 +613,7 @@ func checkReplay(dir string, cfg Config) error {
 	if old := oldVocabularyFailure(dir); old != nil {
 		return old
 	}
-	led, err := ledger.Open(filepath.Join(dir, "ledger.jsonl"), nodeID, box)
+	led, err := ledger.OpenReadOnly(filepath.Join(dir, "ledger.jsonl"), string(nodeID), box)
 	if err != nil {
 		return err
 	}
@@ -611,7 +622,7 @@ func checkReplay(dir string, cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("reading %s/dibs.toml: %w", dir, err)
 	}
-	st := core.NewState(nodeID, limits)
+	st := core.NewState(string(nodeID), limits)
 	start := time.Now()
 	n, err := led.Replay(st)
 	if err != nil {

@@ -91,7 +91,20 @@ func checkRequired(tool string, raw json.RawMessage, bearerToken, agentNonce str
 	// bearer token above. It is the same fact in both cases: a credential the
 	// harness holds, presented where the harness can actually put it, rather
 	// than where only the model could. See identityFromTransport.
-	if agentNonce != "" {
+	//
+	// ONLY for the calls that establish an identity, which is the same scoping
+	// mcp.go applies when it fills the value in. Without that this marked
+	// `nonce` present on EVERY tool, and unknownGiven below exempts only
+	// `token`, so every ordinary call came back "check_in does not take
+	// \"nonce\"". Configuring a transport identity, which is the entire point of
+	// the feature, broke check_in, declare and inbox for that agent: the call
+	// every agent must make at the start of every activation, refused with a
+	// schema complaint about an argument the agent never sent.
+	//
+	// Reproduced against a live daemon by a pre-release review. It passed every
+	// test here because the tests supply the nonce as an argument, which is
+	// what a model does, and never as the header, which is what a harness does.
+	if agentNonce != "" && establishesIdentity(tool) {
 		present["nonce"] = true
 	}
 

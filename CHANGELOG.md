@@ -5,6 +5,55 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+Found by the pre-release review, which this project requires before every tag and
+runs with a model that did not write the code. The first two were present in
+v0.0.5 and are covered by GHSA-72hq-r6x6-mjwf; the rest existed only on this
+branch and never shipped.
+
+- **The operator's identity was claimable with a guessable credential.** The
+  recovery nonce for the human's own agent was `"human:" + <OS username>`, and
+  registration reattaches on a matching name and nonce and returns that
+  identity's token. So any agent that could run `whoami` could become the person
+  at the board: post, announce, send and read their mail as them, and on this
+  branch approve its own coordinator grant, which the Touch ID path never sees
+  because approving a request does not ask for a fingerprint. On an empty board
+  the same call pre-creates the identity, and the operator is somebody else the
+  first time they open it.
+
+  `internal/core` has no notion of the human, deliberately, so the fold cannot
+  tell that row from any other and a rule there would bind every register op
+  already in a ledger. The refusal is at the engine's ingress, beside the other
+  authorisation verdicts a caller is not trusted to assert.
+
+- **Any local page could drive the board through the operator's browser.** The
+  `Origin` check read the hostname and ignored the port. Cookies are scoped to a
+  host and not a port, `SameSite=Strict` does not separate them either, and
+  `text/plain` is CORS-safelisted, so a page on any other local port could POST
+  JSON carrying a live board session with no preflight. CORS withholds the reply
+  and does nothing about the effect, and the effect included `GrantRole`. Any
+  local process can bind a port, which on this machine includes the agents the
+  daemon exists to coordinate. The origin is now this server's own.
+
+- **The Touch ID prompt spoke the caller's words.** `human_unlock` placed its
+  `note` argument verbatim into the biometric sheet, and any agent may call it,
+  so the caller chose the sentence a person read at the moment they decided
+  whether to hand over their token. The prompt is now the daemon's, names the
+  requesting agent, and says what is being given away; `note` is recorded in the
+  result instead.
+
+- **A single approval could perform two effects.** `grant` and `adopt` were
+  admitted independently and both executed, while the prompt rendered only the
+  grant, so a request could read "make X coordinator?" and move a dormant
+  agent's whole mailbox on the same yes. Refused as a combination, and the
+  prompt no longer depends on that.
+
+- **A question's answers went to disk in the clear.** `choices` is message
+  content and became recipient-scoped state exactly like the body beside it, and
+  only the body was sealed. A copied ledger showed the alternatives next to
+  ciphertext, and the alternatives are frequently the sensitive half.
+
 ### Added
 
 - **Codex is configured over stdio, not HTTP, and that is an identity decision
