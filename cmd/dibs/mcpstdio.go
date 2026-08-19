@@ -290,14 +290,28 @@ func pumpSSE(body io.Reader, out *syncWriter) {
 // rather than risk it, which is the real cost of a disruptive update.
 const upgradeGrace = 10 * time.Second
 
-// dialFailed reports a request that never reached the daemon: connection
-// refused, or the listener gone between the drain and the rebind. Any other
-// error may have been received and acted on, and is returned untouched.
+// dialFailed reports a request that PROVABLY never reached the daemon.
+//
+// Connection refused, and nothing else. Refused means no listener accepted the
+// connection, so the request was never read and re-sending it cannot duplicate
+// an effect. That is the entire safety argument for retrying at all.
+//
+// ECONNRESET was in here and does not qualify. A reset says the peer tore the
+// connection down; it says nothing about how much it had already done. The
+// daemon can read a request, apply it, ledger it, and be killed before the
+// response leaves, and the reset that reaches us is indistinguishable from one
+// that arrived before the daemon looked at it. Retrying a send in that state
+// delivers the message twice, and a retried claim or role change is worse.
+//
+// This mattered because upgrades are exactly when resets happen, which is also
+// exactly when a duplicate is least likely to be noticed. Found by a
+// pre-release review; an agent that wants a retry it can trust has op_id, which
+// is what op_id is for.
 func dialFailed(err error) bool {
 	if err == nil {
 		return false
 	}
-	return errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET)
+	return errors.Is(err, syscall.ECONNREFUSED)
 }
 
 // doWithRestartGrace sends one request, waiting out a daemon that is restarting.

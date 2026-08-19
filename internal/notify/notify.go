@@ -493,18 +493,43 @@ func askInAWindow(helperPath, title, body string, buttons []string) (string, err
 			return "", err
 		}
 	}
-	out, err := os.ReadFile(answer) // #nosec G304 -- a path this function just created
-	if err != nil {
-		// "Dismissed" and "never drawn" used to be the same answer here, and
-		// both were reported as a non-answer with no error. That is the one
-		// thing this project forbids everywhere else: an agent waited out its
-		// deadline, the operator saw nothing, and nothing anywhere said which
-		// of the two had happened. Reported as a failure, because a question
-		// nobody was shown is not a question somebody declined.
-		return "", fmt.Errorf("%w: the window left no answer, so it was dismissed "+
-			"without a press or never drawn at all", ErrNoAnswer)
+	// Judged on CONTENT, not on whether the file could be read.
+	//
+	// This asked `os.ReadFile` for an error, and that error could never come:
+	// CreateTemp above makes the file, so the read always succeeds and the
+	// branch below was unreachable. A helper that crashed, was never installed,
+	// or drew nothing at all left the empty file exactly as created, and this
+	// returned ("", nil): no answer and no error, which every caller reads as a
+	// deliberate "not now". So the failure this branch was written to report
+	// was the one case it could not report. Found by a pre-release review.
+	//
+	// An empty answer is the honest signal either way. A dismissed window
+	// writes nothing and exits non-zero; a helper that never drew writes
+	// nothing and exits non-zero. Both are "nobody pressed anything", and the
+	// caller needs to know that rather than infer patience.
+	return answerFrom(answer)
+}
+
+// answerFrom reads the button the helper recorded, or reports that nobody
+// pressed one.
+//
+// Split out because the shell-out above cannot be exercised in a test and this
+// decision is the whole of the behaviour: there was no behavioural test of the
+// window path at all, which is how the bug in the comment above survived.
+func answerFrom(path string) (string, error) {
+	out, err := os.ReadFile(path) // #nosec G304 -- a path the caller just created
+	if err == nil {
+		if pressed := strings.TrimSpace(string(out)); pressed != "" {
+			return pressed, nil
+		}
 	}
-	return strings.TrimSpace(string(out)), nil
+	// "Dismissed" and "never drawn" are one answer to the caller and neither is
+	// a decision. Reported as a failure, because a question nobody was shown is
+	// not a question somebody declined: an agent otherwise waits out its
+	// deadline while the operator sees nothing and nothing anywhere says which
+	// of the two happened.
+	return "", fmt.Errorf("%w: the window left no answer, so it was dismissed "+
+		"without a press or never drawn at all", ErrNoAnswer)
 }
 
 // ErrNoAnswer means nothing came back from a question that was asked.

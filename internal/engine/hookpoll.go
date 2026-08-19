@@ -144,9 +144,14 @@ func (e *Engine) HookPoll(ctx context.Context, sessionID, event, cwd string, sto
 		if e.noticesWake() {
 			noticesCount = len(notices)
 		}
-		fresh := e.freshForWake(l.ID, time.Now()) || len(announced) > 0 || noticesCount > 0
+		// Computed, not consumed. The wake is only spent below, if this event
+		// is one that can actually carry it. See wakeKeys.
+		now := time.Now()
+		wake := e.wakeKeys(l.ID, now)
+		fresh := len(wake) > 0 || len(announced) > 0 || noticesCount > 0
 		blocked := e.somebodyIsWaiting(l.ID) || len(announced) > 0 || noticesCount > 0
 		if e.deliverToModel(event, fresh, blocked, stopActive) {
+			e.markWoken(wake, now)
 			out["hookSpecificOutput"] = map[string]any{
 				"hookEventName":     event,
 				"additionalContext": strings.TrimRight(hookDigest(l.ID, mail, announced, notices), "\n"),
@@ -539,7 +544,29 @@ type wakeState struct {
 // is not a decision, it is a peer waiting, and the whole point of a deadline is
 // that somebody notices before it expires.
 func (e *Engine) freshForWake(agent string, now time.Time) bool {
-	var woke bool
+	keys := e.wakeKeys(agent, now)
+	e.markWoken(keys, now)
+	return len(keys) > 0
+}
+
+// wakeKeys reports which messages would be announced to this agent now, WITHOUT
+// recording that they were. markWoken does that, and only once the wake has
+// actually been handed to a model.
+//
+// THE BUG THE SPLIT FIXES. This was one function, and HookPoll called it to
+// compute `fresh` BEFORE deliverToModel decided whether this event may deliver
+// at all. UserPromptSubmit never delivers, by design: its additionalContext
+// rides on the human's own prompt, so mail there would make the person the
+// trigger. But the freshness was already spent by the time that was decided, so
+// the Stop that followed found nothing fresh and the agent was never woken.
+// Typing consumed the wake that typing is specifically not allowed to carry.
+//
+// Worse because hook_poll takes no token, deliberately: any caller naming a
+// victim's session id could spend that agent's wake without ever reading a word
+// of its mail. SECURITY.md is explicit that the token-less path must not
+// consume or advance anything, and this was the one thing it advanced.
+func (e *Engine) wakeKeys(agent string, now time.Time) []string {
+	var keys []string
 	live := map[string]bool{}
 	for _, m := range e.state.Inbox(agent) {
 		if m.State != core.MsgStatePending && m.State != core.MsgStateDelivered {
@@ -556,17 +583,25 @@ func (e *Engine) freshForWake(agent string, now time.Time) bool {
 		default:
 			continue
 		}
-		e.wokeFor[key] = now
-		woke = true
+		keys = append(keys, key)
 	}
 	// Bounded by what is actually unread: a mailbox that empties takes its
-	// throttle entries with it, so this cannot grow with the ledger.
+	// throttle entries with it, so this cannot grow with the ledger. Pruning is
+	// not consumption, so it stays here on the read side.
 	for key := range e.wokeFor {
 		if !live[key] && strings.HasPrefix(key, agent+"\x00") {
 			delete(e.wokeFor, key)
 		}
 	}
-	return woke
+	return keys
+}
+
+// markWoken records that these messages were announced. Called only where a
+// wake was really delivered.
+func (e *Engine) markWoken(keys []string, now time.Time) {
+	for _, k := range keys {
+		e.wokeFor[k] = now
+	}
 }
 
 // reattachHint tells an unresolved session that an agent of its own may be
