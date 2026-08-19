@@ -403,3 +403,38 @@ func clampCursor(serial, floor uint64) uint64 {
 func errCursorTooOld(floor uint64) error {
 	return core.ErrCursorTooOld(floor)
 }
+
+// CallerName is a display name for whoever holds this token, for a prompt that
+// has to say WHO is asking.
+//
+// Read through the loop, like every other caller-facing read here. Returns a
+// blunt placeholder rather than an error, because the only consumer is a
+// sentence shown to a person and "an unidentified caller" is both true and the
+// more alarming thing to read, which is the right direction for a prompt about
+// handing over an identity.
+func (e *Engine) CallerName(ctx context.Context, token string) string {
+	res, err := e.query(ctx, func() core.Result {
+		l := e.state.AgentByToken(token)
+		if l == nil {
+			return core.Result{}
+		}
+		name := l.Name
+		if name == "" {
+			name = l.ID
+		}
+		return core.Result{"name": name, "id": l.ID}
+	})
+	if err != nil {
+		return "an unidentified caller"
+	}
+	name, _ := res["name"].(string)
+	id, _ := res["id"].(string)
+	switch {
+	case name == "":
+		return "an unidentified caller"
+	case id != "" && id != name:
+		return name + " (" + id + ")"
+	default:
+		return name
+	}
+}

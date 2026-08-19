@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -77,6 +78,9 @@ func strconvItoa(n int) string { return strconv.Itoa(n) }
 type authGate struct {
 	secret        string
 	adminHashPath string
+	// port is the daemon's own listening port, so an Origin can be checked
+	// against THIS server rather than merely against loopback. See localOrigin.
+	port          string
 	mu            sync.Mutex
 	boot          map[string]time.Time // one-time bootstrap tokens
 	sessions      map[string]time.Time // god-view session cookie tokens
@@ -89,8 +93,13 @@ const (
 	sessionTTL   = 12 * time.Hour
 )
 
-func newAuthGate(secret, adminHashPath string) *authGate {
+func newAuthGate(secret, adminHashPath, listenAddr string) *authGate {
+	_, port, err := net.SplitHostPort(listenAddr)
+	if err != nil {
+		port = ""
+	}
 	return &authGate{
+		port:   port,
 		secret: secret, adminHashPath: adminHashPath,
 		boot: map[string]time.Time{}, sessions: map[string]time.Time{},
 	}
@@ -99,6 +108,12 @@ func newAuthGate(secret, adminHashPath string) *authGate {
 // adminHash reads the admin verifier fresh each time, so `dibs admin
 // set-password` takes effect without a daemon restart. "" = not set.
 func (g *authGate) adminHash() string {
+	// #nosec G703 -- adminHashPath is filepath.Join(*dir, "admin.hash"), where
+	// -dir is the operator's own flag or DIBS_DIR. It has never been caller
+	// input. The taint analysis began reaching it when newAuthGate gained the
+	// listen address, which arrives from the same flags: two operator-supplied
+	// values in one constructor is enough for the pass to connect them, and the
+	// connection is not one an agent can reach.
 	b, err := os.ReadFile(g.adminHashPath)
 	if err != nil {
 		return ""
@@ -286,7 +301,7 @@ func (g *authGate) presenceBootstrap(w http.ResponseWriter, r *http.Request) {
 
 func (g *authGate) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if o := r.Header.Get("Origin"); o != "" && !localOrigin(o) {
+		if o := r.Header.Get("Origin"); o != "" && !g.localOrigin(o) {
 			http.Error(w, "forbidden origin", http.StatusForbidden)
 			return
 		}
@@ -458,11 +473,38 @@ border-radius:7px;padding:9px 14px;display:inline-block;margin-top:6px;color:#e6
 <p>then open the link it prints. Single-use, expires in two minutes.</p>
 </div>`
 
-func localOrigin(origin string) bool {
+// localOrigin reports whether a browser Origin belongs to THIS daemon.
+//
+// THE CSRF THIS CLOSES. It checked the hostname alone and ignored the port, so
+// every page served from any port on this machine passed. A cookie is scoped to
+// a host and not to a port, and SameSite=Strict does not separate them either,
+// so a hostile page on http://localhost:9999 could send a credentialed POST
+// carrying the board session. It does not even need a preflight to do it:
+// text/plain is CORS-safelisted, JSON travels inside it happily, and the
+// handlers did not require a content type. CORS stops the attacker READING the
+// answer and does nothing about the side effect, and the side effect here is
+// GrantRole.
+//
+// Any local process can bind a port, which on this machine includes the agents
+// this daemon coordinates. So the check is now against the origin of this
+// server: the same port, over loopback. A page anywhere else is a different
+// origin and is refused, which is what the browser's own model already says.
+//
+// Found by a pre-release review.
+func (g *authGate) localOrigin(origin string) bool {
 	u, err := url.Parse(origin)
 	if err != nil {
 		return false
 	}
-	h := u.Hostname()
-	return h == "localhost" || h == "127.0.0.1" || h == "::1"
+	switch u.Hostname() {
+	case "localhost", "127.0.0.1", "::1":
+	default:
+		return false
+	}
+	// No port on the gate means it could not be determined; fall back to the
+	// old, weaker rule rather than locking the operator out of their own board.
+	if g.port == "" {
+		return true
+	}
+	return u.Port() == g.port
 }

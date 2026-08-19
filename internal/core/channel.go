@@ -283,9 +283,6 @@ func (s *State) applySpaceRetitle(l *Agent, op *Op, now time.Time) (Result, []Ev
 			"join the space first: its members are who may change what it says about itself",
 			"agent %q is not a member of space %q", l.ID, op.Space)
 	}
-	if len(op.Text) > s.Limits.MaxNameBytes {
-		return nil, nil, errTooLarge("topic", s.Limits.MaxNameBytes)
-	}
 	ch.Topic = op.Text
 	evs := []Event{{
 		Type: "agent.retitled", Agent: l.ID,

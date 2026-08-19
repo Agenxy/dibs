@@ -126,6 +126,32 @@ func Admit(op *Op, lim Limits) error {
 			return errf("E_EMPTY_BODY", "pass the text as `body`",
 				"`body` is empty: a post needs something to say")
 		}
+	case OpUpdate:
+		// Both of these were added to Apply, which is the mistake this file
+		// exists to stop.
+		//
+		// Apply is also the fold. A bound enforced there is retroactive: lower
+		// the limit in a later build and an op this release accepted and
+		// ledgered makes that daemon refuse its own history at boot. The bounds
+		// that predate this are left where they are rather than moved blind, and
+		// the rule written at the top of this file is that NEW ones come here.
+		// These two are new, and they went to the wrong place; a pre-release
+		// review found them.
+		//
+		// Removing them from the fold is safe in the one direction that matters:
+		// a fold can only break replay by getting STRICTER, never by getting
+		// more permissive. Every op already on disk was admitted under these
+		// same numbers.
+		if len(op.Name) > lim.MaxNameBytes {
+			return errTooLarge("name", lim.MaxNameBytes)
+		}
+		if len(op.Description) > lim.MaxDescBytes {
+			return errTooLarge("description", lim.MaxDescBytes)
+		}
+	case OpSpaceRetitle:
+		if len(op.Text) > lim.MaxNameBytes {
+			return errTooLarge("topic", lim.MaxNameBytes)
+		}
 	}
 	return nil
 }

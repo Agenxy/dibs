@@ -285,7 +285,7 @@ func run() error {
 		return err
 	}
 	srv := &http.Server{
-		Addr: listenAddr, Handler: newAuthGate(secret, filepath.Join(*dir, "admin.hash")).wrap(mux),
+		Addr: listenAddr, Handler: newAuthGate(secret, filepath.Join(*dir, "admin.hash"), listenAddr).wrap(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		// No global write timeout: long-polls and SSE hold connections open.
 	}

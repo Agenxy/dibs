@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/notify"
 	"github.com/agenxy/dibs/internal/overlap"
 )
 
@@ -570,10 +571,31 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 			if actor != nil {
 				from, who = actor.ID, whoIs(actor)
 			}
-			// Off the loop: an alert waits for somebody to press a button, and
-			// the single writer holding still for two minutes would stop the
-			// board while one person decides.
-			go e.tellTheHuman(from, who, op.MsgType, op.Body, serial, op.Choices, op.Grant, op.Adopt)
+			// SAY SO WHEN THE PROMISE DOES NOT APPLY.
+			//
+			// The tool description for `send` tells an agent that writing to the
+			// human "notifies them on their machine". On a machine with no route
+			// to a desktop that is false, and tellTheHuman below simply returned:
+			// the message was stored, the call answered success, and the sender
+			// had no way to learn that the half it was relying on did not
+			// happen. An agent that needs an answer then waits out its deadline
+			// against a person who was never interrupted.
+			//
+			// The daemon already reports this once at startup, as a fault, which
+			// tells the OPERATOR. It does not tell the sender, and the sender is
+			// the one making a decision about whether to keep waiting.
+			if !notify.Available() {
+				res["notified"] = false
+				res["notify_hint"] = "delivered to their mailbox, but this machine has " +
+					"no way to raise a desktop notification, so they will see it when " +
+					"they next look at the board rather than now. Do not wait on it as " +
+					"though they had been interrupted"
+			} else {
+				// Off the loop: an alert waits for somebody to press a button, and
+				// the single writer holding still for two minutes would stop the
+				// board while one person decides.
+				go e.tellTheHuman(from, who, op.MsgType, op.Body, serial, op.Choices, op.Grant, op.Adopt)
+			}
 		}
 	}
 	return res, nil

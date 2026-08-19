@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/agenxy/dibs/internal/core"
 )
@@ -65,4 +66,62 @@ func TestHumanAgentDoesNotReadStateOffTheLoop(t *testing.T) {
 		}
 	}
 	wg.Wait()
+}
+
+// HumanAgent must not freeze the daemon by holding its mutex across the loop.
+//
+// THE DEADLOCK THIS CATCHES. HumanAgent took e.human.mu with a defer and held
+// it while calling e.query and e.Do. The writer loop is one goroutine, and the
+// requests it serves take that same mutex: board rendering does, on every
+// call. So HumanAgent could lock the mutex, the writer could pick up a board
+// request, that request would block on the mutex, and HumanAgent would block
+// waiting for the writer now stuck behind it. Nothing else can be served after
+// that: the single receiver of e.ops is gone and every agent hangs.
+//
+// The race probe above cannot see this, which is why it is a separate test: its
+// competing traffic is registrations, and registrations never touch human.mu.
+// Here the competing traffic is Board, which does.
+//
+// Written as a deadline rather than an assertion, because the failure mode is
+// not a wrong answer, it is no answer ever.
+func TestHumanAgentDoesNotFreezeTheWriterLoop(t *testing.T) {
+	e, ctx, cancel := runningEngine(t)
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		var wg sync.WaitGroup
+		for range 4 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for range 100 {
+					if _, _, err := e.HumanAgent(ctx); err != nil {
+						return
+					}
+				}
+			}()
+		}
+		for range 4 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for range 100 {
+					if _, err := e.Board(ctx); err != nil {
+						return
+					}
+				}
+			}()
+		}
+		wg.Wait()
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("HumanAgent and Board deadlocked: the mutex was held across a trip " +
+			"through the writer loop, and the loop serves requests that take it. " +
+			"Nothing on this board can be served again")
+	}
 }

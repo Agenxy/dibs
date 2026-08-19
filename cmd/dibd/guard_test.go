@@ -21,7 +21,7 @@ import (
 // Found by running the project's own linter rather than by reading the code.
 func TestBootstrapRedeemCannotRedirectOffHost(t *testing.T) {
 	dir := t.TempDir()
-	g := newAuthGate("test-secret", filepath.Join(dir, "admin.hash"))
+	g := newAuthGate("test-secret", filepath.Join(dir, "admin.hash"), "127.0.0.1:4777")
 	handler := g.wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -58,7 +58,7 @@ func TestBootstrapRedeemCannotRedirectOffHost(t *testing.T) {
 func TestSessionCookieIsSecureOnlyOverTLS(t *testing.T) {
 	dir := t.TempDir()
 	for _, overTLS := range []bool{false, true} {
-		g := newAuthGate("test-secret", filepath.Join(dir, "admin.hash"))
+		g := newAuthGate("test-secret", filepath.Join(dir, "admin.hash"), "127.0.0.1:4777")
 		handler := g.wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		}))
@@ -181,7 +181,7 @@ func TestEveryAdminPathIsGatedIncludingOnesNotWrittenYet(t *testing.T) {
 // Driven through the real gate rather than a helper, because the question is
 // what an unauthenticated request actually gets.
 func TestLivenessIsReachableWithoutTheSecret(t *testing.T) {
-	gate := newAuthGate("the-secret", filepath.Join(t.TempDir(), "admin.hash"))
+	gate := newAuthGate("the-secret", filepath.Join(t.TempDir(), "admin.hash"), "127.0.0.1:4777")
 	served := gate.wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))
 	}))

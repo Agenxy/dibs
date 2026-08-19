@@ -36,12 +36,28 @@ import (
 // password proves possession of a secret an agent could in principle have been
 // given, while a fingerprint proves somebody is sitting there.
 func (s *Server) humanUnlock(ctx context.Context, a *toolArgs) (core.Result, error) {
-	// The reason is shown inside the system sheet, so it says what is being
-	// approved rather than merely that something is.
-	reason := "act on the Dibs board as yourself"
-	if a.Note != "" {
-		reason = a.Note
-	}
+	// THE SHEET'S SENTENCE IS THE DAEMON'S, and it names who is asking.
+	//
+	// It used to be the CALLER's: `note` was placed verbatim into the biometric
+	// prompt. Any agent may call this tool, so any agent could choose the words
+	// a person reads at the exact moment they are deciding, and a benign
+	// sentence like "open the Dibs board" bought the caller a fingerprint. What
+	// it bought is not small: on Verified this returns the operator's own
+	// bearer token in an ordinary tool result, and with that token the caller
+	// can approve its own coordinator grant. The fingerprint proved a person
+	// was present, never that they agreed to THIS.
+	//
+	// The same rule already governs the approval notification a few files away:
+	// "The TITLE is the daemon's sentence, not the sender's." It was not
+	// applied here, and this is the surface where it matters most, because the
+	// system sheet carries an authority no message body has.
+	//
+	// So the prompt states the stakes and the requester, and `note` stays out
+	// of it. It is still recorded below, because what the caller SAYS it wants
+	// is worth having in the answer; it is simply not allowed to be the
+	// question.
+	who := s.eng.CallerName(ctx, a.Token)
+	reason := unlockReason(who)
 
 	verdict, err := humanauth.Check(ctx, reason)
 
@@ -67,9 +83,13 @@ func (s *Server) humanUnlock(ctx context.Context, a *toolArgs) (core.Result, err
 			return nil, herr
 		}
 		return stamp(core.Result{
-			"unlocked": true,
-			"agent":    agent,
-			"token":    token,
+			// What the caller said it wanted, recorded rather than shown on the
+			// sheet. See the note above the prompt.
+			"requested_by":  who,
+			"stated_reason": a.Note,
+			"unlocked":      true,
+			"agent":         agent,
+			"token":         token,
 			"note": "you are now a participant on this board, not a spectator. This is an " +
 				"ordinary agent identity: every action you take is the same op an agent " +
 				"would send, and the agent reading it cannot tell it came from a person",
@@ -114,4 +134,14 @@ func (s *Server) humanUnlock(ctx context.Context, a *toolArgs) (core.Result, err
 			"hint":     hint,
 		})
 	}
+}
+
+// unlockReason is the sentence shown on the system sheet.
+//
+// A function so it can be asserted on. The guarantee is that nothing a caller
+// supplies appears here: `who` is resolved by the daemon from the token the
+// request authenticated with, and everything else is fixed text.
+func unlockReason(who string) string {
+	return "give " + who + " your identity on the Dibs board: it will be able " +
+		"to act as you, including approving role grants"
 }

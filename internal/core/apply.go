@@ -898,12 +898,9 @@ func genericAgentName(name string) string {
 // merge-when-non-empty is free of that constraint AND is the useful semantic:
 // an agent updating its branch must not have to restate its model.
 func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
-	if len(op.Description) > s.Limits.MaxDescBytes {
-		return nil, nil, errTooLarge("description", s.Limits.MaxDescBytes)
-	}
-	if len(op.Name) > s.Limits.MaxNameBytes {
-		return nil, nil, errTooLarge("name", s.Limits.MaxNameBytes)
-	}
+	// The size bounds for this op are in Admit, not here. A bound in the fold is
+	// retroactive, and this one was found by the test that asserts Apply folds
+	// whatever Admit rejects, once that test learned about update.
 	res := Result{"ok": true, "id": l.ID}
 	// Taking a live agent's name is refused, not suffixed. Register suffixes
 	// because a new agent has no history to protect; here both agents already

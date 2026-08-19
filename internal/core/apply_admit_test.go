@@ -18,15 +18,31 @@ import (
 // So the rule is structural, not a matter of care: restrictions on what callers
 // may DO live in Admit, which runs only at ingress. Apply keeps folding.
 //
-// This test is the general form. It walks every op kind Admit can reject and
-// asserts Apply still folds it, so the next rule added in the wrong place fails
-// here rather than at somebody's next daemon restart.
+// A LIST, not a sweep, and that is worth being honest about: this said it
+// "walks every op kind Admit can reject" and it does not. It walks the ones
+// written below. A pre-release review made exactly that point after finding two
+// new bounds added to Apply that this could not see, so the claim was doing
+// harm: a reader who believed it had no reason to check by hand.
+//
+// Every entry must be added when a rule is added to Admit. There is no
+// enumeration of Admit's rejections to iterate, short of fuzzing every field of
+// every op kind, and a list somebody must remember is still better than the
+// nothing that preceded it.
 func TestApplyFoldsWhateverAdmitRejects(t *testing.T) {
+	long := func(n int) string { return strings.Repeat("x", n+1) }
+	lim := DefaultLimits()
 	rejected := []*Op{
 		{Kind: OpSpaceAnnounce, Body: ""},
 		{Kind: OpSpaceAnnounce, Body: "   "},
 		{Kind: OpSpacePost, Body: ""},
 		{Kind: OpSpacePost, Body: "\n\t "},
+		// Added after both were found in the fold: an agent renaming itself, and
+		// a space being retitled. Neither could break replay yet, because the
+		// limits have not moved; the point is that they COULD the moment a later
+		// build lowers one.
+		{Kind: OpUpdate, Name: long(lim.MaxNameBytes)},
+		{Kind: OpUpdate, Description: long(lim.MaxDescBytes)},
+		{Kind: OpSpaceRetitle, Text: long(lim.MaxNameBytes)},
 	}
 
 	for _, proto := range rejected {

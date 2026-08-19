@@ -144,9 +144,30 @@ func humanNonce() string { return "human:" + humanName() }
 // graveyard of `ada-2`, `ada-3`. Their mail and their agent memberships are the
 // things that must survive, and both hang off that identity.
 func (e *Engine) HumanAgent(ctx context.Context) (agent, token string, err error) {
+	// NEVER hold e.human.mu across a trip through the writer loop.
+	//
+	// THE DEADLOCK THIS AVOIDS. This took the mutex and held it, with a defer,
+	// while calling e.query and e.Do. The loop is a single goroutine, and the
+	// requests it serves take the same mutex: humanIdentityLocked, mayAdopt,
+	// and ordinary board rendering all do. So: this locks human.mu, the writer
+	// picks up a board request, that request blocks on human.mu, and this
+	// blocks waiting for the writer that is now stuck behind it. The one
+	// receiver of e.ops is gone and every agent on the board hangs, not just
+	// the caller.
+	//
+	// Snapshot, release, then talk to the loop. Two callers arriving together
+	// can both reach the registration below, and that is harmless: it carries
+	// the same name and the same nonce, so the nonce path returns the same
+	// identity to both and the second write stores what the first already did.
+	// A duplicated registration is a far better failure than a frozen daemon.
+	//
+	// Found by a pre-release review. The race probe beside this cannot see it:
+	// its competing traffic is registrations, which never touch human.mu.
 	e.human.mu.Lock()
-	defer e.human.mu.Unlock()
-	if tok := e.human.token; tok != "" {
+	cachedID, cachedTok := e.human.agent, e.human.token
+	e.human.mu.Unlock()
+
+	if tok := cachedTok; tok != "" {
 		// Confirm the identity still exists: an admin prune, or a data directory
 		// swapped underneath us, would otherwise leave a token that authorises
 		// nothing and fails on the next action with a bare bad-token error.
@@ -170,9 +191,15 @@ func (e *Engine) HumanAgent(ctx context.Context) (agent, token string, err error
 			alive, _ = res["alive"].(bool)
 		}
 		if alive {
-			return e.human.agent, e.human.token, nil
+			return cachedID, cachedTok, nil
 		}
-		e.human.token, e.human.agent = "", ""
+		// Clear only what we actually observed to be dead: another caller may
+		// have replaced it while we were off the mutex.
+		e.human.mu.Lock()
+		if e.human.token == cachedTok {
+			e.human.token, e.human.agent = "", ""
+		}
+		e.human.mu.Unlock()
 	}
 
 	name := humanName()
@@ -209,7 +236,9 @@ func (e *Engine) HumanAgent(ctx context.Context) (agent, token string, err error
 	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
 		return "", "", err
 	}
+	e.human.mu.Lock()
 	e.human.token, e.human.agent = tok, id
+	e.human.mu.Unlock()
 	return id, tok, nil
 }
 

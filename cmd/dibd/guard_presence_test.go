@@ -19,7 +19,7 @@ func gateWithNoPassword(t *testing.T) *authGate {
 	// A path that does not exist: adminHash() returns "", which is the state a
 	// machine is in before anybody runs `dibs admin set-password`, and the whole
 	// point of what follows.
-	return newAuthGate("the-secret", filepath.Join(t.TempDir(), "admin.hash"))
+	return newAuthGate("the-secret", filepath.Join(t.TempDir(), "admin.hash"), "127.0.0.1:4777")
 }
 
 func bootstrapReq(presence bool, secret string) *http.Request {
