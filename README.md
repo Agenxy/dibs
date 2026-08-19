@@ -747,18 +747,24 @@ Dibs speaks **MCP 2026-07-28** (the stateless core) and the legacy
 your host offers.
 
 Worth knowing, because "Dibs is 2026-07-28" and "my client connected with
-2025-11-25" otherwise look like a contradiction: **as of August 2026 no shipping
-host negotiates 2026-07-28 by default.** In Codex it is an under-development
-feature flag, off by default: verifiable in its source, where the spec is
-`key: "mcp_2026_07_28", stage: UnderDevelopment, default_enabled: false`.
+2025-11-25" otherwise look like a contradiction: **no shipping host negotiates
+2026-07-28 by default.** In Codex it is an under-development feature flag, off
+by default.
 
-**Turning it on does not help.** Measured with the flag resolved true, Codex
-still negotiates `2025-06-18` and sends no `server/discover`: it gates unfinished
-work rather than switching protocol. This document used to tell you to enable it
-and call that a user decision, which contradicted the project's own measurement
-in `plugins/codex/README.md`. Nothing you can set today changes the wire, and
-nothing needs to. Dibs serves both paths and all tools behave identically on
-either.
+**Codex can be switched to it, and two things are required.** The feature
+`mcp_2026_07_28`, AND `CODEX_MCP_PROTOCOL_VERSION=2026-07-28` in that server's
+own `env` block in `~/.codex/config.toml`. The feature alone leaves the
+connection on `2025-06-18`, which is why this section previously said turning it
+on does not help: that measurement was correct and the conclusion drawn from it
+was not, because the second condition had not been found. With both set, Codex
+sends `server/discover` carrying `2026-07-28` and Dibs answers it. Verified on
+2026-08-17 against Codex Desktop `0.148.0-alpha.9`, which then also calls
+`resources/list`, something it never does on the legacy path.
+
+You do not have to do any of this. Dibs serves both paths and every tool behaves
+identically on either. The reason to know is that a harness reaching the modern
+path is exercising the stateless contract, and if something differs there it is
+worth a bug report rather than a shrug.
 
 Surveyed by reading source, not announcements. Re-checked 2026-08-03 against
 each project's latest commit:

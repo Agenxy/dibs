@@ -139,6 +139,9 @@ to recover from. The nonce is the credential; the session id is a convenience.
 ## Other measured facts
 
 - opencode's `initialize` negotiates `2025-11-25` and it never sends
-  `resources/list`, so Dibs resources are pull-only here (same as Codex).
+  `resources/list`, so Dibs resources are pull-only here. (This once read "same
+  as Codex". It is not: Codex reached 2026-07-28 on 2026-08-17 and does call
+  `resources/list` there. A comparison to another harness ages faster than the
+  fact it decorates, which is why this file now states only its own.)
 - `clientInfo` is `{name: "opencode", version: "1.18.4"}`, so the board labels
   opencode agents automatically; only `model` needs self-reporting.

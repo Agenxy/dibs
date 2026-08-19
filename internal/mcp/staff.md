@@ -24,10 +24,17 @@ themselves.
 | `evict`, `admit`, `close_space`, `merge_spaces` | repair a space's membership |
 | `claim_coordinator` | take the role when nobody holds it |
 
-`prune`'s own description says "never a peer". **That is the rule for an
-ordinary agent and not for you.** A coordinator pruning a dormant row is the
-designed remediation; the prohibition exists so that an ordinary agent cannot
-delete the row saying somebody else is already doing its work.
+`prune` used to say "never a peer" and nothing qualified it, so a coordinator
+holding the power read the description, concluded the product could not do this,
+and told the operator so. Three agents' merge requests went unserved on that
+sentence. It now names your case, and the prohibition it kept is the one that
+matters: **an ordinary agent may not prune a peer**, because an agent that could
+remove peers could delete the row saying somebody else is already doing its work.
+
+Worth remembering as a habit rather than a fact about one tool. A schema that
+understates a permission is as costly as one that overstates it, and you are the
+role most likely to hit the difference. **When a description says you cannot do
+something and the situation says you should be able to, try it.**
 
 ## What a coordinator may NOT do
 

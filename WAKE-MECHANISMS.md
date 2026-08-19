@@ -139,7 +139,7 @@ The human is told either way. `systemMessage` goes to the person on every poll
 with news, whatever was decided about the model, because "your agent has mail"
 is exactly what an operator wants to know and it interrupts nobody.
 
-## 2. Is 2026 support hidden behind a flag? No
+## 2. Is 2026 support hidden behind a flag? Yes, behind TWO
 
 - Claude Code 2.1.219: `2026-07-28`, `server/discover`, `subscriptions/listen` → **0
   occurrences**. No MCP-protocol env flag exists.
@@ -148,12 +148,22 @@ is exactly what an operator wants to know and it interrupts nobody.
   `Mcp20260728` ("Enable MCP protocol version 2026-07-28 support") in
   `codex-rs/features/src/lib.rs`, config key `mcp_2026_07_28`. Off by default, so
   the measured 2025-06-18 handshake stands for stable 0.145.0.
-  **TESTED 2026-07-25: the flag does NOT change the wire.** With
+  **TESTED 2026-07-25: the flag alone does NOT change the wire.** With
   `mcp_2026_07_28 = true` resolved true (`codex features list`), a source build of
   codex `61a4488` connecting to Dibs over HTTP still negotiated
   `protocolVersion: 2025-06-18`, and sent ZERO `server/discover` and ZERO
-  `subscriptions/listen`. It saw all 24 tools over the legacy path. Codex marks the
-  flag "under development"; it gates unfinished work, not a protocol switch.
+  `subscriptions/listen`. It saw all 24 tools over the legacy path.
+  **Amended 2026-08-17: that measurement was right and incomplete, and the
+  conclusion drawn from it was wrong.** The flag is one of two conditions, not
+  the whole switch. The second is an environment variable on the SERVER's own
+  config entry, `CODEX_MCP_PROTOCOL_VERSION=2026-07-28`, and the stdio rule is
+  exact (`codex-rs/rmcp-client/src/protocol_mode.rs`): the feature alone stays on
+  2025-06-18, and a wrong value is a hard error rather than a fallback. With both
+  set, Codex Desktop `0.148.0-alpha.9` sends `server/discover` carrying
+  `2026-07-28`, and Dibs answers it. Verified twice, against a probe server that
+  logged the raw method and against Dibs itself. "The flag does not change the
+  wire" was a true observation that became a false conclusion the moment it was
+  written as an answer rather than as a measurement.
 - opencode (1071 branches): no `subscriptions/listen`, no `2026-07-28` anywhere.
 
 Reasonable: the 2026 spec was still an RC (final 2026-07-28). Expect movement after.
