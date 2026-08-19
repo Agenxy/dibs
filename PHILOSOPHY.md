@@ -41,7 +41,8 @@ over the few genuinely exclusive resources.
 ## The three pillars
 
 ### 1. Efficiency
-Lightweight, fast, and scalable to large fleets. Unix-utility character: simple to run,
+Dibs stays light enough to run on a laptop and scales to large fleets. It has
+the character of a Unix utility: simple to run,
 cheap to keep running, boring to operate. Resource budgets are **profiles, not dogma**,
 a laptop-scale default that stays small, and honest headroom to scale up when a fleet
 demands it. We do not buy features with permanent bloat, and we do not cap ourselves out
@@ -59,8 +60,9 @@ store, or a different embedder, should be able to plug it in without forking. De
 must be excellent and dependency-free; alternatives must be possible.
 
 ### 3. Community
-FOSS and genuinely approachable. Architecture, organization, and code quality are
-features: they are what makes contribution possible. Non-negotiables: real tests,
+Free software that someone can actually contribute to. Architecture,
+organisation and code quality are features here, because they are what makes
+contribution possible. Non-negotiables: real tests,
 one-command bootstrap/build, `AGENTS.md` so an agent can orient itself in minutes, and a
 philosophy clear enough that nobody has to guess what belongs here.
 
@@ -97,7 +99,7 @@ API", not "fork it."
    listed.** Directories that gate a listing behind a fee are declined, not negotiated,
    however good their traffic looks: a project that buys placement has made its
    discoverability someone else's lever. Paying for infrastructure we genuinely must own,
-   a domain, hosting, is not the same thing and is fine. This is Agenxy doctrine, not a
+   a domain, hosting, is not the same thing and is fine. This is Agenxy doctrine rather than a
    Dibs preference, and it applies to every repository under the org.
 9. **MCP 2026 is the target; 2025 is a courtesy we are paying down.** The 2026
    revision is where this protocol is going and where Dibs is going with it. The
