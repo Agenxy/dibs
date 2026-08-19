@@ -398,7 +398,7 @@ func (s *State) applySpaceJoin(l *Agent, op *Op, now time.Time) (Result, []Event
 	}
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {
-		return nil, nil, errf("E_NO_AGENT", "open_space it, or list agents first", "no agent %s", op.Space)
+		return nil, nil, errf("E_NO_SPACE", "open_space it, or read the board for open spaces", "no space %s", op.Space)
 	}
 	if _, already := ch.Members[l.ID]; already {
 		return Result{"agent_id": ch.ID, "joined": true, "already": true, "key": ch.Key}, nil, nil
@@ -475,7 +475,7 @@ func (s *State) applySpaceJoin(l *Agent, op *Op, now time.Time) (Result, []Event
 func (s *State) applySpaceExclusive(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {
-		return nil, nil, errf("E_NO_AGENT", "open or join it first", "no agent %s", op.Space)
+		return nil, nil, errf("E_NO_SPACE", "open_space or join_space it first", "no space %s", op.Space)
 	}
 	if _, ok := ch.Members[l.ID]; !ok {
 		return nil, nil, errf("E_NOT_MEMBER", "join_space first", "not a member of %s", ch.ID)
@@ -780,7 +780,7 @@ func (s *State) MemberChannel(l *Agent, name string) (*Space, error) {
 func (s *State) memberChannel(l *Agent, op *Op) (*Space, error) {
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {
-		return nil, errf("E_NO_AGENT", "open_space or join_space first", "no agent %s", op.Space)
+		return nil, errf("E_NO_SPACE", "open_space or join_space first", "no space %s", op.Space)
 	}
 	if s.speaksFor(ch, l.ID) == "" {
 		return nil, errf("E_NOT_MEMBER", "join_space first: subscribers read, members speak",
@@ -1087,9 +1087,21 @@ func (s *State) announcementSerials() []uint64 {
 
 // ── matching ─────────────────────────────────────────────────────────────
 
-// AgentMatch is one candidate agent for a piece of declared work.
+// AgentMatch is one candidate SPACE for a piece of declared work.
+//
+// The field held a space id under the name `Agent` from the 0.0.3 rename until
+// now, and it is where two rounds of damage came from rather than a cosmetic
+// oddity: every sentence written about `m.Agent` came out saying agent when it
+// meant space, so hints told agents to "read the agent with read_space" and a
+// comment block explained closing an agent that was a space throughout. The
+// engine's own Suggestion was corrected in f54d766; this, the thing it is built
+// from, was not.
+//
+// Never serialised: MatchAgentsWith produces it, the engine consumes it and
+// emits Suggestion, and no path marshals one to a client. So the tag moves with
+// the identifier, which is only safe BECAUSE nothing reads it off the wire.
 type AgentMatch struct {
-	Agent     string     `json:"agent"`
+	Space     string     `json:"space"`
 	Topic     string     `json:"topic"`
 	Score     float64    `json:"score"`
 	Shared    []PredFile `json:"shared,omitempty"`
@@ -1360,7 +1372,7 @@ func (s *State) MatchAgentsEvidence(
 		}
 		_, in := ch.Members[agent]
 		out = append(out, AgentMatch{
-			Agent: ch.ID, Topic: ch.Topic, Score: score, Shared: shared,
+			Space: ch.ID, Topic: ch.Topic, Score: score, Shared: shared,
 			Members: len(ch.Members), Owner: ch.Owner, AlreadyIn: in,
 			Declined: ch.Declined[agent], SharedRefs: sharedRefs,
 			SharedIDs: identifying(sharedRefs),
@@ -1371,7 +1383,7 @@ func (s *State) MatchAgentsEvidence(
 		if out[i].Score != out[j].Score {
 			return out[i].Score > out[j].Score
 		}
-		return out[i].Agent < out[j].Agent // deterministic ties
+		return out[i].Space < out[j].Space // deterministic ties
 	})
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
@@ -1527,7 +1539,7 @@ func (s *State) directorOf(l *Agent, op *Op) (*Space, error) {
 	}
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {
-		return nil, errf("E_NO_AGENT", "check the agent id", "no agent %s", op.Space)
+		return nil, errf("E_NO_SPACE", "check the space id on the board", "no space %s", op.Space)
 	}
 	return ch, nil
 }
@@ -1764,7 +1776,7 @@ func mergeNotices(src, dst *Space, by string, wasHere []string) []Event {
 func (s *State) applySpaceClose(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {
-		return nil, nil, errf("E_NO_AGENT", "check the agent id", "no agent %s", op.Space)
+		return nil, nil, errf("E_NO_SPACE", "check the space id on the board", "no space %s", op.Space)
 	}
 	// The agent that OPENED a space may retire it, without the coordinator role.
 	//
@@ -1832,10 +1844,10 @@ func (s *State) applySpaceMerge(l *Agent, op *Op, now time.Time) (Result, []Even
 	}
 	dst := s.Spaces[cleanID(op.To)]
 	if dst == nil {
-		return nil, nil, errf("E_NO_AGENT", "check the destination agent id", "no agent %s", op.To)
+		return nil, nil, errf("E_NO_SPACE", "check the destination space id", "no space %s", op.To)
 	}
 	if dst.ID == src.ID {
-		return nil, nil, errf("E_BAD_ARG", "name two different agents", "cannot merge %s into itself", src.ID)
+		return nil, nil, errf("E_BAD_ARG", "name two different spaces", "cannot merge %s into itself", src.ID)
 	}
 	// Who was already in the destination, BEFORE anything moves. Taken here
 	// because mergeNotices runs after the merge and could not otherwise tell

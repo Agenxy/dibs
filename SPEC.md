@@ -656,7 +656,7 @@ connection the caller authenticated on.
 
 **Errors**: structured `{code, message, hint}` tool results (`isError: true`); `hint`
 names the corrective action. Codes: the §11 set plus `E_BAD_TOKEN, E_MUST_ACK_BOARD,
-E_NO_AGENT, E_NO_SLOT, E_NO_MESSAGE, E_NO_CLAIM, E_MSG_FINAL, E_BAD_TYPE, E_BAD_MODE,
+E_NO_AGENT, E_NO_SPACE, E_NO_SLOT, E_NO_MESSAGE, E_NO_CLAIM, E_MSG_FINAL, E_BAD_TYPE, E_BAD_MODE,
 E_BAD_DISPOSITION, E_BAD_NONCE, E_NAME_TAKEN, E_NONCE_IN_USE, E_OP_ID_CONFLICT,
 E_AGENT_CLOSED, E_CURSOR_TOO_OLD`.
 

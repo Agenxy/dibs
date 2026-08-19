@@ -263,7 +263,7 @@ func TestAChildsWorkMatchesItsParentsSpaceOnTheKeyAlone(t *testing.T) {
 		cwd, cwd, nil, nil, 5)
 	var found *AgentMatch
 	for i := range got {
-		if got[i].Agent == "auth-work" {
+		if got[i].Space == "auth-work" {
 			found = &got[i]
 		}
 	}

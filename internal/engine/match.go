@@ -374,7 +374,7 @@ func (e *Engine) suggestionsFor(ctx context.Context, token string, matches []cor
 			continue
 		}
 		s := Suggestion{
-			Space: m.Agent, Topic: m.Topic, Score: round4(m.Score),
+			Space: m.Space, Topic: m.Topic, Score: round4(m.Score),
 			Members: m.Members, Owner: m.Owner, Shared: predPaths(m.Shared),
 			Action: "consider",
 		}
@@ -395,7 +395,7 @@ func (e *Engine) suggestionsFor(ctx context.Context, token string, matches []cor
 		if cfg.DirectorRequired && (aboveBar || len(m.SharedIDs) > 0) {
 			s.Action = "awaiting_director"
 			s.Hint = "a coordinator must admit you to this space (admit); " +
-				"send one a request naming " + m.Agent
+				"send one a request naming " + m.Space
 			out = append(out, s)
 			continue
 		}
@@ -773,7 +773,7 @@ func (e *Engine) attemptJoin(ctx context.Context, token string, m core.AgentMatc
 	cfg MatchConfig, pred overlap.Prediction, recorded []core.PredFile,
 ) (action string, position int, key string) {
 	res, err := e.Do(ctx, &core.Op{
-		Kind: core.OpSpaceJoin, Token: token, Space: m.Agent,
+		Kind: core.OpSpaceJoin, Token: token, Space: m.Space,
 		Score: m.Score, Threshold: cfg.JoinThreshold,
 		ScorerID: pred.ScorerID, ScorerVersion: pred.Version,
 		Evidence: predPaths(m.Shared), Auto: true,

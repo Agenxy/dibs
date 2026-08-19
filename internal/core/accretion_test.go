@@ -185,7 +185,7 @@ func TestASpaceWithNoMemberDeclarationIsStillFindable(t *testing.T) {
 	}}
 	got = s.MatchAgentsEvidence(a["newcomer"].ID, mine, "", "", nil, nil, 5)
 	for _, m := range got {
-		if m.Agent == "guard-work" && m.Score > 0 {
+		if m.Space == "guard-work" && m.Score > 0 {
 			t.Errorf("a measured, unalike member still scored %v off the agent's union", m.Score)
 		}
 	}
@@ -221,7 +221,7 @@ func TestAnEmptySpaceIsNotSomebodyElsesWork(t *testing.T) {
 		t.Fatal("the agent was reclaimed; this test needs one that persists while empty")
 	}
 	for _, m := range s.MatchAgentsEvidence(a["newcomer"].ID, mine, "", "", nil, nil, 5) {
-		if m.Agent == "abandoned" {
+		if m.Space == "abandoned" {
 			t.Errorf("an empty agent was offered as a match (members=%d, score=%v)",
 				m.Members, m.Score)
 		}
@@ -233,7 +233,7 @@ func TestAnEmptySpaceIsNotSomebodyElsesWork(t *testing.T) {
 	ch.Queue = []string{a["opener"].ID}
 	found := false
 	for _, m := range s.MatchAgentsEvidence(a["newcomer"].ID, mine, "", "", nil, nil, 5) {
-		if m.Agent == "abandoned" {
+		if m.Space == "abandoned" {
 			found = true
 		}
 	}

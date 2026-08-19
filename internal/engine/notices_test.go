@@ -495,16 +495,16 @@ func TestAMergedAwaySpaceAlsoLosesItsFootprint(t *testing.T) {
 // alone" about work it had stopped doing. The bar for "you already coordinate on
 // this" must be the bar used for "this is worth mentioning at all".
 func TestOnlyRelevantMembershipSuppressesANewSpace(t *testing.T) {
-	faint := []core.AgentMatch{{Agent: "old", Score: 0.02, AlreadyIn: true}}
+	faint := []core.AgentMatch{{Space: "old", Score: 0.02, AlreadyIn: true}}
 	if alreadyCoordinating(faint, 0.15) {
 		t.Error("a faint overlap with an agent you are in must not block an agent for new work")
 	}
-	real := []core.AgentMatch{{Agent: "old", Score: 0.40, AlreadyIn: true}}
+	real := []core.AgentMatch{{Space: "old", Score: 0.40, AlreadyIn: true}}
 	if !alreadyCoordinating(real, 0.15) {
 		t.Error("a real overlap with an agent you are in must not spawn a duplicate")
 	}
 	// Somebody else's agent never suppresses: that is a match, not a membership.
-	theirs := []core.AgentMatch{{Agent: "theirs", Score: 0.90, AlreadyIn: false}}
+	theirs := []core.AgentMatch{{Space: "theirs", Score: 0.90, AlreadyIn: false}}
 	if alreadyCoordinating(theirs, 0.15) {
 		t.Error("an agent you are NOT in is a suggestion, not a reason to stay silent")
 	}
