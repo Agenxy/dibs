@@ -108,6 +108,15 @@ linters:
       - path: internal/web/web\.go
         linters: [gocognit, cyclop]
 
+      # Admit is one flat sequence of ingress guards: bound this, reject that,
+      # each with its own comment saying what it caught. It counts high because
+      # there are many of them, not because any of them nests. It sat in
+      # apply.go and inherited that file's exemption until it was moved out to
+      # keep the two halves apart, which is when this had to be said out loud
+      # rather than inherited.
+      - path: internal/core/admit\.go
+        linters: [gocognit, cyclop]
+
       # The pure state machine's time-based lifecycles and the ledger replay
       # loop. Each is one pass with a documented decision per branch, and every
       # branch is covered by the randomized replay-equivalence gate (SPEC §17),

@@ -47,6 +47,30 @@ package core
 // which is the rule that keeps this package a pure state machine. The engine
 // holds that check, next to the identity it already owns.
 func checkGrantRequest(op *Op) error {
+	// One approval performs one effect.
+	//
+	// `grant` and `adopt` were admitted independently and BOTH executed on
+	// approval, while the human's prompt is a grant-first switch that renders
+	// only the grant. So a request could read "make me coordinator?" on the
+	// operator's screen and, on the single yes that answers it, also move a
+	// dormant agent's entire mailbox onto the asker. The operator approved one
+	// thing and performed two, and nothing in the prompt or the response said
+	// so.
+	//
+	// Refused rather than fixed in the display. A prompt that lists every effect
+	// is still a prompt somebody skims, and the honest shape is that a yes means
+	// exactly what it was asked for. Two effects are two requests, which the
+	// operator can approve separately or refuse separately.
+	//
+	// Found by a pre-release review; the display bug and the missing exclusion
+	// were each individually survivable and together made a hidden capability.
+	if op.Grant != "" && op.Adopt != "" {
+		return errf("E_BAD_ARG",
+			"send them as two requests: approving one is a single yes, and it has to "+
+				"mean one thing. The operator can then approve the role and refuse the "+
+				"mailbox, or the other way round",
+			"a request carries a grant or an adoption, never both")
+	}
 	if op.Adopt != "" && op.MsgType != MsgRequest {
 		return errf("E_BAD_TYPE",
 			`send it as type "request": approving one is what moves the mailbox`,

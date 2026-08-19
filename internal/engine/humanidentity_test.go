@@ -94,6 +94,9 @@ func TestAPidRecordedAgainstTheHumanIsCleared(t *testing.T) {
 		Nonce:       humanNonce(),
 		SessionID:   humanNonce(),
 		PID:         4242,
+		// The DAEMON's own op, which is what this reproduces. A caller sending
+		// the same thing is refused now; see TestAnAgentCannotRegisterAsTheHuman.
+		HumanMint: true,
 	})
 	if err != nil {
 		t.Fatal("setup:", err)

@@ -31,6 +31,22 @@ var (
 			"back, with its mail. Registering without the nonce makes you a second " +
 			"agent that cannot read the first one's mail",
 	}
+	// ErrHumanIdentity refuses a registration aimed at the operator's own agent.
+	//
+	// The credential used to be `human:<OS username>`, so this was reachable by
+	// anybody who could run `whoami`: register under it, receive the operator's
+	// token, approve your own coordinator grant. Touch ID guards the board
+	// session and was never consulted, because nothing on that path asks.
+	//
+	// The hint names the legitimate route rather than only refusing, because an
+	// agent that genuinely wants the role has one and should be sent to it.
+	ErrHumanIdentity = &Error{
+		Code: "E_NOT_PERMITTED", Msg: "the operator's identity is not registrable",
+		Hint: "that agent belongs to the person at this machine and only the daemon " +
+			"may mint it. To ask for a role, send them a request: to the board row " +
+			"marked `human: true`, type: \"request\", grant: \"coordinator\", with " +
+			"what you need it for. They approve it on their own machine",
+	}
 	ErrMustAck = &Error{
 		Code: "E_MUST_ACK_BOARD", Msg: "awareness gate: board not acknowledged",
 		Hint: "call check_in() first to see what other agents are doing, then retry",

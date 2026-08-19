@@ -272,6 +272,25 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		return nil, err
 	}
 
+	// The operator's own agent is not registrable from a tool call.
+	//
+	// THE HOLE THIS CLOSES, reproduced end to end before it was written: the
+	// human's recovery nonce was `human:<OS username>`, and registration
+	// reattaches on a matching nonce and hands back the token. So any agent
+	// that could run `whoami` could become the person at the keyboard, and then
+	// approve its own coordinator grant. Touch ID protects the board session
+	// and was never reached, because approving a request never asks for it.
+	//
+	// It has to be HERE. `internal/core` has no notion of the human, so the
+	// fold cannot tell that row from any other, and a rule added to Apply would
+	// bind every register op already in the ledger, including the legitimate
+	// ones that minted the identity in the first place. This is the same
+	// placement, and the same reasoning, as ClaimVerified and AdoptAuthorised
+	// directly above.
+	if !op.HumanMint && e.wouldTakeHumanIdentity(op) {
+		return nil, core.ErrHumanIdentity
+	}
+
 	// `to: "coordinator"` reaches whoever holds the role.
 	//
 	// An agent asking for its identity back does not know, and should not have

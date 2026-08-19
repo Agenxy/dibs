@@ -146,11 +146,30 @@ func humanNonce() string { return "human:" + humanName() }
 func (e *Engine) HumanAgent(ctx context.Context) (agent, token string, err error) {
 	e.human.mu.Lock()
 	defer e.human.mu.Unlock()
-	if e.human.token != "" {
+	if tok := e.human.token; tok != "" {
 		// Confirm the identity still exists: an admin prune, or a data directory
 		// swapped underneath us, would otherwise leave a token that authorises
 		// nothing and fails on the next action with a bare bad-token error.
-		if l := e.state.AgentByToken(e.human.token); l != nil {
+		//
+		// Read THROUGH the loop. This called state.AgentByToken directly from
+		// whichever goroutine wanted the human, and that method iterates
+		// State.Agents while the writer mutates it on every registration.
+		// e.human.mu protects the cached fields beside it and nothing in core's
+		// maps, so it was a plain data race: a targeted -race probe reported
+		// several and ended in `fatal error: concurrent map iteration and map
+		// write`, which takes the daemon down.
+		//
+		// RepairHumanProcess and HumanTouch had already been corrected for
+		// exactly this, by an earlier review, and this one was missed both
+		// times. The ordinary suite stays green because nothing in it calls
+		// HumanAgent concurrently with registrations.
+		alive := false
+		if res, qerr := e.query(ctx, func() core.Result {
+			return core.Result{"alive": e.state.AgentByToken(tok) != nil}
+		}); qerr == nil {
+			alive, _ = res["alive"].(bool)
+		}
+		if alive {
 			return e.human.agent, e.human.token, nil
 		}
 		e.human.token, e.human.agent = "", ""
@@ -159,6 +178,8 @@ func (e *Engine) HumanAgent(ctx context.Context) (agent, token string, err error
 	name := humanName()
 	res, err := e.Do(ctx, &core.Op{
 		Kind: core.OpRegister, Name: name,
+		// The one registration allowed to be this identity. See core.Op.HumanMint.
+		HumanMint:   true,
 		Description: "the human at the board",
 		AgentKind:   core.KindPersistent,
 		Nonce:       humanNonce(),
@@ -394,8 +415,18 @@ func (e *Engine) approveForHuman(from, who, body string, serial uint64, grant, a
 	// person read, a request that says "just need to check something" could
 	// carry grant: coordinator and be approved by somebody who never saw the
 	// word. The body is still shown, as the reason, underneath.
+	//
+	// Every effect, not the first one. This was a switch, so a request carrying
+	// BOTH a grant and an adoption rendered as "make X coordinator?" and moved
+	// a mailbox on the same yes. core.Admit now refuses that combination, and
+	// this no longer relies on it: if a second effect ever reaches here, the
+	// person reads it rather than approving it blind. A prompt that can only
+	// describe one of two things is the wrong place to put the assumption that
+	// there is only ever one.
 	title := "Dibs · " + from + " requests"
 	switch {
+	case grant != "" && adopt != "":
+		title = "Dibs · make " + from + " " + grant + " AND give it " + adopt + "'s mail?"
 	case grant != "":
 		title = "Dibs · make " + from + " " + grant + "?"
 	case adopt != "":
@@ -711,3 +742,33 @@ func said(who, body string) string {
 // Not forever: a request nobody answers has to end, or the board fills with
 // asks whose context is long gone and whose askers have moved on.
 const humanDeadline = 24 * time.Hour
+
+// wouldTakeHumanIdentity reports whether a caller's op would land on the
+// operator's own agent.
+//
+// Split from exec so the decision is testable: on a zero-value Engine
+// e.query() blocks forever rather than failing, so anything reachable only
+// through the wrapper is effectively untested. See AGENTS.md.
+//
+// Two ways in, and both are closed. The nonce may RESOLVE to the human's row on
+// a board where it already exists, and it may simply BE the mint credential on
+// a board where it does not: pre-creating the row on a fresh daemon is the same
+// takeover a day earlier. The (name, session_id) path needs no guard, because
+// it refuses any agent that already holds a nonce and the human always does.
+func (e *Engine) wouldTakeHumanIdentity(op *core.Op) bool {
+	if op == nil || (op.Kind != core.OpRegister && op.Kind != core.OpResume) {
+		return false
+	}
+	if op.Nonce == "" {
+		return false
+	}
+	if op.Nonce == humanNonce() {
+		return true
+	}
+	if h := e.humanIdentityLocked(); h != "" {
+		if id, ok := e.state.Nonces[op.Nonce]; ok && id == h {
+			return true
+		}
+	}
+	return false
+}

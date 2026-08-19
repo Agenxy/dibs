@@ -4,7 +4,7 @@
   "title": "Dibs",
   "description": "Tells an AI agent when another is already doing its work. Board, typed mail, directory claims.",
   "version": "0.0.5",
-  "websiteUrl": "https://github.com/Agenxy/dibs",
+  "websiteUrl": "https://agenxy.org/projects/dibs/",
   "repository": {
     "url": "https://github.com/Agenxy/dibs",
     "source": "github"
