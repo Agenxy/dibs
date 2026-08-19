@@ -78,11 +78,11 @@ func TestTheHumanIsToldWhoIsAsking(t *testing.T) {
 	l := &core.Agent{
 		ID: "asker-3", Name: "asker",
 		Agent: &core.AgentInfo{
-			Harness: "Claude Code", Project: "api", Branch: "main", Host: "MacMarine",
+			Harness: "Claude Code", Project: "api", Branch: "main", Host: "workshop-2",
 		},
 	}
 	who := whoIs(l)
-	for _, want := range []string{"asker-3", "Claude Code", "api", "MacMarine"} {
+	for _, want := range []string{"asker-3", "Claude Code", "api", "workshop-2"} {
 		if !strings.Contains(who, want) {
 			t.Errorf("the identity line omits %q, so a person cannot place this agent "+
 				"against anything they have open: %s", want, who)
