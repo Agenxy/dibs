@@ -342,6 +342,60 @@ branch and never shipped.
 
 ### Fixed
 
+- **Pinning an agent's identity broke every call that agent then made.** The
+  transport nonce counted as a supplied argument for every tool, while the
+  unknown-argument check exempts only `token`, so an agent whose harness pinned
+  its identity was refused `check_in` with a schema complaint about an argument
+  it never sent. That is the call every agent must make at the start of every
+  activation, so configuring the feature broke the agent that configured it.
+
+- **`dibd -check` repaired the board it was asked to inspect.** It replays a
+  board to answer whether this build could take over from the daemon now
+  running, and `dibs upgrade` runs it before the cutover, which means while the
+  old daemon may still be serving. It opened the ledger read-write, so it
+  created files in a directory it does not own and truncated a torn final
+  line, and a torn final line is what a running writer looks like from outside.
+  Measured with a 17-byte partial record: the command reported success and left
+  the ledger at 0 bytes. It now loads rather than creates, opens read-only, and
+  reports a torn tail instead of repairing it.
+
+- **The bridge's memory outranked the operator's configuration.** A remembered
+  nonce was injected into the arguments before the pinned identity was attached
+  as a header, and the daemon prefers a stated nonce over a transport one, so
+  `DIBS_AGENT_NONCE` was silently overruled and the session reattached to
+  whichever agent the bridge happened to remember.
+
+- **One checkout was several identities.** The bridge's nonce store said it
+  keyed by repository root and nothing supplied one, so every session was keyed
+  by the exact subdirectory it started in: the same role launched from the
+  repository root and from a subdirectory became two agents. It now walks up for
+  the checkout.
+
+- **The nonce store could lose every identity on the machine.** An unlocked
+  read-modify-truncate-write of a file every bridge shares, and a decode failure
+  reads as an empty map, so one interrupted write discarded the lot. Each lost
+  entry is a fresh nonce and therefore a sibling. Serialised and written
+  atomically now.
+
+- **A branch-only `update` erased the agent's description.** The tool invites
+  branch-only and title-only calls, and an omitted field and an explicitly
+  emptied one were the same value by the time the op was built.
+
+- **Approving a request from an agent that had retired still performed it.** The
+  role was granted to an agent that cannot act, and an adopted mailbox was moved
+  into one whose token has been blanked and which cannot resume, so a
+  coordinator approving a rescue moved the rescued mail somewhere unreadable and
+  was told it worked.
+
+- **The board could be framed.** Cookies are host-scoped and not port-scoped, so
+  a page on another local port could frame the authenticated board with its
+  session attached and drive it through its own script, whose origin is this
+  daemon's. `frame-ancestors 'none'` and `X-Frame-Options: DENY` now.
+
+- **A fault found before anybody was on the board was never retried.** The
+  startup reachability check runs before any agent has registered, so there was
+  nobody to tell, and nothing tried again once somebody arrived.
+
 - **Two shipped plugins read the daemon's secret from a directory it left
   behind, and failed silently when it was not there.** `plugins/opencode` and
   `plugins/pi` defaulted `DIBS_DIR` to `~/.agents`. The daemon has used
