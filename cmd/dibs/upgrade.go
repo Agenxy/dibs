@@ -402,8 +402,13 @@ func (p *plan) verify(newDir string) error {
 			"registered agent returns by re-registering with its nonce",
 			ui.Dim("note"), after.Agents, p.before.Agents)
 	}
-	say("%s serial %d, %d agent(s), no agent had to re-register",
-		ui.Bold("upgraded:"), after.Serial, after.Agents)
+	// SAY WHAT WAS MEASURED. verify compares a serial and a count, and nothing
+	// about identity or registration events, so "no agent had to re-register"
+	// is a claim this code cannot make. It also printed unconditionally, two
+	// lines under a note explaining that a lease MAY have lapsed and an agent
+	// returns by re-registering: the same paragraph both warned of it and
+	// denied it. Found by a pre-release review.
+	say("%s serial %d, %d agent(s)", ui.Bold("upgraded:"), after.Serial, after.Agents)
 	if p.inherited != "" && !p.opts.adoptDir {
 		say("%s %s is named by an older version. Nothing is wrong; `dibs upgrade "+
 			"--adopt-dir` moves it and repoints the service in one step",

@@ -58,3 +58,54 @@ func TestThePanelPayloadCarriesNoBodies(t *testing.T) {
 			"redaction: %.200s", blob)
 	}
 }
+
+// The WHOLE result, as a host receives it, carries no bodies outside `content`.
+//
+// The previous test serialised panelMeta, and there are two other carriers:
+// detail:true puts the complete board into the bootstrap, and a host that
+// declares UI support gets the panel payload merged there too. A panel cached
+// from an older build still contains the code that pushes every body back
+// through ui/update-model-context, so both handed it exactly what the redaction
+// had removed. Testing the redactor rather than the result is what let that
+// stand. Found by a pre-release review, on the fix for the same leak.
+func TestOnlyTheAgentsOwnContentCarriesBodies(t *testing.T) {
+	msgs := []*core.Message{
+		{Serial: 1, From: "peer", To: "me", Type: core.MsgNotify, Body: "SECRET-IN-BOOTSTRAP"},
+	}
+	// act_token is what makes panelBootstrap return anything at all, and the
+	// bootstrap is the carrier under test. Without it this exercised nothing and
+	// passed against the leaking code, which is the trap this whole test exists
+	// to stop falling into.
+	res := core.Result{
+		"agent_id": "me", "act_token": "tok", "view": "mail",
+		"inbox": core.Result{"messages": msgs},
+	}
+
+	for _, tc := range []struct {
+		name               string
+		detail, declaredUI bool
+	}{
+		{"plain", false, false},
+		{"detail requested by the model", true, false},
+		{"a host that declares UI support", false, true},
+		{"both", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out := showBoardResult(res, tc.detail, tc.declaredUI)
+
+			// `content` is the agent's own channel and may carry anything.
+			content := out["content"]
+			delete(out, "content")
+			blob, err := json.Marshal(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(blob), "SECRET-IN-BOOTSTRAP") {
+				t.Errorf("a body reached a carrier the panel can read:\n  %.500s", blob)
+			}
+			if content == nil {
+				t.Error("no content: the agent must still get its own result")
+			}
+		})
+	}
+}

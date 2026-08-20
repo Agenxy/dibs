@@ -349,7 +349,18 @@ func showBoardResult(res core.Result, detail, declaredUI bool) map[string]any {
 		// the MODEL, and what the host declares about rendering panels for the
 		// human has no bearing on whether the agent gets what it asked for.
 		if detail {
-			boot["board"] = fullMap
+			// REDACTED into the bootstrap, whole into `content`.
+			//
+			// `boot` is the panel's carrier, and a panel cached from an older
+			// build still contains the code that interpolates every body into
+			// ui/update-model-context. So putting the complete result here
+			// handed it back exactly what the redaction had just removed from
+			// _meta, and the claim that a cached panel cannot share what it was
+			// never given was false. The MODEL still gets the full detail it
+			// asked for: showBoardResult puts it in `content`, which is the
+			// agent's own private channel. Found by a pre-release review, on
+			// the fix for the same leak.
+			boot["board"] = redactBodies(fullMap)
 		}
 
 		// And on a host that says it renders panels, the BOARD goes with it.
@@ -376,7 +387,9 @@ func showBoardResult(res core.Result, detail, declaredUI bool) map[string]any {
 		// from _meta, so gating the payload itself starved it silently. Gating a
 		// duplicate cannot starve anyone.
 		if declaredUI {
-			for k, v := range payload {
+			// The same rule: this is the panel's copy. See the note above.
+			safe, _ := redactBodies(payload).(core.Result)
+			for k, v := range safe {
 				if _, taken := boot[k]; !taken {
 					boot[k] = v
 				}

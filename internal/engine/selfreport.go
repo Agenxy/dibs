@@ -213,7 +213,9 @@ func (e *Engine) dibsAgent(ctx context.Context) (agent, token string, err error)
 	e.faults.idMu.Lock()
 	defer e.faults.idMu.Unlock()
 	res, err := e.Do(ctx, &core.Op{
-		Kind: core.OpRegister, Name: dibsName,
+		// The one registration allowed to be this identity, like the human's.
+		HumanMint: true,
+		Kind:      core.OpRegister, Name: dibsName,
 		Description: "Dibs itself, reporting faults it found in its own operation",
 		AgentKind:   core.KindPersistent,
 		Nonce:       dibsNonce(),

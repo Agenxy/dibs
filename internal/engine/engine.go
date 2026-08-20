@@ -458,6 +458,10 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		}
 	}
 
+	if err := e.refuseNoOpRetitle(op); err != nil {
+		return nil, err
+	}
+
 	// An omitted description keeps the one the agent already has.
 	//
 	// Resolved at ingress and written INTO the op, so the ledger records the

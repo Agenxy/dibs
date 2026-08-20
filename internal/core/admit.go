@@ -64,6 +64,21 @@ func Admit(op *Op, lim Limits) error {
 	if err := checkGrantRequest(op); err != nil {
 		return err
 	}
+	// Choices only mean something on a QUESTION.
+	//
+	// Admit bounded them and never asked what they were attached to, and Apply
+	// stores them on any message, so send(type:"notify", choices:[...]) reported
+	// success and wrote an option set nothing will ever render: a request uses
+	// fixed approve and deny, and a notify or a handoff cannot be answered at
+	// all. The sender is told it offered a choice and no reader will ever see
+	// one. Found by a pre-release review.
+	if len(op.Choices) > 0 && op.MsgType != MsgQuestion {
+		return errf("E_BAD_TYPE",
+			`send it as type "question": a request is approved or denied, and a notify `+
+				"or a handoff is not answered at all, so choices on those would be "+
+				"recorded and never shown to anybody",
+			"a %s cannot carry choices", op.MsgType)
+	}
 	if len(op.Choices) > MaxChoices {
 		return errTooLarge("choices", MaxChoices)
 	}

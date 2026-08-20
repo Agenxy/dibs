@@ -794,6 +794,25 @@ func (e *Engine) wouldTakeHumanIdentity(op *core.Op) bool {
 	if op.Nonce == humanNonce() {
 		return true
 	}
+	// The daemon's OWN reporting identity is reserved on the same terms.
+	//
+	// `dibs` registers lazily with the fixed nonce "system:dibs", which is a
+	// constant in this repository and therefore public. An agent presenting it
+	// is handed a rotated token and speaks as the thing that reports faults: a
+	// trusted source, on a board where an agent reading "Dibs found a fault"
+	// has no way to check who wrote it. Registering some OTHER name against
+	// that nonce is worse in a quieter way, because the daemon's own later
+	// registration then fails with E_NONCE_IN_USE and ReportFault logs and
+	// drops the one-shot report, so the diagnostics go silent and nothing says
+	// why.
+	//
+	// The guard existed and covered one identity. Two identities are minted by
+	// this daemon and only one of them was reserved, which is the kind of gap
+	// that comes from fixing an instance instead of a class. Found by a
+	// pre-release review.
+	if op.Nonce == dibsNonce() {
+		return true
+	}
 	if h := e.humanIdentityLocked(); h != "" {
 		if id, ok := e.state.Nonces[op.Nonce]; ok && id == h {
 			return true
@@ -895,4 +914,32 @@ func (e *Engine) refuseRetiredRequester(op *core.Op) error {
 		}
 	}
 	return nil
+}
+
+// refuseNoOpRetitle rejects renaming a space to the name it already has.
+//
+// It assigned, emitted an event and advanced the serial unconditionally, so
+// repeating the current topic appended an op that changed nothing. "An op is
+// ledgered iff it changed replayable state" is one of the four rules here, and
+// this broke it in the direction only somebody reading the ledger would notice.
+//
+// At ingress, because the alternative is a rule inside the fold, and a fold that
+// refuses a same-value retitle refuses every one already on disk: the daemon
+// would decline to replay its own history. That is the first bug class
+// AGENTS.md lists, and I wrote it once tonight before moving it here.
+//
+// Refused rather than quietly skipped: a caller that believes it renamed
+// something should be told it did not.
+func (e *Engine) refuseNoOpRetitle(op *core.Op) error {
+	if op.Kind != core.OpSpaceRetitle {
+		return nil
+	}
+	ch := e.state.Spaces[op.Space]
+	if ch == nil || ch.Topic != op.Text {
+		return nil // missing space is the fold's error, with its own hint
+	}
+	return &core.Error{
+		Code: "E_BAD_ARG", Msg: "the topic of " + ch.ID + " is already that",
+		Hint: "nothing was changed. Read the space to see what it currently says",
+	}
 }

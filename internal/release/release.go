@@ -123,10 +123,16 @@ func Stamp(root, version string) ([]string, error) {
 	// step before the tag would be half-done and unrepeatable, and repairing it
 	// by hand is exactly what this command exists to stop anybody doing.
 	//
-	// A dry run first is the cheap version of a transaction: it cannot make the
-	// write atomic, but it removes the failure that was actually reachable,
-	// which is a file this tool can see is wrong before it has touched
-	// anything. Found by a pre-release review, hours before I ran it.
+	// The dry pass proves each manifest parses AND that this process can write
+	// it, because proving only the first was not enough: a permissions or disk
+	// failure still landed mid-sequence, with the changelog already stamped and
+	// Current already reporting the new version, so the retry was refused. The
+	// second review in a row found that, on the fix for the first.
+	//
+	// Still not atomic, and saying so plainly is better than implying it. What
+	// it removes is every failure this tool can detect before touching
+	// anything, which is the reachable set: a manifest it cannot parse, and a
+	// manifest it cannot write.
 	for _, rel := range Manifests {
 		if _, err := setVersion(filepath.Join(root, rel), version, true); err != nil {
 			return nil, fmt.Errorf("%s: %w\n\nNothing was written: every manifest is "+
@@ -191,7 +197,16 @@ func setVersion(path, version string, dryRun bool) (bool, error) {
 			"as %s", path, version)
 	}
 	if dryRun {
-		return true, nil // it would have worked, and nothing was touched
+		// WRITABILITY, not just parseability. Opening for append proves this
+		// process can write the file without changing a byte of it; the earlier
+		// version checked only that the text could be rewritten in memory,
+		// which says nothing about permissions, a read-only mount, or a file
+		// somebody has since made immutable.
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o600) // #nosec G304 -- a manifest from the fixed Manifests list
+		if err != nil {
+			return false, fmt.Errorf("cannot be written: %w", err)
+		}
+		return true, f.Close()
 	}
 	// #nosec G703 -- path is the repository root joined to an entry of
 	// Manifests, which is a fixed list in this file.

@@ -249,8 +249,19 @@ func onScreen(mode string, args ...string) (string, bool) {
 		if notAuthorised(err) {
 			return "", false // fall through to the script path rather than lie
 		}
-		// Cancelled, or sent empty. Both are "no answer", which is an answer.
-		return "", true
+		// EXIT 1 IS CANCEL. Anything else is the helper failing.
+		//
+		// This returned handled=true for every remaining error, so a helper that
+		// could not start, crashed, took a signal, or hit our own deadline was
+		// reported as the person cancelling: Prompt and Pick then hand back an
+		// empty answer with no error, and the request is quietly left open. The
+		// `Ask` path two functions away had exactly this and was corrected; this
+		// one repeated it. Found by a pre-release review.
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && ee.ExitCode() == 1 {
+			return "", true // cancelled, or sent empty: an answer
+		}
+		return "", false // the machine failed: let the caller try the script path
 	}
 	return strings.TrimSpace(string(out)), true
 }
