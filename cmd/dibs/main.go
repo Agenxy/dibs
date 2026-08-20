@@ -165,7 +165,7 @@ func main() {
 	case "calibrate":
 		err = calibrate(os.Args[2:])
 	case "mcp-config":
-		err = adminOnly("mcp-config", mcpConfig)
+		err = adminOnly("mcp-config", func() error { return mcpConfig(os.Args[2:]) })
 	case "admin":
 		err = adminCmd(os.Args[2:])
 	case "await":
@@ -428,7 +428,16 @@ func getGodView(path, adminPass string, v any) error {
 	return json.NewDecoder(resp.Body).Decode(v)
 }
 
-func mcpConfig() error {
+func mcpConfig(args []string) error {
+	fs := flag.NewFlagSet("mcp-config", flag.ContinueOnError)
+	board := fs.String("board", "", "print the config for joining ANOTHER machine's board, "+
+		"given its address as seen from here (e.g. 127.0.0.1:4777 through an ssh forward)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *board != "" {
+		return printJoinConfig(*board)
+	}
 	s, err := localSecret()
 	if err != nil {
 		return fmt.Errorf("no local secret yet: start dibd once first: %w", err)
@@ -442,6 +451,37 @@ func mcpConfig() error {
 	}
 	url := scheme + "://" + addr() + "/mcp"
 
+	// STDIO FIRST, for the same reason it is first for Codex.
+	//
+	// This printed the url form for Claude Code, and every word of the Codex
+	// note below applies here too: Claude Code's HTTP transport has no
+	// per-session process either, so nothing holds this agent's nonce, so every
+	// returning session registers as a sibling that cannot read its
+	// predecessor's mail. The daemon knows and says so at registration, which is
+	// to its credit and beside the point: an operator who does what this command
+	// prints should not land in a state the daemon then diagnoses.
+	//
+	// plugins/claude-code/.mcp.json already configures `dibs mcp-stdio`, so the
+	// plugin and this command were recommending different transports for one
+	// client, and the one an operator reaches first was the one the plugin does
+	// not use. Reported by an operator who followed this and got the warning.
+	stdioCfg := map[string]any{
+		"mcpServers": map[string]any{
+			"dibs": map[string]any{
+				"command": self(),
+				"args":    []string{"mcp-stdio"},
+			},
+		},
+	}
+	stdioOut, _ := json.MarshalIndent(stdioCfg, "", "  ")
+	fmt.Println("# Claude Code and JSON-config hosts: add to .mcp.json:")
+	fmt.Println(string(stdioOut))
+	fmt.Println()
+	fmt.Println("# Better still: the plugin, which brings the wake hooks and the skill")
+	fmt.Println("#   /plugin marketplace add agenxy/dibs")
+	fmt.Println("#   /plugin install dibs@dibs")
+	fmt.Println()
+
 	cfg := map[string]any{
 		"mcpServers": map[string]any{
 			"dibs": map[string]any{
@@ -452,7 +492,10 @@ func mcpConfig() error {
 		},
 	}
 	out, _ := json.MarshalIndent(cfg, "", "  ")
-	fmt.Println("# Claude Code and JSON-config hosts: add to .mcp.json:")
+	fmt.Println("# Only where a client cannot run a process at all. NOT the answer for another")
+	fmt.Println("# machine: run the bridge there instead (see the end of this output). A url")
+	fmt.Println("# client holds no nonce, so each session forks an identity that cannot read")
+	fmt.Println("# its predecessor's mail, and on an unattended remote session that costs most.")
 	fmt.Println(string(out))
 	// The Bearer line shows a prefix so a reader can see it is the same secret
 	// as the header above. Unguarded, that slice panicked on any secret shorter
@@ -495,14 +538,18 @@ env = { CODEX_MCP_PROTOCOL_VERSION = "2026-07-28" }
 # same identity instead of forking a "-2" sibling that cannot read its own mail.
 # That is a default and not a cage: an identity can also be pinned here with
 #   env = { DIBS_AGENT_NONCE = "..." }
-# which is what lets an HTTP client reattach too. Use the url form only from
-# another machine:
+# which is what lets an HTTP client reattach too.
+#
+# NOT for another machine either: run the bridge THERE, pointed here. See the
+# block below, or run "dibs mcp-config --board %s" on that machine. The url
+# form is for a client that genuinely cannot run a process, and it costs an
+# identity per session:
 #   url = %q
 #   http_headers = { "X-Dibs-Local" = %q }
 #   (the secret is also accepted as: Authorization: Bearer %s)
 #
 # Running agent sessions do not hot-load MCP config: start a new session after adding.
-`, self(), url, s, preview)
+`, self(), addr(), url, s, preview)
 
 	if certPath != "" {
 		fmt.Printf(`
@@ -515,8 +562,16 @@ env = { CODEX_MCP_PROTOCOL_VERSION = "2026-07-28" }
 #       Python           : SSL_CERT_FILE=%s
 #       curl (testing)   : curl --cacert %s ...
 `, certPath, certPath, certPath, certPath)
-		printRemoteRecipe()
 	}
+	// Unconditionally.
+	//
+	// This sat inside the TLS branch, so it printed only for a daemon serving
+	// HTTPS. The default daemon is plaintext on loopback, which is every fresh
+	// install, so the one block explaining how a second machine joins was
+	// invisible to exactly the operators who needed it. One reported nearly
+	// abandoning the multi-machine board, which is the reason they run Dibs,
+	// while the instructions for it were in the binary the whole time.
+	printRemoteRecipe(certPath != "")
 	return nil
 }
 
@@ -533,27 +588,84 @@ env = { CODEX_MCP_PROTOCOL_VERSION = "2026-07-28" }
 // verified TLS to the daemon, trusting exactly the certificate this machine
 // recorded and nothing else, so the harness needs no TLS configuration and no
 // certificate of its own. It is also the only shape some harnesses accept.
-func printRemoteRecipe() {
+func printRemoteRecipe(tls bool) {
 	fmt.Printf(`
 # ── Agents on ANOTHER machine ───────────────────────────────────────────────
-# Do not paste the URL above there: it asks that harness to trust a
-# self-signed certificate, which many runtimes cannot be told to do, and the
-# ones that can are told process-wide. Run dibs on that machine instead and
-# let it hold the trust:
+# The board is a fleet board: agents on other machines join THIS daemon and
+# see the same rows. Run dibs on that machine and point its bridge here.
 #
-#   1. install dibs, then record this daemon's certificate:
-#        dibs trust %s
-#      compare what it prints against `+"`dibs fingerprint`"+` run HERE. They must match.
+#   1. copy this machine's secret to a data directory of its own there:
+#        %s   ->   ~/.dibs-<board>/local.secret   (chmod 700 the directory)
+#      Its OWN ~/.dibs stays for its own board, if it runs one. The secret is
+#      per-board and read from the data directory, so joining a second board
+#      means a second directory; there is no way to hold two in one.
 #
-#   2. copy this machine's %s to the same path there.
-#
-#   3. point the harness at the bridge, with the address of this daemon:
+#   2. point the harness at the bridge, with THIS daemon's address and that
+#      directory (absolute path: nothing expands ~ here):
 #        {"mcpServers": {"dibs": {"command": "dibs", "args": ["mcp-stdio"],
-#                                 "env": {"DIBS_ADDR": %q}}}}
+#          "env": {"DIBS_ADDR": %q,
+#                  "DIBS_DIR":  "/home/you/.dibs-<board>"}}}}
 #
-# The bridge verifies the certificate itself, so nothing else on that machine
-# has its TLS behaviour changed.
-`, addr(), filepath.Join(paths.DataDir(), "local.secret"), addr())
+#      Or have that machine print it for you:
+#        dibs mcp-config --board %s
+#
+# stdio there, NOT the url form, and on another machine it matters more rather
+# than less: that session is the long-lived unattended one, and a url client
+# holds no nonce, so every reconnect forks an identity that cannot read its
+# predecessor's mail. The bridge is a process with a filesystem, which is what
+# the credential needs.
+`, filepath.Join(paths.DataDir(), "local.secret"), addr(), addr())
+
+	if !tls {
+		// The tunnel, for the daemon this actually is.
+		//
+		// A plaintext loopback daemon is unreachable from another host, and the
+		// documented answer was a TLS endpoint: fine when the hub has a routable
+		// address, and useless on the corporate and lab networks that are full of
+		// hosts that will never have one. The forward has always worked, because
+		// the bridge only ever talks to an address, and nothing said so. It is
+		// also the better default: the daemon never leaves loopback, and the
+		// tunnel authenticates the machine before Dibs sees a byte.
+		fmt.Printf(`
+# This daemon is plaintext on loopback, so it is unreachable from another
+# host directly. Forward a port to it instead, which is supported and is the
+# more private shape: nothing about this daemon is exposed to the network.
+#
+#   on the other machine, keep this running (or use ssh -f, or autossh):
+#     ssh -N -L %s:%s %s@%s
+#
+#   then DIBS_ADDR above is just %s: its own end of the forward.
+#
+# Pick the hub deliberately: whichever machine hosts the daemon decides
+# whether the fleet has a board at all. A laptop is the tempting choice and
+# the wrong one, because it sleeps, changes networks and gets rebooted
+# mid-task. An always-on headless host reached by a forward is the answer.
+`, port(addr()), addr(), os.Getenv("USER"), hostName(), addr())
+		return
+	}
+	fmt.Printf(`# This daemon serves HTTPS, so that machine must trust its certificate. The
+# bridge holds the trust itself, so nothing else there changes:
+#     dibs trust %s
+# Compare what that prints against `+"`dibs fingerprint`"+` run HERE; they must match.
+`, addr())
+}
+
+// port is the ":4777" half of an address, for the near end of a forward.
+func port(a string) string {
+	if _, p, err := net.SplitHostPort(a); err == nil {
+		return p
+	}
+	return a
+}
+
+// hostName is this machine, for the ssh target in the recipe. A guess an
+// operator can correct beats a placeholder they have to decode.
+func hostName() string {
+	h, err := os.Hostname()
+	if err != nil || h == "" {
+		return "this-machine"
+	}
+	return h
 }
 
 func fileExists(p string) bool {
@@ -1705,4 +1817,92 @@ func self() string {
 		return resolved
 	}
 	return exe
+}
+
+// printJoinConfig is `dibs mcp-config --board <addr>`: the config for joining
+// SOMEBODY ELSE'S board from this machine.
+//
+// The rest of this command answers "how do agents reach the daemon I am running",
+// which leaves the fleet case to be assembled from three separate blocks by an
+// operator who does not yet know that is what they are doing. This one answers
+// the other question directly, and it is the question a second machine has.
+//
+// It deliberately does not read local.secret: the secret needed here belongs to
+// the REMOTE board and this machine may have no daemon of its own at all.
+func printJoinConfig(remote string) error {
+	dir := filepath.Join(homeDir(), ".dibs-"+boardSlug(remote))
+	cfg := map[string]any{
+		"mcpServers": map[string]any{
+			"dibs": map[string]any{
+				"command": self(),
+				"args":    []string{"mcp-stdio"},
+				"env": map[string]string{
+					"DIBS_ADDR": remote,
+					"DIBS_DIR":  dir,
+				},
+			},
+		},
+	}
+	out, _ := json.MarshalIndent(cfg, "", "  ")
+	fmt.Printf(`# Joining the board at %s from this machine.
+#
+# 1. Make the data directory and copy that board's secret into it. The secret
+#    is per-board and read from the data directory, so a machine that also runs
+#    its own board needs this second directory; there is no way to hold two
+#    secrets in one.
+#
+#      mkdir -p %s && chmod 700 %s
+#      scp <hub>:~/.dibs/local.secret %s/local.secret
+#
+# 2. If that board is a plaintext loopback daemon, which is the default, it is
+#    not reachable from here directly. Forward a port to it and leave this
+#    running:
+#
+#      ssh -N -L %s <user>@<hub>
+#
+#    DIBS_ADDR below is then this machine's end of the forward.
+#
+# 3. Add to .mcp.json (Claude Code and JSON-config hosts):
+%s
+
+# Codex / ChatGPT desktop, in ~/.codex/config.toml:
+[mcp_servers.dibs]
+command = %q
+args = ["mcp-stdio"]
+env = { DIBS_ADDR = %q, DIBS_DIR = %q, CODEX_MCP_PROTOCOL_VERSION = "2026-07-28" }
+
+# stdio, not the url form, and from another machine that matters MORE rather
+# than less: this session is the long-lived unattended one, and a url client
+# holds no nonce, so every reconnect forks an identity that cannot read its
+# predecessor's mail. The bridge keeps the nonce in DIBS_DIR above, which is
+# what makes a returning session the same agent.
+#
+# Check it: dibs doctor, with the same two variables set.
+`, remote, dir, dir, dir, port(remote)+":"+remote, string(out), self(), remote, dir)
+	return nil
+}
+
+// homeDir is the operator's home, for a path they can paste. An empty string
+// would silently produce a config rooted at "/", so say what went wrong.
+func homeDir() string {
+	h, err := os.UserHomeDir()
+	if err != nil || h == "" {
+		return "/home/you"
+	}
+	return h
+}
+
+// boardSlug names the data directory after the board it holds the secret for,
+// so a machine on three boards has three directories it can tell apart.
+func boardSlug(addr string) string {
+	h, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		h = addr
+	}
+	if h == "" || h == "127.0.0.1" || h == "localhost" || h == "::1" {
+		// A forwarded port is always loopback, so the host says nothing and the
+		// port is the only thing distinguishing one board from another.
+		return "board-" + p
+	}
+	return strings.NewReplacer(".", "-", ":", "-").Replace(h)
 }

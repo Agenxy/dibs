@@ -413,7 +413,17 @@ func checkMatching(client *http.Client, sec string, ok reportFn, warn fixFn) {
 	case "degraded":
 		warn("matching degraded to the built-in scorer", st.Hint)
 	case "suggest-only":
-		warn("matching suggests but never joins", st.Hint)
+		// AS CONFIGURED, not a warning.
+		//
+		// join_threshold = 0 is the shipped default, it is documented, and it is
+		// what this project recommends: auto-joining on a threshold nobody
+		// measured is how every agent ends up in one space. Reporting the
+		// recommended configuration as a `!` on every single run is the same
+		// mistake MatchPhase exists to prevent, applied by the health check to
+		// itself: a feature that is deliberately off must not look like a
+		// feature that is broken. Reported by an operator seeing four warnings
+		// every run, all of them "all optional features".
+		ok("matching suggests and never joins, as configured (join_threshold = 0)")
 	case "ready":
 		// Name the repository, always.
 		//
@@ -504,6 +514,24 @@ func checkHooks(client *http.Client, sec string, ok reportFn, bad, warn fixFn) {
 }
 
 func checkLedgerAndBoard(dir string, ok reportFn, bad, warn fixFn) {
+	// A data directory that JOINS another machine's board holds a credential
+	// and nothing else: the ledger is on the hub, and there is nothing here to
+	// verify.
+	//
+	// Without this, following the documented recipe for a second machine ends
+	// at `doctor` reporting "ledger does not verify ... do NOT delete it, open
+	// an issue": a data-loss emergency raised against a completely healthy
+	// join, aimed at the operator least able to tell it is spurious. Found by
+	// following `mcp-config --board` end to end.
+	//
+	// node_id is the same test dibd itself uses ("this is not a board a daemon
+	// has served"): it is written at first boot, before any op, so its absence
+	// means no daemon has ever owned this directory. An empty board still has
+	// one.
+	if !fileExists(filepath.Join(dir, "node_id")) && fileExists(filepath.Join(dir, "local.secret")) {
+		ok("joined board: the ledger lives on the daemon serving it, not here")
+		return
+	}
 	res, err := verifyChain(filepath.Join(dir, "ledger.jsonl"))
 	switch {
 	case err != nil:

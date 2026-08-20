@@ -230,3 +230,50 @@ func TestUnparseableMidFileIsNotMistakenForATornTail(t *testing.T) {
 		t.Fatalf("a broken record with more file after it is damage, got %+v / %v", res, err)
 	}
 }
+
+// A data directory that joins ANOTHER machine's board holds a credential and
+// nothing else: the ledger is on the hub.
+//
+// Reported as "ledger does not verify ... do NOT delete it. Copy it somewhere
+// safe and open an issue", which is a data-loss emergency raised against a
+// completely healthy join, and raised at the operator least equipped to know
+// it is spurious. Found by following `dibs mcp-config --board` end to end.
+func TestDoctorDoesNotCallAJoinedBoardsMissingLedgerCorruption(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "local.secret"),
+		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var good []string
+	var bads []string
+	ok := func(msg string) { good = append(good, msg) }
+	fail := func(msg, _ string) { bads = append(bads, msg) }
+	checkLedgerAndBoard(dir, ok, fail, func(msg, _ string) {})
+
+	for _, b := range bads {
+		if strings.Contains(b, "ledger does not verify") {
+			t.Errorf("a joined board is reported as a corrupt ledger: %q", b)
+		}
+	}
+	if !strings.Contains(strings.Join(good, "\n"), "joined board") {
+		t.Errorf("nothing told the operator where the ledger actually is: ok=%v bad=%v", good, bads)
+	}
+
+	// And a real board directory must still be verified: node_id is what a
+	// daemon writes at first boot, so its presence means this IS a board.
+	local := t.TempDir()
+	if err := os.WriteFile(filepath.Join(local, "local.secret"),
+		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(local, "node_id"), []byte("abc123"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bads = nil
+	checkLedgerAndBoard(local, func(string) {}, fail, func(msg, _ string) {})
+	if len(bads) == 0 {
+		t.Error("a board directory with no ledger passed silently: the check has been " +
+			"disabled rather than scoped")
+	}
+}
