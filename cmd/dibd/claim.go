@@ -53,7 +53,12 @@ func newCoordinatorClaim(dir string, alreadyHas bool) *coordinatorClaim {
 		slog.Warn("could not write the coordinator claim", "path", path, "err", err)
 		return &coordinatorClaim{path: path}
 	}
-	slog.Info("no coordinator on this board; the agent that started this daemon can claim it",
+	// "the agent that started this daemon" describes nobody under a service
+	// manager: launchd started it, and no agent did. The mechanism was always
+	// right, since any agent that can read the file may claim, and only the
+	// sentence was wrong. Reported by an operator running it under launchd,
+	// which is the arrangement the project recommends.
+	slog.Info("no coordinator on this board; the first agent that reads the claim file can take it",
 		"how", "claim_coordinator(nonce: the contents of "+path+")")
 	return &coordinatorClaim{path: path, secret: secret}
 }
