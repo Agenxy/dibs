@@ -855,6 +855,16 @@ func (s *State) DescendsFrom(agent, ancestor string) bool {
 	return false
 }
 
+// CleanID is what an id becomes once normalised, exported because callers that
+// BUILD ids need to know what theirs will turn into.
+//
+// The engine constructs space ids and then disambiguates a collision by
+// appending a suffix, and the 64-rune cap below is what decided whether that
+// suffix survived. It did not, and could not be checked from there without
+// copying the number, which is the arrangement that lets one of the two move
+// without the other.
+func CleanID(s string) string { return cleanID(s) }
+
 // cleanID normalises a space id so "Auth Refactor" and "auth-refactor" are
 // not two different agents.
 func cleanID(s string) string {

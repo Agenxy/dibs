@@ -87,6 +87,22 @@ func (e *Engine) SetMatchStatus(s MatchStatus) {
 	}
 	e.matchStatus.mu.Lock()
 	defer e.matchStatus.mu.Unlock()
+	// Unreadable trees SURVIVE a phase change, because they belong to the trees
+	// and not to the phase.
+	//
+	// This replaced the whole status, and scorer completion calls it with no
+	// Unreadable value, so any repository finishing its index silently cleared
+	// the record of every OTHER tree the daemon could not read. The operator was
+	// told about a permissions problem once and then, a minute later, told
+	// nothing, by a success somewhere unrelated. That is the same
+	// one-tree-speaks-for-the-board defect this file was written to fix, running
+	// the other way. Found by a pre-release review.
+	//
+	// A caller that genuinely means "none" passes an empty slice, which is
+	// distinguishable from not setting the field at all.
+	if s.Unreadable == nil {
+		s.Unreadable = e.matchStatus.st.Unreadable
+	}
 	e.matchStatus.st = s
 }
 

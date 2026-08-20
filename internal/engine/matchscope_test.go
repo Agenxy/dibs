@@ -59,3 +59,40 @@ func TestIndexingANewTreeDoesNotDemoteAWorkingBoard(t *testing.T) {
 		t.Errorf("a cold board reports %q rather than indexing", got)
 	}
 }
+
+// One tree finishing its index must not erase what is wrong with another.
+//
+// SetMatchStatus replaced the whole status, and scorer completion calls it with
+// no Unreadable value, so any repository reaching `ready` silently cleared the
+// record of every other tree the daemon could not read. The operator was told
+// about a permissions problem once, and a minute later told nothing, by a
+// success somewhere unrelated. Found by a pre-release review.
+func TestAReadyScorerDoesNotEraseUnreadableTrees(t *testing.T) {
+	e, _, cancel := runningEngine(t)
+	defer cancel()
+
+	e.NoteUnreadableTree("/work/locked", "macOS will not let the daemon read it")
+	if got := len(e.MatchStatus().Unreadable); got != 1 {
+		t.Fatalf("setup: %d unreadable trees, want 1", got)
+	}
+
+	// Another repository finishes indexing, and says nothing about unreadable
+	// trees because it knows nothing about them.
+	e.SetMatchStatus(MatchStatus{Phase: MatchReady, Repo: "/work/other"})
+
+	st := e.MatchStatus()
+	if st.Phase != MatchReady {
+		t.Errorf("phase = %q, want ready", st.Phase)
+	}
+	if len(st.Unreadable) != 1 {
+		t.Fatalf("the unreadable tree was erased by an unrelated repository "+
+			"finishing: the operator is told a permissions problem exists and then, "+
+			"without fixing anything, told it does not. Got %v", st.Unreadable)
+	}
+
+	// A caller that genuinely means "none" can still say so.
+	e.SetMatchStatus(MatchStatus{Phase: MatchReady, Repo: "/work/other", Unreadable: []string{}})
+	if got := len(e.MatchStatus().Unreadable); got != 0 {
+		t.Errorf("an explicit empty list did not clear them: %d left", got)
+	}
+}
