@@ -321,7 +321,7 @@ func (g *authGate) presenceBootstrap(w http.ResponseWriter, r *http.Request) {
 
 func (g *authGate) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if o := r.Header.Get("Origin"); o != "" && !g.localOrigin(o) {
+		if o := r.Header.Get("Origin"); o != "" && !g.localOrigin(o, r.Host) {
 			http.Error(w, "forbidden origin", http.StatusForbidden)
 			return
 		}
@@ -531,7 +531,7 @@ border-radius:7px;padding:9px 14px;display:inline-block;margin-top:6px;color:#e6
 // origin and is refused, which is what the browser's own model already says.
 //
 // Found by a pre-release review.
-func (g *authGate) localOrigin(origin string) bool {
+func (g *authGate) localOrigin(origin, reqHost string) bool {
 	u, err := url.Parse(origin)
 	if err != nil {
 		return false
@@ -555,9 +555,18 @@ func (g *authGate) localOrigin(origin string) bool {
 	}
 	switch g.host {
 	case "", "0.0.0.0", "::":
-		// Listening on every interface: the host cannot narrow anything, and
-		// pretending otherwise would lock somebody out of their own board.
-		return true
+		// Listening on every interface, so the CONFIGURED host cannot narrow
+		// anything. Compare against the host the browser actually addressed
+		// instead of blessing every hostname on this port.
+		//
+		// It returned true here, and a same-site sibling is not a stranger to a
+		// cookie: SameSite=Strict allows one, and text/plain is CORS-safelisted,
+		// so a hostile page at another name under the same registrable domain
+		// and port could POST to /api/admin/role with the session attached.
+		// Narrow (it needs a wildcard bind, hostname access, and control of that
+		// sibling) and free to close. Found by a pre-release review, which also
+		// noted the test I wrote blessed the behaviour rather than checking it.
+		return strings.EqualFold(u.Hostname(), hostOnly(reqHost))
 	}
 	if strings.EqualFold(u.Hostname(), g.host) {
 		return true
@@ -573,4 +582,12 @@ func isLoopback(h string) bool {
 		return true
 	}
 	return false
+}
+
+// hostOnly strips any port from a Host header.
+func hostOnly(h string) string {
+	if host, _, err := net.SplitHostPort(h); err == nil {
+		return host
+	}
+	return h
 }

@@ -196,8 +196,17 @@ func createIdentity() error {
 			"-in", crt, "-passout", "pass:" + pass, "-name", dibsIdentity,
 		},
 		{
+			// -T codesign, and NOT -A.
+			//
+			// -A lets ANY application use the key without warning, which
+			// `security` itself calls insecure, and this key exists to be a
+			// program identity: the whole value is that only Dibs can sign as
+			// org.agenxy.dibs, because macOS hangs a Files-and-Folders grant off
+			// exactly that. Handing every local process the ability to sign with
+			// it gives away the thing being established. -T names the one binary
+			// that needs it. Found by a pre-release review.
 			"security", "import", p12, "-k", loginKeychain(), "-P", pass,
-			"-T", "/usr/bin/codesign", "-A",
+			"-T", "/usr/bin/codesign",
 		},
 		// The step that prompts. Without it the certificate is in the keychain
 		// and `security find-identity -p codesigning` will not list it, so

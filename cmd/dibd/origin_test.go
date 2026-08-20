@@ -40,7 +40,7 @@ func TestAPageOnAnotherLocalPortIsNotThisOrigin(t *testing.T) {
 		{"http://localhost.evil.com:4777", false},
 	} {
 		t.Run(tc.origin, func(t *testing.T) {
-			if got := gate.localOrigin(tc.origin); got != tc.want {
+			if got := gate.localOrigin(tc.origin, "127.0.0.1:4777"); got != tc.want {
 				t.Errorf("localOrigin(%q) = %v, want %v", tc.origin, got, tc.want)
 			}
 		})
@@ -90,7 +90,7 @@ func TestABoardOnATailnetAddressAcceptsItsOwnOrigin(t *testing.T) {
 		{"http://localhost:4777", false},
 	} {
 		t.Run(tc.origin, func(t *testing.T) {
-			if got := gate.localOrigin(tc.origin); got != tc.want {
+			if got := gate.localOrigin(tc.origin, "127.0.0.1:4777"); got != tc.want {
 				t.Errorf("localOrigin(%q) = %v, want %v", tc.origin, got, tc.want)
 			}
 		})
@@ -99,11 +99,17 @@ func TestABoardOnATailnetAddressAcceptsItsOwnOrigin(t *testing.T) {
 	// Listening on every interface cannot narrow the host, and must not lock
 	// the operator out of their own board by pretending it can.
 	any := newAuthGate("s", filepath.Join(t.TempDir(), "admin.hash"), "0.0.0.0:4777")
-	if !any.localOrigin("https://box.tail1234.ts.net:4777") {
+	if !any.localOrigin("https://box.tail1234.ts.net:4777", "box.tail1234.ts.net:4777") {
 		t.Error("a daemon listening on every interface refused an origin on its own port")
 	}
-	if any.localOrigin("https://box.tail1234.ts.net:9999") {
+	if any.localOrigin("https://box.tail1234.ts.net:9999", "box.tail1234.ts.net:4777") {
 		t.Error("the port must still bind even when the host cannot")
+	}
+	// And a same-site SIBLING is not this board, which the earlier version of
+	// this test blessed rather than checked.
+	if any.localOrigin("https://evil.tail1234.ts.net:4777", "box.tail1234.ts.net:4777") {
+		t.Error("a different hostname on the same port was accepted: SameSite does " +
+			"not separate siblings, so that page carries the board's session")
 	}
 }
 
