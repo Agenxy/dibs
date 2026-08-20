@@ -113,6 +113,28 @@ func Stamp(root, version string) ([]string, error) {
 			Unreleased)
 	}
 
+	// EVERY manifest is checked before ANY file is written.
+	//
+	// This wrote the changelog first and then rewrote manifests one at a time,
+	// returning on the first failure. A manifest that is unwritable or missing
+	// its version field therefore left the changelog stamped and some subset of
+	// the manifests updated, and `Current` then reads the new version out of the
+	// changelog, so the "must be newer" check below refuses the retry. The one
+	// step before the tag would be half-done and unrepeatable, and repairing it
+	// by hand is exactly what this command exists to stop anybody doing.
+	//
+	// A dry run first is the cheap version of a transaction: it cannot make the
+	// write atomic, but it removes the failure that was actually reachable,
+	// which is a file this tool can see is wrong before it has touched
+	// anything. Found by a pre-release review, hours before I ran it.
+	for _, rel := range Manifests {
+		if _, err := setVersion(filepath.Join(root, rel), version, true); err != nil {
+			return nil, fmt.Errorf("%s: %w\n\nNothing was written: every manifest is "+
+				"checked before any of them is changed, so the tree is exactly as it "+
+				"was", rel, err)
+		}
+	}
+
 	// Keep an Unreleased heading above it: the next change has somewhere to go,
 	// and its absence is how notes end up appended to a shipped version.
 	stamped := fmt.Sprintf("%s\n\n## [%s] - %s", Unreleased, version,
@@ -125,7 +147,7 @@ func Stamp(root, version string) ([]string, error) {
 	}
 
 	for _, rel := range Manifests {
-		ok, err := setVersion(filepath.Join(root, rel), version)
+		ok, err := setVersion(filepath.Join(root, rel), version, false)
 		if err != nil {
 			return changed, fmt.Errorf("%s: %w", rel, err)
 		}
@@ -136,11 +158,13 @@ func Stamp(root, version string) ([]string, error) {
 	return changed, nil
 }
 
-// setVersion rewrites a manifest's version in place, and reports whether it had
-// to. Textual, not a JSON round-trip: re-encoding would reformat a file a human
 // maintains and reorder keys that read in a deliberate order, turning a
 // one-line release stamp into a diff nobody can review.
-func setVersion(path, version string) (bool, error) {
+// setVersion rewrites a manifest, or with dryRun only proves that it could.
+//
+// The dry pass exists so Stamp can check every manifest before it writes any of
+// them. See the note there.
+func setVersion(path, version string, dryRun bool) (bool, error) {
 	body, err := os.ReadFile(path) // #nosec G304 -- a manifest named in Manifests, joined to the repository root
 	if err != nil {
 		return false, err
@@ -165,6 +189,9 @@ func setVersion(path, version string) (bool, error) {
 	if json.Unmarshal([]byte(out), &doc) != nil || doc.Version != version {
 		return false, fmt.Errorf("stamping %s did not produce a manifest that reads back "+
 			"as %s", path, version)
+	}
+	if dryRun {
+		return true, nil // it would have worked, and nothing was touched
 	}
 	// #nosec G703 -- path is the repository root joined to an entry of
 	// Manifests, which is a fixed list in this file.

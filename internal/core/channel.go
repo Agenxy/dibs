@@ -1825,10 +1825,25 @@ func (s *State) applySpaceClose(l *Agent, op *Op, now time.Time) (Result, []Even
 			delete(s.Announcements, serial)
 		}
 	}
+	// The audit line describes what ACTUALLY happened.
+	//
+	// It was one fixed sentence, "closed by a coordinator; it was empty", and
+	// since an opener may now close a space it still occupies alone, that
+	// sentence became false about both the authority used and the occupancy. An
+	// audit trail that is wrong about who did a thing and why is worse than one
+	// that says less. Found by a pre-release review; the test for the new path
+	// proved the close was allowed and never read the event it wrote.
+	why := "closed by a coordinator; it was empty and everything in it was settled"
+	if ch.OpenedBy == l.ID {
+		why = "closed by the agent that opened it"
+		if soleOccupant {
+			why += ", which was also its only member"
+		}
+	}
 	delete(s.Spaces, ch.ID)
 	evs := []Event{{Type: "agent.closed", Agent: l.ID, Data: map[string]any{
 		"agent_id": ch.ID, "topic": ch.Topic, "by": l.ID, "note": op.Note,
-		"why": "closed by a coordinator; it was empty and everything in it was settled",
+		"why": why,
 	}}}
 	s.finish(&evs, now)
 	return Result{"agent_id": ch.ID, "closed": true, "topic": ch.Topic}, evs, nil

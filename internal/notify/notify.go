@@ -181,7 +181,23 @@ func Ask(title, body string, buttons ...string) (string, error) {
 			if notAuthorised(err) {
 				return "", ErrCannotNotify
 			}
-			return "", nil // dismissed or timed out: an answer, not a fault
+			// EXIT 1 IS THE DISMISSAL. Everything else is the machine failing.
+			//
+			// This returned ("", nil) for every remaining error, and the helper
+			// documents exactly three codes: 0 chose, 1 dismissed, 2 cannot
+			// notify. A command that could not start, a crash, a signal, our own
+			// context deadline, or any code the helper does not define came back
+			// as "the person declined", so the asking agent waited out its
+			// deadline against a banner that was never posted and no layer
+			// reported a fault. The distinction was already written down one
+			// file away, in the helper's own header. Found by a pre-release
+			// review, in the branch added to fix the same class for exit 2.
+			var ee *exec.ExitError
+			if errors.As(err, &ee) && ee.ExitCode() == 1 {
+				return "", nil // a person, dismissing
+			}
+			return "", fmt.Errorf("%w: the notifier did not run to a documented "+
+				"outcome: %v", ErrNoAnswer, err)
 		}
 		return strings.TrimSpace(string(out)), nil
 	}

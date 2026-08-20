@@ -1,6 +1,9 @@
 package core
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // The sole member of a space may close it.
 //
@@ -35,5 +38,40 @@ func TestTheSoleMemberOfASpaceCanCloseIt(t *testing.T) {
 	}, t0); err == nil {
 		t.Error("a space with another agent in it was closed: that agent's working " +
 			"context was tidied away by somebody else")
+	}
+}
+
+// The audit line must say what happened, not a fixed sentence.
+//
+// The event's `why` read "closed by a coordinator; it was empty" whoever closed
+// it and whatever was in it. Once an opener could close a space they still
+// occupied alone, that was false about both halves. The test for that path
+// proved the close was ALLOWED and never read the event it wrote, which is how
+// a wrong audit trail survives a green suite. Found by a pre-release review.
+func TestTheCloseEventSaysWhoActuallyClosedIt(t *testing.T) {
+	s, a := chState(t, "opener")
+	do(t, s, &Op{Kind: OpSpaceOpen, Token: a["opener"].Token, Space: "work", Text: "t"})
+	do(t, s, &Op{Kind: OpSpaceJoin, Token: a["opener"].Token, Space: "work"})
+
+	_, evs, err := s.Apply(&Op{Kind: OpSpaceClose, Token: a["opener"].Token, Space: "work"}, testNow)
+	if err != nil {
+		t.Fatalf("the opener could not close its own space: %v", err)
+	}
+
+	var why string
+	for _, e := range evs {
+		if e.Type == "agent.closed" {
+			why, _ = e.Data["why"].(string)
+		}
+	}
+	if why == "" {
+		t.Fatal("no close event, or no reason on it")
+	}
+	if strings.Contains(why, "coordinator") {
+		t.Errorf("the audit line credits a coordinator for a close the opener "+
+			"performed: %q", why)
+	}
+	if strings.Contains(why, "was empty") {
+		t.Errorf("the audit line calls a space with a member in it empty: %q", why)
 	}
 }

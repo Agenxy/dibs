@@ -268,7 +268,7 @@ func (f *scorerFlags) install(ctx context.Context, eng *engine.Engine) {
 
 	if repo := f.repo; repo != "" {
 		eng.SetMatchStatus(engine.MatchStatus{Phase: engine.MatchIndexing, Repo: repo})
-		go f.bringUp(ctx, eng, repo)
+		go func() { _ = f.bringUp(ctx, eng, repo) }() // pre-warm: nothing waits on the verdict
 		return
 	}
 	eng.SetMatchStatus(engine.MatchStatus{
@@ -286,7 +286,7 @@ func (f *scorerFlags) install(ctx context.Context, eng *engine.Engine) {
 // when does it run) and this one is the work. Every early return here records a
 // STATUS as well as logging, because a feature that switched itself off quietly
 // is indistinguishable from one that is working and found nothing.
-func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo string) {
+func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo string) (installed bool) {
 	start := time.Now()
 	topCtx, cancelTop := context.WithTimeout(ctx, gitDeadline)
 	defer cancelTop()
@@ -307,7 +307,7 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 				"from git log, and cannot match without it",
 		})
 		slog.Warn("work-overlap matching disabled: not a git repository", "repo", repo, "err", err)
-		return
+		return false
 	}
 	dir := strings.TrimSpace(string(root))
 
@@ -346,13 +346,23 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 	// reported exactly this distinction as missing, and was right.
 	cc, err := overlap.MineCoChange(workCtx, dir, overlap.CoChangeOptions{MaxCommits: f.history})
 	if err != nil {
-		historyUnreadable(topCtx, eng, dir, err, offBecause)
-		return
+		// A FRESH deadline for the diagnosis, never the one mining just spent.
+		//
+		// topCtx was created before the first git command, so if mining used up
+		// its four minutes the diagnostic context is already dead, `unborn`
+		// necessarily errors, and every timeout was reported as "a repository
+		// with no commits. Nothing is broken and nothing needs fixing": the one
+		// sentence that tells the operator not to look. Found by a pre-release
+		// review.
+		diagCtx, cancelDiag := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
+		defer cancelDiag()
+		historyUnreadable(diagCtx, eng, dir, err, offBecause)
+		return false
 	}
 	lex, err := overlap.NewLexical(workCtx, dir, cc)
 	if err != nil {
 		offBecause("could not list files", err)
-		return
+		return false
 	}
 	scorer := f.withSidecar(ctx, lex)
 	f.recommendSidecar(ctx, eng, dir, lex.Files())
@@ -437,6 +447,7 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 		slog.Info("no join threshold set: agents will be suggested but never joined automatically; " +
 			"run `dibs calibrate` and pass -match-join")
 	}
+	return true
 }
 
 // withSidecar wraps the built-in scorer in an embedding service when one is
@@ -590,7 +601,21 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 		f.indexed[root] = true
 		f.discoverMu.Unlock()
 
-		f.bringUp(ctx, eng, root)
+		// RELEASED if the bring-up does not produce a scorer.
+		//
+		// The tree was marked indexed before any of the work, so a temporary
+		// failure (a git that timed out, a permissions error, a directory
+		// briefly unreadable) left the flag set with nothing behind it: matching
+		// for that repository stayed off until the daemon restarted, and every
+		// later registration from it was deduplicated against a tree that was
+		// never actually indexed. The mark is a "somebody is doing this" latch
+		// and it has to be dropped when nobody is. Found by a pre-release
+		// review.
+		if !f.bringUp(ctx, eng, root) {
+			f.discoverMu.Lock()
+			delete(f.indexed, root)
+			f.discoverMu.Unlock()
+		}
 	}()
 }
 
@@ -746,6 +771,13 @@ func (f *scorerFlags) calibrateNotify(
 //
 // Only reached when mining already failed, so the extra git call costs nothing
 // on the path that works.
+// historyUnreadable decides whether a tree with no mineable history is a tree
+// with nothing IN it, or a tree this daemon could not read.
+//
+// The two want opposite things from the operator, which is why they are told
+// apart: "no commits yet" ends with "nothing is broken", and saying that about
+// a permissions failure or a timeout is telling somebody not to look at the
+// thing that is wrong.
 func historyUnreadable(ctx context.Context, eng *engine.Engine, dir string, err error, off func(string, error)) {
 	if !unborn(ctx, dir) {
 		off("could not read git history", err)
