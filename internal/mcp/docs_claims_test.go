@@ -149,3 +149,38 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 		}
 	}
 }
+
+// register has two continuity paths and the tool description is the only
+// documentation an agent ever reads.
+//
+// It named `reattached` alone. An integrator writes `if result["reattached"]`,
+// tests it the obvious way by starting a second session while the first is
+// still running, lands on the `resumed` path instead, sees neither the
+// documented key nor an explanation, and concludes identity continuity is
+// broken. That is what happened to an operator evaluating v0.0.6, and correct
+// behaviour looking broken is the failure this project is otherwise careful
+// about.
+//
+// The rotation is asserted separately because it is the half that loses data:
+// a client that caches its token across a reattach is holding a dead one.
+func TestRegisterDocumentsBothContinuityPaths(t *testing.T) {
+	var desc string
+	for _, td := range agentTools {
+		if td["name"] == "register" {
+			desc, _ = td["description"].(string)
+		}
+	}
+	if desc == "" {
+		t.Fatal("no register tool: the probe is not reading the listing")
+	}
+	for _, want := range []string{"resumed", "reattached"} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("register's description never names %q: an agent that gets it back "+
+				"has no way to know what it means", want)
+		}
+	}
+	if !strings.Contains(desc, "ROTATED") {
+		t.Error("register's description does not say the token rotates on reattach: a client " +
+			"that cached the old one keeps sending a dead token")
+	}
+}
