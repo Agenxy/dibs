@@ -38,6 +38,22 @@ These are enforced, not advisory:
 | Lineage (`parent`) | Grants nothing unless the parent vouched with a one-time nonce |
 | Acting as the human from the panel (`human_unlock`) | Needs a fingerprint. The panel renders in the human's UI but speaks over the agent's connection with the agent's credential, so the transport cannot tell "the human clicked Broadcast" from "an agent called the tool". The proof has to come from outside the transport, and an agent confined to that transport cannot produce a fingerprint, see the bound below |
 
+**A presence check proves a person is here. It does not prove they asked.**
+Stated plainly because two paths were built as though it did. Any caller holding
+the local secret can RAISE the prompt: `human_unlock` over MCP, and
+`POST /bootstrap` over HTTP. If the operator approves, the credential goes back
+to whoever asked. Nothing in the transport binds the fingerprint to the
+requester, and on 0.0.6 both were reachable by an ordinary agent, one of them
+with a sentence the caller wrote itself.
+
+What holds the line now is the sentence on the sheet, so it is written by the
+daemon rather than by the caller: `human_unlock` names the requesting agent,
+which it can resolve from the authenticated token, and `/bootstrap` says the
+credential goes to whoever just asked and to decline anything the operator did
+not start. That makes an unexpected prompt refusable, which is a real property
+and a weaker one than binding. **If a prompt appears that you did not cause,
+decline it, and treat it as a report worth making.**
+
 ### What the presence check does and does not bind
 
 It binds the TRANSPORT. An agent speaking to Dibs over MCP cannot forge presence:

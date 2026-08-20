@@ -608,8 +608,11 @@ var toolDefs = func() []map[string]any {
 				"unforgeable. Returns unlocked:false with a reason if they decline.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
-				"note": str("what the human is about to do, shown inside the system prompt " +
-					"so they can see what they are approving"),
+				// Deliberately not "shown to the human": it is not. The sheet's
+				// sentence is written by the daemon and names the caller, because a
+				// caller who can word that prompt can word it into a fingerprint.
+				"note": str("why you are asking, returned as `stated_reason`. The sheet's " +
+					"wording is the daemon's, not yours"),
 			}, "token"),
 		},
 		{

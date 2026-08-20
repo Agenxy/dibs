@@ -267,7 +267,26 @@ func (g *authGate) godViewAuthorized(r *http.Request) bool {
 func (g *authGate) presenceBootstrap(w http.ResponseWriter, r *http.Request) {
 	// Written on the system sheet, so the person is approving a thing rather
 	// than approving that something is happening.
-	const reason = "open the Dibs board, which shows every agent's decrypted mail"
+	//
+	// AND SO AN UNEXPECTED ONE IS REFUSABLE. This read "open the Dibs board,
+	// which shows every agent's decrypted mail", and the argument for safety
+	// was a comment saying an agent that tried it would raise the sheet and the
+	// operator would decline. That rests on the operator noticing, and the
+	// sentence gave them nothing to notice: it describes exactly what they
+	// would be doing if they had just run `dibs web` themselves, so a prompt
+	// they did not cause is indistinguishable from one they did. An agent
+	// holding the local secret can raise this at any moment, including a moment
+	// when the operator is opening the board anyway.
+	//
+	// It cannot name the requester the way internal/mcp/human.go now does,
+	// because this path authenticates with the local secret and no agent
+	// identity reaches it. What it can do is say that the credential goes back
+	// to whoever asked, which is the fact that makes an unprompted sheet worth
+	// declining. A pre-release review reproduced the escalation: a request
+	// received the token, redeemed it, and reached an admin role handler.
+	const reason = "give a full-access board session to whatever just asked for it: " +
+		"every agent's decrypted mail, and the power to change roles. Decline this " +
+		"unless you started it yourself, just now"
 	verdict, err := humanauth.Check(r.Context(), reason)
 	if err != nil && verdict != humanauth.Unavailable {
 		http.Error(w, "presence check failed: "+err.Error(), http.StatusInternalServerError)

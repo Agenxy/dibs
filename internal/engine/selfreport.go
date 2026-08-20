@@ -65,6 +65,18 @@ const repoURL = "https://github.com/agenxy/dibs"
 type faultState struct {
 	mu   sync.Mutex
 	seen map[string]bool
+	// flushing guards the off-loop delivery below, so a sweep every second does
+	// not pile up goroutines all trying to deliver the same held faults.
+	flushing bool
+	// pending holds faults found while the board had nobody to tell.
+	//
+	// The startup reachability check is the case that matters: it runs before
+	// any agent has registered, so there is no coordinator and no human, and
+	// the fault was logged and then never revisited. The coordinator who joins
+	// a minute later heard nothing, and nothing scheduled a retry. The flag is
+	// already set on DELIVERY rather than on the attempt, so all that was
+	// missing was somebody trying again. Found by a pre-release review.
+	pending []Fault
 }
 
 // ReportFault tells the coordinator, or the human, that something is wrong.
@@ -100,10 +112,12 @@ func (e *Engine) ReportFault(ctx context.Context, f Fault) {
 
 	to := e.coordinatorOrHuman()
 	if to == "" {
-		// Nobody to tell. Said out loud, because "reported" and "there was
-		// nobody on the board" must not look the same from outside.
+		// Nobody to tell YET. Said out loud, because "reported" and "there was
+		// nobody on the board" must not look the same from outside, and held so
+		// that whoever arrives next hears it. See faultState.pending.
 		slog.Warn("dibs found a fault and has nobody to report it to",
 			"kind", f.Kind, "what", f.What, "remedy", f.Remedy)
+		e.holdFault(f)
 		return
 	}
 
@@ -301,4 +315,80 @@ func (e *Engine) coordinatorsByLiveness() (live, dormant string) {
 		}
 	}
 	return live, dormant
+}
+
+// holdFault keeps a fault that had no recipient, so it can be delivered when one
+// appears.
+func (e *Engine) holdFault(f Fault) {
+	e.faults.mu.Lock()
+	defer e.faults.mu.Unlock()
+	for _, p := range e.faults.pending {
+		if p.Kind == f.Kind {
+			return
+		}
+	}
+	e.faults.pending = append(e.faults.pending, f)
+}
+
+// flushFaults delivers anything held from before the board had anybody on it.
+//
+// Called from the sweep, which is the one thing that runs on its own and
+// therefore the only place a report can be retried without an agent's call to
+// hang it on.
+//
+// ON THE LOOP, SO IT DOES ALMOST NOTHING HERE. The first version called
+// coordinatorOrHuman from this function, and that runs e.query: the sweep is
+// executing ON the writer loop, so it sent to e.ops and waited for the loop it
+// was already inside. Not a hang, because the query has a five-second timeout,
+// which is worse in its way: every tick stalled for five seconds and then
+// carried on as though nothing had happened. It was caught by a panel
+// end-to-end check going from green to red on timing alone.
+//
+// That is the same lock-inversion class as HumanAgent holding its mutex across
+// the loop, committed two hours after fixing it, which is a fair measure of how
+// easy the shape is to reproduce: anything reachable from the loop must not ask
+// the loop for anything.
+func (e *Engine) flushFaults() {
+	e.faults.mu.Lock()
+	pending := len(e.faults.pending) > 0
+	busy := e.faults.flushing
+	if pending && !busy {
+		e.faults.flushing = true
+	}
+	e.faults.mu.Unlock()
+	if !pending || busy {
+		return
+	}
+	go e.deliverHeldFaults()
+}
+
+// deliverHeldFaults is the part that talks to the loop, and therefore is not on
+// it.
+func (e *Engine) deliverHeldFaults() {
+	defer func() {
+		e.faults.mu.Lock()
+		e.faults.flushing = false
+		e.faults.mu.Unlock()
+	}()
+
+	e.faults.mu.Lock()
+	held := e.faults.pending
+	e.faults.pending = nil
+	e.faults.mu.Unlock()
+	if len(held) == 0 {
+		return
+	}
+	if e.coordinatorOrHuman() == "" {
+		// Still nobody. Put them back for the next tick rather than dropping
+		// them, which is the whole point of holding them at all.
+		e.faults.mu.Lock()
+		e.faults.pending = append(held, e.faults.pending...)
+		e.faults.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	for _, f := range held {
+		e.ReportFault(ctx, f)
+	}
 }

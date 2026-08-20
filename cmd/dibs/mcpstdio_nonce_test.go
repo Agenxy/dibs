@@ -20,7 +20,7 @@ func TestTheSameRoleInTheSameProjectReattaches(t *testing.T) {
 	t.Setenv("DIBS_DIR", t.TempDir())
 
 	first := map[string]any{"name": "reviewer", "cwd": "/work/api"}
-	enrichNonce(first)
+	enrichNonce(first, "")
 	got1, _ := first["nonce"].(string)
 	if got1 == "" {
 		t.Fatal("no nonce was supplied, so this session cannot be reattached to later")
@@ -28,7 +28,7 @@ func TestTheSameRoleInTheSameProjectReattaches(t *testing.T) {
 
 	// A new session: nothing in common but the project and the name.
 	second := map[string]any{"name": "reviewer", "cwd": "/work/api"}
-	enrichNonce(second)
+	enrichNonce(second, "")
 	if got2, _ := second["nonce"].(string); got2 != got1 {
 		t.Errorf("a returning session got a different nonce (%s vs %s), so it "+
 			"registers as a sibling and cannot read its own mail",
@@ -37,7 +37,7 @@ func TestTheSameRoleInTheSameProjectReattaches(t *testing.T) {
 
 	// A DIFFERENT role in the same project is a different agent.
 	other := map[string]any{"name": "release", "cwd": "/work/api"}
-	enrichNonce(other)
+	enrichNonce(other, "")
 	if got, _ := other["nonce"].(string); got == got1 {
 		t.Error("two roles in one project share a nonce, so either could reattach " +
 			"as the other")
@@ -45,7 +45,7 @@ func TestTheSameRoleInTheSameProjectReattaches(t *testing.T) {
 
 	// The same role in a DIFFERENT project is also a different agent.
 	elsewhere := map[string]any{"name": "reviewer", "cwd": "/work/other"}
-	enrichNonce(elsewhere)
+	enrichNonce(elsewhere, "")
 	if got, _ := elsewhere["nonce"].(string); got == got1 {
 		t.Error("one role's nonce is shared across projects, so a session in an " +
 			"unrelated checkout would reattach to somebody else's agent")
@@ -60,12 +60,12 @@ func TestASuppliedNonceWinsAndIsRemembered(t *testing.T) {
 	t.Setenv("DIBS_DIR", t.TempDir())
 
 	mine := map[string]any{"name": "reviewer", "cwd": "/work/api", "nonce": "the-agents-own"}
-	enrichNonce(mine)
+	enrichNonce(mine, "")
 	if got, _ := mine["nonce"].(string); got != "the-agents-own" {
 		t.Errorf("the bridge overwrote a nonce the agent supplied: %s", got)
 	}
 	next := map[string]any{"name": "reviewer", "cwd": "/work/api"}
-	enrichNonce(next)
+	enrichNonce(next, "")
 	if got, _ := next["nonce"].(string); got != "the-agents-own" {
 		t.Errorf("the agent's own nonce was not remembered for its next session: %s", got)
 	}

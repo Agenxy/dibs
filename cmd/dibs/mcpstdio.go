@@ -445,7 +445,13 @@ func endSessionWhenTheHarnessGoes(ctx, sigCtx context.Context, endSession func()
 // happens to speak. The bridge's own nonce store stays as the automatic path
 // for a harness that pins nothing: ergonomics, no longer the mechanism.
 func setPinnedIdentity(req *http.Request) {
-	if n := strings.TrimSpace(os.Getenv("DIBS_AGENT_NONCE")); n != "" {
+	if n := pinnedNonce(); n != "" {
 		req.Header.Set("X-Dibs-Agent-Nonce", n)
 	}
 }
+
+// pinnedNonce is the identity the OPERATOR configured, if any.
+//
+// One reader, because two places now need it: the header this sets, and
+// enrichNonce, which must not overrule it with something the bridge remembered.
+func pinnedNonce() string { return strings.TrimSpace(os.Getenv("DIBS_AGENT_NONCE")) }

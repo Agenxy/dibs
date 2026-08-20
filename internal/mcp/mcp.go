@@ -1090,6 +1090,15 @@ func (s *Server) run(
 	case "update":
 		op.Kind, op.Name, op.Description = core.OpUpdate, a.Name, a.Description
 		op.Agent = selfReported(a)
+		// Omitting `description` means "leave it alone", not "erase it".
+		//
+		// The tool invites branch-only and title-only updates, and decoding into
+		// a plain string loses whether the field was sent at all, so every one
+		// of those wrote "" into the op and the fold assigned it. A session
+		// updating its branch silently lost the one line saying what the agent
+		// is for, on a board whose whole job is telling people that. Found by a
+		// pre-release review.
+		op.KeepDescription = !argumentPresent(params, "description")
 	case "vouch_child":
 		op.Kind, op.Nonce = core.OpVouchChild, a.Nonce
 	case "sign_off":
@@ -1389,4 +1398,23 @@ func clientThreadID(params json.RawMessage) string {
 	}
 	v, _ := p.Meta["threadId"].(string)
 	return strings.TrimSpace(v)
+}
+
+// argumentPresent reports whether the caller actually sent this argument, as
+// opposed to sending an empty one or none at all.
+//
+// The decoded struct cannot answer that: "" is both. Anything that has to tell
+// "omitted" from "cleared" has to look at what arrived.
+func argumentPresent(params json.RawMessage, name string) bool {
+	if len(params) == 0 {
+		return false
+	}
+	var outer struct {
+		Arguments map[string]json.RawMessage `json:"arguments"`
+	}
+	if json.Unmarshal(params, &outer) != nil {
+		return false
+	}
+	_, ok := outer.Arguments[name]
+	return ok
 }

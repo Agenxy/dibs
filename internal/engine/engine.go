@@ -458,6 +458,17 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		}
 	}
 
+	// An omitted description keeps the one the agent already has.
+	//
+	// Resolved at ingress and written INTO the op, so the ledger records the
+	// text that was actually in force and replay reaches the same board without
+	// consulting a board that has moved on. The fold still assigns
+	// unconditionally, which it must: an op already on disk that cleared a
+	// description meant to clear it.
+	if op.Kind == core.OpUpdate && op.KeepDescription && actor != nil {
+		op.Description = actor.Description
+	}
+
 	// Who may take over an abandoned mailbox. Decided here, where the human's
 	// identity is known, and RECORDED, so replay does not have to re-decide it
 	// against a board whose roles have since changed.
@@ -700,6 +711,8 @@ func (e *Engine) touchDurable(l *core.Agent, now time.Time) {
 }
 
 func (e *Engine) sweep(now time.Time) {
+	// Anything found before the board had anybody on it. See flushFaults.
+	e.flushFaults()
 	op := &core.Op{Kind: core.OpSweep, GiveUpAnnounce: e.exhaustedAnnouncements()}
 	for id, l := range e.state.Agents {
 		if l.Status != core.StatusActive {

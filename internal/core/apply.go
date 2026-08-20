@@ -49,6 +49,15 @@ type Op struct {
 	// caller, so replay sees the ordinary registration it always was.
 	HumanMint bool `json:"-"`
 
+	// KeepDescription means the caller OMITTED `description`, so the engine
+	// fills the current one in rather than letting the fold assign "".
+	//
+	// No json name, like HumanMint: an ingress decision, and the op that reaches
+	// the ledger carries the resolved text, so replay is unchanged. The fold
+	// assigns Description unconditionally and must keep doing so, because an op
+	// already on disk that cleared a description meant to clear it.
+	KeepDescription bool `json:"-"`
+
 	// Actor resolution. Token authenticates (live path); Agent is set by Apply
 	// and used on replay (the engine blanks it on ingress: unforgeable).
 	Token   string `json:"-"`
