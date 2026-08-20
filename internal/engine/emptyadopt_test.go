@@ -48,7 +48,7 @@ func TestAdoptingAnEmptyMailboxIsRefused(t *testing.T) {
 		}
 		return id, token
 	}
-	quiet, _ := reg("quiet", "quiet-nonce")
+	quiet, quietTok := reg("quiet", "quiet-nonce")
 	_, senderTok := reg("sender", "sender-nonce")
 
 	// Empty: refused.
@@ -67,7 +67,41 @@ func TestAdoptingAnEmptyMailboxIsRefused(t *testing.T) {
 			"named the wrong row or the row is simply empty")
 	}
 
-	// One message, and it is allowed.
+	// MAIL THE HEIR COULD NOT READ IS NOT MAIL TO RESCUE.
+	//
+	// The check counted any retained record, and a consumed terminal one is
+	// retained for fifteen minutes after it is answered. So: notify an agent,
+	// let it acknowledge, let it go dormant, adopt it. The check saw a record,
+	// the fold moved and counted it, and the answer was ok:true with a positive
+	// count and "read them with inbox" into an inbox that shows nothing, because
+	// Inbox excludes exactly those. The rescue reported, the mailbox empty.
+	// Found by a pre-release review; it is the second time this predicate has
+	// been not quite the same one the recipient uses.
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: senderTok, To: quiet,
+		MsgType: core.MsgNotify, Body: "read and done with",
+	}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	inbox := e.state.Inbox(quiet)
+	if len(inbox) != 1 {
+		t.Fatalf("setup: the quiet agent has %d messages, want 1", len(inbox))
+	}
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpAckMessage, Token: quietTok, MsgSerial: inbox[0].Serial,
+	}); err != nil {
+		t.Fatalf("ack: %v", err)
+	}
+	if got := len(e.state.Inbox(quiet)); got != 0 {
+		t.Fatalf("setup: the message is still visible (%d), so this proves nothing", got)
+	}
+	if err := e.refuseEmptyAdoption(quiet); err == nil {
+		t.Error("an adoption was allowed against a mailbox holding only mail its owner " +
+			"had already read: the fold moves and counts those records, so the " +
+			"coordinator is told a rescue happened and the heir's inbox is empty")
+	}
+
+	// One message the owner has NOT read, and it is allowed.
 	if _, err := e.Do(ctx, &core.Op{
 		Kind: core.OpSendMessage, Token: senderTok, To: quiet,
 		MsgType: core.MsgNotify, Body: "something to rescue",

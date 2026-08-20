@@ -814,10 +814,18 @@ func (e *Engine) refuseEmptyAdoption(from string) error {
 	if src := e.state.Agents[from]; src == nil {
 		return nil
 	}
-	for _, m := range e.state.Messages {
-		if m.To == from {
-			return nil
-		}
+	// The SAME rule the recipient's inbox uses, not merely "a record exists".
+	//
+	// This counted any retained record, and a consumed terminal one is retained
+	// for fifteen minutes after it is answered. So: notify an agent, let it
+	// acknowledge, let it go dormant, adopt it. The check saw a record, the fold
+	// moved and counted it, and the answer was ok:true with a positive message
+	// count and "read them with inbox", into an inbox that shows nothing,
+	// because Inbox excludes exactly those. The one thing the check exists to
+	// prevent, reported as a rescue. Found by a pre-release review, which is the
+	// second time this predicate has been not quite the right one.
+	if len(e.state.Inbox(from)) > 0 {
+		return nil
 	}
 	return &core.Error{
 		Code: "E_NOTHING_TO_ADOPT",

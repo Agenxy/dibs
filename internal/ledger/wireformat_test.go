@@ -276,53 +276,56 @@ func opKind(op map[string]json.RawMessage) string {
 // contained neither. A ledger is affected only if it ever recorded a
 // stalled-subagent wake or an admin prune.
 func TestOpKindStringsAreFrozen(t *testing.T) {
-	for name, got := range map[string]string{
-		"OpRegister": core.OpRegister, "OpResume": core.OpResume,
-		"OpWake": core.OpWake, "OpAckBoard": core.OpAckBoard,
-		"OpUpdate": core.OpUpdate, "OpSignOff": core.OpSignOff,
-		"OpHeartbeat": core.OpHeartbeat, "OpSetSlot": core.OpSetSlot,
-		"OpClearSlot": core.OpClearSlot, "OpSendMessage": core.OpSendMessage,
-		"OpClaim": core.OpClaim, "OpRelease": core.OpRelease,
-		"OpSweep": core.OpSweep, "OpMarkDelivered": core.OpMarkDelivered,
-		"OpPutBlob": core.OpPutBlob, "OpGrantRole": core.OpGrantRole,
-		"OpPrune": core.OpPrune, "OpForceRelease": core.OpForceRelease,
-		"OpSpaceOpen": core.OpSpaceOpen, "OpSpaceJoin": core.OpSpaceJoin,
-		"OpSpaceLeave": core.OpSpaceLeave, "OpSpaceSubscribe": core.OpSpaceSubscribe,
-		"OpSpaceExclusive": core.OpSpaceExclusive, "OpSpacePost": core.OpSpacePost,
-		"OpSpaceAnnounce": core.OpSpaceAnnounce, "OpSpaceAck": core.OpSpaceAck,
+	// ONE table, because two of them drifted.
+	//
+	// This was a map of constants iterated against a SEPARATE map of expected
+	// strings, and the outer one omitted OpAdoptAgent and OpSpaceRetitle. Their
+	// expected values sat in the inner map, unreachable, because the loop never
+	// supplied those names: the comment said the new kinds were pinned and
+	// renaming either left the test green. A pre-release review found it.
+	//
+	// That is the co-edited-guard shape again, in the arrangement that makes it
+	// hardest to see: nothing was wrong with either map, only with the fact that
+	// membership of one decided whether the other was consulted at all. Paired
+	// here so a kind added to the table brings its expected string with it or
+	// does not compile.
+	for name, pair := range map[string]struct{ got, want string }{
+		"OpRegister":       {core.OpRegister, "register"},
+		"OpResume":         {core.OpResume, "resume"},
+		"OpWake":           {core.OpWake, "wake"},
+		"OpAckBoard":       {core.OpAckBoard, "check_in"},
+		"OpUpdate":         {core.OpUpdate, "update"},
+		"OpSignOff":        {core.OpSignOff, "sign_off"},
+		"OpHeartbeat":      {core.OpHeartbeat, "heartbeat"},
+		"OpSetSlot":        {core.OpSetSlot, "declare"},
+		"OpClearSlot":      {core.OpClearSlot, "undeclare"},
+		"OpSendMessage":    {core.OpSendMessage, "send"},
+		"OpClaim":          {core.OpClaim, "claim"},
+		"OpRelease":        {core.OpRelease, "release"},
+		"OpSweep":          {core.OpSweep, "sweep"},
+		"OpMarkDelivered":  {core.OpMarkDelivered, "mark_delivered"},
+		"OpPutBlob":        {core.OpPutBlob, "put_blob"},
+		"OpGrantRole":      {core.OpGrantRole, "grant_role"},
+		"OpPrune":          {core.OpPrune, "prune"},
+		"OpForceRelease":   {core.OpForceRelease, "force_release"},
+		"OpSpaceOpen":      {core.OpSpaceOpen, "open_space"},
+		"OpSpaceJoin":      {core.OpSpaceJoin, "join_space"},
+		"OpSpaceLeave":     {core.OpSpaceLeave, "leave_space"},
+		"OpSpaceSubscribe": {core.OpSpaceSubscribe, "watch_space"},
+		"OpSpaceExclusive": {core.OpSpaceExclusive, "lock_space"},
+		"OpSpacePost":      {core.OpSpacePost, "post"},
+		"OpSpaceAnnounce":  {core.OpSpaceAnnounce, "announce"},
+		"OpSpaceAck":       {core.OpSpaceAck, "ack_announcement"},
+		"OpAdoptAgent":     {core.OpAdoptAgent, "adopt_agent"},
+		"OpSpaceRetitle":   {core.OpSpaceRetitle, "retitle_space"},
 	} {
-		// FROZEN AGAIN, at new values, and the break was deliberate.
-		//
-		// 0.0.3 renamed the product to Dibs and its vocabulary with it, and these
-		// strings went along because leaving `register` inside a tool called
-		// `register` is the kind of seam that outlives everyone who remembers why.
-		// A 0.0.2 ledger therefore cannot be replayed by 0.0.3: the daemon refuses
-		// to start and says so, with `verify` and `admin repair-ledger` offered,
-		// which is the honest failure rather than a silent one.
-		//
-		// That was affordable exactly once, at 0.0.x with a handful of users. It
-		// is not affordable again. From here these are append-only: a new op gets
-		// a new constant, and an existing one keeps its string forever, because
-		// every ledger already written is read by every version that follows.
-		want := map[string]string{
-			"OpRegister": "register", "OpResume": "resume",
-			"OpWake": "wake", "OpAckBoard": "check_in",
-			"OpUpdate": "update", "OpSignOff": "sign_off",
-			"OpHeartbeat": "heartbeat", "OpSetSlot": "declare",
-			"OpClearSlot": "undeclare", "OpSendMessage": "send",
-			"OpClaim": "claim", "OpRelease": "release",
-			"OpSweep": "sweep", "OpMarkDelivered": "mark_delivered",
-			"OpPutBlob": "put_blob", "OpGrantRole": "grant_role",
-			"OpPrune": "prune", "OpForceRelease": "force_release",
-			"OpSpaceOpen": "open_space", "OpSpaceJoin": "join_space",
-			"OpSpaceLeave": "leave_space", "OpSpaceSubscribe": "watch_space",
-			"OpSpaceExclusive": "lock_space", "OpSpacePost": "post",
-			"OpSpaceAnnounce": "announce", "OpSpaceAck": "ack_announcement",
-			// Added by 0.0.6 and unguarded until an independent review found the
-			// gap. A retired op KIND stops the fold loudly, which is the one
-			// mercy in this file, but only if the string is pinned here first.
-			"OpAdoptAgent": "adopt_agent", "OpSpaceRetitle": "retitle_space",
-		}[name]
+		// FROZEN AGAIN, at new values, and the break was deliberate. 0.0.3 renamed
+		// the product to Dibs and its vocabulary with it, and these strings went
+		// along, because leaving `register` inside a tool called `register` is the
+		// kind of seam that outlives everyone who remembers why. A 0.0.2 ledger
+		// therefore cannot be replayed by 0.0.3: the daemon refuses to start and
+		// says so, with `verify` and `admin repair-ledger` offered.
+		got, want := pair.got, pair.want
 		if got != want {
 			t.Errorf("%s = %q, must stay %q: every ledger written since 0.0.3 uses "+
 				"this value, and Apply matches it by string", name, got, want)
