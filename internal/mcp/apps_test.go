@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -76,9 +77,66 @@ func TestShowBoardSplitsModelAndUIPayloads(t *testing.T) {
 
 	// The model line must stay far smaller than the UI payload, or the tool has
 	// stopped paying for itself.
+	//
+	// Measured on a host that DECLARES a panel, which is where the waste would
+	// be: there, the human is looking at the payload already and a second copy
+	// in the model's context buys nothing. Where no panel is declared the model
+	// text is the only rendering there is, and it is held instead by
+	// TestBoardFallsBackToTextBoardWithoutAPanel below.
+	panelHost := showBoardResult(res, false, true)["content"].([]map[string]any)[0]["text"].(string)
 	full, _ := json.Marshal(sc)
-	if len(text) >= len(full) {
-		t.Errorf("model text (%d B) not smaller than UI payload (%d B)", len(text), len(full))
+	if len(panelHost) >= len(full) {
+		t.Errorf("model text (%d B) not smaller than UI payload (%d B)", len(panelHost), len(full))
+	}
+}
+
+// A terminal host renders no panel, so the tool result is the whole of what the
+// agent can show. It used to be one line, "2 agent(s), 1 active", while `dibs
+// board` on the same machine printed the board: an agent asked to show the
+// board could not, and had less than the operator sitting next to it. Reported
+// against v0.0.6 by an operator who hit exactly that.
+func TestBoardFallsBackToTextBoardWithoutAPanel(t *testing.T) {
+	res := core.Result{
+		"board": core.Result{"agents": []core.Result{
+			{"id": "reviewer", "status": "active", "slots": []core.Result{
+				{"text": "reviewing the release surface"},
+			}},
+			{"id": "builder", "status": "dormant"},
+		}},
+		"agent_id": "a",
+	}
+
+	text := showBoardResult(res, false, false)["content"].([]map[string]any)[0]["text"].(string)
+	for _, want := range []string{"reviewer", "active", "reviewing the release surface", "builder", "dormant"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("no-panel board %q is missing %q: the agent cannot show what the board says", text, want)
+		}
+	}
+
+	// And the panel host still gets the line, not the rows: it has the panel.
+	panelHost := showBoardResult(res, false, true)["content"].([]map[string]any)[0]["text"].(string)
+	if strings.Contains(panelHost, "reviewing the release surface") {
+		t.Error("panel host got the rows too: the model is paying twice for what the human is already looking at")
+	}
+}
+
+// A large board must not become the largest thing in the model's context.
+func TestTextBoardIsBounded(t *testing.T) {
+	var agents []core.Result
+	for i := range 200 {
+		agents = append(agents, core.Result{
+			"id":     fmt.Sprintf("agent-%03d", i),
+			"status": "active",
+			"slots":  []core.Result{{"text": strings.Repeat("a very long declaration ", 40)}},
+		})
+	}
+	res := core.Result{"board": core.Result{"agents": agents}, "agent_id": "a"}
+	text := showBoardResult(res, false, false)["content"].([]map[string]any)[0]["text"].(string)
+	if len(text) > 4000 {
+		t.Errorf("no-panel board is %d B: unbounded boards land in every context window", len(text))
+	}
+	if !strings.Contains(text, "and 180 more") {
+		t.Errorf("truncated board does not say what it dropped: %q", text)
 	}
 }
 

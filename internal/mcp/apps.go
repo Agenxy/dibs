@@ -221,6 +221,17 @@ func boardSummary(sc map[string]any, declaredUI bool) string {
 	if n := inboxCount(sc["inbox"]); n > 0 {
 		msg += fmt.Sprintf("; %d unread message(s)", n)
 	}
+	// The ROWS, not just the count.
+	//
+	// A terminal host renders no panel, so an agent asked "show me the board"
+	// had one line, "3 agent(s), 1 active", while `dibs board` on the same
+	// machine printed names, status and declarations. The agent could not show
+	// what the operator could see, which is an odd place for this product to
+	// land. Reported by an operator who hit exactly that.
+	//
+	// Written here rather than reused: the CLI renderer prints to stdout with
+	// colour, from a different command, so there is nothing to call. Bounded,
+	// because this is charged to the model on every board call.
 	if declaredUI {
 		return msg + ". Shown to the human in the board panel."
 	}
@@ -237,8 +248,13 @@ func boardSummary(sc map[string]any, declaredUI bool) string {
 	// Not a denial either: the reference host declares nothing and renders from
 	// _meta regardless, so "not shown" would be its own false claim. What is
 	// true is that it was SENT, and that the agent has a way to see it itself.
-	return msg + ". Sent to their panel; this host declares no panel support, so " +
-		"they may not see it."
+	msg += ". Sent to their panel; this host declares no panel support, so " +
+		"they may not see it. The board itself:"
+	// The ROWS, because this host shows no panel. See boardRows.
+	if r := boardRows(agents); r != "" {
+		msg += "\n" + r
+	}
+	return msg
 }
 
 // inboxCount counts messages in either shape a mailbox arrives in, through a
@@ -748,4 +764,51 @@ func (s *Server) panelState(ctx context.Context, res core.Result, view, token st
 		out["view"] = view
 	}
 	return out
+}
+
+// maxSummaryRows bounds the text board. Enough to see a fleet, not so many that
+// a busy board becomes the largest thing in the model's context.
+const maxSummaryRows = 20
+
+// boardRows renders the board as text, for a host that shows no panel.
+func boardRows(agents []any) string {
+	if len(agents) == 0 {
+		return "  (no agents registered: they appear the moment they call register)"
+	}
+	var b strings.Builder
+	for i, a := range agents {
+		m, ok := a.(map[string]any)
+		if !ok {
+			continue
+		}
+		if i == maxSummaryRows {
+			fmt.Fprintf(&b, "  … and %d more; the full board is in this result\n",
+				len(agents)-maxSummaryRows)
+			break
+		}
+		id, _ := m["id"].(string)
+		status, _ := m["status"].(string)
+		what := "—"
+		if slots, _ := m["slots"].([]any); len(slots) > 0 {
+			if s0, ok := slots[0].(map[string]any); ok {
+				if t, _ := s0["text"].(string); t != "" {
+					what = firstLine(t, 60)
+				}
+			}
+		}
+		fmt.Fprintf(&b, "  %-20s %-9s %s\n", id, status, what)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// firstLine is one line of at most n runes, for a table cell.
+func firstLine(s string, n int) string {
+	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
+		s = s[:i]
+	}
+	r := []rune(strings.TrimSpace(s))
+	if len(r) <= n {
+		return string(r)
+	}
+	return string(r[:n-1]) + "…"
 }
