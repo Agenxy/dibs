@@ -1,6 +1,12 @@
 package engine
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/agenxy/dibs/internal/core"
+)
 
 // A space id must never quote the declaration that opened it.
 //
@@ -80,4 +86,34 @@ func contains(haystack, needle string) bool {
 		}
 	}
 	return false
+}
+
+// A long name must still disambiguate when its space already exists.
+//
+// core.cleanID caps an id at 64 runes. openFirstSpace retries a collision by
+// appending " 2" through " 4", and once the base reached that length every
+// suffix was truncated away, so all four attempts addressed the same existing
+// space, the loop found E_SPACE_EXISTS every time, and openFirstSpace returned
+// nil. The declaration succeeded and the first space it promises was never
+// opened: silent, and exactly the case the retry exists for. A `ticket:` ref
+// with a long key reaches 64 without trying. Found by a pre-release review.
+func TestALongSpaceNameStillDisambiguates(t *testing.T) {
+	long := strings.Repeat("a", 80)
+
+	first := core.CleanID(long)
+	if len([]rune(first)) != 64 {
+		t.Fatalf("setup: the base cleans to %d runes, not the 64-rune cap, so this "+
+			"proves nothing", len([]rune(first)))
+	}
+
+	seen := map[string]bool{first: true}
+	for attempt := 2; attempt <= 4; attempt++ {
+		id := core.CleanID(fmt.Sprintf("%s %d", trimRunes(long, 60), attempt))
+		if seen[id] {
+			t.Errorf("attempt %d produced %q, which an earlier attempt already "+
+				"addressed: every retry hits the same existing space and the agent is "+
+				"left with no space at all", attempt, id)
+		}
+		seen[id] = true
+	}
 }
