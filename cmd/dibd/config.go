@@ -367,7 +367,7 @@ type transport struct {
 //	anything else → TLS, with a certificate generated on first run
 //
 // Dibs secures itself: it never asks the operator to stand up a VPN, a proxy,
-// or a certificate authority to be safe by default. Sovereign, not dependent.
+// or a certificate authority to be safe by default.
 func resolveTransport(dir, addr string, c Config) (transport, error) {
 	if c.TLSCert != "" && c.TLSKey != "" {
 		return transport{c.TLSCert, c.TLSKey, "TLS (certificate from config)"}, nil

@@ -93,14 +93,14 @@ API", not "fork it."
    semantic verdicts it cannot justify. Return ranked candidates and let the model judge.
 7. **No sprawl.** Every component must earn its place against the pillars. When in doubt,
    expose an API and let someone else build it.
-8. **Sovereign, and that includes distribution.** Dibs stands up no CA, depends on no VPN,
-   and requires no account or subscription to install or run: `resolveTransport` states the
-   inward half of this, and the outward half is the same rule. **We do not pay to be
-   listed.** Directories that gate a listing behind a fee are declined, not negotiated,
-   however good their traffic looks: a project that buys placement has made its
-   discoverability someone else's lever. Paying for infrastructure we genuinely must own,
-   a domain, hosting, is not the same thing and is fine. This is Agenxy doctrine rather than a
-   Dibs preference, and it applies to every repository under the org.
+8. **Installing and running Dibs requires nothing you must sign up for.** No CA, no VPN,
+   no account, no subscription: `resolveTransport` states the inward half of this, and the
+   outward half is the same rule. **We do not pay to be listed.** Directories that gate a
+   listing behind a fee are declined, not negotiated, however good their traffic looks: a
+   project that buys placement has made its discoverability someone else's lever. Paying
+   for infrastructure we genuinely must own, a domain, hosting, is not the same thing and
+   is fine. This is Agenxy doctrine rather than a Dibs preference, and it applies to every
+   repository under the org.
 9. **MCP 2026 is the target; 2025 is a courtesy we are paying down.** The 2026
    revision is where this protocol is going and where Dibs is going with it. The
    legacy path exists for exactly one reason, that not every harness has

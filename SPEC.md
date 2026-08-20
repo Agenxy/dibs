@@ -713,8 +713,8 @@ for the operator, not by them:
   first run. Serving a remote address in cleartext is never the default.
 
 Overrides live in `<dir>/dibs.toml` (`addr`, `tls_cert`, `tls_key`, `insecure_plaintext`)
-for operators who want their own CA or a fronting proxy. Sovereignty is the rule: Dibs
-never requires a VPN, an overlay, or an external CA to be safe out of the box.
+for operators who want their own CA or a fronting proxy. Dibs never requires a VPN,
+an overlay, or an external CA to be safe out of the box.
 
 Mesh (v2, multi-writer): QUIC/HTTP3, stream-per-concern, 0-RTT (idempotent exchange),
 pinned-key TLS 1.3: deferred because merging hash-chained ledgers across writers needs
