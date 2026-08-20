@@ -215,7 +215,7 @@ func TestBlobStoreCapIsConfigurable(t *testing.T) {
 	if got.BlobStoreBytes != 4<<30 {
 		t.Fatalf("want 4GiB, got %d", got.BlobStoreBytes)
 	}
-	// Set alongside a agent_ttl, both must land: the early return for an absent
+	// Set alongside an agent_ttl, both must land: the early return for an absent
 	// agent_ttl used to skip this one entirely.
 	both, err := LimitsConfig{AgentTTL: "9m", BlobStoreBytes: 2 << 30}.apply(base)
 	if err != nil {

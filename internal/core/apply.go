@@ -2,117 +2,13 @@ package core
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"slices"
 	"sort"
 	"strings"
 	"time"
 )
-
-// Admit rejects an op arriving from a CALLER. Not called during replay.
-//
-// The distinction is the whole point, and it cost a daemon its own history to
-// learn: this check first went into Apply, and Apply is also the fold that
-// replays the ledger. A ledger holding ops that were legal when they were
-// written then failed to replay under the stricter rule, and the daemon refused
-// to start ("replay apply serial 12: E_EMPTY_BODY") on data it had itself
-// written and acknowledged.
-//
-// So Apply must accept everything it has ever accepted, forever. Anything that
-// tightens what callers may DO belongs here, at ingress, where it binds new ops
-// and leaves history alone. (The size limits inside Apply carry the same latent
-// hazard: lower MaxBodyBytes and an existing ledger stops replaying. They
-// predate this and are left rather than moved blind, but new rules go here.)
-func Admit(op *Op, lim Limits) error {
-	// Bounds on replayed metadata, applied at ingress for the reason above: the
-	// same strings are already in ledgers on disk, and rejecting them in Apply
-	// would stop those daemons booting.
-	//
-	// Everything here ends up in State and is therefore re-read into memory on
-	// every start, forever. The count of dirs and refs was bounded and the
-	// SIZE of each was not, which bounds nothing: sixteen refs of two megabytes
-	// each is thirty-two megabytes of permanent ledger, accepted silently. The
-	// probe that found this pushed a 2 MiB session_id and a slot holding
-	// 100,000 holds, and the board took both.
-	//
-	// A hold is a host resource name ("port:8080"), a ref a file path, an
-	// AgentInfo field a harness name: the honest values are tens of bytes, so
-	// these ceilings are three orders of magnitude above real use and only ever
-	// catch a mistake or an abuse.
-	if err := boundStrings(lim.MaxPathBytes, "dirs", op.Dirs); err != nil {
-		return err
-	}
-	if err := boundStrings(lim.MaxPathBytes, "refs", op.Refs); err != nil {
-		return err
-	}
-	if len(op.Holds) > lim.MaxDirs {
-		return errTooLarge("holds", lim.MaxDirs)
-	}
-	if err := boundStrings(lim.MaxPathBytes, "holds", op.Holds); err != nil {
-		return err
-	}
-	if len(op.SessionID) > lim.MaxNameBytes {
-		return errTooLarge("session_id", lim.MaxNameBytes)
-	}
-	if a := op.Agent; a != nil {
-		for field, v := range map[string]string{
-			"agent.harness": a.Harness, "agent.version": a.Version,
-			"agent.surface": a.Surface, "agent.model": a.Model,
-			"agent.provider": a.Provider, "agent.effort": a.Effort,
-			"agent.title": a.Title, "agent.project": a.Project,
-			"agent.branch": a.Branch, "agent.host": a.Host,
-		} {
-			if len(v) > lim.MaxNameBytes {
-				return errTooLarge(field, lim.MaxNameBytes)
-			}
-		}
-		// A cwd is a PATH, and was bounded as if it were a name. 128 bytes is
-		// generous for a model or a branch and ordinary for a working
-		// directory: a macOS temp directory alone reaches ninety, and any
-		// checkout a few levels inside a home directory passes it. The whole
-		// register was then refused, so the agent could not coordinate AT
-		// ALL, over a descriptive field. Relaxing an admission bound is safe in
-		// the direction that matters: Admit runs only on ingress, so nothing
-		// already in a ledger becomes inadmissible.
-		for field, v := range map[string]string{
-			"agent.cwd": a.CWD, "agent.repo_dir": a.RepoDir,
-			"agent.repo_remote": a.RepoRemote, "agent.repo_roots": a.RepoRoots,
-		} {
-			if len(v) > lim.MaxPathBytes {
-				return errTooLarge(field, lim.MaxPathBytes)
-			}
-		}
-	}
-	switch op.Kind {
-	case OpSpaceAnnounce:
-		// An announcement with nothing in it obliges every member to
-		// acknowledge nothing, and re-pings them until they do. The UPPER bound
-		// on a body was checked and the lower one was not.
-		//
-		// Not hypothetical: a whole coordination space between two agents ran
-		// on empty announcements, because the caller sent the text under the
-		// wrong key and the missing value became "". Each returned a serial and
-		// a must_ack count, so it looked delivered from the sending side, while
-		// the receiving agent saw an agent full of obligations that said nothing
-		// and had to ask a human what was going on.
-		if strings.TrimSpace(op.Body) == "" {
-			return errf("E_EMPTY_BODY",
-				"pass the announcement text as `body`",
-				"`body` is empty: an announcement needs something to say, because it "+
-					"obliges every member to acknowledge it, and an empty one obliges "+
-					"them to acknowledge nothing")
-		}
-	case OpSpacePost:
-		// A post obliges nobody, so an empty one is noise rather than a false
-		// obligation, but it is still an event delivered to every member, and
-		// the cause is the same slip.
-		if strings.TrimSpace(op.Body) == "" {
-			return errf("E_EMPTY_BODY", "pass the text as `body`",
-				"`body` is empty: a post needs something to say")
-		}
-	}
-	return nil
-}
 
 // boundStrings rejects the first oversized element, naming it by index so the
 // caller can find it in a list of sixteen.
@@ -138,22 +34,73 @@ type Op struct {
 	// Blanked on ingress like AgentID: an agent cannot assert it.
 	ClaimVerified bool `json:"claim_verified,omitempty"`
 
+	// AdoptAuthorised records that the ENGINE checked the caller may take over
+	// an abandoned mailbox: the human proven present at this machine, or an
+	// agent the operator promoted. Same rule as ClaimVerified: an impure
+	// authorisation decision is made once, at ingress, and the VERDICT is
+	// recorded so replay reaches the same answer without re-deciding it. Blanked
+	// on ingress like AgentID, so an agent cannot assert it.
+	AdoptAuthorised bool `json:"adopt_authorised,omitempty"`
+
+	// HumanMint marks the ONE registration that may create or reattach the
+	// operator's own agent. An ingress decision like the two above, and the
+	// reasoning is with the guard that reads it (engine.wouldTakeHumanIdentity).
+	//
+	// No json name, deliberately: it is neither ledgered nor settable by a
+	// caller, so replay sees the ordinary registration it always was.
+	HumanMint bool `json:"-"`
+
+	// KeepDescription means the caller OMITTED `description`, so the engine
+	// fills the current one in rather than letting the fold assign "".
+	//
+	// No json name, like HumanMint: an ingress decision, and the op that reaches
+	// the ledger carries the resolved text, so replay is unchanged. The fold
+	// assigns Description unconditionally and must keep doing so, because an op
+	// already on disk that cleared a description meant to clear it.
+	KeepDescription bool `json:"-"`
+
 	// Actor resolution. Token authenticates (live path); Agent is set by Apply
 	// and used on replay (the engine blanks it on ingress: unforgeable).
 	Token   string `json:"-"`
 	AgentID string `json:"agent_id,omitempty"`
 
 	// register / resume / update
-	Name        string     `json:"name,omitempty"`
-	Description string     `json:"description,omitempty"`
-	PID         int        `json:"pid,omitempty"`
-	ProcStart   int64      `json:"proc_start,omitempty"`
-	NewToken    string     `json:"token,omitempty"` // engine-generated; encrypted at rest
-	Nonce       string     `json:"nonce,omitempty"` // encrypted at rest
-	ResumeID    string     `json:"resume_id,omitempty"`
-	SessionID   string     `json:"session_id,omitempty"` // harness session, for hook lookup
-	Agent       *AgentInfo `json:"agent,omitempty"`      // who is behind the agent (descriptive only)
-	Parent      string     `json:"parent,omitempty"`     // the agent that spawned this one (§8.2)
+	Name        string `json:"name,omitempty"`
+	Description string `json:"description,omitempty"`
+	PID         int    `json:"pid,omitempty"`
+	// NoProcess says this participant HAS no process, which is different from
+	// omitting a pid.
+	//
+	// An omitted pid means "unchanged", so an agent that reattaches without one
+	// keeps whatever it had: that rule protects an agent whose harness does not
+	// know its own pid, and it is right. It leaves no way to say that a pid
+	// recorded earlier was wrong, and the human at the board is exactly that
+	// case. Their agent was registered with the DAEMON's pid, so after a
+	// restart the sweep probed a dead process and reported a person as
+	// `process_exited`, which is both false and a grim thing to say about
+	// somebody who is simply not typing.
+	//
+	// A person's liveness is silence, not a process table entry.
+	NoProcess bool `json:"no_process,omitempty"`
+	// Choices enumerates the answers a question will accept, so the answer space
+	// is stated by whoever knows it rather than guessed by whoever reads it.
+	Choices []string `json:"choices,omitempty"`
+	// Grant is the role a request ASKS FOR, so that approving the request IS the
+	// grant rather than a note recording that somebody agreed one should happen.
+	Grant string `json:"grant,omitempty"`
+	// Adopt is the ABANDONED agent a request asks to reclaim, so that approving
+	// it moves that mailbox rather than telling somebody they may go and do it.
+	Adopt     string `json:"adopt,omitempty"`
+	ProcStart int64  `json:"proc_start,omitempty"`
+	NewToken  string `json:"token,omitempty"` // engine-generated; encrypted at rest
+	Nonce     string `json:"nonce,omitempty"` // encrypted at rest
+	ResumeID  string `json:"resume_id,omitempty"`
+	SessionID string `json:"session_id,omitempty"` // harness session, for hook lookup
+	// SessionAlias is another name this same harness session goes by, joined by
+	// the daemon at ingress. Never sent by a caller. See Agent.SessionAliases.
+	SessionAlias string     `json:"session_alias,omitempty"`
+	Agent        *AgentInfo `json:"agent,omitempty"`  // who is behind the agent (descriptive only)
+	Parent       string     `json:"parent,omitempty"` // the agent that spawned this one (§8.2)
 	// ParentNonce is the one-time secret the parent issued for this child.
 	//
 	// Parent alone is a claim anyone can make; this is the proof. A parent that
@@ -263,6 +210,21 @@ const (
 	// it would be applied to ops that older code already accepted. No ledger
 	// anywhere contains this kind, so there is nothing to be retroactive about.
 	OpPruneOwn = "prune_own"
+	// OpAdoptAgent moves an abandoned agent's mail onto a live one.
+	//
+	// An agent that registered with neither a nonce nor a session id cannot be
+	// reattached by anybody, ever: both recovery paths key on one of those. Its
+	// mailbox then keeps accepting mail that no one can read. That is not a
+	// hypothetical: it happened on this project's own board, where six messages
+	// sat unreadable behind an identity nobody could become, and the hint shown
+	// at that exact moment named `merge_spaces`, which takes SPACE ids and would
+	// have failed with E_NO_SPACE.
+	//
+	// Deliberately not an agent-to-agent power. Taking another agent's mail is
+	// the definition of the thing Dibs must never allow, so the caller is
+	// authorised outside the fold (see Op.AdoptAuthorised) by the one party
+	// entitled to decide: the human at the machine, or somebody they promoted.
+	OpAdoptAgent = "adopt_agent"
 	// OpClaimCoordinator is the bootstrap: the agent that started this daemon
 	// takes the coordinator role by presenting a secret only the daemon's own
 	// data directory holds.
@@ -326,6 +288,8 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		res, evs, err = s.applyVouchChild(l, op)
 	case OpSpaceOpen:
 		res, evs, err = s.applySpaceOpen(l, op, now)
+	case OpSpaceRetitle:
+		res, evs, err = s.applySpaceRetitle(l, op, now)
 	case OpSpaceJoin:
 		res, evs, err = s.applySpaceJoin(l, op, now)
 	case OpSpaceLeave:
@@ -355,14 +319,9 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	case OpActivityCheckpoint:
 		res, evs = Result{"ok": true}, []Event{} // state effect: LastCoordination below
 	case OpAckBoard:
-		res, evs = s.applyAckBoard(l, now)
+		res, evs = s.applyAckBoard(l, op)
 	case OpUpdate:
-		if len(op.Description) > s.Limits.MaxDescBytes {
-			err = errTooLarge("description", s.Limits.MaxDescBytes)
-			break
-		}
-		l.Description = op.Description
-		res, evs = Result{"ok": true}, []Event{{Type: "agent.updated", Agent: l.ID}}
+		res, evs, err = s.applyUpdate(l, op)
 	case OpBindSession:
 		// A LEDGERED write, because it is a write.
 		//
@@ -384,6 +343,8 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		return s.applyClaimCoordinator(op, l, now)
 	case OpPruneOwn:
 		return s.applyPruneOwn(op, l, now)
+	case OpAdoptAgent:
+		return s.applyAdoptAgent(op, l, now)
 	case OpSignOff:
 		res, evs = s.applyClose(l, now)
 	case OpHeartbeat: // unreachable when sleeping (wake precedes); no-op
@@ -460,19 +421,73 @@ func dedupKey(agent, id string) string { return agent + "\x00" + id }
 // sendDigest binds a send's payload (recipient, type, body, deadline, and every
 // attachment handle) so op_id dedup rejects a retry that reused the id with
 // different content (SPEC §4).
+// sendDigest binds EVERY field that changes what the message does.
+//
+// op_id makes a retry safe by returning the original result when the payload
+// matches, and refusing with E_OP_ID_CONFLICT when it does not. That guarantee
+// is only as good as the list below: a field left out is a field an agent can
+// change while reusing an op_id, and the answer is `{"ok": true,
+// "deduplicated": true}` over a message that still carries the old value.
+//
+// grant and adopt were missing, which made that a privilege bug rather than a
+// nuisance: retry a plain request with `grant: "coordinator"` and the send
+// reports success while the stored request grants nothing, or drop `grant` from
+// a retry and the send reports success while approval still promotes somebody.
+// choices was missing too, so an answer space could be silently stale.
+//
+// Found by an independent review before release. The rule: if it reaches the
+// Message, it belongs here.
+// COUNTS AND ALL THE FIELDS, because a flat list of strings is ambiguous.
+//
+// The lists were appended one after another with nothing saying where one ended
+// and the next began, so these two different messages digested identically:
+//
+//	choices ["x", "", "/tmp/a", ""]  with no attachments
+//	choices ["x"]                    with attachment {path: "/tmp/a"}
+//
+// The second retry is then answered ok:true, deduplicated:true, and what is
+// stored is the first: one message offering four answers, the other offering one
+// answer and a file. Size and Mime were missing outright, so two attachments
+// differing only in what they claim to be were the same message here.
+//
+// Lengths first, every field included. Found by a pre-release review.
 func sendDigest(op *Op) string {
-	parts := []string{op.To, op.MsgType, op.Body, itoa(op.DeadlineSec)}
+	parts := []string{op.To, op.MsgType, op.Body, itoa(op.DeadlineSec), op.Grant, op.Adopt}
+	parts = append(parts, itoa(len(op.Choices)))
+	parts = append(parts, op.Choices...)
+	parts = append(parts, itoa(len(op.Attachments)))
 	for _, a := range op.Attachments {
-		parts = append(parts, a.Blob, a.Path, a.Hash)
+		parts = append(parts, a.Blob, a.Path, a.Hash, a.Mime, itoa(int(a.Size)))
 	}
 	return digestOf(parts...)
 }
 
+// digestOf hashes a list of strings so that no two different lists collide.
+//
+// LENGTH-PREFIXED, not delimiter-separated. This wrote each part followed by a
+// NUL, which is only unambiguous if no part can CONTAIN a NUL, and JSON accepts
+// \u0000 quite happily while Admit has no reason to refuse it. So these two
+// distinct answer spaces encoded to the same bytes:
+//
+//	["a\x00b", "c"]
+//	["a", "b\x00c"]
+//
+// Reusing an op_id with the second is then answered ok:true, deduplicated:true,
+// and the question that stands is the first, offering different answers than
+// the caller asked for. An encoding collision, not a hash collision: no amount
+// of SHA-256 helps.
+//
+// The previous round of this added element COUNTS, which fixed the boundary
+// between two lists and left the boundary between two elements exactly as it
+// was. Prefixing each part with its length closes both, for any bytes at all.
+// Found by a pre-release review, on the fix for the same defect.
 func digestOf(parts ...string) string {
 	h := sha256.New()
+	var n [8]byte
 	for _, p := range parts {
+		binary.BigEndian.PutUint64(n[:], uint64(len(p)))
+		h.Write(n[:])
 		h.Write([]byte(p))
-		h.Write([]byte{0})
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
@@ -543,12 +558,17 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				if op.Agent != nil {
 					l.Agent = op.Agent
 				}
-				if op.PID != 0 {
+				switch {
+				case op.NoProcess:
+					// Corrects a pid recorded earlier, which omitting one cannot.
+					l.PID, l.ProcStart = 0, 0
+				case op.PID != 0:
 					l.PID, l.ProcStart = op.PID, op.ProcStart
 				}
 				if op.SessionID != "" {
 					l.SessionID = op.SessionID // the new session owns it now
 				}
+				l.bindHarnessSession(op.SessionAlias)
 				// LEDGERED, like every other transition.
 				//
 				// This branch rotates the token, wakes the agent, re-arms the
@@ -627,6 +647,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				if op.PID != 0 {
 					l.PID, l.ProcStart = op.PID, op.ProcStart
 				}
+				l.bindHarnessSession(op.SessionAlias)
 				// Ledgered for the same reason as the nonce branch above.
 				evs := []Event{{Type: "agent.reattached", Agent: l.ID, Data: map[string]any{
 					"via": "session_id",
@@ -650,8 +671,35 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 			}
 		}
 	}
-	if live >= s.Limits.MaxAgents || (kind == KindPersistent && persistent >= s.Limits.MaxPersistentAgents) {
-		return nil, nil, ErrAgentLimit
+	// Name WHICH ceiling, and its number.
+	//
+	// Both cases returned one static error reading "maximum number of agents
+	// reached", which sent the reader to the wrong limit whenever it was the
+	// persistent one: measured on a board holding 16 of 64 agents, where
+	// registration was refused because all 16 were persistent and that cap is
+	// 16. An operator reading "maximum number of agents" against a board that is
+	// a quarter full has been told something true and useless.
+	//
+	// The remedy differs too, which is the better reason. A full board wants
+	// finished agents signed off; a full PERSISTENT board usually means standing
+	// identities accumulated as siblings, and the fix is to reclaim them rather
+	// than to raise anything.
+	if live >= s.Limits.MaxAgents {
+		return nil, nil, errf("E_AGENT_LIMIT",
+			"sign_off the agents that have finished, or ask the human to raise "+
+				"max_agents in dibs.toml",
+			"this board holds its maximum of %d live agents", s.Limits.MaxAgents)
+	}
+	if kind == KindPersistent && persistent >= s.Limits.MaxPersistentAgents {
+		return nil, nil, errf("E_AGENT_LIMIT",
+			"a standing identity holds its slot while dormant, which is the point of "+
+				"one, so this usually means siblings accumulated: an agent that could "+
+				"not prove it was itself and registered again. Reclaim them with "+
+				"adopt_agent, or ask the human to raise max_persistent_agents in "+
+				"dibs.toml. Registering as ephemeral works now and keeps no mailbox",
+			"this board holds its maximum of %d persistent agents (of %d agents in "+
+				"total, so it is the PERSISTENT ceiling you have hit)",
+			s.Limits.MaxPersistentAgents, s.Limits.MaxAgents)
 	}
 	id := agentID(s, op.Name)
 	// Lineage is claimed and proven separately. An unproven parent is displayed
@@ -672,6 +720,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 		Slots: map[string]Slot{},
 	}
 	s.Agents[id] = l
+	l.bindHarnessSession(op.SessionAlias) // the name its hooks use, if different
 	if op.Nonce != "" {
 		s.Nonces[op.Nonce] = id
 	}
@@ -758,6 +807,25 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 			id + ": register with an ASCII name if you want a meaningful one. Your original " +
 			"name is kept and shown to humans on the board."
 	}
+	// A name that says nothing. Not an error: a name is advisory, and refusing
+	// one would be coercion over a label.
+	//
+	// It is worth saying anyway, because the cost lands on somebody who is not
+	// here. An agent picks its name in its first seconds, before it knows what
+	// it will be doing, so "agent", "claude-1" and "worker" are exactly what a
+	// cold start produces; then a human opens a board of nine agents and every
+	// row is a synonym for "an agent". The register result is the one moment
+	// this can be said to the party that can fix it, and `update` is now the fix,
+	// so say both.
+	if generic := genericAgentName(op.Name); generic != "" {
+		res["naming"] = "\"" + op.Name + "\" names your species, not you: on a board of " +
+			"nine agents every row would read as a synonym for \"an agent\", and the human " +
+			"reading it cannot tell which of them to interrupt. Name yourself for the ROLE " +
+			"you hold (reviewer, ledger-surgeon, docs) or the seat you occupy, not for the " +
+			"model or the harness running you: those are already on the board beside your " +
+			"name. Your id is fixed at " + id + ", but the name is not: call update(name=…) " +
+			"once you know what you are, and put the rest in description."
+	}
 	// An agent whose only recovery credential is a session id is reclaimable by
 	// anyone who learns that id, and the bridge derives it from a process id
 	// that any same-user program can enumerate. Say so, rather than letting the
@@ -802,13 +870,158 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 		if n := len(s.Inbox(sib.ID)); n > 0 {
 			msg += " It is holding " + itoa(n) + " message(s) you cannot read."
 		}
+		// The corrective call has to be one that EXISTS.
+		//
+		// This said "ask a coordinator to merge_spaces <new> into <old>", which
+		// is lane-era residue: merge_spaces takes SPACE ids and these are AGENT
+		// ids, so following it fails with E_NO_SPACE. It was printed at the one
+		// moment mail becomes unreachable, which is the worst place in the
+		// product for a hint to be wrong, and it was found by following it.
+		// And the LAST line has to be one this agent can act on by itself.
+		//
+		// It ended on adopt_agent, which needs the human at the machine or a
+		// coordinator: an authority the agent reading it does not have and cannot
+		// get from where it is standing. So the honest reading was "you have lost
+		// your mail", and the reachable action was to carry on as a sibling.
+		// Every duplicate on a real board arrived this way: dibs-maintainer, -2
+		// and -3; codex-root and -2; codex-1 and -2.
+		//
+		// Asking IS an action it can take, and approving it performs the move.
 		res["name_taken"] = msg + " If you ARE that agent returning, you can still get back in:" +
 			" register again with the same name and the nonce you kept, and you reattach to it" +
-			" instead of forking. If you kept no nonce, that agent is only reachable with its" +
-			" session_id: ask a coordinator to merge_spaces " + id + " into " + sib.ID +
-			", which moves this agent's mail and slots onto that one."
+			" instead of forking. If you kept no nonce and no session_id, nobody can become it" +
+			" again, so ASK for its mail instead: send(to: \"coordinator\", type: \"request\"," +
+			" adopt: \"" + sib.ID + "\", body: why it is yours). Their Approve moves that" +
+			" mailbox onto you. Address the human's row instead if nobody holds the" +
+			" coordinator role. Do not carry on as a sibling: that is how a board fills up" +
+			" with -2 and -3."
 	}
 	return res, evs, nil
+}
+
+// genericAgentName reports the placeholder a name reduces to, or "".
+//
+// The test is deliberately narrow: the whole name, minus a trailing counter,
+// must BE a placeholder. "reviewer-2" and "claude-code-linter" are specific
+// enough to pick out of a roster and are left alone; "claude-2" and "agent" are
+// not. Naming yourself after the model or the harness is the same failure in a
+// different coat, because both are already shown next to the name.
+func genericAgentName(name string) string {
+	base := strings.ToLower(strings.TrimSpace(name))
+	base = strings.TrimRight(base, "0123456789")
+	base = strings.TrimRight(base, "-_ .")
+	switch base {
+	case "agent", "assistant", "ai", "bot", "model", "llm",
+		"worker", "helper", "runner", "task", "job", "session", "instance",
+		"main", "default", "temp", "tmp", "test", "dev", "me", "user", "new",
+		"claude", "claude-code", "codex", "gpt", "opus", "sonnet", "haiku",
+		"gemini", "cursor", "copilot", "opencode", "pi", "hermes", "anthropic":
+		return base
+	}
+	return ""
+}
+
+// applyUpdate revises what an agent SAYS ABOUT ITSELF: its display name, its
+// description, and the self-reported half of its identity.
+//
+// The ID is not among them, deliberately. An id is an ADDRESS: mail, claims,
+// space membership and every hint that names an agent are keyed on it, and a
+// mutable address is a message delivered to the wrong agent, or to nobody. So a
+// rename here changes the label a human reads and nothing about where things
+// arrive, and the result says so in the same breath rather than leaving the
+// caller to discover it the hard way.
+//
+// Why this exists at all: an agent picks its name in its first seconds, before
+// it knows what it is going to be doing, and "agent" or "claude-1" is what that
+// produces. The board then carries that name for the agent's whole life. Making
+// the descriptive half mutable is the difference between a roster a human can
+// read and a list of placeholders.
+//
+// Note the asymmetry in what an empty value means. Description clears, because
+// that is what it has always done and ledgers already hold `update` ops with an
+// empty description whose recorded effect was to clear it: making empty mean
+// "leave alone" would silently re-fold that history into a different state.
+// Name and the identity fields are new here, so no ledger has them set, and
+// merge-when-non-empty is free of that constraint AND is the useful semantic:
+// an agent updating its branch must not have to restate its model.
+func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
+	// The size bounds for this op are in Admit, not here. A bound in the fold is
+	// retroactive, and this one was found by the test that asserts Apply folds
+	// whatever Admit rejects, once that test learned about update.
+	res := Result{"ok": true, "id": l.ID}
+	// Taking a live agent's name is refused, not suffixed. Register suffixes
+	// because a new agent has no history to protect; here both agents already
+	// exist, and two live agents sharing a name is not cosmetic: liveSiblingOf
+	// redirects a dead agent's mail to a same-named live one, so a rename onto
+	// somebody else's name is a mail-redirection primitive.
+	if op.Name != "" && op.Name != l.Name {
+		if other := s.siblingByName(op.Name, l.ID); other != nil {
+			return nil, nil, errf("E_NAME_TAKEN",
+				"pick another name, or leave name out and update only your description",
+				"the name %q belongs to %s, which is still on the board: two live agents "+
+					"sharing a name redirects mail between them", op.Name, other.ID)
+		}
+		res["renamed_from"] = l.Name
+		res["address"] = "your id is still " + l.ID + " and that is what others address: " +
+			"a rename changes the label humans read, never where your mail arrives"
+		l.Name = op.Name
+	}
+	l.Description = op.Description
+	if op.Agent != nil {
+		res["identity"] = l.mergeIdentity(op.Agent)
+	}
+	if sid := l.bindHarnessSession(op.SessionAlias); sid != "" {
+		res["session_id"] = sid
+	}
+	// A participant that HAS no process says so, which is the only way to clear
+	// a pid recorded earlier: omitting one means "unchanged", so the register
+	// path cannot express this at all. It is also the only path that reliably
+	// can, because register short-circuits a same-nonce retry inside one TTL and
+	// returns the original result without applying anything: correct for a
+	// retried registration, and silently a no-op for a correction spelled as
+	// one. Asked for by the human's row, which recorded the DAEMON's pid and so
+	// reported the operator as a dead process after every restart.
+	if op.NoProcess {
+		l.PID, l.ProcStart = 0, 0
+		res["process"] = "no process recorded: liveness is silence from here on"
+	}
+	res["name"], res["description"] = l.Name, l.Description
+	return res, []Event{{Type: "agent.updated", Agent: l.ID}}, nil
+}
+
+// mergeIdentity overlays the self-reported identity fields an agent may revise,
+// and returns the ones it actually changed.
+//
+// Only the self-reported half is settable. Harness and Version come from the
+// MCP handshake: the CLIENT states those, which is the one part of an identity
+// that is not the model's word for itself, and letting the model overwrite them
+// would throw away the only trustworthy field on the board. Project, RepoDir,
+// RepoRemote and RepoRoots are resolved from the filesystem by the server and
+// compared by the fold; an agent asserting them could make its work look like
+// it lives in a repository it has never touched.
+func (a *Agent) mergeIdentity(in *AgentInfo) []string {
+	if a.Agent == nil {
+		a.Agent = &AgentInfo{}
+	}
+	var changed []string
+	for _, f := range []struct {
+		name string
+		dst  *string
+		src  string
+	}{
+		{"model", &a.Agent.Model, in.Model},
+		{"provider", &a.Agent.Provider, in.Provider},
+		{"effort", &a.Agent.Effort, in.Effort},
+		{"surface", &a.Agent.Surface, in.Surface},
+		{"title", &a.Agent.Title, in.Title},
+		{"branch", &a.Agent.Branch, in.Branch},
+	} {
+		if f.src != "" && f.src != *f.dst {
+			*f.dst = f.src
+			changed = append(changed, f.name)
+		}
+	}
+	return changed
 }
 
 // applyResume is the explicit activation op for standing roles (SPEC §5):
@@ -891,8 +1104,11 @@ func (s *State) applyWake(l *Agent) (Result, []Event, error) {
 // applyAckBoard is the atomic checkpoint (SPEC §10): awareness ack + delivery
 // transitions of returned pending mail, one op, one serial; snapshot is the
 // post-state.
-func (s *State) applyAckBoard(l *Agent, _ time.Time) (Result, []Event) {
+func (s *State) applyAckBoard(l *Agent, op *Op) (Result, []Event) {
 	evs := []Event{{Type: "board.acked", Agent: l.ID}}
+	// check_in is how an agent ALREADY on the board gets the name its hooks
+	// use: it is the one call they all keep making. See bindHarnessSession.
+	bound := l.bindHarnessSession(op.SessionAlias)
 	for _, m := range s.Inbox(l.ID) {
 		if m.State == MsgStatePending {
 			m.State = MsgStateDelivered
@@ -924,6 +1140,9 @@ func (s *State) applyAckBoard(l *Agent, _ time.Time) (Result, []Event) {
 		"board": s.boardAtNextSerial(), "inbox": s.Inbox(l.ID), "messages": s.Inbox(l.ID),
 		"truncated_before_serial": l.TruncatedBefore,
 		"announcements":           s.UnackedFor(l.ID),
+		// Empty unless this call bound one: a binding nothing reports is a
+		// binding nobody can check.
+		"session_id": bound,
 	}, evs
 }
 
@@ -1372,7 +1591,7 @@ func (s *State) finishSend(
 	m := &Message{
 		Serial: serial, From: l.ID, To: to.ID, Type: op.MsgType, Body: op.Body,
 		State: MsgStatePending, Deadline: deadline, Attachments: op.Attachments,
-		SentAt: now,
+		SentAt: now, Choices: op.Choices, Grant: op.Grant, Adopt: op.Adopt,
 	}
 	s.Messages[serial] = m
 	evs := []Event{{Type: "message.sent", Agent: l.ID, To: to.ID, Data: map[string]any{
@@ -1394,48 +1613,10 @@ func (s *State) finishSend(
 	if expecting {
 		res["deadline"] = deadline
 	}
-	if to.Sleeping() {
-		// A sleeping agent that has been SUPERSEDED will never wake, so the
-		// reassurance below is false for it and has to be said differently.
-		//
-		// This is the case that lost two full bug reports on a live fleet. A
-		// restart forked every agent; agents addressed mail to the names they knew;
-		// those agents were dormant tombstones whose occupants were now alive under
-		// `-2` ids. Dibs accepted the mail and told the senders it would be seen
-		// "when it next wakes". Nobody was coming. The failure was invisible from
-		// both ends at once: the sender read success, the intended recipient saw
-		// nothing, and it took a third space to notice.
-		if live := s.liveSiblingOf(to); live != nil {
-			res["note"] = "delivered to " + to.ID + ", which is " + string(to.Status) +
-				", but " + live.ID + " is LIVE under the same name and is almost certainly who " +
-				"you meant. " + to.ID + " will not wake to read this. Resend to " + live.ID + "."
-		} else {
-			// The message is already committed by the time we get here, so the note
-			// must say what IS true, not warn about what might happen: it is queued
-			// and will be delivered; only the deadline is at risk.
-			res["note"] = "delivered to " + to.ID + ", which is currently " + string(to.Status) +
-				": it will see this when it next wakes. The message is not lost; only the response " +
-				"deadline is at risk, so re-send with a larger deadline_s if you need an answer, or " +
-				"use notify/handoff when you do not."
-		}
+	if n := s.sleepingNote(to); n != "" {
+		res["note"] = n
 	}
 	return res, evs, nil
-}
-
-// liveSiblingOf finds an active agent sharing this one's name.
-//
-// Deliberately NOT siblingByName, which ranks by how much mail an agent holds
-// because it answers a different question. "which mailbox can the caller not
-// read". Here the only thing that matters is which sibling is ALIVE, and
-// borrowing that ranking would quietly skip a live agent that happened to hold
-// less mail than a dead one.
-func (s *State) liveSiblingOf(to *Agent) *Agent {
-	for _, l := range s.Agents {
-		if l.ID != to.ID && l.Name == to.Name && l.Status == StatusActive {
-			return l
-		}
-	}
-	return nil
 }
 
 func (s *State) oldestDisplaceableNotify(agent string) *Message {
@@ -1488,6 +1669,10 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 			"E_BAD_DISPOSITION", "use answer|approve|deny|decline", "unknown disposition %q", op.Disposition,
 		)
 	}
+	granted, adopted, err := s.decideRequestEffects(m, op, st)
+	if err != nil {
+		return nil, nil, err
+	}
 	m.State = st
 	m.Response = op.Body
 	m.Consumed = true // responding proves receipt (SPEC §8)
@@ -1509,10 +1694,42 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 		res["note"] = "recorded, but " + m.From + " closed its agent before this arrived. " +
 			"nobody will read this answer, and no follow-up is coming"
 	}
-	return res,
-		[]Event{{Type: "message." + st, Agent: l.ID, To: m.From, Data: map[string]any{
-			"msg_serial": m.Serial,
-		}}}, nil
+	evs := []Event{{Type: "message." + st, Agent: l.ID, To: m.From, Data: map[string]any{
+		"msg_serial": m.Serial,
+	}}}
+	if granted != nil {
+		granted.Role = m.Grant
+		res["granted"], res["to"] = m.Grant, granted.ID
+		// On the message event too, not only in the result. The result reaches
+		// the RESPONDER; the requester learns about this from the event, and
+		// "approved" without "you are now coordinator" is the half that does not
+		// tell them what changed.
+		evs[0].Data["granted"] = m.Grant
+		evs = append(evs, Event{
+			Type: "agent.role_changed", Agent: granted.ID,
+			Data: map[string]any{"role": m.Grant, "via": "approved_request"},
+		})
+	}
+	if adopted != nil {
+		into := s.Agents[m.From]
+		moved := 0
+		for _, msg := range s.Messages {
+			if msg.To == adopted.ID {
+				msg.To, moved = into.ID, moved+1
+			}
+		}
+		res["adopted"], res["messages"] = adopted.ID, moved
+		evs[0].Data["adopted"] = adopted.ID
+		res["adopt_note"] = "the source agent keeps its history; only where its mail is " +
+			"delivered has changed"
+		evs = append(evs, Event{
+			Type: "agent.updated", Agent: into.ID,
+			Data: map[string]any{
+				"adopted_from": adopted.ID, "messages": moved, "via": "approved_request",
+			},
+		})
+	}
+	return res, evs, nil
 }
 
 // applyAckMessage: pending/delivered → acked (terminal + consumed for
@@ -1650,4 +1867,79 @@ func (s *State) boardAtNextSerial() map[string]any {
 	b := s.Board()
 	b["serial"] = s.Serial + 1
 	return b
+}
+
+// applyAdoptAgent moves an abandoned agent's mail onto a live one.
+//
+// "Abandoned" is a state, not an opinion: the source must not be active. An
+// active agent is reading its own mail, and moving it would be theft dressed as
+// recovery. Everything else about the source is left alone, including its
+// record and its history, because the ledger refers to it and a board that
+// erased the origin of six messages would be lying about where they came from.
+//
+// The role is NOT transferred. A role is a decision the operator made about an
+// identity, and quietly carrying "coordinator" across on the strength of a
+// mailbox recovery would grant a power nobody granted: `dibs admin coordinator`
+// exists and is one command.
+func (s *State) applyAdoptAgent(op *Op, l *Agent, now time.Time) (Result, []Event, error) {
+	if !op.AdoptAuthorised {
+		return nil, nil, errf("E_NOT_PERMITTED",
+			"adopting another agent's mailbox is the human's call: unlock as yourself with "+
+				"human_unlock, or ask them to promote you with `dibs admin coordinator <you>`",
+			"adopt_agent requires the human at this machine, or a coordinator or admin")
+	}
+	from := s.Agents[op.To]
+	if from == nil {
+		return nil, nil, errf("E_NO_AGENT", "check the id on the board", "no agent %q", op.To)
+	}
+	into := l
+	if op.Space != "" { // adopting on somebody else's behalf
+		if into = s.Agents[op.Space]; into == nil {
+			return nil, nil, errf("E_NO_AGENT", "check the id on the board", "no agent %q", op.Space)
+		}
+	}
+	if from.ID == into.ID {
+		return nil, nil, errf("E_BAD_TARGET", "name the abandoned agent, not the one adopting it",
+			"an agent cannot adopt itself")
+	}
+	if from.Status == StatusActive {
+		return nil, nil, errf("E_AGENT_ACTIVE",
+			"an active agent is reading its own mail; there is nothing abandoned to recover",
+			"agent %q is still active", from.ID)
+	}
+	if into.Status == StatusClosed || into.Status == StatusArchived {
+		return nil, nil, errf("E_AGENT_CLOSED",
+			"adopt into an agent that can still read: a retired one receives nothing",
+			"agent %q is retired", into.ID)
+	}
+	var moved int
+	for _, m := range s.Messages {
+		if m.To != from.ID {
+			continue
+		}
+		m.To = into.ID
+		moved++
+	}
+	// The actor's durable checkpoint, which the common path sets and this one
+	// returns before reaching.
+	//
+	// Adoption returns straight out of the dispatcher, so it misses
+	// `l.LastCoordination = now` along with everything else after that point.
+	// The engine's derived `seen` map hides it while the daemon runs, and that
+	// map is deliberately not replayable: restart, and the adopter is judged
+	// against whatever checkpoint it had BEFORE performing a ledgered
+	// operation, so an active agent that has just done something can be swept
+	// stale immediately. Found by a pre-release review.
+	l.LastCoordination = now
+	evs := []Event{{
+		Type: "agent.updated", Agent: into.ID,
+		Data: map[string]any{"adopted_from": from.ID, "messages": moved},
+	}}
+	serial := s.finish(&evs, now)
+	return Result{
+		"ok": true, "from": from.ID, "into": into.ID, "messages": moved,
+		"note": "read them with inbox. The source agent still exists and keeps its history: " +
+			"only where its mail is delivered has changed",
+		"serial": serial,
+	}, evs, nil
 }

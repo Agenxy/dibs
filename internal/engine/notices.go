@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/agenxy/dibs/internal/core"
 )
@@ -31,8 +32,18 @@ import (
 const maxNotices = 16
 
 type notice struct {
+	// Serial is the EVENT that produced this notice, used for ordering.
 	Serial uint64
-	Text   string
+	// Msg is the MESSAGE the notice points at, when it points at one, so that
+	// reading that message satisfies the instruction the notice gave.
+	//
+	// Distinct from Serial deliberately, and the distinction is the bug this
+	// field exists for: a notice saying "read_mail(746)" is produced by the
+	// respond event at serial 749. Clearing by the event serial never matches
+	// what the agent was told to read, so the notice survived being obeyed and
+	// the wake path repeated it every turn.
+	Msg  uint64
+	Text string
 }
 
 // noteEvent records the events an agent needs told about, so hookPoll can
@@ -80,6 +91,26 @@ func (e *Engine) noteEvent(ev core.Event) {
 	switch ev.Type {
 	case "agent.joined":
 		who, text = ev.Agent, joinedNotice(ev)
+		// And tell the people already in the space.
+		//
+		// This told the JOINER and nobody else, which answers "what did I just
+		// join" and leaves the answer to "who turned up in my space" to whoever
+		// re-reads the board. Somebody arriving in the space you are working in
+		// is the definition of a thing that happened to you and that you could
+		// not have inferred, which is what a notice is for. Asked for after a
+		// fleet ran for a day without anyone noticing a new member: "agents
+		// should be notified of things that concern them, including if another
+		// agent joins their space."
+		e.noteNewMember(ev)
+	case "message.approved", "message.denied", "message.answered", "message.declined":
+		// The ANSWER goes to whoever asked.
+		//
+		// A request approved is the single most consequential thing that can
+		// happen to an agent that asked for something: it may now do what it
+		// could not do a moment ago, and it had no way to learn that short of
+		// re-reading a message it had already sent. Nothing told it. Reported
+		// as: "when you approve an agent's request they should be notified."
+		who, text = ev.To, answeredNotice(ev)
 	case "agent.absorbed":
 		// Your agent just gained another space's members, its predicted footprint
 		// and its outstanding announcements, which you may now be required to
@@ -131,7 +162,10 @@ func (e *Engine) noteEvent(ev core.Event) {
 	if who == "" || text == "" {
 		return
 	}
-	e.pushNotice(who, text, ev.Serial)
+	// The message this notice points at, when it points at one. ev.Serial is
+	// the event; msg_serial is what the agent is told to read.
+	msg, _ := ev.Data["msg_serial"].(uint64)
+	e.pushNoticeFor(who, text, ev.Serial, msg)
 }
 
 // pushNotice queues one thing an agent must be told, for the wake path.
@@ -142,6 +176,11 @@ func (e *Engine) noteEvent(ev core.Event) {
 // its own, but it is exactly what a notice is FOR: something that happened to
 // you which you could not have inferred.
 func (e *Engine) pushNotice(who, text string, serial uint64) {
+	e.pushNoticeFor(who, text, serial, 0)
+}
+
+// pushNoticeFor is pushNotice plus the message the notice refers to.
+func (e *Engine) pushNoticeFor(who, text string, serial, msg uint64) {
 	if who == "" || text == "" {
 		return
 	}
@@ -151,7 +190,7 @@ func (e *Engine) pushNotice(who, text string, serial uint64) {
 	// Bounded: an agent that never polls must not accumulate forever. The
 	// newest matter most: being told you were admitted an hour ago and then
 	// evicted is worse than being told only the eviction.
-	e.notices[who] = append(e.notices[who], notice{Serial: serial, Text: text})
+	e.notices[who] = append(e.notices[who], notice{Serial: serial, Msg: msg, Text: text})
 	if n := len(e.notices[who]); n > maxNotices {
 		e.notices[who] = e.notices[who][n-maxNotices:]
 	}
@@ -203,6 +242,124 @@ func (e *Engine) pendingNotices(agent string) []string {
 	return out
 }
 
+// clearNoticesFor drops the notices that pointed at one message, leaving the
+// rest outstanding.
+//
+// Narrower than AckNotices deliberately: reading one message says nothing about
+// the others, and clearing them all would swap a nagging channel for a lossy
+// one, which is the worse of the two failures.
+func (e *Engine) clearNoticesFor(agent string, serial uint64) {
+	all := e.notices[agent]
+	if len(all) == 0 {
+		return
+	}
+	kept := all[:0]
+	for _, n := range all {
+		// Match on the MESSAGE the notice pointed at, not the event that
+		// produced it. Those differ by a few serials and matching the wrong one
+		// is why this cleared nothing the first time.
+		if n.Msg != serial {
+			kept = append(kept, n)
+		}
+	}
+	if len(kept) == 0 {
+		delete(e.notices, agent)
+		return
+	}
+	e.notices[agent] = kept
+}
+
 // AckNotices drops an agent's notices for good. Called on a TOKEN-authenticated
 // read, which is the only place we know the agent itself is asking.
 func (e *Engine) AckNotices(agent string) { delete(e.notices, agent) }
+
+// answeredNotice says what an answer to your own request means for you.
+//
+// The disposition alone ("approved") is not enough: the useful sentence is what
+// you may now do, or what you should stop waiting for. An approval that granted
+// a role or moved a mailbox says so, because those change what the next call
+// will do and the agent has no other way to find out.
+func answeredNotice(ev core.Event) string {
+	by := ev.Agent
+	serial, _ := ev.Data["msg_serial"].(uint64)
+	switch ev.Type {
+	case "message.approved":
+		s := fmt.Sprintf("%s APPROVED your request (msg %d)", by, serial)
+		if role, ok := ev.Data["granted"].(string); ok && role != "" {
+			return s + fmt.Sprintf(": you now hold the %s role. Re-read the board; "+
+				"calls that failed with E_NOT_%s will work now. %s",
+				role, strings.ToUpper(role), staffBriefing(role))
+		}
+		if from, ok := ev.Data["adopted"].(string); ok && from != "" {
+			return s + fmt.Sprintf(": %q's mail is now delivered to you. Call inbox: "+
+				"it is there now and was not before", from)
+		}
+		return s + ". Read it with read_mail to see what they said"
+	case "message.denied":
+		return fmt.Sprintf("%s DENIED your request (msg %d). Do not retry the same ask "+
+			"without new reasoning; read_mail has whatever they said", by, serial)
+	case "message.declined":
+		return fmt.Sprintf("%s declined to answer (msg %d): they are entitled to, and "+
+			"nothing is coming. Ask somebody else or proceed without it", by, serial)
+	default: // answered
+		return fmt.Sprintf("%s answered your question (msg %d): read_mail(%d)",
+			by, serial, serial)
+	}
+}
+
+// noteNewMember tells the existing members that somebody joined.
+//
+// Not the joiner, who already knows and gets joinedNotice, and not a member
+// who is the joiner. One line: who, and where. Whether that matters is the
+// reader's call, which is the whole posture of this product.
+func (e *Engine) noteNewMember(ev core.Event) {
+	// Guarded, because noteEvent runs on the event path and must not be able to
+	// take the daemon down over a notice. A zero-value Engine has no state at
+	// all, which is how the existing notice tests are built, and a nil map
+	// dereference here would be a panic in the writer's own goroutine.
+	if e.state == nil {
+		return
+	}
+	spaceID, _ := ev.Data["agent_id"].(string)
+	sp := e.state.Spaces[spaceID]
+	if sp == nil {
+		return
+	}
+	joiner := ev.Agent
+	auto, _ := ev.Data["auto"].(bool)
+	how := "joined"
+	if auto {
+		how = "was joined automatically, on a work-overlap match, to"
+	}
+	for member := range sp.Members {
+		if member == joiner {
+			continue
+		}
+		e.pushNotice(member,
+			fmt.Sprintf("%s %s the space %q you are in", joiner, how, spaceID), ev.Serial)
+	}
+}
+
+// staffBriefing tells a new role-holder what it can now DO.
+//
+// "Calls that failed will work now" is true and useless: it names no call. A
+// coordinator was granted the role, asked to reconcile three abandoned agents,
+// read `prune`'s description saying "never a peer", concluded the product could
+// not do it, and told the operator so. It could: the description was written for
+// ordinary agents and never mentioned the role. The powers existed and nothing
+// on the wire said so.
+//
+// So the grant carries the briefing, because that is the one moment the agent is
+// certain to be reading, and dibs://staff carries the rest.
+func staffBriefing(role string) string {
+	switch role {
+	case core.RoleCoordinator:
+		return "As coordinator you are STAFF, not a louder agent: you may adopt_agent " +
+			"an abandoned mailbox onto a live agent, prune a dormant peer's row and its " +
+			"stale declarations, force_release a claim, and evict or close a space. You " +
+			"still cannot READ another agent's mail: breadth, not intrusion. Read " +
+			"dibs://staff before using any of them."
+	default:
+		return "Read dibs://staff for what the role lets you do."
+	}
+}

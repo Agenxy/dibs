@@ -318,7 +318,7 @@ let annSerial = 0
   // measurement of the repository's commit history. A few commits that touched
   // guard and space code together were enough to break it.
   //
-  // Probing with the real declaration removes the extra agent entirely: the first
+  // Probing with the real declaration removes the extra space entirely: the first
   // call that gets an answer IS the assertion.
 
   // BOOTSTRAP FIRST: two agents, nothing matching them, nobody calling open_space.

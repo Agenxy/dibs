@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/notify"
 	"github.com/agenxy/dibs/internal/overlap"
 )
 
@@ -51,6 +52,20 @@ type Engine struct {
 	// about something the agent genuinely has not acknowledged. Same category as
 	// `seen`.
 	announceSent map[string]time.Time
+	// wokeFor throttles the WAKE itself, keyed "agent\x00serial".
+	//
+	// An agent must learn about mail when it arrives, not when a human next
+	// types: that is the whole of situational awareness, and a fleet that waits
+	// for a person to kickstart its responsiveness is not agentic. So the wake
+	// fires for anything unread.
+	//
+	// What it must not do is fire for the SAME thing every turn. An agent that
+	// read a message and chose not to act on it has decided, and re-waking it
+	// each turn would be nagging an agent for exercising the judgement the
+	// digest explicitly grants it. So each message wakes once, and only work
+	// somebody is blocked on comes back, on the same retry the announcement
+	// reminder uses.
+	wokeFor map[string]time.Time
 	// announceTries counts how many times each reminder has been shown, keyed
 	// the same way. Ephemeral for the same reason: it is delivery bookkeeping,
 	// and the decision it feeds is recorded in the sweep op.
@@ -79,6 +94,11 @@ type Engine struct {
 	// it is a cache of a prediction, never the record a join is replayed from.
 	footprints map[string][]core.PredFile
 
+	// wake is the operator's policy for which news may extend an agent's turn.
+	// Guarded because it is read on every lifecycle hook and written once at
+	// startup, from a different goroutine.
+	wake wakeState
+
 	// matchStatus is why matching did or did not do anything, so a declaration
 	// never comes back silently ambiguous. See matchstatus.go.
 	matchStatus matchStatusState
@@ -102,6 +122,9 @@ type Engine struct {
 	// human is the operator's own agent, so a person can join agents and speak in
 	// them through the same tools an agent uses. See human.go.
 	human humanState
+	// What Dibs has already told the coordinator about itself, so a fault that
+	// recurs every sweep does not become a message every sweep.
+	faults faultState
 }
 
 type request struct {
@@ -153,6 +176,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 		resumeAt: map[string]time.Time{},
 		streams:  map[chan core.Event]bool{}, seen: map[string]time.Time{},
 		announceSent: map[string]time.Time{}, announceTries: map[string]int{},
+		wokeFor: map[string]time.Time{},
 	}
 }
 
@@ -239,6 +263,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// Same rule: the claim VERDICT is the engine's to record, never the
 	// caller's to assert. Checked below, after the actor is known.
 	op.ClaimVerified = false
+	op.AdoptAuthorised = false
 
 	// Ingress-only validation. Deliberately NOT inside Apply: Apply is also the
 	// fold that replays the ledger, so a rule added there binds history
@@ -246,6 +271,114 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// See core.Admit.
 	if err := core.Admit(op, e.state.Limits); err != nil {
 		return nil, err
+	}
+
+	// The operator's own agent is not registrable from a tool call.
+	//
+	// THE HOLE THIS CLOSES, reproduced end to end before it was written: the
+	// human's recovery nonce was `human:<OS username>`, and registration
+	// reattaches on a matching nonce and hands back the token. So any agent
+	// that could run `whoami` could become the person at the keyboard, and then
+	// approve its own coordinator grant. Touch ID protects the board session
+	// and was never reached, because approving a request never asks for it.
+	//
+	// It has to be HERE. `internal/core` has no notion of the human, so the
+	// fold cannot tell that row from any other, and a rule added to Apply would
+	// bind every register op already in the ledger, including the legitimate
+	// ones that minted the identity in the first place. This is the same
+	// placement, and the same reasoning, as ClaimVerified and AdoptAuthorised
+	// directly above.
+	if !op.HumanMint && e.wouldTakeHumanIdentity(op) {
+		return nil, core.ErrHumanIdentity
+	}
+
+	// `to: "coordinator"` reaches whoever holds the role.
+	//
+	// An agent asking for its identity back does not know, and should not have
+	// to look up, which of sixteen rows is the coordinator today. The role is
+	// the address; the id is an implementation detail that changes when somebody
+	// hands the role over. Resolved at ingress, so the LEDGER records the agent
+	// it actually went to: a message addressed to a role, replayed after the
+	// role moved, would otherwise be delivered to somebody it was never sent to.
+	if op.Kind == core.OpSendMessage && op.To == core.RoleCoordinator {
+		who := e.state.CoordinatorID()
+		if who == "" {
+			return nil, core.ErrNoCoordinator
+		}
+		op.To = who
+	}
+
+	// An agent whose bridge cannot see the harness session id adopts the one
+	// its harness announced from the same directory.
+	//
+	// Resolved at ingress and written INTO the op, like the two above, so the
+	// ledger records the session the agent actually holds and replay reaches the
+	// same board without consulting a children map that no longer exists.
+	// See sessionjoin.go for why this is the register path and not hook_poll.
+	// A harness that NAMED its own thread is believed over anything inferred,
+	// once it is checked. Codex sends `threadId` on every tool call, and it is
+	// the id `codex resume` takes, so this is the identity rather than a
+	// correlation. Vetted, not trusted: see mayClaimSession.
+	if claimed := op.SessionAlias; claimed != "" {
+		if !e.mayClaimSession(claimed, op.Token) {
+			op.SessionAlias = ""
+		}
+	}
+	if op.SessionAlias == "" {
+		switch op.Kind {
+		case core.OpRegister, core.OpUpdate:
+			if op.Agent != nil {
+				op.SessionAlias = announcedSession(e.children, e.state, op.Agent.CWD, now)
+			}
+		case core.OpAckBoard:
+			// check_in carries no cwd, so the agent's own registered one is used.
+			// This is the path that reaches agents ALREADY on the board: they
+			// have no reason to register again, and check_in is the one call
+			// they all keep making.
+			if l := e.state.AgentByToken(op.Token); l != nil && l.Agent != nil {
+				op.SessionAlias = announcedSession(e.children, e.state, l.Agent.CWD, now)
+			}
+		default:
+			op.SessionAlias = "" // no other op binds an identity
+		}
+	}
+
+	// A request to a PERSON gets a person's deadline.
+	//
+	// The default is ten minutes, which is right for an agent: it is in a loop,
+	// it answers in seconds, and a stale question should expire rather than
+	// linger. A human is not in a loop. That is the premise the whole product
+	// rests on, and this one default contradicted it.
+	//
+	// Measured on this board, on the request that would have made the
+	// maintainer a coordinator: sent, delivered, never seen because a Focus mode
+	// swallowed the notification, and expired thirty minutes later as
+	// `expired_recipient_dormant` while the operator was away from the machine.
+	// The feature worked. The clock was set for somebody else.
+	//
+	// Recorded into the op rather than decided at read time, which is the rule
+	// for every impure input here: replay must reach the same deadline, and who
+	// the human is can change.
+	if op.Kind == core.OpSendMessage && op.DeadlineSec == 0 && op.MsgType != core.MsgNotify {
+		if human := e.humanIdentityLocked(); human != "" && op.To == human {
+			op.DeadlineSec = int(humanDeadline / time.Second)
+		}
+	}
+
+	// A role is a human's to give.
+	//
+	// core validates WHICH roles may be requested and on what message type; it
+	// cannot validate the recipient, because core does not know that humans
+	// exist and that rule is what keeps it a pure state machine. So the half
+	// that needs the identity lives here, next to the identity.
+	//
+	// Without it, two agents could promote each other by exchanging requests and
+	// pressing each other's buttons, which is self-promotion with one extra
+	// participant. Refused at ingress, so nothing is ledgered.
+	if op.Kind == core.OpSendMessage && op.Grant != "" {
+		if human := e.humanIdentityLocked(); human == "" || op.To != human {
+			return nil, core.ErrGrantNeedsHuman
+		}
 	}
 
 	// System ops (engine-generated) bypass phases.
@@ -325,6 +458,82 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		}
 	}
 
+	if err := e.refuseNoOpRetitle(op); err != nil {
+		return nil, err
+	}
+
+	// An omitted description keeps the one the agent already has.
+	//
+	// Resolved at ingress and written INTO the op, so the ledger records the
+	// text that was actually in force and replay reaches the same board without
+	// consulting a board that has moved on. The fold still assigns
+	// unconditionally, which it must: an op already on disk that cleared a
+	// description meant to clear it.
+	if op.Kind == core.OpUpdate && op.KeepDescription && actor != nil {
+		op.Description = actor.Description
+	}
+
+	// Who may take over an abandoned mailbox. Decided here, where the human's
+	// identity is known, and RECORDED, so replay does not have to re-decide it
+	// against a board whose roles have since changed.
+	if op.Kind == core.OpAdoptAgent && actor != nil {
+		op.AdoptAuthorised = e.mayAdopt(actor)
+		if err := e.guardHumanMailbox(actor, op.To); err != nil {
+			return nil, err
+		}
+		// An adoption that would move nothing is refused, rather than ledgered.
+		//
+		// The fold records no adoption relationship: moving the messages IS the
+		// whole effect. So adopting an empty mailbox changed no replayable state
+		// and still advanced the serial and answered ok:true with "read them
+		// with inbox", which is advice about mail that does not exist. That
+		// breaks the rule this engine is built on in the direction nobody
+		// notices: an op ledgered though it changed nothing.
+		//
+		// Refused HERE and not in the fold, deliberately. Making Apply skip
+		// finish() would change which ops advance the serial, and every ledger
+		// already holding an empty adoption would replay with a different serial
+		// sequence from the one it was written with, taking every msg_serial and
+		// cursor that references it along. Ingress binds new ops and leaves
+		// history alone, which is the whole reason this check is at this end.
+		//
+		// Found by a pre-release review.
+		if op.AdoptAuthorised {
+			if err := e.refuseEmptyAdoption(op.To); err != nil {
+				return nil, err
+			}
+		}
+	}
+	// Approving an adoption REQUEST needs the same authority as performing one,
+	// decided here for the same reason: recorded at ingress, so replay applies
+	// the decision that was made rather than re-deciding it against a board
+	// whose roles have moved on.
+	if op.Kind == core.OpRespond && actor != nil {
+		op.AdoptAuthorised = e.mayAdopt(actor)
+		if err := e.mayApproveGrant(actor, op); err != nil {
+			return nil, err
+		}
+		if err := e.refuseRetiredRequester(op); err != nil {
+			return nil, err
+		}
+		// The same emptiness check as the direct route above.
+		//
+		// It was only on the direct one, so APPROVING an adoption request
+		// against an empty mailbox still ledgered an op that moved nothing and
+		// answered adopted:<source> with messages:0, and generated a notice
+		// telling the requester their rescued mail was waiting in an inbox that
+		// had received none. Two routes to one effect and the check on one of
+		// them, which is how the first fix looked complete. Found by a
+		// pre-release review.
+		if op.AdoptAuthorised {
+			if from := e.adoptionSourceOf(op); from != "" {
+				if err := e.refuseEmptyAdoption(from); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+
 	res, err := e.applyAndLedger(op, now)
 	if err != nil {
 		return nil, err
@@ -374,6 +583,76 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		}
 		res["agent_updates"] = pending
 		e.AckNotices(actor.ID)
+		// Whether overlap detection is working AT ALL, on the one call
+		// documented as the atomic checkpoint.
+		//
+		// It rode on `declare` alone, and only for the agent that happened to
+		// call it, attributed to whichever cwd the daemon last failed to read.
+		// Reported by k7-a from a live board: matching was off fleet-wide, the
+		// hint named ANOTHER agent's directory, and it read as somebody else's
+		// misconfiguration. An agent that registers, checks in and works
+		// without declaring never learned at all.
+		//
+		// This is the one state where silence must not be read as safety.
+		// dibs://skills already says a low score proves nothing; with matching
+		// off there is no score, the board renders normally, same-path overlap
+		// still works, and nothing looks different. So it belongs here, phrased
+		// as a property of the board rather than of the caller.
+		if st := e.MatchStatus(); st.Phase != MatchReady {
+			res["matching"] = st.Phase
+			res["matching_hint"] = matchingHint(st)
+		}
+	}
+	// Every authenticated write carries word of anything waiting.
+	//
+	// Not on check_in, which has just returned the inbox itself, and not on
+	// register, which returns the board: repeating it there is noise on the two
+	// calls that already answered the question. Everywhere else this is the
+	// only push that reaches an agent whose harness has no hooks, and the one
+	// that still works when the hooks are there and cannot resolve it.
+	if actor != nil && res != nil && op.Kind != core.OpAckBoard {
+		if w := e.waiting(actor.ID); w != "" {
+			res["waiting"] = w
+		}
+	}
+	// The person is the one participant with no loop of their own: no
+	// lifecycle hook fires for them and no tool result reaches them, so mail
+	// addressed to the human waits until they next open the board. On a fleet
+	// that runs for days that means "eventually, or not", while the sender's
+	// deadline runs down.
+	if op.Kind == core.OpSendMessage && res != nil {
+		if human := e.humanIdentityLocked(); human != "" && op.To == human {
+			serial, _ := res["msg_serial"].(uint64)
+			from, who := "", ""
+			if actor != nil {
+				from, who = actor.ID, whoIs(actor)
+			}
+			// SAY SO WHEN THE PROMISE DOES NOT APPLY.
+			//
+			// The tool description for `send` tells an agent that writing to the
+			// human "notifies them on their machine". On a machine with no route
+			// to a desktop that is false, and tellTheHuman below simply returned:
+			// the message was stored, the call answered success, and the sender
+			// had no way to learn that the half it was relying on did not
+			// happen. An agent that needs an answer then waits out its deadline
+			// against a person who was never interrupted.
+			//
+			// The daemon already reports this once at startup, as a fault, which
+			// tells the OPERATOR. It does not tell the sender, and the sender is
+			// the one making a decision about whether to keep waiting.
+			if !notify.Available() {
+				res["notified"] = false
+				res["notify_hint"] = "delivered to their mailbox, but this machine has " +
+					"no way to raise a desktop notification, so they will see it when " +
+					"they next look at the board rather than now. Do not wait on it as " +
+					"though they had been interrupted"
+			} else {
+				// Off the loop: an alert waits for somebody to press a button, and
+				// the single writer holding still for two minutes would stop the
+				// board while one person decides.
+				go e.tellTheHuman(from, who, op.MsgType, op.Body, serial, op.Choices, op.Grant, op.Adopt)
+			}
+		}
 	}
 	return res, nil
 }
@@ -455,6 +734,8 @@ func (e *Engine) touchDurable(l *core.Agent, now time.Time) {
 }
 
 func (e *Engine) sweep(now time.Time) {
+	// Anything found before the board had anybody on it. See flushFaults.
+	e.flushFaults()
 	op := &core.Op{Kind: core.OpSweep, GiveUpAnnounce: e.exhaustedAnnouncements()}
 	for id, l := range e.state.Agents {
 		if l.Status != core.StatusActive {
@@ -720,3 +1001,41 @@ var thisHost = sync.OnceValue(func() string {
 	}
 	return h
 })
+
+// matchingHint explains a non-ready matching phase WITHOUT calling a setting a
+// fault.
+//
+// One sentence used to cover all four, ending "Coordinate explicitly until it
+// is back". That is right for a fault and wrong for `suggest-only`, which is
+// the configured default and never "comes back" because it never left. The
+// cost was not cosmetic: an agent read it, concluded a board-wide feature was
+// down, spent a session diagnosing its own declaration as the cause, and filed
+// an outage that was not happening. A coordinator then repeated the diagnosis.
+// Two agents misled by one word.
+//
+// So the shared half stays, because it is true in every phase and it is the
+// one thing silence must not be read as, and the second half now depends on
+// whether anything is actually wrong.
+func matchingHint(st MatchStatus) string {
+	lead := "BOARD STATE, not something you did: work-overlap matching is " +
+		string(st.Phase) + " for every agent here, so an absence of overlap warnings " +
+		"is not evidence that you are alone. "
+	switch st.Phase {
+	case MatchNoThreshold:
+		// A CHOICE, not an outage. Overlaps are still found and reported; they
+		// are simply never acted on without a threshold to act at.
+		lead += "This is the default rather than a fault: overlaps are still " +
+			"detected and suggested, and nothing is joined automatically because no " +
+			"join threshold is configured. Nothing is broken and nothing is waiting " +
+			"to recover. "
+	case MatchIndexing:
+		lead += "This is temporary: the index is still being built, so coordinate " +
+			"explicitly until it finishes. "
+	default:
+		// off, degraded, or anything added later: treat as a fault, which is the
+		// safe reading for a phase this function has not been taught.
+		lead += "Something is wrong rather than unconfigured, so coordinate " +
+			"explicitly until it is back. "
+	}
+	return lead + st.Hint
+}

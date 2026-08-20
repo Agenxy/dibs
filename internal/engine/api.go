@@ -274,6 +274,16 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 		if m.To == l.ID && m.State == core.MsgStatePending {
 			_, _ = e.applyAndLedger(&core.Op{Kind: core.OpMarkDelivered, MsgSerials: []uint64{serial}}, now)
 		}
+		// A notice that says "read_mail(N)" is answered by reading N.
+		//
+		// Only check_in used to clear notices, so following this one's own
+		// instruction left it outstanding and the wake path repeated it on every
+		// turn: "ring-demo APPROVED your request (msg 712). Read it with
+		// read_mail" delivered twice, after read_mail had already returned that
+		// message terminal and consumed. An instruction that does not clear when
+		// obeyed teaches an agent that the channel nags, and the notification
+		// channel is the one thing here that has to stay worth reading.
+		e.clearNoticesFor(l.ID, serial)
 		return core.Result{"message": m, "serial": e.state.Serial}
 	})
 }
@@ -299,6 +309,7 @@ func (e *Engine) Board(ctx context.Context) (core.Result, error) {
 
 func (e *Engine) decoratedBoard() core.Result {
 	b := e.state.Board()
+	human := e.humanIdentityLocked()
 	agents, _ := b["agents"].([]map[string]any)
 	for _, lm := range agents {
 		id, _ := lm["id"].(string)
@@ -312,6 +323,17 @@ func (e *Engine) decoratedBoard() core.Result {
 		}
 		lm["last_seen"] = seen
 		lm["status"] = l.Status
+		// Which row is the person.
+		//
+		// An agent that wants to reach the operator had no reliable way to find
+		// them: the human is an ordinary agent named after the OS user, so
+		// picking them out meant matching on a description string. Marked here
+		// rather than in the fold because who is at the keyboard is derived,
+		// non-replayable state: it is minted by a presence check and belongs to
+		// this daemon's run, not to the ledger.
+		if human != "" && id == human {
+			lm["human"] = true
+		}
 		// Which machine, hoisted to the row.
 		//
 		// It was only ever nested inside the descriptor, which is right for one
@@ -380,4 +402,61 @@ func clampCursor(serial, floor uint64) uint64 {
 
 func errCursorTooOld(floor uint64) error {
 	return core.ErrCursorTooOld(floor)
+}
+
+// CallerName is a display name for whoever holds this token, for a prompt that
+// has to say WHO is asking.
+//
+// Read through the loop, like every other caller-facing read here. Returns a
+// blunt placeholder rather than an error, because the only consumer is a
+// sentence shown to a person and "an unidentified caller" is both true and the
+// more alarming thing to read, which is the right direction for a prompt about
+// handing over an identity.
+func (e *Engine) CallerName(ctx context.Context, token string) string {
+	res, err := e.query(ctx, func() core.Result {
+		l := e.state.AgentByToken(token)
+		if l == nil {
+			return core.Result{}
+		}
+		name := l.Name
+		if name == "" {
+			name = l.ID
+		}
+		return core.Result{"name": name, "id": l.ID}
+	})
+	if err != nil {
+		return "an unidentified caller"
+	}
+	name, _ := res["name"].(string)
+	id, _ := res["id"].(string)
+	switch {
+	case name == "":
+		return "an unidentified caller"
+	case id != "" && id != name:
+		return name + " (" + id + ")"
+	default:
+		return name
+	}
+}
+
+// HasCoordinator answers whether any agent holds the coordinator role.
+//
+// Read THROUGH the loop, which is the whole reason it exists. Startup called
+// core.State.HasCoordinator directly on the state it had just handed the
+// engine, and that method iterates State.Agents while the writer mutates it:
+// the reachability goroutine started a few lines above can register the `dibs`
+// agent at the same moment, and a concurrent map iteration and write terminates
+// the process. On a board with rows in it and a machine that cannot notify,
+// that is a daemon which dies during boot. Found by a pre-release review.
+func (e *Engine) HasCoordinator(ctx context.Context) bool {
+	res, err := e.query(ctx, func() core.Result {
+		return core.Result{"has": e.state.HasCoordinator()}
+	})
+	if err != nil {
+		// Offering a claim nobody needs is harmless; withholding one that is
+		// needed leaves a board no agent can administer. Fail toward offering.
+		return false
+	}
+	has, _ := res["has"].(bool)
+	return has
 }

@@ -1,11 +1,11 @@
 {
   "manifest_version": "0.3",
-  "name": "io.agents/agents",
+  "name": "io.github.Agenxy/dibs",
   "display_name": "Dibs",
-  "version": "0.0.0",
-  "description": "Coordination board for agents on this machine: shared agents, typed mailboxes, and advisory claims.",
+  "version": "0.0.6",
+  "description": "Coordination board for the agents on this machine: shared spaces, typed mailboxes, and advisory claims.",
   "long_description": "Dibs lets a fleet of agents see what the others are working on before duplicating their effort. Declare your objective, read the board, message peers directly. Dibs is a service agents pull from: it never drives your session.\n\nRequires the `dibs` daemon (`dibd`) running locally. See https://github.com/agenxy/dibs.",
-  "author": { "name": "Dibs" },
+  "author": { "name": "Agenxy" },
   "repository": { "type": "git", "url": "https://github.com/agenxy/dibs" },
 
   "server": {

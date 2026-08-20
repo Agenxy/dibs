@@ -14,22 +14,33 @@ it, so this folder is deliberately thin and defers to
 Exactly the Codex configuration. `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.agents]
-url = "http://127.0.0.1:4777/mcp"
-http_headers = { "X-Dibs-Local" = "<contents of <data-dir>/local.secret>" }
+[mcp_servers.dibs]
+command = "/absolute/path/to/dibs"
+args = ["mcp-stdio"]
 ```
 
-`dibs mcp-config` prints this. A stale secret gives a 401 with no other symptom.
+`dibs mcp-config` prints this with the real path filled in. Use stdio rather
+than a url: the bridge is one process per session and it remembers this agent's
+nonce, so a returning session reattaches instead of forking a `-2` sibling. See
+[../codex/README.md](../codex/README.md) for the reasoning and for the url form,
+which is right only from another machine.
 
 ## What carries over from Codex, and what does not
 
-Everything measured for Codex applies: every tool reachable, `protocolVersion
-2025-06-18` negotiated, `resources/list` never sent, and the `mcp_2026_07_28`
-feature flag that does **not** change the wire.
+Everything measured for Codex applies, because this IS Codex: the desktop app
+runs `codex app-server` and drives it over RPC. **Do not restate those facts
+here.** They are kept in [the codex plugin](../codex/), and the last time they
+were copied into this file all three went stale at once while reading as
+current. What is true of the protocol, the hook types and the wake path is
+whatever that file says today.
 
-**Wake is pull-only**, for the same reason: `HookHandlerConfig` offers `command`,
-`prompt`, `agent`, and only `command` reaches outward: as a subprocess, which
-Dibs does not do. See [PHILOSOPHY.md](https://github.com/agenxy/dibs/blob/main/PHILOSOPHY.md).
+The short version, current as of 2026-08-17: Codex reaches **MCP 2026-07-28**
+when the `mcp_2026_07_28` feature and `CODEX_MCP_PROTOCOL_VERSION=2026-07-28`
+are both set, and then it does call `resources/list`. **Wake is still
+pull-only**: of the four hook handler types it declares, `prompt` and `agent`
+are skipped by name and `mcp_tool` is dropped for want of an executor, leaving
+only `command`, which is a subprocess. See
+[PHILOSOPHY.md](https://github.com/agenxy/dibs/blob/main/PHILOSOPHY.md).
 
 ## Developer mode is the one thing that differs
 

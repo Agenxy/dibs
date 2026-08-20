@@ -55,27 +55,27 @@ func TestUbiquitousFilesDoNotCarryTheMatch(t *testing.T) {
 		t.Fatal("expected matches")
 	}
 
-	byAgent := map[string]float64{}
+	bySpace := map[string]float64{}
 	for _, m := range got {
-		byAgent[m.Agent] = m.Score
+		bySpace[m.Space] = m.Score
 	}
-	// The right agent still wins, and by a clear margin: that is the part the
+	// The right space still wins, and by a clear margin: that is the part the
 	// discount must not break.
-	if byAgent["cli"] <= byAgent["runtime"] {
-		t.Fatalf("the genuinely-matching agent must rank first: cli=%.3f runtime=%.3f",
-			byAgent["cli"], byAgent["runtime"])
+	if bySpace["cli"] <= bySpace["runtime"] {
+		t.Fatalf("the genuinely-matching space must rank first: cli=%.3f runtime=%.3f",
+			bySpace["cli"], bySpace["runtime"])
 	}
 	// And the unrelated agents must not clear a calibrated join bar on shared
 	// build files alone. 0.064 is the bar measured on the repository where this
 	// was reported.
 	const joinBar = 0.064
-	if byAgent["runtime"] >= joinBar {
+	if bySpace["runtime"] >= joinBar {
 		t.Errorf("unrelated agent still auto-joinable on generic files: runtime=%.3f >= %.3f",
-			byAgent["runtime"], joinBar)
+			bySpace["runtime"], joinBar)
 	}
-	if byAgent["web"] >= joinBar {
+	if bySpace["web"] >= joinBar {
 		t.Errorf("unrelated agent still auto-joinable on generic files: web=%.3f >= %.3f",
-			byAgent["web"], joinBar)
+			bySpace["web"], joinBar)
 	}
 }
 
@@ -88,7 +88,7 @@ func TestRareSharedFilesKeepTheirWeight(t *testing.T) {
 	agent(t, s, "docs", "docs", []string{"docs/readme.md", "Justfile"})
 	// Declaring exactly the auth agent's distinctive file.
 	got := s.MatchAgentsWith("newcomer", fp("internal/auth/token.go", "Justfile"), nil, 5)
-	if len(got) == 0 || got[0].Agent != "auth" {
+	if len(got) == 0 || got[0].Space != "auth" {
 		t.Fatalf("a distinctive shared file must dominate: %+v", got)
 	}
 	if got[0].Score < 0.3 {

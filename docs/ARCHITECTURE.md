@@ -167,7 +167,8 @@ agent's** own board and mailbox, authenticated by that agent's token, rendered i
 a host's sandboxed iframe under a CSP with no external origins, so every asset
 is inlined, and a stylesheet fetched over the network would fail closed and
 silently. The web board is the **operator's** view over every agent and all mail,
-behind the admin password.
+behind proof that a human is here: Touch ID where the machine can check it, and
+the admin password where it cannot.
 
 They answer different questions for different readers. What they share is what a
 agent, a message and an event *look* like.

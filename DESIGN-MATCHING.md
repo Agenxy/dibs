@@ -86,7 +86,7 @@ truth:
 
 | Relation | Meaning | Default action |
 |---|---|---|
-| `same_work_item` | Both slots name the same canonical work item or Dibs-issued coordination key | Put them in the same agent and say exactly why |
+| `same_work_item` | Both slots name the same canonical work item or Dibs-issued coordination key | Put them in the same space and say exactly why |
 | `probable_duplicate` | Evidence suggests the same objective, but identity is not established | Interruptive suggestion; never auto-join by default |
 | `complementary` | Same work item or objective, different roles such as implement/review | Coordinate in one agent; never say “stand down” |
 | `surface_collision` | Declared or observed implementation paths overlap, while objectives are different or unknown | Awareness only |

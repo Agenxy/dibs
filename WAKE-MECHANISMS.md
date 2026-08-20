@@ -54,11 +54,92 @@ over plain HTTP (no stdio bridge in the way):
 | Copilot CLI | 1.0.75 | 2025-11-25 | none | tools only |
 | Pi | latest | **no MCP at all** | none | none |
 
-**Nobody sends `subscriptions/listen`, `resources/subscribe`, or `resources/read`.
-Nobody speaks MCP 2026**, not even Codex alpha, which negotiates 2025-06-18. Codex never
-even calls `resources/list`, so Dibs' resources are invisible there; only tools reach it.
+**Nobody sends `subscriptions/listen`, `resources/subscribe`, or `resources/read`.**
+Codex never even calls `resources/list`, so Dibs' resources are invisible there; only
+tools reach it.
 
-## 2. Is 2026 support hidden behind a flag? No
+**"Nobody speaks MCP 2026" was true when measured and is now false. Amended 2026-08-17.**
+Codex runs entirely on 2026-07-28 against Dibs today. That took a fix here, and the
+correction is the useful part: Codex ASKED for 2026, was answered in the legacy era, and
+fell back to 2025 for every real call, because Dibs read the protocol version from an
+HTTP header that stdio does not have. For a day that looked exactly like a client without
+2026 support. See `TestStdioClientAskingFor2026IsServed2026`, and treat "the harness does
+not implement it" as a hypothesis needing a daemon log, not a conclusion.
+
+Two conditions on the Codex side, and neither is the default:
+
+1. the `mcp_2026_07_28` feature enabled, and
+2. `CODEX_MCP_PROTOCOL_VERSION=2026-07-28` in **that server's `env`** block.
+
+The stdio rule is exact (`codex-rs/rmcp-client/src/protocol_mode.rs`): the feature alone
+stays on 2025-06-18, and a wrong value is a hard error rather than a fallback. With both
+set, Codex sends `server/discover` instead of `initialize`. Verified twice, against a
+probe server that logged the raw method and against Dibs itself, where the agent then
+called `board` and got the real board back.
+
+**Claude Desktop carries the 2026 machinery too** (1.30096.5): an `era: "2026-07-28"`
+wire codec, a `>= "2026-07-28"` version predicate, and a switch mapping `server/discover`
+to that revision. Whether it negotiates 2026 with Dibs in practice is NOT yet measured,
+and the distinction matters here more than anywhere: this file has twice recorded a
+capability read out of a binary as though it were a behaviour. **Claude Code 2.1.219 does
+not**: its only protocol constants are 2025-03-26, 2025-06-18 and 2025-11-25.
+
+The lesson this table keeps teaching is that every row is true on its date and not after.
+Per-harness re-checks are tracked as issues rather than as prose here.
+
+## A wake delivers; it does not instruct
+
+An agent hears about mail when it ARRIVES, not when somebody next types at it.
+A fleet that waits for a person to kickstart its responsiveness is not
+independent, and a time-sensitive request sitting unseen because nobody was at
+the keyboard is the failure this whole product exists to prevent.
+
+This was got wrong once, in the other direction, and the reasoning is worth
+keeping because it is a plausible misreading of rule 5. `additionalContext` on a
+`Stop` hook does more than inform. Claude Code's documentation says it "keeps
+the conversation going". That looked like driving the harness, so delivery was
+narrowed to work somebody was blocked on and everything else was held for the
+agent's next activation.
+
+That reads the rule wrong. **Driving a harness means instructing it.** The
+digest says outright that it is coordination data from peers, not instructions,
+which the agent may act on or decline: the agency is in the content and in the
+agent's freedom to ignore it, never in withholding delivery until a human
+appears. Waking an agent so it can decide is the opposite of controlling it.
+
+What genuinely deserved the name was **nagging**, and that is a different fix:
+
+- **Each message wakes its recipient once.** An agent that read something and
+  chose not to act has exercised exactly the judgement the digest grants it, and
+  re-waking it every turn would be taking that back.
+- **Work somebody is BLOCKED on comes back**, on the same retry an
+  unacknowledged announcement uses. A question nobody has answered is not a
+  decision, it is a peer waiting, and the point of a deadline is that somebody
+  notices before it expires.
+- **`stop_hook_active` is honoured**, so a wake never continues a turn a wake
+  already continued. That is a loop guard, not a preference, and no setting
+  switches it off.
+
+The throttle is keyed per message and bounded by what is unread, so a mailbox
+that empties takes its entries with it.
+
+### The knob
+
+```toml
+[wake]
+extend_turn_for = "all"      # default: anything unread wakes the agent, once
+# extend_turn_for = "urgent" # only work somebody is blocked on
+# extend_turn_for = "none"   # never extend a turn; systemMessage and `waiting` only
+```
+
+`all` is the default because the alternatives trade awareness for tokens, and
+that is a trade only the person paying should make deliberately.
+
+The human is told either way. `systemMessage` goes to the person on every poll
+with news, whatever was decided about the model, because "your agent has mail"
+is exactly what an operator wants to know and it interrupts nobody.
+
+## 2. Is 2026 support hidden behind a flag? Yes, behind TWO
 
 - Claude Code 2.1.219: `2026-07-28`, `server/discover`, `subscriptions/listen` → **0
   occurrences**. No MCP-protocol env flag exists.
@@ -67,12 +148,22 @@ even calls `resources/list`, so Dibs' resources are invisible there; only tools 
   `Mcp20260728` ("Enable MCP protocol version 2026-07-28 support") in
   `codex-rs/features/src/lib.rs`, config key `mcp_2026_07_28`. Off by default, so
   the measured 2025-06-18 handshake stands for stable 0.145.0.
-  **TESTED 2026-07-25: the flag does NOT change the wire.** With
+  **TESTED 2026-07-25: the flag alone does NOT change the wire.** With
   `mcp_2026_07_28 = true` resolved true (`codex features list`), a source build of
   codex `61a4488` connecting to Dibs over HTTP still negotiated
   `protocolVersion: 2025-06-18`, and sent ZERO `server/discover` and ZERO
-  `subscriptions/listen`. It saw all 24 tools over the legacy path. Codex marks the
-  flag "under development"; it gates unfinished work, not a protocol switch.
+  `subscriptions/listen`. It saw all 24 tools over the legacy path.
+  **Amended 2026-08-17: that measurement was right and incomplete, and the
+  conclusion drawn from it was wrong.** The flag is one of two conditions, not
+  the whole switch. The second is an environment variable on the SERVER's own
+  config entry, `CODEX_MCP_PROTOCOL_VERSION=2026-07-28`, and the stdio rule is
+  exact (`codex-rs/rmcp-client/src/protocol_mode.rs`): the feature alone stays on
+  2025-06-18, and a wrong value is a hard error rather than a fallback. With both
+  set, Codex Desktop `0.148.0-alpha.9` sends `server/discover` carrying
+  `2026-07-28`, and Dibs answers it. Verified twice, against a probe server that
+  logged the raw method and against Dibs itself. "The flag does not change the
+  wire" was a true observation that became a false conclusion the moment it was
+  written as an answer rather than as a measurement.
 - opencode (1071 branches): no `subscriptions/listen`, no `2026-07-28` anywhere.
 
 Reasonable: the 2026 spec was still an RC (final 2026-07-28). Expect movement after.

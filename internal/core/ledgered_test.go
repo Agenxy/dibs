@@ -46,6 +46,31 @@ func TestEveryMutatingOpAdvancesTheSerial(t *testing.T) {
 			},
 		},
 		{
+			// Adoption RETURNS from the main switch rather than falling through
+			// to the common finishing path, so it calls finish itself. Nothing
+			// enumerated it here, and the adoption tests only assert that the
+			// messages move: delete that internal finish call and the mailbox
+			// would appear moved in memory, the engine would not ledger the op
+			// because the serial never advanced, and a restart would put the
+			// mail back where it started. That is the state-versus-ledger split
+			// this test's own comment describes, on the one op that had found a
+			// way around it. Found by a pre-release review.
+			name: "adopt_agent",
+			build: func(t *testing.T, s *State) *Op {
+				heir := regPersistent(t, s, "heir", "tok-heir", "heir-nonce-0123456789abcdef", t0)
+				gone := reg(t, s, "gone", "tok-gone", t0)
+				mustApply(t, s, &Op{
+					Kind: OpSendMessage, Token: heir.Token, To: gone.ID,
+					MsgType: MsgNotify, Body: "worth rescuing",
+				}, t0)
+				mustApply(t, s, &Op{Kind: OpSignOff, Token: gone.Token}, t0)
+				return &Op{
+					Kind: OpAdoptAgent, Token: heir.Token, To: gone.ID,
+					AdoptAuthorised: true,
+				}
+			},
+		},
+		{
 			name: "claim_coordinator",
 			build: func(t *testing.T, s *State) *Op {
 				a := regPersistent(t, s, "boss", "tok-boss", "boss-nonce-0123456789abcdef", t0)

@@ -21,6 +21,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/agenxy/dibs/internal/release"
 )
 
 // Written as escapes, not as the characters themselves. Spelling them literally
@@ -558,6 +560,374 @@ func TestTheRegistryManifestWouldBeAccepted(t *testing.T) {
 			if err == nil && !ok {
 				t.Errorf("%s = %q does not match the registry's pattern %s", key, s, rule.Pattern)
 			}
+		}
+	}
+}
+
+// The published version must be the same everywhere it is written down.
+//
+// The Claude Code plugin manifest said 0.0.0 while the project was at 0.0.5, so
+// anyone installing it, or reviewing it for the official plugin directory, saw a
+// version that had not existed since the first commit. Nothing failed: a stale
+// version is valid JSON, passes `claude plugin validate`, and installs fine.
+//
+// The owner's standing requirement is that public sources track main. That is
+// enforceable for the ones a release writes (the cask, the registry entry) and
+// was not for the ones a human edits, which is precisely where it drifted.
+func TestTheVersionIsTheSameInEveryManifest(t *testing.T) {
+	root := repoRoot(t)
+	want, err := release.Current(root)
+	if err != nil {
+		t.Skip(err)
+	}
+	for _, rel := range release.Manifests {
+		blob, err := os.ReadFile(filepath.Join(root, rel)) // #nosec G304 -- a manifest named in release.Manifests
+		if err != nil {
+			continue // not every manifest exists in every checkout
+		}
+		var doc struct {
+			Version string `json:"version"`
+		}
+		if json.Unmarshal(blob, &doc) != nil || doc.Version == "" {
+			continue
+		}
+		if doc.Version != want {
+			t.Errorf("%s says version %q; the changelog's newest release is %q. "+
+				"`task release VERSION=%s` writes both, and doing it by hand is how "+
+				"a manifest sat at 0.0.0 through five releases",
+				rel, doc.Version, want, want)
+		}
+	}
+}
+
+func TestNoDocumentReadsLikeARenameRanOverIt(t *testing.T) {
+	// Each entry is a fragment plus what it means when it appears.
+	broken := []struct{ frag, why string }{
+		{"agents agents", "a plural noun doubled: one of these was `spaces`"},
+		{"agent agent", "a noun doubled: one of these was `space`"},
+		{"spaces spaces", "a plural noun doubled: one of these was `agents`"},
+		{"space space", "a noun doubled: one of these was `agent`"},
+		// No article. These read "an agent's agent" for as long as the guard has
+		// existed, and the damage in the tree read "a dead agent's agent", which
+		// the literal article walked straight past: four sites in SPEC.md and the
+		// pi plugin survived every run. A possessive takes any determiner, so
+		// pinning one spells out three quarters of the cases you are not checking.
+		{"agent's agent", "an agent does not have an agent; it has a space"},
+		{"space's space", "a space does not have a space"},
+		{"a agent", "the article was left behind by a rename from a consonant word"},
+		{"an space", "the article was left behind by a rename from a vowel word"},
+		{"a announcement", "the article does not match the noun"},
+		{"an lane", "the article does not match the noun"},
+	}
+	// Whole words only. Without the boundaries "metadata agents" matches
+	// "a agent" across the join, which is the kind of false positive that gets
+	// a guard deleted rather than fixed.
+	pats := make([]*regexp.Regexp, len(broken))
+	for i, b := range broken {
+		pats[i] = regexp.MustCompile(`\b` + regexp.QuoteMeta(b.frag) + `\b`)
+	}
+	root := repoRoot(t)
+	walk(t, root, func(rel, abs string) {
+		// This file spells every fragment out in order to look for them.
+		if !checkedForProse(rel) || rel == "internal/hygiene/hygiene_test.go" {
+			return
+		}
+		body, err := os.ReadFile(abs) // #nosec G304 -- walking this repository
+		if err != nil || !utf8.Valid(body) {
+			return
+		}
+		for i, line := range strings.Split(string(body), "\n") {
+			low := strings.ToLower(line)
+			for j, b := range broken {
+				if !pats[j].MatchString(low) {
+					continue
+				}
+				t.Errorf("%s:%d reads %q: %s. A sweep cannot tell the participant "+
+					"from the work it joins, so re-read the sentence and pick the one "+
+					"the paragraph is about.\n  %s",
+					rel, i+1, b.frag, b.why, strings.TrimSpace(line))
+			}
+		}
+	})
+}
+
+// A list of things to keep in sync is itself a thing that falls out of sync.
+//
+// release.Manifests is what `task release` stamps AND what the test above
+// asserts, so those two cannot disagree. What neither can see is a manifest
+// nobody put on the list: `plugins/claude-desktop/manifest.json` sat at 0.0.0
+// while the project shipped 0.0.5, invisible to every check, because it had
+// never been anybody's to remember.
+//
+// So the list is not trusted. This goes looking for the thing it describes: any
+// JSON in the tree with a top-level "version" is a file that states a release
+// number, and either it is stamped or it is deliberately not ours.
+func TestNoVersionedManifestEscapesTheStamp(t *testing.T) {
+	root := repoRoot(t)
+	stamped := map[string]bool{}
+	for _, rel := range release.Manifests {
+		stamped[rel] = true
+	}
+	// Files that carry a version of something that is not Dibs. Each one is a
+	// decision, spelled out, rather than a pattern that could quietly widen.
+	exempt := map[string]string{
+		"package.json":      "a JS toolchain's own manifest, versioned by its ecosystem",
+		"package-lock.json": "generated by the package manager",
+	}
+	walk(t, root, func(rel, abs string) {
+		if filepath.Ext(rel) != ".json" || stamped[rel] {
+			return
+		}
+		if why, ok := exempt[filepath.Base(rel)]; ok {
+			t.Logf("%s: exempt (%s)", rel, why)
+			return
+		}
+		blob, err := os.ReadFile(abs) // #nosec G304 -- walking this repository
+		if err != nil {
+			return
+		}
+		var doc struct {
+			Version string `json:"version"`
+		}
+		if json.Unmarshal(blob, &doc) != nil || doc.Version == "" {
+			return
+		}
+		t.Errorf("%s states version %q and is not in release.Manifests, so no release "+
+			"stamps it and no test checks it. Add it there, or add it to this test's "+
+			"exempt list with the reason it is not ours to version", rel, doc.Version)
+	})
+}
+
+// The tag is what the world receives, and nothing compared anything to it.
+//
+// The checks above hold the manifests to the changelog, which leaves the
+// changelog itself unverified: forget to claim the Unreleased section and
+// `git tag v0.0.6` publishes a release whose every manifest still says 0.0.5,
+// with a green gate, because the manifests and the changelog agree with each
+// other about the wrong number.
+//
+// The release workflow runs this gate against the TAGGED commit before it
+// publishes anything, so the check belongs here and it fails the release rather
+// than the developer. Silent on an ordinary checkout, where there is no tag and
+// nothing to disagree with.
+func TestATaggedCommitAgreesWithItsChangelog(t *testing.T) {
+	root := repoRoot(t)
+	out, err := exec.Command("git", "-C", root, "tag", "--points-at", "HEAD").Output()
+	if err != nil {
+		t.Skip("no git tags readable here")
+	}
+	var tags []string
+	for _, line := range strings.Fields(string(out)) {
+		if strings.HasPrefix(line, "v") {
+			tags = append(tags, line)
+		}
+	}
+	if len(tags) == 0 {
+		t.Skip("HEAD is not a release commit")
+	}
+	want, err := release.Current(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tag := range tags {
+		if strings.TrimPrefix(tag, "v") == want {
+			return
+		}
+	}
+	t.Errorf("HEAD is tagged %v but the changelog's newest release is %q: this commit "+
+		"would publish artifacts, a Homebrew cask and a registry entry under a version "+
+		"that no file in it names. Run `task release VERSION=…` and move the tag onto "+
+		"the commit it produces", tags, want)
+}
+
+// The helper the daemon looks for must be the one the build produces.
+//
+// It was not, for the whole life of the rename. `humanauth.helperName` said
+// "agents-presence" while the Taskfile compiled and installed "dibs-presence",
+// so findHelper looked for a file that has never existed on any machine and
+// every presence check answered Unavailable. Touch ID is the one assertion in
+// Dibs that must not be forgeable by software, and it was silently off.
+//
+// Nothing could catch it: the Go tests never exec the helper, the Taskfile
+// never reads the constant, and the product's own message for the failure
+// ("this build ships without the presence helper") reads as a packaging
+// decision rather than a typo, so nobody went looking.
+//
+// Two files that must agree and no compiler between them is precisely what this
+// package is for.
+func TestThePresenceHelperIsTheOneThatGetsBuilt(t *testing.T) {
+	root := repoRoot(t)
+
+	src, err := os.ReadFile(filepath.Join(root, "internal/humanauth/presence.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`helperName = "([^"]+)"`).FindSubmatch(src)
+	if m == nil {
+		t.Fatal("presence.go no longer declares helperName; this guard cannot see what " +
+			"the daemon looks for")
+	}
+	want := string(m[1])
+
+	task, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Every place the Taskfile names a presence binary: the compile output and
+	// the install/remove lines. All of them have to be the same word.
+	names := regexp.MustCompile(`[\w./{}-]*/([a-z0-9]+-presence)\b`).FindAllStringSubmatch(string(task), -1)
+	if len(names) == 0 {
+		t.Fatal("the Taskfile no longer builds a presence helper; this guard cannot see " +
+			"what ships")
+	}
+	seen := map[string]bool{}
+	for _, n := range names {
+		seen[n[1]] = true
+	}
+	for name := range seen {
+		if name != want {
+			t.Errorf("the daemon execs %q but the build produces/installs %q. findHelper "+
+				"would look for a file that is never created, every presence check would "+
+				"answer Unavailable, and the human identity check would be silently off",
+				want, name)
+		}
+	}
+}
+
+// Every setting the daemon accepts must be documented, and nothing may be
+// documented that it does not accept.
+//
+// The daemon refuses an unknown key and stops, so a setting an operator reads
+// about and cannot use is not a small documentation slip: it is a daemon that
+// will not start, blamed on the manual that suggested it. And a key with no
+// entry is one nobody can discover, which for a knob whose whole reason to
+// exist is a case the default gets wrong means it may as well not be there.
+//
+// Twenty-four keys were spread across five documents when this was written,
+// with no reference anywhere. The reference is docs/CONFIGURATION.md; this is
+// what keeps it true.
+func TestEverySettingIsDocumentedAndEveryDocumentedSettingExists(t *testing.T) {
+	root := repoRoot(t)
+	doc, err := os.ReadFile(filepath.Join(root, "docs/CONFIGURATION.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference := string(doc)
+
+	// The keys the daemon really reads, taken from the struct tags rather than
+	// a list somebody maintains: a list would be one more thing to fall out of
+	// sync, which is the failure this test exists for.
+	tag := regexp.MustCompile("`toml:\"([a-z_]+)\"`")
+	declared := map[string]string{}
+	// Every file that declares settings, not just the one named config.go: the
+	// first version of this guard missed cmd/dibd/roles.go and reported the
+	// [roles] keys as undocumented inventions, which they are not.
+	for _, rel := range []string{
+		"cmd/dibd/config.go",
+		"cmd/dibd/roles.go",
+		"internal/liveness/settings.go",
+	} {
+		src, err := os.ReadFile(filepath.Join(root, rel)) // #nosec G304 -- a fixed path in this repository
+		if err != nil {
+			continue
+		}
+		for _, m := range tag.FindAllStringSubmatch(string(src), -1) {
+			declared[m[1]] = rel
+		}
+	}
+	if len(declared) < 10 {
+		t.Fatalf("found only %d settings; this guard is looking in the wrong place and "+
+			"would pass whatever the reference said", len(declared))
+	}
+	for key, where := range declared {
+		// The table names are headings, not settings: they are documented as
+		// the sections they introduce.
+		switch key {
+		case "match", "limits", "supervise", "roles", "wake":
+			continue
+		}
+		if !strings.Contains(reference, "`"+key+"`") {
+			t.Errorf("%s accepts %q and docs/CONFIGURATION.md does not mention it: an "+
+				"operator cannot discover a knob that exists for a case the default gets "+
+				"wrong", where, key)
+		}
+	}
+	// And the other direction: a documented key the daemon refuses stops the
+	// daemon, blamed on the manual that suggested it.
+	inDoc := regexp.MustCompile("(?m)^\\| `([a-z_]+)` \\|")
+	for _, m := range inDoc.FindAllStringSubmatch(reference, -1) {
+		if _, ok := declared[m[1]]; !ok {
+			t.Errorf("docs/CONFIGURATION.md documents %q, which the daemon does not "+
+				"accept: writing it into dibs.toml stops the daemon", m[1])
+		}
+	}
+}
+
+// Both binaries have a manual, and both manuals render.
+//
+// dibd had none. It is what an operator installs as a service, points at a
+// listen address and configures with a file, and `man dibd` found nothing: the
+// CLI is discoverable by typing `dibs help`, a daemon under launchd is
+// discoverable only by reading about it. The wrong way round.
+//
+// Rendered rather than merely generated, because an mdoc page that does not
+// parse is a page nobody can read, and the failure is invisible until somebody
+// types `man`.
+func TestBothBinariesShipAManualThatRenders(t *testing.T) {
+	if testing.Short() {
+		t.Skip("runs the generators")
+	}
+	root := repoRoot(t)
+	for _, tc := range []struct{ pkg, flag, section string }{
+		{"./cmd/dibs", "man", "1"},
+		{"./cmd/dibd", "-man", "8"},
+	} {
+		gen := exec.Command("go", "run", tc.pkg, tc.flag)
+		// From the repository root: `go run ./cmd/...` is relative, and this
+		// test runs in its own package directory.
+		gen.Dir = root
+		out, err := gen.Output()
+		if err != nil {
+			t.Errorf("%s %s: %v", tc.pkg, tc.flag, err)
+			continue
+		}
+		page := string(out)
+		if !strings.Contains(page, ".Dt ") || !strings.Contains(page, ".Sh NAME") {
+			t.Errorf("%s produced something that is not an mdoc page:\n%.200s", tc.pkg, page)
+			continue
+		}
+		if !strings.Contains(page, " "+tc.section+"\n") {
+			t.Errorf("%s is not in section %s: a daemon in section 1 or a command in "+
+				"section 8 is filed where nobody looks", tc.pkg, tc.section)
+		}
+		// mandoc where it exists. Not required, because a contributor without
+		// it should still be able to run the suite, but the CI host has it and
+		// a page that stops linting should fail there.
+		if _, err := exec.LookPath("mandoc"); err != nil {
+			continue
+		}
+		// Named with its section: mandoc infers the section from the filename,
+		// and a page written to "page" lints against the wrong conventions.
+		f := filepath.Join(t.TempDir(), "dibs."+tc.section)
+		if err := os.WriteFile(f, out, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		lint, _ := exec.Command("mandoc", "-Tlint", f).CombinedOutput()
+		// "referenced manual not found" is a fact about what is INSTALLED on
+		// this machine, not about the page: dibd(8) correctly cross-references
+		// dibs(1), and dibs(1) is only on the system after a release installs
+		// it. Keeping it would make the suite pass or fail on whether somebody
+		// had run brew install.
+		var real []string
+		for _, line := range strings.Split(strings.TrimSpace(string(lint)), "\n") {
+			if line == "" || strings.Contains(line, "referenced manual not found") {
+				continue
+			}
+			real = append(real, line)
+		}
+		lint = []byte(strings.Join(real, "\n"))
+		if len(real) > 0 {
+			t.Errorf("%s does not lint clean:\n%s\n(page written to %s)", tc.pkg, lint, f)
 		}
 	}
 }

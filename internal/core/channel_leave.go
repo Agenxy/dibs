@@ -15,7 +15,7 @@ import (
 func (s *State) applySpaceLeave(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {
-		return nil, nil, errf("E_NO_AGENT", "nothing to leave", "no agent %s", op.Space)
+		return nil, nil, errf("E_NO_SPACE", "nothing to leave", "no space %s", op.Space)
 	}
 	if _, ok := ch.Members[l.ID]; !ok {
 		// Waiting in the queue is not membership, but it is not nothing either,

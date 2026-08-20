@@ -2,6 +2,7 @@ package core
 
 import (
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -252,4 +253,40 @@ func (s *State) releaseClaims(agent string) []string {
 	}
 	s.Claims = kept
 	return released
+}
+
+// ReattachableIn names the idle agents that were working in this directory and
+// still hold a nonce, sorted, so the answer is stable.
+//
+// It exists so the hook path can tell an unresolved session that an identity of
+// its own may be waiting, WITHOUT that path re-implementing what "the same
+// directory" means. Two implementations of a path rule is a bug this repository
+// already carries an open issue about.
+//
+// Names only. Whether any of them has mail is deliberately not answered here:
+// the caller has not proved it is any of these agents, and the reason the hook
+// refuses to resolve a supplied session id by directory at all is that an
+// earlier build answered a stranger with another agent's messages.
+//
+// Live agents are excluded: somebody is being them right now, and inviting a
+// second session to reattach would fork the identity rather than recover it.
+func (s *State) ReattachableIn(cwd string) []string {
+	if cwd == "" {
+		return nil
+	}
+	want := cleanPath(cwd)
+	var out []string
+	for _, l := range s.Agents {
+		switch {
+		case l.Status == StatusArchived || l.Status == StatusClosed || l.Status == StatusActive:
+			continue
+		case l.Agent == nil || cleanPath(l.Agent.CWD) != want:
+			continue
+		case l.Nonce == "":
+			continue // nobody can reattach to it, so saying so would be cruel
+		}
+		out = append(out, l.ID)
+	}
+	sort.Strings(out)
+	return out
 }

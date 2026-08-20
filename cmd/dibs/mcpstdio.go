@@ -3,12 +3,15 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -52,12 +55,74 @@ func mcpStdio(_ []string) error {
 	out := &syncWriter{w: bufio.NewWriter(os.Stdout)}
 	defer out.flush()
 	var streams sync.WaitGroup
-	defer streams.Wait()
+	// Streams outlive individual requests, and must not outlive the SESSION.
+	//
+	// followStream re-issues the caller's listen every time the stream ends,
+	// which is what keeps a subscription alive across a daemon restart and,
+	// without a way to stop it, also keeps it alive across the harness going
+	// away: `defer streams.Wait()` then waits on a goroutine that reconnects
+	// forever, so a bridge with an open subscription never exits on EOF. Found
+	// by closing stdin on a bridge that had one, which hung.
+	// One shutdown path, with three ways in, so no single one has to be
+	// airtight: stdin reaching EOF, the harness process exiting, or a signal.
+	ctx, endSession := context.WithCancel(context.Background())
+	defer endSession()
+	// Bounded, deliberately. `streams.Wait()` alone made the guarantee "this
+	// process exits IF its goroutines cooperate", and a bridge that fails to
+	// exit is one orphan per session holding a stream open against the daemon
+	// forever. The guarantee has to be that it exits.
+	defer waitBounded(&streams, 3*time.Second)
 
-	sc := bufio.NewScanner(os.Stdin)
-	sc.Buffer(make([]byte, 0, 1<<20), 1<<24)
-	for sc.Scan() {
-		line := bytes.TrimSpace(sc.Bytes())
+	// A harness that dies while a sibling still holds the pipe's write end
+	// leaves stdin open forever, so EOF cannot be the only signal. The kernel
+	// is the one party that always knows.
+	//
+	// These paths EXIT rather than unwind, and that is the correction that
+	// makes the guarantee real. Cancelling a context does not interrupt a
+	// blocking read on stdin: the loop below is parked in that read and will
+	// never look at ctx again, so a polite shutdown is one the process never
+	// performs. Measured, with a sibling holding the write end: the bridge
+	// outlived a SIGKILLed harness indefinitely with its context already
+	// cancelled.
+	//
+	// Exiting is also simply correct here. Both paths mean the session is over:
+	// the harness is gone, or something is stopping this process on purpose.
+	// Nothing in flight is worth finishing for a client that is not there, so
+	// the only thing owed is the flush.
+	sigCtx, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	go endSessionWhenTheHarnessGoes(ctx, sigCtx, endSession, out)
+
+	// A Reader rather than a Scanner, for one reason: Buffered().
+	//
+	// The bridge replaces itself in place when its binary changes, and anything
+	// this process has read out of the pipe but not yet handled would be
+	// discarded by that exec. Bytes still in the kernel's pipe buffer survive,
+	// because the fd does; bytes in a userspace buffer do not. Scanner cannot
+	// answer how much it is holding, so it cannot be made safe here.
+	in := bufio.NewReaderSize(os.Stdin, 1<<20)
+	self, haveSelf := currentSelf()
+	// Anything a previous image was holding, re-established before the first
+	// line is read, so the handshake identity and any subscription are in place
+	// by the time they matter.
+	restoreCarried(ctx, streamClient, url, secret, out, &streams)
+
+	for {
+		if ctx.Err() != nil {
+			return nil // the harness went away
+		}
+		// Between a reply and the next request is the only quiescent point
+		// there is, so it is where an upgrade can happen without losing one.
+		if haveSelf {
+			self = upgradeIfReplaced(in, self)
+		}
+		line, err := readLine(in)
+		if err != nil {
+			return err
+		}
+		if line == nil {
+			return nil // EOF: the harness closed stdin
+		}
 		if len(line) == 0 {
 			continue
 		}
@@ -70,6 +135,7 @@ func mcpStdio(_ []string) error {
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Dibs-Local", secret)
+		setPinnedIdentity(req)
 
 		// A listen call answers with a stream, not a reply, so it cannot be
 		// awaited on the loop that reads stdin: the harness would be unable to
@@ -77,10 +143,11 @@ func mcpStdio(_ []string) error {
 		if methodOf(line) == "subscriptions/listen" {
 			req.Header.Set("Accept", "text/event-stream")
 			listen := bytes.Clone(line)
+			noteListen(listen)
 			streams.Add(1)
 			go func() {
 				defer streams.Done()
-				followStream(streamClient, url, secret, listen, out)
+				followStream(ctx, streamClient, url, secret, listen, out)
 			}()
 			continue
 		}
@@ -97,7 +164,56 @@ func mcpStdio(_ []string) error {
 		}
 		out.line(body)
 	}
-	return sc.Err()
+}
+
+// readLine reads one newline-delimited message, or nil at EOF.
+//
+// Bounded at the same 16 MiB the Scanner it replaced allowed. A local harness
+// is trusted, but "trusted" is not "may hand this process an unbounded
+// allocation", and the daemon caps a request body anyway.
+func readLine(in *bufio.Reader) ([]byte, error) {
+	const maxLine = 1 << 24
+	var acc []byte
+	for {
+		chunk, err := in.ReadSlice('\n')
+		acc = append(acc, chunk...)
+		if len(acc) > maxLine {
+			return nil, fmt.Errorf("a single JSON-RPC line exceeded %d bytes", maxLine)
+		}
+		switch {
+		case err == nil:
+			return bytes.TrimSpace(acc), nil
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue // a long line: keep accumulating
+		case errors.Is(err, io.EOF):
+			if line := bytes.TrimSpace(acc); len(line) > 0 {
+				return line, nil // a final line with no newline
+			}
+			return nil, nil
+		default:
+			return nil, err
+		}
+	}
+}
+
+// upgradeBridge hands this session to the binary now on disk.
+//
+// The stderr line is the only trace this leaves. It is not the protocol
+// (stdout is), so it cannot disturb the harness, and it lands in the harness's
+// debug log, where "why is this session on a different build than it started
+// with" is otherwise unanswerable.
+func upgradeBridge(now selfIdentity) error {
+	fmt.Fprintf(os.Stderr, "dibs: bridge upgrading in place to %s (pid %d keeps its pipes)\n",
+		now.path, os.Getpid())
+	env, err := carryEnv(bridgeState{
+		ClientInfo: lastClientInfo,
+		WantsUI:    lastWantsUI,
+		Listens:    openListens(),
+	})
+	if err != nil {
+		return err
+	}
+	return reexec(now.path, env)
 }
 
 // syncWriter serialises stdout across the request loop and any open streams.
@@ -174,14 +290,28 @@ func pumpSSE(body io.Reader, out *syncWriter) {
 // rather than risk it, which is the real cost of a disruptive update.
 const upgradeGrace = 10 * time.Second
 
-// dialFailed reports a request that never reached the daemon: connection
-// refused, or the listener gone between the drain and the rebind. Any other
-// error may have been received and acted on, and is returned untouched.
+// dialFailed reports a request that PROVABLY never reached the daemon.
+//
+// Connection refused, and nothing else. Refused means no listener accepted the
+// connection, so the request was never read and re-sending it cannot duplicate
+// an effect. That is the entire safety argument for retrying at all.
+//
+// ECONNRESET was in here and does not qualify. A reset says the peer tore the
+// connection down; it says nothing about how much it had already done. The
+// daemon can read a request, apply it, ledger it, and be killed before the
+// response leaves, and the reset that reaches us is indistinguishable from one
+// that arrived before the daemon looked at it. Retrying a send in that state
+// delivers the message twice, and a retried claim or role change is worse.
+//
+// This mattered because upgrades are exactly when resets happen, which is also
+// exactly when a duplicate is least likely to be noticed. Found by a
+// pre-release review; an agent that wants a retry it can trust has op_id, which
+// is what op_id is for.
 func dialFailed(err error) bool {
 	if err == nil {
 		return false
 	}
-	return errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ECONNRESET)
+	return errors.Is(err, syscall.ECONNREFUSED)
 }
 
 // doWithRestartGrace sends one request, waiting out a daemon that is restarting.
@@ -211,10 +341,13 @@ func doWithRestartGrace(client *http.Client, req *http.Request, body []byte) (*h
 // stops hearing, with nothing to notice. Re-issuing the ORIGINAL request is
 // what keeps this honest: whatever the harness subscribed to is what it gets
 // again, decided by the harness rather than reconstructed here.
-func followStream(client *http.Client, url, secret string, listen []byte, out *syncWriter) {
+func followStream(ctx context.Context, client *http.Client, url, secret string, listen []byte, out *syncWriter) {
 	deadline := time.Now().Add(upgradeGrace)
 	for {
-		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(listen))
+		if ctx.Err() != nil {
+			return // the session ended; stop reconnecting
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(listen))
 		if err != nil {
 			return
 		}
@@ -235,6 +368,90 @@ func followStream(client *http.Client, url, secret string, listen []byte, out *s
 		default:
 			return
 		}
-		time.Sleep(150 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(150 * time.Millisecond):
+		}
 	}
 }
+
+// upgradeIfReplaced hands this session to a newly installed binary, and returns
+// the identity to compare against next time.
+//
+// Returns only when it did NOT upgrade: a successful exec never comes back.
+func upgradeIfReplaced(in *bufio.Reader, self selfIdentity) selfIdentity {
+	// A part-read request lives in this process's memory and would be discarded
+	// by the exec. Bytes still in the kernel's pipe buffer are safe.
+	if in.Buffered() != 0 {
+		return self
+	}
+	now, ok := currentSelf()
+	if !ok || !now.differs(self) {
+		return self
+	}
+	// Never fail the session over an upgrade. The build already running is the
+	// one the agent has been talking to and it still works, so a failed exec
+	// means carrying on and not trying this same binary again.
+	_ = upgradeBridge(now)
+	return now
+}
+
+// waitBounded waits for the stream goroutines, then gives up.
+//
+// Giving up is the point. Every goroutine here is cancelled through ctx and
+// should stop at once, and "should" is exactly the word that produced an
+// orphaned bridge in the first place: this process exiting must not depend on
+// any of them behaving. Whatever is still running goes with the process.
+func waitBounded(wg *sync.WaitGroup, limit time.Duration) {
+	done := make(chan struct{})
+	go func() { defer close(done); wg.Wait() }()
+	select {
+	case <-done:
+	case <-time.After(limit):
+	}
+}
+
+// endSessionWhenTheHarnessGoes ends this process when its harness does.
+//
+// It EXITS rather than unwinding, and that is what makes the guarantee real:
+// cancelling a context does not interrupt a blocking read on stdin, so the read
+// loop is parked in that read and will never look at ctx again. Measured, with
+// a sibling holding the pipe's write end, the bridge outlived a SIGKILLed
+// harness indefinitely with its context already cancelled.
+//
+// Exiting is also simply correct. Both triggers mean the session is over: the
+// harness is gone, or something is stopping this process deliberately. Nothing
+// in flight is worth finishing for a client that is not there, so the only
+// thing owed is the flush.
+func endSessionWhenTheHarnessGoes(ctx, sigCtx context.Context, endSession func(), out *syncWriter) {
+	gone := parentGone(ctx)
+	select {
+	case <-ctx.Done(): // ordinary EOF: the loop is returning on its own
+		return
+	case <-gone:
+	case <-sigCtx.Done():
+	}
+	endSession() // stop the streams before the process goes
+	out.flush()
+	os.Exit(0)
+}
+
+// setPinnedIdentity forwards an identity the operator pinned in the harness's
+// own config, to where every transport can carry it.
+//
+// stdio configs set env and HTTP configs set headers; the daemon reads one
+// thing either way, so reattaching stops depending on which transport a harness
+// happens to speak. The bridge's own nonce store stays as the automatic path
+// for a harness that pins nothing: ergonomics, no longer the mechanism.
+func setPinnedIdentity(req *http.Request) {
+	if n := pinnedNonce(); n != "" {
+		req.Header.Set("X-Dibs-Agent-Nonce", n)
+	}
+}
+
+// pinnedNonce is the identity the OPERATOR configured, if any.
+//
+// One reader, because two places now need it: the header this sets, and
+// enrichNonce, which must not overrule it with something the bridge remembered.
+func pinnedNonce() string { return strings.TrimSpace(os.Getenv("DIBS_AGENT_NONCE")) }

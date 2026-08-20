@@ -246,6 +246,7 @@ const (
 	OpSpacePost      = "post"
 	OpSpaceAnnounce  = "announce"
 	OpSpaceAck       = "ack_announcement"
+	OpSpaceRetitle   = "retitle_space"
 
 	// Director powers: the coordinator role applied to spaces (§8.1).
 	OpSpaceForceRelease = "unlock_space"
@@ -254,6 +255,46 @@ const (
 	OpSpaceClose        = "close_space"
 	OpSpaceAdmit        = "admit"
 )
+
+// applySpaceRetitle replaces a space's topic, so a member can redact it.
+//
+// There was no way to change a topic at all. An agent in a private repository
+// declared richly, as dibs://skills tells it to, and the wording became a
+// durable board object; the only remedy it could find was destroying the space,
+// which also destroys the coordination the space exists for. Its operator had
+// to notice the leak, which is not a check anybody should depend on a human for.
+//
+// Any MEMBER may retitle, not only the opener. The agent that needs to redact is
+// whichever one wrote something it should not have, and in an auto-opened space
+// the opener and the author are the same agent anyway. Membership is the
+// existing boundary for reading a space; it is the right one for editing its
+// label.
+//
+// The old topic is NOT recorded in the result or the event. Every other op here
+// reports what changed, and doing that faithfully would republish the exact
+// string somebody just asked to remove, into the ledger and the activity feed.
+func (s *State) applySpaceRetitle(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
+	ch := s.Spaces[op.Space]
+	if ch == nil {
+		return nil, nil, errf("E_NO_SPACE", "check the id on the board", "no space %q", op.Space)
+	}
+	if ch.Members[l.ID] == nil {
+		return nil, nil, errf("E_NOT_A_MEMBER",
+			"join the space first: its members are who may change what it says about itself",
+			"agent %q is not a member of space %q", l.ID, op.Space)
+	}
+	// The same-topic refusal is at the engine's ingress, NOT here: a rule added
+	// to the fold binds every retitle already in a ledger. See
+	// Engine.refuseNoOpRetitle.
+	ch.Topic = op.Text
+	evs := []Event{{
+		Type: "agent.retitled", Agent: l.ID,
+		// The NEW topic only, never the old one. See above.
+		Data: map[string]any{"agent_id": op.Space, "topic": op.Text},
+	}}
+	serial := s.finish(&evs, now)
+	return Result{"ok": true, "space": op.Space, "topic": op.Text, "serial": serial}, evs, nil
+}
 
 // ── open ─────────────────────────────────────────────────────────────────
 
@@ -357,7 +398,7 @@ func (s *State) applySpaceJoin(l *Agent, op *Op, now time.Time) (Result, []Event
 	}
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {
-		return nil, nil, errf("E_NO_AGENT", "open_space it, or list agents first", "no agent %s", op.Space)
+		return nil, nil, errf("E_NO_SPACE", "open_space it, or read the board for open spaces", "no space %s", op.Space)
 	}
 	if _, already := ch.Members[l.ID]; already {
 		return Result{"agent_id": ch.ID, "joined": true, "already": true, "key": ch.Key}, nil, nil
@@ -434,7 +475,7 @@ func (s *State) applySpaceJoin(l *Agent, op *Op, now time.Time) (Result, []Event
 func (s *State) applySpaceExclusive(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {
-		return nil, nil, errf("E_NO_AGENT", "open or join it first", "no agent %s", op.Space)
+		return nil, nil, errf("E_NO_SPACE", "open_space or join_space it first", "no space %s", op.Space)
 	}
 	if _, ok := ch.Members[l.ID]; !ok {
 		return nil, nil, errf("E_NOT_MEMBER", "join_space first", "not a member of %s", ch.ID)
@@ -739,7 +780,7 @@ func (s *State) MemberChannel(l *Agent, name string) (*Space, error) {
 func (s *State) memberChannel(l *Agent, op *Op) (*Space, error) {
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {
-		return nil, errf("E_NO_AGENT", "open_space or join_space first", "no agent %s", op.Space)
+		return nil, errf("E_NO_SPACE", "open_space or join_space first", "no space %s", op.Space)
 	}
 	if s.speaksFor(ch, l.ID) == "" {
 		return nil, errf("E_NOT_MEMBER", "join_space first: subscribers read, members speak",
@@ -1046,16 +1087,28 @@ func (s *State) announcementSerials() []uint64 {
 
 // ── matching ─────────────────────────────────────────────────────────────
 
-// AgentMatch is one candidate agent for a piece of declared work.
+// AgentMatch is one candidate SPACE for a piece of declared work.
+//
+// The field held a space id under the name `Agent` from the 0.0.3 rename until
+// now, and it is where two rounds of damage came from rather than a cosmetic
+// oddity: every sentence written about `m.Agent` came out saying agent when it
+// meant space, so hints told agents to "read the agent with read_space" and a
+// comment block explained closing an agent that was a space throughout. The
+// engine's own Suggestion was corrected in f54d766; this, the thing it is built
+// from, was not.
+//
+// Never serialised: MatchAgentsWith produces it, the engine consumes it and
+// emits Suggestion, and no path marshals one to a client. So the tag moves with
+// the identifier, which is only safe BECAUSE nothing reads it off the wire.
 type AgentMatch struct {
-	Agent     string     `json:"agent"`
+	Space     string     `json:"space"`
 	Topic     string     `json:"topic"`
 	Score     float64    `json:"score"`
 	Shared    []PredFile `json:"shared,omitempty"`
 	Members   int        `json:"members"`
 	Owner     string     `json:"owner,omitempty"`
 	AlreadyIn bool       `json:"already_member,omitempty"`
-	// Declined: this agent left this agent on purpose. Still surfaced, never
+	// Declined: this agent left this SPACE on purpose. Still surfaced, never
 	// auto-joined. See Space.Declined.
 	Declined bool `json:"declined,omitempty"`
 
@@ -1319,7 +1372,7 @@ func (s *State) MatchAgentsEvidence(
 		}
 		_, in := ch.Members[agent]
 		out = append(out, AgentMatch{
-			Agent: ch.ID, Topic: ch.Topic, Score: score, Shared: shared,
+			Space: ch.ID, Topic: ch.Topic, Score: score, Shared: shared,
 			Members: len(ch.Members), Owner: ch.Owner, AlreadyIn: in,
 			Declined: ch.Declined[agent], SharedRefs: sharedRefs,
 			SharedIDs: identifying(sharedRefs),
@@ -1330,7 +1383,7 @@ func (s *State) MatchAgentsEvidence(
 		if out[i].Score != out[j].Score {
 			return out[i].Score > out[j].Score
 		}
-		return out[i].Agent < out[j].Agent // deterministic ties
+		return out[i].Space < out[j].Space // deterministic ties
 	})
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
@@ -1478,12 +1531,15 @@ func jaccard(a, b []PredFile, discount map[string]float64) (float64, []PredFile)
 
 func (s *State) directorOf(l *Agent, op *Op) (*Space, error) {
 	if !l.IsCoordinator() {
-		return nil, errf("E_NOT_COORDINATOR", "ask a human to grant the coordinator role",
-			"only a coordinator may administer another agent's agent")
+		return nil, errf("E_NOT_COORDINATOR",
+			"ask for it rather than waiting to be given it: send(to: the board row marked "+
+				"`human: true`, type: \"request\", body: what you need it for) reaches the "+
+				"person as a notification with Approve on it",
+			"only a coordinator may administer another agent's space")
 	}
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {
-		return nil, errf("E_NO_AGENT", "check the agent id", "no agent %s", op.Space)
+		return nil, errf("E_NO_SPACE", "check the space id on the board", "no space %s", op.Space)
 	}
 	return ch, nil
 }
@@ -1711,36 +1767,45 @@ func mergeNotices(src, dst *Space, by string, wasHere []string) []Event {
 // decision reclaimFinishedAgents makes automatically, made on purpose by somebody
 // accountable, and ledgered under their name.
 //
-// Deliberately refuses an OCCUPIED agent rather than emptying it. Closing an agent
+// Deliberately refuses an OCCUPIED space rather than emptying it. Closing a space
 // with members in it would evict them as a side effect of tidying up, and a
 // coordinator that wants that has evict, which says what it does. Same for
 // an unacknowledged announcement: it is the record that something went
-// unanswered, and the board renders announcements through their agent, so closing
+// unanswered, and the board renders announcements through their space, so closing
 // over one hides evidence rather than settling it.
 func (s *State) applySpaceClose(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {
-		return nil, nil, errf("E_NO_AGENT", "check the agent id", "no agent %s", op.Space)
+		return nil, nil, errf("E_NO_SPACE", "check the space id on the board", "no space %s", op.Space)
 	}
-	// The agent that OPENED an agent may retire it, without the coordinator role.
+	// The agent that OPENED a space may retire it, without the coordinator role.
 	//
-	// open_space is unprivileged and advertised, so an agent could create an agent
+	// open_space is unprivileged and advertised, so an agent could create a space
 	// and then never end it, and the refusal it got said "only a coordinator may
-	// administer ANOTHER AGENT'S agent" about its own. Telling somebody they may
+	// administer ANOTHER AGENT'S space" about its own. Telling somebody they may
 	// not touch their own thing, in words describing somebody else's, is worse
 	// than the missing power.
 	//
 	// Narrower than directorOf on purpose, and placed here rather than in it:
-	// closing your own finished agent is not the same act as merging your agent
+	// closing your own finished space is not the same act as merging your space
 	// into a stranger's, and directorOf gates both. Every other guard below still
-	// applies: an opener cannot close an agent somebody is in, or one holding an
+	// applies: an opener cannot close a space somebody is in, or one holding an
 	// unanswered announcement, any more than a coordinator can.
 	if ch.OpenedBy != l.ID {
 		if _, err := s.directorOf(l, op); err != nil {
 			return nil, nil, err
 		}
 	}
-	if occupied(ch) {
+	// The sole member closing its own space is not eviction.
+	//
+	// The rule exists so nobody tidies away somebody else's working context, and
+	// when the only occupant IS the caller there is no somebody else. Reported
+	// by k7-b from a live board: close_space refused because the space had one
+	// member, which was them; leave_space then removed the empty space outright,
+	// so the close they had been told to make failed with E_NO_AGENT. The
+	// documented path ended in an error and the working path was undocumented.
+	soleOccupant := len(ch.Queue) == 0 && len(ch.Members) == 1 && ch.Members[l.ID] != nil
+	if occupied(ch) && !soleOccupant {
 		return nil, nil, errf("E_SPACE_OCCUPIED",
 			"evict the members first, or leave it: a space with agents in it is "+
 				"somebody's working context, not clutter",
@@ -1763,10 +1828,25 @@ func (s *State) applySpaceClose(l *Agent, op *Op, now time.Time) (Result, []Even
 			delete(s.Announcements, serial)
 		}
 	}
+	// The audit line describes what ACTUALLY happened.
+	//
+	// It was one fixed sentence, "closed by a coordinator; it was empty", and
+	// since an opener may now close a space it still occupies alone, that
+	// sentence became false about both the authority used and the occupancy. An
+	// audit trail that is wrong about who did a thing and why is worse than one
+	// that says less. Found by a pre-release review; the test for the new path
+	// proved the close was allowed and never read the event it wrote.
+	why := "closed by a coordinator; it was empty and everything in it was settled"
+	if ch.OpenedBy == l.ID {
+		why = "closed by the agent that opened it"
+		if soleOccupant {
+			why += ", which was also its only member"
+		}
+	}
 	delete(s.Spaces, ch.ID)
 	evs := []Event{{Type: "agent.closed", Agent: l.ID, Data: map[string]any{
 		"agent_id": ch.ID, "topic": ch.Topic, "by": l.ID, "note": op.Note,
-		"why": "closed by a coordinator; it was empty and everything in it was settled",
+		"why": why,
 	}}}
 	s.finish(&evs, now)
 	return Result{"agent_id": ch.ID, "closed": true, "topic": ch.Topic}, evs, nil
@@ -1779,10 +1859,10 @@ func (s *State) applySpaceMerge(l *Agent, op *Op, now time.Time) (Result, []Even
 	}
 	dst := s.Spaces[cleanID(op.To)]
 	if dst == nil {
-		return nil, nil, errf("E_NO_AGENT", "check the destination agent id", "no agent %s", op.To)
+		return nil, nil, errf("E_NO_SPACE", "check the destination space id", "no space %s", op.To)
 	}
 	if dst.ID == src.ID {
-		return nil, nil, errf("E_BAD_ARG", "name two different agents", "cannot merge %s into itself", src.ID)
+		return nil, nil, errf("E_BAD_ARG", "name two different spaces", "cannot merge %s into itself", src.ID)
 	}
 	// Who was already in the destination, BEFORE anything moves. Taken here
 	// because mergeNotices runs after the merge and could not otherwise tell

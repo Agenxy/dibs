@@ -1,7 +1,9 @@
 # Dibs (Spaces) SPEC v1.2. IMPLEMENTED
 
-Extends SPEC.md §6, §8, §9. Nothing here changes v1 semantics; §18's scope
-freeze holds, and spaces are inert until `dibd -match-repo` is passed.
+Extends SPEC.md §6, §8, §9. Nothing here changes v1 semantics and §18's scope
+freeze holds. Spaces go live once a repository is indexed, which happens the
+first time an agent registers from one; `-match-repo` only pre-warms a tree
+before anybody arrives.
 
 ## Implementation status
 
@@ -9,14 +11,14 @@ freeze holds, and spaces are inert until `dibd -match-repo` is passed.
 |---|---|
 | §2 model, members, subscribers, public by default | **built** |
 | §3 auto-join on `declare`, notify band, explicit join | **built** |
-| §3 opening the first agent when nothing matches | **built**: was the missing half: matching only compared against agents that already existed, so on an empty board two agents declaring identical work were both told they had the field to themselves |
+| §3 opening the first space when nothing matches | **built**: was the missing half: matching only compared against spaces that already existed, so on an empty board two agents declaring identical work were both told they had the field to themselves |
 | §3 matching on `claim` as well as `declare` | **not built**: `claim` declares a path, `declare` declares the work; only the latter is scored today |
 | §7 `scorer`, `announce_retry`, `announce_max_retries`, `space_exclusive_default`, `subagent_inherit` as CONFIG KEYS | **not built**: the behaviours exist and match the documented defaults; the keys do not, and `dibd` refuses to start on an unknown one |
 | §4 Scorer interface; tier 0 (paths + git co-change) | **built** |
 | §4 tier 2 embedding sidecar / tier 3 hosted | **built**, client (`dibd -match-embed-url`) *and* the sidecar itself (`contrib/embed-sidecar/`, MLX + F2LLM-v2-4B, measured best of four, see that README) |
-| §4 tier 1 director-agent scorer | **withdrawn**: see below |
+| §4 tier 1 director-model scorer | **withdrawn**: see below |
 | §4.3 recorded score/prediction, replay contract | **built + proven** |
-| §5 exclusive agents, queue, promotion on departure | **built** |
+| §5 exclusive spaces, queue, promotion on departure | **built** |
 | §5.1 guard interaction | **built** (the guard predates this doc) |
 | §6 `post` / `announce`, ack, redelivery via the wake path | **built** |
 | §6 `announce_retry` throttle (120 s, ephemeral) | **built** |
@@ -42,7 +44,7 @@ preference: adding a coverage assertion revealed five space ops that had never
 once been accepted while the gate reported "space coverage" and passed.
 
 **Go naming is NOT renamed, and this is now a decision rather than a backlog
-item.** `core.Agent` is the agent, `core.Space` is the agent, and the protocol
+item.** `core.Agent` is the agent, `core.Space` is the space, and the protocol
 names (`open_space`, `join_space`, …) are already correct.
 
 The rename was attempted and reverted. It cannot achieve what it is for, because
@@ -70,8 +72,9 @@ written before the change stops replaying. `dibs verify` still reports the
 chain intact, because the hash chain protects the LINES, not the meaning of the
 keys inside them. The compiler cannot help either: both spellings compile.
 
-Mutation-tested against the exact careless rename (`json:"agent"` → `json:"agent"`
-and `OpLaneJoin = "channel_join"`); both fail loudly. Anyone revisiting this
+Mutation-tested against the exact careless rename (`json:"agent"` → `json:"space"`
+and `OpSpaceJoin = "join_space"` losing its frozen `channel_join` wire name); both
+fail loudly. Anyone revisiting this
 decision now gets stopped by the gate instead of by a user whose board will not
 open.
 
@@ -83,8 +86,8 @@ asserted "the operator view offers no actions": coherent for a monitoring tool,
 wrong for a coordination service, because the human is the one participant who
 always has context the agents lack.
 
-The human gets an **agent identity**, not an agent. They join the agents agents
-open, post and announce in them, send messages, and answer questions. An agent of
+The human gets an **agent identity**, not a space. They join the spaces agents
+open, post and announce in them, send messages, and answer questions. A space of
 their own would be a room with one person in it.
 
 **And they need not be a participant at all.** The identity is minted by the
@@ -94,23 +97,23 @@ An operator who has joined nothing owes nobody an acknowledgement. The board
 says "observing" until you do something.
 
 The same is true of agents. Not every agent does development work: a monitor, a
-reporter, a reviewer waiting to be summoned. `watch_space` gives an agent's
+reporter, a reviewer waiting to be summoned. `watch_space` gives a space's
 traffic without membership, and **only members are ever obliged to acknowledge
 an announcement**; being nagged about work you are not doing is how a fleet
-learns to ignore announcements. An agent may hold no agent membership at all.
+learns to ignore announcements. An agent may hold no space membership at all.
 
-**An agent somebody opened outlives its members.** Emptying it does not destroy
-it, so a standing agent, "release", "security review", is normal, and agents
-register and deregister as they come and go. The next arrival finds the same
-agent with its accumulated topic and traffic, not a fresh one.
+**A space somebody opened outlives its members.** Emptying it does not destroy
+it, so a standing space, "release", "security review", is normal, and agents
+join and leave as they come and go. The next arrival finds the same
+space with its accumulated topic and traffic, not a fresh one.
 
-**An agent LANES opened does not.** When a declaration matches nothing, an agent is
+**A space DIBS opened does not.** When a declaration matches nothing, a space is
 opened for it automatically (§3), and those are reclaimed once they are empty,
-unqueued and owe nothing. The distinction is not a nicety: the cap on agents is
+unqueued and owe nothing. The distinction is not a nicety: the cap on spaces is
 generous for the ones a human chose to create and is exhausted within a day by
-one per declaration, after which every later declaration silently gets no agent
+one per declaration, after which every later declaration silently gets no space
 at all. Applying either rule to both kinds breaks something real: reclaiming
-everything deletes the standing agent an agent means to come back to, reclaiming
+everything deletes the standing space an agent means to come back to, reclaiming
 nothing leaks until the board is full.
 
 Everything routes through the SAME ops an agent sends, with the human's own
@@ -135,15 +138,15 @@ not the signal. **"How much better than typical"** is.
 Renormalising an embedding prediction against its maximum therefore destroys
 the only information it carries: chunks at 0.70 and 0.83 become 0.84 and 1.00.
 Measured on a three-file fixture, `"writing release notes for the changelog"`
-scored **0.729** against an authentication agent: a false positive confident
-enough to put every agent in one agent.
+scored **0.729** against an authentication space: a false positive confident
+enough to put every agent in one space.
 
 A tier-2 prediction is rescaled against **the query's own similarity
 distribution** before aggregation: the 25th percentile maps to 0, the maximum to
 1, and anything at or below typical is dropped outright. Weak evidence here is
 no evidence.
 
-| probe (auth agent) | raw | rescaled |
+| probe (auth space) | raw | rescaled |
 |---|---|---|
 | fixing the retry backoff | 0.803 | 0.595 |
 | rate limiting on inbound requests | 0.830 | 0.693 |
@@ -229,11 +232,11 @@ An agent that declares work under a director gate is told
 ever again. It was admitted seconds later with no way to learn the wait had
 ended short of polling the event stream on the off-chance. The same held for an
 agent promoted from an exclusive space's queue, and for one a director evicted:
-still believing it held the agent.
+still believing it held the space.
 
 All three are changes the agent **did not cause and cannot predict**, and all
 three were silent. Normative: such a change is delivered through the wake path,
-once, with what the agent may now do. "you may start; read the agent first",
+once, with what the agent may now do. "you may start; read the space first",
 "stop work there and coordinate before resuming".
 
 Self-service actions are excluded deliberately: repeating your own tool result
@@ -259,7 +262,7 @@ Normative from here:
    `no-opinion`, and the hint says outright that it is **not** a finding of
    working alone.
 1. **Every declaration reports why.** `matching` names the phase and
-   `matching_hint` names the ACTION. "declare again shortly", "run `agents
+   `matching_hint` names the ACTION. "declare again shortly", "run `dibs
    calibrate`", "point -match-repo at a checkout with history". A diagnostic
    that only names the fault leaves the reader exactly as stuck.
 2. **A feature that is off must not look like a feature that found nothing.**
@@ -293,69 +296,69 @@ judges wrong is the one that never looked.
 **A space is one universal answer to "is this the same work?", computed once,
 by Dibs, on the same evidence for everybody.**
 
-## 1. Terminology. `agent` and `agent`
+## 1. Terminology: `agent` and `space`
 
-v1.2 splits a word v1 overloaded.
+v1.2 splits a word v1 overloaded. Both concepts were called "lanes", which is
+why nothing about the v1 tool names made sense.
 
 | Term | Is | Was called |
 |---|---|---|
-| **agent** | a participant: an identity, a mailbox address, a heartbeat, a token | "agent" |
-| **agent** | a space of work that agents join |, (new) |
+| **agent** | a participant: an identity, a mailbox address, a heartbeat, a token | "lane" |
+| **space** | a body of work that agents join | (new) |
 
-Agents work in agents. Everything that resolves *identity*, mail addressing
-(§8), liveness (§7), the awareness gate (§6), the claim guard: keeps keying on
+Agents work in spaces. Everything that resolves *identity*: mail addressing
+(§8), liveness (§7), the awareness gate (§6), the claim guard, keeps keying on
 the agent and is unchanged.
 
-**Migration is a rename, not a re-model.** The v1 `agent` object becomes `agent`
+**Migration is a rename, not a re-model.** The v1 `lane` object becomes `agent`
 with the same id space, the same tokens, and the same ledger ops. Existing
-ledgers replay unchanged: the op kinds keep their wire names (`register`
-stays `register`) so no ledger rewrite is required or permitted. Tool
-aliases are kept for one minor version and the board renders both.
+ledgers replay unchanged: the op kinds keep their wire names (`register_lane`
+stays `register_lane` on disk) so no ledger rewrite is required or permitted.
+Tool aliases are kept for one minor version and the board renders both.
 
 ## 2. The model
 
-A **agent** is: an id, a human-readable topic, a set of member agents, an
+A **space** is: an id, a human-readable topic, a set of member agents, an
 optional owner, an optional queue, and a scoring provenance record (§4).
 
-Three ways an agent relates to an agent:
+Three ways an agent relates to a space:
 
 | Relation | Sees traffic | Counted for collisions | Needs permission |
 |---|---|---|---|
 | **member** | yes | yes | if the space is exclusive |
-| **subscriber** | yes | no | never (public agents) |
+| **subscriber** | yes | no | never (public spaces) |
 | **none** | no | no | n/a |
 
-Dibs are **public by default**: any agent may read a public agent's traffic and
-membership without joining it. Joining is the act that asserts "I am working
+Spaces are **public by default**: any agent may read a public space's traffic
+and membership without joining it. Joining is the act that asserts "I am working
 here", and only membership creates a collision.
 
-Reading is encouraged and cheap. An agent that joins an agent SHOULD read its
-recent traffic first; an agent's whole value is the context it already holds.
+Reading is encouraged and cheap. An agent that joins a space SHOULD read its
+recent traffic first; a space's whole value is the context it already holds.
 
 ## 3. Declaring work, and auto-join
 
-An agent declares what it is doing exactly as it does in v1 (`declare`. That
+An agent declares what it is doing exactly as it does in v1 (`declare`). That
 declaration is the query.
 
-On `declare`) and, once implemented, on `claim`: Dibs scores the declaration
-against every live agent (§4) and:
+On `declare`, and, once implemented, on `claim`: Dibs scores the declaration
+against every live space (§4) and:
 
-- **score ≥ `join_threshold`** → under the default `auto_join=declared` the agent
+- **score ≥ `join_threshold`** → under the default `auto_join=declared` the space
   is **proposed** (`action: consider`) and the agent decides. Only a shared
   identifying ref joins automatically: a score names a resemblance, an
   identifier names a thing. Under `auto_join=always` the agent is **auto-joined**
-  on score alone, and told which
-  agent, what the score was, and what drove it.
+  on score alone, and told which space, what the score was, and what drove it.
 - **`notify_threshold` ≤ score < `join_threshold`** → the agent is **told**
-  about the agent and may join. No membership is created.
-- **score < `notify_threshold`** → nothing. If no agent matched at all, a new
-  agent is opened with the declaration as its topic.
+  about the space and may join. No membership is created.
+- **score < `notify_threshold`** → nothing. If no space matched at all, a new
+  space is opened with the declaration as its topic.
 
 Both thresholds are human-tunable (§7). Auto-join is what makes the model
 useful: a mechanism that only advises reproduces the v1 problem, where the
 agent that needed the signal is the one that ignored it.
 
-**An agent may always create, join, or leave an agent explicitly.** Scoring is a
+**An agent may always create, join, or leave a space explicitly.** Scoring is a
 default, never a cage.
 
 ## 4. Scoring: pluggable, tiered, and replayable
@@ -367,7 +370,7 @@ One interface, four implementations, chosen by configuration:
 | Tier | Scorer | Dependencies | Available |
 |---|---|---|---|
 | 0 | paths, directories, **git co-change** | none | always |
-| ~~1~~ | ~~director agent judges~~ | n/a | **withdrawn** |
+| ~~1~~ | ~~a director model judges~~ | n/a | **withdrawn** |
 | 2 | **local embedding sidecar** | one process | `-match-embed-url` |
 | 3 | hosted embedding endpoint | network | `-match-embed-url` (same contract, different URL) |
 
@@ -437,35 +440,35 @@ anything (SPEC §4).
 This is the same problem as liveness, and takes the same solution (SPEC §2, §7):
 **impure inputs arrive recorded in the op.**
 
-> The `agent.join` op MUST carry `score`, `threshold`, `scorer_id`,
+> The `join_space` op MUST carry `score`, `threshold`, `scorer_id`,
 > `scorer_version` and the matched evidence. `Apply` MUST NOT invoke a scorer,
 > MUST NOT read the filesystem, and MUST treat the recorded score as fact.
 
 Replay therefore reproduces membership exactly, on any machine, years later,
 without a model present. Three things fall out of this for free:
 
-- **`dibs verify` keeps working** (the ledger is still fully deterministic.
-- **Explainability**) "why am I in this agent" is a recorded number and a
+- **`dibs verify` keeps working**: the ledger is still fully deterministic.
+- **Explainability**: "why am I in this space" is a recorded number and a
   recorded reason, not a re-run.
 - **Auditability**: changing the model changes future joins and cannot
   retroactively rewrite past ones.
 
-## 5. Exclusive agents and the queue
+## 5. Exclusive spaces and the queue
 
-The first member of an agent MAY declare it **exclusive**. This is the semantic
+The first member of a space MAY declare it **exclusive**. This is the semantic
 analogue of an exclusive directory claim (§9) and inherits its honesty rules.
 
-While an space is exclusive, an agent whose declaration scores above
+While a space is exclusive, an agent whose declaration scores above
 `join_threshold`:
 
-1. is **told** who owns the agent, with the score and the evidence;
+1. is **told** who owns the space, with the score and the evidence;
 2. may **request** access, an ordinary `request` message (§8), so the existing
    approve/deny path applies unchanged; and
 3. may **queue**, `queue_position` is returned, and the agent is auto-joined
-   the moment the agent leaves exclusive.
+   the moment the space leaves exclusive.
 
-The owner may grant, deny, or hand the agent over. Ownership ends when the owner
-leaves the agent, or when its agent leaves `active`: identical to claim
+The owner may grant, deny, or hand the space over. Ownership ends when the owner
+leaves the space, or when its agent leaves `active`: identical to claim
 expiry, and carrying the identical warning: **the coordination signal ended; it
 is not proof the owner's processes stopped or that the work is safe to take.**
 
@@ -499,24 +502,24 @@ different needs and collapsing them trains agents to ignore both.
 | Redelivered | no | yes, until acked |
 | For | FYI, progress, notes | anything with collision risk |
 
-An agent's announcements **and posts** are READABLE on demand, by any current
+A space's announcements **and posts** are READABLE on demand, by any current
 member or subscriber, with `read_space`. This is not the same as being obliged by
 them: an agent that joins after an announcement was made can see it and does not
 owe an acknowledgement for it, and `read_space` labels each entry accordingly
 (`OWED` / done / not required). Reading acknowledges nothing.
 
 For a post, `read_space` is the *only* read path. The `agent.post` event says a
-post happened, who, which agent, how many bytes, and never what it said,
+post happened, who, which space, how many bytes, and never what it said,
 because space events carry no recipient and anything in one is therefore
 readable by every authenticated agent on the board, member or not (SPEC §10).
-Posts are retained per agent (`post_retention`, default 128, oldest dropped
+Posts are retained per space (`post_retention`, default 128, oldest dropped
 first) and are carried across a `merge_spaces` with the members who were
 discussing them.
 
 Without a read path, "you do not owe this" was implemented as "you cannot see
-this": an agent's shared context was invisible to everyone who was not already in
+this": a space's shared context was invisible to everyone who was not already in
 it when it was said, and the notice sent to a newly-admitted agent told it to
-read the agent while naming no tool that could. Membership is checked at read
+read the space while naming no tool that could. Membership is checked at read
 time, so leaving or being evicted ends access immediately.
 
 An unacked `announce` is redelivered to every non-dormant member every
@@ -544,7 +547,7 @@ driving the harness, which Dibs does not do (PHILOSOPHY.md).
 | `announce_max_retries` | 5 | then mark `unacked` | no, fixed |
 | `scorer` | `auto` | highest available tier | no, selected from what is reachable |
 | `space_exclusive_default` | `false` | first member takes exclusivity automatically | no, always false; pass `exclusive` to `open_space` |
-| `subagent_inherit` | `true` | subagents inherit their parent's agents | no, always on (a vouched child inherits; see §8.2) |
+| `subagent_inherit` | `true` | subagents inherit their parent's spaces | no, always on (a vouched child inherits; see §8.2) |
 
 The **Settable** column is not decoration. `dibd` rejects an unknown key and
 refuses to start, deliberately, so a setting that was never going to take
@@ -582,7 +585,7 @@ repositories with the tier-0 scorer:
 
 **The calibrated threshold spans a factor of fifteen.** There is no default that
 is not badly wrong somewhere: 0.327 auto-joins nothing on codex, and 0.022
-collapses every agent in the Dibs repository into one agent. A scorer's absolute
+collapses every space in the Dibs repository into one. A scorer's absolute
 numbers are a property of the scorer and the repository *together*, and neither
 is known when the binary is built. This document originally proposed 0.75.
 
@@ -627,16 +630,16 @@ cannot know.
 
 An optional agent holding the `director` role (SPEC §5 grant path: a human
 grants it; no agent may promote itself). A director may: move agents between
-agents (`admit`, `evict`), force-release agent ownership
-(`unlock_space`), merge two agents (`merge_spaces`), and approve joins when
+spaces (`admit`, `evict`), force-release a space's ownership
+(`unlock_space`), merge two spaces (`merge_spaces`), and approve joins when
 `director_required` is set.
 
-Two powers listed here originally are **not built**: *read all agents* (a
-director reads an agent by being in it, like anybody else. `read_space` is
-members-only and there is no override) and *split an agent* (merge has no inverse;
-open a new agent and move agents with `admit`).
+Two powers listed here originally are **not built**: *read all spaces* (a
+director reads a space by being in it, like anybody else: `read_space` is
+members-only and there is no override) and *split a space* (merge has no inverse;
+open a new space and move agents into it with `admit`).
 
-`director_required` serialises the fleet behind one agent and is **off by
+`director_required` serialises the fleet behind one approver and is **off by
 default**. When on, the director SHOULD auto-approve by policy and escalate
 only on conflict; a coordinator that must think about every join is a
 bottleneck wearing a coordinator's hat.
@@ -644,7 +647,7 @@ bottleneck wearing a coordinator's hat.
 ### 8.2 Subagents
 
 Spawning subagents is ordinary agent behaviour and MUST NOT require
-coordination ceremony. A subagent inherits its parent's agent membership,
+coordination ceremony. A subagent inherits its parent's space membership,
 including exclusive ownership, and does not join, queue or count separately.
 
 The parent remains accountable: a subagent's traffic is attributed to the
@@ -690,7 +693,7 @@ is measured in an afternoon rather than argued about.
 
 1. Semantic overlap is a **heuristic**. A high score is evidence, not proof; a
    low score is **not** proof that two agents will not collide.
-2. Agent membership is a coordination signal. It does not restrain any process,
+2. Space membership is a coordination signal. It does not restrain any process,
    and only the guard (§5.1) stops a write.
 3. Every auto-join MUST be explainable on demand: score, threshold, scorer, and
    the evidence that drove it.
@@ -701,12 +704,12 @@ is measured in an afternoon rather than argued about.
 
 ## 11. Open questions
 
-- ~~Agent merging when two agents drift into the same work~~. RESOLVED: always a
+- ~~Space merging when two spaces drift into the same work~~. RESOLVED: always a
   director decision (`merge_spaces`), never automatic. Merging is destructive to
   context, and a similarity threshold is the wrong thing to trust with it.
-- Should `join_threshold` be per-agent rather than global? An agent covering a hot
+- Should `join_threshold` be per-space rather than global? A space covering a hot
   file may deserve a lower bar than one covering docs.
-- Cross-repository agents: an agent in `~/api` and an agent in `~/web` working
+- Cross-repository spaces: an agent in `~/api` and an agent in `~/web` working
   one feature share no paths and no history. Probably needs an explicit link,
   not a score.
 - ~~`director_required`~~. RESOLVED: built, and OFF by default. §8.1's own

@@ -7,14 +7,53 @@ Codex reaches Dibs as a plain MCP server over HTTP: no bridge, no adapter.
 In `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.agents]
+[mcp_servers.dibs]
+command = "/absolute/path/to/dibs"
+args = ["mcp-stdio"]
+# MCP 2026-07-28. Codex speaks it, but only when BOTH the `mcp_2026_07_28`
+# feature is enabled AND this exact variable is set on THIS server entry. The
+# feature alone leaves the connection on 2025-06-18, and a wrong value here is a
+# hard error rather than a fallback.
+env = { CODEX_MCP_PROTOCOL_VERSION = "2026-07-28" }
+```
+
+`dibs mcp-config` prints this with the real path filled in.
+
+**stdio rather than a url, and the difference is an identity.** The bridge is one
+process per session, and it is what remembers this agent's nonce, so a returning
+session reattaches to the same agent with its mail instead of forking a `-2`
+sibling that cannot read a word of its predecessor's. Measured on a real board
+before the bridge existed: nine rows for five roles.
+
+That is a default, not a cage. A nonce can also be pinned in this file
+(`env = { DIBS_AGENT_NONCE = "..." }`, or an `X-Dibs-Agent-Nonce` header over
+HTTP), which is what lets an HTTP client reattach at all. The bridge remains the
+automatic path for a harness that pins nothing, which is the common case.
+
+**Please do not send a patch moving this to HTTP for consistency with other
+harnesses.** It is the most reasonable-looking change in this directory and we
+would turn it down: stdio is not the legacy binding, MCP 2026-07-28 keeps both
+current and deprecates neither, Codex reaches 2026 over stdio end to end today,
+and the automatic identity path would be lost for every operator who pins
+nothing. The reasoning is in `CONTRIBUTING.md` under "Changes we will turn down"
+and in the transport section of `plugins/README.md`. If you think it is wrong,
+an issue is cheaper for you than the PR, and the argument is welcome.
+
+This file used to print the url form, Codex took it, and the cost was invisible
+for months. A board carrying nine rows for five roles is what it looks like from
+outside.
+
+Use the url form only from ANOTHER machine, where a local bridge is not an
+option and a forked identity is the lesser problem:
+
+```toml
+[mcp_servers.dibs]
 url = "http://127.0.0.1:4777/mcp"
 http_headers = { "X-Dibs-Local" = "<contents of <data-dir>/local.secret>" }
 ```
 
-`dibs mcp-config` prints this for you. The secret rotates when the data dir is
-recreated; a stale value gives a 401 with no other symptom, so re-copy it if
-Codex suddenly sees zero tools.
+The secret rotates when the data dir is recreated; a stale value gives a 401
+with no other symptom, so re-copy it if Codex suddenly sees zero tools.
 
 ## Verified on a source build (`61a4488`, 2026-07-25)
 
@@ -45,26 +84,65 @@ the flag resolved `true` via `codex features list`:
 Codex marks it "under development": it gates unfinished work, not a protocol
 switch. Do not assume 2026 support from the flag's presence.
 
-## Waking an agent: now possible, as of the `mcp_tool` hook variant
+## Waking an agent: not yet, but it is being built, and we should wait for it
 
-**This section's conclusion has flipped.** It said mail was pull-only here
-because `HookHandlerConfig` had no way to reach Dibs, and ended by telling the
-next reader to re-check that enum on upgrade, because one new variant would
-change the answer. It has:
+**This section has flipped twice on the strength of reading a type, so this
+time it is dated, and the evidence is runtime behaviour.**
+
+State on **2026-08-17**, against codex main `32a383c0` and the Codex Desktop
+`0.148.0-alpha.9` binary inside ChatGPT.app:
+
+| | |
+|---|---|
+| `mcp_tool` hook config parsed | yes, since `81b9bc21` (2026-08-07, #37363) |
+| hooks engine has an `mcp_tool` handler | yes, since `85fc4def` (2026-08-15, #38705) |
+| a real session supplies an MCP executor | **no** |
+| so an `mcp_tool` hook actually runs | **no** |
+
+The last wire is the missing one. `codex-rs/core/src/session/mod.rs` builds the
+`HooksConfig` for every real session and passes `mcp_executor: None`, set in the
+same commit that added the handler, and it is the only construction site outside
+the hooks crate. The engine then drops every `mcp_tool` handler at startup:
 
 ```rust
-#[serde(rename = "mcp_tool")]
-McpTool { server: String, tool: String, input: ..., timeout_sec: ..., status_message: ... }
+if mcp_executor.is_none() {
+    ... "skipping MCP tool hook in {}: MCP invocation is not available yet"
+}
 ```
 
-That is the same mechanism the Claude Code plugin uses: a hook that calls a tool
-over the MCP connection the model already holds. No subprocess, so nothing here
-turns Dibs into a harness driver, and the objection below no longer applies.
+Observed on the shipped Desktop build as `skipping MCP tool hook in
+~/.codex/hooks.json: MCP tool hooks are not supported yet`, once per entry.
+Either way the hook does not fire.
 
-Until this is wired, Codex mail is pull-only in practice and a wake digest
-surfaces to the HUMAN rather than to the agent it is addressed to, which is how
-this was noticed: a person watching their own Codex prompt fill up with mail for
-`codex-primary`.
+**So Dibs ships no `hooks.json` for Codex today**, because one that cannot run
+is not a wake path waiting to be wired: it is a warning per session, and on a
+build that rejects the variant outright it takes the whole file down with it.
+`TestShippedHooksUseOnlySupportedTypes` keeps it out until this table changes.
+
+**And we do not reach for the alternative.** Codex declares four handler types
+and runs exactly one. `prompt` and `agent` are empty structs, skipped by name
+("prompt hooks are not supported yet"); `mcp_tool` is dropped for want of an
+executor. That leaves `command`, a subprocess. Two commits in ten days say
+`mcp_tool` is landing in stages, so shipping subprocess glue now means shipping
+the thing `WAKE-MECHANISMS.md` §6 rejected in order to delete it again within
+weeks.
+
+**What to re-check, and it is not the enum.** The enum was there before any of
+this worked, and reading it is what produced two wrong conclusions. Check
+whether a session supplies an executor:
+
+```
+grep -rn "mcp_executor:" codex-rs/ | grep -v codex-rs/hooks/
+```
+
+When that stops saying `None`, Codex can wake an agent over the connection it
+already holds, and the file to restore is in this repository's history.
+
+**Until then Codex is pull-only.** `check_in` at the start of every activation,
+`await_events` before blocking, which is what `dibs://skills` already tells
+every agent. Mail is not lost: it waits, and the `waiting` line on every
+authenticated result names it on the next call. The digest does not reach the
+human either, on any harness.
 
 ### When a Codex hook takes effect (traced, not assumed)
 
@@ -100,27 +178,20 @@ with a `command` hook, and that refusal still stands.
 
 ## Why we would not use a `command` hook (still true)
 
-Codex has lifecycle hooks and they **do** support `additionalContext` injection,
-the same mechanism Dibs uses in Claude Code. But `HookHandlerConfig`
-(`codex-rs/config/src/hook_config.rs:149`) has exactly three variants:
+Codex's `HookHandlerConfig` once had exactly three variants, `command`, `prompt`
+and `agent`, and this file argued at length that none of them could reach Dibs
+without turning it into a harness driver. That argument was correct and is now
+history: `mcp_tool` exists, and the section above wires it.
 
-| Variant | Reaches Dibs? |
-|---|---|
-| `command` | yes, but it is a **subprocess**, which Dibs does not do |
-| `prompt` | no, empty struct; injects a prompt, calls nothing out |
-| `agent` | no, empty struct; spawns an agent, calls nothing out |
+What survives is the refusal it rested on. We will not close a gap with a
+`command` hook: a CLI reformatting mail into the harness's continuation protocol
+is Dibs driving the agent. See [PHILOSOPHY.md](https://github.com/agenxy/dibs/blob/main/PHILOSOPHY.md).
 
-There is **no `mcp_tool` and no `http` variant**, so unlike Claude Code there is no
-way for a Codex hook to call Dibs over the connection the model already holds.
-
-We will not close this with a `command` hook. A CLI reformatting mail into the
-harness's continuation protocol is Dibs driving the agent: a harness, not a
-service. See [PHILOSOPHY.md](https://github.com/agenxy/dibs/blob/main/PHILOSOPHY.md).
-
-**So in Codex, mail is pull-only:** `await_events` / `inbox`, at the agent's
-choosing. That is the honest floor, and it works today.
-
-Re-check `HookHandlerConfig` when upgrading Codex, one new variant flips this.
+This section is kept short deliberately. It previously stated, as current fact,
+that "there is no `mcp_tool` and no `http` variant", directly under a section
+explaining that `mcp_tool` had arrived. Both were checked in, and the shipped
+`hooks.json` was written against the true one, so a reader comparing the two
+had no way to tell which described the product.
 
 ### Plugins do not change this, but they are not the whole surface
 

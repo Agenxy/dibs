@@ -13,13 +13,36 @@
  * .opencode/plugin/dibs.ts (project-local). opencode scans
  * {plugin,plugins}/*.{ts,js}.
  *
- * Env: DIBS_ADDR (default 127.0.0.1:4777), DIBS_DIR (default ~/.agents)
+ * Env: DIBS_ADDR (default 127.0.0.1:4777), DIBS_DIR (default ~/.dibs)
  */
+import { existsSync } from "node:fs"
+
 import type { Plugin } from "@opencode-ai/plugin"
 
 const ADDR = process.env["DIBS_ADDR"] ?? "127.0.0.1:4777"
-const DIR =
-  process.env["DIBS_DIR"] ?? `${process.env["HOME"] ?? "."}/.agents`
+/**
+ * Where the daemon keeps its local secret, resolved the way the daemon
+ * resolves it: `~/.dibs`, falling back to a legacy `~/.agents` only when that
+ * is the directory that actually exists.
+ *
+ * This used to default to `~/.agents` alone, and that name was never one Dibs
+ * chose: the 0.0.3 rename swept `~/.lanes` up with every other "lane", and the
+ * daemon then moved to `~/.dibs` and kept reading the old name for anyone who
+ * had one. The plugins never moved. So on every install made since, the secret
+ * was read from a directory that does not exist, `secret()` swallowed the
+ * failure and returned null, and every hook here returns null on a null key.
+ * The agent registered no delivery hook and nothing said so: mail simply never
+ * arrived, which is the silent failure this whole plugin exists to prevent.
+ */
+function dataDir(): string {
+  const home = process.env["HOME"] ?? "."
+  const current = `${home}/.dibs`
+  if (existsSync(current)) return current
+  const legacy = `${home}/.agents`
+  return existsSync(legacy) ? legacy : current
+}
+
+const DIR = process.env["DIBS_DIR"] ?? dataDir()
 
 /**
  * The name Dibs knows this session by.

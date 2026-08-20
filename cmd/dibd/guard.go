@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/adminpw"
+	"github.com/agenxy/dibs/internal/humanauth"
 	"github.com/agenxy/dibs/internal/web"
 )
 
@@ -52,13 +54,34 @@ func strconvItoa(n int) string { return strconv.Itoa(n) }
 // authGate enforces two trust tiers:
 //   - COORDINATION (agents, MCP tools, public board): the local secret via
 //     header. A same-user agent legitimately holds this.
-//   - GOD-VIEW (decrypted mail, web board): a session minted ONLY by proving the
-//     human ADMIN PASSWORD. The file secret is NOT sufficient, so an agent that
-//     read the secret file still cannot curl /api/messages. Presence upgrade
-//     (TouchID) can later replace the password on capable platforms.
+//   - GOD-VIEW (decrypted mail, web board): a session minted only by proving a
+//     HUMAN is here, by Touch ID where the machine can do it and by the admin
+//     PASSWORD where it cannot. The file secret is NOT sufficient on its own, so
+//     an agent that read the secret file still cannot curl /api/messages.
+//
+// Presence is preferred, and that is not a convenience. A password proves
+// possession of a secret an agent could in principle have been handed; a
+// fingerprint proves somebody is sitting there. internal/mcp/human.go has said
+// exactly that about the panel's unlock since it was written, and this gate
+// went on demanding the weaker of the two: a person with a working sensor had
+// to invent, store and type a password in order to be trusted less.
+//
+// The check runs HERE, in the daemon, never in the client. A caller that merely
+// asserted "I verified presence" would be forgeable by anything holding the
+// local secret, which is every agent on the machine: the whole point is that the
+// proof cannot be produced from inside the transport.
+//
+// The password stays, because presence genuinely is not always available: no
+// sensor, Linux, a headless session. Both are offered and the caller is told
+// which one this machine can do, rather than being asked for a finger it has no
+// way to read.
 type authGate struct {
 	secret        string
 	adminHashPath string
+	// host and port are the daemon's own listening address, so an Origin can be
+	// checked against THIS server rather than against a fixed idea of what a
+	// server's address looks like. See localOrigin.
+	host, port    string
 	mu            sync.Mutex
 	boot          map[string]time.Time // one-time bootstrap tokens
 	sessions      map[string]time.Time // god-view session cookie tokens
@@ -71,8 +94,13 @@ const (
 	sessionTTL   = 12 * time.Hour
 )
 
-func newAuthGate(secret, adminHashPath string) *authGate {
+func newAuthGate(secret, adminHashPath, listenAddr string) *authGate {
+	host, port, err := net.SplitHostPort(listenAddr)
+	if err != nil {
+		host, port = "", ""
+	}
 	return &authGate{
+		host: host, port: port,
 		secret: secret, adminHashPath: adminHashPath,
 		boot: map[string]time.Time{}, sessions: map[string]time.Time{},
 	}
@@ -81,6 +109,12 @@ func newAuthGate(secret, adminHashPath string) *authGate {
 // adminHash reads the admin verifier fresh each time, so `dibs admin
 // set-password` takes effect without a daemon restart. "" = not set.
 func (g *authGate) adminHash() string {
+	// #nosec G703 -- adminHashPath is filepath.Join(*dir, "admin.hash"), where
+	// -dir is the operator's own flag or DIBS_DIR. It has never been caller
+	// input. The taint analysis began reaching it when newAuthGate gained the
+	// listen address, which arrives from the same flags: two operator-supplied
+	// values in one constructor is enough for the pass to connect them, and the
+	// connection is not one an agent can reach.
 	b, err := os.ReadFile(g.adminHashPath)
 	if err != nil {
 		return ""
@@ -219,12 +253,98 @@ func (g *authGate) godViewAuthorized(r *http.Request) bool {
 	return false
 }
 
+// presenceBootstrap mints a god-view session against a fingerprint instead of a
+// password.
+//
+// The local secret has already been checked by the caller, so this is the
+// second factor and not the only one: same-user AND a person who consented just
+// now. An agent that tried it would raise the system sheet on the operator's own
+// Mac, with the reason below written on it, and the operator would decline.
+//
+// The three verdicts get three different answers because the remedies are
+// opposite, and collapsing them is how a person ends up retyping a password on a
+// machine that was willing to take their finger, or waiting for a sheet that
+// this machine can never show.
+func (g *authGate) presenceBootstrap(w http.ResponseWriter, r *http.Request) {
+	// Written on the system sheet, so the person is approving a thing rather
+	// than approving that something is happening.
+	//
+	// AND SO AN UNEXPECTED ONE IS REFUSABLE. This read "open the Dibs board,
+	// which shows every agent's decrypted mail", and the argument for safety
+	// was a comment saying an agent that tried it would raise the sheet and the
+	// operator would decline. That rests on the operator noticing, and the
+	// sentence gave them nothing to notice: it describes exactly what they
+	// would be doing if they had just run `dibs web` themselves, so a prompt
+	// they did not cause is indistinguishable from one they did. An agent
+	// holding the local secret can raise this at any moment, including a moment
+	// when the operator is opening the board anyway.
+	//
+	// It cannot name the requester the way internal/mcp/human.go now does,
+	// because this path authenticates with the local secret and no agent
+	// identity reaches it. What it can do is say that the credential goes back
+	// to whoever asked, which is the fact that makes an unprompted sheet worth
+	// declining. A pre-release review reproduced the escalation: a request
+	// received the token, redeemed it, and reached an admin role handler.
+	const reason = "give a full-access board session to whatever just asked for it: " +
+		"every agent's decrypted mail, and the power to change roles. Decline this " +
+		"unless you started it yourself, just now"
+	verdict, err := humanauth.Check(r.Context(), reason)
+	if err != nil && verdict != humanauth.Unavailable {
+		http.Error(w, "presence check failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	switch verdict {
+	case humanauth.Verified:
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "application/json")
+		out := map[string]string{"bt": g.mintBootstrap(), "proof": "presence"}
+		// A dev build answering from a script says so, in the response, every
+		// time: the same rule internal/mcp/human.go holds. A mocked unlock that
+		// looked identical to a real one would be evidence of nothing, in exactly
+		// the artefact somebody would later cite as evidence it works.
+		if humanauth.Mocked() {
+			out["mocked"] = "NO HUMAN WAS CHECKED: scripted verdict from a dev build"
+		}
+		_ = json.NewEncoder(w).Encode(out)
+	case humanauth.Unavailable:
+		// Not a refusal, and it must not read as one. There is nobody to blame
+		// and nothing to retry; the answer is the other proof.
+		http.Error(w, "this machine cannot check presence: use the admin password "+
+			"(`dibs admin set-password`, then `dibs web`)", http.StatusPreconditionFailed)
+	case humanauth.Abandoned:
+		http.Error(w, "the presence check went away before anybody answered: nothing "+
+			"was unlocked", http.StatusRequestTimeout)
+	default: // Declined
+		http.Error(w, "presence was declined: nothing was unlocked", http.StatusUnauthorized)
+	}
+}
+
 func (g *authGate) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if o := r.Header.Get("Origin"); o != "" && !localOrigin(o) {
+		if o := r.Header.Get("Origin"); o != "" && !g.localOrigin(o, r.Host) {
 			http.Error(w, "forbidden origin", http.StatusForbidden)
 			return
 		}
+
+		// The board may not be put in somebody else's frame.
+		//
+		// The origin check above stops a hostile page CALLING this daemon. It
+		// does nothing about a hostile page EMBEDDING it, and the difference
+		// matters here more than on most sites: cookies are host-scoped rather
+		// than port-scoped, and different ports on one loopback hostname are
+		// same-site, so a page on http://localhost:9999 can frame the
+		// authenticated board on :4777 with its twelve-hour session attached.
+		// Anything it then induces a click on is issued by the board's OWN
+		// script, so the Origin is this daemon's and the check above waves it
+		// through. Overlay something plausible and the human approves a grant or
+		// an adoption they never read. Any local process can bind a port, which
+		// here includes the agents this daemon coordinates.
+		//
+		// Both headers, because the modern one is authoritative where it is
+		// understood and the old one is what everything else obeys. Found by a
+		// pre-release review.
+		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+		w.Header().Set("X-Frame-Options", "DENY")
 
 		// Mint a god-view bootstrap token: requires BOTH the local secret
 		// (same-user) AND the admin password (human). `dibs web` calls this.
@@ -233,9 +353,20 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
+			// Presence first, when the caller asked for it. This blocks on a
+			// person for up to humanauth's own timeout, which is fine on an HTTP
+			// handler goroutine and would not be on the engine's single writer:
+			// nothing here touches it.
+			if r.Header.Get("X-Dibs-Presence") == "1" {
+				g.presenceBootstrap(w, r)
+				return
+			}
 			hash := g.adminHash()
 			if hash == "" {
-				http.Error(w, "no admin password set: run `dibs admin set-password` to enable the board", http.StatusForbidden)
+				http.Error(w, "no admin password is set on this board: run "+
+					"`dibs admin set-password`. (Touch ID opens it without one, but this "+
+					"request did not ask for a presence check, or asked and did not get "+
+					"a person.)", http.StatusForbidden)
 				return
 			}
 			// Throttle wrong-password attempts: the admin password guards all
@@ -382,11 +513,81 @@ border-radius:7px;padding:9px 14px;display:inline-block;margin-top:6px;color:#e6
 <p>then open the link it prints. Single-use, expires in two minutes.</p>
 </div>`
 
-func localOrigin(origin string) bool {
+// localOrigin reports whether a browser Origin belongs to THIS daemon.
+//
+// THE CSRF THIS CLOSES. It checked the hostname alone and ignored the port, so
+// every page served from any port on this machine passed. A cookie is scoped to
+// a host and not to a port, and SameSite=Strict does not separate them either,
+// so a hostile page on http://localhost:9999 could send a credentialed POST
+// carrying the board session. It does not even need a preflight to do it:
+// text/plain is CORS-safelisted, JSON travels inside it happily, and the
+// handlers did not require a content type. CORS stops the attacker READING the
+// answer and does nothing about the side effect, and the side effect here is
+// GrantRole.
+//
+// Any local process can bind a port, which on this machine includes the agents
+// this daemon coordinates. So the check is now against the origin of this
+// server: the same port, over loopback. A page anywhere else is a different
+// origin and is refused, which is what the browser's own model already says.
+//
+// Found by a pre-release review.
+func (g *authGate) localOrigin(origin, reqHost string) bool {
 	u, err := url.Parse(origin)
 	if err != nil {
 		return false
 	}
-	h := u.Hostname()
-	return h == "localhost" || h == "127.0.0.1" || h == "::1"
+	// The daemon's OWN address, not a fixed idea of what one looks like.
+	//
+	// The first version of this check hardcoded the loopback hostnames, which
+	// broke a configuration Dibs documents and supports: `addr` may be a LAN or
+	// tailnet address so agents on other machines can reach the board, and such
+	// a daemon then rejected its own board's origin. Navigation still loaded the
+	// page, because ordinary navigation sends no Origin, so the board appeared
+	// to work and every button on it returned 403. Found by a pre-release
+	// review; it was a regression introduced by the fix for the port-blind
+	// check, which is its own small lesson about tightening by pattern rather
+	// than by identity.
+	if g.port == "" {
+		return isLoopback(u.Hostname()) // address unknown: the older, weaker rule
+	}
+	if u.Port() != g.port {
+		return false
+	}
+	switch g.host {
+	case "", "0.0.0.0", "::":
+		// Listening on every interface, so the CONFIGURED host cannot narrow
+		// anything. Compare against the host the browser actually addressed
+		// instead of blessing every hostname on this port.
+		//
+		// It returned true here, and a same-site sibling is not a stranger to a
+		// cookie: SameSite=Strict allows one, and text/plain is CORS-safelisted,
+		// so a hostile page at another name under the same registrable domain
+		// and port could POST to /api/admin/role with the session attached.
+		// Narrow (it needs a wildcard bind, hostname access, and control of that
+		// sibling) and free to close. Found by a pre-release review, which also
+		// noted the test I wrote blessed the behaviour rather than checking it.
+		return strings.EqualFold(u.Hostname(), hostOnly(reqHost))
+	}
+	if strings.EqualFold(u.Hostname(), g.host) {
+		return true
+	}
+	// 127.0.0.1, ::1 and localhost are one server, and a browser may use any of
+	// them for a daemon listening on any other.
+	return isLoopback(u.Hostname()) && isLoopback(g.host)
+}
+
+func isLoopback(h string) bool {
+	switch h {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	return false
+}
+
+// hostOnly strips any port from a Host header.
+func hostOnly(h string) string {
+	if host, _, err := net.SplitHostPort(h); err == nil {
+		return host
+	}
+	return h
 }

@@ -377,14 +377,33 @@ try {
   check("renders every agent", names.includes("reviewer") && names.includes("peer"), names.join(","))
   check("groups the roster", (await panel.locator(".band").count()) >= 1)
   check("marks the caller's own agent", (await panel.locator(".entry.self").count()) === 1)
+  // The declaration LEADS the row now rather than sitting in a block below it,
+  // so this asserts the guarantee (a reader can see what the agent declared)
+  // instead of the element it used to live in.
   check("renders the declared task",
-    (await panel.locator(".task").first().textContent())?.includes("running the panel e2e") ?? false)
+    (await panel.locator(".entry.self .lede").first().textContent())?.includes("running the panel e2e") ?? false)
   check("renders slot paths", (await panel.locator(".path").allTextContents()).join(",").includes("board_app.html"))
+  // The detail is CLOSED but present. Clamping in CSS rather than truncating the
+  // string is what keeps a declaration findable by the browser's own search and
+  // readable in full to a screen reader; slicing the text would make the board
+  // quietly misreport what an agent said.
+  const disclosure = panel.locator(".entry.self details.says")
+  check("the rest of an agent's detail is a closed disclosure, not discarded",
+    (await disclosure.count()) === 1 && !(await disclosure.first().evaluate(
+      (d) => (d as HTMLDetailsElement).open)))
+  check("and opening it reveals the paths",
+    await disclosure.first().evaluate((d) => {
+      ;(d as HTMLDetailsElement).open = true
+      return !!d.querySelector(".said .path")
+    }))
   check("summary agrees with the board",
     ((await panel.locator(".metric .figure").first().textContent()) ?? "").includes("2"))
   const capsText = (await panel.locator("#ctx-caps").textContent()) ?? ""
-  check("model-context capability is described without claiming it wakes the agent",
-    capsText.includes("can add agent context") && !/wake/i.test(capsText), capsText)
+  // The panel no longer advertises a model-context power, because it no longer
+  // uses one. Claiming a capability it does not exercise is the kind of line a
+  // reader trusts and should not.
+  check("the panel claims no model-context power it does not use",
+    !capsText.includes("can add agent context") && !/wake/i.test(capsText), capsText)
   check("the context line has no orphaned literal separator",
     (await panel.locator(".context > .dot").count()) === 0)
   await page.evaluate(() => (window as any).__bridge.sendHostContextChange({
@@ -449,30 +468,32 @@ try {
       check("an agent that goes out of touch is marked", marked,
         "the transition happened with no signal at all")
 
-      // The gesture must be on the pseudo-element that RENDERS.
+      // The gesture must be on something that RENDERS.
       //
-      // This check previously read animationName off ::before and passed for a
-      // week while nothing moved: the rail marker is ::after, ::before has
-      // `content: none` and never paints, and getComputedStyle happily reports
-      // the animation from a rule attached to a box that does not exist. So the
-      // content is asserted first: a named animation on an unrendered
-      // pseudo-element is precisely the shape of the bug this now catches.
+      // This check once read animationName off ::before and passed for a week
+      // while nothing moved: the marker was ::after, ::before had
+      // `content: none` and never painted, and getComputedStyle happily
+      // reported an animation from a rule attached to a box that did not exist.
+      //
+      // The gesture now runs on the row itself, which is why it went with the
+      // rail: there is no pseudo-element left to attach it to. That removes the
+      // bug class rather than guarding it, so this asserts the animation is on
+      // the element, and the ghost check below stays to catch anyone moving it
+      // back onto a pseudo that does not paint.
       const gesture = await panel.locator(`.entry[data-agent="${target}"]`).first()
         .evaluate((el) => {
-          const pick = (which: string) => {
+          const pick = (which?: string) => {
             const cs = getComputedStyle(el, which)
-            return { content: cs.content, animation: cs.animationName }
+            return { content: which ? cs.content : "element", animation: cs.animationName }
           }
-          return { before: pick("::before"), after: pick("::after") }
+          return { element: pick(), before: pick("::before"), after: pick("::after") }
         })
-      const painted = Object.values(gesture)
-        .filter((g) => g.content !== "none" && g.content !== "")
-      check("the mark animates a pseudo-element that actually renders",
-        painted.some((g) => g.animation === "panel-went-quiet"),
-        `rendered pseudo-elements carry ${JSON.stringify(painted.map((g) => g.animation))}; ` +
+      check("the went-quiet gesture runs on the row itself",
+        gesture.element.animation === "panel-went-quiet",
+        `the row carries ${JSON.stringify(gesture.element.animation)}; ` +
         `full state ${JSON.stringify(gesture)}`)
       const ghost = Object.entries(gesture)
-        .filter(([, g]) => g.animation === "panel-went-quiet" &&
+        .filter(([k, g]) => k !== "element" && g.animation === "panel-went-quiet" &&
           (g.content === "none" || g.content === ""))
       check("no went-quiet animation is attached to a pseudo-element that never paints",
         ghost.length === 0, `${JSON.stringify(ghost)}`)
@@ -937,41 +958,25 @@ try {
     probe2.toolCalls.length > 0 &&
       probe2.toolCalls.every((c: any) => c?._meta?.["com.dibs/panel-call"] === true),
     `_meta on each: ${JSON.stringify(probe2.toolCalls.map((c: any) => c?._meta ?? null))}`)
-  check("offers unread mail to the agent's context", probe2.modelContexts.length > 0)
-  check("model context is framed as data, not instruction",
-    JSON.stringify(probe2.modelContexts).includes("may act on it or decline"))
-  check("model context names the future-turn limit instead of claiming a wake-up",
-    JSON.stringify(probe2.modelContexts).includes("future turn") &&
-      !/wake/i.test(JSON.stringify(probe2.modelContexts)))
+  // These three asserted that the panel pushed unread mail into model context,
+  // carefully framed as data and honest about not starting a turn. All true,
+  // and the feature was still wrong: by the Apps contract that push does not
+  // wake anybody, so the mail surfaced when the HUMAN next typed, and the host
+  // rendered it into their composer with every message body in it. The operator
+  // reported it four times in one evening. Waking an agent belongs to the
+  // lifecycle hooks; the panel shows a person their board.
+  check("the panel pushes nothing into model context",
+    probe2.modelContexts.length === 0,
+    `pushed ${probe2.modelContexts.length}: ${JSON.stringify(probe2.modelContexts).slice(0, 200)}`)
 
-  // Two identical pushes while the host is still accepting the first context
-  // update must produce one request, not two concurrent copies.
-  const contextsBefore = await page.evaluate(
-    () => (window as any).__probe.modelContexts.length) as number
-  await page.evaluate(() => {
-    const probe = (window as any).__probe
-    ;(window as any).__bridge.onupdatemodelcontext = async (req: any) => {
-      probe.modelContexts.push(req)
-      await new Promise((resolve) => setTimeout(resolve, 180))
-      return {}
-    }
-    const payload = {
-      structuredContent: {
-        agent_id: "reviewer",
-        inbox: { messages: [{
-          serial: 700001, type: "notify", from: "peer", to: "reviewer",
-          body: "one context update", state: "open",
-        }] },
-      },
-    }
-    ;(window as any).__deliver(payload)
-    ;(window as any).__deliver(payload)
-  })
-  await Bun.sleep(350)
-  const contextsAfter = await page.evaluate(
-    () => (window as any).__probe.modelContexts.length) as number
-  check("concurrent identical mail pushes share model context once",
-    contextsAfter - contextsBefore === 1, `${contextsBefore} -> ${contextsAfter}`)
+  // A coalescing check lived here: two identical pushes while the host was
+  // still accepting the first had to produce one request rather than two. It
+  // was a good check of a feature that should not have existed, and it goes
+  // with it. Delivering mail to a model is the lifecycle hooks' job; a panel
+  // that pushes into the operator's composer is not a delivery mechanism, it is
+  // a leak with a schedule.
+  //
+  // What replaces it is the assertion above: zero pushes, ever.
 
   // The host can tear the resource down cleanly; this also exercises pending
   // timer cleanup in the hand-written transport.

@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -605,4 +606,113 @@ func modelTextOf(t *testing.T, out map[string]any) string {
 	}
 	text, _ := content[0]["text"].(string)
 	return text
+}
+
+// The panel never pushes anything into model context.
+//
+// It had a maybeShareMailWithAgent that called ui/update-model-context with the
+// full text of every unread message. It was written as the only push a host
+// with no lifecycle hooks could offer, and it did not do that job: by the Apps
+// contract this does not start a turn, which the code itself said, so the mail
+// surfaced when the HUMAN next typed. The human as transport, which is the
+// failure this product exists to remove, through the one door nobody watched.
+//
+// What it actually did was put every unread message, in full, into the
+// operator's own composer, because a host renders what it is given. Reported
+// four times in one evening.
+//
+// Removed rather than trimmed. The panel shows a person their board; waking an
+// agent belongs to the lifecycle hooks and to the `waiting` line on every
+// authenticated result. A test on the source because this is JavaScript inside
+// the template, and the Go-side leak guard could not see it and did not.
+func TestThePanelPushesNothingIntoModelContext(t *testing.T) {
+	src := boardAppTemplate()
+	if strings.Contains(src, `"ui/update-model-context"`) {
+		t.Error("the panel calls ui/update-model-context. Whatever it sends, the host " +
+			"decides who reads it, and at least one host renders it into the human's " +
+			"own prompt box. Waking an agent is the hooks' job")
+	}
+	if strings.Contains(src, "maybeShareMailWithAgent()") {
+		t.Error("the model-context push is being called again")
+	}
+}
+
+// The daemon never hands a message body to the panel.
+//
+// The panel shares what it is given with the host, and one host renders that in
+// the operator's own composer. Fixing the panel was not enough: MCP Apps
+// templates are cached by the host against their ui:// URI, so a session that
+// loaded it yesterday keeps running yesterday's JavaScript and keeps leaking,
+// with no way to invalidate from the server.
+//
+// So the bodies stop leaving the daemon. A cached panel cannot share what it
+// never received, which makes this the only version of the fix that is true
+// today rather than after every client has restarted.
+func TestThePanelPayloadCarriesNoMessageBody(t *testing.T) {
+	const secret = "SECRET-BODY-THE-PANEL-MUST-NOT-GET"
+	payload := core.Result{
+		"agent_id": "worker",
+		"inbox": []*core.Message{
+			{
+				Serial: 5, From: "peer", To: "worker", Type: core.MsgQuestion,
+				State: core.MsgStatePending, Body: secret, Response: secret,
+			},
+		},
+	}
+	meta := panelMeta(payload)
+	blob, err := json.Marshal(meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(blob, []byte(secret)) {
+		t.Errorf("the panel payload carries a message body. The panel shares what it "+
+			"is given with the host, and a cached panel cannot be fixed from here:\n%s", blob)
+	}
+	for _, want := range []string{"peer", "question", "worker"} {
+		if !bytes.Contains(blob, []byte(want)) {
+			t.Errorf("the payload omits %q, so the panel cannot render a mailbox at "+
+				"all:\n%s", want, blob)
+		}
+	}
+	// The AGENT's own result is untouched: it authenticated for it.
+	if payload["inbox"].([]*core.Message)[0].Body != secret {
+		t.Error("stripping the panel copy mutated the agent's own result")
+	}
+}
+
+// The payload the server ACTUALLY builds carries no body, whatever its shape.
+//
+// The first redaction matched two shapes: `inbox` and `messages` as a flat
+// []*core.Message. check_in nests the mailbox as inbox.messages, which is
+// neither, so the body went through untouched and the fix looked complete for
+// an hour. An independent reviewer found it by constructing the payload the
+// server builds rather than the one the earlier test imagined.
+//
+// This is the fifth instance of this leak and the second time the FIX was
+// shaped to the wrong data, which is why redaction now recurses instead of
+// matching shapes.
+func TestTheNestedPanelPayloadCarriesNoBodyEither(t *testing.T) {
+	const secret = "NESTED-BODY-MUST-NOT-ESCAPE"
+	nested := core.Result{
+		"agent_id": "worker",
+		"inbox": core.Result{"messages": []*core.Message{{
+			Serial: 5, From: "peer", To: "worker", Type: core.MsgQuestion,
+			State: core.MsgStatePending, Body: secret, Response: secret,
+		}}},
+		"deeper": map[string]any{"any": []any{core.Result{
+			"messages": []*core.Message{{Serial: 6, From: "p2", Body: secret}},
+		}}},
+	}
+	blob, err := json.Marshal(panelMeta(nested))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(blob, []byte(secret)) {
+		t.Errorf("a nested mailbox leaked its body to the panel:\n%s", blob)
+	}
+	for _, want := range []string{"peer", "question"} {
+		if !bytes.Contains(blob, []byte(want)) {
+			t.Errorf("the payload lost %q, so the panel cannot render a mailbox", want)
+		}
+	}
 }

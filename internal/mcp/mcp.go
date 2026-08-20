@@ -7,6 +7,7 @@ package mcp
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -15,7 +16,9 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -63,6 +66,9 @@ const errUnsupportedProtocolVersion = -32022
 type Server struct {
 	eng      *engine.Engine
 	sessions *sessionStore
+	// adopted remembers the (token, session) pairs already reconciled, so the
+	// repair costs one loop round-trip per agent rather than one per call.
+	adopted sync.Map
 	// legacy holds 2025-11-25 resource subscriptions, which outlive the request
 	// that created them: that revision subscribes on a POST and delivers on a
 	// separately-opened GET, so the interest has to be remembered in between.
@@ -183,23 +189,38 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.serveSubscription(w, r, &req)
 		return
 	}
-	// 2026-07-28 version negotiation: if the header is present it must be a
-	// version we support AND match the _meta echo; legacy clients (no header,
-	// initialize flow) pass through.
-	if hv := r.Header.Get("MCP-Protocol-Version"); hv != "" {
-		if !supported(hv) {
-			writeRPC(w, http.StatusBadRequest, req.ID, nil, &rpcError{
-				Code: errUnsupportedProtocolVersion, Message: "unsupported protocol version",
-				Data: map[string]any{"supported": supportedVersions, "requested": hv},
-			})
-			return
-		}
-		if mv := metaVersion(req.Params); mv != "" && mv != hv {
-			writeRPC(w, http.StatusBadRequest, req.ID, nil, &rpcError{
-				Code: -32602, Message: "MCP-Protocol-Version header does not match _meta protocolVersion",
-			})
-			return
-		}
+	// 2026-07-28 version negotiation. A version the client STATED, in either
+	// place it may state one, must be a version we serve; where it states one
+	// twice the two must agree; legacy clients (no version at all, initialize
+	// flow) pass through.
+	//
+	// Reading only the header was the same blindness that kept stdio out of the
+	// modern era, one layer down and it outlived the first fix. Over HTTP an
+	// impossible version got -32022; over stdio, which has no header to read,
+	// the request was served as though we had agreed to it. That is worse than a
+	// wrong answer: the 2026 compatibility rules turn on WHICH error a probe
+	// gets, since a recognized modern error keeps a client on the modern path
+	// and anything else sends it back to `initialize`. Answering success says we
+	// agreed, and every later result is a mismatch neither side is checking.
+	hv := r.Header.Get("MCP-Protocol-Version")
+	mv := metaVersion(req.Params)
+	if hv != "" && mv != "" && mv != hv {
+		writeRPC(w, http.StatusBadRequest, req.ID, nil, &rpcError{
+			Code: -32602, Message: "MCP-Protocol-Version header does not match _meta protocolVersion",
+		})
+		return
+	}
+	// server/discover is exempt, and that is not an oversight. It is the
+	// negotiation call: the spec accepts a DiscoverResult carrying
+	// supportedVersions as a valid answer to a version we do not serve, and it
+	// is the friendlier of the two permitted behaviours, because it hands the
+	// client the list it needs to choose again instead of only a refusal.
+	if stated := cmp.Or(hv, mv); stated != "" && !supported(stated) && req.Method != "server/discover" {
+		writeRPC(w, http.StatusBadRequest, req.ID, nil, &rpcError{
+			Code: errUnsupportedProtocolVersion, Message: "unsupported protocol version",
+			Data: map[string]any{"supported": supportedVersions, "requested": stated},
+		})
+		return
 	}
 	// Hand the client a session on initialize and remember whether it said it
 	// can render, so later stateless calls can still be answered correctly.
@@ -216,9 +237,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.handledLegacySubscription(w, r, &req) {
 		return
 	}
-	result, rpcErr := s.dispatch(r.Context(), &req, bearer(r), s.sessions.wantsUI(r),
+	result, rpcErr := s.dispatch(r.Context(), &req, bearer(r), identityFromTransport(r), s.sessions.wantsUI(r),
 		s.sessions.clientFor(r), s.sessions.panelFetches(r))
-	writeRPC(w, http.StatusOK, req.ID, tagResult(result, r.Header.Get("MCP-Protocol-Version")), rpcErr)
+	writeRPC(w, http.StatusOK, req.ID, tagResult(result, requestEra(r, req.Params)), rpcErr)
 }
 
 // tagResult stamps resultType on results served over the stateless core.
@@ -238,6 +259,31 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // reject unknown keys, so stamping this on a 2025-11-25 answer would break the
 // clients that every host actually uses today to satisfy a client that none of
 // them are yet.
+// requestEra is the protocol revision THIS request is in, from either place a
+// client can state it.
+//
+// The header is the Streamable-HTTP way; `_meta` is the way 2026-07-28 defines,
+// because that revision is stateless and every request carries its own version.
+// Reading only the header meant STDIO could never reach the modern era at all:
+// that transport has no headers, so every stdio client asking for 2026 was
+// answered in the legacy one and, finding no `resultType`, fell back to 2025.
+//
+// Measured, with the real Codex Desktop binary over the stdio bridge: two
+// `server/discover` calls carrying `_meta` protocolVersion 2026-07-28, then an
+// `initialize` and every real call on the legacy path. From the outside that is
+// indistinguishable from a client without 2026 support, and it was read that
+// way for a day.
+//
+// The header still wins when present, and the two are already required to agree
+// (checked in ServeHTTP), so this widens where the era is FOUND without
+// widening what may claim it.
+func requestEra(r *http.Request, params json.RawMessage) string {
+	if v := r.Header.Get("MCP-Protocol-Version"); v != "" {
+		return v
+	}
+	return metaVersion(params)
+}
+
 func tagResult(result any, requestVersion string) any {
 	m, ok := result.(map[string]any)
 	if !ok || m == nil || !isModern(requestVersion) {
@@ -351,6 +397,70 @@ func negotiateLegacy(params json.RawMessage) string {
 	return handshakeVersions[0]
 }
 
+// agentNonceHeader carries an agent's durable identity in transport metadata,
+// so that reattaching does not depend on which transport the harness happens to
+// speak.
+const agentNonceHeader = "X-Dibs-Agent-Nonce"
+
+// identityFromTransport returns the nonce the HARNESS presented, or "".
+//
+// The problem it solves is the product's oldest: an agent cannot carry a secret
+// across a context boundary. Its context ends, which is the event the nonce
+// exists for, and the nonce goes with it; the next session registers under the
+// same name with a new nonce, becomes a sibling, and cannot read a word of its
+// predecessor's mail. Measured on this board as nine rows for five roles.
+//
+// The stdio bridge solved it by REMEMBERING: it is a per-session process with a
+// filesystem, so it keeps the nonce and fills it in. That works, and it welded
+// identity to one transport. An HTTP client has no such process, so the same
+// agent on the same board could not reattach at all, and the transport choice
+// stopped being a choice: see #33.
+//
+// This is the same fact carried where every transport can carry it. A harness's
+// MCP server config is static and outlives any context, exactly like the
+// bridge's file, and it is the standard place credentials already live:
+//
+//	HTTP  headers = { "X-Dibs-Agent-Nonce" = "..." }
+//	stdio env     = { DIBS_AGENT_NONCE = "..." }   (the bridge forwards it)
+//
+// 2026-07-28 is what makes this the right shape rather than a workaround. That
+// revision removed connection-scoped sessions precisely so cross-call state
+// travels as explicit handles rather than as a property of the pipe, which is
+// the first time a server can offer identical semantics on every binding.
+//
+// The agent's own word still wins: a nonce passed as a tool argument is used in
+// preference to this, exactly as before. This fills a blank; it never overrides.
+// fillFromTransport supplies the credentials the HARNESS holds, for the fields
+// the agent left blank.
+//
+// Both are the same fact: a credential presented where a harness config can
+// actually put one, rather than where only the model could. The agent's own
+// word always wins; this only ever fills a blank.
+func (a *toolArgs) fillFromTransport(tool, bearerToken, agentNonce string) {
+	if a.Token == "" {
+		a.Token = bearerToken
+	}
+	if a.Nonce == "" && establishesIdentity(tool) {
+		a.Nonce = agentNonce
+	}
+}
+
+// establishesIdentity reports whether a tool's `nonce` means "who I am", so a
+// harness-presented identity may fill it in.
+//
+// Scoped, and the scope is the security boundary. `vouch_child` also takes a
+// `nonce`, and there it means the one-time secret a PARENT issued for one
+// specific child. Defaulting THAT from the caller's own identity would let any
+// agent vouch for a child it never spawned: a privilege escalation wearing a
+// convenience's clothes, and this repository has shipped that shape before.
+func establishesIdentity(tool string) bool {
+	return tool == "register" || tool == "resume"
+}
+
+func identityFromTransport(r *http.Request) string {
+	return strings.TrimSpace(r.Header.Get(agentNonceHeader))
+}
+
 func bearer(r *http.Request) string {
 	// The scheme is case-INSENSITIVE (RFC 9110 §11.1): "bearer", "BEARER" and
 	// "Bearer" are the same token, and a client sending any of them is correct.
@@ -385,7 +495,7 @@ func writeRPC(w http.ResponseWriter, status int, id json.RawMessage, result any,
 // and because ServeHTTP is a transport decision table that the complexity
 // ceiling keeps honest.
 func (s *Server) handledLegacySubscription(w http.ResponseWriter, r *http.Request, req *rpcRequest) bool {
-	version := r.Header.Get("MCP-Protocol-Version")
+	version := requestEra(r, req.Params)
 	switch req.Method {
 	case "resources/subscribe":
 		res, rerr := s.handleLegacySubscribe(r, req.Params)
@@ -422,7 +532,13 @@ func (s *Server) logRequest(r *http.Request, req *rpcRequest) {
 		attrs = append(attrs, "tool", toolName(req.Params),
 			"metaUI", clientWantsUI(req.Params),
 			"sessionUI", s.sessions.wantsUI(r),
-			"sid", r.Header.Get("Mcp-Session-Id") != "")
+			"sid", r.Header.Get("Mcp-Session-Id") != "",
+			// The KEYS a client puts in _meta, never their values. This is the
+			// diagnostic that answers "what does this harness actually tell us
+			// about itself", which was answered three times today by reading
+			// somebody's source and once by reading it wrong. Keys only: a value
+			// here could be anything, and this log is not the place to find out.
+			"metaKeys", metaKeys(req.Params))
 	}
 	if req.Method == "resources/read" {
 		// WHICH resource, because the panel URI carries the template's build.
@@ -450,7 +566,7 @@ func (s *Server) serveGET(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) dispatch(
-	ctx context.Context, req *rpcRequest, bearerToken string,
+	ctx context.Context, req *rpcRequest, bearerToken, agentNonce string,
 	sessionUI bool, sessionClient *clientInfoJSON, panelFetches bool,
 ) (any, *rpcError) {
 	switch req.Method {
@@ -471,10 +587,14 @@ func (s *Server) dispatch(
 			"protocolVersion": negotiateLegacy(req.Params),
 			"capabilities": map[string]any{
 				"tools": map[string]any{},
-				// Advertise subscribe on the LEGACY path too: measured against real
-				// hosts (Claude Code 2.1.219, Codex 0.146.0-alpha.7), every client
-				// still takes this handshake (none speak 2026 yet) so advertising
-				// subscriptions only on server/discover would hide them entirely.
+				// Advertise subscribe on the LEGACY path too, because most clients
+				// still arrive here. That was once true of ALL of them and is no
+				// longer: on 2026-08-17, Claude Code 2.1.233 and Codex
+				// 0.148.0-alpha.9 both negotiate 2026-07-28 against this daemon and
+				// take server/discover instead. The dual advertisement is what keeps
+				// the ones that have not moved (2.1.219 was legacy-only) from losing
+				// subscriptions entirely. Dated deliberately: the previous version of
+				// this comment asserted "none speak 2026 yet" as a standing fact.
 				"resources": map[string]any{"subscribe": true, "listChanged": true},
 			},
 			"serverInfo":   serverBuildInfo(),
@@ -505,6 +625,14 @@ func (s *Server) dispatch(
 					"mistakes that look like success, and the defaults that are not what you would " +
 					"guess. Read this once on your first connection: it is short, and it is the " +
 					"difference between using the protocol and using it correctly.",
+				"mimeType": "text/markdown",
+			},
+			{
+				"uri": "dibs://staff", "name": "staff",
+				"description": "For COORDINATORS and ADMINS: what the role lets you do, what it " +
+					"deliberately does not, and the two-step reconciliation for an agent that " +
+					"forked a sibling. Ordinary agents do not need it; role-holders do, and " +
+					"`prune`'s own description understates what a coordinator may prune.",
 				"mimeType": "text/markdown",
 			},
 			{
@@ -543,6 +671,14 @@ func (s *Server) dispatch(
 			return cacheable(map[string]any{"contents": []map[string]any{
 				{"uri": p.URI, "mimeType": "text/markdown", "text": skillsDoc},
 			}}, ttlStatic, scopePublic), nil
+		case "dibs://staff":
+			// Ungated like the rest of the documentation. Reading what a
+			// coordinator may do grants nothing: every call it names is
+			// enforced at the call, and an agent that cannot use them is
+			// better off knowing who to ask than guessing.
+			return cacheable(map[string]any{"contents": []map[string]any{
+				{"uri": p.URI, "mimeType": "text/markdown", "text": staffDoc},
+			}}, ttlStatic, scopePublic), nil
 		case "dibs://plugin":
 			// Ungated, like dibs://skills, and for the same reason: an agent
 			// should not have to register before it can learn how to be set up
@@ -573,11 +709,11 @@ func (s *Server) dispatch(
 			if err != nil {
 				return nil, rpcErrFrom(err)
 			}
-			text, _ := json.MarshalIndent(box, "", "  ")
+			text, _ := json.MarshalIndent(inboxSummary(box), "", "  ")
 			// PRIVATE, and this is load-bearing rather than tidy: "public" tells
 			// shared gateways they may serve this response to a caller with a
-			// DIFFERENT authorization context. This is one agent's mail, keyed by
-			// its token. Marking it public would be a disclosure bug.
+			// DIFFERENT authorization context. This is one agent's mailbox, keyed
+			// by its token. Marking it public would be a disclosure bug.
 			return cacheable(map[string]any{"contents": []map[string]any{
 				{"uri": p.URI, "mimeType": "application/json", "text": string(text)},
 			}}, ttlLive, scopePrivate), nil
@@ -599,13 +735,48 @@ func (s *Server) dispatch(
 			}
 		}
 	case "tools/call":
-		return s.callTool(ctx, req.Params, bearerToken, sessionUI, sessionClient, panelFetches)
+		return s.callTool(ctx, req.Params, bearerToken, agentNonce, sessionUI, sessionClient, panelFetches)
 	default:
 		return nil, &rpcError{
 			Code: -32601, Message: "method not found: " + req.Method,
 			Data: hint("this server speaks MCP: initialize, tools/list, tools/call, " +
 				"resources/list, resources/read, subscriptions/listen"),
 		}
+	}
+}
+
+// adoptSession binds the caller's harness session to its agent when the agent
+// has none, using the id the stdio bridge attaches to every call.
+//
+// This is the repair for an agent that registered outside its harness's MCP
+// connection. It has no session, so no lifecycle hook can name it, so nothing
+// ever wakes it: the wake path fires, resolves nobody, and says nothing. On
+// this machine that ran for days, with mail unread and `dibs doctor` reporting
+// hooks resolving perfectly, because for every other agent they were.
+//
+// Once per (token, session) per process. The engine refuses to overwrite a
+// session an agent already has, so this is a repair and never a redirection,
+// but there is no reason to pay a loop round-trip for it on every call.
+func (s *Server) adoptSession(ctx context.Context, token string, params json.RawMessage) {
+	sid := metaSession(params)
+	if token == "" || sid == "" {
+		return
+	}
+	key := token + "\x00" + sid
+	if _, seen := s.adopted.LoadOrStore(key, true); seen {
+		return
+	}
+	adopted, err := s.eng.AdoptSession(ctx, token, sid)
+	if err != nil {
+		// Never fail a tool call over this: the call the agent actually made is
+		// what it is waiting on, and an unbound session is the state it was
+		// already in. Forget the key so a later call tries again.
+		s.adopted.Delete(key)
+		return
+	}
+	if adopted {
+		slog.Info("attached an agent to its harness session; lifecycle hooks can now "+
+			"reach it", "session", sid)
 	}
 }
 
@@ -626,6 +797,9 @@ type toolArgs struct {
 	Type        string            `json:"type"`
 	Body        string            `json:"body"`
 	DeadlineSec int               `json:"deadline_s"`
+	Choices     []string          `json:"choices"`
+	Grant       string            `json:"grant"`
+	Adopt       string            `json:"adopt"`
 	OpID        string            `json:"op_id"`
 	MsgSerial   uint64            `json:"msg_serial"`
 	Disposition string            `json:"disposition"`
@@ -648,17 +822,23 @@ type toolArgs struct {
 	TurnID      string            `json:"turn_id"`
 	Progress    int64             `json:"progress"`
 	Event       string            `json:"event"`
-	View        string            `json:"view"`
-	Detail      bool              `json:"detail"`
-	Harness     string            `json:"harness"`
-	Model       string            `json:"model"`
-	Provider    string            `json:"provider"`
-	Surface     string            `json:"surface"`
-	Effort      string            `json:"effort"`
-	Title       string            `json:"title"`
-	CWD         string            `json:"cwd"`
-	Branch      string            `json:"branch"`
-	Host        string            `json:"host"`
+	// StopActive is the harness's stop_hook_active: this turn is already
+	// running because a stop hook continued it. Typed loosely because it
+	// arrives as the string a template substitution produced on one harness and
+	// as a JSON boolean on another, and refusing one spelling would silently
+	// disable the loop guard on that harness.
+	StopActive any    `json:"stop_hook_active"`
+	View       string `json:"view"`
+	Detail     bool   `json:"detail"`
+	Harness    string `json:"harness"`
+	Model      string `json:"model"`
+	Provider   string `json:"provider"`
+	Surface    string `json:"surface"`
+	Effort     string `json:"effort"`
+	Title      string `json:"title"`
+	CWD        string `json:"cwd"`
+	Branch     string `json:"branch"`
+	Host       string `json:"host"`
 
 	// Spaces (SPEC-CHANNELS.md). The parameter is `space`, because it names one.
 	//
@@ -668,7 +848,10 @@ type toolArgs struct {
 	// agent to do the one thing every other line of the docs says never to do.
 	SpaceID string `json:"space"`
 	// AgentRef targets an actual agent, for the tools that act on one.
-	AgentRef    string   `json:"agent"`
+	AgentRef string `json:"agent"`
+	// Into is the agent RECEIVING something, distinct from AgentRef, which is
+	// the one being acted on.
+	Into        string   `json:"into"`
 	Limit       int      `json:"limit"`
 	Topic       string   `json:"topic"`
 	Exclusive   bool     `json:"exclusive"`
@@ -738,7 +921,7 @@ func argErr(err error) string {
 }
 
 func (s *Server) callTool(
-	ctx context.Context, params json.RawMessage, bearerToken string, sessionUI bool,
+	ctx context.Context, params json.RawMessage, bearerToken, agentNonce string, sessionUI bool,
 	sessionClient *clientInfoJSON, panelFetches bool,
 ) (any, *rpcError) {
 	var call struct {
@@ -760,18 +943,20 @@ func (s *Server) callTool(
 			}
 		}
 	}
-	if a.Token == "" {
-		a.Token = bearerToken
-	}
+	a.fillFromTransport(call.Name, bearerToken, agentNonce)
 	// The schemas declare `required`; until this, nothing enforced it, so an
 	// omitted parameter arrived as a zero value and the handler answered about
 	// it as though the caller had sent it.
-	if err := checkRequired(call.Name, call.Args, bearerToken); err != nil {
+	if err := checkRequired(call.Name, call.Args, bearerToken, agentNonce); err != nil {
 		return nil, &rpcError{
 			Code: -32602, Message: err.Error(),
 			Data: hint(schemaHint(call.Name)),
 		}
 	}
+	// Attach the agent to the session it is actually running in, if nothing
+	// has. Before the call, so `check_in`'s own answer already reflects it.
+	s.adoptSession(ctx, a.Token, params)
+
 	res, err := s.run(ctx, call.Name, &a, params, sessionClient)
 	if err != nil {
 		// An unstructured error used to go out as a bare {"error": "..."} with no
@@ -876,6 +1061,19 @@ func (s *Server) run(
 	params json.RawMessage, sessionClient *clientInfoJSON,
 ) (core.Result, error) {
 	op := &core.Op{Token: a.Token}
+	// The harness's own name for this thread, if it volunteered one.
+	//
+	// Codex puts `threadId` in _meta on every tools/call, unconditionally and
+	// for every server, and the value is the id `codex resume` takes. So the
+	// stable identity arrives on the connection the agent already holds: no
+	// hook, no directory guess, no second process. It was missed for a day
+	// because every inspection of _meta looked at the handshake, where it is
+	// absent, rather than at tool calls, where it is always present.
+	//
+	// Carried as a session ALIAS because that is what it is: another name for
+	// the session this agent is running in, alongside the `host-<ppid>` the
+	// bridge derives. The engine decides whether it may be bound.
+	op.SessionAlias = clientThreadID(params)
 	switch name {
 	case "register":
 		if strings.TrimSpace(a.Name) == "" {
@@ -890,7 +1088,17 @@ func (s *Server) run(
 	case "check_in":
 		op.Kind = core.OpAckBoard
 	case "update":
-		op.Kind, op.Description = core.OpUpdate, a.Description
+		op.Kind, op.Name, op.Description = core.OpUpdate, a.Name, a.Description
+		op.Agent = selfReported(a)
+		// Omitting `description` means "leave it alone", not "erase it".
+		//
+		// The tool invites branch-only and title-only updates, and decoding into
+		// a plain string loses whether the field was sent at all, so every one
+		// of those wrote "" into the op and the fold assigned it. A session
+		// updating its branch silently lost the one line saying what the agent
+		// is for, on a board whose whole job is telling people that. Found by a
+		// pre-release review.
+		op.KeepDescription = !argumentPresent(params, "description")
 	case "vouch_child":
 		op.Kind, op.Nonce = core.OpVouchChild, a.Nonce
 	case "sign_off":
@@ -914,6 +1122,7 @@ func (s *Server) run(
 	case "send":
 		op.Kind, op.To, op.MsgType, op.Body = core.OpSendMessage, a.To, a.Type, a.Body
 		op.DeadlineSec, op.OpID, op.Attachments = a.DeadlineSec, a.OpID, a.Attachments
+		op.Choices, op.Grant, op.Adopt = a.Choices, a.Grant, a.Adopt
 	case "put_blob":
 		return s.putBlob(ctx, a)
 	case "get_blob":
@@ -945,7 +1154,7 @@ func (s *Server) run(
 		// compared as a string against the cwd the bridge recorded, and a
 		// harness that passes the alias the user typed (/tmp/x) would never
 		// match an agent registered from the resolved name (/private/tmp/x).
-		return s.eng.HookPoll(ctx, a.SessionID, a.Event, canonPath(a.CWD))
+		return s.eng.HookPoll(ctx, a.SessionID, a.Event, canonPath(a.CWD), truthy(a.StopActive))
 	case "hook_session":
 		return s.eng.NoteChildSession(ctx, engine.Child{
 			SessionID: a.SessionID, CWD: canonPath(a.CWD), Model: a.Model,
@@ -998,6 +1207,10 @@ func (s *Server) run(
 		op.Kind, op.Space, op.To, op.Note = core.OpSpaceMerge, a.SpaceID, a.To, a.Note
 	case "human_unlock":
 		return s.humanUnlock(ctx, a)
+	case "adopt_agent":
+		op.Kind, op.To, op.Space = core.OpAdoptAgent, a.AgentRef, a.Into
+	case "retitle_space":
+		op.Kind, op.Space, op.Text = core.OpSpaceRetitle, a.SpaceID, a.Text
 	case "close_space":
 		op.Kind, op.Space, op.Note = core.OpSpaceClose, a.SpaceID, a.Note
 	case "admit":
@@ -1034,7 +1247,7 @@ func (s *Server) run(
 	// asked about. SessionStart fires before the agent's first turn, so this is
 	// already known by the time it registers.
 	hooksLive := s.eng.HookTrafficSeen(ctx, a.SessionID)
-	return attachPluginHint(res, harness, reattached, hooksLive), nil
+	return attachPluginHint(res, harness, reattached, hooksLive, a.SessionID != ""), nil
 }
 
 // serverInstructions is the text every agent reads on connect.
@@ -1076,10 +1289,132 @@ func (s *Server) run(
 //nolint:lll // agent-facing text; line breaks are semantic
 const serverInstructions = `Dibs coordinates the agents on this machine: who is working, on what, and where they are about to collide.
 
-An agent is an AGENT, not a task. Name it for who you are ('reviewer', 'codex-1'): that name is your address; what you are DOING goes in declare.
+An agent is an AGENT, not a task. Name it for the ROLE you hold ('reviewer', 'release'), never your model or harness; what you DO goes in declare. update() revises both.
 
-Start: register(name, description, pid, nonce): keep the token, and invent a nonce: it is the only credential that survives a restart. Then check_in() at the start of every activation, before you act.
+Start: register(name, description, pid, nonce): keep the token, and invent a nonce: it is the only credential that survives a restart. Then check_in() at the start of every activation.
 
 Read dibs://skills once: short, and it is the mistakes that look like success. dibs://plugin says if your harness can deliver mail instead of you polling.
 
 Something Dibs did that no hint explains? Ask your human about reporting it.`
+
+// truthy reads a flag that may arrive as a bool or as the string a hook
+// template produced.
+func truthy(v any) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case string:
+		return t == "true" || t == "1"
+	default:
+		return false
+	}
+}
+
+// inboxSummary is what dibs://inbox answers: who is waiting, never what they
+// said.
+//
+// A RESOURCE is application-controlled. The MCP host decides what to do with
+// one, and attaching it to the user's next turn is an ordinary thing for a host
+// to do; ChatGPT Desktop does exactly that. This resource returned the whole
+// mailbox, bodies included, so one agent's private mail was being rendered into
+// its operator's prompt box, prefixed with the resource's name. Reported that
+// way: "messages are still coming into my prompt box... it starts with inbox:
+// and a message from another agent."
+//
+// Two things were wrong and both are fixed by the same change. The mail was
+// reaching a reader it was not addressed to, which is a confidentiality
+// failure however friendly the reader. And it put the human back in the loop as
+// a relay, which is the failure this whole product exists to remove.
+//
+// So the resource carries the SIGNAL and the tool carries the content: counts,
+// senders, types and serials, plus the call that reads them. That is the rule
+// Dibs already applies to the human's notification and to the `waiting` line,
+// "counts and senders only, never content", and this was the one place it was
+// not applied. The subscription still works and still says "there is new mail",
+// which is all a wake needs; a host that pastes this into a prompt now pastes a
+// nudge that discloses nothing.
+//
+// Bodies live in the `inbox` TOOL, which is model-controlled and returns down
+// the connection the agent authenticated on.
+func inboxSummary(box core.Result) core.Result {
+	out := core.Result{
+		"read_with": "call the `inbox` tool with your token; this resource carries " +
+			"the signal, not the mail",
+		"note": "senders and counts only. Bodies are never published here, because a " +
+			"resource is application-controlled and the host decides who sees it",
+	}
+	msgs, _ := box["messages"].([]*core.Message)
+	waiting := make([]map[string]any, 0, len(msgs))
+	for _, m := range msgs {
+		if m.Terminal() {
+			continue
+		}
+		waiting = append(waiting, map[string]any{
+			"serial": m.Serial, "from": m.From, "type": m.Type, "state": m.State,
+		})
+	}
+	out["unread"] = len(waiting)
+	out["waiting"] = waiting
+	if a, ok := box["announcements"]; ok {
+		if list, ok := a.([]core.Result); ok {
+			out["unacknowledged_announcements"] = len(list)
+		}
+	}
+	return out
+}
+
+// metaKeys lists the _meta keys a client sent, sorted, for the RPC log.
+//
+// Keys, never values. A harness announcing what it knows about itself is the
+// thing worth seeing; what it knows might be private, and a debug log is the
+// wrong place to learn that.
+func metaKeys(params json.RawMessage) string {
+	var p struct {
+		Meta map[string]any `json:"_meta"`
+	}
+	if len(params) == 0 || json.Unmarshal(params, &p) != nil || len(p.Meta) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(p.Meta))
+	for k := range p.Meta {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ",")
+}
+
+// clientThreadID reads the harness's thread identifier out of a tool call's
+// _meta, or "".
+//
+// `threadId` is Codex's spelling. Kept to identifiers a harness sends about
+// ITSELF: this is an identity claim, and the engine treats it as one rather
+// than as proof.
+func clientThreadID(params json.RawMessage) string {
+	var p struct {
+		Meta map[string]any `json:"_meta"`
+	}
+	if len(params) == 0 || json.Unmarshal(params, &p) != nil {
+		return ""
+	}
+	v, _ := p.Meta["threadId"].(string)
+	return strings.TrimSpace(v)
+}
+
+// argumentPresent reports whether the caller actually sent this argument, as
+// opposed to sending an empty one or none at all.
+//
+// The decoded struct cannot answer that: "" is both. Anything that has to tell
+// "omitted" from "cleared" has to look at what arrived.
+func argumentPresent(params json.RawMessage, name string) bool {
+	if len(params) == 0 {
+		return false
+	}
+	var outer struct {
+		Arguments map[string]json.RawMessage `json:"arguments"`
+	}
+	if json.Unmarshal(params, &outer) != nil {
+		return false
+	}
+	_, ok := outer.Arguments[name]
+	return ok
+}

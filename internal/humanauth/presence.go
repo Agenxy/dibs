@@ -74,12 +74,24 @@ var ErrNoHelper = errors.New("presence helper not found beside dibd")
 // so this is the outer of two bounds rather than the only one.
 const promptTimeout = 90 * time.Second
 
-// helperName is the compiled Swift binary dibd execs. A separate process
+// helperName is the compiled Swift binary dibd execs.
+//
+// It said "agents-presence" while `task presence` built and installed
+// "dibs-presence", so findHelper looked for a file that has never existed on
+// any machine, and Check answered Unavailable every time. Touch ID, the one
+// assertion in Dibs that must not be forgeable by software, was silently off
+// from the rename until this was found: the product said "this build ships
+// without the presence helper", which reads as a packaging decision rather than
+// a typo, so nobody looked.
+//
+// Three spellings were in play, which is how it happened: lanes-presence (v1),
+// agents-presence (the intermediate rename), dibs-presence (what ships).
+// TestThePresenceHelperIsTheOneThatGetsBuilt now pins this to the Taskfile. A separate process
 // rather than cgo because Dibs ships CGO_ENABLED=0 and cross-compiles to four
 // targets: linking LocalAuthentication into the daemon would break every build
 // that is not macOS. Exec also means a missing or unrunnable helper degrades to
 // the password path instead of taking the daemon down with it.
-const helperName = "agents-presence"
+const helperName = "dibs-presence"
 
 // Check asks for proof that a human is present, showing them `reason`.
 //

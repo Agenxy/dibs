@@ -13,10 +13,10 @@ import (
 // plain register would have killed the connection, and the feature that
 // caused it is a nicety the caller never asked for.
 func TestAHarnesslessRegistrationGetsNoHintAndDoesNotPanic(t *testing.T) {
-	if hint := pluginHint("", false, false); hint != nil {
+	if hint := pluginHint("", false, false, true); hint != nil {
 		t.Errorf("hint = %v, want nil for an unknown harness", hint)
 	}
-	if hint := pluginHint("emacs", false, false); hint != nil {
+	if hint := pluginHint("emacs", false, false, true); hint != nil {
 		t.Errorf("hint = %v, want nil: inventing a plugin for a harness we do not "+
 			"support is worse than saying nothing", hint)
 	}
@@ -29,7 +29,7 @@ func TestAHarnesslessRegistrationGetsNoHintAndDoesNotPanic(t *testing.T) {
 // server can already see is busywork on turn one, and busywork is how a
 // first-connection nudge gets learned as noise and filtered out thereafter.
 func TestAnAlreadyHookedSessionIsToldItIsDone(t *testing.T) {
-	live := pluginHint("claude-code", false, true)
+	live := pluginHint("claude-code", false, true, true)
 	if live == nil {
 		t.Fatal("no hint for a fresh registration")
 	}
@@ -40,7 +40,7 @@ func TestAnAlreadyHookedSessionIsToldItIsDone(t *testing.T) {
 		t.Error("an agent whose hooks demonstrably work was still handed a verification " +
 			"step; the server already had the answer")
 	}
-	dark := pluginHint("claude-code", false, false)
+	dark := pluginHint("claude-code", false, false, true)
 	if dark["hooks_live"] != false {
 		t.Error("hooks_live is not reported as false")
 	}
@@ -71,11 +71,11 @@ func TestAnAlreadyHookedSessionIsToldItIsDone(t *testing.T) {
 // install prompt to somebody who already decided is how a hint that mattered
 // once becomes noise that gets filtered out every time after.
 func TestTheHintIsNotRepeatedOnReattach(t *testing.T) {
-	if hint := pluginHint("claude-code", false, false); hint == nil {
+	if hint := pluginHint("claude-code", false, false, true); hint == nil {
 		t.Fatal("a fresh claude-code registration got no hint: the one moment the " +
 			"agent has just told us its harness is the one moment this is news")
 	}
-	if hint := pluginHint("claude-code", true, false); hint != nil {
+	if hint := pluginHint("claude-code", true, false, true); hint != nil {
 		t.Errorf("hint = %v, want nil on reattach", hint)
 	}
 }
@@ -107,7 +107,7 @@ func TestThePluginDocIsServableAndHonest(t *testing.T) {
 // to poll" in the same result whose catalogue entry said mail is pull-only. An
 // agent that believed the first stops checking and silently loses mail.
 func TestAHarnessWithNoWakePathIsNotToldToStopPolling(t *testing.T) {
-	codex := pluginHint("codex", false, true)
+	codex := pluginHint("codex", false, true, true)
 	if codex == nil {
 		t.Fatal("no hint for a fresh codex registration")
 	}
@@ -122,9 +122,41 @@ func TestAHarnessWithNoWakePathIsNotToldToStopPolling(t *testing.T) {
 	// And the harness that DOES deliver still says so: the fix must not flatten
 	// both into the same cautious sentence, which would waste the one thing
 	// installing the plugin buys.
-	cc := pluginHint("claude-code", false, true)
+	cc := pluginHint("claude-code", false, true, true)
 	ccNote, _ := cc["note"].(string)
 	if !strings.Contains(ccNote, "do not need to poll") {
 		t.Errorf("claude-code no longer advertises delivery: %q", ccNote)
+	}
+}
+
+// An agent with no session id is told the truth about why nothing wakes it.
+//
+// The old text pointed at the plugin ("hooks are read at session start, so one
+// installed during this session stays inert"), which sends the agent to check
+// something that is very likely fine. A lifecycle hook resolves an agent by the
+// session id the HARNESS knows: an agent that registered without one cannot be
+// found by any hook, however perfectly the plugin is installed. Measured on a
+// live board, where `dibs doctor` reported hooks resolving while that agent's
+// mail sat unread.
+func TestAnAgentWithNoSessionIdIsToldWhyNothingWakesIt(t *testing.T) {
+	hint := pluginHint("claude-code", false, false, false)
+	if hint == nil {
+		t.Fatal("no hint at all for a fresh Claude Code registration")
+	}
+	status, _ := hint["status"].(string)
+	if !strings.Contains(status, "session_id") {
+		t.Errorf("status = %q: it does not name the actual cause", status)
+	}
+	// The agent can fix this one itself, so the fix has to be in the result.
+	fix, _ := hint["fix"].(string)
+	for _, want := range []string{"same nonce", "check_in", "await_events"} {
+		if !strings.Contains(fix, want) {
+			t.Errorf("fix = %q: missing %q", fix, want)
+		}
+	}
+	// And it must not send the agent off to audit a plugin that is not the
+	// problem: that is the wasted turn this replaces.
+	if hint["verify"] != nil {
+		t.Errorf("verify = %v: the plugin is not what is broken here", hint["verify"])
 	}
 }

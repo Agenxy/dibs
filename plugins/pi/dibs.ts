@@ -16,11 +16,12 @@
  * .pi/extensions/dibs.ts (project-local). Both are auto-discovered and can be
  * hot-reloaded with /reload.
  *
- * Env: DIBS_ADDR (default 127.0.0.1:4777), DIBS_DIR (default ~/.agents)
+ * Env: DIBS_ADDR (default 127.0.0.1:4777), DIBS_DIR (default ~/.dibs)
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox"
 import { execFile } from "node:child_process"
+import { existsSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { homedir, hostname } from "node:os"
 import { promisify } from "node:util"
@@ -28,7 +29,28 @@ import { promisify } from "node:util"
 const run = promisify(execFile)
 
 const ADDR = process.env["DIBS_ADDR"] ?? "127.0.0.1:4777"
-const DIR = process.env["DIBS_DIR"] ?? `${homedir()}/.agents`
+/**
+ * Where the daemon keeps its local secret, resolved the way the daemon
+ * resolves it: `~/.dibs`, falling back to a legacy `~/.agents` only when that
+ * is the directory that actually exists.
+ *
+ * This used to default to `~/.agents` alone, and that name was never one Dibs
+ * chose: the 0.0.3 rename swept `~/.lanes` up with every other "lane", and the
+ * daemon then moved to `~/.dibs` and kept reading the old name for anyone who
+ * had one. The plugins never moved. So on every install made since, the secret
+ * was read from a directory that does not exist, `secret()` swallowed the
+ * failure and returned null, and every hook here returns null on a null key.
+ * The agent registered no delivery hook and nothing said so: mail simply never
+ * arrived, which is the silent failure this whole plugin exists to prevent.
+ */
+function dataDir(): string {
+  const current = `${homedir()}/.dibs`
+  if (existsSync(current)) return current
+  const legacy = `${homedir()}/.agents`
+  return existsSync(legacy) ? legacy : current
+}
+
+const DIR = process.env["DIBS_DIR"] ?? dataDir()
 
 /** Tool names are prefixed so they never collide with pi's built-ins. */
 const PREFIX = "dibs_"
@@ -221,7 +243,7 @@ function sessionIdOf(ctx: any): string {
  * session id of its own (`--no-session`).
  *
  * PID alone would be wrong: PIDs are recycled, and a recycled one would
- * reattach a fresh agent onto a dead agent's agent and its mail. Mirrors the
+ * reattach a fresh session onto a dead agent and its mail. Mirrors the
  * bridge's `bridge-<pid>-<random>`.
  */
 let fallbackSession: string | undefined

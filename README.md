@@ -70,7 +70,7 @@ decision to the two agents. [Tutorial](docs/TUTORIAL.md).
 
 ### What else is on the board
 
-Declaring work is one tool of forty-two. The rest is what agents do once they can
+Declaring work is one tool of 44. The rest is what agents do once they can
 see each other:
 
 - **Mail.** Private mailboxes, four types (`notify`, `question`, `request`,
@@ -89,6 +89,29 @@ see each other:
 
 No agent can act on another through Dibs. The worst thing you can receive is a
 message you may decline. It is a visibility layer, not an orchestrator.
+
+### When an agent needs you
+
+You are a row on the board like anybody else, so an agent can address you the
+way it addresses a peer. A question reaches you as a notification on your own
+machine, and you answer it there: no terminal, no board to open, nothing to
+type into a tool.
+
+| An open question | An answer the agent enumerated |
+|---|---|
+| ![An agent asking the human a free-text question, as a native macOS dialog](docs/ask-human-text.png) | ![An agent offering the human a short list of answers to pick from](docs/ask-human-choices.png) |
+
+An agent that states its options gets a press instead of a sentence: up to three
+become the notification's own buttons, so answering costs one gesture. Requests
+work the same way and carry an effect. `request` + `grant: "coordinator"`
+promotes the asker when you approve it; `request` + `adopt: "<agent>"` hands a
+returning agent its old mailbox back. **Approving is the act, not a note saying
+somebody agreed one should happen.** There is never a command left for you to
+run afterwards.
+
+That matters because the alternative is you as the transport. An agent that has
+to wait for a human to notice, open something and relay an answer is one you are
+carrying.
 
 **Two agents editing the same file is normal and healthy.** Dibs is not a lock
 over your source. The waste it exists to catch is *redundant effort*: two agents
@@ -228,6 +251,53 @@ Not `pkill dibd`. Dibs is built to let several isolated daemons coexist on a
 machine, and a kill by name takes down whichever fleets happen to share the
 name.
 
+### Upgrading a running fleet
+
+After installing a new build, one command moves the daemon onto it:
+
+```sh
+dibs upgrade
+```
+
+It is deliberately not `dibs stop && dibd &`, because three things go wrong
+there and all three are silent. The service unit pins an absolute path, so a
+daemon installed somewhere new leaves the service starting a build from months
+ago forever. A daemon started by hand comes back on the default loopback
+address, which takes every remote agent off a board that was serving a fleet
+across machines. And a new binary that cannot fold the ledger the old one wrote
+is only discovered *after* the daemon that could serve the board has been
+stopped.
+
+So `dibs upgrade` runs the new binary against the ledger first (`dibd -check`,
+which replays without serving and is safe to run against a board another daemon
+is currently holding), and stops nothing unless that passes. Then it repoints a
+service unit that pins the wrong daemon, restarts through the service manager
+where there is one and directly where there is not, restores the address the
+daemon was bound to, and waits for the board to answer before reporting the
+serial and the agent count it came back with. Anything that fails between the
+stop and the start restarts the daemon on the build it was already running.
+
+Nothing about this asks agents to re-register: `state == fold(ledger)`, so a
+restarted daemon rebuilds the board rather than losing it, and the stdio bridge
+waits the window out (REQUIREMENTS.md R12). `dibs upgrade -n` says what it would
+do and changes nothing.
+
+### Configuration
+
+Dibs runs correctly with no configuration file at all, and most fleets never
+write one. Everything the daemon accepts is in
+**[docs/CONFIGURATION.md](docs/CONFIGURATION.md)**, with what happens if you
+leave each setting alone.
+
+An unknown key stops the daemon rather than being ignored, deliberately: a
+setting that was never going to take effect must not look applied.
+
+```sh
+man dibs      # the CLI
+man 8 dibd    # the daemon: flags, files, what a restart costs
+dibs doctor   # what is actually in effect right now
+```
+
 ### Verifying what you downloaded
 
 Release artifacts are signed with [cosign](https://docs.sigstore.dev) in the
@@ -275,7 +345,7 @@ this README.
    you can read it without this repository, and it is also
    [SKILLS.md](SKILLS.md) here.
 
-A taste of what is in it, because these are the ones that cost the most:
+The ones that have cost agents the most time:
 
 - **An agent is an AGENT, not a task.** Its name is your address (`reviewer`, not
   `refactor-auth`), because mail sent to a task name reads as nonsense.
@@ -291,7 +361,7 @@ A taste of what is in it, because these are the ones that cost the most:
   exits when events arrive, so your harness wakes you. The shell watches; you
   sleep, spending nothing.
 
-Working *on* Dibs rather than with it? [AGENTS.md](AGENTS.md) is the map,
+If you are working *on* Dibs rather than with it, [AGENTS.md](AGENTS.md) is the map,
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) is the territory, and
 [llms.txt](llms.txt) indexes everything.
 
@@ -306,7 +376,7 @@ Working *on* Dibs rather than with it? [AGENTS.md](AGENTS.md) is the map,
   `NO_COLOR` it collapses to exactly the plain text it would have been, so
   `dibs board | grep builder` works and a redirected `dibs doctor` is a file
   you can paste into an issue.
-- **MCP-native**: 42 tools, self-teaching through server instructions and
+- **MCP-native**: 44 tools, self-teaching through server instructions and
   corrective error hints, plus resources and an MCP Apps panel. Dibs targets the
   **2026-07-28** stateless contract and also serves the legacy **2025-11-25**
   path, which, as of August 2026, is what every shipping host actually
@@ -358,15 +428,23 @@ without asking; this example used to show bob JOINED, which the shipping default
 has never done. `-match-auto-join always` restores unconditional joining if you
 want it.
 
-### Turning it on
+### Tuning it
 
-Matching is **off until you point Dibs at a repository**, because the threshold
-is not something anyone can guess for you:
+Matching runs from the first agent registration, one index per repository, and
+the daemon measures its own notify threshold on the history it has just mined.
+There is nothing to switch on.
+
+What stays off is **joining**. `join_threshold` is 0 until you set it, so Dibs
+suggests and never moves anybody:
 
 ```sh
-dibs calibrate --repo .       # measures YOUR repo, prints two numbers
-dibd -match-repo . -match-join <join> -match-notify <notify> &
+dibs calibrate --repo .    # measures YOUR repo, prints two numbers
+dibd -match-join <join> &  # notify is measured for you; set it only to disagree
 ```
+
+`-match-repo` survives as a pre-warm: it indexes a tree before anybody registers
+from it, which is worth setting for a daemon started at login and worth nothing
+otherwise.
 
 **Stop any daemon already running first.** Dibs refuses to start a second one
 on the same machine, and names the one that is running. That is deliberate: two
@@ -384,8 +462,8 @@ Better still, put the numbers in `dibs.toml` and skip the flags entirely, which
 is what they are for.
 
 **Calibrate first.** Skipping it leaves `join_threshold` at zero, which means
-Dibs suggests agents and never joins one: deliberately, because auto-joining on
-a threshold nobody measured is how every agent ends up in a single agent. Measured
+Dibs suggests spaces and never joins one: deliberately, because auto-joining on
+a threshold nobody measured is how every agent ends up in a single space. Measured
 across five real repositories the calibrated threshold spans a factor of fifteen
 (0.022–0.327); there is no default that is not badly wrong somewhere.
 
@@ -409,11 +487,11 @@ rather than printing a number and hoping.
 
 **Recall@5 near 0.3 is not "solved".** It means that for roughly a third of
 declarations the right file is in the top five: enough to put two agents in the
-same agent often enough to be worth having, and nowhere near enough to trust
+same space often enough to be worth having, and nowhere near enough to trust
 blindly. SPEC-CHANNELS §10.1 governs: **a low score is never proof that two
 agents will not collide.**
 
-Those numbers are **held out**, and the reason matters more than the numbers.
+Those numbers are **held out**, and how they were measured is the part to read.
 `dibs calibrate` evaluates by using a commit message as the query and that
 commit's changed files as the answer, which is the exact pairing the history
 index is built from. Measured naively, this change took recall@5 from 0.288 to
@@ -444,8 +522,8 @@ surface, so it is worth naming them explicitly:
 They are independent: a declaration can produce either, both, or neither.
 `overlaps` needs no index and no threshold, so it works on the first
 declaration and across machines. `spaces` needs the repository indexed and a
-`notify_threshold` above zero, and reports `matching: "indexing"` while the
-index is still building.
+`notify_threshold` above zero, which the daemon measures for itself, and reports
+`matching: "indexing"` while the index is still building.
 
 An operator integrating against Dibs logged `overlaps` and `suggestions`, saw
 empty results three times, and concluded matching was broken. It was working
@@ -481,11 +559,11 @@ the repository containing it is exactly the history worth mining, so each tree
 is indexed the first time an agent turns up in it, up to sixteen of them.
 
 One index per repository, and an agent is scored by the tree it is working in.
-That matters more than it sounds: a co-change model asked about a different
-project's sentence does not decline, it answers confidently and wrongly, which
-is worse than no matching at all. An agent in a tree that is not indexed simply
-gets no semantic suggestions, and still gets the shared-refs and shared-dirs
-signals, which are computed in the core and need no index.
+A co-change model asked about a different project's sentence does not decline;
+it answers confidently and wrongly, which is worse than no matching at all. An
+agent in a tree that is not indexed simply gets no semantic suggestions, and
+still gets the shared-refs and shared-dirs signals, which are computed in the
+core and need no index.
 
 `-match-repo` survives only as a pre-warm, for a daemon started at login that
 should have an index ready before the first agent arrives.
@@ -501,7 +579,7 @@ indexed repository and warns when you are working outside it. Indexing several i
 Retrieval models are asymmetric: a task description and a chunk of code are not
 the same kind of text, and every serious one is trained with a marker saying
 which side it is being given. Dibs applies the right one automatically, keyed off
-the model name. It matters more than model size:
+the model name. Getting the marker wrong costs more than choosing a smaller model:
 
 | scorer (on this repo)     | recall@5 | MRR   | related work clearing the bar |
 |---------------------------|----------|-------|-------------------------------|
@@ -616,7 +694,7 @@ coordinator = ["orchestrator"]   # broadcast, force-release, merge, evict
 admin       = ["fleet-lead"]     # all of that, plus reading every agent's mail
 ```
 
-**Declaring a role in config is a human decision, and that is the whole point.**
+**Declaring a role in config is a human decision.**
 No agent can promote itself: `grant_role` is not an MCP tool, it is admitted only
 on the daemon's admin path, and a system op presented with an agent token is
 refused outright. The file is authority because you own the file: an agent
@@ -677,18 +755,24 @@ Dibs speaks **MCP 2026-07-28** (the stateless core) and the legacy
 your host offers.
 
 Worth knowing, because "Dibs is 2026-07-28" and "my client connected with
-2025-11-25" otherwise look like a contradiction: **as of August 2026 no shipping
-host negotiates 2026-07-28 by default.** In Codex it is an under-development
-feature flag, off by default: verifiable in its source, where the spec is
-`key: "mcp_2026_07_28", stage: UnderDevelopment, default_enabled: false`.
+2025-11-25" otherwise look like a contradiction: **no shipping host negotiates
+2026-07-28 by default.** In Codex it is an under-development feature flag, off
+by default.
 
-**Turning it on does not help.** Measured with the flag resolved true, Codex
-still negotiates `2025-06-18` and sends no `server/discover`: it gates unfinished
-work rather than switching protocol. This document used to tell you to enable it
-and call that a user decision, which contradicted the project's own measurement
-in `plugins/codex/README.md`. Nothing you can set today changes the wire, and
-nothing needs to. Dibs serves both paths and all tools behave identically on
-either.
+**Codex can be switched to it, and two things are required.** The feature
+`mcp_2026_07_28`, AND `CODEX_MCP_PROTOCOL_VERSION=2026-07-28` in that server's
+own `env` block in `~/.codex/config.toml`. The feature alone leaves the
+connection on `2025-06-18`, which is why this section previously said turning it
+on does not help: that measurement was correct and the conclusion drawn from it
+was not, because the second condition had not been found. With both set, Codex
+sends `server/discover` carrying `2026-07-28` and Dibs answers it. Verified on
+2026-08-17 against Codex Desktop `0.148.0-alpha.9`, which then also calls
+`resources/list`, something it never does on the legacy path.
+
+You do not have to do any of this. Dibs serves both paths and every tool behaves
+identically on either. The reason to know is that a harness reaching the modern
+path is exercising the stateless contract, and if something differs there it is
+worth a bug report rather than a shrug.
 
 Surveyed by reading source, not announcements. Re-checked 2026-08-03 against
 each project's latest commit:
@@ -723,7 +807,7 @@ mcp_2026_07_28 = true
 should not edit your operator's config. Mention it once if it is relevant, then
 carry on: nothing you call through Dibs depends on it.
 
-**If you are the operator:** there is no urgency. Dibs serves both paths, all 42
+**If you are the operator:** there is no urgency. Dibs serves both paths, all 44
 tools behave identically on either, and deprecated features are guaranteed for at
 least twelve months from the 2026-07-28 publication.
 
@@ -744,8 +828,8 @@ Verified against a running daemon, not assumed:
   *retired* the handshake. The reference SDKs encode the same split
   (`HANDSHAKE_PROTOCOL_VERSIONS` vs `MODERN_PROTOCOL_VERSIONS`).
 - **Cacheable list results**: `ttlMs` and `cacheScope` on `server/discover`,
-  `tools/list`, `resources/list` and `resources/read`. It matters more here than
-  most servers: 42 tools with deliberately long descriptions, re-fetched on every
+  `tools/list`, `resources/list` and `resources/read`. Dibs has more to re-fetch
+  than most servers: 44 tools whose descriptions carry real corrective detail, re-fetched on every
   cold path once there is no session to hold them. Static results are hinted for
   an hour and marked `public`; the board is hinted for two seconds; **an agent's
   mailbox is `private`**, because `public` would let a shared gateway serve one

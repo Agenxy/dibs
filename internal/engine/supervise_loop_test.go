@@ -155,6 +155,19 @@ func TestARemotePidIsNotProbedLocally(t *testing.T) {
 		t.Skip("no hostname on this machine")
 	}
 
+	// The remote host is DERIVED from the local one, never written as a
+	// literal. This case used to name a machine, and the machine it named was
+	// the author's own, so `ownsHost` answered "that is me" and correctly so:
+	// the assertion that a remote pid is never probed failed on the single
+	// machine this feature was written and dogfooded on, while passing on every
+	// CI runner in the world, because no runner is called that. Green remote,
+	// red local, from a fixture rather than the code.
+	//
+	// A test whose verdict depends on what somebody named their laptop is not
+	// measuring the code. Appending to the local name is the one construction
+	// that cannot be this host, whatever this host happens to be called.
+	remote := local + "-not-this-machine"
+
 	for _, tc := range []struct {
 		name      string
 		host      string
@@ -163,7 +176,7 @@ func TestARemotePidIsNotProbedLocally(t *testing.T) {
 		{name: "this machine", host: local, wantProbe: true},
 		{name: "this machine, different case", host: strings.ToUpper(local), wantProbe: true},
 		{name: "unknown host is treated as local", host: "", wantProbe: true},
-		{name: "another machine is never probed", host: "MacMarine", wantProbe: false},
+		{name: "another machine is never probed", host: remote, wantProbe: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := &Engine{}

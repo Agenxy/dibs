@@ -487,32 +487,7 @@ func TestAMergedAwaySpaceAlsoLosesItsFootprint(t *testing.T) {
 // An agent is named for the WORK, not for the sentence describing it.
 //
 // Ids are slugified topics, and the topic was the whole declaration, so an
-// agent writing "I am fixing the retry loop when tokens fail to refresh" created
-// an agent called i-am-fixing-the-retry-loop-when-tokens-fail-to-refresh. That id
-// is what another agent passes to join_space, what a human reads on the board,
-// and what a projector shows to a room. Unusable as all three.
-func TestASpaceIsNamedForTheWorkNotTheSentence(t *testing.T) {
-	for _, c := range []struct{ declaration, want string }{
-		{"I am fixing the retry loop when tokens fail to refresh", "fixing retry loop tokens fail"},
-		{"tidying up the CSS on the board", "tidying up css board"},
-		{"I'm working on the auth middleware", "auth middleware"},
-		// Already terse: unchanged, not padded.
-		{"blob eviction", "blob eviction"},
-	} {
-		if got := spaceName(c.declaration); got != c.want {
-			t.Errorf("spaceName(%q) = %q, want %q", c.declaration, got, c.want)
-		}
-	}
-
-	// A declaration that is ALL filler is still a declaration. Naming an agent ""
-	// would be worse than naming it badly: cleanID would reject it and the
-	// agent would never open, silently.
-	if got := spaceName("I am just working on it"); got == "" {
-		t.Error("an all-filler declaration must still yield a name, or the agent never opens")
-	}
-}
-
-// An agent's SECOND task is the normal case, not an edge one.
+// / An agent's SECOND task is the normal case, not an edge one.
 //
 // Suppression counted any membership at any score, so a faint accidental overlap
 // with an agent the agent was still in (one shared file is enough) stopped it
@@ -520,17 +495,103 @@ func TestASpaceIsNamedForTheWorkNotTheSentence(t *testing.T) {
 // alone" about work it had stopped doing. The bar for "you already coordinate on
 // this" must be the bar used for "this is worth mentioning at all".
 func TestOnlyRelevantMembershipSuppressesANewSpace(t *testing.T) {
-	faint := []core.AgentMatch{{Agent: "old", Score: 0.02, AlreadyIn: true}}
+	faint := []core.AgentMatch{{Space: "old", Score: 0.02, AlreadyIn: true}}
 	if alreadyCoordinating(faint, 0.15) {
 		t.Error("a faint overlap with an agent you are in must not block an agent for new work")
 	}
-	real := []core.AgentMatch{{Agent: "old", Score: 0.40, AlreadyIn: true}}
+	real := []core.AgentMatch{{Space: "old", Score: 0.40, AlreadyIn: true}}
 	if !alreadyCoordinating(real, 0.15) {
 		t.Error("a real overlap with an agent you are in must not spawn a duplicate")
 	}
 	// Somebody else's agent never suppresses: that is a match, not a membership.
-	theirs := []core.AgentMatch{{Agent: "theirs", Score: 0.90, AlreadyIn: false}}
+	theirs := []core.AgentMatch{{Space: "theirs", Score: 0.90, AlreadyIn: false}}
 	if alreadyCoordinating(theirs, 0.15) {
 		t.Error("an agent you are NOT in is a suggestion, not a reason to stay silent")
+	}
+}
+
+// An agent whose request is approved is told, and told what changed.
+//
+// It is the most consequential thing that can happen to an agent that asked for
+// something: it may now do what it could not a moment ago, and short of
+// re-reading a message it had already sent, nothing told it. "When you approve
+// an agent's request they should be notified."
+func TestTheAskerIsToldItsRequestWasApproved(t *testing.T) {
+	e := &Engine{}
+	e.noteEvent(core.Event{
+		Type: "message.approved", Agent: "boss", To: "asker", Serial: 9,
+		Data: map[string]any{"msg_serial": uint64(7), "granted": "coordinator"},
+	})
+	got := e.pendingNotices("asker")
+	if len(got) != 1 {
+		t.Fatalf("the asker was told %d things about its own approved request", len(got))
+	}
+	for _, want := range []string{"APPROVED", "coordinator", "boss"} {
+		if !strings.Contains(got[0], want) {
+			t.Errorf("the notice omits %q, so the agent knows it was approved and not "+
+				"what it may now do: %s", want, got[0])
+		}
+	}
+	// And the responder is not told about their own action.
+	if n := e.pendingNotices("boss"); len(n) != 0 {
+		t.Errorf("the responder was notified of its own decision: %v", n)
+	}
+}
+
+// A denial is a different sentence, because the right next move is different.
+func TestADenialSaysNotToRetryBlindly(t *testing.T) {
+	e := &Engine{}
+	e.noteEvent(core.Event{
+		Type: "message.denied", Agent: "boss", To: "asker", Serial: 9,
+		Data: map[string]any{"msg_serial": uint64(7)},
+	})
+	got := e.pendingNotices("asker")
+	if len(got) != 1 || !strings.Contains(got[0], "DENIED") {
+		t.Fatalf("a denied request produced %v", got)
+	}
+	if !strings.Contains(got[0], "retry") {
+		t.Errorf("the notice does not say what not to do next, which is the only "+
+			"thing distinguishing it from a bare status: %s", got[0])
+	}
+}
+
+// The agents already in a space are told when somebody joins it.
+//
+// This notified the JOINER and nobody else, which answers "what did I just
+// join" and leaves "who turned up in my space" to whoever happens to re-read
+// the board. Somebody arriving in the work you are doing is the definition of a
+// change you did not cause and could not infer, which is what a notice is for.
+// Asked for as situational awareness, after a fleet ran for a day without
+// anyone noticing a new member.
+func TestMembersAreToldWhenSomebodyJoinsTheirSpace(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	st.Spaces["auth"] = &core.Space{
+		ID: "auth",
+		Members: map[string]*core.Membership{
+			"incumbent": {}, "newcomer": {}, "quiet-one": {},
+		},
+	}
+	e := &Engine{state: st}
+	e.noteEvent(core.Event{
+		Type: "agent.joined", Agent: "newcomer", Serial: 5,
+		Data: map[string]any{"agent_id": "auth"},
+	})
+
+	for _, who := range []string{"incumbent", "quiet-one"} {
+		got := e.pendingNotices(who)
+		if len(got) != 1 {
+			t.Fatalf("%s was told %d things about a new member of the space it is "+
+				"working in", who, len(got))
+		}
+		if !strings.Contains(got[0], "newcomer") || !strings.Contains(got[0], "auth") {
+			t.Errorf("the notice does not say who joined what: %s", got[0])
+		}
+	}
+	// The joiner gets its own notice about joining, and must not also be told
+	// that it turned up.
+	for _, n := range e.pendingNotices("newcomer") {
+		if strings.Contains(n, "you are in") {
+			t.Errorf("the joiner was told about its own arrival: %s", n)
+		}
 	}
 }

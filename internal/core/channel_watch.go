@@ -24,7 +24,7 @@ import "time"
 func (s *State) ReaderChannel(l *Agent, name string) (*Space, error) {
 	ch := s.Spaces[cleanID(name)]
 	if ch == nil {
-		return nil, errf("E_NO_AGENT", "open_space or join_space first", "no agent %s", name)
+		return nil, errf("E_NO_SPACE", "open_space or join_space first", "no space %s", name)
 	}
 	if s.speaksFor(ch, l.ID) == "" && !ch.Subs[l.ID] {
 		return nil, errf("E_NOT_MEMBER", "join_space to take part, or watch_space to watch",
@@ -51,7 +51,7 @@ func (s *State) ReaderChannel(l *Agent, name string) (*Space, error) {
 func (s *State) applySpaceSubscribe(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
 	ch := s.Spaces[cleanID(op.Space)]
 	if ch == nil {
-		return nil, nil, errf("E_NO_AGENT", "nothing to subscribe to", "no agent %s", op.Space)
+		return nil, nil, errf("E_NO_SPACE", "nothing to subscribe to", "no space %s", op.Space)
 	}
 	if _, isMember := ch.Members[l.ID]; isMember {
 		return Result{"agent_id": ch.ID, "subscribed": false, "reason": "already a member"}, nil, nil

@@ -1,7 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Lanes">
-  <title>Lanes</title>
-  <!-- Two lanes converging into one: the product's one sentence. Two agents
-       declare the same work in different words and end up in the same lane
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Dibs">
+  <title>Dibs</title>
+  <!-- Two paths converging into one: the product's one sentence. Two agents
+       declare the same work in different words and end up in the same space
        before the duplicate effort happens.
 
        It carries its own tile, and that is a decision rather than decoration.
@@ -17,13 +17,13 @@
           contrast on a surface you do not control is to bring your own.
 
        Colours are the board's own tokens converted from OKLCH, not approximations:
-       the tile is bg-0, the lanes are fg, and the junction is --accent (hue 262),
+       the tile is bg-0, the paths are fg, and the junction is --accent (hue 262),
        which the palette defines as "structure: this view, this lane". The live
        green (hue 158) would have been wrong: it means "an agent is alive", and
        a junction is an event about work, not a heartbeat.
 
        Fading one lane to suggest depth was also tried and reverted: it read as
-       a drop shadow, which inverts the meaning. Both lanes carry equal weight
+       a drop shadow, which inverts the meaning. Both paths carry equal weight
        because neither agent is subordinate. -->
   <rect width="32" height="32" rx="7.5" fill="#131518"/>
   <g fill="none" stroke="#dcdee2" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">

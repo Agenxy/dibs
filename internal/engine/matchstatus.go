@@ -59,6 +59,18 @@ type MatchStatus struct {
 	// Since is when this phase began, so "indexing" that never ends is visible
 	// as such rather than looking like a slow but healthy start.
 	Since time.Time `json:"since,omitempty"`
+	// Unreadable lists trees the daemon could not read, WITHOUT that being the
+	// whole board's problem.
+	//
+	// One agent registering from a directory macOS will not let the daemon read
+	// used to switch matching off for everybody: the failure set the global
+	// phase, so a working index for four repositories was replaced by "matching
+	// is off" because a fifth agent started somewhere unreadable. Reported by an
+	// agent that had lost the feature fleet-wide and traced it correctly.
+	//
+	// A tree that cannot be read is that AGENT's problem to fix, so it is named
+	// here and the phase stays whatever the rest of the board earned.
+	Unreadable []string `json:"unreadable,omitempty"`
 }
 
 type matchStatusState struct {
@@ -76,6 +88,61 @@ func (e *Engine) SetMatchStatus(s MatchStatus) {
 	e.matchStatus.mu.Lock()
 	defer e.matchStatus.mu.Unlock()
 	e.matchStatus.st = s
+}
+
+// NoteIndexingTree says a new tree is being indexed, without demoting a board
+// that already works.
+//
+// indexDiscovered set the global phase to `indexing` on every registration, so
+// a fleet that had been matching happily for an hour reported itself as still
+// starting up whenever a sixteenth agent joined, and any agent that declared in
+// that window was told matching was not ready. The same shape as the unreadable
+// case below: one tree's progress is not the board's phase.
+func (e *Engine) NoteIndexingTree(cwd string) {
+	e.matchStatus.mu.Lock()
+	defer e.matchStatus.mu.Unlock()
+	switch e.matchStatus.st.Phase {
+	case MatchReady, MatchDegraded, MatchNoThreshold:
+		return // something already works; do not report the board as starting up
+	case MatchOff, MatchIndexing:
+		// Nothing working to protect, so a new tree's progress IS the board's.
+	}
+	e.matchStatus.st = MatchStatus{
+		Phase: MatchIndexing, Repo: cwd, Since: time.Now(),
+		Unreadable: e.matchStatus.st.Unreadable,
+	}
+}
+
+// NoteUnreadableTree records one tree the daemon cannot read, without changing
+// what matching is doing for everybody else.
+//
+// The distinction is the entire point. "This agent's directory is unreadable"
+// and "matching is off" are different facts with different owners: the first is
+// one operator granting one permission, the second is a feature nobody has.
+// Reporting the first as the second cost a fleet its matching for a day, and
+// the hint that came with it sent everyone looking at the wrong thing.
+//
+// Phase is only forced OFF when nothing at all is indexed, because then the
+// two statements happen to coincide.
+func (e *Engine) NoteUnreadableTree(cwd, hint string) {
+	e.matchStatus.mu.Lock()
+	defer e.matchStatus.mu.Unlock()
+	for _, seen := range e.matchStatus.st.Unreadable {
+		if seen == cwd {
+			return
+		}
+	}
+	e.matchStatus.st.Unreadable = append(e.matchStatus.st.Unreadable, cwd)
+	// Nothing working to protect: the honest phase is off, and the hint is this
+	// tree's, because it is the only evidence there is.
+	if e.matchStatus.st.Phase == "" || e.matchStatus.st.Phase == MatchOff ||
+		e.matchStatus.st.Phase == MatchIndexing {
+		e.matchStatus.st.Phase = MatchOff
+		e.matchStatus.st.Hint = hint
+		if e.matchStatus.st.Since.IsZero() {
+			e.matchStatus.st.Since = time.Now()
+		}
+	}
 }
 
 // MatchStatus reports it, filling in the hint so callers cannot forget to.

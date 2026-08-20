@@ -125,7 +125,12 @@ func TestOnlyAnUnreachedRequestIsWaitedOut(t *testing.T) {
 		want bool
 	}{
 		{name: "connection refused: never arrived", err: syscall.ECONNREFUSED, want: true},
-		{name: "connection reset: listener went away", err: syscall.ECONNRESET, want: true},
+		// A reset says the peer tore the connection down and NOTHING about how
+		// much it had already done. The daemon can read, apply and ledger an op
+		// and be killed before the response leaves. This case read "listener
+		// went away" and wanted a retry, which assumed the half of the story
+		// that suits us; retrying there duplicates the effect.
+		{name: "connection reset: may have been received and acted on", err: syscall.ECONNRESET, want: false},
 		{name: "wrapped refusal", err: fmt.Errorf("post: %w", syscall.ECONNREFUSED), want: true},
 		{name: "timeout: may have been received and acted on", err: os.ErrDeadlineExceeded, want: false},
 		{name: "no error", err: nil, want: false},

@@ -21,6 +21,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/agenxy/dibs/internal/build"
+	"github.com/agenxy/dibs/internal/humanauth"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/ui"
 )
@@ -82,10 +83,18 @@ setup:
                            isolated daemons other fleets are running. SIGTERM, so
                            the ledger closes and claims are released; waits for
                            the process to go, so you can start a replacement
+  dibs upgrade            move the running daemon onto the dibd you have
+                           installed. Proves the new binary can rebuild this
+                           board BEFORE stopping anything, repoints a service
+                           unit pinning the wrong daemon, restarts, and checks
+                           the fleet came back at the same serial. No agent
+                           re-registers (-n dry-run; --adopt-dir also renames a
+                           data directory an older version named)
 
 human/admin (interactive terminal; the god-view needs the admin password):
   dibs messages           ALL mail, decrypted: prompts admin password
-  dibs web                open the board: prompts admin password, one-time link
+  dibs web                open the board: one-time link, unlocked with Touch ID
+                           where the machine has it (--password to type one instead)
   dibs admin set-password  set/replace the admin password that gates the board
   dibs mcp-config         print MCP host config (contains the local secret)
 
@@ -145,6 +154,8 @@ func main() {
 		err = verify(os.Args[2:])
 	case "stop":
 		err = stop(os.Args[2:])
+	case "upgrade":
+		err = upgradeCmd(os.Args[2:])
 	case "trust":
 		err = trustCmd(os.Args[2:])
 	case "fingerprint":
@@ -176,7 +187,7 @@ func main() {
 	case "mcp-stdio":
 		err = mcpStdio(os.Args[2:])
 	case "web":
-		err = adminOnly("web", webURL)
+		err = adminOnly("web", func() error { return webURL(os.Args[2:]) })
 	case "version", "--version", "-V":
 		printVersion()
 	case "help", "--help", "-h":
@@ -451,15 +462,47 @@ func mcpConfig() error {
 	if len(s) > 16 {
 		preview = s[:16] + "…"
 	}
+	// STDIO for Codex, not HTTP, and the difference is an identity rather than a
+	// preference.
+	//
+	// This printed the HTTP form, and Codex took it, and the cost was invisible
+	// for months: an HTTP client has no per-session process, so there is nothing
+	// to remember an agent's nonce, so every returning session registers as a
+	// sibling that cannot read its predecessor's mail. A board carrying nine
+	// rows for five roles is what that looks like from outside.
+	//
+	// The bridge is a process per session with a filesystem, which is exactly
+	// what the credential needs and exactly what HTTP does not have. Codex has
+	// supported stdio all along; almost every other server in a real config uses
+	// it, and Dibs was the odd one out because this line said to be.
+	//
+	// The HTTP form stays documented below, because it is right for a client on
+	// another machine, where a local bridge is not an option and a forked
+	// identity is the lesser problem.
 	fmt.Printf(`
 # Codex / ChatGPT desktop: add to ~/.codex/config.toml:
 [mcp_servers.dibs]
-url = %q
-http_headers = { "X-Dibs-Local" = %q }
+command = %q
+args = ["mcp-stdio"]
+# MCP 2026-07-28. Codex speaks it, but only when BOTH the mcp_2026_07_28
+# feature is enabled AND this exact variable is set on THIS server entry: the
+# feature alone leaves the connection on 2025-06-18, and a wrong value here is
+# a hard error rather than a fallback.
+env = { CODEX_MCP_PROTOCOL_VERSION = "2026-07-28" }
 
-# The secret is also accepted as: Authorization: Bearer %s
+# stdio rather than a url, deliberately: the bridge is one process per session,
+# and it remembers this agent's nonce so a returning session reattaches to the
+# same identity instead of forking a "-2" sibling that cannot read its own mail.
+# That is a default and not a cage: an identity can also be pinned here with
+#   env = { DIBS_AGENT_NONCE = "..." }
+# which is what lets an HTTP client reattach too. Use the url form only from
+# another machine:
+#   url = %q
+#   http_headers = { "X-Dibs-Local" = %q }
+#   (the secret is also accepted as: Authorization: Bearer %s)
+#
 # Running agent sessions do not hot-load MCP config: start a new session after adding.
-`, url, s, preview)
+`, self(), url, s, preview)
 
 	if certPath != "" {
 		fmt.Printf(`
@@ -518,40 +561,145 @@ func fileExists(p string) bool {
 	return err == nil && fi.Mode().IsRegular()
 }
 
-func webURL() error {
+// webURL mints a single-use link to the board.
+//
+// The finger first, and the password only if the machine cannot take one.
+// Both prove the same thing, that a human is here rather than an agent holding
+// the local secret, and the fingerprint proves it better: a password is a
+// secret an agent could in principle have been handed. Asking for one on a Mac
+// with a working sensor made the operator invent, store and type a credential
+// in order to be trusted LESS than the panel already trusts them.
+//
+// The check itself happens in the daemon. This process only asks for it: a
+// client that ran the check and reported the result would be asserting presence
+// rather than proving it, and every agent on the machine can make that
+// assertion.
+func webURL(args []string) error {
+	fs := flag.NewFlagSet("web", flag.ContinueOnError)
+	usePassword := fs.Bool("password", false,
+		"use the admin password even where Touch ID is available")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
 	s, err := localSecret()
 	if err != nil {
 		return fmt.Errorf("no local secret yet: start dibd once first: %w", err)
+	}
+	// A sheet nobody can reach is worse than a prompt.
+	//
+	// Presence is only offered when a person is actually at this terminal.
+	// Piping a password IS the caller saying they cannot touch a sensor: a
+	// script, a CI run, an ssh session. Raising the system sheet at them blocks
+	// for ninety seconds and then fails, and the credential they supplied was
+	// sitting on stdin the whole time.
+	//
+	// stdin only, deliberately: `dibs web | pbcopy` is an ordinary thing to do
+	// and says nothing about whether somebody is sitting here.
+	if humanauth.Available() && !*usePassword && atATerminal() {
+		fmt.Fprintln(os.Stderr, "# Confirming it is you, on the system sheet.")
+		out, err := mintBoard(s, "", true)
+		if err == nil {
+			return printBoardLink(out)
+		}
+		// Any failure falls through to the password. This command must not
+		// dead-end.
+		//
+		// The tempting rule is to stop on a decline, on the grounds that somebody
+		// who just said no should not immediately be asked for a credential.
+		// That is right about a real decline and wrong about everything else it
+		// cannot be told apart from: the helper reports "declined" for a cancel,
+		// a failed match, AND for its own timeout, so a sheet that never reached
+		// the screen is indistinguishable from a person refusing one. Measured
+		// on the machine this was written on: evaluatePolicy accepted the policy,
+		// reported Touch ID present, and never called back at all.
+		//
+		// Stopping there would leave the operator with ninety seconds of nothing
+		// and no way in, on a command whose entire job is to let them in. So the
+		// reason is printed, plainly, and the other door is opened. A person who
+		// genuinely meant to cancel can press ctrl-c at the prompt, which costs
+		// them one keystroke; the alternative costs somebody their board.
+		fmt.Fprintf(os.Stderr, "# %v\n# Falling back to the admin password.\n",
+			strings.TrimSpace(err.Error()))
 	}
 	adminPass, err := promptAdminForGodView()
 	if err != nil {
 		return err
 	}
-	// Mint a one-time bootstrap token: local secret (same-user) + admin
-	// password (human). The durable secret never enters the URL.
+	out, err := mintBoard(s, adminPass, false)
+	if err != nil {
+		return err
+	}
+	return printBoardLink(out)
+}
+
+// atATerminal reports whether a person is typing at this process, which is the
+// question "can they answer a prompt", not "is the output going to a screen".
+func atATerminal() bool {
+	fi, err := os.Stdin.Stat()
+	return err == nil && fi.Mode()&os.ModeCharDevice != 0
+}
+
+// errNoPresenceHere is the daemon saying this machine cannot check presence at
+// all.
+//
+// The CLI falls back on every failure, so it no longer branches on this, but the
+// distinction is still worth carrying: it is the one presence answer that is not
+// about a person, and it is what the daemon's 412 means to anything else that
+// learns to call /bootstrap.
+var errNoPresenceHere = errors.New("this machine cannot check presence")
+
+type boardGrant struct {
+	BT     string `json:"bt"`
+	Proof  string `json:"proof"`
+	Mocked string `json:"mocked"`
+}
+
+// mintBoard asks the daemon for a one-time bootstrap token. The durable secret
+// never enters the URL.
+func mintBoard(secret, adminPass string, presence bool) (boardGrant, error) {
+	var out boardGrant
 	req, err := http.NewRequest(http.MethodPost, origin()+"/bootstrap", nil)
 	if err != nil {
-		return err
+		return out, err
 	}
-	req.Header.Set("X-Dibs-Local", s)
-	req.Header.Set("X-Dibs-Admin", adminPass)
+	req.Header.Set("X-Dibs-Local", secret)
+	if presence {
+		req.Header.Set("X-Dibs-Presence", "1")
+	} else {
+		req.Header.Set("X-Dibs-Admin", adminPass)
+	}
+	// No client deadline on the presence path: the person has ninety seconds to
+	// reach the sensor and the daemon owns that bound. A shorter one here would
+	// cancel the request out from under a sheet they were still looking at.
 	resp, err := daemonClient(0).Do(req)
 	if err != nil {
-		return reachErr(err)
+		return out, reachErr(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusPreconditionFailed {
+		return out, errNoPresenceHere
+	}
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("bootstrap failed: %s", resp.Status)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		if msg := strings.TrimSpace(string(body)); msg != "" {
+			return out, errors.New(msg)
+		}
+		return out, fmt.Errorf("bootstrap failed: %s", resp.Status)
 	}
-	var out struct {
-		BT string `json:"bt"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return err
-	}
+	return out, json.NewDecoder(resp.Body).Decode(&out)
+}
+
+func printBoardLink(out boardGrant) error {
 	fmt.Printf("http://%s/?bt=%s\n", addr(), out.BT)
-	fmt.Fprintln(os.Stderr, "\n# Single-use link, expires in 2 minutes. It sets a session cookie; the secret is "+
-		"never in the URL.")
+	if out.Mocked != "" {
+		fmt.Fprintln(os.Stderr, "\n# "+out.Mocked)
+	}
+	how := "the admin password"
+	if out.Proof == "presence" {
+		how = "your fingerprint"
+	}
+	fmt.Fprintln(os.Stderr, "\n# Single-use link, expires in 2 minutes, unlocked with "+how+
+		". It sets a session cookie; the secret is never in the URL.")
 	return nil
 }
 
@@ -587,7 +735,16 @@ type (
 		// of agents, and a board that will not say which is which answers the
 		// wrong question. Blank for local agents so the common case stays as
 		// quiet as it was.
-		Host  string      `json:"host,omitempty"`
+		Host string `json:"host,omitempty"`
+		// Role, and whether whoever holds it can come back. A role held by an
+		// agent nobody can reattach to is a power the board shows as filled and
+		// nobody can use.
+		Role        string `json:"role,omitempty"`
+		Unreachable bool   `json:"unreachable,omitempty"`
+		// Human marks the row that is the person at this machine, so an agent
+		// (or `dibs board`) can find who to write to without matching on a
+		// description string.
+		Human bool        `json:"human,omitempty"`
 		Slots []boardSlot `json:"slots"`
 	}
 	boardClaim struct {
@@ -1532,3 +1689,20 @@ func reachErr(err error) error {
 }
 
 const notRunningFmt = "%w (is dibd running?)"
+
+// self names this executable for a config file somebody will paste.
+//
+// The absolute path, resolved through symlinks, because a config that says
+// "dibs" works only if the harness's PATH matches the shell's, and a harness
+// launched from Finder frequently has neither ~/.local/bin nor a Homebrew
+// prefix on it. That failure presents as a server that silently never starts.
+func self() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "dibs"
+	}
+	if resolved, rerr := filepath.EvalSymlinks(exe); rerr == nil {
+		return resolved
+	}
+	return exe
+}

@@ -34,6 +34,69 @@ type Config struct {
 	Limits            LimitsConfig      `toml:"limits"`             // coordination timings
 	Supervise         liveness.Settings `toml:"supervise"`          // stalled-subagent detection
 	Roles             RolesConfig       `toml:"roles"`              // standing coordinator/admin agents
+	Wake              WakeConfig        `toml:"wake"`               // which news may extend an agent's turn
+}
+
+// WakeConfig is the [wake] table.
+//
+// One key, because there is one real decision: does an agent hear about mail
+// when it arrives, or when somebody next types at it.
+//
+// The default is when it arrives. A fleet that waits for a human to kickstart
+// its responsiveness is not agentic, and a time-sensitive request sitting
+// unseen because nobody was at the keyboard is the failure this product exists
+// to prevent. Waking is not driving: the digest says outright that it is
+// coordination data the agent may act on or decline. What Dibs must not do is
+// instruct.
+//
+// `urgent` is for an operator who would rather an FYI never cost a turn, and
+// `none` for one who wants Dibs strictly pull-shaped. Neither is the default,
+// because both trade away awareness for tokens and that is a trade only the
+// person paying should make deliberately.
+type WakeConfig struct {
+	// ExtendTurnFor is "all" (default), "urgent", or "none".
+	ExtendTurnFor string `toml:"extend_turn_for"`
+
+	// NoticesWake decides whether situational awareness alone may extend a turn.
+	//
+	// A notice is something that happened TO an agent and that it could not
+	// infer: it was evicted, its request was approved, somebody joined the space
+	// it is working in. Useful, and not all of it is worth resuming a session
+	// for, which is the cost this setting exists to control.
+	//
+	// Waking an agent means extending a turn on a thread that may be long and
+	// whose prompt cache is cold, and on a fleet of idle sessions that is a real
+	// bill to pay for "somebody joined your space".
+	//
+	// ON by default even so, because "an agent is told what happened to it" is a
+	// guarantee this project already makes, in SPEC and in the browser suite,
+	// and quietly making a guarantee conditional to save tokens is the wrong way
+	// round: an operator who cares about the tokens can say so, and one who
+	// never reads this file keeps the behaviour the documentation promises.
+	//
+	// Set it false to make notices pull-only. Nothing is lost when you do: they
+	// queue, they ride along on any wake that happens for another reason, and
+	// they arrive in full at the agent's own check_in, which it makes once per
+	// activation anyway. What changes is latency, not delivery.
+	//
+	// Mail is unaffected either way: a peer waiting on an answer still wakes its
+	// recipient, because somebody is blocked on that and nobody is blocked on
+	// knowing who joined a space.
+	NoticesWake *bool `toml:"notices_wake"`
+}
+
+// policy validates the setting and returns it.
+func (w WakeConfig) policy() (engine.WakePhase, error) {
+	switch w.ExtendTurnFor {
+	case "":
+		return engine.WakeAll, nil
+	case string(engine.WakeUrgent), string(engine.WakeAll), string(engine.WakeNone):
+		return engine.WakePhase(w.ExtendTurnFor), nil
+	default:
+		return "", fmt.Errorf("[wake] extend_turn_for = %q: use \"all\" (default: anything "+
+			"unread wakes the agent once), \"urgent\" (only work somebody is blocked on) "+
+			"or \"none\" (never extend a turn)", w.ExtendTurnFor)
+	}
 }
 
 // LimitsConfig is the [limits] table: the timings an operator's fleet actually
@@ -61,6 +124,27 @@ type LimitsConfig struct {
 	// client at the daemon changes nothing and waits 45 minutes for a lapse
 	// they thought they had configured to 5.
 	IdleTTL string `toml:"idle_ttl"`
+
+	// MaxPersistentAgents caps standing identities, and needs a knob because a
+	// fleet's size is not a constant Dibs can guess.
+	//
+	// A persistent agent holds its slot while dormant. That is the point of one:
+	// its mailbox and memberships survive the harness restarting. The
+	// consequence is that the ceiling is reached by ACCUMULATION rather than by
+	// concurrency, and on a real board it was: sixteen standing roles against a
+	// default of sixteen, so registration was refused while the board held
+	// sixteen agents of a possible sixty-four.
+	//
+	// Exposed as configuration and not raised as a default, because the default
+	// being reached is usually a signal worth reading: siblings accumulate when
+	// agents cannot prove they are themselves, and the fix for that is to
+	// reclaim them rather than to make more room. A fleet that genuinely runs
+	// forty standing roles should say so here.
+	MaxPersistentAgents int `toml:"max_persistent_agents"`
+
+	// MaxAgents caps live agents of every kind. Its counterpart above is the one
+	// usually hit first, since ephemeral agents leave when they finish.
+	MaxAgents int `toml:"max_agents"`
 
 	// BlobStoreBytes caps the attachment store. It is a HARD bound: when the
 	// store is over it, eviction drops referenced content rather than exceed
@@ -142,7 +226,41 @@ func (c LimitsConfig) apply(base core.Limits) (core.Limits, error) {
 	if err := applyTTL("idle_ttl", c.IdleTTL, &base.IdleTTL); err != nil {
 		return base, err
 	}
+	if err := applyCount("max_persistent_agents", c.MaxPersistentAgents,
+		&base.MaxPersistentAgents); err != nil {
+		return base, err
+	}
+	if err := applyCount("max_agents", c.MaxAgents, &base.MaxAgents); err != nil {
+		return base, err
+	}
+	// A persistent ceiling above the total is not a smaller mistake than a bad
+	// duration: it reads as configured and the lower bound silently wins, so an
+	// operator who raised the wrong one waits for a change that cannot happen.
+	if base.MaxPersistentAgents > base.MaxAgents {
+		return base, fmt.Errorf(
+			"[limits] max_persistent_agents = %d exceeds max_agents = %d, so the "+
+				"lower ceiling is the one that binds and this setting would do nothing: "+
+				"raise max_agents too, or lower this",
+			base.MaxPersistentAgents, base.MaxAgents)
+	}
 	return base, c.applyBlobCap(&base)
+}
+
+// applyCount folds a positive integer limit over the default.
+//
+// Zero means unset, because a zero ceiling would refuse every registration and
+// is never what somebody meant to write. A negative is refused rather than
+// clamped: silently correcting a value the operator typed is how a setting ends
+// up meaning something other than it says.
+func applyCount(key string, raw int, dst *int) error {
+	if raw == 0 {
+		return nil
+	}
+	if raw < 0 {
+		return fmt.Errorf("[limits] %s = %d: a ceiling cannot be negative", key, raw)
+	}
+	*dst = raw
+	return nil
 }
 
 // applyTTL parses one duration limit, refusing anything unusable.
@@ -249,7 +367,7 @@ type transport struct {
 //	anything else → TLS, with a certificate generated on first run
 //
 // Dibs secures itself: it never asks the operator to stand up a VPN, a proxy,
-// or a certificate authority to be safe by default. Sovereign, not dependent.
+// or a certificate authority to be safe by default.
 func resolveTransport(dir, addr string, c Config) (transport, error) {
 	if c.TLSCert != "" && c.TLSKey != "" {
 		return transport{c.TLSCert, c.TLSKey, "TLS (certificate from config)"}, nil

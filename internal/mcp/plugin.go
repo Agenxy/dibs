@@ -57,7 +57,7 @@ func pluginDoc() string {
 // Reported as an observation ("no hook has reached this daemon") rather than a
 // conclusion ("you have not installed it"), because a plugin installed earlier
 // this session is real and still inert until the next one.
-func pluginHint(harness string, reattached, hooksLive bool) map[string]any {
+func pluginHint(harness string, reattached, hooksLive, hasSession bool) map[string]any {
 	if reattached || harness == "" {
 		return nil
 	}
@@ -102,6 +102,31 @@ func pluginHint(harness string, reattached, hooksLive bool) map[string]any {
 		}
 		return hint
 	}
+	if !hasSession {
+		// The plugin is the wrong thing to look at here, and saying so matters
+		// because the agent will otherwise go and check it, find it perfect, and
+		// conclude delivery works.
+		//
+		// A lifecycle hook identifies a session by the id the HARNESS knows. An
+		// agent that registered without one cannot be found by any hook, however
+		// correctly the plugin is installed, so no mail will ever be pushed into
+		// this session. Measured on this machine: an agent registered out of band
+		// sat with unread mail while `dibs doctor` reported hooks resolving
+		// perfectly, because they were: for everybody else.
+		//
+		// The cause is the agent's own registration, which is also the one thing
+		// it can fix, so name that and not the plugin.
+		hint["status"] = "You registered with no session_id, so NO lifecycle hook can " +
+			"resolve you: mail will not be pushed into this session no matter how the " +
+			"plugin is installed. This happens when you register outside your harness's " +
+			"MCP connection (a direct HTTP call, or the CLI), because the stdio bridge is " +
+			"what supplies the session id."
+		hint["fix"] = "register again with the same name, the same nonce, and your " +
+			"harness session id, and you reattach to this agent with its mail. Until then " +
+			"you are on the pull path: check_in every activation, and await_events before " +
+			"you block. Every result you get back names anything waiting."
+		return hint
+	}
 	hint["status"] = "No lifecycle hook has reached this daemon for your session. That " +
 		"is not proof the plugin is missing: hooks are read at session start, so one " +
 		"installed during this session stays inert until the next, but it does mean " +
@@ -114,11 +139,11 @@ func pluginHint(harness string, reattached, hooksLive bool) map[string]any {
 
 // attachPluginHint adds the hint to a registration result when there is one to
 // give. Separated so the registration path stays about registration.
-func attachPluginHint(res core.Result, harness string, reattached, hooksLive bool) core.Result {
+func attachPluginHint(res core.Result, harness string, reattached, hooksLive, hasSession bool) core.Result {
 	if res == nil {
 		return res
 	}
-	if hint := pluginHint(harness, reattached, hooksLive); hint != nil {
+	if hint := pluginHint(harness, reattached, hooksLive, hasSession); hint != nil {
 		res["plugin"] = hint
 	}
 	return res

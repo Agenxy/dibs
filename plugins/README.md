@@ -40,9 +40,47 @@ the question.
 | [pi](pi/) | **extension** (no MCP client) | ✅ `before_agent_start` injected message | **yes**, agent quoted the mail unprompted |
 | [hermes](hermes/) | MCP via `hermes mcp add` | ❌ no hook system found | **yes**, every tool enumerated, real model |
 | [claude-desktop](claude-desktop/) | MCP (stdio) or `.mcpb` | ❌ no hook system exists | tools yes; panel renders in the ext-apps reference host |
-| [codex](codex/) | MCP over HTTP | ❌ hooks are subprocess-only | transport yes, every tool enumerated; execution blocked, see below |
+| [codex](codex/) | MCP over **stdio** | ❌ `mcp_tool` hooks land but do not run yet | **yes**: the only harness on MCP 2026-07-28 end to end |
 | [chatgpt-desktop](chatgpt-desktop/) | shares Codex config | ❌ inherits Codex | no |
 | openclaw | not yet assessed | not yet assessed | deferred |
+
+## Transport: why these differ, and why that is not an inconsistency
+
+Read this before proposing that a harness be moved onto a different transport.
+The table above is deliberately mixed, and the mixture is the design.
+
+**MCP 2026-07-28 defines two standard bindings and deprecates neither.** stdio
+is newline-delimited JSON-RPC over a subprocess's standard streams; Streamable
+HTTP is one POST per message. The transport that IS deprecated is **HTTP+SSE**,
+the old two-endpoint one, which is a different thing and easy to confuse with
+Streamable HTTP. Protocol semantics are identical on every binding, including
+`subscriptions/listen`, so nothing is forfeited by choosing either.
+
+stdio is not the legacy option. Its metadata model is the one 2026 defines,
+everything inline in `_meta` with no header layer, and the spec tells custom
+transports over Unix sockets or TCP to reuse its framing.
+
+**Codex is on stdio on purpose.** It was moved there from HTTP, and moving it
+back would be a regression:
+
+- The stdio bridge is one process per session with a filesystem, so it is what
+  can hold an agent's nonce across a context boundary. That is the difference
+  between a returning session reattaching and forking a sibling that cannot read
+  its predecessor's mail. Measured on a real board before the bridge existed:
+  **nine rows for five roles.**
+- Codex reaches MCP 2026-07-28 over stdio today, end to end, with no fallback.
+  There is no protocol argument for moving it.
+
+Identity itself is no longer transport-bound: a nonce may be pinned in the
+harness's own config (`X-Dibs-Agent-Nonce` header, or `DIBS_AGENT_NONCE` env
+which the bridge forwards), so an HTTP client can reattach too. That makes the
+transport a genuine per-harness choice rather than a constraint. It does not
+make the choices interchangeable: the bridge still supplies the nonce
+automatically for stdio harnesses that pin nothing, which is most of them.
+
+**So the rule is: pick the binding a harness supports best, and leave the others
+alone.** A patch that unifies them for consistency's sake is trading a working
+identity guarantee for symmetry, and we will turn it down. See CONTRIBUTING.md.
 
 ## What the survey found
 

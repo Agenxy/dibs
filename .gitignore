@@ -31,3 +31,10 @@ __pycache__/
 /dibs
 /dibd
 /dibs-presence
+# Anchored, like the ones above. Unanchored, `signstable` also matched the
+# DIRECTORY tools/signstable/, so the tool `task install` runs was never
+# committed at all and a fresh clone could not run it. git said nothing,
+# because an ignored path is not an untracked one.
+/signid
+/signcheck
+/signstable

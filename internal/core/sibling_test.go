@@ -66,16 +66,44 @@ func TestRegisterUnderTakenNameWarnsAndNamesTheLostMail(t *testing.T) {
 	if !strings.Contains(warn, "1 message") {
 		t.Errorf("warning must say how much mail is unreachable, got: %s", warn)
 	}
-	// The fix has to be one the caller can actually perform. This used to say
-	// "resume", which is the standing-role path and does nothing for an
-	// ephemeral agent, so the warning correctly identified the problem and then
-	// sent the agent somewhere that could not solve it. Point at the nonce, which
-	// reattaches any kind of agent, and at merge_spaces for an agent that kept none.
+	// The fix has to be one the caller can actually perform, and this warning has
+	// now been wrong about that twice.
+	//
+	// It first said "resume", the standing-role path, which does nothing for an
+	// ephemeral agent: the warning identified the problem correctly and then
+	// sent the agent somewhere that could not solve it. It was changed to
+	// merge_spaces, and THIS TEST pinned that in place, which is the reason it
+	// survived: merge_spaces takes SPACE ids and these are AGENT ids, so
+	// following it fails with E_NO_SPACE. Found by following it on a real board,
+	// at the exact moment six messages became unreachable.
+	//
+	// A test that asserts the presence of a named call is only as good as the
+	// call being right, so read this one before changing the string it guards.
 	if !strings.Contains(warn, "nonce") {
 		t.Errorf("warning must name the credential that reattaches, got: %s", warn)
 	}
-	if !strings.Contains(warn, "merge_spaces") {
-		t.Errorf("warning must offer a route for an agent with no nonce, got: %s", warn)
+	// The route has to be one THIS agent can take from where it is standing.
+	//
+	// It used to end on `adopt_agent`, which needs the human at the machine or a
+	// coordinator: an authority the agent reading this does not have and cannot
+	// get from here. So the honest reading was "your mail is gone", and the only
+	// reachable action was to carry on as a sibling. Every duplicate on a real
+	// board arrived exactly that way.
+	//
+	// Asking is an action it can take unaided, and approving the request
+	// performs the move, so that is what this now requires.
+	if !strings.Contains(warn, "adopt:") || !strings.Contains(warn, "request") {
+		t.Errorf("warning must offer a route the agent can take ITSELF: a request "+
+			"carrying `adopt:`, got: %s", warn)
+	}
+	if strings.Contains(warn, "adopt_agent(") {
+		t.Errorf("warning ends on adopt_agent, which needs the human at this machine "+
+			"or a coordinator: the agent reading this has neither, so it reads as "+
+			"'your mail is gone'. Tell it to ask, got: %s", warn)
+	}
+	if strings.Contains(warn, "merge_spaces") {
+		t.Errorf("warning names merge_spaces, which takes SPACE ids: following it on these "+
+			"AGENT ids fails with E_NO_SPACE, got: %s", warn)
 	}
 }
 
@@ -159,5 +187,46 @@ func TestClosedSpaceDoesNotTriggerTheNameWarning(t *testing.T) {
 	}
 	if w, has := again["name_taken"]; has {
 		t.Errorf("closed agent must not read as a collision, got: %v", w)
+	}
+}
+
+// A sibling shares the NAME, never the role.
+//
+// The resend advice said the live sibling was "almost certainly who you meant",
+// which is right when you meant a person doing a job and wrong when you meant
+// an authority. Measured within an hour of the reclaim path shipping: an agent
+// needed a coordinator to approve an adoption, addressed the coordinator, found
+// it dormant, followed this advice to its live sibling, and asked an agent with
+// no role at all. It opened by telling that agent it held the role, because the
+// note had said so in everything but the word. Neither end could see that the
+// authority had been dropped in transit.
+func TestResendAdviceSaysWhenTheSiblingLacksTheRole(t *testing.T) {
+	s := NewState("n1", DefaultLimits())
+	reg(t, s, "boss", "tboss", t0)
+	reg(t, s, "sender", "ts", t0)
+	// A dormant coordinator, and a live sibling under the same name with no role.
+	s.Agents["boss"].Role = RoleCoordinator
+	s.Agents["boss"].Status = StatusDormant
+	s.Agents["boss-2"] = &Agent{
+		ID: "boss-2", Name: "boss", Status: StatusActive, Token: "tb2",
+		Slots: map[string]Slot{},
+	}
+
+	res := mustApply(t, s, &Op{
+		Kind: OpSendMessage, Token: "ts", To: "boss", MsgType: MsgRequest,
+		Body: "approve this adoption please",
+	}, t0)
+
+	note, _ := res["note"].(string)
+	if !strings.Contains(note, "boss-2") {
+		t.Fatalf("setup: the resend advice did not name the live sibling: %s", note)
+	}
+	if !strings.Contains(note, "does NOT") || !strings.Contains(note, "cannot act") {
+		t.Errorf("the advice sends an authority-seeking request to an agent with no "+
+			"role, without saying so. A sibling shares the name, not the role:\n%s", note)
+	}
+	if !strings.Contains(note, "human") {
+		t.Errorf("the advice names no reachable alternative, so the sender's only "+
+			"option is to ask somebody who cannot help:\n%s", note)
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/agenxy/dibs/internal/assets"
@@ -30,6 +31,18 @@ import (
 //
 //go:embed skills.md
 var skillsDoc string
+
+// staffDoc is what a role-holder needs and an ordinary agent does not, served
+// as dibs://staff.
+//
+// Separate from skills.md deliberately. Most agents never hold a role, and
+// putting the remediation powers in the document everybody reads on first
+// connection would spend the attention of the many on the concerns of the few.
+// It is referenced from the grant notice instead, which is the moment an agent
+// becomes able to use any of it.
+//
+//go:embed staff.md
+var staffDoc string
 
 //go:embed board_app.html
 var boardAppHTML string
@@ -336,7 +349,18 @@ func showBoardResult(res core.Result, detail, declaredUI bool) map[string]any {
 		// the MODEL, and what the host declares about rendering panels for the
 		// human has no bearing on whether the agent gets what it asked for.
 		if detail {
-			boot["board"] = fullMap
+			// REDACTED into the bootstrap, whole into `content`.
+			//
+			// `boot` is the panel's carrier, and a panel cached from an older
+			// build still contains the code that interpolates every body into
+			// ui/update-model-context. So putting the complete result here
+			// handed it back exactly what the redaction had just removed from
+			// _meta, and the claim that a cached panel cannot share what it was
+			// never given was false. The MODEL still gets the full detail it
+			// asked for: showBoardResult puts it in `content`, which is the
+			// agent's own private channel. Found by a pre-release review, on
+			// the fix for the same leak.
+			boot["board"] = redactBodies(fullMap)
 		}
 
 		// And on a host that says it renders panels, the BOARD goes with it.
@@ -363,7 +387,9 @@ func showBoardResult(res core.Result, detail, declaredUI bool) map[string]any {
 		// from _meta, so gating the payload itself starved it silently. Gating a
 		// duplicate cannot starve anyone.
 		if declaredUI {
-			for k, v := range payload {
+			// The same rule: this is the panel's copy. See the note above.
+			safe, _ := redactBodies(payload).(core.Result)
+			for k, v := range safe {
 				if _, taken := boot[k]; !taken {
 					boot[k] = v
 				}
@@ -415,7 +441,172 @@ func panelBootstrap(payload core.Result) core.Result {
 func panelMeta(payload core.Result) map[string]any {
 	return map[string]any{
 		"ui":             map[string]any{"resourceUri": uiBoardURI},
-		panelDataMetaKey: payload,
+		panelDataMetaKey: withoutBodies(payload),
+	}
+}
+
+// withoutBodies strips message text from the panel payload.
+//
+// The panel had been sharing every unread body with the host through
+// ui/update-model-context, which one host renders straight into the operator's
+// own composer. That was fixed in the panel, and the fix did not reach anybody:
+// MCP Apps templates are CACHED by the host against their ui:// URI, so a
+// session that loaded the panel yesterday keeps running yesterday's JavaScript
+// and keeps leaking. There is no way to invalidate that from here.
+//
+// So the bodies stop leaving the daemon. A cached panel cannot share what it
+// was never given, which makes this the only version of the fix that is true
+// today rather than after every client restarts.
+//
+// The panel does not lose the mail. It holds the caller's own token and calls
+// back over its own bridge, where results cannot enter model context at all;
+// that is the same route it already uses for board(detail:true). What changes
+// is that the body travels on the private path instead of the one the host is
+// entitled to redistribute.
+//
+// Serials, senders, types and states are kept: everything needed to render a
+// mailbox, decide what to open, and fetch it.
+func withoutBodies(payload core.Result) core.Result {
+	out, _ := redactBodies(payload).(core.Result)
+	if out == nil {
+		return core.Result{}
+	}
+	return out
+}
+
+// redactBodies walks the whole value and blanks every message body it finds,
+// whatever it is wrapped in.
+//
+// The first version matched two shapes, `inbox` and `messages` as a flat
+// []*core.Message, and the real payload is neither: check_in nests the mailbox
+// as inbox.messages, so the body went through untouched. An independent
+// reviewer found that by constructing the payload the server actually builds
+// rather than the one the test imagined.
+//
+// That is the fifth time this leak has been fixed and the second time the FIX
+// was shaped to the wrong data. So this stops matching shapes: it recurses, and
+// anything that is a Message gets blanked no matter where it sits. A new field
+// that happens to carry a mailbox is covered on the day it is added, which is
+// the only version of this guarantee that survives somebody restructuring a
+// result.
+func redactBodies(v any) any {
+	switch t := v.(type) {
+	case *core.Message:
+		if t == nil {
+			return t
+		}
+		// A copy: the original is the AGENT's own result, delivered over the
+		// connection it authenticated on, and it keeps its text.
+		c := *t
+		c.Body, c.Response = "", ""
+		return &c
+	case core.Message:
+		t.Body, t.Response = "", ""
+		return t
+	case []*core.Message:
+		out := make([]*core.Message, 0, len(t))
+		for _, m := range t {
+			out = append(out, redactBodies(m).(*core.Message))
+		}
+		return out
+	case core.Result:
+		out := core.Result{}
+		for k, val := range t {
+			out[k] = redactField(k, val)
+		}
+		return out
+	case map[string]any:
+		out := map[string]any{}
+		for k, val := range t {
+			out[k] = redactField(k, val)
+		}
+		return out
+	case []any:
+		out := make([]any, 0, len(t))
+		for _, val := range t {
+			out = append(out, redactBodies(val))
+		}
+		return out
+	default:
+		return redactAnyContainer(v)
+	}
+}
+
+// redactAnyContainer walks a slice or map this function has no case for.
+//
+// SIXTH TIME. The switch above says it "stops matching shapes: it recurses",
+// and it did not: it recursed into the shapes somebody had thought of. The
+// production panel builds its inbox as []map[string]any, which is not []any and
+// not a typed message slice, so it fell straight through to `return v` with
+// every body intact. The tests passed because they call this with typed
+// []*core.Message, which is the shape the fix was imagined against and not the
+// shape the code produces.
+//
+// So this handles containers by KIND rather than by type. A slice of anything
+// is walked; a map of anything is walked; whatever is inside reaches the cases
+// above and gets blanked if it is a message. A future result that nests
+// mailboxes inside some new struct-of-slices is covered without anybody
+// noticing it needs to be, which is the only version of this that has ever
+// survived a restructuring.
+//
+// Byte slices are returned untouched: []byte is a slice of uint8 and turning
+// one into a list of numbers would corrupt every blob and every encoded field
+// this ever meets.
+// redactField blanks a value by the NAME it is stored under, then recurses.
+//
+// The typed cases above only fire while a message is still a core.Message, and
+// by the time the panel copy is built it is not: panelPayload marshals the
+// result to plain JSON first, deliberately, so what reaches the redactor is a
+// map with a "body" key and no type at all. Every typed case therefore matched
+// nothing, and the bodies went out with the panel. That is the sixth time this
+// leak has been fixed and the third time the fix was written against the shape
+// the author pictured rather than the one the code builds.
+//
+// So the last line of defence is the field name, which survives normalisation
+// because it IS the normalised form. `withoutBodies` is the only caller and it
+// exists precisely to strip content from a copy that goes to everyone, so a
+// value stored under `body` or `response` anywhere inside it is content this
+// must not carry, whatever it is nested in.
+func redactField(key string, v any) any {
+	switch key {
+	case "body", "response":
+		if _, isString := v.(string); isString {
+			return ""
+		}
+	}
+	return redactBodies(v)
+}
+
+func redactAnyContainer(v any) any {
+	if v == nil {
+		return v
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Slice, reflect.Array:
+		if rv.Kind() == reflect.Slice && rv.IsNil() {
+			return v
+		}
+		if rv.Type().Elem().Kind() == reflect.Uint8 {
+			return v // []byte and friends
+		}
+		out := make([]any, 0, rv.Len())
+		for i := range rv.Len() {
+			out = append(out, redactBodies(rv.Index(i).Interface()))
+		}
+		return out
+	case reflect.Map:
+		if rv.IsNil() {
+			return v
+		}
+		out := map[string]any{}
+		for _, k := range rv.MapKeys() {
+			key := fmt.Sprint(k.Interface())
+			out[key] = redactField(key, rv.MapIndex(k).Interface())
+		}
+		return out
+	default:
+		return v
 	}
 }
 

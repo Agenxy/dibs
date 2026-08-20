@@ -153,6 +153,99 @@ Requirements:
   failure: it is what keeps people on old builds. Say plainly that the board is
   the ledger and a restart replays it.
 
+The requirements above are the CLIENT half, and they were the half that was
+built first. The OPERATOR half is the same requirement seen from the other side:
+an upgrade is a sequence with an order, and every way of getting it wrong is
+silent.
+
+- **A replacement must prove it can rebuild the board BEFORE anything is
+  stopped.** A rule added to `core.Apply` instead of `core.Admit` is
+  retroactive, and a retired op vocabulary does the same at a different layer:
+  either turns an upgrade into a board that will not open, discovered only once
+  the daemon that *could* serve it is gone. `dibd -check` replays without
+  serving, which makes it safe to run against a board another daemon is holding,
+  and it must run from the NEW binary: the CLI's own fold measures the wrong
+  build.
+- **A daemon must come back the way it was running.** Address above all: a fleet
+  spanning machines is bound to a LAN or tailnet address, and a restart onto the
+  default loopback takes every remote agent off the board while every local
+  check still passes.
+- **Nothing that can fail may run between the stop and the start.** Whatever is
+  checkable belongs above the stop. What cannot be moved there must leave the
+  daemon restarted on the build it was already running.
+- **An upgrade must touch only the service unit that serves THIS data
+  directory.** A machine may deliberately run isolated boards (SECURITY.md), and
+  "is there a Dibs service here" is a different question from "is there one for
+  this board".
+- **An upgrade must not require restarting the harnesses either.** A stdio
+  bridge is spawned once per session and held for its lifetime, so a new binary
+  reaches nothing already running: every bridge fix would otherwise be gated on
+  restarting every harness on the machine, which is the same ceremony this
+  requirement refuses for the daemon. The bridge replaces itself with
+  `syscall.Exec`, which keeps the pid and the file descriptors, so the harness's
+  pipes are untouched and from its side nothing happened. Only between a reply
+  and the next request, only when nothing is part-read, and carrying forward
+  everything an exec would otherwise discard: the handshake identity, and every
+  subscription, re-issued as the caller's own request.
+- **A service manager reporting success is not a daemon that is serving.** The
+  only proof is the board answering, so nothing downstream may treat a restart
+  as done before that: a start that returns cleanly and produces nothing is the
+  case the recovery exists for, and it is the case that disables it if the
+  ordering is wrong. Reload a unit before restarting it, unconditionally,
+  because the loaded definition drifts from the file in more ways than the one
+  we happened to cause.
+- **A diagnosis names a command, not a recipe.** `dibs doctor` found all of the
+  above and handed each back as shell steps whose ORDER was load-bearing and
+  unstated. A fix an operator can perform in the wrong order is a fix that will
+  eventually be performed in the wrong order.
+
+## R14: the bridge is the identity anchor, and the last hop is unattested
+
+Reported by `web-lead` on this board, and it is the most useful outside analysis
+Dibs has received. Its finding, verified in-tree: nonces are bearer secrets held
+as plain map keys, `pid` is client-supplied and taken on trust, the transport is
+`ListenAndServe` with no peer verification anywhere, and nothing persists a
+nonce agent-side, so for an LLM agent "remember it" means the context window,
+which means a transcript on disk, which means it is one compaction from gone.
+
+Their first proposal was a holder process to anchor identity. Their own
+follow-up deleted most of it: **the holder already exists.** The stdio bridge is
+spawned per client connection, is a real child of the harness, and its stdin is
+a pipe the harness owns, so who may write to it is enforced by the kernel rather
+than by convention. That is a stronger property than anything a new process
+would have provided, and Dibs already had it.
+
+The trust chain that follows:
+
+| hop | basis |
+|---|---|
+| agent → harness | soft; the harness runs the agent |
+| harness → bridge | **kernel**, pipe ownership |
+| bridge → daemon | **nothing** |
+
+Requirements:
+
+- **The bridge's lifetime must be bounded by its harness**, or the anchor is not
+  an anchor. Built: EOF plus a kernel parent-death bond (R12).
+- **The last hop is the whole remaining gap.** A unix socket with peer
+  attestation by audit token, not pid: pid reuse is real and Apple deprecated
+  pid-based checks. Holding the connection open makes liveness free and
+  revocation exact, with a TTL only as backstop.
+- **Granularity is per harness PROCESS, not per agent**, and must be described
+  that way. Two agents in one window share a bridge. "This window" is still a
+  unit a human can reason about in an approval prompt, and arguably a better one
+  than "this agent", which is a name anyone can type: Dibs' own argument about
+  `parent`.
+- **Agent identity stays cooperative, and SECURITY.md must say so plainly**
+  rather than implying otherwise. Two agents in one harness share a shell, so
+  anything one can execute the other can. No transport fixes that.
+- **A secrets broker MUST NOT ship before the attested hop**, or it is a vault
+  fronted by a bearer key in a log file.
+
+Not built. It is a security-critical transport change, and the honest sequence
+is to design it deliberately rather than append it to an evening that had
+already restarted this board four times.
+
 ## R13: a result must claim only what the server knows
 
 `board` appended "Shown to the human in the board panel." to every result. It

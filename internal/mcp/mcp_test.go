@@ -15,7 +15,9 @@ import (
 	"github.com/agenxy/dibs/internal/ledger"
 )
 
-//nolint:unparam // the CancelFunc is part of the constructor's contract
+// The CancelFunc used to be ignored by every caller, which is why this once
+// carried a nolint for unparam. The stdio-era tests actually stop their server,
+// so the suppression is gone rather than kept as decoration.
 func newServer(t *testing.T) (*httptest.Server, context.CancelFunc) {
 	t.Helper()
 	dir := t.TempDir()

@@ -37,7 +37,7 @@ func TestAMisnamedParameterIsNamed(t *testing.T) {
 		// An explicit null is not an answer.
 		{"ack_announcement", `{"token":"t","msg_serial":null}`, []string{"msg_serial"}},
 	} {
-		err := checkRequired(c.tool, json.RawMessage(c.args), "")
+		err := checkRequired(c.tool, json.RawMessage(c.args), "", "")
 		if err == nil {
 			t.Errorf("%s(%s): accepted a call missing a required parameter", c.tool, c.args)
 			continue
@@ -70,7 +70,7 @@ func TestValidCallsAreNotRejected(t *testing.T) {
 		{"hook_poll", `{"session_id":"","cwd":"/work","event":"Stop"}`, ""},
 		{"hook_poll", `{"session_id":"s1","event":"Stop"}`, ""},
 	} {
-		if err := checkRequired(c.tool, json.RawMessage(c.args), c.bearer); err != nil {
+		if err := checkRequired(c.tool, json.RawMessage(c.args), c.bearer, ""); err != nil {
 			t.Errorf("%s(%s) bearer=%q: rejected a valid call: %v", c.tool, c.args, c.bearer, err)
 		}
 	}
@@ -133,7 +133,7 @@ func TestShippedHooksSatisfyTheSchemasTheyCall(t *testing.T) {
 				seen++
 				// The bearer token is supplied by the host's MCP config, not by
 				// the hook, so hooks legitimately omit it.
-				if err := checkRequired(tool, args, "hook-supplied-token"); err != nil {
+				if err := checkRequired(tool, args, "hook-supplied-token", ""); err != nil {
 					t.Errorf("%s calls %s but the schema rejects it: %v", where, tool, err)
 				}
 				if _, known := knownParams[tool]; !known {
@@ -240,7 +240,7 @@ func TestAWellFormedCallWithAMisnamedFieldIsRefused(t *testing.T) {
 		{"update", `{"token":"t","desc":"x"}`, "desc"},
 		{"declare", `{"token":"t","text":"x","urgency":"high"}`, "urgency"},
 	} {
-		err := checkRequired(c.tool, []byte(c.args), "")
+		err := checkRequired(c.tool, []byte(c.args), "", "")
 		if err == nil {
 			t.Errorf("%s(%s) was accepted: a field the tool does not take was "+
 				"ignored and the caller told it succeeded", c.tool, c.args)
@@ -270,7 +270,7 @@ func TestValidCallsAreStillAccepted(t *testing.T) {
 		{"hook_poll", `{"token":"t","session_id":"s","event":"Stop"}`},
 		{"guard_path", `{"token":"t","session_id":"s","path":"/tmp/x"}`},
 	} {
-		if err := checkRequired(c.tool, []byte(c.args), ""); err != nil {
+		if err := checkRequired(c.tool, []byte(c.args), "", ""); err != nil {
 			t.Errorf("%s(%s) was refused: %v", c.tool, c.args, err)
 		}
 	}
@@ -378,5 +378,68 @@ func TestCommandHooksCannotBreakTheToolTheyDecorate(t *testing.T) {
 	if checked == 0 {
 		t.Error("no command hooks were examined: the walk is broken and this test " +
 			"would pass however dangerous the hooks became")
+	}
+}
+
+// The refusal should name the word this surface uses, when there is one.
+//
+// k7-b called close_space with `reason`, which is what it is called nearly
+// everywhere else, and was told only that `reason` is not accepted. The tool
+// does record why a space was closed; the parameter is `note`. The refusal was
+// correct and left them to guess, which is a hint that names the fault and not
+// the fix, and this repository's rule is that every error carries the
+// corrective call.
+//
+// Deliberately not an alias. Accepting both spellings would put two names for
+// one thing into a schema that is the ONLY documentation an agent has.
+func TestARefusalNamesTheParameterTheCallerMeant(t *testing.T) {
+	err := checkRequired("close_space", []byte(`{"token":"t","space":"s","reason":"done"}`), "", "")
+	if err == nil {
+		t.Fatal("close_space accepted an argument it does not declare")
+	}
+	if !strings.Contains(err.Error(), `"reason" is "note"`) {
+		t.Errorf("err = %v: it refuses without naming the word this tool uses", err)
+	}
+	// And a genuinely unknown argument is still just refused, with no invented
+	// suggestion: a wrong fix is worse than none.
+	err = checkRequired("close_space", []byte(`{"token":"t","space":"s","zzz":1}`), "", "")
+	if err == nil {
+		t.Fatal("an unknown argument was accepted")
+	}
+	if strings.Contains(err.Error(), " is ") {
+		t.Errorf("err = %v: it invented a suggestion for an argument with no counterpart", err)
+	}
+	// A synonym the tool does not have either must not be suggested: `note` is
+	// not a parameter of check_in, so nothing should be offered.
+	err = checkRequired("check_in", []byte(`{"token":"t","reason":"x"}`), "", "")
+	if err == nil {
+		t.Fatal("check_in accepted an argument it does not declare")
+	}
+	if strings.Contains(err.Error(), `is "note"`) {
+		t.Errorf("err = %v: it offered a parameter this tool does not take", err)
+	}
+}
+
+// An unknown argument sometimes means the caller wanted a different TOOL.
+//
+// k7-b called read_mail(agent:…) because read_mail reads like a lister when
+// `inbox` is the lister, and check_in(view:…) because `view` is real on `board`.
+// Both refusals were correct and neither said where to go. Renaming read_mail is
+// the deeper fix and breaks every installed plugin, so the surface stays and the
+// error carries the map.
+func TestARefusalNamesTheToolTheCallerWanted(t *testing.T) {
+	err := checkRequired("read_mail", []byte(`{"token":"t","agent":"k7-b"}`), "", "")
+	if err == nil {
+		t.Fatal("read_mail accepted an argument it does not declare")
+	}
+	if !strings.Contains(err.Error(), "inbox lists your mail") {
+		t.Errorf("err = %v: it refuses without naming the tool that does this", err)
+	}
+	err = checkRequired("check_in", []byte(`{"token":"t","view":"compact"}`), "", "")
+	if err == nil {
+		t.Fatal("check_in accepted an argument it does not declare")
+	}
+	if !strings.Contains(err.Error(), "board(view:") {
+		t.Errorf("err = %v: it does not say where `view` lives", err)
 	}
 }

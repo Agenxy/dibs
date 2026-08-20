@@ -18,7 +18,7 @@ Project-local `.pi/extensions/dibs.ts` works too. Both locations are
 auto-discovered and hot-reload with `/reload`.
 
 Nothing else to configure. The extension finds the daemon at `127.0.0.1:4777`
-and authenticates with `~/.agents/local.secret`. Override with `DIBS_ADDR` and
+and authenticates with `~/.dibs/local.secret`. Override with `DIBS_ADDR` and
 `DIBS_DIR`.
 
 ## The tool surface is fetched, not copied
@@ -27,10 +27,10 @@ At session start the extension calls `tools/list` against the running daemon and
 registers every tool it returns, passing the server's own JSON Schema straight
 through via `Type.Unsafe`.
 
-This matters more than it looks. A hand-written mirror of 25 tool definitions is
-a second source of truth for argument shapes the server already validates, and
-it is wrong the first time a tool changes. Fetching means `dibs` and this file
-cannot drift: add a tool to the server, and pi has it on next start.
+A hand-written mirror of 44 tool definitions is a second source of truth for
+argument shapes the server already validates, and it is wrong the first time a
+tool changes. Fetching means `dibs` and this file cannot drift: add a tool to
+the server, and pi has it on next start.
 
 If the daemon is not running, the extension registers **nothing**. A tool that
 always fails is worse than an absent one: the model will keep reaching for it.
@@ -100,8 +100,8 @@ success.
 reattaches to the same agent instead of forking a sibling whose mail is
 unreachable. With `--no-session` there is no session id, so the extension falls
 back to `pi-<pid>-<random>`: random-suffixed because a recycled PID would
-otherwise reattach a fresh agent onto a dead agent's agent and its mail.
+otherwise reattach a fresh session onto a dead agent and its mail.
 
-A *new* pi session is genuinely a new agent and correctly gets a new agent. For a
+A *new* pi session genuinely is new, and correctly gets a new agent. For a
 standing role that must keep one address across sessions, register with
 `kind: "persistent"` and a nonce, then reactivate with `resume`.
