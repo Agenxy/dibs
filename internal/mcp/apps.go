@@ -788,7 +788,7 @@ func boardRows(agents []any) string {
 		}
 		id, _ := m["id"].(string)
 		status, _ := m["status"].(string)
-		what := "—"
+		what := "(nothing declared)"
 		if slots, _ := m["slots"].([]any); len(slots) > 0 {
 			if s0, ok := slots[0].(map[string]any); ok {
 				if t, _ := s0["text"].(string); t != "" {

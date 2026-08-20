@@ -5,6 +5,75 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Acting on an independent operator evaluation of v0.0.6, which ran Dibs across two
+machines for real work. Their priority order, not ours.
+
+### Added
+
+- **The multi-machine board is documented and has a command.** Everything needed
+  for a real-time fleet board already shipped; the operator who runs Dibs for
+  that reason nearly gave up on it. `dibs mcp-config --board <addr>` prints the
+  join config for another machine's board: the data directory, the secret copy,
+  the ssh forward, and the config for both harnesses. `README.md` gains a second
+  machine section.
+
+  The recipe was in the binary all along and unreachable: it printed only inside
+  the TLS branch, so a plaintext loopback daemon (every fresh install) never
+  showed it. It prints unconditionally now.
+
+  The **ssh forward is named as a supported transport**. A loopback daemon is
+  unreachable from another host and the documented answer was a routable TLS
+  endpoint, which excludes the corporate and lab networks full of hosts that will
+  never have one. The forward always worked, because the bridge only ever talks
+  to an address, and it is the better shape: the daemon never leaves loopback.
+  With it, a paragraph on choosing the hub, since that choice decides whether the
+  fleet has a board at all and the laptop is the tempting wrong answer.
+
+### Changed
+
+- **The transport advice for another machine was backwards.** "Use the url form
+  only from ANOTHER machine" sent operators to a url client for the case where a
+  forked identity costs most: a remote session is the long-lived unattended one.
+  The url form is now scoped to a client that cannot run a process at all, here
+  and in the codex and chatgpt-desktop plugin READMEs.
+
+- **`register` documents both of its continuity paths.** It returns `resumed`
+  when the agent was still active and this was a retry, and `reattached` when it
+  had stopped and the nonce recovered it. The description named only the second,
+  so an integrator testing the obvious way lands on the first, sees neither the
+  documented key nor an explanation, and concludes identity continuity is broken.
+  Both are named now, with the token rotation on reattach: a client that cached
+  the old token is holding a dead one. Paid for inside the tools/list budget
+  rather than by raising it.
+
+- **The install nudge no longer repeats on every register.** Only `reattached`
+  suppressed it, so a still-active agent re-registering with its nonce came back
+  `resumed`, was treated as a first connection, and read the four-sentence
+  paragraph again every time.
+
+### Fixed
+
+- **An agent on a terminal host could not show the board it was reading.**
+  `board` renders to an MCP Apps panel, and a host that renders none fell back to
+  one line, "3 agent(s), 1 active", while `dibs board` on the same machine
+  printed the board. The fallback is now the board itself, bounded at 20 rows.
+  Only where no panel is declared: on a panel host the human is already looking
+  at it.
+
+- **`doctor` called a joined board a corrupt ledger.** A data directory that
+  joins another machine's board holds a credential; the ledger is on the hub. It
+  reported "ledger does not verify ... do NOT delete it, open an issue", a
+  data-loss emergency raised against a healthy join, at the operator least able
+  to tell it was spurious. Found by following the new join recipe end to end.
+
+- **`dibs configure --service` could not install on a fresh machine.** It wrote
+  the unit without creating the data directory the unit names, so the service
+  failed at start with nothing pointing at the cause.
+
+- **`doctor` reported a configured suggest-only matcher as a warning**, so a
+  deliberate `join_threshold = 0` looked like a fault on every run.
+
+
 ## [0.0.6] - 2026-08-20
 
 ### Security

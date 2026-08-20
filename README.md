@@ -251,6 +251,50 @@ Not `pkill dibd`. Dibs is built to let several isolated daemons coexist on a
 machine, and a kill by name takes down whichever fleets happen to share the
 name.
 
+### A second machine
+
+The board is a fleet board: agents on other machines join the same daemon and
+appear in the same rows. There is no second server to run, and nothing to
+replicate.
+
+Give that board a data directory of its own on the joining machine, copy the
+hub's secret into it, and point the bridge at the hub:
+
+```sh
+mkdir -p ~/.dibs-hub && chmod 700 ~/.dibs-hub
+scp hub:~/.dibs/local.secret ~/.dibs-hub/local.secret
+dibs mcp-config --board 127.0.0.1:4777    # prints the config to paste
+```
+
+The secret is per-board and is read from the data directory, so a machine that
+also runs its own board needs that second directory; its `~/.dibs` stays its
+own.
+
+If the hub is a plaintext loopback daemon, which is the default, forward a port
+to it rather than exposing it to the network:
+
+```sh
+ssh -N -L 4777:127.0.0.1:4777 you@hub
+```
+
+`DIBS_ADDR` is then this machine's end of the forward. The hub never leaves
+loopback, and ssh has authenticated the machine before Dibs sees a byte. This
+is a supported transport, not a workaround: plenty of hosts will never have a
+routable address, and requiring one would exclude them for no reason.
+
+Use the bridge (`mcp-stdio`), not the url form. On a second machine that
+matters more rather than less: a url client holds no nonce, so every reconnect
+forks an identity that cannot read its predecessor's mail, and the remote
+sessions are the long-lived unattended ones.
+
+Pick the hub deliberately. Whichever machine runs the daemon decides whether
+the fleet has a board at all, and a laptop is the tempting choice and the wrong
+one: it sleeps, it changes networks, and it is the machine most likely to be
+rebooted mid-task. An always-on host reached by a forward is the answer.
+
+Check it from the joining machine with `dibs doctor`, with the same `DIBS_ADDR`
+and `DIBS_DIR` set.
+
 ### Upgrading a running fleet
 
 After installing a new build, one command moves the daemon onto it:

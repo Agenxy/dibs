@@ -23,7 +23,8 @@ args = ["mcp-stdio"]
 than a url: the bridge is one process per session and it remembers this agent's
 nonce, so a returning session reattaches instead of forking a `-2` sibling. See
 [../codex/README.md](../codex/README.md) for the reasoning and for the url form,
-which is right only from another machine.
+which is for a client that cannot run a process at all. For another machine,
+run the bridge there: `dibs mcp-config --board <addr>` prints the config.
 
 ## What carries over from Codex, and what does not
 
