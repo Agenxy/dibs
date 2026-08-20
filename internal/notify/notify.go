@@ -32,6 +32,7 @@
 package notify
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -297,9 +298,27 @@ func run(script string, args ...string) (string, error) {
 		// A dismissed dialog exits non-zero, which is an answer rather than a
 		// fault: "the human said no" and "the machine could not ask" must not
 		// look the same to the caller.
+		//
+		// THE PART THAT WAS MISSING: so does osascript failing outright. No GUI
+		// session, automation permission refused, a script error, the binary
+		// gone: every one of those is an ExitError too, and every one of them
+		// came back as ("", nil), which the caller reads as a person choosing
+		// not to answer. The agent then waits out its deadline against a dialog
+		// that was never drawn, and nothing anywhere says so. That is the exact
+		// failure this file was written to remove, surviving in the branch that
+		// exists to remove it. Found by a pre-release review, one path along
+		// from the same defect in askInAWindow.
+		//
+		// A cancel is AppleScript error -128, and osascript writes it to stderr.
+		// Anything else is the machine failing, not the person declining.
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
-			return "", nil
+			if bytes.Contains(ee.Stderr, []byte("-128")) ||
+				bytes.Contains(bytes.ToLower(ee.Stderr), []byte("user canceled")) {
+				return "", nil // a person, declining
+			}
+			return "", fmt.Errorf("%w: osascript failed rather than being dismissed: %s",
+				ErrNoAnswer, strings.TrimSpace(string(ee.Stderr)))
 		}
 		return "", err
 	}

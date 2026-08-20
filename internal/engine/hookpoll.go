@@ -64,7 +64,7 @@ func (e *Engine) HookPoll(ctx context.Context, sessionID, event, cwd string, sto
 			return unresolvedSession(e.reattachHint(sessionID, cwd), event)
 		}
 		mail := e.pendingMail(l.ID)
-		announced := e.dueAnnouncements(l.ID, time.Now())
+		announced, announceKeys := e.dueAnnouncements(l.ID, time.Now())
 		// Things done TO this agent that it cannot have inferred: admitted by a
 		// director, promoted from a queue, evicted. Silent until now: an agent
 		// told "awaiting_director" had no way to learn the wait had ended.
@@ -174,6 +174,7 @@ func (e *Engine) HookPoll(ctx context.Context, sessionID, event, cwd string, sto
 			// probe for it used, so the probe passed while a spoofed Stop still
 			// worked.
 			e.markWoken(wake, now)
+			e.markAnnounced(announceKeys, now)
 			out["hookSpecificOutput"] = map[string]any{
 				"hookEventName":     event,
 				"additionalContext": strings.TrimRight(hookDigest(l.ID, mail, announced, notices), "\n"),
@@ -265,21 +266,27 @@ func (e *Engine) pendingMail(agent string) []string {
 }
 
 // dueAnnouncements lists unacknowledged announcements that are due for another
-// showing, and records that they were shown.
+// showing, WITHOUT recording that they were shown. markAnnounced does that.
 //
 // Throttled to AnnounceRetry. Without it the reminder rides EVERY hook the
 // harness fires, for a busy agent, every turn, and an announcement repeated
 // every turn is indistinguishable from a stuck loop. Repeating it is the point;
 // repeating it constantly destroys the signal that makes it worth reading.
-func (e *Engine) dueAnnouncements(agent string, now time.Time) []string {
-	var out []string
+//
+// THE BUDGET THIS STOPPED SPENDING. It recorded the send here, and HookPoll
+// calls it long before deliverToModel decides whether this event may carry
+// anything. UserPromptSubmit never delivers; Stop with stop_hook_active never
+// delivers; WakeNone never delivers. Each of those still burned a retry, and
+// five spaced-out non-delivering polls exhaust the budget, after which the
+// sweep marks the announcement unacked and it drops out of the open-announcement
+// pull path having never once been shown to the agent. The same split the wake
+// path already needed, found in the same review, one function along.
+func (e *Engine) dueAnnouncements(agent string, now time.Time) (out []string, keys []string) {
 	for _, a := range e.state.Unacked(agent) {
 		key := agent + "\x00" + strconv.FormatUint(a.Serial, 10)
 		if last, ok := e.announceSent[key]; ok && now.Sub(last) < AnnounceRetry {
 			continue
 		}
-		e.announceSent[key] = now
-		e.announceTries[key]++
 		// Same rule as pendingMail: an unauthenticated caller learns THAT
 		// something is owed, never what it says. An announcement is broadcast
 		// to a space's members, not to whoever can name that agent's session id.
@@ -288,10 +295,11 @@ func (e *Engine) dueAnnouncements(agent string, now time.Time) []string {
 		// structure to the human and not to the model: a reviewing agent hit
 		// exactly this and could not reach the body it was being told to read.
 		// read_space is unambiguous: one agent, its announcements, nothing else.
+		keys = append(keys, key)
 		out = append(out, fmt.Sprintf("#%d in agent %q from %q: read it with read_space(%q), "+
 			"then acknowledge with ack_announcement(%d)", a.Serial, a.Space, a.From, a.Space, a.Serial))
 	}
-	return out
+	return out, keys
 }
 
 // hookDigest writes what the model will actually read.
@@ -681,4 +689,13 @@ func unresolvedSession(hint, event string) core.Result {
 	return core.Result{"hookSpecificOutput": map[string]any{
 		"hookEventName": hookEvent(event), "additionalContext": hint,
 	}}
+}
+
+// markAnnounced records that these announcements were shown, and spends one
+// retry each. Called only where a digest was really delivered.
+func (e *Engine) markAnnounced(keys []string, now time.Time) {
+	for _, k := range keys {
+		e.announceSent[k] = now
+		e.announceTries[k]++
+	}
 }

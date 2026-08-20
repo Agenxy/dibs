@@ -15,6 +15,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/agenxy/dibs/internal/assets"
@@ -498,19 +499,97 @@ func redactBodies(v any) any {
 	case core.Result:
 		out := core.Result{}
 		for k, val := range t {
-			out[k] = redactBodies(val)
+			out[k] = redactField(k, val)
 		}
 		return out
 	case map[string]any:
 		out := map[string]any{}
 		for k, val := range t {
-			out[k] = redactBodies(val)
+			out[k] = redactField(k, val)
 		}
 		return out
 	case []any:
 		out := make([]any, 0, len(t))
 		for _, val := range t {
 			out = append(out, redactBodies(val))
+		}
+		return out
+	default:
+		return redactAnyContainer(v)
+	}
+}
+
+// redactAnyContainer walks a slice or map this function has no case for.
+//
+// SIXTH TIME. The switch above says it "stops matching shapes: it recurses",
+// and it did not: it recursed into the shapes somebody had thought of. The
+// production panel builds its inbox as []map[string]any, which is not []any and
+// not a typed message slice, so it fell straight through to `return v` with
+// every body intact. The tests passed because they call this with typed
+// []*core.Message, which is the shape the fix was imagined against and not the
+// shape the code produces.
+//
+// So this handles containers by KIND rather than by type. A slice of anything
+// is walked; a map of anything is walked; whatever is inside reaches the cases
+// above and gets blanked if it is a message. A future result that nests
+// mailboxes inside some new struct-of-slices is covered without anybody
+// noticing it needs to be, which is the only version of this that has ever
+// survived a restructuring.
+//
+// Byte slices are returned untouched: []byte is a slice of uint8 and turning
+// one into a list of numbers would corrupt every blob and every encoded field
+// this ever meets.
+// redactField blanks a value by the NAME it is stored under, then recurses.
+//
+// The typed cases above only fire while a message is still a core.Message, and
+// by the time the panel copy is built it is not: panelPayload marshals the
+// result to plain JSON first, deliberately, so what reaches the redactor is a
+// map with a "body" key and no type at all. Every typed case therefore matched
+// nothing, and the bodies went out with the panel. That is the sixth time this
+// leak has been fixed and the third time the fix was written against the shape
+// the author pictured rather than the one the code builds.
+//
+// So the last line of defence is the field name, which survives normalisation
+// because it IS the normalised form. `withoutBodies` is the only caller and it
+// exists precisely to strip content from a copy that goes to everyone, so a
+// value stored under `body` or `response` anywhere inside it is content this
+// must not carry, whatever it is nested in.
+func redactField(key string, v any) any {
+	switch key {
+	case "body", "response":
+		if _, isString := v.(string); isString {
+			return ""
+		}
+	}
+	return redactBodies(v)
+}
+
+func redactAnyContainer(v any) any {
+	if v == nil {
+		return v
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Slice, reflect.Array:
+		if rv.Kind() == reflect.Slice && rv.IsNil() {
+			return v
+		}
+		if rv.Type().Elem().Kind() == reflect.Uint8 {
+			return v // []byte and friends
+		}
+		out := make([]any, 0, rv.Len())
+		for i := range rv.Len() {
+			out = append(out, redactBodies(rv.Index(i).Interface()))
+		}
+		return out
+	case reflect.Map:
+		if rv.IsNil() {
+			return v
+		}
+		out := map[string]any{}
+		for _, k := range rv.MapKeys() {
+			key := fmt.Sprint(k.Interface())
+			out[key] = redactField(key, rv.MapIndex(k).Interface())
 		}
 		return out
 	default:

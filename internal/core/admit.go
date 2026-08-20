@@ -70,6 +70,28 @@ func Admit(op *Op, lim Limits) error {
 	if err := boundStrings(lim.MaxNameBytes, "choices", op.Choices); err != nil {
 		return err
 	}
+	// "Later" is the daemon's own way out, and cannot also be an answer.
+	//
+	// Up to three choices become the notification's buttons verbatim, and the
+	// engine treats a press equal to its deferral label as "no answer yet". So
+	// a question offering ["Now", "Later"] rendered both, and pressing the
+	// stated answer recorded nothing: the operator answered, the asker went on
+	// waiting, and no layer reported anything wrong. Found by a pre-release
+	// review.
+	//
+	// Refused at ingress rather than renamed at the button, because the sender
+	// chose that word and showing them something else is its own quiet lie. The
+	// hint says what to write instead. Case-insensitive: the collision is what
+	// the person reads, not what the byte comparison happens to match.
+	for _, c := range op.Choices {
+		if strings.EqualFold(strings.TrimSpace(c), "later") {
+			return errf("E_BAD_ARG",
+				`pick another word: "Defer", "Not now", "Ask again" all work. `+
+					`"Later" is the button Dibs adds itself for "no answer yet", so an `+
+					`answer with that label would be recorded as no answer at all`,
+				`"Later" is reserved: it is the deferral Dibs offers on every question`)
+		}
+	}
 	if a := op.Agent; a != nil {
 		for field, v := range map[string]string{
 			"agent.harness": a.Harness, "agent.version": a.Version,

@@ -823,6 +823,19 @@ branch and never shipped.
   own agent: the sender cannot tell it came from a notification rather than a
   tool call, which is the point.
 
+- **Dibs.app is built by an install from source, not shipped in the archives.**
+  Said here because the two entries around this one promise banner buttons and a
+  named sender, and a `brew install` or a downloaded archive gets neither: they
+  carry `dibs` and `dibd` only. Notifications still arrive; they arrive without
+  the actions and under the poster's borrowed identity.
+
+  It is not an oversight in the release build. macOS remembers notification
+  authorisation against the SIGNATURE, and the identity Dibs signs with is
+  created on the operator's own machine by `task install`. A bundle signed in CI
+  would be ad-hoc, which means a different application to macOS on every build,
+  which revokes the grant every time: worse than not shipping one. `task install`
+  builds it, signs it with your identity, and the grant then survives rebuilds.
+
 - **Dibs.app**, because a notification carries the identity of whoever posts it.
   A daemon shelling out to `osascript` borrows Script Editor's name and icon, so
   every message from an agent arrived branded "osascript"; there is no flag that

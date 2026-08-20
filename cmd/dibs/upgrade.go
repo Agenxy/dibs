@@ -290,17 +290,26 @@ func (p *plan) cutover() error {
 		// build back needs one to put back, which means keeping a copy across
 		// the replacement, and that is a change to how upgrade installs rather
 		// than a wording fix.
-		fmt.Fprintf(os.Stderr, "\n%s the daemon is serving again from %s on %s. This is "+
-			"the NEW build, not a rollback: the board is intact, but if the failure "+
-			"above was the new build itself, install the previous one before relying "+
-			"on it.\n", ui.Bold("recovered:"), recoverDir, filepath.Base(p.installed))
+		// "started", not "serving". startDaemon schedules or launches a process
+		// and verifies no board, so claiming the board is back is a claim this
+		// code cannot make. `dibs doctor` is what answers it.
+		fmt.Fprintf(os.Stderr, "\n%s the daemon was started again from %s on %s. This "+
+			"is the NEW build, not a rollback, and a start is not a serving board: "+
+			"run `dibs doctor` to confirm. If the failure above was the new build "+
+			"itself, install the previous one before relying on it.\n",
+			ui.Bold("recovered:"), recoverDir, filepath.Base(p.installed))
 	}()
 
+	// The directory FIRST, then the error. reconcile reports where the data
+	// directory is now whether or not it finished, because the recovery below
+	// has to start a daemon against something that exists.
 	newDir, err := p.reconcile()
+	if newDir != "" {
+		recoverDir = newDir
+	}
 	if err != nil {
 		return err
 	}
-	recoverDir = newDir
 
 	step("starting " + filepath.Base(p.installed))
 	if err := startDaemon(p.installed, newDir, p.unit, p.running); err != nil {
@@ -336,7 +345,7 @@ func (p *plan) reconcile() (newDir string, err error) {
 			// daemon was restarted" is two contradictory sentences in one
 			// result, and the first one loses a fleet if believed. Measured:
 			// this pair printed together on the first recovery test.
-			return "", fmt.Errorf("could not move %s to %s, so the directory is "+
+			return newDir, fmt.Errorf("could not move %s to %s, so the directory is "+
 				"untouched and nothing was adopted: %w", p.inherited, target, err)
 		}
 		newDir = target
@@ -352,12 +361,19 @@ func (p *plan) reconcile() (newDir string, err error) {
 	}
 	step("rewriting " + filepath.Base(p.unit))
 	if err := os.Setenv("DIBS_DIR", newDir); err != nil {
-		return "", err
+		return newDir, err
 	}
 	replaceUnits = true
 	defer func() { replaceUnits = false }()
 	if err := writeServiceUnit(); err != nil {
-		return "", fmt.Errorf("could not rewrite %s, so the service still pins %s: %w",
+		// newDir, NOT "". By here the directory may already have MOVED, and the
+		// caller's recovery starts a daemon against whatever this reports. It
+		// returned "" and the recovery then pointed at the vanished original,
+		// which is the one moment in an upgrade when there is no board at all.
+		// The failure is real (a legacy unit blocks the rewrite, which is
+		// exactly the installation --adopt-dir exists to migrate), so this path
+		// is reached by ordinary use rather than by accident.
+		return newDir, fmt.Errorf("could not rewrite %s, so the service still pins %s: %w",
 			p.unit, p.pinned, err)
 	}
 	return newDir, nil

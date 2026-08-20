@@ -436,11 +436,27 @@ func dedupKey(agent, id string) string { return agent + "\x00" + id }
 //
 // Found by an independent review before release. The rule: if it reaches the
 // Message, it belongs here.
+// COUNTS AND ALL THE FIELDS, because a flat list of strings is ambiguous.
+//
+// The lists were appended one after another with nothing saying where one ended
+// and the next began, so these two different messages digested identically:
+//
+//	choices ["x", "", "/tmp/a", ""]  with no attachments
+//	choices ["x"]                    with attachment {path: "/tmp/a"}
+//
+// The second retry is then answered ok:true, deduplicated:true, and what is
+// stored is the first: one message offering four answers, the other offering one
+// answer and a file. Size and Mime were missing outright, so two attachments
+// differing only in what they claim to be were the same message here.
+//
+// Lengths first, every field included. Found by a pre-release review.
 func sendDigest(op *Op) string {
 	parts := []string{op.To, op.MsgType, op.Body, itoa(op.DeadlineSec), op.Grant, op.Adopt}
+	parts = append(parts, itoa(len(op.Choices)))
 	parts = append(parts, op.Choices...)
+	parts = append(parts, itoa(len(op.Attachments)))
 	for _, a := range op.Attachments {
-		parts = append(parts, a.Blob, a.Path, a.Hash)
+		parts = append(parts, a.Blob, a.Path, a.Hash, a.Mime, itoa(int(a.Size)))
 	}
 	return digestOf(parts...)
 }
@@ -1882,6 +1898,17 @@ func (s *State) applyAdoptAgent(op *Op, l *Agent, now time.Time) (Result, []Even
 		m.To = into.ID
 		moved++
 	}
+	// The actor's durable checkpoint, which the common path sets and this one
+	// returns before reaching.
+	//
+	// Adoption returns straight out of the dispatcher, so it misses
+	// `l.LastCoordination = now` along with everything else after that point.
+	// The engine's derived `seen` map hides it while the daemon runs, and that
+	// map is deliberately not replayable: restart, and the adopter is judged
+	// against whatever checkpoint it had BEFORE performing a ledgered
+	// operation, so an active agent that has just done something can be swept
+	// stale immediately. Found by a pre-release review.
+	l.LastCoordination = now
 	evs := []Event{{
 		Type: "agent.updated", Agent: into.ID,
 		Data: map[string]any{"adopted_from": from.ID, "messages": moved},

@@ -63,8 +63,27 @@ type Fault struct {
 const repoURL = "https://github.com/agenxy/dibs"
 
 type faultState struct {
+	// mu guards seen, flushing and pending: the bookkeeping the writer loop
+	// touches on every tick through flushFaults.
 	mu   sync.Mutex
 	seen map[string]bool
+
+	// idMu guards nothing but the identity mint below, and is separate from mu
+	// for a reason worth stating.
+	//
+	// dibsAgent holds a lock across e.Do, which waits for the writer loop. When
+	// that lock was mu, the loop's own tick entered flushFaults and blocked
+	// acquiring it: the reporting goroutine waited for the writer, the writer
+	// waited for the reporting goroutine's mutex, and the only receiver of
+	// e.ops was gone. A bounded context makes that a multi-second freeze of the
+	// whole board; an unbounded one makes it permanent.
+	//
+	// I introduced the cycle by putting flushFaults on the loop. Two mutexes,
+	// because the two things genuinely are separate: one is a cached identity,
+	// the other is what has been reported. Found by a pre-release review, and it
+	// is the third instance of this shape from me in as many days: anything the
+	// loop calls must not wait for anything the loop is needed to finish.
+	idMu sync.Mutex
 	// flushing guards the off-loop delivery below, so a sweep every second does
 	// not pile up goroutines all trying to deliver the same held faults.
 	flushing bool
@@ -190,8 +209,9 @@ func dibsNonce() string { return "system:dibs" }
 // not carry a row for the thing that reports what goes wrong. Same rule as the
 // human's identity, and the same reason.
 func (e *Engine) dibsAgent(ctx context.Context) (agent, token string, err error) {
-	e.faults.mu.Lock()
-	defer e.faults.mu.Unlock()
+	// idMu, never mu: this holds a lock across e.Do. See faultState.idMu.
+	e.faults.idMu.Lock()
+	defer e.faults.idMu.Unlock()
 	res, err := e.Do(ctx, &core.Op{
 		Kind: core.OpRegister, Name: dibsName,
 		Description: "Dibs itself, reporting faults it found in its own operation",
