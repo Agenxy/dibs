@@ -416,12 +416,27 @@ function drawPanes() {
     </div>` + (state.messages.length
     ? state.messages.map((m) => {
         const forMe = me && m.to === me && !Board.TERMINAL.has(m.state)
-        return Board.messageHTML(m, { selfId: me }) + (forMe ? `
+        // A REQUEST is approved or denied, never answered.
+        //
+        // Every open message got the same `answer` button, and core refuses
+        // that disposition for a request, so the operator could read a
+        // coordinator grant or a mailbox adoption on their own authenticated
+        // board and had no way to act on it. The desktop notification was the
+        // only working approval surface, and this board is what it falls back
+        // to when notifications cannot be raised. Found by a pre-release
+        // review.
+        const isRequest = m.type === "request"
+        return Board.messageHTML(m, { selfId: me }) + (forMe ? (isRequest ? `
+          <div class="compose reply" data-serial="${m.serial}">
+            <input type="text" placeholder="why (optional)…" aria-label="reason">
+            <button class="act approve">approve</button>
+            <button class="act deny">deny</button>
+          </div>` : `
           <div class="compose reply" data-serial="${m.serial}">
             <input type="text" placeholder="reply to ${Board.esc(m.from)}…" aria-label="reply">
             <button class="act respond">answer</button>
             <button class="act ackmsg" data-why="acknowledge without answering">ack<span class="sr-only">: acknowledge without answering</span></button>
-          </div>` : "")
+          </div>`) : "")
       }).join("")
     : Board.emptyHTML("No mail", "Messages between agents appear here as they are sent."))
 
@@ -591,6 +606,16 @@ document.addEventListener("click", async (ev) => {
     if (await act("send", { to, body, type }, btn)) {
       document.getElementById("msg-body").value = ""
       flash("sent to " + to)
+    }
+  } else if (btn.classList.contains("approve") || btn.classList.contains("deny")) {
+    // A reason is optional here, deliberately: an approval that requires an
+    // essay is an approval somebody puts off, and denial already carries one
+    // by convention rather than by rule.
+    const disposition = btn.classList.contains("approve") ? "approve" : "deny"
+    const body = input?.value.trim() || ""
+    if (await act("respond", { serial, body, disposition }, btn)) {
+      if (input) input.value = ""
+      flash(disposition === "approve" ? "approved" : "denied")
     }
   } else if (btn.classList.contains("respond")) {
     const body = input?.value.trim()

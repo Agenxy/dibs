@@ -361,6 +361,29 @@ const Board = (() => {
     return `${(n / (1024 * 1024)).toFixed(1)} MB`
   }
 
+  // What approving this message WOULD DO, stated by the card rather than left
+  // in the sender's prose.
+  //
+  // A request may carry `grant` (a role) or `adopt` (somebody's mailbox), and
+  // approving it performs that. The card rendered only the body, which the
+  // SENDER writes, so a human reading their own board saw "just need to check
+  // something" and no indication that pressing approve would promote the asker
+  // or move a dormant agent's mail onto it. The notification has said this for
+  // a while; the board had not. Found by a pre-release review.
+  function effectHTML(m) {
+    const bits = []
+    if (m.grant) {
+      bits.push(`approving makes <strong>${esc(m.from)}</strong> ` +
+        `<strong>${esc(m.grant)}</strong>`)
+    }
+    if (m.adopt) {
+      bits.push(`approving moves <strong>${esc(m.adopt)}</strong>'s mailbox to ` +
+        `<strong>${esc(m.from)}</strong>`)
+    }
+    if (!bits.length) return ""
+    return `<p class="effect"><span class="pill attn">effect</span> ${bits.join("; ")}</p>`
+  }
+
   function messageHTML(m, { selfId = null, actionsHTML = null } = {}) {
     const t = m.type || "notify"
     // `response` is a STRING; an earlier version read `.body` / `.disposition`
@@ -379,7 +402,7 @@ const Board = (() => {
     const who = (id) =>
       `<span class="who${selfId != null && id === selfId ? " focal" : ""}">${esc(id || ", ")}</span>`
     return `
-      <article class="msg ${settled ? "" : "open"}${overdue ? " overdue" : ""}">
+      <article class="msg ${settled ? "" : "open"}${overdue ? " overdue" : ""}" data-serial="${esc(String(m.serial))}">
         <div class="msg-head">
           <span class="serial">#${esc(m.serial ?? "")}</span>
           <span class="kind ${esc(t)}">${esc(t)}</span>
@@ -389,6 +412,7 @@ const Board = (() => {
           ${who(m.from)}<span class="wire"></span><span class="arrow">▶</span>${who(m.to)}
         </div>
         <p class="body">${esc(m.body)}</p>
+        ${effectHTML(m)}
         ${attachmentsHTML(m.attachments)}
         ${settled ? `<div class="reply ${esc(m.state)}">
           <span class="verdict">${esc(verdict)}</span>

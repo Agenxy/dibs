@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -62,8 +63,35 @@ func TestAFaultFoundBeforeAnybodyArrivedIsStillDelivered(t *testing.T) {
 
 	e.faults.mu.Lock()
 	stillHeld := len(e.faults.pending)
+	delivered := e.faults.seen["notify-unreachable"]
 	e.faults.mu.Unlock()
 	if stillHeld != 0 {
 		t.Errorf("the fault is still held with a coordinator on the board: %d", stillHeld)
+	}
+
+	// DELIVERY, not merely an empty queue.
+	//
+	// This asserted only that `pending` emptied, which deleting the ReportFault
+	// call entirely would also satisfy, and so would every delivery failing.
+	// The queue draining is the thing that happens either way; the mail arriving
+	// is the thing this feature is for. A pre-release review made exactly that
+	// point.
+	if !delivered {
+		t.Error("the fault was dropped from the queue without being marked delivered")
+	}
+	inbox := e.state.Inbox(id)
+	if len(inbox) == 0 {
+		t.Fatal("the coordinator's inbox is empty: the held fault was removed from " +
+			"the queue and never arrived, which is the silence this whole path exists " +
+			"to end")
+	}
+	var found bool
+	for _, m := range inbox {
+		if strings.Contains(m.Body, "cannot reach the person") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the coordinator has %d messages and none is the held fault", len(inbox))
 	}
 }

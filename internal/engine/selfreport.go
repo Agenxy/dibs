@@ -410,5 +410,21 @@ func (e *Engine) deliverHeldFaults() {
 	defer cancel()
 	for _, f := range held {
 		e.ReportFault(ctx, f)
+		// RE-HELD if it did not land. ReportFault marks a kind seen only on
+		// delivery, so the absence of that flag is the reliable signal that this
+		// one is still owed.
+		//
+		// The held list was emptied before delivery and never refilled, so a
+		// full mailbox, a timeout, or a transient failure to mint the reporting
+		// identity lost a one-shot startup reachability report for the life of
+		// the daemon. Holding faults exists precisely because the first attempt
+		// can fail; dropping them on the second is the same bug one layer in.
+		// Found by a pre-release review.
+		e.faults.mu.Lock()
+		delivered := e.faults.seen[f.Kind]
+		if !delivered {
+			e.faults.pending = append(e.faults.pending, f)
+		}
+		e.faults.mu.Unlock()
 	}
 }

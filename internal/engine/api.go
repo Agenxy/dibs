@@ -438,3 +438,25 @@ func (e *Engine) CallerName(ctx context.Context, token string) string {
 		return name
 	}
 }
+
+// HasCoordinator answers whether any agent holds the coordinator role.
+//
+// Read THROUGH the loop, which is the whole reason it exists. Startup called
+// core.State.HasCoordinator directly on the state it had just handed the
+// engine, and that method iterates State.Agents while the writer mutates it:
+// the reachability goroutine started a few lines above can register the `dibs`
+// agent at the same moment, and a concurrent map iteration and write terminates
+// the process. On a board with rows in it and a machine that cannot notify,
+// that is a daemon which dies during boot. Found by a pre-release review.
+func (e *Engine) HasCoordinator(ctx context.Context) bool {
+	res, err := e.query(ctx, func() core.Result {
+		return core.Result{"has": e.state.HasCoordinator()}
+	})
+	if err != nil {
+		// Offering a claim nobody needs is harmless; withholding one that is
+		// needed leaves a board no agent can administer. Fail toward offering.
+		return false
+	}
+	has, _ := res["has"].(bool)
+	return has
+}

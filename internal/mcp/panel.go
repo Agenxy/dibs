@@ -101,7 +101,11 @@ var (
 	// `attachments` is here because the panel dropped it: a message carrying a
 	// blob rendered identically to one carrying nothing, so "review the attached
 	// evidence" showed no attachment at all. The shared renderer displays them.
-	msgFields   = []string{"serial", "type", "from", "to", "body", "response", "state", "attachments"}
+	// grant and adopt are here because approving a request PERFORMS them, and a
+	// card that shows only the body shows only what the sender chose to say
+	// about it. Redaction blanks body and response by name; these two are the
+	// typed effect and are exactly what the reader needs.
+	msgFields   = []string{"serial", "type", "from", "to", "body", "response", "state", "attachments", "grant", "adopt"}
 	eventFields = []string{"serial", "type", "agent", "to", "ts"}
 )
 

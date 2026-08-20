@@ -2,6 +2,7 @@ package core
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"slices"
 	"sort"
@@ -461,11 +462,32 @@ func sendDigest(op *Op) string {
 	return digestOf(parts...)
 }
 
+// digestOf hashes a list of strings so that no two different lists collide.
+//
+// LENGTH-PREFIXED, not delimiter-separated. This wrote each part followed by a
+// NUL, which is only unambiguous if no part can CONTAIN a NUL, and JSON accepts
+// \u0000 quite happily while Admit has no reason to refuse it. So these two
+// distinct answer spaces encoded to the same bytes:
+//
+//	["a\x00b", "c"]
+//	["a", "b\x00c"]
+//
+// Reusing an op_id with the second is then answered ok:true, deduplicated:true,
+// and the question that stands is the first, offering different answers than
+// the caller asked for. An encoding collision, not a hash collision: no amount
+// of SHA-256 helps.
+//
+// The previous round of this added element COUNTS, which fixed the boundary
+// between two lists and left the boundary between two elements exactly as it
+// was. Prefixing each part with its length closes both, for any bytes at all.
+// Found by a pre-release review, on the fix for the same defect.
 func digestOf(parts ...string) string {
 	h := sha256.New()
+	var n [8]byte
 	for _, p := range parts {
+		binary.BigEndian.PutUint64(n[:], uint64(len(p)))
+		h.Write(n[:])
 		h.Write([]byte(p))
-		h.Write([]byte{0})
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

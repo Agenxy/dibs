@@ -262,8 +262,9 @@ func run() error {
 		eng.CheckReachability(ctx, reaches, why)
 	}()
 	// After declared roles are applied, so a board configured with a coordinator
-	// is not offered a claim it does not need.
-	installCoordinatorClaim(eng, *dir, st.HasCoordinator())
+	// is not offered a claim it does not need. Asked THROUGH the engine: st is
+	// the state the loop now owns, and the goroutine above may be writing to it.
+	installCoordinatorClaim(eng, *dir, eng.HasCoordinator(ctx))
 	startSupervision(ctx, eng, cfg.Supervise)
 	// Indexing shells out to git across thousands of commits; the daemon must be
 	// answering agents long before that finishes, so it lands asynchronously.

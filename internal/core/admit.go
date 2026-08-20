@@ -84,6 +84,18 @@ func Admit(op *Op, lim Limits) error {
 	// hint says what to write instead. Case-insensitive: the collision is what
 	// the person reads, not what the byte comparison happens to match.
 	for _, c := range op.Choices {
+		// A blank choice becomes a blank BUTTON, and pressing it returns "",
+		// which the engine reads as a dismissal. So the send succeeded, the
+		// person pressed the option they were offered, and the asker went on
+		// waiting with nothing reported wrong anywhere. The notifier uses each
+		// value as both the visible title and the identifier, so there is not
+		// even anything to render. Found by a pre-release review.
+		if strings.TrimSpace(c) == "" {
+			return errf("E_BAD_ARG",
+				"give every choice a label: a blank one renders as an empty button, "+
+					"and pressing it is indistinguishable from dismissing the question",
+				"a choice is empty")
+		}
 		if strings.EqualFold(strings.TrimSpace(c), "later") {
 			return errf("E_BAD_ARG",
 				`pick another word: "Defer", "Not now", "Ask again" all work. `+

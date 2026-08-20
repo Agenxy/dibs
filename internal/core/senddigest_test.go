@@ -33,6 +33,23 @@ func TestTwoDifferentMessagesDigestDifferently(t *testing.T) {
 			"they can see is wrong")
 	}
 
+	// A value containing the delimiter must not be able to impersonate a
+	// boundary. Counts fixed the seam between two LISTS and left the seam
+	// between two ELEMENTS, which JSON can write into any string it likes.
+	nul := &Op{
+		To: "peer", MsgType: MsgQuestion, Body: "which?",
+		Choices: []string{"a\x00b", "c"},
+	}
+	shifted := &Op{
+		To: "peer", MsgType: MsgQuestion, Body: "which?",
+		Choices: []string{"a", "b\x00c"},
+	}
+	if sendDigest(nul) == sendDigest(shifted) {
+		t.Error("two different answer spaces sharing a NUL byte digest identically: " +
+			"a retry of one is answered as a duplicate of the other and the question " +
+			"that stands offers answers the caller never sent")
+	}
+
 	// The fields that decide what an attachment IS are part of it too.
 	same := func() *Op {
 		return &Op{
