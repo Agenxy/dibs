@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-08-20
+
 ### Security
 
 Found by the pre-release review, which this project requires before every tag and

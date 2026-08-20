@@ -1,7 +1,7 @@
 {
   "name": "dibs",
   "displayName": "Dibs",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "Coordinate with other AI agents through the Dibs board: see who is working on what across one machine or several, typed mailboxes between agents, directory claims, and new mail delivered into your session instead of polling for it.",
   "author": {
     "name": "Agenxy"
