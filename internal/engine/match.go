@@ -718,7 +718,17 @@ func (e *Engine) openFirstSpace(ctx context.Context, token, declaration string,
 	for attempt := 1; attempt <= 4; attempt++ {
 		attempted := name
 		if attempt > 1 {
-			attempted = fmt.Sprintf("%s %d", name, attempt)
+			// The base is shortened so the suffix SURVIVES normalisation.
+			//
+			// core.cleanID caps an id at 64 runes, so once the base reaches that
+			// length every " 2".." 4" was truncated away and all four attempts
+			// addressed the same existing space: the loop ran, every attempt
+			// collided identically, and openFirstSpace returned nil. The
+			// declaration succeeded and the first space it promises was never
+			// opened, silently, which is the case this retry exists for. A ref
+			// like `ticket:` plus a long key reaches 64 easily. Found by a
+			// pre-release review.
+			attempted = fmt.Sprintf("%s %d", trimRunes(name, 60), attempt)
 		}
 		res, err = e.Do(ctx, &core.Op{
 			Kind: core.OpSpaceOpen, Token: token, Space: attempted, Text: topic,
@@ -1217,4 +1227,13 @@ func (e *Engine) SetCoordinatorClaim(verify func(secret string) (bool, func())) 
 	e.claimMu.Lock()
 	defer e.claimMu.Unlock()
 	e.verifyClaim = verify
+}
+
+// trimRunes shortens to at most n runes, on a rune boundary.
+func trimRunes(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return strings.TrimRight(string(r[:n]), " -")
 }
