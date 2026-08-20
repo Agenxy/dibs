@@ -72,6 +72,17 @@ Use **bun**, never npm, for any JS/TS work.
 harnesses: see `CONTRIBUTING.md` for why. Python with a `uv` shebang and PEP 723
 inline dependencies, or Go, or the existing runner.
 
+## Design for 2026, not for what shipped
+
+PHILOSOPHY.md rule 9 is a standing architectural position and not a compatibility
+note: **MCP 2026 is where this is going, and the 2025 path is a transitional
+courtesy to harnesses that have not migrated.** New work is designed the 2026 way
+first and made to work on the legacy path afterwards, never the reverse.
+
+The practical form of that rule: a feature shaped around `initialize` and a
+long-lived session has to be redesigned when the session goes away, and 2026 is
+stateless. When a 2025-only assumption is load-bearing, say so where it is made.
+
 ## Easy to miss
 
 Things that have cost real time here, none of which are visible in the diff:
@@ -112,6 +123,23 @@ Things that have cost real time here, none of which are visible in the diff:
 - **A failing probe is usually a broken probe.** Before concluding the product is
   broken, check that your measurement is sound: assert your setup steps
   succeeded. Three false alarms in one session came from this.
+- **A doc-count guard is only as good as the spellings it knows.** The tool
+  count appears in six documents and has now gone stale three times in three
+  different shapes: a plain wrong number, `one tool of forty-two`, and
+  `Tools (40)`. The check read `N tools` only, so two of those passed it for
+  months and were found by a person reading. When you add a claim a test
+  guards, add the SHAPE of the claim too.
+- **A PASSING probe proves nothing until you have seen it fail.** The same
+  session that produced those three then wrote four consecutive versions of one
+  test that passed against the code they were written to catch: the fixture gave
+  a sibling the read end of a pipe instead of the write end; the next killed the
+  process under test instead of its parent; the next pointed the daemon at an
+  empty data directory, so it exited at once for want of a local secret. Each
+  looked like a green test of a real guarantee. For anything that asserts a
+  behaviour you have just added, run it against the commit before the fix and
+  watch it fail. `git worktree add --detach <dir> HEAD` makes that thirty
+  seconds, and it is the only thing that distinguishes a regression test from a
+  decoration.
 
 ## Where the reasoning lives
 
@@ -132,6 +160,32 @@ commit, then publishes signed artifacts, updates the Homebrew cask in `agenxy/ho
 and publishes `server.json` to the official MCP Registry as `io.github.Agenxy/dibs`.
 Nothing here needs a human between the tag and the release, and no source is updated by
 hand: if the three ever disagree, that is a bug in the pipeline, not a chore.
+
+**Before the tag, a DIFFERENT model reads the whole release surface.** Not
+optional, and not the author's own review: several versions have been spent
+fixing things a careful reader would have caught, and the reader who misses them
+is reliably the one who wrote them. `task review:release` runs it against the
+last tag.
+
+The value is the second opinion, so run something that is not what wrote the
+code. What matters is what it is pointed at: this repository's recurring bug
+classes (validation in `Apply` instead of `Admit`, an op that changes state
+without advancing the serial, a renamed json tag, anything that reports success
+while doing nothing) and its newest authorisation paths. Fix what it finds, run
+`task ci`, and go round again until a pass turns up nothing worth fixing.
+
+**`task release VERSION=0.0.6` is the one step before the tag.** It claims the
+changelog's `## [Unreleased]` section for that version and stamps every manifest that
+states one, then stops: tagging publishes, so it stays yours to do. Doing it by hand is
+how two manifests sat at `0.0.0` through five releases, and the tagged commit is now
+checked against its own tag, so the release fails rather than shipping a version no file
+in it names.
+
+**Trunk-based, deliberately: `main` is always the release candidate.** There are no
+release branches, and adding one would create a second place that has to agree with main
+about what is shipping, which is this repository's most expensive recurring bug (see the
+drift guards for `skills.md`, the plugin copies, the tool count, the vocabulary). Topic
+branches live hours, not weeks. What is going into the next version is `## [Unreleased]`.
 
 **We do not pay to be listed** (PHILOSOPHY.md rule 8). Several MCP directories now gate
 submission behind a fee, and the answer is no every time, however good the traffic

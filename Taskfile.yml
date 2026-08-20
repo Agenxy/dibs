@@ -6,6 +6,42 @@ tasks:
     cmds: [task --list]
     silent: true
 
+  app:
+    # Dibs.app: the process that speaks to the person.
+    #
+    # A notification carries the identity of whoever posts it, so a daemon
+    # shelling out to osascript borrows Script Editor's name and icon. The
+    # bundle is what makes a message from an agent arrive as Dibs, and
+    # UNUserNotificationCenter (which needs a bundle id) is the only API that
+    # puts action buttons on the banner itself.
+    #
+    # macOS only. Elsewhere the daemon simply has no route to a desktop.
+    platforms: [darwin]
+    desc: Build Dibs.app, the notifier bundle with the product icon
+    sources:
+      - internal/notify/app/*.swift
+      - tools/appbundle/main.go
+    generates:
+      - bin/Dibs.app/Contents/MacOS/dibs-notify
+    vars:
+      # The same identity `install` signs the binaries with.
+      #
+      # The bundle was signed ad hoc unless somebody had exported
+      # DIBS_CODESIGN_IDENTITY by hand, which is precisely the arrangement
+      # tools/signid exists to end: notification authorisation is remembered
+      # against the SIGNATURE, so an ad-hoc rebuild is a new app to macOS and
+      # the grant is asked for again. Dibs.app is the one component whose whole
+      # job is putting a notification in front of the person, and it was the one
+      # component left out of the stable identity. Found by a pre-release
+      # review.
+      #
+      # Computed here rather than duplicated in the Go tool, so there stays one
+      # answer to "which identity does this project sign with".
+      SIGNER:
+        sh: go run ./tools/signid
+    cmds:
+      - DIBS_CODESIGN_IDENTITY='{{.SIGNER}}' go run ./tools/appbundle -o bin/Dibs.app -version {{.VERSION | default "0.0.0"}}
+
   presence:
     desc: >-
       Compile the Touch ID presence helper (macOS only). Separate from `build`
@@ -27,6 +63,7 @@ tasks:
       - go build -o bin/dibd ./cmd/dibd
       - go build -o bin/dibs ./cmd/dibs
       - task: presence
+      - task: app
 
   install:
     desc: Install both binaries to ~/.local/bin (replaces, never overwrites)
@@ -51,9 +88,11 @@ tasks:
       # never existed, and then copied over a live `dibs`, reusing exactly the
       # inode the comment above says not to. The failure is a SIGKILL with no
       # message, and it cost an hour before somebody read this line.
-      - rm -f {{.DEST}}/dibs {{.DEST}}/dibd {{.DEST}}/dibs-presence
+      - rm -rf {{.DEST}}/dibs {{.DEST}}/dibd {{.DEST}}/dibs-presence {{.DEST}}/Dibs.app
       - cp bin/dibs bin/dibd {{.DEST}}/
       - task: install:presence
+        vars: { DEST: '{{.DEST}}' }
+      - task: install:app
         vars: { DEST: '{{.DEST}}' }
       - task: install:sign
         vars: { DEST: '{{.DEST}}' }
@@ -61,7 +100,7 @@ tasks:
       - |
         echo "installed to {{.DEST}}"
         echo "a running dibd keeps the old code until you restart it:"
-        echo "  dibs stop && dibd &"
+        echo "  dibs upgrade"
 
   install:sign:
     # Sign with a STABLE identity when one is configured, because macOS keys a
@@ -74,28 +113,65 @@ tasks:
     # working, then silently not working after the next install, with nothing to
     # point at. Signing with a persistent identity keeps the grant across builds.
     #
-    # Set DIBS_CODESIGN_IDENTITY to an identity from `security find-identity -v
-    # -p codesigning`. Unset, this does nothing and the Go toolchain's ad-hoc
-    # signature stands.
+    # Set DIBS_CODESIGN_IDENTITY to an identity of DIBS' OWN, not one borrowed
+    # from another project on the machine: a grant keyed to somebody else's
+    # certificate is silently revoked when they rotate or delete it. `tools/
+    # signcheck` says how to make one. Unset, this does nothing and the Go
+    # toolchain's ad-hoc signature stands.
     platforms: [darwin]
     internal: true
     vars:
-      # Ad-hoc unless an identity is given. Either way the IDENTIFIER is set:
-      # the Go toolchain leaves it as `a.out`, so the daemon presents itself to
-      # the system under a name shared with every other ad-hoc binary, and any
-      # grant recorded against it is recorded against that.
-      SIGNER: '{{if .DIBS_CODESIGN_IDENTITY}}{{.DIBS_CODESIGN_IDENTITY}}{{else}}-{{end}}'
+      # Resolved by tools/signid, not by a template conditional here.
+      #
+      # It answers DIBS_CODESIGN_IDENTITY if set, else Dibs' own identity if it
+      # is in the keychain, else "-" for ad-hoc. The middle case is the point:
+      # the operator creates the certificate once and every install after it
+      # keeps the privacy grant, instead of the fix applying only when somebody
+      # remembers an environment variable. Nine installs in one session, nine
+      # permission prompts, is what the old behaviour cost.
+      #
+      # Either way the IDENTIFIER is set: the Go toolchain leaves it as `a.out`,
+      # so the daemon would present itself to the system under a name shared
+      # with every other ad-hoc binary, and any grant recorded against it is
+      # recorded against that.
+      SIGNER:
+        sh: go run ./tools/signid
     cmds:
       - codesign --force -i org.agenxy.dibs -s '{{.SIGNER}}' {{.DEST}}/dibd
       - codesign --force -i org.agenxy.dibs.cli -s '{{.SIGNER}}' {{.DEST}}/dibs
-      - |
-        if [ -n "$DIBS_CODESIGN_IDENTITY" ]; then
-          echo "signed with $DIBS_CODESIGN_IDENTITY so privacy grants survive a rebuild"
-        else
-          echo "ad-hoc signed. A macOS privacy grant will not survive the next install:"
-          echo "  set DIBS_CODESIGN_IDENTITY to an identity from"
-          echo "  security find-identity -v -p codesigning" 
-        fi
+      # One message, chosen by template. `status:` is a TASK-level field, not a
+      # per-command one, so a pair of commands guarded by it printed BOTH: the
+      # install claimed in consecutive lines that the grant would and would not
+      # survive.
+      # Proves the promise rather than restating it: an install whose signature
+      # moved has just revoked the operator's folder permission, and they would
+      # otherwise find out from a dialog that explains nothing.
+      - cmd: go run ./tools/signstable {{.DEST}}
+        platforms: [darwin]
+      - cmd: >-
+          echo
+          {{if eq .SIGNER "-"}}"ad-hoc signed: a macOS privacy grant will NOT survive
+          the next install, so you will be asked for Desktop/Documents/Downloads
+          access again. Give Dibs an identity of its own, ONCE: Keychain Access ->
+          Certificate Assistant -> Create a Certificate, name it 'Dibs Local
+          Codesign', type Code Signing, self-signed. Every install after that finds
+          it by name, with no variable to set."{{else}}"signed as '{{.SIGNER}}', so
+          the macOS privacy grant survives this and every later install."{{end}}
+        platforms: [darwin]
+        silent: true
+
+  install:app:
+    # Beside the daemon, for the same reason the presence helper is: notify
+    # resolves it relative to its own executable rather than on PATH.
+    #
+    # Registered with Launch Services afterwards. Without that, macOS does not
+    # know the bundle exists and refuses it notification authorisation, which
+    # presents as a notifier that posts nothing and reports "cannot notify".
+    platforms: [darwin]
+    internal: true
+    cmds:
+      - cp -R bin/Dibs.app {{.DEST}}/
+      - /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f {{.DEST}}/Dibs.app
 
   install:presence:
     # Beside the daemon, because humanauth looks beside its own executable rather
@@ -108,11 +184,47 @@ tasks:
       - cp bin/dibs-presence {{.DEST}}/
 
   test:
+    env:
+      # No dialogs from a test run: these suites spawn real daemons,
+      # which notify like any other. See internal/notify silenceEnv.
+      DIBS_NOTIFY: "off"
     desc: Full test suite with race detector
     cmds:
       - go test -race ./...
 
+  review:release:
+    desc: "Pre-release review: a different model reads everything since the last tag"
+    # Not the author's own review, deliberately. Versions have been spent fixing
+    # things a careful reader would have caught, and the reader who misses them
+    # is reliably the one who wrote them.
+    #
+    # `codex` here because it is what this project has to hand; any capable
+    # reviewer that is NOT what wrote the code does the job. What it is pointed
+    # at matters more than which one it is: docs/REVIEW.md holds the brief.
+    cmds:
+      - cmd: |
+          if ! command -v codex >/dev/null 2>&1; then
+            echo "no reviewer found: install codex, or run docs/REVIEW.md's brief"
+            echo "through whichever model you have. The point is that it is not the"
+            echo "one that wrote the change."
+            exit 1
+          fi
+          # stdin closed, because the prompt is an argument and the reviewer
+          # needs nothing from it. Left open, `codex exec` waits on stdin when it
+          # is not a terminal: run from a script, or after anything that consumed
+          # stdin, this task printed "Reading additional input from stdin..." and
+          # sat there until it was killed. A release gate that hangs instead of
+          # reviewing is a release gate somebody stops running.
+          codex exec "$(cat docs/REVIEW.md)
+
+          The diff under review is: git diff $(git describe --tags --abbrev=0)..HEAD
+          Read it with git, in pieces if you need to. Work read-only." < /dev/null
+
   test:dev:
+    env:
+      # No dialogs from a test run: these suites spawn real daemons,
+      # which notify like any other. See internal/notify silenceEnv.
+      DIBS_NOTIFY: "off"
     desc: The dibdev-tagged code, which the default build excludes
     # `go test ./...` never compiles anything behind the dibdev tag, so the
     # presence mock and its tests would rot silently, and the thing that rots
@@ -123,7 +235,7 @@ tasks:
     # `test`.
     cmds:
       - go build -tags dibdev ./...
-      - go test -race -tags dibdev ./internal/humanauth/ ./internal/mcp/
+      - go test -race -tags dibdev ./internal/humanauth/ ./internal/mcp/ ./cmd/dibd/
 
   test:minimal:
     desc: "The stripped diagnostic panel: a serving mode the default suite never enters"
@@ -134,6 +246,9 @@ tasks:
     # is worse than none, because it is reached for at the exact moment somebody
     # is already confused about which layer is broken.
     env:
+      # No dialogs from a test run: these suites spawn real daemons,
+      # which notify like any other. See internal/notify silenceEnv.
+      DIBS_NOTIFY: "off"
       DIBS_PANEL_MINIMAL: "1"
     cmds:
       - go test -count=1 ./internal/mcp/
@@ -142,6 +257,9 @@ tasks:
     desc: "The panel's human actions, end to end: needs a dev daemon, not a finger"
     deps: [build]
     env:
+      # No dialogs from a test run: these suites spawn real daemons,
+      # which notify like any other. See internal/notify silenceEnv.
+      DIBS_NOTIFY: "off"
       DIBS_ALLOW_PARALLEL: "1"
     cmds:
       # The dev daemon is built here rather than by `build`, so it never lands in
@@ -154,6 +272,9 @@ tasks:
 
   test:panel:
     env:
+      # No dialogs from a test run: these suites spawn real daemons,
+      # which notify like any other. See internal/notify silenceEnv.
+      DIBS_NOTIFY: "off"
       # These suites spawn several daemons at once by design. The
       # host-wide guard exists to stop a fleet being silently split
       # across two boards, which is not what an isolated test dir is.
@@ -178,6 +299,9 @@ tasks:
 
   test:web:
     env:
+      # No dialogs from a test run: these suites spawn real daemons,
+      # which notify like any other. See internal/notify silenceEnv.
+      DIBS_NOTIFY: "off"
       # These suites spawn several daemons at once by design. The
       # host-wide guard exists to stop a fleet being silently split
       # across two boards, which is not what an isolated test dir is.
@@ -190,6 +314,9 @@ tasks:
 
   test:guard:
     env:
+      # No dialogs from a test run: these suites spawn real daemons,
+      # which notify like any other. See internal/notify silenceEnv.
+      DIBS_NOTIFY: "off"
       # These suites spawn several daemons at once by design. The
       # host-wide guard exists to stop a fleet being silently split
       # across two boards, which is not what an isolated test dir is.
@@ -202,6 +329,9 @@ tasks:
 
   test:space:
     env:
+      # No dialogs from a test run: these suites spawn real daemons,
+      # which notify like any other. See internal/notify silenceEnv.
+      DIBS_NOTIFY: "off"
       # These suites spawn several daemons at once by design. The
       # host-wide guard exists to stop a fleet being silently split
       # across two boards, which is not what an isolated test dir is.
@@ -213,6 +343,10 @@ tasks:
       - DIBD=$PWD/bin/dibd DIBS=$PWD/bin/dibs MATCH_REPO=$PWD bun internal/mcp/e2e/channel_e2e.ts
 
   test:sidecar:
+    env:
+      # No dialogs from a test run: these suites spawn real daemons,
+      # which notify like any other. See internal/notify silenceEnv.
+      DIBS_NOTIFY: "off"
     desc: "Embedding sidecar contract check: no model, no repository needed"
     cmds:
       - python3 contrib/embed-sidecar/dibs_embed.py --self-test
@@ -311,6 +445,24 @@ tasks:
     deps: [build]
     cmds:
       - go run ./tools/smoke
+
+  release:
+    # The last hand-edited step in a pipeline that has no other.
+    #
+    # A release used to mean: rename the changelog heading, remember the date,
+    # then edit four JSON manifests, and every one of those is a place to stop
+    # halfway. It drifted twice: the Claude Code manifest sat at 0.0.0 through
+    # five releases and the Claude Desktop one still did, both valid JSON,
+    # both passing every validator, neither caught by anything.
+    #
+    # Stamps and stops. Tagging publishes signed artifacts, moves the Homebrew
+    # cask and writes to the MCP registry, so it stays the owner's to perform;
+    # this prints the commands rather than running them.
+    desc: 'Stamp a release across the changelog and every manifest: task release VERSION=0.0.6'
+    requires:
+      vars: [VERSION]
+    cmds:
+      - go run ./tools/version -set {{.VERSION}}
 
   ci:
     desc: The full local gate chain (mirrors CI)

@@ -23,12 +23,14 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/blobstore"
+	"github.com/agenxy/dibs/internal/build"
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/ledger"
 	"github.com/agenxy/dibs/internal/liveness"
 	"github.com/agenxy/dibs/internal/logs"
 	"github.com/agenxy/dibs/internal/mcp"
+	"github.com/agenxy/dibs/internal/notify"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/web"
 )
@@ -51,21 +53,50 @@ func main() {
 	}
 }
 
-func run() error {
-	var (
-		dir = flag.String("dir", defaultDir(), "data directory")
+// registerDaemonFlags declares every flag in one place, so the manual can walk
+// them rather than repeat them. A flag added here appears in `dibd -man`
+// without anybody remembering to document it, which is the only arrangement
+// that stays true.
+// daemonOpts are the daemon's own flags, declared once so the manual walks the
+// same declarations run() parses. A second copy for documentation is a second
+// copy that loses.
+type daemonOpts struct {
+	dir           *string
+	allowParallel *bool
+	addr          *string
+	check         *bool
+}
+
+func registerDaemonFlags(fs *flag.FlagSet) (*daemonOpts, *scorerFlags) {
+	o := &daemonOpts{
+		dir: fs.String("dir", defaultDir(), "data directory"),
 		// Two daemons on one machine means two boards, and agents split across
 		// them cannot see each other while everything still appears to work.
 		// Off by default for that reason; SECURITY.md's isolation advice is the
 		// case where you genuinely want it.
-		allowParallel = flag.Bool("allow-parallel", false,
+		allowParallel: fs.Bool("allow-parallel", false,
 			"permit a second dibd on this machine (splits the fleet across two boards; "+
-				"intended for isolating agents you do not trust: see SECURITY.md)")
-		addr = flag.String("addr", "",
+				"intended for isolating agents you do not trust: see SECURITY.md)"),
+		addr: fs.String("addr", "",
 			"listen address (override; default 127.0.0.1:4777: set a tailnet/LAN IP to serve "+
-				"remote agents. TLS is handled automatically; see <dir>/dibs.toml to tune anything)")
-	)
-	scorer := registerScorerFlags()
+				"remote agents. TLS is handled automatically; see <dir>/dibs.toml to tune anything)"),
+		// The one question an upgrade has to answer BEFORE it stops anything.
+		check: fs.Bool("check", false,
+			"replay the board at -dir and exit, without serving: answers whether THIS build "+
+				"could take over from the daemon now running. `dibs upgrade` runs it first"),
+	}
+	fs.Bool("man", false, "write this daemon's manual page (mdoc) to stdout and exit")
+	return o, registerScorerFlagsOn(fs)
+}
+
+func run() error {
+	// `-man` before anything else: it must work with no data directory, no
+	// configuration and no daemon, which is how somebody reads a manual.
+	if wantsMan() {
+		return manCmd(manArgs())
+	}
+	opts, scorer := registerDaemonFlags(flag.CommandLine)
+	dir, allowParallel, addr, check := opts.dir, opts.allowParallel, opts.addr, opts.check
 	flag.Parse()
 
 	if err := os.MkdirAll(*dir, 0o700); err != nil {
@@ -83,6 +114,12 @@ func run() error {
 	cfg, err := loadConfig(*dir)
 	if err != nil {
 		return fmt.Errorf("reading %s/dibs.toml: %w", *dir, err)
+	}
+	// Before the host slot, the listener, and anything else with a side effect.
+	// The whole value of this mode is that it can run against a board a
+	// different daemon is currently serving.
+	if *check {
+		return checkReplay(*dir, cfg)
 	}
 	// DIBS_ADDR sits between the flag and the config file, because the CLI
 	// already honours it and a daemon that ignored it silently bound the
@@ -194,6 +231,15 @@ func run() error {
 	led.OnEvents = nil // replay is done; live events flow through the engine
 	eng := engine.New(st, led, liveness.New(), history)
 	eng.SetBlobs(bs)
+	wake, err := cfg.Wake.policy()
+	if err != nil {
+		return fmt.Errorf("reading %s/dibs.toml: %w", *dir, err)
+	}
+	eng.SetWakePolicy(wake)
+	// On unless the operator opted out: see WakeConfig.NoticesWake. A pointer so
+	// "unset" and "explicitly false" are distinguishable, which is the whole
+	// reason a bool setting with a true default needs one.
+	eng.SetNoticesWake(cfg.Wake.NoticesWake == nil || *cfg.Wake.NoticesWake)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go eng.Run(ctx)
@@ -203,9 +249,22 @@ func run() error {
 	// Roles the operator declared. On the admin path, because the daemon IS the
 	// admin path: an agent still cannot promote itself.
 	keepDeclaredRolesApplied(ctx, eng, cfg.Roles)
+	// Clears a pid an older build recorded against the operator's own row, which
+	// made every restart report them as a dead process. One op, once, and only
+	// on a board that already has a human on it.
+	eng.RepairHumanProcess(ctx)
+	// Tell the coordinator, once, if this machine cannot get a notification in
+	// front of the person. Off the boot path: it shells out to the notifier, and
+	// the daemon must be answering agents long before anybody asks about
+	// notifications.
+	go func() {
+		reaches, why := notify.Reach()
+		eng.CheckReachability(ctx, reaches, why)
+	}()
 	// After declared roles are applied, so a board configured with a coordinator
-	// is not offered a claim it does not need.
-	installCoordinatorClaim(eng, *dir, st.HasCoordinator())
+	// is not offered a claim it does not need. Asked THROUGH the engine: st is
+	// the state the loop now owns, and the goroutine above may be writing to it.
+	installCoordinatorClaim(eng, *dir, eng.HasCoordinator(ctx))
 	startSupervision(ctx, eng, cfg.Supervise)
 	// Indexing shells out to git across thousands of commits; the daemon must be
 	// answering agents long before that finishes, so it lands asynchronously.
@@ -227,7 +286,7 @@ func run() error {
 		return err
 	}
 	srv := &http.Server{
-		Addr: listenAddr, Handler: newAuthGate(secret, filepath.Join(*dir, "admin.hash")).wrap(mux),
+		Addr: listenAddr, Handler: newAuthGate(secret, filepath.Join(*dir, "admin.hash"), listenAddr).wrap(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		// No global write timeout: long-polls and SSE hold connections open.
 	}
@@ -505,4 +564,99 @@ func retiredVocabulary(ledgerPath string) string {
 		}
 	}
 	return ""
+}
+
+// checkReplay answers "could this build take over this board", and answers it
+// while the board is still being served by somebody else.
+//
+// It exists because the two ways a Dibs upgrade goes wrong are both invisible
+// until the new daemon starts, and by then the old one has been stopped. A rule
+// added to core.Apply instead of core.Admit is retroactive, so the fold refuses
+// records an older build wrote and accepted; a retired op VOCABULARY does the
+// same at a different layer. Either one turns an upgrade into a board that will
+// not open, on a machine whose whole fleet was coordinating through it minutes
+// earlier. Both have happened here.
+//
+// Running the check from the NEW binary is the point. `dibs` links its own copy
+// of core and could fold the ledger itself, but that measures the CLI's build,
+// and the binary the service is about to start is exactly the thing in doubt.
+//
+// Read-only in the sense that matters: no host slot (so it never collides with
+// the running daemon), no listener, no ops, and nothing appended. It opens the
+// ledger and the key because folding requires decrypting, and those files
+// already exist for any board worth checking.
+func checkReplay(dir string, cfg Config) error {
+	if _, err := os.Stat(filepath.Join(dir, "ledger.jsonl")); err != nil {
+		return fmt.Errorf("no board at %s: there is nothing to check", dir)
+	}
+	// LOAD, never create. This is a question about a board, and asking it must
+	// not bring one into being: `dibs upgrade` runs this while the previous
+	// daemon may still be serving, so anything written here is written into a
+	// live data directory by a process that does not own it. A board missing
+	// either file is not a board this build could take over, which is the
+	// question, so saying so is the right answer rather than a failure.
+	nodeID, err := os.ReadFile(filepath.Join(dir, "node_id")) // #nosec G304 -- the operator's own -dir
+	if err != nil || len(nodeID) == 0 {
+		return fmt.Errorf("no node_id at %s: this is not a board a daemon has served, "+
+			"so there is nothing to check", dir)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "key")); err != nil {
+		return fmt.Errorf("no key at %s: the ledger is encrypted and cannot be "+
+			"replayed without it", dir)
+	}
+	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
+	if err != nil {
+		return err
+	}
+	// Same order as run(): a retired vocabulary folds "successfully" into a
+	// board that disagrees with its own records, so it has to be caught first
+	// or the check passes on exactly the upgrade it exists to stop.
+	if old := oldVocabularyFailure(dir); old != nil {
+		return old
+	}
+	led, err := ledger.OpenReadOnly(filepath.Join(dir, "ledger.jsonl"), string(nodeID), box)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = led.Close() }()
+	limits, err := cfg.Limits.apply(core.DefaultLimits())
+	if err != nil {
+		return fmt.Errorf("reading %s/dibs.toml: %w", dir, err)
+	}
+	st := core.NewState(string(nodeID), limits)
+	start := time.Now()
+	n, err := led.Replay(st)
+	if err != nil {
+		return fmt.Errorf("this build cannot rebuild the board at %s: %w\n\n"+
+			"  Record %d will not apply. Do NOT stop the daemon now running: it is\n"+
+			"  serving a board this binary could not reconstruct, and stopping it is\n"+
+			"  what makes that unrecoverable.\n\n"+
+			"  Stay on the running build, and report this with `dibs verify %s`",
+			dir, err, st.Serial+1, dir)
+	}
+	fmt.Printf("ok: %s replays %d record(s) to serial %d in %s (%d agent(s), %d space(s))\n",
+		build.Version, n, st.Serial, time.Since(start).Round(time.Microsecond),
+		len(st.Agents), len(st.Spaces))
+	return nil
+}
+
+// wantsMan spots `-man` before the flag package parses, because the manual must
+// not require a valid data directory or a config file to print.
+func wantsMan() bool {
+	for _, a := range os.Args[1:] {
+		if a == "-man" || a == "--man" {
+			return true
+		}
+	}
+	return false
+}
+
+// manArgs is everything after -man, so `dibd -man -out dibd.8` works.
+func manArgs() []string {
+	for i, a := range os.Args[1:] {
+		if a == "-man" || a == "--man" {
+			return os.Args[i+2:]
+		}
+	}
+	return nil
 }

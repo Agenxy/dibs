@@ -17,7 +17,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agenxy/dibs/internal/humanauth"
 	"github.com/agenxy/dibs/internal/liveness"
+	"github.com/agenxy/dibs/internal/notify"
 	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/ui"
 )
@@ -131,16 +133,22 @@ func (d *diagnosis) run(verbose bool) error {
 	// Doctor exists to answer "why is it behaving like that", and reading a
 	// directory the current version would not have created is high on the list.
 	if inherited != "" {
+		// One command, not a recipe.
+		//
+		// This used to hand back `mv`, plus a second sentence about re-running
+		// `dibs configure --service` because a unit pins the old path as a
+		// literal argument. Both are right and the ORDER is load-bearing: the
+		// daemon has to be down for the move, and a unit rewritten before the
+		// move points at a directory that does not exist yet. An operator
+		// following two sentences in the wrong order ends up with a service that
+		// starts against a path that is gone, which is how this hint's own
+		// advice broke a machine.
 		fix := "nothing is wrong and nothing is required. To adopt the current name, " +
-			"stop the daemon and `mv " + inherited + " " +
-			filepath.Join(filepath.Dir(inherited), ".dibs") + "`"
-		// A service unit pins its data directory as a literal argument, so the
-		// move above would leave it starting against a path that is gone. Found
-		// by following this hint's own advice on a machine where `dibs configure
-		// --service` had written that path in.
+			"`dibs upgrade --adopt-dir`, which stops the daemon, moves the directory, " +
+			"repoints the service and starts it again in that order"
 		if unit := unitPinning(inherited); unit != "" {
-			fix += ". " + unit + " pins the old path, so re-run `dibs configure " +
-				"--service` after moving, or the service starts against a directory that is gone"
+			fix += " (" + unit + " pins the old path, so a bare `mv` would leave the " +
+				"service starting against a directory that is gone)"
 		}
 		warn("data directory is "+inherited+", named by an older version", fix)
 	}
@@ -205,6 +213,9 @@ func (d *diagnosis) run(verbose bool) error {
 	checkOneDaemon(verbose, ok, warn)
 	checkCodeSignature(ok, warn)
 	checkServiceBinary(ok, warn)
+	if b, err := boardSnapshot(); err == nil {
+		checkCoordinatorIsReachable(b, ok, warn)
+	}
 
 	if d.json {
 		// The tally is a rendering of counts the document already carries, and
@@ -452,6 +463,7 @@ func checkHooks(client *http.Client, sec string, ok reportFn, bad, warn fixFn) {
 		GuardResolved   int64  `json:"guard_resolved"`
 		GuardUnresolved int64  `json:"guard_unresolved"`
 		PollResolved    int64  `json:"poll_resolved"`
+		PollUnresolved  int64  `json:"poll_unresolved"`
 		Verdict         string `json:"verdict"`
 		Hint            string `json:"hint"`
 	}
@@ -480,6 +492,11 @@ func checkHooks(client *http.Client, sec string, ok reportFn, bad, warn fixFn) {
 	case "never-resolved", "guard-unresolved":
 		// A problem, not a warning: the guard is running and protecting nothing.
 		bad("hooks are reaching Dibs but resolving to NO agent: the guard is inert", h.Hint)
+	case "poll-partly-unresolved":
+		// A problem, not a warning. Mail that is never delivered is the failure
+		// this product exists to prevent, and it was reading as a tick.
+		bad(fmt.Sprintf("%d wake call(s) resolved to no agent: somebody's mail is not "+
+			"being delivered", h.PollUnresolved), h.Hint)
 	case "guard-mostly-unresolved":
 		bad(fmt.Sprintf("%d of %d guard calls did not resolve to an agent",
 			h.GuardUnresolved, h.GuardUnresolved+h.GuardResolved), h.Hint)
@@ -507,10 +524,46 @@ func checkLedgerAndBoard(dir string, ok reportFn, bad, warn fixFn) {
 	default:
 		ok(fmt.Sprintf("ledger chain intact (%d lines)", res.Lines))
 	}
-	if _, err := os.Stat(filepath.Join(dir, "admin.hash")); err != nil {
-		warn("no admin password set, so the web board cannot be opened",
-			"run `dibs admin set-password`")
-	} else {
+	// Whether a notification would actually be SEEN, which is not the same as
+	// whether one can be posted.
+	//
+	// Everything reported success while nothing appeared: a coordinator request
+	// was posted, macOS accepted it, an active Focus swallowed the banner, and
+	// the operator asked why they had seen nothing. This is the one path that
+	// exists because the person is not in a loop to notice its absence, so it
+	// must not be the one path that fails quietly.
+	if reaches, why := notify.Reach(); reaches {
+		ok("notifications reach you: a question or request from an agent raises one " +
+			"with buttons on it")
+	} else if why != "" {
+		warn("agents cannot reach you by notification", why)
+	}
+
+	// Two ways in, and this used to report only one of them.
+	//
+	// "no admin password set, so the web board cannot be opened" was a warning
+	// on every Mac with a working sensor, where the board opens on a fingerprint
+	// and always could have. It sent the operator to invent and store a
+	// credential in order to be trusted less than the fingerprint they already
+	// had. A check that names a fault the machine does not have costs exactly
+	// what the fault would have.
+	_, pwErr := os.Stat(filepath.Join(dir, "admin.hash"))
+	switch {
+	case humanauth.Available():
+		how := "`dibs web` unlocks the board with Touch ID"
+		if pwErr == nil {
+			how += ", and the admin password still works"
+		} else {
+			how += ". No admin password is needed here; set one only if you want a " +
+				"way in that does not use the sensor"
+		}
+		ok(how)
+	case pwErr != nil:
+		warn("no way to open the web board: this machine cannot check presence and "+
+			"no admin password is set",
+			"run `dibs admin set-password`. Touch ID would do instead, on a machine "+
+				"that has it")
+	default:
 		ok("admin password set. `dibs web` will open the board")
 	}
 }
@@ -865,11 +918,21 @@ func checkCodeSignature(ok reportFn, warn fixFn) {
 		ok("dibd is signed with a stable identity, so privacy grants survive a rebuild")
 		return
 	}
+	// An identity of DIBS' OWN, and named rather than chosen from a list.
+	//
+	// This used to say "pick one from `security find-identity`", which invites
+	// borrowing a certificate some unrelated project on the machine owns. A
+	// privacy grant keyed to somebody else's certificate is revoked the moment
+	// they rotate or delete it, and the symptom is matching quietly going off:
+	// the same invisible failure this check exists to catch, arrived at by
+	// following its own advice. tools/signcheck carries the same rule.
 	warn("dibd is ad-hoc signed, so a macOS privacy grant will not survive the next install",
 		"only matters if your checkouts live under Desktop, Documents or Downloads, where "+
-			"the daemon needs permission to read them. Sign with a persistent identity so the "+
-			"grant sticks: pick one from `security find-identity -v -p codesigning` and "+
-			"reinstall with DIBS_CODESIGN_IDENTITY=<identity> task install")
+			"the daemon needs permission to read them. Give Dibs a signing identity of its "+
+			"OWN, never one belonging to another project: Keychain Access → Certificate "+
+			"Assistant → Create a Certificate, named \"Dibs Local Codesign\", type Code "+
+			"Signing, self-signed, then reinstall with "+
+			"DIBS_CODESIGN_IDENTITY=\"Dibs Local Codesign\" task install")
 }
 
 // runningDaemonPath is the executable behind the daemon serving this data
@@ -907,6 +970,58 @@ func runningDaemonPath() string {
 // that build is simply not running. Found on the machine this was written on,
 // where the unit still pinned a dibd in ~/go/bin from an earlier install while
 // every check above passed against a hand-started current one.
+// checkCoordinatorIsReachable reports a coordinator nobody can become.
+//
+// The role can only be granted by the operator, and it is what force_release,
+// close_space and clearing another agent's debris all key on. Held by an agent
+// that registered with neither a nonce nor a session id, it is held by an
+// identity no one can ever log back into, so the board has a coordinator on
+// paper and nobody able to act as one. Nothing said so: the board shows the
+// role, and the role looks filled.
+//
+// Not a deadlock, which is what it looks like from inside: `dibs admin
+// coordinator <agent>` moves it, and a `[roles]` block in dibs.toml reapplies
+// it on every start. The gap was that nothing pointed at either.
+// boardSnapshot reads the public board for the checks that need it.
+func boardSnapshot() (*boardView, error) {
+	var b boardView
+	if err := get("/api/board", &b); err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
+func checkCoordinatorIsReachable(b *boardView, ok reportFn, warn fixFn) {
+	var stuck []string
+	live := ""
+	for _, l := range b.Agents {
+		if l.Status == "active" && live == "" {
+			live = l.ID
+		}
+		if l.Role != "coordinator" {
+			continue
+		}
+		// Reattachable agents are fine however dormant they are: their operator
+		// comes back with the nonce and the role comes back with them.
+		if l.Status != "active" && l.Unreachable {
+			stuck = append(stuck, l.ID)
+		}
+	}
+	if len(stuck) == 0 {
+		return
+	}
+	if live == "" {
+		live = "<a live agent>"
+	}
+	warn("the coordinator is an agent nobody can become: "+strings.Join(stuck, ", "),
+		"it registered with neither a nonce nor a session id, so no one can reattach to it, "+
+			"and force_release, close_space and clearing another agent's debris all need a "+
+			"coordinator. Move the role to an agent that is here: `dibs admin coordinator "+
+			live+"`, or declare it in [roles] in dibs.toml so it survives a reset. Its mail "+
+			"is recovered separately, with adopt_agent")
+	_ = ok
+}
+
 func checkServiceBinary(ok reportFn, warn fixFn) {
 	unit, pinned := unitDaemon()
 	if unit == "" || pinned == "" {
@@ -926,8 +1041,8 @@ func checkServiceBinary(ok reportFn, warn fixFn) {
 	}
 	warn("the service would start a different daemon than the one installed",
 		detail+". Every fix since that build is not running when the service starts it. "+
-			"Rewrite the unit: rm "+unit+" && dibs configure --service, then load it with "+
-			"the command that prints")
+			"`dibs upgrade` rewrites the unit and restarts onto the installed daemon, "+
+			"after checking that it can rebuild this board")
 }
 
 // sameBinary compares two paths by inode where it can, so a symlink or a

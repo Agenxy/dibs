@@ -14,7 +14,7 @@ step 4 shows you how to fake one if you only have the first.
 [4. Watch a collision get caught](#4-watch-a-collision-get-caught) ·
 [5. Talk to the other agent](#5-talk-to-the-other-agent) ·
 [6. Look at the board](#6-look-at-the-board) ·
-[7. Turn on work-overlap matching](#7-turn-on-work-overlap-matching-optional) ·
+[7. Work-overlap matching](#7-work-overlap-matching) ·
 [When something looks wrong](#when-something-looks-wrong)
 
 ---
@@ -243,46 +243,45 @@ agent, an idle one, and one that finished deliberately are three different facts
 with three different right responses, so the board says which: never a generic
 "offline".
 
-For the browser board, set an admin password once:
+For the browser board:
 
 ```sh
-dibs admin set-password
 dibs web
 ```
 
+On a Mac with Touch ID that is all of it: the daemon raises the system sheet,
+you touch the sensor, and it prints a single-use link. Everywhere else, set a
+password once and `dibs web` asks for it instead:
+
+```sh
+dibs admin set-password
+```
+
 The web board shows decrypted mail and can act as you, so it is gated on
-something the agents do not have. Every agent holds the coordination secret; none
-holds this. That is the whole reason the password exists, and why `dibs board`
-in the terminal needs none: it shows only what the board already shows.
+something the agents do not have. Every agent on this machine holds the
+coordination secret; none of them can produce your fingerprint, and none of them
+knows that password. That is the whole reason the gate exists, and why `dibs
+board` in the terminal needs neither: it shows only what the board already
+shows.
 
-## 7. Turn on work-overlap matching (optional)
+Of the two, the fingerprint is the stronger claim, which is why it is preferred
+where it exists. A password proves possession of a secret an agent could in
+principle have been handed. Presence proves somebody is sitting here: an agent
+that tried it would raise the sheet on your own Mac, and you would decline.
 
-Everything above compares what agents *declared*. Dibs can also compare
+`dibs web --password` uses the password anyway, and a `dibs web` whose stdin is
+not a terminal never raises a sheet: a script that pipes a password is telling
+you it cannot reach a sensor.
+
+## 7. Work-overlap matching
+
+Everything above compares what agents *declared*. Dibs also compares
 declarations against your repository's actual history, so it catches two agents
 converging on the same code before either has said so in the same words.
 
-This is a daemon flag, so the daemon from step 1 has to be **restarted**. One
-daemon owns a data directory at a time; starting a second against the same
-directory refuses rather than quietly taking over,
-`another dibd already runs on ~/.dibs (flock …): resource temporarily
-unavailable`:
-
-```sh
-dibs stop                                  # this daemon, not every daemon
-dibd &
-```
-
-Not `pkill dibd`: Dibs is built to let you run several isolated daemons on
-one machine, and a broad kill takes down somebody else's fleet along with yours.
-
-Nothing is lost in the restart. The board is rebuilt by replaying the ledger, so
-the agents, their declarations and their mail are all still there: the state
-*is* the ledger, which is why stopping the daemon is not an event anything has
-to recover from.
-
-Matching needs no configuration. Each repository is indexed the first time an
-agent registers from it, so until an agent has arrived `declare` says so rather
-than pretending:
+It needs no configuration and no restart. Each repository is indexed the first
+time an agent registers from it, so until an agent has arrived `declare` says so
+rather than pretending:
 
 ```json
 { "matching": "off",
@@ -299,6 +298,25 @@ A low score never proves two agents will not collide. It means Dibs found no
 evidence, which is a different claim.
 [SPEC-CHANNELS.md](../SPEC-CHANNELS.md) is exact about the difference.
 
+**If you ever do need to restart the daemon**, after an upgrade or to change a
+flag, stop it by name:
+
+```sh
+dibs stop    # this daemon, not every daemon
+dibd &
+```
+
+Not `pkill dibd`: Dibs is built to let you run several isolated daemons on one
+machine, and a broad kill takes down somebody else's fleet along with yours. One
+daemon owns a data directory at a time, and a second started against the same
+directory refuses rather than quietly taking over: `another dibd already runs on
+~/.dibs (flock …): resource temporarily unavailable`.
+
+Nothing is lost either way. The board is rebuilt by replaying the ledger, so the
+agents, their declarations and their mail are all still there: the state *is* the
+ledger, which is why stopping the daemon is not an event anything has to recover
+from.
+
 ## When something looks wrong
 
 ```sh
@@ -312,10 +330,11 @@ dibs doctor: data dir ~/.dibs
 
   ✓ local secret present
   ✓ daemon answering on 127.0.0.1:4777
-  ✓ 42 tools published
-  ! work-overlap matching is off
-      → start dibd with -match-repo <path> (or set [match] repo in
-        dibs.toml) to have Dibs tell you who else is doing your work
+  ✓ 44 tools published
+  ! work-overlap matching has no repository indexed yet
+      → no repository indexed yet: each one is indexed when an agent first
+        registers from it, so this turns itself on. -match-repo only
+        pre-warms a tree
   ! no harness has ever called this daemon's hooks
       → no harness has ever asked this daemon a lifecycle question, so the
         claim guard has never run and mail is never injected. Install the

@@ -336,15 +336,22 @@ body {
    Four numbers, one row, no prose. This is the line a person
    reads first and it must survive being glanced at. */
 .summary {
-  display: flex; flex-wrap: wrap; gap: var(--s2) var(--s6);
+  display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: var(--s1) var(--s4);
   padding: var(--s3) 0 var(--s4);
   border-bottom: 1px solid var(--line);
 }
-.metric { display: flex; align-items: baseline; gap: 7px; }
+/* Separated by a middot rather than by rules and cells: four numbers a person
+   reads in one pass are a sentence, and ruling them apart made each one look
+   like an independent gauge worth stopping at. */
+.metric + .metric::before {
+  content: "\00b7"; color: var(--fg-3); margin-right: var(--s4);
+}
+.metric { display: inline-flex; align-items: baseline; gap: 5px; }
 .metric .figure {
   font-family: var(--mono);
-  font-size: var(--t-title); font-weight: 500;
-  letter-spacing: -.02em; line-height: 1;
+  font-size: var(--t-body); font-weight: 500;
+  letter-spacing: -.01em; line-height: 1;
   font-feature-settings: "tnum" 1;
 }
 .metric .figure .of {
@@ -357,8 +364,8 @@ body {
 .metric .figure.attn { color: var(--warn); }
 .metric .figure.good { color: var(--live); }
 .metric .label {
-  font-family: var(--mono);
-  font-size: var(--t-micro); letter-spacing: .13em; text-transform: uppercase;
+  font-family: var(--sans);
+  font-size: var(--t-sm);
   color: var(--fg-3);
 }
 
@@ -371,16 +378,25 @@ body {
 .band {
   display: flex; align-items: center; gap: var(--s2);
   padding: var(--s5) 0 var(--s2);
-  font-family: var(--mono);
-  font-size: var(--t-micro); letter-spacing: .15em; text-transform: uppercase;
+  /* Sans, sentence case, no tracking. These are WORDS: "Out of touch" is a
+     phrase a person reads, and setting it as tracked mono capitals made it
+     look like a machine register. Mono in this system means data, and a
+     heading is not data; when everything is mono, mono says nothing. */
+  font-family: var(--sans);
+  font-size: var(--t-sm); font-weight: 500; letter-spacing: 0;
   color: var(--fg-3);
 }
 .band .n {
-  font-weight: 500; color: var(--fg-2);
-  padding: 1px 5px; border-radius: 3px; background: var(--bg-1);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 400; color: var(--fg-3);
 }
-.band.working .n { color: var(--live); }
-.band.gone .n { color: var(--warn); }
+/* The band headings are all one colour, deliberately.
+   Out-of-touch used to be warm here AND on its count AND on every row's edge
+   AND on the figure in the line above: four warm marks for one fact, on a
+   system whose rule is that a quiet board has no warm pixels. The count at the
+   top says how many, and the edge on each row says which. A heading's job is
+   to group. */
 .band .hr { flex: 1; height: 1px; background: var(--line); }
 
 /* ── roster ────────────────────────────────────────────────────
@@ -421,11 +437,15 @@ body {
 .entry.stale .pip { background: var(--warn); }
 
 .tag {
-  font-family: var(--mono);
-  font-size: var(--t-micro); letter-spacing: .1em; text-transform: uppercase;
+  /* Same argument as the band. A badge reading "no contact" is a short
+     sentence about an agent, so it is set as one. The border stays: it is what
+     makes a chip a chip at this size, and it is the quietest way to say "this
+     is a label about the row" without spending a colour on it. */
+  font-family: var(--sans);
+  font-size: var(--t-fine); letter-spacing: 0;
   color: var(--fg-3);
   border: 1px solid var(--line-2);
-  padding: 1px 5px; border-radius: 3px;
+  padding: 0 5px; border-radius: 3px;
 }
 .tag.self { color: var(--accent); border-color: var(--accent-dim); }
 /* A member that is not currently working. The chip is dimmed rather than
@@ -452,6 +472,52 @@ body {
   font-size: var(--t-body); color: var(--fg-2);
   max-width: 78ch;
 }
+
+/* ── the disclosure ────────────────────────────────────────────
+   One line of what an agent said, and the rest on request. The
+   marker is a chevron on the LEFT of the row's text column, in
+   line with the pip above it, so a column of them reads as a
+   column of controls rather than as punctuation trailing off the
+   end of sentences of different lengths. */
+.says { margin: 3px 0 0 14px; }
+.says > summary {
+  display: flex; align-items: baseline; gap: 6px;
+  list-style: none;                 /* the default triangle, everywhere */
+  cursor: pointer;
+  border-radius: var(--r);
+  color: var(--fg-2);
+}
+.says > summary::-webkit-details-marker { display: none; }
+.says > summary::before {
+  content: "";
+  flex: none;
+  width: 5px; height: 5px;
+  margin-top: .45em;
+  border-right: 1.5px solid var(--fg-3);
+  border-bottom: 1.5px solid var(--fg-3);
+  transform: rotate(-45deg);
+  transition: transform .18s var(--ease);
+}
+.says[open] > summary::before { transform: rotate(45deg); }
+.says > summary:hover { color: var(--fg); }
+.says > summary:hover::before { border-color: var(--fg-2); }
+.says > summary:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 3px;
+}
+/* Clamped to ONE line, and clamped in CSS rather than sliced in the string, so
+   the whole declaration is still in the DOM: selectable, searchable with the
+   browser's own find, and read in full by a screen reader. Truncating the text
+   itself would make the board lie about what an agent declared. */
+.lede {
+  margin: 0;
+  font-size: var(--t-body); color: inherit;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1;
+  overflow: hidden;
+  max-width: 78ch;
+}
+.entry > .lede { margin: 3px 0 0 14px; color: var(--fg-2); }
+.says[open] .lede { -webkit-line-clamp: unset; }
+.said > :first-child { margin-top: var(--s2); }
 
 /* What the agent declared it is doing. The accent rule marks the
    one line that answers "what is happening right now". */
@@ -941,8 +1007,7 @@ body {
    is outstanding, and this is the only band that can be. Quiet enough that a
    healthy board has no warm pixels at all: a board where everything is
    coloured is a board nobody reads. */
-.band.gone > span:first-child { color: var(--warn); }
-.band.gone .n { color: var(--warn); border-color: var(--warn); }
+
 
 /* First run. The one screen where the product has to say what to do next, so it
    is allowed slightly more room than anything else, and no colour, because

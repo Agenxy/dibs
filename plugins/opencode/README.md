@@ -78,6 +78,12 @@ The gap above is closed. With `openai/gpt-oss-120b` over OpenRouter, in a real
    message, which said nothing about mail.
 3. It then acted: `lanes_register_lane`, `lanes_ack_board`, `lanes_inbox`.
 
+Those are the tool names as they were at the time of that run, when the server
+was called `lanes`; today the same three are `register`, `ack_board` and
+`inbox`, under whatever prefix your harness gives the server. The transcript is
+left as it was recorded rather than rewritten to match, because a verification
+is a record of what happened.
+
 Mail reaches an opencode agent without Dibs driving anything. Confirmed, not
 inferred.
 
@@ -139,6 +145,9 @@ to recover from. The nonce is the credential; the session id is a convenience.
 ## Other measured facts
 
 - opencode's `initialize` negotiates `2025-11-25` and it never sends
-  `resources/list`, so Dibs resources are pull-only here (same as Codex).
+  `resources/list`, so Dibs resources are pull-only here. (This once read "same
+  as Codex". It is not: Codex reached 2026-07-28 on 2026-08-17 and does call
+  `resources/list` there. A comparison to another harness ages faster than the
+  fact it decorates, which is why this file now states only its own.)
 - `clientInfo` is `{name: "opencode", version: "1.18.4"}`, so the board labels
   opencode agents automatically; only `model` needs self-reporting.

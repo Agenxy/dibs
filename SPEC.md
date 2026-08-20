@@ -217,8 +217,8 @@ Two consequences were real bugs, both found only by running the harnesses:
   new bridge and correctly gets a new agent. Verified both ways.
 
   The id is `bridge-<pid>-<random>`, not bare PID: PIDs are recycled, and a
-  recycled PID would silently reattach a fresh agent onto a dead agent's agent
-  and its mail.
+  recycled PID would silently reattach a fresh session onto a dead agent and its
+  mail.
 
 - **`pid` was asked of the model, which cannot know it.** It drives the sweep's
   dead-agent detection, and arrived either absent (`0`, suppressing `proc_alive`
@@ -275,6 +275,29 @@ you can measure is never improved by asking.
     (`resumed: true`). Outside that window: `E_NONCE_IN_USE` with hint → `resume`.
   - *Recovery credential* for persistent agents via `resume`. **Treat a
     persistent agent's nonce as a secret equal to its token.**
+  - *Presented by the harness, on any transport.* An agent cannot carry a secret
+    across a context boundary. Its context ends, which is the event the nonce
+    exists for, and the nonce goes with it. So the nonce MAY arrive in transport
+    metadata instead of as a tool argument, from the one place that outlives a
+    context: the harness's own MCP server config.
+
+    | transport | where |
+    |---|---|
+    | Streamable HTTP | `headers = { "X-Dibs-Agent-Nonce" = "…" }` |
+    | stdio | `env = { DIBS_AGENT_NONCE = "…" }`, forwarded by the bridge |
+
+    Accepted only for `register` and `resume`, the calls where `nonce` means
+    "who I am". `vouch_child` also takes a `nonce`, and there it is a secret a
+    PARENT issued for one specific child; filling that from the caller's own
+    identity would let any agent vouch for a child it never spawned. An argument
+    the agent supplies always wins; this only fills a blank.
+
+    This is what makes the transport a free choice. Identity used to depend on
+    the stdio bridge being a per-session process with a filesystem, so an HTTP
+    client could not reattach at all, and "which transport" silently meant
+    "whether reattachment works". 2026-07-28 removed connection-scoped sessions
+    precisely so cross-call state travels as explicit handles rather than as a
+    property of the pipe; this is Dibs taking that up.
 - **`resume(nonce, resume_id, pid?)`**: the explicit activation op for standing
   roles. `resume_id` (client-generated per attempt, ≥64-bit) makes it a **complete
   activation boundary**:
@@ -583,7 +606,7 @@ as load-bearing until the final ships and hosts migrate.
   initialized`/`ping` retained for 2025-11-25 hosts: today's clients work day one,
   and the legacy path sunsets when hosts migrate.
 
-**Tools (40).** All take `token` except `register`, `resume`,
+**Tools (44).** All take `token` except `register`, `resume`,
 `hook_poll` and `guard_path` (the last two are lifecycle-hook surfaces and have
 no token to give: see SECURITY.md).
 
@@ -606,7 +629,8 @@ counting a document; this line said 17 for two minor versions.
 | `register(name, description?, pid?, nonce?, kind?)` | → `{agent_id, token, serial, board}`; nonce required for `kind: persistent` |
 | `resume(nonce, resume_id, pid?)` | reactivate a persistent agent: rotates token, bumps activation generation, rebinds PID, wakes, re-arms gate; idempotent per resume_id (§5) |
 | `check_in()` | pass the awareness gate (per activation); → atomic `{board, inbox, serial}` checkpoint (§10) |
-| `update(description)` / `sign_off()` | lifecycle |
+| `update(name?, description?, title?, branch?, model?, provider?, effort?, surface?)` | revise what the agent says about ITSELF. The id is immutable (it is the address every message, claim and membership keys on), so a rename moves the label only, and a name another live agent holds is refused (`E_NAME_TAKEN`) rather than suffixed. `harness`/`version` are not settable: the client states them at the handshake, which is the only part of an identity that is not self-reported. Empty `description` clears, because already-ledgered `update` ops did that; the fields added later merge when non-empty, so replay of old ops is unchanged |
+| `sign_off()` | lifecycle |
 | `heartbeat()` | renew lease while idle (implicit on every call) |
 | `declare(slot_id?, text, dirs?)` / `undeclare(slot_id)` | declare/end work units |
 | `send(to, type, body, deadline_s?, op_id?)` | → `msg_serial`; `op_id` = durable dedup (§4) |
@@ -617,11 +641,24 @@ counting a document; this line said 17 for two minor versions.
 | `claim(path, mode, note?)` / `release(path)` | §9 |
 | `events_since(since_serial)` / `await_events(since_serial, timeout_s?)` | §10 |
 
+**`waiting`**: every authenticated result from a mutating call carries a `waiting`
+string when the caller has unread mail, an unacknowledged announcement, or a
+pending agent update. Counts and the corrective call (`inbox`) only, never
+content: the body stays behind the authenticated mailbox. Absent when there is
+nothing, and absent on `check_in`, which has just returned the inbox itself.
+
+This is a delivery guarantee, not a convenience. Push delivery through lifecycle
+hooks is conditional on the harness having hooks, the plugin being installed and
+loaded before the session began, and the agent having registered with the
+session id the hook quotes; a tool result is the only channel that exists
+unconditionally, and it cannot be misrouted, because it returns down the
+connection the caller authenticated on.
+
 **Errors**: structured `{code, message, hint}` tool results (`isError: true`); `hint`
 names the corrective action. Codes: the §11 set plus `E_BAD_TOKEN, E_MUST_ACK_BOARD,
-E_NO_AGENT, E_NO_SLOT, E_NO_MESSAGE, E_NO_CLAIM, E_MSG_FINAL, E_BAD_TYPE, E_BAD_MODE,
-E_BAD_DISPOSITION, E_BAD_NONCE, E_NONCE_IN_USE, E_OP_ID_CONFLICT, E_AGENT_CLOSED,
-E_CURSOR_TOO_OLD`.
+E_NO_AGENT, E_NO_SPACE, E_NO_SLOT, E_NO_MESSAGE, E_NO_CLAIM, E_MSG_FINAL, E_BAD_TYPE, E_BAD_MODE,
+E_BAD_DISPOSITION, E_BAD_NONCE, E_NAME_TAKEN, E_NONCE_IN_USE, E_OP_ID_CONFLICT,
+E_AGENT_CLOSED, E_CURSOR_TOO_OLD`.
 
 **Resources**: `dibs://board`. Mailboxes are deliberately not resources.
 
@@ -676,8 +713,8 @@ for the operator, not by them:
   first run. Serving a remote address in cleartext is never the default.
 
 Overrides live in `<dir>/dibs.toml` (`addr`, `tls_cert`, `tls_key`, `insecure_plaintext`)
-for operators who want their own CA or a fronting proxy. Sovereignty is the rule: Dibs
-never requires a VPN, an overlay, or an external CA to be safe out of the box.
+for operators who want their own CA or a fronting proxy. Dibs never requires a VPN,
+an overlay, or an external CA to be safe out of the box.
 
 Mesh (v2, multi-writer): QUIC/HTTP3, stream-per-concern, 0-RTT (idempotent exchange),
 pinned-key TLS 1.3: deferred because merging hash-chained ledgers across writers needs
@@ -701,7 +738,7 @@ binaries (`dibd` and `dibs`) both CGO_ENABLED=0 and byte-reproducible.
 ledgered wake transitions; ephemeral + persistent agents; resume; awareness gate
 per activation; mailbox (full state machine, read_mail, op_id dedup,
 dormant-recipient semantics); claims (§9 matrix); bounded liveness with bounded
-restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (42 tools);
+restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (44 tools);
 local access secret + Origin validation; CLI (board/messages/log/verify/mcp-config);
 SSE web board; static binaries (`dibd` + `dibs`, no cgo, no runtime deps).
 

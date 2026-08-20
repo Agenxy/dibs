@@ -20,52 +20,113 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 )
 
-func main() { os.Exit(run()) }
+func main() { run() }
 
-func run() int {
+// run REPORTS; it no longer refuses.
+//
+// It used to stop an install that would have signed ad-hoc while a usable
+// identity sat unused in the keychain, which was the right call when using one
+// meant naming it in an environment variable. tools/signid resolves it by name
+// now, so that situation cannot arise: if the identity exists, the install uses
+// it. What is left is the case signid cannot fix, which is having no identity at
+// all, and the answer to that is a certificate this machine does not have yet
+// rather than a refusal.
+func run() {
 	if runtime.GOOS != "darwin" || os.Getenv("DIBS_CODESIGN_IDENTITY") != "" {
-		return 0
+		return
 	}
 	if os.Getenv("DIBS_ADHOC_OK") == "1" {
 		fmt.Println("signcheck: ad-hoc install allowed by DIBS_ADHOC_OK=1")
-		return 0
+		return
 	}
 	guarded := protectedPaths()
 	if len(guarded) == 0 {
-		return 0 // nothing here needs the grant
+		return // nothing here needs the grant
 	}
-	ids := identities()
-	if len(ids) == 0 {
-		// Nothing to sign with. Say what will happen, but do not block: the fix
-		// is not available to this machine yet.
+	if !haveIdentity(dibsIdentity) {
+		// MAKE one, rather than explaining how.
+		//
+		// The old text sent the operator to Keychain Access, through Certificate
+		// Assistant, to create a certificate with four fields set exactly right.
+		// Measured on the machine this was written on: they did not do it, and
+		// were then asked for Desktop access on every single install for a day,
+		// because every ad-hoc rebuild is a different program to macOS. An
+		// instruction nobody follows is a defect with extra steps.
+		//
+		// It is a self-signed code-signing certificate in the user's own login
+		// keychain. Nothing is trusted beyond this machine and nothing is sent
+		// anywhere: the point is only that the signature stops changing, so the
+		// privacy grant they give once keeps applying.
+		//
+		// The one step that cannot be silent is trust, which macOS gates behind
+		// the user's password. That prompt is correct and worth it: one
+		// authorisation, once, against a folder prompt on every install forever.
+		if err := createIdentity(); err != nil {
+			fmt.Fprintf(os.Stderr,
+				"signcheck: %s is in a macOS protected folder and dibd will be ad-hoc\n"+
+					"  signed, so any Desktop/Documents/Downloads permission you grant is\n"+
+					"  revoked by the next install.\n\n"+
+					"  Tried to create a signing identity for you and could not: %v\n\n"+
+					"  Do it by hand if you would rather: Keychain Access → Certificate\n"+
+					"  Assistant → Create a Certificate, named %q, type Code Signing,\n"+
+					"  self-signed. Every install finds it by name after that.\n",
+				guarded[0], err, dibsIdentity)
+			return
+		}
 		fmt.Fprintf(os.Stderr,
-			"signcheck: %s is in a macOS protected folder and dibd will be ad-hoc signed,\n"+
-				"  so any Desktop/Documents/Downloads permission you grant is revoked by the\n"+
-				"  next install. Create a signing identity in Keychain Access (a self-signed\n"+
-				"  code-signing certificate is enough) and set DIBS_CODESIGN_IDENTITY.\n",
-			guarded[0])
-		return 0
+			"signcheck: created a signing identity named %q in your login keychain.\n"+
+				"  macOS ties a Files-and-Folders permission to a program's signature, and\n"+
+				"  the Go toolchain signs ad-hoc, so without this every install would ask\n"+
+				"  you for Desktop access again. It will not now.\n", dibsIdentity)
 	}
+	// The identity EXISTS, so the install is not ad-hoc: tools/signid resolves it
+	// by name with no variable set, which is the whole point of that tool.
+	//
+	// This used to refuse here, telling the operator to set
+	// DIBS_CODESIGN_IDENTITY, which was correct when the only way to use an
+	// identity was to name it and is now simply false. Two tools that decide the
+	// same thing have to decide it the same way; this one was left behind by the
+	// other and turned a solved problem into a blocked install.
 	fmt.Fprintf(os.Stderr,
-		"\nsigncheck: refusing to install ad-hoc, because it would revoke a permission you have to re-grant.\n\n"+
-			"  %s is inside a macOS protected folder, so dibd needs your permission to read it.\n"+
-			"  macOS ties that permission to the binary's signature, and an ad-hoc signature\n"+
-			"  changes on every build: you would be prompted again, exactly as before.\n\n"+
-			"  Install with an identity you already have:\n\n"+
-			"    DIBS_CODESIGN_IDENTITY=%q task install\n\n"+
-			"  Available: %s\n\n"+
-			"  Or accept the re-prompt: DIBS_ADHOC_OK=1 task install\n\n",
-		guarded[0], ids[0], strings.Join(ids, ", "))
-	return 1
+		"signcheck: signing as %q, so the privacy grant survives this install.\n",
+		dibsIdentity)
+}
+
+// dibsIdentity is the only signing identity this tool will name.
+//
+// It used to list every code-signing identity in the keychain and propose the
+// first one, which is wrong twice over.
+//
+// Borrowing another project's identity is not a convenience, it is a
+// cross-project dependency established by accident: Dibs' privacy grant would
+// then be keyed to a certificate some unrelated project owns, and rotating or
+// deleting it there silently revokes the grant here.
+//
+// And PRINTING the list is a disclosure. A keychain holds identities for work
+// that has not been announced, and this tool's output is the kind of thing that
+// gets pasted into an issue or captured in a CI log. Dibs has no business
+// naming anything but its own.
+const dibsIdentity = "Dibs Local Codesign"
+
+// haveIdentity reports whether the named identity is in the keychain.
+//
+// By name, never by position: `security` orders identities by keychain, and
+// "whatever is first" is how the wrong project's certificate got proposed.
+func haveIdentity(name string) bool {
+	out, err := exec.Command("security", "find-identity", "-v", "-p", "codesigning").Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(out), `"`+name+`"`)
 }
 
 // protectedPaths reports the trees this install would need permission for: the
@@ -94,18 +155,85 @@ func protectedPaths() []string {
 	return out
 }
 
-// identities lists code-signing identities in the keychain, newest first as
-// `security` reports them.
-func identities() []string {
-	out, err := exec.Command("security", "find-identity", "-v", "-p", "codesigning").Output()
+// createIdentity makes Dibs' own self-signed code-signing certificate and
+// trusts it for code signing, in the user's login keychain.
+//
+// Written as exec calls from Go rather than a shell script, per CONTRIBUTING:
+// this is a sequence with four failure points and a private key passing through
+// a temporary file, which is exactly the kind of thing that should not live in
+// untyped glue that continues past errors.
+//
+// The key never leaves this machine and the certificate is trusted only in the
+// user's own keychain. It is not an Apple identity and does not pretend to be:
+// its whole job is to be the SAME signature next time, so that a permission the
+// operator grants once keeps applying.
+func createIdentity() error {
+	dir, err := os.MkdirTemp("", "dibs-signing-*")
 	if err != nil {
-		return nil
+		return err
 	}
-	// Lines look like: `  1) A1B2C3… "Some Local Codesign"`
-	re := regexp.MustCompile(`\d+\)\s+[0-9A-F]+\s+"([^"]+)"`)
-	var names []string
-	for _, m := range re.FindAllStringSubmatch(string(out), -1) {
-		names = append(names, m[1])
+	// The private key is in here. Remove it whatever happens.
+	defer func() { _ = os.RemoveAll(dir) }()
+
+	key := filepath.Join(dir, "key.pem")
+	crt := filepath.Join(dir, "cert.pem")
+	p12 := filepath.Join(dir, "bundle.p12")
+	const pass = "dibs-transient" // #nosec G101 -- guards a file deleted seconds later
+
+	steps := [][]string{
+		{
+			"openssl", "req", "-x509", "-newkey", "rsa:2048", "-sha256", "-days", "3650",
+			"-nodes", "-keyout", key, "-out", crt, "-subj", "/CN=" + dibsIdentity,
+			"-addext", "basicConstraints=critical,CA:FALSE",
+			"-addext", "keyUsage=critical,digitalSignature",
+			"-addext", "extendedKeyUsage=critical,codeSigning",
+		},
+		// -legacy, because macOS's Security framework rejects the PKCS#12 that
+		// OpenSSL 3 writes by default: "MAC verification failed during PKCS12
+		// import", which reads like a wrong password and is not one.
+		{
+			"openssl", "pkcs12", "-export", "-legacy", "-out", p12, "-inkey", key,
+			"-in", crt, "-passout", "pass:" + pass, "-name", dibsIdentity,
+		},
+		{
+			// -T codesign, and NOT -A.
+			//
+			// -A lets ANY application use the key without warning, which
+			// `security` itself calls insecure, and this key exists to be a
+			// program identity: the whole value is that only Dibs can sign as
+			// org.agenxy.dibs, because macOS hangs a Files-and-Folders grant off
+			// exactly that. Handing every local process the ability to sign with
+			// it gives away the thing being established. -T names the one binary
+			// that needs it. Found by a pre-release review.
+			"security", "import", p12, "-k", loginKeychain(), "-P", pass,
+			"-T", "/usr/bin/codesign",
+		},
+		// The step that prompts. Without it the certificate is in the keychain
+		// and `security find-identity -p codesigning` will not list it, so
+		// codesign cannot use it and the whole exercise achieves nothing.
+		{
+			"security", "add-trusted-cert", "-r", "trustRoot", "-p", "codeSign",
+			"-k", loginKeychain(), crt,
+		},
 	}
-	return names
+	for _, step := range steps {
+		// #nosec G204 -- every argument is a constant or a path this function
+		// created; nothing here comes from outside.
+		if out, err := exec.Command(step[0], step[1:]...).CombinedOutput(); err != nil {
+			return fmt.Errorf("%s: %w: %s", step[0], err, strings.TrimSpace(string(out)))
+		}
+	}
+	if !haveIdentity(dibsIdentity) {
+		return errors.New("the certificate was created but is not usable for code " +
+			"signing; the trust step may have been declined")
+	}
+	return nil
+}
+
+func loginKeychain() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "login.keychain-db"
+	}
+	return filepath.Join(home, "Library", "Keychains", "login.keychain-db")
 }

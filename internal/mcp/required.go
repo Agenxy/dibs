@@ -62,7 +62,7 @@ var knownParams = func() map[string][]string {
 //
 // bearerToken is passed because `token` may legitimately arrive in the HTTP
 // Authorization header instead of the arguments object.
-func checkRequired(tool string, raw json.RawMessage, bearerToken string) error {
+func checkRequired(tool string, raw json.RawMessage, bearerToken, agentNonce string) error {
 	req := requiredParams[tool]
 	if len(req) == 0 {
 		return nil
@@ -86,6 +86,26 @@ func checkRequired(tool string, raw json.RawMessage, bearerToken string) error {
 	}
 	if bearerToken != "" {
 		present["token"] = true
+	}
+	// A nonce carried by the transport counts as supplied, exactly like the
+	// bearer token above. It is the same fact in both cases: a credential the
+	// harness holds, presented where the harness can actually put it, rather
+	// than where only the model could. See identityFromTransport.
+	//
+	// ONLY for the calls that establish an identity, which is the same scoping
+	// mcp.go applies when it fills the value in. Without that this marked
+	// `nonce` present on EVERY tool, and unknownGiven below exempts only
+	// `token`, so every ordinary call came back "check_in does not take
+	// \"nonce\"". Configuring a transport identity, which is the entire point of
+	// the feature, broke check_in, declare and inbox for that agent: the call
+	// every agent must make at the start of every activation, refused with a
+	// schema complaint about an argument the agent never sent.
+	//
+	// Reproduced against a live daemon by a pre-release review. It passed every
+	// test here because the tests supply the nonce as an argument, which is
+	// what a model does, and never as the header, which is what a harness does.
+	if agentNonce != "" && establishesIdentity(tool) {
+		present["nonce"] = true
 	}
 
 	var missing []string
@@ -115,8 +135,8 @@ func checkRequired(tool string, raw json.RawMessage, bearerToken string) error {
 		if len(extra) == 0 {
 			return nil
 		}
-		return fmt.Errorf("%s does not take %s: check the tool's schema; "+
-			"nothing was changed", tool, quoteList(extra))
+		return fmt.Errorf("%s does not take %s%s: check the tool's schema; "+
+			"nothing was changed", tool, quoteList(extra), synonymHint(tool, extra))
 	}
 
 	msg := fmt.Sprintf("%s needs %s", tool, quoteList(missing))
@@ -124,8 +144,8 @@ func checkRequired(tool string, raw json.RawMessage, bearerToken string) error {
 	// almost always the misnamed parameter: say so, rather than leaving them
 	// to diff two lists by eye.
 	if len(extra) > 0 {
-		msg += fmt.Sprintf(": you sent %s, which %s does not take",
-			quoteList(extra), tool)
+		msg += fmt.Sprintf(": you sent %s, which %s does not take%s",
+			quoteList(extra), tool, synonymHint(tool, extra))
 	}
 	return fmt.Errorf("%s", msg)
 }
@@ -161,4 +181,72 @@ func quoteList(xs []string) string {
 		return q[0]
 	}
 	return strings.Join(q[:len(q)-1], ", ") + " and " + q[len(q)-1]
+}
+
+// synonyms are the words agents reach for that this surface spells differently.
+//
+// Not aliases. Accepting both spellings would put a second name for one thing
+// into a schema that is the only documentation an agent has, and the schema
+// being the whole documentation is exactly why it must stay one word per
+// concept. What was missing is not tolerance, it is a sentence: k7-b called
+// close_space with `reason`, which records why a space was closed, and was told
+// only that `reason` is not accepted. The word they wanted was `note`, the tool
+// takes it, and nothing said so.
+var synonyms = map[string]string{
+	"reason":  "note",
+	"why":     "note",
+	"message": "body",
+	"content": "body",
+	"text":    "body",
+	"id":      "space",
+	"lane":    "space",
+	"channel": "space",
+	"target":  "agent",
+	"to":      "agent",
+	"name":    "agent",
+}
+
+// wrongTool maps a (tool, argument) that means the caller wanted a DIFFERENT
+// tool, not a different parameter.
+//
+// k7-b reached for read_mail(agent:…) because read_mail reads like a lister,
+// and for check_in(view:…) because `view` is real on `board`. Both refusals were
+// correct and neither said where to go. Renaming read_mail would be the deeper
+// fix and is a breaking change for every installed plugin, so the surface stays
+// and the error carries the map.
+var wrongTool = map[string]map[string]string{
+	"read_mail": {
+		"agent": "inbox lists your mail; read_mail fetches ONE message by msg_serial",
+		"from":  "inbox lists your mail; read_mail fetches ONE message by msg_serial",
+	},
+	"check_in": {
+		"view":   "`view` belongs to board(view: board|mail|activity); check_in always returns the whole checkpoint",
+		"detail": "`detail` belongs to board(detail: true); check_in always returns the whole checkpoint",
+	},
+	"inbox": {
+		"msg_serial": "read_mail(msg_serial) fetches one message; inbox lists them",
+	},
+}
+
+// synonymHint names the parameter the caller probably meant, when this tool
+// actually has one, or the tool they probably wanted.
+func synonymHint(tool string, extra []string) string {
+	known := map[string]bool{}
+	for _, p := range knownParams[tool] {
+		known[p] = true
+	}
+	var found []string
+	for _, e := range extra {
+		if where, ok := wrongTool[tool][e]; ok {
+			found = append(found, where)
+			continue
+		}
+		if want, ok := synonyms[e]; ok && known[want] {
+			found = append(found, fmt.Sprintf("%q is %q here", e, want))
+		}
+	}
+	if len(found) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(found, "; ") + ")"
 }

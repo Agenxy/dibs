@@ -53,7 +53,7 @@
     </div>
     <nav class="views" role="tablist" aria-label="Board views">
       <button data-view="board" role="tab" aria-selected="true" aria-controls="pane-board" id="tab-board">Board</button>
-      <button data-view="agents" role="tab" aria-selected="false" aria-controls="pane-agents" id="tab-agents" tabindex="-1">Dibs<span class="tally zero" id="tally-agents">0</span></button>
+      <button data-view="agents" role="tab" aria-selected="false" aria-controls="pane-agents" id="tab-agents" tabindex="-1">Spaces<span class="tally zero" id="tally-agents">0</span></button>
       <button data-view="mail" role="tab" aria-selected="false" aria-controls="pane-mail" id="tab-mail" tabindex="-1">Mail<span class="tally zero" id="tally-mail">0</span></button>
       <button data-view="activity" role="tab" aria-selected="false" aria-controls="pane-activity" id="tab-activity" tabindex="-1">Activity<span class="tally zero" id="tally-act">0</span></button>
     </nav>
@@ -117,7 +117,7 @@
 // ── the human as a participant ───────────────────────────────────────────
 // The operator is a participant, not a special kind of actor: they get an AGENT
 // identity and every button below sends the SAME op an agent would. They have no
-// space of their own: they join the agents agents open. See internal/web/act.go.
+// space of their own: they join the spaces agents open. See internal/web/act.go.
 let me = null
 // Why the Dibs tab is empty, in the operator's own words. An empty board with
 // matching switched off is indistinguishable from a quiet fleet unless it says.
@@ -217,7 +217,21 @@ function flash(msg, bad) {
   flash._t = setTimeout(() => { el.textContent = ""; el.className = "flash" }, 6000)
 }
 
-let state = { board: {{.BoardJSON}}, messages: {{.MessagesJSON}}, events: {{.EventsJSON}} }
+let state = { board: {{.BoardJSON}}, messages: {{.MessagesJSON}}, events: {{.EventsJSON}},
+  // Which agents the reader opened. Held here because the roster is rebuilt
+  // from scratch on every board change and a `details` does not survive that.
+  expanded: new Set() }
+
+// Capture phase: `toggle` does not bubble, so a container listener never hears
+// it. Bound once, because the rows are replaced constantly.
+document.addEventListener("toggle", (e) => {
+  const d = e.target
+  if (!(d instanceof HTMLDetailsElement) || !d.classList.contains("says")) return
+  const id = d.closest("[data-agent]")?.dataset.agent
+  if (!id) return
+  if (d.open) state.expanded.add(id)
+  else state.expanded.delete(id)
+}, true)
 
 function drawSummary() {
   const agents = state.board?.agents || []
@@ -335,6 +349,9 @@ function drawPanes() {
   // surface can decline to answer the question.
   boardEl.innerHTML = Board.rosterHTML(b?.agents, {
     selfId: null,
+    // Same reason as the panel: this surface replaces the roster's innerHTML on
+    // every board change, so a `details` a reader opened does not survive one.
+    expanded: state.expanded,
     // The cadence trace is drawn from the event feed the board already has,
     // no new endpoint, no new poll, and the same events the Activity pane shows.
     events: state.events,
@@ -399,12 +416,27 @@ function drawPanes() {
     </div>` + (state.messages.length
     ? state.messages.map((m) => {
         const forMe = me && m.to === me && !Board.TERMINAL.has(m.state)
-        return Board.messageHTML(m, { selfId: me }) + (forMe ? `
+        // A REQUEST is approved or denied, never answered.
+        //
+        // Every open message got the same `answer` button, and core refuses
+        // that disposition for a request, so the operator could read a
+        // coordinator grant or a mailbox adoption on their own authenticated
+        // board and had no way to act on it. The desktop notification was the
+        // only working approval surface, and this board is what it falls back
+        // to when notifications cannot be raised. Found by a pre-release
+        // review.
+        const isRequest = m.type === "request"
+        return Board.messageHTML(m, { selfId: me }) + (forMe ? (isRequest ? `
+          <div class="compose reply" data-serial="${m.serial}">
+            <input type="text" placeholder="why (optional)…" aria-label="reason">
+            <button class="act approve">approve</button>
+            <button class="act deny">deny</button>
+          </div>` : `
           <div class="compose reply" data-serial="${m.serial}">
             <input type="text" placeholder="reply to ${Board.esc(m.from)}…" aria-label="reply">
             <button class="act respond">answer</button>
             <button class="act ackmsg" data-why="acknowledge without answering">ack<span class="sr-only">: acknowledge without answering</span></button>
-          </div>` : "")
+          </div>`) : "")
       }).join("")
     : Board.emptyHTML("No mail", "Messages between agents appear here as they are sent."))
 
@@ -574,6 +606,16 @@ document.addEventListener("click", async (ev) => {
     if (await act("send", { to, body, type }, btn)) {
       document.getElementById("msg-body").value = ""
       flash("sent to " + to)
+    }
+  } else if (btn.classList.contains("approve") || btn.classList.contains("deny")) {
+    // A reason is optional here, deliberately: an approval that requires an
+    // essay is an approval somebody puts off, and denial already carries one
+    // by convention rather than by rule.
+    const disposition = btn.classList.contains("approve") ? "approve" : "deny"
+    const body = input?.value.trim() || ""
+    if (await act("respond", { serial, body, disposition }, btn)) {
+      if (input) input.value = ""
+      flash(disposition === "approve" ? "approved" : "denied")
     }
   } else if (btn.classList.contains("respond")) {
     const body = input?.value.trim()

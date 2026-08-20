@@ -39,6 +39,8 @@ type Ledger struct {
 	headHash string
 	box      *Box
 	nodeID   string
+	// readOnly means this handle may not repair what it reads. See OpenReadOnly.
+	readOnly bool
 
 	// OnEvents, if set, receives every event regenerated during Replay.
 	OnEvents func([]core.Event)
@@ -74,6 +76,29 @@ func Open(path, nodeID string, box *Box) (*Ledger, error) {
 		return nil, fmt.Errorf("open ledger: %w", err)
 	}
 	return &Ledger{f: f, headHash: genesis, box: box, nodeID: nodeID}, nil
+}
+
+// OpenReadOnly opens an EXISTING ledger for inspection and nothing else.
+//
+// `dibd -check` replays a board to answer whether this build could take over
+// from the daemon now running, and `dibs upgrade` runs it BEFORE the cutover,
+// which means while the old daemon may still be serving. It used the ordinary
+// Open, so a question about the board could repair the board: O_CREATE made a
+// ledger where there was none, and Replay truncated a torn final line, which is
+// the record the running daemon was in the middle of writing.
+//
+// A read-only handle cannot do either. A torn tail is REPORTED through
+// OnTornTail and left exactly as found, because repairing it belongs to the
+// process that owns the file. Found by a pre-release review, which reproduced
+// both the created files and a ledger truncated to zero bytes while the command
+// reported success.
+func OpenReadOnly(path, nodeID string, box *Box) (*Ledger, error) {
+	// #nosec G304 -- the daemon's own ledger inside its data directory.
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open ledger read-only: %w", err)
+	}
+	return &Ledger{f: f, headHash: genesis, box: box, nodeID: nodeID, readOnly: true}, nil
 }
 
 // Replay folds every ledger line into st, truncating a torn tail if the last
@@ -159,6 +184,15 @@ func (l *Ledger) Replay(st *core.State) (int, error) {
 			// A torn final line (no trailing newline / partial JSON) is the
 			// expected crash artifact: truncate it and continue.
 			if len(raw) > 0 {
+				// Reported, never repaired, on a read-only handle: the process
+				// that owns the file is the one entitled to change it, and here
+				// that may be a daemon still serving. See OpenReadOnly.
+				if l.readOnly {
+					if l.OnTornTail != nil {
+						l.OnTornTail(len(raw), validOff)
+					}
+					break
+				}
 				if err := l.f.Truncate(validOff); err != nil {
 					return n, fmt.Errorf("truncate torn tail: %w", err)
 				}

@@ -5,7 +5,1055 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-08-20
+
+### Security
+
+Found by the pre-release review, which this project requires before every tag and
+runs with a model that did not write the code. The first two were present in
+v0.0.5 and are covered by GHSA-72hq-r6x6-mjwf; the rest existed only on this
+branch and never shipped.
+
+- **The operator's identity was claimable with a guessable credential.** The
+  recovery nonce for the human's own agent was `"human:" + <OS username>`, and
+  registration reattaches on a matching name and nonce and returns that
+  identity's token. So any agent that could run `whoami` could become the person
+  at the board: post, announce, send and read their mail as them, and on this
+  branch approve its own coordinator grant, which the Touch ID path never sees
+  because approving a request does not ask for a fingerprint. On an empty board
+  the same call pre-creates the identity, and the operator is somebody else the
+  first time they open it.
+
+  `internal/core` has no notion of the human, deliberately, so the fold cannot
+  tell that row from any other and a rule there would bind every register op
+  already in a ledger. The refusal is at the engine's ingress, beside the other
+  authorisation verdicts a caller is not trusted to assert.
+
+- **Any local page could drive the board through the operator's browser.** The
+  `Origin` check read the hostname and ignored the port. Cookies are scoped to a
+  host and not a port, `SameSite=Strict` does not separate them either, and
+  `text/plain` is CORS-safelisted, so a page on any other local port could POST
+  JSON carrying a live board session with no preflight. CORS withholds the reply
+  and does nothing about the effect, and the effect included `GrantRole`. Any
+  local process can bind a port, which on this machine includes the agents the
+  daemon exists to coordinate. The origin is now this server's own.
+
+- **The Touch ID prompt spoke the caller's words.** `human_unlock` placed its
+  `note` argument verbatim into the biometric sheet, and any agent may call it,
+  so the caller chose the sentence a person read at the moment they decided
+  whether to hand over their token. The prompt is now the daemon's, names the
+  requesting agent, and says what is being given away; `note` is recorded in the
+  result instead.
+
+- **A single approval could perform two effects.** `grant` and `adopt` were
+  admitted independently and both executed, while the prompt rendered only the
+  grant, so a request could read "make X coordinator?" and move a dormant
+  agent's whole mailbox on the same yes. Refused as a combination, and the
+  prompt no longer depends on that.
+
+- **A question's answers went to disk in the clear.** `choices` is message
+  content and became recipient-scoped state exactly like the body beside it, and
+  only the body was sealed. A copied ledger showed the alternatives next to
+  ciphertext, and the alternatives are frequently the sensitive half.
+
 ### Added
+
+- **Codex is configured over stdio, not HTTP, and that is an identity decision
+  rather than a preference.** `dibs mcp-config` printed the url form for Codex,
+  Codex took it, and the cost was invisible for months: an HTTP client has no
+  per-session process, so nothing holds the agent's nonce, so every returning
+  session registers as a sibling that cannot read its predecessor's mail. Codex
+  has supported stdio all along; in a real config almost every other server uses
+  it, and Dibs was the odd one out because this command said to be. The url form
+  is still documented for a client on another machine, where a local bridge is
+  not an option and a forked identity is the lesser problem.
+
+- **The stdio bridge keeps the nonce, so a returning agent is the same agent.**
+  This is the product's central failure, and an agent building on Dibs said it
+  better than the source did: "An agent cannot be relied on to carry a secret
+  across a context boundary." A persistent agent is told to keep a nonce,
+  because it is the only credential that survives a restart. Then its context
+  ends, which is the event the nonce exists for, and the nonce ends with it. The
+  next session registers under the same name with a fresh one, becomes a
+  SIBLING, and cannot read a word of its predecessor's mail.
+
+  Measured on a real board: nine rows for five roles. `dibs-maintainer`, `-2`,
+  `-3`. `codex-root`, `-2`. `codex-1`, `-2`. `web-lead`, `-2`. One created while
+  fixing the others; one agent reproduced it twice in a day, the second time
+  having been warned by the very response that created the first.
+
+  The bridge is the only participant with a memory that spans sessions, so it
+  keeps it: per project root and per name, stored 0600 under the data directory
+  rather than in a tree somebody might commit. A returning session reattaches
+  before the model has done anything. What the agent supplies still wins, and is
+  remembered too. This does not help HTTP clients, which have no bridge; that
+  gap is named rather than papered over.
+
+- **An agent is told when its request is answered, and what changed.** Approval
+  is the most consequential thing that can happen to an agent that asked for
+  something: it may now do what it could not a moment ago, and short of
+  re-reading a message it had already sent, nothing told it. The notice names
+  the effect rather than the disposition, so an approved `grant` says "you now
+  hold the coordinator role" and an approved `adopt` says whose mail is now
+  yours. A denial says not to retry the same ask without new reasoning.
+
+- **The agents already in a space are told when somebody joins it.** This
+  notified the joiner and nobody else, which answers "what did I just join" and
+  leaves "who turned up in my space" to whoever re-reads the board. Somebody
+  arriving in the work you are doing is a change you did not cause and could not
+  infer, which is what a notice is for.
+
+- **`[wake] notices_wake`**, for the cost of the above. Extending a turn revives
+  a thread that may be long and whose prompt cache is cold, and on a fleet of
+  idle sessions that is a real bill to pay for "somebody joined your space".
+
+  On by default, and the first version had it off, which four end-to-end checks
+  caught immediately: "an agent is told what happened to it" is a guarantee this
+  project already makes, and one that holds only for operators who found a
+  config file is not a guarantee. The zero value is therefore the documented
+  behaviour, and the field is stored inverted so that stays true for an engine
+  nobody configured. Turning it off costs latency, not delivery: notices still
+  queue, still ride along on any other wake, and still arrive in full at the
+  agent's own `check_in`.
+
+- **Mail reaches an agent whose harness cannot push anything.** Every
+  authenticated mutating result now carries a `waiting` line when the caller has
+  unread mail, an unacknowledged announcement, or a pending agent update: counts
+  and the corrective call, never content. Push delivery through lifecycle hooks
+  is conditional on four things (the harness having hooks, the plugin being
+  installed, it having loaded before the session started, and the agent having
+  registered with the session id the hook quotes) and each of them is a real way
+  to end up believing mail arrives by itself. Measured on a live board: an agent
+  registered out of band sat on unread mail while `dibs doctor` reported hooks
+  resolving perfectly, because they were, for everybody else. A tool result is
+  the one channel that always exists and cannot be misrouted, because it returns
+  down the connection the caller authenticated on.
+
+- **Registering with no session id says so, and says what it costs.** That
+  registration used to draw the "no lifecycle hook has reached this daemon"
+  text, which sends the agent to audit a plugin that is very likely fine. No
+  hook can resolve an agent that has no session id, however well the plugin is
+  installed, so the result now names that and the way back (re-register with the
+  same name and nonce) instead.
+
+- **A human running a terminal harness can see what Dibs is doing.** The wake
+  hook returns `systemMessage` alongside the model-facing digest: one line, to
+  the person rather than the model, costing the agent no context. The board is
+  an MCP Apps panel and terminal hosts do not render those, so everything Dibs
+  did for those operators happened in silence.
+
+- **`UserPromptSubmit` joins the Claude Code wake hooks**, so mail that arrived
+  while the agent was idle lands when the human's next turn starts rather than
+  waiting out the turn after it.
+
+- **`update` revises what an agent says about itself**: `name`, `description`,
+  and the self-reported half of its identity (`title`, `branch`, `model`,
+  `provider`, `effort`, `surface`). An agent picks its name in its first seconds
+  and boards fill with `agent`, `claude-1` and `worker`: nine rows that are all
+  synonyms for "an agent". The id never changes, because it is the address every
+  message, claim and membership keys on, and a name another live agent holds is
+  refused (`E_NAME_TAKEN`) rather than suffixed, since two live agents sharing a
+  name redirects mail between them. `harness` and `version` stay unsettable:
+  the client states those, which is the one part of the board that is not a
+  model's word for itself. `register` now also answers a placeholder name at the
+  moment it is chosen.
+
+- **A question to the human is answerable from the notification.** It used to
+  raise a banner, which is a notification that the board has something on it:
+  the person still had to go and open the board, and the asking agent waited out
+  its deadline while they decided whether to. Requests have had approve/deny
+  buttons since notifications landed; questions had nothing.
+
+  `send` now takes `choices` (up to four). Up to three become the buttons
+  themselves, so answering is one press with nothing to type and no window to
+  find. A fourth does not fit on a notification, so that case, and a question
+  with no choices at all, offers `Later` and an opt-in, which then opens a list
+  or a text box.
+
+  Nothing takes the screen until the person has pressed something asking it to,
+  and that ordering is the design rather than a detail: raising a text box on
+  arrival is fewer steps and is a coordination service deciding that its
+  optional question outranks whatever they were doing. `planAnswer` is split
+  from the osascript that performs it so the rule is testable, because the part
+  with a rule in it is the part a rewrite loses.
+
+  The choices are on the MESSAGE and therefore in the ledger, not a property of
+  the notification that raised them: a question replayed without its options is
+  a different question. Agents see them in `inbox` like any other field, so an
+  enumerated answer space is worth stating whoever is receiving it.
+
+- **Touch ID opens the web board, and no password is needed where it works.**
+  `dibs doctor` warned "no admin password set, so the web board cannot be
+  opened" on every Mac with a working sensor, and the remedy it named was to
+  invent and store a credential in order to be trusted LESS. The presence
+  machinery had existed since the panel's `human_unlock`, whose own comment says
+  it: a password proves possession of a secret an agent could in principle have
+  been handed, while a fingerprint proves somebody is sitting there. The gate
+  went on demanding the weaker of the two, and `guard.go` had carried a note
+  saying "presence upgrade can later replace the password" the whole time.
+
+  The check runs in the DAEMON, never in the client. A caller that reported "I
+  verified presence" would be asserting it, and every agent on the machine holds
+  the local secret needed to make that assertion. Presence is also still the
+  SECOND factor: same-user AND a person who consented just now.
+
+  The password stays, because presence is genuinely absent on Linux, on Macs
+  without the sensor, and in a headless session. Declined and unavailable are
+  answered differently by the daemon, because they mean different things to
+  anything calling `/bootstrap`. And a `dibs web` whose stdin is not a terminal
+  never raises a sheet at all, since a script piping a password is telling you
+  it cannot reach a sensor. `dibs web --password` forces it.
+
+  `dibs web` falls back to the password on EVERY presence failure, not just on
+  an unavailable sensor. The tempting rule is to stop on a decline, so that
+  somebody who just said no is not immediately asked for a credential; it is
+  right about a real decline and wrong about everything it cannot be told apart
+  from. The helper reports "declined" for a cancel, a failed match and its own
+  timeout alike, so a sheet that never reached the screen looks exactly like a
+  refusal. That is not hypothetical: on the machine this was written on,
+  `evaluatePolicy` accepted the policy, reported Touch ID present and enrolled,
+  and never called back at all. Stopping there would leave the operator with
+  ninety seconds of nothing and no way in, on the one command whose job is to
+  let them in.
+
+- **Dibs reports its own faults to the coordinator, and asks for a patch.** A
+  service that notices something wrong with itself and writes it to a log has
+  told nobody: the operator is not tailing it, which is the same premise this
+  whole product rests on. Faults now go to whoever holds the coordinator role,
+  or to the human when nobody does, as ordinary mail: same envelope, same
+  mailbox, same wake path, visible on the board and replayable. A private
+  channel for system messages would be a second delivery mechanism to keep
+  working and the first thing to rot.
+
+  Every report ends on something the reader can do, and what that is depends on
+  whose fault it is. Configuration gets the remedy precisely, because it is
+  theirs to apply, and still names the repository in case the remedy does not
+  work. A defect gets the repository, the failing path, and an invitation to
+  FIX it: the agent reading it is holding a reproducible fault in a Go codebase
+  with the path named, which is a better starting point than whoever reads the
+  issue later will have. Asking for a bug report gets a bug report; asking for a
+  patch sometimes gets a patch, and a contributor.
+
+  Dibs speaks as an ordinary participant to do it, minted on first fault rather
+  than at startup, so a board where nothing has gone wrong carries no row for
+  the thing that reports what goes wrong. A report without a remedy is refused
+  at the door, because that is an alarm and this is the file that exists to not
+  produce those. One report per kind per run, so a fault that recurs every sweep
+  does not become a message every sweep.
+
+- **An agent can ask for its old identity back, and approving moves the mail.**
+  `send(to: "coordinator", type: "request", adopt: "<the abandoned id>")`. The
+  approver's yes performs the adoption; there is nothing left to run.
+
+  This is the fix for the duplicates a real board accumulates. `dibs-maintainer`,
+  `-2` and `-3`; `codex-root` and `-2`; `codex-1` and `-2`: every one is an agent
+  that came back, could not prove it was itself, and started again beside its own
+  unread mail. The recovery path already existed and needed the human at the
+  machine or a coordinator, which is an authority the returning agent does not
+  have and cannot get from where it is standing. So the honest reading of the
+  warning was "your mail is gone", and the only reachable action was to carry on
+  as a sibling. The warning now ends on something the agent can do unaided.
+
+  Approving one still needs exactly the authority that performing one needs,
+  recorded at ingress like every other verdict, so replay applies the decision
+  that was made rather than re-deciding it against a board whose roles have
+  moved on.
+
+- **`to: "coordinator"` addresses whoever holds the role.** An agent asking for
+  its identity back should not have to work out which of sixteen rows is the
+  coordinator today, or notice when it changes hands. Resolved at ingress, so
+  the ledger records the agent it actually went to: a message addressed to a
+  role and replayed after the role moved would otherwise be delivered to
+  somebody it was never sent to. A live holder wins over a dormant one, because
+  addressing a role has to reach somebody who can answer, and the result is
+  stable across calls: map iteration is random, and "the first one found" would
+  scatter a role's mail across however many hold it.
+
+- **An agent asks for a role and your Approve grants it.** `send(to: <the human
+  row>, type: "request", grant: "coordinator")` raises a notification whose
+  button says what pressing it does, and pressing it promotes them. There is no
+  second step.
+
+  Before this, the loop stopped one move short of useful: the agent asked, the
+  notification appeared, the human pressed Approve, and then had to open a
+  terminal and type `dibs admin coordinator <agent>`. Two steps for one
+  decision, and the second is where it died: the approval sat answered on the
+  board while the agent stayed unable to do the thing it had just been told it
+  could. A `request` is free prose, so Dibs could not know that approving one
+  meant granting anything; `grant` is the typed field that makes the yes
+  actionable.
+
+  Three rules keep it from being self-promotion with extra steps. Only the human
+  may receive one, checked in the engine because `core` does not know humans
+  exist and that ignorance is what keeps it a pure state machine: without it two
+  agents could promote each other by approving in turn. Only a `request` may
+  carry one, because it is the only type with an approve. And **admin is refused
+  outright**: coordinator is breadth (broadcast, force_release) and cannot read
+  anybody's mail, while admin is the god view including every agent's decrypted
+  mail, which is not something to hand over on a notification tapped between two
+  others.
+
+  The notification's title is composed by the DAEMON from the typed field, not
+  from the sender's prose. It is the only line stating the effect of pressing
+  Approve, so a request whose body reads "just need to check something" cannot
+  carry `grant: coordinator` past somebody who never saw the word.
+
+- **`retitle_space`**, so a topic can be redacted without destroying the space.
+
+- A hygiene guard against the wreckage a find-and-replace leaves when one word
+  used to mean two things, which is how the last one went.
+
+- **`task release VERSION=x.y.z`**, because the release pipeline had exactly one
+  hand-edited step left and it drifted twice. AGENTS.md says of that pipeline
+  that "no source is updated by hand: if the three ever disagree, that is a bug
+  in the pipeline, not a chore"; claiming the changelog's Unreleased section and
+  stamping four manifests was still a chore. It stamps and stops, because
+  tagging publishes signed artifacts, moves the Homebrew cask and writes to the
+  MCP registry, and that stays the owner's to perform. `internal/release` is the
+  one declaration of what carries a version, used by both the thing that writes
+  it and the thing that checks it, so a manifest cannot be stamped and unchecked
+  or checked and unstamped.
+
+- **`dibs upgrade`**: one command to move a running fleet onto a new build.
+  R12 settled the client half of this (the bridge waits out the restart window
+  and re-sends only requests that provably never arrived); this is the operator
+  half. It runs the new binary against the ledger first, through a new
+  `dibd -check` that replays without serving and is safe against a board another
+  daemon is holding, and stops nothing unless that passes: a binary that cannot
+  fold the ledger the old one wrote is otherwise discovered only after the
+  daemon that could serve the board is gone. Then it repoints a service unit
+  pinning the wrong daemon, restarts through the service manager where there is
+  one, restores the address the daemon was bound to (a fleet spanning machines
+  is not on loopback, and coming back there would take every remote agent off
+  the board while every local check passed), and waits for the board before
+  reporting the serial and agent count it returned with. Anything that fails
+  between the stop and the start restarts the daemon on the build it was already
+  running. `--adopt-dir` also renames a data directory an older version named,
+  in the one order that works. `dibs doctor` now names this command instead of
+  handing back shell steps whose order was load-bearing and unstated.
+
+  Two rules in it were paid for on a live board, by the first real run. A
+  service unit is RELOADED before it is restarted, always: launchd reads a plist
+  at load time and holds the parsed definition, so rewriting the file changes
+  nothing it knows and `kickstart` exits 0 having scheduled the old program.
+  Unconditionally, because a plist edited by hand or by an earlier failed run
+  drifts the same way and presents identically. And a restart is not believed
+  until the BOARD answers: marking it done when the start call returned meant
+  the recovery could not fire on the one failure that matters, and the fleet
+  stayed down while the command reported the failure and exited.
+
+### Fixed
+
+- **Pinning an agent's identity broke every call that agent then made.** The
+  transport nonce counted as a supplied argument for every tool, while the
+  unknown-argument check exempts only `token`, so an agent whose harness pinned
+  its identity was refused `check_in` with a schema complaint about an argument
+  it never sent. That is the call every agent must make at the start of every
+  activation, so configuring the feature broke the agent that configured it.
+
+- **`dibd -check` repaired the board it was asked to inspect.** It replays a
+  board to answer whether this build could take over from the daemon now
+  running, and `dibs upgrade` runs it before the cutover, which means while the
+  old daemon may still be serving. It opened the ledger read-write, so it
+  created files in a directory it does not own and truncated a torn final
+  line, and a torn final line is what a running writer looks like from outside.
+  Measured with a 17-byte partial record: the command reported success and left
+  the ledger at 0 bytes. It now loads rather than creates, opens read-only, and
+  reports a torn tail instead of repairing it.
+
+- **The bridge's memory outranked the operator's configuration.** A remembered
+  nonce was injected into the arguments before the pinned identity was attached
+  as a header, and the daemon prefers a stated nonce over a transport one, so
+  `DIBS_AGENT_NONCE` was silently overruled and the session reattached to
+  whichever agent the bridge happened to remember.
+
+- **One checkout was several identities.** The bridge's nonce store said it
+  keyed by repository root and nothing supplied one, so every session was keyed
+  by the exact subdirectory it started in: the same role launched from the
+  repository root and from a subdirectory became two agents. It now walks up for
+  the checkout.
+
+- **The nonce store could lose every identity on the machine.** An unlocked
+  read-modify-truncate-write of a file every bridge shares, and a decode failure
+  reads as an empty map, so one interrupted write discarded the lot. Each lost
+  entry is a fresh nonce and therefore a sibling. Serialised and written
+  atomically now.
+
+- **A branch-only `update` erased the agent's description.** The tool invites
+  branch-only and title-only calls, and an omitted field and an explicitly
+  emptied one were the same value by the time the op was built.
+
+- **Approving a request from an agent that had retired still performed it.** The
+  role was granted to an agent that cannot act, and an adopted mailbox was moved
+  into one whose token has been blanked and which cannot resume, so a
+  coordinator approving a rescue moved the rescued mail somewhere unreadable and
+  was told it worked.
+
+- **The board could be framed.** Cookies are host-scoped and not port-scoped, so
+  a page on another local port could frame the authenticated board with its
+  session attached and drive it through its own script, whose origin is this
+  daemon's. `frame-ancestors 'none'` and `X-Frame-Options: DENY` now.
+
+- **A fault found before anybody was on the board was never retried.** The
+  startup reachability check runs before any agent has registered, so there was
+  nobody to tell, and nothing tried again once somebody arrived.
+
+- **Two shipped plugins read the daemon's secret from a directory it left
+  behind, and failed silently when it was not there.** `plugins/opencode` and
+  `plugins/pi` defaulted `DIBS_DIR` to `~/.agents`. The daemon has used
+  `~/.dibs` since 0.0.3 and reads the old name only as a legacy directory, so on
+  any install made since, both plugins looked for `local.secret` where nothing
+  was. Neither says so: the read is wrapped, returns null, and every hook in
+  both files returns null on a null key. The agent registered no delivery hook,
+  nothing was logged, and mail simply never arrived, which is indistinguishable
+  from a quiet board. Both now resolve the way the daemon resolves, preferring
+  `~/.dibs` and falling back to the legacy directory only when that is the one
+  that exists.
+
+- **A missing SPACE said "no agent" and sent the agent to look at the roster.**
+  Nine call sites keyed on a space id answered `E_NO_AGENT`, while `E_NO_SPACE`
+  existed alongside them and was used in six others. The hints were the
+  expensive half: `join_space` against a space nobody had opened answered
+  `no agent ghost`, hint `open_space it, or list agents first`. Dibs holds that
+  every error carries a hint naming the corrective call; this named the wrong
+  noun and then the wrong call. `join`, `leave`, `post`, `watch`, `retitle`,
+  `close`, `merge` and both watch paths now answer `E_NO_SPACE`. `E_NO_SPACE`
+  was also missing from SPEC §12's list of codes, before any of this.
+
+- **Three hints told an agent to "read the agent with `read_space`".** The 0.0.3
+  rename left `core.AgentMatch.Agent` holding a space id, so everything written
+  about that field came out saying agent when it meant space. The field is now
+  `Space`, which is what the two rounds of repair above and below both trace
+  back to.
+
+- **The hermes plugin told the reader to install a binary that has never
+  existed** (`hermes mcp add agents --command "$(which agents)"`), six lines
+  above its own output showing `command: .../bin/dibs`. It and `plugins/pi`
+  also advertised a stale count of 25 against a server publishing 44 of them: no
+  plugin README was read by the tool-count guard, and hermes stated the number
+  in a shape the guard cannot match, so both halves had to be wrong for it to
+  survive. The guard now reads every plugin document.
+
+- **The README, the tutorial and SPEC-CHANNELS described matching as something
+  you switch on.** It has indexed every repository the fleet works in since
+  0.0.5, and measured its own notify threshold since. The README's section was
+  headed "Turning it on", SPEC-CHANNELS promised in its fourth line that spaces
+  are inert until `-match-repo` is passed, and the tutorial told the reader to
+  restart the daemon to set a flag that no longer does anything, including a
+  `dibs doctor` transcript showing a check the command has not printed since.
+
+- **A full board refused registrations while naming the wrong ceiling.** One
+  static error read "maximum number of agents reached" for both caps, so an
+  operator hitting the PERSISTENT limit checked `max_agents`, found the board a
+  quarter full, and had been told something true and useless. Found by running
+  the thing: a board holding 16 agents of a possible 64 refused a new one,
+  because all 16 were persistent and that ceiling is 16. Each cap now names
+  itself, its number, and its own remedy, which differ: a full board wants
+  finished agents signed off, while a full persistent board usually means
+  siblings accumulated and wants them reclaimed.
+
+- **`max_persistent_agents` and `max_agents` are settable**, which the hint
+  above tells people to do and which was not previously possible. A persistent
+  ceiling above the total is refused rather than accepted, because the lower one
+  binds and the setting would otherwise read as applied while doing nothing.
+
+- **One unreadable directory switched work-overlap matching off for the whole
+  board.** An agent registering from a tree macOS will not let the daemon read
+  set the GLOBAL phase to `off`, replacing a working index for every other
+  repository with "matching is off" and a hint pointing at one directory. A
+  fleet lost the feature for a day to it. Reported by an agent that had lost it
+  and traced the cause correctly.
+
+  A tree that cannot be read is now named in `unreadable` and belongs to the
+  agent that registered from it; the phase stays whatever the rest of the board
+  earned, and only goes `off` when nothing at all is indexed, because then the
+  two statements coincide.
+
+  The same shape two lines above it: every registration set the phase to
+  `indexing`, so a fleet that had been matching for an hour reported itself as
+  starting up whenever a new agent joined, and anything declaring in that window
+  was told matching was not ready.
+
+- **`task install` proves the signature is stable instead of asserting it.**
+  macOS ties a Files-and-Folders grant to a program's code-directory hash, so a
+  hash that moves silently revokes the permission and the operator is asked
+  again by a dialog that explains none of it. The stable identity fixed that;
+  nothing checked it was still true. It had been verified once, by hand, by
+  somebody who then promised it would not recur, which is precisely the kind of
+  claim this repository does not accept anywhere else. `tools/signstable`
+  records what each install signed and fails the next one if it changed, naming
+  both hashes and the two commands that diagnose it. Ad-hoc builds are exempt
+  and say so, because their hash changes by design and failing every install on
+  a machine with no identity would teach everyone to ignore the check.
+
+- **The panel no longer pushes anything into model context, and the daemon no
+  longer gives it the material to.** `maybeShareMailWithAgent` called
+  `ui/update-model-context` with the body of every unread message. It existed as
+  the only push a host without lifecycle hooks could offer, and it did not do
+  that job: by the Apps contract it does not start a turn, which the code said
+  itself, so the mail surfaced when the HUMAN next typed. That is the operator
+  acting as the transport, which is the failure this product exists to remove,
+  arriving through the one door nobody was watching. What it did in practice was
+  put every unread message, in full, into their composer.
+
+  Removed, not trimmed. Waking an agent belongs to the lifecycle hooks and to
+  the `waiting` line on every authenticated result; a panel shows a person their
+  board.
+
+  Removing it was not enough on its own. MCP Apps templates are cached by the
+  host against their `ui://` URI, so a session that loaded the panel before the
+  fix keeps running the old JavaScript and keeps leaking, with nothing the
+  server can do about it. So the bodies also stop leaving the daemon: the panel
+  payload carries serials, senders, types and states, and the text travels only
+  on the panel's own authenticated bridge, where a host has no claim to it. A
+  cached panel cannot share what it was never given.
+
+  Four e2e checks asserted the old behaviour, carefully: that the push was
+  framed as data rather than instruction, that it never claimed to wake anyone,
+  and that concurrent pushes coalesced. All true, all of a feature that should
+  not have existed. They now assert zero pushes, with the reasoning kept.
+
+- **A guard against the leak that keeps coming back through a new door.** The
+  same defect has now appeared three times in three channels: the wake digest
+  listing each message with its text, `dibs://inbox` returning the whole
+  mailbox, and both reported by the operator watching their own prompt box fill
+  with mail addressed to an agent. `TestNoWakeSurfaceLeaksAMessageBody` asserts
+  the rule over every surface a host may attach to a human's turn, as a property
+  rather than three examples, because the failure keeps arriving somewhere
+  nobody thought to look. The rule is one sentence: these say who is waiting and
+  what kind, never what was said, and the content is fetched with a
+  token-authenticated call.
+
+- **A fault report goes to somebody who can READ it.** It asked
+  `CoordinatorID`, which answers "who holds the role". On a board whose only
+  coordinator is dormant, that is an agent which may never come back, so the
+  report was filed correctly into a mailbox nobody opens: this feature's own
+  failure mode, with an extra step. Measured here, where the standing
+  coordinator had been dormant for a day while the operator was at the keyboard
+  throughout, and Dibs' warning that it could not reach them by notification
+  went to the one row guaranteed not to see it. A live coordinator first, then
+  the human, then a dormant coordinator as a last resort.
+
+- **A request to a PERSON gets a person's deadline.** The default was ten
+  minutes for every recipient. That is right for an agent: it is in a loop, it
+  answers in seconds, and a stale question should expire rather than linger. A
+  human is not in a loop, which is the premise this entire product rests on, and
+  this one default contradicted it.
+
+  Measured here, on the request that would have made the maintainer a
+  coordinator: sent, delivered, never seen because a Focus mode swallowed the
+  notification, and expired thirty minutes later as
+  `expired_recipient_dormant` while the operator was away from the machine. The
+  feature worked exactly as built. The clock was set for somebody else.
+
+  A day now, when the recipient is the human and the sender named no deadline.
+  Well inside the seven days a persistent recipient already allowed, so a sender
+  who wants longer can ask, and an explicit deadline still wins in both
+  directions. Agent-to-agent mail keeps the short default, because "every
+  deadline is a day" would leave stale questions on every board for a day apiece.
+
+- **A sibling shares the NAME, never the ROLE, and the resend advice did not say
+  so.** Mail to a dormant agent returns "X is LIVE under the same name and is
+  almost certainly who you meant. Resend to X." That is right when you meant a
+  peer doing a job, and wrong when you meant an authority.
+
+  Found in the wild within an hour of the reclaim path shipping, by the first
+  agent to use it in earnest. It needed a coordinator to approve an adoption,
+  addressed the agent holding that role, found it dormant, followed this advice
+  to the live sibling, and asked an agent with no role at all. It opened by
+  telling that agent it held the coordinator role, because the note had said so
+  in everything but the word. Neither end could see that the authority had been
+  dropped in transit. The advice now says when the sibling lacks the role, what
+  that costs (approving an adoption or a grant, force_release, evict), and names
+  the human as the reachable alternative.
+
+- **Confidentiality: `dibs://inbox` published message bodies to whoever the host
+  decided.** An MCP resource is APPLICATION-controlled: the host chooses what to
+  do with one, and attaching it to the user's next turn is an ordinary thing for
+  a host to do. This resource returned the whole mailbox, bodies included, so
+  one agent's private mail was rendered into its operator's prompt box, prefixed
+  with the resource's own name. Reported that way: "it starts with `inbox:` and
+  a message from another agent."
+
+  Two failures in one change: mail reaching a reader it was not addressed to,
+  and the human put back in the loop as a relay. The resource now carries the
+  SIGNAL and the tool carries the content: counts, senders, types and serials,
+  plus the call that reads them. That is the rule Dibs already applies to the
+  human's notification and to the `waiting` line, "counts and senders only,
+  never content", and this was the one place it was not applied. The
+  subscription still says "there is new mail", which is all a wake needs.
+
+- **Security: a role grant could be approved by an agent, not only by the
+  human.** The engine checked that a request carrying `grant` was ADDRESSED to
+  the human when it was sent, and approval trusted the recipient from then on.
+  Adoption rewrites the recipient of every message in a mailbox, and a
+  coordinator may adopt, so: an agent asks the human for coordinator, the
+  human's row goes dormant (which needs no arranging, since silence is a
+  person's whole liveness model), a coordinator adopts that mailbox, inherits
+  the pending request, and approves it. No human anywhere in the story. Closed
+  twice: the human's mailbox is not adoptable by anybody else, which the
+  coordinator boundary already implied and did not enforce, and approving a
+  grant re-checks the human at APPROVAL time.
+
+- **`op_id` dedup ignored the fields that carry the effect** (`grant`, `adopt`,
+  `choices`), so a retry reusing an op_id with a changed `grant` returned
+  `{"ok": true, "deduplicated": true}` over a message that granted nothing.
+
+- **Three new validation rules sat in `Apply` instead of `Admit`**, which makes
+  them retroactive replay rules: the day the accepted roles change is the day
+  the daemon refuses to boot on its own history. This is the mistake AGENTS.md
+  names first. The tests reinforced it by asserting rejection at `Apply`.
+
+- **Three new engine paths read core state off the single-writer loop**,
+  including one called from an HTTP handler. `e.human.mu` guards the cached
+  human fields and nothing in core, so those were data races and candidates for
+  a concurrent map read-and-write panic.
+
+- **A notification that could not be SHOWN was reported as one nobody
+  answered**, so a question the operator could never see was indistinguishable
+  from one they ignored, and the asker waited out its deadline.
+
+- **A fault was marked reported before it was delivered**, on four paths. The
+  startup reachability check is exactly when that bites, since it runs before
+  anybody has registered.
+
+- **The notification says WHO is asking.** "Dibs · make asker coordinator?" is
+  not enough to approve a privilege change on: a name is self-chosen and often
+  three variations of one word. It leads with the daemon-assigned id and where
+  the agent works, placed ABOVE the sender's own text.
+
+- **Tests can no longer notify a real person.** `go test ./...` put alerts on
+  the operator's screen carrying fixture text, with buttons that answered a
+  process which had already exited, and the product was then reported broken on
+  the evidence of its own test suite.
+
+- **`core.Message`'s json tags and two op-kind strings were frozen by nothing**,
+  though a message is state and state is a fold over the ledger.
+
+- **Mail no longer rides on the human's prompt.** `UserPromptSubmit` fires when
+  a PERSON types, and its `additionalContext` is attached to their message, so
+  delivering a wake digest there made the operator the transport: an agent
+  learned that a peer was waiting when, and only when, its human happened to say
+  something. That is the failure Dibs exists to remove, shipped as a feature.
+  Worse, that path had no freshness throttle (only `Stop` did), so the same
+  unread message was attached to every prompt they sent until somebody read it.
+  Reported from a live fleet: "it's putting it on my plate to take an action for
+  them to notice, agents should be notified directly."
+
+  `Stop` still pushes and keeps its loop guard, `SessionStart` still tells a new
+  session what is waiting, and the `waiting` line still reaches an agent that
+  neither can. None of those need a person to type.
+
+- **The Codex plugin says how to wire its wake path, and stops contradicting
+  itself about whether one exists.** Codex reads hooks from `~/.codex/hooks.json`,
+  a different file from `config.toml`; nothing said so, so the MCP server got
+  configured and the hooks file never did. The README meanwhile carried two
+  sections: one announcing that the `mcp_tool` hook variant had arrived, and,
+  directly below it, one stating as current fact that "there is no `mcp_tool`
+  and no `http` variant". Both were checked in, and the shipped `hooks.json` was
+  written against the true one, so a reader had no way to tell which described
+  the product. This is the drift class this repository is most expensive at, in
+  the file whose whole job is to tell somebody how to install the thing.
+
+- **Pressing "Answer" on a notification now has somewhere to put the answer.**
+  The notification comes from Dibs' application bundle, because only that API
+  carries buttons and only a bundle carries an identity. The text box that
+  opened when somebody pressed Answer did not: it was an osascript
+  `display dialog`, and a background LaunchAgent has no foreground application
+  for a dialog to belong to. So the press dismissed the notification, osascript
+  ran, and nothing appeared. Reported exactly that way: "when I clicked answer
+  it just went away, there was nowhere to put an answer." Both halves of
+  answering now come from the bundle, as a native alert that activates, because
+  stealing focus is correct one gesture after somebody asked for it.
+
+- **Dibs says when it cannot reach you, instead of reporting success into
+  silence.** A coordinator request was posted, macOS accepted it, an active
+  Focus mode swallowed the banner, and every layer reported success: the board
+  said "delivered", the agent waited out its deadline, and the operator asked
+  why they had seen nothing. The notifier's "authorisation refused" exit was
+  also being read as "the human did not answer", so a silenced Dibs and an
+  ignored one were the same value. `dibs doctor` now reports whether a
+  notification would actually be SEEN, naming the cause: a Focus mode, a
+  revoked grant, permission never asked for, or every alert style switched off.
+  A question or request also asks to break through Focus as Time Sensitive,
+  since buttons are the tell that somebody is blocked on the answer.
+
+- **`signcheck` stopped refusing installs it no longer needs to refuse.** It
+  blocked an ad-hoc install whenever a usable identity sat unused in the
+  keychain, which was right when using one meant naming it in an environment
+  variable. `tools/signid` resolves it by name now, so that situation cannot
+  arise, and the refusal turned a solved problem into a blocked install. Two
+  tools that decide the same thing have to decide it the same way; this one was
+  left behind by the other, an hour after the other was written.
+
+- **`task install` finds Dibs' own signing identity by name, so the macOS
+  permission prompt stops repeating.** macOS keys a Files-and-Folders grant to a
+  program's code signature; the Go toolchain signs ad-hoc, so every rebuild is a
+  different program and the grant stops applying. `tools/signcheck` has warned
+  about this and named the remedy since it was written, but the remedy only
+  worked if the operator then passed `DIBS_CODESIGN_IDENTITY` on every install
+  forever, and one install that forgot silently went back to ad-hoc and revoked
+  the grant again. A fix conditional on remembering is not one.
+
+  `tools/signid` resolves it: the environment variable if set, else Dibs' own
+  identity if it is actually in the keychain, else ad-hoc. Create the
+  certificate once and every later install keeps the grant, with nothing to set.
+
+  Measured on the machine this was written on: nine installs in one session,
+  nine permission prompts, and the operator asking why. The warning printed all
+  nine times, into output nobody was reading.
+
+  The install also says which of the two happened, in ONE line. It briefly said
+  both: `status:` is a task-level field rather than a per-command one, so two
+  guarded commands both ran and consecutive lines claimed the grant would and
+  would not survive.
+
+- **The human's row on the board reported `process gone` after every daemon
+  restart.** The human registers as a participant so agents have somewhere to
+  address a request, and it recorded `os.Getpid()`: the daemon's own pid, which
+  is the one pid guaranteed to be alive at the moment it is written and gone by
+  the next start. The liveness sweep then found a dead process and honestly
+  reported what it saw. A person is not a process, so `Op.NoProcess` now says
+  that a participant HAS none, which is different from omitting a pid and is
+  why it needed a field: omitting one means "unchanged", so nothing could ever
+  clear a pid recorded earlier.
+
+  Boards that already ran the old build heal themselves at the next daemon
+  start, because nothing else would: the human's registration is rewritten only
+  when they ACT, so an operator who reads their board and closes it would be
+  told `process gone` about themselves indefinitely. The repair is an `update`
+  rather than a re-registration, which is a distinction that cost a debugging
+  round: `register` short-circuits a same-nonce retry inside one TTL and returns
+  the original result WITHOUT applying the op, which is right for a retried
+  registration and silently a no-op for a correction spelled as one. It fires
+  only on a board that already has a human, and only while a pid is recorded, so
+  it repairs rather than recruits and does not append a record a day to say
+  nothing.
+
+- **The wire-format guard was checking a third of the wire format.** Renaming an
+  op's json tag is silent data loss here (`lane_kind` → `agent_kind` demoted
+  every persistent agent on upgrade, in every release to v0.0.4), and
+  `TestLedgerFieldNamesAreFrozen` exists to catch exactly that. It fingerprinted
+  the tags a hand-written fixture happened to populate, so 17 tags, including
+  every field of `update` and `adopt_agent`, were free to be renamed by the next
+  sweep with the guard passing. It now reflects over `core.Op` itself, so a
+  field is guarded because it exists rather than because somebody remembered to
+  exercise it.
+
+- **The stdio bridge upgrades itself in place, so a fix no longer waits for
+  every harness on the machine to restart.** A bridge is spawned once per
+  session and held for its lifetime, so installing a new `dibs` did nothing to
+  the one already running: an agent kept talking to the build it started with,
+  for days. Every bridge fix was therefore gated on restarting every harness,
+  which is precisely the ceremony R12 refuses to charge for a daemon upgrade and
+  has no better claim to here. The session-repair above rides in the bridge, so
+  the agent whose mail was going undelivered would have kept not receiving it
+  until its session ended.
+
+  `syscall.Exec` is the whole mechanism, and it works because of what exec does
+  not touch: the process keeps its pid and its file descriptors, so stdin and
+  stdout stay the pipes the harness is holding, and from the harness's side
+  nothing happened. It fires only between a reply and the next request, only
+  when this process's own read buffer is empty (buffered bytes live in memory,
+  not in the pipe, so an exec would discard a batched request), and it carries
+  the handshake identity and every open subscription across in the environment.
+  Subscriptions are re-issued as the caller's own request, never reconstructed,
+  which is the rule followStream already follows across a daemon restart.
+
+- **A bridge can no longer outlive its harness, by construction.** One bridge
+  exists per session, so a bridge that fails to exit is one orphan per session,
+  each holding a stream open against the daemon forever. EOF on stdin cannot
+  prevent that, because the bridge sees EOF only when the LAST holder of the
+  pipe's write end closes it, and a harness that also spawns shells hands each
+  one the same descriptors: a Claude Code killed while a Bash tool is running
+  leaves the write end open and the bridge waiting on a pipe nobody will write
+  to again. The lifetime is now bound to the PROCESS by the kernel, on both
+  supported platforms: `PR_SET_PDEATHSIG` on Linux, which holds even if the
+  bridge is wedged, and kqueue `EVFILT_PROC`/`NOTE_EXIT` on macOS. Both re-check
+  `getppid` afterwards, because the parent can die in the window before
+  registering, and a reparented process is an orphan by definition.
+
+  Those paths exit rather than unwind, which is the part that makes the
+  guarantee real: cancelling a context does not interrupt a blocking read on
+  stdin, so a bridge parked in that read never looks at the cancellation again.
+  Measured: with a sibling holding the write end, a bridge outlived a SIGKILLed
+  harness indefinitely with its context already cancelled. Shutdown also waits a
+  bounded time for its stream goroutines and then goes anyway, because the
+  guarantee has to be that the process exits, not that it exits if its
+  goroutines cooperate. SIGTERM and SIGINT end it cleanly, flushing first.
+
+- **A bridge holding a subscription never exited when its harness closed
+  stdin.** `followStream` re-issues the listen every time the stream ends, which
+  is what keeps a subscription alive across a daemon restart and, with no way to
+  stop it, also kept it alive across the session going away: the bridge then
+  waited forever on a goroutine that reconnected forever. Found by closing stdin
+  on a bridge that had one.
+
+- **`adopt_agent`, for a mailbox nobody can log back into.** An agent that
+  registered with neither a nonce nor a session id can never be reattached, and
+  its mailbox keeps accepting mail no one can read. Found on this project's own
+  board, holding six unreachable messages. It moves that mail onto a live agent;
+  the source record and its history stay, because the ledger refers to them, and
+  roles do not move with it. Authorised outside the fold, by the human proven
+  present at the machine or somebody they promoted, and the verdict is recorded
+  in the op the way a coordinator claim already is: taking another agent's mail
+  is otherwise the one thing Dibs must never allow, so there is no
+  agent-to-agent version.
+
+- **docs/CONFIGURATION.md**: every setting the daemon accepts, in one place,
+  with what happens if you leave it alone. Twenty-four keys were spread across
+  five documents with no reference anywhere, and an unknown key stops the daemon
+  rather than being ignored, so a setting somebody reads about and cannot use is
+  not a small slip: it is a daemon that will not start, blamed on the manual
+  that suggested it. A guard checks both directions, reading the struct tags
+  rather than a list somebody maintains.
+
+- **`man 8 dibd`.** The daemon had no manual. It is what an operator installs as
+  a service, points at a listen address and configures with a file, while the
+  CLI, which is discoverable by typing `dibs help`, has had a page since it had
+  verbs. Generated from the daemon's own flags, which are now declared once for
+  both parsing and documentation, and both pages are checked with `mandoc
+  -Tlint` in CI. The CLI's page also stopped calling itself `agents.1`.
+
+- **Agents can reach the human, and the human is notified on the machine.** The
+  person is the one participant with no loop: no lifecycle hook fires for them
+  and no tool result reaches them, so mail addressed to them waited until they
+  next opened the board. The board now marks their row `human: true` so an agent
+  can find who to write to, and a message to that row raises a desktop
+  notification. A `request` carries **Deny / Later / Approve on the banner
+  itself**, and the button pressed comes back as an ordinary response from their
+  own agent: the sender cannot tell it came from a notification rather than a
+  tool call, which is the point.
+
+- **Dibs.app is built by an install from source, not shipped in the archives.**
+  Said here because the two entries around this one promise banner buttons and a
+  named sender, and a `brew install` or a downloaded archive gets neither: they
+  carry `dibs` and `dibd` only. Notifications still arrive; they arrive without
+  the actions and under the poster's borrowed identity.
+
+  It is not an oversight in the release build. macOS remembers notification
+  authorisation against the SIGNATURE, and the identity Dibs signs with is
+  created on the operator's own machine by `task install`. A bundle signed in CI
+  would be ad-hoc, which means a different application to macOS on every build,
+  which revokes the grant every time: worse than not shipping one. `task install`
+  builds it, signs it with your identity, and the grant then survives rebuilds.
+
+- **Dibs.app**, because a notification carries the identity of whoever posts it.
+  A daemon shelling out to `osascript` borrows Script Editor's name and icon, so
+  every message from an agent arrived branded "osascript"; there is no flag that
+  changes that, the poster's bundle IS the identity. The bundle also buys the
+  action buttons: `UNUserNotificationCenter` needs a bundle identifier and is
+  the only API that puts them on the banner. The product mark is rendered from
+  the same nine numbers as `icon.svg` (a rounded tile, three polylines, a dot)
+  rather than parsed, so producing an icon needs no build dependency, and a
+  guard keeps the two from diverging. `LSUIElement`, so notifying never bounces
+  a Dock icon or steals focus.
+
+- **Mail wakes its recipient when it arrives, once.** An agent hearing about a
+  message only when somebody next types at it is not situational awareness, and
+  a time-sensitive request sitting unseen because nobody was at the keyboard is
+  the failure this product exists to prevent.
+
+  This was got wrong in both directions first. `additionalContext` on a `Stop`
+  hook "keeps the conversation going", so every unread message extended a
+  finished turn, a plain FYI included, and eight in a row could burn eight
+  turns. Narrowing delivery to work somebody was blocked on fixed the symptom
+  and broke the point: driving a harness means INSTRUCTING it, and the digest
+  already says it is coordination data the agent may act on or decline. The
+  agency is in the content, not in withholding delivery until a human appears.
+
+  What deserved the name was nagging, and that is a different fix. Each message
+  wakes its recipient once; work somebody is blocked on comes back on the same
+  retry an unacknowledged announcement uses, because a question nobody has
+  answered is a peer waiting rather than a decision; and `stop_hook_active` is
+  honoured, so a wake never continues a turn a wake already continued. That last
+  one is a loop guard rather than a preference, and no setting switches it off.
+
+  `[wake] extend_turn_for` is `all` by default, `urgent` for an operator who
+  would rather an FYI never cost a turn, `none` for one who wants Dibs strictly
+  pull-shaped. The alternatives trade awareness for tokens, which is a trade
+  only the person paying should make deliberately.
+
+- **A board-visibility report that could not be reproduced is now guarded
+  instead.** `codex-primary` reported that an agent which had just joined was
+  absent from their `check_in` snapshot and from the board app. By the time the
+  report was read the event ring had rolled over, so the two plausible causes
+  (their snapshot preceded the registration; the client was rendering a panel it
+  had cached for the session, which `dibs doctor` warns about by name) cannot be
+  told apart after the fact. Measured against a live board: a fresh registration
+  is present in the very next `check_in` and in the panel payload. That property
+  is now a test over both surfaces, because they are separate code paths and the
+  report named both.
+
+- **Three reports from agents on this board, acted on.** `k7-a` found that
+  work-overlap matching being OFF surfaced only in a `matching_hint` on
+  `declare`, attributed to whichever cwd the daemon last failed to read, so it
+  read as another agent's misconfiguration; an agent that registers, checks in
+  and works without declaring never learned at all. That is the one state where
+  silence must not be read as safety: the board renders normally, same-path
+  overlap still works, and nothing looks different. It is now on `check_in`, the
+  call documented as the atomic checkpoint, phrased as a board state.
+
+  `k7-b` found that closing a solo space was a two-step ending in an error:
+  close_space refused because the space had one member, which was them, and
+  leave_space then removed the empty space so the close they had been told to
+  make failed with `E_NO_AGENT`. The sole member may now close its own space,
+  because the rule exists so nobody tidies away somebody ELSE's working context.
+  They also called `close_space(reason: …)` when the parameter is `note`, and
+  were told only that `reason` is not accepted; the refusal now names the word
+  this surface uses when the tool has one. Not an alias: two names for one thing
+  in a schema that is an agent's only documentation is worse than a sentence.
+
+- **Touch ID had been dead since the rename.** `humanauth.helperName` said
+  `agents-presence` while `task presence` compiled and installed
+  `dibs-presence`, so `findHelper` looked for a file that has never existed on
+  any machine and every presence check answered `Unavailable`. Three spellings
+  were in play, which is how it happened: `lanes-presence` (v1),
+  `agents-presence` (the intermediate rename), `dibs-presence` (what ships). The
+  one assertion in Dibs that must not be forgeable by software was silently off,
+  and the product's own message for it, "this build ships without the presence
+  helper", reads as a packaging decision rather than a typo, so nobody looked.
+  Nothing could catch it: the Go tests never exec the helper and the Taskfile
+  never reads the constant. `TestThePresenceHelperIsTheOneThatGetsBuilt` now
+  pins the two together.
+
+- **The hint shown when a name is taken named a call that cannot work.** It said
+  to ask a coordinator to `merge_spaces <new> into <old>`, which takes SPACE ids
+  where those are AGENT ids: following it fails with `E_NO_SPACE`. Lane-era
+  residue, printed at the one moment mail becomes unreachable, which is the
+  worst place in the product for a hint to be wrong. Found by following it.
+
+- **A role held by an agent nobody can become now shows on the board and in
+  `dibs doctor`.** The coordinator role is what `force_release`, `close_space`
+  and clearing another agent's debris all key on, and held by an unreattachable
+  agent it is a power the board shows as filled and nobody can use. Not a
+  deadlock, which is what it looks like from inside: `dibs admin coordinator
+  <agent>` moves it and a `[roles]` block reapplies it on every start. The gap
+  was that nothing pointed at either.
+
+- **The wake path could not reach an agent that had no session, and nothing
+  said so.** A lifecycle hook names an agent by the session id its harness
+  quotes, and `AgentForHook` deliberately refuses the cwd fallback when a
+  supplied session matches nothing, because without that refusal any
+  unregistered session in a shared directory was handed another agent's private
+  mail. Correct, and it means an agent that registered outside its harness's MCP
+  connection carries no session and can never be woken, however well the plugin
+  is installed. The stdio bridge sent the session id on `register` alone, which
+  is the one call such an agent never made through it; it now rides every tool
+  call, and the first authenticated one repairs the binding. The engine refuses
+  to overwrite a session an agent already has, so this is a repair and never a
+  redirection.
+
+  The second half is why it went unnoticed for days. `poll_unresolved` was
+  counted from the day the health check was written and never reached a verdict:
+  the check asked whether ANY call resolved, which a machine running several
+  agents always answers yes to. So one agent's wake path being completely dead
+  read `ok`, and `dibs doctor` printed "harness hooks resolving" while nine
+  consecutive polls for that session found nobody. A count nothing reads is not
+  a diagnostic, and a partial failure that reads as success is worse than one
+  that reads as nothing.
+
+- **A declaration no longer publishes its own prose as a space id.** An
+  auto-opened space took its id from the words of the declaration, so a private
+  repository's hostnames, service accounts and internal paths became durable
+  board objects readable by agents in unrelated repositories, with no way to
+  take them back. Ids now come from a ref where there is one (`issue:42` →
+  `issue-42`) and otherwise from the project plus a digest.
+
+- **`task install` no longer offers another project's signing identity.**
+  `tools/signcheck` listed every code-signing identity in the keychain and
+  proposed whichever came first. That is a cross-project dependency established
+  by accident, because a macOS privacy grant keyed to a certificate another
+  project owns is revoked the moment they rotate it; and printing the list is a
+  disclosure, since a keychain holds identities for work that has not been
+  announced and this output is the kind of thing that lands in an issue. It now
+  looks for `Dibs Local Codesign` by name, names nothing else, and says how to
+  create one.
+
+- **The Claude Desktop manifest said version 0.0.0**, and no test could see it:
+  it had never been on anybody's list of things to stamp. A list of things to
+  keep in sync is itself a thing that falls out of sync, so the list is no
+  longer trusted. `TestNoVersionedManifestEscapesTheStamp` goes looking for the
+  thing it describes, failing on any JSON in the tree that states a version and
+  is neither stamped nor explicitly somebody else's. It found this one
+  immediately. The same manifest still carried the retired product name
+  `io.agents/agents` and described spaces as "shared agents".
+
+- **A tag is now checked against the changelog it ships.** The version guards
+  held the manifests to the changelog, which left the changelog itself
+  unverified: forgetting to claim the Unreleased section would publish a release
+  whose every manifest named the previous version, with a green gate, because
+  the manifests and the changelog agreed with each other about the wrong number.
+  The release workflow runs the gate against the tagged commit, so the check
+  fails the release rather than the developer, and is silent on an ordinary
+  checkout where there is no tag to disagree with.
+
+- **SPEC-CHANNELS.md is readable again.** The `lane` → `agent`/`space` rename
+  ran over the document that defines the split, leaving a terminology table
+  whose two rows were identical, a sentence with the same plural noun twice in a
+  row, and a passage warning about careless renames whose own example had been
+  renamed into two identical halves. The
+  same sweep reached `internal/web/act.go` and both board templates, which is
+  what the operator reads.
+
+### Changed
+
+- **The board panel, first pass: quiet instrument.** It had four nested rail
+  systems down the left, an orbiting conic gradient with a blurred breathing
+  core for a connection indicator, a diagonal hatch under every line of type,
+  two coloured pools of light, glow on the figures and a halo on every live pip.
+  Read cold it was instrument-shaped costume, and this file already argued
+  twice, about the rail's cross-ticks and the metrics' corner brackets, that
+  ornament imitating instrumentation costs a surface the trust it is imitating.
+  The same argument finishes the job.
+
+  Monospace now means data and nothing else. It had been marking the node id,
+  "read only", group headings, badges, agent names, paths and counts: seven
+  roles, which is none. Headings and badges are words, so they are set as words.
+
+  Colour is spent once. "Out of touch" was warm on the heading, its count, every
+  affected row's edge and the figure in the summary; it is now the count at the
+  top, which says how many, and the edge on each row, which says which.
+
+  The four-cell metric deck is a sentence: `1/16 live · 0 unanswered · 11
+  declared · 1 out of touch`. The accessible label already read that way and
+  read better than what sighted readers were given.
+
+  And each agent is one line, opened on request. Sixteen agents spending four to
+  twelve lines each answered "who else is here and what are they on" only for
+  whoever scrolled: a well-written twelve-line declaration pushed the two agents
+  that needed attention off the screen. A native `details` carries it, so it is
+  keyboard operable and needs no script, and the text is clamped in CSS rather
+  than sliced, so the whole declaration stays selectable, searchable and read in
+  full by a screen reader. Which rows are open is held by each surface, because
+  both rebuild the roster wholesale on every board change and a `details` does
+  not survive that: expanding an agent and having the board tick would have
+  snapped it shut.
+
+  Two things were simply wrong and are fixed on the way past. The window title
+  read `Dibs) Board`, and `Dibs (3 waiting` with mail. And the tab whose id says
+  `agents` and whose label said `Dibs` renders SPACES: three names for one
+  thing, in the surface a person reads.
+
+- **A permission error now names the route to permission.** `E_NOT_COORDINATOR`
+  and `E_NOT_ADMIN` stated the rule and stopped, which leaves a capable agent
+  with nothing to do but give up or ask for the tool again. Every honesty hint
+  in Dibs names the corrective call; these had none to name, because the
+  corrective call is a human's. So they now name the human: send them a
+  `request`, which raises a notification with Approve on it and returns their
+  answer as an ordinary response.
+
+- **Every message type says what it DOES to its recipient.** An agent choosing
+  between `notify`, `question`, `request` and `handoff` was choosing by tone, on
+  four labels that read as synonyms for "send". They now say which types wake
+  the recipient now and which arrive at their next activation, so an agent can
+  pick for the effect and structure the message for what it triggers.
+
+- `tools/list` is 34.0k characters for 44 tools, down from 36.2k for 42. Every
+  agent pays it on every cold connection, and the reasoning behind a rule
+  belongs in `dibs://skills`, which is fetched once, rather than in the
+  description of every tool that follows from it. No corrective detail was
+  dropped; the war stories moved.
 
 - Published to the official MCP Registry as `io.github.agenxy/dibs`, on the same
   tag trigger as the release, so the registry entry, the GitHub release and the

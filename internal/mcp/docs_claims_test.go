@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -47,10 +48,26 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 	// version number. "v1.0 tool table" was read as a claim of "0 tools" and
 	// failed this test on a sentence that makes no numeric claim at all. A
 	// guard that fires on correct prose gets weakened by whoever hits it next.
-	claim := regexp.MustCompile(`(?:^|[^\w.])(\d+)\s+tools?\b`)
+	// Both orders. "44 tools" and "Tools (44)" are the same claim to a reader,
+	// and the second walked past this test while SPEC.md advertised 40 for four
+	// releases. That is the third spelling this check has been blind to: the
+	// first was a plain stale number, the second was "one tool of forty-two",
+	// and each was found by somebody reading rather than by the guard whose
+	// whole job it is.
+	claim := regexp.MustCompile(`(?:^|[^\w.])(\d+)\s+tools?\b|(?i)tools?\s*\((\d+)\)`)
 
-	checked := 0
-	for _, doc := range []string{
+	// ONE list, read by both checks below.
+	//
+	// There were two, identical and three lines apart, which is the arrangement
+	// this repository is most expensive at: a file added to one and not the
+	// other is checked for digits and not for words, and nothing says so. The
+	// plugin READMEs were in neither, and one of them advertised 25 while the
+	// server published 44. It survived because it ALSO used a shape no pattern
+	// here matches, "the tools it found (25)", where the number trails the noun
+	// with two words in between. Both halves had to be wrong for it to sit
+	// there, which is the usual arrangement. That sentence now reads "the 44
+	// tools it found", which this test can see.
+	docs := []string{
 		"README.md", "SKILLS.md", "CHANGELOG.md",
 		"docs/ARCHITECTURE.md", "internal/mcp/skills.md",
 		// Both carry the count and neither was guarded: SPEC.md states it as a
@@ -58,7 +75,16 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 		// prints it. A number in a transcript goes stale exactly like a number
 		// in a sentence, and is likelier to be believed.
 		"SPEC.md", "docs/TUTORIAL.md",
-	} {
+		// Every shipped plugin doc, because each one tells a reader what they
+		// will see on install.
+		"plugins/README.md", "plugins/hermes/README.md", "plugins/pi/README.md",
+		"plugins/opencode/README.md", "plugins/codex/README.md",
+		"plugins/claude-code/README.md", "plugins/claude-desktop/README.md",
+		"plugins/chatgpt-desktop/README.md",
+	}
+
+	checked := 0
+	for _, doc := range docs {
 		body, err := os.ReadFile(root(doc))
 		if err != nil {
 			// A document that has been renamed or removed should not fail this
@@ -67,7 +93,13 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 			continue
 		}
 		for _, m := range claim.FindAllStringSubmatch(string(body), -1) {
-			n, err := strconv.Atoi(m[1])
+			// Whichever alternation matched: one group is the number, the other
+			// is empty.
+			digits := m[1]
+			if digits == "" {
+				digits = m[2]
+			}
+			n, err := strconv.Atoi(digits)
 			if err != nil {
 				continue
 			}
@@ -82,5 +114,38 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 	if checked == 0 {
 		t.Errorf("no document states a tool count, so this check verified nothing; " +
 			"either the claim was removed (fine: delete this test) or the pattern no longer matches")
+	}
+
+	// A count spelled as a WORD is the same claim and was invisible here.
+	//
+	// The README carried "one tool of forty-two" while the server published 44,
+	// through every run of this test, because the pattern above only reads
+	// digits. A guard that can be walked past by writing the number out is a
+	// guard against one spelling, not against the claim.
+	//
+	// Refused rather than counted: "forty-four" would have to be parsed and kept
+	// in step with the digits, and the cheaper rule is that this one number is
+	// written as a numeral wherever it appears, precisely so that it is checked.
+	// Matched per LINE, and in either order, because the claim is written both
+	// ways: "forty-two tools" and "one tool of forty-two". The first version of
+	// this check only caught the first, so it passed against the very sentence
+	// that prompted it, which is worse than not having added it.
+	spelled := regexp.MustCompile(`(?i)\b(twenty|thirty|forty|fifty|sixty)([- ]?\w+)?\b`)
+	for _, doc := range docs {
+		body, err := os.ReadFile(root(doc))
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(body), "\n") {
+			if !strings.Contains(strings.ToLower(line), "tool") {
+				continue
+			}
+			if m := spelled.FindString(line); m != "" {
+				t.Errorf("%s says %q on a line about tools. Write the count as a "+
+					"numeral: this test reads digits, so a spelled number is a claim "+
+					"nothing checks, which is exactly how \"one tool of forty-two\" "+
+					"survived to 44.\n  line: %s", doc, m, strings.TrimSpace(line))
+			}
+		}
 	}
 }

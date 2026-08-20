@@ -150,26 +150,19 @@ var catalog = []struct {
 		harness: "codex",
 		dir:     "codex",
 		aliases: []string{"chatgpt-desktop", "chatgpt", "gpt"},
-		buys: "nothing to install. Codex fires hooks as SUBPROCESSES, which Dibs " +
-			"will not be: a plugin that spawned a process to drive your harness " +
-			"would make Dibs a wrapper rather than a service. So on this harness " +
-			"mail stays pull-only: call await_events or inbox when you choose. " +
-			"That is the honest floor and it works everywhere.",
+		buys: "nothing to install, and no hook file yet. Codex is close to being " +
+			"able to wake you: as of 2026-08-17 it parses `mcp_tool` hooks and its " +
+			"hooks engine has a handler for them, but no session supplies an MCP " +
+			"executor, so every such hook is dropped at startup. The only handler " +
+			"it actually runs is a subprocess, which Dibs will not be: a plugin " +
+			"that spawned a process to drive your harness would make Dibs a " +
+			"wrapper rather than a service, and the real mechanism is weeks away. " +
+			"So on this harness mail is pull-only: call await_events or inbox when " +
+			"you choose. That is the honest floor and it works everywhere. Dibs " +
+			"shipped a hooks.json here for three releases and not one entry in it " +
+			"ever fired.",
 		root: "~/.codex",
 		setup: []Step{
-			{
-				Do: "Install the hook so mail is delivered instead of polled: copy " +
-					"`hooks.json` from `files` below into your Codex config folder " +
-					"(alongside config.toml). It uses the `mcp_tool` handler, which calls " +
-					"Dibs over the MCP connection you already hold: no subprocess, so " +
-					"nothing here lets Dibs drive your harness. If you cannot write that " +
-					"file, ASK YOUR OPERATOR. Do NOT substitute a `command` hook that " +
-					"shells out to fetch mail: that is the thing this project refuses.",
-				Check: "call spawned_agents: if your own session_id is listed, the " +
-					"SessionStart hook reached this daemon",
-				IfNot: "you are still fine, but pull-only: mail waits until you call " +
-					"check_in or await_events yourself",
-			},
 			{
 				Do: "Set a pull rhythm instead of waiting to be woken: check_in at the " +
 					"start of each activation, await_events when you are about to block. " +

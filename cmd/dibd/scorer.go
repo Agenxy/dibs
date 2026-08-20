@@ -17,6 +17,7 @@ import (
 
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/overlap"
+	"github.com/agenxy/dibs/internal/paths"
 )
 
 // Work-overlap scoring, installed at boot. See SPEC-CHANNELS.md.
@@ -94,39 +95,44 @@ func (f *scorerFlags) markSetFlags() {
 	})
 }
 
-func registerScorerFlags() *scorerFlags {
+func registerScorerFlags() *scorerFlags { return registerScorerFlagsOn(flag.CommandLine) }
+
+// registerScorerFlagsOn declares the matching flags on a given set, so the
+// daemon's manual can walk the same declarations the daemon parses rather than
+// a second copy of them.
+func registerScorerFlagsOn(fs *flag.FlagSet) *scorerFlags {
 	f := defaultScorerFlags()
-	flag.StringVar(&f.repo, "match-repo", "",
+	fs.StringVar(&f.repo, "match-repo", "",
 		"repository to mine for work-overlap matching (enables agent auto-matching; run `dibs calibrate` first)")
-	flag.Float64Var(&f.join, "match-join", 0,
+	fs.Float64Var(&f.join, "match-join", 0,
 		"auto-join agents at or above this overlap score (0 = suggest only, never join)")
-	flag.Float64Var(&f.notify, "match-notify", 0,
+	fs.Float64Var(&f.notify, "match-notify", 0,
 		"mention agents at or above this overlap score")
-	flag.IntVar(&f.history, "match-history", 2000, "commits to mine for co-change history")
-	flag.DurationVar(&f.deadline, "match-deadline", 1500*time.Millisecond,
+	fs.IntVar(&f.history, "match-history", 2000, "commits to mine for co-change history")
+	fs.DurationVar(&f.deadline, "match-deadline", 1500*time.Millisecond,
 		"give up on scoring after this long; declaring work never blocks on it")
-	flag.StringVar(&f.embedURL, "match-embed-url", "",
+	fs.StringVar(&f.embedURL, "match-embed-url", "",
 		"OpenAI-compatible embeddings service for tier 2/3. Ollama, vLLM, TEI, "+
 			"LM Studio, llama.cpp's server, or a hosted provider. Dibs owns the index "+
 			"and only asks it to POST /v1/embeddings. Unreachable or slow degrades to "+
 			"the built-in scorer and says so")
-	flag.StringVar(&f.embedModel, "match-embed-model", "",
+	fs.StringVar(&f.embedModel, "match-embed-model", "",
 		"model name to request from that service (e.g. codefuse-ai/F2LLM-v2-4B)")
-	flag.StringVar(&f.embedQueryPrefix, "match-embed-query-prefix", "",
+	fs.StringVar(&f.embedQueryPrefix, "match-embed-query-prefix", "",
 		"marker prepended to a QUERY before embedding (default: inferred from the model name. "+
 			"qwen3-embedding, nomic-embed, e5, arctic-embed and each BGE generation are "+
 			"known). Retrieval "+
 			"models are asymmetric; addressing one without its markers roughly halves how well "+
 			"it separates related work from unrelated")
-	flag.StringVar(&f.embedDocPrefix, "match-embed-doc-prefix", "",
+	fs.StringVar(&f.embedDocPrefix, "match-embed-doc-prefix", "",
 		"marker prepended to a DOCUMENT before embedding (see -match-embed-query-prefix)")
-	flag.StringVar(&f.embedKey, "match-embed-key", "",
+	fs.StringVar(&f.embedKey, "match-embed-key", "",
 		"bearer token for a hosted embeddings endpoint")
-	flag.StringVar(&f.autoJoin, "match-auto-join", engine.AutoJoinDeclared,
+	fs.StringVar(&f.autoJoin, "match-auto-join", engine.AutoJoinDeclared,
 		"who decides a match becomes a membership: declared (default: join only on a shared "+
 			"ref, which both agents wrote down; everything else is proposed for the agent to "+
 			"judge), always, or never")
-	flag.BoolVar(&f.director, "match-director-required", false,
+	fs.BoolVar(&f.director, "match-director-required", false,
 		"gate every matched join on a coordinator admitting it (admit). "+
 			"Off by default: it serialises the fleet behind one agent")
 	return f
@@ -262,7 +268,7 @@ func (f *scorerFlags) install(ctx context.Context, eng *engine.Engine) {
 
 	if repo := f.repo; repo != "" {
 		eng.SetMatchStatus(engine.MatchStatus{Phase: engine.MatchIndexing, Repo: repo})
-		go f.bringUp(ctx, eng, repo)
+		go func() { _ = f.bringUp(ctx, eng, repo) }() // pre-warm: nothing waits on the verdict
 		return
 	}
 	eng.SetMatchStatus(engine.MatchStatus{
@@ -280,7 +286,7 @@ func (f *scorerFlags) install(ctx context.Context, eng *engine.Engine) {
 // when does it run) and this one is the work. Every early return here records a
 // STATUS as well as logging, because a feature that switched itself off quietly
 // is indistinguishable from one that is working and found nothing.
-func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo string) {
+func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo string) (installed bool) {
 	start := time.Now()
 	topCtx, cancelTop := context.WithTimeout(ctx, gitDeadline)
 	defer cancelTop()
@@ -301,7 +307,7 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 				"from git log, and cannot match without it",
 		})
 		slog.Warn("work-overlap matching disabled: not a git repository", "repo", repo, "err", err)
-		return
+		return false
 	}
 	dir := strings.TrimSpace(string(root))
 
@@ -325,17 +331,41 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 	workCtx, cancelWork := context.WithTimeout(ctx, gitDeadline)
 	defer cancelWork()
 
+	// A repository with no commits is NORMAL, not a fault.
+	//
+	// `git init` and then start working is the most ordinary first hour of a
+	// project, and git answers an unborn branch with exit status 128, the same
+	// code it uses for a genuine read failure. Reported as one, it took matching
+	// OFF for every agent on the board, with the hint "could not read git
+	// history (exit status 128)" sending the reader after a permissions problem
+	// that did not exist. Measured: one test agent registered from a fresh
+	// `git init` and the whole fleet lost the feature.
+	//
+	// So this is separated from failure before mining, and reported as the tree
+	// having nothing to mine yet rather than as the board being broken. An agent
+	// reported exactly this distinction as missing, and was right.
 	cc, err := overlap.MineCoChange(workCtx, dir, overlap.CoChangeOptions{MaxCommits: f.history})
 	if err != nil {
-		offBecause("could not read git history", err)
-		return
+		// A FRESH deadline for the diagnosis, never the one mining just spent.
+		//
+		// topCtx was created before the first git command, so if mining used up
+		// its four minutes the diagnostic context is already dead, `unborn`
+		// necessarily errors, and every timeout was reported as "a repository
+		// with no commits. Nothing is broken and nothing needs fixing": the one
+		// sentence that tells the operator not to look. Found by a pre-release
+		// review.
+		diagCtx, cancelDiag := context.WithTimeout(context.WithoutCancel(ctx), 20*time.Second)
+		defer cancelDiag()
+		historyUnreadable(diagCtx, eng, dir, err, offBecause)
+		return false
 	}
 	lex, err := overlap.NewLexical(workCtx, dir, cc)
 	if err != nil {
 		offBecause("could not list files", err)
-		return
+		return false
 	}
 	scorer := f.withSidecar(ctx, lex)
+	f.recommendSidecar(ctx, eng, dir, lex.Files())
 
 	// Calibrate the notify bar unless the operator set one.
 	//
@@ -417,6 +447,7 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 		slog.Info("no join threshold set: agents will be suggested but never joined automatically; " +
 			"run `dibs calibrate` and pass -match-join")
 	}
+	return true
 }
 
 // withSidecar wraps the built-in scorer in an embedding service when one is
@@ -522,9 +553,10 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 		// so: they went looking for a configuration error that did not exist.
 		// The state to report it with already existed and nothing ever entered
 		// it, which is the worst arrangement of the two.
-		eng.SetMatchStatus(engine.MatchStatus{
-			Phase: engine.MatchIndexing, Repo: cwd, Since: time.Now(),
-		})
+		// Progress on ONE tree, which is not the board's phase: a fleet that has
+		// been matching for an hour must not report itself as starting up
+		// because a sixteenth agent joined from somewhere new.
+		eng.NoteIndexingTree(cwd)
 
 		// Resolved BEFORE the dedup, because the unit of work is a repository
 		// and cwd is not one. Keyed by cwd, agents in three subdirectories of
@@ -535,11 +567,16 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 		if err != nil {
 			slog.Info("work-overlap matching skipped a tree it cannot read",
 				"cwd", cwd, "err", err, "likely", tccHint(cwd))
-			eng.SetMatchStatus(engine.MatchStatus{
-				Phase: engine.MatchOff,
-				Hint: "an agent registered from " + cwd + " but the daemon cannot read it (" +
-					err.Error() + "). " + tccHint(cwd),
-			})
+			// That AGENT's tree, not the board's feature.
+			//
+			// This set the global phase to Off, so one agent starting in a
+			// directory macOS would not let the daemon read replaced a working
+			// index for every other repository with "matching is off". Reported
+			// by an agent that had lost the feature fleet-wide and traced it to
+			// here correctly.
+			eng.NoteUnreadableTree(cwd,
+				"an agent registered from "+cwd+" but the daemon cannot read it ("+
+					err.Error()+"). "+tccHint(cwd))
 			return
 		}
 
@@ -564,7 +601,21 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 		f.indexed[root] = true
 		f.discoverMu.Unlock()
 
-		f.bringUp(ctx, eng, root)
+		// RELEASED if the bring-up does not produce a scorer.
+		//
+		// The tree was marked indexed before any of the work, so a temporary
+		// failure (a git that timed out, a permissions error, a directory
+		// briefly unreadable) left the flag set with nothing behind it: matching
+		// for that repository stayed off until the daemon restarted, and every
+		// later registration from it was deduplicated against a tree that was
+		// never actually indexed. The mark is a "somebody is doing this" latch
+		// and it has to be dropped when nobody is. Found by a pre-release
+		// review.
+		if !f.bringUp(ctx, eng, root) {
+			f.discoverMu.Lock()
+			delete(f.indexed, root)
+			f.discoverMu.Unlock()
+		}
 	}()
 }
 
@@ -598,7 +649,7 @@ func repoRootOf(ctx context.Context, cwd string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", "-C", cwd, "rev-parse", "--show-toplevel")
 	out, err := cmd.CombinedOutput()
 	if err == nil {
-		return strings.TrimSpace(string(out)), nil
+		return repositoryOf(strings.TrimSpace(string(out))), nil
 	}
 	if ctx.Err() != nil {
 		return "", fmt.Errorf("git did not answer within %s (if a permission dialog is "+
@@ -713,4 +764,135 @@ func (f *scorerFlags) calibrateNotify(
 		return overlap.Calibration{}, false
 	}
 	return cal, true
+}
+
+// historyUnreadable decides whether a failed mine is a fault or an ordinary
+// empty repository, and reports it as whichever it is.
+//
+// Only reached when mining already failed, so the extra git call costs nothing
+// on the path that works.
+// historyUnreadable decides whether a tree with no mineable history is a tree
+// with nothing IN it, or a tree this daemon could not read.
+//
+// The two want opposite things from the operator, which is why they are told
+// apart: "no commits yet" ends with "nothing is broken", and saying that about
+// a permissions failure or a timeout is telling somebody not to look at the
+// thing that is wrong.
+func historyUnreadable(ctx context.Context, eng *engine.Engine, dir string, err error, off func(string, error)) {
+	if !unborn(ctx, dir) {
+		off("could not read git history", err)
+		return
+	}
+	eng.NoteUnreadableTree(dir,
+		"no work-overlap matching for "+dir+" yet: it is a git repository with no "+
+			"commits. Matching is mined from git log, so there is nothing to learn from "+
+			"until the first commit. Nothing is broken and nothing needs fixing")
+	slog.Info("work-overlap matching skipped a repository with no commits", "repo", dir)
+}
+
+// unborn reports whether a checkout has no commits yet.
+//
+// `git rev-parse --verify HEAD` is the cheapest question that distinguishes an
+// unborn branch from a repository the daemon cannot read: both fail, and only
+// this one is ordinary.
+func unborn(ctx context.Context, dir string) bool {
+	// #nosec G204 -- git is a literal and dir came from rev-parse --show-toplevel.
+	err := exec.CommandContext(ctx, "git", "-C", dir, "rev-parse", "--verify", "HEAD").Run()
+	return err != nil
+}
+
+// repositoryOf collapses a linked worktree onto the repository it belongs to.
+//
+// THE BUG THIS FIXES, and it is not an edge case. `git rev-parse
+// --show-toplevel` answers with the WORKTREE, so two agents in two worktrees of
+// one repository were indexed under two different roots, scored by two
+// different models, and never compared with each other. They are editing the
+// same code. Worktrees are how a fleet parallelises work on ONE repository
+// precisely so its agents do not collide, so Dibs was blind exactly where it
+// was most needed, and mined the identical history once per worktree while
+// being so.
+//
+// The repository's own checkout is the natural key: every worktree shares its
+// common directory, and any worktree sees the full history, so one index serves
+// them all and their agents are scored against each other.
+//
+// Identify is the one that already knows this. The stdio bridge has resolved
+// worktrees to their parent for `repo_dir` all along while this file did not,
+// which is the disagreement issue #13 predicted, so this uses that
+// implementation rather than adding a third opinion. It is cached, so the
+// common case costs nothing.
+//
+// Falls back to the worktree whenever the answer is not a plain `<repo>/.git`:
+// a separate git dir or a bare repository has no primary checkout to mine, and
+// a wrong key is worse than an unshared one.
+func repositoryOf(worktree string) string {
+	if worktree == "" {
+		return worktree
+	}
+	common, _, _, ok := paths.Identify(worktree).Identity()
+	if !ok || filepath.Base(common) != ".git" {
+		return worktree
+	}
+	primary := filepath.Dir(common)
+	if primary == "" || primary == worktree {
+		return worktree
+	}
+	if fi, err := os.Stat(primary); err != nil || !fi.IsDir() {
+		return worktree // the repository has no checkout of its own to mine
+	}
+	return primary
+}
+
+// sidecarWorthIt is where the built-in scorer stops being enough.
+//
+// Not a guess. SPEC-CHANNELS.md records tier-0 recall@10 measured across five
+// real repositories: 0.488 at 121 files, 0.229 at 1,142, and about 0.20 from
+// 6,000 upward. Recall roughly halves as a repository grows, because shared
+// vocabulary dilutes while the file count does not, and abstention stays near
+// zero throughout: the scorer is not giving up, it is answering less precisely,
+// which is worse. A thousand files is where the measurements first show it.
+const sidecarWorthIt = 1000
+
+// recommendSidecar tells the coordinator, and the operator when nobody holds
+// that role, that this repository is past what the built-in scorer does well.
+//
+// Dibs measures this at index time and used to keep it to itself. A fleet whose
+// matching is quietly at half its recall has no way to learn that: the board
+// looks the same, declarations are answered, and the absence of a warning reads
+// as "no overlap" rather than as "asked a scorer that is out of its depth". The
+// operator asked for exactly this to be surfaced, and the machinery already
+// existed for Dibs to report its own shortcomings as ordinary mail.
+//
+// Silent when a sidecar is configured, and once per repository per daemon run:
+// a recommendation repeated every index is an alarm, and the Kind dedupes it.
+func (f *scorerFlags) recommendSidecar(ctx context.Context, eng *engine.Engine, dir string, files int) {
+	if f.embedURL != "" || files < sidecarWorthIt {
+		return
+	}
+	eng.ReportFault(ctx, engine.Fault{
+		Kind:   "scorer-below-repo-size:" + dir,
+		Remedy: recommendationFor(f, dir, files),
+		What: fmt.Sprintf("%s has %d files, and the built-in scorer is measured well below its "+
+			"best at that size. Tier-0 recall@10 is 0.488 on a 121-file repository and about "+
+			"0.20 from 6,000 files upward, because shared vocabulary dilutes while the file "+
+			"count does not. Matching still answers; it answers less precisely, and an absence "+
+			"of overlap warnings here is weaker evidence than it looks.", dir, files),
+	})
+}
+
+// recommendationFor is the remedy text, separated so a test can assert it names
+// a command a reader can actually run. "Remedy is what to do. Required: a report
+// without one is an alarm."
+func recommendationFor(f *scorerFlags, dir string, files int) string {
+	_ = dir
+	_ = files
+	_ = f
+	return "Point Dibs at an embeddings service to raise it: `dibd -match-embed-url " +
+		"<url> -match-embed-model <name>`. Measured head to head on identical cases, tier 2 " +
+		"gains +68% recall@5 and +28% MRR, and the gain is at the TOP of the list, which is " +
+		"the part that decides whether two agents meet. It runs on your own hardware: " +
+		"contrib/embed-sidecar/ ships an MLX one, and Ollama, vLLM, TEI, LM Studio and " +
+		"llama.cpp's server all speak the endpoint. Then re-run `dibs calibrate`: thresholds " +
+		"are per-scorer as well as per-repository, so switching without recalibrating " +
+		"silently changes who gets matched. Full numbers in SPEC-CHANNELS.md."
 }

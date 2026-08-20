@@ -35,7 +35,7 @@
         ]
       }
     ],
-    "Stop": [
+    "UserPromptSubmit": [
       {
         "hooks": [
           {
@@ -46,6 +46,25 @@
               "session_id": "${session_id}",
               "event": "${hook_event_name}",
               "cwd": "${cwd}"
+            },
+            "timeout": 5,
+            "statusMessage": "Checking Dibs"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "plugin:dibs:dibs",
+            "tool": "hook_poll",
+            "input": {
+              "session_id": "${session_id}",
+              "event": "${hook_event_name}",
+              "cwd": "${cwd}",
+              "stop_hook_active": "${stop_hook_active}"
             },
             "timeout": 10,
             "statusMessage": "Checking Dibs"
@@ -79,7 +98,8 @@
             "input": {
               "session_id": "${session_id}",
               "event": "${hook_event_name}",
-              "cwd": "${cwd}"
+              "cwd": "${cwd}",
+              "stop_hook_active": "${stop_hook_active}"
             },
             "timeout": 10,
             "statusMessage": "Checking Dibs"

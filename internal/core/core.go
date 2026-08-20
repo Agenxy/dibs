@@ -343,6 +343,18 @@ type Agent struct {
 	// token through config. Set at registration; never a credential on its own,
 	// the connection is already authenticated.
 	SessionID string `json:"session_id,omitempty"`
+	// SessionAliases are the OTHER names this same session is known by, because
+	// the two halves of a harness do not always agree on one.
+	//
+	// The stdio bridge derives `host-<ppid>` from the process that spawned it,
+	// which is what an in-process plugin can also observe. A harness whose hooks
+	// are configured rather than in-process sends what IT calls the session
+	// instead: Codex passes a uuid. Both are truthfully the same session, and
+	// before this an agent could answer to exactly one of them, so mail was
+	// delivered to a name its own Stop hook never used and nothing was ever
+	// woken. Neither id is a credential; the connection is already
+	// authenticated, and these are only ever added by the daemon's own join.
+	SessionAliases []string `json:"session_aliases,omitempty"`
 	// Agent is who is behind this agent: harness, version, model, surface. In a
 	// large fleet "reviewer" is not enough; the human needs to know that it is
 	// Codex 0.145 rather than Opus 5 in Claude Desktop. Purely descriptive: it
@@ -525,6 +537,17 @@ type Message struct {
 	TerminalAt    time.Time    `json:"terminal_at,omitzero"` // when it reached a terminal state
 	ExpireDetail  string       `json:"expire_detail,omitempty"`
 	Attachments   []Attachment `json:"attachments,omitempty"` // blob handles + filerefs (A2)
+	// Choices is the answer space of a question, stated by its sender. Ledgered
+	// with the message because it is part of what was ASKED: a question whose
+	// options were lost on replay is a different question.
+	Choices []string `json:"choices,omitempty"`
+	// Grant is the role this request asks for. Ledgered with the message because
+	// approving the message is what performs the grant: a request replayed
+	// without it would be an approval of nothing.
+	Grant string `json:"grant,omitempty"`
+	// Adopt is the abandoned agent this request asks to reclaim, for the same
+	// reason and with the same consequence on approval.
+	Adopt string `json:"adopt,omitempty"`
 }
 
 // Terminal implements the exact SPEC §8 predicate, used consistently by
@@ -670,3 +693,12 @@ func constEq(a, b string) bool {
 	}
 	return v == 0
 }
+
+// MaxChoices bounds the answers a question may enumerate.
+//
+// Four, because the point of stating them is to make answering a press rather
+// than a composition, and a list long enough to need scrolling has given that
+// up. It is also what the delivery surfaces can render: a macOS notification
+// carries three buttons plus the implicit dismiss, so a question that fits here
+// is answerable in one gesture wherever it lands.
+const MaxChoices = 4

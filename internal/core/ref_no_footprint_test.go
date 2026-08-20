@@ -53,11 +53,11 @@ func TestASharedRefMatchesAChannelWithNoFootprint(t *testing.T) {
 	}, now); err != nil {
 		t.Fatalf("owner declare: %v", err)
 	}
-	agent := s.Spaces["ticket-42"]
-	if agent == nil {
+	space := s.Spaces["ticket-42"]
+	if space == nil {
 		t.Fatal("setup: the space was not opened")
 	}
-	if len(agent.Predicted) != 0 {
+	if len(space.Predicted) != 0 {
 		t.Skip("this fixture produced a footprint; the no-footprint path is what is " +
 			"under test and a scorer change has made it unreachable here")
 	}
@@ -68,10 +68,10 @@ func TestASharedRefMatchesAChannelWithNoFootprint(t *testing.T) {
 
 	found := false
 	for _, m := range matches {
-		if m.Agent == agent.ID {
+		if m.Space == space.ID {
 			found = true
 			if len(m.SharedRefs) == 0 {
-				t.Errorf("matched %s but reported no shared refs: %+v", agent.ID, m)
+				t.Errorf("matched %s but reported no shared refs: %+v", space.ID, m)
 			}
 		}
 	}

@@ -59,7 +59,7 @@ func TestTheMatcherCarriesTheCoordinationKeyOutOfAnAutoJoin(t *testing.T) {
 	}
 
 	action, _, key := e.attemptJoin(ctx, joiner,
-		core.AgentMatch{Agent: "auth-work", Score: 0.9},
+		core.AgentMatch{Space: "auth-work", Score: 0.9},
 		MatchConfig{JoinThreshold: 0.33},
 		overlap.Prediction{ScorerID: "test"}, nil)
 

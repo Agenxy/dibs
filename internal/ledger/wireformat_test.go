@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -95,13 +96,53 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	wantOp := map[string]bool{
 		"kind": true, "agent": true, "name": true, "pid": true, "token": true,
 		"nonce": true, "agent_kind": true, "session_id": true, "agent_id": true,
-		"slot_id": true, "text": true, "dirs": true, "refs": true,
+		// The OTHER name one harness session goes by, joined by the daemon at
+		// ingress. Frozen from the day it shipped, like every tag here: it
+		// records which agent a lifecycle hook resolves to, so renaming it later
+		// would silently unbind every agent on replay and wake nobody, reporting
+		// success throughout.
+		"session_alias": true,
+		"slot_id":       true, "text": true, "dirs": true, "refs": true,
 		"to": true, "msg_type": true, "body": true, "deadline_sec": true, "op_id": true,
 		"path": true, "mode": true, "note": true,
 		"space": true, "exclusive": true, "predicted": true,
 		"score": true, "threshold": true, "scorer_id": true, "scorer_version": true,
 		"evidence": true, "auto": true,
 		"stale_agents": true, "alive_pids": true,
+		"no_process": true, "adopt_authorised": true, "choices": true, "grant": true, "adopt": true,
+		// Declared by core.Op and reachable on disk, though the fixture below
+		// does not exercise every one. They were entirely unfrozen until the
+		// type check underneath this list was added: seventeen tags, more than
+		// a third of the format, protected by nothing. A rename of any of them
+		// would have replayed as success with the field silently zero, which is
+		// the exact failure `lane_kind` -> `agent_kind` caused across every
+		// release to v0.0.4.
+		"description": true, "proc_start": true, "resume_id": true,
+		"parent": true, "parent_nonce": true, "claim_verified": true,
+		"activity": true, "holds": true, "disposition": true,
+		"msg_serial": true, "msg_serials": true, "attachments": true,
+		"blob": true, "mime": true, "size": true,
+		"dead_agents": true, "give_up_announce": true,
+	}
+
+	// Every tag the Op DECLARES, not merely the ones this fixture happens to
+	// write. The check below compares what reached disk, which protects a field
+	// once it is in use and is blind to one that is not yet: `no_process` and
+	// `adopt_authorised` were both added and neither tripped anything, because
+	// no op in the fixture set them. They are on disk the moment a human
+	// registers or a mailbox is adopted, so "not exercised here" is not the
+	// same as "not part of the format".
+	//
+	// A new wire field must be declared. That is the whole cost of the rule,
+	// and it is what stops the next one being invisible.
+	for _, tag := range declaredOpTags() {
+		if !wantOp[tag] {
+			t.Errorf("core.Op declares json tag %q, which is not in this test's frozen "+
+				"list. Every field that can reach disk is part of the on-disk format, "+
+				"whether or not this fixture writes it: add it here deliberately, and "+
+				"remember that RENAMING one later is silent data loss rather than a "+
+				"rename", tag)
+		}
 	}
 
 	seenEnvelope := map[string]bool{}
@@ -191,8 +232,17 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 // Fingerprints of the frozen sets above. Deliberately not derived from anything
 // at build time: a value a sweep can recompute defends nothing.
 const (
-	frozenOpFingerprint       = "sha256:a6b92b35ecc6140e"
+	// Updated deliberately when `session_alias` was added: one new tag, no
+	// rename. If you are here because a sweep moved this value, the sweep is the
+	// bug, and the tag it renamed is the data loss.
+	frozenOpFingerprint       = "sha256:644f727b01467102"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
+	// The Message list had no fingerprint, and the list it guards sits in the
+	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
+	// renames the adjacent `"grant": true` with it and this test goes on
+	// passing: the exact co-edited-guard failure AGENTS.md describes, in the
+	// guard written to stop it. Found by a pre-release review.
+	frozenMessageFingerprint = "sha256:fda0b5aee19d524a"
 )
 
 func fingerprint(set map[string]bool) string {
@@ -226,52 +276,143 @@ func opKind(op map[string]json.RawMessage) string {
 // contained neither. A ledger is affected only if it ever recorded a
 // stalled-subagent wake or an admin prune.
 func TestOpKindStringsAreFrozen(t *testing.T) {
-	for name, got := range map[string]string{
-		"OpRegister": core.OpRegister, "OpResume": core.OpResume,
-		"OpWake": core.OpWake, "OpAckBoard": core.OpAckBoard,
-		"OpUpdate": core.OpUpdate, "OpSignOff": core.OpSignOff,
-		"OpHeartbeat": core.OpHeartbeat, "OpSetSlot": core.OpSetSlot,
-		"OpClearSlot": core.OpClearSlot, "OpSendMessage": core.OpSendMessage,
-		"OpClaim": core.OpClaim, "OpRelease": core.OpRelease,
-		"OpSweep": core.OpSweep, "OpMarkDelivered": core.OpMarkDelivered,
-		"OpPutBlob": core.OpPutBlob, "OpGrantRole": core.OpGrantRole,
-		"OpPrune": core.OpPrune, "OpForceRelease": core.OpForceRelease,
-		"OpSpaceOpen": core.OpSpaceOpen, "OpSpaceJoin": core.OpSpaceJoin,
-		"OpSpaceLeave": core.OpSpaceLeave, "OpSpaceSubscribe": core.OpSpaceSubscribe,
-		"OpSpaceExclusive": core.OpSpaceExclusive, "OpSpacePost": core.OpSpacePost,
-		"OpSpaceAnnounce": core.OpSpaceAnnounce, "OpSpaceAck": core.OpSpaceAck,
+	// ONE table, because two of them drifted.
+	//
+	// This was a map of constants iterated against a SEPARATE map of expected
+	// strings, and the outer one omitted OpAdoptAgent and OpSpaceRetitle. Their
+	// expected values sat in the inner map, unreachable, because the loop never
+	// supplied those names: the comment said the new kinds were pinned and
+	// renaming either left the test green. A pre-release review found it.
+	//
+	// That is the co-edited-guard shape again, in the arrangement that makes it
+	// hardest to see: nothing was wrong with either map, only with the fact that
+	// membership of one decided whether the other was consulted at all. Paired
+	// here so a kind added to the table brings its expected string with it or
+	// does not compile.
+	for name, pair := range map[string]struct{ got, want string }{
+		"OpRegister":       {core.OpRegister, "register"},
+		"OpResume":         {core.OpResume, "resume"},
+		"OpWake":           {core.OpWake, "wake"},
+		"OpAckBoard":       {core.OpAckBoard, "check_in"},
+		"OpUpdate":         {core.OpUpdate, "update"},
+		"OpSignOff":        {core.OpSignOff, "sign_off"},
+		"OpHeartbeat":      {core.OpHeartbeat, "heartbeat"},
+		"OpSetSlot":        {core.OpSetSlot, "declare"},
+		"OpClearSlot":      {core.OpClearSlot, "undeclare"},
+		"OpSendMessage":    {core.OpSendMessage, "send"},
+		"OpClaim":          {core.OpClaim, "claim"},
+		"OpRelease":        {core.OpRelease, "release"},
+		"OpSweep":          {core.OpSweep, "sweep"},
+		"OpMarkDelivered":  {core.OpMarkDelivered, "mark_delivered"},
+		"OpPutBlob":        {core.OpPutBlob, "put_blob"},
+		"OpGrantRole":      {core.OpGrantRole, "grant_role"},
+		"OpPrune":          {core.OpPrune, "prune"},
+		"OpForceRelease":   {core.OpForceRelease, "force_release"},
+		"OpSpaceOpen":      {core.OpSpaceOpen, "open_space"},
+		"OpSpaceJoin":      {core.OpSpaceJoin, "join_space"},
+		"OpSpaceLeave":     {core.OpSpaceLeave, "leave_space"},
+		"OpSpaceSubscribe": {core.OpSpaceSubscribe, "watch_space"},
+		"OpSpaceExclusive": {core.OpSpaceExclusive, "lock_space"},
+		"OpSpacePost":      {core.OpSpacePost, "post"},
+		"OpSpaceAnnounce":  {core.OpSpaceAnnounce, "announce"},
+		"OpSpaceAck":       {core.OpSpaceAck, "ack_announcement"},
+		"OpAdoptAgent":     {core.OpAdoptAgent, "adopt_agent"},
+		"OpSpaceRetitle":   {core.OpSpaceRetitle, "retitle_space"},
 	} {
-		// FROZEN AGAIN, at new values, and the break was deliberate.
-		//
-		// 0.0.3 renamed the product to Dibs and its vocabulary with it, and these
-		// strings went along because leaving `register` inside a tool called
-		// `register` is the kind of seam that outlives everyone who remembers why.
-		// A 0.0.2 ledger therefore cannot be replayed by 0.0.3: the daemon refuses
-		// to start and says so, with `verify` and `admin repair-ledger` offered,
-		// which is the honest failure rather than a silent one.
-		//
-		// That was affordable exactly once, at 0.0.x with a handful of users. It
-		// is not affordable again. From here these are append-only: a new op gets
-		// a new constant, and an existing one keeps its string forever, because
-		// every ledger already written is read by every version that follows.
-		want := map[string]string{
-			"OpRegister": "register", "OpResume": "resume",
-			"OpWake": "wake", "OpAckBoard": "check_in",
-			"OpUpdate": "update", "OpSignOff": "sign_off",
-			"OpHeartbeat": "heartbeat", "OpSetSlot": "declare",
-			"OpClearSlot": "undeclare", "OpSendMessage": "send",
-			"OpClaim": "claim", "OpRelease": "release",
-			"OpSweep": "sweep", "OpMarkDelivered": "mark_delivered",
-			"OpPutBlob": "put_blob", "OpGrantRole": "grant_role",
-			"OpPrune": "prune", "OpForceRelease": "force_release",
-			"OpSpaceOpen": "open_space", "OpSpaceJoin": "join_space",
-			"OpSpaceLeave": "leave_space", "OpSpaceSubscribe": "watch_space",
-			"OpSpaceExclusive": "lock_space", "OpSpacePost": "post",
-			"OpSpaceAnnounce": "announce", "OpSpaceAck": "ack_announcement",
-		}[name]
+		// FROZEN AGAIN, at new values, and the break was deliberate. 0.0.3 renamed
+		// the product to Dibs and its vocabulary with it, and these strings went
+		// along, because leaving `register` inside a tool called `register` is the
+		// kind of seam that outlives everyone who remembers why. A 0.0.2 ledger
+		// therefore cannot be replayed by 0.0.3: the daemon refuses to start and
+		// says so, with `verify` and `admin repair-ledger` offered.
+		got, want := pair.got, pair.want
 		if got != want {
 			t.Errorf("%s = %q, must stay %q: every ledger written since 0.0.3 uses "+
 				"this value, and Apply matches it by string", name, got, want)
 		}
 	}
+}
+
+// The MESSAGE is on disk too, and was guarded by nothing.
+//
+// This file froze core.Op's tags by reflection and stopped there, but a Message
+// is state, state is a fold over the ledger, and its fields are serialised with
+// it. Renaming one is the same silent data loss the whole file exists to stop:
+// the op applies, replay reports success, and the field is quietly zero. 0.0.6
+// added three of them (`choices`, `grant`, `adopt`), each of which decides what
+// approving a request DOES, so a rename would turn an approval into a no-op
+// that reports success.
+//
+// Found by an independent review before release, in the same pass that found
+// the two op kinds above.
+func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
+	frozen := map[string]bool{
+		"serial": true, "from": true, "to": true, "type": true, "body": true,
+		"state": true, "consumed": true, "deadline": true, "response": true,
+		"delivered_serial": true, "sent_at": true, "delivered_at": true,
+		"responded_serial": true, "acked_serial": true, "terminal_at": true,
+		"expire_detail": true, "attachments": true,
+		// 0.0.6.
+		"choices": true, "grant": true, "adopt": true,
+	}
+	var declared []string
+	mt := reflect.TypeOf(core.Message{})
+	for i := range mt.NumField() {
+		tag := mt.Field(i).Tag.Get("json")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		if c := strings.Index(tag, ","); c >= 0 {
+			tag = tag[:c]
+		}
+		if tag == "" {
+			continue
+		}
+		declared = append(declared, tag)
+		if !frozen[tag] {
+			t.Errorf("core.Message declares json tag %q, which is not frozen here. A "+
+				"message is state, and state is a fold over the ledger: renaming this "+
+				"later applies cleanly, replays cleanly, and silently zeroes the "+
+				"field. Add it deliberately", tag)
+		}
+	}
+	// The fingerprint, for the reason the constant gives: a text sweep can keep
+	// the tag and the list in step with each other, and cannot keep either in
+	// step with this.
+	if got := fingerprint(frozen); got != frozenMessageFingerprint {
+		t.Errorf("the frozen message-field list changed.\n"+
+			"  got  %s\n  want %s\n\n"+
+			"  If you renamed a tag: every ledger written before the change replays\n"+
+			"  with that field silently zero, and for `grant` or `adopt` that turns\n"+
+			"  an approval into a no-op that reports success. Put the old tag back.\n"+
+			"  If you genuinely added a field, this is deliberate: set\n"+
+			"    frozenMessageFingerprint = %q", got, frozenMessageFingerprint, got)
+	}
+
+	// The other half of the same loss: a field REMOVED is a field that stops
+	// being written, and every reader of an older ledger keeps expecting it.
+	if len(declared) != len(frozen) {
+		t.Errorf("core.Message declares %d tags and %d are frozen: a field was "+
+			"removed or renamed", len(declared), len(frozen))
+	}
+}
+
+// declaredOpTags lists every json tag on core.Op, so the frozen list above is
+// checked against the type rather than against whatever the fixture exercised.
+func declaredOpTags() []string {
+	var out []string
+	t := reflect.TypeOf(core.Op{})
+	for i := range t.NumField() {
+		tag := t.Field(i).Tag.Get("json")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		if i := strings.Index(tag, ","); i >= 0 {
+			tag = tag[:i]
+		}
+		if tag != "" {
+			out = append(out, tag)
+		}
+	}
+	return out
 }

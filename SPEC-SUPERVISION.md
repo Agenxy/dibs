@@ -213,6 +213,17 @@ that enforces this walks every `plugins/*/hooks/hooks.json` that exists, rather
 than the one hardcoded path it read before, so a plugin cannot ship a hook
 ahead of the tool it calls.
 
+**It came back, and the guard could not see it.** A later change shipped
+`plugins/codex/hooks.json` with all seven entries on `mcp_tool`, on the strength
+of a Rust enum found in a Codex source tree. Codex Desktop parses that file and
+then prints `MCP tool hooks are not supported yet` once per entry; a build from
+codex main has no such variant and rejects the whole file, which takes any
+working entry down with it. The file was never opened by a test, because the
+glob above requires a `hooks/` subdirectory and this one sat directly in the
+plugin root. `TestShippedHooksUseOnlySupportedTypes` now walks both layouts and
+checks each hook's TYPE against what that harness is measured to run, so the
+next one is caught by shape rather than by somebody noticing.
+
 The events it needs are settled:
 
 | event | carries | why Dibs wants it |

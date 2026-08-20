@@ -47,7 +47,7 @@ func (s *Server) registerActions(mux *http.ServeMux) {
 // apiMe tells the page which AGENT it is speaking as, or that it is only
 // watching, so the UI can mark the human's own memberships without guessing.
 //
-// The human is a participant, not a space: they join the agents agents open,
+// The human is a participant, not a space: they join the spaces agents open,
 // and never need one of their own, and they need not be a participant at all.
 func (s *Server) apiMe(w http.ResponseWriter, r *http.Request) {
 	// Deliberately does NOT create. Watching the board is not participating:

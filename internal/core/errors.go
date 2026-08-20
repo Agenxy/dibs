@@ -31,6 +31,22 @@ var (
 			"back, with its mail. Registering without the nonce makes you a second " +
 			"agent that cannot read the first one's mail",
 	}
+	// ErrHumanIdentity refuses a registration aimed at the operator's own agent.
+	//
+	// The credential used to be `human:<OS username>`, so this was reachable by
+	// anybody who could run `whoami`: register under it, receive the operator's
+	// token, approve your own coordinator grant. Touch ID guards the board
+	// session and was never consulted, because nothing on that path asks.
+	//
+	// The hint names the legitimate route rather than only refusing, because an
+	// agent that genuinely wants the role has one and should be sent to it.
+	ErrHumanIdentity = &Error{
+		Code: "E_NOT_PERMITTED", Msg: "the operator's identity is not registrable",
+		Hint: "that agent belongs to the person at this machine and only the daemon " +
+			"may mint it. To ask for a role, send them a request: to the board row " +
+			"marked `human: true`, type: \"request\", grant: \"coordinator\", with " +
+			"what you need it for. They approve it on their own machine",
+	}
 	ErrMustAck = &Error{
 		Code: "E_MUST_ACK_BOARD", Msg: "awareness gate: board not acknowledged",
 		Hint: "call check_in() first to see what other agents are doing, then retry",
@@ -94,15 +110,66 @@ var (
 		Code: "E_STORE_FULL", Msg: "blob store is full",
 		Hint: "retry shortly; the store evicts unreferenced blobs under pressure",
 	}
+	// ErrHumanMailboxIsTheirs refuses an adoption of the operator's own identity.
+	//
+	// Their row is dormant whenever they are not typing, which is most of the
+	// time and is not evidence that anything is abandoned.
+	ErrHumanMailboxIsTheirs = &Error{
+		Code: "E_NOT_PERMITTED",
+		Msg:  "the human's mailbox is not adoptable",
+		Hint: "a person's row is dormant whenever they are not at the keyboard, which " +
+			"is not the same as abandoned. If you need something in there, ask them " +
+			"for it",
+	}
+
+	// ErrNoCoordinator answers mail addressed to a role nobody holds.
+	//
+	// Silence would be worse than an error: the sender would believe it had
+	// asked somebody, and wait out a deadline against a mailbox that does not
+	// exist.
+	ErrNoCoordinator = &Error{
+		Code: "E_NO_COORDINATOR",
+		Msg:  "nobody holds the coordinator role on this board",
+		Hint: "address the human instead: the board row marked `human: true`. If you " +
+			"need the role yourself, ask them for it with " +
+			"send(to: <that row>, type: \"request\", grant: \"coordinator\")",
+	}
+
+	// ErrGrantNeedsHuman refuses a role request addressed to anything but the
+	// person. Two agents exchanging requests and approving each other's is
+	// self-promotion with one extra participant.
+	ErrGrantNeedsHuman = &Error{
+		Code: "E_GRANT_NEEDS_HUMAN",
+		Msg:  "a role can only be requested from the human",
+		Hint: "address it to the board row marked `human: true`. If no row is marked, " +
+			"nobody has opened the board on this machine yet and there is nobody to " +
+			"ask: send without `grant` and say what you need, or drop it",
+	}
 	ErrNotAdmin = &Error{
 		Code: "E_NOT_ADMIN",
 		Msg:  "this action needs the admin role",
-		Hint: "admin can read every agent's mail, so only a human grants it: `dibs admin admin <agent>`",
+		Hint: "admin reads every agent's mail, so unlike coordinator it is never " +
+			"granted by approving a notification: send(to: the row marked " +
+			"`human: true`, type: \"request\", body: what you need it for) to ask, and " +
+			"they run `dibs admin admin <agent>` themselves, on their own machine",
 	}
 	ErrNotCoordinator = &Error{
 		Code: "E_NOT_COORDINATOR",
 		Msg:  "this action needs the coordinator role",
-		Hint: "a human grants it with `dibs admin coordinator <agent>`; agents cannot promote themselves",
+		// The corrective call an AGENT can make, first.
+		//
+		// This named a command only a person can run, at a terminal the agent is
+		// not sitting at, which reads as "you cannot do this" rather than as a
+		// route. An agent that needs the role has an ordinary way to ask for it:
+		// the board carries the human as a row like any other, and a `request`
+		// to them raises a notification with Approve on it. Measured on a real
+		// board: nobody could broadcast because the coordinator was an agent
+		// nobody could log back into, and no hint said what to do next.
+		Hint: "ask, and their yes IS the grant: send(to: the board row marked " +
+			"`human: true`, type: \"request\", grant: \"coordinator\", body: what you " +
+			"need it for). That raises a notification with Approve on it; pressing it " +
+			"promotes you and the answer comes back as an ordinary response. You still " +
+			"cannot promote yourself: only they can press it",
 	}
 	ErrBlobUnavailable = &Error{
 		Code: "E_BLOB_UNAVAILABLE", Msg: "blob bytes are no longer available",

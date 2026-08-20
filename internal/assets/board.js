@@ -180,20 +180,68 @@ const Board = (() => {
       }).join("") + "</div>"
   }
 
-  function laneHTML(l, { selfId = null, events = null } = {}) {
+  // One line per agent, opened on request.
+  //
+  // A board is read at the start of every activation to answer "who else is
+  // here and what are they on". Sixteen agents each spending four to twelve
+  // lines on a declaration answers that only for whoever scrolls, and the
+  // longest field on the board was being given the most room: a well-written
+  // twelve-line declaration pushed the two agents that needed attention off
+  // the screen entirely.
+  //
+  // So the row states who and how they are, plus the first line of what they
+  // said, and the rest is one press away.
+  //
+  // `details`, rather than a class this library toggles. It is keyboard
+  // operable, it is announced as a disclosure, it is findable by the browser's
+  // own in-page search when closed in engines that support that, and it needs
+  // no script: which matters here, because this library is pure by contract
+  // and holds no state at all.
+  //
+  // The head sits OUTSIDE the summary deliberately. It carries explainer marks
+  // that are themselves buttons, and inside a summary every one of those
+  // presses would also toggle the row.
+  function laneHTML(l, { selfId = null, events = null, expanded = null } = {}) {
     const st = l.status || "dormant"
     const self = selfId != null && l.id === selfId
-    const tasks = (l.slots || []).map((s) => `
-      <div class="task">
-        <p>${esc(s.text)}</p>
-        ${(s.refs || []).length || (s.dirs || []).length ? `<div class="paths">
+    const pathsHTML = (s) =>
+      (s.refs || []).length || (s.dirs || []).length ? `<div class="paths">
           ${(s.refs || []).map((r) => `<span class="path">${esc(r)}</span>`).join("")}
           ${(s.dirs || []).map((d) => `<span class="path dir">${esc(d)}/</span>`).join("")}
-        </div>` : ""}
-      </div>`).join("")
+        </div>` : ""
 
-    return `
-      <article class="entry ${esc(st)}${self ? " self" : ""}" data-agent="${esc(l.id)}" data-recency="${recency(l.last_coordination_at)}">
+    // What the agent said it is DOING, preferred over what it says it IS: a
+    // reader scanning the board wants the work, and the description is the
+    // standing self-portrait that barely changes.
+    const slots = l.slots || []
+    const first = slots.findIndex((s) => (s.text || "").trim())
+    const declared = first >= 0 ? slots[first] : null
+    const lede = (declared && declared.text) || l.description || ""
+
+    // The lede is the ONLY place its own text appears. It is the summary when
+    // closed and the full declaration when open, so repeating it in the body
+    // would show a reader the same paragraph twice, one under the other, the
+    // moment they opened the row. What the body adds is everything the one line
+    // could not carry: that declaration's paths, any FURTHER declarations, the
+    // standing description, and the identity strip.
+    const rest = slots
+      .filter((_, i) => i !== first)
+      .map((s) => `
+      <div class="task">
+        <p>${esc(s.text)}</p>
+        ${pathsHTML(s)}
+      </div>`).join("")
+    const detail = (declared ? pathsHTML(declared) : "") + rest +
+      (declared && l.description ? `<p class="about">${esc(l.description)}</p>` : "") +
+      identHTML(l.agent)
+
+    // Nothing further to open is not a disclosure. An agent that has declared
+    // one line and carries nothing else would otherwise offer a control that
+    // reveals an empty box.
+    const more = detail.trim()
+    const open = expanded && expanded.has(l.id) ? " open" : ""
+
+    const head = `
         <div class="entry-head">
           <span class="pip"></span>
           <span class="name">${esc(l.display_name || l.id || l.name)}</span>
@@ -204,10 +252,19 @@ const Board = (() => {
           ${staleReasonHTML(l)}
           ${cadenceHTML(l.id, events)}
           <time class="age" datetime="${esc(l.last_coordination_at || "")}">${esc(ago(l.last_coordination_at))}</time>
-        </div>
-        ${l.description ? `<p class="about">${esc(l.description)}</p>` : ""}
-        ${tasks}
-        ${identHTML(l.agent)}
+        </div>`
+
+    const body = !lede ? "" : !more
+      ? `<p class="lede">${esc(lede)}</p>`
+      : `<details class="says"${open}>
+          <summary><span class="lede">${esc(lede)}</span></summary>
+          <div class="said">${detail}</div>
+        </details>`
+
+    return `
+      <article class="entry ${esc(st)}${self ? " self" : ""}" data-agent="${esc(l.id)}" data-recency="${recency(l.last_coordination_at)}">
+        ${head}
+        ${body}
       </article>`
   }
 
@@ -221,7 +278,7 @@ const Board = (() => {
   // meant to be between activations, was labelled "Idle" as though something
   // were wrong. Dibs knows an agent has spoken. It does not know what it is
   // doing, and this board must not say otherwise (SPEC §7).
-  function rosterHTML(agents, { selfId = null, empty = "", events = null } = {}) {
+  function rosterHTML(agents, { selfId = null, empty = "", events = null, expanded = null } = {}) {
     if (!agents || !agents.length) return empty
     // Ordered by WHAT NEEDS A PERSON, not by status name.
     //
@@ -253,7 +310,7 @@ const Board = (() => {
         <h2 class="band ${cls}" id="band-${cls}">
           <span>${esc(label)}</span><span class="n">${ls.length}</span><span class="hr"></span>
         </h2>
-        ${ls.map((l) => laneHTML(l, { selfId, events })).join("")}
+        ${ls.map((l) => laneHTML(l, { selfId, events, expanded })).join("")}
       </section>`).join("")
   }
 
@@ -304,6 +361,29 @@ const Board = (() => {
     return `${(n / (1024 * 1024)).toFixed(1)} MB`
   }
 
+  // What approving this message WOULD DO, stated by the card rather than left
+  // in the sender's prose.
+  //
+  // A request may carry `grant` (a role) or `adopt` (somebody's mailbox), and
+  // approving it performs that. The card rendered only the body, which the
+  // SENDER writes, so a human reading their own board saw "just need to check
+  // something" and no indication that pressing approve would promote the asker
+  // or move a dormant agent's mail onto it. The notification has said this for
+  // a while; the board had not. Found by a pre-release review.
+  function effectHTML(m) {
+    const bits = []
+    if (m.grant) {
+      bits.push(`approving makes <strong>${esc(m.from)}</strong> ` +
+        `<strong>${esc(m.grant)}</strong>`)
+    }
+    if (m.adopt) {
+      bits.push(`approving moves <strong>${esc(m.adopt)}</strong>'s mailbox to ` +
+        `<strong>${esc(m.from)}</strong>`)
+    }
+    if (!bits.length) return ""
+    return `<p class="effect"><span class="pill attn">effect</span> ${bits.join("; ")}</p>`
+  }
+
   function messageHTML(m, { selfId = null, actionsHTML = null } = {}) {
     const t = m.type || "notify"
     // `response` is a STRING; an earlier version read `.body` / `.disposition`
@@ -322,7 +402,7 @@ const Board = (() => {
     const who = (id) =>
       `<span class="who${selfId != null && id === selfId ? " focal" : ""}">${esc(id || ", ")}</span>`
     return `
-      <article class="msg ${settled ? "" : "open"}${overdue ? " overdue" : ""}">
+      <article class="msg ${settled ? "" : "open"}${overdue ? " overdue" : ""}" data-serial="${esc(String(m.serial))}">
         <div class="msg-head">
           <span class="serial">#${esc(m.serial ?? "")}</span>
           <span class="kind ${esc(t)}">${esc(t)}</span>
@@ -332,6 +412,7 @@ const Board = (() => {
           ${who(m.from)}<span class="wire"></span><span class="arrow">▶</span>${who(m.to)}
         </div>
         <p class="body">${esc(m.body)}</p>
+        ${effectHTML(m)}
         ${attachmentsHTML(m.attachments)}
         ${settled ? `<div class="reply ${esc(m.state)}">
           <span class="verdict">${esc(verdict)}</span>
@@ -371,14 +452,24 @@ const Board = (() => {
    * the reading is still there, still legible, still announced to a screen
    * reader by the aria-label the caller builds. It simply stops competing.
    */
+  // A sentence, not a dashboard.
+  //
+  // These four counts were four bordered cells with big numerals over tracked
+  // mono capitals: an instrument-shaped widget for something a person reads
+  // once, in order, as a line. The give-away was that the accessible label
+  // already said it properly, "1 of 16 live. 0 unanswered.", and read better
+  // than the thing sighted readers were given. So both are the same line now,
+  // which is the standard this system should have been holding anyway.
+  //
+  // Figures stay mono and tabular because they are data and they change in
+  // place; labels are sans because they are words. Colour only lands on a count
+  // that is not zero, so a quiet board has no coloured pixels at all.
   function summaryHTML(metrics) {
     return metrics.map(({ figure, label, tone }) => {
       const quiet = !tone && /^0(<|$)/.test(String(figure))
-      return `
-      <div class="metric${quiet ? " quiet" : ""}">
-        <span class="figure ${tone || ""}">${figure}</span>
-        <span class="label">${esc(label)}</span>
-      </div>`
+      return `<span class="metric${quiet ? " quiet" : ""}"
+        ><b class="figure ${tone || ""}">${figure}</b
+        ><span class="label">${esc(label)}</span></span>`
     }).join("")
   }
 

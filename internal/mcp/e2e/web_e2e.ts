@@ -861,6 +861,44 @@ try {
       JSON.stringify(got).slice(0, 240))
   }
 
+  // ── the human APPROVES a request, which is not the same as answering ───
+  {
+    // THE GAP THIS CLOSES. Every open message on the board got one `answer`
+    // button, and core refuses that disposition for a request, so a human on
+    // their own authenticated board could read a coordinator grant and had no
+    // way to act on it. The desktop notification was the only working approval
+    // surface, and this board is what it is supposed to fall back to when
+    // notifications cannot be raised.
+    //
+    // This suite covered answering a QUESTION and nothing else, which is why it
+    // stayed green. Found by a pre-release review.
+    const me = ((await (await fetch(`http://${ADDR}/api/me`, { headers: { cookie } })).json()) as any).agent
+    const asked = await tool("send", { token: b.token, to: me, type: "request",
+      body: "may I coordinate the release?", grant: "coordinator",
+      op_id: "ask-human-grant", deadline_s: 600 })
+
+    await page.locator('.views button[data-view="mail"]').click()
+    const card = page.locator(`.msg[data-serial="${asked.msg_serial}"]`).first()
+    await card.waitFor({ timeout: 8000 })
+
+    // The card must say what approving DOES, not only what the sender wrote.
+    const effect = (await card.locator(".effect").textContent().catch(() => "")) ?? ""
+    check("the card says what approving the request would do",
+      effect.includes("coordinator"), effect || "(no effect line)")
+
+    // The controls are a SIBLING of the card, not a child: messageHTML renders
+    // the message and the view appends its own compose block beside it.
+    const approve = page.locator(`.compose.reply[data-serial="${asked.msg_serial}"] .act.approve`)
+    check("a request offers approve, not a reply box", await approve.count() === 1)
+    await approve.click()
+    await Bun.sleep(300)
+
+    const got = await tool("read_mail", { token: b.token, msg_serial: asked.msg_serial })
+    const state = got.message?.state ?? got.state ?? ""
+    check("the request is approved, from the board alone",
+      String(state) === "approved", String(state))
+  }
+
   // ── the human sends a message unprompted ───────────────────────────────
   {
     await page.locator("#msg-to").fill("builder")
