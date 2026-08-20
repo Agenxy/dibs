@@ -167,6 +167,20 @@ homebrew_casks:
       # The key exists only in CI, so a local `goreleaser release --snapshot`
       # stops here with "map has no entry for key HOMEBREW_TAP_DEPLOY_KEY".
       # That is the config working. Add --skip=homebrew locally.
+      # A BRANCH, never main. The tap requires changes to go through a pull
+      # request, and GoReleaser pushed straight at main, so v0.0.6 published
+      # every artifact and then failed on its last step with GH013: the release
+      # was out and the cask stayed at 0.0.5 until somebody opened the PR by
+      # hand. A red release job for a release that actually succeeded is the
+      # worst of both, because the next person reads the red and wonders what
+      # else did not happen.
+      #
+      # The ruleset protects main and not other refs, so this lands and the
+      # release stays green. Opening the PR still needs a token: a deploy key
+      # can push and cannot call the API, and that is the trade the key was
+      # chosen for. Merging it is one click, or a workflow in the tap can watch
+      # for `cask-*`.
+      branch: "cask-{{ .Version }}"
       git:
         url: git@github.com:Agenxy/homebrew-tap.git
         private_key: "{{ .Env.HOMEBREW_TAP_DEPLOY_KEY }}"
