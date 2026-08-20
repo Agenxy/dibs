@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -63,5 +64,79 @@ func TestTheGateRefusesAForeignLocalOrigin(t *testing.T) {
 	}
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)
+	}
+}
+
+// A board served on a LAN or tailnet address accepts its own origin.
+//
+// THE REGRESSION THIS CATCHES, which the fix for the port-blind check
+// introduced. `addr` may be a LAN or tailnet address so agents on other
+// machines can reach the board, and Dibs documents that. Hardcoding the
+// loopback hostnames made such a daemon reject its own board: navigation still
+// loaded the page, because ordinary navigation sends no Origin, so it looked
+// like it worked and every button returned 403. Tightening by pattern rather
+// than by identity is what did it. Found by a pre-release review.
+func TestABoardOnATailnetAddressAcceptsItsOwnOrigin(t *testing.T) {
+	gate := newAuthGate("the-secret", filepath.Join(t.TempDir(), "admin.hash"), "100.72.14.3:4777")
+	for _, tc := range []struct {
+		origin string
+		want   bool
+	}{
+		{"https://100.72.14.3:4777", true},
+		{"http://100.72.14.3:4777", true},
+		// Still not anybody else.
+		{"https://100.72.14.9:4777", false},
+		{"https://100.72.14.3:9999", false},
+		{"http://localhost:4777", false},
+	} {
+		t.Run(tc.origin, func(t *testing.T) {
+			if got := gate.localOrigin(tc.origin); got != tc.want {
+				t.Errorf("localOrigin(%q) = %v, want %v", tc.origin, got, tc.want)
+			}
+		})
+	}
+
+	// Listening on every interface cannot narrow the host, and must not lock
+	// the operator out of their own board by pretending it can.
+	any := newAuthGate("s", filepath.Join(t.TempDir(), "admin.hash"), "0.0.0.0:4777")
+	if !any.localOrigin("https://box.tail1234.ts.net:4777") {
+		t.Error("a daemon listening on every interface refused an origin on its own port")
+	}
+	if any.localOrigin("https://box.tail1234.ts.net:9999") {
+		t.Error("the port must still bind even when the host cannot")
+	}
+}
+
+// The board refuses to be framed.
+//
+// THE CLICKJACK THIS CLOSES. The origin check stops a hostile page CALLING the
+// daemon and does nothing about one EMBEDDING it. Cookies are host-scoped and
+// not port-scoped, and different ports on one loopback hostname are same-site,
+// so a page on http://localhost:9999 can frame the authenticated board on :4777
+// with its twelve-hour session attached. Anything it induces a click on is
+// issued by the board's OWN script, so the Origin is this daemon's and the
+// check waves it through: overlay something plausible and the human approves a
+// grant or an adoption they never read.
+//
+// Found by a pre-release review, which noted the foreign-origin test does not
+// cover it, because framing is not a cross-origin request at all.
+func TestTheBoardCannotBeFramed(t *testing.T) {
+	gate := newAuthGate("the-secret", filepath.Join(t.TempDir(), "admin.hash"), "127.0.0.1:4777")
+	h := gate.wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("<html>the board</html>"))
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("X-Frame-Options"); got != "DENY" {
+		t.Errorf("X-Frame-Options = %q, want DENY", got)
+	}
+	csp := rec.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "frame-ancestors 'none'") {
+		t.Errorf("Content-Security-Policy = %q, want frame-ancestors 'none'. Without "+
+			"it a page on another local port frames the authenticated board and "+
+			"drives it with the human's own session", csp)
 	}
 }

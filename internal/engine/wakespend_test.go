@@ -67,12 +67,21 @@ func TestTypingDoesNotSpendTheWakeThatStopNeeds(t *testing.T) {
 	}
 }
 
-// And a peer cannot spend an agent's wake on its behalf.
+// A poll that DELIVERS NOTHING must record nothing.
 //
-// hook_poll carries no token, so the only thing standing between one agent and
-// another's wake state is that a poll which delivers nothing must record
-// nothing.
-func TestAPeerCannotSpendAnotherAgentsWake(t *testing.T) {
+// Narrower than it first looks, and the name says so now. hook_poll takes no
+// token, so a caller naming somebody else's session and claiming an event that
+// CAN deliver is handed that agent's digest and spends its wake. That is a real
+// property of the design and SECURITY.md states it: a session id is a
+// capability on this path.
+//
+// What this pins is the half that is fixable: an event that cannot deliver must
+// not spend anything either. The first version of this test used exactly such
+// an event and called it proof against the whole attack, which it never was:
+// UserPromptSubmit is hard-coded never to deliver, so it never reached
+// markWoken, and a spoofed `Stop` did. Found by the review that had already
+// found the bug once.
+func TestAPollThatDeliversNothingSpendsNothing(t *testing.T) {
 	e, ctx, cancel := runningEngine(t)
 	defer cancel()
 

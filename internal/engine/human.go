@@ -827,3 +827,64 @@ func (e *Engine) refuseEmptyAdoption(from string) error {
 			"prune removes it; if you expected mail, check the id on the board",
 	}
 }
+
+// adoptionSourceOf is the agent an approval would adopt from, or "".
+//
+// Reads the message being responded to, because the adoption is recorded on the
+// REQUEST rather than on the response: an approval carries only the serial it
+// answers. Runs on the loop, like the other ingress decisions beside it.
+func (e *Engine) adoptionSourceOf(op *core.Op) string {
+	if op.Disposition != "approve" {
+		return ""
+	}
+	m, ok := e.state.Messages[op.MsgSerial]
+	if !ok || m == nil {
+		return ""
+	}
+	return m.Adopt
+}
+
+// refuseRetiredRequester rejects approving a request whose asker has gone.
+//
+// THE FALSE SUCCESS THIS ENDS. Apply notices that the requester is gone and
+// marks the response undelivered, and then performs the effects anyway: the
+// role is granted to a retired agent, and an adopted mailbox is moved INTO one
+// whose token has been blanked and which cannot resume. So a coordinator
+// approving a rescue moved the rescued mail somewhere nobody can ever read it,
+// and was told it worked. The direct adoption path already refuses a closed or
+// archived destination; only this route did not. Reproduced end to end by a
+// pre-release review: request, sign off, approve, mail gone.
+//
+// At ingress, not in the fold. Refusing inside Apply would bind every approval
+// already on disk, and skipping the effect there would make replay produce a
+// different board from the one that was written.
+func (e *Engine) refuseRetiredRequester(op *core.Op) error {
+	if op.Disposition != "approve" {
+		return nil
+	}
+	m, ok := e.state.Messages[op.MsgSerial]
+	if !ok || m == nil {
+		return nil // the fold reports a missing message, with its own hint
+	}
+	if m.Grant == "" && m.Adopt == "" {
+		return nil // nothing is performed, so nothing lands anywhere
+	}
+	asker := e.state.Agents[m.From]
+	if asker == nil {
+		return &core.Error{
+			Code: "E_NO_AGENT", Msg: "the agent that asked is gone",
+			Hint: "nothing was changed. Its row has been removed, so there is nobody " +
+				"for this to take effect on",
+		}
+	}
+	if asker.Status == core.StatusClosed || asker.Status == core.StatusArchived {
+		return &core.Error{
+			Code: "E_AGENT_CLOSED",
+			Msg:  "the agent that asked has retired (" + string(asker.Status) + ")",
+			Hint: "nothing was changed. Approving would grant a role to an agent that " +
+				"cannot act, or move a mailbox into one that cannot read: if a live " +
+				"agent needs this, have it ask, and deny this one",
+		}
+	}
+	return nil
+}

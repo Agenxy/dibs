@@ -78,9 +78,10 @@ func strconvItoa(n int) string { return strconv.Itoa(n) }
 type authGate struct {
 	secret        string
 	adminHashPath string
-	// port is the daemon's own listening port, so an Origin can be checked
-	// against THIS server rather than merely against loopback. See localOrigin.
-	port          string
+	// host and port are the daemon's own listening address, so an Origin can be
+	// checked against THIS server rather than against a fixed idea of what a
+	// server's address looks like. See localOrigin.
+	host, port    string
 	mu            sync.Mutex
 	boot          map[string]time.Time // one-time bootstrap tokens
 	sessions      map[string]time.Time // god-view session cookie tokens
@@ -94,12 +95,12 @@ const (
 )
 
 func newAuthGate(secret, adminHashPath, listenAddr string) *authGate {
-	_, port, err := net.SplitHostPort(listenAddr)
+	host, port, err := net.SplitHostPort(listenAddr)
 	if err != nil {
-		port = ""
+		host, port = "", ""
 	}
 	return &authGate{
-		port:   port,
+		host: host, port: port,
 		secret: secret, adminHashPath: adminHashPath,
 		boot: map[string]time.Time{}, sessions: map[string]time.Time{},
 	}
@@ -325,6 +326,26 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 			return
 		}
 
+		// The board may not be put in somebody else's frame.
+		//
+		// The origin check above stops a hostile page CALLING this daemon. It
+		// does nothing about a hostile page EMBEDDING it, and the difference
+		// matters here more than on most sites: cookies are host-scoped rather
+		// than port-scoped, and different ports on one loopback hostname are
+		// same-site, so a page on http://localhost:9999 can frame the
+		// authenticated board on :4777 with its twelve-hour session attached.
+		// Anything it then induces a click on is issued by the board's OWN
+		// script, so the Origin is this daemon's and the check above waves it
+		// through. Overlay something plausible and the human approves a grant or
+		// an adoption they never read. Any local process can bind a port, which
+		// here includes the agents this daemon coordinates.
+		//
+		// Both headers, because the modern one is authoritative where it is
+		// understood and the old one is what everything else obeys. Found by a
+		// pre-release review.
+		w.Header().Set("Content-Security-Policy", "frame-ancestors 'none'")
+		w.Header().Set("X-Frame-Options", "DENY")
+
 		// Mint a god-view bootstrap token: requires BOTH the local secret
 		// (same-user) AND the admin password (human). `dibs web` calls this.
 		if r.Method == http.MethodPost && r.URL.Path == "/bootstrap" {
@@ -515,15 +536,41 @@ func (g *authGate) localOrigin(origin string) bool {
 	if err != nil {
 		return false
 	}
-	switch u.Hostname() {
-	case "localhost", "127.0.0.1", "::1":
-	default:
+	// The daemon's OWN address, not a fixed idea of what one looks like.
+	//
+	// The first version of this check hardcoded the loopback hostnames, which
+	// broke a configuration Dibs documents and supports: `addr` may be a LAN or
+	// tailnet address so agents on other machines can reach the board, and such
+	// a daemon then rejected its own board's origin. Navigation still loaded the
+	// page, because ordinary navigation sends no Origin, so the board appeared
+	// to work and every button on it returned 403. Found by a pre-release
+	// review; it was a regression introduced by the fix for the port-blind
+	// check, which is its own small lesson about tightening by pattern rather
+	// than by identity.
+	if g.port == "" {
+		return isLoopback(u.Hostname()) // address unknown: the older, weaker rule
+	}
+	if u.Port() != g.port {
 		return false
 	}
-	// No port on the gate means it could not be determined; fall back to the
-	// old, weaker rule rather than locking the operator out of their own board.
-	if g.port == "" {
+	switch g.host {
+	case "", "0.0.0.0", "::":
+		// Listening on every interface: the host cannot narrow anything, and
+		// pretending otherwise would lock somebody out of their own board.
 		return true
 	}
-	return u.Port() == g.port
+	if strings.EqualFold(u.Hostname(), g.host) {
+		return true
+	}
+	// 127.0.0.1, ::1 and localhost are one server, and a browser may use any of
+	// them for a daemon listening on any other.
+	return isLoopback(u.Hostname()) && isLoopback(g.host)
+}
+
+func isLoopback(h string) bool {
+	switch h {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	return false
 }

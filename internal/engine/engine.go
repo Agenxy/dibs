@@ -509,6 +509,25 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		if err := e.mayApproveGrant(actor, op); err != nil {
 			return nil, err
 		}
+		if err := e.refuseRetiredRequester(op); err != nil {
+			return nil, err
+		}
+		// The same emptiness check as the direct route above.
+		//
+		// It was only on the direct one, so APPROVING an adoption request
+		// against an empty mailbox still ledgered an op that moved nothing and
+		// answered adopted:<source> with messages:0, and generated a notice
+		// telling the requester their rescued mail was waiting in an inbox that
+		// had received none. Two routes to one effect and the check on one of
+		// them, which is how the first fix looked complete. Found by a
+		// pre-release review.
+		if op.AdoptAuthorised {
+			if from := e.adoptionSourceOf(op); from != "" {
+				if err := e.refuseEmptyAdoption(from); err != nil {
+					return nil, err
+				}
+			}
+		}
 	}
 
 	res, err := e.applyAndLedger(op, now)

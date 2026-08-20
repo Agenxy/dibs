@@ -151,6 +151,28 @@ func (e *Engine) HookPoll(ctx context.Context, sessionID, event, cwd string, sto
 		fresh := len(wake) > 0 || len(announced) > 0 || noticesCount > 0
 		blocked := e.somebodyIsWaiting(l.ID) || len(announced) > 0 || noticesCount > 0
 		if e.deliverToModel(event, fresh, blocked, stopActive) {
+			// Marked on DELIVERY, and that is a deliberate trade rather than an
+			// oversight, so it is written down here and in SECURITY.md.
+			//
+			// hook_poll takes no token, so a caller naming somebody else's
+			// session and claiming `Stop` is handed that agent's digest and
+			// spends its one wake: the victim's own Stop then delivers nothing.
+			// SECURITY.md accepts the disclosure and used to claim the other
+			// half was impossible, which was wrong.
+			//
+			// Moving the mark to the agent's own check_in was tried and is
+			// worse. A notify wakes once by design, and an agent that reads its
+			// wake and decides not to act never checks in, so the same FYI would
+			// interrupt it every turn for the rest of its life. That rule has
+			// its own test, and it is the right rule: this product exists to
+			// stop agents being interrupted by each other.
+			//
+			// So the session id IS a capability on this path, and the document
+			// now says so rather than promising an isolation that the design
+			// cannot give. Found twice by the same review: the first fix stopped
+			// the marking only on events that cannot deliver, which is what the
+			// probe for it used, so the probe passed while a spoofed Stop still
+			// worked.
 			e.markWoken(wake, now)
 			out["hookSpecificOutput"] = map[string]any{
 				"hookEventName":     event,
@@ -596,8 +618,10 @@ func (e *Engine) wakeKeys(agent string, now time.Time) []string {
 	return keys
 }
 
-// markWoken records that these messages were announced. Called only where a
-// wake was really delivered.
+// markWoken records that these messages were announced.
+//
+// Called only where a wake was really delivered. See the note at the call site
+// for why that is on the token-less path, and what it costs.
 func (e *Engine) markWoken(keys []string, now time.Time) {
 	for _, k := range keys {
 		e.wokeFor[k] = now

@@ -126,6 +126,16 @@ func Admit(op *Op, lim Limits) error {
 			return errf("E_EMPTY_BODY", "pass the text as `body`",
 				"`body` is empty: a post needs something to say")
 		}
+	case OpSendMessage:
+		// `adopt` is copied permanently into the message and therefore into the
+		// ledger, before anything looks up whether that agent exists. It was
+		// checked for message TYPE and never for length, so one authenticated
+		// request could put most of the 96 MiB request cap of nonsense into the
+		// encrypted ledger and into every replay of it, forever. An agent id is
+		// a name; it is bounded like one. Found by a pre-release review.
+		if len(op.Adopt) > lim.MaxNameBytes {
+			return errTooLarge("adopt", lim.MaxNameBytes)
+		}
 	case OpUpdate:
 		// Both of these were added to Apply, which is the mistake this file
 		// exists to stop.
