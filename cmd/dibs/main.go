@@ -1831,7 +1831,7 @@ func reachErr(err error) error {
 			"  dibd signs its own certificate off loopback, so this is what first\n"+
 			"  contact from a new machine looks like, not a failure.\n\n"+
 			"  Trust it the same way you got the secret, by carrying it across:\n"+
-			"    dibs trust %s", err, addr(), addr())
+			"    %s", err, addr(), trustCommand())
 	case errors.As(err, &hostErr):
 		return fmt.Errorf("%w\n\n"+
 			"  The daemon is reachable but its certificate names a different host.\n"+
@@ -1862,4 +1862,20 @@ func self() string {
 		return resolved
 	}
 	return exe
+}
+
+// trustCommand is the `dibs trust` line to print, carrying DIBS_DIR when this
+// process is using one.
+//
+// Printed bare, an operator on a joined board pastes it without the variable
+// and records the certificate in the default data directory: trust reports
+// success and the bridge goes on refusing the board, which is the failure this
+// message exists to end. It is only added when there is something to carry, so
+// the ordinary single-board case reads as it did.
+func trustCommand() string {
+	cmd := "dibs trust " + addr()
+	if d := os.Getenv("DIBS_DIR"); d != "" {
+		return "DIBS_DIR=" + shellArg(d) + " " + cmd
+	}
+	return cmd
 }

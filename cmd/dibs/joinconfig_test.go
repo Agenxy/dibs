@@ -30,6 +30,10 @@ func TestEachBoardGetsItsOwnDirectory(t *testing.T) {
 		// somebody thought of.
 		"[2001:db8::1]:4777",
 		"2001-db8--1:4777",
+		// And a fourth: loopback was renamed "board", which is an ordinary
+		// hostname somebody may well be using. Each of these was one character
+		// kept after the last; the address is kept verbatim now.
+		"board:4777",
 	} {
 		slug := boardSlug(addr)
 		if prev, clash := seen[slug]; clash {
@@ -133,5 +137,33 @@ func TestGeneratedShellLinesAreQuoted(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("no shell line carried the home directory, so this proves nothing")
+	}
+
+	// The scp SOURCE is a placeholder the operator replaces with the hub's own
+	// data directory, which may equally contain a space. Quoting only the half
+	// this machine controls leaves the other half to split.
+	if !strings.Contains(out, "'<hub>:<hub-data-dir>/local.secret'") {
+		t.Error("the scp source is unquoted, so a hub data directory with a space in " +
+			"it splits into two arguments when the operator substitutes it")
+	}
+}
+
+// The recovery message must carry the data directory the failing call used.
+//
+// An operator on a joined board reads "dibs trust <addr>", pastes it without
+// the variable, and records the certificate in the DEFAULT data directory:
+// trust reports success and the bridge goes on refusing the board, which is
+// the failure this message exists to end. Found by the pre-release review as
+// the third place the same fix was missing.
+func TestTheTrustAdviceCarriesTheDataDirectory(t *testing.T) {
+	t.Setenv("DIBS_DIR", "/tmp/board with space")
+	got := trustCommand()
+	if !strings.HasPrefix(got, "DIBS_DIR='/tmp/board with space' dibs trust ") {
+		t.Errorf("trust advice does not carry (or does not quote) DIBS_DIR: %q", got)
+	}
+
+	t.Setenv("DIBS_DIR", "")
+	if bare := trustCommand(); strings.Contains(bare, "DIBS_DIR") {
+		t.Errorf("the single-board case grew a variable with nothing to carry: %q", bare)
 	}
 }

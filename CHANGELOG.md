@@ -138,6 +138,18 @@ machines for real work. Their priority order, not ours.
   no-panel host cannot see, so it pointed an agent at rows it could not reach
   and would have had it report them as present.
 
+- **Three more from the review's fifth round**, and the credential directory
+  is now keyed on the address verbatim. It collided four times, once per
+  round, each fix keeping one more character while the comment above it went
+  on claiming every board gets its own: the port was dropped for non-loopback,
+  then dots became hyphens, then loopback was renamed "board" and collided
+  with the ordinary hostname `board`. The pattern was rewriting the address
+  into something that reads nicely, and every such rewrite maps two addresses
+  onto one name somewhere. Also: the certificate-refused recovery message told
+  an operator to run `dibs trust` without the data directory their failing
+  call was using, and the `scp` source was quoted on the half this machine
+  controls but not the hub's.
+
 - **README: building without mise or task.** On a network that allows the Go
   module proxy but not the object store it redirects to, neither tool installs
   and the failure reads like a broken toolchain rather than a blocked host.

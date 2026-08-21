@@ -50,7 +50,7 @@ func printJoinConfig(remote string) error {
 #    secrets in one.
 #
 #      mkdir -p %s && chmod 700 %s
-#      scp <hub>:<hub-data-dir>/local.secret %s
+#      scp '<hub>:<hub-data-dir>/local.secret' %s
 #
 #    <hub-data-dir> is ~/.dibs unless that machine sets DIBS_DIR. Only the hub
 #    knows: `+"`dibs doctor`"+` prints it on the first line there. A hub running more
@@ -147,33 +147,28 @@ func homeDir() string {
 // boardSlug names the data directory after the board it holds the secret for,
 // so a machine on three boards has three directories it can tell apart.
 //
-// The PORT is always part of it. It was kept only for loopback, on the
-// reasoning that a forwarded port is the only thing distinguishing one tunnel
-// from another, which is true and not the whole set: two daemons on one host
-// are a configuration Dibs supports deliberately, and both resolved to the same
-// directory. Copying the second board's secret would then overwrite the first
-// board's, while each generated config claimed the shared directory was its
-// own. A credential store keyed by less than the address it serves is a
-// collision waiting for the operator who has two boards.
+// The whole address, with nothing invented and nothing tidied.
+//
+// This collided three times, each fix keeping one more character and each
+// leaving the claim above still false: the port was dropped for non-loopback,
+// so two daemons on one host shared a directory; then dots became hyphens, so
+// hub.example and hub-example did; then loopback was renamed "board", so
+// 127.0.0.1:4777 collided with the ordinary hostname board:4777.
+//
+// The pattern was rewriting the address into something that reads nicely.
+// Every such rewrite maps two addresses onto one name somewhere, and the next
+// character is found by whoever has two boards rather than by me. So: keep the
+// address, replace only the separators that would change the path, and accept
+// a less pretty directory name. Brackets stay, because they are what tells an
+// IPv6 literal from a hostname spelled like one.
 func boardSlug(addr string) string {
 	h, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		h, port = addr, ""
 	}
-	if h == "" || h == "127.0.0.1" || h == "localhost" || h == "::1" {
-		h = "board"
+	if h == "" {
+		h = "localhost"
 	}
-	// Dots are KEPT. Rewriting them to hyphens was cosmetic and it collided:
-	// hub.example and hub-example are different hosts and both became
-	// "hub-example", so two boards shared a credential directory again, one
-	// round after the port did. A directory name may contain dots; only the
-	// separators that would change the path have to go.
-	// The BRACKETS are kept too, for the same reason the dots were: they are
-	// what distinguishes the literal [2001:db8::1] from the syntactically valid
-	// hostname 2001-db8--1, which the colon rewrite otherwise maps onto it. A
-	// contrived pair, and the point is that the comment above claims every
-	// address gets its own directory, so it has to be true rather than true of
-	// the examples somebody thought of.
 	slug := strings.NewReplacer(":", "-", "/", "-", string(filepath.Separator), "-").Replace(h)
 	if strings.Contains(h, ":") {
 		slug = "[" + slug + "]"
