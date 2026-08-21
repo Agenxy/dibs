@@ -306,3 +306,36 @@ func TestDoctorDoesNotCallAJoinedBoardsMissingLedgerCorruption(t *testing.T) {
 		t.Error("a damaged ledger passed unverified because node_id was missing")
 	}
 }
+
+// A join is a credential and NOTHING ELSE, which is not the same as a missing
+// node_id and ledger.
+//
+// A local board that lost both, but still holds the key it encrypts with and
+// the blobs it wrote, was reported as a healthy join. That directory has lost
+// its replayable state, which is the one thing this check exists to notice, and
+// it was told nothing was wrong. Found by the pre-release review.
+func TestADamagedLocalBoardIsNotMistakenForAJoin(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "local.secret"),
+		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// No node_id, no ledger: but the key it encrypted with is still here.
+	if err := os.WriteFile(filepath.Join(dir, "key"), []byte("k"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if isJoinedBoard(dir) {
+		t.Error("a board that lost its node_id and its ledger but kept its key was " +
+			"called a healthy join, so nothing reported the loss")
+	}
+
+	// The real join case still is one.
+	clean := t.TempDir()
+	if err := os.WriteFile(filepath.Join(clean, "local.secret"),
+		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !isJoinedBoard(clean) {
+		t.Error("a directory holding only a credential is not recognised as a join")
+	}
+}

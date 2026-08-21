@@ -473,7 +473,7 @@ func TestTheOrdinaryRecipeReadsTheAddress(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Setenv("DIBS_ADDR", c.addr)
-		out, err := captureStdout(t, func() error { printRemoteRecipe(); return nil })
+		out, err := captureStdout(t, func() error { printRemoteRecipe(true); return nil })
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -567,7 +567,7 @@ func TestAStaleCertificateDoesNotClaimTLS(t *testing.T) {
 // that machine's choice. Two halves of one output contradicting each other.
 func TestTheRecipeNamesTheOtherMachinesAddress(t *testing.T) {
 	t.Setenv("DIBS_ADDR", "127.0.0.1:4777")
-	out, err := captureStdout(t, func() error { printRemoteRecipe(); return nil })
+	out, err := captureStdout(t, func() error { printRemoteRecipe(false); return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -688,5 +688,96 @@ func TestAMalformedConfigIsNotSilentlyIgnored(t *testing.T) {
 	t.Setenv("DIBS_DIR", clean)
 	if _, err := captureStdout(t, func() error { return mcpConfig(nil) }); err != nil {
 		t.Errorf("a data directory with no dibs.toml was refused: %v", err)
+	}
+}
+
+// A --board address that cannot name a directory safely must be refused.
+//
+// The port half goes into the credential directory's name, and a path there
+// walked the directory out of the operator's home: `hub:4777/../../escaped`
+// produced `mkdir -p /Users/escaped` with a secret written into it. The shipped
+// binary accepted it and exited 0. Found by the pre-release review.
+func TestABoardAddressCannotSteerTheCredentialDirectory(t *testing.T) {
+	for _, bad := range []string{
+		"hub.example:4777/../../escaped",
+		"hub.example:not-a-port",
+		"hub.example:0",
+		"hub.example:99999",
+	} {
+		if err := checkBoardAddr(bad); err == nil {
+			t.Errorf("%q was accepted", bad)
+		}
+	}
+	// And the slug is safe whatever it is handed, since checkBoardAddr is one
+	// caller rather than a property of the function.
+	for _, nasty := range []string{"../../escape:4777", "a/b:4777", `a\b:4777`} {
+		if slug := boardSlug(nasty); strings.ContainsAny(slug, `/\`) || strings.Contains(slug, "..") {
+			t.Errorf("boardSlug(%q) = %q, which is a path", nasty, slug)
+		}
+	}
+}
+
+// The configured transport outranks whatever the data directory happens to
+// contain.
+//
+// `insecure_plaintext = true` beside a left-behind tls-cert.pem had this
+// printing an https url and instructions to record a certificate the daemon is
+// not presenting.
+func TestConfiguredPlaintextOutranksALeftBehindCertificate(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"local.secret": strings.Repeat("a", 64),
+		"tls-cert.pem": "-- stale --",
+		"dibs.toml":    "addr = \"192.168.50.10:4777\"\ninsecure_plaintext = true\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("DIBS_DIR", dir)
+	t.Setenv("DIBS_ADDR", "")
+
+	out, err := captureStdout(t, func() error { return mcpConfig(nil) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "serves HTTPS") || strings.Contains(out, "https://") {
+		t.Errorf("a daemon configured for plaintext was described as serving HTTPS "+
+			"because a certificate file was left in its directory:\n%s", out)
+	}
+}
+
+// A key dibd does not know means dibd will not start, so a configuration
+// printed from that file is a guess.
+//
+// `adrr = "192.168.1.5:4777"` parses as valid TOML. The daemon refuses it; this
+// printed a confident configuration for 127.0.0.1:4777.
+func TestAConfigTheDaemonWouldRefuseIsRefusedHere(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"local.secret": strings.Repeat("a", 64),
+		"dibs.toml":    "adrr = \"192.168.50.10:4777\"\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("DIBS_DIR", dir)
+	t.Setenv("DIBS_ADDR", "")
+
+	if _, err := captureStdout(t, func() error { return mcpConfig(nil) }); err == nil {
+		t.Fatal("a config the daemon refuses was accepted, and a configuration printed " +
+			"for the default address")
+	} else if !strings.Contains(err.Error(), "adrr") {
+		t.Errorf("the refusal does not name the key at fault: %v", err)
+	}
+
+	// A nested key under a table dibd knows is that table's business.
+	if err := os.WriteFile(filepath.Join(dir, "dibs.toml"),
+		[]byte("[match]\njoin_threshold = 0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := captureStdout(t, func() error { return mcpConfig(nil) }); err != nil {
+		t.Errorf("a valid nested setting was refused: %v", err)
 	}
 }

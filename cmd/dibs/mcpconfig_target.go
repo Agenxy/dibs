@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -110,26 +111,50 @@ func configuredAddr(dir string) string {
 // configuration for 127.0.0.1:4777. An operator would then be looking at the
 // config the CLI gave them, wondering why nothing connects, with the actual
 // fault in a file neither of them mentioned.
-func readConfiguredAddr(dir string) (string, error) {
-	b, err := os.ReadFile(filepath.Join(dir, "dibs.toml")) // #nosec G304 -- the operator's own data dir
+// boardConfig is the little of dibs.toml this command needs in order to
+// describe the daemon honestly: where it listens, and whether it serves TLS.
+type boardConfig struct {
+	Addr              string `toml:"addr"`
+	InsecurePlaintext bool   `toml:"insecure_plaintext"`
+	TLSCert           string `toml:"tls_cert"`
+	TLSKey            string `toml:"tls_key"`
+}
+
+// readBoardConfig reads those fields, and refuses a file the daemon would.
+func readBoardConfig(dir string) (boardConfig, error) {
+	var c boardConfig
+	path := filepath.Join(dir, "dibs.toml")
+	b, err := os.ReadFile(path) // #nosec G304 -- the operator's own data dir
 	if os.IsNotExist(err) {
-		// No config file at all is the ordinary case, not a fault: every field
-		// is optional and `dibd` with none does the right thing.
-		return "", nil
+		return c, nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("cannot read %s, so any configuration printed from it "+
-			"would be a guess: %w", filepath.Join(dir, "dibs.toml"), err)
+		return c, fmt.Errorf("cannot read %s, so any configuration printed from it "+
+			"would be a guess: %w", path, err)
 	}
-	var doc struct {
-		Addr string `toml:"addr"`
+	md, err := toml.Decode(string(b), &c)
+	if err != nil {
+		return c, fmt.Errorf("%s does not parse, so this daemon will not start and "+
+			"any configuration printed from it would be a guess: %w", path, err)
 	}
-	if _, err := toml.Decode(string(b), &doc); err != nil {
-		return "", fmt.Errorf("%s does not parse, so this daemon will not start and "+
-			"any configuration printed from it would be a guess: %w",
-			filepath.Join(dir, "dibs.toml"), err)
+	// The daemon refuses an unknown key, so a typo means it will not start,
+	// and printing a confident configuration for the default address while
+	// `dibd` exits 1 on the same file is the success-that-is-false shape again.
+	// `adrr = "192.168.1.5:4777"` is a real way to lose an afternoon.
+	for _, k := range md.Undecoded() {
+		top, _, _ := strings.Cut(k.String(), ".")
+		if !knownConfigKeys[top] {
+			return c, fmt.Errorf("%s sets %q, which dibd does not know, so it will "+
+				"refuse to start: fix the file (or run `dibd -check`) before taking a "+
+				"configuration from it", path, top)
+		}
 	}
-	return doc.Addr, nil
+	return c, nil
+}
+
+func readConfiguredAddr(dir string) (string, error) {
+	c, err := readBoardConfig(dir)
+	return c.Addr, err
 }
 
 // nonDefaultEnv is the environment a bridge needs to reach THIS daemon rather
@@ -227,8 +252,18 @@ func checkBoardAddr(a string) error {
 	if err != nil {
 		return fmt.Errorf("dibs mcp-config --board: %q is not a host:port address: %w", a, err)
 	}
-	if p == "" {
-		return fmt.Errorf("dibs mcp-config --board: %q names no port", a)
+	// SplitHostPort does not check that the port is one.
+	//
+	// `hub:not-a-port` was accepted, and worse, `hub:4777/../../escaped`: the
+	// port half goes into the credential directory's name, so a path there
+	// walked the directory out of the operator's home. It is a name derived
+	// from untrusted-ish input that then has `mkdir`, `chmod 700` and a secret
+	// written into it, which is not a shape to leave loose.
+	if n, perr := strconv.Atoi(p); perr != nil || n < 1 || n > 65535 {
+		return fmt.Errorf("dibs mcp-config --board: %q is not a port number in %q", p, a)
+	}
+	if strings.ContainsAny(h, `/\`) || strings.Contains(h, "..") {
+		return fmt.Errorf("dibs mcp-config --board: %q is not a host name", h)
 	}
 	switch h {
 	case "", "0.0.0.0", "::", "[::]":
@@ -248,4 +283,20 @@ func dialableAddr(a string) string {
 		return scheme + "://" + clientHost(rest)
 	}
 	return clientHost(a)
+}
+
+// knownConfigKeys is dibd's TOP-LEVEL configuration keys.
+//
+// Top-level only: anything nested under a known table is that table's business
+// and the daemon validates it. This exists so a typo at the top, `adrr` for
+// `addr`, is reported here rather than leaving the CLI printing a confident
+// configuration for the default address while `dibd` refuses to start on the
+// same file.
+//
+// A copy of the daemon's list, because cmd/dibd is package main and cannot be
+// imported. TestConfigKeysMatchTheDaemon reads the struct out of its source, so
+// the copy cannot drift.
+var knownConfigKeys = map[string]bool{
+	"addr": true, "tls_cert": true, "tls_key": true, "insecure_plaintext": true,
+	"match": true, "limits": true, "supervise": true, "roles": true, "wake": true,
 }

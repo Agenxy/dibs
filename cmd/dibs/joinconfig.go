@@ -222,6 +222,14 @@ func boardSlug(addr string) string {
 	if port != "" {
 		slug += "-" + port
 	}
+	// Belt and braces: this names a directory that then has a secret written
+	// into it, and checkBoardAddr is one caller rather than a property of the
+	// function. A slug that is a path is a slug that escapes the home directory
+	// it is joined to.
+	slug = strings.NewReplacer("/", "-", `\`, "-", "..", "-").Replace(slug)
+	if slug == "" || slug == "." {
+		return "board"
+	}
 	return slug
 }
 

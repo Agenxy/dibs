@@ -513,10 +513,6 @@ func mcpConfig(args []string) error {
 		}
 		return printJoinConfig(*board)
 	}
-	// A dibs.toml the daemon would refuse is not "no configuration".
-	if _, err := readConfiguredAddr(paths.DataDir()); err != nil {
-		return err
-	}
 	s, err := localSecret()
 	if err != nil {
 		return fmt.Errorf("no local secret yet: start dibd once first: %w", err)
@@ -530,20 +526,16 @@ func mcpConfig(args []string) error {
 	// statement, and reading only the file printed an `http://` url for a
 	// daemon reached as https: a url block that is confidently wrong, which is
 	// worse than one that is absent.
-	scheme, certPath := "http", ""
-	if p := filepath.Join(paths.DataDir(), "tls-cert.pem"); fileExists(p) {
-		scheme, certPath = "https", p
-	}
-	if given, _, found := strings.Cut(rawAddr(), "://"); found {
-		scheme = strings.ToLower(given)
-		// And the certificate goes with it. The file outlives the configuration
-		// that produced it: a daemon moved back to loopback, or switched to
-		// insecure_plaintext, keeps its tls-cert.pem, and reading the file alone
-		// printed an http:// url under the heading "this daemon serves HTTPS"
-		// with instructions to trust a certificate it is not presenting.
-		if scheme != "https" {
-			certPath = ""
-		}
+	// What the CONFIGURATION says, before what the directory happens to contain.
+	//
+	// A certificate file is evidence; `insecure_plaintext = true` is the
+	// operator stating the daemon serves plaintext, and a stale tls-cert.pem
+	// beside it had this printing an https url and instructions to trust a
+	// certificate that is not being presented. A configured tls_cert is the
+	// same statement the other way, and is not in the data directory at all.
+	scheme, certPath, cerr := resolveTransport(paths.DataDir())
+	if cerr != nil {
+		return cerr
 	}
 	// The address a CLIENT dials, which is not always the one the daemon binds.
 	//
@@ -682,7 +674,7 @@ args = ["mcp-stdio"]
 	// invisible to exactly the operators who needed it. One reported nearly
 	// abandoning the multi-machine board, which is the reason they run Dibs,
 	// while the instructions for it were in the binary the whole time.
-	printRemoteRecipe()
+	printRemoteRecipe(scheme == "https")
 	return nil
 }
 
@@ -699,7 +691,7 @@ args = ["mcp-stdio"]
 // verified TLS to the daemon, trusting exactly the certificate this machine
 // recorded and nothing else, so the harness needs no TLS configuration and no
 // certificate of its own. It is also the only shape some harnesses accept.
-func printRemoteRecipe() {
+func printRemoteRecipe(servesTLS bool) {
 	fmt.Printf(`
 # ── Agents on ANOTHER machine ───────────────────────────────────────────────
 # The board is a fleet board: agents on other machines join THIS daemon and
@@ -737,6 +729,11 @@ func printRemoteRecipe() {
 	// boardShape already answers both from the address; there is no reason for
 	// this recipe to guess separately.
 	tunnel, trust := boardShape(rawAddr())
+	// The address says what a daemon off loopback USUALLY serves; the resolved
+	// transport says what this one does. `insecure_plaintext = true` is the
+	// operator overriding the default, and printing "this daemon serves HTTPS"
+	// at them, with a certificate to record, describes a different machine.
+	trust = trust && servesTLS
 	if tunnel {
 		// The tunnel, for the daemon this actually is.
 		//
@@ -1950,47 +1947,4 @@ func self() string {
 		return resolved
 	}
 	return exe
-}
-
-// joinerAddr is the address the OTHER machine reaches this daemon on.
-//
-// Not this daemon's own address, which is what it printed. For a loopback hub
-// that is 127.0.0.1:4777, and the joining machine's 127.0.0.1:4777 is its OWN
-// board: the recipe handed over a ready-looking configuration pointed at the
-// wrong daemon, and then, further down, correctly explained that the local end
-// of a forward is that machine's choice. Two halves of one recipe contradicting
-// each other. It names the placeholder the rest of the recipe uses.
-func joinerAddr() string {
-	if tunnel, _ := boardShape(rawAddr()); tunnel {
-		return "127.0.0.1:<local-port>"
-	}
-	// And a wildcard bind is not dialable from there either: 0.0.0.0 means
-	// "every interface" to the daemon and nothing at all to a client.
-	raw := rawAddr()
-	if scheme, rest, found := strings.Cut(raw, "://"); found {
-		return scheme + "://" + clientHost(rest)
-	}
-	return clientHost(raw)
-}
-
-// clientHost turns a listen address into one a client can dial.
-//
-// A wildcard bind is the case that matters: 0.0.0.0 and :: mean "every
-// interface", and printing either in a url hands somebody a string that cannot
-// connect from anywhere. The machine's own LAN address is what they meant, and
-// is what the wizard offers for the same choice.
-func clientHost(a string) string {
-	h, p, err := net.SplitHostPort(a)
-	if err != nil {
-		return a
-	}
-	switch h {
-	case "0.0.0.0", "::", "[::]", "":
-		lan, _, lerr := net.SplitHostPort(defaultLANAddr())
-		if lerr != nil || lan == "0.0.0.0" {
-			return "<this-machine>:" + p
-		}
-		return net.JoinHostPort(lan, p)
-	}
-	return a
 }

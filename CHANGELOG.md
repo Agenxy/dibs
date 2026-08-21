@@ -253,6 +253,23 @@ machines for real work. Their priority order, not ours.
   daemon would refuse to start while this printed a confident config for the
   default address.
 
+- **Five more from the review's fifteenth round.** `--board` did not check
+  that the port was a port, and the port goes into the credential directory's
+  name: `hub:4777/../../escaped` produced a `mkdir -p /Users/escaped` with a
+  secret written into it, and exited 0. The transport was still decided by
+  whether `tls-cert.pem` exists, ignoring `insecure_plaintext` and a
+  configured `tls_cert`, so a daemon configured for plaintext beside a
+  left-behind certificate was described as serving HTTPS. A `dibs.toml` with a
+  key `dibd` does not know parses as valid TOML and makes the daemon refuse to
+  start, while this printed a configuration for the default address.
+  `configure --non-interactive <dir>` then told the operator to run bare
+  `dibs configure --service` and `dibd`, both of which act on the DEFAULT data
+  directory, so the advertised sequence configured one board and started
+  another. And `doctor` called any directory with a secret and no `node_id` or
+  ledger a healthy join, including a local board that had lost both but still
+  held the key it encrypts with: a directory that has lost its replayable
+  state, reported as nothing wrong.
+
 - **README: building without mise or task.** On a network that allows the Go
   module proxy but not the object store it redirects to, neither tool installs
   and the failure reads like a broken toolchain rather than a blocked host.

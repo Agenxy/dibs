@@ -532,9 +532,7 @@ func checkLedgerAndBoard(dir string, ok reportFn, bad, warn fixFn) {
 	// lost the file naming it, and skipping verification there would report the
 	// one directory that most needs checking as healthy. The join case is a
 	// credential and nothing else.
-	if !fileExists(filepath.Join(dir, "node_id")) &&
-		!fileExists(filepath.Join(dir, "ledger.jsonl")) &&
-		fileExists(filepath.Join(dir, "local.secret")) {
+	if isJoinedBoard(dir) {
 		ok("joined board: the ledger lives on the daemon serving it, not here")
 		return
 	}
@@ -1133,4 +1131,27 @@ func scanShippedHooks() (wanted, misaddressed map[string]string) {
 		}
 	}
 	return wanted, misaddressed
+}
+
+// isJoinedBoard reports whether this data directory holds a credential for
+// SOMEBODY ELSE'S board and nothing of its own.
+//
+// "Credential and nothing else" is what the join case actually is, and keying
+// it on a missing node_id and ledger did not establish that: a local board that
+// lost both, but still holds the key it encrypts with and the blobs it wrote,
+// was reported as a healthy join. That directory has lost its replayable state,
+// which is the one thing this check exists to notice, and it was told nothing
+// was wrong. Raised by the pre-release review.
+func isJoinedBoard(dir string) bool {
+	if !fileExists(filepath.Join(dir, "local.secret")) {
+		return false
+	}
+	// Anything a daemon writes for a board of its own. Any of them present and
+	// this directory is a board, however damaged.
+	for _, own := range []string{"node_id", "ledger.jsonl", "key", "blobs", "coordinator.claim", "out"} {
+		if _, err := os.Stat(filepath.Join(dir, own)); err == nil {
+			return false
+		}
+	}
+	return true
 }

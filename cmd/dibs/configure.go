@@ -308,9 +308,24 @@ func configureWithDefaults(dir string) error {
 	fmt.Printf("Wrote %s:\n\n%s\n", cfgPath, body)
 	fmt.Println("Loopback only, which is the right default for a host reached through an")
 	fmt.Println("ssh forward. To serve other machines directly, set addr and restart dibd.")
+	// Carrying the directory, because this path was given one.
+	//
+	// It printed bare `dibs configure --service` and `dibd`, both of which use
+	// the DEFAULT data directory: the sequence this command advertises would
+	// have configured one board and then created and started another. Only
+	// printed when the directory is not the default, so the ordinary case reads
+	// as it did.
+	prefix := ""
+	if dir != paths.DataDir() {
+		prefix = "DIBS_DIR=" + shellArg(dir) + " "
+	}
 	fmt.Println("\nNext:")
-	fmt.Println("  dibs configure --service    keep the daemon running across reboots")
-	fmt.Println("  dibd                        start it now")
+	fmt.Printf("  %sdibs configure --service    keep the daemon running across reboots\n", prefix)
+	fmt.Printf("  %sdibd                        start it now\n", prefix)
+	if prefix != "" {
+		fmt.Println("\nDIBS_DIR is not optional there: without it both act on " +
+			paths.DataDir() + ", which is a different board.")
+	}
 	return nil
 }
 
