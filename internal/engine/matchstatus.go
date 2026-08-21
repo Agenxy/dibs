@@ -101,7 +101,17 @@ func (e *Engine) SetMatchStatus(s MatchStatus) {
 	// A caller that genuinely means "none" passes an empty slice, which is
 	// distinguishable from not setting the field at all.
 	if s.Unreadable == nil {
-		s.Unreadable = e.matchStatus.st.Unreadable
+		// Preserve every OTHER tree's failure, and drop this one's.
+		//
+		// Preserving the whole list meant a repository whose permissions
+		// recovered stayed listed as unreadable until the daemon restarted: no
+		// production caller ever sends the empty slice that clears it, so the
+		// only thing that could retract the diagnosis was something nothing
+		// does. A successful index of THIS tree is proof about this tree, and
+		// proof about nothing else, which is exactly the distinction the
+		// preserve was added to protect. Raised by the pre-release review, which
+		// reproduced the stale entry against the production sequence.
+		s.Unreadable = withoutTree(e.matchStatus.st.Unreadable, s.Repo)
 	}
 	e.matchStatus.st = s
 }
@@ -199,4 +209,18 @@ func matchHint(st MatchStatus) string {
 		return ""
 	}
 	return ""
+}
+
+// withoutTree drops one path from an unreadable list, leaving the rest.
+func withoutTree(trees []string, readable string) []string {
+	if readable == "" || len(trees) == 0 {
+		return trees
+	}
+	out := trees[:0:0]
+	for _, t := range trees {
+		if t != readable {
+			out = append(out, t)
+		}
+	}
+	return out
 }

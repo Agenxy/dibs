@@ -1148,7 +1148,17 @@ func isJoinedBoard(dir string) bool {
 	}
 	// Anything a daemon writes for a board of its own. Any of them present and
 	// this directory is a board, however damaged.
-	for _, own := range []string{"node_id", "ledger.jsonl", "key", "blobs", "coordinator.claim", "out"} {
+	// tls-key.pem and admin.hash are here for the same reason as the rest: a
+	// joining client may hold the board's public CERTIFICATE, but it never has
+	// the private key, and it never has the board's admin hash. Both are
+	// unambiguously daemon-owned, and a local board that had lost its ledger,
+	// node id, encryption key and blobs while keeping one of them read as a
+	// healthy join, which skipped the very check that would have reported the
+	// loss. Raised by the pre-release review.
+	for _, own := range []string{
+		"node_id", "ledger.jsonl", "key", "blobs", "coordinator.claim", "out",
+		"tls-key.pem", "admin.hash",
+	} {
 		if _, err := os.Stat(filepath.Join(dir, own)); err == nil {
 			return false
 		}

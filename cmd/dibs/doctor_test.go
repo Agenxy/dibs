@@ -329,6 +329,37 @@ func TestADamagedLocalBoardIsNotMistakenForAJoin(t *testing.T) {
 			"called a healthy join, so nothing reported the loss")
 	}
 
+	// Every daemon-owned artifact, not just the one the first version happened
+	// to name. A joining client holds the board's public certificate; it never
+	// holds the private key or the admin hash.
+	for _, own := range []string{"tls-key.pem", "admin.hash", "blobs", "coordinator.claim", "out"} {
+		d := t.TempDir()
+		if err := os.WriteFile(filepath.Join(d, "local.secret"),
+			[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(d, own), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if isJoinedBoard(d) {
+			t.Errorf("a directory holding %s is a board that has lost its ledger, not a "+
+				"join, and reporting it healthy hides exactly that loss", own)
+		}
+	}
+
+	// And the public certificate alone does NOT make it a board: a joining
+	// machine records that legitimately, via `dibs trust`.
+	joined := t.TempDir()
+	for _, f := range []string{"local.secret", "tls-cert.pem", "trusted-certs.pem", "harness-nonces.json"} {
+		if err := os.WriteFile(filepath.Join(joined, f), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !isJoinedBoard(joined) {
+		t.Error("a joined directory holding a credential and a trusted certificate was " +
+			"not recognised as a join")
+	}
+
 	// The real join case still is one.
 	clean := t.TempDir()
 	if err := os.WriteFile(filepath.Join(clean, "local.secret"),

@@ -149,9 +149,20 @@ var catalog = []struct {
 				Do: "Confirm mail actually arrives rather than merely being fetchable. " +
 					"Have another agent send you a message, or send one to yourself from " +
 					"a second agent.",
-				Check: "it appears in your context on your next tool call, WITHOUT you " +
-					"calling inbox",
-				IfNot: "the PreToolUse hook is not reaching the daemon. Check that the " +
+				// The same correction as `buys`, which this escaped: my guard read
+				// the summary and not the steps published beside it.
+				//
+				// hook_poll is bound to SessionStart, UserPromptSubmit, Stop and
+				// SubagentStop, and deliverToModel deliberately does not extend a
+				// turn for a notify. So mail arrives at a turn boundary, and this
+				// told the operator to expect it on the next tool call and to go
+				// hunting a PreToolUse hook when it did not appear: a check that
+				// fails for a correctly installed plugin, pointed at the wrong file.
+				Check: "it is in your context when you next take a turn, WITHOUT you " +
+					"calling inbox. Not mid-turn: a question or a request extends the " +
+					"turn it arrives at the end of, and a plain notify waits for the " +
+					"next one",
+				IfNot: "the wake hooks are not reaching the daemon. Check that the " +
 					"`server` field in hooks.json names the same MCP server you are " +
 					"connected through, and that the daemon is the one on this machine",
 			},

@@ -1,11 +1,12 @@
 package engine
 
 import (
-	"fmt"
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/overlap"
 )
 
 // A space id must never quote the declaration that opened it.
@@ -88,32 +89,74 @@ func contains(haystack, needle string) bool {
 	return false
 }
 
-// A long name must still disambiguate when its space already exists.
+// A long space name must still disambiguate on retry, through the ENGINE.
 //
-// core.cleanID caps an id at 64 runes. openFirstSpace retries a collision by
-// appending " 2" through " 4", and once the base reached that length every
-// suffix was truncated away, so all four attempts addressed the same existing
-// space, the loop found E_SPACE_EXISTS every time, and openFirstSpace returned
-// nil. The declaration succeeded and the first space it promises was never
-// opened: silent, and exactly the case the retry exists for. A `ticket:` ref
-// with a long key reaches 64 without trying. Found by a pre-release review.
+// core.CleanID caps an id at 64 runes, so once the base reaches that length
+// every " 2".." 4" suffix was truncated away: all four attempts addressed the
+// same existing space, openFirstSpace returned nil, and the declaration
+// succeeded while the space it promises was never opened. Silently.
+//
+// The first version of this guard rebuilt the corrected trimming expression and
+// compared it against itself, so restoring the production regression left it
+// green: it tested its own copy of the fix. This drives e.Do the way the
+// declaration path does, seeds the collision it has to survive, and looks at
+// what actually got opened. Raised by the pre-release review.
 func TestALongSpaceNameStillDisambiguates(t *testing.T) {
-	long := strings.Repeat("a", 80)
-
-	first := core.CleanID(long)
-	if len([]rune(first)) != 64 {
-		t.Fatalf("setup: the base cleans to %d runes, not the 64-rune cap, so this "+
-			"proves nothing", len([]rune(first)))
+	// A long id arrives through REFS, not through the declaration: spaceID
+	// hashes the prose deliberately (see the test above), so the only route to a
+	// name at the 64-rune cap is an identifying ref the agent published, which
+	// is what the original comment named: "a ref like `ticket:` plus a long key
+	// reaches 64 easily". Driving it any other way tests nothing, because the
+	// generic `work-0f45e8` id is eleven runes and never reaches the cap.
+	ref := "ticket:" + strings.Repeat("k", 80)
+	// The cap is applied by core.CleanID when the op is admitted, not by
+	// spaceID, so that is where the setup has to look.
+	base := spaceID("some work", []string{ref}, "")
+	if n := len([]rune(core.CleanID(base))); n != 64 {
+		t.Fatalf("setup: this ref cleans to %d runes, not the 64-rune cap, so a suffix "+
+			"would survive and this proves nothing", n)
 	}
 
-	seen := map[string]bool{first: true}
-	for attempt := 2; attempt <= 4; attempt++ {
-		id := core.CleanID(fmt.Sprintf("%s %d", trimRunes(long, 60), attempt))
-		if seen[id] {
-			t.Errorf("attempt %d produced %q, which an earlier attempt already "+
-				"addressed: every retry hits the same existing space and the agent is "+
-				"left with no space at all", attempt, id)
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	token := func(name string) string {
+		t.Helper()
+		res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: name, Nonce: "n-" + name})
+		if err != nil {
+			t.Fatalf("setup: register %s: %v", name, err)
 		}
-		seen[id] = true
+		tok, _ := res["token"].(string)
+		if tok == "" {
+			t.Fatalf("setup: no token for %s", name)
+		}
+		// The awareness gate: a space cannot be opened before the board is
+		// acknowledged, so this is setup rather than the thing under test.
+		if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
+			t.Fatalf("setup: check_in %s: %v", name, err)
+		}
+		return tok
+	}
+
+	// Three agents declare the same over-long work. openFirstSpace is the
+	// production path that retries on collision, so that is what this calls:
+	// e.Do alone just returns E_SPACE_EXISTS, which is the condition the retry
+	// exists to resolve rather than the behaviour under test.
+	seen := map[string]bool{}
+	for i, who := range []string{"one", "two", "three"} {
+		sug := e.openFirstSpace(ctx, token(who), "some work", []string{ref}, "", overlap.Prediction{}, nil)
+		if sug == nil {
+			t.Fatalf("agent %d got no space at all: every retry collided with the same "+
+				"id, which is the silent failure this guards", i+1)
+		}
+		if seen[sug.Space] {
+			t.Errorf("agent %d was given %q, which an earlier agent already holds: the "+
+				"suffix is being truncated away and every retry addresses one space",
+				i+1, sug.Space)
+		}
+		seen[sug.Space] = true
 	}
 }
