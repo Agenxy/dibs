@@ -553,7 +553,15 @@ func mcpConfig(args []string) error {
 	// wizard sends them to got a url for 127.0.0.1: a confident answer about
 	// the wrong daemon. A wildcard bind needs care of its own, since 0.0.0.0
 	// is a listen address and not something anybody can connect to.
-	url := scheme + "://" + clientHost(hostPort(rawAddr())) + "/mcp"
+	dialable, derr := clientHost(hostPort(rawAddr()))
+	if derr != nil {
+		return derr
+	}
+	joiner, jerr := joinerAddr()
+	if jerr != nil {
+		return jerr
+	}
+	url := scheme + "://" + dialable + "/mcp"
 
 	// STDIO FIRST, for the same reason it is first for Codex.
 	//
@@ -666,7 +674,7 @@ args = ["mcp-stdio"]
 #   (the secret is also accepted as: Authorization: Bearer %s)
 #
 # Running agent sessions do not hot-load MCP config: start a new session after adding.
-`, self(), codexEnvLine(), shellArg(joinerAddr()), url, s, preview)
+`, self(), codexEnvLine(), shellArg(joiner), url, s, preview)
 
 	if certPath != "" {
 		fmt.Printf(`
@@ -688,7 +696,7 @@ args = ["mcp-stdio"]
 	// invisible to exactly the operators who needed it. One reported nearly
 	// abandoning the multi-machine board, which is the reason they run Dibs,
 	// while the instructions for it were in the binary the whole time.
-	printRemoteRecipe(scheme == "https")
+	printRemoteRecipe(scheme == "https", joiner)
 	return nil
 }
 
@@ -705,7 +713,7 @@ args = ["mcp-stdio"]
 // verified TLS to the daemon, trusting exactly the certificate this machine
 // recorded and nothing else, so the harness needs no TLS configuration and no
 // certificate of its own. It is also the only shape some harnesses accept.
-func printRemoteRecipe(servesTLS bool) {
+func printRemoteRecipe(servesTLS bool, joiner string) {
 	fmt.Printf(`
 # ── Agents on ANOTHER machine ───────────────────────────────────────────────
 # The board is a fleet board: agents on other machines join THIS daemon and
@@ -732,7 +740,7 @@ func printRemoteRecipe(servesTLS bool) {
 # holds no nonce, so every reconnect forks an identity that cannot read its
 # predecessor's mail. The bridge is a process with a filesystem, which is what
 # the credential needs.
-`, filepath.Join(paths.DataDir(), "local.secret"), joinerAddr(), shellArg(joinerAddr()))
+`, filepath.Join(paths.DataDir(), "local.secret"), joiner, shellArg(joiner))
 
 	// Both facts, from the address, as `--board` reads them.
 	//
@@ -787,7 +795,7 @@ func printRemoteRecipe(servesTLS bool) {
 # it is given, the bridge reads it from the one in its config above, and without
 # it trust reports success while writing where the bridge never looks.
 # Compare what that prints against `+"`dibs fingerprint`"+` run HERE; they must match.
-`, shellArg(hostPort(joinerAddr())))
+`, shellArg(hostPort(joiner)))
 }
 
 // port is the ":4777" half of an address, for the near end of a forward.
