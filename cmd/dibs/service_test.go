@@ -496,6 +496,23 @@ func TestWritingAServiceUnitCreatesTheDataDirectory(t *testing.T) {
 	t.Setenv("DIBS_DIR", dir)
 	t.Setenv("HOME", t.TempDir())
 
+	// A dibd for daemonPath to find, because the machine running the tests may
+	// not have one installed.
+	//
+	// This passed locally and failed on every runner: the mirror image of the
+	// hostname test that passed on every runner and failed locally, and the
+	// same mistake. A test that depends on what happens to be installed is
+	// testing the machine.
+	//
+	// An empty file is enough and nothing executes it: daemonPath stats the
+	// binary beside this one and otherwise LookPaths it, to record an absolute
+	// path in the unit. It never runs it.
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "dibd"), nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		t.Fatalf("setup: %s already exists, so this proves nothing", dir)
 	}
