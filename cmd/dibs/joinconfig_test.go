@@ -62,7 +62,7 @@ func TestJoinConfigNamesTheStepTheAddressCallsFor(t *testing.T) {
 	// writes into ~/.dibs, reports success, and the bridge still rejects the
 	// board: a step that looks done and is not.
 	dir := homeDir() + "/.dibs-" + boardSlug("hub.example:4777")
-	if !strings.Contains(tls, "DIBS_DIR="+shellArg(dir)+" dibs trust hub.example:4777") {
+	if !strings.Contains(tls, "DIBS_DIR="+shellArg(dir)+" dibs trust "+shellArg("hub.example:4777")) {
 		t.Errorf("the trust step does not name the board's data directory, so the "+
 			"certificate lands where the bridge never looks:\n%s", tls)
 	}
@@ -74,7 +74,7 @@ func TestJoinConfigNamesTheStepTheAddressCallsFor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(loop, "ssh -N -L 4777:127.0.0.1:4777") {
+	if !strings.Contains(loop, "ssh -N -L "+shellArg("4777:127.0.0.1:4777")) {
 		t.Errorf("a loopback address is the near end of a forward and nothing said how "+
 			"to open it:\n%s", loop)
 	}
@@ -165,5 +165,71 @@ func TestTheTrustAdviceCarriesTheDataDirectory(t *testing.T) {
 	t.Setenv("DIBS_DIR", "")
 	if bare := trustCommand(); strings.Contains(bare, "DIBS_DIR") {
 		t.Errorf("the single-board case grew a variable with nothing to carry: %q", bare)
+	}
+}
+
+// An IPv6 literal is a glob in zsh, so an unquoted address in a pasteable
+// command fails with "no matches found" rather than doing anything.
+func TestAddressesInShellCommandsAreQuoted(t *testing.T) {
+	out, err := captureStdout(t, func() error { return printJoinConfig("[2001:db8::1]:4777") })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "dibs trust '[2001:db8::1]:4777'") {
+		t.Errorf("the trust command's address is unquoted, so zsh globs it:\n%s", out)
+	}
+	if strings.Contains(out, "dibs trust [2001") {
+		t.Error("an unquoted IPv6 address reached a pasteable command")
+	}
+}
+
+// mcp-config must not print a confident answer to a question nobody asked.
+//
+// Go stops parsing flags at the first positional, so `mcp-config junk --board
+// hub:4777` printed the LOCAL configuration and said nothing about the flag it
+// never read: the ignored-argument shape that `configure` was fixed for, one
+// command away.
+func TestMCPConfigRefusesArgumentsItWouldIgnore(t *testing.T) {
+	err := mcpConfig([]string{"junk", "--board", "hub:4777"})
+	if err == nil {
+		t.Fatal("a positional argument was ignored and the local config printed instead")
+	}
+	if !strings.Contains(err.Error(), "junk") {
+		t.Errorf("the refusal does not name what it refused: %v", err)
+	}
+}
+
+// The stdio config must name a daemon that is not the default one.
+//
+// Without DIBS_ADDR and DIBS_DIR it printed a complete-looking config whose
+// bridge falls back to 127.0.0.1:4777 and ~/.dibs: an operator running a second
+// daemon gets a configuration for the FIRST, reads its secret and its nonce
+// file, and joins a board they were not asking about.
+func TestConfigNamesANonDefaultDaemon(t *testing.T) {
+	t.Setenv("DIBS_ADDR", "127.0.0.1:4791")
+	t.Setenv("DIBS_DIR", "/tmp/other-board")
+	env := nonDefaultEnv()
+	if env["DIBS_ADDR"] != "127.0.0.1:4791" || env["DIBS_DIR"] != "/tmp/other-board" {
+		t.Errorf("a non-default daemon is not named in the config it prints: %v", env)
+	}
+
+	// One env key per TOML table. This was briefly two lines, a protocol
+	// version and a daemon address, which is a duplicate-key error in a strict
+	// parser and a silent override in a lenient one.
+	line := codexEnvLine()
+	if strings.Count(line, "env = {") != 1 {
+		t.Errorf("the Codex table does not get exactly one env line: %q", line)
+	}
+	for _, want := range []string{"CODEX_MCP_PROTOCOL_VERSION", "DIBS_ADDR", "DIBS_DIR"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("the merged env line dropped %s: %q", want, line)
+		}
+	}
+
+	// And the default daemon keeps the config it had.
+	t.Setenv("DIBS_ADDR", "")
+	t.Setenv("DIBS_DIR", "")
+	if env := nonDefaultEnv(); len(env) > 0 {
+		t.Errorf("the default daemon grew configuration it does not need: %v", env)
 	}
 }

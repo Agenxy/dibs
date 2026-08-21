@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -477,6 +478,14 @@ func mcpConfig(args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	// Go stops parsing at the first positional, so `mcp-config junk --board
+	// hub:4777` printed the LOCAL configuration and said nothing about the flag
+	// it never read: the ignored-argument shape again, here producing a
+	// confident answer to a question nobody asked. Same rule as configure.
+	if rest := fs.Args(); len(rest) > 0 {
+		return fmt.Errorf("dibs mcp-config takes no arguments except --board, and was "+
+			"given %q. Flags must come first: `mcp-config --board <host:port>`", rest[0])
+	}
 	if *board != "" {
 		return printJoinConfig(*board)
 	}
@@ -507,14 +516,21 @@ func mcpConfig(args []string) error {
 	// plugin and this command were recommending different transports for one
 	// client, and the one an operator reaches first was the one the plugin does
 	// not use. Reported by an operator who followed this and got the warning.
-	stdioCfg := map[string]any{
-		"mcpServers": map[string]any{
-			"dibs": map[string]any{
-				"command": self(),
-				"args":    []string{"mcp-stdio"},
-			},
-		},
+	// The address and data directory, when they are not the defaults.
+	//
+	// Without them this printed a complete-looking config whose bridge falls
+	// back to 127.0.0.1:4777 and ~/.dibs: an operator running a second daemon
+	// gets a configuration for the FIRST one, reads its secret and its nonce
+	// file, and joins a board they were not asking about. Omitted when they are
+	// the defaults, so the ordinary case reads as it did.
+	dibs := map[string]any{
+		"command": self(),
+		"args":    []string{"mcp-stdio"},
 	}
+	if env := nonDefaultEnv(); len(env) > 0 {
+		dibs["env"] = env
+	}
+	stdioCfg := map[string]any{"mcpServers": map[string]any{"dibs": dibs}}
 	stdioOut, _ := json.MarshalIndent(stdioCfg, "", "  ")
 	fmt.Println("# Claude Code and JSON-config hosts: add to .mcp.json:")
 	fmt.Println(string(stdioOut))
@@ -573,7 +589,7 @@ args = ["mcp-stdio"]
 # feature is enabled AND this exact variable is set on THIS server entry: the
 # feature alone leaves the connection on 2025-06-18, and a wrong value here is
 # a hard error rather than a fallback.
-env = { CODEX_MCP_PROTOCOL_VERSION = "2026-07-28" }
+%s
 
 # stdio rather than a url, deliberately: the bridge is one process per session,
 # and it remembers this agent's nonce so a returning session reattaches to the
@@ -591,7 +607,7 @@ env = { CODEX_MCP_PROTOCOL_VERSION = "2026-07-28" }
 #   (the secret is also accepted as: Authorization: Bearer %s)
 #
 # Running agent sessions do not hot-load MCP config: start a new session after adding.
-`, self(), addr(), url, s, preview)
+`, self(), codexEnvLine(), addr(), url, s, preview)
 
 	if certPath != "" {
 		fmt.Printf(`
@@ -674,15 +690,18 @@ func printRemoteRecipe(tls bool) {
 # more private shape: nothing about this daemon is exposed to the network.
 #
 #   on the other machine, keep this running (or use ssh -f, or autossh):
-#     ssh -N -L %s:%s %s@%s
+#     ssh -N -L <local-port>:%s %s@%s
 #
-#   then DIBS_ADDR above is just %s: its own end of the forward.
+#   <local-port> is that machine's end and is its choice: it only has to be
+#   free THERE, and it is what goes in DIBS_ADDR as 127.0.0.1:<local-port>.
+#   Using %s for it is tidy and wrong if that machine already runs a board of
+#   its own on it.
 #
 # Pick the hub deliberately: whichever machine hosts the daemon decides
 # whether the fleet has a board at all. A laptop is the tempting choice and
 # the wrong one, because it sleeps, changes networks and gets rebooted
 # mid-task. An always-on headless host reached by a forward is the answer.
-`, port(addr()), addr(), os.Getenv("USER"), hostName(), addr())
+`, addr(), os.Getenv("USER"), hostName(), port(addr()))
 		return
 	}
 	fmt.Printf(`# This daemon serves HTTPS, so that machine must trust its certificate. The
@@ -692,7 +711,7 @@ func printRemoteRecipe(tls bool) {
 # it is given, the bridge reads it from the one in its config above, and without
 # it trust reports success while writing where the bridge never looks.
 # Compare what that prints against `+"`dibs fingerprint`"+` run HERE; they must match.
-`, addr())
+`, shellArg(addr()))
 }
 
 // port is the ":4777" half of an address, for the near end of a forward.
@@ -1873,9 +1892,48 @@ func self() string {
 // message exists to end. It is only added when there is something to carry, so
 // the ordinary single-board case reads as it did.
 func trustCommand() string {
-	cmd := "dibs trust " + addr()
+	cmd := "dibs trust " + shellArg(addr())
 	if d := os.Getenv("DIBS_DIR"); d != "" {
 		return "DIBS_DIR=" + shellArg(d) + " " + cmd
 	}
 	return cmd
+}
+
+// nonDefaultEnv is the environment a bridge needs to reach THIS daemon rather
+// than the default one, and is empty when this IS the default one.
+func nonDefaultEnv() map[string]string {
+	env := map[string]string{}
+	if a := addr(); a != "127.0.0.1:4777" {
+		env["DIBS_ADDR"] = a
+	}
+	if d := os.Getenv("DIBS_DIR"); d != "" {
+		env["DIBS_DIR"] = d
+	}
+	return env
+}
+
+// codexEnvLine is the ONE `env = { ... }` line the Codex table gets.
+//
+// One line, because a TOML table may not repeat a key: this was briefly two,
+// a protocol-version line and a daemon-address line, which is a duplicate-key
+// error in a strict parser and a silent override in a lenient one. Whatever a
+// bridge needs to reach a non-default daemon is merged in here rather than
+// added beside it.
+func codexEnvLine() string {
+	env := nonDefaultEnv()
+	// Codex speaks 2026-07-28 only when BOTH the mcp_2026_07_28 feature is
+	// enabled AND this exact variable is set on THIS server entry. The feature
+	// alone leaves the connection on 2025-06-18, and a wrong value here is a
+	// hard error rather than a fallback.
+	env["CODEX_MCP_PROTOCOL_VERSION"] = "2026-07-28"
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s = %q", k, env[k]))
+	}
+	return "env = { " + strings.Join(parts, ", ") + " }"
 }

@@ -150,6 +150,20 @@ machines for real work. Their priority order, not ours.
   call was using, and the `scp` source was quoted on the half this machine
   controls but not the hub's.
 
+- **Five more from the review's sixth round.** `mcp-config` printed a
+  complete-looking stdio configuration that named no address or data
+  directory, so an operator running a second daemon got a config for the
+  first, reading its secret and its nonce file and joining a board they were
+  not asking about. Merging that into the Codex form then produced two
+  `env = { ... }` lines in one TOML table, which is a duplicate key: one line
+  now, protocol version included. The ssh recipe used this machine's port as
+  the hub's, so a forward printed for a board on 5777 pointed at a hub that
+  listens on 4777; the local end is named as the joining machine's choice.
+  Addresses in pasteable commands were unquoted, and an IPv6 literal is a glob
+  in zsh. And `mcp-config` ignored everything after its first positional
+  argument, so `mcp-config junk --board hub:4777` printed the local
+  configuration and never read the flag.
+
 - **README: building without mise or task.** On a network that allows the Go
   module proxy but not the object store it redirects to, neither tool installs
   and the failure reads like a broken toolchain rather than a blocked host.

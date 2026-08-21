@@ -71,7 +71,7 @@ func printJoinConfig(remote string) error {
 #    The hub's daemon never leaves its own loopback, and ssh has authenticated
 #    the machine before Dibs sees a byte.
 #
-`, port(remote)+":"+remote)
+`, shellArg(port(remote)+":"+remote))
 	} else {
 		// The trust step, which the bridge cannot do without.
 		//
@@ -95,7 +95,7 @@ func printJoinConfig(remote string) error {
 #    they must match. Only the bridge's own trust store changes, so nothing
 #    else on this machine has its TLS behaviour altered.
 #
-`, q, remote)
+`, q, shellArg(remote))
 	}
 
 	fmt.Printf(`# 3. Add to .mcp.json (Claude Code and JSON-config hosts):
