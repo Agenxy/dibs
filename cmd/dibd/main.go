@@ -247,8 +247,11 @@ func run() error {
 	// the agent that spawned them. Its own goroutine: it forks ps, and the
 	// writer loop must never wait on a process scan. It reports and never acts.
 	// Roles the operator declared. On the admin path, because the daemon IS the
-	// admin path: an agent still cannot promote itself.
-	keepDeclaredRolesApplied(ctx, eng, cfg.Roles)
+	// admin path. That was not enough on its own: the config names a STRING, and
+	// an agent that took the name got the role, which is self-promotion by any
+	// other word. The grant now pins the credential of the agent it lands on and
+	// closes its window shortly after start. See rolepin.go.
+	keepDeclaredRolesApplied(ctx, *dir, eng, cfg.Roles)
 	// Clears a pid an older build recorded against the operator's own row, which
 	// made every restart report them as a dead process. One op, once, and only
 	// on a board that already has a human on it.
