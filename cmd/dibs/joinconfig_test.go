@@ -63,7 +63,11 @@ func TestJoinConfigNamesTheStepTheAddressCallsFor(t *testing.T) {
 	// and the bridge reads it from the one in the config. Printed bare, trust
 	// writes into ~/.dibs, reports success, and the bridge still rejects the
 	// board: a step that looks done and is not.
-	dir := homeDir() + "/.dibs-" + boardSlug("hub.example:4777")
+	home, herr := homeDir()
+	if herr != nil {
+		t.Fatal(herr)
+	}
+	dir := home + "/.dibs-" + boardSlug("hub.example:4777")
 	if !strings.Contains(tls, "DIBS_DIR="+shellArg(dir)+" dibs trust "+shellArg("hub.example:4777")) {
 		t.Errorf("the trust step does not name the board's data directory, so the "+
 			"certificate lands where the bridge never looks:\n%s", tls)
@@ -99,7 +103,7 @@ func TestJoinConfigNamesTheStepTheAddressCallsFor(t *testing.T) {
 	// same one. They were not: the README named ~/.dibs-hub while the command
 	// derived ~/.dibs-board-4777, so the secret was copied where nothing read
 	// it and the bridge could not start.
-	loopDir := homeDir() + "/.dibs-" + boardSlug("127.0.0.1:4777")
+	loopDir := home + "/.dibs-" + boardSlug("127.0.0.1:4777")
 	if strings.Count(loop, loopDir) < 2 {
 		t.Errorf("the data directory is not stated consistently: %q appears %d times in\n%s",
 			loopDir, strings.Count(loop, loopDir), loop)
@@ -865,5 +869,24 @@ func TestAnUnknownNestedKeyIsRefused(t *testing.T) {
 	write("[match]\njoin_threshold = 0\n")
 	if _, err := readBoardConfig(dir); err != nil {
 		t.Errorf("a real [match] setting was refused: %v", err)
+	}
+}
+
+// A home directory that cannot be resolved is refused, not invented.
+//
+// It answered "/home/you", so a headless host got a complete recipe of mkdir,
+// scp, trust and JSON rooted at a literal path that is nobody's home and may be
+// somebody else's directory, with nothing saying it was a stand-in.
+func TestAnUnresolvableHomeIsRefusedNotInvented(t *testing.T) {
+	t.Setenv("HOME", "")
+	if _, err := homeDir(); err == nil {
+		t.Skip("this platform resolves a home without HOME, so there is nothing to probe")
+	}
+	err := printJoinConfig("hub.example:4777")
+	if err == nil {
+		t.Fatal("a configuration was printed rooted at an invented home directory")
+	}
+	if strings.Contains(err.Error(), "/home/you") {
+		t.Errorf("the refusal still names the placeholder as if it were real: %v", err)
 	}
 }

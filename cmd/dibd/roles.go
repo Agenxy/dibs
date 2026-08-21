@@ -44,16 +44,6 @@ import (
 //	coordinator = ["orchestrator"]
 //	admin       = ["fleet-lead"]
 
-// RolesConfig is the [roles] table.
-type RolesConfig struct {
-	// Coordinator gets breadth without intrusion: broadcast, force-release,
-	// merge and evict, but never another agent's mail.
-	Coordinator []string `toml:"coordinator"`
-	// Admin adds the god view, mail included. Grant it only to an agent trusted
-	// as the operator trusts themselves.
-	Admin []string `toml:"admin"`
-}
-
 // keepDeclaredRolesApplied grants the declared roles, and keeps granting them.
 //
 // A role can only be attached to an agent that EXISTS: core.applyGrantRole

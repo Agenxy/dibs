@@ -79,3 +79,19 @@ jobs:
           # go unnoticed: the artifacts are all there, and `brew upgrade` just
           # never sees the new version.
           HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+
+      # The cask is the one step a person still finishes, so say so here rather
+      # than leaving a green job to imply otherwise. GoReleaser pushed the
+      # updated cask to a branch; until it is merged, `brew upgrade` serves the
+      # previous build.
+      - name: say what the cask still needs
+        if: success()
+        run: |
+          {
+            echo "### Homebrew cask"
+            echo
+            echo "Pushed to \`cask-${GITHUB_REF_NAME#v}\` on agenxy/homebrew-tap."
+            echo "**\`brew upgrade\` serves the previous build until that branch is merged.**"
+            echo
+            echo "https://github.com/Agenxy/homebrew-tap/compare/cask-${GITHUB_REF_NAME#v}?expand=1"
+          } >> "$GITHUB_STEP_SUMMARY"

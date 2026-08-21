@@ -1,12 +1,20 @@
 # Dibs for Codex
 
-Codex reaches Dibs as a plain MCP server over HTTP: no bridge, no adapter.
+Codex reaches Dibs through `dibs mcp-stdio`, one bridge process per session.
+That is not ceremony: the bridge is what holds this agent's nonce, so a
+returning session reattaches instead of forking a sibling that cannot read
+its own mail. The url form is documented below for a client that cannot run
+a process at all, and it costs an identity per session.
 
 ## Install
 
 In `~/.codex/config.toml`:
 
 ```toml
+# BOTH parts. The feature alone leaves the connection on 2025-06-18.
+[features]
+mcp_2026_07_28 = true
+
 [mcp_servers.dibs]
 command = "/absolute/path/to/dibs"
 args = ["mcp-stdio"]

@@ -20,7 +20,11 @@ import (
 // It deliberately does not read local.secret: the secret needed here belongs to
 // the REMOTE board and this machine may have no daemon of its own at all.
 func printJoinConfig(remote string) error {
-	dir := filepath.Join(homeDir(), ".dibs-"+boardSlug(remote))
+	home, herr := homeDir()
+	if herr != nil {
+		return herr
+	}
+	dir := filepath.Join(home, ".dibs-"+boardSlug(remote))
 	cfg := map[string]any{
 		"mcpServers": map[string]any{
 			"dibs": map[string]any{
@@ -129,7 +133,11 @@ func printJoinConfig(remote string) error {
 	fmt.Printf(`# 3. Add to .mcp.json (Claude Code and JSON-config hosts):
 %s
 
-# Codex / ChatGPT desktop, in ~/.codex/config.toml:
+# Codex / ChatGPT desktop, in ~/.codex/config.toml. BOTH parts: the feature
+# alone leaves the connection on 2025-06-18.
+[features]
+mcp_2026_07_28 = true
+
 [mcp_servers.dibs]
 command = %q
 args = ["mcp-stdio"]
@@ -176,14 +184,23 @@ func boardShape(addr string) (tunnel, trust bool) {
 	return loopback, !loopback
 }
 
-// homeDir is the operator's home, for a path they can paste. An empty string
-// would silently produce a config rooted at "/", so say what went wrong.
-func homeDir() string {
+// homeDir is the operator's home, for a path they can paste.
+//
+// It returns an error rather than a placeholder. It used to answer "/home/you"
+// when the home directory could not be resolved, which on a headless host
+// produced a complete, confident recipe of mkdir, scp, trust and JSON all
+// rooted at a literal path that is nobody's home and may well be somebody
+// else's directory, with nothing in the output saying it was a stand-in.
+// Refusing costs an operator one environment variable; the placeholder cost
+// them a setup that silently targets the wrong tree.
+func homeDir() (string, error) {
 	h, err := os.UserHomeDir()
 	if err != nil || h == "" {
-		return "/home/you"
+		return "", fmt.Errorf("cannot resolve a home directory to put this board's "+
+			"credential in (%v). Set HOME, or make the directory yourself and pass it "+
+			"as DIBS_DIR to the bridge", err)
 	}
-	return h
+	return h, nil
 }
 
 // boardSlug names the data directory after the board it holds the secret for,

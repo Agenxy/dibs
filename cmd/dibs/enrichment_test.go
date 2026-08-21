@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/agenxy/dibs/internal/mcp"
@@ -34,9 +36,39 @@ func TestEveryEnrichedFieldIsOneRegisterDeclares(t *testing.T) {
 }
 
 // And the fields read from Claude Code's sidecar go into register too.
+//
+// With a REAL sidecar. The first version called sessionContext(true) in a bare
+// environment, where the function returns early and yields only the universal
+// host and cwd: it named surface, session_id and title and then checked neither,
+// so a sidecar/schema mismatch would have stayed green. Raised by the
+// pre-release review.
 func TestSidecarFieldsAreOnesRegisterDeclares(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".claude", "sessions"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const pid = "424242"
+	sidecar := `{"pid":424242,"sessionId":"11111111-2222-3333-4444-555555555555",` +
+		`"cwd":"/tmp","entrypoint":"claude-desktop","kind":"interactive"}`
+	if err := os.WriteFile(filepath.Join(home, ".claude", "sessions", pid+".json"),
+		[]byte(sidecar), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("CLAUDE_PID", pid)
+
+	got := sessionContext(true)
+	// The sidecar-only fields must actually be present, or this is measuring the
+	// universal ones again.
+	for _, want := range []string{"session_id", "surface", "cwd"} {
+		if got[want] == "" {
+			t.Fatalf("the sidecar yielded no %q, so this probe is reading the bare "+
+				"environment rather than a session: %v", want, got)
+		}
+	}
+
 	declared := mcp.ToolProperties("register")
-	for field := range sessionContext(true) {
+	for field := range got {
 		if !declared[field] {
 			t.Errorf("the bridge injects %q into register from the session sidecar, and "+
 				"register does not declare it: registration fails outright", field)

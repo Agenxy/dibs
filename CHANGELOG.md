@@ -5,6 +5,77 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **`dibs.toml` has one type and one loader.** The daemon decoded the file into
+  its own struct and refused any key it did not recognise; `dibs mcp-config`,
+  which describes the daemon an agent will connect to, decoded a four-field
+  projection and checked the rest against a hand-kept list of key NAMES. That
+  list validated spelling and nothing else, so `[limits] agent_ttl = 10` passed
+  the CLI and produced a configuration while `dibd -check` refused the same
+  file: the daemon would not start, and the command telling an operator how to
+  reach it reported success. Both now call `internal/boardconfig`, and the
+  key-name copy and its drift test are gone with the need for them.
+
+### Fixed
+
+- **A mistyped scheme was refused on one path only.** `DIBS_ADDR=htps://…`
+  exited 0 and emitted the typo as both the bridge's address and the MCP url;
+  `--board` had rejected exactly that since the last round. One validator now
+  serves both, split so the rule that only applies to a board you DIAL (a
+  wildcard is a legitimate bind address, and the wizard writes one) does not
+  refuse this daemon's own configuration.
+
+- **Two more false delivery promises.** The claude-code plugin's setup step
+  still told an operator mail appears "on your next tool call" and blamed a
+  PreToolUse hook when it did not, and `send`'s description told every harness
+  it reaches a recipient at a turn boundary, which is untrue for Codex, where
+  nothing invokes Dibs automatically. The guard added last round read only the
+  plugin's summary; it reads every published string now, and refuses that
+  phrase by name.
+
+- **`doctor` could call a damaged local TLS board a healthy join.** The
+  daemon-owned artifact list omitted `tls-key.pem` and `admin.hash`. A joining
+  client holds the board's public certificate and never either of those, so a
+  board that had lost its ledger, node id, key and blobs while keeping one of
+  them read as a join and skipped the check that would have reported the loss.
+
+- **A repository stayed reported unreadable after its permissions recovered.**
+  Unreadable trees survive a phase change on purpose, but the preserve kept the
+  whole list and no production caller ever sends the empty slice that clears
+  it, so the diagnosis could not be retracted without a restart. A successful
+  index now drops that one tree and leaves every other.
+
+- **Every generated Codex configuration supplied half of the documented MCP
+  2026 requirement**, omitting `[features] mcp_2026_07_28 = true`, so operators
+  following it stayed on the legacy protocol while the prose said otherwise.
+  The README also contradicted itself about whether the flag does anything.
+
+- **An unresolvable home directory produced a confident recipe rooted at
+  `/home/you`.** On a headless host `mcp-config --board` printed mkdir, scp,
+  trust and JSON all targeting a literal path that is nobody's home, with
+  nothing saying it was a stand-in. It refuses now.
+
+- **The Codex plugin guide opened by recommending the transport the rest of it
+  argues against**, "a plain MCP server over HTTP: no bridge", ahead of a page
+  explaining why the per-session bridge is what holds the nonce.
+
+- **The documented release guarantee was not true of the pipeline.**
+  `AGENTS.md` said nothing between the tag and the release needs a person; the
+  Homebrew cask does, because the tap requires a pull request and the deploy
+  key can push but cannot call the API. Until that branch is merged the release
+  is out and `brew upgrade` serves the previous build. Said plainly now, and
+  the release job prints what is still owed.
+
+- **Three regression guards passed against the behaviour they named.** The
+  space-id one rebuilt the corrected expression and compared it with itself;
+  the enrichment one read a session sidecar that was not there and checked the
+  universal fields instead; the continuity one searched for `resumed`,
+  `reattached` and `ROTATED` separately, so swapping the two token rules left
+  it green while telling a client to keep a dead token. Each now drives the
+  production path, and each was verified by restoring the exact regression and
+  watching it fail.
+
 Acting on an independent operator evaluation of v0.0.6, which ran Dibs across two
 machines for real work. Their priority order, not ours.
 

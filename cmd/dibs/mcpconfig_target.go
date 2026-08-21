@@ -10,8 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/BurntSushi/toml"
-
+	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/paths"
 )
 
@@ -111,47 +110,21 @@ func configuredAddr(dir string) string {
 // configuration for 127.0.0.1:4777. An operator would then be looking at the
 // config the CLI gave them, wondering why nothing connects, with the actual
 // fault in a file neither of them mentioned.
-// boardConfig is the little of dibs.toml this command needs in order to
-// describe the daemon honestly: where it listens, and whether it serves TLS.
-type boardConfig struct {
-	Addr              string `toml:"addr"`
-	InsecurePlaintext bool   `toml:"insecure_plaintext"`
-	TLSCert           string `toml:"tls_cert"`
-	TLSKey            string `toml:"tls_key"`
-}
-
-// readBoardConfig reads those fields, and refuses a file the daemon would.
-func readBoardConfig(dir string) (boardConfig, error) {
-	var c boardConfig
-	path := filepath.Join(dir, "dibs.toml")
-	b, err := os.ReadFile(path) // #nosec G304 -- the operator's own data dir
-	if os.IsNotExist(err) {
-		return c, nil
-	}
+// readBoardConfig reads this data directory's dibs.toml, and refuses exactly
+// what the daemon would.
+//
+// It used to decode a four-field projection and check every other key against a
+// hand-kept list of NAMES, which can only ever validate spelling: `[limits]
+// agent_ttl = 10` passed here and produced a configuration, while `dibd -check`
+// refused the same file because that field is a duration. The daemon would not
+// start and the command telling an operator how to connect to it reported
+// success. Both now call internal/boardconfig, so there is one answer.
+func readBoardConfig(dir string) (boardconfig.Config, error) {
+	c, err := boardconfig.Load(dir)
 	if err != nil {
-		return c, fmt.Errorf("cannot read %s, so any configuration printed from it "+
-			"would be a guess: %w", path, err)
-	}
-	md, err := toml.Decode(string(b), &c)
-	if err != nil {
-		return c, fmt.Errorf("%s does not parse, so this daemon will not start and "+
-			"any configuration printed from it would be a guess: %w", path, err)
-	}
-	// The daemon refuses an unknown key, so a typo means it will not start,
-	// and printing a confident configuration for the default address while
-	// `dibd` exits 1 on the same file is the success-that-is-false shape again.
-	// `adrr = "192.168.1.5:4777"` is a real way to lose an afternoon.
-	for _, k := range md.Undecoded() {
-		// The WHOLE key, not just its table. Accepting anything nested under a
-		// known table left `[match] typo_threshold = 0.9` silently fine here
-		// while dibd refuses it: the same "daemon will not start, this reports
-		// success" failure, preserved for every table.
-		name := k.String()
-		if !knownConfigKeys[name] {
-			return c, fmt.Errorf("%s sets %q, which dibd does not know, so it will "+
-				"refuse to start: fix the file (or run `dibd -check`) before taking a "+
-				"configuration from it", path, name)
-		}
+		return c, fmt.Errorf("%s: %w\n\nAny configuration printed from it would be a "+
+			"guess: dibd refuses this file, so fix it (or run `dibd -check`) first",
+			filepath.Join(dir, "dibs.toml"), err)
 	}
 	return c, nil
 }
@@ -234,45 +207,63 @@ func trustCommand() string {
 	return cmd
 }
 
-// checkBoardAddr refuses an address that cannot work, rather than printing a
-// complete-looking configuration around it.
+// checkAddrShape refuses an address that is malformed however it is used.
 //
-// The shipped command accepted `htps://hub:4777`, called it plaintext because
-// the scheme was not "https", and emitted the typo as DIBS_ADDR; and accepted
-// `0.0.0.0:4777`, which is a listen address a client cannot dial. Both exited
-// 0 and reported a complete setup.
-func checkBoardAddr(a string) error {
+// A scheme Dibs does not speak, a missing or non-numeric port, or a host
+// carrying path segments: none of these can work as anybody's address, and each
+// produced a complete-looking configuration around it. The port half also names
+// the credential directory, so a path there walked that directory out of the
+// operator's home.
+func checkAddrShape(what, a string) error {
+	if a == "" {
+		return nil // absent is not malformed; the default applies
+	}
 	rest := a
 	if scheme, r, found := strings.Cut(a, "://"); found {
 		switch strings.ToLower(scheme) {
 		case "http", "https":
 			rest = r
 		default:
-			return fmt.Errorf("dibs mcp-config --board: %q is not a scheme Dibs speaks. "+
-				"Use http:// or https://, or leave it off and the address decides", scheme)
+			return fmt.Errorf("%s: %q is not a scheme Dibs speaks. Use http:// or "+
+				"https://, or leave it off and the address decides", what, scheme)
 		}
 	}
 	h, p, err := net.SplitHostPort(rest)
 	if err != nil {
-		return fmt.Errorf("dibs mcp-config --board: %q is not a host:port address: %w", a, err)
+		return fmt.Errorf("%s: %q is not a host:port address: %w", what, a, err)
 	}
-	// SplitHostPort does not check that the port is one.
-	//
-	// `hub:not-a-port` was accepted, and worse, `hub:4777/../../escaped`: the
-	// port half goes into the credential directory's name, so a path there
-	// walked the directory out of the operator's home. It is a name derived
-	// from untrusted-ish input that then has `mkdir`, `chmod 700` and a secret
-	// written into it, which is not a shape to leave loose.
 	if n, perr := strconv.Atoi(p); perr != nil || n < 1 || n > 65535 {
-		return fmt.Errorf("dibs mcp-config --board: %q is not a port number in %q", p, a)
+		return fmt.Errorf("%s: %q is not a port number in %q", what, p, a)
 	}
 	if strings.ContainsAny(h, `/\`) || strings.Contains(h, "..") {
-		return fmt.Errorf("dibs mcp-config --board: %q is not a host name", h)
+		return fmt.Errorf("%s: %q is not a host name", what, h)
+	}
+	return nil
+}
+
+// checkBoardAddr adds the rule that only applies to a board you DIAL.
+//
+// A wildcard is a legitimate bind address, and this daemon's own dibs.toml may
+// well say 0.0.0.0: what it cannot be is the address another machine reaches a
+// board on. Applying the dialable rule to both paths refused the wizard's own
+// "this machine and others" answer.
+func checkBoardAddr(a string) error {
+	const what = "dibs mcp-config --board"
+	if err := checkAddrShape(what, a); err != nil {
+		return err
+	}
+	rest := a
+	if _, r, found := strings.Cut(a, "://"); found {
+		rest = r
+	}
+	h, _, err := net.SplitHostPort(rest)
+	if err != nil {
+		return err
 	}
 	switch h {
 	case "", "0.0.0.0", "::", "[::]":
-		return fmt.Errorf("dibs mcp-config --board: %q is a LISTEN address, not one this "+
-			"machine can dial. Use the address you reach that board on", a)
+		return fmt.Errorf("%s: %q is a LISTEN address, not one this machine can dial. "+
+			"Use the address you reach that board on", what, a)
 	}
 	return nil
 }
@@ -287,36 +278,4 @@ func dialableAddr(a string) string {
 		return scheme + "://" + clientHost(rest)
 	}
 	return clientHost(a)
-}
-
-// knownConfigKeys is every configuration key dibd accepts, tables included.
-//
-// Nested keys are here too. Accepting anything under a known table left
-// `[match] typo_threshold = 0.9` fine here while dibd refuses it, which is the
-// same "the daemon will not start and this reports success" failure the
-// top-level check was added for, preserved for every table.
-//
-// A copy of the daemon's list, because cmd/dibd is package main and cannot be
-// imported. TestConfigKeysMatchTheDaemon reads the struct out of its source, so
-// the copy cannot drift.
-var knownConfigKeys = map[string]bool{
-	"addr": true, "tls_cert": true, "tls_key": true, "insecure_plaintext": true,
-	"match": true, "limits": true, "supervise": true, "roles": true, "wake": true,
-
-	"match.repo": true, "match.join_threshold": true, "match.notify_threshold": true,
-	"match.history": true, "match.deadline": true, "match.embed_url": true,
-	"match.embed_model": true, "match.embed_query_prefix": true,
-	"match.embed_doc_prefix": true, "match.director_required": true,
-	"match.auto_join": true,
-
-	"limits.agent_ttl": true, "limits.idle_ttl": true,
-	"limits.max_persistent_agents": true, "limits.max_agents": true,
-	"limits.blob_store_bytes": true,
-
-	"supervise.every": true, "supervise.quiet": true, "supervise.frozen": true,
-	"supervise.min_age": true, "supervise.min_duty": true, "supervise.off": true,
-
-	"roles.coordinator": true, "roles.admin": true,
-
-	"wake.extend_turn_for": true, "wake.notices_wake": true,
 }

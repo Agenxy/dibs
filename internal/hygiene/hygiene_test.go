@@ -822,7 +822,12 @@ func TestEverySettingIsDocumentedAndEveryDocumentedSettingExists(t *testing.T) {
 	// Every file that declares settings, not just the one named config.go: the
 	// first version of this guard missed cmd/dibd/roles.go and reported the
 	// [roles] keys as undocumented inventions, which they are not.
+	// The settings themselves moved to internal/boardconfig, because `dibs
+	// mcp-config` has to read the same file and reach the same verdict. This
+	// guard caught the move by finding seven settings where it expects ten,
+	// which is what the floor below is for.
 	for _, rel := range []string{
+		"internal/boardconfig/boardconfig.go",
 		"cmd/dibd/config.go",
 		"cmd/dibd/roles.go",
 		"internal/liveness/settings.go",

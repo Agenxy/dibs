@@ -155,7 +155,7 @@ func run() error {
 	}
 	defer func() { _ = led.Close() }()
 
-	limits, err := cfg.Limits.apply(core.DefaultLimits())
+	limits, err := applyLimits(cfg.Limits, core.DefaultLimits())
 	if err != nil {
 		return fmt.Errorf("reading %s/dibs.toml: %w", *dir, err)
 	}
@@ -231,7 +231,7 @@ func run() error {
 	led.OnEvents = nil // replay is done; live events flow through the engine
 	eng := engine.New(st, led, liveness.New(), history)
 	eng.SetBlobs(bs)
-	wake, err := cfg.Wake.policy()
+	wake, err := wakePolicy(cfg.Wake)
 	if err != nil {
 		return fmt.Errorf("reading %s/dibs.toml: %w", *dir, err)
 	}
@@ -619,7 +619,7 @@ func checkReplay(dir string, cfg Config) error {
 		return err
 	}
 	defer func() { _ = led.Close() }()
-	limits, err := cfg.Limits.apply(core.DefaultLimits())
+	limits, err := applyLimits(cfg.Limits, core.DefaultLimits())
 	if err != nil {
 		return fmt.Errorf("reading %s/dibs.toml: %w", dir, err)
 	}

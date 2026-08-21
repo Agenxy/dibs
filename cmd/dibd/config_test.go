@@ -127,7 +127,7 @@ func TestBadDeadlineDoesNotStopTheDaemon(t *testing.T) {
 // agents and nothing else, which is why it is a knob.
 func TestAgentTTLIsConfigurable(t *testing.T) {
 	base := core.DefaultLimits()
-	got, err := LimitsConfig{AgentTTL: "20m"}.apply(base)
+	got, err := applyLimits(LimitsConfig{AgentTTL: "20m"}, base)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func TestAgentTTLIsConfigurable(t *testing.T) {
 	if got.ClaimLease != base.ClaimLease || got.ArchiveRetention != base.ArchiveRetention {
 		t.Fatal("[limits] must not disturb bounds it does not name")
 	}
-	if unset, err := (LimitsConfig{}).apply(base); err != nil || unset.AgentTTL != base.AgentTTL {
+	if unset, err := applyLimits(LimitsConfig{}, base); err != nil || unset.AgentTTL != base.AgentTTL {
 		t.Fatalf("an absent table keeps the defaults, got %s / %v", unset.AgentTTL, err)
 	}
 }
@@ -148,7 +148,7 @@ func TestAgentTTLIsConfigurable(t *testing.T) {
 // crashes with no idea the setting had been ignored.
 func TestABadAgentTTLIsRefusedWithTheFix(t *testing.T) {
 	for _, bad := range []string{"10", "soon", "-3m", "1s"} {
-		_, err := LimitsConfig{AgentTTL: bad}.apply(core.DefaultLimits())
+		_, err := applyLimits(LimitsConfig{AgentTTL: bad}, core.DefaultLimits())
 		if err == nil {
 			t.Fatalf("agent_ttl = %q must be refused, not silently ignored", bad)
 		}
@@ -157,7 +157,7 @@ func TestABadAgentTTLIsRefusedWithTheFix(t *testing.T) {
 		}
 	}
 	// And the message has to show what a good value looks like.
-	_, err := LimitsConfig{AgentTTL: "10"}.apply(core.DefaultLimits())
+	_, err := applyLimits(LimitsConfig{AgentTTL: "10"}, core.DefaultLimits())
 	if !strings.Contains(err.Error(), `"5m"`) {
 		t.Fatalf("the error must show the shape it wants, got: %v", err)
 	}
@@ -208,7 +208,7 @@ func TestUnknownConfigKeysAreRefusedNotIgnored(t *testing.T) {
 // artifacts needs it bigger; one short on disk needs it smaller.
 func TestBlobStoreCapIsConfigurable(t *testing.T) {
 	base := core.DefaultLimits()
-	got, err := LimitsConfig{BlobStoreBytes: 4 << 30}.apply(base)
+	got, err := applyLimits(LimitsConfig{BlobStoreBytes: 4 << 30}, base)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,14 +217,14 @@ func TestBlobStoreCapIsConfigurable(t *testing.T) {
 	}
 	// Set alongside an agent_ttl, both must land: the early return for an absent
 	// agent_ttl used to skip this one entirely.
-	both, err := LimitsConfig{AgentTTL: "9m", BlobStoreBytes: 2 << 30}.apply(base)
+	both, err := applyLimits(LimitsConfig{AgentTTL: "9m", BlobStoreBytes: 2 << 30}, base)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if both.AgentTTL != 9*time.Minute || both.BlobStoreBytes != 2<<30 {
 		t.Fatalf("both settings must apply, got %s / %d", both.AgentTTL, both.BlobStoreBytes)
 	}
-	if unset, err := (LimitsConfig{AgentTTL: "9m"}).apply(base); err != nil ||
+	if unset, err := applyLimits(LimitsConfig{AgentTTL: "9m"}, base); err != nil ||
 		unset.BlobStoreBytes != base.BlobStoreBytes {
 		t.Fatalf("an absent cap keeps the default, got %d / %v", unset.BlobStoreBytes, err)
 	}
@@ -234,7 +234,7 @@ func TestBlobStoreCapIsConfigurable(t *testing.T) {
 // used, which looks like attachments being broken rather than a cap doing its
 // job. Refuse it at startup, where the operator can still see why.
 func TestABlobStoreTooSmallToHoldOneBlobIsRefused(t *testing.T) {
-	_, err := LimitsConfig{BlobStoreBytes: 1024}.apply(core.DefaultLimits())
+	_, err := applyLimits(LimitsConfig{BlobStoreBytes: 1024}, core.DefaultLimits())
 	if err == nil {
 		t.Fatal("a cap below one maximum blob must be refused")
 	}
@@ -429,7 +429,7 @@ func TestPrecedenceIsFlagThenEnvThenFile_AndZeroIsAValue(t *testing.T) {
 func TestIdleTTLIsConfigurableAndValidated(t *testing.T) {
 	base := core.DefaultLimits()
 
-	got, err := LimitsConfig{IdleTTL: "90s"}.apply(base)
+	got, err := applyLimits(LimitsConfig{IdleTTL: "90s"}, base)
 	if err != nil {
 		t.Fatalf("a valid idle_ttl was refused: %v", err)
 	}
@@ -442,7 +442,7 @@ func TestIdleTTLIsConfigurableAndValidated(t *testing.T) {
 	}
 
 	// Both keys at once, since they are independent knobs.
-	both, err := LimitsConfig{AgentTTL: "2m", IdleTTL: "30m"}.apply(base)
+	both, err := applyLimits(LimitsConfig{AgentTTL: "2m", IdleTTL: "30m"}, base)
 	if err != nil {
 		t.Fatalf("setting both was refused: %v", err)
 	}
@@ -453,10 +453,10 @@ func TestIdleTTLIsConfigurableAndValidated(t *testing.T) {
 	// A bad value is an ERROR, never a silent fallback: the same rule agent_ttl
 	// follows, and for the same reason: a setting that looks accepted and was
 	// ignored is debugged as phantom crashes.
-	if _, err := (LimitsConfig{IdleTTL: "10"}).apply(base); err == nil {
+	if _, err := applyLimits(LimitsConfig{IdleTTL: "10"}, base); err == nil {
 		t.Error("idle_ttl = \"10\" is not a duration and must be refused, not defaulted")
 	}
-	if _, err := (LimitsConfig{IdleTTL: "1s"}).apply(base); err == nil {
+	if _, err := applyLimits(LimitsConfig{IdleTTL: "1s"}, base); err == nil {
 		t.Error("idle_ttl below the floor must be refused; agents renew at half the TTL")
 	}
 }
