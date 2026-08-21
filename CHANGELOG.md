@@ -227,6 +227,20 @@ machines for real work. Their priority order, not ours.
   tests of ours were also named for regressions they could not catch, and now
   drive the gate and the wizard rather than the helpers beside them.
 
+- **Three more from the review's thirteenth round.** `dibs configure` writes
+  the operator's listen-address choice to `dibs.toml` and ends by telling them
+  to run `dibs mcp-config`, which read only `DIBS_ADDR` and so printed a
+  configuration for `127.0.0.1:4777`: a confident answer about the wrong
+  daemon, from the command the wizard had just sent them to. It reads the
+  configured address now, and maps a wildcard bind to something dialable,
+  since `0.0.0.0` is a listen address and not one anybody can connect to. The
+  second-machine recipe also handed the joining machine THIS daemon's loopback
+  address, which on that machine is its own board, in the same output that
+  then explains the local end of a forward is that machine's choice. And a
+  left-behind `tls-cert.pem` was read as proof of TLS, so a daemon moved back
+  to loopback or switched to `insecure_plaintext` was still described as
+  serving HTTPS, with instructions to trust a certificate it does not present.
+
 - **README: building without mise or task.** On a network that allows the Go
   module proxy but not the object store it redirects to, neither tool installs
   and the failure reads like a broken toolchain rather than a blocked host.

@@ -529,8 +529,23 @@ func mcpConfig(args []string) error {
 	}
 	if given, _, found := strings.Cut(rawAddr(), "://"); found {
 		scheme = strings.ToLower(given)
+		// And the certificate goes with it. The file outlives the configuration
+		// that produced it: a daemon moved back to loopback, or switched to
+		// insecure_plaintext, keeps its tls-cert.pem, and reading the file alone
+		// printed an http:// url under the heading "this daemon serves HTTPS"
+		// with instructions to trust a certificate it is not presenting.
+		if scheme != "https" {
+			certPath = ""
+		}
 	}
-	url := scheme + "://" + addr() + "/mcp"
+	// The address a CLIENT dials, which is not always the one the daemon binds.
+	//
+	// This used addr(), which ignores dibs.toml, so an operator who answered
+	// the wizard's "this machine and others" and then ran the command the
+	// wizard sends them to got a url for 127.0.0.1: a confident answer about
+	// the wrong daemon. A wildcard bind needs care of its own, since 0.0.0.0
+	// is a listen address and not something anybody can connect to.
+	url := scheme + "://" + clientHost(hostPort(rawAddr())) + "/mcp"
 
 	// STDIO FIRST, for the same reason it is first for Codex.
 	//
@@ -638,7 +653,7 @@ args = ["mcp-stdio"]
 #   (the secret is also accepted as: Authorization: Bearer %s)
 #
 # Running agent sessions do not hot-load MCP config: start a new session after adding.
-`, self(), codexEnvLine(), shellArg(addr()), url, s, preview)
+`, self(), codexEnvLine(), shellArg(joinerAddr()), url, s, preview)
 
 	if certPath != "" {
 		fmt.Printf(`
@@ -689,8 +704,9 @@ func printRemoteRecipe() {
 #      per-board and read from the data directory, so joining a second board
 #      means a second directory; there is no way to hold two in one.
 #
-#   2. point the harness at the bridge, with THIS daemon's address and that
-#      directory (absolute path: nothing expands ~ here):
+#   2. point the harness at the bridge, with the address THAT machine reaches
+#      this daemon on and a directory of its own (absolute path: nothing
+#      expands ~ here):
 #        {"mcpServers": {"dibs": {"command": "dibs", "args": ["mcp-stdio"],
 #          "env": {"DIBS_ADDR": %q,
 #                  "DIBS_DIR":  "/home/you/.dibs-<board>"}}}}
@@ -703,7 +719,7 @@ func printRemoteRecipe() {
 # holds no nonce, so every reconnect forks an identity that cannot read its
 # predecessor's mail. The bridge is a process with a filesystem, which is what
 # the credential needs.
-`, filepath.Join(paths.DataDir(), "local.secret"), rawAddr(), shellArg(rawAddr()))
+`, filepath.Join(paths.DataDir(), "local.secret"), joinerAddr(), shellArg(joinerAddr()))
 
 	// Both facts, from the address, as `--board` reads them.
 	//
@@ -753,7 +769,7 @@ func printRemoteRecipe() {
 # it is given, the bridge reads it from the one in its config above, and without
 # it trust reports success while writing where the bridge never looks.
 # Compare what that prints against `+"`dibs fingerprint`"+` run HERE; they must match.
-`, shellArg(addr()))
+`, shellArg(hostPort(joinerAddr())))
 }
 
 // port is the ":4777" half of an address, for the near end of a forward.
@@ -1927,4 +1943,47 @@ func self() string {
 		return resolved
 	}
 	return exe
+}
+
+// joinerAddr is the address the OTHER machine reaches this daemon on.
+//
+// Not this daemon's own address, which is what it printed. For a loopback hub
+// that is 127.0.0.1:4777, and the joining machine's 127.0.0.1:4777 is its OWN
+// board: the recipe handed over a ready-looking configuration pointed at the
+// wrong daemon, and then, further down, correctly explained that the local end
+// of a forward is that machine's choice. Two halves of one recipe contradicting
+// each other. It names the placeholder the rest of the recipe uses.
+func joinerAddr() string {
+	if tunnel, _ := boardShape(rawAddr()); tunnel {
+		return "127.0.0.1:<local-port>"
+	}
+	// And a wildcard bind is not dialable from there either: 0.0.0.0 means
+	// "every interface" to the daemon and nothing at all to a client.
+	raw := rawAddr()
+	if scheme, rest, found := strings.Cut(raw, "://"); found {
+		return scheme + "://" + clientHost(rest)
+	}
+	return clientHost(raw)
+}
+
+// clientHost turns a listen address into one a client can dial.
+//
+// A wildcard bind is the case that matters: 0.0.0.0 and :: mean "every
+// interface", and printing either in a url hands somebody a string that cannot
+// connect from anywhere. The machine's own LAN address is what they meant, and
+// is what the wizard offers for the same choice.
+func clientHost(a string) string {
+	h, p, err := net.SplitHostPort(a)
+	if err != nil {
+		return a
+	}
+	switch h {
+	case "0.0.0.0", "::", "[::]", "":
+		lan, _, lerr := net.SplitHostPort(defaultLANAddr())
+		if lerr != nil || lan == "0.0.0.0" {
+			return "<this-machine>:" + p
+		}
+		return net.JoinHostPort(lan, p)
+	}
+	return a
 }

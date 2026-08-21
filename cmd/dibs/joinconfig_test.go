@@ -485,3 +485,102 @@ func TestTheOrdinaryRecipeReadsTheAddress(t *testing.T) {
 		}
 	}
 }
+
+// The wizard writes an address; the command it sends you to must read it.
+//
+// `dibs configure` asks where agents connect from, writes the answer to
+// dibs.toml, and ends by saying to run `dibs mcp-config`. That printed a
+// configuration for 127.0.0.1:4777 regardless, so an operator who chose LAN or
+// internet got a confident answer about the wrong daemon from the command the
+// wizard had just sent them to. Found by the pre-release review.
+func TestTheConfigFollowsTheWizardsChoice(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "dibs.toml"),
+		[]byte("addr = \"0.0.0.0:4777\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "local.secret"),
+		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DIBS_DIR", dir)
+	t.Setenv("DIBS_ADDR", "")
+
+	out, err := captureStdout(t, func() error { return mcpConfig(nil) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "127.0.0.1:4777") {
+		t.Errorf("the configured address was ignored in favour of the default:\n%s", out)
+	}
+
+	// A wildcard bind is a LISTEN address: 0.0.0.0 means every interface to the
+	// daemon and nothing anybody can connect to. Printing it in a url or in
+	// another machine's DIBS_ADDR hands over a string that cannot work.
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, `"url"`) || strings.Contains(line, `"DIBS_ADDR"`) {
+			if strings.Contains(line, "0.0.0.0") {
+				t.Errorf("a wildcard bind reached something a client has to dial: %s", line)
+			}
+		}
+	}
+}
+
+// A certificate FILE is not proof the daemon serves TLS today.
+//
+// It outlives the configuration that made it: a daemon moved back to loopback,
+// or switched to insecure_plaintext, keeps its tls-cert.pem. Reading the file
+// alone printed an http:// url under the heading "this daemon serves HTTPS",
+// with instructions to trust a certificate it is not presenting.
+func TestAStaleCertificateDoesNotClaimTLS(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"local.secret": strings.Repeat("a", 64),
+		"tls-cert.pem": "-- not a real certificate --",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("DIBS_DIR", dir)
+	t.Setenv("DIBS_ADDR", "http://hub.example:4777")
+
+	out, err := captureStdout(t, func() error { return mcpConfig(nil) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "serves HTTPS") {
+		t.Errorf("an address explicitly naming plaintext was declared HTTPS because a "+
+			"certificate file was left behind:\n%s", out)
+	}
+	if strings.Contains(out, "https://hub.example") {
+		t.Error("the url contradicts the scheme the operator wrote")
+	}
+}
+
+// The recipe must not hand the joining machine THIS daemon's loopback address.
+//
+// For a loopback hub it printed 127.0.0.1:4777 as that machine's DIBS_ADDR and
+// in the --board command it suggests. On that machine 127.0.0.1:4777 is its
+// OWN board: a ready-looking configuration pointed at the wrong daemon, in a
+// recipe that goes on to explain, correctly, that the local end of a forward is
+// that machine's choice. Two halves of one output contradicting each other.
+func TestTheRecipeNamesTheOtherMachinesAddress(t *testing.T) {
+	t.Setenv("DIBS_ADDR", "127.0.0.1:4777")
+	out, err := captureStdout(t, func() error { printRemoteRecipe(); return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.Contains(line, "DIBS_ADDR") && !strings.Contains(line, "--board") {
+			continue
+		}
+		if strings.Contains(line, "127.0.0.1:4777") {
+			t.Errorf("the joining machine is told to use this daemon's own loopback "+
+				"address, which on that machine is its own board: %s", line)
+		}
+	}
+	if !strings.Contains(out, "<local-port>") {
+		t.Errorf("the recipe never says the local end is that machine's choice:\n%s", out)
+	}
+}

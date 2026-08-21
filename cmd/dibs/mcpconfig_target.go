@@ -4,8 +4,13 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/BurntSushi/toml"
+
+	"github.com/agenxy/dibs/internal/paths"
 )
 
 // This file holds the small decisions `mcp-config` makes about WHICH daemon a
@@ -73,7 +78,37 @@ func rawAddr() string {
 	if a := os.Getenv("DIBS_ADDR"); a != "" {
 		return a
 	}
+	// Then the configuration the WIZARD wrote.
+	//
+	// `dibs configure` asks where agents will connect from, writes the answer to
+	// dibs.toml, and its last lines say to run `dibs mcp-config`. That printed a
+	// configuration for 127.0.0.1:4777 regardless, so an operator who chose LAN
+	// or internet was handed a confident config for the wrong address and the
+	// wrong transport, by the command the wizard had just sent them to. Found by
+	// the pre-release review.
+	if a := configuredAddr(paths.DataDir()); a != "" {
+		return a
+	}
 	return addr()
+}
+
+// configuredAddr is the `addr` this data directory's dibs.toml names, or "".
+//
+// Only that one field: this is the CLI describing the daemon it would talk to,
+// not a second implementation of the daemon's configuration, and every other
+// field is the daemon's business.
+func configuredAddr(dir string) string {
+	b, err := os.ReadFile(filepath.Join(dir, "dibs.toml")) // #nosec G304 -- the operator's own data dir
+	if err != nil {
+		return ""
+	}
+	var doc struct {
+		Addr string `toml:"addr"`
+	}
+	if _, err := toml.Decode(string(b), &doc); err != nil {
+		return ""
+	}
+	return doc.Addr
 }
 
 // nonDefaultEnv is the environment a bridge needs to reach THIS daemon rather
