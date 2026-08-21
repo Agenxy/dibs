@@ -241,6 +241,18 @@ machines for real work. Their priority order, not ours.
   to loopback or switched to `insecure_plaintext` was still described as
   serving HTTPS, with instructions to trust a certificate it does not present.
 
+- **Three more from the review's fourteenth round.** The environment handed to
+  a bridge still read the address the way that ignores `dibs.toml`, so a daemon
+  configured onto a LAN address or a non-default port had its stdio configs
+  printed with no address at all and the bridge dialled the default; the url
+  block had been fixed a round earlier and this had not. `--board` accepted
+  anything non-empty, including a mistyped scheme, which it then classified as
+  plaintext and emitted verbatim, and a wildcard listen address no client can
+  dial; both exited 0 around a configuration that cannot work. And a
+  `dibs.toml` that does not parse was read as no configuration at all, so the
+  daemon would refuse to start while this printed a confident config for the
+  default address.
+
 - **README: building without mise or task.** On a network that allows the Go
   module proxy but not the object store it redirects to, neither tool installs
   and the failure reads like a broken toolchain rather than a blocked host.

@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -98,17 +99,37 @@ func rawAddr() string {
 // not a second implementation of the daemon's configuration, and every other
 // field is the daemon's business.
 func configuredAddr(dir string) string {
+	a, _ := readConfiguredAddr(dir)
+	return a
+}
+
+// readConfiguredAddr also reports a dibs.toml that does not parse.
+//
+// Swallowing that was a success response whose advertised effect is false: the
+// daemon refuses to start on a malformed config, while this printed a confident
+// configuration for 127.0.0.1:4777. An operator would then be looking at the
+// config the CLI gave them, wondering why nothing connects, with the actual
+// fault in a file neither of them mentioned.
+func readConfiguredAddr(dir string) (string, error) {
 	b, err := os.ReadFile(filepath.Join(dir, "dibs.toml")) // #nosec G304 -- the operator's own data dir
+	if os.IsNotExist(err) {
+		// No config file at all is the ordinary case, not a fault: every field
+		// is optional and `dibd` with none does the right thing.
+		return "", nil
+	}
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("cannot read %s, so any configuration printed from it "+
+			"would be a guess: %w", filepath.Join(dir, "dibs.toml"), err)
 	}
 	var doc struct {
 		Addr string `toml:"addr"`
 	}
 	if _, err := toml.Decode(string(b), &doc); err != nil {
-		return ""
+		return "", fmt.Errorf("%s does not parse, so this daemon will not start and "+
+			"any configuration printed from it would be a guess: %w",
+			filepath.Join(dir, "dibs.toml"), err)
 	}
-	return doc.Addr
+	return doc.Addr, nil
 }
 
 // nonDefaultEnv is the environment a bridge needs to reach THIS daemon rather
@@ -124,7 +145,12 @@ func nonDefaultEnv() map[string]string {
 	// this process was told is what the bridge should be told.
 	if raw := os.Getenv("DIBS_ADDR"); raw != "" {
 		env["DIBS_ADDR"] = raw
-	} else if a := addr(); a != "127.0.0.1:4777" {
+	} else if a := dialableAddr(rawAddr()); a != "127.0.0.1:4777" {
+		// rawAddr, not addr: addr ignores dibs.toml, so a daemon configured onto
+		// a LAN address or a non-default port had its stdio config printed with
+		// no DIBS_ADDR at all, and the bridge then dialled 127.0.0.1:4777 and
+		// could not reach it. The url block above had already been fixed and
+		// this had not, which is this branch's recurring shape.
 		env["DIBS_ADDR"] = a
 	}
 	if d := os.Getenv("DIBS_DIR"); d != "" {
@@ -177,4 +203,49 @@ func trustCommand() string {
 		return "DIBS_DIR=" + shellArg(d) + " " + cmd
 	}
 	return cmd
+}
+
+// checkBoardAddr refuses an address that cannot work, rather than printing a
+// complete-looking configuration around it.
+//
+// The shipped command accepted `htps://hub:4777`, called it plaintext because
+// the scheme was not "https", and emitted the typo as DIBS_ADDR; and accepted
+// `0.0.0.0:4777`, which is a listen address a client cannot dial. Both exited
+// 0 and reported a complete setup.
+func checkBoardAddr(a string) error {
+	rest := a
+	if scheme, r, found := strings.Cut(a, "://"); found {
+		switch strings.ToLower(scheme) {
+		case "http", "https":
+			rest = r
+		default:
+			return fmt.Errorf("dibs mcp-config --board: %q is not a scheme Dibs speaks. "+
+				"Use http:// or https://, or leave it off and the address decides", scheme)
+		}
+	}
+	h, p, err := net.SplitHostPort(rest)
+	if err != nil {
+		return fmt.Errorf("dibs mcp-config --board: %q is not a host:port address: %w", a, err)
+	}
+	if p == "" {
+		return fmt.Errorf("dibs mcp-config --board: %q names no port", a)
+	}
+	switch h {
+	case "", "0.0.0.0", "::", "[::]":
+		return fmt.Errorf("dibs mcp-config --board: %q is a LISTEN address, not one this "+
+			"machine can dial. Use the address you reach that board on", a)
+	}
+	return nil
+}
+
+// dialableAddr is an address a bridge can connect to, scheme preserved.
+//
+// A wildcard bind is the case: 0.0.0.0 is what a daemon LISTENS on and not
+// something anything connects to, so handing it to a bridge as DIBS_ADDR is
+// the same mistake as printing it in a url.
+func dialableAddr(a string) string {
+	if scheme, rest, found := strings.Cut(a, "://"); found {
+		return scheme + "://" + clientHost(rest)
+	}
+	return clientHost(a)
 }

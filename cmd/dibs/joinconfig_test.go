@@ -584,3 +584,109 @@ func TestTheRecipeNamesTheOtherMachinesAddress(t *testing.T) {
 		t.Errorf("the recipe never says the local end is that machine's choice:\n%s", out)
 	}
 }
+
+// EVERY block that configures a bridge must carry the configured address.
+//
+// nonDefaultEnv read addr(), which ignores dibs.toml, so a daemon configured
+// onto a LAN address or a non-default port had its stdio configs printed with
+// no DIBS_ADDR at all and the bridge dialled 127.0.0.1:4777. The url block had
+// already been fixed and this had not: the wildcard fixture used elsewhere
+// misses it, because a wildcard bind is still reachable over loopback.
+func TestEveryBridgeBlockCarriesTheConfiguredAddress(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "dibs.toml"),
+		[]byte("addr = \"192.168.50.10:4777\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "local.secret"),
+		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DIBS_DIR", dir)
+	t.Setenv("DIBS_ADDR", "")
+
+	out, err := captureStdout(t, func() error { return mcpConfig(nil) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The JSON block, the TOML block, and the url: three places, one address.
+	for _, want := range []string{
+		`"DIBS_ADDR": "192.168.50.10:4777"`,
+		`DIBS_ADDR = "192.168.50.10:4777"`,
+		`"url": "http://192.168.50.10:4777/mcp"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("a bridge is configured without the address the daemon is on, so it "+
+				"will dial the default and fail. missing: %s\n%s", want, out)
+		}
+	}
+}
+
+// An address that cannot work must be refused, not wrapped in a complete-looking
+// configuration.
+//
+// The shipped command accepted `htps://hub:4777`, called it plaintext because
+// the scheme was not "https", and emitted the typo as DIBS_ADDR; and accepted
+// `0.0.0.0:4777`, a listen address no client can dial. Both exited 0.
+func TestABoardAddressThatCannotWorkIsRefused(t *testing.T) {
+	for _, bad := range []string{
+		"htps://hub.example:4777",
+		"0.0.0.0:4777",
+		"[::]:4777",
+		"hub.example",
+		"ftp://hub.example:4777",
+	} {
+		if err := checkBoardAddr(bad); err == nil {
+			t.Errorf("%q was accepted, so a configuration will be printed around an "+
+				"address that cannot connect", bad)
+		}
+	}
+	for _, good := range []string{
+		"127.0.0.1:4777", "hub.example:4777",
+		"https://hub.example:4777", "http://hub.example:4777", "[2001:db8::1]:4777",
+	} {
+		if err := checkBoardAddr(good); err != nil {
+			t.Errorf("%q was refused: %v", good, err)
+		}
+	}
+}
+
+// A dibs.toml the daemon would refuse is not "no configuration".
+//
+// It was read as absent, so the daemon would not start while this printed a
+// confident configuration for 127.0.0.1:4777. The operator then looks at the
+// config the CLI gave them and wonders why nothing connects, with the actual
+// fault in a file neither of them mentioned.
+func TestAMalformedConfigIsNotSilentlyIgnored(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "dibs.toml"),
+		[]byte("addr = \"unterminated\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "local.secret"),
+		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DIBS_DIR", dir)
+	t.Setenv("DIBS_ADDR", "")
+
+	_, err := captureStdout(t, func() error { return mcpConfig(nil) })
+	if err == nil {
+		t.Fatal("a config the daemon cannot parse was ignored, and a configuration " +
+			"printed for the default address instead")
+	}
+	if !strings.Contains(err.Error(), "dibs.toml") {
+		t.Errorf("the refusal does not name the file at fault: %v", err)
+	}
+
+	// No config file at all is a different thing and must still work.
+	clean := t.TempDir()
+	if err := os.WriteFile(filepath.Join(clean, "local.secret"),
+		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DIBS_DIR", clean)
+	if _, err := captureStdout(t, func() error { return mcpConfig(nil) }); err != nil {
+		t.Errorf("a data directory with no dibs.toml was refused: %v", err)
+	}
+}

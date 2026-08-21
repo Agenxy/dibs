@@ -508,7 +508,14 @@ func mcpConfig(args []string) error {
 			"machine's own configuration")
 	}
 	if *board != "" {
+		if err := checkBoardAddr(*board); err != nil {
+			return err
+		}
 		return printJoinConfig(*board)
+	}
+	// A dibs.toml the daemon would refuse is not "no configuration".
+	if _, err := readConfiguredAddr(paths.DataDir()); err != nil {
+		return err
 	}
 	s, err := localSecret()
 	if err != nil {
@@ -757,7 +764,7 @@ func printRemoteRecipe() {
 # whether the fleet has a board at all. A laptop is the tempting choice and
 # the wrong one, because it sleeps, changes networks and gets rebooted
 # mid-task. An always-on headless host reached by a forward is the answer.
-`, addr(), os.Getenv("USER"), hostName(), port(addr()))
+`, hostPort(rawAddr()), os.Getenv("USER"), hostName(), port(rawAddr()))
 	}
 	if !trust {
 		return
