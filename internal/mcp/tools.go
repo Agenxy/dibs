@@ -199,8 +199,8 @@ var toolDefs = func() []map[string]any {
 				"token": tok,
 				"agent": map[string]any{
 					"type": "string",
-					"description": "id of the finished agent to remove: yours, a vouched " +
-						"child, or a dormant peer if you are coordinator",
+					"description": "id of the finished agent to remove: a vouched child, " +
+						"or a dormant peer if you are coordinator. Not you: see above",
 				},
 			}, "token", "agent"),
 		},

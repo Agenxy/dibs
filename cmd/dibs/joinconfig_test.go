@@ -23,6 +23,13 @@ func TestEachBoardGetsItsOwnDirectory(t *testing.T) {
 		// onto one directory, which is the port collision again in another
 		// character.
 		"hub-example:4777",
+		// And the same shape a third time: an IPv6 literal and a hostname
+		// spelled like one, which the colon rewrite maps together. Contrived,
+		// and the comment on boardSlug claims EVERY address gets its own
+		// directory, so it has to hold rather than hold for the examples
+		// somebody thought of.
+		"[2001:db8::1]:4777",
+		"2001-db8--1:4777",
 	} {
 		slug := boardSlug(addr)
 		if prev, clash := seen[slug]; clash {
@@ -44,9 +51,16 @@ func TestJoinConfigNamesTheStepTheAddressCallsFor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(tls, "dibs trust hub.example:4777") {
-		t.Errorf("a non-loopback board is configured with no trust step, so the bridge "+
-			"will reject it:\n%s", tls)
+	// The trust command must carry the board's DIBS_DIR.
+	//
+	// `dibs trust` records the certificate in the data directory it is given,
+	// and the bridge reads it from the one in the config. Printed bare, trust
+	// writes into ~/.dibs, reports success, and the bridge still rejects the
+	// board: a step that looks done and is not.
+	dir := homeDir() + "/.dibs-" + boardSlug("hub.example:4777")
+	if !strings.Contains(tls, "DIBS_DIR="+dir+" dibs trust hub.example:4777") {
+		t.Errorf("the trust step does not name the board's data directory, so the "+
+			"certificate lands where the bridge never looks:\n%s", tls)
 	}
 	if strings.Contains(tls, "ssh -N -L") {
 		t.Error("a directly reachable board was told to open an ssh forward")
@@ -64,13 +78,24 @@ func TestJoinConfigNamesTheStepTheAddressCallsFor(t *testing.T) {
 		t.Error("a loopback board was told to record a certificate it does not serve")
 	}
 
+	// The hub's own data directory cannot be inferred from here: a hub serving
+	// from DIBS_DIR=~/.dibs-team has no local.secret at ~/.dibs, and a hub that
+	// ALSO runs a default board has the wrong one there. Hard-coding the path
+	// copies a credential for a board nobody meant.
+	for _, out := range []string{tls, loop} {
+		if strings.Contains(out, "<hub>:~/.dibs/local.secret") {
+			t.Errorf("the recipe hard-codes the hub's data directory, which only the hub "+
+				"knows:\n%s", out)
+		}
+	}
+
 	// The directory in the prose and the directory in the config must be the
 	// same one. They were not: the README named ~/.dibs-hub while the command
 	// derived ~/.dibs-board-4777, so the secret was copied where nothing read
 	// it and the bridge could not start.
-	dir := homeDir() + "/.dibs-" + boardSlug("127.0.0.1:4777")
-	if strings.Count(loop, dir) < 3 {
+	loopDir := homeDir() + "/.dibs-" + boardSlug("127.0.0.1:4777")
+	if strings.Count(loop, loopDir) < 3 {
 		t.Errorf("the data directory is not stated consistently: %q appears %d times in\n%s",
-			dir, strings.Count(loop, dir), loop)
+			loopDir, strings.Count(loop, loopDir), loop)
 	}
 }

@@ -114,6 +114,17 @@ machines for real work. Their priority order, not ours.
   hyphens, so `hub.example` and `hub-example` shared one: the port collision
   again in another character. Dots are kept.
 
+- **Four more from the review's third round.** The generated `dibs trust`
+  command omitted the board's `DIBS_DIR`, so it recorded the certificate under
+  the default data directory, reported success, and the bridge went on
+  rejecting the board: a step that looks done and is not. The recipe hard-coded
+  the hub's secret at `~/.dibs/local.secret`, which only the hub knows and
+  which is the wrong board's credential on a hub that runs two. The directory
+  key still collided between an IPv6 literal and a hostname spelled like one.
+  And `prune` refused self-pruning in its description while its `agent`
+  parameter still offered "yours", so an agent reading both was told to make a
+  call that cannot succeed.
+
 - **README: building without mise or task.** On a network that allows the Go
   module proxy but not the object store it redirects to, neither tool installs
   and the failure reads like a broken toolchain rather than a blocked host.

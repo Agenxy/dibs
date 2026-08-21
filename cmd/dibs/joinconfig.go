@@ -42,7 +42,12 @@ func printJoinConfig(remote string) error {
 #    secrets in one.
 #
 #      mkdir -p %s && chmod 700 %s
-#      scp <hub>:~/.dibs/local.secret %s/local.secret
+#      scp <hub>:<hub-data-dir>/local.secret %s/local.secret
+#
+#    <hub-data-dir> is ~/.dibs unless that machine sets DIBS_DIR. Only the hub
+#    knows: `+"`dibs doctor`"+` prints it on the first line there. A hub running more
+#    than one board has more than one, and copying the wrong one gives a
+#    credential that authenticates against a board nobody meant.
 #
 `, remote, dir, dir, dir)
 
@@ -71,13 +76,18 @@ func printJoinConfig(remote string) error {
 #    certificate it generated itself. The bridge trusts only what this machine
 #    has recorded, so record it once:
 #
-#      dibs trust %s
+#      DIBS_DIR=%s dibs trust %s
+#
+#    DIBS_DIR is not optional there: trust records the certificate in the data
+#    directory it is given, the bridge reads it from the one in the config
+#    below, and without it trust reports success while writing somewhere the
+#    bridge never looks.
 #
 #    Compare the fingerprint it prints against `+"`dibs fingerprint`"+` run on the hub;
 #    they must match. Only the bridge's own trust store changes, so nothing
 #    else on this machine has its TLS behaviour altered.
 #
-`, remote)
+`, dir, remote)
 	}
 
 	fmt.Printf(`# 3. Add to .mcp.json (Claude Code and JSON-config hosts):
@@ -150,7 +160,16 @@ func boardSlug(addr string) string {
 	// "hub-example", so two boards shared a credential directory again, one
 	// round after the port did. A directory name may contain dots; only the
 	// separators that would change the path have to go.
+	// The BRACKETS are kept too, for the same reason the dots were: they are
+	// what distinguishes the literal [2001:db8::1] from the syntactically valid
+	// hostname 2001-db8--1, which the colon rewrite otherwise maps onto it. A
+	// contrived pair, and the point is that the comment above claims every
+	// address gets its own directory, so it has to be true rather than true of
+	// the examples somebody thought of.
 	slug := strings.NewReplacer(":", "-", "/", "-", string(filepath.Separator), "-").Replace(h)
+	if strings.Contains(h, ":") {
+		slug = "[" + slug + "]"
+	}
 	if port != "" {
 		slug += "-" + port
 	}

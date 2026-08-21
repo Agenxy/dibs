@@ -184,3 +184,37 @@ func TestRegisterDocumentsBothContinuityPaths(t *testing.T) {
 			"that cached the old one keeps sending a dead token")
 	}
 }
+
+// A tool's parameter must not contradict its own description.
+//
+// `prune`'s description says it is NOT for yourself, because signing off
+// invalidates the token prune authenticates with and an authenticated caller is
+// awakened before pruning and refused as active. Its `agent` parameter went on
+// offering "yours". An agent reads both and gets mutually exclusive
+// instructions for the exact sequence the description was rewritten to rule
+// out. Found by the pre-release review.
+func TestPruneDoesNotOfferWhatItRefuses(t *testing.T) {
+	var desc, param string
+	for _, td := range agentTools {
+		if td["name"] != "prune" {
+			continue
+		}
+		desc, _ = td["description"].(string)
+		schema, _ := td["inputSchema"].(map[string]any)
+		props, _ := schema["properties"].(map[string]any)
+		agent, _ := props["agent"].(map[string]any)
+		param, _ = agent["description"].(string)
+	}
+	if desc == "" || param == "" {
+		t.Fatal("prune or its agent parameter is missing: the probe reads neither")
+	}
+	if !strings.Contains(desc, "NOT for yourself") {
+		t.Fatalf("prune no longer says it refuses self-pruning, so this guard is "+
+			"measuring nothing: %q", desc)
+	}
+	if strings.Contains(param, "yours") {
+		t.Errorf("prune refuses self-pruning in its description and offers it in its "+
+			"agent parameter (%q): an agent reading both is told to make a call that "+
+			"cannot succeed", param)
+	}
+}
