@@ -73,6 +73,18 @@ machines for real work. Their priority order, not ours.
 - **`doctor` reported a configured suggest-only matcher as a warning**, so a
   deliberate `join_threshold = 0` looked like a fault on every run.
 
+- **`dibs prune` answered "did you mean dibs probe".** The CLI verbs and the
+  MCP tools are different sets and nothing mapped them, so a name that is a
+  real Dibs verb on the other surface was answered with the nearest unrelated
+  word. The CLI now says which surface it lives on. Its copy of the tool names
+  is held to the server's listing by a test.
+
+- **`dibs configure` needed a terminal**, and the machines that most need
+  configuring are headless and reached by `ssh host command`. A second machine
+  in a fleet hit this on its first command. `--non-interactive` takes the
+  defaults, writes the file and prints what it wrote. It refuses to overwrite
+  an existing config, since there is no prompt on that path to catch it.
+
 
 ## [0.0.6] - 2026-08-20
 

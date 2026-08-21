@@ -75,6 +75,19 @@ func configure(args []string) error {
 	if len(args) > 0 && args[0] == "--service" {
 		return serviceCommand(args[1:])
 	}
+	// --non-interactive, for the machines that need configuring most.
+	//
+	// The wizard is the thing a new install is pointed at, and it assumes a
+	// TTY. The hosts that most need setting up are headless and reached by
+	// `ssh host command`, which has no terminal: the second machine in a fleet
+	// hits this on its first command. Reported against v0.0.6.
+	//
+	// It takes the defaults and prints them rather than asking. The wizard's
+	// only real question is the listen address, and the default is the right
+	// answer for a host reached through a forward, which is what a headless
+	// machine in a fleet usually is.
+	args, quiet := takeNonInteractive(args)
+
 	dir := paths.DataDir()
 	if len(args) > 0 && args[0] != "" {
 		// A flag is not a directory. `dibs configure --help` was taken as
@@ -89,9 +102,14 @@ func configure(args []string) error {
 		}
 		dir = args[0]
 	}
+	if quiet {
+		return configureWithDefaults(dir)
+	}
 	if !interactive() {
 		return fmt.Errorf(`"dibs configure" needs an interactive terminal.
-Non-interactive setup: write %s directly: every field is optional.
+For a headless machine: dibs configure --non-interactive
+  takes the defaults, writes %s, and prints what it wrote.
+Or write that file directly: every field is optional.
 Example:
   addr = "0.0.0.0:4777"   # serve agents on other machines (TLS is automatic)`,
 			filepath.Join(dir, "dibs.toml"))
@@ -132,14 +150,7 @@ Where will agents connect from?
   keep this behind a firewall, a private network, or a reverse proxy you trust.`)
 	}
 
-	var b strings.Builder
-	b.WriteString("# Dibs configuration. Every field is optional;\n")
-	b.WriteString("# deleting this file returns Dibs to its defaults.\n\n")
-	fmt.Fprintf(&b, "addr = %q\n", addr)
-	b.WriteString("\n# tls_cert = \"/path/cert.pem\"   # bring your own certificate\n")
-	b.WriteString("# tls_key  = \"/path/key.pem\"\n")
-	b.WriteString("# insecure_plaintext = false     # never set this on an untrusted network\n")
-	if err := os.WriteFile(cfgPath, []byte(b.String()), 0o600); err != nil { //nolint:gosec // G703: see above
+	if err := os.WriteFile(cfgPath, []byte(defaultConfig(addr)), 0o600); err != nil { //nolint:gosec // G703: see above
 		return err
 	}
 
@@ -241,4 +252,65 @@ func netInterfaceAddrs() ([]net.IP, error) {
 		}
 	}
 	return out, nil
+}
+
+// defaultConfig is what the wizard writes when every question is answered with
+// Enter. One source, so the interactive and non-interactive paths cannot come
+// to different conclusions about what "the defaults" are.
+func defaultConfig(addr string) string {
+	var b strings.Builder
+	b.WriteString("# Dibs configuration. Every field is optional;\n")
+	b.WriteString("# deleting this file returns Dibs to its defaults.\n\n")
+	fmt.Fprintf(&b, "addr = %q\n", addr)
+	b.WriteString("\n# tls_cert = \"/path/cert.pem\"   # bring your own certificate\n")
+	b.WriteString("# tls_key  = \"/path/key.pem\"\n")
+	b.WriteString("# insecure_plaintext = false     # never set this on an untrusted network\n")
+	return b.String()
+}
+
+// configureWithDefaults is `dibs configure --non-interactive`.
+//
+// It prints the file it wrote rather than a tick. The operator cannot see a
+// wizard's questions here, so the only way for them to know what was decided
+// on their behalf is to be shown it.
+func configureWithDefaults(dir string) error {
+	// The path is the operator's own data dir. See the note on the wizard.
+	if err := os.MkdirAll(dir, 0o700); err != nil { //nolint:gosec // G703: operator-supplied path is the feature
+		return err
+	}
+	cfgPath := filepath.Join(dir, "dibs.toml")
+	// No prompt to confirm an overwrite exists on this path, so refuse.
+	// Silently replacing a configuration somebody wrote by hand, in a command
+	// whose whole purpose is to run unattended, is how a scripted re-run
+	// destroys a hub's settings.
+	if _, err := os.Stat(cfgPath); err == nil { //nolint:gosec // G703: see above
+		return fmt.Errorf("%s already exists and --non-interactive will not overwrite it: "+
+			"edit it, or delete it and run this again", cfgPath)
+	}
+	body := defaultConfig("127.0.0.1:4777")
+	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil { //nolint:gosec // G703: see above
+		return err
+	}
+	fmt.Printf("Wrote %s:\n\n%s\n", cfgPath, body)
+	fmt.Println("Loopback only, which is the right default for a host reached through an")
+	fmt.Println("ssh forward. To serve other machines directly, set addr and restart dibd.")
+	fmt.Println("\nNext:")
+	fmt.Println("  dibs configure --service    keep the daemon running across reboots")
+	fmt.Println("  dibd                        start it now")
+	return nil
+}
+
+// takeNonInteractive removes --non-interactive from the arguments and reports
+// whether it was there, so the wizard's own argument handling stays readable.
+func takeNonInteractive(args []string) ([]string, bool) {
+	quiet := false
+	rest := args[:0:0]
+	for _, a := range args {
+		if a == "--non-interactive" {
+			quiet = true
+			continue
+		}
+		rest = append(rest, a)
+	}
+	return rest, quiet
 }

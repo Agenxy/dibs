@@ -207,7 +207,18 @@ func main() {
 		// reasoning as nearestAgentsHint, which answers a misaddressed message
 		// with the closest live agent rather than the whole board.
 		fmt.Fprintf(os.Stderr, "dibs: unknown command %q\n", os.Args[1])
-		if near := nearestCommand(os.Args[1]); near != "" {
+		// A word that IS a real Dibs verb, on the other surface.
+		//
+		// The CLI and the MCP tools are different sets and nothing maps them, so
+		// `dibs prune` answered "did you mean dibs probe": a suggestion that is
+		// reasonable letter by letter and wrong about the question, because the
+		// reader did not mistype anything. They learned both surfaces at once,
+		// which is how everybody learns them, and this one told them the verb
+		// does not exist. Reported against v0.0.6.
+		if mcpOnlyTool(os.Args[1]) {
+			fmt.Fprintf(os.Stderr, "  %s is an MCP tool, not a CLI verb: agents call it "+
+				"over MCP, not from a shell.\n", strings.ToLower(os.Args[1]))
+		} else if near := nearestCommand(os.Args[1]); near != "" {
 			fmt.Fprintf(os.Stderr, "  did you mean: dibs %s\n", near)
 		}
 		fmt.Fprintln(os.Stderr, "  dibs help   lists every command")
@@ -274,6 +285,37 @@ var commands = []string{
 // correction. Substring either way catches the common slips (`dibs boar`,
 // `dibs verif`), and one transposition or one wrong letter catches `borad` and
 // `verifu`: beyond that, silence and a pointer to `dibs help`.
+// mcpTools is every tool an agent can call over MCP that is NOT also a CLI
+// verb, so a human who types one gets told where it lives instead of being
+// offered the nearest unrelated word.
+//
+// A copy, because cmd/dibs deliberately does not link internal/mcp: the CLI
+// stays small and the bridge talks to the daemon over the wire. The copy is
+// only safe because a test holds it to the real listing, and that test does
+// import the package, which a _test.go file can do without putting a byte of
+// it in the shipped binary.
+var mcpTools = []string{
+	"ack", "ack_announcement", "admit", "adopt_agent", "all_mail", "announce",
+	"await_events", "broadcast", "check_in", "claim", "claim_coordinator",
+	"close_space", "declare", "events_since", "evict", "force_release",
+	"get_blob", "heartbeat", "human_unlock", "inbox", "join_space",
+	"leave_space", "lock_space", "merge_spaces", "open_space", "post", "prune",
+	"put_blob", "read_mail", "read_space", "register", "release", "respond",
+	"resume", "retitle_space", "send", "sign_off", "spawned_agents",
+	"undeclare", "unlock_space", "update", "vouch_child", "watch_space",
+}
+
+// mcpOnlyTool reports whether a typed word is an MCP tool rather than a typo.
+func mcpOnlyTool(typed string) bool {
+	w := strings.ToLower(typed)
+	for _, t := range mcpTools {
+		if t == w {
+			return true
+		}
+	}
+	return false
+}
+
 func nearestCommand(typed string) string {
 	w := strings.ToLower(typed)
 	for _, c := range commands {

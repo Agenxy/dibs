@@ -740,3 +740,19 @@ var toolDefs = func() []map[string]any {
 		},
 	}
 }()
+
+// ToolNames is every tool tools/list advertises.
+//
+// Exported for the CLI's drift test: `dibs` keeps its own copy of these names
+// so it can tell a human that `prune` lives on the other surface rather than
+// offering them the nearest unrelated verb, and that copy has to be held to
+// this list by something.
+func ToolNames() []string {
+	out := make([]string, 0, len(agentTools))
+	for _, t := range agentTools {
+		if n, ok := t["name"].(string); ok {
+			out = append(out, n)
+		}
+	}
+	return out
+}
