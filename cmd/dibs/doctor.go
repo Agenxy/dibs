@@ -528,7 +528,13 @@ func checkLedgerAndBoard(dir string, ok reportFn, bad, warn fixFn) {
 	// has served"): it is written at first boot, before any op, so its absence
 	// means no daemon has ever owned this directory. An empty board still has
 	// one.
-	if !fileExists(filepath.Join(dir, "node_id")) && fileExists(filepath.Join(dir, "local.secret")) {
+	// A ledger present with no node_id is NOT a join: it is a board that has
+	// lost the file naming it, and skipping verification there would report the
+	// one directory that most needs checking as healthy. The join case is a
+	// credential and nothing else.
+	if !fileExists(filepath.Join(dir, "node_id")) &&
+		!fileExists(filepath.Join(dir, "ledger.jsonl")) &&
+		fileExists(filepath.Join(dir, "local.secret")) {
 		ok("joined board: the ledger lives on the daemon serving it, not here")
 		return
 	}

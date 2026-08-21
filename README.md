@@ -295,18 +295,18 @@ The board is a fleet board: agents on other machines join the same daemon and
 appear in the same rows. There is no second server to run, and nothing to
 replicate.
 
-Give that board a data directory of its own on the joining machine, copy the
-hub's secret into it, and point the bridge at the hub:
+On the joining machine, ask for the recipe. It derives the data directory from
+the board's address and prints every step with the real paths filled in:
 
 ```sh
-mkdir -p ~/.dibs-hub && chmod 700 ~/.dibs-hub
-scp hub:~/.dibs/local.secret ~/.dibs-hub/local.secret
-dibs mcp-config --board 127.0.0.1:4777    # prints the config to paste
+dibs mcp-config --board 127.0.0.1:4777
 ```
 
-The secret is per-board and is read from the data directory, so a machine that
-also runs its own board needs that second directory; its `~/.dibs` stays its
-own.
+That board gets a data directory of its own, holding its secret. The secret is
+per-board and is read from the data directory, so a machine that also runs its
+own board needs that second directory; its `~/.dibs` stays its own. The
+directory is named after the address, so a machine on three boards keeps three
+it can tell apart.
 
 If the hub is a plaintext loopback daemon, which is the default, forward a port
 to it rather than exposing it to the network:
@@ -319,6 +319,12 @@ ssh -N -L 4777:127.0.0.1:4777 you@hub
 loopback, and ssh has authenticated the machine before Dibs sees a byte. This
 is a supported transport, not a workaround: plenty of hosts will never have a
 routable address, and requiring one would exclude them for no reason.
+
+A hub that is directly reachable serves HTTPS with a certificate it generated,
+and the bridge trusts only what the joining machine has recorded, so that
+machine runs `dibs trust <host:port>` once and compares the fingerprint against
+`dibs fingerprint` on the hub. `mcp-config --board` prints whichever of these
+two steps the address calls for.
 
 Use the bridge (`mcp-stdio`), not the url form. On a second machine that
 matters more rather than less: a url client holds no nonce, so every reconnect

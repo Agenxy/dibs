@@ -90,6 +90,19 @@ machines for real work. Their priority order, not ours.
   what its name suggests; run bare on an up-to-date install it correctly does
   nothing, and that reads as a failure.
 
+- **Five things the pre-release review caught in the above**, before any of it
+  shipped: the README copied the board secret to a directory the generated
+  configuration did not use, so the documented setup ended at a bridge that
+  could not start; `--board` printed no `dibs trust` step for a board that is
+  not on loopback, so the configuration looked complete and the bridge would
+  reject the certificate; two boards on different ports of one host shared a
+  credential directory, so joining the second overwrote the first; `doctor`
+  keyed "this is a join" on a missing `node_id` alone, so a local board that
+  lost that file but still held a ledger skipped verification and was reported
+  healthy; and the successful-claim log still said "claimed by the agent that
+  started this daemon", the same false attribution the startup line was
+  corrected for, on the record of a privileged role being taken.
+
 - **README: building without mise or task.** On a network that allows the Go
   module proxy but not the object store it redirects to, neither tool installs
   and the failure reads like a broken toolchain rather than a blocked host.

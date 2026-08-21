@@ -276,4 +276,33 @@ func TestDoctorDoesNotCallAJoinedBoardsMissingLedgerCorruption(t *testing.T) {
 		t.Error("a board directory with no ledger passed silently: the check has been " +
 			"disabled rather than scoped")
 	}
+
+	// The dangerous case, which the two above cannot reach: a LOCAL board that
+	// has lost its node_id but still holds a ledger. Keyed on node_id alone,
+	// that reads as a join and skips verification entirely, so the one
+	// directory most in need of checking is reported healthy. Raised by the
+	// pre-release review against the first version of this fix.
+	damaged := t.TempDir()
+	if err := os.WriteFile(filepath.Join(damaged, "local.secret"),
+		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Genuinely broken: the second record's prev does not match the hash of the
+	// first. A file of arbitrary JSON is NOT damaged, because unknown fields
+	// unmarshal cleanly and an empty prev is what a first record has: the first
+	// version of this fixture verified as a valid one-line chain and failed the
+	// probe rather than the code.
+	if err := os.WriteFile(filepath.Join(damaged, "ledger.jsonl"),
+		[]byte("{\"s\":1,\"prev\":\"\"}\n{\"s\":2,\"prev\":\"deadbeef\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	good, bads = nil, nil
+	checkLedgerAndBoard(damaged, ok, fail, func(msg, _ string) {})
+	if strings.Contains(strings.Join(good, "\n"), "joined board") {
+		t.Errorf("a board holding a ledger with no node_id was called a join, so its "+
+			"chain was never verified: ok=%v", good)
+	}
+	if len(bads) == 0 {
+		t.Error("a damaged ledger passed unverified because node_id was missing")
+	}
 }

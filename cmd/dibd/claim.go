@@ -98,7 +98,14 @@ func (c *coordinatorClaim) spend() {
 		slog.Warn("claimed coordinator but could not remove the claim file",
 			"path", c.path, "err", err)
 	}
-	slog.Info("coordinator claimed by the agent that started this daemon")
+	// Not "the agent that started this daemon".
+	//
+	// That is the same false attribution the startup line was corrected for,
+	// and this one records a privileged role being taken: under launchd or
+	// systemd no agent started anything, and the claim went to whichever agent
+	// read the file first. Naming the wrong actor in the log of an
+	// authorisation event is worse than naming none.
+	slog.Info("coordinator claimed by an agent that read the claim file")
 }
 
 // installCoordinatorClaim wires the claim to the engine.
