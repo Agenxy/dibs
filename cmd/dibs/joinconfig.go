@@ -59,12 +59,16 @@ func printJoinConfig(remote string) error {
 #
 `, remote, q, q, qsecret)
 
-	// Step 2 is a different step for the two shapes a board comes in, and
-	// printing both as conditionals leaves the operator deciding which sentence
-	// applies to them. The address already says.
+	// Both, when both apply.
+	//
+	// This was a switch, which reads as "one of these" and quietly dropped a
+	// real combination: `https://127.0.0.1:5777` needs a forward AND a
+	// certificate recorded, and the tunnel arm won, so the printed
+	// configuration was complete-looking and rejected the board's certificate.
+	// boardShape had computed both answers correctly; the branch below threw
+	// one away.
 	tunnel, trust := boardShape(remote)
-	switch {
-	case tunnel:
+	if tunnel {
 		// The hub's port is NOT this one.
 		//
 		// The two ends of a forward are independent: the local port is whatever
@@ -73,7 +77,7 @@ func printJoinConfig(remote string) error {
 		// match, and when they do not the tunnel comes up and forwards to
 		// nothing, which is the worst way for this to fail: ssh reports success
 		// and the board is simply unreachable.
-		fmt.Printf(`# 2. That address is loopback, so it is this machine's end of an ssh
+		fmt.Printf(`# 2%s. That address is loopback, so it is this machine's end of an ssh
 #    forward to the hub. Open it and leave it running:
 #
 #      ssh -N -L %s:127.0.0.1:<hub-port> <user>@<hub>
@@ -85,8 +89,9 @@ func printJoinConfig(remote string) error {
 #    The hub's daemon never leaves its own loopback, and ssh has authenticated
 #    the machine before Dibs sees a byte.
 #
-`, port(remote), port(remote))
-	case trust:
+`, tunnelStepSuffix(trust), port(remote), port(remote))
+	}
+	if trust {
 		// The trust step, which the bridge cannot do without.
 		//
 		// A non-loopback daemon serves HTTPS with a certificate it generated
@@ -94,8 +99,8 @@ func printJoinConfig(remote string) error {
 		// this the config below is complete-looking and the bridge rejects the
 		// board on the first call. The older TLS recipe said so; this command was
 		// written without it.
-		fmt.Printf(`# 2. That address is not loopback, so the board serves HTTPS with a
-#    certificate it generated itself. The bridge trusts only what this machine
+		fmt.Printf(`# 2%s. The board serves HTTPS with a certificate it generated
+#    itself. The bridge trusts only what this machine
 #    has recorded, so record it once:
 #
 #      DIBS_DIR=%s dibs trust %s
@@ -109,8 +114,9 @@ func printJoinConfig(remote string) error {
 #    they must match. Only the bridge's own trust store changes, so nothing
 #    else on this machine has its TLS behaviour altered.
 #
-`, q, shellArg(hostPort(remote)))
-	default:
+`, trustStepSuffix(tunnel), q, shellArg(hostPort(remote)))
+	}
+	if !tunnel && !trust {
 		// Reachable directly and serving plaintext, because the operator said
 		// so with an explicit scheme. Nothing to trust and nothing to forward.
 		fmt.Printf(`# 2. That address is reachable directly and names plaintext, so there is
@@ -152,6 +158,7 @@ env = { DIBS_ADDR = %q, DIBS_DIR = %q, CODEX_MCP_PROTOCOL_VERSION = "2026-07-28"
 // else means the HTTPS a daemon off loopback serves by default.
 func boardShape(addr string) (tunnel, trust bool) {
 	scheme, rest, hasScheme := strings.Cut(addr, "://")
+	scheme = strings.ToLower(scheme)
 	if !hasScheme {
 		rest = addr
 	}
@@ -226,4 +233,21 @@ func hostPort(a string) string {
 		return rest
 	}
 	return a
+}
+
+// trustStepSuffix labels the trust step "2b" when a forward is step 2a, so two
+// steps that both print are not both called 2.
+func trustStepSuffix(afterTunnel bool) string {
+	if afterTunnel {
+		return "b"
+	}
+	return ""
+}
+
+// tunnelStepSuffix labels the forward "2a" when a trust step follows it.
+func tunnelStepSuffix(beforeTrust bool) string {
+	if beforeTrust {
+		return "a"
+	}
+	return ""
 }

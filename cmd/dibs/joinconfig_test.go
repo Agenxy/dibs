@@ -371,3 +371,38 @@ func TestJoiningAnotherBoardIsNotGatedOnATerminal(t *testing.T) {
 			"this machine's secret")
 	}
 }
+
+// A board can need BOTH a forward and a certificate recorded.
+//
+// The branch was a switch, which reads as "one of these" and dropped a real
+// combination: `https://127.0.0.1:5777` is a forwarded HTTPS board, and the
+// tunnel arm won, so the printed configuration was complete-looking and
+// rejected the certificate. boardShape had both answers right; the branch threw
+// one away. Found by the pre-release review running the shipped binary.
+func TestABoardCanNeedAForwardAndACertificate(t *testing.T) {
+	out, err := captureStdout(t, func() error { return printJoinConfig("https://127.0.0.1:5777") })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "ssh -N -L") {
+		t.Errorf("a loopback address was given no forward:\n%s", out)
+	}
+	if !strings.Contains(out, "dibs trust") {
+		t.Errorf("an https board was given no trust step, so the bridge will reject "+
+			"its certificate:\n%s", out)
+	}
+	// Two steps that both print must not both be called 2.
+	if strings.Count(out, "\n# 2. ") > 1 {
+		t.Errorf("two steps share a number:\n%s", out)
+	}
+
+	// A scheme is not case-sensitive, and reading HTTPS:// as plaintext would
+	// skip the trust step on a board that does serve a certificate.
+	upper, err := captureStdout(t, func() error { return printJoinConfig("HTTPS://hub.example:4777") })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(upper, "dibs trust") {
+		t.Errorf("an uppercase scheme was read as plaintext:\n%s", upper)
+	}
+}

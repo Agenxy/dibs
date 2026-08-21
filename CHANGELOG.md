@@ -195,6 +195,16 @@ machines for real work. Their priority order, not ours.
   of the host and fails with "too many colons in address": the scheme belongs
   in `DIBS_ADDR`, not in a command that dials.
 
+- **Two more from the review's tenth round.** A board can need BOTH a forward
+  and a certificate recorded, and the branch printing step two was a switch, so
+  a forwarded HTTPS board got the forward and no trust step: a
+  complete-looking configuration that then rejects the certificate. An
+  uppercase scheme was also read as plaintext. And the new build-without-mise
+  section stopped at `bin/` before telling the reader to run `dibd`, which on
+  a fresh machine is command-not-found and on an existing one silently runs
+  the previous build; the install step is written out, Launch Services
+  registration included.
+
 - **README: building without mise or task.** On a network that allows the Go
   module proxy but not the object store it redirects to, neither tool installs
   and the failure reads like a broken toolchain rather than a blocked host.

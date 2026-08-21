@@ -216,7 +216,22 @@ Four artifacts get installed, not two: `dibd`, `dibs`, and on macOS
 own executable, so they belong beside it. Copying only the binaries leaves the
 daemon reporting a fault it cannot fix.
 
-Two install rules are not obvious from the commands:
+Then install them, which is its own step: the commands above only produce
+`bin/`, so running `dibd` before this gets command-not-found on a fresh machine
+and the PREVIOUS build on a machine that has one.
+
+```sh
+rm -rf ~/.local/bin/dibs ~/.local/bin/dibd ~/.local/bin/dibs-presence ~/.local/bin/Dibs.app
+cp bin/dibs bin/dibd bin/dibs-presence ~/.local/bin/
+cp -R bin/Dibs.app ~/.local/bin/                                            # macOS
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f ~/.local/bin/Dibs.app
+```
+
+That last line registers the bundle with Launch Services. Without it macOS does
+not know it exists and refuses it notification authorisation, which presents as
+a notifier that posts nothing and reports "cannot notify".
+
+Two more install rules are not obvious from the commands:
 
 - **Remove before copying.** macOS caches a binary's signature verdict against
   its inode. `cp` over a running executable reuses the inode with new content,
