@@ -322,3 +322,52 @@ func TestConfigNamesANonDefaultDaemon(t *testing.T) {
 		t.Errorf("the default daemon grew configuration it does not need: %v", env)
 	}
 }
+
+// `dibs trust` dials host:port, so a scheme reaches tls.Dial as part of the
+// host and fails with "too many colons in address". The scheme belongs in
+// DIBS_ADDR, which is a different argument to a different program: round eight
+// preserved it everywhere and this is the one place it must not go.
+func TestTrustIsGivenHostPortAndNotAScheme(t *testing.T) {
+	out, err := captureStdout(t, func() error { return printJoinConfig("https://hub.example:4777") })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "dibs trust 'hub.example:4777'") {
+		t.Errorf("the trust command does not get a bare host:port:\n%s", out)
+	}
+	if strings.Contains(out, "dibs trust 'https://") {
+		t.Error("a scheme reached `dibs trust`, which cannot dial it")
+	}
+
+	// And the credential directory names the BOARD, not the way it is reached:
+	// http://hub and https://hub are one daemon on one address.
+	if a, b := boardSlug("https://hub.example:4777"), boardSlug("hub.example:4777"); a != b {
+		t.Errorf("one board got two credential directories, %q and %q, for the same "+
+			"address written two ways", a, b)
+	}
+}
+
+// The headless invocation must reach the command.
+//
+// `dibs mcp-config --board <addr>` is documented for a second machine, which is
+// typically headless and driven by `ssh host command`. adminOnly gated the
+// whole verb before --board was parsed, so that invocation printed "needs an
+// interactive terminal" and nothing else: the exact machine the command was
+// added for. The tests called mcpConfig directly and never reached the gate,
+// which is why it took the reviewer running the shipped CLI to find it.
+func TestJoiningAnotherBoardIsNotGatedOnATerminal(t *testing.T) {
+	for _, args := range [][]string{
+		{"--board", "hub.example:4777"},
+		{"--board=hub.example:4777"},
+	} {
+		if !joiningAnotherBoard(args) {
+			t.Errorf("%v is not recognised as joining another board, so it would be "+
+				"refused on a headless machine", args)
+		}
+	}
+	// The plain form prints THIS daemon's local secret, so it stays gated.
+	if joiningAnotherBoard([]string{}) || joiningAnotherBoard([]string{"--help"}) {
+		t.Error("the plain form was let past the gate that exists because it prints " +
+			"this machine's secret")
+	}
+}

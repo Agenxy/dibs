@@ -184,6 +184,17 @@ machines for real work. Their priority order, not ours.
   example also still used one port for both ends, in the paragraph that
   describes a machine already running its own board on that port.
 
+- **Two more from the review's ninth round.** `dibs mcp-config --board` was
+  refused on a machine with no terminal: the admin gate ran before the flag was
+  parsed, so the invocation documented for a second machine, which is typically
+  headless and driven by `ssh host command`, printed "needs an interactive
+  terminal" and nothing else. `--board` prints a config for somebody else's
+  board and reads no secret of this machine's, so it is not what that gate
+  protects; the plain form, which prints this daemon's secret, still is. And
+  the generated `dibs trust` carried a scheme, which reaches `tls.Dial` as part
+  of the host and fails with "too many colons in address": the scheme belongs
+  in `DIBS_ADDR`, not in a command that dials.
+
 - **README: building without mise or task.** On a network that allows the Go
   module proxy but not the object store it redirects to, neither tool installs
   and the failure reads like a broken toolchain rather than a blocked host.

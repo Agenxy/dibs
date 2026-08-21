@@ -109,7 +109,7 @@ func printJoinConfig(remote string) error {
 #    they must match. Only the bridge's own trust store changes, so nothing
 #    else on this machine has its TLS behaviour altered.
 #
-`, q, shellArg(remote))
+`, q, shellArg(hostPort(remote)))
 	default:
 		// Reachable directly and serving plaintext, because the operator said
 		// so with an explicit scheme. Nothing to trust and nothing to forward.
@@ -197,7 +197,11 @@ func homeDir() string {
 // a less pretty directory name. Brackets stay, because they are what tells an
 // IPv6 literal from a hostname spelled like one.
 func boardSlug(addr string) string {
-	h, port, err := net.SplitHostPort(addr)
+	// The scheme says HOW to reach a board, not WHICH board it is: http://hub
+	// and https://hub are one daemon on one address, and giving them separate
+	// credential directories would have an operator copy the same secret twice
+	// and wonder which one is live.
+	h, port, err := net.SplitHostPort(hostPort(addr))
 	if err != nil {
 		h, port = addr, ""
 	}
@@ -212,4 +216,14 @@ func boardSlug(addr string) string {
 		slug += "-" + port
 	}
 	return slug
+}
+
+// hostPort is an address with any scheme removed, for the commands that dial
+// rather than configure. `dibs trust` is one: a scheme reaches tls.Dial as part
+// of the host and fails with "too many colons in address".
+func hostPort(a string) string {
+	if _, rest, found := strings.Cut(a, "://"); found {
+		return rest
+	}
+	return a
 }

@@ -166,7 +166,21 @@ func main() {
 	case "calibrate":
 		err = calibrate(os.Args[2:])
 	case "mcp-config":
-		err = adminOnly("mcp-config", func() error { return mcpConfig(os.Args[2:]) })
+		// --board prints a config for SOMEBODY ELSE'S board and reads no secret
+		// of this machine's, so it is not the thing the gate protects: the gate
+		// is there because the plain form prints this daemon's local secret.
+		//
+		// Gating the verb meant the documented headless invocation, `ssh host
+		// dibs mcp-config --board ...`, exited with "needs an interactive
+		// terminal" and printed nothing. That is the exact machine this
+		// command was added for. Reproduced through the shipped CLI by the
+		// pre-release review; the tests call mcpConfig directly and never
+		// reached the gate.
+		if joiningAnotherBoard(os.Args[2:]) {
+			err = mcpConfig(os.Args[2:])
+		} else {
+			err = adminOnly("mcp-config", func() error { return mcpConfig(os.Args[2:]) })
+		}
 	case "admin":
 		err = adminCmd(os.Args[2:])
 	case "await":
@@ -712,7 +726,7 @@ func printRemoteRecipe(tls bool) {
 # it is given, the bridge reads it from the one in its config above, and without
 # it trust reports success while writing where the bridge never looks.
 # Compare what that prints against `+"`dibs fingerprint`"+` run HERE; they must match.
-`, shellArg(rawAddr()))
+`, shellArg(addr()))
 }
 
 // port is the ":4777" half of an address, for the near end of a forward.
@@ -1897,6 +1911,10 @@ func self() string {
 // message exists to end. It is only added when there is something to carry, so
 // the ordinary single-board case reads as it did.
 func trustCommand() string {
+	// addr(), not rawAddr(): `dibs trust` dials host:port and a scheme reaches
+	// tls.Dial as part of the host, failing with "too many colons in address".
+	// The scheme belongs in DIBS_ADDR, which is a different argument to a
+	// different program.
 	cmd := "dibs trust " + shellArg(addr())
 	if d := os.Getenv("DIBS_DIR"); d != "" {
 		return "DIBS_DIR=" + shellArg(d) + " " + cmd
@@ -1963,4 +1981,18 @@ func rawAddr() string {
 		return a
 	}
 	return addr()
+}
+
+// joiningAnotherBoard reports whether these arguments ask for --board, which
+// prints no secret of this machine's. Deliberately a plain scan rather than a
+// second flag parse: it decides only whether to apply the interactive gate,
+// and mcpConfig still parses and validates properly.
+func joiningAnotherBoard(args []string) bool {
+	for _, a := range args {
+		if a == "--board" || a == "-board" ||
+			strings.HasPrefix(a, "--board=") || strings.HasPrefix(a, "-board=") {
+			return true
+		}
+	}
+	return false
 }
