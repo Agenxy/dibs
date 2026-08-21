@@ -533,6 +533,15 @@ func mcpConfig(args []string) error {
 	// beside it had this printing an https url and instructions to trust a
 	// certificate that is not being presented. A configured tls_cert is the
 	// same statement the other way, and is not in the data directory at all.
+	// The address this daemon is reached on, checked the same way --board's is.
+	//
+	// checkBoardAddr rejected a mistyped scheme on the --board path only, so
+	// `DIBS_ADDR=htps://hub:4777 dibs mcp-config` exited 0 and emitted that typo
+	// as both the bridge's DIBS_ADDR and the MCP url: a complete-looking
+	// configuration for a scheme nothing speaks. One validator, both paths.
+	if err := checkAddrShape("this daemon's address", rawAddr()); err != nil {
+		return err
+	}
 	scheme, certPath, cerr := resolveTransport(paths.DataDir())
 	if cerr != nil {
 		return cerr
@@ -626,6 +635,11 @@ func mcpConfig(args []string) error {
 	// identity is the lesser problem.
 	fmt.Printf(`
 # Codex / ChatGPT desktop: add to ~/.codex/config.toml:
+# BOTH of these. The feature alone leaves the connection on 2025-06-18; the
+# variable alone is read by a client that never offers 2026-07-28.
+[features]
+mcp_2026_07_28 = true
+
 [mcp_servers.dibs]
 command = %q
 args = ["mcp-stdio"]

@@ -179,9 +179,36 @@ func TestRegisterDocumentsBothContinuityPaths(t *testing.T) {
 				"has no way to know what it means", want)
 		}
 	}
-	if !strings.Contains(desc, "ROTATED") {
-		t.Error("register's description does not say the token rotates on reattach: a client " +
-			"that cached the old one keeps sending a dead token")
+
+	// The two keys must be BOUND to their token rules, not merely present.
+	//
+	// The first version searched for `resumed`, `reattached` and `ROTATED`
+	// independently, so swapping the two rules, telling a client its token
+	// survives a reattach and rotates on a resume, left it green while
+	// instructing that client to keep sending a dead token. Raised by the
+	// pre-release review. Each clause is read from where the key is named to the
+	// end of that sentence.
+	clause := func(key string) string {
+		i := strings.Index(desc, key)
+		if i < 0 {
+			return ""
+		}
+		rest := desc[i:]
+		if end := strings.IndexAny(rest, ";."); end > 0 {
+			return rest[:end]
+		}
+		return rest
+	}
+	if c := clause("reattached"); !strings.Contains(c, "ROTATED") {
+		t.Errorf("reattachment is not the thing the token rotation is attached to, so a "+
+			"client cannot tell which path invalidates its token: %q", c)
+	}
+	if c := clause("resumed"); !strings.Contains(c, "same token") {
+		t.Errorf("resume does not say the token is unchanged, so a client cannot tell "+
+			"it from the path that rotates: %q", c)
+	}
+	if c := clause("resumed"); strings.Contains(c, "ROTATED") {
+		t.Errorf("the resume clause claims a rotation, which is the reattach rule: %q", c)
 	}
 }
 

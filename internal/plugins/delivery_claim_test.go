@@ -62,13 +62,27 @@ func TestNoPluginAdvertisesAWakeEventItDoesNotBind(t *testing.T) {
 				"delivery path at all", hooksPath)
 		}
 
+		// EVERY published string, not just the summary.
+		//
+		// The first version of this read `buys` alone, so the same false claim
+		// survived in the Setup steps beside it: "it appears in your context on
+		// your next tool call", with a failure hint sending the operator to hunt
+		// a PreToolUse hook that was never the delivery path. A plugin resource
+		// is read whole; a guard that reads one field of it is a guard on one
+		// field.
+		published := []string{p.buys, p.verify, p.install}
+		for _, st := range p.setup {
+			published = append(published, st.Do, st.Check, st.IfNot)
+		}
+		all := strings.Join(published, "\n")
+
 		for _, ev := range events {
-			if wakes[ev] || !strings.Contains(p.buys, ev) {
+			if wakes[ev] || !strings.Contains(all, ev) {
 				continue
 			}
-			t.Errorf("%s advertises %s as a delivery moment, and %s binds hook_poll "+
-				"only to %v. An agent reading that stops polling and loses mail",
-				p.harness, ev, hooksPath, keys(wakes))
+			t.Errorf("%s advertises %s as a delivery moment somewhere in its published "+
+				"text, and %s binds hook_poll only to %v. An agent reading that stops "+
+				"polling and loses mail", p.harness, ev, hooksPath, keys(wakes))
 		}
 	}
 }
@@ -79,4 +93,25 @@ func keys(m map[string]bool) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// "on your next tool call" is the same promise without naming a hook.
+//
+// The event-name check above cannot see it: the sentence describes a delivery
+// moment in prose. It is the exact wording that had an operator stop polling,
+// so it is worth refusing by name until something actually delivers per-call.
+func TestNoPluginPromisesPerToolCallDelivery(t *testing.T) {
+	for _, p := range catalog {
+		published := []string{p.buys, p.verify, p.install}
+		for _, st := range p.setup {
+			published = append(published, st.Do, st.Check, st.IfNot)
+		}
+		for _, text := range published {
+			if strings.Contains(text, "next tool call") {
+				t.Errorf("%s promises delivery on the next tool call. Nothing binds "+
+					"hook_poll to a per-call event, so mail arrives at a turn boundary: %q",
+					p.harness, text)
+			}
+		}
+	}
 }

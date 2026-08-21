@@ -46,8 +46,9 @@ var toolDefs = func() []map[string]any {
 		"type": "string", "enum": []string{"notify", "question", "request", "handoff"},
 		"description": "what the message DOES, so pick for the effect. notify: no reply " +
 			"needed, costs them nothing. question / request / handoff: reach them at their " +
-			"NEXT ACTIVATION, their next prompt or the end of the turn they are in, not the " +
-			"instant you send: a shorter deadline expires while they still work. To the " +
+			"NEXT ACTIVATION, not the instant you send: a turn boundary with wake hooks, " +
+			"their next Dibs call without. A shorter deadline expires while they still " +
+			"work. To the " +
 			"HUMAN a request raises a notification with Approve on it, and " +
 			"the press returns as an ordinary response",
 	}
@@ -61,9 +62,9 @@ var toolDefs = func() []map[string]any {
 				"agent, its mail and its claims instead of forking a second agent that cannot read " +
 				"the first one's mail. `resumed:true` = it was still active and this was a retry, " +
 				"same token; `reattached:true` = it had stopped and the nonce recovered it, and YOUR " +
-				"TOKEN HAS ROTATED, so use the one in this result. Without a nonce you can only " +
-				"reattach within a session, by name + session_id. kind 'persistent' is for standing " +
-				"roles that sleep and return via resume.",
+				"TOKEN HAS ROTATED, so use the one in this result. Without a nonce, reattach " +
+				"works only within a session. kind 'persistent' is for standing roles that " +
+				"sleep and return via resume.",
 			"inputSchema": obj(map[string]any{
 				"name": str("WHO YOU ARE: a stable name others address mail to ('reviewer', " +
 					"'codex-1'), never what you are doing: mail addressed to 'refactor-auth' " +

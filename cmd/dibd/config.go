@@ -12,83 +12,18 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
+	"github.com/agenxy/dibs/internal/boardconfig"
 	xport "github.com/agenxy/dibs/internal/transport"
-
-	"github.com/BurntSushi/toml"
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/liveness"
 )
 
-// Config is everything dibd can be told. Every field is optional: running
-// `dibd` with no arguments and no config file must always do the right thing.
-// Written as <dir>/dibs.toml for people who want to get their hands dirty.
-type Config struct {
-	Addr              string            `toml:"addr"`               // listen address
-	TLSCert           string            `toml:"tls_cert"`           // explicit cert (else auto)
-	TLSKey            string            `toml:"tls_key"`            //
-	InsecurePlaintext bool              `toml:"insecure_plaintext"` // force plaintext off-loopback
-	Match             MatchConfig       `toml:"match"`              // work-overlap matching
-	Limits            LimitsConfig      `toml:"limits"`             // coordination timings
-	Supervise         liveness.Settings `toml:"supervise"`          // stalled-subagent detection
-	Roles             RolesConfig       `toml:"roles"`              // standing coordinator/admin agents
-	Wake              WakeConfig        `toml:"wake"`               // which news may extend an agent's turn
-}
-
-// WakeConfig is the [wake] table.
-//
-// One key, because there is one real decision: does an agent hear about mail
-// when it arrives, or when somebody next types at it.
-//
-// The default is when it arrives. A fleet that waits for a human to kickstart
-// its responsiveness is not agentic, and a time-sensitive request sitting
-// unseen because nobody was at the keyboard is the failure this product exists
-// to prevent. Waking is not driving: the digest says outright that it is
-// coordination data the agent may act on or decline. What Dibs must not do is
-// instruct.
-//
-// `urgent` is for an operator who would rather an FYI never cost a turn, and
-// `none` for one who wants Dibs strictly pull-shaped. Neither is the default,
-// because both trade away awareness for tokens and that is a trade only the
-// person paying should make deliberately.
-type WakeConfig struct {
-	// ExtendTurnFor is "all" (default), "urgent", or "none".
-	ExtendTurnFor string `toml:"extend_turn_for"`
-
-	// NoticesWake decides whether situational awareness alone may extend a turn.
-	//
-	// A notice is something that happened TO an agent and that it could not
-	// infer: it was evicted, its request was approved, somebody joined the space
-	// it is working in. Useful, and not all of it is worth resuming a session
-	// for, which is the cost this setting exists to control.
-	//
-	// Waking an agent means extending a turn on a thread that may be long and
-	// whose prompt cache is cold, and on a fleet of idle sessions that is a real
-	// bill to pay for "somebody joined your space".
-	//
-	// ON by default even so, because "an agent is told what happened to it" is a
-	// guarantee this project already makes, in SPEC and in the browser suite,
-	// and quietly making a guarantee conditional to save tokens is the wrong way
-	// round: an operator who cares about the tokens can say so, and one who
-	// never reads this file keeps the behaviour the documentation promises.
-	//
-	// Set it false to make notices pull-only. Nothing is lost when you do: they
-	// queue, they ride along on any wake that happens for another reason, and
-	// they arrive in full at the agent's own check_in, which it makes once per
-	// activation anyway. What changes is latency, not delivery.
-	//
-	// Mail is unaffected either way: a peer waiting on an answer still wakes its
-	// recipient, because somebody is blocked on that and nobody is blocked on
-	// knowing who joined a space.
-	NoticesWake *bool `toml:"notices_wake"`
-}
-
 // policy validates the setting and returns it.
-func (w WakeConfig) policy() (engine.WakePhase, error) {
+func wakePolicy(w WakeConfig) (engine.WakePhase, error) {
 	switch w.ExtendTurnFor {
 	case "":
 		return engine.WakeAll, nil
@@ -101,127 +36,13 @@ func (w WakeConfig) policy() (engine.WakePhase, error) {
 	}
 }
 
-// LimitsConfig is the [limits] table: the timings an operator's fleet actually
-// changes. Everything else in core.Limits is a safety bound rather than a
-// preference, and is deliberately not exposed.
-type LimitsConfig struct {
-	// AgentTTL is how long an agent may go silent before it is treated as
-	// crashed. It matters more than it looks: a stale owner YIELDS its
-	// exclusive agents, so an agent that is merely busy: a long build, a slow
-	// tool call, a big test run makes no Dibs calls for its duration: can be
-	// declared dead and lose an agent it is still working in.
-	//
-	// The default of 5m suits chatty agents. Fleets that run long silent steps
-	// want more; fleets that want fast crash detection want less. There is no
-	// value that is right for both, which is why this is a knob and not a
-	// better constant.
-	AgentTTL string `toml:"agent_ttl"`
-
-	// IdleTTL is agent_ttl's counterpart for agents that gave no PID, where
-	// silence is the only evidence available.
-	//
-	// It needs its own knob because it governs the configuration Dibs itself
-	// tells people to use: `dibs mcp-config` prints a plain HTTP client, which
-	// registers without a pid, so an operator who sets agent_ttl and points that
-	// client at the daemon changes nothing and waits 45 minutes for a lapse
-	// they thought they had configured to 5.
-	IdleTTL string `toml:"idle_ttl"`
-
-	// MaxPersistentAgents caps standing identities, and needs a knob because a
-	// fleet's size is not a constant Dibs can guess.
-	//
-	// A persistent agent holds its slot while dormant. That is the point of one:
-	// its mailbox and memberships survive the harness restarting. The
-	// consequence is that the ceiling is reached by ACCUMULATION rather than by
-	// concurrency, and on a real board it was: sixteen standing roles against a
-	// default of sixteen, so registration was refused while the board held
-	// sixteen agents of a possible sixty-four.
-	//
-	// Exposed as configuration and not raised as a default, because the default
-	// being reached is usually a signal worth reading: siblings accumulate when
-	// agents cannot prove they are themselves, and the fix for that is to
-	// reclaim them rather than to make more room. A fleet that genuinely runs
-	// forty standing roles should say so here.
-	MaxPersistentAgents int `toml:"max_persistent_agents"`
-
-	// MaxAgents caps live agents of every kind. Its counterpart above is the one
-	// usually hit first, since ephemeral agents leave when they finish.
-	MaxAgents int `toml:"max_agents"`
-
-	// BlobStoreBytes caps the attachment store. It is a HARD bound: when the
-	// store is over it, eviction drops referenced content rather than exceed
-	// it, so a recipient can end up holding a message that names a blob which
-	// is gone. Fleets that exchange large artifacts want this bigger; a machine
-	// with little disk to spare wants it smaller. Accepts a plain byte count.
-	BlobStoreBytes int64 `toml:"blob_store_bytes"`
-}
-
-// MatchConfig is the [match] table (SPEC-CHANNELS.md §7).
-//
-// It belongs in a file rather than only in flags because the two numbers that
-// matter are MEASURED, not chosen: `dibs calibrate` prints thresholds for a
-// specific repository, and retyping them onto a command line every restart is
-// how a carefully calibrated bar quietly becomes a guess again.
-//
-// Every field is optional and a flag always wins, so an operator can override
-// one setting for one run without editing anything.
-type MatchConfig struct {
-	// Repo enables matching. Empty means off: an index built from the wrong
-	// repository is worse than none, so this is never inferred.
-	Repo string `toml:"repo"`
-	// Join is the auto-join threshold. 0 means suggest only. There is no safe
-	// default: it is unitless and scorer-relative, so run `dibs calibrate`.
-	Join float64 `toml:"join_threshold"`
-	// Notify is the mention threshold.
-	Notify float64 `toml:"notify_threshold"`
-	// History bounds the co-change mining.
-	History int `toml:"history"`
-	// Deadline bounds the scorer; declaring work never blocks on it.
-	Deadline string `toml:"deadline"`
-	// EmbedURL points at a tier-2/3 embedding service (contrib/embed-sidecar).
-	EmbedURL string `toml:"embed_url"`
-	// EmbedModel is the model to request from it.
-	//
-	// Every other match setting could live here and this one could not, so an
-	// operator using an embedding service had to retype `-match-embed-model` on
-	// every restart while the URL beside it sat in the file. That is precisely
-	// what this table exists to stop.
-	//
-	// There is deliberately no embed_key: a bearer token belongs in the
-	// environment (DIBS_MATCH_EMBED_KEY), not in a file people paste into
-	// issues and commit by accident.
-	EmbedModel string `toml:"embed_model"`
-	// EmbedQueryPrefix / EmbedDocPrefix override the retrieval markers Dibs
-	// infers from the model name.
-	//
-	// Retrieval models are asymmetric and every family marks its two sides
-	// differently. Dibs knows the common conventions, but a model it has not
-	// heard of gets none, and measured on this repository, a model addressed
-	// without its markers separates related from unrelated work about half as
-	// well. Set these when you know the convention Dibs does not.
-	EmbedQueryPrefix string `toml:"embed_query_prefix"`
-	EmbedDocPrefix   string `toml:"embed_doc_prefix"`
-	// DirectorRequired gates joins on a coordinator admitting them. Off by
-	// default: it serialises the fleet behind one agent.
-	DirectorRequired bool `toml:"director_required"`
-
-	// AutoJoin: "declared" (default), "always", or "never".
-	//
-	// Who decides whether a match becomes a membership. The default lets Dibs
-	// join you only on DECLARED overlap: both agents named the same ref, which is
-	// a fact rather than a similarity score, and offers everything else as a
-	// proposal for the agent to judge. See engine.MatchConfig.AutoJoin for why
-	// that turned out to be the right split.
-	AutoJoin string `toml:"auto_join"`
-}
-
 // apply folds the [limits] table over the defaults.
 //
 // A bad value is an ERROR, never a silent fallback: an operator who wrote
 // agent_ttl = "10" (meaning minutes, in a field that takes a duration) and got
 // the 5-minute default back would be debugging phantom crashes with no idea the
 // setting had been ignored.
-func (c LimitsConfig) apply(base core.Limits) (core.Limits, error) {
+func applyLimits(c LimitsConfig, base core.Limits) (core.Limits, error) {
 	if err := applyTTL("agent_ttl", c.AgentTTL, &base.AgentTTL); err != nil {
 		return base, err
 	}
@@ -245,7 +66,7 @@ func (c LimitsConfig) apply(base core.Limits) (core.Limits, error) {
 				"raise max_agents too, or lower this",
 			base.MaxPersistentAgents, base.MaxAgents)
 	}
-	return base, c.applyBlobCap(&base)
+	return base, applyBlobCap(c, &base)
 }
 
 // applyCount folds a positive integer limit over the default.
@@ -297,7 +118,7 @@ func applyTTL(key, raw string, dst *time.Duration) error {
 // could not hold a single maximum-sized blob: a store smaller than one item
 // evicts everything the moment it is used, which looks like attachments simply
 // not working.
-func (c LimitsConfig) applyBlobCap(base *core.Limits) error {
+func applyBlobCap(c LimitsConfig, base *core.Limits) error {
 	if c.BlobStoreBytes == 0 {
 		return nil
 	}
@@ -316,44 +137,21 @@ func (c LimitsConfig) applyBlobCap(base *core.Limits) error {
 // minAgentTTL is the floor below which crash detection stops meaning anything.
 const minAgentTTL = 5 * time.Second
 
-// loadConfig reads <dir>/dibs.toml if present. A missing file is not an error,
-// zero config is the supported default, not a degraded mode.
-func loadConfig(dir string) (Config, error) {
-	var c Config
-	// #nosec G304 -- a path inside the daemon's own data directory, or one the
-	// operator pointed the CLI at. Same-user access only; refusing it would mean
-	// refusing to run.
-	b, err := os.ReadFile(filepath.Join(dir, "dibs.toml"))
-	if os.IsNotExist(err) {
-		return c, nil
-	}
-	if err != nil {
-		return c, err
-	}
-	md, err := toml.Decode(string(b), &c)
-	if err != nil {
-		return c, err
-	}
-	// A key TOML did not recognise is a key that did nothing.
-	//
-	// Silently ignoring it is the worst outcome available: `[limit]` for
-	// `[limits]`, or `agent_ttl` under `[match]`, parses cleanly, changes
-	// nothing, and leaves the operator certain they configured something. They
-	// then debug the behaviour they were trying to change. Decode reports what
-	// it could not place, so say so and name it.
-	if un := md.Undecoded(); len(un) > 0 {
-		keys := make([]string, 0, len(un))
-		for _, k := range un {
-			keys = append(keys, k.String())
-		}
-		return c, fmt.Errorf(
-			"unknown setting(s) in dibs.toml: %s: check the spelling and the table "+
-				"they are under ([match], [limits]); nothing here took effect",
-			strings.Join(keys, ", "),
-		)
-	}
-	return c, nil
-}
+// The configuration types and their loader live in internal/boardconfig,
+// because `dibs mcp-config` has to read the same file and reach the same
+// verdict. Aliases rather than a rename: every reference in this daemon keeps
+// working, and the type is genuinely the same one.
+type (
+	Config       = boardconfig.Config
+	WakeConfig   = boardconfig.WakeConfig
+	LimitsConfig = boardconfig.LimitsConfig
+	MatchConfig  = boardconfig.MatchConfig
+	RolesConfig  = boardconfig.RolesConfig
+)
+
+// loadConfig reads <dir>/dibs.toml, refusing anything the operator wrote that
+// this daemon would silently ignore.
+func loadConfig(dir string) (Config, error) { return boardconfig.Load(dir) }
 
 // transport is the resolved decision about how to serve.
 type transport struct {

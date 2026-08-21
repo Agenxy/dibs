@@ -909,8 +909,10 @@ The reason is one level below the harnesses, and it is the useful part:
 
 So every TypeScript harness is blocked on its SDK, not on its own roadmap, and
 no amount of configuration will move them until that ships. Codex is the only one
-that exposes the flag at all, and as measured above, setting it does not change
-what goes on the wire, so there is nothing to do with it yet:
+that exposes the flag at all, and as measured above, the flag ALONE does not
+change what goes on the wire: it moves only when `CODEX_MCP_PROTOCOL_VERSION` is
+set on that server's own entry as well, which is what `dibs mcp-config` prints.
+The rest of this list has no switch to set:
 
 ```toml
 # ~/.codex/config.toml: exposed, but does not change the negotiated version

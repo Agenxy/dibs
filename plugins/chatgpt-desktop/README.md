@@ -14,9 +14,13 @@ it, so this folder is deliberately thin and defers to
 Exactly the Codex configuration. `~/.codex/config.toml`:
 
 ```toml
+[features]
+mcp_2026_07_28 = true
+
 [mcp_servers.dibs]
 command = "/absolute/path/to/dibs"
 args = ["mcp-stdio"]
+env = { CODEX_MCP_PROTOCOL_VERSION = "2026-07-28" }
 ```
 
 `dibs mcp-config` prints this with the real path filled in. Use stdio rather
