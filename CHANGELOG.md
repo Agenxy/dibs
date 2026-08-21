@@ -85,6 +85,20 @@ machines for real work. Their priority order, not ours.
   defaults, writes the file and prints what it wrote. It refuses to overwrite
   an existing config, since there is no prompt on that path to catch it.
 
+- **`dibs upgrade --help` now says it does not fetch.** It moves the running
+  daemon onto a build already installed, which is what it should do and not
+  what its name suggests; run bare on an up-to-date install it correctly does
+  nothing, and that reads as a failure.
+
+- **README: building without mise or task.** On a network that allows the Go
+  module proxy but not the object store it redirects to, neither tool installs
+  and the failure reads like a broken toolchain rather than a blocked host.
+  Dibs itself still builds, because every step is a `go build` or a `go run
+  ./tools/...` in-tree. The four commands are written down, along with the two
+  install rules that are not obvious from them: remove before copying, because
+  macOS caches a signature verdict against the inode, and set the codesign
+  identifiers, which the Go toolchain leaves as `a.out`.
+
 
 ## [0.0.6] - 2026-08-20
 

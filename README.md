@@ -196,6 +196,44 @@ would rather not use mise at all, `go build ./cmd/...` needs nothing but Go
 builds fine and skips the toolchain download, which on a restricted-egress
 network is a hard failure rather than a slow one.
 
+#### Without mise or task
+
+On a network that allows the Go module proxy but not the object store it
+redirects to, neither tool installs, and the failure reads like a broken
+toolchain rather than a blocked host. Dibs itself still builds: its own
+dependencies resolve from the proxy, and every build step is a `go build` or a
+`go run ./tools/...` in this tree.
+
+```sh
+go build -o bin/dibd ./cmd/dibd
+go build -o bin/dibs ./cmd/dibs
+swiftc -O -o bin/dibs-presence internal/humanauth/presence_darwin.swift   # macOS
+go run ./tools/appbundle -o bin/Dibs.app -version 0.0.0                   # macOS
+```
+
+Four artifacts get installed, not two: `dibd`, `dibs`, and on macOS
+`dibs-presence` and `Dibs.app`. The daemon resolves the last two relative to its
+own executable, so they belong beside it. Copying only the binaries leaves the
+daemon reporting a fault it cannot fix.
+
+Two install rules are not obvious from the commands:
+
+- **Remove before copying.** macOS caches a binary's signature verdict against
+  its inode. `cp` over a running executable reuses the inode with new content,
+  and every later run is SIGKILLed with no message, from a file that is
+  byte-identical to a working one. `rm` first gives a fresh inode.
+- **Set the identifiers when signing.** The Go toolchain leaves them as `a.out`:
+
+  ```sh
+  codesign --force -i org.agenxy.dibs     -s - ~/.local/bin/dibd
+  codesign --force -i org.agenxy.dibs.cli -s - ~/.local/bin/dibs
+  ```
+
+  `-s -` is ad-hoc, which is fine to build with and costs a re-granted macOS
+  privacy prompt on every install, because the system keys the grant to the
+  signature. `go run ./tools/signcheck` says how to make a stable identity once
+  and stop that.
+
 Then:
 
 ```sh
