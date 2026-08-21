@@ -687,7 +687,10 @@ func printRemoteRecipe(tls bool) {
 	}
 	fmt.Printf(`# This daemon serves HTTPS, so that machine must trust its certificate. The
 # bridge holds the trust itself, so nothing else there changes:
-#     dibs trust %s
+#     DIBS_DIR=~/.dibs-<board> dibs trust %s
+# DIBS_DIR is not optional: trust records the certificate in the data directory
+# it is given, the bridge reads it from the one in its config above, and without
+# it trust reports success while writing where the bridge never looks.
 # Compare what that prints against `+"`dibs fingerprint`"+` run HERE; they must match.
 `, addr())
 }

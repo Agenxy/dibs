@@ -33,6 +33,14 @@ func printJoinConfig(remote string) error {
 			},
 		},
 	}
+	// Quoted, because a home directory may contain a space.
+	//
+	// The JSON and TOML forms carry the path as a value and are fine; these are
+	// shell lines an operator pastes, and unquoted they would have mkdir, scp
+	// and trust act on a split argument. shellArg already exists for exactly
+	// this, on the service unit.
+	q := shellArg(dir)
+	qsecret := shellArg(filepath.Join(dir, "local.secret"))
 	out, _ := json.MarshalIndent(cfg, "", "  ")
 	fmt.Printf(`# Joining the board at %s from this machine.
 #
@@ -42,14 +50,14 @@ func printJoinConfig(remote string) error {
 #    secrets in one.
 #
 #      mkdir -p %s && chmod 700 %s
-#      scp <hub>:<hub-data-dir>/local.secret %s/local.secret
+#      scp <hub>:<hub-data-dir>/local.secret %s
 #
 #    <hub-data-dir> is ~/.dibs unless that machine sets DIBS_DIR. Only the hub
 #    knows: `+"`dibs doctor`"+` prints it on the first line there. A hub running more
 #    than one board has more than one, and copying the wrong one gives a
 #    credential that authenticates against a board nobody meant.
 #
-`, remote, dir, dir, dir)
+`, remote, q, q, qsecret)
 
 	// Step 2 is a different step for the two shapes a board comes in, and
 	// printing both as conditionals leaves the operator deciding which sentence
@@ -87,7 +95,7 @@ func printJoinConfig(remote string) error {
 #    they must match. Only the bridge's own trust store changes, so nothing
 #    else on this machine has its TLS behaviour altered.
 #
-`, dir, remote)
+`, q, remote)
 	}
 
 	fmt.Printf(`# 3. Add to .mcp.json (Claude Code and JSON-config hosts):

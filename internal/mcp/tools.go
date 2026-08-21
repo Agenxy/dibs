@@ -168,9 +168,9 @@ var toolDefs = func() []map[string]any {
 			"inputSchema": obj(map[string]any{"token": tok}, "token"),
 		},
 		{
-			"name": "claim_coordinator", "description": "Take the coordinator role if you " +
-				"started this daemon: pass the contents of `coordinator.claim` from its data " +
-				"directory as `nonce`. It exists only while the board has no coordinator and " +
+			"name": "claim_coordinator", "description": "Take the coordinator role: pass " +
+				"the contents of `coordinator.claim` from the daemon's data directory as " +
+				"`nonce`. Reading that file is the authorisation. It exists only while the board has no coordinator and " +
 				"the first claim consumes it, so if there already is one, ask them or ask " +
 				"the human (send with grant). You must be kind \"persistent\": the role " +
 				"outlives this process, and an ephemeral agent would take it away on " +

@@ -218,3 +218,31 @@ func TestPruneDoesNotOfferWhatItRefuses(t *testing.T) {
 			"cannot succeed", param)
 	}
 }
+
+// claim_coordinator must not repeat the attribution the daemon's own logs were
+// corrected for.
+//
+// It said the role is for the agent that "started this daemon". Under launchd
+// or systemd no agent started anything: the authorisation is being able to read
+// coordinator.claim. A tool description is the only documentation an agent
+// sees, so this discouraged every eligible caller on a service-managed board,
+// which can leave that board with no coordinator at all. Found by the
+// pre-release review, after the two log lines saying the same thing were fixed.
+func TestClaimCoordinatorDoesNotNameAnAgentThatDoesNotExist(t *testing.T) {
+	var desc string
+	for _, td := range agentTools {
+		if td["name"] == "claim_coordinator" {
+			desc, _ = td["description"].(string)
+		}
+	}
+	if desc == "" {
+		t.Fatal("no claim_coordinator tool: the probe reads nothing")
+	}
+	if strings.Contains(desc, "started this daemon") {
+		t.Errorf("claim_coordinator is offered to the agent that started the daemon, "+
+			"which under a service manager is nobody: %q", desc)
+	}
+	if !strings.Contains(desc, "coordinator.claim") {
+		t.Errorf("claim_coordinator does not name the file that authorises it: %q", desc)
+	}
+}

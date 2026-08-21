@@ -125,6 +125,19 @@ machines for real work. Their priority order, not ours.
   parameter still offered "yours", so an agent reading both was told to make a
   call that cannot succeed.
 
+- **Four more from the review's fourth round.** The hub-side recipe and the
+  README still printed `dibs trust` bare after sending the joining bridge to a
+  directory of its own, which is round three's bug in the other two places it
+  is written. The generated shell lines did not quote the derived path, so a
+  home directory containing a space split into two arguments. The
+  `claim_coordinator` tool still offered the role to "the agent that started
+  this daemon", which under a service manager is nobody, and a tool description
+  is the only documentation an agent reads: that can leave a service-managed
+  board with no coordinator. And the truncated text board said the rest was
+  "in this result" when it is in `_meta`, which is exactly what the model on a
+  no-panel host cannot see, so it pointed an agent at rows it could not reach
+  and would have had it report them as present.
+
 - **README: building without mise or task.** On a network that allows the Go
   module proxy but not the object store it redirects to, neither tool installs
   and the failure reads like a broken toolchain rather than a blocked host.

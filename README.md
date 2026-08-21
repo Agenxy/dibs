@@ -322,8 +322,10 @@ routable address, and requiring one would exclude them for no reason.
 
 A hub that is directly reachable serves HTTPS with a certificate it generated,
 and the bridge trusts only what the joining machine has recorded, so that
-machine runs `dibs trust <host:port>` once and compares the fingerprint against
-`dibs fingerprint` on the hub. `mcp-config --board` prints whichever of these
+machine runs `DIBS_DIR=<that board's directory> dibs trust <host:port>` once and
+compares the fingerprint against `dibs fingerprint` on the hub. `DIBS_DIR` is not
+optional there: `trust` records the certificate in the directory it is given, and
+the bridge reads it from the one in its own config. `mcp-config --board` prints whichever of these
 two steps the address calls for.
 
 Use the bridge (`mcp-stdio`), not the url form. On a second machine that

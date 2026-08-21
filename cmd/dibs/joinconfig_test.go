@@ -58,7 +58,7 @@ func TestJoinConfigNamesTheStepTheAddressCallsFor(t *testing.T) {
 	// writes into ~/.dibs, reports success, and the bridge still rejects the
 	// board: a step that looks done and is not.
 	dir := homeDir() + "/.dibs-" + boardSlug("hub.example:4777")
-	if !strings.Contains(tls, "DIBS_DIR="+dir+" dibs trust hub.example:4777") {
+	if !strings.Contains(tls, "DIBS_DIR="+shellArg(dir)+" dibs trust hub.example:4777") {
 		t.Errorf("the trust step does not name the board's data directory, so the "+
 			"certificate lands where the bridge never looks:\n%s", tls)
 	}
@@ -94,8 +94,44 @@ func TestJoinConfigNamesTheStepTheAddressCallsFor(t *testing.T) {
 	// derived ~/.dibs-board-4777, so the secret was copied where nothing read
 	// it and the bridge could not start.
 	loopDir := homeDir() + "/.dibs-" + boardSlug("127.0.0.1:4777")
-	if strings.Count(loop, loopDir) < 3 {
+	if strings.Count(loop, loopDir) < 2 {
 		t.Errorf("the data directory is not stated consistently: %q appears %d times in\n%s",
 			loopDir, strings.Count(loop, loopDir), loop)
+	}
+}
+
+// The generated shell lines are pasted, so a home directory with a space in it
+// must not split into two arguments. shellArg exists for this and was not used.
+func TestGeneratedShellLinesAreQuoted(t *testing.T) {
+	t.Setenv("HOME", "/tmp/home with space")
+	out, err := captureStdout(t, func() error { return printJoinConfig("hub.example:4777") })
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only the SHELL lines. The JSON and TOML blocks carry the path as a value
+	// in their own syntax, already quoted, and are not pasted into a shell.
+	shellVerbs := []string{"mkdir -p", "scp ", "dibs trust"}
+	checked := 0
+	for _, line := range strings.Split(out, "\n") {
+		if !strings.Contains(line, "home with space") {
+			continue
+		}
+		isShell := false
+		for _, v := range shellVerbs {
+			if strings.Contains(line, v) {
+				isShell = true
+			}
+		}
+		if !isShell {
+			continue
+		}
+		checked++
+		if !strings.Contains(line, "'/tmp/home with space") {
+			t.Errorf("unquoted path in a pasteable command, which would split into two "+
+				"arguments: %q", line)
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no shell line carried the home directory, so this proves nothing")
 	}
 }

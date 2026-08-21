@@ -782,7 +782,14 @@ func boardRows(agents []any) string {
 			continue
 		}
 		if i == maxSummaryRows {
-			fmt.Fprintf(&b, "  … and %d more; the full board is in this result\n",
+			// NOT "the full board is in this result".
+			//
+			// It is in _meta, which is exactly what the model on this host cannot
+			// see: that is the whole reason this fallback exists. Telling an agent
+			// its answer is somewhere it cannot look is the honesty rule broken
+			// inside the fix written to keep it, and it would report the missing
+			// rows as present. Name the call that actually returns them.
+			fmt.Fprintf(&b, "  … and %d more: call board again with detail true for all of them\n",
 				len(agents)-maxSummaryRows)
 			break
 		}

@@ -138,6 +138,19 @@ func TestTextBoardIsBounded(t *testing.T) {
 	if !strings.Contains(text, "and 180 more") {
 		t.Errorf("truncated board does not say what it dropped: %q", text)
 	}
+	// And must not claim the rest is somewhere the agent cannot look.
+	//
+	// It said "the full board is in this result". It is in _meta, which is
+	// exactly what the model on this host cannot see: the reason this fallback
+	// exists at all. An agent believing it would report the missing rows as
+	// present, which is the honesty rule broken inside the fix written to keep
+	// it. Found by the pre-release review.
+	if strings.Contains(text, "in this result") {
+		t.Errorf("the truncation points at this result, where those rows are not: %q", text)
+	}
+	if !strings.Contains(text, "detail") {
+		t.Errorf("the truncation does not name the call that returns the rest: %q", text)
+	}
 }
 
 // Hosts prefetch and cache the template by URI, so it must be static and carry
