@@ -294,6 +294,18 @@ machines for real work. Their priority order, not ours.
   reported the product broken. The description now says when a message actually
   arrives and what a short deadline costs.
 
+- **`register` failed outright for any Claude Code session with
+  `CLAUDE_EFFORT` set.** The stdio bridge fills in identity it can observe, and
+  that table is applied to `register` and nothing else. It carried an entry for
+  `effort`, which is an `update` field: `register` does not declare it, and
+  since v0.0.6 refuses unknown arguments rather than ignoring them, injecting it
+  did not add a field, it failed the call with `-32602 register does not take
+  "effort"`. No agent was created at all, so no lifecycle hook could resolve
+  that session, no mail reached it, and its claim guard returned allow.
+  Reproduced against the shipped v0.0.6 binary with the environment of a live
+  session. A test now holds every field the bridge injects to `register`'s
+  actual schema.
+
 - **The claude-code plugin advertised a delivery moment it does not bind.**
   Its catalogue entry said a PreToolUse hook calls the wake path, so mail
   "appears in your context on your next tool call". PreToolUse binds the claim

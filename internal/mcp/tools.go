@@ -757,3 +757,25 @@ func ToolNames() []string {
 	}
 	return out
 }
+
+// ToolProperties is the set of parameter names a tool's inputSchema declares.
+//
+// Exported for the bridge's enrichment test: `dibs mcp-stdio` fills in fields it
+// can observe, and a field that is not declared does not get ignored, it fails
+// the call. That cost every Claude Code session with CLAUDE_EFFORT set its
+// registration.
+func ToolProperties(tool string) map[string]bool {
+	for _, t := range toolDefs {
+		if n, _ := t["name"].(string); n != tool {
+			continue
+		}
+		schema, _ := t["inputSchema"].(map[string]any)
+		props, _ := schema["properties"].(map[string]any)
+		out := make(map[string]bool, len(props))
+		for k := range props {
+			out[k] = true
+		}
+		return out
+	}
+	return nil
+}
