@@ -294,6 +294,14 @@ machines for real work. Their priority order, not ours.
   reported the product broken. The description now says when a message actually
   arrives and what a short deadline costs.
 
+- **The claude-code plugin advertised a delivery moment it does not bind.**
+  Its catalogue entry said a PreToolUse hook calls the wake path, so mail
+  "appears in your context on your next tool call". PreToolUse binds the claim
+  guard and nothing else. That text is what an agent reads when deciding
+  whether it still needs to poll, so the one claim that overstates is the one
+  that loses mail. A test now holds every plugin's pitch to the events its own
+  `hooks.json` actually binds `hook_poll` to.
+
 - **`E_MSG_FINAL` carried no hint**, in breach of the rule that every error
   names the corrective call, and it is the error an agent hits exactly when it
   has come back late to something it missed. It now names the corrective call:
