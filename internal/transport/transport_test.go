@@ -25,10 +25,6 @@ func TestTheRuleTwoProgramsHaveToAgreeOn(t *testing.T) {
 			"/c.pem", "/k.pem", "192.168.1.5:4777", true, true,
 		},
 		{
-			"a certificate with no key is not something a daemon can serve",
-			"/c.pem", "", "192.168.1.5:4777", false, true,
-		}, // falls through to self-signed
-		{
 			"insecure_plaintext off loopback is the operator accepting it",
 			"", "", "192.168.1.5:4777", true, false,
 		},
@@ -54,12 +50,16 @@ func TestTheRuleTwoProgramsHaveToAgreeOn(t *testing.T) {
 		})
 	}
 
-	// A certificate with no key must not be handed to clients as if it were the
-	// one being served: the daemon ignores it, so pointing anybody at it means
-	// trusting a certificate that is never presented.
-	got, _ := Resolve("/c.pem", "", "192.168.1.5:4777", false,
-		func() (string, string, error) { return "/auto.pem", "/auto-key.pem", nil })
-	if got.CertFile == "/c.pem" {
-		t.Error("a lone tls_cert was treated as the certificate in use")
+	// HALF a pair is refused outright now, rather than falling through to a
+	// self-signed certificate the operator did not ask for. Starting on a
+	// transport other than the configured one is worse than not starting: the
+	// explicit setting did nothing and nothing said so.
+	for _, half := range []struct{ cert, key string }{{"/c.pem", ""}, {"", "/k.pem"}} {
+		if _, err := Resolve(half.cert, half.key, "192.168.1.5:4777", false,
+			func() (string, string, error) { return "/auto.pem", "/auto-key.pem", nil }); err == nil {
+			t.Errorf("half a certificate pair (cert=%q key=%q) was accepted, so the "+
+				"daemon starts on a transport the operator did not configure",
+				half.cert, half.key)
+		}
 	}
 }

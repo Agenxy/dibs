@@ -477,7 +477,7 @@ func TestTheOrdinaryRecipeReadsTheAddress(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Setenv("DIBS_ADDR", c.addr)
-		out, err := captureStdout(t, func() error { printRemoteRecipe(true); return nil })
+		out, err := captureStdout(t, func() error { printRemoteRecipe(true, mustJoiner(t)); return nil })
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -571,7 +571,7 @@ func TestAStaleCertificateDoesNotClaimTLS(t *testing.T) {
 // that machine's choice. Two halves of one output contradicting each other.
 func TestTheRecipeNamesTheOtherMachinesAddress(t *testing.T) {
 	t.Setenv("DIBS_ADDR", "127.0.0.1:4777")
-	out, err := captureStdout(t, func() error { printRemoteRecipe(false); return nil })
+	out, err := captureStdout(t, func() error { printRemoteRecipe(false, mustJoiner(t)); return nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -889,4 +889,15 @@ func TestAnUnresolvableHomeIsRefusedNotInvented(t *testing.T) {
 	if strings.Contains(err.Error(), "/home/you") {
 		t.Errorf("the refusal still names the placeholder as if it were real: %v", err)
 	}
+}
+
+// mustJoiner resolves the address another machine reaches this daemon on, the
+// way mcp-config does before printing anything.
+func mustJoiner(t *testing.T) string {
+	t.Helper()
+	j, err := joinerAddr()
+	if err != nil {
+		t.Fatalf("resolving the joining address: %v", err)
+	}
+	return j
 }

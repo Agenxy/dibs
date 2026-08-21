@@ -81,3 +81,56 @@ func TestTheRefusalNamesTheSetting(t *testing.T) {
 		}
 	}
 }
+
+// Settings the daemon refuses or silently ignores must not load here either.
+//
+// Round two moved the checks in with the type; round four found the list was
+// short. Each of these produced a complete-looking configuration around a
+// setting that never took effect, which is the pattern this package exists to
+// end. Raised by the pre-release review.
+func TestLoadRefusesSettingsThatWouldNotTakeEffect(t *testing.T) {
+	bad := []struct{ name, body string }{
+		{
+			"a listen address carrying a scheme, which net.Listen cannot bind",
+			"addr = \"https://127.0.0.1:4777\"\n",
+		},
+		{"a listen address that is not host:port", "addr = \"127.0.0.1\"\n"},
+		{"a certificate with no key", "tls_cert = \"/c.pem\"\n"},
+		{"a key with no certificate", "tls_key = \"/k.pem\"\n"},
+		{"a negative blob store", "[limits]\nblob_store_bytes = -1\n"},
+		{"a negative match history", "[match]\nhistory = -1\n"},
+		{"a match deadline that is not a duration", "[match]\ndeadline = \"soon\"\n"},
+		{"an auto_join value that names nothing", "[match]\nauto_join = \"maybe\"\n"},
+		{"a negative supervision interval", "[supervise]\nevery = \"-5m\"\n"},
+	}
+	for _, c := range bad {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(c.body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(dir); err == nil {
+				t.Errorf("loaded a setting the daemon refuses or ignores:\n%s", c.body)
+			}
+		})
+	}
+
+	// And the shapes that are legitimate must still load.
+	good := []struct{ name, body string }{
+		{"a bare host:port", "addr = \"0.0.0.0:4777\"\n"},
+		{"a complete certificate pair", "tls_cert = \"/c.pem\"\ntls_key = \"/k.pem\"\n"},
+		{"a real match deadline", "[match]\ndeadline = \"5m\"\n"},
+		{"each auto_join value", "[match]\nauto_join = \"predicted\"\n"},
+	}
+	for _, c := range good {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(c.body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(dir); err != nil {
+				t.Errorf("refused a usable configuration: %v\n%s", err, c.body)
+			}
+		})
+	}
+}

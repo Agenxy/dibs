@@ -7,6 +7,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- **The role pin failed open in two ways**, found by the review round after the
+  one that added it. `loadRolePins` treated every read error as "no pins yet",
+  so a permissions problem on `roles.pinned` silently re-opened every declared
+  role to whoever held its name; and `check` recorded a fingerprint in memory
+  before `save` succeeded, so a failed write left it there and the next
+  reconciliation fifteen seconds later matched against its own unsaved value
+  and granted the role with nothing durable behind it. Both now refuse. A
+  security decision that survives only in memory is one that disappears on
+  restart while behaving as though it had not.
+
+- **A half-configured certificate pair started the daemon on a transport
+  nobody asked for.** With `tls_cert` set and `tls_key` absent (or the
+  reverse), both were treated as absent: plaintext on loopback, an unrelated
+  self-signed certificate off it, and the operator's explicit setting doing
+  nothing silently. Refused now, in the shared config so `dibd -check` and
+  `dibs mcp-config` both see it.
+
 - **A declared standing role could be taken by any agent that chose the right
   name.** `[roles] admin = ["release-manager"]` in `dibs.toml` authorises a
   STRING, and an agent picks its own name at registration. So an agent that
@@ -85,6 +102,43 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   paragraph again every time.
 
 ### Fixed
+
+- **A wildcard bind produced a certificate no client could verify.** The
+  wizard's "this machine and others" writes `0.0.0.0`, so the generated
+  certificate carried IP SAN `0.0.0.0` and DNS SAN `localhost` and nothing
+  else. `mcp-config` then correctly refuses to hand anybody a listen address
+  and substitutes this machine's LAN address, which was not in the
+  certificate: one unusable answer traded for another. A wildcard bind now
+  covers the machine's own addresses. Where none can be detected, the command
+  refuses rather than printing `<this-machine>` inside an otherwise complete
+  configuration.
+
+- **A URL was accepted as the daemon's listen address.** `addr =
+  "https://127.0.0.1:4777"` passed the loader and produced a confident HTTPS
+  configuration, while `dibd` hands that value to `net.Listen`, which cannot
+  bind a URL. Two grammars were being checked by one validator: a scheme is
+  valid on a client's `DIBS_ADDR` and never on an address a daemon binds.
+
+- **More settings that read as applied and were not**: a negative blob store,
+  a negative match history, a match deadline that is not a duration, an
+  `auto_join` value naming nothing, and negative supervision intervals. Each
+  loaded cleanly while the daemon refused or silently ignored it.
+
+- **A recovered repository still stayed reported unreadable.** The failure
+  records the agent's working directory and the recovery reports the
+  repository root it resolved to, so comparing exactly removed a path nothing
+  had recorded. It drops by containment now. The test used one path for both
+  ends, which is why the first fix looked right.
+
+- **`E_MSG_FINAL` pointed at a human mailbox that may not exist.** The human
+  row is created when the operator first acts, so a headless board has none.
+
+- **Three test defects.** `holdsRole` asked whether an agent held a role by
+  calling `GrantRole`, which GRANTS it: every authorization assertion in that
+  file rested on a probe that mutated what it inspected. The self-promotion
+  test asserted the effect only inside `if err == nil`, so an op that returned
+  success while doing nothing passed. And the unreadable-tree test used the
+  same path for failure and recovery.
 
 - **The shared config loader validated keys but not values.** It rejected an
   unknown key and stopped there, while the daemon goes on to check that

@@ -14,6 +14,7 @@ package boardconfig
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -307,6 +308,52 @@ func CheckCount(table, key string, raw int) error {
 // clears a maximum blob size this package does not know. Those are checked
 // where those values live, and this does not claim otherwise.
 func (c Config) Validate() error {
+	for _, check := range []func() error{
+		c.validateAddr, c.validateTLS, c.validateLimits, c.validateMatch,
+		c.validateSupervise, c.validateWake,
+	} {
+		if err := check(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateAddr: the daemon BINDS this one, so it may not carry a scheme.
+// net.Listen takes host:port and cannot bind a URL. A client's DIBS_ADDR is a
+// different grammar and is checked where it is used.
+func (c Config) validateAddr() error {
+	if c.Addr == "" {
+		return nil
+	}
+	if _, _, found := strings.Cut(c.Addr, "://"); found {
+		return fmt.Errorf("[addr] %q carries a scheme, and the address a daemon "+
+			"listens on cannot: write it as host:port. dibd hands this to net.Listen "+
+			"verbatim, so it would fail at bind rather than here", c.Addr)
+	}
+	if _, _, err := net.SplitHostPort(c.Addr); err != nil {
+		return fmt.Errorf("[addr] %q is not a host:port address: %w", c.Addr, err)
+	}
+	return nil
+}
+
+// validateTLS: HALF a pair is a mistake, and it looked like an absence. The
+// daemon started and served plaintext, or an unrelated self-signed certificate,
+// while the operator's explicit setting did nothing.
+func (c Config) validateTLS() error {
+	if (c.TLSCert == "") == (c.TLSKey == "") {
+		return nil
+	}
+	missing, given := "tls_key", "tls_cert"
+	if c.TLSCert == "" {
+		missing, given = "tls_cert", "tls_key"
+	}
+	return fmt.Errorf("%s is set and %s is not: a certificate without its key "+
+		"cannot be served, and half a pair is ignored rather than refused, so the "+
+		"daemon would start on a transport you did not ask for", given, missing)
+}
+
+func (c Config) validateLimits() error {
 	for _, d := range []struct{ key, raw string }{
 		{"agent_ttl", c.Limits.AgentTTL},
 		{"idle_ttl", c.Limits.IdleTTL},
@@ -326,6 +373,10 @@ func (c Config) Validate() error {
 			return err
 		}
 	}
+	if c.Limits.BlobStoreBytes < 0 {
+		return fmt.Errorf("[limits] blob_store_bytes = %d: a store cannot hold a "+
+			"negative number of bytes", c.Limits.BlobStoreBytes)
+	}
 	// Only when the file sets BOTH: with one unset the daemon's default is the
 	// other side of the comparison, and that default is not ours to know.
 	if c.Limits.MaxAgents > 0 && c.Limits.MaxPersistentAgents > c.Limits.MaxAgents {
@@ -334,18 +385,58 @@ func (c Config) Validate() error {
 			"nothing: raise max_agents too, or lower this",
 			c.Limits.MaxPersistentAgents, c.Limits.MaxAgents)
 	}
-	if w := c.Wake.ExtendTurnFor; w != "" {
-		var known bool
-		for _, p := range WakePhases {
-			if w == p {
-				known = true
-			}
+	return nil
+}
+
+// validateMatch covers the settings the daemon silently ignores rather than
+// refusing, each of which produced a complete-looking configuration around a
+// setting that never took effect.
+func (c Config) validateMatch() error {
+	if c.Match.History < 0 {
+		return fmt.Errorf("[match] history = %d: a window cannot be negative, and a "+
+			"negative one is ignored rather than refused", c.Match.History)
+	}
+	if d := c.Match.Deadline; d != "" {
+		if _, err := time.ParseDuration(d); err != nil {
+			return fmt.Errorf("[match] deadline = %q is not a duration: write it like "+
+				"\"5m\" or \"90s\". An unparseable one is replaced with the default, so "+
+				"the setting reads as applied and is not: %w", d, err)
 		}
-		if !known {
-			return fmt.Errorf("[wake] extend_turn_for = %q: use \"all\" (default: "+
-				"anything unread wakes the agent once), \"urgent\" (only work somebody "+
-				"is blocked on) or \"none\" (never extend a turn)", w)
+	}
+	if j := c.Match.AutoJoin; j != "" && j != "declared" && j != "predicted" && j != "off" {
+		return fmt.Errorf("[match] auto_join = %q: use \"declared\", \"predicted\" or "+
+			"\"off\". An unknown value behaves as \"declared\" rather than being refused", j)
+	}
+	return nil
+}
+
+func (c Config) validateSupervise() error {
+	for _, d := range []struct{ key, raw string }{
+		{"every", c.Supervise.Every.String()},
+		{"quiet", c.Supervise.Quiet.String()},
+		{"frozen", c.Supervise.Frozen.String()},
+		{"min_age", c.Supervise.MinAge.String()},
+	} {
+		if strings.HasPrefix(d.raw, "-") {
+			return fmt.Errorf("[supervise] %s = %s: a negative interval is ignored "+
+				"rather than refused, so it reads as configured and does nothing",
+				d.key, d.raw)
 		}
 	}
 	return nil
+}
+
+func (c Config) validateWake() error {
+	w := c.Wake.ExtendTurnFor
+	if w == "" {
+		return nil
+	}
+	for _, p := range WakePhases {
+		if w == p {
+			return nil
+		}
+	}
+	return fmt.Errorf("[wake] extend_turn_for = %q: use \"all\" (default: anything "+
+		"unread wakes the agent once), \"urgent\" (only work somebody is blocked on) "+
+		"or \"none\" (never extend a turn)", w)
 }

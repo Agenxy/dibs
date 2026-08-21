@@ -13,6 +13,7 @@
 package transport
 
 import (
+	"fmt"
 	"net"
 	"strings"
 )
@@ -46,6 +47,22 @@ func Resolve(cfgCert, cfgKey, addr string, insecurePlaintext bool,
 	// that would never be presented.
 	if cfgCert != "" && cfgKey != "" {
 		return Choice{cfgCert, cfgKey, "TLS (certificate from config)"}, nil
+	}
+	// HALF a pair is a mistake, and it used to look like an absence: the daemon
+	// started, served plaintext on loopback or an unrelated self-signed
+	// certificate off it, and the operator's explicit transport setting did
+	// nothing at all. Silence is the worst answer available for a
+	// security-sensitive setting that did not take. Raised by the pre-release
+	// review, which noted the refactor had blessed the behaviour by moving it
+	// here.
+	if (cfgCert == "") != (cfgKey == "") {
+		missing, given := "tls_key", "tls_cert"
+		if cfgCert == "" {
+			missing, given = "tls_cert", "tls_key"
+		}
+		return Choice{}, fmt.Errorf("[%s] is set and [%s] is not: a certificate "+
+			"without its key cannot be served, and ignoring half a pair would start "+
+			"the daemon on a transport you did not ask for", given, missing)
 	}
 	// Before insecure_plaintext, and before any certificate on disk: a loopback
 	// daemon is unreachable from other hosts, so it serves plaintext however

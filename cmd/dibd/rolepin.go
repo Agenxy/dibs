@@ -34,6 +34,8 @@ import (
 // name for something that is not coordination state.
 type rolePins struct {
 	path string
+	// readErr is why the pins could not be read, so the refusal can say.
+	readErr error
 	// role -> declared name -> credential fingerprint
 	Pins map[string]map[string]string `json:"pins"`
 }
@@ -41,6 +43,16 @@ type rolePins struct {
 func loadRolePins(dir string) *rolePins {
 	p := &rolePins{path: filepath.Join(dir, "roles.pinned"), Pins: map[string]map[string]string{}}
 	b, err := os.ReadFile(p.path) // #nosec G304 -- the daemon's own data directory
+	// ABSENT is a fresh board; UNREADABLE is a fault, and they must not look the
+	// same. Treating every read error as "no pins yet" meant a permissions
+	// problem, or a directory where the file should be, silently re-opened every
+	// declared role to whoever held its name. Pin state that cannot be read has
+	// to fail in the refusing direction. Raised by the pre-release review.
+	if err != nil && !os.IsNotExist(err) {
+		p.Pins = nil
+		p.readErr = err
+		return p
+	}
 	if err != nil {
 		return p
 	}
@@ -58,8 +70,9 @@ func loadRolePins(dir string) *rolePins {
 // records it when the role is not pinned yet.
 func (p *rolePins) check(role, name, fingerprint string) error {
 	if p.Pins == nil {
-		return fmt.Errorf("%s is unreadable, so no declared role can be verified: "+
-			"remove it to re-pin from the agents holding these names now", p.path)
+		return fmt.Errorf("%s cannot be read (%v), so no declared role can be "+
+			"verified: fix the file's permissions, or remove it to re-pin from the "+
+			"agents holding these names now", p.path, p.readErr)
 	}
 	if fingerprint == "" {
 		return fmt.Errorf("agent %q has no nonce, so it has no identity that survives "+
@@ -73,8 +86,22 @@ func (p *rolePins) check(role, name, fingerprint string) error {
 	}
 	switch pinned := byName[name]; pinned {
 	case "":
+		// PERSIST FIRST, then remember.
+		//
+		// Recording it in memory before saving meant a failed write left the
+		// fingerprint sitting in the map: the first reconciliation refused
+		// correctly, and fifteen seconds later the next one found its own
+		// unsaved value, matched against it, and granted admin with no durable
+		// pin behind it. A security decision that survives only in memory is one
+		// that disappears on restart while behaving as though it did not.
 		byName[name] = fingerprint
-		return p.save()
+		if err := p.save(); err != nil {
+			delete(byName, name)
+			return fmt.Errorf("could not record which agent holds %s in %s (%w), so "+
+				"the grant is refused: a pin that is not on disk is not a pin",
+				role, p.path, err)
+		}
+		return nil
 	case fingerprint:
 		return nil
 	default:

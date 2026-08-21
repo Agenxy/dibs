@@ -132,3 +132,27 @@ func (e *Engine) AgentIdentity(ctx context.Context, id string) (string, error) {
 	fp, _ := res["fingerprint"].(string)
 	return fp, nil
 }
+
+// AgentRole reports the role an agent holds, without changing anything.
+//
+// It exists because the only way to ask used to be GrantRole, and reading the
+// answer that way GRANTS it: a probe for "is this agent admin?" made it admin
+// and then reported that it was not, because the grant had changed something.
+// An inspector that mutates the thing it inspects is worse than no inspector.
+func (e *Engine) AgentRole(ctx context.Context, id string) (string, error) {
+	res, err := e.query(ctx, func() core.Result {
+		l, ok := e.state.Agents[id]
+		if !ok {
+			return core.Result{"missing": true}
+		}
+		return core.Result{"role": l.Role}
+	})
+	if err != nil {
+		return "", err
+	}
+	if missing, _ := res["missing"].(bool); missing {
+		return "", fmt.Errorf("no agent %q", id)
+	}
+	role, _ := res["role"].(string)
+	return role, nil
+}

@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -211,16 +213,29 @@ func matchHint(st MatchStatus) string {
 	return ""
 }
 
-// withoutTree drops one path from an unreadable list, leaving the rest.
+// withoutTree drops the trees a successful index has proved readable.
+//
+// By CONTAINMENT, not by string equality. A failed discovery records the
+// agent's working directory, `/repo/subdir`, while a successful index reports
+// the repository root it resolved to, `/repo`. Comparing exactly removed a path
+// nothing had recorded and left the real entry behind until restart, so the
+// operator went on being told about a permissions problem that was fixed. The
+// first version of this compared the same path with itself, which is why it
+// passed. Raised by the pre-release review.
+//
+// Reading /repo proves every directory inside it readable; it proves nothing
+// about a sibling, so containment runs one way only.
 func withoutTree(trees []string, readable string) []string {
 	if readable == "" || len(trees) == 0 {
 		return trees
 	}
+	root := filepath.Clean(readable)
 	out := trees[:0:0]
 	for _, t := range trees {
-		if t != readable {
-			out = append(out, t)
+		if p := filepath.Clean(t); p == root || strings.HasPrefix(p, root+string(filepath.Separator)) {
+			continue
 		}
+		out = append(out, t)
 	}
 	return out
 }

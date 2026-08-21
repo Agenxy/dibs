@@ -154,7 +154,7 @@ func nonDefaultEnv() map[string]string {
 	// this process was told is what the bridge should be told.
 	if raw := os.Getenv("DIBS_ADDR"); raw != "" {
 		env["DIBS_ADDR"] = raw
-	} else if a := dialableAddr(rawAddr()); a != "127.0.0.1:4777" {
+	} else if a, aerr := dialableAddr(rawAddr()); aerr == nil && a != "127.0.0.1:4777" {
 		// rawAddr, not addr: addr ignores dibs.toml, so a daemon configured onto
 		// a LAN address or a non-default port had its stdio config printed with
 		// no DIBS_ADDR at all, and the bridge then dialled 127.0.0.1:4777 and
@@ -222,11 +222,34 @@ func trustCommand() string {
 // the credential directory, so a path there walked that directory out of the
 // operator's home.
 func checkAddrShape(what, a string) error {
+	return checkAddr(what, a, true)
+}
+
+// checkListenAddr is the daemon's own address, where a scheme is NOT valid.
+//
+// Two grammars were being checked by one validator. A client's DIBS_ADDR may
+// carry a scheme, because it says what to speak to a remote board; a daemon's
+// `addr` is handed to net.Listen, which takes host:port and cannot bind a URL.
+// So `addr = "https://127.0.0.1:4777"` passed the loader, `dibs mcp-config`
+// printed a confident HTTPS configuration, and `dibd` failed at bind. `dibd
+// -check` returns before binding, so it missed it too. Raised by the
+// pre-release review.
+func checkListenAddr(what, a string) error {
+	return checkAddr(what, a, false)
+}
+
+func checkAddr(what, a string, allowScheme bool) error {
 	if a == "" {
 		return nil // absent is not malformed; the default applies
 	}
 	rest := a
 	if scheme, r, found := strings.Cut(a, "://"); found {
+		if !allowScheme {
+			return fmt.Errorf("%s: %q carries a scheme, and a listen address cannot. "+
+				"This is the address the daemon BINDS, so write it as host:port; a "+
+				"scheme belongs on a client's DIBS_ADDR, which says what to speak to "+
+				"somebody else's board", what, a)
+		}
 		switch strings.ToLower(scheme) {
 		case "http", "https":
 			rest = r
@@ -280,9 +303,13 @@ func checkBoardAddr(a string) error {
 // A wildcard bind is the case: 0.0.0.0 is what a daemon LISTENS on and not
 // something anything connects to, so handing it to a bridge as DIBS_ADDR is
 // the same mistake as printing it in a url.
-func dialableAddr(a string) string {
+func dialableAddr(a string) (string, error) {
 	if scheme, rest, found := strings.Cut(a, "://"); found {
-		return scheme + "://" + clientHost(rest)
+		h, err := clientHost(rest)
+		if err != nil {
+			return "", err
+		}
+		return scheme + "://" + h, nil
 	}
 	return clientHost(a)
 }
