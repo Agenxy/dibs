@@ -185,12 +185,26 @@ off = true    # this machine's agents are supervised by something else
 | `coordinator` | *(none)* | Agent names granted the coordinator role at every start. |
 | `admin` | *(none)* | Agent names granted admin. **Admin can read every agent's mailbox.** |
 
-Applied on **every** start, not once. A role granted by hand disappears with the
-ledger it lived in; a role declared here comes back with the daemon, which is
-what somebody writing it down expects.
+Applied at **every** start, and only for a short window after it. A role granted
+by hand disappears with the ledger it lived in; a role declared here comes back
+with the daemon, which is what somebody writing it down expects.
 
-No agent can promote itself, and this file is not reachable through Dibs: it is
-the operator's, read by the daemon as itself.
+**A declared role follows the agent it first lands on, not the name.** This file
+names a string, and a name is free for anyone to take once its holder is gone,
+so the daemon records the credential of the agent it grants to in
+`<data-dir>/roles.pinned` and refuses the same name later under a different
+identity. That agent must have registered with a `nonce`: without one it cannot
+prove it is itself after a restart, which is the whole of what a standing role
+needs. If you genuinely mean to hand the role to a different agent, delete that
+name from `roles.pinned`.
+
+The grant window closes about two minutes after start. A name that never
+appears is reported once and then left alone, rather than standing open for
+whoever registers under it later. Restarting the daemon re-opens it, which is a
+moment an operator is present for.
+
+This file is not reachable through Dibs: it is the operator's, read by the
+daemon as itself.
 
 ```toml
 [roles]
