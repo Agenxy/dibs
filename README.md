@@ -196,6 +196,66 @@ would rather not use mise at all, `go build ./cmd/...` needs nothing but Go
 builds fine and skips the toolchain download, which on a restricted-egress
 network is a hard failure rather than a slow one.
 
+#### Without mise or task
+
+On a network that allows the Go module proxy but not the object store it
+redirects to, neither tool installs, and the failure reads like a broken
+toolchain rather than a blocked host. Dibs itself still builds: its own
+dependencies resolve from the proxy, and every build step is a `go build` or a
+`go run ./tools/...` in this tree.
+
+```sh
+go build -o bin/dibd ./cmd/dibd
+go build -o bin/dibs ./cmd/dibs
+swiftc -O -o bin/dibs-presence internal/humanauth/presence_darwin.swift   # macOS
+go run ./tools/appbundle -o bin/Dibs.app -version 0.0.0                   # macOS
+```
+
+Four artifacts get installed, not two: `dibd`, `dibs`, and on macOS
+`dibs-presence` and `Dibs.app`. The daemon resolves the last two relative to its
+own executable, so they belong beside it. Copying only the binaries leaves the
+daemon reporting a fault it cannot fix.
+
+Then install them, which is its own step: the commands above only produce
+`bin/`, so running `dibd` before this gets command-not-found on a fresh machine
+and the PREVIOUS build on a machine that has one.
+
+```sh
+mkdir -p ~/.local/bin
+rm -rf ~/.local/bin/dibs ~/.local/bin/dibd ~/.local/bin/dibs-presence ~/.local/bin/Dibs.app
+cp bin/dibs bin/dibd ~/.local/bin/
+```
+
+and on macOS, the two artifacts that only exist there:
+
+```sh
+cp bin/dibs-presence ~/.local/bin/
+cp -R bin/Dibs.app ~/.local/bin/
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f ~/.local/bin/Dibs.app
+```
+
+That last line registers the bundle with Launch Services. Without it macOS does
+not know it exists and refuses it notification authorisation, which presents as
+a notifier that posts nothing and reports "cannot notify".
+
+Two more install rules are not obvious from the commands:
+
+- **Remove before copying.** macOS caches a binary's signature verdict against
+  its inode. `cp` over a running executable reuses the inode with new content,
+  and every later run is SIGKILLed with no message, from a file that is
+  byte-identical to a working one. `rm` first gives a fresh inode.
+- **Set the identifiers when signing.** The Go toolchain leaves them as `a.out`:
+
+  ```sh
+  codesign --force -i org.agenxy.dibs     -s - ~/.local/bin/dibd
+  codesign --force -i org.agenxy.dibs.cli -s - ~/.local/bin/dibs
+  ```
+
+  `-s -` is ad-hoc, which is fine to build with and costs a re-granted macOS
+  privacy prompt on every install, because the system keys the grant to the
+  signature. `go run ./tools/signcheck` says how to make a stable identity once
+  and stop that.
+
 Then:
 
 ```sh
@@ -250,6 +310,61 @@ dibs stop
 Not `pkill dibd`. Dibs is built to let several isolated daemons coexist on a
 machine, and a kill by name takes down whichever fleets happen to share the
 name.
+
+### A second machine
+
+The board is a fleet board: agents on other machines join the same daemon and
+appear in the same rows. There is no second server to run, and nothing to
+replicate.
+
+On the joining machine, ask for the recipe. It derives the data directory from
+the board's address and prints every step with the real paths filled in:
+
+```sh
+dibs mcp-config --board 127.0.0.1:4777
+```
+
+That board gets a data directory of its own, holding its secret. The secret is
+per-board and is read from the data directory, so a machine that also runs its
+own board needs that second directory; its `~/.dibs` stays its own. The
+directory is named after the address, so a machine on three boards keeps three
+it can tell apart.
+
+If the hub is a plaintext loopback daemon, which is the default, forward a port
+to it rather than exposing it to the network:
+
+```sh
+ssh -N -L <local-port>:127.0.0.1:4777 you@hub
+```
+
+The two ends are independent: `4777` is what the hub listens on, and
+`<local-port>` is whatever is free on this machine, which will not be 4777 if it
+already runs a board of its own. `DIBS_ADDR` is then `127.0.0.1:<local-port>`,
+this machine's end of the forward. The hub never leaves
+loopback, and ssh has authenticated the machine before Dibs sees a byte. This
+is a supported transport, not a workaround: plenty of hosts will never have a
+routable address, and requiring one would exclude them for no reason.
+
+A hub that is directly reachable serves HTTPS with a certificate it generated,
+and the bridge trusts only what the joining machine has recorded, so that
+machine runs `DIBS_DIR=<that board's directory> dibs trust <host:port>` once and
+compares the fingerprint against `dibs fingerprint` on the hub. `DIBS_DIR` is not
+optional there: `trust` records the certificate in the directory it is given, and
+the bridge reads it from the one in its own config. `mcp-config --board` prints whichever of these
+two steps the address calls for.
+
+Use the bridge (`mcp-stdio`), not the url form. On a second machine that
+matters more rather than less: a url client holds no nonce, so every reconnect
+forks an identity that cannot read its predecessor's mail, and the remote
+sessions are the long-lived unattended ones.
+
+Pick the hub deliberately. Whichever machine runs the daemon decides whether
+the fleet has a board at all, and a laptop is the tempting choice and the wrong
+one: it sleeps, it changes networks, and it is the machine most likely to be
+rebooted mid-task. An always-on host reached by a forward is the answer.
+
+Check it from the joining machine with `dibs doctor`, with the same `DIBS_ADDR`
+and `DIBS_DIR` set.
 
 ### Upgrading a running fleet
 

@@ -50,6 +50,31 @@ func writeServiceUnit() error {
 		}
 	}
 
+	// The data directory is created HERE, before the unit that names it.
+	//
+	// THE INSTALL BLOCKER THIS FIXES, and it is silent, which is what makes it
+	// expensive. The launchd unit points StandardOutPath and StandardErrorPath
+	// at <datadir>/dibd.log, and launchd creates a log FILE but not its parent
+	// DIRECTORY. On a first install the directory does not exist yet, because
+	// the daemon makes it on its own first run, so the spawn fails before the
+	// binary runs. What the operator sees is not an error:
+	//
+	//	$ launchctl list | grep dibs
+	//	-	0	org.agenxy.dibs
+	//
+	// A dash for the pid and last exit status ZERO, which reads as "ran and
+	// finished cleanly" and sends you looking at RunAtLoad rather than at
+	// whether the process was ever spawned. The one artefact that would explain
+	// it is the log file, which is the artefact that cannot be created.
+	//
+	// Reported by an operator setting up a second machine, with the diagnosis
+	// and this fix. It is one mkdir, and it is the only step between a written
+	// unit and a working one.
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("creating the data directory %s, which the unit names as its "+
+			"log destination and launchd will not create: %w", dir, err)
+	}
+
 	switch runtime.GOOS {
 	case "darwin":
 		return writeLaunchAgent(daemon, dir)

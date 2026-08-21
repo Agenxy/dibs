@@ -27,7 +27,21 @@ import (
 var identityEnv = []struct{ harness, env, field string }{
 	{"claude", "CLAUDE_CODE_ENTRYPOINT", "surface"}, // "claude-desktop" vs "cli"
 	{"claude", "CLAUDE_CODE_SESSION_ID", "session_id"},
-	{"claude", "CLAUDE_EFFORT", "effort"},
+	// CLAUDE_EFFORT is NOT here, and must not be.
+	//
+	// This table is applied to register and to nothing else, and register does
+	// not declare `effort`: that is an update field. Since unknown arguments are
+	// refused rather than ignored, injecting it did not add a field, it failed
+	// the call: every Claude Code session with CLAUDE_EFFORT set got
+	// `-32602 register does not take "effort"` and registered no agent at all.
+	// Reproduced against the shipped v0.0.6 binary.
+	//
+	// Downstream that is total: no agent for the session, so lifecycle hooks
+	// resolve nothing, so no mail is delivered and the claim guard returns allow.
+	// It surfaced as an operator reporting that Dibs does not deliver messages.
+	//
+	// TestEveryEnrichedFieldIsOneRegisterDeclares now holds this table to
+	// register's actual schema, so the next field added here cannot repeat it.
 	{"opencode", "OPENCODE_CALLER", "surface"},
 	{"pi", "PI_MODEL", "model"}, // pi is the one harness that publishes the model
 	{"pi", "PI_PROVIDER", "provider"},

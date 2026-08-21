@@ -53,7 +53,12 @@ func newCoordinatorClaim(dir string, alreadyHas bool) *coordinatorClaim {
 		slog.Warn("could not write the coordinator claim", "path", path, "err", err)
 		return &coordinatorClaim{path: path}
 	}
-	slog.Info("no coordinator on this board; the agent that started this daemon can claim it",
+	// "the agent that started this daemon" describes nobody under a service
+	// manager: launchd started it, and no agent did. The mechanism was always
+	// right, since any agent that can read the file may claim, and only the
+	// sentence was wrong. Reported by an operator running it under launchd,
+	// which is the arrangement the project recommends.
+	slog.Info("no coordinator on this board; the first agent that reads the claim file can take it",
 		"how", "claim_coordinator(nonce: the contents of "+path+")")
 	return &coordinatorClaim{path: path, secret: secret}
 }
@@ -93,7 +98,14 @@ func (c *coordinatorClaim) spend() {
 		slog.Warn("claimed coordinator but could not remove the claim file",
 			"path", c.path, "err", err)
 	}
-	slog.Info("coordinator claimed by the agent that started this daemon")
+	// Not "the agent that started this daemon".
+	//
+	// That is the same false attribution the startup line was corrected for,
+	// and this one records a privileged role being taken: under launchd or
+	// systemd no agent started anything, and the claim went to whichever agent
+	// read the file first. Naming the wrong actor in the log of an
+	// authorisation event is worse than naming none.
+	slog.Info("coordinator claimed by an agent that read the claim file")
 }
 
 // installCoordinatorClaim wires the claim to the engine.

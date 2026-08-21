@@ -165,7 +165,17 @@ func main() {
 	case "calibrate":
 		err = calibrate(os.Args[2:])
 	case "mcp-config":
-		err = adminOnly("mcp-config", mcpConfig)
+		// --board prints a config for SOMEBODY ELSE'S board and reads no secret
+		// of this machine's, so it is not the thing the gate protects: the gate
+		// is there because the plain form prints this daemon's local secret.
+		//
+		// Gating the verb meant the documented headless invocation, `ssh host
+		// dibs mcp-config --board ...`, exited with "needs an interactive
+		// terminal" and printed nothing. That is the exact machine this
+		// command was added for. Reproduced through the shipped CLI by the
+		// pre-release review; the tests call mcpConfig directly and never
+		// reached the gate.
+		err = mcpConfigEntry(os.Args[2:])
 	case "admin":
 		err = adminCmd(os.Args[2:])
 	case "await":
@@ -207,7 +217,18 @@ func main() {
 		// reasoning as nearestAgentsHint, which answers a misaddressed message
 		// with the closest live agent rather than the whole board.
 		fmt.Fprintf(os.Stderr, "dibs: unknown command %q\n", os.Args[1])
-		if near := nearestCommand(os.Args[1]); near != "" {
+		// A word that IS a real Dibs verb, on the other surface.
+		//
+		// The CLI and the MCP tools are different sets and nothing maps them, so
+		// `dibs prune` answered "did you mean dibs probe": a suggestion that is
+		// reasonable letter by letter and wrong about the question, because the
+		// reader did not mistype anything. They learned both surfaces at once,
+		// which is how everybody learns them, and this one told them the verb
+		// does not exist. Reported against v0.0.6.
+		if mcpOnlyTool(os.Args[1]) {
+			fmt.Fprintf(os.Stderr, "  %s is an MCP tool, not a CLI verb: agents call it "+
+				"over MCP, not from a shell.\n", strings.ToLower(os.Args[1]))
+		} else if near := nearestCommand(os.Args[1]); near != "" {
 			fmt.Fprintf(os.Stderr, "  did you mean: dibs %s\n", near)
 		}
 		fmt.Fprintln(os.Stderr, "  dibs help   lists every command")
@@ -274,6 +295,37 @@ var commands = []string{
 // correction. Substring either way catches the common slips (`dibs boar`,
 // `dibs verif`), and one transposition or one wrong letter catches `borad` and
 // `verifu`: beyond that, silence and a pointer to `dibs help`.
+// mcpTools is every tool an agent can call over MCP that is NOT also a CLI
+// verb, so a human who types one gets told where it lives instead of being
+// offered the nearest unrelated word.
+//
+// A copy, because cmd/dibs deliberately does not link internal/mcp: the CLI
+// stays small and the bridge talks to the daemon over the wire. The copy is
+// only safe because a test holds it to the real listing, and that test does
+// import the package, which a _test.go file can do without putting a byte of
+// it in the shipped binary.
+var mcpTools = []string{
+	"ack", "ack_announcement", "admit", "adopt_agent", "all_mail", "announce",
+	"await_events", "broadcast", "check_in", "claim", "claim_coordinator",
+	"close_space", "declare", "events_since", "evict", "force_release",
+	"get_blob", "heartbeat", "human_unlock", "inbox", "join_space",
+	"leave_space", "lock_space", "merge_spaces", "open_space", "post", "prune",
+	"put_blob", "read_mail", "read_space", "register", "release", "respond",
+	"resume", "retitle_space", "send", "sign_off", "spawned_agents",
+	"undeclare", "unlock_space", "update", "vouch_child", "watch_space",
+}
+
+// mcpOnlyTool reports whether a typed word is an MCP tool rather than a typo.
+func mcpOnlyTool(typed string) bool {
+	w := strings.ToLower(typed)
+	for _, t := range mcpTools {
+		if t == w {
+			return true
+		}
+	}
+	return false
+}
+
 func nearestCommand(typed string) string {
 	w := strings.ToLower(typed)
 	for _, c := range commands {
@@ -428,7 +480,39 @@ func getGodView(path, adminPass string, v any) error {
 	return json.NewDecoder(resp.Body).Decode(v)
 }
 
-func mcpConfig() error {
+func mcpConfig(args []string) error {
+	fs := flag.NewFlagSet("mcp-config", flag.ContinueOnError)
+	board := fs.String("board", "", "print the config for joining ANOTHER machine's board, "+
+		"given its address as seen from here (e.g. 127.0.0.1:4777 through an ssh forward)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	// Go stops parsing at the first positional, so `mcp-config junk --board
+	// hub:4777` printed the LOCAL configuration and said nothing about the flag
+	// it never read: the ignored-argument shape again, here producing a
+	// confident answer to a question nobody asked. Same rule as configure.
+	if rest := fs.Args(); len(rest) > 0 {
+		return fmt.Errorf("dibs mcp-config takes no arguments except --board, and was "+
+			"given %q. Flags must come first: `mcp-config --board <host:port>`", rest[0])
+	}
+	// An EMPTY --board is a mistake, not a request for the local configuration.
+	//
+	// Falling through printed this daemon's local secret, and because the
+	// dispatch waives the interactive gate for --board, it did so on a headless
+	// machine: `dibs mcp-config --board=` over ssh returned the secret and
+	// exited 0. Found by the pre-release review running the binary; the gate
+	// waiver was mine, added one round earlier.
+	if boardGiven(fs) && *board == "" {
+		return fmt.Errorf("dibs mcp-config --board needs the board's address as seen " +
+			"from here, e.g. `--board 127.0.0.1:4777`. Run it with no flags for THIS " +
+			"machine's own configuration")
+	}
+	if *board != "" {
+		if err := checkBoardAddr(*board); err != nil {
+			return err
+		}
+		return printJoinConfig(*board)
+	}
 	s, err := localSecret()
 	if err != nil {
 		return fmt.Errorf("no local secret yet: start dibd once first: %w", err)
@@ -436,11 +520,69 @@ func mcpConfig() error {
 	// If the daemon generated a certificate, it is serving HTTPS: say so, and
 	// hand over the certificate path. A self-signed cert that clients cannot
 	// find is the difference between "works" and "mysteriously refuses".
-	scheme, certPath := "http", ""
-	if p := filepath.Join(paths.DataDir(), "tls-cert.pem"); fileExists(p) {
-		scheme, certPath = "https", p
+	//
+	// An explicit scheme in DIBS_ADDR outranks the guess. The presence of a
+	// certificate file is evidence and the operator writing `https://` is a
+	// statement, and reading only the file printed an `http://` url for a
+	// daemon reached as https: a url block that is confidently wrong, which is
+	// worse than one that is absent.
+	// What the CONFIGURATION says, before what the directory happens to contain.
+	//
+	// A certificate file is evidence; `insecure_plaintext = true` is the
+	// operator stating the daemon serves plaintext, and a stale tls-cert.pem
+	// beside it had this printing an https url and instructions to trust a
+	// certificate that is not being presented. A configured tls_cert is the
+	// same statement the other way, and is not in the data directory at all.
+	scheme, certPath, cerr := resolveTransport(paths.DataDir())
+	if cerr != nil {
+		return cerr
 	}
-	url := scheme + "://" + addr() + "/mcp"
+	// The address a CLIENT dials, which is not always the one the daemon binds.
+	//
+	// This used addr(), which ignores dibs.toml, so an operator who answered
+	// the wizard's "this machine and others" and then ran the command the
+	// wizard sends them to got a url for 127.0.0.1: a confident answer about
+	// the wrong daemon. A wildcard bind needs care of its own, since 0.0.0.0
+	// is a listen address and not something anybody can connect to.
+	url := scheme + "://" + clientHost(hostPort(rawAddr())) + "/mcp"
+
+	// STDIO FIRST, for the same reason it is first for Codex.
+	//
+	// This printed the url form for Claude Code, and every word of the Codex
+	// note below applies here too: Claude Code's HTTP transport has no
+	// per-session process either, so nothing holds this agent's nonce, so every
+	// returning session registers as a sibling that cannot read its
+	// predecessor's mail. The daemon knows and says so at registration, which is
+	// to its credit and beside the point: an operator who does what this command
+	// prints should not land in a state the daemon then diagnoses.
+	//
+	// plugins/claude-code/.mcp.json already configures `dibs mcp-stdio`, so the
+	// plugin and this command were recommending different transports for one
+	// client, and the one an operator reaches first was the one the plugin does
+	// not use. Reported by an operator who followed this and got the warning.
+	// The address and data directory, when they are not the defaults.
+	//
+	// Without them this printed a complete-looking config whose bridge falls
+	// back to 127.0.0.1:4777 and ~/.dibs: an operator running a second daemon
+	// gets a configuration for the FIRST one, reads its secret and its nonce
+	// file, and joins a board they were not asking about. Omitted when they are
+	// the defaults, so the ordinary case reads as it did.
+	dibs := map[string]any{
+		"command": self(),
+		"args":    []string{"mcp-stdio"},
+	}
+	if env := nonDefaultEnv(); len(env) > 0 {
+		dibs["env"] = env
+	}
+	stdioCfg := map[string]any{"mcpServers": map[string]any{"dibs": dibs}}
+	stdioOut, _ := json.MarshalIndent(stdioCfg, "", "  ")
+	fmt.Println("# Claude Code and JSON-config hosts: add to .mcp.json:")
+	fmt.Println(string(stdioOut))
+	fmt.Println()
+	fmt.Println("# Better still: the plugin, which brings the wake hooks and the skill")
+	fmt.Println("#   /plugin marketplace add agenxy/dibs")
+	fmt.Println("#   /plugin install dibs@dibs")
+	fmt.Println()
 
 	cfg := map[string]any{
 		"mcpServers": map[string]any{
@@ -452,7 +594,10 @@ func mcpConfig() error {
 		},
 	}
 	out, _ := json.MarshalIndent(cfg, "", "  ")
-	fmt.Println("# Claude Code and JSON-config hosts: add to .mcp.json:")
+	fmt.Println("# Only where a client cannot run a process at all. NOT the answer for another")
+	fmt.Println("# machine: run the bridge there instead (see the end of this output). A url")
+	fmt.Println("# client holds no nonce, so each session forks an identity that cannot read")
+	fmt.Println("# its predecessor's mail, and on an unattended remote session that costs most.")
 	fmt.Println(string(out))
 	// The Bearer line shows a prefix so a reader can see it is the same secret
 	// as the header above. Unguarded, that slice panicked on any secret shorter
@@ -488,21 +633,26 @@ args = ["mcp-stdio"]
 # feature is enabled AND this exact variable is set on THIS server entry: the
 # feature alone leaves the connection on 2025-06-18, and a wrong value here is
 # a hard error rather than a fallback.
-env = { CODEX_MCP_PROTOCOL_VERSION = "2026-07-28" }
+%s
 
 # stdio rather than a url, deliberately: the bridge is one process per session,
 # and it remembers this agent's nonce so a returning session reattaches to the
 # same identity instead of forking a "-2" sibling that cannot read its own mail.
-# That is a default and not a cage: an identity can also be pinned here with
-#   env = { DIBS_AGENT_NONCE = "..." }
-# which is what lets an HTTP client reattach too. Use the url form only from
-# another machine:
+# That is a default and not a cage: an identity can be pinned by adding
+# DIBS_AGENT_NONCE = "..." INSIDE the env line above, not as a second env line,
+# which a TOML table does not allow. That is also what lets an HTTP client
+# reattach.
+#
+# NOT for another machine either: run the bridge THERE, pointed here. See the
+# block below, or run: dibs mcp-config --board %s   on that machine. The url
+# form is for a client that genuinely cannot run a process, and it costs an
+# identity per session:
 #   url = %q
 #   http_headers = { "X-Dibs-Local" = %q }
 #   (the secret is also accepted as: Authorization: Bearer %s)
 #
 # Running agent sessions do not hot-load MCP config: start a new session after adding.
-`, self(), url, s, preview)
+`, self(), codexEnvLine(), shellArg(joinerAddr()), url, s, preview)
 
 	if certPath != "" {
 		fmt.Printf(`
@@ -515,8 +665,16 @@ env = { CODEX_MCP_PROTOCOL_VERSION = "2026-07-28" }
 #       Python           : SSL_CERT_FILE=%s
 #       curl (testing)   : curl --cacert %s ...
 `, certPath, certPath, certPath, certPath)
-		printRemoteRecipe()
 	}
+	// Unconditionally.
+	//
+	// This sat inside the TLS branch, so it printed only for a daemon serving
+	// HTTPS. The default daemon is plaintext on loopback, which is every fresh
+	// install, so the one block explaining how a second machine joins was
+	// invisible to exactly the operators who needed it. One reported nearly
+	// abandoning the multi-machine board, which is the reason they run Dibs,
+	// while the instructions for it were in the binary the whole time.
+	printRemoteRecipe(scheme == "https")
 	return nil
 }
 
@@ -533,27 +691,111 @@ env = { CODEX_MCP_PROTOCOL_VERSION = "2026-07-28" }
 // verified TLS to the daemon, trusting exactly the certificate this machine
 // recorded and nothing else, so the harness needs no TLS configuration and no
 // certificate of its own. It is also the only shape some harnesses accept.
-func printRemoteRecipe() {
+func printRemoteRecipe(servesTLS bool) {
 	fmt.Printf(`
 # ── Agents on ANOTHER machine ───────────────────────────────────────────────
-# Do not paste the URL above there: it asks that harness to trust a
-# self-signed certificate, which many runtimes cannot be told to do, and the
-# ones that can are told process-wide. Run dibs on that machine instead and
-# let it hold the trust:
+# The board is a fleet board: agents on other machines join THIS daemon and
+# see the same rows. Run dibs on that machine and point its bridge here.
 #
-#   1. install dibs, then record this daemon's certificate:
-#        dibs trust %s
-#      compare what it prints against `+"`dibs fingerprint`"+` run HERE. They must match.
+#   1. copy this machine's secret to a data directory of its own there:
+#        %s   ->   ~/.dibs-<board>/local.secret   (chmod 700 the directory)
+#      Its OWN ~/.dibs stays for its own board, if it runs one. The secret is
+#      per-board and read from the data directory, so joining a second board
+#      means a second directory; there is no way to hold two in one.
 #
-#   2. copy this machine's %s to the same path there.
-#
-#   3. point the harness at the bridge, with the address of this daemon:
+#   2. point the harness at the bridge, with the address THAT machine reaches
+#      this daemon on and a directory of its own (absolute path: nothing
+#      expands ~ here):
 #        {"mcpServers": {"dibs": {"command": "dibs", "args": ["mcp-stdio"],
-#                                 "env": {"DIBS_ADDR": %q}}}}
+#          "env": {"DIBS_ADDR": %q,
+#                  "DIBS_DIR":  "/home/you/.dibs-<board>"}}}}
 #
-# The bridge verifies the certificate itself, so nothing else on that machine
-# has its TLS behaviour changed.
-`, addr(), filepath.Join(paths.DataDir(), "local.secret"), addr())
+#      Or have that machine print it for you:
+#        dibs mcp-config --board %s
+#
+# stdio there, NOT the url form, and on another machine it matters more rather
+# than less: that session is the long-lived unattended one, and a url client
+# holds no nonce, so every reconnect forks an identity that cannot read its
+# predecessor's mail. The bridge is a process with a filesystem, which is what
+# the credential needs.
+`, filepath.Join(paths.DataDir(), "local.secret"), joinerAddr(), shellArg(joinerAddr()))
+
+	// Both facts, from the address, as `--board` reads them.
+	//
+	// This took a single boolean meaning "the daemon made a certificate", which
+	// answered neither question properly: an https board on loopback needs a
+	// forward AND a trust step and got only the forward, and a board explicitly
+	// named http:// off loopback was described as loopback and told to tunnel.
+	// boardShape already answers both from the address; there is no reason for
+	// this recipe to guess separately.
+	tunnel, trust := boardShape(rawAddr())
+	// The address says what a daemon off loopback USUALLY serves; the resolved
+	// transport says what this one does. `insecure_plaintext = true` is the
+	// operator overriding the default, and printing "this daemon serves HTTPS"
+	// at them, with a certificate to record, describes a different machine.
+	trust = trust && servesTLS
+	if tunnel {
+		// The tunnel, for the daemon this actually is.
+		//
+		// A plaintext loopback daemon is unreachable from another host, and the
+		// documented answer was a TLS endpoint: fine when the hub has a routable
+		// address, and useless on the corporate and lab networks that are full of
+		// hosts that will never have one. The forward has always worked, because
+		// the bridge only ever talks to an address, and nothing said so. It is
+		// also the better default: the daemon never leaves loopback, and the
+		// tunnel authenticates the machine before Dibs sees a byte.
+		fmt.Printf(`
+# This daemon is plaintext on loopback, so it is unreachable from another
+# host directly. Forward a port to it instead, which is supported and is the
+# more private shape: nothing about this daemon is exposed to the network.
+#
+#   on the other machine, keep this running (or use ssh -f, or autossh):
+#     ssh -N -L <local-port>:%s %s@%s
+#
+#   <local-port> is that machine's end and is its choice: it only has to be
+#   free THERE, and it is what goes in DIBS_ADDR as 127.0.0.1:<local-port>.
+#   Using %s for it is tidy and wrong if that machine already runs a board of
+#   its own on it.
+#
+# Pick the hub deliberately: whichever machine hosts the daemon decides
+# whether the fleet has a board at all. A laptop is the tempting choice and
+# the wrong one, because it sleeps, changes networks and gets rebooted
+# mid-task. An always-on headless host reached by a forward is the answer.
+`, hostPort(rawAddr()), os.Getenv("USER"), hostName(), port(rawAddr()))
+	}
+	if !trust {
+		return
+	}
+	fmt.Printf(`# This daemon serves HTTPS, so that machine must trust its certificate. The
+# bridge holds the trust itself, so nothing else there changes:
+#     DIBS_DIR=~/.dibs-<board> dibs trust %s
+# DIBS_DIR is not optional: trust records the certificate in the data directory
+# it is given, the bridge reads it from the one in its config above, and without
+# it trust reports success while writing where the bridge never looks.
+# Compare what that prints against `+"`dibs fingerprint`"+` run HERE; they must match.
+`, shellArg(hostPort(joinerAddr())))
+}
+
+// port is the ":4777" half of an address, for the near end of a forward.
+func port(a string) string {
+	// A scheme is not part of the port. DIBS_ADDR may carry a whole origin.
+	if _, rest, found := strings.Cut(a, "://"); found {
+		a = rest
+	}
+	if _, p, err := net.SplitHostPort(a); err == nil {
+		return p
+	}
+	return a
+}
+
+// hostName is this machine, for the ssh target in the recipe. A guess an
+// operator can correct beats a placeholder they have to decode.
+func hostName() string {
+	h, err := os.Hostname()
+	if err != nil || h == "" {
+		return "this-machine"
+	}
+	return h
 }
 
 func fileExists(p string) bool {
@@ -1674,7 +1916,7 @@ func reachErr(err error) error {
 			"  dibd signs its own certificate off loopback, so this is what first\n"+
 			"  contact from a new machine looks like, not a failure.\n\n"+
 			"  Trust it the same way you got the secret, by carrying it across:\n"+
-			"    dibs trust %s", err, addr(), addr())
+			"    %s", err, addr(), trustCommand())
 	case errors.As(err, &hostErr):
 		return fmt.Errorf("%w\n\n"+
 			"  The daemon is reachable but its certificate names a different host.\n"+

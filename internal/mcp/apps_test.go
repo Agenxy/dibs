@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -76,9 +77,103 @@ func TestShowBoardSplitsModelAndUIPayloads(t *testing.T) {
 
 	// The model line must stay far smaller than the UI payload, or the tool has
 	// stopped paying for itself.
+	//
+	// Measured on a host that DECLARES a panel, which is where the waste would
+	// be: there, the human is looking at the payload already and a second copy
+	// in the model's context buys nothing. Where no panel is declared the model
+	// text is the only rendering there is, and it is held instead by
+	// TestBoardFallsBackToTextBoardWithoutAPanel below.
+	panelHost := showBoardResult(res, false, true)["content"].([]map[string]any)[0]["text"].(string)
 	full, _ := json.Marshal(sc)
-	if len(text) >= len(full) {
-		t.Errorf("model text (%d B) not smaller than UI payload (%d B)", len(text), len(full))
+	if len(panelHost) >= len(full) {
+		t.Errorf("model text (%d B) not smaller than UI payload (%d B)", len(panelHost), len(full))
+	}
+}
+
+// A terminal host renders no panel, so the tool result is the whole of what the
+// agent can show. It used to be one line, "2 agent(s), 1 active", while `dibs
+// board` on the same machine printed the board: an agent asked to show the
+// board could not, and had less than the operator sitting next to it. Reported
+// against v0.0.6 by an operator who hit exactly that.
+func TestBoardFallsBackToTextBoardWithoutAPanel(t *testing.T) {
+	res := core.Result{
+		"board": core.Result{"agents": []core.Result{
+			{"id": "reviewer", "status": "active", "slots": []core.Result{
+				{"text": "reviewing the release surface"},
+			}},
+			{"id": "builder", "status": "dormant"},
+		}},
+		"agent_id": "a",
+	}
+
+	text := showBoardResult(res, false, false)["content"].([]map[string]any)[0]["text"].(string)
+	for _, want := range []string{"reviewer", "active", "reviewing the release surface", "builder", "dormant"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("no-panel board %q is missing %q: the agent cannot show what the board says", text, want)
+		}
+	}
+
+	// display_name, and the declarations not shown.
+	//
+	// The rows carried only the addressable id and the first slot. A name that
+	// is not Latin collapses to a generic id ("agent", "agent-2"), which is why
+	// display_name exists, so a terminal agent was shown the wrong identity;
+	// and an agent declaring three things is doing three things, so showing one
+	// silently is a wrong account rather than a short one.
+	named := core.Result{"board": core.Result{"agents": []core.Result{
+		{"id": "agent", "display_name": "審査担当", "status": "active", "slots": []core.Result{
+			{"text": "reviewing the release"}, {"text": "and the docs"}, {"text": "and the tests"},
+		}},
+	}}, "agent_id": "a"}
+	rows := showBoardResult(named, false, false)["content"].([]map[string]any)[0]["text"].(string)
+	if !strings.Contains(rows, "審査担当") {
+		t.Errorf("the board shows an id where the agent has a display name, so a "+
+			"terminal agent is told the wrong identity: %q", rows)
+	}
+	if !strings.Contains(rows, "agent") {
+		t.Errorf("the addressable id is gone, and it is what mail is sent to: %q", rows)
+	}
+	if !strings.Contains(rows, "+2 more") {
+		t.Errorf("two of three declarations were dropped without saying so: %q", rows)
+	}
+
+	// And the panel host still gets the line, not the rows: it has the panel.
+	panelHost := showBoardResult(res, false, true)["content"].([]map[string]any)[0]["text"].(string)
+	if strings.Contains(panelHost, "reviewing the release surface") {
+		t.Error("panel host got the rows too: the model is paying twice for what the human is already looking at")
+	}
+}
+
+// A large board must not become the largest thing in the model's context.
+func TestTextBoardIsBounded(t *testing.T) {
+	var agents []core.Result
+	for i := range 200 {
+		agents = append(agents, core.Result{
+			"id":     fmt.Sprintf("agent-%03d", i),
+			"status": "active",
+			"slots":  []core.Result{{"text": strings.Repeat("a very long declaration ", 40)}},
+		})
+	}
+	res := core.Result{"board": core.Result{"agents": agents}, "agent_id": "a"}
+	text := showBoardResult(res, false, false)["content"].([]map[string]any)[0]["text"].(string)
+	if len(text) > 4000 {
+		t.Errorf("no-panel board is %d B: unbounded boards land in every context window", len(text))
+	}
+	if !strings.Contains(text, "and 180 more") {
+		t.Errorf("truncated board does not say what it dropped: %q", text)
+	}
+	// And must not claim the rest is somewhere the agent cannot look.
+	//
+	// It said "the full board is in this result". It is in _meta, which is
+	// exactly what the model on this host cannot see: the reason this fallback
+	// exists at all. An agent believing it would report the missing rows as
+	// present, which is the honesty rule broken inside the fix written to keep
+	// it. Found by the pre-release review.
+	if strings.Contains(text, "in this result") {
+		t.Errorf("the truncation points at this result, where those rows are not: %q", text)
+	}
+	if !strings.Contains(text, "detail") {
+		t.Errorf("the truncation does not name the call that returns the rest: %q", text)
 	}
 }
 

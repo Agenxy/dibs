@@ -1,0 +1,261 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"net"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+// printJoinConfig is `dibs mcp-config --board <addr>`: the config for joining
+// SOMEBODY ELSE'S board from this machine.
+//
+// The rest of this command answers "how do agents reach the daemon I am running",
+// which leaves the fleet case to be assembled from three separate blocks by an
+// operator who does not yet know that is what they are doing. This one answers
+// the other question directly, and it is the question a second machine has.
+//
+// It deliberately does not read local.secret: the secret needed here belongs to
+// the REMOTE board and this machine may have no daemon of its own at all.
+func printJoinConfig(remote string) error {
+	dir := filepath.Join(homeDir(), ".dibs-"+boardSlug(remote))
+	cfg := map[string]any{
+		"mcpServers": map[string]any{
+			"dibs": map[string]any{
+				"command": self(),
+				"args":    []string{"mcp-stdio"},
+				"env": map[string]string{
+					"DIBS_ADDR": remote,
+					"DIBS_DIR":  dir,
+				},
+			},
+		},
+	}
+	// Quoted, because a home directory may contain a space.
+	//
+	// The JSON and TOML forms carry the path as a value and are fine; these are
+	// shell lines an operator pastes, and unquoted they would have mkdir, scp
+	// and trust act on a split argument. shellArg already exists for exactly
+	// this, on the service unit.
+	q := shellArg(dir)
+	qsecret := shellArg(filepath.Join(dir, "local.secret"))
+	out, _ := json.MarshalIndent(cfg, "", "  ")
+	fmt.Printf(`# Joining the board at %s from this machine.
+#
+# 1. Make the data directory and copy that board's secret into it. The secret
+#    is per-board and read from the data directory, so a machine that also runs
+#    its own board needs this second directory; there is no way to hold two
+#    secrets in one.
+#
+#      mkdir -p %s && chmod 700 %s
+#      scp '<hub>:<hub-data-dir>/local.secret' %s
+#
+#    <hub-data-dir> is ~/.dibs unless that machine sets DIBS_DIR. Only the hub
+#    knows: `+"`dibs doctor`"+` prints it on the first line there. A hub running more
+#    than one board has more than one, and copying the wrong one gives a
+#    credential that authenticates against a board nobody meant.
+#
+`, remote, q, q, qsecret)
+
+	// Both, when both apply.
+	//
+	// This was a switch, which reads as "one of these" and quietly dropped a
+	// real combination: `https://127.0.0.1:5777` needs a forward AND a
+	// certificate recorded, and the tunnel arm won, so the printed
+	// configuration was complete-looking and rejected the board's certificate.
+	// boardShape had computed both answers correctly; the branch below threw
+	// one away.
+	tunnel, trust := boardShape(remote)
+	if tunnel {
+		// The hub's port is NOT this one.
+		//
+		// The two ends of a forward are independent: the local port is whatever
+		// is free here, the far port is whatever the hub listens on. Printing
+		// `-L 5777:127.0.0.1:5777` for `--board 127.0.0.1:5777` assumes they
+		// match, and when they do not the tunnel comes up and forwards to
+		// nothing, which is the worst way for this to fail: ssh reports success
+		// and the board is simply unreachable.
+		fmt.Printf(`# 2%s. That address is loopback, so it is this machine's end of an ssh
+#    forward to the hub. Open it and leave it running:
+#
+#      ssh -N -L %s:127.0.0.1:<hub-port> <user>@<hub>
+#
+#    <hub-port> is whatever the HUB's daemon listens on, usually 4777, and is
+#    unrelated to %s above: that is this machine's end, and only has to be free
+#    here. `+"`dibs doctor`"+` on the hub prints its address.
+#
+#    The hub's daemon never leaves its own loopback, and ssh has authenticated
+#    the machine before Dibs sees a byte.
+#
+`, tunnelStepSuffix(trust), port(remote), port(remote))
+	}
+	if trust {
+		// The trust step, which the bridge cannot do without.
+		//
+		// A non-loopback daemon serves HTTPS with a certificate it generated
+		// itself, and the bridge trusts only what this machine recorded. Without
+		// this the config below is complete-looking and the bridge rejects the
+		// board on the first call. The older TLS recipe said so; this command was
+		// written without it.
+		fmt.Printf(`# 2%s. The board serves HTTPS with a certificate it generated
+#    itself. The bridge trusts only what this machine
+#    has recorded, so record it once:
+#
+#      DIBS_DIR=%s dibs trust %s
+#
+#    DIBS_DIR is not optional there: trust records the certificate in the data
+#    directory it is given, the bridge reads it from the one in the config
+#    below, and without it trust reports success while writing somewhere the
+#    bridge never looks.
+#
+#    Compare the fingerprint it prints against `+"`dibs fingerprint`"+` run on the hub;
+#    they must match. Only the bridge's own trust store changes, so nothing
+#    else on this machine has its TLS behaviour altered.
+#
+`, trustStepSuffix(tunnel), q, shellArg(hostPort(remote)))
+	}
+	if !tunnel && !trust {
+		// Reachable directly and serving plaintext, because the operator said
+		// so with an explicit scheme. Nothing to trust and nothing to forward.
+		fmt.Printf(`# 2. That address is reachable directly and names plaintext, so there is
+#    no certificate to record and no forward to open. Nothing about that
+#    daemon is protected by the network it is on: keep it on one you trust.
+#
+`)
+	}
+
+	fmt.Printf(`# 3. Add to .mcp.json (Claude Code and JSON-config hosts):
+%s
+
+# Codex / ChatGPT desktop, in ~/.codex/config.toml:
+[mcp_servers.dibs]
+command = %q
+args = ["mcp-stdio"]
+env = { DIBS_ADDR = %q, DIBS_DIR = %q, CODEX_MCP_PROTOCOL_VERSION = "2026-07-28" }
+
+# stdio, not the url form, and from another machine that matters MORE rather
+# than less: this session is the long-lived unattended one, and a url client
+# holds no nonce, so every reconnect forks an identity that cannot read its
+# predecessor's mail. The bridge keeps the nonce in DIBS_DIR above, which is
+# what makes a returning session the same agent.
+#
+# Check it: dibs doctor, with the same two variables set.
+`, string(out), self(), remote, dir)
+	return nil
+}
+
+// boardShape decides which second step an address calls for: a forward, or
+// recording a certificate.
+//
+// One place, reading the address AS GIVEN, because there are three signals and
+// they were being read in two. A scheme, when present, is the operator saying
+// what the daemon serves and settles it outright: `http://` is the documented
+// way to reach a deliberately plaintext daemon off loopback, and telling that
+// operator to trust a certificate it does not serve sends them to a command
+// that cannot succeed. Without a scheme, loopback means a forward and anything
+// else means the HTTPS a daemon off loopback serves by default.
+func boardShape(addr string) (tunnel, trust bool) {
+	scheme, rest, hasScheme := strings.Cut(addr, "://")
+	scheme = strings.ToLower(scheme)
+	if !hasScheme {
+		rest = addr
+	}
+	h, _, err := net.SplitHostPort(rest)
+	if err != nil {
+		h = rest
+	}
+	loopback := h == "" || h == "localhost"
+	if ip := net.ParseIP(strings.Trim(h, "[]")); ip != nil {
+		loopback = ip.IsLoopback()
+	}
+	if hasScheme {
+		return loopback, scheme == "https"
+	}
+	return loopback, !loopback
+}
+
+// homeDir is the operator's home, for a path they can paste. An empty string
+// would silently produce a config rooted at "/", so say what went wrong.
+func homeDir() string {
+	h, err := os.UserHomeDir()
+	if err != nil || h == "" {
+		return "/home/you"
+	}
+	return h
+}
+
+// boardSlug names the data directory after the board it holds the secret for,
+// so a machine on three boards has three directories it can tell apart.
+//
+// The whole address, with nothing invented and nothing tidied.
+//
+// This collided three times, each fix keeping one more character and each
+// leaving the claim above still false: the port was dropped for non-loopback,
+// so two daemons on one host shared a directory; then dots became hyphens, so
+// hub.example and hub-example did; then loopback was renamed "board", so
+// 127.0.0.1:4777 collided with the ordinary hostname board:4777.
+//
+// The pattern was rewriting the address into something that reads nicely.
+// Every such rewrite maps two addresses onto one name somewhere, and the next
+// character is found by whoever has two boards rather than by me. So: keep the
+// address, replace only the separators that would change the path, and accept
+// a less pretty directory name. Brackets stay, because they are what tells an
+// IPv6 literal from a hostname spelled like one.
+func boardSlug(addr string) string {
+	// The scheme says HOW to reach a board, not WHICH board it is: http://hub
+	// and https://hub are one daemon on one address, and giving them separate
+	// credential directories would have an operator copy the same secret twice
+	// and wonder which one is live.
+	h, port, err := net.SplitHostPort(hostPort(addr))
+	if err != nil {
+		h, port = addr, ""
+	}
+	if h == "" {
+		h = "localhost"
+	}
+	slug := strings.NewReplacer(":", "-", "/", "-", string(filepath.Separator), "-").Replace(h)
+	if strings.Contains(h, ":") {
+		slug = "[" + slug + "]"
+	}
+	if port != "" {
+		slug += "-" + port
+	}
+	// Belt and braces: this names a directory that then has a secret written
+	// into it, and checkBoardAddr is one caller rather than a property of the
+	// function. A slug that is a path is a slug that escapes the home directory
+	// it is joined to.
+	slug = strings.NewReplacer("/", "-", `\`, "-", "..", "-").Replace(slug)
+	if slug == "" || slug == "." {
+		return "board"
+	}
+	return slug
+}
+
+// hostPort is an address with any scheme removed, for the commands that dial
+// rather than configure. `dibs trust` is one: a scheme reaches tls.Dial as part
+// of the host and fails with "too many colons in address".
+func hostPort(a string) string {
+	if _, rest, found := strings.Cut(a, "://"); found {
+		return rest
+	}
+	return a
+}
+
+// trustStepSuffix labels the trust step "2b" when a forward is step 2a, so two
+// steps that both print are not both called 2.
+func trustStepSuffix(afterTunnel bool) string {
+	if afterTunnel {
+		return "b"
+	}
+	return ""
+}
+
+// tunnelStepSuffix labels the forward "2a" when a trust step follows it.
+func tunnelStepSuffix(beforeTrust bool) string {
+	if beforeTrust {
+		return "a"
+	}
+	return ""
+}

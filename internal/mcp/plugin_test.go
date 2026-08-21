@@ -160,3 +160,36 @@ func TestAnAgentWithNoSessionIdIsToldWhyNothingWakesIt(t *testing.T) {
 		t.Errorf("verify = %v: the plugin is not what is broken here", hint["verify"])
 	}
 }
+
+// The install nudge is four sentences and it is worth reading exactly once.
+//
+// register has TWO continuity paths and only one of them was checked: an agent
+// that is still active and registers again with its nonce comes back `resumed`,
+// not `reattached`, so it was treated as a first connection every time and read
+// the whole paragraph again on every register. An operator reported exactly
+// that against v0.0.6. A hint that repeats gets trained away as noise, which
+// costs the one registration where it is news.
+func TestTheInstallNudgeIsNotRepeatedOnEveryRegister(t *testing.T) {
+	srv, _ := newServer(t)
+	const nonce = "b8c1f0a2d4e6a8c0b2d4f6a8c0e2d4f6"
+	args := map[string]any{
+		"name":    "returning",
+		"nonce":   nonce,
+		"harness": "claude-code",
+		"cwd":     t.TempDir(),
+	}
+
+	first := toolCall(t, srv, "register", args)
+	if _, ok := first["plugin"]; !ok {
+		t.Fatal("no nudge on the FIRST registration: the probe is not measuring the hint at all")
+	}
+
+	// Same name, same nonce, agent still active: the resumed path.
+	again := toolCall(t, srv, "register", args)
+	if resumed, _ := again["resumed"].(bool); !resumed {
+		t.Fatalf("second register did not resume, so this does not exercise the reported case: %v", again)
+	}
+	if hint, repeated := again["plugin"]; repeated {
+		t.Errorf("install nudge repeated on a resumed registration: %v", hint)
+	}
+}
