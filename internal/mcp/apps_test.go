@@ -113,6 +113,30 @@ func TestBoardFallsBackToTextBoardWithoutAPanel(t *testing.T) {
 		}
 	}
 
+	// display_name, and the declarations not shown.
+	//
+	// The rows carried only the addressable id and the first slot. A name that
+	// is not Latin collapses to a generic id ("agent", "agent-2"), which is why
+	// display_name exists, so a terminal agent was shown the wrong identity;
+	// and an agent declaring three things is doing three things, so showing one
+	// silently is a wrong account rather than a short one.
+	named := core.Result{"board": core.Result{"agents": []core.Result{
+		{"id": "agent", "display_name": "審査担当", "status": "active", "slots": []core.Result{
+			{"text": "reviewing the release"}, {"text": "and the docs"}, {"text": "and the tests"},
+		}},
+	}}, "agent_id": "a"}
+	rows := showBoardResult(named, false, false)["content"].([]map[string]any)[0]["text"].(string)
+	if !strings.Contains(rows, "審査担当") {
+		t.Errorf("the board shows an id where the agent has a display name, so a "+
+			"terminal agent is told the wrong identity: %q", rows)
+	}
+	if !strings.Contains(rows, "agent") {
+		t.Errorf("the addressable id is gone, and it is what mail is sent to: %q", rows)
+	}
+	if !strings.Contains(rows, "+2 more") {
+		t.Errorf("two of three declarations were dropped without saying so: %q", rows)
+	}
+
 	// And the panel host still gets the line, not the rows: it has the panel.
 	panelHost := showBoardResult(res, false, true)["content"].([]map[string]any)[0]["text"].(string)
 	if strings.Contains(panelHost, "reviewing the release surface") {

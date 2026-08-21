@@ -356,6 +356,22 @@ func TestTrustIsGivenHostPortAndNotAScheme(t *testing.T) {
 // added for. The tests called mcpConfig directly and never reached the gate,
 // which is why it took the reviewer running the shipped CLI to find it.
 func TestJoiningAnotherBoardIsNotGatedOnATerminal(t *testing.T) {
+	// Through the GATE, not the predicate.
+	//
+	// The first version called joiningAnotherBoard only, so restoring the
+	// dispatch to gate the whole verb, which is the regression this names,
+	// would have left it green. go test gives this process a pipe for stdout,
+	// so adminOnly sees no terminal: exactly the headless case.
+	err := mcpConfigEntry([]string{"--board", "hub.example:4777"})
+	if err != nil && strings.Contains(err.Error(), "interactive terminal") {
+		t.Errorf("joining another board was refused for want of a terminal, which is "+
+			"the machine it exists for: %v", err)
+	}
+	if err := mcpConfigEntry(nil); err == nil ||
+		!strings.Contains(err.Error(), "interactive terminal") {
+		t.Errorf("the plain form was not gated, and it prints this machine's secret: %v", err)
+	}
+
 	for _, args := range [][]string{
 		{"--board", "hub.example:4777"},
 		{"--board=hub.example:4777"},
@@ -435,5 +451,37 @@ func TestAnEmptyBoardIsNeitherWaivedNorTreatedAsLocal(t *testing.T) {
 	// A real address still waives it: that is the headless case the flag exists for.
 	if !joiningAnotherBoard([]string{"--board", "hub.example:4777"}) {
 		t.Error("a real board no longer waives the gate, so the headless case is refused again")
+	}
+}
+
+// The ORDINARY recipe reads the address too, not a boolean about a file.
+//
+// It took "did the daemon make a certificate", which answers neither question:
+// an https board on loopback needs a forward AND a trust step and got only the
+// forward, and a board explicitly named http:// off loopback was called
+// loopback and told to tunnel. Found by the pre-release review running the
+// binary; `--board` had been fixed and this had not.
+func TestTheOrdinaryRecipeReadsTheAddress(t *testing.T) {
+	cases := []struct {
+		addr                  string
+		wantTunnel, wantTrust bool
+	}{
+		{"https://127.0.0.1:5777", true, true},
+		{"http://hub.example:4777", false, false},
+		{"127.0.0.1:4777", true, false},
+		{"hub.example:4777", false, true},
+	}
+	for _, c := range cases {
+		t.Setenv("DIBS_ADDR", c.addr)
+		out, err := captureStdout(t, func() error { printRemoteRecipe(); return nil })
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Contains(out, "ssh -N -L"); got != c.wantTunnel {
+			t.Errorf("%s: forward printed = %v, want %v", c.addr, got, c.wantTunnel)
+		}
+		if got := strings.Contains(out, "dibs trust"); got != c.wantTrust {
+			t.Errorf("%s: trust step printed = %v, want %v", c.addr, got, c.wantTrust)
+		}
 	}
 }

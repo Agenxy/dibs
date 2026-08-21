@@ -214,6 +214,19 @@ machines for real work. Their priority order, not ours.
   value. The install recipe also never created `~/.local/bin`, and copied the
   two macOS-only artifacts unconditionally, so it failed on Linux.
 
+- **Four more from the review's twelfth round.** The ordinary `mcp-config`
+  recipe still decided the second machine's setup from "did this daemon make a
+  certificate", which answers neither of the two questions it has: an HTTPS
+  board on loopback needs a forward and a certificate recorded and got only
+  the forward, and a board explicitly named `http://` off loopback was called
+  loopback and told to tunnel. It reads the address now, as `--board` does. An
+  explicit scheme also outranks the certificate file when naming the url. The
+  no-panel board dropped `display_name`, which exists because a name that is
+  not Latin collapses to a generic id, and silently showed one of an agent's
+  declarations; it shows the name, the id, and how many it did not show. Two
+  tests of ours were also named for regressions they could not catch, and now
+  drive the gate and the wizard rather than the helpers beside them.
+
 - **README: building without mise or task.** On a network that allows the Go
   module proxy but not the object store it redirects to, neither tool installs
   and the failure reads like a broken toolchain rather than a blocked host.

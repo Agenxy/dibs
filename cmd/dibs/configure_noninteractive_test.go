@@ -40,17 +40,55 @@ func TestConfigureCanRunWithoutATerminal(t *testing.T) {
 // string builders, which is how one of them ends up a release behind.
 func TestBothConfigurePathsWriteTheSameDefaults(t *testing.T) {
 	body := defaultConfig("127.0.0.1:4777")
-	dir := filepath.Join(t.TempDir(), "data")
-	if err := configure([]string{"--non-interactive", dir}); err != nil {
+
+	quiet := filepath.Join(t.TempDir(), "data")
+	if err := configure([]string{"--non-interactive", quiet}); err != nil {
 		t.Fatal(err)
 	}
-	b, err := os.ReadFile(filepath.Join(dir, "dibs.toml"))
+	got, err := os.ReadFile(filepath.Join(quiet, "dibs.toml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(b) != body {
-		t.Errorf("the non-interactive path wrote something other than defaultConfig:\n%q\nwant\n%q", b, body)
+	if string(got) != body {
+		t.Errorf("the non-interactive path wrote something other than defaultConfig:\n%q\nwant\n%q", got, body)
 	}
+
+	// And the WIZARD, driven the way a person drives it.
+	//
+	// The first version of this compared defaultConfig against the
+	// non-interactive output only, so the interactive path could have diverged
+	// while it stayed green: it named both paths and tested one. Raised by the
+	// pre-release review. Enter through every question is the documented way to
+	// get a correct single-machine setup, so that is what this presses.
+	wizard := filepath.Join(t.TempDir(), "data")
+	withStdin(t, "\n\n\n\n")
+	if err := runWizard(wizard); err != nil {
+		t.Fatal(err)
+	}
+	got, err = os.ReadFile(filepath.Join(wizard, "dibs.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != body {
+		t.Errorf("pressing Enter through the wizard does not produce the defaults the "+
+			"other path writes:\n%q\nwant\n%q", got, body)
+	}
+}
+
+// withStdin points os.Stdin at a string for the duration of the test.
+func withStdin(t *testing.T, in string) {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.WriteString(in); err != nil {
+		t.Fatal(err)
+	}
+	_ = w.Close()
+	saved := os.Stdin
+	os.Stdin = r
+	t.Cleanup(func() { os.Stdin = saved; _ = r.Close() })
 }
 
 // Every argument is read before anything is written.

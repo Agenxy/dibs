@@ -175,11 +175,7 @@ func main() {
 		// command was added for. Reproduced through the shipped CLI by the
 		// pre-release review; the tests call mcpConfig directly and never
 		// reached the gate.
-		if joiningAnotherBoard(os.Args[2:]) {
-			err = mcpConfig(os.Args[2:])
-		} else {
-			err = adminOnly("mcp-config", func() error { return mcpConfig(os.Args[2:]) })
-		}
+		err = mcpConfigEntry(os.Args[2:])
 	case "admin":
 		err = adminCmd(os.Args[2:])
 	case "await":
@@ -521,9 +517,18 @@ func mcpConfig(args []string) error {
 	// If the daemon generated a certificate, it is serving HTTPS: say so, and
 	// hand over the certificate path. A self-signed cert that clients cannot
 	// find is the difference between "works" and "mysteriously refuses".
+	//
+	// An explicit scheme in DIBS_ADDR outranks the guess. The presence of a
+	// certificate file is evidence and the operator writing `https://` is a
+	// statement, and reading only the file printed an `http://` url for a
+	// daemon reached as https: a url block that is confidently wrong, which is
+	// worse than one that is absent.
 	scheme, certPath := "http", ""
 	if p := filepath.Join(paths.DataDir(), "tls-cert.pem"); fileExists(p) {
 		scheme, certPath = "https", p
+	}
+	if given, _, found := strings.Cut(rawAddr(), "://"); found {
+		scheme = strings.ToLower(given)
 	}
 	url := scheme + "://" + addr() + "/mcp"
 
@@ -655,7 +660,7 @@ args = ["mcp-stdio"]
 	// invisible to exactly the operators who needed it. One reported nearly
 	// abandoning the multi-machine board, which is the reason they run Dibs,
 	// while the instructions for it were in the binary the whole time.
-	printRemoteRecipe(certPath != "")
+	printRemoteRecipe()
 	return nil
 }
 
@@ -672,7 +677,7 @@ args = ["mcp-stdio"]
 // verified TLS to the daemon, trusting exactly the certificate this machine
 // recorded and nothing else, so the harness needs no TLS configuration and no
 // certificate of its own. It is also the only shape some harnesses accept.
-func printRemoteRecipe(tls bool) {
+func printRemoteRecipe() {
 	fmt.Printf(`
 # ── Agents on ANOTHER machine ───────────────────────────────────────────────
 # The board is a fleet board: agents on other machines join THIS daemon and
@@ -700,7 +705,16 @@ func printRemoteRecipe(tls bool) {
 # the credential needs.
 `, filepath.Join(paths.DataDir(), "local.secret"), rawAddr(), shellArg(rawAddr()))
 
-	if !tls {
+	// Both facts, from the address, as `--board` reads them.
+	//
+	// This took a single boolean meaning "the daemon made a certificate", which
+	// answered neither question properly: an https board on loopback needs a
+	// forward AND a trust step and got only the forward, and a board explicitly
+	// named http:// off loopback was described as loopback and told to tunnel.
+	// boardShape already answers both from the address; there is no reason for
+	// this recipe to guess separately.
+	tunnel, trust := boardShape(rawAddr())
+	if tunnel {
 		// The tunnel, for the daemon this actually is.
 		//
 		// A plaintext loopback daemon is unreachable from another host, and the
@@ -728,6 +742,8 @@ func printRemoteRecipe(tls bool) {
 # the wrong one, because it sleeps, changes networks and gets rebooted
 # mid-task. An always-on headless host reached by a forward is the answer.
 `, addr(), os.Getenv("USER"), hostName(), port(addr()))
+	}
+	if !trust {
 		return
 	}
 	fmt.Printf(`# This daemon serves HTTPS, so that machine must trust its certificate. The

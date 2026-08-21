@@ -15,6 +15,19 @@ import (
 // one env line a TOML table may have, and which invocations may run without a
 // terminal. Together in one place, they are readable against each other.
 
+// mcpConfigEntry applies the interactive gate and then runs mcp-config.
+//
+// A function rather than a branch in the dispatch, because the branch could not
+// be tested: the probe for it called joiningAnotherBoard directly, so reverting
+// the dispatch to gate the whole verb, which is the regression it names, would
+// have left it green. Raised by the pre-release review.
+func mcpConfigEntry(args []string) error {
+	if joiningAnotherBoard(args) {
+		return mcpConfig(args)
+	}
+	return adminOnly("mcp-config", func() error { return mcpConfig(args) })
+}
+
 // joiningAnotherBoard reports whether these arguments ask for --board, which
 // prints no secret of this machine's. Deliberately a plain scan rather than a
 // second flag parse: it decides only whether to apply the interactive gate,

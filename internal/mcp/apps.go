@@ -795,15 +795,32 @@ func boardRows(agents []any) string {
 		}
 		id, _ := m["id"].(string)
 		status, _ := m["status"].(string)
+		// display_name, when there is one.
+		//
+		// It exists because a name that is not Latin collapses to a generic
+		// addressable id ("agent", "agent-2"), and showing only the id tells a
+		// terminal agent the wrong thing about who it is looking at. The id is
+		// kept alongside because it is what mail is addressed to.
+		who := id
+		if dn, _ := m["display_name"].(string); dn != "" && dn != id {
+			who = firstLine(dn, 22) + " (" + id + ")"
+		}
 		what := "(nothing declared)"
-		if slots, _ := m["slots"].([]any); len(slots) > 0 {
+		slots, _ := m["slots"].([]any)
+		if len(slots) > 0 {
 			if s0, ok := slots[0].(map[string]any); ok {
 				if t, _ := s0["text"].(string); t != "" {
 					what = firstLine(t, 60)
 				}
 			}
 		}
-		fmt.Fprintf(&b, "  %-20s %-9s %s\n", id, status, what)
+		// An agent declaring five things is doing five things, and showing one
+		// of them silently is a wrong account of the board rather than a short
+		// one. Say how many were not shown.
+		if n := len(slots) - 1; n > 0 {
+			what += fmt.Sprintf(" (+%d more)", n)
+		}
+		fmt.Fprintf(&b, "  %-28s %-9s %s\n", who, status, what)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
