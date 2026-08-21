@@ -13,7 +13,7 @@ import (
 // unusable. `agent_ttl = "10"` is a string, decodes cleanly, and is not a
 // duration; `extend_turn_for = "everything"` names no policy. Both stopped the
 // daemon while `dibs mcp-config` printed a complete configuration around them
-// and exited 0 — the same success-that-is-false this package was created to
+// and exited 0: the same success-that-is-false this package was created to
 // end, found one round after it was created. Raised by the pre-release review.
 func TestLoadRefusesValuesTheDaemonRefuses(t *testing.T) {
 	bad := []struct{ name, body string }{
