@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -250,5 +251,101 @@ func Load(dir string) (Config, error) {
 			strings.Join(keys, ", "),
 		)
 	}
-	return c, nil
+	return c, c.Validate()
+}
+
+// MinAgentTTL is the floor for any lease duration in [limits].
+//
+// Agents renew at half the TTL, so anything shorter marks healthy agents
+// crashed between their own keepalives.
+const MinAgentTTL = 5 * time.Second
+
+// WakePhases is every value [wake] extend_turn_for accepts.
+//
+// String literals rather than the engine's constants, because this package must
+// not import the engine: `dibs` reads this file and has no business linking the
+// daemon's internals. TestWakePhasesMatchTheEngine holds the two together.
+var WakePhases = []string{"all", "urgent", "none"}
+
+// CheckDuration parses a duration setting and enforces the floor.
+func CheckDuration(table, key, raw string) (time.Duration, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("[%s] %s = %q is not a duration: write it like \"5m\", "+
+			"\"90s\" or \"1h\": %w", table, key, raw, err)
+	}
+	if d < MinAgentTTL {
+		return 0, fmt.Errorf("[%s] %s = %q is below the %s floor: agents renew their "+
+			"lease at half the TTL, so anything shorter marks healthy agents crashed "+
+			"between their own keepalives", table, key, raw, MinAgentTTL)
+	}
+	return d, nil
+}
+
+// CheckCount refuses a negative ceiling.
+func CheckCount(table, key string, raw int) error {
+	if raw < 0 {
+		return fmt.Errorf("[%s] %s = %d: a ceiling cannot be negative", table, key, raw)
+	}
+	return nil
+}
+
+// Validate refuses what this file can be wrong about on its own.
+//
+// Decoding and unknown keys are not the whole of what makes a configuration
+// unusable: `agent_ttl = "10"` is a string, decodes cleanly, and is not a
+// duration, and `extend_turn_for = "everything"` is a perfectly good string that
+// names no policy. Both stopped the daemon while `dibs mcp-config` printed a
+// complete configuration around them and exited 0. Raised by the pre-release
+// review, one round after the shared type was supposed to have ended this.
+//
+// What stays with the daemon is the part that needs the daemon's own defaults:
+// whether a ceiling set here exceeds one that is not, and whether a blob cap
+// clears a maximum blob size this package does not know. Those are checked
+// where those values live, and this does not claim otherwise.
+func (c Config) Validate() error {
+	for _, d := range []struct{ key, raw string }{
+		{"agent_ttl", c.Limits.AgentTTL},
+		{"idle_ttl", c.Limits.IdleTTL},
+	} {
+		if _, err := CheckDuration("limits", d.key, d.raw); err != nil {
+			return err
+		}
+	}
+	for _, n := range []struct {
+		key string
+		raw int
+	}{
+		{"max_persistent_agents", c.Limits.MaxPersistentAgents},
+		{"max_agents", c.Limits.MaxAgents},
+	} {
+		if err := CheckCount("limits", n.key, n.raw); err != nil {
+			return err
+		}
+	}
+	// Only when the file sets BOTH: with one unset the daemon's default is the
+	// other side of the comparison, and that default is not ours to know.
+	if c.Limits.MaxAgents > 0 && c.Limits.MaxPersistentAgents > c.Limits.MaxAgents {
+		return fmt.Errorf("[limits] max_persistent_agents = %d exceeds max_agents = %d, "+
+			"so the lower ceiling is the one that binds and this setting would do "+
+			"nothing: raise max_agents too, or lower this",
+			c.Limits.MaxPersistentAgents, c.Limits.MaxAgents)
+	}
+	if w := c.Wake.ExtendTurnFor; w != "" {
+		var known bool
+		for _, p := range WakePhases {
+			if w == p {
+				known = true
+			}
+		}
+		if !known {
+			return fmt.Errorf("[wake] extend_turn_for = %q: use \"all\" (default: "+
+				"anything unread wakes the agent once), \"urgent\" (only work somebody "+
+				"is blocked on) or \"none\" (never extend a turn)", w)
+		}
+	}
+	return nil
 }

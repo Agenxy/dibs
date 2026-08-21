@@ -110,8 +110,15 @@ func configuredAddr(dir string) string {
 // configuration for 127.0.0.1:4777. An operator would then be looking at the
 // config the CLI gave them, wondering why nothing connects, with the actual
 // fault in a file neither of them mentioned.
-// readBoardConfig reads this data directory's dibs.toml, and refuses exactly
-// what the daemon would.
+// readBoardConfig reads this data directory's dibs.toml through the same loader
+// the daemon uses, so a file dibd will not start on is one this refuses.
+//
+// Not quite everything: two checks need the daemon's own defaults, and stay
+// with them. Whether a ceiling set here exceeds one that is NOT set is compared
+// against `core.DefaultLimits()`, and a blob cap is compared against the
+// maximum blob size. Neither is knowable from the file alone, so this does not
+// claim them. An earlier version of this comment claimed the lot, which was
+// what let `agent_ttl = "10"` through.
 //
 // It used to decode a four-field projection and check every other key against a
 // hand-kept list of NAMES, which can only ever validate spelling: `[limits]
