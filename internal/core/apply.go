@@ -1638,7 +1638,18 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 		return nil, nil, errf("E_NO_MESSAGE", "check your inbox", "no message %d addressed to you", op.MsgSerial)
 	}
 	if m.Terminal() {
-		return nil, nil, errf("E_MSG_FINAL", "", "message %d already %s", m.Serial, m.State)
+		// A hint, like every other error here.
+		//
+		// This one had none, and it is the error an agent hits precisely when it
+		// has come back late to something it missed: the moment it most needs
+		// telling what to do instead. Answering is genuinely closed, but saying
+		// so and stopping leaves a returning agent with an answer and nowhere to
+		// put it.
+		return nil, nil, errf("E_MSG_FINAL",
+			"this one is finished and cannot be answered. To say it anyway, send() a new "+
+				"message to that agent; if they are gone, the human's row is persistent and "+
+				"outlives every agent on the board",
+			"message %d already %s", m.Serial, m.State)
 	}
 	if len(op.Body) > s.Limits.MaxBodyBytes {
 		return nil, nil, errTooLarge("response body", s.Limits.MaxBodyBytes)

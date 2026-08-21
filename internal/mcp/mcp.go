@@ -1242,7 +1242,19 @@ func (s *Server) run(
 	if op.Agent != nil {
 		harness = op.Agent.Harness
 	}
+	// Either continuity path means this agent has been here before and has
+	// already read the nudge.
+	//
+	// Only `reattached` was read, and register has TWO continuity paths: a
+	// still-active agent re-registering with its nonce is `resumed`, not
+	// `reattached`, so it was treated as a first connection and handed the
+	// four-sentence install paragraph again on every single register. An
+	// operator reported reading it every time. A hint that repeats is trained
+	// away as noise, which costs the one registration where it is news.
 	reattached, _ := res["reattached"].(bool)
+	if resumed, _ := res["resumed"].(bool); resumed {
+		reattached = true
+	}
 	// Whether this session's lifecycle hooks are actually live: observed, not
 	// asked about. SessionStart fires before the agent's first turn, so this is
 	// already known by the time it registers.

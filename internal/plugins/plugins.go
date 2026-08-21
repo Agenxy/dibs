@@ -103,12 +103,27 @@ var catalog = []struct {
 		harness: "claude-code",
 		dir:     "claude-code",
 		aliases: []string{"claude", "claudecode", "claude_code"},
-		buys: "mail is DELIVERED instead of polled. A SessionStart hook and a " +
-			"PreToolUse hook call the wake path for you, so a question addressed to " +
-			"your agent appears in your context on your next tool call rather than " +
-			"waiting until you remember to check inbox. Also installs the dibs " +
-			"skill, so the protocol is in context when it is relevant and absent " +
-			"when it is not.",
+		// What the SHIPPED hooks actually do.
+		//
+		// This said a PreToolUse hook calls the wake path, so mail "appears in
+		// your context on your next tool call". It does not: hooks.json binds
+		// hook_poll to SessionStart, UserPromptSubmit, Stop and SubagentStop,
+		// and PreToolUse to the claim guard alone. Mail therefore arrives at a
+		// turn boundary, and an agent working a long autonomous stretch has no
+		// boundary until it finishes.
+		//
+		// That mattered. A peer sent a question with the default 600-second
+		// deadline to an agent seven hours into such a stretch, was told the
+		// recipient was dormant, and reported that Dibs does not deliver
+		// messages. It delivers them; it delivers them at the end of the turn,
+		// and three separate places said otherwise.
+		buys: "mail is DELIVERED instead of polled: lifecycle hooks call the wake " +
+			"path for you at every turn boundary, so a question addressed to your " +
+			"agent is in your context when you next take a turn rather than waiting " +
+			"until you remember to check inbox. Mid-turn is not one of those " +
+			"boundaries, so a message arriving while you work waits for the end of " +
+			"it. Also installs the dibs skill, so the protocol is in context when " +
+			"it is relevant and absent when it is not.",
 		install: "claude plugin marketplace add agenxy/dibs && claude plugin install dibs@dibs",
 		root:    "~/.claude/plugins/dibs",
 		setup: []Step{

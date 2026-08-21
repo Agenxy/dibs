@@ -45,10 +45,11 @@ var toolDefs = func() []map[string]any {
 	msgType := map[string]any{
 		"type": "string", "enum": []string{"notify", "question", "request", "handoff"},
 		"description": "what the message DOES, so pick for the effect. notify: no reply " +
-			"needed, arrives at their next activation, costs them nothing. question / " +
-			"request / handoff: WAKE the recipient now, so use them when somebody is " +
-			"genuinely waiting. To the HUMAN a request raises a notification with " +
-			"Approve on it, and the press returns as an ordinary response",
+			"needed, costs them nothing. question / request / handoff: reach them at their " +
+			"NEXT ACTIVATION, their next prompt or the end of the turn they are in, not the " +
+			"instant you send: a shorter deadline expires while they still work. To the " +
+			"HUMAN a request raises a notification with Approve on it, and " +
+			"the press returns as an ordinary response",
 	}
 
 	return []map[string]any{
@@ -56,23 +57,23 @@ var toolDefs = func() []map[string]any {
 			"name": "register",
 			"description": "Register an agent: who you are, publicly. Returns your token and the " +
 				"board. PASS A NONCE: a random id >=128-bit that you keep. It is the only credential " +
-				"that survives your harness restarting: same name + same nonce reattaches you to your " +
-				"agent, its mail and its claims (`reattached:true`) instead of forking a second agent " +
-				"that cannot read the first one's mail. Without one you can reattach within a session " +
-				"by name + session_id (returned here), but that id names the harness process and dies " +
-				"with it. kind 'persistent' is for standing roles that sleep and return via resume.",
+				"that survives your harness restarting: same name + same nonce returns you to your " +
+				"agent, its mail and its claims instead of forking a second agent that cannot read " +
+				"the first one's mail. `resumed:true` = it was still active and this was a retry, " +
+				"same token; `reattached:true` = it had stopped and the nonce recovered it, and YOUR " +
+				"TOKEN HAS ROTATED, so use the one in this result. Without a nonce you can only " +
+				"reattach within a session, by name + session_id. kind 'persistent' is for standing " +
+				"roles that sleep and return via resume.",
 			"inputSchema": obj(map[string]any{
 				"name": str("WHO YOU ARE: a stable name others address mail to ('reviewer', " +
 					"'codex-1'), never what you are doing: mail addressed to 'refactor-auth' " +
-					"reads as nonsense, and work goes in declare. Name yourself for the ROLE " +
-					"you hold, not your model or harness. update() changes it later"),
+					"reads as nonsense, and work goes in declare. update() changes it later"),
 				"description": str("one line on your standing purpose, e.g. 'reviewing PRs for the release'"),
 				"pid":         num("your process id, for crash detection (optional)"),
 				"kind": map[string]any{"type": "string", "enum": []string{"ephemeral", "persistent"}, "description": "ephemeral " +
 					"(default): session-scoped; persistent: standing role with a durable mailbox"},
 				"nonce": str("random id >=128-bit that YOU generate: a secret, and KEEP IT. Required " +
-					"for persistent agents, advised for all: same name + same nonce = the same agent, " +
-					"with its mail, after your harness restarts"),
+					"for persistent agents, advised for all"),
 				"session_id": str("your harness session id: lets lifecycle hooks find your " +
 					"mailbox, so mail is pushed to you rather than polled for. Filled in for " +
 					"you when omitted; it names the harness process, so it dies with it"),
@@ -115,7 +116,7 @@ var toolDefs = func() []map[string]any {
 			"description": "Acknowledge the board: required once per activation, before declare " +
 				"or claim. One atomic checkpoint: the board, your inbox, your cursor serial, " +
 				"`announcements` you owe an ack on, and `agent_updates`, whatever happened TO " +
-				"you in a space (admitted, promoted, evicted, merged) since you last checked. " +
+				"you in a space since you last checked. " +
 				"Neither survives losing context, and this is the authoritative path for both: " +
 				"the wake hook only nudges. Also the recovery after E_CURSOR_TOO_OLD.",
 			"inputSchema": obj(map[string]any{"token": tok}, "token"),
@@ -168,9 +169,9 @@ var toolDefs = func() []map[string]any {
 			"inputSchema": obj(map[string]any{"token": tok}, "token"),
 		},
 		{
-			"name": "claim_coordinator", "description": "Take the coordinator role if you " +
-				"started this daemon: pass the contents of `coordinator.claim` from its data " +
-				"directory as `nonce`. It exists only while the board has no coordinator and " +
+			"name": "claim_coordinator", "description": "Take the coordinator role: pass " +
+				"the contents of `coordinator.claim` from the daemon's data directory as " +
+				"`nonce`. Reading that file is the authorisation. It exists only while the board has no coordinator and " +
 				"the first claim consumes it, so if there already is one, ask them or ask " +
 				"the human (send with grant). You must be kind \"persistent\": the role " +
 				"outlives this process, and an ephemeral agent would take it away on " +
@@ -181,17 +182,26 @@ var toolDefs = func() []map[string]any {
 			}, "token", "nonce"),
 		},
 		{
-			"name": "prune", "description": "Remove a FINISHED agent record: your own, or " +
-				"a child you vouched for. A COORDINATOR may also prune a dormant peer, " +
-				"clearing its stale declarations (dibs://staff). Nobody else may: it would " +
-				"delete the row saying somebody else is doing that work. Never an ACTIVE " +
-				"one: sign_off stops an agent, this tidies the record.",
+			// It said "sign_off stops an agent, this tidies the record", which
+			// prescribes an order nobody can perform: sign_off blanks the token,
+			// prune authenticates with it, and following the E_BAD_TOKEN hint
+			// re-registers you as ACTIVE, which prune also refuses. There is no
+			// ordering of the two that satisfies both. Reported by an operator
+			// who spent a cycle believing they held the wrong token.
+			//
+			// Your own row does not need pruning: a signed-off agent is swept.
+			// So the description now says whose record this is FOR.
+			"name": "prune", "description": "Remove a finished agent's record: a child " +
+				"you vouched for, or, as COORDINATOR, a dormant peer whose stale " +
+				"declarations you are clearing (dibs://staff). Nobody else may: it " +
+				"would delete the row saying somebody else is doing that work. NOT for " +
+				"yourself: sign_off stops you and the sweep tidies your row.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"agent": map[string]any{
 					"type": "string",
-					"description": "id of the finished agent to remove: yours, a vouched " +
-						"child, or a dormant peer if you are coordinator",
+					"description": "id of the finished agent to remove: a vouched child, " +
+						"or a dormant peer if you are coordinator. Not you: see above",
 				},
 			}, "token", "agent"),
 		},
@@ -256,8 +266,8 @@ var toolDefs = func() []map[string]any {
 			"name": "send",
 			"description": "Send a message to an agent, or to the HUMAN: the board row " +
 				"marked `human: true` is the person here, and writing to it notifies them " +
-				"on their machine. Questions and requests carry a deadline; on expiry you " +
-				"get a diagnosis (alive-but-silent, dormant, gone). op_id retries safely.",
+				"on their machine. Questions and requests carry a deadline, and on expiry " +
+				"you get a diagnosis of why.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "to": str("recipient agent id, or \"coordinator\" for " +
 					"whoever holds that role"),
@@ -686,9 +696,9 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "broadcast",
-			"description": "COORDINATOR ONLY. One message to every other live agent: the same " +
-				"as writing to each by hand, so each may decline its own. Fleet-wide " +
-				"direction only; use send for anything targeted.",
+			"description": "COORDINATOR ONLY. One message to every other live agent, each of " +
+				"which may decline its own. Fleet-wide direction only; send is for anything " +
+				"targeted.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"type":  msgType,
@@ -731,3 +741,41 @@ var toolDefs = func() []map[string]any {
 		},
 	}
 }()
+
+// ToolNames is every tool tools/list advertises.
+//
+// Exported for the CLI's drift test: `dibs` keeps its own copy of these names
+// so it can tell a human that `prune` lives on the other surface rather than
+// offering them the nearest unrelated verb, and that copy has to be held to
+// this list by something.
+func ToolNames() []string {
+	out := make([]string, 0, len(agentTools))
+	for _, t := range agentTools {
+		if n, ok := t["name"].(string); ok {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// ToolProperties is the set of parameter names a tool's inputSchema declares.
+//
+// Exported for the bridge's enrichment test: `dibs mcp-stdio` fills in fields it
+// can observe, and a field that is not declared does not get ignored, it fails
+// the call. That cost every Claude Code session with CLAUDE_EFFORT set its
+// registration.
+func ToolProperties(tool string) map[string]bool {
+	for _, t := range toolDefs {
+		if n, _ := t["name"].(string); n != tool {
+			continue
+		}
+		schema, _ := t["inputSchema"].(map[string]any)
+		props, _ := schema["properties"].(map[string]any)
+		out := make(map[string]bool, len(props))
+		for k := range props {
+			out[k] = true
+		}
+		return out
+	}
+	return nil
+}

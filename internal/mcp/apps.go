@@ -221,6 +221,17 @@ func boardSummary(sc map[string]any, declaredUI bool) string {
 	if n := inboxCount(sc["inbox"]); n > 0 {
 		msg += fmt.Sprintf("; %d unread message(s)", n)
 	}
+	// The ROWS, not just the count.
+	//
+	// A terminal host renders no panel, so an agent asked "show me the board"
+	// had one line, "3 agent(s), 1 active", while `dibs board` on the same
+	// machine printed names, status and declarations. The agent could not show
+	// what the operator could see, which is an odd place for this product to
+	// land. Reported by an operator who hit exactly that.
+	//
+	// Written here rather than reused: the CLI renderer prints to stdout with
+	// colour, from a different command, so there is nothing to call. Bounded,
+	// because this is charged to the model on every board call.
 	if declaredUI {
 		return msg + ". Shown to the human in the board panel."
 	}
@@ -237,8 +248,13 @@ func boardSummary(sc map[string]any, declaredUI bool) string {
 	// Not a denial either: the reference host declares nothing and renders from
 	// _meta regardless, so "not shown" would be its own false claim. What is
 	// true is that it was SENT, and that the agent has a way to see it itself.
-	return msg + ". Sent to their panel; this host declares no panel support, so " +
-		"they may not see it."
+	msg += ". Sent to their panel; this host declares no panel support, so " +
+		"they may not see it. The board itself:"
+	// The ROWS, because this host shows no panel. See boardRows.
+	if r := boardRows(agents); r != "" {
+		msg += "\n" + r
+	}
+	return msg
 }
 
 // inboxCount counts messages in either shape a mailbox arrives in, through a
@@ -748,4 +764,75 @@ func (s *Server) panelState(ctx context.Context, res core.Result, view, token st
 		out["view"] = view
 	}
 	return out
+}
+
+// maxSummaryRows bounds the text board. Enough to see a fleet, not so many that
+// a busy board becomes the largest thing in the model's context.
+const maxSummaryRows = 20
+
+// boardRows renders the board as text, for a host that shows no panel.
+func boardRows(agents []any) string {
+	if len(agents) == 0 {
+		return "  (no agents registered: they appear the moment they call register)"
+	}
+	var b strings.Builder
+	for i, a := range agents {
+		m, ok := a.(map[string]any)
+		if !ok {
+			continue
+		}
+		if i == maxSummaryRows {
+			// NOT "the full board is in this result".
+			//
+			// It is in _meta, which is exactly what the model on this host cannot
+			// see: that is the whole reason this fallback exists. Telling an agent
+			// its answer is somewhere it cannot look is the honesty rule broken
+			// inside the fix written to keep it, and it would report the missing
+			// rows as present. Name the call that actually returns them.
+			fmt.Fprintf(&b, "  … and %d more: call board again with detail true for all of them\n",
+				len(agents)-maxSummaryRows)
+			break
+		}
+		id, _ := m["id"].(string)
+		status, _ := m["status"].(string)
+		// display_name, when there is one.
+		//
+		// It exists because a name that is not Latin collapses to a generic
+		// addressable id ("agent", "agent-2"), and showing only the id tells a
+		// terminal agent the wrong thing about who it is looking at. The id is
+		// kept alongside because it is what mail is addressed to.
+		who := id
+		if dn, _ := m["display_name"].(string); dn != "" && dn != id {
+			who = firstLine(dn, 22) + " (" + id + ")"
+		}
+		what := "(nothing declared)"
+		slots, _ := m["slots"].([]any)
+		if len(slots) > 0 {
+			if s0, ok := slots[0].(map[string]any); ok {
+				if t, _ := s0["text"].(string); t != "" {
+					what = firstLine(t, 60)
+				}
+			}
+		}
+		// An agent declaring five things is doing five things, and showing one
+		// of them silently is a wrong account of the board rather than a short
+		// one. Say how many were not shown.
+		if n := len(slots) - 1; n > 0 {
+			what += fmt.Sprintf(" (+%d more)", n)
+		}
+		fmt.Fprintf(&b, "  %-28s %-9s %s\n", who, status, what)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// firstLine is one line of at most n runes, for a table cell.
+func firstLine(s string, n int) string {
+	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
+		s = s[:i]
+	}
+	r := []rune(strings.TrimSpace(s))
+	if len(r) <= n {
+		return string(r)
+	}
+	return string(r[:n-1]) + "…"
 }

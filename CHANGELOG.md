@@ -5,6 +5,330 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+Acting on an independent operator evaluation of v0.0.6, which ran Dibs across two
+machines for real work. Their priority order, not ours.
+
+### Added
+
+- **The multi-machine board is documented and has a command.** Everything needed
+  for a real-time fleet board already shipped; the operator who runs Dibs for
+  that reason nearly gave up on it. `dibs mcp-config --board <addr>` prints the
+  join config for another machine's board: the data directory, the secret copy,
+  the ssh forward, and the config for both harnesses. `README.md` gains a second
+  machine section.
+
+  The recipe was in the binary all along and unreachable: it printed only inside
+  the TLS branch, so a plaintext loopback daemon (every fresh install) never
+  showed it. It prints unconditionally now.
+
+  The **ssh forward is named as a supported transport**. A loopback daemon is
+  unreachable from another host and the documented answer was a routable TLS
+  endpoint, which excludes the corporate and lab networks full of hosts that will
+  never have one. The forward always worked, because the bridge only ever talks
+  to an address, and it is the better shape: the daemon never leaves loopback.
+  With it, a paragraph on choosing the hub, since that choice decides whether the
+  fleet has a board at all and the laptop is the tempting wrong answer.
+
+### Changed
+
+- **The transport advice for another machine was backwards.** "Use the url form
+  only from ANOTHER machine" sent operators to a url client for the case where a
+  forked identity costs most: a remote session is the long-lived unattended one.
+  The url form is now scoped to a client that cannot run a process at all, here
+  and in the codex and chatgpt-desktop plugin READMEs.
+
+- **`register` documents both of its continuity paths.** It returns `resumed`
+  when the agent was still active and this was a retry, and `reattached` when it
+  had stopped and the nonce recovered it. The description named only the second,
+  so an integrator testing the obvious way lands on the first, sees neither the
+  documented key nor an explanation, and concludes identity continuity is broken.
+  Both are named now, with the token rotation on reattach: a client that cached
+  the old token is holding a dead one. Paid for inside the tools/list budget
+  rather than by raising it.
+
+- **The install nudge no longer repeats on every register.** Only `reattached`
+  suppressed it, so a still-active agent re-registering with its nonce came back
+  `resumed`, was treated as a first connection, and read the four-sentence
+  paragraph again every time.
+
+### Fixed
+
+- **An agent on a terminal host could not show the board it was reading.**
+  `board` renders to an MCP Apps panel, and a host that renders none fell back to
+  one line, "3 agent(s), 1 active", while `dibs board` on the same machine
+  printed the board. The fallback is now the board itself, bounded at 20 rows.
+  Only where no panel is declared: on a panel host the human is already looking
+  at it.
+
+- **`doctor` called a joined board a corrupt ledger.** A data directory that
+  joins another machine's board holds a credential; the ledger is on the hub. It
+  reported "ledger does not verify ... do NOT delete it, open an issue", a
+  data-loss emergency raised against a healthy join, at the operator least able
+  to tell it was spurious. Found by following the new join recipe end to end.
+
+- **`dibs configure --service` could not install on a fresh machine.** It wrote
+  the unit without creating the data directory the unit names, so the service
+  failed at start with nothing pointing at the cause.
+
+- **`doctor` reported a configured suggest-only matcher as a warning**, so a
+  deliberate `join_threshold = 0` looked like a fault on every run.
+
+- **`dibs prune` answered "did you mean dibs probe".** The CLI verbs and the
+  MCP tools are different sets and nothing mapped them, so a name that is a
+  real Dibs verb on the other surface was answered with the nearest unrelated
+  word. The CLI now says which surface it lives on. Its copy of the tool names
+  is held to the server's listing by a test.
+
+- **`dibs configure` needed a terminal**, and the machines that most need
+  configuring are headless and reached by `ssh host command`. A second machine
+  in a fleet hit this on its first command. `--non-interactive` takes the
+  defaults, writes the file and prints what it wrote. It refuses to overwrite
+  an existing config, since there is no prompt on that path to catch it.
+
+- **`dibs upgrade --help` now says it does not fetch.** It moves the running
+  daemon onto a build already installed, which is what it should do and not
+  what its name suggests; run bare on an up-to-date install it correctly does
+  nothing, and that reads as a failure.
+
+- **Five things the pre-release review caught in the above**, before any of it
+  shipped: the README copied the board secret to a directory the generated
+  configuration did not use, so the documented setup ended at a bridge that
+  could not start; `--board` printed no `dibs trust` step for a board that is
+  not on loopback, so the configuration looked complete and the bridge would
+  reject the certificate; two boards on different ports of one host shared a
+  credential directory, so joining the second overwrote the first; `doctor`
+  keyed "this is a join" on a missing `node_id` alone, so a local board that
+  lost that file but still held a ledger skipped verification and was reported
+  healthy; and the successful-claim log still said "claimed by the agent that
+  started this daemon", the same false attribution the startup line was
+  corrected for, on the record of a privileged role being taken.
+
+- **Two more from the review's second round**: `dibs configure <dir>
+  --non-interactive --help` wrote the configuration and ignored the help
+  request, which is the third instance of the shape this command's own
+  comments document (`configure --service --help` wrote a LaunchAgent, `dibs
+  stop --help` stopped the daemon) and the first where a flag added for
+  unattended use turned an ignored argument into a silent write. `configure`
+  now reads every argument before deciding anything, and refuses an unknown
+  flag or a second directory. And the credential directory rewrote dots to
+  hyphens, so `hub.example` and `hub-example` shared one: the port collision
+  again in another character. Dots are kept.
+
+- **Four more from the review's third round.** The generated `dibs trust`
+  command omitted the board's `DIBS_DIR`, so it recorded the certificate under
+  the default data directory, reported success, and the bridge went on
+  rejecting the board: a step that looks done and is not. The recipe hard-coded
+  the hub's secret at `~/.dibs/local.secret`, which only the hub knows and
+  which is the wrong board's credential on a hub that runs two. The directory
+  key still collided between an IPv6 literal and a hostname spelled like one.
+  And `prune` refused self-pruning in its description while its `agent`
+  parameter still offered "yours", so an agent reading both was told to make a
+  call that cannot succeed.
+
+- **Four more from the review's fourth round.** The hub-side recipe and the
+  README still printed `dibs trust` bare after sending the joining bridge to a
+  directory of its own, which is round three's bug in the other two places it
+  is written. The generated shell lines did not quote the derived path, so a
+  home directory containing a space split into two arguments. The
+  `claim_coordinator` tool still offered the role to "the agent that started
+  this daemon", which under a service manager is nobody, and a tool description
+  is the only documentation an agent reads: that can leave a service-managed
+  board with no coordinator. And the truncated text board said the rest was
+  "in this result" when it is in `_meta`, which is exactly what the model on a
+  no-panel host cannot see, so it pointed an agent at rows it could not reach
+  and would have had it report them as present.
+
+- **Three more from the review's fifth round**, and the credential directory
+  is now keyed on the address verbatim. It collided four times, once per
+  round, each fix keeping one more character while the comment above it went
+  on claiming every board gets its own: the port was dropped for non-loopback,
+  then dots became hyphens, then loopback was renamed "board" and collided
+  with the ordinary hostname `board`. The pattern was rewriting the address
+  into something that reads nicely, and every such rewrite maps two addresses
+  onto one name somewhere. Also: the certificate-refused recovery message told
+  an operator to run `dibs trust` without the data directory their failing
+  call was using, and the `scp` source was quoted on the half this machine
+  controls but not the hub's.
+
+- **Five more from the review's sixth round.** `mcp-config` printed a
+  complete-looking stdio configuration that named no address or data
+  directory, so an operator running a second daemon got a config for the
+  first, reading its secret and its nonce file and joining a board they were
+  not asking about. Merging that into the Codex form then produced two
+  `env = { ... }` lines in one TOML table, which is a duplicate key: one line
+  now, protocol version included. The ssh recipe used this machine's port as
+  the hub's, so a forward printed for a board on 5777 pointed at a hub that
+  listens on 4777; the local end is named as the joining machine's choice.
+  Addresses in pasteable commands were unquoted, and an IPv6 literal is a glob
+  in zsh. And `mcp-config` ignored everything after its first positional
+  argument, so `mcp-config junk --board hub:4777` printed the local
+  configuration and never read the flag.
+
+- **Four more from the review's seventh round.** The forward still used one
+  port for both its ends, so `--board 127.0.0.1:5777` could not express a hub
+  on 4777; the far port is the hub's to name now. The note on pinning an
+  identity told the reader to add a second `env = { ... }` line, which is the
+  duplicate TOML key the round before had just removed. `nonDefaultEnv` read
+  the address through a helper that strips an explicit scheme, so a
+  deliberately plaintext daemon off loopback handed the bridge bare
+  `host:port` and the bridge inferred HTTPS. And the hub-side recipe's
+  pasteable commands were still unquoted.
+
+- **Three more from the review's eighth round**, and the address's shape is now
+  decided in one place. The second-machine recipe still handed the bridge an
+  address with the scheme removed, and the branch choosing between a forward
+  and a certificate could not read a scheme at all, so a board explicitly named
+  as plaintext was told to record a certificate it does not serve. A scheme,
+  when the operator writes one, settles what the daemon serves; without one,
+  loopback means a forward and anything else means HTTPS. The README's tunnel
+  example also still used one port for both ends, in the paragraph that
+  describes a machine already running its own board on that port.
+
+- **Two more from the review's ninth round.** `dibs mcp-config --board` was
+  refused on a machine with no terminal: the admin gate ran before the flag was
+  parsed, so the invocation documented for a second machine, which is typically
+  headless and driven by `ssh host command`, printed "needs an interactive
+  terminal" and nothing else. `--board` prints a config for somebody else's
+  board and reads no secret of this machine's, so it is not what that gate
+  protects; the plain form, which prints this daemon's secret, still is. And
+  the generated `dibs trust` carried a scheme, which reaches `tls.Dial` as part
+  of the host and fails with "too many colons in address": the scheme belongs
+  in `DIBS_ADDR`, not in a command that dials.
+
+- **Two more from the review's tenth round.** A board can need BOTH a forward
+  and a certificate recorded, and the branch printing step two was a switch, so
+  a forwarded HTTPS board got the forward and no trust step: a
+  complete-looking configuration that then rejects the certificate. An
+  uppercase scheme was also read as plaintext. And the new build-without-mise
+  section stopped at `bin/` before telling the reader to run `dibd`, which on
+  a fresh machine is command-not-found and on an existing one silently runs
+  the previous build; the install step is written out, Launch Services
+  registration included.
+
+- **Three more from the review's eleventh round**, the first of them a leak
+  introduced by the round before it. Waiving the interactive gate for
+  `--board` was scoped to the flag appearing rather than to it having a value,
+  so `dibs mcp-config --board=` waived the gate, parsed as empty, fell through
+  to the local form and printed this daemon's secret on a headless machine,
+  exiting 0. An empty `--board` is refused now, and the waiver requires a
+  value. The install recipe also never created `~/.local/bin`, and copied the
+  two macOS-only artifacts unconditionally, so it failed on Linux.
+
+- **Four more from the review's twelfth round.** The ordinary `mcp-config`
+  recipe still decided the second machine's setup from "did this daemon make a
+  certificate", which answers neither of the two questions it has: an HTTPS
+  board on loopback needs a forward and a certificate recorded and got only
+  the forward, and a board explicitly named `http://` off loopback was called
+  loopback and told to tunnel. It reads the address now, as `--board` does. An
+  explicit scheme also outranks the certificate file when naming the url. The
+  no-panel board dropped `display_name`, which exists because a name that is
+  not Latin collapses to a generic id, and silently showed one of an agent's
+  declarations; it shows the name, the id, and how many it did not show. Two
+  tests of ours were also named for regressions they could not catch, and now
+  drive the gate and the wizard rather than the helpers beside them.
+
+- **Three more from the review's thirteenth round.** `dibs configure` writes
+  the operator's listen-address choice to `dibs.toml` and ends by telling them
+  to run `dibs mcp-config`, which read only `DIBS_ADDR` and so printed a
+  configuration for `127.0.0.1:4777`: a confident answer about the wrong
+  daemon, from the command the wizard had just sent them to. It reads the
+  configured address now, and maps a wildcard bind to something dialable,
+  since `0.0.0.0` is a listen address and not one anybody can connect to. The
+  second-machine recipe also handed the joining machine THIS daemon's loopback
+  address, which on that machine is its own board, in the same output that
+  then explains the local end of a forward is that machine's choice. And a
+  left-behind `tls-cert.pem` was read as proof of TLS, so a daemon moved back
+  to loopback or switched to `insecure_plaintext` was still described as
+  serving HTTPS, with instructions to trust a certificate it does not present.
+
+- **Three more from the review's fourteenth round.** The environment handed to
+  a bridge still read the address the way that ignores `dibs.toml`, so a daemon
+  configured onto a LAN address or a non-default port had its stdio configs
+  printed with no address at all and the bridge dialled the default; the url
+  block had been fixed a round earlier and this had not. `--board` accepted
+  anything non-empty, including a mistyped scheme, which it then classified as
+  plaintext and emitted verbatim, and a wildcard listen address no client can
+  dial; both exited 0 around a configuration that cannot work. And a
+  `dibs.toml` that does not parse was read as no configuration at all, so the
+  daemon would refuse to start while this printed a confident config for the
+  default address.
+
+- **Five more from the review's fifteenth round.** `--board` did not check
+  that the port was a port, and the port goes into the credential directory's
+  name: `hub:4777/../../escaped` produced a `mkdir -p /Users/escaped` with a
+  secret written into it, and exited 0. The transport was still decided by
+  whether `tls-cert.pem` exists, ignoring `insecure_plaintext` and a
+  configured `tls_cert`, so a daemon configured for plaintext beside a
+  left-behind certificate was described as serving HTTPS. A `dibs.toml` with a
+  key `dibd` does not know parses as valid TOML and makes the daemon refuse to
+  start, while this printed a configuration for the default address.
+  `configure --non-interactive <dir>` then told the operator to run bare
+  `dibs configure --service` and `dibd`, both of which act on the DEFAULT data
+  directory, so the advertised sequence configured one board and started
+  another. And `doctor` called any directory with a secret and no `node_id` or
+  ledger a healthy join, including a local board that had lost both but still
+  held the key it encrypts with: a directory that has lost its replayable
+  state, reported as nothing wrong.
+
+- **The rule for what a daemon serves now lives in one place**, after the
+  review's sixteenth round found the CLI's copy of it wrong a third time: a
+  leftover certificate made it print HTTPS for a loopback daemon, which serves
+  plaintext however many certificates are lying around; `insecure_plaintext`
+  was allowed to beat an explicit certificate pair, which the daemon honours
+  first; and a `tls_cert` with no `tls_key` was treated as authoritative,
+  pointing clients at a certificate the daemon never presents. `dibd` and
+  `dibs mcp-config` both call `internal/transport` now. The unknown-key check
+  also covered only top-level keys, so `[match] typo_threshold` was fine here
+  while `dibd -check` exits 1 on it; the key list is complete and a test reads
+  the daemon's own structs, nested tables included, so it cannot drift.
+
+- **`send` promised a wake it cannot deliver.** Its own description said
+  question, request and handoff "WAKE the recipient now". They do not: mail is
+  pushed by `hook_poll`, which the shipped plugins bind to SessionStart,
+  UserPromptSubmit, Stop and SubagentStop, so an agent in the middle of a long
+  turn has no event for one to arrive on and sees it when the turn ends.
+  `WAKE-MECHANISMS.md` says exactly this under "Honest limits"; the tool
+  description, which is the only thing an agent reads, did not. Found when a
+  peer sent a question with the default 600-second deadline to an agent working
+  a seven-hour autonomous stretch, got "recipient is dormant" back, and
+  reported the product broken. The description now says when a message actually
+  arrives and what a short deadline costs.
+
+- **`register` failed outright for any Claude Code session with
+  `CLAUDE_EFFORT` set.** The stdio bridge fills in identity it can observe, and
+  that table is applied to `register` and nothing else. It carried an entry for
+  `effort`, which is an `update` field: `register` does not declare it, and
+  since v0.0.6 refuses unknown arguments rather than ignoring them, injecting it
+  did not add a field, it failed the call with `-32602 register does not take
+  "effort"`. No agent was created at all, so no lifecycle hook could resolve
+  that session, no mail reached it, and its claim guard returned allow.
+  Reproduced against the shipped v0.0.6 binary with the environment of a live
+  session. A test now holds every field the bridge injects to `register`'s
+  actual schema.
+
+- **The claude-code plugin advertised a delivery moment it does not bind.**
+  Its catalogue entry said a PreToolUse hook calls the wake path, so mail
+  "appears in your context on your next tool call". PreToolUse binds the claim
+  guard and nothing else. That text is what an agent reads when deciding
+  whether it still needs to poll, so the one claim that overstates is the one
+  that loses mail. A test now holds every plugin's pitch to the events its own
+  `hooks.json` actually binds `hook_poll` to.
+
+- **`E_MSG_FINAL` carried no hint**, in breach of the rule that every error
+  names the corrective call, and it is the error an agent hits exactly when it
+  has come back late to something it missed. It now names the corrective call:
+  send a new message, and if that agent is gone, the human's row outlives them.
+
+- **README: building without mise or task.** On a network that allows the Go
+  module proxy but not the object store it redirects to, neither tool installs
+  and the failure reads like a broken toolchain rather than a blocked host.
+  Dibs itself still builds, because every step is a `go build` or a `go run
+  ./tools/...` in-tree. The four commands are written down, along with the two
+  install rules that are not obvious from them: remove before copying, because
+  macOS caches a signature verdict against the inode, and set the codesign
+  identifiers, which the Go toolchain leaves as `a.out`.
+
+
 ## [0.0.6] - 2026-08-20
 
 ### Security

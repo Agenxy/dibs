@@ -477,3 +477,60 @@ func TestSameBinarySeesThroughASymlink(t *testing.T) {
 		t.Error("a path that does not exist matched a real one")
 	}
 }
+
+// Writing a service unit creates the directory the unit points its log at.
+//
+// THE SILENT INSTALL BLOCKER. The launchd unit names <datadir>/dibd.log for
+// both StandardOutPath and StandardErrorPath, and launchd creates the log FILE
+// but not its parent DIRECTORY. On a first install the directory does not exist
+// yet, because the daemon makes it on its own first run, so the spawn fails
+// before the binary runs and `launchctl list` shows a dash for the pid with
+// last exit status ZERO: "ran and finished cleanly", which sends the operator
+// looking at RunAtLoad instead of at whether anything was ever spawned. The one
+// artefact that would explain it is the log, which is the artefact that cannot
+// be created.
+//
+// Reported by an operator bringing up a second machine, with the diagnosis.
+func TestWritingAServiceUnitCreatesTheDataDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "fresh-install")
+	t.Setenv("DIBS_DIR", dir)
+	t.Setenv("HOME", t.TempDir())
+
+	// A dibd for daemonPath to find, because the machine running the tests may
+	// not have one installed.
+	//
+	// This passed locally and failed on every runner: the mirror image of the
+	// hostname test that passed on every runner and failed locally, and the
+	// same mistake. A test that depends on what happens to be installed is
+	// testing the machine.
+	//
+	// An empty file is enough and nothing executes it: daemonPath stats the
+	// binary beside this one and otherwise LookPaths it, to record an absolute
+	// path in the unit. It never runs it.
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "dibd"), nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("setup: %s already exists, so this proves nothing", dir)
+	}
+
+	if err := writeServiceUnit(); err != nil {
+		// A machine with no launchd/systemd is not what this is about.
+		if strings.Contains(err.Error(), "no service unit for") {
+			t.Skip(err)
+		}
+		t.Fatalf("writeServiceUnit: %v", err)
+	}
+
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("the unit was written and its log directory was not created, so the "+
+			"service cannot start and says so with exit status 0: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("%s is not a directory", dir)
+	}
+}

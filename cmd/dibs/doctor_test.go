@@ -230,3 +230,112 @@ func TestUnparseableMidFileIsNotMistakenForATornTail(t *testing.T) {
 		t.Fatalf("a broken record with more file after it is damage, got %+v / %v", res, err)
 	}
 }
+
+// A data directory that joins ANOTHER machine's board holds a credential and
+// nothing else: the ledger is on the hub.
+//
+// Reported as "ledger does not verify ... do NOT delete it. Copy it somewhere
+// safe and open an issue", which is a data-loss emergency raised against a
+// completely healthy join, and raised at the operator least equipped to know
+// it is spurious. Found by following `dibs mcp-config --board` end to end.
+func TestDoctorDoesNotCallAJoinedBoardsMissingLedgerCorruption(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "local.secret"),
+		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var good []string
+	var bads []string
+	ok := func(msg string) { good = append(good, msg) }
+	fail := func(msg, _ string) { bads = append(bads, msg) }
+	checkLedgerAndBoard(dir, ok, fail, func(msg, _ string) {})
+
+	for _, b := range bads {
+		if strings.Contains(b, "ledger does not verify") {
+			t.Errorf("a joined board is reported as a corrupt ledger: %q", b)
+		}
+	}
+	if !strings.Contains(strings.Join(good, "\n"), "joined board") {
+		t.Errorf("nothing told the operator where the ledger actually is: ok=%v bad=%v", good, bads)
+	}
+
+	// And a real board directory must still be verified: node_id is what a
+	// daemon writes at first boot, so its presence means this IS a board.
+	local := t.TempDir()
+	if err := os.WriteFile(filepath.Join(local, "local.secret"),
+		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(local, "node_id"), []byte("abc123"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bads = nil
+	checkLedgerAndBoard(local, func(string) {}, fail, func(msg, _ string) {})
+	if len(bads) == 0 {
+		t.Error("a board directory with no ledger passed silently: the check has been " +
+			"disabled rather than scoped")
+	}
+
+	// The dangerous case, which the two above cannot reach: a LOCAL board that
+	// has lost its node_id but still holds a ledger. Keyed on node_id alone,
+	// that reads as a join and skips verification entirely, so the one
+	// directory most in need of checking is reported healthy. Raised by the
+	// pre-release review against the first version of this fix.
+	damaged := t.TempDir()
+	if err := os.WriteFile(filepath.Join(damaged, "local.secret"),
+		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Genuinely broken: the second record's prev does not match the hash of the
+	// first. A file of arbitrary JSON is NOT damaged, because unknown fields
+	// unmarshal cleanly and an empty prev is what a first record has: the first
+	// version of this fixture verified as a valid one-line chain and failed the
+	// probe rather than the code.
+	if err := os.WriteFile(filepath.Join(damaged, "ledger.jsonl"),
+		[]byte("{\"s\":1,\"prev\":\"\"}\n{\"s\":2,\"prev\":\"deadbeef\"}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	good, bads = nil, nil
+	checkLedgerAndBoard(damaged, ok, fail, func(msg, _ string) {})
+	if strings.Contains(strings.Join(good, "\n"), "joined board") {
+		t.Errorf("a board holding a ledger with no node_id was called a join, so its "+
+			"chain was never verified: ok=%v", good)
+	}
+	if len(bads) == 0 {
+		t.Error("a damaged ledger passed unverified because node_id was missing")
+	}
+}
+
+// A join is a credential and NOTHING ELSE, which is not the same as a missing
+// node_id and ledger.
+//
+// A local board that lost both, but still holds the key it encrypts with and
+// the blobs it wrote, was reported as a healthy join. That directory has lost
+// its replayable state, which is the one thing this check exists to notice, and
+// it was told nothing was wrong. Found by the pre-release review.
+func TestADamagedLocalBoardIsNotMistakenForAJoin(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "local.secret"),
+		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// No node_id, no ledger: but the key it encrypted with is still here.
+	if err := os.WriteFile(filepath.Join(dir, "key"), []byte("k"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if isJoinedBoard(dir) {
+		t.Error("a board that lost its node_id and its ledger but kept its key was " +
+			"called a healthy join, so nothing reported the loss")
+	}
+
+	// The real join case still is one.
+	clean := t.TempDir()
+	if err := os.WriteFile(filepath.Join(clean, "local.secret"),
+		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !isJoinedBoard(clean) {
+		t.Error("a directory holding only a credential is not recognised as a join")
+	}
+}

@@ -43,8 +43,10 @@ This file used to print the url form, Codex took it, and the cost was invisible
 for months. A board carrying nine rows for five roles is what it looks like from
 outside.
 
-Use the url form only from ANOTHER machine, where a local bridge is not an
-option and a forked identity is the lesser problem:
+The url form is for a client that cannot run a process at all. It is NOT the
+answer for another machine: run the bridge THERE, pointed at the hub, which is
+what `dibs mcp-config --board <addr>` prints. A remote session is the
+long-lived unattended one, so a forked identity costs most exactly there.
 
 ```toml
 [mcp_servers.dibs]

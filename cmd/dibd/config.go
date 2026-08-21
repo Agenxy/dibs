@@ -15,6 +15,8 @@ import (
 	"strings"
 	"time"
 
+	xport "github.com/agenxy/dibs/internal/transport"
+
 	"github.com/BurntSushi/toml"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -369,20 +371,22 @@ type transport struct {
 // Dibs secures itself: it never asks the operator to stand up a VPN, a proxy,
 // or a certificate authority to be safe by default.
 func resolveTransport(dir, addr string, c Config) (transport, error) {
-	if c.TLSCert != "" && c.TLSKey != "" {
-		return transport{c.TLSCert, c.TLSKey, "TLS (certificate from config)"}, nil
-	}
-	if isLoopbackAddr(addr) {
-		return transport{why: "plaintext (loopback: unreachable from other hosts)"}, nil
-	}
-	if c.InsecurePlaintext {
-		return transport{why: "plaintext (insecure_plaintext set in config: you accepted this)"}, nil
-	}
-	cert, key, err := ensureSelfSignedCert(dir, addr)
+	// The rule itself lives in internal/transport, because `dibs mcp-config`
+	// has to reach the same answer in order to print a client configuration
+	// that works, and it reached a different one three times. Only the
+	// certificate GENERATION is the daemon's, and it stays here.
+	choice, err := xport.Resolve(c.TLSCert, c.TLSKey, addr, c.InsecurePlaintext,
+		func() (string, string, error) {
+			cert, key, cerr := ensureSelfSignedCert(dir, addr)
+			if cerr != nil {
+				return "", "", fmt.Errorf("could not prepare TLS for %s: %w", addr, cerr)
+			}
+			return cert, key, nil
+		})
 	if err != nil {
-		return transport{}, fmt.Errorf("could not prepare TLS for %s: %w", addr, err)
+		return transport{}, err
 	}
-	return transport{cert, key, "TLS (self-signed certificate, auto-generated)"}, nil
+	return transport{choice.CertFile, choice.KeyFile, choice.Why}, nil
 }
 
 // ensureSelfSignedCert returns a cert/key for addr, generating them into the

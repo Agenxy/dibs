@@ -114,10 +114,14 @@ func TestDeclinedAndUnavailableAreDistinguished(t *testing.T) {
 		want int
 		why  string
 	}{
-		{"declined", http.StatusUnauthorized,
-			"a person said no; the caller must stop rather than ask for a password"},
-		{"unavailable", http.StatusPreconditionFailed,
-			"nobody was asked; the caller must fall back to the password"},
+		{
+			"declined", http.StatusUnauthorized,
+			"a person said no; the caller must stop rather than ask for a password",
+		},
+		{
+			"unavailable", http.StatusPreconditionFailed,
+			"nobody was asked; the caller must fall back to the password",
+		},
 	} {
 		t.Run(c.mock, func(t *testing.T) {
 			t.Setenv("DIBS_PRESENCE_MOCK", c.mock)

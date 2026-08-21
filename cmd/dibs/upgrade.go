@@ -70,6 +70,11 @@ func upgradeCmd(args []string) error {
 
 const upgradeHelp = `dibs upgrade: move the running daemon onto the dibd you have installed.
 
+  It does NOT fetch anything. Install the new build first (brew upgrade, or
+  task install from a checkout); this is the step that puts the fleet onto it.
+  Run bare on an up-to-date install and it correctly does nothing, which reads
+  as a failure if you expected it to go and get the release.
+
   Checks that the new binary can rebuild this board BEFORE stopping anything,
   reconciles a service unit that pins the wrong daemon, restarts, and verifies
   the fleet came back with its serial and its agents intact.

@@ -149,3 +149,140 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 		}
 	}
 }
+
+// register has two continuity paths and the tool description is the only
+// documentation an agent ever reads.
+//
+// It named `reattached` alone. An integrator writes `if result["reattached"]`,
+// tests it the obvious way by starting a second session while the first is
+// still running, lands on the `resumed` path instead, sees neither the
+// documented key nor an explanation, and concludes identity continuity is
+// broken. That is what happened to an operator evaluating v0.0.6, and correct
+// behaviour looking broken is the failure this project is otherwise careful
+// about.
+//
+// The rotation is asserted separately because it is the half that loses data:
+// a client that caches its token across a reattach is holding a dead one.
+func TestRegisterDocumentsBothContinuityPaths(t *testing.T) {
+	var desc string
+	for _, td := range agentTools {
+		if td["name"] == "register" {
+			desc, _ = td["description"].(string)
+		}
+	}
+	if desc == "" {
+		t.Fatal("no register tool: the probe is not reading the listing")
+	}
+	for _, want := range []string{"resumed", "reattached"} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("register's description never names %q: an agent that gets it back "+
+				"has no way to know what it means", want)
+		}
+	}
+	if !strings.Contains(desc, "ROTATED") {
+		t.Error("register's description does not say the token rotates on reattach: a client " +
+			"that cached the old one keeps sending a dead token")
+	}
+}
+
+// A tool's parameter must not contradict its own description.
+//
+// `prune`'s description says it is NOT for yourself, because signing off
+// invalidates the token prune authenticates with and an authenticated caller is
+// awakened before pruning and refused as active. Its `agent` parameter went on
+// offering "yours". An agent reads both and gets mutually exclusive
+// instructions for the exact sequence the description was rewritten to rule
+// out. Found by the pre-release review.
+func TestPruneDoesNotOfferWhatItRefuses(t *testing.T) {
+	var desc, param string
+	for _, td := range agentTools {
+		if td["name"] != "prune" {
+			continue
+		}
+		desc, _ = td["description"].(string)
+		schema, _ := td["inputSchema"].(map[string]any)
+		props, _ := schema["properties"].(map[string]any)
+		agent, _ := props["agent"].(map[string]any)
+		param, _ = agent["description"].(string)
+	}
+	if desc == "" || param == "" {
+		t.Fatal("prune or its agent parameter is missing: the probe reads neither")
+	}
+	if !strings.Contains(desc, "NOT for yourself") {
+		t.Fatalf("prune no longer says it refuses self-pruning, so this guard is "+
+			"measuring nothing: %q", desc)
+	}
+	if strings.Contains(param, "yours") {
+		t.Errorf("prune refuses self-pruning in its description and offers it in its "+
+			"agent parameter (%q): an agent reading both is told to make a call that "+
+			"cannot succeed", param)
+	}
+}
+
+// claim_coordinator must not repeat the attribution the daemon's own logs were
+// corrected for.
+//
+// It said the role is for the agent that "started this daemon". Under launchd
+// or systemd no agent started anything: the authorisation is being able to read
+// coordinator.claim. A tool description is the only documentation an agent
+// sees, so this discouraged every eligible caller on a service-managed board,
+// which can leave that board with no coordinator at all. Found by the
+// pre-release review, after the two log lines saying the same thing were fixed.
+func TestClaimCoordinatorDoesNotNameAnAgentThatDoesNotExist(t *testing.T) {
+	var desc string
+	for _, td := range agentTools {
+		if td["name"] == "claim_coordinator" {
+			desc, _ = td["description"].(string)
+		}
+	}
+	if desc == "" {
+		t.Fatal("no claim_coordinator tool: the probe reads nothing")
+	}
+	if strings.Contains(desc, "started this daemon") {
+		t.Errorf("claim_coordinator is offered to the agent that started the daemon, "+
+			"which under a service manager is nobody: %q", desc)
+	}
+	if !strings.Contains(desc, "coordinator.claim") {
+		t.Errorf("claim_coordinator does not name the file that authorises it: %q", desc)
+	}
+}
+
+// The message types must not promise a wake the mechanism cannot deliver.
+//
+// `send`'s own description said question/request/handoff "WAKE the recipient
+// now". They do not. Mail is pushed by hook_poll, which the shipped plugins
+// bind to SessionStart, UserPromptSubmit, Stop and SubagentStop: an agent in
+// the middle of a long turn has none of those, so a message arriving mid-run
+// waits for the end of the turn. WAKE-MECHANISMS.md says so plainly under
+// "Honest limits"; the tool description, which is the only thing an agent
+// reads, did not.
+//
+// The cost was real and measured: a peer sent a question with the default
+// 600-second deadline to an agent working a seven-hour autonomous stretch, got
+// "recipient is dormant" back, and reported the product broken.
+func TestMessageTypesDoNotPromiseAnInstantWake(t *testing.T) {
+	var desc string
+	for _, td := range agentTools {
+		if td["name"] != "send" {
+			continue
+		}
+		schema, _ := td["inputSchema"].(map[string]any)
+		props, _ := schema["properties"].(map[string]any)
+		ty, _ := props["type"].(map[string]any)
+		desc, _ = ty["description"].(string)
+	}
+	if desc == "" {
+		t.Fatal("send has no type description: the probe reads nothing")
+	}
+	if strings.Contains(desc, "WAKE the recipient now") {
+		t.Errorf("send promises an instant wake it cannot deliver: %q", desc)
+	}
+	if !strings.Contains(desc, "NEXT ACTIVATION") {
+		t.Errorf("send does not say when a message actually arrives: %q", desc)
+	}
+	// And the consequence a sender needs in order to pick a deadline.
+	if !strings.Contains(desc, "deadline") {
+		t.Errorf("send does not warn that a short deadline expires against a working "+
+			"agent, which is what made a peer report the product broken: %q", desc)
+	}
+}
