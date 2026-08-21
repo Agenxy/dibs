@@ -673,7 +673,7 @@ func printRemoteRecipe(tls bool) {
 # holds no nonce, so every reconnect forks an identity that cannot read its
 # predecessor's mail. The bridge is a process with a filesystem, which is what
 # the credential needs.
-`, filepath.Join(paths.DataDir(), "local.secret"), addr(), shellArg(addr()))
+`, filepath.Join(paths.DataDir(), "local.secret"), rawAddr(), shellArg(rawAddr()))
 
 	if !tls {
 		// The tunnel, for the daemon this actually is.
@@ -712,11 +712,15 @@ func printRemoteRecipe(tls bool) {
 # it is given, the bridge reads it from the one in its config above, and without
 # it trust reports success while writing where the bridge never looks.
 # Compare what that prints against `+"`dibs fingerprint`"+` run HERE; they must match.
-`, shellArg(addr()))
+`, shellArg(rawAddr()))
 }
 
 // port is the ":4777" half of an address, for the near end of a forward.
 func port(a string) string {
+	// A scheme is not part of the port. DIBS_ADDR may carry a whole origin.
+	if _, rest, found := strings.Cut(a, "://"); found {
+		a = rest
+	}
 	if _, p, err := net.SplitHostPort(a); err == nil {
 		return p
 	}
@@ -1946,4 +1950,17 @@ func codexEnvLine() string {
 		parts = append(parts, fmt.Sprintf("%s = %q", k, env[k]))
 	}
 	return "env = { " + strings.Join(parts, ", ") + " }"
+}
+
+// rawAddr is DIBS_ADDR exactly as this process was given it, scheme included.
+//
+// addr() strips the scheme, which is right for a caller that wants host:port
+// and wrong for anything handed to another process: `http://<non-loopback>` is
+// how a deliberately plaintext daemon off loopback is reached, and a bridge
+// given bare host:port infers HTTPS and cannot connect.
+func rawAddr() string {
+	if a := os.Getenv("DIBS_ADDR"); a != "" {
+		return a
+	}
+	return addr()
 }

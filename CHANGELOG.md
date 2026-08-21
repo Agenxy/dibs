@@ -174,6 +174,16 @@ machines for real work. Their priority order, not ours.
   `host:port` and the bridge inferred HTTPS. And the hub-side recipe's
   pasteable commands were still unquoted.
 
+- **Three more from the review's eighth round**, and the address's shape is now
+  decided in one place. The second-machine recipe still handed the bridge an
+  address with the scheme removed, and the branch choosing between a forward
+  and a certificate could not read a scheme at all, so a board explicitly named
+  as plaintext was told to record a certificate it does not serve. A scheme,
+  when the operator writes one, settles what the daemon serves; without one,
+  loopback means a forward and anything else means HTTPS. The README's tunnel
+  example also still used one port for both ends, in the paragraph that
+  describes a machine already running its own board on that port.
+
 - **README: building without mise or task.** On a network that allows the Go
   module proxy but not the object store it redirects to, neither tool installs
   and the failure reads like a broken toolchain rather than a blocked host.

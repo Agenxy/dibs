@@ -312,10 +312,13 @@ If the hub is a plaintext loopback daemon, which is the default, forward a port
 to it rather than exposing it to the network:
 
 ```sh
-ssh -N -L 4777:127.0.0.1:4777 you@hub
+ssh -N -L <local-port>:127.0.0.1:4777 you@hub
 ```
 
-`DIBS_ADDR` is then this machine's end of the forward. The hub never leaves
+The two ends are independent: `4777` is what the hub listens on, and
+`<local-port>` is whatever is free on this machine, which will not be 4777 if it
+already runs a board of its own. `DIBS_ADDR` is then `127.0.0.1:<local-port>`,
+this machine's end of the forward. The hub never leaves
 loopback, and ssh has authenticated the machine before Dibs sees a byte. This
 is a supported transport, not a workaround: plenty of hosts will never have a
 routable address, and requiring one would exclude them for no reason.

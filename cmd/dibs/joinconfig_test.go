@@ -256,9 +256,21 @@ func TestConfigNamesANonDefaultDaemon(t *testing.T) {
 		t.Errorf("the Codex table gets %d env lines, want 1: a TOML table may not "+
 			"repeat a key\n%s", n, out)
 	}
-	for _, want := range []string{"CODEX_MCP_PROTOCOL_VERSION", "DIBS_ADDR", "DIBS_DIR"} {
-		if !strings.Contains(codexEnvLine(), want) {
-			t.Errorf("the merged env line dropped %s: %q", want, codexEnvLine())
+	// In the RENDERED env line, not the helper that builds it: the address and
+	// directory appear elsewhere in the output too, so checking the whole
+	// output would pass even if the Codex block stopped carrying them.
+	envLine := ""
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "env = {") {
+			envLine = line
+		}
+	}
+	if envLine == "" {
+		t.Fatal("no env line in the rendered Codex block")
+	}
+	for _, want := range []string{"CODEX_MCP_PROTOCOL_VERSION", "127.0.0.1:4791", dir} {
+		if !strings.Contains(envLine, want) {
+			t.Errorf("the rendered Codex env line does not carry %q: %s", want, envLine)
 		}
 	}
 
@@ -267,8 +279,40 @@ func TestConfigNamesANonDefaultDaemon(t *testing.T) {
 	// http://host:port, and handing the bridge bare host:port makes it infer
 	// HTTPS and fail to connect.
 	t.Setenv("DIBS_ADDR", "http://hub.example:4777")
-	if got := nonDefaultEnv()["DIBS_ADDR"]; got != "http://hub.example:4777" {
-		t.Errorf("the scheme was stripped from the bridge's address: %q", got)
+	scheme, err := captureStdout(t, func() error { return mcpConfig(nil) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The BRIDGE's own value. The url block further down carries an origin with
+	// a scheme in it regardless, so searching the whole output would pass while
+	// the stdio config handed the bridge bare host:port.
+	// Every place that hands another process an address, which is both the
+	// stdio config and the second-machine recipe printed under it. The url
+	// block carries an origin with a scheme regardless, so searching the whole
+	// output would pass while either of these handed over bare host:port.
+	for _, line := range strings.Split(scheme, "\n") {
+		if !strings.Contains(line, "DIBS_ADDR") || !strings.Contains(line, "hub.example") {
+			continue
+		}
+		if !strings.Contains(line, "http://hub.example:4777") {
+			t.Errorf("the scheme was stripped from an address handed to a bridge, which "+
+				"will then infer HTTPS and fail to connect: %s", line)
+		}
+	}
+	if !strings.Contains(scheme, "http://hub.example:4777") {
+		t.Fatal("the address never appeared at all, so this proves nothing")
+	}
+
+	// And a plaintext board off loopback must not be told to record a
+	// certificate it does not serve.
+	joined, err := captureStdout(t, func() error {
+		return printJoinConfig("http://hub.example:4777")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(joined, "dibs trust") {
+		t.Errorf("a board that names plaintext was told to trust a certificate:\n%s", joined)
 	}
 
 	// And the default daemon keeps the config it had.

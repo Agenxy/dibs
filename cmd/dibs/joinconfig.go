@@ -62,7 +62,9 @@ func printJoinConfig(remote string) error {
 	// Step 2 is a different step for the two shapes a board comes in, and
 	// printing both as conditionals leaves the operator deciding which sentence
 	// applies to them. The address already says.
-	if isLoopbackAddr(remote) {
+	tunnel, trust := boardShape(remote)
+	switch {
+	case tunnel:
 		// The hub's port is NOT this one.
 		//
 		// The two ends of a forward are independent: the local port is whatever
@@ -84,7 +86,7 @@ func printJoinConfig(remote string) error {
 #    the machine before Dibs sees a byte.
 #
 `, port(remote), port(remote))
-	} else {
+	case trust:
 		// The trust step, which the bridge cannot do without.
 		//
 		// A non-loopback daemon serves HTTPS with a certificate it generated
@@ -108,6 +110,14 @@ func printJoinConfig(remote string) error {
 #    else on this machine has its TLS behaviour altered.
 #
 `, q, shellArg(remote))
+	default:
+		// Reachable directly and serving plaintext, because the operator said
+		// so with an explicit scheme. Nothing to trust and nothing to forward.
+		fmt.Printf(`# 2. That address is reachable directly and names plaintext, so there is
+#    no certificate to record and no forward to open. Nothing about that
+#    daemon is protected by the network it is on: keep it on one you trust.
+#
+`)
 	}
 
 	fmt.Printf(`# 3. Add to .mcp.json (Claude Code and JSON-config hosts):
@@ -130,20 +140,33 @@ env = { DIBS_ADDR = %q, DIBS_DIR = %q, CODEX_MCP_PROTOCOL_VERSION = "2026-07-28"
 	return nil
 }
 
-// isLoopbackAddr reports whether an address names this machine, which is what
-// the near end of an ssh forward looks like.
-func isLoopbackAddr(addr string) bool {
-	h, _, err := net.SplitHostPort(addr)
+// boardShape decides which second step an address calls for: a forward, or
+// recording a certificate.
+//
+// One place, reading the address AS GIVEN, because there are three signals and
+// they were being read in two. A scheme, when present, is the operator saying
+// what the daemon serves and settles it outright: `http://` is the documented
+// way to reach a deliberately plaintext daemon off loopback, and telling that
+// operator to trust a certificate it does not serve sends them to a command
+// that cannot succeed. Without a scheme, loopback means a forward and anything
+// else means the HTTPS a daemon off loopback serves by default.
+func boardShape(addr string) (tunnel, trust bool) {
+	scheme, rest, hasScheme := strings.Cut(addr, "://")
+	if !hasScheme {
+		rest = addr
+	}
+	h, _, err := net.SplitHostPort(rest)
 	if err != nil {
-		h = addr
+		h = rest
 	}
-	if h == "" || h == "localhost" {
-		return true
-	}
+	loopback := h == "" || h == "localhost"
 	if ip := net.ParseIP(strings.Trim(h, "[]")); ip != nil {
-		return ip.IsLoopback()
+		loopback = ip.IsLoopback()
 	}
-	return false
+	if hasScheme {
+		return loopback, scheme == "https"
+	}
+	return loopback, !loopback
 }
 
 // homeDir is the operator's home, for a path they can paste. An empty string
