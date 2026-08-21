@@ -205,6 +205,15 @@ machines for real work. Their priority order, not ours.
   the previous build; the install step is written out, Launch Services
   registration included.
 
+- **Three more from the review's eleventh round**, the first of them a leak
+  introduced by the round before it. Waiving the interactive gate for
+  `--board` was scoped to the flag appearing rather than to it having a value,
+  so `dibs mcp-config --board=` waived the gate, parsed as empty, fell through
+  to the local form and printed this daemon's secret on a headless machine,
+  exiting 0. An empty `--board` is refused now, and the waiver requires a
+  value. The install recipe also never created `~/.local/bin`, and copied the
+  two macOS-only artifacts unconditionally, so it failed on Linux.
+
 - **README: building without mise or task.** On a network that allows the Go
   module proxy but not the object store it redirects to, neither tool installs
   and the failure reads like a broken toolchain rather than a blocked host.

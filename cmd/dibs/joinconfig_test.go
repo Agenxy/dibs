@@ -406,3 +406,34 @@ func TestABoardCanNeedAForwardAndACertificate(t *testing.T) {
 		t.Errorf("an uppercase scheme was read as plaintext:\n%s", upper)
 	}
 }
+
+// An empty --board must not be read as a request for the LOCAL configuration.
+//
+// It was: `--board=` passed the scan that waives the interactive gate, then
+// parsed as empty and fell through to the local form, which prints this
+// daemon's secret. So `dibs mcp-config --board=` over ssh returned the secret
+// and exited 0. The waiver was added one round earlier and has to be as narrow
+// as the thing it waives for. Found by the pre-release review running the
+// binary.
+func TestAnEmptyBoardIsNeitherWaivedNorTreatedAsLocal(t *testing.T) {
+	for _, args := range [][]string{
+		{"--board="},
+		{"--board"},
+		{"--board", "--help"},
+	} {
+		if joiningAnotherBoard(args) {
+			t.Errorf("%v waived the gate that exists because the local form prints this "+
+				"machine's secret", args)
+		}
+	}
+
+	// And it is refused rather than silently doing something else.
+	if err := mcpConfig([]string{"--board="}); err == nil {
+		t.Error("an empty --board printed the local configuration instead of being refused")
+	}
+
+	// A real address still waives it: that is the headless case the flag exists for.
+	if !joiningAnotherBoard([]string{"--board", "hub.example:4777"}) {
+		t.Error("a real board no longer waives the gate, so the headless case is refused again")
+	}
+}

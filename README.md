@@ -221,9 +221,16 @@ Then install them, which is its own step: the commands above only produce
 and the PREVIOUS build on a machine that has one.
 
 ```sh
+mkdir -p ~/.local/bin
 rm -rf ~/.local/bin/dibs ~/.local/bin/dibd ~/.local/bin/dibs-presence ~/.local/bin/Dibs.app
-cp bin/dibs bin/dibd bin/dibs-presence ~/.local/bin/
-cp -R bin/Dibs.app ~/.local/bin/                                            # macOS
+cp bin/dibs bin/dibd ~/.local/bin/
+```
+
+and on macOS, the two artifacts that only exist there:
+
+```sh
+cp bin/dibs-presence ~/.local/bin/
+cp -R bin/Dibs.app ~/.local/bin/
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f ~/.local/bin/Dibs.app
 ```
 
