@@ -332,7 +332,12 @@ func TestADamagedLocalBoardIsNotMistakenForAJoin(t *testing.T) {
 	// Every daemon-owned artifact, not just the one the first version happened
 	// to name. A joining client holds the board's public certificate; it never
 	// holds the private key or the admin hash.
-	for _, own := range []string{"tls-key.pem", "admin.hash", "blobs", "coordinator.claim", "out"} {
+	for _, own := range []string{
+		"tls-key.pem", "admin.hash", "blobs", "coordinator.claim", "out",
+		// The ordinary output of `dibs configure`: a configured local board that
+		// lost everything else is the one whose loss most deserves reporting.
+		"dibs.toml",
+	} {
 		d := t.TempDir()
 		if err := os.WriteFile(filepath.Join(d, "local.secret"),
 			[]byte(strings.Repeat("a", 64)), 0o600); err != nil {

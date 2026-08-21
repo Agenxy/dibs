@@ -14,7 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
 )
 
 // The [match] table exists because the two numbers that matter are MEASURED,
@@ -601,5 +603,25 @@ func writeCertExpiring(t *testing.T, certFile, keyFile string, notAfter time.Tim
 	}
 	if _, err := os.Stat(keyFile); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// boardconfig lists the wake policies as strings, because it must not import
+// the engine: `dibs` reads the same file and has no business linking the
+// daemon's internals. This is the seam that keeps the two honest.
+func TestWakePhasesMatchTheEngine(t *testing.T) {
+	known := map[string]bool{}
+	for _, p := range boardconfig.WakePhases {
+		known[p] = true
+		// Every listed phase must be one the daemon can actually translate.
+		if _, err := wakePolicy(WakeConfig{ExtendTurnFor: p}); err != nil {
+			t.Errorf("boardconfig accepts %q and the daemon refuses it: %v", p, err)
+		}
+	}
+	for _, p := range []engine.WakePhase{engine.WakeAll, engine.WakeUrgent, engine.WakeNone} {
+		if !known[string(p)] {
+			t.Errorf("the engine has a wake phase %q that boardconfig would refuse, so a "+
+				"valid configuration is rejected before the daemon sees it", p)
+		}
 	}
 }
