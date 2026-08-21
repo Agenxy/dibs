@@ -176,7 +176,24 @@ func (d *diagnosis) run(verbose bool) error {
 	if err != nil {
 		bad("daemon unreachable at "+addr()+" ("+err.Error()+")",
 			"start it with `dibd`, or set DIBS_ADDR if it listens elsewhere")
-		d.prose("\nnothing else can be checked while the daemon is down.")
+		// The LOCAL checks still run, and the ledger one most of all.
+		//
+		// A damaged ledger usually presents as exactly this: dibd refuses to
+		// replay it and never starts listening. Returning here reported "daemon
+		// unreachable" and stopped, so the one check that would have said WHY,
+		// and told the operator not to delete the file, never ran in the case it
+		// was written for. Everything below reads the data directory and needs no
+		// daemon; the checks that need one stay above. Raised by the pre-release
+		// review, which pointed out my tests called the helper directly and so
+		// could not see that the command never reached it.
+		d.prose("\nthe daemon is down, so nothing that needs it can be checked. What " +
+			"follows reads this machine's own files, and is where the reason usually is.")
+		checkLedgerAndBoard(dir, ok, bad, warn)
+		checkGit(verbose, ok, bad)
+		checkSupervision(verbose, ok, warn)
+		checkOneDaemon(verbose, ok, warn)
+		checkCodeSignature(ok, warn)
+		checkServiceBinary(ok, warn)
 		return earlyDoctorResult(d.probs, d.warns)
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -1158,6 +1175,12 @@ func isJoinedBoard(dir string) bool {
 	for _, own := range []string{
 		"node_id", "ledger.jsonl", "key", "blobs", "coordinator.claim", "out",
 		"tls-key.pem", "admin.hash",
+		// dibs.toml is what `dibs configure` writes for a board of ITS OWN, and
+		// a joining directory has no daemon to configure. Without it, the
+		// ordinary output of the wizard, local.secret beside dibs.toml, read as
+		// a join the moment the ledger went missing: exactly the configured
+		// board whose loss most deserves reporting.
+		"dibs.toml",
 	} {
 		if _, err := os.Stat(filepath.Join(dir, own)); err == nil {
 			return false

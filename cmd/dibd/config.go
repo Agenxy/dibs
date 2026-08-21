@@ -76,11 +76,11 @@ func applyLimits(c LimitsConfig, base core.Limits) (core.Limits, error) {
 // clamped: silently correcting a value the operator typed is how a setting ends
 // up meaning something other than it says.
 func applyCount(key string, raw int, dst *int) error {
+	if err := boardconfig.CheckCount("limits", key, raw); err != nil {
+		return err
+	}
 	if raw == 0 {
 		return nil
-	}
-	if raw < 0 {
-		return fmt.Errorf("[limits] %s = %d: a ceiling cannot be negative", key, raw)
 	}
 	*dst = raw
 	return nil
@@ -93,22 +93,11 @@ func applyCount(key string, raw int, dst *int) error {
 // healthy agents crashed between their own keepalives: a fleet-wide phantom
 // outage produced by a setting that looked accepted.
 func applyTTL(key, raw string, dst *time.Duration) error {
-	if raw == "" {
-		return nil
-	}
-	d, err := time.ParseDuration(raw)
-	if err != nil {
-		return fmt.Errorf(
-			"[limits] %s = %q is not a duration: write it like \"5m\", \"90s\" or \"1h\": %w",
-			key, raw, err,
-		)
-	}
-	if d < minAgentTTL {
-		return fmt.Errorf(
-			"[limits] %s = %q is below the %s floor: agents renew their lease at "+
-				"half the TTL, so anything shorter marks healthy agents crashed between "+
-				"their own keepalives", key, raw, minAgentTTL,
-		)
+	// The check is boardconfig's, so the CLI describing this daemon reaches the
+	// same verdict about the same file. Only the assignment is the daemon's.
+	d, err := boardconfig.CheckDuration("limits", key, raw)
+	if err != nil || raw == "" {
+		return err
 	}
 	*dst = d
 	return nil
@@ -135,7 +124,8 @@ func applyBlobCap(c LimitsConfig, base *core.Limits) error {
 }
 
 // minAgentTTL is the floor below which crash detection stops meaning anything.
-const minAgentTTL = 5 * time.Second
+// The floor lives with the setting it bounds.
+const minAgentTTL = boardconfig.MinAgentTTL
 
 // The configuration types and their loader live in internal/boardconfig,
 // because `dibs mcp-config` has to read the same file and reach the same
