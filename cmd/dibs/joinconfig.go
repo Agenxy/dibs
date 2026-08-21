@@ -145,7 +145,12 @@ func boardSlug(addr string) string {
 	if h == "" || h == "127.0.0.1" || h == "localhost" || h == "::1" {
 		h = "board"
 	}
-	slug := strings.NewReplacer(".", "-", ":", "-").Replace(h)
+	// Dots are KEPT. Rewriting them to hyphens was cosmetic and it collided:
+	// hub.example and hub-example are different hosts and both became
+	// "hub-example", so two boards shared a credential directory again, one
+	// round after the port did. A directory name may contain dots; only the
+	// separators that would change the path have to go.
+	slug := strings.NewReplacer(":", "-", "/", "-", string(filepath.Separator), "-").Replace(h)
 	if port != "" {
 		slug += "-" + port
 	}

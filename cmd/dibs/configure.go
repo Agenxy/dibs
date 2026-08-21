@@ -86,7 +86,14 @@ func configure(args []string) error {
 	// only real question is the listen address, and the default is the right
 	// answer for a host reached through a forward, which is what a headless
 	// machine in a fleet usually is.
-	args, quiet := takeNonInteractive(args)
+	args, quiet, help, err := parseConfigureArgs(args)
+	if err != nil {
+		return err
+	}
+	if help {
+		fmt.Print(configureHelp)
+		return nil
+	}
 
 	dir := paths.DataDir()
 	if len(args) > 0 && args[0] != "" {
@@ -114,6 +121,13 @@ Example:
   addr = "0.0.0.0:4777"   # serve agents on other machines (TLS is automatic)`,
 			filepath.Join(dir, "dibs.toml"))
 	}
+	return runWizard(dir)
+}
+
+// runWizard is the interactive path: the questions, and the file they produce.
+// Split from configure so the dispatch above stays about deciding WHICH job
+// this is, which is where the argument-handling bugs have all been.
+func runWizard(dir string) error {
 	// The path is the operator's own data dir, given by them on their own
 	// machine: it is an argument, not untrusted input.
 	if err := os.MkdirAll(dir, 0o700); err != nil { //nolint:gosec // G703: operator-supplied path is the feature
@@ -300,17 +314,51 @@ func configureWithDefaults(dir string) error {
 	return nil
 }
 
-// takeNonInteractive removes --non-interactive from the arguments and reports
-// whether it was there, so the wizard's own argument handling stays readable.
-func takeNonInteractive(args []string) ([]string, bool) {
-	quiet := false
-	rest := args[:0:0]
+const configureHelp = `dibs configure [dir]: write the daemon's configuration
+
+  Bare, it asks; every question has a safe default and pressing Enter through
+  it produces a correct single-machine setup. It writes <dir>/dibs.toml and
+  nothing else.
+
+  --non-interactive   take the defaults, write the file, print what it wrote.
+                      For a headless host reached by "ssh host command", which
+                      has no terminal. Refuses to overwrite an existing config.
+  --service           write an init-system unit instead, so the daemon
+                      survives a closed terminal and a reboot
+`
+
+// parseConfigureArgs reads EVERY argument before anything is decided.
+//
+// The rule this file already states twice, arrived at the hard way: a command
+// that writes outside the data directory reads all of its arguments first.
+// `configure --service --help` wrote a LaunchAgent and exited 0, and `dibs stop
+// --help` stopped the daemon, both by acting on the first thing they
+// recognised.
+//
+// It happened a third time here. Arguments after the directory were silently
+// ignored, which was harmless while the wizard needed a terminal to do
+// anything: `configure <dir> --non-interactive --help` then WROTE the config
+// and exited 0, turning an ignored flag into a silent write on a path built to
+// run unattended. Found by the pre-release review, which reproduced it.
+func parseConfigureArgs(args []string) (rest []string, quiet, help bool, err error) {
+	rest = args[:0:0]
 	for _, a := range args {
-		if a == "--non-interactive" {
+		switch a {
+		case "--non-interactive":
 			quiet = true
-			continue
+		case "-h", "--help", "help":
+			help = true
+		default:
+			if strings.HasPrefix(a, "-") {
+				return nil, false, false, fmt.Errorf("dibs configure: unknown flag %q\n\n%s",
+					a, configureHelp)
+			}
+			if len(rest) > 0 {
+				return nil, false, false, fmt.Errorf("dibs configure takes ONE data "+
+					"directory, and was given %q and %q\n\n%s", rest[0], a, configureHelp)
+			}
+			rest = append(rest, a)
 		}
-		rest = append(rest, a)
 	}
-	return rest, quiet
+	return rest, quiet, help, nil
 }

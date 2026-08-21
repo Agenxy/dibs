@@ -103,6 +103,17 @@ machines for real work. Their priority order, not ours.
   started this daemon", the same false attribution the startup line was
   corrected for, on the record of a privileged role being taken.
 
+- **Two more from the review's second round**: `dibs configure <dir>
+  --non-interactive --help` wrote the configuration and ignored the help
+  request, which is the third instance of the shape this command's own
+  comments document (`configure --service --help` wrote a LaunchAgent, `dibs
+  stop --help` stopped the daemon) and the first where a flag added for
+  unattended use turned an ignored argument into a silent write. `configure`
+  now reads every argument before deciding anything, and refuses an unknown
+  flag or a second directory. And the credential directory rewrote dots to
+  hyphens, so `hub.example` and `hub-example` shared one: the port collision
+  again in another character. Dots are kept.
+
 - **README: building without mise or task.** On a network that allows the Go
   module proxy but not the object store it redirects to, neither tool installs
   and the failure reads like a broken toolchain rather than a blocked host.

@@ -19,6 +19,10 @@ func TestEachBoardGetsItsOwnDirectory(t *testing.T) {
 		"127.0.0.1:4777", "127.0.0.1:5777",
 		"hub.example:4777", "hub.example:5777",
 		"other.example:4777",
+		// Two different hosts that a cosmetic dot-to-hyphen rewrite mapped
+		// onto one directory, which is the port collision again in another
+		// character.
+		"hub-example:4777",
 	} {
 		slug := boardSlug(addr)
 		if prev, clash := seen[slug]; clash {

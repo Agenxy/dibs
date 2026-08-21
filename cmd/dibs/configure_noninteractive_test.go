@@ -52,3 +52,32 @@ func TestBothConfigurePathsWriteTheSameDefaults(t *testing.T) {
 		t.Errorf("the non-interactive path wrote something other than defaultConfig:\n%q\nwant\n%q", b, body)
 	}
 }
+
+// Every argument is read before anything is written.
+//
+// The rule this command already states twice, arrived at the hard way:
+// `configure --service --help` wrote a LaunchAgent and exited 0, and `dibs stop
+// --help` stopped the daemon. It happened a third time. Arguments after the
+// directory were silently ignored, harmless while the wizard needed a terminal
+// to do anything, and `--non-interactive` turned that into a silent write on
+// the path built to run unattended. Found by the pre-release review, which
+// reproduced it from the shipped command.
+func TestConfigureReadsEveryArgumentBeforeWriting(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "data")
+	if err := configure([]string{dir, "--non-interactive", "--help"}); err != nil {
+		t.Fatalf("help is not an error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "dibs.toml")); err == nil {
+		t.Error("asking for help wrote the configuration: an argument was acted on " +
+			"before the rest had been read")
+	}
+
+	// An argument it does not understand is a misunderstanding about what this
+	// does, and it writes a file.
+	if err := configure([]string{dir, "--wat"}); err == nil {
+		t.Error("an unknown flag was accepted")
+	}
+	if err := configure([]string{dir, filepath.Join(t.TempDir(), "other")}); err == nil {
+		t.Error("two data directories were accepted, so one of them was silently ignored")
+	}
+}
