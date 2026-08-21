@@ -246,3 +246,43 @@ func TestClaimCoordinatorDoesNotNameAnAgentThatDoesNotExist(t *testing.T) {
 		t.Errorf("claim_coordinator does not name the file that authorises it: %q", desc)
 	}
 }
+
+// The message types must not promise a wake the mechanism cannot deliver.
+//
+// `send`'s own description said question/request/handoff "WAKE the recipient
+// now". They do not. Mail is pushed by hook_poll, which the shipped plugins
+// bind to SessionStart, UserPromptSubmit, Stop and SubagentStop: an agent in
+// the middle of a long turn has none of those, so a message arriving mid-run
+// waits for the end of the turn. WAKE-MECHANISMS.md says so plainly under
+// "Honest limits"; the tool description, which is the only thing an agent
+// reads, did not.
+//
+// The cost was real and measured: a peer sent a question with the default
+// 600-second deadline to an agent working a seven-hour autonomous stretch, got
+// "recipient is dormant" back, and reported the product broken.
+func TestMessageTypesDoNotPromiseAnInstantWake(t *testing.T) {
+	var desc string
+	for _, td := range agentTools {
+		if td["name"] != "send" {
+			continue
+		}
+		schema, _ := td["inputSchema"].(map[string]any)
+		props, _ := schema["properties"].(map[string]any)
+		ty, _ := props["type"].(map[string]any)
+		desc, _ = ty["description"].(string)
+	}
+	if desc == "" {
+		t.Fatal("send has no type description: the probe reads nothing")
+	}
+	if strings.Contains(desc, "WAKE the recipient now") {
+		t.Errorf("send promises an instant wake it cannot deliver: %q", desc)
+	}
+	if !strings.Contains(desc, "NEXT ACTIVATION") {
+		t.Errorf("send does not say when a message actually arrives: %q", desc)
+	}
+	// And the consequence a sender needs in order to pick a deadline.
+	if !strings.Contains(desc, "deadline") {
+		t.Errorf("send does not warn that a short deadline expires against a working "+
+			"agent, which is what made a peer report the product broken: %q", desc)
+	}
+}

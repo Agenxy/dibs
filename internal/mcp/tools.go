@@ -45,10 +45,11 @@ var toolDefs = func() []map[string]any {
 	msgType := map[string]any{
 		"type": "string", "enum": []string{"notify", "question", "request", "handoff"},
 		"description": "what the message DOES, so pick for the effect. notify: no reply " +
-			"needed, arrives at their next activation, costs them nothing. question / " +
-			"request / handoff: WAKE the recipient now, so use them when somebody is " +
-			"genuinely waiting. To the HUMAN a request raises a notification with " +
-			"Approve on it, and the press returns as an ordinary response",
+			"needed, costs them nothing. question / request / handoff: reach them at their " +
+			"NEXT ACTIVATION, their next prompt or the end of the turn they are in, not the " +
+			"instant you send: a shorter deadline expires while they still work. To the " +
+			"HUMAN a request raises a notification with Approve on it, and " +
+			"the press returns as an ordinary response",
 	}
 
 	return []map[string]any{
@@ -115,7 +116,7 @@ var toolDefs = func() []map[string]any {
 			"description": "Acknowledge the board: required once per activation, before declare " +
 				"or claim. One atomic checkpoint: the board, your inbox, your cursor serial, " +
 				"`announcements` you owe an ack on, and `agent_updates`, whatever happened TO " +
-				"you in a space (admitted, promoted, evicted, merged) since you last checked. " +
+				"you in a space since you last checked. " +
 				"Neither survives losing context, and this is the authoritative path for both: " +
 				"the wake hook only nudges. Also the recovery after E_CURSOR_TOO_OLD.",
 			"inputSchema": obj(map[string]any{"token": tok}, "token"),
@@ -265,8 +266,8 @@ var toolDefs = func() []map[string]any {
 			"name": "send",
 			"description": "Send a message to an agent, or to the HUMAN: the board row " +
 				"marked `human: true` is the person here, and writing to it notifies them " +
-				"on their machine. Questions and requests carry a deadline; on expiry you " +
-				"get a diagnosis (alive-but-silent, dormant, gone). op_id retries safely.",
+				"on their machine. Questions and requests carry a deadline, and on expiry " +
+				"you get a diagnosis of why.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "to": str("recipient agent id, or \"coordinator\" for " +
 					"whoever holds that role"),
@@ -695,9 +696,9 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "broadcast",
-			"description": "COORDINATOR ONLY. One message to every other live agent: the same " +
-				"as writing to each by hand, so each may decline its own. Fleet-wide " +
-				"direction only; use send for anything targeted.",
+			"description": "COORDINATOR ONLY. One message to every other live agent, each of " +
+				"which may decline its own. Fleet-wide direction only; send is for anything " +
+				"targeted.",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
 				"type":  msgType,

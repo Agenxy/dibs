@@ -282,6 +282,23 @@ machines for real work. Their priority order, not ours.
   while `dibd -check` exits 1 on it; the key list is complete and a test reads
   the daemon's own structs, nested tables included, so it cannot drift.
 
+- **`send` promised a wake it cannot deliver.** Its own description said
+  question, request and handoff "WAKE the recipient now". They do not: mail is
+  pushed by `hook_poll`, which the shipped plugins bind to SessionStart,
+  UserPromptSubmit, Stop and SubagentStop, so an agent in the middle of a long
+  turn has no event for one to arrive on and sees it when the turn ends.
+  `WAKE-MECHANISMS.md` says exactly this under "Honest limits"; the tool
+  description, which is the only thing an agent reads, did not. Found when a
+  peer sent a question with the default 600-second deadline to an agent working
+  a seven-hour autonomous stretch, got "recipient is dormant" back, and
+  reported the product broken. The description now says when a message actually
+  arrives and what a short deadline costs.
+
+- **`E_MSG_FINAL` carried no hint**, in breach of the rule that every error
+  names the corrective call, and it is the error an agent hits exactly when it
+  has come back late to something it missed. It now names the corrective call:
+  send a new message, and if that agent is gone, the human's row outlives them.
+
 - **README: building without mise or task.** On a network that allows the Go
   module proxy but not the object store it redirects to, neither tool installs
   and the failure reads like a broken toolchain rather than a blocked host.
