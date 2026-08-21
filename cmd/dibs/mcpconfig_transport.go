@@ -4,6 +4,8 @@ import (
 	"net"
 	"path/filepath"
 	"strings"
+
+	xport "github.com/agenxy/dibs/internal/transport"
 )
 
 // How this daemon is REACHED, as opposed to how it is configured: the transport
@@ -25,16 +27,34 @@ func resolveTransport(dir string) (scheme, certPath string, err error) {
 	if err != nil {
 		return "", "", err
 	}
+	// The daemon's own rule, from the package they share. Answering it here
+	// separately is what produced three rounds of the CLI describing a
+	// transport the daemon does not serve.
+	//
+	// ensure reports where the daemon WOULD have put a self-signed certificate,
+	// without making one: this is a description of that daemon, not a second
+	// program deciding things for it.
+	choice, err := xport.Resolve(cfg.TLSCert, cfg.TLSKey, hostPort(rawAddr()), cfg.InsecurePlaintext,
+		func() (string, string, error) {
+			return filepath.Join(dir, "tls-cert.pem"), filepath.Join(dir, "tls-key.pem"), nil
+		})
+	if err != nil {
+		return "", "", err
+	}
 	scheme = "http"
-	if p := filepath.Join(dir, "tls-cert.pem"); fileExists(p) {
-		scheme, certPath = "https", p
+	if choice.TLS() {
+		scheme = "https"
+		certPath = choice.CertFile
+		// Only a certificate that is actually there can be handed to anybody.
+		// The daemon makes it on first start; before that there is nothing to
+		// point at, and naming a path that does not exist is worse than saying
+		// nothing.
+		if !fileExists(certPath) {
+			certPath = ""
+		}
 	}
-	if cfg.TLSCert != "" {
-		scheme, certPath = "https", cfg.TLSCert
-	}
-	if cfg.InsecurePlaintext {
-		scheme, certPath = "http", ""
-	}
+	// An explicit scheme in DIBS_ADDR is the operator stating it outright, and
+	// outranks everything above.
 	if given, _, found := strings.Cut(rawAddr(), "://"); found {
 		scheme = strings.ToLower(given)
 		if scheme != "https" {

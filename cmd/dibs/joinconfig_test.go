@@ -613,7 +613,10 @@ func TestEveryBridgeBlockCarriesTheConfiguredAddress(t *testing.T) {
 	for _, want := range []string{
 		`"DIBS_ADDR": "192.168.50.10:4777"`,
 		`DIBS_ADDR = "192.168.50.10:4777"`,
-		`"url": "http://192.168.50.10:4777/mcp"`,
+		// https, because that is what the daemon serves on an address off
+		// loopback with nothing said. This asserted http when the CLI inferred
+		// transport from whether a certificate file happened to exist.
+		`"url": "https://192.168.50.10:4777/mcp"`,
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("a bridge is configured without the address the daemon is on, so it "+
@@ -779,5 +782,88 @@ func TestAConfigTheDaemonWouldRefuseIsRefusedHere(t *testing.T) {
 	}
 	if _, err := captureStdout(t, func() error { return mcpConfig(nil) }); err != nil {
 		t.Errorf("a valid nested setting was refused: %v", err)
+	}
+}
+
+// The CLI must describe the transport the DAEMON serves, not a second opinion.
+//
+// It reached a different answer three rounds running: a leftover certificate
+// made it say HTTPS for a loopback daemon; insecure_plaintext was allowed to
+// beat a certificate pair the daemon honours first; and a tls_cert with no
+// tls_key was treated as authoritative. Both now call internal/transport.
+func TestTheCLIAgreesWithTheDaemonAboutTransport(t *testing.T) {
+	cases := []struct {
+		name, toml, addr string
+		staleCert        bool
+		wantScheme       string
+	}{
+		{"loopback with a leftover certificate", "", "127.0.0.1:4999", true, "http"},
+		{
+			"a certificate pair beats insecure_plaintext",
+			"addr = \"192.168.50.10:4777\"\ninsecure_plaintext = true\ntls_cert = \"/c.pem\"\ntls_key = \"/k.pem\"\n", "", false, "https",
+		},
+		{
+			"insecure_plaintext off loopback",
+			"addr = \"192.168.50.10:4777\"\ninsecure_plaintext = true\n", "", true, "http",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "local.secret"),
+				[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if c.toml != "" {
+				if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(c.toml), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if c.staleCert {
+				if err := os.WriteFile(filepath.Join(dir, "tls-cert.pem"), []byte("stale"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Setenv("DIBS_DIR", dir)
+			t.Setenv("DIBS_ADDR", c.addr)
+
+			scheme, _, err := resolveTransport(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if scheme != c.wantScheme {
+				t.Errorf("scheme = %q, want %q", scheme, c.wantScheme)
+			}
+		})
+	}
+}
+
+// An unknown key inside a known table is still a key the daemon refuses.
+//
+// Checking only the table left `[match] typo_threshold = 0.9` fine here while
+// dibd exits 1 on it: the round-fifteen failure preserved for every table.
+func TestAnUnknownNestedKeyIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "local.secret"),
+		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	write := func(body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("DIBS_DIR", dir)
+	t.Setenv("DIBS_ADDR", "")
+
+	write("[match]\ntypo_threshold = 0.9\n")
+	if _, err := readBoardConfig(dir); err == nil {
+		t.Error("an unknown key inside [match] was accepted, so a configuration would " +
+			"be printed for a daemon that refuses to start")
+	}
+	write("[match]\njoin_threshold = 0\n")
+	if _, err := readBoardConfig(dir); err != nil {
+		t.Errorf("a real [match] setting was refused: %v", err)
 	}
 }

@@ -142,11 +142,15 @@ func readBoardConfig(dir string) (boardConfig, error) {
 	// `dibd` exits 1 on the same file is the success-that-is-false shape again.
 	// `adrr = "192.168.1.5:4777"` is a real way to lose an afternoon.
 	for _, k := range md.Undecoded() {
-		top, _, _ := strings.Cut(k.String(), ".")
-		if !knownConfigKeys[top] {
+		// The WHOLE key, not just its table. Accepting anything nested under a
+		// known table left `[match] typo_threshold = 0.9` silently fine here
+		// while dibd refuses it: the same "daemon will not start, this reports
+		// success" failure, preserved for every table.
+		name := k.String()
+		if !knownConfigKeys[name] {
 			return c, fmt.Errorf("%s sets %q, which dibd does not know, so it will "+
 				"refuse to start: fix the file (or run `dibd -check`) before taking a "+
-				"configuration from it", path, top)
+				"configuration from it", path, name)
 		}
 	}
 	return c, nil
@@ -285,13 +289,12 @@ func dialableAddr(a string) string {
 	return clientHost(a)
 }
 
-// knownConfigKeys is dibd's TOP-LEVEL configuration keys.
+// knownConfigKeys is every configuration key dibd accepts, tables included.
 //
-// Top-level only: anything nested under a known table is that table's business
-// and the daemon validates it. This exists so a typo at the top, `adrr` for
-// `addr`, is reported here rather than leaving the CLI printing a confident
-// configuration for the default address while `dibd` refuses to start on the
-// same file.
+// Nested keys are here too. Accepting anything under a known table left
+// `[match] typo_threshold = 0.9` fine here while dibd refuses it, which is the
+// same "the daemon will not start and this reports success" failure the
+// top-level check was added for, preserved for every table.
 //
 // A copy of the daemon's list, because cmd/dibd is package main and cannot be
 // imported. TestConfigKeysMatchTheDaemon reads the struct out of its source, so
@@ -299,4 +302,21 @@ func dialableAddr(a string) string {
 var knownConfigKeys = map[string]bool{
 	"addr": true, "tls_cert": true, "tls_key": true, "insecure_plaintext": true,
 	"match": true, "limits": true, "supervise": true, "roles": true, "wake": true,
+
+	"match.repo": true, "match.join_threshold": true, "match.notify_threshold": true,
+	"match.history": true, "match.deadline": true, "match.embed_url": true,
+	"match.embed_model": true, "match.embed_query_prefix": true,
+	"match.embed_doc_prefix": true, "match.director_required": true,
+	"match.auto_join": true,
+
+	"limits.agent_ttl": true, "limits.idle_ttl": true,
+	"limits.max_persistent_agents": true, "limits.max_agents": true,
+	"limits.blob_store_bytes": true,
+
+	"supervise.every": true, "supervise.quiet": true, "supervise.frozen": true,
+	"supervise.min_age": true, "supervise.min_duty": true, "supervise.off": true,
+
+	"roles.coordinator": true, "roles.admin": true,
+
+	"wake.extend_turn_for": true, "wake.notices_wake": true,
 }

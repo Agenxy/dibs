@@ -270,6 +270,18 @@ machines for real work. Their priority order, not ours.
   held the key it encrypts with: a directory that has lost its replayable
   state, reported as nothing wrong.
 
+- **The rule for what a daemon serves now lives in one place**, after the
+  review's sixteenth round found the CLI's copy of it wrong a third time: a
+  leftover certificate made it print HTTPS for a loopback daemon, which serves
+  plaintext however many certificates are lying around; `insecure_plaintext`
+  was allowed to beat an explicit certificate pair, which the daemon honours
+  first; and a `tls_cert` with no `tls_key` was treated as authoritative,
+  pointing clients at a certificate the daemon never presents. `dibd` and
+  `dibs mcp-config` both call `internal/transport` now. The unknown-key check
+  also covered only top-level keys, so `[match] typo_threshold` was fine here
+  while `dibd -check` exits 1 on it; the key list is complete and a test reads
+  the daemon's own structs, nested tables included, so it cannot drift.
+
 - **README: building without mise or task.** On a network that allows the Go
   module proxy but not the object store it redirects to, neither tool installs
   and the failure reads like a broken toolchain rather than a blocked host.
