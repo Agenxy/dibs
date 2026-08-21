@@ -594,12 +594,13 @@ args = ["mcp-stdio"]
 # stdio rather than a url, deliberately: the bridge is one process per session,
 # and it remembers this agent's nonce so a returning session reattaches to the
 # same identity instead of forking a "-2" sibling that cannot read its own mail.
-# That is a default and not a cage: an identity can also be pinned here with
-#   env = { DIBS_AGENT_NONCE = "..." }
-# which is what lets an HTTP client reattach too.
+# That is a default and not a cage: an identity can be pinned by adding
+# DIBS_AGENT_NONCE = "..." INSIDE the env line above, not as a second env line,
+# which a TOML table does not allow. That is also what lets an HTTP client
+# reattach.
 #
 # NOT for another machine either: run the bridge THERE, pointed here. See the
-# block below, or run "dibs mcp-config --board %s" on that machine. The url
+# block below, or run: dibs mcp-config --board %s   on that machine. The url
 # form is for a client that genuinely cannot run a process, and it costs an
 # identity per session:
 #   url = %q
@@ -607,7 +608,7 @@ args = ["mcp-stdio"]
 #   (the secret is also accepted as: Authorization: Bearer %s)
 #
 # Running agent sessions do not hot-load MCP config: start a new session after adding.
-`, self(), codexEnvLine(), addr(), url, s, preview)
+`, self(), codexEnvLine(), shellArg(addr()), url, s, preview)
 
 	if certPath != "" {
 		fmt.Printf(`
@@ -672,7 +673,7 @@ func printRemoteRecipe(tls bool) {
 # holds no nonce, so every reconnect forks an identity that cannot read its
 # predecessor's mail. The bridge is a process with a filesystem, which is what
 # the credential needs.
-`, filepath.Join(paths.DataDir(), "local.secret"), addr(), addr())
+`, filepath.Join(paths.DataDir(), "local.secret"), addr(), shellArg(addr()))
 
 	if !tls {
 		// The tunnel, for the daemon this actually is.
@@ -1903,7 +1904,16 @@ func trustCommand() string {
 // than the default one, and is empty when this IS the default one.
 func nonDefaultEnv() map[string]string {
 	env := map[string]string{}
-	if a := addr(); a != "127.0.0.1:4777" {
+	// VERBATIM, not addr().
+	//
+	// addr() strips an explicit scheme, which is the one thing DIBS_ADDR carries
+	// that cannot be inferred: `DIBS_ADDR=http://<non-loopback>` is how a
+	// deliberately plaintext daemon off loopback is reached, and handing the
+	// bridge bare host:port makes it infer HTTPS and fail to connect. Whatever
+	// this process was told is what the bridge should be told.
+	if raw := os.Getenv("DIBS_ADDR"); raw != "" {
+		env["DIBS_ADDR"] = raw
+	} else if a := addr(); a != "127.0.0.1:4777" {
 		env["DIBS_ADDR"] = a
 	}
 	if d := os.Getenv("DIBS_DIR"); d != "" {

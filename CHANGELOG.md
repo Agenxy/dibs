@@ -164,6 +164,16 @@ machines for real work. Their priority order, not ours.
   argument, so `mcp-config junk --board hub:4777` printed the local
   configuration and never read the flag.
 
+- **Four more from the review's seventh round.** The forward still used one
+  port for both its ends, so `--board 127.0.0.1:5777` could not express a hub
+  on 4777; the far port is the hub's to name now. The note on pinning an
+  identity told the reader to add a second `env = { ... }` line, which is the
+  duplicate TOML key the round before had just removed. `nonDefaultEnv` read
+  the address through a helper that strips an explicit scheme, so a
+  deliberately plaintext daemon off loopback handed the bridge bare
+  `host:port` and the bridge inferred HTTPS. And the hub-side recipe's
+  pasteable commands were still unquoted.
+
 - **README: building without mise or task.** On a network that allows the Go
   module proxy but not the object store it redirects to, neither tool installs
   and the failure reads like a broken toolchain rather than a blocked host.

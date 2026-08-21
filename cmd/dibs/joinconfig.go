@@ -63,15 +63,27 @@ func printJoinConfig(remote string) error {
 	// printing both as conditionals leaves the operator deciding which sentence
 	// applies to them. The address already says.
 	if isLoopbackAddr(remote) {
+		// The hub's port is NOT this one.
+		//
+		// The two ends of a forward are independent: the local port is whatever
+		// is free here, the far port is whatever the hub listens on. Printing
+		// `-L 5777:127.0.0.1:5777` for `--board 127.0.0.1:5777` assumes they
+		// match, and when they do not the tunnel comes up and forwards to
+		// nothing, which is the worst way for this to fail: ssh reports success
+		// and the board is simply unreachable.
 		fmt.Printf(`# 2. That address is loopback, so it is this machine's end of an ssh
 #    forward to the hub. Open it and leave it running:
 #
-#      ssh -N -L %s <user>@<hub>
+#      ssh -N -L %s:127.0.0.1:<hub-port> <user>@<hub>
+#
+#    <hub-port> is whatever the HUB's daemon listens on, usually 4777, and is
+#    unrelated to %s above: that is this machine's end, and only has to be free
+#    here. `+"`dibs doctor`"+` on the hub prints its address.
 #
 #    The hub's daemon never leaves its own loopback, and ssh has authenticated
 #    the machine before Dibs sees a byte.
 #
-`, shellArg(port(remote)+":"+remote))
+`, port(remote), port(remote))
 	} else {
 		// The trust step, which the bridge cannot do without.
 		//

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -74,7 +76,7 @@ func TestJoinConfigNamesTheStepTheAddressCallsFor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(loop, "ssh -N -L "+shellArg("4777:127.0.0.1:4777")) {
+	if !strings.Contains(loop, "ssh -N -L 4777:127.0.0.1:<hub-port>") {
 		t.Errorf("a loopback address is the near end of a forward and nothing said how "+
 			"to open it:\n%s", loop)
 	}
@@ -181,6 +183,21 @@ func TestAddressesInShellCommandsAreQuoted(t *testing.T) {
 	if strings.Contains(out, "dibs trust [2001") {
 		t.Error("an unquoted IPv6 address reached a pasteable command")
 	}
+
+	// The forward's two ends are independent: the local port is whatever is
+	// free here, the far port is whatever the hub listens on. Printing them as
+	// the same number brings the tunnel up pointed at nothing, and ssh reports
+	// success.
+	loop, err := captureStdout(t, func() error { return printJoinConfig("127.0.0.1:5777") })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(loop, "5777:127.0.0.1:5777") {
+		t.Errorf("the forward assumes the hub uses this machine's port:\n%s", loop)
+	}
+	if !strings.Contains(loop, "<hub-port>") {
+		t.Errorf("the forward does not say the far port is the hub's to name:\n%s", loop)
+	}
 }
 
 // mcp-config must not print a confident answer to a question nobody asked.
@@ -206,24 +223,52 @@ func TestMCPConfigRefusesArgumentsItWouldIgnore(t *testing.T) {
 // daemon gets a configuration for the FIRST, reads its secret and its nonce
 // file, and joins a board they were not asking about.
 func TestConfigNamesANonDefaultDaemon(t *testing.T) {
+	// The RENDERED output, not the helpers.
+	//
+	// The first version of this called nonDefaultEnv and codexEnvLine directly,
+	// so it would have passed unchanged if the JSON and TOML blocks stopped
+	// using either of them: it proved the helpers work, which was never the
+	// thing at risk. Raised by the pre-release review.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "local.secret"),
+		[]byte(strings.Repeat("a", 64)), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("DIBS_ADDR", "127.0.0.1:4791")
-	t.Setenv("DIBS_DIR", "/tmp/other-board")
-	env := nonDefaultEnv()
-	if env["DIBS_ADDR"] != "127.0.0.1:4791" || env["DIBS_DIR"] != "/tmp/other-board" {
-		t.Errorf("a non-default daemon is not named in the config it prints: %v", env)
+	t.Setenv("DIBS_DIR", dir)
+	out, err := captureStdout(t, func() error { return mcpConfig(nil) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"127.0.0.1:4791", dir} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the printed config never names %q, so a second daemon is handed a "+
+				"configuration for the first:\n%s", want, out)
+		}
 	}
 
 	// One env key per TOML table. This was briefly two lines, a protocol
 	// version and a daemon address, which is a duplicate-key error in a strict
-	// parser and a silent override in a lenient one.
-	line := codexEnvLine()
-	if strings.Count(line, "env = {") != 1 {
-		t.Errorf("the Codex table does not get exactly one env line: %q", line)
+	// parser and a silent override in a lenient one. Counted in the OUTPUT,
+	// including the prose: the note on pinning an identity told the reader to
+	// add a second one.
+	if n := strings.Count(out, "env = {"); n != 1 {
+		t.Errorf("the Codex table gets %d env lines, want 1: a TOML table may not "+
+			"repeat a key\n%s", n, out)
 	}
 	for _, want := range []string{"CODEX_MCP_PROTOCOL_VERSION", "DIBS_ADDR", "DIBS_DIR"} {
-		if !strings.Contains(line, want) {
-			t.Errorf("the merged env line dropped %s: %q", want, line)
+		if !strings.Contains(codexEnvLine(), want) {
+			t.Errorf("the merged env line dropped %s: %q", want, codexEnvLine())
 		}
+	}
+
+	// An explicit scheme is the one thing DIBS_ADDR carries that cannot be
+	// inferred: a deliberately plaintext daemon off loopback is reached as
+	// http://host:port, and handing the bridge bare host:port makes it infer
+	// HTTPS and fail to connect.
+	t.Setenv("DIBS_ADDR", "http://hub.example:4777")
+	if got := nonDefaultEnv()["DIBS_ADDR"]; got != "http://hub.example:4777" {
+		t.Errorf("the scheme was stripped from the bridge's address: %q", got)
 	}
 
 	// And the default daemon keeps the config it had.
