@@ -34,7 +34,7 @@ These are enforced, not advisory:
 | Acting as the human (`/api/act/*`, `/api/me`) | Same, an agent with the secret cannot post, announce or send as the operator |
 | Agent tokens | Rotated, and the previous one revoked, on register, reattach and resume. Compared in constant time, never on the board. An agent woken from `stale` or `dormant` by its own token keeps that token: it re-arms the awareness gate, not the credential |
 | Blob access | Owner or recipient of a live message only; a stranger cannot learn a blob exists |
-| Coordinator / admin roles | Granted only on the human's admin path; no agent can promote itself |
+| Coordinator / admin roles | Granted only on the human's admin path. A role declared in `[roles]` names a string, so the grant is pinned to the credential of the agent it first lands on and refused later under a different identity: a name is free to take once its holder is gone |
 | Lineage (`parent`) | Grants nothing unless the parent vouched with a one-time nonce |
 | Acting as the human from the panel (`human_unlock`) | Needs a fingerprint. The panel renders in the human's UI but speaks over the agent's connection with the agent's credential, so the transport cannot tell "the human clicked Broadcast" from "an agent called the tool". The proof has to come from outside the transport, and an agent confined to that transport cannot produce a fingerprint, see the bound below |
 

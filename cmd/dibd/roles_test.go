@@ -28,7 +28,7 @@ func TestRolesDeclaredInConfigAreGrantedAtStartup(t *testing.T) {
 	applyDeclaredRoles(ctx, eng, RolesConfig{
 		Coordinator: []string{"orchestrator"},
 		Admin:       []string{"fleet-lead"},
-	})
+	}, loadRolePins(t.TempDir()))
 
 	for agent, want := range map[string]string{
 		"orchestrator": core.RoleCoordinator,
@@ -47,7 +47,7 @@ func TestRolesDeclaredInConfigAreGrantedAtStartup(t *testing.T) {
 // the opposite of the property this whole path is built around.
 func TestNoRolesDeclaredGrantsNothing(t *testing.T) {
 	eng, ctx := testEngine(t)
-	applyDeclaredRoles(ctx, eng, RolesConfig{})
+	applyDeclaredRoles(ctx, eng, RolesConfig{}, loadRolePins(t.TempDir()))
 	registerAgent(t, eng, "orchestrator")
 	if holdsRole(t, eng, "orchestrator", core.RoleCoordinator) {
 		t.Error("an agent was granted coordinator from an EMPTY [roles] table; the default " +
@@ -62,15 +62,24 @@ func TestNoRolesDeclaredGrantsNothing(t *testing.T) {
 // operator unable to read the complaint.
 func TestABadRoleEntryDoesNotStopTheDaemon(t *testing.T) {
 	eng, ctx := testEngine(t)
-	applyDeclaredRoles(ctx, eng, RolesConfig{Coordinator: []string{"", "nobody-here"}})
+	applyDeclaredRoles(ctx, eng, RolesConfig{Coordinator: []string{"", "nobody-here"}},
+		loadRolePins(t.TempDir()))
 	// Reaching this line without panicking or hanging is the assertion: a typo
 	// in the config must not take the daemon down with it.
 }
 
+// registerAgent registers with a NONCE, because a declared role now requires
+// one: an agent with no nonce cannot prove it is itself after a restart, and a
+// standing role is precisely a thing that outlives restarts.
 func registerAgent(t *testing.T, eng *engine.Engine, name string) {
 	t.Helper()
+	registerAgentAs(t, eng, name, "nonce-"+name)
+}
+
+func registerAgentAs(t *testing.T, eng *engine.Engine, name, nonce string) {
+	t.Helper()
 	if _, err := eng.Do(context.Background(),
-		&core.Op{Kind: core.OpRegister, Name: name}); err != nil {
+		&core.Op{Kind: core.OpRegister, Name: name, Nonce: nonce}); err != nil {
 		t.Fatalf("registering %s: %v", name, err)
 	}
 }
@@ -150,5 +159,59 @@ func TestAnAgentStillCannotPromoteItself(t *testing.T) {
 	// And it is not quietly a coordinator either.
 	if holdsRole(t, eng, "climber", core.RoleCoordinator) {
 		t.Error("an agent acquired coordinator without the admin path")
+	}
+}
+
+// A declared role follows an IDENTITY, not a name.
+//
+// `[roles] admin = ["release-manager"]` authorises a string, and any agent may
+// register under any free name. So an ordinary agent that could read dibs.toml,
+// or guess the name, registered as `release-manager` and the reconciler handed
+// it admin: the god view over every decrypted mailbox, while SECURITY.md and
+// docs/CONFIGURATION.md both promised "no agent can promote itself". It did not
+// promote itself; it only had to be called the right thing. Reproduced against a
+// live daemon, and present in v0.0.5 and v0.0.6.
+//
+// This drives applyDeclaredRoles, not the pin store alone: the property is that
+// the RECONCILER refuses, and a test of the helper would pass while the caller
+// went on granting.
+func TestADeclaredRoleWillNotFollowAStolenName(t *testing.T) {
+	eng, ctx := testEngine(t)
+	pinDir := t.TempDir()
+	cfg := RolesConfig{Admin: []string{"release-manager"}}
+
+	// The agent the operator meant takes the role, and is pinned to it.
+	registerAgentAs(t, eng, "release-manager", "the-real-one")
+	applyDeclaredRoles(ctx, eng, cfg, loadRolePins(pinDir))
+	if !holdsRole(t, eng, "release-manager", core.RoleAdmin) {
+		t.Fatal("setup: the intended agent did not receive the declared role, so the " +
+			"theft below proves nothing")
+	}
+
+	// It goes away, and its name with it: a prune, a wiped ledger, a fresh
+	// board. Anyone may now register under that name.
+	impostor, impCtx := testEngine(t)
+	registerAgentAs(t, impostor, "release-manager", "somebody-else")
+	applyDeclaredRoles(impCtx, impostor, cfg, loadRolePins(pinDir))
+
+	if holdsRole(t, impostor, "release-manager", core.RoleAdmin) {
+		t.Error("an agent that merely took the configured NAME was granted admin, " +
+			"which reads every mailbox on the board. A standing role has to follow " +
+			"the identity it was granted to")
+	}
+}
+
+// And the pin must not be satisfiable by an agent with no durable identity.
+func TestADeclaredRoleNeedsAnAgentThatCanProveItselfTomorrow(t *testing.T) {
+	eng, ctx := testEngine(t)
+	if _, err := eng.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "no-nonce"}); err != nil {
+		t.Fatal(err)
+	}
+	applyDeclaredRoles(ctx, eng, RolesConfig{Admin: []string{"no-nonce"}},
+		loadRolePins(t.TempDir()))
+	if holdsRole(t, eng, "no-nonce", core.RoleAdmin) {
+		t.Error("an agent with no nonce was granted a standing role: it cannot prove " +
+			"it is itself after a restart, so the role would pass to whoever takes " +
+			"the name next")
 	}
 }

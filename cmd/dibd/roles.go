@@ -58,24 +58,53 @@ import (
 // role an agent already holds is free: the state machine reports changed:false
 // and ledgers nothing, so the steady-state cost is one map lookup per agent per
 // tick.
-func keepDeclaredRolesApplied(ctx context.Context, eng *engine.Engine, c RolesConfig) {
+func keepDeclaredRolesApplied(ctx context.Context, dir string, eng *engine.Engine, c RolesConfig) {
 	if len(c.Coordinator) == 0 && len(c.Admin) == 0 {
 		return
 	}
-	applyDeclaredRoles(ctx, eng, c)
+	pins := loadRolePins(dir)
+	applyDeclaredRoles(ctx, eng, c, pins)
 	go func() {
 		tick := time.NewTicker(rolesReapplyEvery)
 		defer tick.Stop()
+		// A BOUNDED window, not forever.
+		//
+		// Retrying indefinitely turned every declared name into a standing
+		// invitation: the name sat unclaimed, and whichever agent registered
+		// under it at any point later was handed the role. The reason for the
+		// retry is narrow and short, an agent starting a few seconds after the
+		// daemon, so the window is too. After it closes, a name that never
+		// appeared is said out loud once and left alone; restarting the daemon
+		// is what re-opens it, which is the moment an operator is present.
+		deadline := time.NewTimer(rolesGrantWindow)
+		defer deadline.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
+			case <-deadline.C:
+				for role, names := range pins.unclaimed(c) {
+					for _, n := range names {
+						slog.Warn("declared role was never granted: no agent registered "+
+							"under this name while the grant window was open",
+							"agent", n, "role", role, "window", rolesGrantWindow,
+							"how", "start that agent and restart dibd, or remove the name")
+					}
+				}
+				return
 			case <-tick.C:
-				applyDeclaredRoles(ctx, eng, c)
+				applyDeclaredRoles(ctx, eng, c, pins)
 			}
 		}
 	}()
 }
+
+// rolesGrantWindow is how long after start a declared name may still be claimed.
+//
+// Long enough for an operator's own agents to come up behind the daemon, short
+// enough that the name is not left open to whoever asks for it first an hour
+// later.
+const rolesGrantWindow = 2 * time.Minute
 
 // rolesReapplyEvery is how often declared roles are re-checked. Slow on purpose:
 // the thing it is waiting for is an agent starting up, which a human notices on
@@ -83,7 +112,7 @@ func keepDeclaredRolesApplied(ctx context.Context, eng *engine.Engine, c RolesCo
 const rolesReapplyEvery = 15 * time.Second
 
 // applyDeclaredRoles grants each declared role once.
-func applyDeclaredRoles(ctx context.Context, eng *engine.Engine, c RolesConfig) {
+func applyDeclaredRoles(ctx context.Context, eng *engine.Engine, c RolesConfig, pins *rolePins) {
 	for _, spec := range []struct {
 		role   string
 		agents []string
@@ -93,6 +122,9 @@ func applyDeclaredRoles(ctx context.Context, eng *engine.Engine, c RolesConfig) 
 	} {
 		for _, agent := range spec.agents {
 			if agent == "" {
+				continue
+			}
+			if !mayHoldDeclaredRole(ctx, eng, pins, spec.role, agent) {
 				continue
 			}
 			res, err := eng.GrantRole(ctx, agent, spec.role)
@@ -130,4 +162,29 @@ func describeDeclaredRoles(c RolesConfig) string {
 		return ""
 	}
 	return fmt.Sprintf("coordinator=%v admin=%v", c.Coordinator, c.Admin)
+}
+
+// mayHoldDeclaredRole answers WHICH agent, not which name.
+//
+// The config authorises a string, and a name is free for anyone to take once
+// its holder is gone. Pinning the credential of the agent that first receives
+// the role is what makes a standing role follow an identity, and refusing an
+// agent with no nonce is what stops it being pinned to something that cannot
+// prove itself tomorrow.
+func mayHoldDeclaredRole(ctx context.Context, eng *engine.Engine, pins *rolePins,
+	role, agent string,
+) bool {
+	fp, err := eng.AgentIdentity(ctx, agent)
+	if err != nil {
+		// Not registered yet is the ordinary case while the window is open.
+		slog.Debug("declared role is waiting for its agent to register",
+			"agent", agent, "role", role)
+		return false
+	}
+	if err := pins.check(role, agent, fp); err != nil {
+		slog.Error("refusing to grant a role declared in dibs.toml",
+			"agent", agent, "role", role, "err", err)
+		return false
+	}
+	return true
 }

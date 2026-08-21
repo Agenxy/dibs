@@ -5,6 +5,31 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- **A declared standing role could be taken by any agent that chose the right
+  name.** `[roles] admin = ["release-manager"]` in `dibs.toml` authorises a
+  STRING, and an agent picks its own name at registration. So an agent that
+  could read that file, or guess the name, registered under it and the
+  reconciler granted it admin on the next tick: the god view over every
+  decrypted mailbox. Both `SECURITY.md` and `docs/CONFIGURATION.md` promised
+  "no agent can promote itself", and it did not have to: it only had to be
+  called the right thing before the intended agent was. Present in v0.0.5 and
+  v0.0.6, and reproduced against a live daemon before it was changed.
+
+  A grant is now pinned to the credential of the agent it first lands on,
+  recorded in `<data-dir>/roles.pinned`, and the same name is refused later
+  under a different identity. The agent must have registered with a nonce,
+  since without one it cannot prove it is itself after a restart, which is the
+  whole of what a standing role needs. The grant window also closes about two
+  minutes after start, so an unclaimed name stops being a standing invitation
+  to whoever registers under it later; it is reported once and left alone.
+
+  Preconditions were narrow: the attacker had to be on the board already, and
+  `[roles]` had to be configured at all, which is not the default. That is why
+  this is a changelog entry rather than an advisory.
+
+
 ### Added
 
 - **The multi-machine board is documented and has a command.** Everything needed

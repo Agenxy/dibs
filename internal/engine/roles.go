@@ -2,6 +2,9 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -94,4 +97,38 @@ func (e *Engine) AllMail(ctx context.Context, token string) (core.Result, error)
 		return nil, e2
 	}
 	return res, nil
+}
+
+// AgentIdentity is an opaque, stable fingerprint of the agent's own credential,
+// or "" when it has none.
+//
+// A FINGERPRINT, never the nonce. The caller that needs this is the standing
+// role reconciler, which has to answer "is the agent holding this name still the
+// one I granted the role to", and answering it must not require handing the
+// agent's only durable secret to anything outside the engine.
+//
+// An agent with no nonce has no durable identity at all: it cannot prove it is
+// itself after a restart, and a standing role is precisely a thing that outlives
+// restarts. The empty string says so, and the reconciler refuses rather than
+// pinning nothing.
+func (e *Engine) AgentIdentity(ctx context.Context, id string) (string, error) {
+	res, err := e.query(ctx, func() core.Result {
+		l, ok := e.state.Agents[id]
+		if !ok {
+			return core.Result{"missing": true}
+		}
+		if l.Nonce == "" {
+			return core.Result{"fingerprint": ""}
+		}
+		sum := sha256.Sum256([]byte("dibs-role-pin\x00" + l.Nonce))
+		return core.Result{"fingerprint": hex.EncodeToString(sum[:])}
+	})
+	if err != nil {
+		return "", err
+	}
+	if missing, _ := res["missing"].(bool); missing {
+		return "", fmt.Errorf("no agent %q", id)
+	}
+	fp, _ := res["fingerprint"].(string)
+	return fp, nil
 }
