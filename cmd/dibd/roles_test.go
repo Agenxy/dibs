@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -113,14 +114,18 @@ func testEngine(t *testing.T) (*engine.Engine, context.Context) {
 // board happens to serialise itself today. An earlier version of this helper
 // read the board payload and silently returned "" for a role that HAD been
 // granted, which made a passing implementation look broken.
+// It READS the role now. It used to ask by calling GrantRole and inferring the
+// answer from `changed`, which meant a probe for "is this agent admin?" made it
+// admin and then reported that it was not, because the grant had changed
+// something. Every authorization assertion in this file rested on that.
+// Raised by the pre-release review.
 func holdsRole(t *testing.T, eng *engine.Engine, agent, role string) bool {
 	t.Helper()
-	res, err := eng.GrantRole(context.Background(), agent, role)
+	got, err := eng.AgentRole(context.Background(), agent)
 	if err != nil {
 		return false
 	}
-	changed, _ := res["changed"].(bool)
-	return !changed // unchanged ⇒ it already held this role
+	return got == role
 }
 
 // Config can grant a role. An AGENT still cannot.
@@ -147,13 +152,21 @@ func TestAnAgentStillCannotPromoteItself(t *testing.T) {
 	// An agent-authenticated grant_role must be refused. The engine treats
 	// grant_role as a system op admitted only on the admin path, so presenting a
 	// token must not make it work.
+	// The op must be REFUSED, and the role must not land. Asserting only the
+	// second, inside an `if err == nil`, let a regression that returns success
+	// while doing nothing pass silently: nothing then distinguishes "refused"
+	// from "accepted and ineffective", and the second is one refactor away from
+	// being effective.
 	if _, err := eng.Do(context.Background(), &core.Op{
 		Kind: core.OpGrantRole, To: "climber", Mode: core.RoleAdmin, Token: token,
 	}); err == nil {
-		if holdsRole(t, eng, "climber", core.RoleAdmin) {
-			t.Fatal("an agent promoted ITSELF to admin using its own agent token. " +
-				"that role can read every other agent's mail")
-		}
+		t.Error("an agent-authenticated grant_role was ACCEPTED. Even if it changed " +
+			"nothing today, a system op that takes an agent token is one refactor " +
+			"from promoting whoever calls it")
+	}
+	if holdsRole(t, eng, "climber", core.RoleAdmin) {
+		t.Fatal("an agent promoted ITSELF to admin using its own agent token. " +
+			"that role can read every other agent's mail")
 	}
 
 	// And it is not quietly a coordinator either.
@@ -214,4 +227,61 @@ func TestADeclaredRoleNeedsAnAgentThatCanProveItselfTomorrow(t *testing.T) {
 			"it is itself after a restart, so the role would pass to whoever takes " +
 			"the name next")
 	}
+}
+
+// Pin state that cannot be recorded must refuse the grant, not proceed.
+//
+// Two fail-open paths, both found by the pre-release review in the fix that was
+// itself closing a privilege escalation:
+//
+//   - loadRolePins treated EVERY read error as "no pins yet", so a permissions
+//     problem re-opened every declared role to whoever held its name.
+//   - check recorded the fingerprint in memory before save() succeeded, so a
+//     failed write left it there: the first reconciliation refused, and the next
+//     one fifteen seconds later matched against its own unsaved value and
+//     granted admin with nothing durable behind it.
+//
+// A security decision that survives only in memory is one that disappears on
+// restart while behaving as though it had not.
+func TestUnrecordablePinsRefuseTheGrant(t *testing.T) {
+	t.Run("unreadable pin file", func(t *testing.T) {
+		dir := t.TempDir()
+		// A directory where the file belongs: readable as an entry, never as a file.
+		if err := os.Mkdir(filepath.Join(dir, "roles.pinned"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		pins := loadRolePins(dir)
+		// The LOAD's own decision, not the write that happens to fail after it.
+		// The first version of this asserted on check() and passed against the
+		// fail-open, because the same fixture was unwritable too and save()
+		// caught it by accident: a probe that is right for the wrong reason.
+		if pins.Pins != nil {
+			t.Error("pins that cannot be read were loaded as an empty store, which is " +
+				"indistinguishable from a fresh board and re-opens every declared role")
+		}
+		if err := pins.check("admin", "release-manager", "fingerprint"); err == nil {
+			t.Error("a grant was allowed although the pin state could not be read")
+		}
+	})
+
+	t.Run("unwritable pin file", func(t *testing.T) {
+		dir := t.TempDir()
+		pins := loadRolePins(dir)
+		// Nothing can be created in a directory that is not writable.
+		if err := os.Chmod(dir, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+		if err := pins.check("admin", "release-manager", "fingerprint"); err == nil {
+			t.Fatal("a grant was allowed although its pin could not be written")
+		}
+		// And the SECOND attempt must refuse too. This is the whole finding: the
+		// first refusal left the fingerprint in memory, so the next tick matched
+		// against it and granted.
+		if err := pins.check("admin", "release-manager", "fingerprint"); err == nil {
+			t.Error("the second reconciliation matched against a fingerprint that was " +
+				"never persisted, and granted the role")
+		}
+	})
 }

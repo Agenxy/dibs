@@ -1647,8 +1647,8 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 		// put it.
 		return nil, nil, errf("E_MSG_FINAL",
 			"this one is finished and cannot be answered. To say it anyway, send() a new "+
-				"message to that agent; if they are gone, the human's row is persistent and "+
-				"outlives every agent on the board",
+				"message to that agent; if they are gone, check_in for who is on the board "+
+				"now",
 			"message %d already %s", m.Serial, m.State)
 	}
 	if len(op.Body) > s.Limits.MaxBodyBytes {

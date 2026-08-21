@@ -213,6 +213,21 @@ func ensureSelfSignedCert(dir, addr string) (string, string, error) {
 	} else if host != "" {
 		tmpl.DNSNames = append(tmpl.DNSNames, host)
 	}
+	// A WILDCARD bind needs the addresses a client will actually dial.
+	//
+	// The wizard's "this machine and others" writes 0.0.0.0, so the certificate
+	// carried IP SAN 0.0.0.0 and DNS SAN localhost, and nothing else. Then
+	// `dibs mcp-config` correctly refuses to hand anybody 0.0.0.0, which is a
+	// listen address, and substitutes this machine's LAN address instead. That
+	// address is not in the certificate, so verification fails and the operator
+	// is handed a configuration that cannot connect: one unusable answer traded
+	// for another. Raised by the pre-release review.
+	//
+	// The interfaces are enumerated at generation time. A machine that later
+	// moves networks needs a new certificate, which is true of any name in a
+	// certificate and is why the file is regenerated rather than patched.
+	tmpl.IPAddresses = append(tmpl.IPAddresses, localAddresses(host)...)
+	tmpl.IPAddresses = append(tmpl.IPAddresses, net.IPv4(127, 0, 0, 1), net.IPv6loopback)
 	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
 	if err != nil {
 		return "", "", err
@@ -291,4 +306,31 @@ func usableCert(certFile, keyFile string) bool {
 		return false
 	}
 	return time.Now().Before(cert.NotAfter.Add(-certRenewBefore))
+}
+
+// localAddresses is every address of this machine a client could dial, for a
+// certificate that has to cover a wildcard bind.
+//
+// Empty unless the bind IS a wildcard: a certificate should name what it serves
+// and nothing more, and a daemon told to listen on one address has already said
+// which one.
+func localAddresses(host string) []net.IP {
+	switch host {
+	case "0.0.0.0", "::", "[::]", "":
+	default:
+		return nil
+	}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return nil
+	}
+	var out []net.IP
+	for _, a := range addrs {
+		n, ok := a.(*net.IPNet)
+		if !ok || n.IP.IsLoopback() || n.IP.IsLinkLocalUnicast() {
+			continue
+		}
+		out = append(out, n.IP)
+	}
+	return out
 }

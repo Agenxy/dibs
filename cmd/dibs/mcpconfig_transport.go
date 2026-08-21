@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net"
 	"path/filepath"
 	"strings"
@@ -70,20 +71,31 @@ func resolveTransport(dir string) (scheme, certPath string, err error) {
 // interface", and printing either in a url hands somebody a string that cannot
 // connect from anywhere. The machine's own LAN address is what they meant, and
 // is what the wizard offers for the same choice.
-func clientHost(a string) string {
+func clientHost(a string) (string, error) {
 	h, p, err := net.SplitHostPort(a)
 	if err != nil {
-		return a
+		// Not host:port at all: a bare hostname or something already shaped for
+		// a client. Nothing to substitute, so hand it back unchanged rather than
+		// inventing a failure the caller cannot act on. Shape is checked by
+		// checkAddrShape, which is a different question from dialability.
+		return a, nil //nolint:nilerr // see above: not a failure, nothing to do
 	}
 	switch h {
 	case "0.0.0.0", "::", "[::]", "":
 		lan, _, lerr := net.SplitHostPort(defaultLANAddr())
 		if lerr != nil || lan == "0.0.0.0" {
-			return "<this-machine>:" + p
+			// A PLACEHOLDER is not an address, and printing one inside an
+			// otherwise complete configuration is the /home/you mistake again:
+			// the command exits 0 and hands somebody a string that cannot
+			// connect from anywhere, with nothing saying it is a stand-in.
+			return "", fmt.Errorf("this daemon listens on %s, a wildcard, and no "+
+				"address of this machine could be detected to put in its place. A "+
+				"client cannot dial a wildcard: set `addr` in dibs.toml to the address "+
+				"agents should reach this board on", a)
 		}
-		return net.JoinHostPort(lan, p)
+		return net.JoinHostPort(lan, p), nil
 	}
-	return a
+	return a, nil
 }
 
 // joinerAddr is the address the OTHER machine reaches this daemon on.
@@ -94,15 +106,17 @@ func clientHost(a string) string {
 // wrong daemon, and then, further down, correctly explained that the local end
 // of a forward is that machine's choice. Two halves of one recipe contradicting
 // each other. It names the placeholder the rest of the recipe uses.
-func joinerAddr() string {
+func joinerAddr() (string, error) {
 	if tunnel, _ := boardShape(rawAddr()); tunnel {
-		return "127.0.0.1:<local-port>"
+		return "127.0.0.1:<local-port>", nil
 	}
-	// And a wildcard bind is not dialable from there either: 0.0.0.0 means
-	// "every interface" to the daemon and nothing at all to a client.
 	raw := rawAddr()
 	if scheme, rest, found := strings.Cut(raw, "://"); found {
-		return scheme + "://" + clientHost(rest)
+		h, err := clientHost(rest)
+		if err != nil {
+			return "", err
+		}
+		return scheme + "://" + h, nil
 	}
 	return clientHost(raw)
 }

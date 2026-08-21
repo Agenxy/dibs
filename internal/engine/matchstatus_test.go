@@ -13,14 +13,21 @@ import "testing"
 // review, which reproduced it against the production sequence.
 func TestARecoveredTreeStopsBeingReportedUnreadable(t *testing.T) {
 	e := &Engine{}
-	e.SetMatchStatus(MatchStatus{Phase: MatchReady, Repo: "/a", Unreadable: []string{"/a", "/b"}})
+	// The failure records the AGENT'S CWD, which is what discovery was given.
+	// The recovery reports the repository ROOT it resolved to. Using the same
+	// path for both, as the first version of this did, tests string equality
+	// against itself and passes while the production transition is broken.
+	e.SetMatchStatus(MatchStatus{
+		Phase: MatchReady, Repo: "/a/subdir",
+		Unreadable: []string{"/a/subdir", "/b"},
+	})
 
 	// /a indexes successfully, the way the scorer reports it: no Unreadable field.
 	e.SetMatchStatus(MatchStatus{Phase: MatchReady, Repo: "/a", Files: 10})
 
 	got := e.matchStatus.st.Unreadable
 	for _, tree := range got {
-		if tree == "/a" {
+		if tree == "/a/subdir" {
 			t.Errorf("a tree that just indexed successfully is still reported unreadable: %v", got)
 		}
 	}
