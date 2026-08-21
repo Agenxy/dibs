@@ -5,6 +5,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **The multi-machine board is documented and has a command.** Everything needed
+  for a real-time fleet board already shipped; the operator who runs Dibs for
+  that reason nearly gave up on it. `dibs mcp-config --board <addr>` prints the
+  join config for another machine's board: the data directory, the secret copy,
+  the ssh forward, and the config for both harnesses. `README.md` gains a second
+  machine section.
+
+  The recipe was in the binary all along and unreachable: it printed only inside
+  the TLS branch, so a plaintext loopback daemon (every fresh install) never
+  showed it. It prints unconditionally now.
+
+  The **ssh forward is named as a supported transport**. A loopback daemon is
+  unreachable from another host and the documented answer was a routable TLS
+  endpoint, which excludes the corporate and lab networks full of hosts that will
+  never have one. The forward always worked, because the bridge only ever talks
+  to an address, and it is the better shape: the daemon never leaves loopback.
+  With it, a paragraph on choosing the hub, since that choice decides whether the
+  fleet has a board at all and the laptop is the tempting wrong answer.
+
 ### Changed
 
 - **`dibs.toml` has one type and one loader.** The daemon decoded the file into
@@ -17,7 +38,51 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   reach it reported success. Both now call `internal/boardconfig`, and the
   key-name copy and its drift test are gone with the need for them.
 
+
+- **The transport advice for another machine was backwards.** "Use the url form
+  only from ANOTHER machine" sent operators to a url client for the case where a
+  forked identity costs most: a remote session is the long-lived unattended one.
+  The url form is now scoped to a client that cannot run a process at all, here
+  and in the codex and chatgpt-desktop plugin READMEs.
+
+- **`register` documents both of its continuity paths.** It returns `resumed`
+  when the agent was still active and this was a retry, and `reattached` when it
+  had stopped and the nonce recovered it. The description named only the second,
+  so an integrator testing the obvious way lands on the first, sees neither the
+  documented key nor an explanation, and concludes identity continuity is broken.
+  Both are named now, with the token rotation on reattach: a client that cached
+  the old token is holding a dead one. Paid for inside the tools/list budget
+  rather than by raising it.
+
+- **The install nudge no longer repeats on every register.** Only `reattached`
+  suppressed it, so a still-active agent re-registering with its nonce came back
+  `resumed`, was treated as a first connection, and read the four-sentence
+  paragraph again every time.
+
 ### Fixed
+
+- **The shared config loader validated keys but not values.** It rejected an
+  unknown key and stopped there, while the daemon goes on to check that
+  durations parse and clear a floor, that ceilings are neither negative nor
+  mutually contradictory, and that the wake policy names something. So
+  `[limits] agent_ttl = "10"` and `[wake] extend_turn_for = "everything"` both
+  loaded here and stopped `dibd`: the same success-that-is-false the shared
+  package was created to end, found one round after creating it. The checks
+  moved in with the type; what stays with the daemon is the part that needs its
+  own defaults, and the comment no longer claims otherwise.
+
+- **`doctor` could not reach its own damaged-ledger diagnosis.** It returned as
+  soon as the daemon was unreachable, and a corrupt ledger is usually WHY the
+  daemon is unreachable: the operator got "daemon unreachable" and nothing
+  else, while the check that names the broken record and says not to delete the
+  file sat behind that return. Everything that reads this machine's own files
+  now runs when the daemon is down, which is when it matters.
+
+- **A configured local board that lost its daemon files still read as a join.**
+  `dibs.toml` is what `dibs configure` writes for a board of its own, and a
+  joining directory has no daemon to configure, so its absence from the
+  daemon-owned list meant the wizard's ordinary output was mistaken for
+  somebody else's board the moment its ledger went missing.
 
 - **A mistyped scheme was refused on one path only.** `DIBS_ADDR=htps://…`
   exited 0 and emitted the typo as both the bridge's address and the MCP url;
@@ -79,50 +144,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Acting on an independent operator evaluation of v0.0.6, which ran Dibs across two
 machines for real work. Their priority order, not ours.
 
-### Added
-
-- **The multi-machine board is documented and has a command.** Everything needed
-  for a real-time fleet board already shipped; the operator who runs Dibs for
-  that reason nearly gave up on it. `dibs mcp-config --board <addr>` prints the
-  join config for another machine's board: the data directory, the secret copy,
-  the ssh forward, and the config for both harnesses. `README.md` gains a second
-  machine section.
-
-  The recipe was in the binary all along and unreachable: it printed only inside
-  the TLS branch, so a plaintext loopback daemon (every fresh install) never
-  showed it. It prints unconditionally now.
-
-  The **ssh forward is named as a supported transport**. A loopback daemon is
-  unreachable from another host and the documented answer was a routable TLS
-  endpoint, which excludes the corporate and lab networks full of hosts that will
-  never have one. The forward always worked, because the bridge only ever talks
-  to an address, and it is the better shape: the daemon never leaves loopback.
-  With it, a paragraph on choosing the hub, since that choice decides whether the
-  fleet has a board at all and the laptop is the tempting wrong answer.
-
-### Changed
-
-- **The transport advice for another machine was backwards.** "Use the url form
-  only from ANOTHER machine" sent operators to a url client for the case where a
-  forked identity costs most: a remote session is the long-lived unattended one.
-  The url form is now scoped to a client that cannot run a process at all, here
-  and in the codex and chatgpt-desktop plugin READMEs.
-
-- **`register` documents both of its continuity paths.** It returns `resumed`
-  when the agent was still active and this was a retry, and `reattached` when it
-  had stopped and the nonce recovered it. The description named only the second,
-  so an integrator testing the obvious way lands on the first, sees neither the
-  documented key nor an explanation, and concludes identity continuity is broken.
-  Both are named now, with the token rotation on reattach: a client that cached
-  the old token is holding a dead one. Paid for inside the tools/list budget
-  rather than by raising it.
-
-- **The install nudge no longer repeats on every register.** Only `reattached`
-  suppressed it, so a still-active agent re-registering with its nonce came back
-  `resumed`, was treated as a first connection, and read the four-sentence
-  paragraph again every time.
-
-### Fixed
 
 - **An agent on a terminal host could not show the board it was reading.**
   `board` renders to an MCP Apps panel, and a host that renders none fell back to
@@ -398,7 +419,6 @@ machines for real work. Their priority order, not ours.
   install rules that are not obvious from them: remove before copying, because
   macOS caches a signature verdict against the inode, and set the codesign
   identifiers, which the Go toolchain leaves as `a.out`.
-
 
 ## [0.0.6] - 2026-08-20
 
