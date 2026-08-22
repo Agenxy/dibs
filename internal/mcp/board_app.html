@@ -681,7 +681,22 @@
     <!-- The human's way in. Locked until a fingerprint proves somebody is
          actually here: the panel speaks with the AGENT's token, so without
          proof from outside the transport "this came from the operator" is a
-         claim the one party it excludes could also make. -->
+         claim the one party it excludes could also make.
+
+         WHY THIS EXISTS AT ALL, since a person is the only one looking at it.
+
+         A person is the only VIEWER, and is not the default ACTOR, and those
+         come apart here in a way they do not on the web board. This panel is
+         rendered inside the agent's own session and carries the agent's token
+         and nothing else. If it posted as the human by default, an agent could
+         act as its operator by drawing this panel and pressing its own button:
+         the human's identity would be a thing the agent could spend.
+
+         So the panel is built for a person to read, which is the default, and
+         acting as that person is the one thing that needs proof from outside
+         the conversation the agent controls. The button says what it does now.
+         "Act as yourself" read as though the reader had been acting as somebody
+         else, which is exactly backwards: they had not been acting at all. -->
     <button id="human-lock" class="human-lock" type="button"
             aria-describedby="human-lock-why">
       <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true" fill="none"
@@ -689,11 +704,12 @@
         <circle cx="8" cy="5" r="2.6" />
         <path d="M3.2 13.2a4.8 4.8 0 0 1 9.6 0" />
       </svg>
-      <span id="human-lock-label">act as yourself</span>
+      <span id="human-lock-label">confirm it's you</span>
     </button>
-    <span class="sr-only" id="human-lock-why">Proves a person is at this machine
-      with Touch ID, then lets you post, announce and message agents as
-      yourself.</span>
+    <span class="sr-only" id="human-lock-why">The board is yours to read either
+      way. This proves with Touch ID that a person is at this machine, which is
+      what lets you post, announce and message agents under your own name rather
+      than the agent's.</span>
   </div>
 
   <div class="summary" id="summary" role="status" aria-label="Board summary"></div>
@@ -1453,7 +1469,7 @@ async function unlockHuman() {
   try {
     const res = await call("tools/call", {
       name: "human_unlock",
-      arguments: { token: state.token, note: "act on the Dibs board as yourself" },
+      arguments: { token: state.token, note: "post to the Dibs board under your own name" },
     })
     const refusal = toolFailure(res)
     if (refusal) { setHumanState("locked"); announce(refusal); return }
@@ -1483,7 +1499,7 @@ function setHumanState(next) {
   const label = document.getElementById("human-lock-label")
   if (label) {
     label.textContent = {
-      locked: "act as yourself",
+      locked: "confirm it's you",
       asking: "confirming…",
       unlocked: state.human ? state.human.agent : "you",
       unavailable: "no sensor here",
