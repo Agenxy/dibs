@@ -68,7 +68,9 @@ func loadRolePins(dir string) *rolePins {
 
 // check reports whether this fingerprint may hold this declared role, and
 // records it when the role is not pinned yet.
-func (p *rolePins) check(role, name, fingerprint string) error {
+// want is the fingerprint the OPERATOR named for this agent, from
+// [roles.identity], or "" when they named none.
+func (p *rolePins) check(role, name, fingerprint, want string) error {
 	if p.Pins == nil {
 		return fmt.Errorf("%s cannot be read (%v), so no declared role can be "+
 			"verified: fix the file's permissions, or remove it to re-pin from the "+
@@ -86,6 +88,34 @@ func (p *rolePins) check(role, name, fingerprint string) error {
 	}
 	switch pinned := byName[name]; pinned {
 	case "":
+		// FIRST-REGISTRANT-WINS IS NOT AUTHENTICATION.
+		//
+		// Pinning whoever showed up first held every LATER impostor to the
+		// first one's identity and welcomed the first impostor without a
+		// question. An agent that read dibs.toml, or simply guessed a likely
+		// name, could register under it before the operator's own agent came
+		// up and be granted admin: the god view, every agent's mail included.
+		// The startup window made that a race rather than a standing offer,
+		// which is not the same as making it safe. Found by the pre-release
+		// review, which also noted that neither existing test could fail on
+		// this path: one tested direct grant_role, and the other started from
+		// an already-established legitimate pin.
+		//
+		// So the first pin must be one the operator can PROVE. They already
+		// choose the agent's nonce; naming it in [roles.identity] is a secret
+		// the config and the agent share and an impostor does not.
+		if want == "" {
+			return fmt.Errorf("%q has no identity in [roles.identity], so the first "+
+				"agent to register under that name would be granted %s on trust "+
+				"alone. Add `%s = \"<that agent's nonce>\"` under [roles.identity] "+
+				"in dibs.toml: a name authenticates nobody, and the nonce is the "+
+				"credential that agent already presents", name, role, name)
+		}
+		if want != fingerprint {
+			return fmt.Errorf("the agent registering as %q did not present the nonce "+
+				"[roles.identity] names for it, so it is not the agent you meant to "+
+				"grant %s to", name, role)
+		}
 		// PERSIST FIRST, then remember.
 		//
 		// Recording it in memory before saving meant a failed write left the

@@ -184,19 +184,29 @@ off = true    # this machine's agents are supervised by something else
 |---|---|---|
 | `coordinator` | *(none)* | Agent names granted the coordinator role at every start. |
 | `admin` | *(none)* | Agent names granted admin. **Admin can read every agent's mailbox.** |
+| `identity` | *(none)* | Table of name → the `nonce` that agent registers with. **Required for the first grant.** |
 
 Applied at **every** start, and only for a short window after it. A role granted
 by hand disappears with the ledger it lived in; a role declared here comes back
 with the daemon, which is what somebody writing it down expects.
 
-**A declared role follows the agent it first lands on, not the name.** This file
-names a string, and a name is free for anyone to take once its holder is gone,
-so the daemon records the credential of the agent it grants to in
-`<data-dir>/roles.pinned` and refuses the same name later under a different
-identity. That agent must have registered with a `nonce`: without one it cannot
-prove it is itself after a restart, which is the whole of what a standing role
-needs. If you genuinely mean to hand the role to a different agent, delete that
-name from `roles.pinned`.
+**A name authenticates nobody, so you have to say who you mean.** Under
+`[roles.identity]`, give each declared name the `nonce` that agent registers
+with. The daemon compares only its fingerprint, records it in
+`<data-dir>/roles.pinned`, and from then on the role follows that identity: the
+same name later, under a different agent, is refused.
+
+Without `[roles.identity]` the role is **not granted**, and the daemon says so.
+That is deliberate. Pinning whoever registered first held every later impostor
+to the first one's identity and asked the first one nothing, so an agent that
+read this file, or simply guessed that `admin = ["fleet-lead"]` is a likely
+line, could register under that name before your own agent came up and be handed
+the god view with every agent's mail in it. The nonce is a secret you already
+choose and already give that agent; naming it here is what makes the first grant
+provable rather than merely recorded.
+
+If you genuinely mean to hand the role to a different agent, change the nonce
+here and delete that name from `roles.pinned`.
 
 The grant window closes about two minutes after start. A name that never
 appears is reported once and then left alone, rather than standing open for
@@ -209,7 +219,15 @@ daemon as itself.
 ```toml
 [roles]
 coordinator = ["fleet-lead"]
+admin = ["release"]
+
+[roles.identity]
+fleet-lead = "the-nonce-fleet-lead-registers-with"
+release = "the-nonce-release-registers-with"
 ```
+
+This file holds those nonces, so it is a credential file: keep it `chmod 600`
+and do not paste it into an issue.
 
 ---
 

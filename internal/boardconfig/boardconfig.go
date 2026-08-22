@@ -210,6 +210,28 @@ type RolesConfig struct {
 	// Admin adds the god view, mail included. Grant it only to an agent trusted
 	// as the operator trusts themselves.
 	Admin []string `toml:"admin"`
+	// Identity binds a declared name to the NONCE the operator gave that agent,
+	// and it is what makes a standing role safe on a board with no history.
+	//
+	// A name on its own authenticates nobody. The pin file records whoever
+	// registered under a declared name first and holds them to it afterwards,
+	// which stops a later impostor and does nothing about the first one: an
+	// agent that reads dibs.toml, or guesses that `admin = ["fleet-lead"]` is a
+	// likely line, could register under that name before the operator's own
+	// agent came up, become the durable pin, and be handed the god view
+	// including every agent's mail. The startup window bounds the race; it
+	// authenticates nothing. Found by the pre-release review.
+	//
+	// The nonce is the credential the agent already presents at register, and
+	// the operator already chooses it. Writing the same value here is a shared
+	// secret between the operator's config and the operator's agent, which an
+	// impostor does not have. Only its fingerprint is ever compared.
+	//
+	//	[roles]
+	//	admin = ["fleet-lead"]
+	//	[roles.identity]
+	//	fleet-lead = "the-nonce-you-give-that-agent"
+	Identity map[string]string `toml:"identity"`
 }
 
 // Load reads <dir>/dibs.toml if present. A missing file is not an error: zero
@@ -432,6 +454,21 @@ func (c Config) validateSupervise() error {
 				"rather than refused, so it reads as configured and does nothing",
 				d.key, d.raw)
 		}
+	}
+	// min_duty is a FRACTION of a process's life, and neither end of it was
+	// checked. Settings.Apply takes the value only when it is above zero, so a
+	// negative one reads as configured and silently keeps the default: the
+	// thing this validation exists to stop. Above 1 is worse than ignored.
+	// convictedByDutyCycle ACQUITS a process whose duty exceeds the threshold,
+	// so a threshold no duty can reach acquits nobody, and every process past
+	// min_age becomes eligible for a stuck verdict. Found by the pre-release
+	// review, which also noted the test claiming to cover ignored settings had
+	// no case for either end.
+	if d := c.Supervise.MinDuty; d < 0 || d > 1 {
+		return fmt.Errorf("[supervise] min_duty = %v: it is the FRACTION of its life "+
+			"a process must have spent running, so it lives in [0, 1]. A negative "+
+			"value is ignored and the default is kept; above 1 no process can clear "+
+			"it, so every process old enough is convicted of being stuck", d)
 	}
 	return nil
 }

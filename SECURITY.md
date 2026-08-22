@@ -102,6 +102,31 @@ evidence that the real path works.
 
 ## What is deliberately weaker, and why
 
+**The board session cookie reaches the board and its stream, and nothing else.**
+Cookies are scoped to a *host* and never to a port, and `SameSite` does not
+separate ports either, so every service you visit on `127.0.0.1` is handed
+`dibs_session` by your own browser. Nothing the daemon can set on that cookie
+changes this.
+
+So the cookie is not the credential. Redeeming the magic link also hands the
+browser a **page key**, in the redirect's *fragment*: browsers never send a
+fragment to any server, so it appears in no request, no log and no cookie jar,
+and the board keeps it in `localStorage`, which *is* scoped by port. Mail, your
+identity, acting as you, and every `/api/admin/` route require it. Something
+replaying the cookie can ask for the board document and gets HTML with no key in
+it.
+
+What the cookie alone still opens is the board document and `/events`, because
+`EventSource` cannot send a header. Both carry board state, who is
+working on what, which every agent on this machine can already see. Neither carries mail.
+
+An earlier version of this section claimed the exposure was closed by requiring
+an `Origin` header on writes. That is a real control against a hostile *page*, a
+browser will not let a page lie about its origin, and it is worth nothing
+against a local process replaying the cookie, which writes its own headers and
+declares whatever origin it likes. Both controls are present now; only the page
+key stops the second one.
+
 **The wake path is unauthenticated.** `hook_poll` and `guard_path` take a
 session id and a working directory with no agent token, because a harness
 lifecycle hook does not have one: that is the whole reason they exist. A caller

@@ -39,9 +39,27 @@ func (c Choice) TLS() bool { return c.CertFile != "" }
 // that only needs to describe the daemon passes something that reports where it
 // would be, and a caller that cannot answer at all passes nil, which yields the
 // TLS choice with no paths.
-func Resolve(cfgCert, cfgKey, addr string, insecurePlaintext bool,
+// scheme is the transport the operator NAMED, lowercased, or "" for unstated.
+// DIBS_ADDR may carry one and every client honours it, so a daemon that read
+// the variable and threw the scheme away could serve the opposite of what its
+// clients speak: `http://10.0.0.9:4777` served TLS because the address is not
+// loopback, and `https://127.0.0.1:4777` served plaintext because it is. Both
+// sides read the same variable and disagreed about it. Found by the
+// pre-release review.
+func Resolve(cfgCert, cfgKey, addr, scheme string, insecurePlaintext bool,
 	ensure func() (string, string, error),
 ) (Choice, error) {
+	// A contradiction is refused BEFORE either side of it wins. http:// with a
+	// configured certificate is the operator asking for two opposite
+	// transports, and quietly honouring the certificate is how a board ends up
+	// serving TLS to clients that were told, by the same address, to speak
+	// plaintext.
+	if scheme == "http" && (cfgCert != "" || cfgKey != "") {
+		return Choice{}, fmt.Errorf("the address asks for http:// and a TLS certificate "+
+			"is configured: those are opposite transports, and picking one for you "+
+			"would leave %s serving something its clients were told not to speak. "+
+			"Drop the scheme, or drop tls_cert/tls_key", addr)
+	}
 	// BOTH halves. A certificate with no key is not something a daemon can
 	// serve, and treating it as authoritative pointed clients at a certificate
 	// that would never be presented.
@@ -64,6 +82,11 @@ func Resolve(cfgCert, cfgKey, addr string, insecurePlaintext bool,
 			"without its key cannot be served, and ignoring half a pair would start "+
 			"the daemon on a transport you did not ask for", given, missing)
 	}
+	// A stated scheme outranks every inference below it, because the operator
+	// said it and the clients are going to believe them.
+	if c, ok, err := fromStatedScheme(scheme, ensure); ok || err != nil {
+		return c, err
+	}
 	// Before insecure_plaintext, and before any certificate on disk: a loopback
 	// daemon is unreachable from other hosts, so it serves plaintext however
 	// many certificates are lying around from when it did not.
@@ -81,6 +104,25 @@ func Resolve(cfgCert, cfgKey, addr string, insecurePlaintext bool,
 		return Choice{}, err
 	}
 	return Choice{cert, key, "TLS (self-signed certificate, auto-generated)"}, nil
+}
+
+// fromStatedScheme answers for an address that NAMES its transport. ok is false
+// when it names none, which is when the inferences below it apply.
+func fromStatedScheme(scheme string, ensure func() (string, string, error)) (Choice, bool, error) {
+	switch scheme {
+	case "http":
+		return Choice{Why: "plaintext (http:// in the address you gave)"}, true, nil
+	case "https":
+		if ensure == nil {
+			return Choice{Why: "TLS (https:// in the address you gave)"}, true, nil
+		}
+		cert, key, err := ensure()
+		if err != nil {
+			return Choice{}, true, err
+		}
+		return Choice{cert, key, "TLS (https:// in the address you gave)"}, true, nil
+	}
+	return Choice{}, false, nil
 }
 
 // IsLoopback reports whether an address names only this machine.
