@@ -113,7 +113,20 @@ func (e *Engine) SetMatchStatus(s MatchStatus) {
 		// proof about nothing else, which is exactly the distinction the
 		// preserve was added to protect. Raised by the pre-release review, which
 		// reproduced the stale entry against the production sequence.
-		s.Unreadable = withoutTree(e.matchStatus.st.Unreadable, s.Repo)
+		// Only a SUCCESSFUL index proves a tree readable.
+		//
+		// Failure paths publish MatchOff with a repository and no Unreadable
+		// field, and treating that as recovery erased the record of the very
+		// failure being reported: the board could end up ready with nothing
+		// saying matching for that tree never came back, which is the
+		// "working but found nothing" ambiguity this file exists to remove.
+		// Raised by the pre-release review; my tests covered a successful index
+		// and an unrelated repository, and not the failed retry.
+		if s.Phase == MatchReady {
+			s.Unreadable = withoutTree(e.matchStatus.st.Unreadable, s.Repo)
+		} else {
+			s.Unreadable = e.matchStatus.st.Unreadable
+		}
 	}
 	e.matchStatus.st = s
 }

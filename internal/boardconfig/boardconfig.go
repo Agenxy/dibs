@@ -261,6 +261,15 @@ func Load(dir string) (Config, error) {
 // crashed between their own keepalives.
 const MinAgentTTL = 5 * time.Second
 
+// AutoJoinPolicies is every value [match] auto_join accepts.
+//
+// Taken from the engine's own constants by TestConfigVocabulariesMatchTheEngine,
+// because inventing one was worse than not checking at all: a validator built
+// on "declared", "predicted" and "off" refused the working configurations
+// `always` and `never`, and recommended two values that silently behave as
+// declared. A vocabulary check has to be against the vocabulary that exists.
+var AutoJoinPolicies = map[string]bool{"declared": true, "always": true, "never": true}
+
 // WakePhases is every value [wake] extend_turn_for accepts.
 //
 // String literals rather than the engine's constants, because this package must
@@ -403,9 +412,10 @@ func (c Config) validateMatch() error {
 				"the setting reads as applied and is not: %w", d, err)
 		}
 	}
-	if j := c.Match.AutoJoin; j != "" && j != "declared" && j != "predicted" && j != "off" {
-		return fmt.Errorf("[match] auto_join = %q: use \"declared\", \"predicted\" or "+
-			"\"off\". An unknown value behaves as \"declared\" rather than being refused", j)
+	if j := c.Match.AutoJoin; j != "" && !AutoJoinPolicies[j] {
+		return fmt.Errorf("[match] auto_join = %q: use \"declared\" (default: certainty "+
+			"joins, guesses are proposed), \"always\" or \"never\". An unknown value "+
+			"behaves as \"declared\" rather than being refused", j)
 	}
 	return nil
 }

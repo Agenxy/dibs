@@ -245,6 +245,31 @@ func godViewPath(p string) bool {
 // holding the secret still lacks the password, so it cannot pass.
 func (g *authGate) godViewAuthorized(r *http.Request) bool {
 	if g.validSession(r) {
+		// A cookie authenticates a BROWSER, so a state-changing request carrying
+		// one has to look like it came from a browser on this board.
+		//
+		// Cookies are host-scoped and not port-scoped, and every port on one
+		// loopback hostname is the same site, so SameSite=Strict does not
+		// separate them either. A second server on 127.0.0.1 therefore receives
+		// dibs_session the moment the operator visits it, and can then replay it
+		// from outside a browser, where no Origin header is sent at all and the
+		// check in wrap() is skipped by construction. That reached
+		// /api/admin/role, which grants roles. Demonstrated by the pre-release
+		// review with a cookie jar and a handler-level replay.
+		//
+		// Browsers send Origin on POST and friends, and a non-browser replay does
+		// not, so requiring it here costs the board nothing and costs the replay
+		// everything. Reads are deliberately not gated this way: a same-origin
+		// GET does not carry Origin either, and refusing those would refuse the
+		// board itself. See SECURITY.md for what that leaves.
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			return true
+		}
+		o := r.Header.Get("Origin")
+		if o == "" || !g.localOrigin(o, r.Host) {
+			return false
+		}
 		return true
 	}
 	if h := g.adminHash(); h != "" && g.headerSecret(r) && adminpw.Verify(r.Header.Get("X-Dibs-Admin"), h) {

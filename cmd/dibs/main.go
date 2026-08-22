@@ -588,7 +588,7 @@ func mcpConfig(args []string) error {
 		"command": self(),
 		"args":    []string{"mcp-stdio"},
 	}
-	if env := nonDefaultEnv(); len(env) > 0 {
+	if env := nonDefaultEnv(scheme); len(env) > 0 {
 		dibs["env"] = env
 	}
 	stdioCfg := map[string]any{"mcpServers": map[string]any{"dibs": dibs}}
@@ -674,7 +674,7 @@ args = ["mcp-stdio"]
 #   (the secret is also accepted as: Authorization: Bearer %s)
 #
 # Running agent sessions do not hot-load MCP config: start a new session after adding.
-`, self(), codexEnvLine(), shellArg(joiner), url, s, preview)
+`, self(), codexEnvLine(scheme), shellArg(joiner), url, s, preview)
 
 	if certPath != "" {
 		fmt.Printf(`

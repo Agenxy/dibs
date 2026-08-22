@@ -462,6 +462,10 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		return nil, err
 	}
 
+	if err := e.refuseClaimWhenCoordinatorExists(op); err != nil {
+		return nil, err
+	}
+
 	// An omitted description keeps the one the agent already has.
 	//
 	// Resolved at ingress and written INTO the op, so the ledger records the
@@ -1038,4 +1042,36 @@ func matchingHint(st MatchStatus) string {
 			"explicitly until it is back. "
 	}
 	return lead + st.Hint
+}
+
+// refuseClaimWhenCoordinatorExists closes a claim the board has outgrown.
+//
+// The claim file is minted at startup when no coordinator exists, and nothing
+// retired it once one did. A role declared in dibs.toml is granted a few
+// seconds later by the reconciler, so an ordinary startup left a live claim
+// lying in the data directory beside a board that already had its coordinator:
+// a second persistent agent could consume it and acquire broadcast,
+// force_release, eviction and mailbox adoption. Reproduced against the
+// production startup order by the pre-release review.
+//
+// At INGRESS, never in the fold. Apply also replays the ledger, so refusing a
+// claim there would refuse claims that were legal when they were written and
+// stop the daemon booting on its own history. This binds new callers and leaves
+// the record alone, which is what the other authorization verdicts here do.
+func (e *Engine) refuseClaimWhenCoordinatorExists(op *core.Op) error {
+	if op.Kind != core.OpClaimCoordinator {
+		return nil
+	}
+	for _, l := range e.state.Agents {
+		if l.IsCoordinator() && l.Status != core.StatusClosed {
+			return &core.Error{
+				Code: "E_HAVE_COORDINATOR",
+				Msg:  "this board already has a coordinator (" + l.ID + ")",
+				Hint: "ask them, or ask the human to move the role (send with grant). " +
+					"The claim file is the bootstrap for a board with NO coordinator, " +
+					"and is not a second way in once there is one",
+			}
+		}
+	}
+	return nil
 }

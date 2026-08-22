@@ -609,6 +609,31 @@ func writeCertExpiring(t *testing.T, certFile, keyFile string, notAfter time.Tim
 // boardconfig lists the wake policies as strings, because it must not import
 // the engine: `dibs` reads the same file and has no business linking the
 // daemon's internals. This is the seam that keeps the two honest.
+// Both vocabularies boardconfig lists must be the engine's own.
+//
+// The auto_join list was invented: "declared", "predicted", "off", against an
+// engine that implements "declared", "always", "never". So valid boards stopped
+// starting, and the error recommended two values that do nothing. A vocabulary
+// check is only worth having if it is checked against the vocabulary.
+func TestConfigVocabulariesMatchTheEngine(t *testing.T) {
+	for _, p := range []string{
+		engine.AutoJoinDeclared, engine.AutoJoinAlways, engine.AutoJoinNever,
+	} {
+		if !boardconfig.AutoJoinPolicies[p] {
+			t.Errorf("the engine implements auto_join %q and boardconfig refuses it, so "+
+				"a working configuration stops the daemon", p)
+		}
+	}
+	for p := range boardconfig.AutoJoinPolicies {
+		switch p {
+		case engine.AutoJoinDeclared, engine.AutoJoinAlways, engine.AutoJoinNever:
+		default:
+			t.Errorf("boardconfig accepts auto_join %q, which the engine does not "+
+				"implement: it silently behaves as %q", p, engine.AutoJoinDeclared)
+		}
+	}
+}
+
 func TestWakePhasesMatchTheEngine(t *testing.T) {
 	known := map[string]bool{}
 	for _, p := range boardconfig.WakePhases {
