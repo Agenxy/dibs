@@ -27,15 +27,48 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   neither carries mail. `SECURITY.md` says so plainly rather than claiming the
   exposure is gone.
 
+- **A board session cookie opened the coordination tier, including `/mcp`.**
+  `/mcp` is deliberately not a god-view path, so it sat behind "local secret OR
+  a valid board session". A local service replaying the host-scoped cookie could
+  therefore POST `/mcp`, call `register` (which needs no prior credential) and
+  be handed an agent token: the whole coordination surface, without ever holding
+  `local.secret`. The tier now takes the local secret, or a board page that has
+  proved itself.
+
+- **The page key protected nothing, because the routes it exempted carried all
+  the mail.** `SECURITY.md` and the guard both said the board document and
+  `/events` carry board state and not mail. Both called `AllMessages`: the
+  document embedded every decrypted body in the HTML, and every SSE snapshot
+  streamed them. So a cookie thief got the complete mailbox and every update to
+  it, straight past the control added for exactly that attacker. The end-to-end
+  test *required* a private message body to be present in a cookie-only
+  response, so the suite pinned the leak in place. Mail is out of both routes;
+  the board fetches it from `/api/messages`, which needs the key.
+
 - **A declared role was granted to whoever registered under the name first.**
   The pin file held every *later* impostor to the first registrant's identity
   and asked the first one nothing, so an agent that read `dibs.toml`, or guessed
   that `admin = ["fleet-lead"]` is a likely line, could register under that name
   before the operator's own agent came up and be handed the god view with every
   agent's mail in it. The two-minute window made that a race, not a safeguard.
-  A declared role now requires `[roles.identity]` to name the nonce that agent
-  registers with; without it nothing is granted, and the daemon says why.
-  **This is a breaking change for anyone using `[roles]`.**
+  A declared role now requires `[roles.identity]` to name that agent's
+  **fingerprint**; without it nothing is granted, and the daemon logs the line
+  to paste. **Breaking for anyone using `[roles]`.**
+
+  The first version of this asked for the raw **nonce**, which was worse than
+  the hole it closed: a nonce is the whole recovery credential, so any same-user
+  process that read `dibs.toml` could reattach *as* the admin, rotate its token
+  and take its mailbox at any time, rather than merely winning a two-minute
+  race. It takes a 64-character hex fingerprint now, and refuses anything that
+  is not one.
+
+- **Published macOS artifacts shipped without the Touch ID helper.** GoReleaser
+  built `dibd` and `dibs` and nothing else, and the runtime looks for
+  `dibs-presence` beside the executable, so every archive and every `brew
+  install` silently fell back to the admin password while the documentation
+  described a presence-first flow. The release job already runs on macOS; it
+  builds and ships the helper now, and the drift guard that watched only the
+  Taskfile watches the release too.
 
 - **An archived coordinator stranded the board.** The claim guard added above
   spelled out its own idea of who coordinates and excluded only closed agents,
@@ -43,6 +76,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Archiving blanks the token and nonce and resume refuses archived identities,
   so a board whose only coordinator was swept had nobody able to coordinate and
   no way to claim it. It asks the one resolver now.
+
+  Round seven found the same defect in a *second* copy, `core.HasCoordinator`,
+  which is the one the startup claim path actually consults, so the strand
+  survived the first fix. It is defined as `CoordinatorID` now rather than as
+  its own scan of the roster: two functions cannot disagree if there is only one
+  of them.
 
 - **`DIBS_ADDR` schemes were accepted and then discarded.** The daemon read the
   variable, stripped `http://` or `https://` so `net.Listen` would take it, and
@@ -157,6 +196,30 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   paragraph again every time.
 
 ### Fixed
+
+- **The CLI decided its transport from the address alone.** `dibs.toml`
+  supports `insecure_plaintext` and an explicit certificate pair, and the daemon
+  honours both through the shared resolver; `origin()` looked only at whether
+  the host was loopback. A LAN board with `insecure_plaintext = true` was
+  contacted over HTTPS, and a loopback board with a certificate over HTTP, by
+  `doctor`, `mcp-stdio`, `admin`, `await` and every ordinary request. It asks
+  the shared resolver now.
+
+- **One agent named as both coordinator and admin flipped between them** every
+  fifteen seconds for the whole startup window, two ledger entries a pass, with
+  a gap in which admin-only calls failed. Refused at load.
+
+- **Explicit zero supervision settings, and `nan`, validated and did nothing.**
+  `every = "0s"` is not "no limit": the daemon takes these only above zero, so
+  it kept the default and nothing said so. `min_duty = nan` passed the range
+  check because no comparison against NaN is true. An absent key and an explicit
+  zero are the same value in the struct and opposite intentions, so validation
+  now asks the decoder which keys were actually written.
+
+- **`mcp-config --board` accepted hosts that cannot become a URL.** The check
+  listed forbidden characters, so it caught the ones somebody thought of and
+  passed spaces, control characters and invalid escapes. It asks `net/url` the
+  same question the failure would ask later.
 
 - **`dibs doctor` ignored the address `dibs configure` wrote.** It built its
   request from the environment alone, so a healthy daemon configured only in

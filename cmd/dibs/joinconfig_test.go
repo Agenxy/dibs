@@ -642,6 +642,16 @@ func TestABoardAddressThatCannotWorkIsRefused(t *testing.T) {
 		"[::]:4777",
 		"hub.example",
 		"ftp://hub.example:4777",
+		// MALFORMED HOSTS. The check listed forbidden characters, so it caught
+		// the ones somebody thought of and accepted spaces, control characters
+		// and invalid escapes. `dibs mcp-config --board 'bad host:4777'` exited
+		// zero and printed a confident configuration the bridge could not turn
+		// into a request. This list claimed to cover unusable addresses and had
+		// no case like it. Found by the pre-release review.
+		"bad host:4777",
+		"hub\texample:4777",
+		"hub%zz.example:4777",
+		"hub\x00example:4777",
 	} {
 		if err := checkBoardAddr(bad); err == nil {
 			t.Errorf("%q was accepted, so a configuration will be printed around an "+
@@ -900,4 +910,53 @@ func mustJoiner(t *testing.T) string {
 		t.Fatalf("resolving the joining address: %v", err)
 	}
 	return j
+}
+
+// The CLI must speak the transport the daemon SERVES, not the one the address
+// suggests.
+//
+// origin() inferred from the address alone: loopback means plaintext, anything
+// else means TLS. dibs.toml supports two settings that change the answer and
+// the daemon honours both through the shared resolver, so a correctly
+// configured board had every CLI command talking to it the wrong way: doctor,
+// mcp-stdio, admin, await and the ordinary request paths.
+//
+// Round six made the CLI read the right ADDRESS and left it deciding the
+// transport by itself. The pre-release review pointed out that the agreement
+// test calls the shared resolver directly, so it passes while the caller that
+// matters never asks it.
+func TestOriginHonoursTransportSettingsOnlyTheFileNames(t *testing.T) {
+	for _, c := range []struct {
+		name, toml, addr, want string
+	}{
+		{
+			"insecure_plaintext on a LAN address, which would otherwise be https",
+			"insecure_plaintext = true\n", "10.0.0.9:4777", "http://10.0.0.9:4777",
+		},
+		{
+			"a certificate pair on loopback, which would otherwise be http",
+			"tls_cert = \"/c.pem\"\ntls_key = \"/k.pem\"\n", "127.0.0.1:4777",
+			"https://127.0.0.1:4777",
+		},
+		{
+			"neither: the inference still applies",
+			"", "127.0.0.1:4777", "http://127.0.0.1:4777",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if c.toml != "" {
+				if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(c.toml), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Setenv("DIBS_DIR", dir)
+			t.Setenv("DIBS_ADDR", c.addr)
+			if got := origin(); got != c.want {
+				t.Errorf("origin() = %q, want %q: the daemon serves by the shared "+
+					"rule, and a client that decides for itself talks to a working "+
+					"board on a transport it does not speak", got, c.want)
+			}
+		})
+	}
 }

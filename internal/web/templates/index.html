@@ -245,7 +245,12 @@ function flash(msg, bad) {
   flash._t = setTimeout(() => { el.textContent = ""; el.className = "flash" }, 6000)
 }
 
-let state = { board: {{.BoardJSON}}, messages: {{.MessagesJSON}}, events: {{.EventsJSON}},
+// messages starts EMPTY and is fetched, never embedded. The document and the
+// event stream are the two routes a session cookie opens on its own, because
+// EventSource cannot send a header, and cookies are host-scoped so any local
+// service the operator visits is handed one. Mail comes from /api/messages,
+// which requires the page key.
+let state = { board: {{.BoardJSON}}, messages: [], events: {{.EventsJSON}},
   // Which agents the reader opened. Held here because the roster is rebuilt
   // from scratch on every board change and a `details` does not survive that.
   expanded: new Set() }
@@ -676,6 +681,21 @@ document.addEventListener("keydown", (ev) => {
 // stream is visible rather than looking like a quiet fleet.
 const mark = document.getElementById("mark")
 const es = new EventSource("/events")
+
+// refreshMail pulls the mailbox over the keyed route. Coalesced, because a
+// burst of board frames should not become a burst of requests.
+let mailPending = false
+async function refreshMail() {
+  if (mailPending) return
+  mailPending = true
+  try {
+    const res = await boardFetch("/api/messages")
+    if (!res.ok) return
+    const d = await res.json()
+    if (Array.isArray(d.messages)) { state.messages = d.messages; draw() }
+  } catch (_) { /* keep the last good view rather than blanking it */ }
+  finally { mailPending = false }
+}
 // Announced on TRANSITION, never on every heartbeat: a live region that fires
 // each time the stream breathes is a region people turn off.
 let wasLive = null
@@ -699,9 +719,11 @@ es.addEventListener("board", (e) => {
   try {
     const d = JSON.parse(e.data)
     if (d.board) state.board = d.board
-    if (d.messages) state.messages = d.messages
     if (d.events) state.events = d.events
     draw()
+    // The frame says the board moved; mail is fetched over the keyed route
+    // rather than carried in a stream anything holding the cookie can read.
+    refreshMail()
   } catch (_) { /* keep the last good view rather than blanking it */ }
 })
 
@@ -720,6 +742,10 @@ Board.ticker()
 
 draw()
 tab("board")
+// The board paints without mail, then the mailbox arrives over the keyed
+// route. That order is deliberate: the document itself must not carry mail,
+// because a session cookie alone can fetch it.
+refreshMail()
 Promise.all([whoAmI(), whyEmpty()]).then(() => {
   // "observing" until the operator does something. Watching is a legitimate
   // posture, not a degraded one, so it is not called "read-only".

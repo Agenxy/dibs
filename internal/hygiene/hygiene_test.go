@@ -792,6 +792,34 @@ func TestThePresenceHelperIsTheOneThatGetsBuilt(t *testing.T) {
 				want, name)
 		}
 	}
+
+	// AND THE RELEASE, which is what almost everybody installs.
+	//
+	// This compared the runtime name with the Taskfile only, so it was green
+	// while GoReleaser built dibd and dibs and nothing else: the helper existed
+	// for anyone who built from source and was absent from every published
+	// archive and every brew install, where the runtime looks for it beside the
+	// executable and quietly falls back to the password. A guard that watches
+	// the developer's path and not the shipped one watches the case that was
+	// never going to break. Found by the pre-release review.
+	rel, err := os.ReadFile(filepath.Join(root, ".goreleaser.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// It has to be BUILT and it has to be PACKAGED: the before hook produces it
+	// and the archive carries it. Either one alone ships nothing usable.
+	for _, place := range []struct{ what, needle string }{
+		{"built by a before hook", "-o " + want},
+		{"carried in the archive", "src: " + want},
+		{"linked by the Homebrew cask", "- " + want},
+	} {
+		if !strings.Contains(string(rel), place.needle) {
+			t.Errorf("the release is not %s (%q not found in .goreleaser.yml): an "+
+				"installed Dibs would find no helper beside its executable and fall "+
+				"back to the admin password, while the docs describe Touch ID as the "+
+				"default", place.what, place.needle)
+		}
+	}
 }
 
 // Every setting the daemon accepts must be documented, and nothing may be

@@ -32,9 +32,12 @@ func TestRolesDeclaredInConfigAreGrantedAtStartup(t *testing.T) {
 		// The operator names WHICH agent, not just the name: a declared role
 		// with no identity behind it is granted to nobody, because the first
 		// agent to take a name is not necessarily the one that was meant.
+		// FINGERPRINTS, not nonces. dibs.toml holding a nonce would be the
+		// operator's config handing out the agent's whole recovery credential
+		// to anything running as them.
 		Identity: map[string]string{
-			"orchestrator": "nonce-orchestrator",
-			"fleet-lead":   "nonce-fleet-lead",
+			"orchestrator": engine.RolePinFingerprint("nonce-orchestrator"),
+			"fleet-lead":   engine.RolePinFingerprint("nonce-fleet-lead"),
 		},
 	}, loadRolePins(t.TempDir()))
 
@@ -201,8 +204,10 @@ func TestADeclaredRoleWillNotFollowAStolenName(t *testing.T) {
 	// The operator names the identity as well as the name, which is what lets
 	// the FIRST grant be verified rather than merely recorded.
 	cfg := RolesConfig{
-		Admin:    []string{"release-manager"},
-		Identity: map[string]string{"release-manager": "the-real-one"},
+		Admin: []string{"release-manager"},
+		Identity: map[string]string{
+			"release-manager": engine.RolePinFingerprint("the-real-one"),
+		},
 	}
 
 	// The agent the operator meant takes the role, and is pinned to it.
@@ -329,8 +334,10 @@ func TestAFreshBoardWillNotGrantADeclaredRoleToWhoeverAsksFirst(t *testing.T) {
 	t.Run("an identity configured: only that agent is granted", func(t *testing.T) {
 		eng, ctx := testEngine(t)
 		cfg := RolesConfig{
-			Admin:    []string{"fleet-lead"},
-			Identity: map[string]string{"fleet-lead": "the-nonce-the-operator-chose"},
+			Admin: []string{"fleet-lead"},
+			Identity: map[string]string{
+				"fleet-lead": engine.RolePinFingerprint("the-nonce-the-operator-chose"),
+			},
 		}
 		pinDir := t.TempDir()
 

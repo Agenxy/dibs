@@ -273,13 +273,19 @@ func (s *State) CoordinatorID() string {
 //
 // Asked once at startup, to decide whether a launch claim is worth minting: a
 // board that has settled the question must not offer to settle it again.
+// Defined as CoordinatorID, not as its own scan of the roster.
+//
+// This spelled out "not closed and is coordinator" and so counted an ARCHIVED
+// holder, while CoordinatorID twenty lines above correctly ignores archived
+// agents. Startup asks this before installing the bootstrap claim, so a board
+// whose only coordinator had been swept deleted its stale claim, minted no
+// replacement on the strength of a coordinator that does not exist, and came up
+// with no coordinator and no way to get one: the archived identity has no
+// recoverable token or nonce. Round six fixed the ingress predicate and left
+// this one, which is the copy the production startup path actually consults.
+// Found by the pre-release review, twice, in two different functions.
 func (s *State) HasCoordinator() bool {
-	for _, l := range s.Agents {
-		if l.Status != StatusClosed && l.IsCoordinator() {
-			return true
-		}
-	}
-	return false
+	return s.CoordinatorID() != ""
 }
 
 // maxSessionAliases bounds what one agent accumulates. A session has two names

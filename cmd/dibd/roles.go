@@ -181,9 +181,22 @@ func mayHoldDeclaredRole(ctx context.Context, eng *engine.Engine, pins *rolePins
 			"agent", agent, "role", role)
 		return false
 	}
-	if err := pins.check(role, agent, fp, engine.RolePinFingerprint(c.Identity[agent])); err != nil {
+	// The config already holds the FINGERPRINT, so nothing is hashed here. It
+	// used to hold the nonce, which is the agent's whole recovery credential
+	// and made dibs.toml a file that hands the admin identity to anything
+	// running as the operator.
+	if err := pins.check(role, agent, fp, c.Identity[agent]); err != nil {
 		slog.Error("refusing to grant a role declared in dibs.toml",
 			"agent", agent, "role", role, "err", err)
+		// The operator cannot look this up anywhere else, and printing it is
+		// safe: it is a hash of the nonce and reveals nothing that could be
+		// replayed. Without this the feature has a bootstrap step with no way
+		// to complete it.
+		if c.Identity[agent] == "" {
+			slog.Warn("to grant it, pin this agent's identity in dibs.toml",
+				"agent", agent, "role", role,
+				"add", fmt.Sprintf("[roles.identity]\n%s = %q", agent, fp))
+		}
 		return false
 	}
 	return true

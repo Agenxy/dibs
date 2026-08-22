@@ -121,8 +121,18 @@ func (e *Engine) SetMatchStatus(s MatchStatus) {
 	//
 	// The tree is still named, so the operator learns which one failed. What it
 	// no longer does is speak for the trees that are fine.
-	if s.Phase == MatchOff && e.matchStatus.st.Phase.indexed() &&
-		s.Repo != "" && filepath.Clean(s.Repo) != filepath.Clean(e.matchStatus.st.Repo) {
+	//
+	// The test is WHAT IS STILL INSTALLED, not what the last status happened to
+	// name. Round six compared the failing repository against the repository in
+	// the previous status, which is a proxy for "is another scorer working" and
+	// is wrong in both directions. A prewarm and a registration can bring up the
+	// same tree at once: one installs the scorer, the other fails transiently,
+	// the paths match, and the board goes off while that very scorer keeps
+	// answering. And scorers are never removed on a failed bring-up, so a
+	// repository that once worked still serves. Found by the pre-release
+	// review, which noted the round-six test claimed a scorer stayed installed
+	// and never called SetScorerForRepo.
+	if s.Phase == MatchOff && s.Repo != "" && e.anyScorerServes() {
 		kept := e.matchStatus.st
 		kept.Unreadable = withTree(kept.Unreadable, s.Repo)
 		e.matchStatus.st = kept
@@ -283,6 +293,18 @@ func matchHint(st MatchStatus) string {
 //
 // Reading /repo proves every directory inside it readable; it proves nothing
 // about a sibling, so containment runs one way only.
+// anyScorerServes reports whether any index is installed and still answering.
+//
+// ANY, including one for the tree that just failed. A failed bring-up does not
+// remove a scorer, so a repository whose re-index failed goes on serving the
+// index it already had: that is degraded, and calling it off contradicts the
+// answers the same daemon keeps giving. It is only off when nothing is left.
+func (e *Engine) anyScorerServes() bool {
+	e.matchMu.RLock()
+	defer e.matchMu.RUnlock()
+	return len(e.scorers) > 0
+}
+
 // withTree names a tree in the list once, without disturbing the rest.
 func withTree(trees []string, failed string) []string {
 	if failed == "" {
