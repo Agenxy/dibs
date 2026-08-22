@@ -13,7 +13,9 @@
 package boardconfig
 
 import (
+	"errors"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -36,8 +38,13 @@ type Config struct {
 	Match             MatchConfig       `toml:"match"`              // work-overlap matching
 	Limits            LimitsConfig      `toml:"limits"`             // coordination timings
 	Supervise         liveness.Settings `toml:"supervise"`          // stalled-subagent detection
-	Roles             RolesConfig       `toml:"roles"`              // standing coordinator/admin agents
-	Wake              WakeConfig        `toml:"wake"`               // which news may extend an agent's turn
+
+	// set reports whether a key was written in the file, as opposed to holding
+	// its zero value because nobody mentioned it. Unexported, so it is not a
+	// setting; nil for a zero Config, which reads as "nothing was written".
+	set   func(key ...string) bool
+	Roles RolesConfig `toml:"roles"` // standing coordinator/admin agents
+	Wake  WakeConfig  `toml:"wake"`  // which news may extend an agent's turn
 }
 
 // WakeConfig is the [wake] table.
@@ -210,27 +217,33 @@ type RolesConfig struct {
 	// Admin adds the god view, mail included. Grant it only to an agent trusted
 	// as the operator trusts themselves.
 	Admin []string `toml:"admin"`
-	// Identity binds a declared name to the NONCE the operator gave that agent,
-	// and it is what makes a standing role safe on a board with no history.
+	// Identity binds a declared name to the FINGERPRINT of the agent that may
+	// hold it, and it is what makes a standing role safe on a board with no
+	// history.
 	//
 	// A name on its own authenticates nobody. The pin file records whoever
 	// registered under a declared name first and holds them to it afterwards,
 	// which stops a later impostor and does nothing about the first one: an
-	// agent that reads dibs.toml, or guesses that `admin = ["fleet-lead"]` is a
+	// agent that read dibs.toml, or guessed that `admin = ["fleet-lead"]` is a
 	// likely line, could register under that name before the operator's own
-	// agent came up, become the durable pin, and be handed the god view
-	// including every agent's mail. The startup window bounds the race; it
-	// authenticates nothing. Found by the pre-release review.
+	// agent came up and be handed the god view with every mailbox in it.
 	//
-	// The nonce is the credential the agent already presents at register, and
-	// the operator already chooses it. Writing the same value here is a shared
-	// secret between the operator's config and the operator's agent, which an
-	// impostor does not have. Only its fingerprint is ever compared.
+	// A FINGERPRINT, and never the nonce itself. The first version of this
+	// asked for the raw nonce, which was worse than the hole it closed: a nonce
+	// is the whole recovery credential, so an agent under the same account that
+	// read dibs.toml could reattach AS the admin, rotate its token and take its
+	// mailbox at any time, rather than merely winning a two-minute race. Found
+	// by the pre-release review round after the one that added it.
+	//
+	// The daemon prints the fingerprint of any agent that registers under a
+	// declared name it cannot yet verify, so the way to fill this in is to
+	// start the agent and copy the line out of the log. Nothing secret is
+	// typed, stored or transmitted.
 	//
 	//	[roles]
 	//	admin = ["fleet-lead"]
 	//	[roles.identity]
-	//	fleet-lead = "the-nonce-you-give-that-agent"
+	//	fleet-lead = "9f2b...64 hex characters, from the daemon's log"
 	Identity map[string]string `toml:"identity"`
 }
 
@@ -274,6 +287,17 @@ func Load(dir string) (Config, error) {
 			strings.Join(keys, ", "),
 		)
 	}
+	// WHICH KEYS WERE ACTUALLY WRITTEN, carried into validation.
+	//
+	// An unset duration and an explicit `every = "0s"` are the same zero in the
+	// struct, and they mean opposite things: one is "use the default" and the
+	// other is a setting the daemon then ignores, because Settings.Apply
+	// overlays only values above zero. Refusing every zero would refuse the
+	// default; refusing none of them let `min_age = "0s"` read as configured
+	// and do nothing. Only the decoder knows the difference. Found by the
+	// pre-release review, which noted this list claimed to cover ignored
+	// settings and had no zero case at all.
+	c.set = md.IsDefined
 	return c, c.Validate()
 }
 
@@ -341,13 +365,70 @@ func CheckCount(table, key string, raw int) error {
 func (c Config) Validate() error {
 	for _, check := range []func() error{
 		c.validateAddr, c.validateTLS, c.validateLimits, c.validateMatch,
-		c.validateSupervise, c.validateWake,
+		c.validateSupervise, c.validateWake, c.validateRoles,
 	} {
 		if err := check(); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// validateRoles catches the two ways a standing role reads as configured and
+// is not.
+func (c Config) validateRoles() error {
+	declared := map[string]int{}
+	for _, n := range c.Roles.Coordinator {
+		declared[n] |= 1
+	}
+	for _, n := range c.Roles.Admin {
+		declared[n] |= 2
+	}
+	// One agent, one role string. Naming the same agent in both lists made the
+	// reconciler grant coordinator and then admin on every pass through the
+	// startup window: admin, coordinator, admin, fifteen seconds apart, two
+	// ledger entries each time and a window in between where admin-only calls
+	// fail. Not a race the operator could see, and not something they meant.
+	// Found by the pre-release review.
+	for name, in := range declared {
+		if in == 3 {
+			return fmt.Errorf("[roles]: %q is named as both coordinator and admin, "+
+				"and an agent holds ONE role: the reconciler would grant one and then "+
+				"the other on every pass. Admin already includes what coordinator can "+
+				"do, so name it in admin alone", name)
+		}
+	}
+	for name, fp := range c.Roles.Identity {
+		if declared[name] == 0 {
+			return fmt.Errorf("[roles.identity]: %q is not named in [roles] coordinator "+
+				"or admin, so this line grants nothing and reads as though it does", name)
+		}
+		if !isFingerprint(fp) {
+			// The likeliest wrong value is the NONCE itself, which is what the
+			// first version of this feature asked for and is a credential: a
+			// nonce in a file another same-user agent can read is that agent's
+			// route to reattaching AS the role holder.
+			return fmt.Errorf("[roles.identity] %s: expected a 64-character hex "+
+				"fingerprint, not %d characters. If you put the agent's NONCE here, "+
+				"take it out: it is that agent's whole recovery credential, and this "+
+				"file is readable by everything running as you. Start the agent and "+
+				"copy the fingerprint the daemon logs for it", name, len(fp))
+		}
+	}
+	return nil
+}
+
+// isFingerprint reports whether s is the shape RolePinFingerprint produces.
+func isFingerprint(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // validateAddr: the daemon BINDS this one, so it may not carry a scheme.
@@ -464,6 +545,40 @@ func (c Config) validateSupervise() error {
 	// min_age becomes eligible for a stuck verdict. Found by the pre-release
 	// review, which also noted the test claiming to cover ignored settings had
 	// no case for either end.
+	// An explicit zero is a setting that does not take. Settings.Apply overlays
+	// only values above zero, so every one of these reads as configured and
+	// silently keeps the default.
+	if c.set != nil {
+		for _, key := range []string{"every", "quiet", "frozen", "min_age", "min_duty"} {
+			if !c.set("supervise", key) {
+				continue
+			}
+			zero := c.Supervise.MinDuty == 0
+			switch key {
+			case "every":
+				zero = c.Supervise.Every == 0
+			case "quiet":
+				zero = c.Supervise.Quiet == 0
+			case "frozen":
+				zero = c.Supervise.Frozen == 0
+			case "min_age":
+				zero = c.Supervise.MinAge == 0
+			}
+			if zero {
+				return fmt.Errorf("[supervise] %s is set to zero, which is not "+
+					"\"no limit\": the daemon takes this setting only when it is "+
+					"above zero, so it keeps the default and nothing says so. "+
+					"Remove the line to mean the default", key)
+			}
+		}
+	}
+	// NaN passes every comparison below, because no comparison against NaN is
+	// true, and is then ignored by the same `> 0` test. TOML has NaN.
+	if math.IsNaN(c.Supervise.MinDuty) {
+		return errors.New("[supervise] min_duty = nan: no comparison against nan is " +
+			"true, so it passes every range check and is then ignored. It is a " +
+			"fraction in [0, 1]")
+	}
 	if d := c.Supervise.MinDuty; d < 0 || d > 1 {
 		return fmt.Errorf("[supervise] min_duty = %v: it is the FRACTION of its life "+
 			"a process must have spent running, so it lives in [0, 1]. A negative "+

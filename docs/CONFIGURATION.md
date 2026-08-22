@@ -184,17 +184,34 @@ off = true    # this machine's agents are supervised by something else
 |---|---|---|
 | `coordinator` | *(none)* | Agent names granted the coordinator role at every start. |
 | `admin` | *(none)* | Agent names granted admin. **Admin can read every agent's mailbox.** |
-| `identity` | *(none)* | Table of name → the `nonce` that agent registers with. **Required for the first grant.** |
+| `identity` | *(none)* | Table of name → that agent's 64-hex **fingerprint**. **Required for the first grant.** |
 
 Applied at **every** start, and only for a short window after it. A role granted
 by hand disappears with the ledger it lived in; a role declared here comes back
 with the daemon, which is what somebody writing it down expects.
 
 **A name authenticates nobody, so you have to say who you mean.** Under
-`[roles.identity]`, give each declared name the `nonce` that agent registers
-with. The daemon compares only its fingerprint, records it in
+`[roles.identity]`, give each declared name that agent's **fingerprint**: a
+64-character hex string derived from its nonce. The daemon records it in
 `<data-dir>/roles.pinned`, and from then on the role follows that identity: the
 same name later, under a different agent, is refused.
+
+**Not the nonce itself.** A nonce is the agent's whole recovery credential:
+anything holding it can reattach *as* that agent, rotate its token and take its
+mailbox. Putting one in `dibs.toml` would hand the admin identity to every
+process running as you, which is worse than the race it closes.
+
+To get the fingerprint, start the agent. The daemon cannot grant the role yet,
+and logs the line to paste:
+
+```
+to grant it, pin this agent's identity in dibs.toml
+  agent=fleet-lead role=admin
+  add=[roles.identity]
+      fleet-lead = "9f2b…"
+```
+
+Paste it in and restart. Nothing secret is typed, stored or sent.
 
 Without `[roles.identity]` the role is **not granted**, and the daemon says so.
 That is deliberate. Pinning whoever registered first held every later impostor
@@ -205,8 +222,13 @@ the god view with every agent's mail in it. The nonce is a secret you already
 choose and already give that agent; naming it here is what makes the first grant
 provable rather than merely recorded.
 
-If you genuinely mean to hand the role to a different agent, change the nonce
-here and delete that name from `roles.pinned`.
+If you genuinely mean to hand the role to a different agent, put the new
+agent's fingerprint here and delete that name from `roles.pinned`.
+
+**One agent, one role.** Naming the same agent under both `coordinator` and
+`admin` is refused: an agent holds a single role, so the reconciler would grant
+one and then the other every fifteen seconds for the whole startup window.
+`admin` already includes everything `coordinator` can do.
 
 The grant window closes about two minutes after start. A name that never
 appears is reported once and then left alone, rather than standing open for
@@ -222,12 +244,12 @@ coordinator = ["fleet-lead"]
 admin = ["release"]
 
 [roles.identity]
-fleet-lead = "the-nonce-fleet-lead-registers-with"
-release = "the-nonce-release-registers-with"
+fleet-lead = "9f2b1c…"   # 64 hex characters, from the daemon's log
+release = "4d8e07…"
 ```
 
-This file holds those nonces, so it is a credential file: keep it `chmod 600`
-and do not paste it into an issue.
+These are hashes, not secrets, so this file is not a credential file. That is
+deliberate: an earlier design put the nonces here and it was the wrong trade.
 
 ---
 
