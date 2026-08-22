@@ -90,7 +90,11 @@ func rawAddr() string {
 	if a := configuredAddr(paths.DataDir()); a != "" {
 		return a
 	}
-	return addr()
+	// The default, spelled out rather than delegated to addr(). addr() consults
+	// this function now, so calling it back here recurses until the stack ends:
+	// the two of them are one lookup with two names, and only one of them may
+	// own the fallback.
+	return defaultAddr
 }
 
 // configuredAddr is the `addr` this data directory's dibs.toml names, or "".

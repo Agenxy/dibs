@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A page on another port of this machine is a different origin, and is refused.
@@ -48,19 +49,33 @@ func TestAPageOnAnotherLocalPortIsNotThisOrigin(t *testing.T) {
 }
 
 // And the gate actually refuses the request, not merely the predicate.
+//
+// The first version of this proved nothing twice over: it posted to /roles,
+// which is not a god-view path, and attached no cookie, so it could not fail on
+// the control it names however broken that control was. Both noted by the
+// pre-release review. It now drives a real god-view route with a real session,
+// which is the only arrangement in which the answer means anything.
 func TestTheGateRefusesAForeignLocalOrigin(t *testing.T) {
 	gate := newAuthGate("the-secret", filepath.Join(t.TempDir(), "admin.hash"), "127.0.0.1:4777")
 	reached := false
 	h := gate.wrap(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
 
-	req := httptest.NewRequest(http.MethodPost, "/roles", nil)
+	const token, pageKey = "a-real-session", "a-real-page-key"
+	gate.sessions[token] = boardSession{exp: time.Now().Add(time.Hour), page: pageKey}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/role", nil)
+	req.AddCookie(&http.Cookie{Name: "dibs_session", Value: token})
+	// The page key too, so the ONLY thing wrong with this request is where it
+	// came from. Without it the request would be refused for a different
+	// reason, and the test would pass while saying nothing about origins.
+	req.Header.Set(pageKeyHeader, pageKey)
 	req.Header.Set("Origin", "http://localhost:9999")
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 
 	if reached {
-		t.Error("a POST from a page on another local port reached the handler: with a " +
-			"board session cookie attached, that is a role grant the operator never made")
+		t.Error("a POST from a page on another local port reached role granting, " +
+			"carrying a board session the browser attached for it")
 	}
 	if rec.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusForbidden)

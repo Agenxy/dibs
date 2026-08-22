@@ -226,36 +226,70 @@ func TestAStolenSessionCannotChangeStateWithoutABrowser(t *testing.T) {
 	// localOrigin falls back to "any loopback host", which accepts the sibling
 	// port this test is about. That was the fixture, not the product.
 	g := &authGate{
-		sessions: map[string]time.Time{}, boot: map[string]time.Time{},
+		sessions: map[string]boardSession{}, boot: map[string]time.Time{},
 		host: "127.0.0.1", port: "4777",
 	}
-	const token = "stolen-session-value"
-	g.sessions[token] = time.Now().Add(time.Hour)
+	const token, pageKey = "stolen-session-value", "the-page-key-that-never-left-the-tab"
+	g.sessions[token] = boardSession{exp: time.Now().Add(time.Hour), page: pageKey}
 
-	withCookie := func(method, origin string) *http.Request {
-		r := httptest.NewRequest(method, "http://127.0.0.1:4777/api/admin/role", nil)
+	// The THIEF: it holds the cookie, because cookies are host-scoped and the
+	// operator visited it on another port. It writes its own headers, because it
+	// is not a browser, so it declares whatever Origin it likes.
+	thief := func(method, target string) *http.Request {
+		r := httptest.NewRequest(method, "http://127.0.0.1:4777"+target, nil)
 		r.AddCookie(&http.Cookie{Name: "dibs_session", Value: token})
-		if origin != "" {
-			r.Header.Set("Origin", origin)
-		}
+		r.Header.Set("Origin", "http://127.0.0.1:4777") // forged, and free to forge
 		return r
 	}
+	for _, target := range []string{"/api/messages", "/api/admin/role", "/api/me", "/api/act/announce"} {
+		for _, method := range []string{http.MethodGet, http.MethodPost} {
+			if g.godViewAuthorized(thief(method, target)) {
+				t.Errorf("%s %s was allowed on a replayed cookie alone: mail, identity, "+
+					"acting as the human and role granting all sit behind this",
+					method, target)
+			}
+		}
+	}
+	// Round five demanded an Origin header and called it fixed. This is the
+	// request that defeated it, spelled out so the premise cannot come back:
+	// forging Origin is free for anything that is not a browser.
+	if g.godViewAuthorized(thief(http.MethodPost, "/api/admin/role")) {
+		t.Error("a forged same-origin write reached role granting")
+	}
 
-	if g.godViewAuthorized(withCookie(http.MethodPost, "")) {
-		t.Error("a session cookie replayed with no Origin was allowed to change state: " +
-			"that is the cross-port theft path, and it reaches role granting")
+	// The BOARD: same cookie, plus the key it took from the fragment.
+	page := func(method, target string) *http.Request {
+		r := thief(method, target)
+		r.Header.Set(pageKeyHeader, pageKey)
+		return r
 	}
-	if g.godViewAuthorized(withCookie(http.MethodPost, "http://127.0.0.1:9999")) {
-		t.Error("a session cookie was accepted from another port's origin")
+	for _, target := range []string{"/api/messages", "/api/admin/role", "/api/me"} {
+		if !g.godViewAuthorized(page(http.MethodPost, target)) {
+			t.Errorf("the board's own page was refused %s, so this refuses everybody, "+
+				"which is a broken board rather than a closed hole", target)
+		}
+	}
+	// A WRONG key is not a missing one, and must not pass either.
+	wrong := thief(http.MethodPost, "/api/admin/role")
+	wrong.Header.Set(pageKeyHeader, "not-the-key")
+	if g.godViewAuthorized(wrong) {
+		t.Error("any non-empty page key was accepted")
 	}
 
-	// The board itself must keep working: same-origin writes carry Origin, and
-	// reads do not carry one at all.
-	if !g.godViewAuthorized(withCookie(http.MethodPost, "http://127.0.0.1:4777")) {
-		t.Error("a same-origin write from the board was refused, which breaks the panel")
+	// The two routes the cookie still opens: the document, and the stream the
+	// page must open with EventSource, which cannot send a header. Neither
+	// carries mail. This is the residual, and it is deliberate: see SECURITY.md.
+	for _, target := range []string{"/", "/events"} {
+		if !g.godViewAuthorized(thief(http.MethodGet, target)) {
+			t.Errorf("GET %s was refused, so the board cannot load itself", target)
+		}
 	}
-	if !g.godViewAuthorized(withCookie(http.MethodGet, "")) {
-		t.Error("a same-origin read was refused; browsers do not send Origin on GET, " +
-			"so this would refuse the board itself")
+	// But a hostile PAGE still cannot write through them: a browser sets Origin
+	// itself and will not let a page lie about it.
+	crossOrigin := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:4777/", nil)
+	crossOrigin.AddCookie(&http.Cookie{Name: "dibs_session", Value: token})
+	crossOrigin.Header.Set("Origin", "http://127.0.0.1:9999")
+	if g.godViewAuthorized(crossOrigin) {
+		t.Error("a write from another port's origin was accepted")
 	}
 }

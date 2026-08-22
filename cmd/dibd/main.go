@@ -137,10 +137,15 @@ func run() error {
 	// scheme through to Listen was not. Raised by the pre-release review, which
 	// noted the test for it grepped main.go for the variable's name and stayed
 	// green while the shipped daemon could not use the value.
+	// The scheme is REMEMBERED, not just stripped. Removing it made net.Listen
+	// work and left the transport decision to be re-inferred from the bare
+	// address, which is how a daemon told to serve http:// on a LAN address
+	// served TLS while its clients spoke plaintext.
+	var askedScheme string
 	if scheme, rest, found := strings.Cut(listenAddr, "://"); found {
 		switch strings.ToLower(scheme) {
 		case "http", "https":
-			listenAddr = rest
+			askedScheme, listenAddr = strings.ToLower(scheme), rest
 		default:
 			return fmt.Errorf("DIBS_ADDR=%q names a scheme Dibs does not speak: use "+
 				"http:// or https://, or give a bare host:port", listenAddr)
@@ -302,7 +307,7 @@ func run() error {
 	registerMatchStatusAPI(mux, eng)
 	registerAdminAPI(mux, eng)
 
-	tr, err := resolveTransport(*dir, listenAddr, cfg)
+	tr, err := resolveTransport(*dir, listenAddr, askedScheme, cfg)
 	if err != nil {
 		return err
 	}

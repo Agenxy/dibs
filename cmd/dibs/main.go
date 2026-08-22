@@ -364,10 +364,21 @@ func editDistance(a, b string) int {
 	return prev[len(b)]
 }
 
+// defaultAddr is where a daemon nobody configured is listening.
+const defaultAddr = "127.0.0.1:4777"
+
 func addr() string {
-	a := os.Getenv("DIBS_ADDR")
+	// rawAddr, not the environment alone. `dibs configure` writes the operator's
+	// answer to dibs.toml and dibd resolves flag -> environment -> file, so an
+	// address configured only in the file was invisible here: doctor built its
+	// request from 127.0.0.1:4777, reported a perfectly healthy daemon on
+	// 192.168.50.10:4777 as unreachable, and then checked the harness
+	// configurations against the wrong board. CONFIGURATION.md says doctor
+	// reports what is actually in effect; this is what makes that true. Found
+	// by the pre-release review.
+	a := rawAddr()
 	if a == "" {
-		return "127.0.0.1:4777"
+		return defaultAddr
 	}
 	// A scheme is accepted here so one variable can carry a whole origin, but
 	// callers that want host:port get host:port.
@@ -403,9 +414,15 @@ const (
 )
 
 func origin() string {
-	if a := os.Getenv("DIBS_ADDR"); a != "" {
+	if a := rawAddr(); a != "" {
 		if scheme, _, found := strings.Cut(a, "://"); found {
-			return scheme + "://" + addr()
+			// LOWERCASED. checkAddr accepts a scheme case-insensitively, and
+			// this preserved the operator's spelling, so `HTTPS://host:4777`
+			// passed validation and then failed inside Go's HTTP transport as
+			// an unsupported scheme: a valid address rejected at the last
+			// possible moment, by a layer that cannot explain itself. Found by
+			// the pre-release review.
+			return strings.ToLower(scheme) + "://" + addr()
 		}
 	}
 	if isLoopbackHostPort(addr()) {

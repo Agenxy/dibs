@@ -47,6 +47,23 @@ const (
 	MatchNoThreshold MatchPhase = "suggest-only"
 )
 
+// indexed reports whether this phase means the tree was successfully read.
+// `ready`, `suggest-only` and `degraded` all reached an index; the first is
+// only the one with a join threshold set, and the second is the default.
+func (p MatchPhase) indexed() bool {
+	switch p {
+	case MatchReady, MatchNoThreshold, MatchDegraded:
+		return true
+	case MatchOff, MatchIndexing:
+		return false
+	}
+	return false
+}
+
+const (
+	_ = 0
+)
+
 // MatchStatus is the whole truth about work-overlap matching, in one value.
 type MatchStatus struct {
 	Phase   MatchPhase `json:"phase"`
@@ -89,6 +106,28 @@ func (e *Engine) SetMatchStatus(s MatchStatus) {
 	}
 	e.matchStatus.mu.Lock()
 	defer e.matchStatus.mu.Unlock()
+	// A SECOND repository failing does not switch matching off for the board.
+	//
+	// This is the same one-tree-speaks-for-the-board defect as the Unreadable
+	// list below, on the route that was left open: NoteIndexingTree and
+	// NoteUnreadableTree were fixed, and the ordinary mining and listing
+	// failures in the scorer still called this with MatchOff and replaced the
+	// entire global status. The first repository's scorer stays installed and
+	// goes on producing results, so the board ended up annotating declarations
+	// with "matching is off" while matching demonstrably worked: a statement
+	// contradicted by the same daemon's own behaviour. Found by the
+	// pre-release review, which noted no test drove a working repository
+	// followed by an ordinary second-repository failure.
+	//
+	// The tree is still named, so the operator learns which one failed. What it
+	// no longer does is speak for the trees that are fine.
+	if s.Phase == MatchOff && e.matchStatus.st.Phase.indexed() &&
+		s.Repo != "" && filepath.Clean(s.Repo) != filepath.Clean(e.matchStatus.st.Repo) {
+		kept := e.matchStatus.st
+		kept.Unreadable = withTree(kept.Unreadable, s.Repo)
+		e.matchStatus.st = kept
+		return
+	}
 	// Unreadable trees SURVIVE a phase change, because they belong to the trees
 	// and not to the phase.
 	//
@@ -122,7 +161,13 @@ func (e *Engine) SetMatchStatus(s MatchStatus) {
 		// "working but found nothing" ambiguity this file exists to remove.
 		// Raised by the pre-release review; my tests covered a successful index
 		// and an unrelated repository, and not the failed retry.
-		if s.Phase == MatchReady {
+		// Any phase that means the tree WAS read clears it, not just `ready`.
+		// Production success is ordinarily `suggest-only` (the default join
+		// threshold is zero) or `degraded` (after sidecar fallback), so keying
+		// recovery on `ready` alone kept a stale unreadable entry until
+		// restart on the default path: the pre-release review found the
+		// regression test hard-coded `ready` and so passed against it.
+		if s.Phase.indexed() {
 			s.Unreadable = withoutTree(e.matchStatus.st.Unreadable, s.Repo)
 		} else {
 			s.Unreadable = e.matchStatus.st.Unreadable
@@ -238,6 +283,20 @@ func matchHint(st MatchStatus) string {
 //
 // Reading /repo proves every directory inside it readable; it proves nothing
 // about a sibling, so containment runs one way only.
+// withTree names a tree in the list once, without disturbing the rest.
+func withTree(trees []string, failed string) []string {
+	if failed == "" {
+		return trees
+	}
+	root := filepath.Clean(failed)
+	for _, t := range trees {
+		if filepath.Clean(t) == root {
+			return trees
+		}
+	}
+	return append(trees[:len(trees):len(trees)], failed)
+}
+
 func withoutTree(trees []string, readable string) []string {
 	if readable == "" || len(trees) == 0 {
 		return trees

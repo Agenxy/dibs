@@ -83,10 +83,10 @@ type authGate struct {
 	// server's address looks like. See localOrigin.
 	host, port    string
 	mu            sync.Mutex
-	boot          map[string]time.Time // one-time bootstrap tokens
-	sessions      map[string]time.Time // god-view session cookie tokens
-	adminFails    int                  // consecutive wrong admin passwords
-	adminLockTill time.Time            // throttle window for /bootstrap
+	boot          map[string]time.Time    // one-time bootstrap tokens
+	sessions      map[string]boardSession // god-view session cookie tokens
+	adminFails    int                     // consecutive wrong admin passwords
+	adminLockTill time.Time               // throttle window for /bootstrap
 }
 
 const (
@@ -102,7 +102,7 @@ func newAuthGate(secret, adminHashPath, listenAddr string) *authGate {
 	return &authGate{
 		host: host, port: port,
 		secret: secret, adminHashPath: adminHashPath,
-		boot: map[string]time.Time{}, sessions: map[string]time.Time{},
+		boot: map[string]time.Time{}, sessions: map[string]boardSession{},
 	}
 }
 
@@ -142,9 +142,67 @@ func (g *authGate) redeemBootstrap(t string) (string, bool) {
 	if !ok || time.Now().After(exp) {
 		return "", false
 	}
-	sess := randHex(32)
-	g.sessions[sess] = time.Now().Add(sessionTTL)
+	sess, page := randHex(32), randHex(32)
+	g.sessions[sess] = boardSession{exp: time.Now().Add(sessionTTL), page: page}
 	return sess, true
+}
+
+// boardSession is a redeemed magic link: the cookie's expiry, and the key the
+// PAGE holds.
+//
+// Two credentials because the cookie cannot be trusted on its own and cannot be
+// made to be. Cookies are host-scoped and never port-scoped, so every service on
+// 127.0.0.1 is handed dibs_session the moment the operator visits it, and
+// SameSite does not separate ports either. The round-five answer was to demand
+// an Origin header on writes, and that was worth having against a hostile PAGE
+// (a browser will not let a page lie about its origin) and worth nothing
+// against the actual attacker: a local process replaying the cookie writes its
+// own headers and simply declares the board's origin. The round-five test
+// asserted that forged request must be ACCEPTED, so it encoded the hole as a
+// requirement. Both facts found by the pre-release review.
+//
+// The page key is delivered in the redirect's FRAGMENT, which browsers never
+// send to any server. So it is not in the cookie jar, not in a request log, and
+// not recoverable by fetching the board: a replay holding the cookie can ask
+// for the page and gets HTML with no key in it. The board's own JavaScript
+// reads the fragment once, keeps the key in localStorage (which IS scoped by
+// port) and sends it as a header on every call that matters.
+type boardSession struct {
+	exp  time.Time
+	page string
+}
+
+// pageKeyHeader carries the key the board page holds. Not a CSRF token: a
+// custom header stops a browser cross-origin, and this exists to stop something
+// that is not a browser.
+const pageKeyHeader = "X-Dibs-Board-Key"
+
+// holdsPageKey reports whether this request came from a page that redeemed the
+// magic link, rather than from something replaying the cookie it was given.
+func (g *authGate) holdsPageKey(r *http.Request) bool {
+	c, err := r.Cookie("dibs_session")
+	if err != nil || c.Value == "" {
+		return false
+	}
+	given := r.Header.Get(pageKeyHeader)
+	if given == "" {
+		return false
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	sess, ok := g.sessions[c.Value]
+	if !ok || time.Now().After(sess.exp) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(given), []byte(sess.page)) == 1
+}
+
+// pageKeyFor returns the page key for a session token, for the redirect that
+// hands it to the browser exactly once.
+func (g *authGate) pageKeyFor(sess string) string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.sessions[sess].page
 }
 
 func (g *authGate) validSession(r *http.Request) bool {
@@ -154,8 +212,8 @@ func (g *authGate) validSession(r *http.Request) bool {
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	exp, ok := g.sessions[c.Value]
-	if !ok || time.Now().After(exp) {
+	sess, ok := g.sessions[c.Value]
+	if !ok || time.Now().After(sess.exp) {
 		delete(g.sessions, c.Value)
 		return false
 	}
@@ -169,8 +227,8 @@ func (g *authGate) gcLocked() {
 			delete(g.boot, k)
 		}
 	}
-	for k, exp := range g.sessions {
-		if now.After(exp) {
+	for k, sess := range g.sessions {
+		if now.After(sess.exp) {
 			delete(g.sessions, k)
 		}
 	}
@@ -245,32 +303,46 @@ func godViewPath(p string) bool {
 // holding the secret still lacks the password, so it cannot pass.
 func (g *authGate) godViewAuthorized(r *http.Request) bool {
 	if g.validSession(r) {
-		// A cookie authenticates a BROWSER, so a state-changing request carrying
-		// one has to look like it came from a browser on this board.
+		// THE COOKIE IS NOT ENOUGH, and cannot be made to be.
 		//
-		// Cookies are host-scoped and not port-scoped, and every port on one
-		// loopback hostname is the same site, so SameSite=Strict does not
-		// separate them either. A second server on 127.0.0.1 therefore receives
-		// dibs_session the moment the operator visits it, and can then replay it
-		// from outside a browser, where no Origin header is sent at all and the
-		// check in wrap() is skipped by construction. That reached
-		// /api/admin/role, which grants roles. Demonstrated by the pre-release
-		// review with a cookie jar and a handler-level replay.
+		// Cookies are host-scoped and never port-scoped, and every port on one
+		// loopback hostname is the same site, so SameSite does not separate them
+		// either. A second server on 127.0.0.1 is handed dibs_session the moment
+		// the operator visits it, and can replay it from outside a browser.
 		//
-		// Browsers send Origin on POST and friends, and a non-browser replay does
-		// not, so requiring it here costs the board nothing and costs the replay
-		// everything. Reads are deliberately not gated this way: a same-origin
-		// GET does not carry Origin either, and refusing those would refuse the
-		// board itself. See SECURITY.md for what that leaves.
-		switch r.Method {
-		case http.MethodGet, http.MethodHead, http.MethodOptions:
+		// Round five answered that by demanding an Origin header on writes. That
+		// is a real control against a hostile PAGE, because a browser will not
+		// let a page lie about its origin, and it is worth nothing against the
+		// attacker actually described: a process replaying the cookie sets its
+		// own headers and declares the board's origin. The test written with it
+		// asserted that forged request must be ACCEPTED, so the guard encoded
+		// the hole as a requirement. Both found by the pre-release review.
+		//
+		// What the replay cannot obtain is the page key. It is handed to the
+		// browser once, in the redirect FRAGMENT, which is never sent to any
+		// server; the page keeps it in localStorage, which is scoped by port.
+		// Fetching the board with a stolen cookie returns HTML with no key in it.
+		if g.holdsPageKey(r) {
 			return true
 		}
-		o := r.Header.Get("Origin")
-		if o == "" || !g.localOrigin(o, r.Host) {
-			return false
+		// Without it, only the two routes the page needs before it has one: the
+		// document itself, and the board stream it opens with EventSource, which
+		// cannot send headers. Both carry board state, which the operator's own
+		// agents can already see. Mail, the human's identity, acting as them and
+		// the admin routes all need the key.
+		//
+		// The Origin check stays on those two, because against a hostile page it
+		// is exactly the right control and costs nothing.
+		switch path.Clean(r.URL.Path) {
+		case "/", "/events":
+			switch r.Method {
+			case http.MethodGet, http.MethodHead, http.MethodOptions:
+				return true
+			}
+			o := r.Header.Get("Origin")
+			return o != "" && g.localOrigin(o, r.Host)
 		}
-		return true
+		return false
 	}
 	if h := g.adminHash(); h != "" && g.headerSecret(r) && adminpw.Verify(r.Header.Get("X-Dibs-Admin"), h) {
 		return true
@@ -456,7 +528,14 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 				if !strings.HasPrefix(target, "/") || strings.HasPrefix(target, "//") {
 					target = "/"
 				}
-				// #nosec G710 -- the target is sanitised immediately below (rooted single '/',
+				// The page key rides in the FRAGMENT, which is the whole point
+				// of it: browsers never send a fragment to any server, so it
+				// reaches this operator's tab and appears in no request, no
+				// proxy log and no cookie jar. The board's script reads it once,
+				// moves it to localStorage (scoped by PORT, unlike a cookie) and
+				// clears the address bar.
+				target += "#k=" + g.pageKeyFor(sess)
+				// #nosec G710 -- the target is sanitised immediately above (rooted single '/',
 				// protocol-relative rejected) and covered by
 				// TestBootstrapRedeemCannotRedirectOffHost. The taint analysis cannot see it.
 				http.Redirect(w, r, target, http.StatusSeeOther)

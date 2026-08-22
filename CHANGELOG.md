@@ -7,15 +7,51 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
-- **A stolen board session could grant a role from outside a browser.** Cookies
-  are host-scoped and not port-scoped, and every port on one loopback hostname
-  is the same site, so `SameSite=Strict` does not separate them: a second
-  server on `127.0.0.1` receives `dibs_session` as soon as the operator visits
-  it, and can replay it server-side, where no `Origin` header is sent and the
-  origin check is skipped by construction. That reached `/api/admin/role`. A
-  cookie authenticates a browser, so a state-changing request carrying one now
-  has to carry a matching `Origin` too; reads are unchanged, because a
-  same-origin GET does not send one and refusing those would refuse the board.
+- **A stolen board session could read every mailbox and grant a role.** Cookies
+  are host-scoped and never port-scoped, and `SameSite` does not separate ports
+  either, so a second server on `127.0.0.1` receives `dibs_session` as soon as
+  the operator visits it and can replay it from outside a browser. That reached
+  `/api/messages` and `/api/admin/role`.
+
+  Requiring an `Origin` header, which is what the previous entry here claimed as
+  the fix, does not stop it: a process that is not a browser sets its own
+  headers and declares the board's own origin. The regression test written with
+  that fix asserted the forged request must be **accepted**, so it encoded the
+  hole as a requirement.
+
+  Redeeming the magic link now also hands the browser a **page key**, in the
+  redirect's fragment: fragments are never sent to a server, and the board keeps
+  it in `localStorage`, which is scoped by port. Mail, `/api/me`, `/api/act/*`
+  and every `/api/admin/` route require it. The cookie alone still opens the
+  board document and `/events` (`EventSource` cannot send a header), and
+  neither carries mail. `SECURITY.md` says so plainly rather than claiming the
+  exposure is gone.
+
+- **A declared role was granted to whoever registered under the name first.**
+  The pin file held every *later* impostor to the first registrant's identity
+  and asked the first one nothing, so an agent that read `dibs.toml`, or guessed
+  that `admin = ["fleet-lead"]` is a likely line, could register under that name
+  before the operator's own agent came up and be handed the god view with every
+  agent's mail in it. The two-minute window made that a race, not a safeguard.
+  A declared role now requires `[roles.identity]` to name the nonce that agent
+  registers with; without it nothing is granted, and the daemon says why.
+  **This is a breaking change for anyone using `[roles]`.**
+
+- **An archived coordinator stranded the board.** The claim guard added above
+  spelled out its own idea of who coordinates and excluded only closed agents,
+  while the resolver everything else uses correctly ignores archived ones.
+  Archiving blanks the token and nonce and resume refuses archived identities,
+  so a board whose only coordinator was swept had nobody able to coordinate and
+  no way to claim it. It asks the one resolver now.
+
+- **`DIBS_ADDR` schemes were accepted and then discarded.** The daemon read the
+  variable, stripped `http://` or `https://` so `net.Listen` would take it, and
+  re-inferred the transport from the bare address, while every client honours
+  the scheme. `http://10.0.0.9:4777` served TLS to clients speaking plaintext;
+  `https://127.0.0.1:4777` served plaintext to clients speaking TLS. The scheme
+  is now carried into the shared transport rule, an uppercase one is lowercased
+  rather than failing later inside Go's HTTP transport, and `http://` alongside
+  a configured certificate is refused as the contradiction it is.
 
 - **A launch claim stayed usable after the board had a coordinator.** The claim
   file is minted at startup when none exists, and a role declared in
@@ -121,6 +157,34 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   paragraph again every time.
 
 ### Fixed
+
+- **`dibs doctor` ignored the address `dibs configure` wrote.** It built its
+  request from the environment alone, so a healthy daemon configured only in
+  `dibs.toml` was reported unreachable and every harness was then checked
+  against a board that was never running. It resolves the address the same way
+  the daemon does, which is what `docs/CONFIGURATION.md` has been promising.
+
+- **One repository failing switched matching off for the whole board.** The
+  unreadable-tree and indexing-tree routes were fixed before the tag; the
+  ordinary mining and listing failures still replaced the entire global status
+  with `off`, while the first repository's scorer stayed installed and went on
+  producing results. The board annotated declarations with "matching is off"
+  while matching demonstrably worked. The failing tree is named; the phase now
+  belongs to the trees that are actually broken.
+
+- **A recovered repository stayed reported as unreadable on the default path.**
+  Recovery cleared the diagnosis only on the `ready` phase, which is the phase
+  only when a join threshold is configured. The shipped default reports
+  `suggest-only`, and a sidecar fallback reports `degraded`, so on an ordinary
+  board the operator was told about a permissions problem that had been fixed
+  until the daemon restarted.
+
+- **`min_duty` loaded happily at values that could not work.** A negative one
+  was ignored and the default silently kept; one above `1` is worse than
+  ignored, because the duty check *acquits* a process that clears the
+  threshold, so a threshold nothing can clear acquits nobody and every process
+  past `min_age` becomes eligible for a stuck verdict. It is a fraction, and it
+  is now checked at both ends.
 
 - **`auto_join` was validated against a vocabulary that does not exist.** The
   shared loader accepted `declared`, `predicted` and `off`, while the engine

@@ -72,3 +72,92 @@ func TestAFailedRetryKeepsTheUnreadableRecord(t *testing.T) {
 			"reporting on, so nothing is left saying matching never recovered there")
 	}
 }
+
+// The DEFAULT success phase must clear an unreadable entry too.
+//
+// The recovery above keyed on MatchReady, and the test above hard-codes it, so
+// both passed while the production default did not work. `ready` is the phase
+// only when a join threshold is configured; the shipped default threshold is
+// zero, which reports `suggest-only`, and a sidecar fallback reports
+// `degraded`. Every ordinary board therefore kept telling its operator about a
+// permissions problem it had already re-read successfully, until restart.
+// Found by the pre-release review, which named the hard-coded phase as the
+// reason the first guard could not catch it.
+func TestARecoveredTreeIsClearedOnTheDefaultSuccessPhase(t *testing.T) {
+	for _, phase := range []MatchPhase{MatchNoThreshold, MatchDegraded} {
+		t.Run(string(phase), func(t *testing.T) {
+			e := &Engine{}
+			e.SetMatchStatus(MatchStatus{
+				Phase: MatchReady, Repo: "/a/subdir",
+				Unreadable: []string{"/a/subdir", "/b"},
+			})
+			e.SetMatchStatus(MatchStatus{Phase: phase, Repo: "/a", Files: 10})
+
+			for _, tree := range e.matchStatus.st.Unreadable {
+				if tree == "/a/subdir" {
+					t.Errorf("a tree indexed successfully as %q is still reported "+
+						"unreadable: %v", phase, e.matchStatus.st.Unreadable)
+				}
+			}
+		})
+	}
+
+	// And a genuine failure still does not erase the diagnosis it is reporting.
+	e := &Engine{}
+	e.SetMatchStatus(MatchStatus{Phase: MatchReady, Repo: "/a", Unreadable: []string{"/a"}})
+	e.SetMatchStatus(MatchStatus{Phase: MatchOff, Repo: "/a"})
+	if len(e.matchStatus.st.Unreadable) == 0 {
+		t.Error("a failing repository erased its own unreadable entry, so the board " +
+			"reports nothing wrong while matching for that tree is off")
+	}
+}
+
+// A second repository failing must not switch matching off for the board.
+//
+// The unreadable-tree and indexing-tree routes were fixed; the ordinary
+// mining and listing failures in the scorer still replaced the whole global
+// status with `off`. The first repository's scorer is still installed and
+// still answering, so the board annotated declarations with "matching is off"
+// while matching worked: a claim the same daemon's behaviour contradicts.
+// Found by the pre-release review, which pointed out that no test drove a
+// working repository followed by an ordinary second-repository failure, which
+// is exactly the production sequence.
+func TestASecondRepositoryFailingDoesNotSwitchMatchingOff(t *testing.T) {
+	e := &Engine{}
+	// /a indexes, the way the default production path reports it.
+	e.SetMatchStatus(MatchStatus{Phase: MatchNoThreshold, Repo: "/a", Files: 10})
+
+	// /b fails the way bringUp does for an ordinary mining or listing error.
+	e.SetMatchStatus(MatchStatus{
+		Phase: MatchOff, Repo: "/b",
+		Hint: "matching is off: mining co-change (exit status 128)",
+	})
+
+	if got := e.matchStatus.st.Phase; got == MatchOff {
+		t.Errorf("phase = %q: one repository failing switched matching off for the "+
+			"whole board, while /a's scorer is still installed and still "+
+			"producing results", got)
+	}
+	var named bool
+	for _, tree := range e.matchStatus.st.Unreadable {
+		if tree == "/b" {
+			named = true
+		}
+	}
+	if !named {
+		t.Errorf("the failing repository is not named anywhere (%v), so the operator "+
+			"is told nothing at all about it: quietly dropping the failure is the "+
+			"other half of this defect",
+			e.matchStatus.st.Unreadable)
+	}
+
+	// And the FIRST repository failing still switches matching off, because
+	// then there is nothing left working to speak for.
+	e2 := &Engine{}
+	e2.SetMatchStatus(MatchStatus{Phase: MatchNoThreshold, Repo: "/a", Files: 10})
+	e2.SetMatchStatus(MatchStatus{Phase: MatchOff, Repo: "/a", Hint: "gone"})
+	if e2.matchStatus.st.Phase != MatchOff {
+		t.Errorf("phase = %q: the only working repository failed and the board still "+
+			"reports matching as working", e2.matchStatus.st.Phase)
+	}
+}

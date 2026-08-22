@@ -158,12 +158,12 @@ type transport struct {
 //
 // Dibs secures itself: it never asks the operator to stand up a VPN, a proxy,
 // or a certificate authority to be safe by default.
-func resolveTransport(dir, addr string, c Config) (transport, error) {
+func resolveTransport(dir, addr, scheme string, c Config) (transport, error) {
 	// The rule itself lives in internal/transport, because `dibs mcp-config`
 	// has to reach the same answer in order to print a client configuration
 	// that works, and it reached a different one three times. Only the
 	// certificate GENERATION is the daemon's, and it stays here.
-	choice, err := xport.Resolve(c.TLSCert, c.TLSKey, addr, c.InsecurePlaintext,
+	choice, err := xport.Resolve(c.TLSCert, c.TLSKey, addr, scheme, c.InsecurePlaintext,
 		func() (string, string, error) {
 			cert, key, cerr := ensureSelfSignedCert(dir, addr)
 			if cerr != nil {
