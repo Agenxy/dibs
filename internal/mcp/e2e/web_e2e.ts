@@ -283,7 +283,34 @@ try {
 
   check("board renders the agents", html.includes("builder") && html.includes("checker"))
   check("board renders the declared work", html.includes("rendering the web board"))
-  check("board renders the message", html.includes("Does the web board render?"))
+  // THE DOCUMENT MUST NOT CARRY MAIL, and this check used to require that it
+  // did. The document is one of two routes a session cookie opens by itself,
+  // because EventSource cannot send a header and cookies are host-scoped, so
+  // embedding message bodies handed the whole mailbox to anything replaying the
+  // cookie. This suite pinned that in place. Found by the pre-release review.
+  check("the document carries no message body",
+    !html.includes("Does the web board render?"))
+  // It arrives over the keyed route instead, which is what the page does.
+  const mail = await (await fetch(`http://${ADDR}/api/messages`, { headers: keyed })).json() as any
+  check("the keyed route carries the message",
+    JSON.stringify(mail.messages ?? []).includes("Does the web board render?"),
+    JSON.stringify(mail.messages ?? []).slice(0, 200))
+  // And the stream a bare cookie can open carries none of it either.
+  {
+    const ctl = new AbortController()
+    const res = await fetch(`http://${ADDR}/events`, { headers: { cookie }, signal: ctl.signal })
+    const reader = res.body!.getReader()
+    const dec = new TextDecoder()
+    let buf = ""
+    while (!buf.includes("\n\n")) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buf += dec.decode(value, { stream: true })
+    }
+    ctl.abort()
+    check("the event stream carries no message body",
+      !buf.includes("Does the web board render?"), buf.slice(0, 200))
+  }
 
   // The shared font contract, from the web side.
   check("fonts are inlined", html.includes("data:font/woff2;base64,"))

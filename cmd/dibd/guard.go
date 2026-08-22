@@ -197,6 +197,16 @@ func (g *authGate) holdsPageKey(r *http.Request) bool {
 	return subtle.ConstantTimeCompare([]byte(given), []byte(sess.page)) == 1
 }
 
+// boardPageSession is a session that has proved it is the board's own page.
+//
+// The coordination tier accepts it for the assets and polling the document
+// needs. It is deliberately NOT validSession: that would let anything holding
+// the cookie into /mcp, where register hands out an agent token without asking
+// for a prior credential.
+func (g *authGate) boardPageSession(r *http.Request) bool {
+	return g.validSession(r) && g.holdsPageKey(r)
+}
+
 // pageKeyFor returns the page key for a session token, for the redirect that
 // hands it to the browser exactly once.
 func (g *authGate) pageKeyFor(sess string) string {
@@ -574,10 +584,20 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 			r = r.WithContext(web.WithRevalidator(r.Context(), func() bool {
 				return g.godViewAuthorized(r)
 			}))
-		} else if !g.headerSecret(r) && !g.validSession(r) {
-			// Coordination tier: local secret (agents) OR a god-view session
-			// (a logged-in human loading page assets). The file secret alone
-			// can reach coordination but NOT the god-view paths above.
+		} else if !g.headerSecret(r) && !g.boardPageSession(r) {
+			// Coordination tier: the local secret (agents), or a board page
+			// that has proved itself, for the assets and polling the document
+			// needs.
+			//
+			// A bare session cookie USED to be enough here, and /mcp lives in
+			// this tier because it is not a god-view path. So a local service
+			// replaying the host-scoped cookie could POST /mcp, call register,
+			// which needs no prior credential, and be handed an agent token:
+			// the whole coordination surface, without ever holding
+			// local.secret. The page key closed the god-view routes and this
+			// one went around them. Found by the pre-release review, which also
+			// noted the stolen-cookie test calls godViewAuthorized directly and
+			// never drives a cookie-only request through this wrapper.
 			g.unauthorized(w, r)
 			return
 		}

@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -284,6 +285,22 @@ func checkAddr(what, a string, allowScheme bool) error {
 	}
 	if strings.ContainsAny(h, `/\`) || strings.Contains(h, "..") {
 		return fmt.Errorf("%s: %q is not a host name", what, h)
+	}
+	// AND IT HAS TO SURVIVE BEING PUT IN A URL, which is the one thing every
+	// caller does with it.
+	//
+	// Listing forbidden characters catches the ones somebody thought of: this
+	// rejected slashes and dots and accepted spaces, control characters and
+	// invalid percent-escapes. `dibs mcp-config --board 'bad host:4777'` exited
+	// zero and printed a complete, confident configuration that the bridge then
+	// could not turn into a request at all. Asking net/url is the same question
+	// the failure will ask later, only now, where it can be explained. Found by
+	// the pre-release review, which noted the test claiming unusable addresses
+	// are refused had no malformed-host case.
+	if _, uerr := url.Parse("http://" + net.JoinHostPort(h, p) + "/"); uerr != nil {
+		return fmt.Errorf("%s: %q cannot be used in a URL (%v), so every request "+
+			"built from it would fail inside the HTTP client rather than here",
+			what, h, uerr)
 	}
 	return nil
 }

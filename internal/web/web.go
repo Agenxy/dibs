@@ -143,27 +143,38 @@ func (s *Server) boardJSONAt(r *http.Request) ([]byte, uint64, error) {
 		return nil, 0, err
 	}
 	serial, _ := board["serial"].(uint64)
-	msgs, err := s.eng.AllMessages(r.Context())
-	if err != nil {
-		return nil, 0, err
-	}
+	// NO MAIL IN THE STREAM.
+	//
+	// EventSource cannot send a header, so /events is one of the two routes a
+	// session cookie opens on its own, and cookies are host-scoped: any local
+	// service the operator visits is handed one. Putting decrypted message
+	// bodies in every snapshot frame therefore handed a cookie thief the whole
+	// mailbox and every update to it, straight past the page key that exists to
+	// stop exactly that. The comment in guard.go asserted this route carried no
+	// mail; it carried all of it. Found by the pre-release review, which also
+	// noted the e2e test REQUIRED a private body to be present in a cookie-only
+	// response, so the suite pinned the leak in place.
+	//
+	// The board and the log stay: they are who is working on what, which every
+	// agent on this machine can already see. Mail is fetched separately from
+	// /api/messages, which needs the page key.
 	out, err := json.Marshal(map[string]any{
-		"board":    map[string]any(board),
-		"messages": msgs["messages"],
-		"events":   s.log.recent(50),
+		"board":  map[string]any(board),
+		"events": s.log.recent(50),
 	})
 	return out, serial, err
 }
 
 // indexData is the first paint: the same JSON the stream carries, embedded so
-// the board is on screen before EventSource delivers anything. Split into three
-// fields because template.JS marks each as already-safe JSON.
+// the board is on screen before EventSource delivers anything.
+//
+// NO MAIL HERE EITHER, for the reason in boardJSONAt. This document is the
+// other route a session cookie opens by itself, and it embedded every decrypted
+// message body in the HTML, so fetching the board with a stolen cookie returned
+// the mailbox in the response. The page fetches mail from /api/messages, which
+// requires the page key, immediately after this paints.
 func (s *Server) indexData(r *http.Request) (map[string]any, error) {
 	board, err := s.eng.Board(r.Context())
-	if err != nil {
-		return nil, err
-	}
-	msgs, err := s.eng.AllMessages(r.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -180,19 +191,14 @@ func (s *Server) indexData(r *http.Request) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	msgJSON, err := js(msgs["messages"])
-	if err != nil {
-		return nil, err
-	}
 	evJSON, err := js(s.log.recent(50))
 	if err != nil {
 		return nil, err
 	}
 	return map[string]any{
-		"BoardJSON":    boardJSON,
-		"MessagesJSON": msgJSON,
-		"EventsJSON":   evJSON,
-		"Version":      build.Version,
+		"BoardJSON":  boardJSON,
+		"EventsJSON": evJSON,
+		"Version":    build.Version,
 	}, nil
 }
 

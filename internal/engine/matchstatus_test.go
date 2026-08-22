@@ -1,6 +1,11 @@
 package engine
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/agenxy/dibs/internal/overlap"
+)
 
 // A repository whose permissions recover must stop being reported unreadable.
 //
@@ -124,7 +129,13 @@ func TestARecoveredTreeIsClearedOnTheDefaultSuccessPhase(t *testing.T) {
 // is exactly the production sequence.
 func TestASecondRepositoryFailingDoesNotSwitchMatchingOff(t *testing.T) {
 	e := &Engine{}
-	// /a indexes, the way the default production path reports it.
+	// /a indexes, the way the default production path reports it, AND installs
+	// a scorer. Installing one is the whole point: the round-six version of
+	// this test claimed a scorer stayed installed and never called
+	// SetScorerForRepo, so it proved only that two path strings differ. The
+	// pre-release review named that as the reason it could not see the real
+	// failure.
+	e.SetScorerForRepo("/a", stubScorer{}, MatchConfig{})
 	e.SetMatchStatus(MatchStatus{Phase: MatchNoThreshold, Repo: "/a", Files: 10})
 
 	// /b fails the way bringUp does for an ordinary mining or listing error.
@@ -160,4 +171,30 @@ func TestASecondRepositoryFailingDoesNotSwitchMatchingOff(t *testing.T) {
 		t.Errorf("phase = %q: the only working repository failed and the board still "+
 			"reports matching as working", e2.matchStatus.st.Phase)
 	}
+
+	// The case the last-status-repository proxy got wrong: the SAME tree
+	// brought up twice at once, which a prewarm plus a registration does. One
+	// installs the scorer, the other fails, the paths match, and comparing
+	// paths concluded there was nothing left to protect. There was: the scorer
+	// it just installed, which goes on answering.
+	e3 := &Engine{}
+	e3.SetScorerForRepo("/a", stubScorer{}, MatchConfig{})
+	e3.SetMatchStatus(MatchStatus{Phase: MatchNoThreshold, Repo: "/a", Files: 10})
+	e3.SetMatchStatus(MatchStatus{Phase: MatchOff, Repo: "/a", Hint: "transient"})
+	if e3.matchStatus.st.Phase == MatchOff && len(e3.IndexedRepos()) > 0 {
+		t.Errorf("phase = off with %v still indexed: a duplicate bring-up of a tree "+
+			"that is working switched the board off while its own scorer answers",
+			e3.IndexedRepos())
+	}
+}
+
+// stubScorer is an installed index that answers nothing. What matters here is
+// that it IS installed: the decision under test is "does any tree still serve",
+// and a scorer that returns no prediction is still a scorer that is serving.
+type stubScorer struct{}
+
+func (stubScorer) ID() string      { return "stub" }
+func (stubScorer) Version() string { return "0" }
+func (stubScorer) Predict(context.Context, string, int) (overlap.Prediction, error) {
+	return overlap.Prediction{}, nil
 }

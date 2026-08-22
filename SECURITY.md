@@ -117,8 +117,13 @@ replaying the cookie can ask for the board document and gets HTML with no key in
 it.
 
 What the cookie alone still opens is the board document and `/events`, because
-`EventSource` cannot send a header. Both carry board state, who is
-working on what, which every agent on this machine can already see. Neither carries mail.
+`EventSource` cannot send a header. Both carry board state, who is working on
+what, which every agent on this machine can already see. Neither carries mail:
+the document paints without it and the page fetches the mailbox over the keyed
+route. That was not true when this section was first written. Both handlers
+called `AllMessages`, so the document embedded every decrypted body and every
+stream frame carried them, and the control described here protected nothing that
+mattered.
 
 An earlier version of this section claimed the exposure was closed by requiring
 an `Origin` header on writes. That is a real control against a hostile *page*, a

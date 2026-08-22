@@ -110,6 +110,35 @@ func TestLoadRefusesSettingsThatWouldNotTakeEffect(t *testing.T) {
 		// process past min_age becomes eligible for a stuck verdict.
 		{"a negative duty fraction, which is ignored", "[supervise]\nmin_duty = -0.1\n"},
 		{"a duty fraction above 1, which convicts everything", "[supervise]\nmin_duty = 1.5\n"},
+		// Round seven: explicit zeros validated and were then ignored, which is
+		// this list's own subject. Settings.Apply overlays only values above
+		// zero, so `every = "0s"` reads as "supervise constantly" and silently
+		// keeps the default interval.
+		{"a zero supervision interval, which is ignored", "[supervise]\nevery = \"0s\"\n"},
+		{"a zero quiet window, which is ignored", "[supervise]\nquiet = \"0s\"\n"},
+		{"a zero minimum age, which is ignored", "[supervise]\nmin_age = \"0s\"\n"},
+		{"a zero duty fraction, which is ignored", "[supervise]\nmin_duty = 0.0\n"},
+		// NaN passed `< 0 || > 1` because no comparison against NaN is true,
+		// and was then ignored by the `> 0` test on the way in. TOML has NaN.
+		{"a duty fraction of nan, which no comparison catches", "[supervise]\nmin_duty = nan\n"},
+		// The identity table is a CREDENTIAL-shaped setting, and the first
+		// version of the feature asked for the nonce itself. A nonce in a file
+		// every same-user process can read is that process's route to
+		// reattaching AS the admin.
+		{
+			"a role identity given as a raw nonce rather than a fingerprint",
+			"[roles]\nadmin = [\"fleet-lead\"]\n[roles.identity]\nfleet-lead = \"the-secret-nonce\"\n",
+		},
+		{
+			"a role identity for a name no role is declared for",
+			"[roles]\nadmin = [\"fleet-lead\"]\n[roles.identity]\nsomebody-else = \"" + strings.Repeat("a", 64) + "\"\n",
+		},
+		// One agent holds ONE role, so naming it twice makes the reconciler
+		// flip it back and forth for the whole startup window.
+		{
+			"one agent named as both coordinator and admin",
+			"[roles]\ncoordinator = [\"fleet-lead\"]\nadmin = [\"fleet-lead\"]\n",
+		},
 	}
 	for _, c := range bad {
 		t.Run(c.name, func(t *testing.T) {
