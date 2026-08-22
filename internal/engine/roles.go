@@ -99,6 +99,20 @@ func (e *Engine) AllMail(ctx context.Context, token string) (core.Result, error)
 	return res, nil
 }
 
+// RolePinFingerprint is the durable identity of an agent holding a nonce.
+//
+// Exported because the daemon has to compute the EXPECTED fingerprint from the
+// operator's config, and a second copy of this hash in cmd/dibd would be a
+// second answer to "who is this agent" waiting to disagree with the first.
+// The nonce itself never leaves the engine; only this does.
+func RolePinFingerprint(nonce string) string {
+	if nonce == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte("dibs-role-pin\x00" + nonce))
+	return hex.EncodeToString(sum[:])
+}
+
 // AgentIdentity is an opaque, stable fingerprint of the agent's own credential,
 // or "" when it has none.
 //
@@ -120,8 +134,7 @@ func (e *Engine) AgentIdentity(ctx context.Context, id string) (string, error) {
 		if l.Nonce == "" {
 			return core.Result{"fingerprint": ""}
 		}
-		sum := sha256.Sum256([]byte("dibs-role-pin\x00" + l.Nonce))
-		return core.Result{"fingerprint": hex.EncodeToString(sum[:])}
+		return core.Result{"fingerprint": RolePinFingerprint(l.Nonce)}
 	})
 	if err != nil {
 		return "", err

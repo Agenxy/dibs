@@ -35,7 +35,8 @@ func resolveTransport(dir string) (scheme, certPath string, err error) {
 	// ensure reports where the daemon WOULD have put a self-signed certificate,
 	// without making one: this is a description of that daemon, not a second
 	// program deciding things for it.
-	choice, err := xport.Resolve(cfg.TLSCert, cfg.TLSKey, hostPort(rawAddr()), cfg.InsecurePlaintext,
+	choice, err := xport.Resolve(cfg.TLSCert, cfg.TLSKey, hostPort(rawAddr()),
+		statedScheme(rawAddr()), cfg.InsecurePlaintext,
 		func() (string, string, error) {
 			return filepath.Join(dir, "tls-cert.pem"), filepath.Join(dir, "tls-key.pem"), nil
 		})
@@ -119,4 +120,20 @@ func joinerAddr() (string, error) {
 		return scheme + "://" + h, nil
 	}
 	return clientHost(raw)
+}
+
+// statedScheme returns the transport an address NAMES, lowercased, or "" when
+// it names none. It is deliberately not inferredScheme: that one guesses for an
+// address that stayed quiet, and this one reports only what was actually said,
+// because the daemon is given the same string and must reach the same answer.
+func statedScheme(a string) string {
+	scheme, _, found := strings.Cut(a, "://")
+	if !found {
+		return ""
+	}
+	switch s := strings.ToLower(scheme); s {
+	case "http", "https":
+		return s
+	}
+	return ""
 }

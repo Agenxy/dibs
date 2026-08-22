@@ -124,7 +124,7 @@ func applyDeclaredRoles(ctx context.Context, eng *engine.Engine, c RolesConfig, 
 			if agent == "" {
 				continue
 			}
-			if !mayHoldDeclaredRole(ctx, eng, pins, spec.role, agent) {
+			if !mayHoldDeclaredRole(ctx, eng, pins, c, spec.role, agent) {
 				continue
 			}
 			res, err := eng.GrantRole(ctx, agent, spec.role)
@@ -172,7 +172,7 @@ func describeDeclaredRoles(c RolesConfig) string {
 // agent with no nonce is what stops it being pinned to something that cannot
 // prove itself tomorrow.
 func mayHoldDeclaredRole(ctx context.Context, eng *engine.Engine, pins *rolePins,
-	role, agent string,
+	c RolesConfig, role, agent string,
 ) bool {
 	fp, err := eng.AgentIdentity(ctx, agent)
 	if err != nil {
@@ -181,7 +181,7 @@ func mayHoldDeclaredRole(ctx context.Context, eng *engine.Engine, pins *rolePins
 			"agent", agent, "role", role)
 		return false
 	}
-	if err := pins.check(role, agent, fp); err != nil {
+	if err := pins.check(role, agent, fp, engine.RolePinFingerprint(c.Identity[agent])); err != nil {
 		slog.Error("refusing to grant a role declared in dibs.toml",
 			"agent", agent, "role", role, "err", err)
 		return false

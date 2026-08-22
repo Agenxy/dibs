@@ -375,3 +375,90 @@ func TestADamagedLocalBoardIsNotMistakenForAJoin(t *testing.T) {
 		t.Error("a directory holding only a credential is not recognised as a join")
 	}
 }
+
+// With the daemon down, doctor must still reach the LOCAL checks.
+//
+// A damaged ledger usually presents as an unreachable daemon: dibd refuses to
+// replay it and never listens. The old implementation returned as soon as the
+// connection failed, so the one check that says why, and tells the operator not
+// to delete the file, never ran in the case it exists for.
+//
+// The existing unreachable-daemon test asserts only that doctor returns an
+// error, and the early-return version did that too: restoring the exact
+// regression left it green. The pre-release review made that point, so this
+// asserts the call chain instead of the exit status, against a ledger that is
+// genuinely broken rather than merely unparsable.
+func TestDoctorStillChecksTheLedgerWhenTheDaemonIsDown(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// node_id present: without it this reads as a JOINED board, which skips
+	// ledger verification entirely and would pass while proving nothing.
+	if err := os.WriteFile(filepath.Join(dir, "node_id"), []byte("test-node\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A real broken chain. Arbitrary JSON unmarshals cleanly and verifies as an
+	// empty ledger, which is how an earlier fixture of mine tested nothing: the
+	// second record has to claim a predecessor hash that the first does not have.
+	broken := `{"s":1,"prev":"","k":"register"}` + "\n" + `{"s":2,"prev":"deadbeef","k":"register"}` + "\n"
+	if err := os.WriteFile(filepath.Join(dir, "ledger.jsonl"), []byte(broken), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DIBS_DIR", dir)
+	// Port 1 on loopback: nothing listens there, deterministically.
+	t.Setenv("DIBS_ADDR", "127.0.0.1:1")
+
+	out, err := captureStdout(t, func() error { return doctor(nil) })
+	if err == nil {
+		t.Fatal("doctor reported success with an unreachable daemon and a broken ledger")
+	}
+	if !strings.Contains(out, "unreachable") {
+		t.Fatalf("setup: doctor did not report the daemon unreachable, so this test "+
+			"is not exercising the path it was written for:\n%s", out)
+	}
+	if !strings.Contains(out, "ledger") {
+		t.Errorf("doctor stopped at the unreachable daemon and never checked the "+
+			"ledger, which is where the reason for an unreachable daemon usually "+
+			"is, and which tells the operator NOT to delete the file:\n%s", out)
+	}
+}
+
+// doctor must talk to the board `dibs configure` wrote, not to the default.
+//
+// dibd resolves flag -> DIBS_ADDR -> dibs.toml, and the wizard writes the
+// operator's answer to the file. doctor built its request from the environment
+// alone, so a healthy daemon configured only in dibs.toml was reported
+// unreachable and the harness configurations were then checked against a board
+// that was never running. CONFIGURATION.md promises doctor reports what is
+// actually in effect. Found by the pre-release review.
+func TestDoctorUsesTheAddressConfigureWrote(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	daemon := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}`))
+	}))
+	defer daemon.Close()
+	hostPort := strings.TrimPrefix(daemon.URL, "http://")
+
+	// The address lives ONLY in the file, which is the case that was broken.
+	toml := "addr = \"" + hostPort + "\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(toml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DIBS_DIR", dir)
+	t.Setenv("DIBS_ADDR", "")
+
+	out, _ := captureStdout(t, func() error { return doctor(nil) })
+	if strings.Contains(out, "unreachable") {
+		t.Errorf("doctor called a healthy daemon unreachable because the address was "+
+			"in dibs.toml rather than the environment, and then checked every "+
+			"harness against the board it guessed instead:\n%s", out)
+	}
+	if !strings.Contains(out, hostPort) {
+		t.Errorf("doctor never names the configured address %s:\n%s", hostPort, out)
+	}
+}

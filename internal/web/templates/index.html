@@ -108,6 +108,34 @@
 <script>{{boardJS}}</script>
 
 <script>
+// ── the page key ─────────────────────────────────────────────
+// The session cookie is not enough to reach anything that matters, on purpose.
+//
+// Cookies are scoped to a HOST and never to a port, so every service on
+// 127.0.0.1 is handed this board's cookie the moment the operator visits it,
+// and can replay it from outside a browser where no header can be trusted.
+// The key below is the half that does not leak: the daemon puts it in the
+// redirect's fragment, browsers never send a fragment to a server, and
+// localStorage IS scoped by port. Fetching this page with a stolen cookie
+// returns HTML with no key in it.
+const KEY_STORE = "dibs_board_key"
+if (location.hash.startsWith("#k=")) {
+  try { localStorage.setItem(KEY_STORE, location.hash.slice(3)) } catch {}
+  // Out of the address bar, so it is not shoulder-read, bookmarked or pasted
+  // into a bug report. replaceState leaves no history entry to go back to.
+  history.replaceState(null, "", location.pathname + location.search)
+}
+// Every request the board makes carries it. EventSource cannot send headers,
+// which is why /events and this document are the only two routes the cookie
+// still opens by itself, and why neither of them carries mail.
+const boardFetch = (url, opts = {}) => {
+  let key = ""
+  try { key = localStorage.getItem(KEY_STORE) || "" } catch {}
+  const headers = new Headers(opts.headers || {})
+  if (key) headers.set("X-Dibs-Board-Key", key)
+  return fetch(url, { ...opts, headers })
+}
+
 // ── the web board's transport ────────────────────────────────
 // The panel receives its data as `structuredContent` over postMessage from an
 // MCP host. Here the server streams the same shape down an EventSource. That is
@@ -124,7 +152,7 @@ let me = null
 let matchingHint = ""
 async function whyEmpty() {
   try {
-    const st = await (await fetch("/api/matching")).json()
+    const st = await (await boardFetch("/api/matching")).json()
     matchingHint = st.phase === "ready" ? "" : (st.hint || "")
   } catch { matchingHint = "" }
 }
@@ -140,7 +168,7 @@ async function whyEmptyUntilReady() {
   }
 }
 async function whoAmI() {
-  try { me = (await (await fetch("/api/me")).json()).agent } catch { me = null }
+  try { me = (await (await boardFetch("/api/me")).json()).agent } catch { me = null }
 }
 // Every human action goes through here, so this is where the two things that go
 // wrong on a network get handled ONCE.
@@ -172,7 +200,7 @@ async function act(what, payload, control) {
     control.setAttribute("aria-busy", "true")
   }
   try {
-    const res = await fetch("/api/act/" + what, {
+    const res = await boardFetch("/api/act/" + what, {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify(payload || {}),
     })

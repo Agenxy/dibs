@@ -29,6 +29,13 @@ func TestRolesDeclaredInConfigAreGrantedAtStartup(t *testing.T) {
 	applyDeclaredRoles(ctx, eng, RolesConfig{
 		Coordinator: []string{"orchestrator"},
 		Admin:       []string{"fleet-lead"},
+		// The operator names WHICH agent, not just the name: a declared role
+		// with no identity behind it is granted to nobody, because the first
+		// agent to take a name is not necessarily the one that was meant.
+		Identity: map[string]string{
+			"orchestrator": "nonce-orchestrator",
+			"fleet-lead":   "nonce-fleet-lead",
+		},
 	}, loadRolePins(t.TempDir()))
 
 	for agent, want := range map[string]string{
@@ -191,7 +198,12 @@ func TestAnAgentStillCannotPromoteItself(t *testing.T) {
 func TestADeclaredRoleWillNotFollowAStolenName(t *testing.T) {
 	eng, ctx := testEngine(t)
 	pinDir := t.TempDir()
-	cfg := RolesConfig{Admin: []string{"release-manager"}}
+	// The operator names the identity as well as the name, which is what lets
+	// the FIRST grant be verified rather than merely recorded.
+	cfg := RolesConfig{
+		Admin:    []string{"release-manager"},
+		Identity: map[string]string{"release-manager": "the-real-one"},
+	}
 
 	// The agent the operator meant takes the role, and is pinned to it.
 	registerAgentAs(t, eng, "release-manager", "the-real-one")
@@ -259,7 +271,7 @@ func TestUnrecordablePinsRefuseTheGrant(t *testing.T) {
 			t.Error("pins that cannot be read were loaded as an empty store, which is " +
 				"indistinguishable from a fresh board and re-opens every declared role")
 		}
-		if err := pins.check("admin", "release-manager", "fingerprint"); err == nil {
+		if err := pins.check("admin", "release-manager", "fingerprint", "fingerprint"); err == nil {
 			t.Error("a grant was allowed although the pin state could not be read")
 		}
 	})
@@ -273,15 +285,71 @@ func TestUnrecordablePinsRefuseTheGrant(t *testing.T) {
 		}
 		t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
 
-		if err := pins.check("admin", "release-manager", "fingerprint"); err == nil {
+		if err := pins.check("admin", "release-manager", "fingerprint", "fingerprint"); err == nil {
 			t.Fatal("a grant was allowed although its pin could not be written")
 		}
 		// And the SECOND attempt must refuse too. This is the whole finding: the
 		// first refusal left the fingerprint in memory, so the next tick matched
 		// against it and granted.
-		if err := pins.check("admin", "release-manager", "fingerprint"); err == nil {
+		if err := pins.check("admin", "release-manager", "fingerprint", "fingerprint"); err == nil {
 			t.Error("the second reconciliation matched against a fingerprint that was " +
 				"never persisted, and granted the role")
+		}
+	})
+}
+
+// A fresh board must not hand a declared role to whoever registers first.
+//
+// The pin file held every LATER impostor to the first registrant's identity and
+// asked the first one nothing. So an agent that read dibs.toml, or guessed that
+// `admin = ["fleet-lead"]` is a likely line, could register under that name
+// before the operator's own agent came up, become the durable pin, and be
+// granted the god view: every agent's mail included. The two-minute window made
+// that a race rather than a standing offer, which is not the same as making it
+// safe.
+//
+// Found by the pre-release review, which also explained why neither existing
+// test could catch it: TestAnAgentStillCannotPromoteItself drives OpGrantRole
+// directly, and TestADeclaredRoleWillNotFollowAStolenName starts from a pin
+// that is already legitimately established. Both skip the first grant, which is
+// the one that was unguarded.
+func TestAFreshBoardWillNotGrantADeclaredRoleToWhoeverAsksFirst(t *testing.T) {
+	t.Run("no identity configured: nobody is granted", func(t *testing.T) {
+		eng, ctx := testEngine(t)
+		cfg := RolesConfig{Admin: []string{"fleet-lead"}}
+		registerAgentAs(t, eng, "fleet-lead", "an-impostors-own-nonce")
+		applyDeclaredRoles(ctx, eng, cfg, loadRolePins(t.TempDir()))
+		if holdsRole(t, eng, "fleet-lead", core.RoleAdmin) {
+			t.Error("the first agent to register under a declared name was granted " +
+				"admin on a fresh board, so reading dibs.toml is enough to take the " +
+				"god view and every agent's mail with it")
+		}
+	})
+
+	t.Run("an identity configured: only that agent is granted", func(t *testing.T) {
+		eng, ctx := testEngine(t)
+		cfg := RolesConfig{
+			Admin:    []string{"fleet-lead"},
+			Identity: map[string]string{"fleet-lead": "the-nonce-the-operator-chose"},
+		}
+		pinDir := t.TempDir()
+
+		// The impostor knows the NAME, which is all dibs.toml would tell it.
+		registerAgentAs(t, eng, "fleet-lead", "an-impostors-own-nonce")
+		applyDeclaredRoles(ctx, eng, cfg, loadRolePins(pinDir))
+		if holdsRole(t, eng, "fleet-lead", core.RoleAdmin) {
+			t.Fatal("an agent that took the declared name without the declared nonce " +
+				"was granted admin")
+		}
+
+		// The operator's own agent, holding the nonce the operator chose.
+		real, realCtx := testEngine(t)
+		registerAgentAs(t, real, "fleet-lead", "the-nonce-the-operator-chose")
+		applyDeclaredRoles(realCtx, real, cfg, loadRolePins(pinDir))
+		if !holdsRole(t, real, "fleet-lead", core.RoleAdmin) {
+			t.Error("the agent the operator named, presenting the nonce the operator " +
+				"configured, was NOT granted its declared role: the check refuses " +
+				"everybody, which is a broken feature rather than a closed hole")
 		}
 	})
 }

@@ -202,8 +202,42 @@ try {
   const cookie = (first.headers.get("set-cookie") || "").split(";")[0]
   check("it sets a session cookie", cookie.length > 0)
 
+  // The cookie is only half of it. The other half rides in the redirect's
+  // FRAGMENT, which a browser never sends to a server: that is what makes it
+  // unreachable by anything replaying the cookie, and cookies are host-scoped
+  // so every local port is handed one the moment the operator visits it.
+  const loc = first.headers.get("location") || ""
+  const pageKey = loc.includes("#k=") ? loc.slice(loc.indexOf("#k=") + 3) : ""
+  check("the redirect carries a page key in its fragment", pageKey.length > 0, loc)
+  const keyed = { cookie, "X-Dibs-Board-Key": pageKey }
+
   const served = await fetch(`http://${ADDR}/`, { headers: { cookie } })
   check("the board serves with the cookie", served.status === 200, String(served.status))
+
+  // ── what a stolen cookie can reach ──────────────────────────────────────
+  // A second server on 127.0.0.1 receives dibs_session as soon as the operator
+  // visits it, and can replay it from outside a browser, where it writes its
+  // own headers and can declare any Origin it likes. Everything that matters
+  // must refuse it. Round five demanded an Origin header and called this
+  // closed; the forged header passed, and the test written with it asserted
+  // that the forged request SHOULD pass.
+  const forged = { cookie, origin: `http://${ADDR}` }
+  for (const path of ["/api/messages", "/api/me"]) {
+    const r = await fetch(`http://${ADDR}${path}`, { headers: forged })
+    // 401 or 403: which one is the gate's business, and either refuses. What
+    // matters here is that it is not 200.
+    check(`a replayed cookie cannot read ${path}`,
+      r.status === 401 || r.status === 403, String(r.status))
+  }
+  const roleReplay = await fetch(`http://${ADDR}/api/admin/role`, {
+    method: "POST", headers: { ...forged, "content-type": "application/json" },
+    body: JSON.stringify({ agent: "nobody", role: "admin" }),
+  })
+  check("a replayed cookie cannot grant a role",
+    roleReplay.status === 401 || roleReplay.status === 403, String(roleReplay.status))
+  const withKey = await fetch(`http://${ADDR}/api/me`, { headers: keyed })
+  check("the board's own page still reads /api/me", withKey.status === 200,
+    String(withKey.status))
 
   // ── the stream's id must be a resume point ──────────────────────────────
   // A snapshot frame has to advertise the serial it REPRESENTS. The initial
@@ -277,6 +311,12 @@ try {
   const ctx = await browser.newContext()
   const [name, value] = cookie.split("=")
   await ctx.addCookies([{ name, value, domain: "127.0.0.1", path: "/" }])
+  // The browser normally takes this out of the fragment on the redemption
+  // redirect. This context is handed the cookie directly and never makes that
+  // trip, so it is seeded here, before any page script runs.
+  await ctx.addInitScript((k: string) => {
+    try { localStorage.setItem("dibs_board_key", k) } catch {}
+  }, pageKey)
   const page = await ctx.newPage()
   const pageErrors: string[] = []
   page.on("pageerror", (e) => pageErrors.push(String(e)))
@@ -836,7 +876,7 @@ try {
   // ── the human answers an agent's question ──────────────────────────────
   {
     // `checker` asked `builder` a question during setup; ask the human one too.
-    const me = ((await (await fetch(`http://${ADDR}/api/me`, { headers: { cookie } })).json()) as any).agent
+    const me = ((await (await fetch(`http://${ADDR}/api/me`, { headers: keyed })).json()) as any).agent
     check("the human has an agent identity, not an agent of their own", typeof me === "string" && me.length > 0, String(me))
 
     const asked = await tool("send", { token: b.token, to: me, type: "question",
@@ -872,7 +912,7 @@ try {
     //
     // This suite covered answering a QUESTION and nothing else, which is why it
     // stayed green. Found by a pre-release review.
-    const me = ((await (await fetch(`http://${ADDR}/api/me`, { headers: { cookie } })).json()) as any).agent
+    const me = ((await (await fetch(`http://${ADDR}/api/me`, { headers: keyed })).json()) as any).agent
     const asked = await tool("send", { token: b.token, to: me, type: "request",
       body: "may I coordinate the release?", grant: "coordinator",
       op_id: "ask-human-grant", deadline_s: 600 })

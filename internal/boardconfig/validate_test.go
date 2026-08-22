@@ -102,6 +102,14 @@ func TestLoadRefusesSettingsThatWouldNotTakeEffect(t *testing.T) {
 		{"a match deadline that is not a duration", "[match]\ndeadline = \"soon\"\n"},
 		{"an auto_join value that names nothing", "[match]\nauto_join = \"maybe\"\n"},
 		{"a negative supervision interval", "[supervise]\nevery = \"-5m\"\n"},
+		// min_duty is a fraction, and round six found BOTH ends unchecked while
+		// this very list claimed to cover settings that do not take effect.
+		// Negative is the ordinary silent-default case. Above 1 is the
+		// dangerous one: the duty check ACQUITS a process that clears the
+		// threshold, so a threshold nothing can clear acquits nobody and every
+		// process past min_age becomes eligible for a stuck verdict.
+		{"a negative duty fraction, which is ignored", "[supervise]\nmin_duty = -0.1\n"},
+		{"a duty fraction above 1, which convicts everything", "[supervise]\nmin_duty = 1.5\n"},
 	}
 	for _, c := range bad {
 		t.Run(c.name, func(t *testing.T) {

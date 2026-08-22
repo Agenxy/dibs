@@ -1062,15 +1062,21 @@ func (e *Engine) refuseClaimWhenCoordinatorExists(op *core.Op) error {
 	if op.Kind != core.OpClaimCoordinator {
 		return nil
 	}
-	for _, l := range e.state.Agents {
-		if l.IsCoordinator() && l.Status != core.StatusClosed {
-			return &core.Error{
-				Code: "E_HAVE_COORDINATOR",
-				Msg:  "this board already has a coordinator (" + l.ID + ")",
-				Hint: "ask them, or ask the human to move the role (send with grant). " +
-					"The claim file is the bootstrap for a board with NO coordinator, " +
-					"and is not a second way in once there is one",
-			}
+	// Ask the SAME question the rest of the system asks. Spelling the condition
+	// out here was a second opinion about who coordinates, and it disagreed:
+	// this excluded only StatusClosed, so an ARCHIVED coordinator still refused
+	// the claim, while core.CoordinatorID correctly ignores archived holders.
+	// Archiving blanks the token and nonce and resume refuses archived
+	// identities, so that agent cannot coordinate and cannot be recovered: the
+	// board was left with no coordinator and no way to claim one. Found by the
+	// pre-release review. One resolver, one answer.
+	if id := e.state.CoordinatorID(); id != "" {
+		return &core.Error{
+			Code: "E_HAVE_COORDINATOR",
+			Msg:  "this board already has a coordinator (" + id + ")",
+			Hint: "ask them, or ask the human to move the role (send with grant). " +
+				"The claim file is the bootstrap for a board with NO coordinator, " +
+				"and is not a second way in once there is one",
 		}
 	}
 	return nil
