@@ -120,7 +120,9 @@ func TestLoadRefusesSettingsThatWouldNotTakeEffect(t *testing.T) {
 		{"a bare host:port", "addr = \"0.0.0.0:4777\"\n"},
 		{"a complete certificate pair", "tls_cert = \"/c.pem\"\ntls_key = \"/k.pem\"\n"},
 		{"a real match deadline", "[match]\ndeadline = \"5m\"\n"},
-		{"each auto_join value", "[match]\nauto_join = \"predicted\"\n"},
+		{"auto_join always", "[match]\nauto_join = \"always\"\n"},
+		{"auto_join never", "[match]\nauto_join = \"never\"\n"},
+		{"auto_join declared", "[match]\nauto_join = \"declared\"\n"},
 	}
 	for _, c := range good {
 		t.Run(c.name, func(t *testing.T) {

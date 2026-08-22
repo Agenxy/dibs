@@ -42,3 +42,33 @@ func TestARecoveredTreeStopsBeingReportedUnreadable(t *testing.T) {
 		t.Errorf("one tree's success cleared another tree's failure: %v", got)
 	}
 }
+
+// A FAILED retry must not erase the diagnosis it is reporting.
+//
+// Scorer failure paths publish MatchOff with a repository and no Unreadable
+// field. Treating every nil Unreadable as proof that repository recovered
+// removed the entry while publishing the failure, so the board could later read
+// ready with no structured record that matching for that tree never came back.
+// The first version of this fix covered a successful index and an unrelated
+// repository, and not the transition that actually happens. Raised by the
+// pre-release review.
+func TestAFailedRetryKeepsTheUnreadableRecord(t *testing.T) {
+	e := &Engine{}
+	e.SetMatchStatus(MatchStatus{
+		Phase: MatchReady, Repo: "/a", Unreadable: []string{"/a"},
+	})
+
+	// The retry fails: off, same repository, nothing said about readability.
+	e.SetMatchStatus(MatchStatus{Phase: MatchOff, Repo: "/a"})
+
+	var kept bool
+	for _, tree := range e.matchStatus.st.Unreadable {
+		if tree == "/a" {
+			kept = true
+		}
+	}
+	if !kept {
+		t.Error("a failed retry erased the unreadable record for the tree it was " +
+			"reporting on, so nothing is left saying matching never recovered there")
+	}
+}

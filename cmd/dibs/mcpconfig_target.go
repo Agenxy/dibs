@@ -143,7 +143,7 @@ func readConfiguredAddr(dir string) (string, error) {
 
 // nonDefaultEnv is the environment a bridge needs to reach THIS daemon rather
 // than the default one, and is empty when this IS the default one.
-func nonDefaultEnv() map[string]string {
+func nonDefaultEnv(scheme string) map[string]string {
 	env := map[string]string{}
 	// VERBATIM, not addr().
 	//
@@ -154,7 +154,20 @@ func nonDefaultEnv() map[string]string {
 	// this process was told is what the bridge should be told.
 	if raw := os.Getenv("DIBS_ADDR"); raw != "" {
 		env["DIBS_ADDR"] = raw
-	} else if a, aerr := dialableAddr(rawAddr()); aerr == nil && a != "127.0.0.1:4777" {
+	} else if a, aerr := dialableAddr(rawAddr()); aerr == nil &&
+		(a != "127.0.0.1:4777" || scheme != inferredScheme(a)) {
+		// The RESOLVED scheme, when the bridge would infer a different one.
+		//
+		// mcp-stdio rebuilds an origin from the address alone: loopback reads as
+		// http, anything else as https. So a plaintext daemon off loopback got a
+		// bare address and the bridge inferred HTTPS, and a configured TLS pair
+		// on loopback got the reverse. The url block printed the right answer
+		// while the PREFERRED stdio block could not connect. The daemon already
+		// resolved this; saying it explicitly is cheaper than teaching the
+		// bridge the same rule twice. Raised by the pre-release review.
+		if scheme != "" && scheme != inferredScheme(a) {
+			a = scheme + "://" + a
+		}
 		// rawAddr, not addr: addr ignores dibs.toml, so a daemon configured onto
 		// a LAN address or a non-default port had its stdio config printed with
 		// no DIBS_ADDR at all, and the bridge then dialled 127.0.0.1:4777 and
@@ -175,8 +188,8 @@ func nonDefaultEnv() map[string]string {
 // error in a strict parser and a silent override in a lenient one. Whatever a
 // bridge needs to reach a non-default daemon is merged in here rather than
 // added beside it.
-func codexEnvLine() string {
-	env := nonDefaultEnv()
+func codexEnvLine(scheme string) string {
+	env := nonDefaultEnv(scheme)
 	// Codex speaks 2026-07-28 only when BOTH the mcp_2026_07_28 feature is
 	// enabled AND this exact variable is set on THIS server entry. The feature
 	// alone leaves the connection on 2025-06-18, and a wrong value here is a
@@ -312,4 +325,16 @@ func dialableAddr(a string) (string, error) {
 		return scheme + "://" + h, nil
 	}
 	return clientHost(a)
+}
+
+// inferredScheme is what `dibs mcp-stdio` would decide from an address alone.
+//
+// It exists so the generator can tell when it needs to say the scheme out loud:
+// agreeing with the bridge costs nothing and is worth leaving unsaid, and
+// disagreeing with it is the whole bug.
+func inferredScheme(a string) string {
+	if tunnel, _ := boardShape(a); tunnel {
+		return "http"
+	}
+	return "https"
 }

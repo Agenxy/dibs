@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/agenxy/dibs/internal/core"
 )
 
 // A correct secret that the core then refuses must not spend the claim.
@@ -81,5 +83,58 @@ func TestNoClaimIsMintedWhenTheRoleIsHeld(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Errorf("the stale claim file was left readable: err = %v", err)
+	}
+}
+
+// The claim must be refused once the board has a coordinator, through the real
+// verification path.
+//
+// The engine clears a caller-supplied ClaimVerified and re-derives it from the
+// claim file, so this is the only place the guard can be shown to be REACHED
+// rather than merely correct. An attacker here is an ordinary agent that read
+// coordinator.claim out of the data directory, which is same-user readable and
+// documented to be: the secret is legitimate, and the board having a
+// coordinator already is what must stop it.
+func TestAClaimIsRefusedOnceTheRoleIsHeld(t *testing.T) {
+	eng, ctx := testEngine(t)
+	dir := t.TempDir()
+	// ONE claim, minted and installed. Calling newCoordinatorClaim and
+	// installCoordinatorClaim separately makes two, and the secret held here is
+	// then not the one the engine verifies against: the claim is refused for the
+	// wrong reason and the probe proves nothing.
+	c := newCoordinatorClaim(dir, false)
+	eng.SetCoordinatorClaim(c.verify)
+
+	registerPersistent := func(name string) string {
+		t.Helper()
+		res, err := eng.Do(ctx, &core.Op{
+			Kind: core.OpRegister, Name: name, Nonce: "n-" + name,
+			AgentKind: core.KindPersistent,
+		})
+		if err != nil {
+			t.Fatalf("setup: register %s: %v", name, err)
+		}
+		tok, _ := res["token"].(string)
+		return tok
+	}
+
+	// The declared coordinator receives its role, the way the reconciler grants it.
+	registerPersistent("fleet-lead")
+	if _, err := eng.GrantRole(ctx, "fleet-lead", core.RoleCoordinator); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	// Another agent presents the genuine, unspent claim secret.
+	other := registerPersistent("opportunist")
+	_, err := eng.Do(ctx, &core.Op{
+		Kind: core.OpClaimCoordinator, Token: other, Nonce: c.secret,
+	})
+	if err == nil {
+		t.Fatal("a genuine launch claim was spent on a board that already had a " +
+			"coordinator: a second agent now holds broadcast, force_release, " +
+			"eviction and mailbox adoption")
+	}
+	if got, _ := eng.AgentRole(ctx, "opportunist"); got == core.RoleCoordinator {
+		t.Error("the claim was refused and the role landed anyway")
 	}
 }

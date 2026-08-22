@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The bootstrap redemption endpoint trades a one-time token for a god-view
@@ -206,5 +207,55 @@ func TestLivenessIsReachableWithoutTheSecret(t *testing.T) {
 				t.Errorf("GET %s without the secret = %d, want %d", tc.path, rec.Code, tc.want)
 			}
 		})
+	}
+}
+
+// A stolen session cookie must not grant a role from outside a browser.
+//
+// Cookies are host-scoped and not port-scoped, and every port on one loopback
+// hostname is the same site, so SameSite=Strict does not separate them. A second
+// server on 127.0.0.1 therefore receives dibs_session as soon as the operator
+// visits it, and can replay it server-side, where no Origin header is sent and
+// the check in wrap() is skipped by construction. That reached /api/admin/role.
+// Demonstrated by the pre-release review with a cookie jar and a handler-level
+// replay.
+//
+// Browsers send Origin on state-changing methods; a replay does not.
+func TestAStolenSessionCannotChangeStateWithoutABrowser(t *testing.T) {
+	// Configured with its own address, as a real daemon is: without it
+	// localOrigin falls back to "any loopback host", which accepts the sibling
+	// port this test is about. That was the fixture, not the product.
+	g := &authGate{
+		sessions: map[string]time.Time{}, boot: map[string]time.Time{},
+		host: "127.0.0.1", port: "4777",
+	}
+	const token = "stolen-session-value"
+	g.sessions[token] = time.Now().Add(time.Hour)
+
+	withCookie := func(method, origin string) *http.Request {
+		r := httptest.NewRequest(method, "http://127.0.0.1:4777/api/admin/role", nil)
+		r.AddCookie(&http.Cookie{Name: "dibs_session", Value: token})
+		if origin != "" {
+			r.Header.Set("Origin", origin)
+		}
+		return r
+	}
+
+	if g.godViewAuthorized(withCookie(http.MethodPost, "")) {
+		t.Error("a session cookie replayed with no Origin was allowed to change state: " +
+			"that is the cross-port theft path, and it reaches role granting")
+	}
+	if g.godViewAuthorized(withCookie(http.MethodPost, "http://127.0.0.1:9999")) {
+		t.Error("a session cookie was accepted from another port's origin")
+	}
+
+	// The board itself must keep working: same-origin writes carry Origin, and
+	// reads do not carry one at all.
+	if !g.godViewAuthorized(withCookie(http.MethodPost, "http://127.0.0.1:4777")) {
+		t.Error("a same-origin write from the board was refused, which breaks the panel")
+	}
+	if !g.godViewAuthorized(withCookie(http.MethodGet, "")) {
+		t.Error("a same-origin read was refused; browsers do not send Origin on GET, " +
+			"so this would refuse the board itself")
 	}
 }

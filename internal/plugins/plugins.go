@@ -117,13 +117,14 @@ var catalog = []struct {
 		// recipient was dormant, and reported that Dibs does not deliver
 		// messages. It delivers them; it delivers them at the end of the turn,
 		// and three separate places said otherwise.
-		buys: "mail is DELIVERED instead of polled: lifecycle hooks call the wake " +
-			"path for you at every turn boundary, so a question addressed to your " +
-			"agent is in your context when you next take a turn rather than waiting " +
-			"until you remember to check inbox. Mid-turn is not one of those " +
-			"boundaries, so a message arriving while you work waits for the end of " +
-			"it. Also installs the dibs skill, so the protocol is in context when " +
-			"it is relevant and absent when it is not.",
+		buys: "mail is USUALLY delivered rather than polled: lifecycle hooks call " +
+			"the wake path at turn boundaries, so a question addressed to your agent " +
+			"often reaches you without your asking. Not a guarantee, and worth " +
+			"knowing which: mid-turn is not a boundary, a plain notify never " +
+			"extends a turn, and `wake = none` or a repeated wake suppresses it " +
+			"too. check_in each activation is what makes delivery certain; the " +
+			"hooks make it convenient. Also installs the dibs skill, so the " +
+			"protocol is in context when it is relevant and absent when it is not.",
 		install: "claude plugin marketplace add agenxy/dibs && claude plugin install dibs@dibs",
 		root:    "~/.claude/plugins/dibs",
 		setup: []Step{
@@ -158,10 +159,15 @@ var catalog = []struct {
 				// told the operator to expect it on the next tool call and to go
 				// hunting a PreToolUse hook when it did not appear: a check that
 				// fails for a correctly installed plugin, pointed at the wrong file.
-				Check: "it is in your context when you next take a turn, WITHOUT you " +
-					"calling inbox. Not mid-turn: a question or a request extends the " +
-					"turn it arrives at the end of, and a plain notify waits for the " +
-					"next one",
+				// The engine refuses UserPromptSubmit outright, and refuses Stop
+				// under wake=none, a repeated wake, or stop_hook_active. So mail
+				// arriving after the preceding Stop can be absent for the whole of
+				// the next turn, and a check that says otherwise fails on a
+				// correctly installed plugin. Raised by the pre-release review.
+				Check: "it reaches you without your calling inbox, at a turn boundary " +
+					"rather than the moment it is sent. If it does not, that is not " +
+					"proof the plugin is broken: a notify never extends a turn, and " +
+					"nothing is delivered mid-turn. check_in is what always shows it",
 				IfNot: "the wake hooks are not reaching the daemon. Check that the " +
 					"`server` field in hooks.json names the same MCP server you are " +
 					"connected through, and that the daemon is the one on this machine",

@@ -7,6 +7,25 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- **A stolen board session could grant a role from outside a browser.** Cookies
+  are host-scoped and not port-scoped, and every port on one loopback hostname
+  is the same site, so `SameSite=Strict` does not separate them: a second
+  server on `127.0.0.1` receives `dibs_session` as soon as the operator visits
+  it, and can replay it server-side, where no `Origin` header is sent and the
+  origin check is skipped by construction. That reached `/api/admin/role`. A
+  cookie authenticates a browser, so a state-changing request carrying one now
+  has to carry a matching `Origin` too; reads are unchanged, because a
+  same-origin GET does not send one and refusing those would refuse the board.
+
+- **A launch claim stayed usable after the board had a coordinator.** The claim
+  file is minted at startup when none exists, and a role declared in
+  `dibs.toml` is granted seconds later by the reconciler, so an ordinary
+  startup left a live claim in the data directory beside a board that already
+  had its coordinator. A second persistent agent that read it, which is
+  same-user readable and documented to be, could take broadcast,
+  `force_release`, eviction and mailbox adoption. Refused at ingress, never in
+  the fold, so replay still accepts claims that were legal when written.
+
 - **The role pin failed open in two ways**, found by the review round after the
   one that added it. `loadRolePins` treated every read error as "no pins yet",
   so a permissions problem on `roles.pinned` silently re-opened every declared
@@ -102,6 +121,41 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   paragraph again every time.
 
 ### Fixed
+
+- **`auto_join` was validated against a vocabulary that does not exist.** The
+  shared loader accepted `declared`, `predicted` and `off`, while the engine
+  implements `declared`, `always` and `never`. So working boards configured
+  with `always` or `never` stopped starting, and the error recommended two
+  values that silently behave as `declared`. Both vocabularies the loader knows
+  are now checked against the engine's own constants.
+
+- **`dibd` could not bind a `DIBS_ADDR` carrying a scheme.** Every other Dibs
+  binary accepts one because it says what to speak to a remote board;
+  `net.Listen` takes host:port and answered "too many colons in address" after
+  the daemon had announced itself. Reading the variable was right, passing its
+  scheme to `Listen` was not.
+
+- **The preferred stdio configuration discarded the resolved transport.** The
+  bridge rebuilds a scheme from the address alone, so a plaintext daemon off
+  loopback was handed a bare address and inferred HTTPS, while the url block
+  printed the correct answer. The generator now says the scheme out loud
+  whenever the bridge would infer a different one.
+
+- **A refused service install had already created the board directory.** The
+  `mkdir` ran before the conflict checks that then refuse, so where a loaded
+  unit's directory had been moved or damaged, the command recreated an empty
+  board at the old path for the existing job to start against, and then
+  reported that it had refused.
+
+- **A failed retry erased the unreadable diagnosis it was reporting.** Scorer
+  failure paths publish a repository with no `Unreadable` field, and every such
+  status was treated as proof that repository had recovered.
+
+- **The plugin still promised delivery the engine refuses.** `UserPromptSubmit`
+  never delivers to the model, and `Stop` does not under `wake = none`, a
+  repeated wake, or `stop_hook_active`, so mail arriving after the preceding
+  Stop can be absent for a whole turn. The pitch says what the hooks buy and
+  what still makes delivery certain.
 
 - **A wildcard bind produced a certificate no client could verify.** The
   wizard's "this machine and others" writes `0.0.0.0`, so the generated
