@@ -322,7 +322,7 @@ func TestConfigNamesANonDefaultDaemon(t *testing.T) {
 	// And the default daemon keeps the config it had.
 	t.Setenv("DIBS_ADDR", "")
 	t.Setenv("DIBS_DIR", "")
-	if env := nonDefaultEnv(); len(env) > 0 {
+	if env := nonDefaultEnv("http"); len(env) > 0 {
 		t.Errorf("the default daemon grew configuration it does not need: %v", env)
 	}
 }

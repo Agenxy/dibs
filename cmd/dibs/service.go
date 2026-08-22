@@ -70,6 +70,18 @@ func writeServiceUnit() error {
 	// Reported by an operator setting up a second machine, with the diagnosis
 	// and this fix. It is one mkdir, and it is the only step between a written
 	// unit and a working one.
+	// REFUSE FIRST, then create.
+	//
+	// The mkdir above the switch ran before the conflict checks inside it, so a
+	// command that goes on to say "refusing to overwrite a unit you may have
+	// tuned" had already created a board directory on the way to saying it. If
+	// the loaded unit's directory had been moved or damaged, this recreated an
+	// empty board at the old path and the existing job would start a daemon
+	// against it. A refusal has to change nothing. Raised by the pre-release
+	// review.
+	if err := refuseIfUnitConflicts(); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("creating the data directory %s, which the unit names as its "+
 			"log destination and launchd will not create: %w", dir, err)
@@ -470,4 +482,31 @@ func unitDaemon() (unit, daemon string) {
 		}
 	}
 	return "", ""
+}
+
+// refuseIfUnitConflicts answers "would writing a unit be refused?" without
+// creating anything, so the answer can be given before the data directory is.
+func refuseIfUnitConflicts() error {
+	var legacy func() error
+	var target string
+	switch runtime.GOOS {
+	case "darwin":
+		agents := filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents")
+		legacy = func() error { return refuseIfLegacyUnitExists(agents) }
+		target = filepath.Join(agents, "org.agenxy.dibs.plist")
+	case "linux":
+		unitDir := filepath.Join(configHome(), "systemd", "user")
+		legacy = func() error { return refuseIfLegacySystemdUnitExists(unitDir) }
+		target = filepath.Join(unitDir, "dibs.service")
+	default:
+		return nil // the switch below reports the unsupported platform
+	}
+	if err := legacy(); err != nil {
+		return err
+	}
+	if _, err := os.Stat(target); err == nil && !replaceUnits { // #nosec G703
+		return fmt.Errorf("%s already exists: delete it first if you want a fresh one, "+
+			"or edit it in place; refusing to overwrite a unit you may have tuned", target)
+	}
+	return nil
 }

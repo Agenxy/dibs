@@ -128,6 +128,24 @@ func run() error {
 	// named. Every other Dibs binary reads this variable; this one not doing so
 	// was an inconsistency, not a design.
 	listenAddr := firstNonEmpty(*addr, os.Getenv("DIBS_ADDR"), cfg.Addr, "127.0.0.1:4777")
+	// A scheme is a CLIENT's grammar, and this is a listen address.
+	//
+	// DIBS_ADDR may carry http:// or https:// because a client needs to say what
+	// to speak to a remote board. net.Listen takes host:port and answers "too
+	// many colons in address", after the daemon has already announced itself and
+	// claimed the host slot. Reading the variable here was right; passing its
+	// scheme through to Listen was not. Raised by the pre-release review, which
+	// noted the test for it grepped main.go for the variable's name and stayed
+	// green while the shipped daemon could not use the value.
+	if scheme, rest, found := strings.Cut(listenAddr, "://"); found {
+		switch strings.ToLower(scheme) {
+		case "http", "https":
+			listenAddr = rest
+		default:
+			return fmt.Errorf("DIBS_ADDR=%q names a scheme Dibs does not speak: use "+
+				"http:// or https://, or give a bare host:port", listenAddr)
+		}
+	}
 	scorer.applyConfig(cfg.Match)
 
 	// Exclusivity, both kinds: this data directory, and this machine.

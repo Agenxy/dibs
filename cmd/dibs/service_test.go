@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -532,5 +533,52 @@ func TestWritingAServiceUnitCreatesTheDataDirectory(t *testing.T) {
 	}
 	if !info.IsDir() {
 		t.Fatalf("%s is not a directory", dir)
+	}
+}
+
+// A refusal must change nothing on disk.
+//
+// The data directory was created before the conflict checks that then refuse,
+// so `dibs configure --service` could report "refusing to overwrite a unit you
+// may have tuned" having already made a board directory on the way to saying
+// it. Where the loaded unit's directory had been moved or damaged, that
+// recreated an empty board at the old path for the existing job to start
+// against. Raised by the pre-release review.
+func TestARefusedServiceInstallCreatesNothing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+
+	// A unit is already there, so the install must refuse.
+	var unit string
+	switch runtime.GOOS {
+	case "darwin":
+		unit = filepath.Join(home, "Library", "LaunchAgents", "org.agenxy.dibs.plist")
+	case "linux":
+		unit = filepath.Join(home, ".config", "systemd", "user", "dibs.service")
+	default:
+		t.Skip("no service unit on this platform")
+	}
+	if err := os.MkdirAll(filepath.Dir(unit), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(unit, []byte("existing, possibly tuned"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := filepath.Join(t.TempDir(), "board")
+	t.Setenv("DIBS_DIR", dir)
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "dibd"), nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+
+	if err := writeServiceUnit(); err == nil {
+		t.Fatal("an existing unit was overwritten")
+	}
+	if _, err := os.Stat(dir); err == nil {
+		t.Errorf("the install refused and still created %s: a refusal that changes "+
+			"the board on disk is not a refusal", dir)
 	}
 }
