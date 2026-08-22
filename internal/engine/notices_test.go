@@ -595,3 +595,85 @@ func TestMembersAreToldWhenSomebodyJoinsTheirSpace(t *testing.T) {
 		}
 	}
 }
+
+// An approval must wake the agent that asked, even with notices turned down.
+//
+// `notices_wake = false` exists so an operator can stop paying for a turn when
+// somebody joins a space. Its justification, written in hookPoll, is that
+// "nobody is blocked on knowing who joined a space". That is true of a join and
+// false of the answer to a request: the agent asked, stopped, and is doing
+// nothing else until it is told.
+//
+// Both were filed under one word, so turning notices down also turned off being
+// woken when a human approved a role grant or a mailbox handover. The operator
+// hit exactly that: they pressed Approve, both effects landed correctly in the
+// ledger, the agent was never told, and they had to go and say so by hand.
+func TestAnApprovalWakesTheAskerEvenWithNoticesTurnedDown(t *testing.T) {
+	for _, noticesOn := range []bool{true, false} {
+		name := "notices_wake on"
+		if !noticesOn {
+			name = "notices_wake off"
+		}
+		t.Run(name, func(t *testing.T) {
+			e := &Engine{}
+			e.SetNoticesWake(noticesOn)
+
+			// A join: situational, and the thing the switch was written for.
+			e.noteEvent(core.Event{
+				Type: "agent.joined", Agent: "asker", Serial: 10,
+				Data: map[string]any{"agent_id": "auth", "admitted_by": "director"},
+			})
+			if got := e.blockingNotices("asker"); got != 0 {
+				t.Fatalf("a join counted as blocking (%d): the switch has to keep "+
+					"covering the case it was written for", got)
+			}
+
+			// The human approves the request this agent sent and stopped for.
+			e.noteEvent(core.Event{
+				Type: "message.approved", Agent: "lael", To: "asker", Serial: 11,
+				Data: map[string]any{"msg_serial": uint64(7), "granted": "coordinator"},
+			})
+
+			if got := e.blockingNotices("asker"); got != 1 {
+				t.Errorf("blockingNotices = %d, want 1: an approval of your own "+
+					"request is something you are waiting on, so it must reach the "+
+					"wake path whatever notices_wake says", got)
+			}
+		})
+	}
+}
+
+// And the wake path itself must act on it.
+//
+// blockingNotices being right is worth nothing if hookPoll still refuses to
+// spend a turn on it, which is what happened: `fresh` and `blocked` were
+// computed from the agent's INBOX and from a notice count the operator could
+// switch off. A verdict on a message the agent SENT is in neither, so a fully
+// hooked agent on the default policy was not woken either.
+func TestTheWakePathSpendsATurnOnAnApproval(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		policy  WakePhase
+		notices bool
+	}{
+		{"the default policy", WakeAll, true},
+		{"notices turned down", WakeAll, false},
+		{"an operator who only wants urgent news", WakeUrgent, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			e := &Engine{}
+			e.SetWakePolicy(c.policy)
+			e.SetNoticesWake(c.notices)
+			e.noteEvent(core.Event{
+				Type: "message.approved", Agent: "lael", To: "asker", Serial: 11,
+				Data: map[string]any{"msg_serial": uint64(7), "adopted": "old-self"},
+			})
+			waiting := e.blockingNotices("asker")
+			if !e.deliverToModel("Stop", waiting > 0, waiting > 0, false) {
+				t.Errorf("the wake path declined to deliver an approval under %q: the "+
+					"agent asked, stopped, and has no other way to learn the answer",
+					c.name)
+			}
+		})
+	}
+}
