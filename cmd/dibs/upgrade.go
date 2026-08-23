@@ -444,6 +444,23 @@ func adoptedName(inherited string) string {
 // that quietly downgrades a supervised service to an orphan process is a worse
 // outcome than the drift it was fixing.
 func startDaemon(installed, dir, unit string, was daemonState) error {
+	// UNLESS THE UNIT NAMES A DIFFERENT BOARD.
+	//
+	// --adopt-dir renames the data directory and rewrites the unit to match. If
+	// that rewrite fails, recovery ran here with the CORRECT new directory in
+	// `dir` and started the unit anyway, which still pointed at the path that
+	// had just been moved out from under it: a daemon started against a
+	// directory that no longer exists, reported as a recovery.
+	//
+	// Preferring the unit is right when it describes this board and wrong when
+	// it does not, and the file says which.
+	if unit != "" && !unitNames(unit, dir) {
+		fmt.Fprintf(os.Stderr, "%s %s does not name %s, so the daemon is being "+
+			"started directly rather than through it. Fix the unit before the next "+
+			"logout, or the board will not come back on its own.\n",
+			ui.Bold("note:"), unit, dir)
+		unit = ""
+	}
 	if unit != "" {
 		err := restartUnit(unit)
 		if err == nil {
@@ -741,4 +758,25 @@ func bare(a string) string {
 		return rest
 	}
 	return a
+}
+
+// unitNames reports whether a service unit refers to this data directory.
+//
+// Read rather than assumed: the one case that matters is a unit whose rewrite
+// failed after the directory moved, and the only evidence for that is the file
+// itself. An unreadable unit is treated as naming it, because refusing to use a
+// unit we cannot read would downgrade a supervised service to an orphan process
+// over a permissions problem, which is the worse outcome this function's own
+// comment already argues.
+func unitNames(unit, dir string) bool {
+	b, err := os.ReadFile(unit) // #nosec G304 -- the operator's own unit path
+	if err != nil {
+		return true
+	}
+	if abs, aerr := filepath.Abs(dir); aerr == nil {
+		if strings.Contains(string(b), abs) {
+			return true
+		}
+	}
+	return strings.Contains(string(b), dir)
 }

@@ -184,3 +184,37 @@ func addrFlag(args []string) string {
 	}
 	return ""
 }
+
+// A unit that names a different board is not the way back.
+//
+// --adopt-dir renames the data directory and rewrites the unit to match. When
+// that rewrite fails, recovery runs with the CORRECT new directory in hand and
+// used to start the unit anyway, which still pointed at the path that had just
+// been moved out from under it: a daemon started against a directory that no
+// longer exists, printed as a recovery.
+func TestAUnitThatNamesAnotherBoardIsNotUsedForRecovery(t *testing.T) {
+	dir := t.TempDir()
+	unit := filepath.Join(t.TempDir(), "com.example.dibs.plist")
+
+	if err := os.WriteFile(unit, []byte("<string>-dir</string><string>"+dir+"</string>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !unitNames(unit, dir) {
+		t.Error("a unit that names this board was rejected, which would downgrade a " +
+			"supervised service to an orphan process that dies at the next logout")
+	}
+
+	moved := t.TempDir()
+	if unitNames(unit, moved) {
+		t.Errorf("a unit naming %s was accepted as the way to start %s. It starts a "+
+			"daemon against the directory that was just renamed away, and the "+
+			"command reports a recovery", dir, moved)
+	}
+
+	// An unreadable unit is trusted, deliberately: refusing over a permissions
+	// problem is the worse failure.
+	if !unitNames(filepath.Join(t.TempDir(), "absent.plist"), dir) {
+		t.Error("an unreadable unit was rejected, so a permissions problem would " +
+			"silently turn a supervised daemon into an orphan process")
+	}
+}
