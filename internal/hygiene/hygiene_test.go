@@ -794,29 +794,41 @@ func TestThePresenceHelperIsTheOneThatGetsBuilt(t *testing.T) {
 		}
 	}
 
-	// AND IT MUST RUN ON BOTH MACS.
+	// AND IT MUST NAME ITS TARGET.
 	//
-	// GoReleaser builds darwin/amd64 and darwin/arm64 and copies ONE helper into
-	// both archives. Built without a target it is whatever the release runner
-	// was, so one of the two releases carried a presence binary that machine
-	// cannot execute, and the failure is silent: no usable helper means the
-	// password path, and Touch ID disappears from a release that advertises it.
-	// The name checks below could not see this, which is the point of adding it
-	// here: they verify the word, not the artifact.
+	// The Swift helpers are compiled on the release runner and copied into the
+	// archive, so with no -target the artifact is a property of whatever machine
+	// ran the job rather than of this repository. That is how the notifier
+	// shipped arm64-only into the Intel tarball, silently: no usable helper
+	// means the password path, and Touch ID disappears from a release that
+	// advertises it. The name checks below cannot see that, which is the point
+	// of this one: they verify the word, not the artifact.
+	//
+	// AND THE MAC INTEL TARGET STAYS GONE. Apple is ending Intel support, so
+	// Dibs does not ship that build: carrying it costs a second Swift slice for
+	// each helper, lipo for both, and an archive nobody installs. This is
+	// checked rather than remembered because `goarch: [amd64, arm64]` reads as
+	// an obvious pair and the `ignore` line under it is easy to drop in a tidy-
+	// up, which would restore the target and every cost with it, quietly.
 	relRaw, err := os.ReadFile(filepath.Join(root, ".goreleaser.yml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(relRaw), "lipo -create") {
-		t.Error("the presence helper is not built as a universal binary: one of the " +
-			"two macOS archives will carry a helper for the wrong architecture, and " +
-			"Touch ID will silently fall back to the password there")
+	if !strings.Contains(string(relRaw), "-target arm64-apple-macos") {
+		t.Error("the presence helper is built with no explicit -target, so the release " +
+			"ships whatever architecture the runner happened to be. Touch ID then " +
+			"falls back to the password wherever that guess was wrong, silently")
 	}
-	for _, target := range []string{"arm64-apple-macos", "x86_64-apple-macos"} {
-		if !strings.Contains(string(relRaw), target) {
-			t.Errorf("no swiftc -target for %s: lipo cannot join a slice that was "+
-				"never compiled", target)
-		}
+	if !strings.Contains(string(relRaw), "{goos: darwin, goarch: amd64}") {
+		t.Error("the release no longer ignores darwin/amd64, so it builds a Mac Intel " +
+			"archive again. Both Swift helpers are single-slice and would be wrong " +
+			"in it. Either restore the ignore, or bring back the lipo builds and the " +
+			"second slice of each helper deliberately")
+	}
+	if strings.Contains(string(relRaw), "x86_64-apple-macos") {
+		t.Error("a Swift helper is compiled for Mac Intel while the release ignores " +
+			"that target: one of the two is wrong, and the build is paying for a " +
+			"slice nothing ships")
 	}
 
 	// AND THE RELEASE, which is what almost everybody installs.
@@ -834,13 +846,22 @@ func TestThePresenceHelperIsTheOneThatGetsBuilt(t *testing.T) {
 	}
 	// It has to be BUILT and it has to be PACKAGED: the before hook produces it
 	// and the archive carries it. Either one alone ships nothing usable.
-	// The needle for the before hook was `-o dibs-presence`, which is a PREFIX
-	// of `-o dibs-presence-arm64`: deleting the lipo output left the per-slice
-	// compiles matching it and every assertion here green, while the archive had
-	// no universal helper to carry. A guard that a partial build satisfies is
-	// not watching the thing it names, so this looks for lipo's own output flag.
+	//
+	// AN EXACT OUTPUT NAME, not a prefix. `-o dibs-presence` is a prefix of `-o
+	// dibs-presence-arm64`, and while the release built per-architecture slices
+	// and joined them, deleting the join left those compiles matching a
+	// substring needle and every assertion here green with no helper to carry.
+	// The join is gone now (one Mac target, one slice), so the needle is the
+	// output name bounded at both ends, which is true of either arrangement and
+	// false of a half-finished one.
+	if !regexp.MustCompile(`-o(?:utput)?\s+` + regexp.QuoteMeta(want) + `(\s|$)`).
+		Match(rel) {
+		t.Errorf("the release does not build %q: no swiftc or lipo line produces that "+
+			"exact name, so an installed Dibs finds no helper beside its executable "+
+			"and falls back to the admin password, while the docs describe Touch ID "+
+			"as the default", want)
+	}
 	for _, place := range []struct{ what, needle string }{
-		{"joined into a universal binary", "-output " + want},
 		{"carried in the archive", "src: " + want},
 		{"linked by the Homebrew cask", "- " + want},
 	} {

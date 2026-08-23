@@ -992,6 +992,11 @@ Verified against a running daemon, not assumed:
 **macOS is what this is verified on.** Every test, every end-to-end suite and the
 CI gate run there, and that is the honest extent of the claim for v0.
 
+**Apple silicon only on the Mac.** Apple is ending Intel support, so the
+released Mac archive and the Homebrew cask are arm64: an Intel Mac has to build
+from source, which works, and `go install` covers the two Go binaries. Linux
+ships both amd64 and arm64.
+
 It compiles for Linux and arm64 on every push: the cross-compile matrix is part
 of CI, and most of Dibs is ordinary portable Go with no reason to care. The
 part that does is `internal/liveness`, which works out whether a spawned agent is

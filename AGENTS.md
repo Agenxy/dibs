@@ -56,7 +56,7 @@ Then:
 ```bash
 task ci                   # THE gate: vet, lint, -race, build, 6 e2e suites + the
                           # sidecar contract, and the SPEC §17 coverage floor.
-                          # Includes cross-compilation to all four release
+                          # Includes cross-compilation to all three release
                           # targets and govulncheck.
 go build ./...            # quick build
 go test -race ./internal/...

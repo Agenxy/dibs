@@ -321,6 +321,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **No Mac Intel build.** Apple is ending Intel support, so the released macOS
+  archive and the Homebrew cask are `arm64` only. Carrying the target costs a
+  second Swift slice for each of the two helpers, `lipo` for both, and the
+  checking that goes with them, which is where the last two release-artifact
+  defects were; paying that every release for a platform on its way out is not
+  worth it. **Breaking for anyone installing on an Intel Mac**: build from
+  source, which works and is documented, or use `go install` for the two Go
+  binaries without the Touch ID and notifier helpers. Linux keeps both `amd64`
+  and `arm64`, which is not going anywhere.
+
 - **`dibs.toml` has one type and one loader.** The daemon decoded the file into
   its own struct and refused any key it did not recognise; `dibs mcp-config`,
   which describes the daemon an agent will connect to, decoded a four-field
@@ -904,17 +914,15 @@ machines for real work. Their priority order, not ours.
   recorded before the recency test, and only where a wake is known to be
   running: an agent working at its own keyboard is still left alone.
 
-- **The Intel archive shipped an Apple-silicon notifier.** `Dibs.app` was built
-  once, for whatever the release host happened to be, and copied into every
-  archive, so `dibs-notify` was arm64-only inside `darwin_amd64`. On an Intel
-  Mac the passive path returns the exec error rather than falling back to
-  `osascript`, and an interactive request fails before it reaches a person, so
-  the release's whole human-in-the-loop story was absent on a supported target
-  while every check was green. The helper beside it, `dibs-presence`, has been
-  built for both Macs and joined with `lipo` all along, three lines above in the
-  same file. It is built the same way now, and the archive check opens **every**
-  darwin archive and reads the Mach-O headers, because a file at the right path
-  that cannot execute is not an installation.
+- **The Swift helpers are built for a stated target**, not for whatever the
+  release runner happened to be. `Dibs.app` is built once and copied into every
+  archive, and with no `-target` it took the host's default: `dibs-notify` was
+  arm64-only inside `darwin_amd64`, where the passive notification path returns
+  the exec error rather than falling back to `osascript`, so the release's whole
+  human-in-the-loop story was absent on a shipped target while every check was
+  green. The archive check reads Mach-O headers now, across every darwin
+  archive, because a file at the right path that cannot execute is not an
+  installation.
 
 - **A standing role declared by name was never granted.** `[roles]` is
   documented to take agent names, `register` turns a name into an id, and the

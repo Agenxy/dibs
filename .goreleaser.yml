@@ -20,17 +20,16 @@ before:
     # documentation described a presence-first flow. A source install got it and
     # a released one did not, which is the worst way round. The release job runs
     # on macos-latest, so swiftc is there. Found by the pre-release review.
-    # UNIVERSAL, because one archive is built per architecture and this file is
-    # copied into both. A single-architecture helper meant one macOS release
-    # shipped a correctly built dibd beside a presence binary the machine cannot
-    # execute, and the failure is silent: humanauth finds no usable helper and
-    # falls back to the admin password, so Touch ID quietly stops existing on
-    # whichever architecture the release runner was not. Found by the
-    # pre-release review; the drift guard only checked that the NAME appeared in
-    # the build, the archive and the cask, never what was inside.
-    - swiftc -O -target arm64-apple-macos11 -o dibs-presence-arm64 internal/humanauth/presence_darwin.swift
-    - swiftc -O -target x86_64-apple-macos11 -o dibs-presence-amd64 internal/humanauth/presence_darwin.swift
-    - lipo -create -output dibs-presence dibs-presence-arm64 dibs-presence-amd64
+    # AN EXPLICIT TARGET, not the release runner's default.
+    #
+    # Built with no -target this is whatever the runner happened to be, which is
+    # how the notifier beside it shipped for the wrong architecture: the failure
+    # is silent, because humanauth finds no usable helper, falls back to the
+    # admin password, and Touch ID quietly stops existing. Stating the target
+    # makes the artifact a property of the file rather than of the machine.
+    #
+    # arm64 only: Dibs does not ship a Mac Intel build. See the `ignore` below.
+    - swiftc -O -target arm64-apple-macos11 -o dibs-presence internal/humanauth/presence_darwin.swift
     - lipo -info dibs-presence
     # AND THE NOTIFIER BUNDLE, for the same reason and found the same way.
     #
@@ -52,6 +51,16 @@ builds:
     ldflags: ["-s -w -X github.com/agenxy/dibs/internal/build.Version={{.Version}}"]
     goos: [darwin, linux]
     goarch: [amd64, arm64]
+    # NO MAC INTEL BUILD. Apple is ending Intel support, and carrying the target
+    # means a second Swift slice for the presence helper, a second one for the
+    # notifier, lipo for both, and an archive nobody will install: cost paid
+    # every release for a platform on its way out. Linux keeps amd64, which is
+    # not going anywhere.
+    #
+    # Removing the target rather than shipping universal binaries is the whole
+    # point: a fat binary still has to be built, joined and checked on both
+    # sides, and the checking is where the last two defects were.
+    ignore: [{goos: darwin, goarch: amd64}]
   - id: dibs
     main: ./cmd/dibs
     binary: dibs
@@ -60,6 +69,16 @@ builds:
     ldflags: ["-s -w -X github.com/agenxy/dibs/internal/build.Version={{.Version}}"]
     goos: [darwin, linux]
     goarch: [amd64, arm64]
+    # NO MAC INTEL BUILD. Apple is ending Intel support, and carrying the target
+    # means a second Swift slice for the presence helper, a second one for the
+    # notifier, lipo for both, and an archive nobody will install: cost paid
+    # every release for a platform on its way out. Linux keeps amd64, which is
+    # not going anywhere.
+    #
+    # Removing the target rather than shipping universal binaries is the whole
+    # point: a fat binary still has to be built, joined and checked on both
+    # sides, and the checking is where the last two defects were.
+    ignore: [{goos: darwin, goarch: amd64}]
 
 archives:
   - formats: [tar.gz]

@@ -63,21 +63,22 @@ func run() error {
 	want = append(want, "dibd", "dibs")
 	sort.Strings(want)
 
-	// EVERY darwin archive, not one of them.
+	// EVERY darwin archive, however many that is.
 	//
-	// This opened only the arm64 tarball, and the bundled notifier is built once
-	// and copied into both: it was arm64-only inside darwin_amd64, so on an
-	// Intel Mac the notifier could not run at all, and this check was green over
-	// it. Checking one target and reporting on the release is the same mistake
-	// as reading the configuration and reporting on the artifact, one level in.
+	// One today, because the Mac Intel target was dropped. Written as a glob
+	// rather than a name so that adding a target adds a check instead of
+	// silently leaving one unexamined, which is the shape of the defect that
+	// prompted the architecture check below: the bundled notifier was built once
+	// on the release host and copied into both archives, so it was arm64-only
+	// inside darwin_amd64 and this program, reading only the arm64 tarball, was
+	// green over it.
 	archives, err := filepath.Glob(filepath.Join(root, "dist", "*_darwin_*.tar.gz"))
 	if err != nil {
 		return err
 	}
-	if len(archives) < 2 {
-		return fmt.Errorf("found %d darwin archive(s) under dist/ %v; the release "+
-			"builds arm64 and amd64, so this is not seeing them all.\n"+
-			"Build them first: goreleaser release --snapshot --clean", len(archives), archives)
+	if len(archives) == 0 {
+		return fmt.Errorf("found no darwin archive under dist/.\n" +
+			"Build one first: goreleaser release --snapshot --clean")
 	}
 	sort.Strings(archives)
 
@@ -86,7 +87,7 @@ func run() error {
 			return err
 		}
 	}
-	fmt.Printf("archivecheck: %d darwin archives carry all %d runtime paths, each "+
+	fmt.Printf("archivecheck: %d darwin archive(s) carry all %d runtime paths, each "+
 		"runnable on the Mac it is for\n", len(archives), len(want))
 	return nil
 }
@@ -201,9 +202,9 @@ func goArch(c macho.Cpu) string {
 		return "amd64"
 	case macho.CpuArm64:
 		return "arm64"
-	// The release targets darwin/amd64 and darwin/arm64 and nothing else. A
-	// helper built for any of these is wrong wherever it turns up, and naming
-	// them keeps the mismatch readable in the error rather than as a number.
+	// The release targets darwin/arm64 and nothing else on a Mac. A helper built
+	// for any of these is wrong wherever it turns up, and naming them keeps the
+	// mismatch readable in the error rather than as a number.
 	case macho.Cpu386, macho.CpuArm, macho.CpuPpc, macho.CpuPpc64:
 		return c.String()
 	}
