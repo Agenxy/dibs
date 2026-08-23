@@ -347,6 +347,21 @@ func (e *Engine) AdoptSession(ctx context.Context, token, sessionID string) (boo
 	if token == "" || sessionID == "" {
 		return false, nil
 	}
+	// CHECK AND BIND AS ONE.
+	//
+	// These are two separate trips through the writer loop, so concurrent
+	// callers all saw an empty SessionID and all bound: twenty ambient repairs
+	// were each told they had adopted the agent, nineteen of them wrongly, and
+	// the id that stuck was whichever finished last. Hook delivery then reaches
+	// one session while every other holder believes it owns the mailbox, which
+	// is the failure this repair exists to prevent, caused by the repair.
+	//
+	// The lock rather than a loop-side rule because binding is an OP: it goes
+	// through the ledger, and an op cannot be issued from inside a query
+	// without deadlocking the single writer. Serialising the pair is enough,
+	// since the second caller's check then sees the first caller's bind.
+	e.adoptMu.Lock()
+	defer e.adoptMu.Unlock()
 	res, err := e.query(ctx, func() core.Result {
 		l := e.state.AgentByToken(token)
 		return core.Result{"needs": l != nil && l.SessionID == ""}

@@ -3,9 +3,11 @@ package main
 import (
 	"errors"
 	"fmt"
+	"html"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -768,15 +770,62 @@ func bare(a string) string {
 // unit we cannot read would downgrade a supervised service to an orphan process
 // over a permissions problem, which is the worse outcome this function's own
 // comment already argues.
+//
+// TOKENS, NOT A SUBSTRING, and the first version was wrong in both directions.
+//
+// A plist is XML, so a board at `.../Fleet & Review` is written `Fleet &amp;
+// Review` and a raw search rejected the unit as somebody else's: a supervised
+// daemon quietly demoted to a direct start because its path contained an
+// ampersand. And `strings.Contains` accepted `~/.dibs-old` as naming `~/.dibs`,
+// which is exactly the wrong-board case the check exists to catch, and the
+// likeliest spelling of it after an --adopt-dir rename.
+//
+// So the file is split into candidate values, unescaped, and compared as whole
+// paths.
 func unitNames(unit, dir string) bool {
 	b, err := os.ReadFile(unit) // #nosec G304 -- the operator's own unit path
 	if err != nil {
 		return true
 	}
+	want := map[string]bool{filepath.Clean(dir): true}
 	if abs, aerr := filepath.Abs(dir); aerr == nil {
-		if strings.Contains(string(b), abs) {
+		want[filepath.Clean(abs)] = true
+	}
+	for _, tok := range unitTokens(string(b)) {
+		if want[filepath.Clean(tok)] {
 			return true
 		}
 	}
-	return strings.Contains(string(b), dir)
+	return false
 }
+
+// unitTokens pulls the candidate paths out of a service unit.
+//
+// Both shapes this project writes: a launchd plist, where values sit in
+// <string> elements and carry XML entities, and a systemd unit, where an
+// ExecStart line is whitespace-separated. Splitting on both and unescaping is
+// cheaper than parsing either properly, and the comparison afterwards is exact,
+// so a stray token costs nothing.
+func unitTokens(body string) []string {
+	var out []string
+	// A plist <string> is ONE value, spaces included: a board at `.../Fleet &
+	// Review` is a single path, and splitting on whitespace turned it into
+	// three tokens that match nothing. Taken whole, then unescaped.
+	for _, m := range plistString.FindAllStringSubmatch(body, -1) {
+		out = append(out, html.UnescapeString(m[1]))
+	}
+	// And a systemd ExecStart is whitespace-separated, where a path containing
+	// a space is quoted. Splitting on both covers it; the comparison afterwards
+	// is exact, so a stray token costs nothing.
+	for _, chunk := range strings.FieldsFunc(body, func(r rune) bool {
+		return r == '"' || r == '\'' || r == '\n' || r == '\r' || r == '\t' || r == ' '
+	}) {
+		if chunk != "" {
+			out = append(out, html.UnescapeString(chunk))
+		}
+	}
+	return out
+}
+
+// plistString matches one <string> element's contents, including spaces.
+var plistString = regexp.MustCompile(`(?s)<string>(.*?)</string>`)

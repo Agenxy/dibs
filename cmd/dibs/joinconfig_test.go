@@ -8,6 +8,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1121,11 +1122,22 @@ func realPair(t *testing.T) (certPath, keyPath string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// NAMES THE ADDRESSES THE FIXTURES CONFIGURE IT FOR.
+	//
+	// A certificate with no SANs loads, parses and is in date, and every client
+	// refuses it on hostname verification: the loader checks that now, and a
+	// nameless fixture was standing in for a working TLS daemon while
+	// describing one nobody can reach.
 	tmpl := x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject:      pkix.Name{CommonName: "test"},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(24 * time.Hour),
+		DNSNames:     []string{"localhost", "hub.example"},
+		IPAddresses: []net.IP{
+			net.ParseIP("127.0.0.1"), net.ParseIP("::1"),
+			net.ParseIP("192.168.50.10"), net.ParseIP("10.0.0.9"),
+		},
 	}
 	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
 	if err != nil {

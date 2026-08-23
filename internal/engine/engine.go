@@ -88,6 +88,10 @@ type Engine struct {
 	// Work-overlap scoring (SPEC-CHANNELS.md). Guarded by its own mutex rather
 	// than the loop: Predict runs OFF the writer goroutine, because a model that
 	// takes a second would otherwise stall every other agent on the board.
+	// adoptMu serialises the ambient session repair, whose check and bind are
+	// two separate trips through the loop. See AdoptSession.
+	adoptMu sync.Mutex
+
 	matchMu sync.RWMutex
 	scorer  overlap.Scorer
 	// scorers is one index per repository root. A co-change model only means

@@ -217,4 +217,33 @@ func TestAUnitThatNamesAnotherBoardIsNotUsedForRecovery(t *testing.T) {
 		t.Error("an unreadable unit was rejected, so a permissions problem would " +
 			"silently turn a supervised daemon into an orphan process")
 	}
+
+	// A SUBSTRING IS NOT A NAME. `~/.dibs-old` contains `~/.dibs`, and after an
+	// --adopt-dir rename that is the likeliest spelling of the wrong board: the
+	// first version of this accepted it, which is the exact case the check
+	// exists to catch.
+	sub := filepath.Join(t.TempDir(), ".dibs")
+	subUnit := filepath.Join(t.TempDir(), "sub.plist")
+	if err := os.WriteFile(subUnit, []byte("<string>"+sub+"-old</string>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if unitNames(subUnit, sub) {
+		t.Errorf("a unit naming %s-old was accepted as naming %s. That is a different "+
+			"board whose path merely starts the same way, and recovery would start "+
+			"the daemon against it", sub, sub)
+	}
+
+	// AND A PLIST IS XML. A board at a path containing `&` is written `&amp;`,
+	// so a raw search rejected the unit as somebody else's and demoted a
+	// supervised daemon to a direct start over an ampersand.
+	amp := filepath.Join(t.TempDir(), "Fleet & Review")
+	ampUnit := filepath.Join(t.TempDir(), "amp.plist")
+	if err := os.WriteFile(ampUnit,
+		[]byte("<string>"+strings.ReplaceAll(amp, "&", "&amp;")+"</string>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !unitNames(ampUnit, amp) {
+		t.Errorf("a unit naming %s, XML-escaped as a plist requires, was not "+
+			"recognised as naming it", amp)
+	}
 }

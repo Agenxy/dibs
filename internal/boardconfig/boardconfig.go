@@ -591,7 +591,47 @@ func (c Config) validateTLS() error {
 		return fmt.Errorf("tls_cert %q is not valid until %s. Until then every client "+
 			"refuses the connection", cert, leaf.NotBefore.Format("2006-01-02"))
 	}
+	// AND IT HAS TO NAME THIS BOARD.
+	//
+	// Valid dates and a matching key say the pair is coherent, not that it is
+	// for us: a certificate for wrong.example loads, parses, is in date, serves
+	// perfectly, and every client refuses on hostname verification. That is the
+	// same silent, total, all-at-once failure the auto-managed path renews and
+	// re-issues to avoid, and the configured path accepted it.
+	//
+	// Only when the address is known and is a real host. A wildcard bind serves
+	// whatever the client dialled and no certificate can name that in advance,
+	// which is why the generated one enumerates interfaces instead.
+	if host := configuredHost(c.Addr); host != "" {
+		if err := leaf.VerifyHostname(host); err != nil {
+			return fmt.Errorf("tls_cert %q does not name %s (%w). It will serve, and "+
+				"every client dialling that address will refuse it. Reissue the "+
+				"certificate for the address this daemon listens on, or remove "+
+				"tls_cert and tls_key and let Dibs manage one", cert, host, err)
+		}
+	}
 	return nil
+}
+
+// configuredHost is the host an explicit certificate has to name, or "".
+//
+// Empty for a wildcard bind: 0.0.0.0 and :: serve whatever the client dialled,
+// so nothing can be verified in advance. Empty when no address is configured,
+// because then the default is loopback and a configured certificate is being
+// asked for by some other means.
+func configuredHost(addr string) string {
+	if addr == "" {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	switch strings.Trim(host, "[]") {
+	case "", "0.0.0.0", "::":
+		return ""
+	}
+	return strings.Trim(host, "[]")
 }
 
 func (c Config) validateLimits() error {
