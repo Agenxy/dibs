@@ -44,6 +44,21 @@ type notice struct {
 	// the wake path repeated it every turn.
 	Msg  uint64
 	Text string
+	// Blocking marks a notice somebody is WAITING on, as opposed to one that
+	// merely keeps them current.
+	//
+	// The distinction is load-bearing because `notices_wake = false` exists. It
+	// was written for situational awareness, and its justification is the
+	// comment in hookPoll: "nobody is blocked on knowing who joined a space".
+	// True of a join. Not true of the answer to a request the agent SENT and
+	// then stopped for: it asked, it is waiting, and by construction it is
+	// doing nothing else. Filing both under one word meant an operator who
+	// turned notices down to save tokens also turned off being woken when a
+	// human approved a role grant or a mailbox handover, and nothing said so.
+	//
+	// Reported by the operator, who approved a request and then had to go and
+	// tell the agent by hand.
+	Blocking bool
 }
 
 // noteEvent records the events an agent needs told about, so hookPoll can
@@ -88,6 +103,8 @@ func joinedNotice(ev core.Event) string {
 
 func (e *Engine) noteEvent(ev core.Event) {
 	var who, text string
+	// Whether somebody is WAITING on this notice. See notice.Blocking.
+	var blocking bool
 	switch ev.Type {
 	case "agent.joined":
 		who, text = ev.Agent, joinedNotice(ev)
@@ -110,7 +127,7 @@ func (e *Engine) noteEvent(ev core.Event) {
 		// could not do a moment ago, and it had no way to learn that short of
 		// re-reading a message it had already sent. Nothing told it. Reported
 		// as: "when you approve an agent's request they should be notified."
-		who, text = ev.To, answeredNotice(ev)
+		who, text, blocking = ev.To, answeredNotice(ev), true
 	case "agent.absorbed":
 		// Your agent just gained another space's members, its predicted footprint
 		// and its outstanding announcements, which you may now be required to
@@ -165,7 +182,7 @@ func (e *Engine) noteEvent(ev core.Event) {
 	// The message this notice points at, when it points at one. ev.Serial is
 	// the event; msg_serial is what the agent is told to read.
 	msg, _ := ev.Data["msg_serial"].(uint64)
-	e.pushNoticeFor(who, text, ev.Serial, msg)
+	e.pushNoticeAs(who, text, ev.Serial, msg, blocking)
 }
 
 // pushNotice queues one thing an agent must be told, for the wake path.
@@ -181,6 +198,11 @@ func (e *Engine) pushNotice(who, text string, serial uint64) {
 
 // pushNoticeFor is pushNotice plus the message the notice refers to.
 func (e *Engine) pushNoticeFor(who, text string, serial, msg uint64) {
+	e.pushNoticeAs(who, text, serial, msg, false)
+}
+
+// pushNoticeAs is pushNoticeFor plus whether somebody is waiting on it.
+func (e *Engine) pushNoticeAs(who, text string, serial, msg uint64, blocking bool) {
 	if who == "" || text == "" {
 		return
 	}
@@ -190,7 +212,8 @@ func (e *Engine) pushNoticeFor(who, text string, serial, msg uint64) {
 	// Bounded: an agent that never polls must not accumulate forever. The
 	// newest matter most: being told you were admitted an hour ago and then
 	// evicted is worse than being told only the eviction.
-	e.notices[who] = append(e.notices[who], notice{Serial: serial, Msg: msg, Text: text})
+	e.notices[who] = append(e.notices[who],
+		notice{Serial: serial, Msg: msg, Text: text, Blocking: blocking})
 	if n := len(e.notices[who]); n > maxNotices {
 		e.notices[who] = e.notices[who][n-maxNotices:]
 	}
@@ -267,6 +290,21 @@ func (e *Engine) clearNoticesFor(agent string, serial uint64) {
 		return
 	}
 	e.notices[agent] = kept
+}
+
+// blockingNotices counts the notices somebody is WAITING on: answers to
+// requests this agent sent and then stopped for.
+//
+// Separate from len(notices) because the operator can turn ordinary notices
+// down, and must not thereby turn off being woken for an approval.
+func (e *Engine) blockingNotices(agent string) int {
+	n := 0
+	for _, x := range e.notices[agent] {
+		if x.Blocking {
+			n++
+		}
+	}
+	return n
 }
 
 // AckNotices drops an agent's notices for good. Called on a TOKEN-authenticated
