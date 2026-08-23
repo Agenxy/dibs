@@ -51,6 +51,9 @@ type wakers struct {
 	mu        sync.Mutex
 	byHarness map[string]wakeCommand
 	last      map[string]time.Time
+	// deferred: a re-check armed for when an agent's cooldown expires, because
+	// maybeWake fires once per event and nothing else retries.
+	deferred map[string]*time.Timer
 	// running: agents whose wake command has not exited yet.
 	//
 	// The cooldown alone was the whole exclusion, and it is a START-time rule:
@@ -244,6 +247,96 @@ func (e *Engine) maybeWake(ev core.Event) {
 	}()
 }
 
+// deferWake re-asks the wake question when this agent's cooldown expires.
+//
+// Callers hold wakers.mu.
+//
+// The timer is stored so a second suppressed event replaces it rather than
+// adding one: three questions inside the window are one re-check, which is the
+// same coalescing the cooldown was for. Stopping the old timer first is what
+// makes that true; leaving it running would be the fork bomb with extra steps.
+func (e *Engine) deferWake(agent string, in time.Duration) {
+	if e.wakers.deferred == nil {
+		e.wakers.deferred = map[string]*time.Timer{}
+	}
+	if t := e.wakers.deferred[agent]; t != nil {
+		t.Stop()
+	}
+	// A small margin, so the timer does not land a microsecond early and find
+	// the cooldown still nominally unexpired.
+	e.wakers.deferred[agent] = time.AfterFunc(in+50*time.Millisecond, func() {
+		e.retryWake(agent)
+	})
+}
+
+// retryWake re-decides, on the writer loop, whether this agent still needs one.
+//
+// From scratch rather than from a remembered event: by now the agent may have
+// come back on its own and read everything, another wake may be running, or the
+// message may have been answered. The only thing worth carrying across the
+// timer is the agent's name.
+func (e *Engine) retryWake(agent string) {
+	_, _ = e.query(context.Background(), func() core.Result {
+		e.retryWakeDecision(agent)
+		return core.Result{"ok": true}
+	})
+}
+
+// retryWakeDecision is the decision, split from the loop plumbing.
+//
+// Split because query() sends on e.ops, which is nil on an engine whose loop is
+// not running: a test that called the wrapper would block forever rather than
+// fail, which AGENTS.md records as having hung CI for five minutes once. It
+// hung this one too, before the split.
+//
+// Callers run on the writer loop.
+func (e *Engine) retryWakeDecision(agent string) {
+	e.wakers.mu.Lock()
+	delete(e.wakers.deferred, agent)
+	e.wakers.mu.Unlock()
+	if e.state == nil {
+		return
+	}
+	l := e.state.Agents[agent]
+	if l == nil || l.Gone() || e.recentlyInTouch(l) {
+		return
+	}
+	if !e.hasBlockingMail(agent) {
+		return
+	}
+	// A verdict carries no msg_type, and this is not replaying a specific
+	// event: the question is only whether somebody is still waiting.
+	cmd, ok := e.wakeFor(l, core.MsgQuestion, core.Event{Type: "wake.retry", To: agent})
+	if !ok {
+		return
+	}
+	stamp := e.wakeStamp(agent)
+	go func() {
+		defer e.wakeFinished(agent)
+		if !runWake(cmd, agent) {
+			e.releaseWake(agent, stamp)
+		}
+	}()
+}
+
+// hasBlockingMail reports whether anybody is still waiting on this agent.
+//
+// Callers run on the writer loop.
+func (e *Engine) hasBlockingMail(agent string) bool {
+	if e.blockingNotices(agent) > 0 {
+		return true
+	}
+	for _, m := range e.state.Inbox(agent) {
+		if m.Expecting() && (m.State == core.MsgStatePending || m.State == core.MsgStateDelivered) {
+			return true
+		}
+		if m.Type == core.MsgHandoff && m.State != core.MsgStateAcked {
+			return true
+		}
+	}
+	return false
+}
+
 // wakeFinished records that this agent's wake command has exited, so a later
 // blocking message may start another.
 func (e *Engine) wakeFinished(agent string) {
@@ -365,7 +458,22 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) ([]string
 		return nil, false
 	}
 	if last, seen := e.wakers.last[l.ID]; seen && now.Sub(last) < cmd.cooldown {
-		slog.Debug("no wake: still inside the cooldown", "agent", l.ID)
+		// SUPPRESSED, NOT DISCARDED.
+		//
+		// maybeWake fires once per event and nothing retries, so a message
+		// arriving after a wake has EXITED but inside its cooldown was lost
+		// outright: the recipient is asleep again, somebody is blocked on it,
+		// and the next attempt waits for an unrelated event that may never
+		// come. Ninety seconds is a rate limit on starting processes; it was
+		// behaving as a rate limit on delivering mail, which is the failure
+		// this whole path exists to remove.
+		//
+		// A timer for the remainder, re-deciding from scratch when it fires.
+		// One per agent, replaced rather than stacked, so a burst inside the
+		// window is still one wake at the end of it.
+		e.deferWake(l.ID, cmd.cooldown-now.Sub(last))
+		slog.Debug("no wake yet: inside the cooldown, re-checking when it expires",
+			"agent", l.ID)
 		return nil, false
 	}
 	e.wakers.last[l.ID] = now

@@ -91,6 +91,22 @@ func TestSensitiveValuesAreRedactedOnStderrToo(t *testing.T) {
 	if strings.Contains(base.String(), "decrypted mail") {
 		t.Errorf("a wake command's output reached stderr: %s", strings.TrimSpace(base.String()))
 	}
+	// AND ATTRIBUTES BOUND WITH log.With, which take a different path: they
+	// enter the base handler at WithAttrs and are no longer in the record that
+	// Handle sanitises. The record fix covered one door of two.
+	var bound bytes.Buffer
+	boundLog := slog.New(NewHandler(slog.NewTextHandler(&bound, nil), NewRing(8))).
+		With("local_secret", leak, "agent", "reviewer")
+	boundLog.Info("a request arrived")
+	if strings.Contains(bound.String(), leak) {
+		t.Errorf("a secret bound with log.With reached stderr in full:\n  %s",
+			strings.TrimSpace(bound.String()))
+	}
+	if !strings.Contains(bound.String(), "reviewer") {
+		t.Errorf("redacting the bound attributes dropped the harmless ones too: %s",
+			strings.TrimSpace(bound.String()))
+	}
+
 	// The record still says what happened, or redaction has become deletion.
 	for _, want := range []string{"an agent registered", "reviewer", "[redacted]"} {
 		if !strings.Contains(base.String(), want) {

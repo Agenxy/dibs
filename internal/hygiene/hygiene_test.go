@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -1152,5 +1153,72 @@ func TestEveryToolBinaryIsIgnored(t *testing.T) {
 	}
 	if seen == 0 {
 		t.Fatal("no tool directories found, so this check verified nothing")
+	}
+}
+
+// The notifier bundle ships in the release, not only in `task install`.
+//
+// internal/notify resolves Dibs.app/Contents/MacOS/dibs-notify beside the
+// executable, and Reach reports notifications unavailable when it is absent.
+// Only the Taskfile built it, so source builds had the branded, actionable
+// notification the README lists as a required artifact and every published
+// archive and brew install did not. CI therefore exercised a different
+// installation surface from the one people download.
+//
+// This is the SECOND component to go missing the same way: the Touch ID helper
+// had the identical hole one review round earlier, and its guard watched only
+// itself. A guard written for one artifact is a guard for that artifact.
+func TestEveryBundledHelperShipsInTheRelease(t *testing.T) {
+	root := repoRoot(t)
+	rel, err := os.ReadFile(filepath.Join(root, ".goreleaser.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := string(rel)
+
+	// What the RUNTIME looks for beside the executable. Read from the source
+	// rather than listed here, so a third helper is covered on the day it is
+	// added rather than on the day somebody remembers this test.
+	helpers := map[string]string{
+		"dibs-presence": "internal/humanauth",
+		"Dibs.app":      "internal/notify",
+	}
+	for name, where := range helpers {
+		found := false
+		if werr := filepath.WalkDir(filepath.Join(root, where), func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() || filepath.Ext(p) != ".go" {
+				return nil
+			}
+			b, rerr := os.ReadFile(p) // #nosec G304 -- this repository
+			if rerr != nil {
+				return rerr
+			}
+			if strings.Contains(string(b), name) {
+				found = true
+			}
+			return nil
+		}); werr != nil {
+			t.Fatalf("walking %s: %v", where, werr)
+		}
+		if !found {
+			t.Errorf("%s no longer names %q, so this check is guarding an artifact "+
+				"the runtime does not look for", where, name)
+			continue
+		}
+		for _, place := range []struct{ what, needle string }{
+			{"built by a before hook", name},
+			{"carried in the archive", "src: " + name},
+			{"installed by the Homebrew cask", "- " + name},
+		} {
+			if !strings.Contains(release, place.needle) {
+				t.Errorf("%s is resolved at runtime by %s and is not %s (%q missing "+
+					"from .goreleaser.yml). Every published archive and brew install "+
+					"would be without it, while a source build has it and CI passes",
+					name, where, place.what, place.needle)
+			}
+		}
 	}
 }

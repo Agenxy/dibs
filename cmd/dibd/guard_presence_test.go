@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/agenxy/dibs/internal/humanauth"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -221,18 +222,51 @@ func TestThePresenceSheetNamesTheAskingTerminalsCode(t *testing.T) {
 // with this very message, and the sheet they approve completes the agent's.
 // A security control that overstates itself is worse than one that says nothing.
 func TestTheBusyPromptRefusalDoesNotOverstateItself(t *testing.T) {
-	g := newAuthGate("the-secret", filepath.Join(t.TempDir(), "admin.hash"), "127.0.0.1:4777")
-	_ = g
-	// The text lives in the handler; assert on the claim rather than the wiring.
+	// THE WHOLE TREE, not this file.
+	//
+	// The first version read guard.go only, and the identical false claim was
+	// sitting in internal/mcp/human.go the entire time: `human_unlock` told its
+	// caller the same untrue thing while this guard reported the sentence gone.
+	// A check that knows one location of a claim is a check that finds it in
+	// that location, which is the location somebody already fixed.
 	const bad = "cannot be taken by a request it was not raised for"
-	src, err := os.ReadFile("guard.go")
+	root := filepath.Join("..", "..")
+	var found []string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			if d != nil && d.IsDir() && (d.Name() == ".git" || d.Name() == "node_modules") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if filepath.Ext(path) != ".go" && filepath.Ext(path) != ".md" {
+			return nil
+		}
+		// This file quotes the sentence in order to forbid it.
+		if filepath.Base(path) == "guard_presence_test.go" {
+			return nil
+		}
+		b, rerr := os.ReadFile(path) // #nosec G304 -- walking this repository
+		if rerr != nil {
+			return rerr
+		}
+		if strings.Contains(string(b), bad) {
+			found = append(found, path)
+		}
+		return nil
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(src), bad) {
-		t.Error("the busy-prompt refusal still claims serialising binds the approval " +
-			"to the requester. It does not: whichever request asked first owns the " +
-			"sheet, and the operator cannot see which that is without the code")
+	if len(found) > 0 {
+		t.Errorf("%v still claim serialising binds the approval to the requester. "+
+			"It does not: whichever request asked first owns the sheet, and the "+
+			"operator cannot see which that is without the code on it", found)
+	}
+
+	src, err := os.ReadFile("guard.go")
+	if err != nil {
+		t.Fatal(err)
 	}
 	if !strings.Contains(string(src), "DECLINE the sheet on screen") {
 		t.Error("the refusal does not tell the operator what to actually do when a " +

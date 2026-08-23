@@ -772,57 +772,8 @@ func (c Config) validateWake() error {
 	// operator's explicit value did nothing at all. Zero is documented as "use
 	// the default" and stays legal; a negative one is a mistake and is refused.
 	for harness, x := range c.Wake.Exec {
-		// The KEY is matched against the harness an agent reports, lowercased.
-		// A blank one matches nothing that will ever register, so the entry is
-		// unreachable while still counting towards "harnesses configured".
-		if strings.TrimSpace(harness) == "" {
-			return fmt.Errorf("[wake.exec] has an entry with a blank harness name. " +
-				"The key is matched against the harness an agent reports, so this " +
-				"one can never match anybody, and it still counts as a configured " +
-				"harness at startup")
-		}
-		if x.Cooldown < 0 {
-			return fmt.Errorf("[wake.exec.%s] cooldown = %q: a wake cooldown cannot "+
-				"be negative. Omit it, or set 0, to take the default; anything "+
-				"below zero was silently becoming that default while reading as "+
-				"a setting you had chosen", harness, x.Cooldown)
-		}
-		// An empty argv is the whole entry doing nothing. It loaded, startup
-		// took the "there is a wake command" branch, skipped the entry for want
-		// of an argv, and logged `harnesses=0` as though that were a capability:
-		// success reported for a table that can start nobody. Refused with the
-		// same words as the rest of this list, because it is the same mistake.
-		if len(x.Argv) == 0 {
-			return fmt.Errorf("[wake.exec.%s] has no argv, so nothing can be run for "+
-				"that harness and the section does nothing at all. Give it the "+
-				"command that resumes a thread, or remove the section", harness)
-		}
-		// TRIMMED, because " " is a perfectly good TOML string and a perfectly
-		// useless program name. It passed `dibd -check`, startup logged "the
-		// board can start an agent that is not running" with one harness
-		// configured, and every wake then failed inside exec before starting
-		// anything. Configuration approved, capability announced, nobody ever
-		// woken: this list's own subject, in the section it was added for.
-		if strings.TrimSpace(x.Argv[0]) == "" {
-			return fmt.Errorf("[wake.exec.%s] argv starts with an empty string, so "+
-				"there is no program to run. The first element is the executable, "+
-				"and the rest are its arguments: there is no shell in this path "+
-				"to work out what was meant", harness)
-		}
-		// NOTHING AN AGENT SAID MAY CHOOSE THE PROGRAM.
-		//
-		// Whole-element substitution keeps a message body from being parsed as a
-		// command, which is what makes the argv form safe. It does not make the
-		// VALUES trustworthy: {agent}, {from} and {type} are derived from agents,
-		// and argv[0] is handed straight to exec. A placeholder there would let a
-		// peer's chosen name select the executable, which is a different rule
-		// from quoting and the one this project actually states: the wake command
-		// comes from the operator's file and nothing an agent said reaches it.
-		if len(x.Argv) > 0 && strings.HasPrefix(x.Argv[0], "{") {
-			return fmt.Errorf("[wake.exec.%s] argv[0] is %q: the program to run must "+
-				"be named in this file and cannot be a placeholder. Substituted "+
-				"values come from agents, and the one thing an agent must never "+
-				"choose is which executable the board starts", harness, x.Argv[0])
+		if err := validateWakeEntry(harness, x, c.Wake.Exec); err != nil {
+			return err
 		}
 	}
 	w := c.Wake.ExtendTurnFor
@@ -837,4 +788,87 @@ func (c Config) validateWake() error {
 	return fmt.Errorf("[wake] extend_turn_for = %q: use \"all\" (default: anything "+
 		"unread wakes the agent once), \"urgent\" (only work somebody is blocked on) "+
 		"or \"none\" (never extend a turn)", w)
+}
+
+// validateWakeEntry checks one [wake.exec.<harness>] block.
+//
+// Split out because validateWake outgrew the complexity budget once every way
+// a wake entry can look configured and do nothing had its own refusal. Each of
+// those was found by a review round rather than imagined, which is why there
+// are so many of them.
+func validateWakeEntry(harness string, x WakeExec, all map[string]WakeExec) error {
+	// The KEY is matched against the harness an agent reports, lowercased.
+	// A blank one matches nothing that will ever register, so the entry is
+	// unreachable while still counting towards "harnesses configured".
+	if strings.TrimSpace(harness) == "" {
+		return fmt.Errorf("[wake.exec] has an entry with a blank harness name. " +
+			"The key is matched against the harness an agent reports, so this " +
+			"one can never match anybody, and it still counts as a configured " +
+			"harness at startup")
+	}
+	// The waker lowercases the key and does NOT trim it, so `" codex "`
+	// validates, is announced as configured, and never matches a `Codex`
+	// agent. Refused rather than trimmed here: silently accepting a
+	// different string than the operator wrote is how a setting reads as
+	// applied while meaning something else.
+	if harness != strings.TrimSpace(harness) {
+		return fmt.Errorf("[wake.exec.%q] has leading or trailing space. The key "+
+			"is matched against the harness an agent reports, lowercased and not "+
+			"trimmed, so this matches nobody while still counting as configured",
+			harness)
+	}
+	// Two keys differing only in case collapse onto one lowercase entry,
+	// and which executable survives is Go map iteration order: a
+	// configuration whose behaviour changes between restarts.
+	if lower := strings.ToLower(harness); lower != harness {
+		if _, clash := all[lower]; clash {
+			return fmt.Errorf("[wake.exec] has both %q and %q, which are the same "+
+				"harness once lowercased. One of the two would win at random on "+
+				"each start", harness, lower)
+		}
+	}
+	if x.Cooldown < 0 {
+		return fmt.Errorf("[wake.exec.%s] cooldown = %q: a wake cooldown cannot "+
+			"be negative. Omit it, or set 0, to take the default; anything "+
+			"below zero was silently becoming that default while reading as "+
+			"a setting you had chosen", harness, x.Cooldown)
+	}
+	// An empty argv is the whole entry doing nothing. It loaded, startup
+	// took the "there is a wake command" branch, skipped the entry for want
+	// of an argv, and logged `harnesses=0` as though that were a capability:
+	// success reported for a table that can start nobody. Refused with the
+	// same words as the rest of this list, because it is the same mistake.
+	if len(x.Argv) == 0 {
+		return fmt.Errorf("[wake.exec.%s] has no argv, so nothing can be run for "+
+			"that harness and the section does nothing at all. Give it the "+
+			"command that resumes a thread, or remove the section", harness)
+	}
+	// TRIMMED, because " " is a perfectly good TOML string and a perfectly
+	// useless program name. It passed `dibd -check`, startup logged "the
+	// board can start an agent that is not running" with one harness
+	// configured, and every wake then failed inside exec before starting
+	// anything. Configuration approved, capability announced, nobody ever
+	// woken: this list's own subject, in the section it was added for.
+	if strings.TrimSpace(x.Argv[0]) == "" {
+		return fmt.Errorf("[wake.exec.%s] argv starts with an empty string, so "+
+			"there is no program to run. The first element is the executable, "+
+			"and the rest are its arguments: there is no shell in this path "+
+			"to work out what was meant", harness)
+	}
+	// NOTHING AN AGENT SAID MAY CHOOSE THE PROGRAM.
+	//
+	// Whole-element substitution keeps a message body from being parsed as a
+	// command, which is what makes the argv form safe. It does not make the
+	// VALUES trustworthy: {agent}, {from} and {type} are derived from agents,
+	// and argv[0] is handed straight to exec. A placeholder there would let a
+	// peer's chosen name select the executable, which is a different rule
+	// from quoting and the one this project actually states: the wake command
+	// comes from the operator's file and nothing an agent said reaches it.
+	if len(x.Argv) > 0 && strings.HasPrefix(x.Argv[0], "{") {
+		return fmt.Errorf("[wake.exec.%s] argv[0] is %q: the program to run must "+
+			"be named in this file and cannot be a placeholder. Substituted "+
+			"values come from agents, and the one thing an agent must never "+
+			"choose is which executable the board starts", harness, x.Argv[0])
+	}
+	return nil
 }

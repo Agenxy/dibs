@@ -32,9 +32,9 @@
  *
  * Run: DIBD=$PWD/bin/dibd bun internal/mcp/e2e/wake_e2e.ts
  */
-import { mkdtempSync, rmSync, mkdirSync, existsSync, readFileSync } from "node:fs"
+import { mkdtempSync, rmSync, mkdirSync, readFileSync, readdirSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, dirname, join } from "node:path"
 
 const PORT = process.env.PORT ?? "4939"
 const ADDR = `127.0.0.1:${PORT}`
@@ -64,9 +64,16 @@ const log = join(dir, "wakes.jsonl")
 // It can also FAIL, on demand: a wake command that cannot run is the case the
 // cooldown accounting gets wrong, and a recorder that always exits 0 can never
 // show it.
+// APPENDS, and that word has to be true. It read the whole file and rewrote
+// old-contents-plus-line, which is a read-modify-write: if cooldown suppression
+// regressed and three processes started at once, all three could read the same
+// old content and clobber each other, the file could finish one line longer,
+// and the burst check below would pass against the exact defect it exists to
+// catch. Each process writes its own file instead, and the count is the number
+// of files.
 await Bun.write(recorder, `
 const line = JSON.stringify(Bun.argv.slice(3)) + "\\n"
-await Bun.write(Bun.argv[2], (await Bun.file(Bun.argv[2]).text().catch(() => "")) + line)
+await Bun.write(Bun.argv[2] + "." + process.pid + "." + Bun.nanoseconds(), line)
 if (await Bun.file(Bun.argv[2] + ".fail").exists()) process.exit(3)
 `)
 
@@ -116,9 +123,14 @@ async function call(name: string, args: Record<string, unknown>): Promise<any> {
 }
 
 // Every wake recorded so far, newest last.
+// One file per wake, so two processes cannot collapse into one observation.
 function wakes(): string[][] {
-  if (!existsSync(log)) return []
-  return readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map(l => JSON.parse(l))
+  const dir = dirname(log)
+  const base = basename(log) + "."
+  return readdirSync(dir)
+    .filter(f => f.startsWith(base) && !f.endsWith(".fail"))
+    .sort()
+    .map(f => JSON.parse(readFileSync(join(dir, f), "utf8").trim()))
 }
 async function settle(ms = 1500) { await Bun.sleep(ms) }
 
@@ -214,9 +226,12 @@ async function failedWakeDoesNotConsumeTheAttempt() {
   mkdirSync(proj)
   const rec = join(d, "recorder.ts")
   const lg = join(d, "wakes.jsonl")
+  // One file per wake, like the recorder above and for the same reason: a
+  // shared file is a read-modify-write, and two processes clobbering each other
+  // look exactly like one process.
   await Bun.write(rec, `
 const line = JSON.stringify(Bun.argv.slice(3)) + "\\n"
-await Bun.write(Bun.argv[2], (await Bun.file(Bun.argv[2]).text().catch(() => "")) + line)
+await Bun.write(Bun.argv[2] + "." + process.pid + "." + Bun.nanoseconds(), line)
 if (await Bun.file(Bun.argv[2] + ".fail").exists()) process.exit(3)
 `)
   await Bun.write(join(d, "dibs.toml"), `
@@ -249,9 +264,10 @@ cooldown = "60s"
       })
       return JSON.parse(((await r.json()) as any).result.content[0].text)
     }
-    const count = () => existsSync(lg)
-      ? readFileSync(lg, "utf8").trim().split("\n").filter(Boolean).length
-      : 0
+    // One file per wake, matching the recorder: counting lines in a shared
+    // file cannot distinguish one process from three that clobbered each other.
+    const count = () => readdirSync(d)
+      .filter(f => f.startsWith(basename(lg) + ".") && !f.endsWith(".fail")).length
 
     await c("hook_poll", { session_id: THREAD, event: "SessionStart", cwd: proj })
     await c("register", {

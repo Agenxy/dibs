@@ -118,23 +118,51 @@ func TestARestartIsNotBelievedUntilTheBoardAnswers(t *testing.T) {
 // This asserts the argv, because the fault was in the argv: the two commands
 // have to describe one daemon.
 func TestTheReplacementIsProvedForTheAddressItWillBeStartedOn(t *testing.T) {
-	p := &plan{dir: "/tmp/board", running: daemonState{addr: "192.168.1.205:4777"}}
-	got := checkArgs(p)
-	joined := strings.Join(got, " ")
-	if !strings.Contains(joined, "-addr 192.168.1.205:4777") {
+	p := &plan{dir: t.TempDir(), running: daemonState{addr: "192.168.1.205:4777"}}
+	joined := strings.Join(checkArgs(p), " ")
+	if !strings.Contains(joined, "192.168.1.205:4777") {
 		t.Errorf("the proof runs `dibd %s`, which does not name the address the "+
 			"replacement will be started on. Everything about binding and TLS is "+
 			"then answered for a different daemon, after which the running one is "+
 			"stopped", joined)
 	}
-	if !strings.Contains(joined, "-dir /tmp/board") {
+	if !strings.Contains(joined, "-dir "+p.dir) {
 		t.Errorf("the proof does not name the board: %s", joined)
 	}
 
-	// A daemon whose address was never recorded still gets checked, on whatever
-	// it resolves for itself: passing an empty -addr would be worse than none.
-	bare := checkArgs(&plan{dir: "/tmp/board"})
-	if strings.Contains(strings.Join(bare, " "), "-addr") {
-		t.Errorf("an empty address was passed as a flag: %v", bare)
+	// AND THE TRANSPORT, which the registry does not store.
+	//
+	// resolveListenAddr strips any scheme before the daemon registers, so the
+	// recorded address is a bare host:port and handing it back makes the
+	// replacement re-infer: an http:// LAN board is checked and restarted as
+	// HTTPS, an https:// loopback board becomes plaintext. The preflight then
+	// approves a different daemon than the one it authorises stopping. This
+	// test pinned the bare form and so could not fail on either case.
+	if _, _, found := strings.Cut(addrFlag(checkArgs(p)), "://"); !found {
+		t.Errorf("the proof is given %q, which states no transport: the replacement "+
+			"infers one from the host, and the two can disagree",
+			addrFlag(checkArgs(p)))
 	}
+
+	// The restart must be given the SAME thing, or the proof was about a
+	// different daemon than the one that comes up.
+	if got, want := replacementAddr(p.dir, p.running.addr), addrFlag(checkArgs(p)); got != want {
+		t.Errorf("the restart uses %q and the preflight used %q", got, want)
+	}
+
+	// A daemon whose address was never recorded still gets checked, on whatever
+	// it resolves for itself: an empty -addr flag would be worse than none.
+	if strings.Contains(strings.Join(checkArgs(&plan{dir: p.dir}), " "), "-addr") {
+		t.Errorf("an empty address was passed as a flag: %v", checkArgs(&plan{dir: p.dir}))
+	}
+}
+
+// addrFlag returns the value after -addr, or "".
+func addrFlag(args []string) string {
+	for i, a := range args {
+		if a == "-addr" && i+1 < len(args) {
+			return args[i+1]
+		}
+	}
+	return ""
 }

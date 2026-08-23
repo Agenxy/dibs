@@ -173,11 +173,33 @@ func putAttr(m map[string]any, a slog.Attr) {
 }
 
 // WithAttrs returns a handler carrying additional attributes.
+//
+// REDACTED ON THE WAY IN, for the base handler as well.
+//
+// The record path was fixed to redact before forwarding, and this one was
+// missed: attributes bound with log.With go into the base handler HERE and are
+// no longer in the record that Handle later sanitises, so
+// `log.With("local_secret", s)` printed the secret on stderr while the board's
+// own log view showed it redacted. Same guarantee, other door. The ring keeps
+// the originals in h.attrs because putAttr redacts them at capture.
 func (h *Handler) WithAttrs(as []slog.Attr) slog.Handler {
 	n := *h
-	n.base = h.base.WithAttrs(as)
+	n.base = h.base.WithAttrs(redactAttrs(as))
 	n.attrs = append(append([]slog.Attr(nil), h.attrs...), as...)
 	return &n
+}
+
+// redactAttrs replaces sensitive values in a slice, leaving the input alone.
+func redactAttrs(as []slog.Attr) []slog.Attr {
+	out := make([]slog.Attr, len(as))
+	for i, a := range as {
+		if sensitive(a.Key) {
+			out[i] = slog.String(a.Key, "[redacted]")
+			continue
+		}
+		out[i] = a
+	}
+	return out
 }
 
 // WithGroup returns a handler nested under a group name.

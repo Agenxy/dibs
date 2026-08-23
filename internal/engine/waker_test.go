@@ -966,3 +966,79 @@ func TestAWakeSleeperDoesNothing(t *testing.T) {
 		}
 	}
 }
+
+// Mail arriving after a wake exits, inside its cooldown, is not lost.
+//
+// maybeWake fires once per event and nothing retries. A wake that ran and
+// exited leaves the agent asleep again; a question arriving ten seconds later
+// was refused by the ninety-second cooldown and then forgotten, so the sender
+// waited for an unrelated future event to happen to arrive. Ninety seconds is a
+// rate limit on starting processes, and it was behaving as a rate limit on
+// delivering mail, which is the failure this whole path exists to remove.
+//
+// The existing cooldown test ages the timestamp by hand before finishing the
+// previous wake, so it never occupies this window.
+func TestMailInsideTheCooldownIsRetriedNotDropped(t *testing.T) {
+	e, st := wakeEngine(t, WakeCommand{
+		Argv: []string{"echo", "{thread}"}, Cooldown: 300 * time.Millisecond,
+	})
+	l := bridgeAgent("sleeper", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	st.Agents["sleeper"] = l
+
+	// A wake happens and its command exits.
+	if _, ok := e.wakeFor(l, core.MsgQuestion, core.Event{}); !ok {
+		t.Fatal("no first wake, so there is no cooldown to arrive inside")
+	}
+	e.wakeFinished("sleeper")
+
+	// Now blocking mail lands inside the window.
+	e.maybeWake(core.Event{
+		Type: "message.sent", To: "sleeper",
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	})
+
+	// It was refused for now, which is correct: what matters is that a
+	// re-check was ARMED rather than the event thrown away.
+	e.wakers.mu.Lock()
+	armed := e.wakers.deferred["sleeper"] != nil
+	e.wakers.mu.Unlock()
+	if !armed {
+		t.Fatal("a message refused by the cooldown armed no re-check. maybeWake " +
+			"fires once per event, so that wake is now lost: the recipient stays " +
+			"asleep until some unrelated event happens to arrive, while the sender " +
+			"waits on a deadline")
+	}
+}
+
+// And the re-check only wakes somebody who still needs it.
+//
+// Re-deciding from scratch rather than replaying the event is the point: by the
+// time the timer fires the agent may have come back and read everything, or the
+// question may have been answered. A retry that fires regardless would start a
+// process for mail nobody is waiting on, which is the behaviour that makes an
+// operator switch the feature off.
+func TestTheDeferredRecheckWakesNobodyWhoNoLongerNeedsIt(t *testing.T) {
+	e, st := wakeEngine(t, WakeCommand{
+		Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute,
+	})
+	l := bridgeAgent("quiet", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	st.Agents["quiet"] = l
+
+	// Nothing is waiting on this agent.
+	if e.hasBlockingMail("quiet") {
+		t.Fatal("setup: something is already blocking, so this proves nothing")
+	}
+	e.retryWakeDecision("quiet")
+	if _, spent := e.wakers.last["quiet"]; spent {
+		t.Error("the re-check started a wake for an agent nobody is waiting on")
+	}
+
+	// A signed-off agent is not woken by the retry either.
+	gone := bridgeAgent("retired", "Codex", "019fff00-1111-7f60-81cc-6ab1298d76ec")
+	gone.Status = core.StatusClosed
+	st.Agents["retired"] = gone
+	e.retryWakeDecision("retired")
+	if _, spent := e.wakers.last["retired"]; spent {
+		t.Error("the re-check resumed an agent that has signed off")
+	}
+}

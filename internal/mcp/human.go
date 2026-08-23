@@ -73,10 +73,11 @@ func (s *Server) humanUnlock(ctx context.Context, a *toolArgs) (core.Result, err
 		return core.Result{
 			"ok": false,
 			"why": "a presence check is already waiting for an answer on this " +
-				"machine, so nothing was asked. Only one prompt at a time, so an " +
-				"approval cannot be taken by a request it was not raised for",
+				"machine, so nothing was asked. The sheet on screen belongs to " +
+				"whatever asked first, which is not this request",
 			"hint": "wait for the prompt already on screen to be answered or " +
-				"dismissed, then try again. This is not a refusal by the human",
+				"dismissed, then try again. This is not a refusal by the human, and " +
+				"the operator should decline that sheet if they did not start it",
 		}, nil
 	}
 

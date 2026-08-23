@@ -457,8 +457,11 @@ func startDaemon(installed, dir, unit string, was daemonState) error {
 		// leave the fleet with no daemon over a bookkeeping detail.
 	}
 	args := []string{"-dir", dir}
-	if was.addr != "" {
-		args = append(args, "-addr", was.addr)
+	// The SAME address the preflight was given, transport included: the proof
+	// and the thing proved have to describe one daemon, and the restart is the
+	// thing proved.
+	if a := replacementAddr(dir, was.addr); a != "" {
+		args = append(args, "-addr", a)
 	}
 	// A second board on one machine is a deliberate configuration (isolating
 	// agents you do not trust, SECURITY.md), and it is refused by default. A
@@ -675,8 +678,38 @@ func unitIsWritable(unit string) error {
 // notice it changing.
 func checkArgs(p *plan) []string {
 	args := []string{"-check", "-dir", p.dir}
-	if p.running.addr != "" {
-		args = append(args, "-addr", p.running.addr)
+	if a := replacementAddr(p.dir, p.running.addr); a != "" {
+		args = append(args, "-addr", a)
 	}
 	return args
+}
+
+// replacementAddr is the address to hand the replacement daemon, WITH the
+// transport the board is actually serving.
+//
+// The registry stores what net.Listen was given, and resolveListenAddr strips
+// any scheme before the daemon registers, so `addr` alone is a bare host:port.
+// Handing that back means the replacement re-infers a transport from the host:
+// an http:// LAN board is checked and restarted as HTTPS, and an https://
+// loopback board becomes plaintext. The preflight then approves a different
+// daemon than the one it is about to authorise stopping, and the restart can
+// leave every existing client unable to reconnect.
+//
+// The scheme is not in the registry, and it does not need to be: the data
+// directory's own configuration is what the daemon resolved it from, and asking
+// the shared resolver is the same question the daemon will ask on the way up.
+func replacementAddr(dir, addr string) string {
+	if addr == "" {
+		return ""
+	}
+	if _, _, found := strings.Cut(addr, "://"); found {
+		return addr // already stated, nothing to add
+	}
+	scheme, _, err := resolveTransport(dir)
+	if err != nil || scheme == "" {
+		// Unreadable config: the bare address is what today does, and a guess
+		// here would be the same guess the daemon makes anyway.
+		return addr
+	}
+	return scheme + "://" + addr
 }
