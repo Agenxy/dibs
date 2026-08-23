@@ -218,6 +218,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   decrypted mail, and whatever a tool surfaced. Only the operating system's own
   complaint is logged, and only when the process never started.
 
+- **And then it shipped as something that is not a bundle.** The archive entry
+  added to fix the above used a `Dibs.app/**/*` glob, which ate the `Contents`
+  level: every archive carried `Dibs.app/MacOS/dibs-notify`, which macOS does
+  not recognise as a bundle and which is not the path the runtime resolves, so
+  `dibs doctor` run from an extracted archive reported the notifier not
+  installed and fell back to `osascript` under Script Editor's name. That is the
+  same sentence the fix was written to remove, and three guards were green over
+  it: `goreleaser check` validates the file's shape, and the two helper guards
+  look for the substring `src: Dibs.app`, which the broken line contains. The
+  gate builds the archives and opens one now, and compares it against the paths
+  read out of the packages that resolve them.
+
 - **The notifier bundle was never in a release.** `internal/notify` resolves
   `Dibs.app/Contents/MacOS/dibs-notify` beside the executable and only `task
   install` built it, so every published archive and every `brew install` went

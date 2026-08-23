@@ -1168,6 +1168,17 @@ func TestEveryToolBinaryIsIgnored(t *testing.T) {
 // This is the SECOND component to go missing the same way: the Touch ID helper
 // had the identical hole one review round earlier, and its guard watched only
 // itself. A guard written for one artifact is a guard for that artifact.
+//
+// WHAT THIS CANNOT SEE, and what does. Everything below reads
+// `.goreleaser.yml`, so it can only answer whether the configuration NAMES the
+// artifact. It was green while the notifier bundle shipped as
+// `Dibs.app/MacOS/dibs-notify`, because `src: Dibs.app/**/*` contains the
+// substring `src: Dibs.app` and the glob quietly ate the `Contents` level the
+// runtime resolves through. The archive had the file, under a path that is not
+// a macOS bundle and is not where internal/notify looks, and `dibs doctor` run
+// from an extracted archive said the notifier was not installed. `task
+// test:archive` builds the archives and tools/archivecheck opens one; this
+// stays because a deleted entry is worth catching in a second, without a build.
 func TestEveryBundledHelperShipsInTheRelease(t *testing.T) {
 	root := repoRoot(t)
 	rel, err := os.ReadFile(filepath.Join(root, ".goreleaser.yml"))
@@ -1281,5 +1292,70 @@ func TestEveryWorkflowPinsTheSameToolchain(t *testing.T) {
 		t.Errorf("workflows pin different toolchain versions: %v. One of them is the "+
 			"gate and one of them is the release, and they have to be the same "+
 			"toolchain or the gate is not testing what ships", seen)
+	}
+}
+
+// Every release before-hook output has an ignore entry.
+//
+// The hooks build the man pages, the Touch ID helper's two slices, the
+// universal binary made from them, and the notifier bundle, all into the
+// working directory. Until the gate built a release nothing produced any of
+// that outside the release job, so `.gitignore` listed exactly one of them and
+// nobody noticed: `task test:archive` went into `task ci` to prove the archive
+// carries what the runtime resolves, and the first local run left four
+// untracked artifacts including a whole signed .app bundle, which `git add -A`
+// staged.
+//
+// That is the same failure as the tool binaries above, arriving from a
+// different direction, and it has the same answer: derive the list rather than
+// remember it. The entry a hand-written list will be missing is the one for the
+// hook somebody adds next.
+func TestEveryReleaseHookOutputIsIgnored(t *testing.T) {
+	root := repoRoot(t)
+	raw, err := os.ReadFile(filepath.Join(root, ".goreleaser.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The hooks section only. A `-o` further down the file belongs to something
+	// that is not run before the build and does not land in this directory.
+	hooks := regexp.MustCompile(`(?ms)^before:\n(.*?)^\S`).FindStringSubmatch(string(raw))
+	if hooks == nil {
+		t.Fatal(".goreleaser.yml has no `before:` section, so this check cannot see what " +
+			"the release builds into the working directory before it starts")
+	}
+	// -o, -out and -output: three tools, three spellings, and a guard that knew
+	// one of them would pass over the other two. Bare `-o` last so the longer
+	// flags are not read as it.
+	outputs := map[string]bool{}
+	for _, m := range regexp.MustCompile(`-(?:output|out|o)\s+(\S+)`).
+		FindAllStringSubmatch(hooks[1], -1) {
+		outputs[m[1]] = true
+	}
+	if len(outputs) == 0 {
+		t.Fatal("no before-hook outputs found; this check verified nothing")
+	}
+
+	ignoreRaw, err := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ignored := map[string]bool{}
+	for _, line := range strings.Split(string(ignoreRaw), "\n") {
+		line = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(line), "/"))
+		ignored[strings.TrimPrefix(line, "/")] = true
+	}
+
+	for name := range outputs {
+		// A path into a subdirectory is not left at the root and is somebody
+		// else's ignore rule; this is about what lands beside the go.mod.
+		if strings.ContainsRune(name, '/') {
+			continue
+		}
+		if !ignored[name] {
+			t.Errorf(".goreleaser.yml's before hooks build %q into the working directory "+
+				"and .gitignore has no anchored entry for it, so `task ci` now leaves it "+
+				"untracked and the next `git add -A` commits a build artifact. Add this "+
+				"line:\n\n    /%s\n", name, name)
+		}
 	}
 }

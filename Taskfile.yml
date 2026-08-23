@@ -362,6 +362,24 @@ tasks:
     cmds:
       - goreleaser check
 
+
+  test:archive:
+    desc: "Build the release archives and prove they carry every runtime path"
+    # VALIDATING THE CONFIG IS NOT INSPECTING THE ARTIFACT. `release:check` above
+    # asks GoReleaser whether the file is well formed, and two other guards read
+    # it for the helpers' names. All three were green while the notifier bundle
+    # shipped as `Dibs.app/MacOS/dibs-notify`: a `src: Dibs.app/**/*` glob ate
+    # the `Contents` level, the substring those guards look for was present in
+    # the broken line, and `dibs doctor` run from an extracted archive reported
+    # the notifier not installed. The only check that could see it is one that
+    # opens the tar.
+    #
+    # Snapshot, so it needs no tag and no credentials; the cask and signing are
+    # skipped because they need the tap's deploy key and cosign, which a
+    # contributor's machine has neither of and which are not what this asks.
+    cmds:
+      - goreleaser release --snapshot --clean --skip=sign,publish,announce,validate,homebrew
+      - go run ./tools/archivecheck
   test:wake:
     env:
       # No dialogs from a test run: these suites spawn real daemons,
@@ -514,6 +532,7 @@ tasks:
       - task: test:space
       - task: test:wake
       - task: release:check
+      - task: test:archive
       - task: test:sidecar
       - task: test:human
       - task: test:minimal

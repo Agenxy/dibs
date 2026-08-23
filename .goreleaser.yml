@@ -127,7 +127,16 @@ archives:
           mtime: "{{ .CommitDate }}"
       # The notifier bundle, whole: it is a directory, and the executable
       # inside it is what internal/notify resolves.
-      - src: Dibs.app/**/*
+      # src is the DIRECTORY and dst its name in the archive. A `Dibs.app/**/*`
+      # glob here silently ate the `Contents` level: the archive carried
+      # `Dibs.app/MacOS/dibs-notify`, which is not a bundle macOS recognises and
+      # is not the path internal/notify resolves. Every published archive would
+      # have reported "Dibs.app is not installed beside the binary" and fallen
+      # back to osascript under Script Editor's name: the exact failure the round
+      # that ADDED this entry believed it had closed. tools/archivecheck opens
+      # the built archive now, because the guard that read this file saw a
+      # correct `src: Dibs.app` substring in the broken form.
+      - src: Dibs.app
         dst: Dibs.app
         info:
           owner: root
