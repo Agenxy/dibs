@@ -904,6 +904,44 @@ machines for real work. Their priority order, not ours.
   macOS caches a signature verdict against the inode, and set the codesign
   identifiers, which the Go toolchain leaves as `a.out`.
 
+- **And the re-check could not get past the same test one hop later.**
+  Recording the arrival before the recency short-circuit fixed the branch that
+  decides whether a re-check is owed, and the re-check itself then asked
+  `recentlyInTouch` and returned: the agent is recently in touch precisely
+  because the wake it has just finished called Dibs. The wake command runs the
+  agent's whole turn in that process, so the process exiting IS the turn
+  finishing, which is what `turnEnded` already means and what a Stop hook would
+  report on any other path. It is recorded at the exit, and every later
+  re-check, including the deferred one, reads the right answer. The test stopped
+  at "the exit owes a re-check" and never drove the decision, which is where
+  production lost it.
+
+- **A failed wake plus mail during it left a live timer.** Two re-checks can be
+  owed at once, armed by different code: the failure arms one for its cooldown,
+  the arrival arms one for the exit. The exit runs first and dropped the
+  cooldown entry from the map without stopping the timer, so the orphan fired
+  later and started a third command, against the promise two lines from it that
+  a command failing twice fails rather than looping.
+
+- **The one instruction the role pin has was invalid TOML for the names this
+  release added.** The daemon prints the `[roles.identity]` line to paste,
+  because the operator cannot look a fingerprint up anywhere else, and it
+  interpolated the agent's name as a bare key. A bare TOML key holds only
+  letters, digits, underscores and dashes, so `Fleet Lead = "..."` does not
+  parse: following the daemon's own advice produced a `dibs.toml` it then
+  refuses to load, with the role still ungranted and a new fault on top. The
+  guard hands the printed snippet to the same decoder the daemon uses rather
+  than checking that it looks quoted.
+
+- **`task build` could not build on the Mac the release no longer covers.** The
+  app bundle's icon renderer is a build-time tool that the build then executes,
+  and it was compiled through the same helper as the shipped notifier, which now
+  states an arm64 target: on an Intel Mac Swift emitted a binary the next line
+  could not run. Building from source is the documented answer for anyone whose
+  Mac the release dropped, so that path has to work. A tool that runs during the
+  build and a file that ships in the archive have opposite requirements, and one
+  function serving both is how they were confused.
+
 - **Reading the inbox cancelled the re-check that exists for what comes after
   it.** Mail arriving during a running wake is re-asked when that command exits,
   and the woken agent's inbox read is itself a call to Dibs, so the agent became

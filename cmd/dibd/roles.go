@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -182,6 +183,31 @@ func grantDeclared(ctx context.Context, eng *engine.Engine, role, agent, id stri
 	}
 }
 
+// tomlKey renders a key the way the operator has to type it.
+//
+// THE ONE INSTRUCTION THIS FEATURE HAS, and it emitted invalid TOML for exactly
+// the names the reconciler had just learned to accept. A bare key may hold only
+// letters, digits, underscores and dashes, so `Fleet Lead = "..."` does not
+// parse: an operator following the daemon's own advice got a dibs.toml the
+// daemon then refuses to load, and the role they were trying to grant stayed
+// ungranted with a new fault on top. Quoted whenever it has to be, and left
+// bare when it does not, because an unnecessary quote invites the reader to
+// copy it into places where it is wrong.
+func tomlKey(s string) string {
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
+			r == '_', r == '-':
+		default:
+			return strconv.Quote(s)
+		}
+	}
+	if s == "" {
+		return `""`
+	}
+	return s
+}
+
 // resolveDeclared turns what the operator wrote in `[roles]` into an agent id,
 // or "" when there is nothing to do this tick.
 //
@@ -239,7 +265,7 @@ func mayHoldDeclaredRole(ctx context.Context, eng *engine.Engine, pins *rolePins
 		if c.Identity[agent] == "" {
 			slog.Warn("to grant it, pin this agent's identity in dibs.toml",
 				"agent", agent, "role", role,
-				"add", fmt.Sprintf("[roles.identity]\n%s = %q", agent, fp))
+				"add", fmt.Sprintf("[roles.identity]\n%s = %q", tomlKey(agent), fp))
 		}
 		return false
 	}

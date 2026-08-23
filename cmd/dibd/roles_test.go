@@ -4,8 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/BurntSushi/toml"
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
@@ -649,4 +652,62 @@ func TestACorruptPinFileExplainsItself(t *testing.T) {
 		!strings.Contains(err.Error(), "invalid character") {
 		t.Errorf("the refusal does not name the parse failure:\n  %s", err)
 	}
+}
+
+// The one instruction this feature has must be valid TOML.
+//
+// A standing role needs the agent's fingerprint in `[roles.identity]`, and the
+// operator cannot look that up anywhere else, so the daemon prints the line to
+// paste. It interpolated the name as a bare key, and a bare TOML key holds only
+// letters, digits, underscores and dashes: for `Fleet Lead`, which is exactly
+// the kind of name the reconciler had just learned to resolve, the printed
+// snippet does not parse. Following the daemon's own advice therefore produced
+// a dibs.toml it then refuses to load, with the role still ungranted and a new
+// fault on top.
+//
+// PARSED, not pattern-matched. A check that the key "looks quoted" would pass
+// against a quoting scheme TOML does not accept; this hands the snippet to the
+// same decoder the daemon uses and reads the value back out.
+func TestThePrintedIdentityPinIsValidTOML(t *testing.T) {
+	const fp = "0f9c1c2b3a4d5e6f70819293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7"
+	for _, name := range []string{
+		"fleet-lead",   // already a bare key
+		"Fleet Lead",   // the documented display-name form
+		"ops/west",     // a slash, which register slugs to a dash
+		"lead_2",       // underscores are bare-legal and must not be quoted away
+		`say "hello"`,  // quotes in the name must not escape the key
+		"agent\\north", // a backslash, which TOML treats as an escape
+	} {
+		snippet := "[roles.identity]\n" + tomlKey(name) + " = " + strconv.Quote(fp) + "\n"
+		var got struct {
+			Roles struct {
+				Identity map[string]string `toml:"identity"`
+			} `toml:"roles"`
+		}
+		if _, err := toml.Decode(snippet, &got); err != nil {
+			t.Errorf("the daemon tells an operator to paste this and it does not "+
+				"parse:\n%s\n%v\n\nThe role stays ungranted and dibs.toml now fails to "+
+				"load, which is worse than the state it was meant to fix", snippet, err)
+			continue
+		}
+		if got.Roles.Identity[name] != fp {
+			t.Errorf("the snippet parses but pins %q rather than %q:\n%s",
+				keysOf(got.Roles.Identity), name, snippet)
+		}
+	}
+
+	// And a name that needs no quoting does not get any: an operator copies
+	// what they are shown, and a needless quote is a pattern they will repeat
+	// where it is wrong.
+	if got := tomlKey("fleet-lead"); got != "fleet-lead" {
+		t.Errorf("a bare-legal name was rendered as %s", got)
+	}
+}
+
+func keysOf(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }

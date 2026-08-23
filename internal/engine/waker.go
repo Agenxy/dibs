@@ -301,7 +301,7 @@ func (e *Engine) deferWake(agent string, in time.Duration) {
 	// A small margin, so the timer does not land a microsecond early and find
 	// the cooldown still nominally unexpired.
 	e.wakers.deferred[agent] = time.AfterFunc(in+50*time.Millisecond, func() {
-		e.retryWake(agent)
+		e.retryWake(agent, false)
 	})
 }
 
@@ -311,9 +311,9 @@ func (e *Engine) deferWake(agent string, in time.Duration) {
 // come back on its own and read everything, another wake may be running, or the
 // message may have been answered. The only thing worth carrying across the
 // timer is the agent's name.
-func (e *Engine) retryWake(agent string) {
+func (e *Engine) retryWake(agent string, afterExit bool) {
 	_, _ = e.query(context.Background(), func() core.Result {
-		e.retryWakeDecision(agent)
+		e.retryWakeDecision(agent, afterExit)
 		return core.Result{"ok": true}
 	})
 }
@@ -333,15 +333,48 @@ func (e *Engine) deferWakeLocked(agent string, in time.Duration) {
 // hung this one too, before the split.
 //
 // Callers run on the writer loop.
-func (e *Engine) retryWakeDecision(agent string) {
+func (e *Engine) retryWakeDecision(agent string, afterExit bool) {
 	e.wakers.mu.Lock()
+	// STOPPED, not merely forgotten. Deleting the map entry leaves the timer
+	// running: a failed command arms a cooldown re-check, and if mail also
+	// arrived during it the exit re-check runs immediately and dropped that
+	// entry without stopping it. The orphan then fired after the cooldown and
+	// started a THIRD command, against the adjacent promise that a bad command
+	// costs two attempts rather than looping.
+	if t := e.wakers.deferred[agent]; t != nil {
+		t.Stop()
+	}
 	delete(e.wakers.deferred, agent)
 	e.wakers.mu.Unlock()
 	if e.state == nil {
 		return
 	}
 	l := e.state.Agents[agent]
-	if l == nil || l.Gone() || e.recentlyInTouch(l) {
+	if l == nil || l.Gone() {
+		return
+	}
+	// THE WAKE COMMAND WAS THE TURN, AND IT HAS ENDED.
+	//
+	// Recorded before the recency test, on the writer loop, because otherwise
+	// this returns immediately on exactly the case the exit re-check exists
+	// for: the woken agent read its inbox, which is a call to Dibs, so it is
+	// "recently in touch" for the rest of the cooldown, and the re-check that
+	// mail arriving afterwards depends on was discarded here. Marking the
+	// arrival earlier fixed the branch one hop upstream and left this one.
+	//
+	// This is not a flag standing in for the truth: `codex exec resume` runs the
+	// agent's whole turn in that process, so the process exiting IS the turn
+	// finishing. It is the same fact a Stop hook reports, arriving by the one
+	// path that has no hook to report it, and turnEnded already means exactly
+	// that. Only on the exit: the cooldown timer fires while a command may still
+	// be running, and claiming a finished turn there would be false.
+	if afterExit {
+		if e.turnEnded == nil {
+			e.turnEnded = map[string]time.Time{}
+		}
+		e.turnEnded[agent] = time.Now()
+	}
+	if e.recentlyInTouch(l) {
 		return
 	}
 	if !e.hasBlockingMail(agent) {
@@ -429,7 +462,7 @@ func (e *Engine) wakeFinished(agent string) bool {
 // answer; production takes this.
 func (e *Engine) wakeExited(agent string) {
 	if e.wakeFinished(agent) {
-		e.retryWake(agent)
+		e.retryWake(agent, true)
 	}
 }
 

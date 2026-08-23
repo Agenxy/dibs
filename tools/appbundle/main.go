@@ -98,8 +98,16 @@ func run() error {
 
 	// The icon renderer is a build-time tool: it draws the mark and exits, and
 	// nothing ships it.
+	//
+	// SO IT IS BUILT FOR THIS MACHINE, not for the release target. Compiling it
+	// with the shipped helper's `-target` made it an arm64 binary that the very
+	// next line tries to execute, which an Intel Mac cannot do: `task build`
+	// then failed there, and building from source is the documented answer for
+	// anyone whose Mac the release no longer covers. A tool that runs during the
+	// build and a file that ships in the archive have opposite requirements, and
+	// one function serving both is how they got confused.
 	iconBin := filepath.Join(work, "dibs-icon")
-	if err := swiftc(iconBin, filepath.Join(src, "icon_darwin.swift")); err != nil {
+	if err := swiftcHost(iconBin, filepath.Join(src, "icon_darwin.swift")); err != nil {
 		return err
 	}
 	iconset := filepath.Join(work, "Dibs.iconset")
@@ -184,10 +192,22 @@ func identity() string {
 // 12 APIs, so 12 is what it already required at runtime. The host default hid
 // that too.
 func swiftc(out, src string) error {
+	// SHIPPED, so a fixed target: see swiftcHost for the other case.
 	// #nosec G204 -- a fixed target triple, and paths built from this tool's own
 	// flags and the fixed source directory.
 	if o, err := exec.Command("swiftc", "-O", "-target", "arm64-apple-macos12",
 		"-o", out, src).CombinedOutput(); err != nil {
+		return fmt.Errorf("swiftc %s: %w: %s", src, err, o)
+	}
+	return nil
+}
+
+// swiftcHost builds something this build is about to RUN, so it takes the
+// host's own default target. See the icon renderer above.
+func swiftcHost(out, src string) error {
+	// #nosec G204 -- paths built from this tool's own flags and the fixed source
+	// directory.
+	if o, err := exec.Command("swiftc", "-O", "-o", out, src).CombinedOutput(); err != nil {
 		return fmt.Errorf("swiftc %s: %w: %s", src, err, o)
 	}
 	return nil

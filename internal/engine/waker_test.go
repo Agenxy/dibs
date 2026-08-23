@@ -1028,7 +1028,7 @@ func TestTheDeferredRecheckWakesNobodyWhoNoLongerNeedsIt(t *testing.T) {
 	if e.hasBlockingMail("quiet") {
 		t.Fatal("setup: something is already blocking, so this proves nothing")
 	}
-	e.retryWakeDecision("quiet")
+	e.retryWakeDecision("quiet", false)
 	if _, spent := e.wakers.last["quiet"]; spent {
 		t.Error("the re-check started a wake for an agent nobody is waiting on")
 	}
@@ -1037,7 +1037,7 @@ func TestTheDeferredRecheckWakesNobodyWhoNoLongerNeedsIt(t *testing.T) {
 	gone := bridgeAgent("retired", "Codex", "019fff00-1111-7f60-81cc-6ab1298d76ec")
 	gone.Status = core.StatusClosed
 	st.Agents["retired"] = gone
-	e.retryWakeDecision("retired")
+	e.retryWakeDecision("retired", false)
 	if _, spent := e.wakers.last["retired"]; spent {
 		t.Error("the re-check resumed an agent that has signed off")
 	}
@@ -1158,10 +1158,40 @@ func TestReadingTheInboxDoesNotCancelTheExitRecheck(t *testing.T) {
 	e.maybeWake(ev)
 
 	if owed := e.wakeFinished("busy"); !owed {
-		t.Error("the exit owes nothing, so mail that arrived after the running " +
+		t.Fatal("the exit owes nothing, so mail that arrived after the running " +
 			"activation read its inbox is discarded. It waits for an unrelated event " +
 			"that may never come, while the board reports it delivered: exactly the " +
 			"case the exit re-check was added for")
+	}
+
+	// AND THE RE-CHECK ITSELF MUST GET PAST THE SAME SHORT-CIRCUIT.
+	//
+	// Stopping at "the exit owes a re-check" is where the first version of this
+	// test stopped, and it was green while production still lost the retry one
+	// hop later: retryWakeDecision asked recentlyInTouch before hasBlockingMail,
+	// and the agent is recently in touch precisely BECAUSE the wake it just
+	// finished called Dibs. The end-to-end recorder cannot see it either, since
+	// it never reads an inbox.
+	//
+	// So drive the decision, and assert the property rather than a side effect.
+	//
+	// NOT "a command started": the cooldown legitimately suppresses one here and
+	// defers it, so that assertion passes whatever this branch does, which is
+	// how the first version of this addition could not fail. What has to be true
+	// is that the agent stops counting as in touch, because the contact was its
+	// own finished turn. Everything downstream, including the deferred re-check
+	// that fires when the cooldown lapses, depends on that single answer.
+	e.state.Messages[1] = &core.Message{
+		Serial: 1, From: "asker", To: "busy",
+		Type: core.MsgQuestion, State: core.MsgStatePending,
+	}
+	e.retryWakeDecision("busy", true)
+	if e.recentlyInTouch(l) {
+		t.Error("after its wake command exited, the agent still reads as recently in " +
+			"touch, on the strength of the inbox read of the turn that has just " +
+			"ended. Every later re-check returns at that test, so the mail waits for " +
+			"an unrelated event: the exit re-check exists for exactly this and cannot " +
+			"reach past it")
 	}
 }
 
@@ -1193,5 +1223,53 @@ func TestAWorkingAgentWithNoWakeRunningIsStillLeftAlone(t *testing.T) {
 		t.Error("an arrival was recorded for an agent with no wake running, so an " +
 			"exit that never happens owes a re-check, and a live agent working at " +
 			"its own keyboard is queued for a process it does not need")
+	}
+}
+
+// A failed wake with mail arriving during it does not leave a live timer.
+//
+// Two re-checks can be owed at once and they are armed by different code. A
+// failed command arms one for when its cooldown expires; mail that turned up
+// while it was running arms one for its exit. The exit runs first, and it
+// deleted the cooldown entry from the map WITHOUT stopping the timer, so the
+// orphan fired later and started a third command: against the promise, written
+// two lines from it, that a command which fails twice fails rather than looping.
+//
+// Existing tests isolate "mail arrived during a command" from "the command
+// failed". Neither can see this, because it only exists where they overlap.
+func TestAFailedWakeAndMailDuringItDoNotLeaveAnOrphanTimer(t *testing.T) {
+	e, st := wakeEngine(t, WakeCommand{
+		Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute,
+	})
+	l := bridgeAgent("busy", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	st.Agents["busy"] = l
+
+	// The failed command's cooldown re-check.
+	e.deferWakeLocked("busy", time.Hour)
+	e.wakers.mu.Lock()
+	armed := e.wakers.deferred["busy"]
+	e.wakers.mu.Unlock()
+	if armed == nil {
+		t.Fatal("setup: no cooldown re-check was armed, so there is no timer for the " +
+			"exit to orphan and this test is not exercising the overlap it names")
+	}
+
+	// The exit re-check, which supersedes it.
+	e.retryWakeDecision("busy", true)
+
+	e.wakers.mu.Lock()
+	_, stillMapped := e.wakers.deferred["busy"]
+	e.wakers.mu.Unlock()
+	if stillMapped {
+		t.Fatal("the exit re-check left its entry in the map")
+	}
+	// Stop reports false for a timer that has already fired or been stopped. It
+	// was armed for an hour and has not fired, so a true here means it was still
+	// live and would have started a third command.
+	if armed.Stop() {
+		t.Error("the superseded cooldown timer is still running. It fires after the " +
+			"cooldown and starts another command, so a wake command that is simply " +
+			"wrong costs three attempts and more on every round, which is the retry " +
+			"loop the deferral was carefully written to avoid")
 	}
 }

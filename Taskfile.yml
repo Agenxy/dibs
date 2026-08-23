@@ -45,7 +45,7 @@ tasks:
   presence:
     desc: >-
       Compile the Touch ID presence helper (macOS only). Separate from `build`
-      because Dibs ships CGO_ENABLED=0 and cross-compiles to four targets,
+      because Dibs ships CGO_ENABLED=0 and cross-compiles to three targets,
       linking LocalAuthentication into the daemon would break every non-macOS
       build. The daemon execs this and degrades to the admin password when it is
       absent, so a platform without it loses one affordance, not the product.
@@ -485,7 +485,7 @@ tasks:
   crosscompile:
     desc: Build every release target, so a portability break fails here not at tag time
     # In `ci` because CONTRIBUTING.md promises it is, and because the failure it
-    # catches is invisible on the host: Dibs ships CGO_ENABLED=0 to four targets,
+    # catches is invisible on the host: Dibs ships CGO_ENABLED=0 to three targets,
     # and a Linux-only build break stays hidden on a Mac until the release runs.
     cmds:
       - GOOS=linux  GOARCH=amd64 go build ./...
