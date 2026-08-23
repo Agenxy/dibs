@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os/exec"
 	"strings"
@@ -506,9 +507,23 @@ func runWake(argv []string, agent string) bool {
 	err := cmd.Run()
 	out := tail.Bytes()
 	if err != nil {
+		// WHAT THE OS SAID, not what the agent printed.
+		//
+		// The documented wake command runs an entire agent turn, so its stdout
+		// is transcript: decrypted mail, tool output, a model's summary of a
+		// private message. Logging it put all of that on stderr and in
+		// /api/logs, which undoes the reason mail is encrypted at rest.
+		//
+		// A command that never STARTED is different. There is no agent then,
+		// and the bytes are the operating system's own complaint, which is the
+		// half an operator actually needs to fix a wrong argv.
+		fields := []any{"agent", agent, "cmd", argv[0], "err", err}
+		var ee *exec.Error
+		if errors.As(err, &ee) {
+			fields = append(fields, "output", strings.TrimSpace(string(out)))
+		}
 		slog.Warn("wake command failed; the next message somebody is blocked on "+
-			"will try again", "agent", agent, "cmd", argv[0],
-			"err", err, "output", strings.TrimSpace(string(out)))
+			"will try again", fields...)
 		return false
 	}
 	slog.Info("woke an agent that was not running", "agent", agent, "cmd", argv[0])

@@ -116,6 +116,25 @@ func (e *Engine) humanIdentityLocked() string {
 	return ""
 }
 
+// humanRowLocked is the human's agent id whatever state that row is in.
+//
+// Separate from humanIdentityLocked, which answers "who may act as the human"
+// and rightly says nobody once the row is archived. Ownership is not the same
+// question as authority: an archived human still owns the mail in their
+// mailbox, and for the week the row survives retention, asking the authority
+// question about ownership let a coordinator adopt it.
+func (e *Engine) humanRowLocked() string {
+	if e.state == nil {
+		return ""
+	}
+	if id, ok := e.state.Nonces[humanNonce()]; ok {
+		if l := e.state.Agents[id]; l != nil {
+			return id
+		}
+	}
+	return ""
+}
+
 // humanNonce is the recovery credential the human's agent is registered with.
 // One place, because HumanAgent writes it and HumanIdentity reads it, and a
 // second spelling would make the human two different people.
@@ -660,6 +679,10 @@ func (e *Engine) mayApproveGrant(actor *core.Agent, op *core.Op) error {
 	if m.Grant != "" && (human == "" || actor.ID != human) {
 		return core.ErrGrantNeedsHuman
 	}
+	// The mailbox half asks humanRowLocked, for the reason written on
+	// guardHumanMailbox: an archived human still owns their mail. Approving a
+	// request that carries `adopt: <the human>` is the same taking, one door
+	// along, and this one was skipped entirely once the row aged out.
 	// The same rule as adopt_agent, at the OTHER door.
 	//
 	// guardHumanMailbox covered the direct call and nothing else, so an agent
@@ -671,7 +694,7 @@ func (e *Engine) mayApproveGrant(actor *core.Agent, op *core.Op) error {
 	// points needs its rule at the effect, and this is the second escalation in
 	// one release from guarding a door instead. Both doors now consult this
 	// sentence, and there are only two.
-	if m.Adopt != "" && human != "" && m.Adopt == human && actor.ID != human {
+	if row := e.humanRowLocked(); m.Adopt != "" && row != "" && m.Adopt == row && actor.ID != row {
 		return core.ErrHumanMailboxIsTheirs
 	}
 	return nil
@@ -693,7 +716,19 @@ func (e *Engine) mayApproveGrant(actor *core.Agent, op *core.Op) error {
 // The human may still adopt their own identity, which is what recovery looks
 // like for them.
 func (e *Engine) guardHumanMailbox(actor *core.Agent, target string) error {
-	human := e.humanIdentityLocked()
+	// THE ROW, not the ACTING identity.
+	//
+	// humanIdentityLocked answers "who may act as the human", and it correctly
+	// returns nothing once that row is archived: an archived identity cannot
+	// approve anything. This guard asks a different question, and reading the
+	// same answer made it fail open at exactly the wrong moment. Thirty days
+	// dormant archives the human, the row and its mail survive the seven-day
+	// retention window, and core accepts an archived source as abandoned, so a
+	// coordinator could adopt the operator's private mailbox into its own inbox
+	// during that week: directly, or by approving a peer's request carrying it.
+	//
+	// Whose mail it is does not change when they stop typing.
+	human := e.humanRowLocked()
 	if human == "" || target != human || actor.ID == human {
 		return nil
 	}

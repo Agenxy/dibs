@@ -749,3 +749,49 @@ func TestABlockingNoticeSurvivesABurstOfOrdinaryOnes(t *testing.T) {
 			"news to keep old news", newest, 1+maxNotices*2)
 	}
 }
+
+// The bound holds when notices are indistinguishable from each other.
+//
+// trimNotices rebuilt its result by matching (Serial, Text) back against the
+// original list, and that pair is not an identity: supervisor notices use
+// serial zero deliberately, so a repeated stall and recovery for one
+// observation produces entries equal in both fields. Every one of seventeen
+// identical notices then matched one of the sixteen selected, all seventeen
+// came back, and each further push grew the list again. A bound that fails
+// open, inside the function added to enforce it.
+func TestTheNoticeBoundHoldsForIdenticalNotices(t *testing.T) {
+	var all []notice
+	for i := 0; i < maxNotices*2+1; i++ {
+		// Serial zero and one text, which is what the supervisor produces.
+		all = append(all, notice{Serial: 0, Text: "still working on the same thing"})
+	}
+	if got := trimNotices(all, maxNotices); len(got) != maxNotices {
+		t.Errorf("trimNotices kept %d of %d identical notices, bound %d. An agent "+
+			"that never polls accumulates without limit, which is the one thing this "+
+			"bound exists for", len(got), len(all), maxNotices)
+	}
+
+	// And through the real push path, repeatedly, because the growth compounds.
+	e := &Engine{}
+	for i := 0; i < maxNotices*3; i++ {
+		e.pushNotice("agent", "still working on the same thing", 0)
+	}
+	if n := len(e.notices["agent"]); n > maxNotices {
+		t.Errorf("after %d identical pushes the list holds %d, past the %d bound",
+			maxNotices*3, n, maxNotices)
+	}
+
+	// A blocking notice among duplicates still survives, or the fix above has
+	// traded one failure for the other.
+	e2 := &Engine{}
+	e2.pushNoticeAs("agent", "lael approved your request", 1, 7, true)
+	for i := 0; i < maxNotices*2; i++ {
+		e2.pushNotice("agent", "still working on the same thing", 0)
+	}
+	if e2.blockingNotices("agent") == 0 {
+		t.Error("the approval was evicted by identical situational notices")
+	}
+	if n := len(e2.notices["agent"]); n > maxNotices {
+		t.Errorf("the list holds %d, past the %d bound", n, maxNotices)
+	}
+}

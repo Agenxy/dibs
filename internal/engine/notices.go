@@ -423,24 +423,31 @@ func trimNotices(all []notice, limit int) []notice {
 	if len(all) <= limit {
 		return all
 	}
-	keep := make([]notice, 0, limit)
-	// Walk newest-first, taking blocking ones, then fill with the rest.
-	for pass := 0; pass < 2 && len(keep) < limit; pass++ {
+	// BY POSITION, never by value.
+	//
+	// The first version selected `limit` entries and then rebuilt the result by
+	// matching (Serial, Text) back against the original. That pair is not an
+	// identity: supervisor notices deliberately use serial zero, so a repeated
+	// stall and recovery for one observation produces entries that are equal in
+	// both fields. Seventeen identical notices each matched one of the sixteen
+	// selected, so all seventeen came back and every further push grew the list
+	// again: a bound that fails open, in the function added to enforce it.
+	//
+	// Indices are unique whatever the contents are.
+	keep := make([]bool, len(all))
+	kept := 0
+	for pass := 0; pass < 2 && kept < limit; pass++ {
 		wantBlocking := pass == 0
-		for i := len(all) - 1; i >= 0 && len(keep) < limit; i-- {
-			if all[i].Blocking == wantBlocking {
-				keep = append(keep, all[i])
+		for i := len(all) - 1; i >= 0 && kept < limit; i-- {
+			if !keep[i] && all[i].Blocking == wantBlocking {
+				keep[i], kept = true, kept+1
 			}
 		}
 	}
-	// Back into the order they arrived in.
-	out := make([]notice, 0, len(keep))
-	for _, n := range all {
-		for _, k := range keep {
-			if n.Serial == k.Serial && n.Text == k.Text {
-				out = append(out, n)
-				break
-			}
+	out := make([]notice, 0, kept)
+	for i, n := range all {
+		if keep[i] {
+			out = append(out, n)
 		}
 	}
 	return out
