@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/BurntSushi/toml"
+
 	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
@@ -688,15 +690,22 @@ func TestTheSharedLoaderRefusesEverythingTheDaemonRefuses(t *testing.T) {
 
 			// What the daemon does with the same file. A load failure means the
 			// daemon never gets here, which is the loader refusing: agreement.
-			daemonErr := loaderErr
+			//
+			// applyLimits ONLY, because that is the whole call the daemon makes.
+			// This called applyBlobCap itself as well, which meant that if
+			// production stopped calling it the test supplied the missing
+			// wiring and stayed green: a test that repairs the thing it is
+			// checking. The blob rule is inside applyLimits, so asking for it
+			// separately was also asserting the wiring was NOT there.
+			var daemonErr error
 			if loaderErr == nil {
-				base, err := applyLimits(cfg.Limits, core.DefaultLimits())
-				if err == nil {
-					err = applyBlobCap(cfg.Limits, &base)
-				}
-				daemonErr = err
+				_, daemonErr = applyLimits(cfg.Limits, core.DefaultLimits())
 			}
 
+			// Both directions, and the loader-refused branch has to be
+			// reachable: it was initialised from loaderErr, so `loaderErr != nil
+			// && daemonErr == nil` could never be true and half this test was
+			// dead code. daemonErr is now only ever the daemon's answer.
 			if loaderErr == nil && daemonErr != nil {
 				t.Errorf("the shared loader ACCEPTED a configuration the daemon "+
 					"refuses:\n  %s\n  daemon: %v\n"+
@@ -705,7 +714,7 @@ func TestTheSharedLoaderRefusesEverythingTheDaemonRefuses(t *testing.T) {
 					"loader was added to make impossible",
 					strings.ReplaceAll(strings.TrimSpace(c.body), "\n", " / "), daemonErr)
 			}
-			if loaderErr != nil && daemonErr == nil {
+			if loaderErr != nil && daemonErrFor(t, c.body) == nil {
 				t.Errorf("the shared loader REFUSED a configuration the daemon "+
 					"accepts:\n  %s\n  loader: %v\n"+
 					"Refusing more than the daemon is not the safe direction: it "+
@@ -947,4 +956,26 @@ func TestAMismatchedCertificateAndKeyAreRegenerated(t *testing.T) {
 	if _, err := tls.LoadX509KeyPair(certFile2, keyFile2); err != nil {
 		t.Errorf("the regenerated pair still does not load: %v", err)
 	}
+}
+
+// daemonErrFor asks the daemon's validators about a configuration the shared
+// loader refused, by decoding the file directly.
+//
+// Needed because the loader is how everything else reads dibs.toml, so a file
+// it rejects yields no Config to hand the daemon: the "loader refused, daemon
+// would not" branch could not be evaluated at all and was quietly dead. Refusing
+// MORE than the daemon is a real failure -- it stops an operator using a board
+// that works -- so the branch has to be reachable.
+func daemonErrFor(t *testing.T, body string) error {
+	t.Helper()
+	var raw struct {
+		Limits boardconfig.LimitsConfig `toml:"limits"`
+	}
+	if _, err := toml.Decode(body, &raw); err != nil {
+		// Not even valid TOML: the daemon refuses it too, so they agree.
+		return err
+	}
+	base, err := applyLimits(raw.Limits, core.DefaultLimits())
+	_ = base
+	return err
 }

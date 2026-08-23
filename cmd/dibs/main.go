@@ -365,6 +365,12 @@ func editDistance(a, b string) int {
 }
 
 func get(path string, v any) error {
+	// Before the secret goes anywhere: a dibs.toml that does not parse means
+	// the daemon this was meant for is not running, and the request would carry
+	// this directory's local secret to whatever else answers.
+	if err := checkConfigReadable(); err != nil {
+		return err
+	}
 	req, err := http.NewRequest(http.MethodGet, origin()+path, nil)
 	if err != nil {
 		return err

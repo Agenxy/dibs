@@ -64,7 +64,11 @@ func TestTheGateRefusesAForeignLocalOrigin(t *testing.T) {
 	gate.sessions[token] = boardSession{exp: time.Now().Add(time.Hour), page: pageKey}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/admin/role", nil)
-	req.AddCookie(&http.Cookie{Name: "dibs_session", Value: token})
+	// The gate's OWN name for the cookie. This hard-coded "dibs_session", which
+	// stopped being what production issues when boards became port-scoped, so
+	// session authentication rejected the cookie before the origin check was
+	// ever reached: removing the origin check outright left this green.
+	req.AddCookie(&http.Cookie{Name: gate.sessionCookieName(), Value: token})
 	// The page key too, so the ONLY thing wrong with this request is where it
 	// came from. Without it the request would be refused for a different
 	// reason, and the test would pass while saying nothing about origins.

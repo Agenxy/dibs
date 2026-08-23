@@ -36,8 +36,19 @@ func TestDocumentedE2ESuiteCountMatchesTheGate(t *testing.T) {
 	}
 	// The tasks `ci` actually depends on, so a suite that exists but is not in
 	// the gate is not counted: the sentence describes what `task ci` RUNS.
+	//
+	// THE ci BLOCK, not the whole file. This matched every `- task: test:*`
+	// line anywhere in the Taskfile, so a suite dropped from the gate but still
+	// referenced by some other aggregate task went on being counted, and the
+	// sentence claiming what `task ci` runs stayed green while it ran one
+	// fewer.
+	ciBlock := regexp.MustCompile(`(?ms)^  ci:\n(.*?)(?:\n  \S|\z)`).FindStringSubmatch(string(tf))
+	if ciBlock == nil {
+		t.Fatal("no `ci:` task found in Taskfile.yml, so this check cannot tell " +
+			"what the gate runs")
+	}
 	inCI := map[string]bool{}
-	for _, m := range regexp.MustCompile(`-\s+task:\s+(test:[\w:-]+)`).FindAllStringSubmatch(string(tf), -1) {
+	for _, m := range regexp.MustCompile(`-\s+task:\s+(test:[\w:-]+)`).FindAllStringSubmatch(ciBlock[1], -1) {
 		inCI[m[1]] = true
 	}
 	if len(inCI) == 0 {

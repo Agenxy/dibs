@@ -10,6 +10,7 @@ package main
 // rather than deciding anything on their own.
 
 import (
+	"fmt"
 	"net"
 	"strings"
 
@@ -92,11 +93,23 @@ func origin() string {
 	// transport by itself; the pre-release review pointed out the agreement
 	// test calls the shared resolver directly and so could not see that this
 	// function never did.
-	if scheme, _, err := resolveTransport(paths.DataDir()); err == nil && scheme != "" {
+	scheme, _, err := resolveTransport(paths.DataDir())
+	if err == nil && scheme != "" {
 		return scheme + "://" + addr()
 	}
-	// Unreadable or absent config: back to the inference, which is right for
-	// the default board and is the only answer available.
+	// A BROKEN config is not the same as no config.
+	//
+	// Falling back on both meant a malformed dibs.toml sent every request to
+	// the default endpoint with THIS data directory's local secret attached, so
+	// the daemon the operator meant to reach was stopped by the same fault
+	// while its credential went to whatever else answers on 4777. Absent is the
+	// ordinary case and the inference is right for it; unparseable is a fault
+	// worth saying out loud, and the caller can still choose to continue.
+	if err != nil {
+		configFault = err
+	}
+	// Absent config: back to the inference, which is right for the default
+	// board and is the only answer available.
 	if isLoopbackHostPort(addr()) {
 		return schemePlain + addr()
 	}
@@ -116,4 +129,28 @@ func isLoopbackHostPort(hostPort string) bool {
 	}
 	ip := net.ParseIP(strings.Trim(host, "[]"))
 	return ip != nil && ip.IsLoopback()
+}
+
+// configFault records a dibs.toml that exists and does not parse, so a command
+// about to send this board's local secret somewhere can refuse rather than
+// guess. Set by origin(), read by checkConfigReadable().
+var configFault error
+
+// checkConfigReadable refuses to continue when this data directory's config is
+// broken.
+//
+// The daemon will not start on that file, so nothing the CLI reaches is the
+// board the operator configured, and every request carries their local secret.
+// `mcp-config` already propagated this error; the ordinary request path and
+// `mcp-stdio` swallowed it, which is the half that actually sends credentials.
+func checkConfigReadable() error {
+	origin() // populates configFault as a side effect of resolving
+	if configFault == nil {
+		return nil
+	}
+	return fmt.Errorf("this board's dibs.toml cannot be read (%w). The daemon "+
+		"will not start on it either, so anything reachable now is not the board "+
+		"you configured, and requests would carry this directory's local secret "+
+		"to it. Fix the file, or run `dibd -check` to see what it objects to",
+		configFault)
 }

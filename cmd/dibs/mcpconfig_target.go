@@ -297,10 +297,32 @@ func checkAddr(what, a string, allowScheme bool) error {
 	// the failure will ask later, only now, where it can be explained. Found by
 	// the pre-release review, which noted the test claiming unusable addresses
 	// are refused had no malformed-host case.
-	if _, uerr := url.Parse("http://" + net.JoinHostPort(h, p) + "/"); uerr != nil {
+	u, uerr := url.Parse("http://" + net.JoinHostPort(h, p) + "/")
+	if uerr != nil {
 		return fmt.Errorf("%s: %q cannot be used in a URL (%v), so every request "+
 			"built from it would fail inside the HTTP client rather than here",
 			what, h, uerr)
+	}
+	// AND THE URL MUST STILL POINT AT THE HOST WE CHECKED.
+	//
+	// Parsing successfully is not the same as parsing to what you validated. An
+	// `@` in the host makes everything before it USERINFO, so
+	// `--board 'trusted.example@evil.example:4777'` split cleanly, passed every
+	// character rule, parsed as a valid URL, and named evil.example as the
+	// authority. The recipe printed `trusted.example@evil.example:4777` and
+	// exited zero; the bridge built from it then sent this board's local secret,
+	// in an `X-Dibs-Local` header, to a host the operator never named. Explicit
+	// http skips the trust ceremony, so nothing downstream would have caught it.
+	//
+	// Comparing the parsed authority against the validated one is the whole
+	// check, and it is the shape of the bug rather than the character: any
+	// future syntax that redirects an authority fails here too.
+	if u.Host != net.JoinHostPort(h, p) || u.User != nil {
+		return fmt.Errorf("%s: %q parses as a URL whose real host is %q, not %q. "+
+			"Anything before an `@` is a username, so requests would carry this "+
+			"board's local secret to %q. If that is genuinely the host you mean, "+
+			"name it on its own",
+			what, a, u.Hostname(), h, u.Hostname())
 	}
 	return nil
 }

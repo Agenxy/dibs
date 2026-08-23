@@ -13,6 +13,7 @@
 package boardconfig
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"math"
@@ -498,16 +499,34 @@ func (c Config) validateAddr() error {
 // daemon started and served plaintext, or an unrelated self-signed certificate,
 // while the operator's explicit setting did nothing.
 func (c Config) validateTLS() error {
-	if (c.TLSCert == "") == (c.TLSKey == "") {
+	cert, key := c.TLSCert, c.TLSKey
+	if cert == "" && key == "" {
 		return nil
 	}
-	missing, given := "tls_key", "tls_cert"
-	if c.TLSCert == "" {
-		missing, given = "tls_cert", "tls_key"
+	if cert == "" || key == "" {
+		return fmt.Errorf("tls_cert and tls_key must be set together: one without " +
+			"the other describes half a transport, and the daemon would start on " +
+			"whichever one the resolver picked instead")
 	}
-	return fmt.Errorf("%s is set and %s is not: a certificate without its key "+
-		"cannot be served, and half a pair is ignored rather than refused, so the "+
-		"daemon would start on a transport you did not ask for", given, missing)
+	// AND THE PAIR HAS TO LOAD.
+	//
+	// This checked only that both strings were present, so `dibd -check`
+	// reported a good configuration for paths that do not exist, and the test
+	// blessed /c.pem and /k.pem as a "complete certificate pair". The check is
+	// what an operator runs before stopping the old daemon during a takeover:
+	// it said yes, the old daemon stopped, and the replacement failed inside
+	// ServeTLS with the port already released. `mcp-config` emitted a
+	// complete-looking https configuration for the same board.
+	//
+	// Loading it is the same question ServeTLS asks, moved to the one moment
+	// where the answer is still cheap.
+	if _, err := tls.LoadX509KeyPair(cert, key); err != nil {
+		return fmt.Errorf("tls_cert %q and tls_key %q cannot be loaded as a pair "+
+			"(%w), so this daemon would report itself configured and then fail every "+
+			"connection. Check that both exist, are readable, and belong together",
+			cert, key, err)
+	}
+	return nil
 }
 
 func (c Config) validateLimits() error {
@@ -581,11 +600,53 @@ func (c Config) validateMatch() error {
 		return fmt.Errorf("[match] history = %d: a window cannot be negative, and a "+
 			"negative one is ignored rather than refused", c.Match.History)
 	}
+	if c.set("match", "history") && c.Match.History == 0 {
+		return fmt.Errorf("[match] history = 0 is ignored and the default window is " +
+			"kept, so this reads as \"look at no history\" and does the opposite. " +
+			"Remove the line for the default, or give it a real number of commits")
+	}
 	if d := c.Match.Deadline; d != "" {
-		if _, err := time.ParseDuration(d); err != nil {
+		parsed, err := time.ParseDuration(d)
+		if err != nil {
 			return fmt.Errorf("[match] deadline = %q is not a duration: write it like "+
 				"\"5m\" or \"90s\". An unparseable one is replaced with the default, so "+
 				"the setting reads as applied and is not: %w", d, err)
+		}
+		// A deadline of zero or less reaches context.WithTimeout and has already
+		// expired, so every match is cancelled before it starts and the board
+		// goes on reporting matching as ready. Turning matching off is a real
+		// thing to want and `auto_join = "never"` is how you say it.
+		if parsed <= 0 {
+			return fmt.Errorf("[match] deadline = %q gives every match no time at "+
+				"all: the context is already expired when it is created, so nothing "+
+				"is ever compared while the board reports matching as ready. To turn "+
+				"matching off, set auto_join = \"never\"", d)
+		}
+	}
+	// A threshold is a SCORE, and scores live in [0,1]. Negative or NaN reads
+	// as "configured" and is not: a negative join threshold takes the setting
+	// out of the explicit no-threshold state without replacing it, a negative
+	// notify threshold clears every candidate for notification, and NaN also
+	// defeats the "am I already coordinating this" comparison, which is what
+	// stops two spaces opening for one piece of work.
+	for _, th := range []struct {
+		key string
+		val float64
+	}{
+		{"join_threshold", c.Match.Join},
+		{"notify_threshold", c.Match.Notify},
+	} {
+		if math.IsNaN(th.val) {
+			return fmt.Errorf("[match] %s = nan: no comparison against nan is ever "+
+				"true, so every score test it takes part in silently answers no, "+
+				"including the one that stops a second space opening for work "+
+				"somebody is already doing", th.key)
+		}
+		if th.val < 0 || th.val > 1 {
+			return fmt.Errorf("[match] %s = %v: a score is between 0 and 1. Outside "+
+				"that range the comparison is decided before any work is looked at, "+
+				"and the setting reads as a threshold while being a constant answer",
+				th.key, th.val)
 		}
 	}
 	if j := c.Match.AutoJoin; j != "" && !AutoJoinPolicies[j] {

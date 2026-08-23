@@ -61,7 +61,7 @@ jobs:
           version: 2026.7.7
           experimental: true
       - name: Playwright browser
-        run: cd internal/mcp/e2e && bun install --frozen-lockfile && bunx playwright install --with-deps chromium
+        run: task e2e:deps
       - name: task ci
         env:
           PW_CHANNEL: ""

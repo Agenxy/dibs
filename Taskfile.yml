@@ -342,6 +342,16 @@ tasks:
       - cd internal/mcp/e2e && bun install --frozen-lockfile
       - DIBD=$PWD/bin/dibd DIBS=$PWD/bin/dibs MATCH_REPO=$PWD bun internal/mcp/e2e/channel_e2e.ts
 
+  e2e:deps:
+    desc: "Browser dependencies for the e2e suites: bun packages and chromium"
+    # HERE rather than in the workflows, which had the same `cd && bun && bunx`
+    # chain written out twice. Task running is what the runner is for, and a
+    # workflow's embedded shell is a shell script that happens to live in YAML:
+    # untyped, untestable, and duplicated in this case.
+    cmds:
+      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - cd internal/mcp/e2e && bunx playwright install --with-deps chromium
+
   test:wake:
     env:
       # No dialogs from a test run: these suites spawn real daemons,

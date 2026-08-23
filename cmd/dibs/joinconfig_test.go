@@ -1,10 +1,18 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Every board gets its own credential directory, keyed by the WHOLE address.
@@ -294,14 +302,28 @@ func TestConfigNamesANonDefaultDaemon(t *testing.T) {
 	// stdio config and the second-machine recipe printed under it. The url
 	// block carries an origin with a scheme regardless, so searching the whole
 	// output would pass while either of these handed over bare host:port.
+	// COUNTED, because a loop over lines that match nothing asserts nothing.
+	// Removing the address from both bridge blocks made this perform zero
+	// checks and pass, while the whole-output check below still succeeded on
+	// the url block's own origin.
+	handed := 0
 	for _, line := range strings.Split(scheme, "\n") {
 		if !strings.Contains(line, "DIBS_ADDR") || !strings.Contains(line, "hub.example") {
 			continue
 		}
+		handed++
 		if !strings.Contains(line, "http://hub.example:4777") {
 			t.Errorf("the scheme was stripped from an address handed to a bridge, which "+
 				"will then infer HTTPS and fail to connect: %s", line)
 		}
+	}
+	// TWO bridge blocks hand over an address here: the stdio config and the
+	// second-machine recipe under it. Anything less means the loop above
+	// skipped one of them, and a skipped line is a line that cannot fail.
+	if handed < 2 {
+		t.Fatalf("only %d line(s) handed an address to a bridge; the stdio config "+
+			"and the remote recipe each do, so the loop above inspected less than it "+
+			"claims and would pass with the address removed from one of them", handed)
 	}
 	if !strings.Contains(scheme, "http://hub.example:4777") {
 		t.Fatal("the address never appeared at all, so this proves nothing")
@@ -351,7 +373,7 @@ func TestTrustIsGivenHostPortAndNotAScheme(t *testing.T) {
 	}
 }
 
-// The headless invocation must reach the command.
+// The headless invocation must reach the command, AND DO SOMETHING.
 //
 // `dibs mcp-config --board <addr>` is documented for a second machine, which is
 // typically headless and driven by `ssh host command`. adminOnly gated the
@@ -366,10 +388,23 @@ func TestJoiningAnotherBoardIsNotGatedOnATerminal(t *testing.T) {
 	// dispatch to gate the whole verb, which is the regression this names,
 	// would have left it green. go test gives this process a pipe for stdout,
 	// so adminOnly sees no terminal: exactly the headless case.
-	err := mcpConfigEntry([]string{"--board", "hub.example:4777"})
-	if err != nil && strings.Contains(err.Error(), "interactive terminal") {
-		t.Errorf("joining another board was refused for want of a terminal, which is "+
-			"the machine it exists for: %v", err)
+	// AND IT HAS TO PRODUCE THE RECIPE. Only "not the terminal error" was
+	// asserted, so any OTHER failure satisfied it, and so did a path that
+	// reached the command and did nothing at all: the check could not tell
+	// "ungated and working" from "ungated and broken in a new way".
+	out, err := captureStdout(t, func() error {
+		return mcpConfigEntry([]string{"--board", "hub.example:4777"})
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "interactive terminal") {
+			t.Fatalf("joining another board was refused for want of a terminal, which "+
+				"is the machine it exists for: %v", err)
+		}
+		t.Fatalf("joining another board failed: %v", err)
+	}
+	if !strings.Contains(out, "hub.example:4777") {
+		t.Errorf("the headless invocation printed no configuration for the board it "+
+			"was given, so it is ungated and does nothing:\n%s", out)
 	}
 	if err := mcpConfigEntry(nil); err == nil ||
 		!strings.Contains(err.Error(), "interactive terminal") {
@@ -842,6 +877,7 @@ func TestAConfigTheDaemonWouldRefuseIsRefusedHere(t *testing.T) {
 // beat a certificate pair the daemon honours first; and a tls_cert with no
 // tls_key was treated as authoritative. Both now call internal/transport.
 func TestTheCLIAgreesWithTheDaemonAboutTransport(t *testing.T) {
+	certPath, keyPath := realPair(t)
 	cases := []struct {
 		name, toml, addr string
 		staleCert        bool
@@ -850,7 +886,8 @@ func TestTheCLIAgreesWithTheDaemonAboutTransport(t *testing.T) {
 		{"loopback with a leftover certificate", "", "127.0.0.1:4999", true, "http"},
 		{
 			"a certificate pair beats insecure_plaintext",
-			"addr = \"192.168.50.10:4777\"\ninsecure_plaintext = true\ntls_cert = \"/c.pem\"\ntls_key = \"/k.pem\"\n", "", false, "https",
+			"addr = \"192.168.50.10:4777\"\ninsecure_plaintext = true\ntls_cert = \"" + certPath +
+				"\"\ntls_key = \"" + keyPath + "\"\n", "", false, "https",
 		},
 		{
 			"insecure_plaintext off loopback",
@@ -975,6 +1012,7 @@ func mustJoiner(t *testing.T) string {
 // test calls the shared resolver directly, so it passes while the caller that
 // matters never asks it.
 func TestOriginHonoursTransportSettingsOnlyTheFileNames(t *testing.T) {
+	pairCert, pairKey := realPair(t)
 	for _, c := range []struct {
 		name, toml, addr, want string
 	}{
@@ -984,7 +1022,7 @@ func TestOriginHonoursTransportSettingsOnlyTheFileNames(t *testing.T) {
 		},
 		{
 			"a certificate pair on loopback, which would otherwise be http",
-			"tls_cert = \"/c.pem\"\ntls_key = \"/k.pem\"\n", "127.0.0.1:4777",
+			"tls_cert = \"" + pairCert + "\"\ntls_key = \"" + pairKey + "\"\n", "127.0.0.1:4777",
 			"https://127.0.0.1:4777",
 		},
 		{
@@ -1054,5 +1092,74 @@ func TestTheForwardedAddressSaysWhichTransportIsOnTheOtherEnd(t *testing.T) {
 					"end of a forward is the joining machine's choice", got)
 			}
 		})
+	}
+}
+
+// realPair writes a certificate and key that actually load.
+//
+// The fixtures here used "/c.pem" and "/k.pem", which name nothing. That was
+// fine while the loader only checked that both strings were present, and the
+// pre-release review pointed out what that meant: `dibd -check` blessed a board
+// that cannot start, during a takeover, right before the operator stopped the
+// daemon it was replacing. The loader loads the pair now, so a fixture standing
+// in for a TLS-configured daemon has to be one.
+func realPair(t *testing.T) (certPath, keyPath string) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "test"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	certPath = filepath.Join(dir, "cert.pem")
+	keyPath = filepath.Join(dir, "key.pem")
+	if err := os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return certPath, keyPath
+}
+
+// A wildcard bind is reachable, so it gets the direct recipe.
+//
+// `:4777` and `0.0.0.0:4777` mean every interface, which is the one shape that
+// is definitely reachable from another machine. An empty host was read as
+// loopback, so a board deliberately bound wide was handed an ssh-forward recipe
+// instead: unnecessary on a host that has ssh, and impossible on one that does
+// not. The shared transport code already read it correctly, so the CLI and the
+// daemon disagreed about the same string.
+func TestAWildcardBindIsNotMistakenForLoopback(t *testing.T) {
+	for _, addr := range []string{":4777", "0.0.0.0:4777", "[::]:4777"} {
+		t.Run(addr, func(t *testing.T) {
+			if tunnel, _ := boardShape(addr, ""); tunnel {
+				t.Errorf("%s was given an ssh-forward recipe. It binds every "+
+					"interface, so another machine reaches it directly; a forward is "+
+					"advice that is unnecessary at best and unfollowable on a host "+
+					"with no ssh", addr)
+			}
+		})
+	}
+	// And genuine loopback still gets one, so this cannot pass by never
+	// forwarding anything.
+	for _, addr := range []string{"127.0.0.1:4777", "localhost:4777", "[::1]:4777"} {
+		if tunnel, _ := boardShape(addr, ""); !tunnel {
+			t.Errorf("%s got no forward, and it is reachable from nowhere else: the "+
+				"joining machine has no way in at all", addr)
+		}
 	}
 }

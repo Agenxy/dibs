@@ -288,12 +288,42 @@ func ensureSelfSignedCert(dir, addr string) (string, string, error) {
 // not depend on any address: a board that changes networks, renews, or gains an
 // interface keeps the same CA and every machine that trusted it stays working.
 func ensureCA(caCert, caKey string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
-	if pair, err := tls.LoadX509KeyPair(caCert, caKey); err == nil {
+	pair, loadErr := tls.LoadX509KeyPair(caCert, caKey)
+	if loadErr == nil {
 		cert, perr := x509.ParseCertificate(pair.Certificate[0])
 		signer, ok := pair.PrivateKey.(*ecdsa.PrivateKey)
-		if perr == nil && ok && time.Now().Before(cert.NotAfter.Add(-certRenewBefore)) {
-			return cert, signer, nil
+		switch {
+		case perr != nil || !ok:
+			return nil, nil, fmt.Errorf("the board's signing identity at %s cannot be "+
+				"read (%v). Every machine that ran `dibs trust` against this board is "+
+				"pinned to it, so this daemon will not quietly issue a new one: "+
+				"restore the file, or delete %s and %s and re-trust each of those "+
+				"machines once", caCert, perr, caCert, caKey)
+		case !time.Now().Before(cert.NotAfter):
+			return nil, nil, fmt.Errorf("the board's signing identity at %s expired on "+
+				"%s. Delete it and %s, restart, and run `dibs trust` again on every "+
+				"machine that joined this board: a new identity is not something this "+
+				"daemon may choose on their behalf",
+				caCert, cert.NotAfter.Format("2006-01-02"), caKey)
 		}
+		return cert, signer, nil
+	}
+	// GENERATED ONLY WHEN THERE IS NOTHING THERE.
+	//
+	// This fell through to generation for every failure: missing, unreadable,
+	// malformed, mismatched, wrong key type, near expiry. Each of those quietly
+	// replaced the identity every joined machine has pinned, so a corrupted
+	// file or a bad restore would silently lock out the whole fleet while the
+	// daemon reported itself healthy, and the README promised the identity
+	// changes only when the operator deletes it. Absent means first run and is
+	// the one case worth guessing at; anything else is the operator's call,
+	// because only they can redo the ceremony on the other machines.
+	if _, statErr := os.Stat(caCert); statErr == nil {
+		return nil, nil, fmt.Errorf("the board's signing identity at %s exists but "+
+			"cannot be loaded with %s (%v). Machines that trusted this board are "+
+			"pinned to it, so a replacement is not this daemon's to make: restore "+
+			"the pair, or delete both files and re-trust each machine once",
+			caCert, caKey, loadErr)
 	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

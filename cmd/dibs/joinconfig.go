@@ -184,7 +184,15 @@ func boardShape(addr, served string) (tunnel, trust bool) {
 	if err != nil {
 		h = rest
 	}
-	loopback := h == "" || h == "localhost"
+	// An EMPTY host is a wildcard bind, not loopback.
+	//
+	// `:4777` means every interface, which is the one shape that is definitely
+	// reachable from another machine, and this classified it as confined to
+	// this one: a board deliberately bound wide was handed an ssh-forward
+	// recipe instead of the direct one, and on a host without ssh that advice
+	// cannot be followed at all. The shared transport code already reads it
+	// correctly, so the two disagreed.
+	loopback := h == "localhost"
 	if ip := net.ParseIP(strings.Trim(h, "[]")); ip != nil {
 		loopback = ip.IsLoopback()
 	}

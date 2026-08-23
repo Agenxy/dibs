@@ -53,7 +53,7 @@ jobs:
           version: 2026.7.7
           experimental: true
       - name: Playwright browser
-        run: cd internal/mcp/e2e && bun install --frozen-lockfile && bunx playwright install --with-deps chromium
+        run: task e2e:deps
       - name: task ci
         env:
           PW_CHANNEL: ""
@@ -86,12 +86,4 @@ jobs:
       # previous build.
       - name: say what the cask still needs
         if: success()
-        run: |
-          {
-            echo "### Homebrew cask"
-            echo
-            echo "Pushed to \`cask-${GITHUB_REF_NAME#v}\` on agenxy/homebrew-tap."
-            echo "**\`brew upgrade\` serves the previous build until that branch is merged.**"
-            echo
-            echo "https://github.com/Agenxy/homebrew-tap/compare/cask-${GITHUB_REF_NAME#v}?expand=1"
-          } >> "$GITHUB_STEP_SUMMARY"
+        run: go run ./tools/casknote

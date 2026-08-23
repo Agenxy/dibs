@@ -994,3 +994,113 @@ func TestBothBinariesShipAManualThatRenders(t *testing.T) {
 		}
 	}
 }
+
+// A workflow's `run:` block is a shell script that happens to live in YAML.
+//
+// The no-shell rule is about what shell IS, not about where the bytes sit: an
+// embedded block is the same untyped string handling, the same silent
+// continuation past failure unless somebody remembered `set -euo pipefail`, the
+// same quoting hazards, and it cannot be built, vetted, or run locally. The
+// guard above looked for extensions, shebangs and symlinks, so every one of
+// these was invisible to it, and three had accumulated: a brace group writing a
+// job summary, a curl-into-sha256sum-into-tar install, and a three-branch
+// version selector interpolating `${{ }}` template values straight into shell
+// words. The pre-release review found the newest by reading.
+//
+// One COMMAND is not a script. `run: go test ./...` is how a workflow invokes
+// anything at all, and forbidding it would forbid workflows. What is refused is
+// shell LOGIC: multiple statements, conditionals, pipelines, redirections,
+// substitutions, and parameter expansion.
+func TestWorkflowsDoNotEmbedShellScripts(t *testing.T) {
+	root := repoRoot(t)
+	dir := filepath.Join(root, ".github", "workflows")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading %s: %v", dir, err)
+	}
+	// Shell constructs that make a `run:` a program rather than an invocation.
+	constructs := []struct{ token, why string }{
+		{"${", "parameter expansion (${VAR#prefix} and friends) is shell string surgery"},
+		{"$(", "command substitution runs a second program to build the first one's arguments"},
+		{"&&", "a conditional sequence is control flow"},
+		{"||", "a fallback is control flow, and the silent kind"},
+		{" | ", "a pipeline hides the exit status of everything but the last stage"},
+		{">>", "a redirection is the script deciding where output goes"},
+		{"if ", "a conditional is control flow"},
+		{"for ", "a loop is control flow"},
+		{"set -e", "needing this is the admission that shell continues past failures"},
+	}
+	checked := 0
+	for _, e := range entries {
+		if e.IsDir() || (filepath.Ext(e.Name()) != ".yml" && filepath.Ext(e.Name()) != ".yaml") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, e.Name())) // #nosec G304 -- this repo's own workflows
+		if err != nil {
+			t.Fatal(err)
+		}
+		checked++
+		for _, block := range runBlocks(string(raw)) {
+			for _, c := range constructs {
+				if !strings.Contains(block.body, c.token) {
+					continue
+				}
+				t.Errorf("%s line %d: this `run:` is a shell script, not a command: %s\n"+
+					"  %s\n"+
+					"Write it as a Go program under tools/ and invoke that. See "+
+					"tools/casknote, tools/fetchpinned and tools/stampserver, each of "+
+					"which replaced one of these",
+					e.Name(), block.line, c.why, strings.TrimSpace(firstLine(block.body)))
+				break
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no workflow files were read, so this check verified nothing")
+	}
+}
+
+type runBlock struct {
+	line int
+	body string
+}
+
+// runBlocks returns every `run:` value in a workflow, folded blocks included.
+func runBlocks(s string) []runBlock {
+	var out []runBlock
+	lines := strings.Split(s, "\n")
+	for i := 0; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		if !strings.HasPrefix(trimmed, "run:") {
+			continue
+		}
+		rest := strings.TrimSpace(strings.TrimPrefix(trimmed, "run:"))
+		// A single-line command.
+		if rest != "" && rest != "|" && rest != ">" && rest != ">-" && rest != "|-" {
+			out = append(out, runBlock{i + 1, rest})
+			continue
+		}
+		// A block scalar: everything indented under it.
+		indent := len(lines[i]) - len(strings.TrimLeft(lines[i], " "))
+		var body []string
+		for j := i + 1; j < len(lines); j++ {
+			if strings.TrimSpace(lines[j]) == "" {
+				body = append(body, "")
+				continue
+			}
+			if len(lines[j])-len(strings.TrimLeft(lines[j], " ")) <= indent {
+				break
+			}
+			body = append(body, strings.TrimSpace(lines[j]))
+		}
+		out = append(out, runBlock{i + 1, strings.Join(body, "\n")})
+	}
+	return out
+}
+
+func firstLine(s string) string {
+	if i := strings.Index(s, "\n"); i >= 0 {
+		return s[:i]
+	}
+	return s
+}

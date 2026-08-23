@@ -1,10 +1,18 @@
 package boardconfig
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A value the daemon refuses must not load here.
@@ -189,10 +197,28 @@ func TestLoadRefusesSettingsThatWouldNotTakeEffect(t *testing.T) {
 		})
 	}
 
+	// A pair that does not exist is not a pair. `dibd -check` is what an
+	// operator runs before stopping the old daemon during a takeover, and this
+	// list used to declare /c.pem and /k.pem a "complete certificate pair": the
+	// check said yes, the old daemon stopped, and the replacement failed inside
+	// ServeTLS with the port already released.
+	certPath, keyPath := writeTestPair(t)
+	t.Run("tls paths that name nothing", func(t *testing.T) {
+		dir := t.TempDir()
+		body := "tls_cert = \"/c.pem\"\ntls_key = \"/k.pem\"\n"
+		if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(dir); err == nil {
+			t.Error("a certificate pair that does not exist was accepted as a " +
+				"complete transport, so `dibd -check` reports a board that cannot start")
+		}
+	})
+
 	// And the shapes that are legitimate must still load.
 	good := []struct{ name, body string }{
 		{"a bare host:port", "addr = \"0.0.0.0:4777\"\n"},
-		{"a complete certificate pair", "tls_cert = \"/c.pem\"\ntls_key = \"/k.pem\"\n"},
+		{"a complete certificate pair", "tls_cert = \"" + certPath + "\"\ntls_key = \"" + keyPath + "\"\n"},
 		{"a real match deadline", "[match]\ndeadline = \"5m\"\n"},
 		{"auto_join always", "[match]\nauto_join = \"always\"\n"},
 		{"auto_join never", "[match]\nauto_join = \"never\"\n"},
@@ -209,4 +235,39 @@ func TestLoadRefusesSettingsThatWouldNotTakeEffect(t *testing.T) {
 			}
 		})
 	}
+}
+
+// writeTestPair generates a real certificate and key, because "a complete
+// certificate pair" now means one that loads.
+func writeTestPair(t *testing.T) (certPath, keyPath string) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "test"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	certPath = filepath.Join(dir, "cert.pem")
+	keyPath = filepath.Join(dir, "key.pem")
+	write := func(path, typ string, b []byte, mode os.FileMode) {
+		if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: typ, Bytes: b}), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(certPath, "CERTIFICATE", der, 0o644)
+	write(keyPath, "EC PRIVATE KEY", keyDER, 0o600)
+	return certPath, keyPath
 }
