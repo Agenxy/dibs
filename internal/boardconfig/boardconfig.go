@@ -817,14 +817,20 @@ func validateWakeEntry(harness string, x WakeExec, all map[string]WakeExec) erro
 			"trimmed, so this matches nobody while still counting as configured",
 			harness)
 	}
-	// Two keys differing only in case collapse onto one lowercase entry,
-	// and which executable survives is Go map iteration order: a
-	// configuration whose behaviour changes between restarts.
-	if lower := strings.ToLower(harness); lower != harness {
-		if _, clash := all[lower]; clash {
+	// Two keys differing only in case collapse onto one lowercase entry, and
+	// which executable survives is Go map iteration order: a configuration
+	// whose behaviour changes between restarts.
+	//
+	// ANY pair that lowercases alike. This looked only for the exact lowercase
+	// spelling, so `Codex` and `CODEX` both passed: the one collision it could
+	// not see is the one where neither key is the canonical form.
+	lower := strings.ToLower(harness)
+	for other := range all {
+		if other != harness && strings.ToLower(other) == lower {
 			return fmt.Errorf("[wake.exec] has both %q and %q, which are the same "+
-				"harness once lowercased. One of the two would win at random on "+
-				"each start", harness, lower)
+				"harness once lowercased. They collapse onto one entry and which "+
+				"executable survives is map iteration order, so the board would "+
+				"behave differently between restarts", harness, other)
 		}
 	}
 	if x.Cooldown < 0 {

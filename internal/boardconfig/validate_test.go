@@ -172,6 +172,12 @@ func TestLoadRefusesSettingsThatWouldNotTakeEffect(t *testing.T) {
 			"a wake entry whose harness name is blank",
 			"[wake.exec.\" \"]\nargv = [\"/bin/echo\"]\n",
 		},
+		// NEITHER key is the canonical form, which is the collision the first
+		// version could not see: it looked only for an exact lowercase peer.
+		{
+			"two harness keys that differ only in case",
+			"[wake.exec.Codex]\nargv = [\"/bin/echo\"]\n\n[wake.exec.CODEX]\nargv = [\"/bin/true\"]\n",
+		},
 		// An entry with no argv at all: the section loaded, startup took the
 		// "there is a wake command" branch, skipped the entry for want of an
 		// argv, and logged `harnesses=0` as though that were a capability.

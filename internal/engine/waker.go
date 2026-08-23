@@ -222,11 +222,19 @@ func (e *Engine) maybeWake(ev core.Event) {
 		return
 	}
 	agent, stamp := l.ID, e.wakeStamp(l.ID)
+	e.wakers.mu.Lock()
+	cool := e.wakers.byHarness[wakeHarness(l)].cooldown
+	e.wakers.mu.Unlock()
 	go func() {
 		defer e.wakeFinished(agent)
 		if runWake(cmd, agent) {
 			return
 		}
+		// A FAILED wake read nothing, so whatever arrived during it is still
+		// owed. One re-check, armed here where failure is actually known:
+		// retryWakeDecision does not arm another on ITS failure, so a command
+		// that is simply wrong costs two attempts rather than looping.
+		defer e.deferWakeLocked(agent, cool)
 		// A FAILED WAKE MUST NOT SPEND THE ATTEMPT.
 		//
 		// The cooldown is taken before the process starts, which is right: two
@@ -282,6 +290,13 @@ func (e *Engine) retryWake(agent string) {
 	})
 }
 
+// deferWakeLocked is deferWake for callers that do not already hold the lock.
+func (e *Engine) deferWakeLocked(agent string, in time.Duration) {
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	e.deferWake(agent, in)
+}
+
 // retryWakeDecision is the decision, split from the loop plumbing.
 //
 // Split because query() sends on e.ops, which is nil on an engine whose loop is
@@ -304,6 +319,14 @@ func (e *Engine) retryWakeDecision(agent string) {
 	if !e.hasBlockingMail(agent) {
 		return
 	}
+	// A wake that is STILL running is already this agent's activation; the
+	// mail will be read by it. Nothing owed, nothing to arm.
+	e.wakers.mu.Lock()
+	stillRunning := e.wakers.running[agent]
+	e.wakers.mu.Unlock()
+	if stillRunning {
+		return
+	}
 	// A verdict carries no msg_type, and this is not replaying a specific
 	// event: the question is only whether somebody is still waiting.
 	cmd, ok := e.wakeFor(l, core.MsgQuestion, core.Event{Type: "wake.retry", To: agent})
@@ -314,6 +337,8 @@ func (e *Engine) retryWakeDecision(agent string) {
 	go func() {
 		defer e.wakeFinished(agent)
 		if !runWake(cmd, agent) {
+			// Released so the next EVENT may try, but no timer armed: this is
+			// already the retry, and a command that fails twice fails.
 			e.releaseWake(agent, stamp)
 		}
 	}()
@@ -454,6 +479,15 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) ([]string
 		// STILL GOING is a stronger reason than recently started, and it
 		// outlives the cooldown: the command IS the activation, so a second one
 		// is a second agent in the same thread.
+		//
+		// NOT DEFERRED. Mail arriving while a wake runs is mail that wake is
+		// about to read: the command IS an activation of this agent. Arming a
+		// re-check here woke it a second time for the same burst, which is the
+		// coalescing this branch exists to provide, and on a command that never
+		// reads mail it is a retry loop with a ninety-second fuse.
+		//
+		// What the review actually found is the FAILED case, and that is
+		// handled where failure is known rather than guessed at here.
 		slog.Debug("no wake: the last one is still running", "agent", l.ID)
 		return nil, false
 	}
@@ -694,4 +728,13 @@ func (t *tailBuffer) Bytes() []byte {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return append([]byte(nil), t.buf...)
+}
+
+// wakeHarness is the table key for this agent, lowercased as SetWakeCommands
+// stores it.
+func wakeHarness(l *core.Agent) string {
+	if l == nil || l.Agent == nil {
+		return ""
+	}
+	return strings.ToLower(l.Agent.Harness)
 }

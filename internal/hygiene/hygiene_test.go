@@ -1232,3 +1232,54 @@ func TestEveryBundledHelperShipsInTheRelease(t *testing.T) {
 		}
 	}
 }
+
+// Every workflow pins the same toolchain version, and pins one at all.
+//
+// The action commit being pinned is not the same as the tool being pinned:
+// publish-mcp.yml pinned jdx/mise-action to a SHA and left the mise version
+// unset, so a job holding `id-token: write` downloaded whatever `latest` meant
+// that morning. That is the exact shape the same file refuses three lines lower
+// for mcp-publisher, in a comment, added by the change that introduced this.
+//
+// And one version across all of them, because three copies of a pin is three
+// places for it to drift and this repository has paid for that shape before.
+func TestEveryWorkflowPinsTheSameToolchain(t *testing.T) {
+	dir := filepath.Join(repoRoot(t), ".github", "workflows")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string][]string{}
+	for _, e := range entries {
+		if e.IsDir() || (filepath.Ext(e.Name()) != ".yml" && filepath.Ext(e.Name()) != ".yaml") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, e.Name())) // #nosec G304 -- this repository
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := string(raw)
+		uses := strings.Count(body, "jdx/mise-action@")
+		if uses == 0 {
+			continue
+		}
+		m := regexp.MustCompile(`(?m)^\s*version:\s*([0-9][\w.\-]*)`).FindAllStringSubmatch(body, -1)
+		if len(m) < uses {
+			t.Errorf("%s uses mise-action %d time(s) and pins %d version(s). A pinned "+
+				"ACTION with an unpinned tool downloads whatever latest means today, "+
+				"and these jobs hold id-token: write", e.Name(), uses, len(m))
+			continue
+		}
+		for _, hit := range m {
+			seen[hit[1]] = append(seen[hit[1]], e.Name())
+		}
+	}
+	if len(seen) == 0 {
+		t.Fatal("no workflow pins a toolchain version, so this check verified nothing")
+	}
+	if len(seen) > 1 {
+		t.Errorf("workflows pin different toolchain versions: %v. One of them is the "+
+			"gate and one of them is the release, and they have to be the same "+
+			"toolchain or the gate is not testing what ships", seen)
+	}
+}

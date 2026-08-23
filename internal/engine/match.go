@@ -1050,7 +1050,7 @@ func (e *Engine) agentsNeedingFootprints(ctx context.Context) (need map[string]s
 			if len(ch.Predicted) > 0 || ch.Topic == "" {
 				continue
 			}
-			if _, done := e.footprints[id]; done {
+			if e.footprintCached(id) {
 				continue
 			}
 			if need == nil {
@@ -1061,6 +1061,24 @@ func (e *Engine) agentsNeedingFootprints(ctx context.Context) (need map[string]s
 		return core.Result{}
 	})
 	return need, live
+}
+
+// footprintCached reports whether this agent's footprint is already backfilled.
+//
+// UNDER THE LOCK, which this read was not.
+//
+// Every other access to e.footprints takes matchMu, and this one ran inside
+// e.query on the writer loop and read the map bare. The writes come from
+// backfillFootprints, which runs OFF the loop precisely so a slow scorer cannot
+// stall coordination, so the loop and a backfill goroutine touched the same map
+// at the same time: a data race, and on a map the runtime turns that into a
+// crash rather than a wrong answer. The writer loop being single is a guarantee
+// about STATE, not about every map an engine happens to hold.
+func (e *Engine) footprintCached(id string) bool {
+	e.matchMu.RLock()
+	defer e.matchMu.RUnlock()
+	_, done := e.footprints[id]
+	return done
 }
 
 // forgetFootprint drops one agent's cached footprint the moment that agent ends.
