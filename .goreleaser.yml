@@ -40,7 +40,15 @@ before:
     # archive and brew install did not: a release whose whole
     # human-in-the-loop story is a component nobody downloading it receives.
     # The Touch ID helper above had exactly this hole one review round earlier.
-    - go run ./tools/appbundle -o Dibs.app -version {{ .Version }}
+    #
+    # -target, because this bundle is for the archive rather than for the
+    # machine building it. Without one the notifier is whatever the release
+    # runner happened to be, which is how it shipped arm64-only into an Intel
+    # tarball. `task app` deliberately passes none: a local build is for the
+    # Mac doing the building, and forcing the release's answer there broke
+    # building from source on an Intel Mac, which is the documented escape
+    # hatch now that the release does not cover it.
+    - go run ./tools/appbundle -o Dibs.app -version {{ .Version }} -target arm64-apple-macos12
 
 builds:
   - id: dibd

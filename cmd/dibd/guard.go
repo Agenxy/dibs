@@ -704,8 +704,15 @@ func (g *authGate) unauthorized(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(unauthorizedHTML))
 		return
 	}
+	// NOT "admin password". This is an onboarding surface, and `dibs web` raises
+	// the Touch ID sheet first: telling a Mac user the way in is a password
+	// sends them to create the weaker credential this release exists to stop
+	// needing. The README and the Homebrew caveat said the same thing and were
+	// corrected a round earlier; this one is the sentence somebody reads at the
+	// exact moment they are locked out, which makes it the worst place for it.
 	_, _ = w.Write([]byte("unauthorized: coordination needs the local secret (X-Dibs-Local); the board needs a " +
-		"session from `dibs web` (admin password)\n"))
+		"session from `dibs web`, which unlocks with Touch ID where there is a sensor " +
+		"and an admin password where there is not\n"))
 }
 
 const unauthorizedHTML = `<!doctype html><meta charset=utf-8>
@@ -724,7 +731,8 @@ border-radius:7px;padding:9px 14px;display:inline-block;margin-top:6px;color:#e6
 <div class=card>
 <div class=mark>▤</div>
 <h1>This board shows private mail: it's locked</h1>
-<p>Opening it takes your admin password (something an agent on this machine can't read). In your terminal:</p>
+<p>Opening it takes something an agent on this machine can't produce: your fingerprint,
+or an admin password where there's no sensor. In your terminal:</p>
 <code>dibs web</code>
 <p>then open the link it prints. Single-use, expires in two minutes.</p>
 </div>`

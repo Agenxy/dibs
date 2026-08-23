@@ -814,10 +814,30 @@ func TestThePresenceHelperIsTheOneThatGetsBuilt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(relRaw), "-target arm64-apple-macos") {
-		t.Error("the presence helper is built with no explicit -target, so the release " +
-			"ships whatever architecture the runner happened to be. Touch ID then " +
-			"falls back to the password wherever that guess was wrong, silently")
+	// BOTH Swift artifacts, and in the RELEASE rather than in the tool.
+	//
+	// The notifier's target was briefly hardcoded in tools/appbundle, which
+	// fixed the release and broke building from source on an Intel Mac: the
+	// documented escape hatch for the platform the release just dropped. A local
+	// build is for the machine doing the building; only the release is for
+	// somewhere else, so only the release states a target, and this checks the
+	// place that has to.
+	for _, what := range []string{
+		"-target arm64-apple-macos", // the presence helper's own swiftc line
+		"appbundle",                 // and the notifier, via the bundler
+	} {
+		if !strings.Contains(string(relRaw), what) {
+			t.Errorf("the release does not build %s at all", what)
+		}
+	}
+	for _, line := range strings.Split(string(relRaw), "\n") {
+		if strings.Contains(line, "tools/appbundle") && !strings.Contains(line, "-target ") {
+			t.Error("the release builds Dibs.app without -target, so the notifier is " +
+				"whatever architecture the runner happened to be. It shipped arm64-only " +
+				"into the Intel archive exactly that way, and the failure is silent: " +
+				"the runtime finds an executable at the expected path and runs it " +
+				"rather than falling back")
+		}
 	}
 	if !strings.Contains(string(relRaw), "{goos: darwin, goarch: amd64}") {
 		t.Error("the release no longer ignores darwin/amd64, so it builds a Mac Intel " +

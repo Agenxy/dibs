@@ -89,6 +89,9 @@ func run() error {
 	out := flagValue("-o", "bin/Dibs.app")
 	version := flagValue("-version", "0.0.0")
 	src := flagValue("-src", "internal/notify/app")
+	// Empty means this machine. The release states its target; `task app` does
+	// not, because a local build is for the Mac doing the building.
+	swiftTarget = flagValue("-target", "")
 
 	work, err := os.MkdirTemp("", "dibs-app")
 	if err != nil {
@@ -173,7 +176,11 @@ func identity() string {
 	return "-"
 }
 
-// swiftc builds the notifier for the one Mac Dibs ships to.
+// swiftTarget is the triple the shipped notifier is compiled for, or "" for
+// this machine. Set by -target; the release passes one, a local build does not.
+var swiftTarget string
+
+// swiftc builds the notifier for the Mac this bundle is FOR.
 //
 // AN EXPLICIT TARGET, not the build host's default. Built without one this was
 // whatever the release runner happened to be, and the release copies a single
@@ -182,21 +189,30 @@ func identity() string {
 // back to osascript, so the notifier was simply absent on that platform while
 // every check was green.
 //
-// The answer is not a fat binary. Dibs does not ship a Mac Intel build at all
-// (see the `ignore` in .goreleaser.yml), so there is one target and stating it
-// is what keeps the artifact a property of this file rather than of the machine
-// that ran it.
+// The answer is not a fat binary. Dibs does not ship a Mac Intel build (see the
+// `ignore` in .goreleaser.yml), so the release has one target and states it.
 //
-// macos12, where the presence helper uses macos11: this source calls
-// interruptionLevel and timeSensitiveSetting unconditionally, which are macOS
-// 12 APIs, so 12 is what it already required at runtime. The host default hid
-// that too.
+// BUT THE TARGET IS AN INPUT, not a constant. Hardcoding the release's answer
+// broke the escape hatch the release drop documents: an Intel Mac told to build
+// from source got native Go binaries, a native presence helper, and an
+// arm64-only notifier beside them. The runtime finds an executable at the
+// expected path and runs it rather than falling back, so notifications failed
+// as an unexplained exec error on a machine where everything else worked. A
+// local build is for the machine doing the building; only the release is for a
+// target somewhere else.
+//
+// macos12 when a target is given, where the presence helper uses macos11: this
+// source calls interruptionLevel and timeSensitiveSetting unconditionally,
+// which are macOS 12 APIs, so 12 is what it already required at runtime.
 func swiftc(out, src string) error {
-	// SHIPPED, so a fixed target: see swiftcHost for the other case.
-	// #nosec G204 -- a fixed target triple, and paths built from this tool's own
-	// flags and the fixed source directory.
-	if o, err := exec.Command("swiftc", "-O", "-target", "arm64-apple-macos12",
-		"-o", out, src).CombinedOutput(); err != nil {
+	args := []string{"-O"}
+	if swiftTarget != "" {
+		args = append(args, "-target", swiftTarget)
+	}
+	args = append(args, "-o", out, src)
+	// #nosec G204 -- a target triple from this tool's own flag, and paths built
+	// from its flags and the fixed source directory.
+	if o, err := exec.Command("swiftc", args...).CombinedOutput(); err != nil {
 		return fmt.Errorf("swiftc %s: %w: %s", src, err, o)
 	}
 	return nil

@@ -904,6 +904,42 @@ machines for real work. Their priority order, not ours.
   macOS caches a signature verdict against the inode, and set the codesign
   identifiers, which the Go toolchain leaves as `a.out`.
 
+- **Mail arriving after a wake exited was refused as "still working".** The
+  commoner ordering, and the last of this one: a wake runs, the woken agent
+  reads its inbox, which is a call to Dibs and makes it recently in touch, the
+  command exits with nothing having arrived meanwhile, and *then* a question
+  lands. Nothing was running, so nothing was owed, so no turn end was recorded,
+  and the recency test refused the wake on the strength of a turn that had
+  already finished, without even arming a deferred re-check. The message was
+  stored and reported delivered. The exit records the turn end unconditionally
+  now, which is simply true and makes both orderings answer correctly, rather
+  than adding a third branch for the third case.
+
+- **A retried wake said "question" from nobody.** The retry passed a hard-coded
+  message type and a bare event, so `{type}` and `{from}` were wrong on every
+  wake that went through a cooldown or an exit re-check, which this release
+  makes the ordinary path rather than a corner: a request, a handoff or an
+  approval all arrived at the operator's command as a question from an empty
+  sender. Both are documented configuration. The retry reads the longest-waiting
+  blocking message instead, and says `notice` when the reason is a blocking
+  notice rather than mail, because that is not one of the four message types and
+  should not borrow their vocabulary.
+
+- **The source build produced a notifier the building Mac could not run.**
+  Stating the release's target inside the bundler fixed the archive and broke
+  the escape hatch the Intel drop documents: `task build` on an Intel Mac
+  produced native Go binaries, a native presence helper, and an arm64-only
+  `dibs-notify` beside them, which the runtime finds at the expected path and
+  runs rather than falling back. The target is an input now. The release states
+  one because it is building for somewhere else; a local build states none
+  because it is building for the machine it is on.
+
+- **The locked board told a Touch ID user to make an admin password.** Both the
+  401 text and the page a browser gets said the way in is the password, at the
+  exact moment somebody is locked out and looking for instructions. The README
+  and the Homebrew caveat had the same error and were corrected a round earlier;
+  nothing was watching this one, which is the version a person actually reads.
+
 - **And the re-check could not get past the same test one hop later.**
   Recording the arrival before the recency short-circuit fixed the branch that
   decides whether a re-check is owed, and the re-check itself then asked

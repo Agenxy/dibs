@@ -301,7 +301,7 @@ func (e *Engine) deferWake(agent string, in time.Duration) {
 	// A small margin, so the timer does not land a microsecond early and find
 	// the cooldown still nominally unexpired.
 	e.wakers.deferred[agent] = time.AfterFunc(in+50*time.Millisecond, func() {
-		e.retryWake(agent, false)
+		e.retryWake(agent)
 	})
 }
 
@@ -311,9 +311,9 @@ func (e *Engine) deferWake(agent string, in time.Duration) {
 // come back on its own and read everything, another wake may be running, or the
 // message may have been answered. The only thing worth carrying across the
 // timer is the agent's name.
-func (e *Engine) retryWake(agent string, afterExit bool) {
+func (e *Engine) retryWake(agent string) {
 	_, _ = e.query(context.Background(), func() core.Result {
-		e.retryWakeDecision(agent, afterExit)
+		e.retryWakeDecision(agent)
 		return core.Result{"ok": true}
 	})
 }
@@ -333,7 +333,7 @@ func (e *Engine) deferWakeLocked(agent string, in time.Duration) {
 // hung this one too, before the split.
 //
 // Callers run on the writer loop.
-func (e *Engine) retryWakeDecision(agent string, afterExit bool) {
+func (e *Engine) retryWakeDecision(agent string) {
 	e.wakers.mu.Lock()
 	// STOPPED, not merely forgotten. Deleting the map entry leaves the timer
 	// running: a failed command arms a cooldown re-check, and if mail also
@@ -353,27 +353,9 @@ func (e *Engine) retryWakeDecision(agent string, afterExit bool) {
 	if l == nil || l.Gone() {
 		return
 	}
-	// THE WAKE COMMAND WAS THE TURN, AND IT HAS ENDED.
-	//
-	// Recorded before the recency test, on the writer loop, because otherwise
-	// this returns immediately on exactly the case the exit re-check exists
-	// for: the woken agent read its inbox, which is a call to Dibs, so it is
-	// "recently in touch" for the rest of the cooldown, and the re-check that
-	// mail arriving afterwards depends on was discarded here. Marking the
-	// arrival earlier fixed the branch one hop upstream and left this one.
-	//
-	// This is not a flag standing in for the truth: `codex exec resume` runs the
-	// agent's whole turn in that process, so the process exiting IS the turn
-	// finishing. It is the same fact a Stop hook reports, arriving by the one
-	// path that has no hook to report it, and turnEnded already means exactly
-	// that. Only on the exit: the cooldown timer fires while a command may still
-	// be running, and claiming a finished turn there would be false.
-	if afterExit {
-		if e.turnEnded == nil {
-			e.turnEnded = map[string]time.Time{}
-		}
-		e.turnEnded[agent] = time.Now()
-	}
+	// The turn end is recorded by wakeExited, not here: the cooldown timer can
+	// fire while a command is still running, and claiming a finished turn there
+	// would be false. See noteWakeEnded.
 	if e.recentlyInTouch(l) {
 		return
 	}
@@ -388,9 +370,25 @@ func (e *Engine) retryWakeDecision(agent string, afterExit bool) {
 	if stillRunning {
 		return
 	}
-	// A verdict carries no msg_type, and this is not replaying a specific
-	// event: the question is only whether somebody is still waiting.
-	cmd, ok := e.wakeFor(l, core.MsgQuestion, core.Event{Type: "wake.retry", To: agent})
+	// THE OUTSTANDING WORK, NOT A PLACEHOLDER.
+	//
+	// This passed a hard-coded MsgQuestion and a bare event, so every wake that
+	// went through a retry, which is now both the cooldown path and the exit
+	// path, substituted `{type}` as "question" and `{from}` as empty, whatever
+	// was actually waiting: a request, a handoff, an approval, a denial. Those
+	// two placeholders are documented operator configuration, and a command
+	// built on them was handed wrong arguments on precisely the paths this
+	// release added. The verdict fix above solved the same problem for the
+	// immediate case and left the retry.
+	//
+	// Derived from state rather than remembered from the event, which is right
+	// for a re-check: by now the original message may have been answered and a
+	// different one may be the reason this is still owed.
+	kind, from := e.oldestBlocking(agent)
+	cmd, ok := e.wakeFor(l, kind, core.Event{
+		Type: "wake.retry", To: agent, Agent: from,
+		Data: map[string]any{"msg_type": kind, "from": from},
+	})
 	if !ok {
 		return
 	}
@@ -403,6 +401,36 @@ func (e *Engine) retryWakeDecision(agent string, afterExit bool) {
 			e.releaseWake(agent, stamp)
 		}
 	}()
+}
+
+// oldestBlocking names the work a re-check is being run for: the type and
+// sender of the longest-waiting blocking message.
+//
+// "notice" when the reason is a blocking notice rather than mail, which is a
+// real case (an approval, an eviction) and has no sender. Not one of the four
+// message types, deliberately: a command reading `{type}` should be able to
+// tell "somebody approved your request" from "somebody asked you a question",
+// and calling it a question because that was the convenient constant is how
+// this went wrong in the first place.
+//
+// Callers run on the writer loop.
+func (e *Engine) oldestBlocking(agent string) (kind, from string) {
+	var oldest *core.Message
+	for _, m := range e.state.Inbox(agent) {
+		blocking := m.Expecting() &&
+			(m.State == core.MsgStatePending || m.State == core.MsgStateDelivered)
+		blocking = blocking || (m.Type == core.MsgHandoff && m.State != core.MsgStateAcked)
+		if !blocking {
+			continue
+		}
+		if oldest == nil || m.Serial < oldest.Serial {
+			oldest = m
+		}
+	}
+	if oldest == nil {
+		return "notice", ""
+	}
+	return oldest.Type, oldest.From
 }
 
 // hasBlockingMail reports whether anybody is still waiting on this agent.
@@ -461,9 +489,37 @@ func (e *Engine) wakeFinished(agent string) bool {
 // this would block forever rather than fail. Tests take wakeFinished and its
 // answer; production takes this.
 func (e *Engine) wakeExited(agent string) {
-	if e.wakeFinished(agent) {
-		e.retryWake(agent, true)
+	owed := e.wakeFinished(agent)
+	_, _ = e.query(context.Background(), func() core.Result {
+		// ALWAYS, not only when a re-check is owed.
+		//
+		// The command runs the agent's whole turn in that process, so the
+		// process exiting IS the turn finishing: that is true whether or not
+		// mail happened to arrive while it ran, and it is what turnEnded means
+		// on every path that has a Stop hook to say so. This one has none.
+		//
+		// Stamping it only on the owed path left the commonest ordering broken.
+		// A wake runs, the agent reads its inbox (which is a call to Dibs, so it
+		// is "recently in touch"), the command exits with nothing having
+		// arrived, and THEN a question lands. maybeWake found no running wake,
+		// found the agent recently in touch on the strength of a turn that had
+		// already ended, and returned without even arming a deferred re-check.
+		// The message was stored, reported delivered, and waited for a human.
+		e.noteWakeEnded(agent)
+		if owed {
+			e.retryWakeDecision(agent)
+		}
+		return core.Result{"ok": true}
+	})
+}
+
+// noteWakeEnded records that a wake command has exited, which is the end of
+// that agent's turn. Callers run on the writer loop.
+func (e *Engine) noteWakeEnded(agent string) {
+	if e.turnEnded == nil {
+		e.turnEnded = map[string]time.Time{}
 	}
+	e.turnEnded[agent] = time.Now()
 }
 
 // wakeStamp reads back the cooldown this wake just took, so its failure can be

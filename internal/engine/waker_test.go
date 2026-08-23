@@ -1028,7 +1028,7 @@ func TestTheDeferredRecheckWakesNobodyWhoNoLongerNeedsIt(t *testing.T) {
 	if e.hasBlockingMail("quiet") {
 		t.Fatal("setup: something is already blocking, so this proves nothing")
 	}
-	e.retryWakeDecision("quiet", false)
+	e.retryWakeDecision("quiet")
 	if _, spent := e.wakers.last["quiet"]; spent {
 		t.Error("the re-check started a wake for an agent nobody is waiting on")
 	}
@@ -1037,7 +1037,7 @@ func TestTheDeferredRecheckWakesNobodyWhoNoLongerNeedsIt(t *testing.T) {
 	gone := bridgeAgent("retired", "Codex", "019fff00-1111-7f60-81cc-6ab1298d76ec")
 	gone.Status = core.StatusClosed
 	st.Agents["retired"] = gone
-	e.retryWakeDecision("retired", false)
+	e.retryWakeDecision("retired")
 	if _, spent := e.wakers.last["retired"]; spent {
 		t.Error("the re-check resumed an agent that has signed off")
 	}
@@ -1185,7 +1185,12 @@ func TestReadingTheInboxDoesNotCancelTheExitRecheck(t *testing.T) {
 		Serial: 1, From: "asker", To: "busy",
 		Type: core.MsgQuestion, State: core.MsgStatePending,
 	}
-	e.retryWakeDecision("busy", true)
+	// The two halves of what wakeExited does on the writer loop. Not wakeExited
+	// itself: it goes through query(), which sends on e.ops, nil on an engine
+	// with no running loop, so calling it here would block forever rather than
+	// fail. That trap is why the decisions are split from the plumbing.
+	e.noteWakeEnded("busy")
+	e.retryWakeDecision("busy")
 	if e.recentlyInTouch(l) {
 		t.Error("after its wake command exited, the agent still reads as recently in " +
 			"touch, on the strength of the inbox read of the turn that has just " +
@@ -1255,7 +1260,7 @@ func TestAFailedWakeAndMailDuringItDoNotLeaveAnOrphanTimer(t *testing.T) {
 	}
 
 	// The exit re-check, which supersedes it.
-	e.retryWakeDecision("busy", true)
+	e.retryWakeDecision("busy")
 
 	e.wakers.mu.Lock()
 	_, stillMapped := e.wakers.deferred["busy"]
@@ -1271,5 +1276,105 @@ func TestAFailedWakeAndMailDuringItDoNotLeaveAnOrphanTimer(t *testing.T) {
 			"cooldown and starts another command, so a wake command that is simply " +
 			"wrong costs three attempts and more on every round, which is the retry " +
 			"loop the deferral was carefully written to avoid")
+	}
+}
+
+// Mail arriving AFTER a wake has exited is not refused as "still working".
+//
+// The mirror of the case above, and the commoner one. A wake runs, the woken
+// agent reads its inbox (a call to Dibs, so it is recently in touch), the
+// command exits with nothing having arrived during it, and THEN a question
+// lands. maybeWake finds no running wake, finds the agent recently in touch on
+// the strength of a turn that has already ended, and returns without even
+// arming a deferred re-check. The message is stored, `send` reports it
+// delivered, and the recipient waits for a human.
+//
+// The fix is not another branch: the exit records that the turn ended, which is
+// simply true, and every later question about recency then answers correctly
+// whether or not mail happened to arrive while the command was running. Marking
+// only the arrived case is what left this ordering broken.
+func TestMailArrivingAfterAWakeExitsIsNotRefusedAsStillWorking(t *testing.T) {
+	e, st := wakeEngine(t, WakeCommand{
+		Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute,
+	})
+	l := bridgeAgent("done", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	st.Agents["done"] = l
+	ev := core.Event{
+		Type: "message.sent", To: "done",
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	}
+
+	if _, ok := e.wakeFor(l, core.MsgQuestion, ev); !ok {
+		t.Fatal("no first wake, so nothing below is about an exited command")
+	}
+	// The woken agent reads its inbox, then the command exits with nothing
+	// having arrived meanwhile.
+	e.seen["done"] = time.Now()
+	if owed := e.wakeFinished("done"); owed {
+		t.Fatal("setup: the exit owes a re-check, so this is the arrived-during case " +
+			"and not the one this test names")
+	}
+	e.noteWakeEnded("done")
+
+	// New mail, after all that.
+	if e.recentlyInTouch(l) {
+		t.Fatal("the agent still reads as recently in touch after its wake exited, so " +
+			"maybeWake returns before it can even arm a deferred re-check and the " +
+			"message waits for an unrelated event while the board reports it delivered")
+	}
+}
+
+// A retried wake names the work it is actually for.
+//
+// The retry passed a hard-coded question and a bare event, so `{type}` came out
+// as "question" and `{from}` as empty however the agent was actually blocked: a
+// request, a handoff, an approval. Both are documented operator configuration,
+// and this release made retries the common path rather than a corner, so a
+// command built on those placeholders was handed wrong arguments precisely
+// where the new behaviour lives.
+//
+// The verdict fix solved this for the immediate wake and stopped there; the
+// test for it never drives a retry, and the cooldown test uses only {thread}.
+func TestARetriedWakeNamesTheWorkItIsFor(t *testing.T) {
+	e, st := wakeEngine(t, WakeCommand{
+		Argv:     []string{"echo", "{type}", "{from}"},
+		Cooldown: time.Millisecond,
+	})
+	l := bridgeAgent("stuck", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	st.Agents["stuck"] = l
+
+	// A handoff, which is neither a question nor from the agent that would have
+	// been guessed.
+	st.Messages[9] = &core.Message{
+		Serial: 9, From: "dispatcher", To: "stuck",
+		Type: core.MsgHandoff, State: core.MsgStateDelivered,
+	}
+
+	kind, from := e.oldestBlocking("stuck")
+	if kind != core.MsgHandoff || from != "dispatcher" {
+		t.Fatalf("the outstanding work reads as (%q, %q), want (handoff, dispatcher): "+
+			"every retry substitutes these into the operator's command", kind, from)
+	}
+
+	// And the substitution actually carries them.
+	argv, ok := e.wakeFor(l, kind, core.Event{
+		Type: "wake.retry", To: "stuck", Agent: from,
+		Data: map[string]any{"msg_type": kind, "from": from},
+	})
+	if !ok {
+		t.Fatal("no command for the retry")
+	}
+	joined := strings.Join(argv, " ")
+	if !strings.Contains(joined, "handoff") || !strings.Contains(joined, "dispatcher") {
+		t.Errorf("the retried command runs %q. {type} and {from} are documented "+
+			"placeholders, and a command told `question` from nobody acts on the "+
+			"wrong thing", joined)
+	}
+
+	// A blocking notice is not mail and must not borrow a message's vocabulary.
+	delete(st.Messages, 9)
+	if kind, from := e.oldestBlocking("stuck"); kind != "notice" || from != "" {
+		t.Errorf("with no blocking mail the retry names (%q, %q); a notice has no "+
+			"sender and is not one of the four message types", kind, from)
 	}
 }
