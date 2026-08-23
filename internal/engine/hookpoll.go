@@ -140,16 +140,25 @@ func (e *Engine) HookPoll(ctx context.Context, sessionID, event, cwd string, sto
 		//
 		// Mail is deliberately unaffected: somebody is blocked on an unanswered
 		// question, and nobody is blocked on knowing who joined a space.
-		noticesCount := 0
-		if e.noticesWake() {
-			noticesCount = len(notices)
-		}
+		noticesCount := e.situationalCount(len(notices))
+		// A notice somebody is WAITING on is not situational awareness, and the
+		// switch above was never meant to cover it. `notices_wake = false`
+		// trades latency for tokens on "somebody joined your space"; it also,
+		// silently, stopped an agent being woken when a human APPROVED the
+		// request it had asked for and stopped for. Reported by the operator,
+		// who approved one and then had to go and tell the agent by hand.
+		//
+		// Counted separately and added to both terms, so it survives the switch
+		// and reaches an `urgent` operator too: an answer you are blocked on is
+		// the definition of urgent.
+		waiting := e.blockingNotices(l.ID)
 		// Computed, not consumed. The wake is only spent below, if this event
 		// is one that can actually carry it. See wakeKeys.
 		now := time.Now()
 		wake := e.wakeKeys(l.ID, now)
-		fresh := len(wake) > 0 || len(announced) > 0 || noticesCount > 0
-		blocked := e.somebodyIsWaiting(l.ID) || len(announced) > 0 || noticesCount > 0
+		fresh := len(wake) > 0 || len(announced) > 0 || noticesCount > 0 || waiting > 0
+		blocked := e.somebodyIsWaiting(l.ID) || len(announced) > 0 ||
+			noticesCount > 0 || waiting > 0
 		if e.deliverToModel(event, fresh, blocked, stopActive) {
 			// Marked on DELIVERY, and that is a deliberate trade rather than an
 			// oversight, so it is written down here and in SECURITY.md.
@@ -534,6 +543,19 @@ func (e *Engine) noticesWake() bool {
 	e.wake.mu.Lock()
 	defer e.wake.mu.Unlock()
 	return !e.wake.noticesOff
+}
+
+// situationalCount applies `[wake] notices_wake` to a notice count.
+//
+// Extracted so HookPoll stays under the complexity limit, and because the
+// setting reads better named than as a bare `if` in the middle of the wake
+// computation: it governs situational awareness ONLY, and never a notice
+// somebody is waiting on. See notice.Blocking.
+func (e *Engine) situationalCount(n int) int {
+	if !e.noticesWake() {
+		return 0
+	}
+	return n
 }
 
 // somebodyIsWaiting reports whether any unread message expects a response.
