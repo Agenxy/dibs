@@ -335,3 +335,50 @@ func TestProcAliveIsOnlyRecordedWhenSomethingActuallyLooked(t *testing.T) {
 		})
 	}
 }
+
+// A purged agent's mail goes with it, because its ID goes back into use.
+//
+// An agent id is derived from its NAME. Purging the row after archive retention
+// released that id while every message still pointed at it, so the next agent
+// to register the same name was handed the same id and inherited the mailbox.
+// For the human that name is the OS username, which is the one id an attacker
+// can be sure of, and the retained mail is the operator's own.
+func TestPurgingAnAgentTakesItsMailbox(t *testing.T) {
+	s := NewState("test", DefaultLimits())
+	now := time.Now()
+
+	s.Agents["gone"] = &Agent{
+		ID: "gone", Name: "gone", Kind: KindPersistent,
+		Status: StatusArchived, ArchivedAt: now.Add(-s.Limits.ArchiveRetention - time.Hour),
+		Nonce: "n-gone",
+	}
+	s.Nonces["n-gone"] = "gone"
+	s.Messages[1] = &Message{
+		Serial: 1, From: "peer", To: "gone", Type: MsgNotify,
+		Body: "a private note for the operator", State: MsgStateDelivered,
+	}
+	// Mail this agent SENT to somebody live must survive: that inbox is not
+	// theirs to lose.
+	s.Agents["live"] = &Agent{ID: "live", Name: "live", Status: StatusActive}
+	s.Messages[2] = &Message{
+		Serial: 2, From: "gone", To: "live", Type: MsgNotify,
+		Body: "still relevant", State: MsgStateDelivered,
+	}
+
+	if _, _, err := s.Apply(&Op{Kind: OpSweep}, now); err != nil {
+		t.Fatalf("setup: sweep: %v", err)
+	}
+
+	if _, still := s.Agents["gone"]; still {
+		t.Fatal("setup: the archived agent was not purged, so nothing below is about " +
+			"a released id")
+	}
+	if _, orphan := s.Messages[1]; orphan {
+		t.Error("mail addressed to a purged agent survived the purge. The id is " +
+			"derived from the name and is now free: whoever registers that name " +
+			"next is handed the same id and reads this")
+	}
+	if _, taken := s.Messages[2]; !taken {
+		t.Error("a live agent's inbox lost a message because its SENDER was purged")
+	}
+}

@@ -1,10 +1,18 @@
 package boardconfig
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A value the daemon refuses must not load here.
@@ -95,6 +103,12 @@ func TestLoadRefusesSettingsThatWouldNotTakeEffect(t *testing.T) {
 			"addr = \"https://127.0.0.1:4777\"\n",
 		},
 		{"a listen address that is not host:port", "addr = \"127.0.0.1\"\n"},
+		// SplitHostPort parses these and net.Listen refuses them, and `dibd
+		// -check` never attempts the bind: it is what an operator runs before
+		// stopping the daemon being replaced.
+		{"a port that is not a number", "addr = \"hub:not-a-port\"\n"},
+		{"a port above 65535", "addr = \"127.0.0.1:99999\"\n"},
+		{"port zero, which binds something arbitrary", "addr = \"127.0.0.1:0\"\n"},
 		{"a certificate with no key", "tls_cert = \"/c.pem\"\n"},
 		{"a key with no certificate", "tls_key = \"/k.pem\"\n"},
 		{"a negative blob store", "[limits]\nblob_store_bytes = -1\n"},
@@ -121,6 +135,60 @@ func TestLoadRefusesSettingsThatWouldNotTakeEffect(t *testing.T) {
 		// NaN passed `< 0 || > 1` because no comparison against NaN is true,
 		// and was then ignored by the `> 0` test on the way in. TOML has NaN.
 		{"a duty fraction of nan, which no comparison catches", "[supervise]\nmin_duty = nan\n"},
+		// The two the shared loader accepted while the daemon refused them, which
+		// is the one failure this loader exists to make impossible: `dibs
+		// mcp-config` printed a complete configuration and exited zero for a
+		// board that cannot boot. Both need the DEFAULT for the other side of
+		// the comparison, and the omission was deliberate ("not ours to know").
+		{
+			"a persistent ceiling above the DEFAULT max_agents",
+			"[limits]\nmax_persistent_agents = 65\n",
+		},
+		{
+			"a blob store too small for one maximum-sized blob",
+			"[limits]\nblob_store_bytes = 1024\n",
+		},
+		// [wake.exec] arrived with this list's own subject in it: cooldown took
+		// any duration and the waker maps everything <= 0 to the 90s default,
+		// so a negative one passed `dibd -check`, startup reported the harness
+		// configured, and the operator's explicit value did nothing. Zero is
+		// documented as "take the default" and stays legal.
+		{
+			"a negative wake cooldown, which silently becomes the default",
+			"[wake.exec.codex]\nargv = [\"codex\"]\ncooldown = \"-1s\"\n",
+		},
+		{
+			"a wake command whose executable is the empty string",
+			"[wake.exec.codex]\nargv = [\"\", \"exec\"]\n",
+		},
+		// " " is a valid TOML string and a useless program name: it passed the
+		// check, startup announced a configured harness, and every wake failed
+		// inside exec before starting anything.
+		{
+			"a wake command whose executable is only whitespace",
+			"[wake.exec.codex]\nargv = [\" \", \"exec\"]\n",
+		},
+		{
+			"a wake entry whose harness name is blank",
+			"[wake.exec.\" \"]\nargv = [\"/bin/echo\"]\n",
+		},
+		// NEITHER key is the canonical form, which is the collision the first
+		// version could not see: it looked only for an exact lowercase peer.
+		{
+			"two harness keys that differ only in case",
+			"[wake.exec.Codex]\nargv = [\"/bin/echo\"]\n\n[wake.exec.CODEX]\nargv = [\"/bin/true\"]\n",
+		},
+		// An entry with no argv at all: the section loaded, startup took the
+		// "there is a wake command" branch, skipped the entry for want of an
+		// argv, and logged `harnesses=0` as though that were a capability.
+		{
+			"a wake entry with no argv, which can start nothing",
+			"[wake.exec.codex]\nargv = []\n",
+		},
+		{
+			"a wake entry that sets only a cooldown",
+			"[wake.exec.codex]\ncooldown = \"2m\"\n",
+		},
 		// The identity table is a CREDENTIAL-shaped setting, and the first
 		// version of the feature asked for the nonce itself. A nonce in a file
 		// every same-user process can read is that process's route to
@@ -152,10 +220,28 @@ func TestLoadRefusesSettingsThatWouldNotTakeEffect(t *testing.T) {
 		})
 	}
 
+	// A pair that does not exist is not a pair. `dibd -check` is what an
+	// operator runs before stopping the old daemon during a takeover, and this
+	// list used to declare /c.pem and /k.pem a "complete certificate pair": the
+	// check said yes, the old daemon stopped, and the replacement failed inside
+	// ServeTLS with the port already released.
+	certPath, keyPath := writeTestPair(t)
+	t.Run("tls paths that name nothing", func(t *testing.T) {
+		dir := t.TempDir()
+		body := "tls_cert = \"/c.pem\"\ntls_key = \"/k.pem\"\n"
+		if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(dir); err == nil {
+			t.Error("a certificate pair that does not exist was accepted as a " +
+				"complete transport, so `dibd -check` reports a board that cannot start")
+		}
+	})
+
 	// And the shapes that are legitimate must still load.
 	good := []struct{ name, body string }{
 		{"a bare host:port", "addr = \"0.0.0.0:4777\"\n"},
-		{"a complete certificate pair", "tls_cert = \"/c.pem\"\ntls_key = \"/k.pem\"\n"},
+		{"a complete certificate pair", "tls_cert = \"" + certPath + "\"\ntls_key = \"" + keyPath + "\"\n"},
 		{"a real match deadline", "[match]\ndeadline = \"5m\"\n"},
 		{"auto_join always", "[match]\nauto_join = \"always\"\n"},
 		{"auto_join never", "[match]\nauto_join = \"never\"\n"},
@@ -172,4 +258,39 @@ func TestLoadRefusesSettingsThatWouldNotTakeEffect(t *testing.T) {
 			}
 		})
 	}
+}
+
+// writeTestPair generates a real certificate and key, because "a complete
+// certificate pair" now means one that loads.
+func writeTestPair(t *testing.T) (certPath, keyPath string) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "test"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	certPath = filepath.Join(dir, "cert.pem")
+	keyPath = filepath.Join(dir, "key.pem")
+	write := func(path, typ string, b []byte, mode os.FileMode) {
+		if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: typ, Bytes: b}), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(certPath, "CERTIFICATE", der, 0o644)
+	write(keyPath, "EC PRIVATE KEY", keyDER, 0o600)
+	return certPath, keyPath
 }

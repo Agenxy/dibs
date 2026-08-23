@@ -568,6 +568,21 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				if op.SessionID != "" {
 					l.SessionID = op.SessionID // the new session owns it now
 				}
+				// THE NONCE COMES BACK WITH THE AGENT.
+				//
+				// Archival blanks Agent.Nonce while keeping the nonce INDEX, so
+				// this recovery path can still find the row. It never put the
+				// nonce back, so a recovered agent had no durable identity:
+				// AgentIdentity returned "", and a declared role could never
+				// reconcile onto it again. An admin that went dormant for a
+				// month came back as itself, with its mail and its claims, and
+				// permanently without the role dibs.toml grants it.
+				//
+				// It is the same secret this branch just matched on, so putting
+				// it back asserts nothing new.
+				if l.Nonce == "" && op.Nonce != "" {
+					l.Nonce = op.Nonce
+				}
 				l.bindHarnessSession(op.SessionAlias)
 				// LEDGERED, like every other transition.
 				//

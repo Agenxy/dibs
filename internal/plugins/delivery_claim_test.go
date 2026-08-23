@@ -30,12 +30,42 @@ func TestNoPluginAdvertisesAWakeEventItDoesNotBind(t *testing.T) {
 		"PreToolUse", "PostToolUse", "Notification", "PreCompact", "SessionEnd",
 	}
 
+	checked := 0
 	for _, p := range catalog {
-		hooksPath := filepath.Join("..", "..", "plugins", p.dir, "hooks", "hooks.json")
-		raw, err := os.ReadFile(hooksPath) // #nosec G304 -- a path in this repository
-		if err != nil {
-			continue // not every plugin ships hooks
+		// BOTH LAYOUTS, and a miss is not a skip. Claude Code reads
+		// plugins/<name>/hooks/hooks.json; Codex reads hooks.json at the root
+		// of its config directory. This looked only in the nested place and
+		// `continue`d on the read failure, so after Codex's file moved to where
+		// Codex actually reads it, deleting its Stop binding left this guard
+		// green: the one plugin whose delivery claim had just changed was the
+		// one it stopped looking at.
+		var raw []byte
+		var err error
+		hooksPath := ""
+		for _, candidate := range []string{
+			filepath.Join("..", "..", "plugins", p.dir, "hooks", "hooks.json"),
+			filepath.Join("..", "..", "plugins", p.dir, "hooks.json"),
+		} {
+			if b, rerr := os.ReadFile(candidate); rerr == nil { // #nosec G304 -- a path in this repository
+				raw, err, hooksPath = b, nil, candidate
+				break
+			} else {
+				err = rerr
+			}
 		}
+		if raw == nil {
+			// Only a plugin that claims no wake may ship no hooks. One that
+			// advertises delivery and has no file is the exact overstatement
+			// this test exists to catch.
+			if strings.Contains(strings.ToLower(p.buys), "wake") ||
+				strings.Contains(strings.ToLower(p.buys), "deliver") {
+				t.Errorf("%s advertises delivery in `buys` and ships no hooks.json "+
+					"in either layout (%v), so nothing binds the events it promises",
+					p.dir, err)
+			}
+			continue
+		}
+		checked++
 		var doc struct {
 			Hooks map[string][]struct {
 				Hooks []struct {
@@ -84,6 +114,9 @@ func TestNoPluginAdvertisesAWakeEventItDoesNotBind(t *testing.T) {
 				"text, and %s binds hook_poll only to %v. An agent reading that stops "+
 				"polling and loses mail", p.harness, ev, hooksPath, keys(wakes))
 		}
+	}
+	if checked == 0 {
+		t.Fatal("no plugin hooks file was read, so this check verified nothing")
 	}
 }
 

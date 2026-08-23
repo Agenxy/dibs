@@ -3,9 +3,11 @@ package main
 import (
 	"errors"
 	"fmt"
+	"html"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -164,9 +166,18 @@ func planUpgrade(o upgradeOpts) (*plan, error) {
 // exactly the thing in doubt.
 func (p *plan) proveReplacement() error {
 	step("checking that " + filepath.Base(p.installed) + " can rebuild this board")
+	// THE ADDRESS THIS DAEMON ACTUALLY SERVES, because that is what the
+	// replacement will be started with a few steps below.
+	//
+	// Without it, -check answered for the DEFAULT address while the replacement
+	// was started on the real one, so everything address- and TLS-specific went
+	// unasked: the proof and the thing proved were about different daemons.
+	// Recovery retries this same binary rather than the previous build, so a
+	// failure there leaves the fleet down.
 	// #nosec G204 -- installed comes from daemonPath(), which resolves the
-	// daemon beside this binary or on PATH; dir is the resolved data directory.
-	out, err := exec.Command(p.installed, "-check", "-dir", p.dir).CombinedOutput()
+	// daemon beside this binary or on PATH; dir and addr are this machine's own
+	// resolved data directory and the address its daemon registered.
+	out, err := exec.Command(p.installed, checkArgs(p)...).CombinedOutput()
 	switch {
 	case err != nil && tooOldForCheck(out):
 		// A refusal, and a different one, said in its own words.
@@ -435,6 +446,23 @@ func adoptedName(inherited string) string {
 // that quietly downgrades a supervised service to an orphan process is a worse
 // outcome than the drift it was fixing.
 func startDaemon(installed, dir, unit string, was daemonState) error {
+	// UNLESS THE UNIT NAMES A DIFFERENT BOARD.
+	//
+	// --adopt-dir renames the data directory and rewrites the unit to match. If
+	// that rewrite fails, recovery ran here with the CORRECT new directory in
+	// `dir` and started the unit anyway, which still pointed at the path that
+	// had just been moved out from under it: a daemon started against a
+	// directory that no longer exists, reported as a recovery.
+	//
+	// Preferring the unit is right when it describes this board and wrong when
+	// it does not, and the file says which.
+	if unit != "" && !unitNames(unit, dir) {
+		fmt.Fprintf(os.Stderr, "%s %s does not name %s, so the daemon is being "+
+			"started directly rather than through it. Fix the unit before the next "+
+			"logout, or the board will not come back on its own.\n",
+			ui.Bold("note:"), unit, dir)
+		unit = ""
+	}
 	if unit != "" {
 		err := restartUnit(unit)
 		if err == nil {
@@ -448,8 +476,11 @@ func startDaemon(installed, dir, unit string, was daemonState) error {
 		// leave the fleet with no daemon over a bookkeeping detail.
 	}
 	args := []string{"-dir", dir}
-	if was.addr != "" {
-		args = append(args, "-addr", was.addr)
+	// The SAME address the preflight was given, transport included: the proof
+	// and the thing proved have to describe one daemon, and the restart is the
+	// thing proved.
+	if a := replacementAddr(dir, was.addr); a != "" {
+		args = append(args, "-addr", a)
 	}
 	// A second board on one machine is a deliberate configuration (isolating
 	// agents you do not trust, SECURITY.md), and it is refused by default. A
@@ -657,3 +688,144 @@ func unitIsWritable(unit string) error {
 	}
 	return f.Close()
 }
+
+// checkArgs is what `dibd -check` is asked, separated so a test can read it.
+//
+// The argv IS the defect: it named only the directory, while the replacement is
+// started with the address the running daemon bound. A test that ran the whole
+// upgrade could not isolate that, and one that restated the list would not
+// notice it changing.
+func checkArgs(p *plan) []string {
+	args := []string{"-check", "-dir", p.dir}
+	if a := replacementAddr(p.dir, p.running.addr); a != "" {
+		args = append(args, "-addr", a)
+	}
+	return args
+}
+
+// replacementAddr is the address to hand the replacement daemon, WITH the
+// transport the board is actually serving.
+//
+// The registry stores what net.Listen was given, and resolveListenAddr strips
+// any scheme before the daemon registers, so `addr` alone is a bare host:port.
+// Handing that back means the replacement re-infers a transport from the host:
+// an http:// LAN board is checked and restarted as HTTPS, and an https://
+// loopback board becomes plaintext. The preflight then approves a different
+// daemon than the one it is about to authorise stopping, and the restart can
+// leave every existing client unable to reconnect.
+//
+// The scheme is not in the registry, and it does not need to be: the data
+// directory's own configuration is what the daemon resolved it from, and asking
+// the shared resolver is the same question the daemon will ask on the way up.
+func replacementAddr(dir, addr string) string {
+	if addr == "" {
+		return ""
+	}
+	if _, _, found := strings.Cut(addr, "://"); found {
+		return addr // already stated, nothing to add
+	}
+	// ONLY WHEN THE CONFIG DESCRIBES THIS ADDRESS.
+	//
+	// resolveTransport answers for the address the CONFIG names, and the
+	// running daemon may be on a different one: started with `-addr
+	// 0.0.0.0:4777` against a config that names nothing, it resolves loopback
+	// and returns http, so a TLS wildcard board would be handed
+	// `http://0.0.0.0:4777` and restarted in plaintext. Losing the scheme is
+	// bad; asserting the wrong one is worse, because the daemon can still
+	// re-resolve correctly from a bare address and cannot recover from a lie.
+	//
+	// So the scheme is added only when the config is talking about the same
+	// address the daemon actually bound. Otherwise the bare form goes through
+	// and the replacement resolves it exactly as the original did.
+	configured, cerr := readConfiguredAddr(paths.DataDir())
+	if cerr != nil || !sameHostPort(configured, addr) {
+		return addr
+	}
+	scheme, _, err := resolveTransport(dir)
+	if err != nil || scheme == "" {
+		return addr
+	}
+	return scheme + "://" + addr
+}
+
+// sameHostPort reports whether two addresses name the same listener, ignoring
+// any scheme on either side.
+func sameHostPort(a, b string) bool {
+	return bare(a) != "" && bare(a) == bare(b)
+}
+
+// bare strips a scheme, so "https://h:1" and "h:1" compare equal.
+func bare(a string) string {
+	if _, rest, found := strings.Cut(a, "://"); found {
+		return rest
+	}
+	return a
+}
+
+// unitNames reports whether a service unit refers to this data directory.
+//
+// Read rather than assumed: the one case that matters is a unit whose rewrite
+// failed after the directory moved, and the only evidence for that is the file
+// itself. An unreadable unit is treated as naming it, because refusing to use a
+// unit we cannot read would downgrade a supervised service to an orphan process
+// over a permissions problem, which is the worse outcome this function's own
+// comment already argues.
+//
+// TOKENS, NOT A SUBSTRING, and the first version was wrong in both directions.
+//
+// A plist is XML, so a board at `.../Fleet & Review` is written `Fleet &amp;
+// Review` and a raw search rejected the unit as somebody else's: a supervised
+// daemon quietly demoted to a direct start because its path contained an
+// ampersand. And `strings.Contains` accepted `~/.dibs-old` as naming `~/.dibs`,
+// which is exactly the wrong-board case the check exists to catch, and the
+// likeliest spelling of it after an --adopt-dir rename.
+//
+// So the file is split into candidate values, unescaped, and compared as whole
+// paths.
+func unitNames(unit, dir string) bool {
+	b, err := os.ReadFile(unit) // #nosec G304 -- the operator's own unit path
+	if err != nil {
+		return true
+	}
+	want := map[string]bool{filepath.Clean(dir): true}
+	if abs, aerr := filepath.Abs(dir); aerr == nil {
+		want[filepath.Clean(abs)] = true
+	}
+	for _, tok := range unitTokens(string(b)) {
+		if want[filepath.Clean(tok)] {
+			return true
+		}
+	}
+	return false
+}
+
+// unitTokens pulls the candidate paths out of a service unit.
+//
+// Both shapes this project writes: a launchd plist, where values sit in
+// <string> elements and carry XML entities, and a systemd unit, where an
+// ExecStart line is whitespace-separated. Splitting on both and unescaping is
+// cheaper than parsing either properly, and the comparison afterwards is exact,
+// so a stray token costs nothing.
+func unitTokens(body string) []string {
+	var out []string
+	// A plist <string> is ONE value, spaces included: a board at `.../Fleet &
+	// Review` is a single path, and splitting on whitespace turned it into
+	// three tokens that match nothing. Taken whole, then unescaped.
+	for _, m := range plistString.FindAllStringSubmatch(body, -1) {
+		out = append(out, html.UnescapeString(m[1]))
+	}
+	// And a systemd ExecStart is whitespace-separated, where a path containing
+	// a space is quoted. Splitting on both covers it; the comparison afterwards
+	// is exact, so a stray token costs nothing.
+	for _, chunk := range strings.FieldsFunc(body, func(r rune) bool {
+		return r == '"' || r == '\'' || r == '\n' || r == '\r' || r == '\t' || r == ' '
+	}) {
+		if chunk != "" {
+			out = append(out, html.UnescapeString(chunk))
+		}
+	}
+	return out
+}
+
+// plistString matches one <string> element's contents, including spaces.
+var plistString = regexp.MustCompile(`(?s)<string>(.*?)</string>`)

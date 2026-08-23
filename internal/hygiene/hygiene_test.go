@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -833,8 +834,13 @@ func TestThePresenceHelperIsTheOneThatGetsBuilt(t *testing.T) {
 	}
 	// It has to be BUILT and it has to be PACKAGED: the before hook produces it
 	// and the archive carries it. Either one alone ships nothing usable.
+	// The needle for the before hook was `-o dibs-presence`, which is a PREFIX
+	// of `-o dibs-presence-arm64`: deleting the lipo output left the per-slice
+	// compiles matching it and every assertion here green, while the archive had
+	// no universal helper to carry. A guard that a partial build satisfies is
+	// not watching the thing it names, so this looks for lipo's own output flag.
 	for _, place := range []struct{ what, needle string }{
-		{"built by a before hook", "-o " + want},
+		{"joined into a universal binary", "-output " + want},
 		{"carried in the archive", "src: " + want},
 		{"linked by the Homebrew cask", "- " + want},
 	} {
@@ -986,6 +992,370 @@ func TestBothBinariesShipAManualThatRenders(t *testing.T) {
 		lint = []byte(strings.Join(real, "\n"))
 		if len(real) > 0 {
 			t.Errorf("%s does not lint clean:\n%s\n(page written to %s)", tc.pkg, lint, f)
+		}
+	}
+}
+
+// A workflow's `run:` block is a shell script that happens to live in YAML.
+//
+// The no-shell rule is about what shell IS, not about where the bytes sit: an
+// embedded block is the same untyped string handling, the same silent
+// continuation past failure unless somebody remembered `set -euo pipefail`, the
+// same quoting hazards, and it cannot be built, vetted, or run locally. The
+// guard above looked for extensions, shebangs and symlinks, so every one of
+// these was invisible to it, and three had accumulated: a brace group writing a
+// job summary, a curl-into-sha256sum-into-tar install, and a three-branch
+// version selector interpolating `${{ }}` template values straight into shell
+// words. The pre-release review found the newest by reading.
+//
+// One COMMAND is not a script. `run: go test ./...` is how a workflow invokes
+// anything at all, and forbidding it would forbid workflows. What is refused is
+// shell LOGIC: multiple statements, conditionals, pipelines, redirections,
+// substitutions, and parameter expansion.
+func TestWorkflowsDoNotEmbedShellScripts(t *testing.T) {
+	root := repoRoot(t)
+	dir := filepath.Join(root, ".github", "workflows")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading %s: %v", dir, err)
+	}
+	// Shell constructs that make a `run:` a program rather than an invocation.
+	constructs := []struct{ token, why string }{
+		{"${", "parameter expansion (${VAR#prefix} and friends) is shell string surgery"},
+		{"$(", "command substitution runs a second program to build the first one's arguments"},
+		{"&&", "a conditional sequence is control flow"},
+		{"||", "a fallback is control flow, and the silent kind"},
+		{" | ", "a pipeline hides the exit status of everything but the last stage"},
+		{">>", "a redirection is the script deciding where output goes"},
+		{"if ", "a conditional is control flow"},
+		{"for ", "a loop is control flow"},
+		{"set -e", "needing this is the admission that shell continues past failures"},
+	}
+	checked := 0
+	for _, e := range entries {
+		if e.IsDir() || (filepath.Ext(e.Name()) != ".yml" && filepath.Ext(e.Name()) != ".yaml") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, e.Name())) // #nosec G304 -- this repo's own workflows
+		if err != nil {
+			t.Fatal(err)
+		}
+		checked++
+		for _, block := range runBlocks(string(raw)) {
+			for _, c := range constructs {
+				if !strings.Contains(block.body, c.token) {
+					continue
+				}
+				t.Errorf("%s line %d: this `run:` is a shell script, not a command: %s\n"+
+					"  %s\n"+
+					"Write it as a Go program under tools/ and invoke that. See "+
+					"tools/casknote, tools/fetchpinned and tools/stampserver, each of "+
+					"which replaced one of these",
+					e.Name(), block.line, c.why, strings.TrimSpace(firstLine(block.body)))
+				break
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no workflow files were read, so this check verified nothing")
+	}
+}
+
+type runBlock struct {
+	line int
+	body string
+}
+
+// runBlocks returns every `run:` value in a workflow, folded blocks included.
+func runBlocks(s string) []runBlock {
+	var out []runBlock
+	lines := strings.Split(s, "\n")
+	for i := 0; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		if !strings.HasPrefix(trimmed, "run:") {
+			continue
+		}
+		rest := strings.TrimSpace(strings.TrimPrefix(trimmed, "run:"))
+		// A single-line command.
+		if rest != "" && rest != "|" && rest != ">" && rest != ">-" && rest != "|-" {
+			out = append(out, runBlock{i + 1, rest})
+			continue
+		}
+		// A block scalar: everything indented under it.
+		indent := len(lines[i]) - len(strings.TrimLeft(lines[i], " "))
+		var body []string
+		for j := i + 1; j < len(lines); j++ {
+			if strings.TrimSpace(lines[j]) == "" {
+				body = append(body, "")
+				continue
+			}
+			if len(lines[j])-len(strings.TrimLeft(lines[j], " ")) <= indent {
+				break
+			}
+			body = append(body, strings.TrimSpace(lines[j]))
+		}
+		out = append(out, runBlock{i + 1, strings.Join(body, "\n")})
+	}
+	return out
+}
+
+func firstLine(s string) string {
+	if i := strings.Index(s, "\n"); i >= 0 {
+		return s[:i]
+	}
+	return s
+}
+
+// Every tool has an ignore entry, so building one cannot commit it.
+//
+// `go build ./tools/<name>` writes the binary into the working directory, and
+// `git add -A` then stages it. Three went in on one commit exactly that way,
+// and the gate that forbids committed binaries did not stop them: it reads
+// TRACKED files, and it had run before the add. So the gate was green, the
+// binaries were staged afterwards, and nothing looked again.
+//
+// A list of names in .gitignore is the fix, and a list of names is also this
+// repository's most reliable way to go stale: the entry it will be missing is
+// the one for the tool somebody adds next, which is the one nobody has learned
+// to expect yet. So the list is checked against the directory rather than
+// remembered, and the check names the line to add.
+func TestEveryToolBinaryIsIgnored(t *testing.T) {
+	root := repoRoot(t)
+	entries, err := os.ReadDir(filepath.Join(root, "tools"))
+	if err != nil {
+		t.Fatalf("reading tools/: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ignored := map[string]bool{}
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "/") && !strings.HasSuffix(line, "/") {
+			ignored[strings.TrimPrefix(line, "/")] = true
+		}
+	}
+	seen := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		seen++
+		if !ignored[e.Name()] {
+			t.Errorf("tools/%s has no anchored .gitignore entry. `go build "+
+				"./tools/%s` leaves ./%s in the working directory, and the next "+
+				"`git add -A` commits a binary. Add this line:\n\n    /%s\n\n"+
+				"Anchored: unanchored, it would also match the tools/%s DIRECTORY "+
+				"and the source would stop being committed at all",
+				e.Name(), e.Name(), e.Name(), e.Name(), e.Name())
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no tool directories found, so this check verified nothing")
+	}
+}
+
+// The notifier bundle ships in the release, not only in `task install`.
+//
+// internal/notify resolves Dibs.app/Contents/MacOS/dibs-notify beside the
+// executable, and Reach reports notifications unavailable when it is absent.
+// Only the Taskfile built it, so source builds had the branded, actionable
+// notification the README lists as a required artifact and every published
+// archive and brew install did not. CI therefore exercised a different
+// installation surface from the one people download.
+//
+// This is the SECOND component to go missing the same way: the Touch ID helper
+// had the identical hole one review round earlier, and its guard watched only
+// itself. A guard written for one artifact is a guard for that artifact.
+//
+// WHAT THIS CANNOT SEE, and what does. Everything below reads
+// `.goreleaser.yml`, so it can only answer whether the configuration NAMES the
+// artifact. It was green while the notifier bundle shipped as
+// `Dibs.app/MacOS/dibs-notify`, because `src: Dibs.app/**/*` contains the
+// substring `src: Dibs.app` and the glob quietly ate the `Contents` level the
+// runtime resolves through. The archive had the file, under a path that is not
+// a macOS bundle and is not where internal/notify looks, and `dibs doctor` run
+// from an extracted archive said the notifier was not installed. `task
+// test:archive` builds the archives and tools/archivecheck opens one; this
+// stays because a deleted entry is worth catching in a second, without a build.
+func TestEveryBundledHelperShipsInTheRelease(t *testing.T) {
+	root := repoRoot(t)
+	rel, err := os.ReadFile(filepath.Join(root, ".goreleaser.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	release := string(rel)
+
+	// What the RUNTIME looks for beside the executable. Read from the source
+	// rather than listed here, so a third helper is covered on the day it is
+	// added rather than on the day somebody remembers this test.
+	helpers := map[string]string{
+		"dibs-presence": "internal/humanauth",
+		"Dibs.app":      "internal/notify",
+	}
+	for name, where := range helpers {
+		found := false
+		if werr := filepath.WalkDir(filepath.Join(root, where), func(p string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if d.IsDir() || filepath.Ext(p) != ".go" {
+				return nil
+			}
+			b, rerr := os.ReadFile(p) // #nosec G304 -- this repository
+			if rerr != nil {
+				return rerr
+			}
+			if strings.Contains(string(b), name) {
+				found = true
+			}
+			return nil
+		}); werr != nil {
+			t.Fatalf("walking %s: %v", where, werr)
+		}
+		if !found {
+			t.Errorf("%s no longer names %q, so this check is guarding an artifact "+
+				"the runtime does not look for", where, name)
+			continue
+		}
+		if !strings.Contains(release, "src: "+name) {
+			t.Errorf("%s is resolved at runtime by %s and is not carried in the "+
+				"archive (%q missing from .goreleaser.yml). Every published archive "+
+				"would be without it, while a source build has it and CI passes",
+				name, where, "src: "+name)
+		}
+		// THE CASK SECTION, in whatever stanza carries it.
+		//
+		// The first version looked for the list form `- Dibs.app` and the valid
+		// configuration turned out to be a `custom_block` emitting Homebrew's
+		// own `app` stanza, so the guard failed on a correct file. A check that
+		// knows one spelling finds the artifact only where somebody already put
+		// it in that spelling; what matters is that the cask mentions it at all.
+		at := strings.Index(release, "homebrew_casks:")
+		if at < 0 {
+			t.Fatal(".goreleaser.yml has no homebrew_casks section, so this check " +
+				"cannot say whether the cask installs anything")
+		}
+		if !strings.Contains(release[at:], name) {
+			t.Errorf("%s is resolved at runtime by %s and the Homebrew cask never "+
+				"mentions it, so every brew install would be without it", name, where)
+		}
+	}
+}
+
+// Every workflow pins the same toolchain version, and pins one at all.
+//
+// The action commit being pinned is not the same as the tool being pinned:
+// publish-mcp.yml pinned jdx/mise-action to a SHA and left the mise version
+// unset, so a job holding `id-token: write` downloaded whatever `latest` meant
+// that morning. That is the exact shape the same file refuses three lines lower
+// for mcp-publisher, in a comment, added by the change that introduced this.
+//
+// And one version across all of them, because three copies of a pin is three
+// places for it to drift and this repository has paid for that shape before.
+func TestEveryWorkflowPinsTheSameToolchain(t *testing.T) {
+	dir := filepath.Join(repoRoot(t), ".github", "workflows")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string][]string{}
+	for _, e := range entries {
+		if e.IsDir() || (filepath.Ext(e.Name()) != ".yml" && filepath.Ext(e.Name()) != ".yaml") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, e.Name())) // #nosec G304 -- this repository
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := string(raw)
+		uses := strings.Count(body, "jdx/mise-action@")
+		if uses == 0 {
+			continue
+		}
+		m := regexp.MustCompile(`(?m)^\s*version:\s*([0-9][\w.\-]*)`).FindAllStringSubmatch(body, -1)
+		if len(m) < uses {
+			t.Errorf("%s uses mise-action %d time(s) and pins %d version(s). A pinned "+
+				"ACTION with an unpinned tool downloads whatever latest means today, "+
+				"and these jobs hold id-token: write", e.Name(), uses, len(m))
+			continue
+		}
+		for _, hit := range m {
+			seen[hit[1]] = append(seen[hit[1]], e.Name())
+		}
+	}
+	if len(seen) == 0 {
+		t.Fatal("no workflow pins a toolchain version, so this check verified nothing")
+	}
+	if len(seen) > 1 {
+		t.Errorf("workflows pin different toolchain versions: %v. One of them is the "+
+			"gate and one of them is the release, and they have to be the same "+
+			"toolchain or the gate is not testing what ships", seen)
+	}
+}
+
+// Every release before-hook output has an ignore entry.
+//
+// The hooks build the man pages, the Touch ID helper's two slices, the
+// universal binary made from them, and the notifier bundle, all into the
+// working directory. Until the gate built a release nothing produced any of
+// that outside the release job, so `.gitignore` listed exactly one of them and
+// nobody noticed: `task test:archive` went into `task ci` to prove the archive
+// carries what the runtime resolves, and the first local run left four
+// untracked artifacts including a whole signed .app bundle, which `git add -A`
+// staged.
+//
+// That is the same failure as the tool binaries above, arriving from a
+// different direction, and it has the same answer: derive the list rather than
+// remember it. The entry a hand-written list will be missing is the one for the
+// hook somebody adds next.
+func TestEveryReleaseHookOutputIsIgnored(t *testing.T) {
+	root := repoRoot(t)
+	raw, err := os.ReadFile(filepath.Join(root, ".goreleaser.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The hooks section only. A `-o` further down the file belongs to something
+	// that is not run before the build and does not land in this directory.
+	hooks := regexp.MustCompile(`(?ms)^before:\n(.*?)^\S`).FindStringSubmatch(string(raw))
+	if hooks == nil {
+		t.Fatal(".goreleaser.yml has no `before:` section, so this check cannot see what " +
+			"the release builds into the working directory before it starts")
+	}
+	// -o, -out and -output: three tools, three spellings, and a guard that knew
+	// one of them would pass over the other two. Bare `-o` last so the longer
+	// flags are not read as it.
+	outputs := map[string]bool{}
+	for _, m := range regexp.MustCompile(`-(?:output|out|o)\s+(\S+)`).
+		FindAllStringSubmatch(hooks[1], -1) {
+		outputs[m[1]] = true
+	}
+	if len(outputs) == 0 {
+		t.Fatal("no before-hook outputs found; this check verified nothing")
+	}
+
+	ignoreRaw, err := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ignored := map[string]bool{}
+	for _, line := range strings.Split(string(ignoreRaw), "\n") {
+		line = strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(line), "/"))
+		ignored[strings.TrimPrefix(line, "/")] = true
+	}
+
+	for name := range outputs {
+		// A path into a subdirectory is not left at the root and is somebody
+		// else's ignore rule; this is about what lands beside the go.mod.
+		if strings.ContainsRune(name, '/') {
+			continue
+		}
+		if !ignored[name] {
+			t.Errorf(".goreleaser.yml's before hooks build %q into the working directory "+
+				"and .gitignore has no anchored entry for it, so `task ci` now leaves it "+
+				"untracked and the next `git add -A` commits a build artifact. Add this "+
+				"line:\n\n    /%s\n", name, name)
 		}
 	}
 }

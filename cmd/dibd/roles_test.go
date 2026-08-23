@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -49,6 +50,33 @@ func TestRolesDeclaredInConfigAreGrantedAtStartup(t *testing.T) {
 			t.Errorf("%s does not hold %q after applyDeclaredRoles: a role written in "+
 				"dibs.toml that does not take effect is a config that lies", agent, want)
 		}
+	}
+
+	// AND THE ONE THAT HAS NOT REGISTERED YET, which is the case the comment
+	// above this test is about and the reason production reapplies on a ticker.
+	//
+	// Both agents were registered before the first pass, so every assertion so
+	// far describes a board where everybody is already present: the startup
+	// order that actually happens, an operator's daemon coming up before their
+	// agents do, went untested, and deleting the reconciliation loop would have
+	// left this green.
+	pins := loadRolePins(t.TempDir())
+	late := RolesConfig{
+		Coordinator: []string{"latecomer"},
+		Identity:    map[string]string{"latecomer": engine.RolePinFingerprint("nonce-late")},
+	}
+	applyDeclaredRoles(ctx, eng, late, pins) // nobody by that name yet
+	if holdsRole(t, eng, "latecomer", core.RoleCoordinator) {
+		t.Fatal("a role was granted to an agent that has never registered, so the " +
+			"grant is following the NAME again")
+	}
+	registerAgentAs(t, eng, "latecomer", "nonce-late")
+	applyDeclaredRoles(ctx, eng, late, pins) // the ticker's next pass
+	if !holdsRole(t, eng, "latecomer", core.RoleCoordinator) {
+		t.Error("an agent that registered after startup never received its declared " +
+			"role. The daemon comes up before the agents do, so this is the ordinary " +
+			"order rather than an edge case, and without a later pass the operator's " +
+			"config silently applies to nobody")
 	}
 }
 
@@ -232,17 +260,72 @@ func TestADeclaredRoleWillNotFollowAStolenName(t *testing.T) {
 }
 
 // And the pin must not be satisfiable by an agent with no durable identity.
+//
+// WITH AN IDENTITY CONFIGURED, which is what makes this about the nonce. The
+// first version left [roles.identity] empty as well, so the grant was refused
+// for having no configured fingerprint and the nonce rule could have been
+// deleted outright with this still green: two protections, one assertion, and
+// the wrong one doing the work.
+//
+// The configured identity is a REAL fingerprint, of some nonce the operator
+// chose. RolePinFingerprint("") is itself empty, so pinning that would recreate
+// the same masking with an extra step.
 func TestADeclaredRoleNeedsAnAgentThatCanProveItselfTomorrow(t *testing.T) {
 	eng, ctx := testEngine(t)
 	if _, err := eng.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "no-nonce"}); err != nil {
 		t.Fatal(err)
 	}
-	applyDeclaredRoles(ctx, eng, RolesConfig{Admin: []string{"no-nonce"}},
-		loadRolePins(t.TempDir()))
+	intended := engine.RolePinFingerprint("the-nonce-the-operator-chose")
+	if intended == "" {
+		t.Fatal("the configured identity is empty, so the refusal below would be " +
+			"about the missing config rather than about the agent")
+	}
+	cfg := RolesConfig{
+		Admin:    []string{"no-nonce"},
+		Identity: map[string]string{"no-nonce": intended},
+	}
+	applyDeclaredRoles(ctx, eng, cfg, loadRolePins(t.TempDir()))
 	if holdsRole(t, eng, "no-nonce", core.RoleAdmin) {
 		t.Error("an agent with no nonce was granted a standing role: it cannot prove " +
 			"it is itself after a restart, so the role would pass to whoever takes " +
 			"the name next")
+	}
+
+	// And the same configuration DOES grant to an agent that has one, so this
+	// cannot pass by refusing everything.
+	registerAgentAs(t, eng, "has-nonce", "a-durable-secret")
+	ok := RolesConfig{
+		Admin:    []string{"has-nonce"},
+		Identity: map[string]string{"has-nonce": engine.RolePinFingerprint("a-durable-secret")},
+	}
+	applyDeclaredRoles(ctx, eng, ok, loadRolePins(t.TempDir()))
+	if !holdsRole(t, eng, "has-nonce", core.RoleAdmin) {
+		t.Fatal("no agent can hold a declared role at all, so the refusal above says " +
+			"nothing about nonces")
+	}
+
+	// THE NONCE RULE ON ITS OWN.
+	//
+	// Several protections deliver the property above and any of them will
+	// refuse a nonce-less agent, so the whole-path assertion cannot say WHICH
+	// one is doing it: with no identity configured the missing-config branch
+	// answers, and with one configured the mismatch branch does. Both are
+	// correct and neither is this rule. Asked directly, the empty fingerprint
+	// is the only thing wrong.
+	for _, want := range []struct{ name, configured string }{
+		{"with no identity configured", ""},
+		{"with an identity configured", intended},
+	} {
+		t.Run("the nonce rule "+want.name, func(t *testing.T) {
+			err := loadRolePins(t.TempDir()).check(core.RoleAdmin, "no-nonce", "", want.configured)
+			if err == nil {
+				t.Fatal("an agent with no durable identity was accepted for a standing role")
+			}
+			if !strings.Contains(err.Error(), "no nonce") {
+				t.Errorf("refused for a different reason, so this says nothing about "+
+					"the nonce rule: %v", err)
+			}
+		})
 	}
 }
 
@@ -359,4 +442,211 @@ func TestAFreshBoardWillNotGrantADeclaredRoleToWhoeverAsksFirst(t *testing.T) {
 				"everybody, which is a broken feature rather than a closed hole")
 		}
 	})
+}
+
+// The corrective errors on the role-pin path must not talk an operator into
+// making things worse.
+//
+// PHILOSOPHY's honesty rule says every error carries the corrective call. Two
+// on this path named the wrong one, and both are security-relevant:
+//
+//   - The "no identity configured" refusal said to add `<that agent's nonce>`
+//     to [roles.identity]. A 256-bit nonce is 64 hex characters, exactly the
+//     shape the fingerprint check accepts, so the file loaded and nothing ever
+//     objected. Anything that could read dibs.toml could then register with
+//     that name and that nonce and be handed the agent's own token, mailbox and
+//     role: an upgrade from a two-minute startup race to a standing key. The
+//     startup log already printed the correct line, so the two contradicted
+//     each other and the dangerous one came first.
+//
+//   - The mismatch refusal offered a handover repair of one step. Both the pin
+//     file and dibs.toml are read once at startup, so that step changes nothing
+//     under a running daemon and still fails on the next boot against the old
+//     fingerprint. An error naming a fix that does not fix anything spends the
+//     operator's trust in every other error this daemon prints.
+//
+// Prose is not checkable by reading, so it is checked here.
+func TestTheRolePinErrorsNameTheCorrectiveThatWorks(t *testing.T) {
+	t.Run("the first-pin refusal never asks for the nonce", func(t *testing.T) {
+		p := loadRolePins(t.TempDir())
+		err := p.check("fleet-lead", core.RoleAdmin, engine.RolePinFingerprint("n"), "")
+		if err == nil {
+			t.Fatal("a declared role with no [roles.identity] was accepted, so this " +
+				"check is reading an error that no longer exists")
+		}
+		assertDoesNotAskForANonce(t, "the first-pin refusal", err)
+		if !strings.Contains(strings.ToLower(err.Error()), "fingerprint") {
+			t.Errorf("the refusal does not say to use the FINGERPRINT:\n  %s", err)
+		}
+	})
+
+	// The MISMATCH refusal too, which is the one an operator reads while
+	// debugging a role that stopped working, and which said the longest for
+	// "the nonce [roles.identity] names for it". The first version of this
+	// guard listed two literal phrases and walked straight past that sentence:
+	// a check that knows only the spellings already fixed is a check that finds
+	// nothing new, which is this repository's most-repeated lesson about
+	// guarding prose.
+	t.Run("the identity-mismatch refusal never asks for the nonce", func(t *testing.T) {
+		// UNPINNED, which is the branch that carried the wording. A role that
+		// is already pinned takes the handover path instead; the first version
+		// of this subtest established a pin and so never reached the sentence
+		// it was written for, and passed against it.
+		p := loadRolePins(t.TempDir())
+		err := p.check(core.RoleAdmin, "fleet-lead",
+			engine.RolePinFingerprint("the agent that turned up"),
+			engine.RolePinFingerprint("the agent the operator meant"))
+		if err == nil {
+			t.Fatal("an agent whose fingerprint is not the one [roles.identity] " +
+				"names was granted the role")
+		}
+		if strings.Contains(err.Error(), "cannot be read") ||
+			strings.Contains(err.Error(), "has no nonce") {
+			t.Fatalf("this reached a different refusal, so the wording under test "+
+				"was never produced: %v", err)
+		}
+		assertDoesNotAskForANonce(t, "the identity-mismatch refusal", err)
+	})
+
+	t.Run("the handover repair names every step it needs", func(t *testing.T) {
+		dir := t.TempDir()
+		p := loadRolePins(dir)
+		// An established pin, then a different agent under the same name.
+		if err := p.check("fleet-lead", core.RoleAdmin,
+			engine.RolePinFingerprint("the-original"), engine.RolePinFingerprint("the-original")); err != nil {
+			t.Fatalf("establishing the pin: %v", err)
+		}
+		err := p.check("fleet-lead", core.RoleAdmin,
+			engine.RolePinFingerprint("a-successor"), engine.RolePinFingerprint("the-original"))
+		if err == nil {
+			t.Fatal("a different agent under a pinned name was accepted, so there is " +
+				"no mismatch error to check")
+		}
+		got := strings.ToLower(err.Error())
+		for _, want := range []string{"roles.identity", "restart"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("the handover repair does not mention %q:\n  %s\n"+
+					"Removing the pin alone cannot work: both files are read once at "+
+					"startup, so the running daemon keeps its loaded copy and the next "+
+					"boot still checks the successor against the old fingerprint",
+					want, err.Error())
+			}
+		}
+	})
+}
+
+// assertDoesNotAskForANonce fails if an error points the operator at
+// [roles.identity] and calls what belongs there a nonce.
+//
+// ONE PLACE, and it matches on the RELATION rather than on remembered wording.
+// The first version of this check listed the two exact phrases that had already
+// been fixed, so the next occurrence -- "did not present the nonce
+// [roles.identity] names for it" -- passed it untouched, in the error an
+// operator is most likely to be reading when they decide what to put in that
+// field. A nonce is the agent's whole recovery credential and has the same
+// 64-hex shape as a fingerprint, so a file that holds one loads silently and
+// hands that agent to anything running as the operator.
+func assertDoesNotAskForANonce(t *testing.T, what string, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("%s: no error to inspect, so this check verified nothing", what)
+	}
+	got := err.Error()
+	lower := strings.ToLower(got)
+	// The hazard is the two ideas in one sentence: this field, and that word.
+	if strings.Contains(lower, "nonce") && strings.Contains(got, "[roles.identity]") {
+		// Saying "never the nonce" is the correct use and must stay allowed.
+		for _, safe := range []string{"never its nonce", "never the nonce", "not the nonce"} {
+			if strings.Contains(lower, safe) {
+				return
+			}
+		}
+		t.Errorf("%s describes [roles.identity] as holding a nonce:\n  %s\n"+
+			"That field takes a FINGERPRINT. A nonce is the agent's whole recovery "+
+			"credential and is the same 64-hex shape, so an operator who follows this "+
+			"puts it in a file anything running as them can read, and whatever reads "+
+			"it can register as that agent and take its token, mailbox and role",
+			what, got)
+	}
+}
+
+// A nonce pasted into [roles.identity] is caught, and named as an exposure.
+//
+// A 256-bit nonce is 64 lowercase hex characters, exactly the shape of a
+// fingerprint, so no validator reading dibs.toml on its own can tell them
+// apart: the shape check accepts both, the board comes up, and nothing ever
+// says the value is wrong. The regression case in boardconfig used
+// "the-secret-nonce", which is neither 64 characters nor hex, so it only proved
+// that obviously malformed values fail.
+//
+// Where the grant is decided both values exist, which makes the test exact:
+// hashing what the operator wrote gives this agent's fingerprint only if what
+// they wrote was this agent's nonce.
+func TestANoncePastedIntoTheIdentityTableIsRefusedAsAnExposure(t *testing.T) {
+	// The realistic representation, and the one the old case could not model.
+	nonce := strings.Repeat("a1b2c3d4", 8) // 64 lowercase hex
+	if len(nonce) != 64 {
+		t.Fatalf("fixture is %d characters, not the 64 a 256-bit nonce has", len(nonce))
+	}
+	fp := engine.RolePinFingerprint(nonce)
+
+	p := loadRolePins(t.TempDir())
+	err := p.check(core.RoleAdmin, "fleet-lead", fp, nonce)
+	if err == nil {
+		t.Fatal("a raw nonce in [roles.identity] was accepted as an identity. It is " +
+			"the agent's whole recovery credential: anything running as the operator " +
+			"that reads dibs.toml can register with that name and nonce and be handed " +
+			"the agent's token, mailbox and role")
+	}
+	got := strings.ToLower(err.Error())
+	if !strings.Contains(got, "nonce") {
+		t.Errorf("the refusal does not say the value is a nonce:\n  %s", err)
+	}
+	// Refusing is not the whole remedy: the credential is already in a file.
+	if !strings.Contains(got, "new nonce") && !strings.Contains(got, "rotate") {
+		t.Errorf("the refusal does not tell the operator to rotate the nonce:\n  %s\n"+
+			"Correcting the file leaves a credential that has been sitting on disk", err)
+	}
+
+	// And the correct value still works, so this cannot pass by refusing
+	// everything.
+	if err := p.check(core.RoleAdmin, "fleet-lead", fp, fp); err != nil {
+		t.Errorf("a correct fingerprint was refused: %v", err)
+	}
+}
+
+// A corrupt pin file must say WHY every grant is refused.
+//
+// Refusing is the safe direction and was never in doubt. But the parse error
+// was dropped on the floor, so `check` reported that the file "cannot be read
+// (<nil>)": an operator whose declared roles have all stopped working is told
+// the file is unreadable, given no reason, and sent to look at permissions on a
+// file whose permissions are fine. readErr is the field that error prints, and
+// its own contract says it holds why. Existing coverage used an OS-level read
+// failure, which is the one case that already populated it.
+func TestACorruptPinFileExplainsItself(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "roles.pinned"),
+		[]byte("{ this is not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := loadRolePins(dir)
+	if p.Pins != nil {
+		t.Fatal("a corrupt pin file left the pins usable, so a damaged file " +
+			"silently un-pins every role: the failure the file exists to prevent")
+	}
+	err := p.check(core.RoleAdmin, "fleet-lead", engine.RolePinFingerprint("n"), "")
+	if err == nil {
+		t.Fatal("a grant was allowed against an unreadable pin file")
+	}
+	if strings.Contains(err.Error(), "<nil>") {
+		t.Errorf("the refusal reports no reason:\n  %s\n"+
+			"The operator sees every declared role stop working and is told the "+
+			"file cannot be read, with the parse error that would explain it "+
+			"thrown away", err)
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "json") &&
+		!strings.Contains(err.Error(), "invalid character") {
+		t.Errorf("the refusal does not name the parse failure:\n  %s", err)
+	}
 }

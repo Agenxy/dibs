@@ -1,6 +1,7 @@
 package logs
 
 import (
+	"bytes"
 	"log/slog"
 	"strings"
 	"testing"
@@ -63,3 +64,54 @@ func TestSensitiveAttrsAreRedactedAtCapture(t *testing.T) {
 type discard struct{}
 
 func (discard) Write(p []byte) (int, error) { return len(p), nil }
+
+// Redaction covers stderr, not only the board's log view.
+//
+// The handler redacted its own copy for /api/logs and forwarded the ORIGINAL
+// record to the base handler, so every value the list calls sensitive was
+// hidden from the board and printed in full on stderr: where a service manager
+// collects it, where a crash reporter picks it up, and where anything reading
+// the daemon's output can see it. The list read as a guarantee about logging
+// and was a guarantee about one of its two destinations.
+func TestSensitiveValuesAreRedactedOnStderrToo(t *testing.T) {
+	var base bytes.Buffer
+	ring := NewRing(8)
+	log := slog.New(NewHandler(slog.NewTextHandler(&base, nil), ring))
+
+	const leak = "sk-live-do-not-print-this"
+	log.Info("an agent registered", "agent", "reviewer", "token", leak,
+		"output", "decrypted mail from the resumed turn")
+
+	if strings.Contains(base.String(), leak) {
+		t.Errorf("the token reached stderr in full:\n  %s\n"+
+			"That is where a service manager collects the daemon's output, so "+
+			"redacting only the in-memory ring protects the one destination an "+
+			"operator is least likely to be reading", strings.TrimSpace(base.String()))
+	}
+	if strings.Contains(base.String(), "decrypted mail") {
+		t.Errorf("a wake command's output reached stderr: %s", strings.TrimSpace(base.String()))
+	}
+	// AND ATTRIBUTES BOUND WITH log.With, which take a different path: they
+	// enter the base handler at WithAttrs and are no longer in the record that
+	// Handle sanitises. The record fix covered one door of two.
+	var bound bytes.Buffer
+	boundLog := slog.New(NewHandler(slog.NewTextHandler(&bound, nil), NewRing(8))).
+		With("local_secret", leak, "agent", "reviewer")
+	boundLog.Info("a request arrived")
+	if strings.Contains(bound.String(), leak) {
+		t.Errorf("a secret bound with log.With reached stderr in full:\n  %s",
+			strings.TrimSpace(bound.String()))
+	}
+	if !strings.Contains(bound.String(), "reviewer") {
+		t.Errorf("redacting the bound attributes dropped the harmless ones too: %s",
+			strings.TrimSpace(bound.String()))
+	}
+
+	// The record still says what happened, or redaction has become deletion.
+	for _, want := range []string{"an agent registered", "reviewer", "[redacted]"} {
+		if !strings.Contains(base.String(), want) {
+			t.Errorf("stderr lost %q, so the log no longer says what happened: %s",
+				want, strings.TrimSpace(base.String()))
+		}
+	}
+}

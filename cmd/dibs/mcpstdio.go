@@ -36,7 +36,26 @@ import (
 //
 // So listen is streamed instead, on its own goroutine, and stdout is
 // serialised because notifications now interleave with ordinary replies.
-func mcpStdio(_ []string) error {
+func mcpStdio(args []string) error {
+	if err := bridgePreflight(); err != nil {
+		return err
+	}
+	return runBridge(args)
+}
+
+// bridgePreflight answers "is there a board to talk to" before anything is
+// sent, because everything the bridge sends carries this board's local secret.
+//
+// Separated so mcpStdio stays inside the complexity budget, and because these
+// are the two questions with the same answer: if either fails, no request
+// should leave this process.
+func bridgePreflight() error {
+	// A dibs.toml the daemon will not start on is a reason to stop here rather
+	// than guess an endpoint and send the credential to whatever answers.
+	return checkConfigReadable()
+}
+
+func runBridge(_ []string) error {
 	secret, err := localSecret()
 	if err != nil {
 		return fmt.Errorf("no local secret yet: start dibd once first: %w", err)

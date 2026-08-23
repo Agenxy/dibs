@@ -95,10 +95,20 @@ func pluginHint(harness string, reattached, hooksLive, hasSession bool) map[stri
 			hint["note"] = "shown once, on first registration. Mail will arrive in your " +
 				"session; you do not need to poll inbox to find it"
 		} else {
-			hint["note"] = "shown once, on first registration. Your hooks reach this " +
-				"daemon, but this harness has no wake path: mail is still PULL-ONLY " +
-				"here, so keep calling check_in each activation and await_events when " +
-				"you are about to block"
+			// OBSERVED, not assumed. `delivers` is a property of the harness in
+			// general and is deliberately conservative, because for some it
+			// depends on the build. But hooks HAVE reached this daemon for this
+			// session, so telling this agent its harness "has no wake path" is
+			// contradicted by the evidence that produced this very branch, and
+			// it was contradicted by the catalogue entry printed beside it.
+			// Codex is the case: mcp_tool hooks execute on builds from
+			// 2026-08-18 and are dropped on older ones, so the flag stays false
+			// and the sentence has to be about what was seen here.
+			hint["note"] = "shown once, on first registration. Your hooks reached this " +
+				"daemon, so news can arrive at a turn boundary on this build. Delivery " +
+				"is not guaranteed for this harness in general, so keep calling " +
+				"check_in each activation and await_events when you are about to " +
+				"block: that is the floor, and it works whether or not a hook fires"
 		}
 		return hint
 	}

@@ -365,6 +365,12 @@ func editDistance(a, b string) int {
 }
 
 func get(path string, v any) error {
+	// Before the secret goes anywhere: a dibs.toml that does not parse means
+	// the daemon this was meant for is not running, and the request would carry
+	// this directory's local secret to whatever else answers.
+	if err := checkConfigReadable(); err != nil {
+		return err
+	}
 	req, err := http.NewRequest(http.MethodGet, origin()+path, nil)
 	if err != nil {
 		return err
@@ -492,7 +498,7 @@ func mcpConfig(args []string) error {
 	if derr != nil {
 		return derr
 	}
-	joiner, jerr := joinerAddr()
+	joiner, jerr := joinerAddr(scheme)
 	if jerr != nil {
 		return jerr
 	}
@@ -631,8 +637,20 @@ args = ["mcp-stdio"]
 	// invisible to exactly the operators who needed it. One reported nearly
 	// abandoning the multi-machine board, which is the reason they run Dibs,
 	// while the instructions for it were in the binary the whole time.
-	printRemoteRecipe(scheme == "https", joiner)
+	printRemoteRecipe(recipeInputs(scheme, joiner))
 	return nil
+}
+
+// recipeInputs is the handoff from the resolved transport to the recipe.
+//
+// TWO LINES, named, because the tests could not reach them. Every case in the
+// recipe suite passed `servesTLS` and a joining address BOTH derived from the
+// answer it expected, so an inverted comparison here, a constant, or a joining
+// address built from the wrong scheme would have left every row green while the
+// shipped command printed a recipe for a daemon that does not exist. The
+// renderer was well covered; the boundary into it was not covered at all.
+func recipeInputs(scheme, joiner string) (servesTLS bool, addr string) {
+	return scheme == "https", joiner
 }
 
 // printRemoteRecipe is the setup for agents on OTHER machines.
@@ -648,6 +666,14 @@ args = ["mcp-stdio"]
 // verified TLS to the daemon, trusting exactly the certificate this machine
 // recorded and nothing else, so the harness needs no TLS configuration and no
 // certificate of its own. It is also the only shape some harnesses accept.
+// servedScheme names the transport for boardShape.
+func servedScheme(servesTLS bool) string {
+	if servesTLS {
+		return "https"
+	}
+	return "http"
+}
+
 func printRemoteRecipe(servesTLS bool, joiner string) {
 	fmt.Printf(`
 # ── Agents on ANOTHER machine ───────────────────────────────────────────────
@@ -685,12 +711,12 @@ func printRemoteRecipe(servesTLS bool, joiner string) {
 	// named http:// off loopback was described as loopback and told to tunnel.
 	// boardShape already answers both from the address; there is no reason for
 	// this recipe to guess separately.
-	tunnel, trust := boardShape(rawAddr())
-	// The address says what a daemon off loopback USUALLY serves; the resolved
-	// transport says what this one does. `insecure_plaintext = true` is the
-	// operator overriding the default, and printing "this daemon serves HTTPS"
-	// at them, with a certificate to record, describes a different machine.
-	trust = trust && servesTLS
+	tunnel, trust := boardShape(rawAddr(), servedScheme(servesTLS))
+	// boardShape is now TOLD the resolved transport, so it no longer guesses and
+	// this no longer has to correct it. The old `trust && servesTLS` could only
+	// ever narrow, which was right for insecure_plaintext on a LAN address and
+	// wrong for a certificate pair on loopback: that case needs a trust step the
+	// address alone will never ask for.
 	if tunnel {
 		// The tunnel, for the daemon this actually is.
 		//
@@ -795,8 +821,27 @@ func webURL(args []string) error {
 	// stdin only, deliberately: `dibs web | pbcopy` is an ordinary thing to do
 	// and says nothing about whether somebody is sitting here.
 	if humanauth.Available() && !*usePassword && atATerminal() {
-		fmt.Fprintln(os.Stderr, "# Confirming it is you, on the system sheet.")
-		out, err := mintBoard(s, "", true)
+		// A CODE THE OPERATOR CAN COMPARE.
+		//
+		// Every agent holds the same local secret, so any of them may raise this
+		// sheet. Serialising prompts stops two appearing at once and does NOT
+		// bind the approval to whoever asked: an agent can leave a request
+		// waiting and let the operator's own `dibs web` supply the finger. They
+		// see a sheet at exactly the moment they expect one, and approving it
+		// completes somebody else's request.
+		//
+		// Nothing in the transport can tell the two apart, so the person is the
+		// channel: this terminal names a code, the daemon prints that code on
+		// the sheet, and a prompt showing anything else was raised by something
+		// else. It is the ssh fingerprint trade, and it works for the same
+		// reason: the comparison happens outside the thing being attacked.
+		code, err := presenceCode()
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "# Confirming it is you. Approve the sheet showing "+
+			"%s, and ONLY that one.\n", code)
+		out, err := mintBoard(s, "", true, code)
 		if err == nil {
 			return printBoardLink(out)
 		}
@@ -824,7 +869,7 @@ func webURL(args []string) error {
 	if err != nil {
 		return err
 	}
-	out, err := mintBoard(s, adminPass, false)
+	out, err := mintBoard(s, adminPass, false, "")
 	if err != nil {
 		return err
 	}
@@ -836,70 +881,6 @@ func webURL(args []string) error {
 func atATerminal() bool {
 	fi, err := os.Stdin.Stat()
 	return err == nil && fi.Mode()&os.ModeCharDevice != 0
-}
-
-// errNoPresenceHere is the daemon saying this machine cannot check presence at
-// all.
-//
-// The CLI falls back on every failure, so it no longer branches on this, but the
-// distinction is still worth carrying: it is the one presence answer that is not
-// about a person, and it is what the daemon's 412 means to anything else that
-// learns to call /bootstrap.
-var errNoPresenceHere = errors.New("this machine cannot check presence")
-
-type boardGrant struct {
-	BT     string `json:"bt"`
-	Proof  string `json:"proof"`
-	Mocked string `json:"mocked"`
-}
-
-// mintBoard asks the daemon for a one-time bootstrap token. The durable secret
-// never enters the URL.
-func mintBoard(secret, adminPass string, presence bool) (boardGrant, error) {
-	var out boardGrant
-	req, err := http.NewRequest(http.MethodPost, origin()+"/bootstrap", nil)
-	if err != nil {
-		return out, err
-	}
-	req.Header.Set("X-Dibs-Local", secret)
-	if presence {
-		req.Header.Set("X-Dibs-Presence", "1")
-	} else {
-		req.Header.Set("X-Dibs-Admin", adminPass)
-	}
-	// No client deadline on the presence path: the person has ninety seconds to
-	// reach the sensor and the daemon owns that bound. A shorter one here would
-	// cancel the request out from under a sheet they were still looking at.
-	resp, err := daemonClient(0).Do(req)
-	if err != nil {
-		return out, reachErr(err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode == http.StatusPreconditionFailed {
-		return out, errNoPresenceHere
-	}
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		if msg := strings.TrimSpace(string(body)); msg != "" {
-			return out, errors.New(msg)
-		}
-		return out, fmt.Errorf("bootstrap failed: %s", resp.Status)
-	}
-	return out, json.NewDecoder(resp.Body).Decode(&out)
-}
-
-func printBoardLink(out boardGrant) error {
-	fmt.Printf("http://%s/?bt=%s\n", addr(), out.BT)
-	if out.Mocked != "" {
-		fmt.Fprintln(os.Stderr, "\n# "+out.Mocked)
-	}
-	how := "the admin password"
-	if out.Proof == "presence" {
-		how = "your fingerprint"
-	}
-	fmt.Fprintln(os.Stderr, "\n# Single-use link, expires in 2 minutes, unlocked with "+how+
-		". It sets a session cookie; the secret is never in the URL.")
-	return nil
 }
 
 // The shapes `dibs board` reads. Named rather than anonymous so each section

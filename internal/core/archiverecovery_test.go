@@ -89,3 +89,41 @@ func TestAnArchivedAgentComesBackWithItsNonceAndItsMail(t *testing.T) {
 			"holding is what makes recovery worth having")
 	}
 }
+
+// A recovered agent gets its durable identity back, not just its mail.
+//
+// Archival blanks Agent.Nonce and keeps the nonce INDEX, which is what lets
+// recovery find the row at all. Reattaching restored the token, the session and
+// the mailbox and left Nonce empty, so AgentIdentity returned "" and a declared
+// role could never reconcile onto that agent again: an admin that went dormant
+// for a month came back as itself and permanently without the role dibs.toml
+// grants it. The secret is the one this path just matched on, so putting it
+// back asserts nothing new.
+func TestRecoveringAnArchivedAgentRestoresItsNonce(t *testing.T) {
+	s := NewState("test", DefaultLimits())
+	now := time.Now()
+
+	if _, _, err := s.Apply(&Op{
+		Kind: OpRegister, Name: "fleet-lead", AgentKind: KindPersistent, Nonce: "the-secret",
+	}, now); err != nil {
+		t.Fatal("setup:", err)
+	}
+	l := s.Agents["fleet-lead"]
+	// What archival does: the row survives, the credential on it does not.
+	l.Status, l.Token, l.Nonce = StatusArchived, "", ""
+	if s.Nonces["the-secret"] != "fleet-lead" {
+		t.Fatal("setup: the nonce index was not retained, so recovery cannot find " +
+			"this row and the test is about a different path")
+	}
+
+	if _, _, err := s.Apply(&Op{
+		Kind: OpRegister, Name: "fleet-lead", AgentKind: KindPersistent, Nonce: "the-secret",
+	}, now); err != nil {
+		t.Fatal("recovering:", err)
+	}
+	if got := s.Agents["fleet-lead"].Nonce; got != "the-secret" {
+		t.Errorf("the recovered agent's nonce is %q. It has no durable identity, so "+
+			"AgentIdentity returns nothing and a role declared in dibs.toml can "+
+			"never be reconciled onto it again", got)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -145,5 +146,126 @@ func TestHarnessNamesResolveHowAgentsSpellThem(t *testing.T) {
 	if _, ok := For("emacs"); ok {
 		t.Error("For(\"emacs\") matched something; unknown harnesses must not be given " +
 			"a plugin that does not fit them")
+	}
+}
+
+// The Codex payload's file key must be the path Codex actually reads.
+//
+// `Files` maps a path RELATIVE TO Root, and Codex's root is `~/.codex`. The key
+// was `hooks/hooks.json`, which is Claude Code's layout, so a consumer honouring
+// the structured contract wrote `~/.codex/hooks/hooks.json`: a valid file in a
+// place Codex never looks. The catalogue's own prose said `~/.codex/hooks.json`
+// in the same breath, so the two halves of one document disagreed and only the
+// half a human reads was right.
+//
+// This is the failure this project keeps paying for: an install that reports
+// success and does nothing. Nothing compared the key with the instruction, so
+// nothing could see it.
+func TestTheCodexPayloadPutsItsHookWhereCodexReadsIt(t *testing.T) {
+	p, ok := For("codex")
+	if !ok {
+		t.Fatal("no codex plugin")
+	}
+	if _, has := p.Files["hooks.json"]; !has {
+		t.Errorf("the codex payload has no \"hooks.json\" at its root; keys are %v. "+
+			"Files are written relative to Root (%s), and Codex reads hooks.json "+
+			"there: a nested key writes a correct file to a path it never opens",
+			keysOf(p.Files), p.Root)
+	}
+	if _, wrong := p.Files["hooks/hooks.json"]; wrong {
+		t.Error("the codex payload still keys its hook under \"hooks/hooks.json\", " +
+			"which is Claude Code's layout. Codex reads ~/.codex/hooks.json")
+	}
+	// And the setup prose must name the same place, because the two halves of
+	// this catalogue disagreeing is how the defect survived: a machine follows
+	// Files, a person follows the steps, and only one of them was right.
+	var says bool
+	for _, st := range p.Setup {
+		if strings.Contains(st.Check, "~/.codex/hooks.json") ||
+			strings.Contains(st.Do, "~/.codex/") {
+			says = true
+		}
+	}
+	if !says {
+		t.Error("no setup step names ~/.codex as where hooks.json goes, so a reader " +
+			"has nothing to check the structured path against")
+	}
+}
+
+// A plugin's own README must not deny the hook file shipped beside it.
+//
+// The Codex guide said, in the same document, that the executor landed and Dibs
+// ships a working hooks.json AND that mcp_tool is dropped for want of an
+// executor, that the reader should wait until it stops being None, and that
+// Codex is pull-only. Two rewrites fixed the passages somebody happened to
+// read; the contradiction survived twice, further down each time.
+//
+// This is not archival prose. The README is embedded into the plugin payload
+// and served to agents over dibs://plugin, so the contradiction ships to a
+// reader who cannot check it against the tree. The drift guard proves the two
+// copies are identical, which only means both copies are wrong together.
+//
+// So the falsifiable half is checked: a plugin that HAS a hook file may not
+// state, unconditionally, that it has none or that its harness cannot run one.
+// Conditional statements are fine and necessary, because the answer depends on
+// the reader's build; a bare present-tense denial is not.
+func TestAPluginReadmeDoesNotDenyItsOwnHookFile(t *testing.T) {
+	checked := 0
+	for _, name := range Names() {
+		p, ok := For(name)
+		if !ok {
+			t.Fatalf("catalogue lists %q and For() does not return it", name)
+		}
+		readme, has := p.Files["README.md"]
+		if !has {
+			continue
+		}
+		ships := false
+		for k := range p.Files {
+			if path.Base(k) == "hooks.json" {
+				ships = true
+			}
+		}
+		if !ships {
+			continue
+		}
+		checked++
+		// BY SENTENCE, not by line. Markdown wraps, so a denial and the past
+		// tense that excuses it routinely sit on different lines; a line-based
+		// version of this flagged the paragraph explaining the history of the
+		// very mistake it was written to catch.
+		flat := strings.Join(strings.Fields(strings.ReplaceAll(readme, "\n", " ")), " ")
+		for _, sentence := range strings.Split(flat, ". ") {
+			l := strings.ToLower(sentence)
+			denies := false
+			for _, d := range []string{"ships no hook", "ships no `hooks.json`", "ships no hooks.json"} {
+				if strings.Contains(l, d) {
+					denies = true
+				}
+			}
+			if !denies {
+				continue
+			}
+			// A sentence that names a version, a date, a condition or the past
+			// is describing WHEN, which is the honest way to say this and the
+			// way this file now does. A bare present-tense denial is not.
+			for _, qualified := range []string{
+				"if ", "predates", "older", "until", "used to", "went on saying",
+				"earlier", "no longer", "the second said", "the first ",
+			} {
+				if strings.Contains(l, qualified) {
+					denies = false
+				}
+			}
+			if denies {
+				t.Errorf("%s/README.md ships a hooks.json and says it does not:\n  %s\n"+
+					"This file is embedded and served over dibs://plugin, so the reader "+
+					"cannot check it against the tree", name, strings.TrimSpace(sentence))
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no plugin was found that ships both a README and a hooks.json, " +
+			"so this check verified nothing")
 	}
 }

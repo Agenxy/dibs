@@ -12,7 +12,7 @@
               "session_id": "${session_id}",
               "event": "${hook_event_name}",
               "cwd": "${cwd}",
-              "strict_output": true
+              "strict_output": "true"
             },
             "timeout": 10,
             "statusMessage": "Checking Dibs"
@@ -32,7 +32,7 @@
               "event": "${hook_event_name}",
               "cwd": "${cwd}",
               "stop_hook_active": "${stop_hook_active}",
-              "strict_output": true
+              "strict_output": "true"
             },
             "timeout": 10,
             "statusMessage": "Checking Dibs"
@@ -52,7 +52,7 @@
               "event": "${hook_event_name}",
               "cwd": "${cwd}",
               "stop_hook_active": "${stop_hook_active}",
-              "strict_output": true
+              "strict_output": "true"
             },
             "timeout": 10,
             "statusMessage": "Checking Dibs"

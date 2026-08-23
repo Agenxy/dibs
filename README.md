@@ -353,6 +353,14 @@ optional there: `trust` records the certificate in the directory it is given, an
 the bridge reads it from the one in its own config. `mcp-config --board` prints whichever of these
 two steps the address calls for.
 
+**Once, not once a year.** What gets recorded is the board's own signing
+identity, not the certificate it happens to be serving today. The daemon issues
+itself a short-lived certificate under that identity and replaces it whenever it
+nears expiry or stops naming an address clients dial, and a machine that has
+already trusted the board keeps working through every one of those. The identity
+changes only if you delete `tls-ca.pem` from the board's directory, which is the
+one case where the ceremony is owed again.
+
 Use the bridge (`mcp-stdio`), not the url form. On a second machine that
 matters more rather than less: a url client holds no nonce, so every reconnect
 forks an identity that cannot read its predecessor's mail, and the remote
@@ -807,6 +815,15 @@ min_duty = 0.0005  # CPU share below which a long-lived process counts as idle
 # re-granted by hand.
 coordinator = ["orchestrator"]   # broadcast, force-release, merge, evict
 admin       = ["fleet-lead"]     # all of that, plus reading every agent's mail
+
+[roles.identity]
+# REQUIRED, and this is the half that makes the block above safe. A name
+# authenticates nobody: any agent may register as "fleet-lead". Each entry is
+# the FINGERPRINT of the agent allowed to hold that name, which `register`
+# returns and the daemon prints at startup for you to paste. Never the nonce
+# itself, which is that agent's whole recovery credential.
+orchestrator = "…64 hex characters, from the startup log…"
+fleet-lead   = "…64 hex characters…"
 ```
 
 **Declaring a role in config is a human decision.**

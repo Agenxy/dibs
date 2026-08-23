@@ -126,3 +126,43 @@ func TestARealHelperIsStillAccepted(t *testing.T) {
 			"must not have made the helper unfindable", err)
 	}
 }
+
+// One presence prompt waits at a time, whatever asked for it.
+//
+// The defence against an agent obtaining the operator's approval is a sentence
+// on the system sheet asking them to decline a prompt they did not cause. That
+// cannot hold while two are waiting: they approve the one they expected, and
+// the credential goes to whichever request the race picked. The person did
+// nothing wrong and cannot see the difference.
+//
+// HERE, not in a caller. The first version of this serialised inside the
+// board's `/bootstrap` handler, which covered that one door while `human_unlock`
+// over MCP called Check directly and could overlap it, or overlap another
+// unlock, with a reason line the requesting agent influences. The prompt is the
+// shared thing: one person, one Mac, one sheet.
+//
+// It does NOT bind the approval to the requester. Nothing available here can,
+// and SECURITY.md says so. It removes the silent case.
+func TestOnlyOnePresencePromptWaitsAtATime(t *testing.T) {
+	if !claimPrompt() {
+		t.Fatal("the slot was already held with nothing waiting, so this test is " +
+			"measuring leftover state rather than the rule")
+	}
+	defer releasePrompt()
+
+	// The real entry point, because a test of claimPrompt alone would pass
+	// against a Check that never consults it: that is exactly how the first
+	// version of this covered one caller and not the other.
+	if _, err := Check(context.Background(), "a second sheet"); !errors.Is(err, ErrPromptBusy) {
+		t.Errorf("Check raised a second prompt while one was waiting (err=%v). One "+
+			"approval would then satisfy whichever request the race picked, so an "+
+			"agent can take a credential from a sheet the operator raised for "+
+			"something else", err)
+	}
+
+	releasePrompt()
+	if !claimPrompt() {
+		t.Error("the slot was not released, so one finished prompt leaves this " +
+			"machine unable to raise another until the daemon restarts")
+	}
+}

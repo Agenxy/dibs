@@ -13,17 +13,21 @@
 package boardconfig
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"math"
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/liveness"
 )
 
@@ -230,9 +234,9 @@ type MatchConfig struct {
 // which is the one failure that would be worse than not delivering at all.
 //
 //	[wake.exec.codex]
-//	argv = ["codex", "queue", "--thread", "{session_id}", "--message", "{message}"]
+//	argv = ["codex", "queue", "--thread", "{thread}", "--message", "{message}"]
 //
-// Placeholders, each replaced as a COMPLETE element: {session_id}, {agent},
+// Placeholders, each replaced as a COMPLETE element: {thread}, {agent},
 // {from}, {type}, {message}. Anything else is left alone.
 type WakeExec struct {
 	// Argv is the command and its arguments. Empty means this harness has no
@@ -246,8 +250,17 @@ type WakeExec struct {
 
 // RolesConfig is the [roles] table.
 type RolesConfig struct {
-	// Coordinator gets breadth without intrusion: broadcast, force-release,
-	// merge and evict, but never another agent's mail.
+	// Coordinator gets breadth with ONE narrow reach into private content:
+	// broadcast, force-release, merge and evict, plus adopting a peer that is
+	// not active, which moves that agent's messages into a live mailbox so they
+	// can be read. That last one is the point of adoption and it is ledgered.
+	//
+	// This said "never another agent's mail", which is the flat claim
+	// internal/core/roles.go records as already found wrong once. Repeating it
+	// in the newly centralised config type would have reintroduced a false
+	// authorisation contract in the file an operator reads to decide who gets
+	// this. Admin is still the difference in kind: it reads every mailbox,
+	// without adopting anything.
 	Coordinator []string `toml:"coordinator"`
 	// Admin adds the god view, mail included. Grant it only to an agent trusted
 	// as the operator trusts themselves.
@@ -412,6 +425,31 @@ func (c Config) Validate() error {
 // validateRoles catches the two ways a standing role reads as configured and
 // is not.
 func (c Config) validateRoles() error {
+	// A NAME HAS TO BE ONE. An empty or whitespace-only entry is never granted
+	// to anybody, and with a fingerprint beside it the daemon reads the
+	// declaration as "the operator has chosen a coordinator" and withholds the
+	// launch claim. The board then gets neither the standing role nor the
+	// bootstrap path that exists for its absence: a fresh install with no
+	// coordinator and no way to take one, from a typo.
+	for _, names := range []struct {
+		key  string
+		list []string
+	}{{"coordinator", c.Roles.Coordinator}, {"admin", c.Roles.Admin}} {
+		for _, n := range names.list {
+			if strings.TrimSpace(n) == "" {
+				return fmt.Errorf("[roles] %s contains an empty name. No agent can "+
+					"register under it, so the role is granted to nobody, and a "+
+					"declared coordinator also withholds the launch claim: the board "+
+					"would come up with no coordinator and no way to take one",
+					names.key)
+			}
+			if n != strings.TrimSpace(n) {
+				return fmt.Errorf("[roles] %s names %q, which has leading or trailing "+
+					"space. Agents register the trimmed name, so this matches nobody "+
+					"and waits forever", names.key, n)
+			}
+		}
+	}
 	declared := map[string]int{}
 	for _, n := range c.Roles.Coordinator {
 		declared[n] |= 1
@@ -478,8 +516,24 @@ func (c Config) validateAddr() error {
 			"listens on cannot: write it as host:port. dibd hands this to net.Listen "+
 			"verbatim, so it would fail at bind rather than here", c.Addr)
 	}
-	if _, _, err := net.SplitHostPort(c.Addr); err != nil {
+	_, port, err := net.SplitHostPort(c.Addr)
+	if err != nil {
 		return fmt.Errorf("[addr] %q is not a host:port address: %w", c.Addr, err)
+	}
+	// AND THE PORT HAS TO BE ONE.
+	//
+	// SplitHostPort is a parse, not a check: it takes "not-a-port" and "99999"
+	// happily, and `dibd -check` returns after replay without ever attempting
+	// the bind. So the check an operator runs BEFORE stopping the daemon they
+	// are replacing reported success for a configuration that cannot start.
+	// A stronger version of this rule already existed in the CLI and had no
+	// callers at all, which is the shape of a rule that was written and never
+	// wired up.
+	n, perr := strconv.Atoi(port)
+	if perr != nil || n < 1 || n > 65535 {
+		return fmt.Errorf("[addr] %q is not a port number in %q: net.Listen refuses "+
+			"it, so the daemon would fail at bind. Ports run from 1 to 65535",
+			port, c.Addr)
 	}
 	return nil
 }
@@ -488,16 +542,96 @@ func (c Config) validateAddr() error {
 // daemon started and served plaintext, or an unrelated self-signed certificate,
 // while the operator's explicit setting did nothing.
 func (c Config) validateTLS() error {
-	if (c.TLSCert == "") == (c.TLSKey == "") {
+	cert, key := c.TLSCert, c.TLSKey
+	if cert == "" && key == "" {
 		return nil
 	}
-	missing, given := "tls_key", "tls_cert"
-	if c.TLSCert == "" {
-		missing, given = "tls_cert", "tls_key"
+	if cert == "" || key == "" {
+		return fmt.Errorf("tls_cert and tls_key must be set together: one without " +
+			"the other describes half a transport, and the daemon would start on " +
+			"whichever one the resolver picked instead")
 	}
-	return fmt.Errorf("%s is set and %s is not: a certificate without its key "+
-		"cannot be served, and half a pair is ignored rather than refused, so the "+
-		"daemon would start on a transport you did not ask for", given, missing)
+	// AND THE PAIR HAS TO LOAD.
+	//
+	// This checked only that both strings were present, so `dibd -check`
+	// reported a good configuration for paths that do not exist, and the test
+	// blessed /c.pem and /k.pem as a "complete certificate pair". The check is
+	// what an operator runs before stopping the old daemon during a takeover:
+	// it said yes, the old daemon stopped, and the replacement failed inside
+	// ServeTLS with the port already released. `mcp-config` emitted a
+	// complete-looking https configuration for the same board.
+	//
+	// Loading it is the same question ServeTLS asks, moved to the one moment
+	// where the answer is still cheap.
+	pair, err := tls.LoadX509KeyPair(cert, key)
+	if err != nil {
+		return fmt.Errorf("tls_cert %q and tls_key %q cannot be loaded as a pair "+
+			"(%w), so this daemon would report itself configured and then fail every "+
+			"connection. Check that both exist, are readable, and belong together",
+			cert, key, err)
+	}
+	// AND IT HAS TO BE VALID TODAY.
+	//
+	// Loading proves the pair belongs together, not that anybody will accept
+	// it. An expired certificate serves perfectly and every client refuses the
+	// connection, which is the same total, silent, all-at-once failure the
+	// auto-managed path already renews to avoid; the explicitly configured path
+	// had no such check at all, so `dibd -check` blessed a board nobody could
+	// reach.
+	leaf, perr := x509.ParseCertificate(pair.Certificate[0])
+	if perr != nil {
+		return fmt.Errorf("tls_cert %q does not parse (%w)", cert, perr)
+	}
+	now := time.Now()
+	switch {
+	case now.After(leaf.NotAfter):
+		return fmt.Errorf("tls_cert %q expired on %s. It will serve, and every client "+
+			"will refuse the connection", cert, leaf.NotAfter.Format("2006-01-02"))
+	case now.Before(leaf.NotBefore):
+		return fmt.Errorf("tls_cert %q is not valid until %s. Until then every client "+
+			"refuses the connection", cert, leaf.NotBefore.Format("2006-01-02"))
+	}
+	// AND IT HAS TO NAME THIS BOARD.
+	//
+	// Valid dates and a matching key say the pair is coherent, not that it is
+	// for us: a certificate for wrong.example loads, parses, is in date, serves
+	// perfectly, and every client refuses on hostname verification. That is the
+	// same silent, total, all-at-once failure the auto-managed path renews and
+	// re-issues to avoid, and the configured path accepted it.
+	//
+	// Only when the address is known and is a real host. A wildcard bind serves
+	// whatever the client dialled and no certificate can name that in advance,
+	// which is why the generated one enumerates interfaces instead.
+	if host := configuredHost(c.Addr); host != "" {
+		if err := leaf.VerifyHostname(host); err != nil {
+			return fmt.Errorf("tls_cert %q does not name %s (%w). It will serve, and "+
+				"every client dialling that address will refuse it. Reissue the "+
+				"certificate for the address this daemon listens on, or remove "+
+				"tls_cert and tls_key and let Dibs manage one", cert, host, err)
+		}
+	}
+	return nil
+}
+
+// configuredHost is the host an explicit certificate has to name, or "".
+//
+// Empty for a wildcard bind: 0.0.0.0 and :: serve whatever the client dialled,
+// so nothing can be verified in advance. Empty when no address is configured,
+// because then the default is loopback and a configured certificate is being
+// asked for by some other means.
+func configuredHost(addr string) string {
+	if addr == "" {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	switch strings.Trim(host, "[]") {
+	case "", "0.0.0.0", "::":
+		return ""
+	}
+	return strings.Trim(host, "[]")
 }
 
 func (c Config) validateLimits() error {
@@ -524,13 +658,41 @@ func (c Config) validateLimits() error {
 		return fmt.Errorf("[limits] blob_store_bytes = %d: a store cannot hold a "+
 			"negative number of bytes", c.Limits.BlobStoreBytes)
 	}
-	// Only when the file sets BOTH: with one unset the daemon's default is the
-	// other side of the comparison, and that default is not ours to know.
-	if c.Limits.MaxAgents > 0 && c.Limits.MaxPersistentAgents > c.Limits.MaxAgents {
-		return fmt.Errorf("[limits] max_persistent_agents = %d exceeds max_agents = %d, "+
+	// AGAINST THE DEFAULT WHEN THE FILE OMITS THE OTHER SIDE.
+	//
+	// This compared the two only when the file set BOTH, on the reasoning that
+	// the daemon's default "is not ours to know". It is: core.DefaultLimits is
+	// the same value the daemon folds these over, and refusing to look at it
+	// left exactly the hole this loader exists to close. With max_agents
+	// omitted, `max_persistent_agents = 65` passed here and was refused by the
+	// daemon at startup, so `dibs mcp-config` printed a complete configuration
+	// and exited zero for a board that cannot boot. A shared loader that
+	// accepts what the daemon rejects is worse than two loaders, because it
+	// reads as a guarantee.
+	limits := core.DefaultLimits()
+	maxAgents := c.Limits.MaxAgents
+	if maxAgents == 0 {
+		maxAgents = limits.MaxAgents
+	}
+	if c.Limits.MaxPersistentAgents > maxAgents {
+		how := fmt.Sprintf("max_agents = %d", maxAgents)
+		if c.Limits.MaxAgents == 0 {
+			how = fmt.Sprintf("the default max_agents of %d", maxAgents)
+		}
+		return fmt.Errorf("[limits] max_persistent_agents = %d exceeds %s, "+
 			"so the lower ceiling is the one that binds and this setting would do "+
 			"nothing: raise max_agents too, or lower this",
-			c.Limits.MaxPersistentAgents, c.Limits.MaxAgents)
+			c.Limits.MaxPersistentAgents, how)
+	}
+	// A store that cannot hold one maximum-sized blob evicts everything the
+	// moment it is used, which looks like attachments not working rather than
+	// like a setting. The daemon refuses it; so must anything describing the
+	// daemon.
+	if min := int64(limits.MaxBlobSize); c.Limits.BlobStoreBytes > 0 && c.Limits.BlobStoreBytes < min {
+		return fmt.Errorf("[limits] blob_store_bytes = %d is smaller than one "+
+			"maximum-sized blob (%d): the store would evict every attachment as "+
+			"soon as it held one, and the daemon refuses to start on it",
+			c.Limits.BlobStoreBytes, min)
 	}
 	return nil
 }
@@ -543,11 +705,53 @@ func (c Config) validateMatch() error {
 		return fmt.Errorf("[match] history = %d: a window cannot be negative, and a "+
 			"negative one is ignored rather than refused", c.Match.History)
 	}
+	if c.set("match", "history") && c.Match.History == 0 {
+		return fmt.Errorf("[match] history = 0 is ignored and the default window is " +
+			"kept, so this reads as \"look at no history\" and does the opposite. " +
+			"Remove the line for the default, or give it a real number of commits")
+	}
 	if d := c.Match.Deadline; d != "" {
-		if _, err := time.ParseDuration(d); err != nil {
+		parsed, err := time.ParseDuration(d)
+		if err != nil {
 			return fmt.Errorf("[match] deadline = %q is not a duration: write it like "+
 				"\"5m\" or \"90s\". An unparseable one is replaced with the default, so "+
 				"the setting reads as applied and is not: %w", d, err)
+		}
+		// A deadline of zero or less reaches context.WithTimeout and has already
+		// expired, so every match is cancelled before it starts and the board
+		// goes on reporting matching as ready. Turning matching off is a real
+		// thing to want and `auto_join = "never"` is how you say it.
+		if parsed <= 0 {
+			return fmt.Errorf("[match] deadline = %q gives every match no time at "+
+				"all: the context is already expired when it is created, so nothing "+
+				"is ever compared while the board reports matching as ready. To turn "+
+				"matching off, set auto_join = \"never\"", d)
+		}
+	}
+	// A threshold is a SCORE, and scores live in [0,1]. Negative or NaN reads
+	// as "configured" and is not: a negative join threshold takes the setting
+	// out of the explicit no-threshold state without replacing it, a negative
+	// notify threshold clears every candidate for notification, and NaN also
+	// defeats the "am I already coordinating this" comparison, which is what
+	// stops two spaces opening for one piece of work.
+	for _, th := range []struct {
+		key string
+		val float64
+	}{
+		{"join_threshold", c.Match.Join},
+		{"notify_threshold", c.Match.Notify},
+	} {
+		if math.IsNaN(th.val) {
+			return fmt.Errorf("[match] %s = nan: no comparison against nan is ever "+
+				"true, so every score test it takes part in silently answers no, "+
+				"including the one that stops a second space opening for work "+
+				"somebody is already doing", th.key)
+		}
+		if th.val < 0 || th.val > 1 {
+			return fmt.Errorf("[match] %s = %v: a score is between 0 and 1. Outside "+
+				"that range the comparison is decided before any work is looked at, "+
+				"and the setting reads as a threshold while being a constant answer",
+				th.key, th.val)
 		}
 	}
 	if j := c.Match.AutoJoin; j != "" && !AutoJoinPolicies[j] {
@@ -624,6 +828,17 @@ func (c Config) validateSupervise() error {
 }
 
 func (c Config) validateWake() error {
+	// A setting that reads as applied and is not is this file's oldest bug, and
+	// [wake.exec] arrived with a fresh one: cooldown accepted any duration, and
+	// the waker maps everything <= 0 to the 90s default. So `cooldown = "-1s"`
+	// passed `dibd -check`, startup reported the harness configured, and the
+	// operator's explicit value did nothing at all. Zero is documented as "use
+	// the default" and stays legal; a negative one is a mistake and is refused.
+	for harness, x := range c.Wake.Exec {
+		if err := validateWakeEntry(harness, x, c.Wake.Exec); err != nil {
+			return err
+		}
+	}
 	w := c.Wake.ExtendTurnFor
 	if w == "" {
 		return nil
@@ -636,4 +851,93 @@ func (c Config) validateWake() error {
 	return fmt.Errorf("[wake] extend_turn_for = %q: use \"all\" (default: anything "+
 		"unread wakes the agent once), \"urgent\" (only work somebody is blocked on) "+
 		"or \"none\" (never extend a turn)", w)
+}
+
+// validateWakeEntry checks one [wake.exec.<harness>] block.
+//
+// Split out because validateWake outgrew the complexity budget once every way
+// a wake entry can look configured and do nothing had its own refusal. Each of
+// those was found by a review round rather than imagined, which is why there
+// are so many of them.
+func validateWakeEntry(harness string, x WakeExec, all map[string]WakeExec) error {
+	// The KEY is matched against the harness an agent reports, lowercased.
+	// A blank one matches nothing that will ever register, so the entry is
+	// unreachable while still counting towards "harnesses configured".
+	if strings.TrimSpace(harness) == "" {
+		return fmt.Errorf("[wake.exec] has an entry with a blank harness name. " +
+			"The key is matched against the harness an agent reports, so this " +
+			"one can never match anybody, and it still counts as a configured " +
+			"harness at startup")
+	}
+	// The waker lowercases the key and does NOT trim it, so `" codex "`
+	// validates, is announced as configured, and never matches a `Codex`
+	// agent. Refused rather than trimmed here: silently accepting a
+	// different string than the operator wrote is how a setting reads as
+	// applied while meaning something else.
+	if harness != strings.TrimSpace(harness) {
+		return fmt.Errorf("[wake.exec.%q] has leading or trailing space. The key "+
+			"is matched against the harness an agent reports, lowercased and not "+
+			"trimmed, so this matches nobody while still counting as configured",
+			harness)
+	}
+	// Two keys differing only in case collapse onto one lowercase entry, and
+	// which executable survives is Go map iteration order: a configuration
+	// whose behaviour changes between restarts.
+	//
+	// ANY pair that lowercases alike. This looked only for the exact lowercase
+	// spelling, so `Codex` and `CODEX` both passed: the one collision it could
+	// not see is the one where neither key is the canonical form.
+	lower := strings.ToLower(harness)
+	for other := range all {
+		if other != harness && strings.ToLower(other) == lower {
+			return fmt.Errorf("[wake.exec] has both %q and %q, which are the same "+
+				"harness once lowercased. They collapse onto one entry and which "+
+				"executable survives is map iteration order, so the board would "+
+				"behave differently between restarts", harness, other)
+		}
+	}
+	if x.Cooldown < 0 {
+		return fmt.Errorf("[wake.exec.%s] cooldown = %q: a wake cooldown cannot "+
+			"be negative. Omit it, or set 0, to take the default; anything "+
+			"below zero was silently becoming that default while reading as "+
+			"a setting you had chosen", harness, x.Cooldown)
+	}
+	// An empty argv is the whole entry doing nothing. It loaded, startup
+	// took the "there is a wake command" branch, skipped the entry for want
+	// of an argv, and logged `harnesses=0` as though that were a capability:
+	// success reported for a table that can start nobody. Refused with the
+	// same words as the rest of this list, because it is the same mistake.
+	if len(x.Argv) == 0 {
+		return fmt.Errorf("[wake.exec.%s] has no argv, so nothing can be run for "+
+			"that harness and the section does nothing at all. Give it the "+
+			"command that resumes a thread, or remove the section", harness)
+	}
+	// TRIMMED, because " " is a perfectly good TOML string and a perfectly
+	// useless program name. It passed `dibd -check`, startup logged "the
+	// board can start an agent that is not running" with one harness
+	// configured, and every wake then failed inside exec before starting
+	// anything. Configuration approved, capability announced, nobody ever
+	// woken: this list's own subject, in the section it was added for.
+	if strings.TrimSpace(x.Argv[0]) == "" {
+		return fmt.Errorf("[wake.exec.%s] argv starts with an empty string, so "+
+			"there is no program to run. The first element is the executable, "+
+			"and the rest are its arguments: there is no shell in this path "+
+			"to work out what was meant", harness)
+	}
+	// NOTHING AN AGENT SAID MAY CHOOSE THE PROGRAM.
+	//
+	// Whole-element substitution keeps a message body from being parsed as a
+	// command, which is what makes the argv form safe. It does not make the
+	// VALUES trustworthy: {agent}, {from} and {type} are derived from agents,
+	// and argv[0] is handed straight to exec. A placeholder there would let a
+	// peer's chosen name select the executable, which is a different rule
+	// from quoting and the one this project actually states: the wake command
+	// comes from the operator's file and nothing an agent said reaches it.
+	if len(x.Argv) > 0 && strings.HasPrefix(x.Argv[0], "{") {
+		return fmt.Errorf("[wake.exec.%s] argv[0] is %q: the program to run must "+
+			"be named in this file and cannot be a placeholder. Substituted "+
+			"values come from agents, and the one thing an agent must never "+
+			"choose is which executable the board starts", harness, x.Argv[0])
+	}
+	return nil
 }

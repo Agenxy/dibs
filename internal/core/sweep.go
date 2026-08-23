@@ -321,7 +321,29 @@ func (s *State) gc(now time.Time) ([]Event, bool) {
 				delete(s.Dedup, k)
 			}
 		}
-		evs = append(evs, Event{Type: "agent.purged", Agent: id})
+		// AND THE MAIL ADDRESSED TO IT.
+		//
+		// An agent id is derived from its NAME, so purging the row released
+		// that id for reuse while every message still pointed at it: the next
+		// agent to register the same name was handed the same id and inherited
+		// the mailbox. For the human that name is the OS username, which is the
+		// one id an attacker can be certain of, and the retained mail is the
+		// operator's own.
+		//
+		// Only mail TO the purged agent. What it SENT belongs to whoever
+		// received it, and deleting that would take a live agent's inbox with
+		// somebody else's retirement.
+		mail := 0
+		for serial, m := range s.Messages {
+			if m.To == id {
+				delete(s.Messages, serial)
+				mail++
+			}
+		}
+		evs = append(evs, Event{
+			Type: "agent.purged", Agent: id,
+			Data: map[string]any{"messages_dropped": mail},
+		})
 	}
 
 	// Dedup records: lesser of window and per-agent cap (SPEC §4).

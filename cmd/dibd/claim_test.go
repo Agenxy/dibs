@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
 )
 
 // A correct secret that the core then refuses must not spend the claim.
@@ -136,5 +137,88 @@ func TestAClaimIsRefusedOnceTheRoleIsHeld(t *testing.T) {
 	}
 	if got, _ := eng.AgentRole(ctx, "opportunist"); got == core.RoleCoordinator {
 		t.Error("the claim was refused and the role landed anyway")
+	}
+}
+
+// A board that NAMES a coordinator is never offered a claim, even before that
+// agent has registered.
+//
+// The claim is minted when the board has no coordinator, and on a fresh board
+// that is true for as long as it takes the pinned agent to start: the declared
+// pass runs before anybody has registered and grants nothing, and the
+// reconciler waits for a later tick. In that gap `coordinator.claim` sat in the
+// data directory for any same-user agent to read and spend. Later
+// reconciliation grants the intended coordinator and does not demote the one
+// that got there first, so a board ends with a coordinator its operator did not
+// choose, holding broadcast, eviction, force-release and mailbox adoption.
+//
+// The existing test grants the legitimate coordinator BEFORE the opportunist
+// presents the claim, so it exercises the already-settled board and cannot see
+// this ordering at all. This one is the fresh board: nobody registered, nothing
+// granted, exactly as at startup.
+func TestAConfiguredCoordinatorIsNotRaceableBeforeItRegisters(t *testing.T) {
+	dir := t.TempDir()
+
+	// The state at `installCoordinatorClaim` on a fresh board: no coordinator
+	// has been granted, because no agent exists to grant it to.
+	const hasCoordinator = false
+	// WITH AN IDENTITY, because that is what makes the declaration grantable.
+	// A name on its own can never receive the role, so it decides nothing and
+	// the board still needs its bootstrap claim; see the inert case below.
+	declared := RolesConfig{
+		Coordinator: []string{"fleet-lead"},
+		Identity:    map[string]string{"fleet-lead": engine.RolePinFingerprint("n")},
+	}
+
+	c := newCoordinatorClaim(dir, coordinatorAlreadyDecided(hasCoordinator, declared))
+	if c.secret != "" {
+		t.Error("a board whose dibs.toml names a coordinator was still offered a " +
+			"launch claim. The claim answers \"who coordinates here\", and the " +
+			"operator has already answered it: minting one lets any agent that " +
+			"can read the data directory take the role before the named identity " +
+			"has even started")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "coordinator.claim")); err == nil {
+		t.Error("coordinator.claim was written for a board that names a coordinator")
+	}
+
+	// AND ADMIN COUNTS, because admin includes coordinator authority. A board
+	// configured with only `[roles] admin = [...]` has named who coordinates
+	// just as surely as one that spells it out; the first version of this fix
+	// looked only at Coordinator, so that board still minted a claim an
+	// opportunist could spend, and later reconciliation grants the admin
+	// without demoting whoever took it.
+	adminOnly := RolesConfig{
+		Admin:    []string{"fleet-lead"},
+		Identity: map[string]string{"fleet-lead": engine.RolePinFingerprint("n")},
+	}
+	if coordinatorAlreadyDecided(false, adminOnly) != true {
+		t.Error("a board that declares an ADMIN was still offered a launch claim. " +
+			"Admin carries coordinator authority, so the operator has answered the " +
+			"question the claim asks, and an agent that reads the claim file first " +
+			"keeps broadcast, eviction and force-release on a board it was never " +
+			"meant to run")
+	}
+
+	// A NAME WITH NO IDENTITY IS INERT, and must not suppress the claim.
+	//
+	// A standing role needs a fingerprint in [roles.identity]; without one the
+	// grant is refused forever rather than delayed. Reading the bare name as an
+	// answer left a board with neither the standing authority its config
+	// promised nor the bootstrap path that exists for its absence: no
+	// coordinator, ever, and no way to take the role. The README's own copyable
+	// example was exactly that file.
+	if coordinatorAlreadyDecided(false, RolesConfig{Coordinator: []string{"nobody"}}) {
+		t.Error("a coordinator declared with no [roles.identity] suppressed the " +
+			"launch claim. That grant can never be made, so the declaration decides " +
+			"nothing and the board is left with no coordinator and no way to get one")
+	}
+
+	// A board that names NOBODY still gets one: this must not disable the
+	// bootstrap path it exists to provide.
+	c2 := newCoordinatorClaim(t.TempDir(), coordinatorAlreadyDecided(false, RolesConfig{}))
+	if c2.secret == "" {
+		t.Error("a board with no declared coordinator was offered no claim, so a " +
+			"fleet with no human at the keyboard can never have one at all")
 	}
 }

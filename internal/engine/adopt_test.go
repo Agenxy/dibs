@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -116,5 +118,71 @@ func TestWakeCallsThatResolveNobodyAreNotReportedAsHealthy(t *testing.T) {
 	clean.noteHook("guard", true)
 	if v := clean.HookHealth().Verdict; v != "ok" {
 		t.Errorf("verdict = %q on a board where every call resolved", v)
+	}
+}
+
+// Only one ambient caller adopts an unbound session.
+//
+// The check and the bind are separate trips through the writer loop, so
+// concurrent callers all saw an empty SessionID and all bound: each was told it
+// had adopted the agent, and the id that stuck was whichever finished last.
+// Hook delivery then reaches one session while every other holder believes it
+// owns the mailbox, which is the failure this repair exists to prevent, caused
+// by the repair.
+//
+// Twenty callers, released together, because one at a time is exactly the case
+// that already worked.
+func TestOnlyOneAmbientCallerAdoptsASession(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "orphan", Nonce: "n-orphan"})
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	tok, _ := res["token"].(string)
+
+	const callers = 20
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var adopted []string
+	for i := 0; i < callers; i++ {
+		sid := fmt.Sprintf("ambient-%02d", i)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			if ok, err := e.AdoptSession(ctx, tok, sid); err == nil && ok {
+				mu.Lock()
+				adopted = append(adopted, sid)
+				mu.Unlock()
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	if len(adopted) != 1 {
+		t.Errorf("%d of %d concurrent callers were told they adopted the session: %v\n"+
+			"Only one can own it. The rest go on believing they will receive this "+
+			"agent's mail, and its hooks deliver to whichever bind landed last",
+			len(adopted), callers, adopted)
+	}
+	// And the winner is the one the board actually holds.
+	if len(adopted) == 1 {
+		got, err := e.query(ctx, func() core.Result {
+			return core.Result{"sid": st.Agents["orphan"].SessionID}
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got["sid"] != adopted[0] {
+			t.Errorf("the caller told it adopted the session is %q and the board holds "+
+				"%v", adopted[0], got["sid"])
+		}
 	}
 }

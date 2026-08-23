@@ -342,6 +342,59 @@ tasks:
       - cd internal/mcp/e2e && bun install --frozen-lockfile
       - DIBD=$PWD/bin/dibd DIBS=$PWD/bin/dibs MATCH_REPO=$PWD bun internal/mcp/e2e/channel_e2e.ts
 
+  e2e:deps:
+    desc: "Browser dependencies for the e2e suites: bun packages and chromium"
+    # HERE rather than in the workflows, which had the same `cd && bun && bunx`
+    # chain written out twice. Task running is what the runner is for, and a
+    # workflow's embedded shell is a shell script that happens to live in YAML:
+    # untyped, untestable, and duplicated in this case.
+    cmds:
+      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - cd internal/mcp/e2e && bunx playwright install --with-deps chromium
+
+  release:check:
+    desc: "Validate .goreleaser.yml against the pinned GoReleaser"
+    # NOTHING VALIDATED THIS FILE. A cask key that GoReleaser rejects outright
+    # passed the whole gate and would have stopped the tag workflow before it
+    # built anything: the release surface is the one place where "it failed on
+    # CI" means the release did not happen, and it was the only surface with no
+    # local check. `check` parses the config the same way `release` does.
+    cmds:
+      - goreleaser check
+
+
+  test:archive:
+    desc: "Build the release archives and prove they carry every runtime path"
+    # VALIDATING THE CONFIG IS NOT INSPECTING THE ARTIFACT. `release:check` above
+    # asks GoReleaser whether the file is well formed, and two other guards read
+    # it for the helpers' names. All three were green while the notifier bundle
+    # shipped as `Dibs.app/MacOS/dibs-notify`: a `src: Dibs.app/**/*` glob ate
+    # the `Contents` level, the substring those guards look for was present in
+    # the broken line, and `dibs doctor` run from an extracted archive reported
+    # the notifier not installed. The only check that could see it is one that
+    # opens the tar.
+    #
+    # Snapshot, so it needs no tag and no credentials; the cask and signing are
+    # skipped because they need the tap's deploy key and cosign, which a
+    # contributor's machine has neither of and which are not what this asks.
+    cmds:
+      - goreleaser release --snapshot --clean --skip=sign,publish,announce,validate,homebrew
+      - go run ./tools/archivecheck
+  test:wake:
+    env:
+      # No dialogs from a test run: these suites spawn real daemons,
+      # which notify like any other. See internal/notify silenceEnv.
+      DIBS_NOTIFY: "off"
+      # These suites spawn several daemons at once by design. The
+      # host-wide guard exists to stop a fleet being silently split
+      # across two boards, which is not what an isolated test dir is.
+      DIBS_ALLOW_PARALLEL: "1"
+    desc: "[wake.exec] end-to-end: a real dibs.toml, a real hook, a real subprocess"
+    deps: [build]
+    cmds:
+      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - DIBD=$PWD/bin/dibd bun internal/mcp/e2e/wake_e2e.ts
+
   test:sidecar:
     env:
       # No dialogs from a test run: these suites spawn real daemons,
@@ -477,6 +530,9 @@ tasks:
       - task: test:web
       - task: test:guard
       - task: test:space
+      - task: test:wake
+      - task: release:check
+      - task: test:archive
       - task: test:sidecar
       - task: test:human
       - task: test:minimal

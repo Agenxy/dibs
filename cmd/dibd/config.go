@@ -4,10 +4,12 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net"
 	"os"
@@ -179,70 +181,202 @@ func resolveTransport(dir, addr, scheme string, c Config) (transport, error) {
 
 // ensureSelfSignedCert returns a cert/key for addr, generating them into the
 // data dir on first use so the operator never has to think about certificates.
+//
+// TWO CERTIFICATES, and the split is the whole point.
+//
+// `dibs trust` pins what a daemon presents, ssh-style: look once, record, and
+// refuse anything else afterwards. A single self-signed certificate makes the
+// pinned identity and the served certificate the same object, and then the two
+// things this function must do become mutually exclusive. A bounded lifetime
+// needs the certificate replaced; replacing it changes the pinned identity and
+// every joined machine refuses the daemon until a human repeats the fingerprint
+// ceremony on each one. Not replacing it means an always-on hub sails past
+// NotAfter and serves an expired certificate to everybody. The pre-release
+// review put both branches side by side, which is what showed there was no
+// third one.
+//
+// So the identity is a long-lived CA that signs a short-lived leaf. The CA
+// carries no addresses and never needs reissuing when the machine moves; the
+// leaf carries the SANs and is replaced whenever it expires or stops naming the
+// address clients dial. `dibs trust` pins the CA, so rotation is invisible to
+// every machine that has already trusted this board.
+//
+// Upgrading from a single self-signed certificate re-trusts once, and never
+// again. Round fifteen already made a v0.0.6 certificate re-issue on first boot
+// because its SANs were incomplete, so that ceremony was owed regardless; this
+// makes it the last one.
 func ensureSelfSignedCert(dir, addr string) (string, string, error) {
+	caCert := filepath.Join(dir, "tls-ca.pem")
+	caKey := filepath.Join(dir, "tls-ca-key.pem")
 	certFile := filepath.Join(dir, "tls-cert.pem")
 	keyFile := filepath.Join(dir, "tls-key.pem")
-	if usableCert(certFile, keyFile) {
+
+	ca, caSigner, err := ensureCA(caCert, caKey)
+	if err != nil {
+		return "", "", err
+	}
+	// The leaf is checked against the CA it must chain to, so a leaf left over
+	// from a previous CA is replaced rather than served unverifiably.
+	if usableLeaf(certFile, keyFile, addr, ca) {
 		return certFile, keyFile, nil
 	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return "", "", err
 	}
-	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	serial, err := newSerial()
 	if err != nil {
 		return "", "", err
-	}
-	host, _, splitErr := net.SplitHostPort(addr)
-	if splitErr != nil {
-		host = addr
 	}
 	tmpl := x509.Certificate{
-		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: "dibs"},
-		NotBefore:             time.Now().Add(-time.Hour),
-		NotAfter:              time.Now().Add(certLifetime),
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		BasicConstraintsValid: true,
-		IsCA:                  true,
-		DNSNames:              []string{"localhost"},
+		SerialNumber: serial,
+		Subject:      pkix.Name{CommonName: "dibs"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(certLifetime),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}
-	if ip := net.ParseIP(host); ip != nil {
-		tmpl.IPAddresses = []net.IP{ip}
-	} else if host != "" {
-		tmpl.DNSNames = append(tmpl.DNSNames, host)
+	// ONE list, shared with the reuse check, so a name added here makes every
+	// leaf lacking it renewable instead of quietly outliving the rule.
+	//
+	// A WILDCARD bind needs the addresses a client will actually dial: the
+	// wizard's "this machine and others" writes 0.0.0.0, `dibs mcp-config`
+	// correctly refuses to hand anybody a listen address and substitutes this
+	// machine's LAN address, and a certificate that does not name it cannot be
+	// verified. The interfaces are enumerated at generation time; a machine
+	// that later moves networks gets a new LEAF, which now costs nothing
+	// because the pinned CA above it does not change.
+	for _, n := range certNames(addr) {
+		if ip := net.ParseIP(n); ip != nil {
+			tmpl.IPAddresses = append(tmpl.IPAddresses, ip)
+		} else {
+			tmpl.DNSNames = append(tmpl.DNSNames, n)
+		}
 	}
-	// A WILDCARD bind needs the addresses a client will actually dial.
-	//
-	// The wizard's "this machine and others" writes 0.0.0.0, so the certificate
-	// carried IP SAN 0.0.0.0 and DNS SAN localhost, and nothing else. Then
-	// `dibs mcp-config` correctly refuses to hand anybody 0.0.0.0, which is a
-	// listen address, and substitutes this machine's LAN address instead. That
-	// address is not in the certificate, so verification fails and the operator
-	// is handed a configuration that cannot connect: one unusable answer traded
-	// for another. Raised by the pre-release review.
-	//
-	// The interfaces are enumerated at generation time. A machine that later
-	// moves networks needs a new certificate, which is true of any name in a
-	// certificate and is why the file is regenerated rather than patched.
-	tmpl.IPAddresses = append(tmpl.IPAddresses, localAddresses(host)...)
-	tmpl.IPAddresses = append(tmpl.IPAddresses, net.IPv4(127, 0, 0, 1), net.IPv6loopback)
-	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
+	der, err := x509.CreateCertificate(rand.Reader, &tmpl, ca, &key.PublicKey, caSigner)
 	if err != nil {
-		return "", "", err
-	}
-	if err := writePEM(certFile, "CERTIFICATE", der, 0o644); err != nil {
 		return "", "", err
 	}
 	keyDER, err := x509.MarshalECPrivateKey(key)
 	if err != nil {
 		return "", "", err
 	}
+	// KEY FIRST, then the certificate.
+	//
+	// These are two files and the pair is only valid together, so an interrupted
+	// rotation leaves a mismatch either way. Writing the key first makes the
+	// surviving mismatch "old certificate, new key", which usableLeaf rejects
+	// on the chain check and regenerates. usableCert used to check only that
+	// the key FILE existed, so it declared any mismatch usable, ServeTLS then
+	// failed at startup, and the predicate responsible for regenerating kept
+	// saying there was nothing to regenerate: a daemon that could not repair
+	// itself from its own data directory.
 	if err := writePEM(keyFile, "EC PRIVATE KEY", keyDER, 0o600); err != nil {
 		return "", "", err
 	}
+	// The chain, leaf first: a client that has pinned the CA verifies the leaf
+	// through it, and one that has pinned nothing sees the whole path.
+	if err := writePEMChain(certFile, der, ca.Raw); err != nil {
+		return "", "", err
+	}
 	return certFile, keyFile, nil
+}
+
+// ensureCA returns the board's long-lived signing identity, generating it once.
+//
+// This is the thing `dibs trust` pins, so it must outlive every leaf and must
+// not depend on any address: a board that changes networks, renews, or gains an
+// interface keeps the same CA and every machine that trusted it stays working.
+func ensureCA(caCert, caKey string) (*x509.Certificate, *ecdsa.PrivateKey, error) {
+	pair, loadErr := tls.LoadX509KeyPair(caCert, caKey)
+	if loadErr == nil {
+		cert, perr := x509.ParseCertificate(pair.Certificate[0])
+		signer, ok := pair.PrivateKey.(*ecdsa.PrivateKey)
+		switch {
+		case perr != nil || !ok:
+			return nil, nil, fmt.Errorf("the board's signing identity at %s cannot be "+
+				"read (%v). Every machine that ran `dibs trust` against this board is "+
+				"pinned to it, so this daemon will not quietly issue a new one: "+
+				"restore the file, or delete %s and %s and re-trust each of those "+
+				"machines once", caCert, perr, caCert, caKey)
+		case !time.Now().Before(cert.NotAfter):
+			return nil, nil, fmt.Errorf("the board's signing identity at %s expired on "+
+				"%s. Delete it and %s, restart, and run `dibs trust` again on every "+
+				"machine that joined this board: a new identity is not something this "+
+				"daemon may choose on their behalf",
+				caCert, cert.NotAfter.Format("2006-01-02"), caKey)
+		}
+		return cert, signer, nil
+	}
+	// GENERATED ONLY WHEN THERE IS NOTHING THERE.
+	//
+	// This fell through to generation for every failure: missing, unreadable,
+	// malformed, mismatched, wrong key type, near expiry. Each of those quietly
+	// replaced the identity every joined machine has pinned, so a corrupted
+	// file or a bad restore would silently lock out the whole fleet while the
+	// daemon reported itself healthy, and the README promised the identity
+	// changes only when the operator deletes it. Absent means first run and is
+	// the one case worth guessing at; anything else is the operator's call,
+	// because only they can redo the ceremony on the other machines.
+	// EITHER FILE. This asked only about the certificate, so a surviving KEY
+	// beside a missing certificate, which is what an interrupted restore or a
+	// half-finished deletion leaves, fell through and overwrote the key: the
+	// identity every joined machine has pinned, replaced by a daemon that then
+	// reported itself healthy. Half a pair present is the state that most
+	// needs a person, because it is the one where the other half may still be
+	// recoverable.
+	for _, f := range []string{caCert, caKey} {
+		if _, statErr := os.Stat(f); statErr != nil {
+			continue
+		}
+		return nil, nil, fmt.Errorf("the board's signing identity is half here: %s "+
+			"exists and the pair (%s, %s) cannot be loaded (%v). Machines that "+
+			"trusted this board are pinned to that identity, so replacing it is not "+
+			"this daemon's to decide: restore the missing half, or delete both and "+
+			"run `dibs trust` again on every machine that joined",
+			f, caCert, caKey, loadErr)
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+	serial, err := newSerial()
+	if err != nil {
+		return nil, nil, err
+	}
+	tmpl := x509.Certificate{
+		SerialNumber:          serial,
+		Subject:               pkix.Name{CommonName: "dibs board CA"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(caLifetime),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		MaxPathLenZero:        true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
+	if err != nil {
+		return nil, nil, err
+	}
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := writePEM(caKey, "EC PRIVATE KEY", keyDER, 0o600); err != nil {
+		return nil, nil, err
+	}
+	if err := writePEM(caCert, "CERTIFICATE", der, 0o644); err != nil {
+		return nil, nil, err
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cert, key, nil
+}
+
+func newSerial() (*big.Int, error) {
+	return rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 }
 
 func writePEM(path, blockType string, der []byte, mode os.FileMode) error {
@@ -282,15 +416,42 @@ const certLifetime = 365 * 24 * time.Hour
 // machine away at once, with nothing having changed on either side.
 const certRenewBefore = 30 * 24 * time.Hour
 
-// usableCert reports whether the stored pair can still be served.
+// caLifetime is how long the pinned identity lasts. Long, deliberately: it is
+// what `dibs trust` records on every joined machine, and replacing it costs a
+// human a fingerprint ceremony on each of them. It signs and carries no
+// addresses, so nothing about the machine can invalidate it.
+const caLifetime = 10 * 365 * 24 * time.Hour
+
+// usableLeaf reports whether the stored pair can still be served FOR addr, as
+// a leaf of ca.
 //
 // The old check was os.Stat on both files, which answers "does a certificate
 // exist" and never "is it any good". With a ten-year life that was nearly the
 // same question. With a bounded life it is not: an expired certificate on disk
 // would be served forever, and the failure surfaces on the CLIENTS, all of
 // them, at once.
-func usableCert(certFile, keyFile string) bool {
-	if _, err := os.Stat(keyFile); err != nil {
+//
+// AND EXPIRY IS NOT THE ONLY WAY A CERTIFICATE STOPS WORKING. It also stops
+// working when it no longer names the address clients dial, which is not
+// hypothetical: the SANs a wildcard bind needs were added in this release, so
+// every board upgrading from v0.0.6 holds a still-valid certificate covering
+// 0.0.0.0 and localhost and nothing else. `dibs mcp-config` then correctly
+// hands out the LAN address, the daemon starts, and every client fails
+// hostname verification. A machine that changes networks lands in the same
+// place. Both are silent: the daemon is healthy and only the clients see it.
+//
+// So the question is whether this certificate covers what a fresh one would.
+// If not it is regenerated, which is the same answer expiry already gets.
+func usableLeaf(certFile, keyFile, addr string, ca *x509.Certificate) bool {
+	// THE PAIR, not the two files. Replacement writes the certificate and the
+	// key separately, certificate first, so a crash between them leaves a new
+	// certificate beside an old key. Checking only that the key EXISTS declared
+	// that pair usable on every later boot, ServeTLS then failed to load it and
+	// the daemon exited, and the predicate whose job is deciding whether to
+	// regenerate kept saying there was nothing to regenerate. A daemon that
+	// cannot repair itself from its own data directory is worse than one that
+	// never wrote the file.
+	if _, err := tls.LoadX509KeyPair(certFile, keyFile); err != nil {
 		return false
 	}
 	pemBytes, err := os.ReadFile(certFile) // #nosec G304 -- the daemon's own data directory
@@ -305,7 +466,82 @@ func usableCert(certFile, keyFile string) bool {
 	if err != nil {
 		return false
 	}
-	return time.Now().Before(cert.NotAfter.Add(-certRenewBefore))
+	if !time.Now().Before(cert.NotAfter.Add(-certRenewBefore)) {
+		return false
+	}
+	// AND IT MUST CHAIN TO THE CA WE HOLD. A leaf left behind by a previous CA
+	// parses, is unexpired and names the right addresses, and no client that
+	// trusts the current CA can verify it. Checking the chain is also what
+	// makes an interrupted rotation self-repairing.
+	roots := x509.NewCertPool()
+	roots.AddCert(ca)
+	if _, err := cert.Verify(x509.VerifyOptions{
+		Roots:     roots,
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}); err != nil {
+		slog.Info("the stored certificate does not chain to this board's CA; "+
+			"generating a new one", "err", err)
+		return false
+	}
+	return covers(cert, addr)
+}
+
+// writePEMChain writes the leaf followed by the certificates above it, so a
+// client that has pinned the CA can build the path.
+func writePEMChain(path string, ders ...[]byte) error {
+	var b []byte
+	for _, der := range ders {
+		b = append(b, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})...)
+	}
+	return os.WriteFile(path, b, 0o644) // #nosec G306 -- a public certificate chain
+}
+
+// covers reports whether cert names every address a fresh one would name for
+// this bind.
+//
+// Compared against what generation WOULD produce rather than against a fixed
+// list, so the two cannot drift: adding a name to the template automatically
+// makes every certificate lacking it renewable.
+func covers(cert *x509.Certificate, addr string) bool {
+	have := map[string]bool{}
+	for _, ip := range cert.IPAddresses {
+		have[ip.String()] = true
+	}
+	for _, d := range cert.DNSNames {
+		have[d] = true
+	}
+	for _, want := range certNames(addr) {
+		if !have[want] {
+			slog.Info("the stored certificate does not name an address clients dial; "+
+				"generating a new one", "missing", want, "addr", addr)
+			return false
+		}
+	}
+	return true
+}
+
+// certNames is every name a self-signed certificate for this bind must carry.
+//
+// Shared by generation and by the reuse check, and that is the point: the two
+// disagreed, so a board that upgraded kept a still-valid certificate from
+// before the wildcard SANs existed and served it to clients that could not
+// verify it. One list means adding a name here renews every certificate that
+// lacks it, and there is no second place to remember.
+func certNames(addr string) []string {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	names := []string{"localhost", "127.0.0.1", net.IPv6loopback.String()}
+	if ip := net.ParseIP(host); ip != nil {
+		names = append(names, ip.String())
+	} else if host != "" {
+		names = append(names, host)
+	}
+	for _, ip := range localAddresses(host) {
+		names = append(names, ip.String())
+	}
+	return names
 }
 
 // localAddresses is every address of this machine a client could dial, for a

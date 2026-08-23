@@ -5,11 +5,13 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -167,6 +169,26 @@ func (g *authGate) redeemBootstrap(t string) (string, bool) {
 // for the page and gets HTML with no key in it. The board's own JavaScript
 // reads the fragment once, keeps the key in localStorage (which IS scoped by
 // port) and sends it as a header on every call that matters.
+// sessionCookieName is the board session cookie for THIS daemon.
+//
+// Cookies are host-scoped and never port-scoped, so two boards on 127.0.0.1
+// both wrote `dibs_session` and each redemption silently overwrote the other's.
+// `-allow-parallel` exists precisely so an operator can run separate boards for
+// agents they do not trust together, and the web interfaces of two such boards
+// could not stay signed in at the same time: the older tab kept its own
+// port-scoped page key and started sending the newer board's session token, so
+// its stream revalidation and every keyed request failed for no visible reason.
+//
+// The port is the one thing that distinguishes them, and it is already known
+// here. This is not isolation, which cookies cannot give across ports; it is
+// simply not colliding.
+func (g *authGate) sessionCookieName() string {
+	if g.port == "" {
+		return "dibs_session"
+	}
+	return "dibs_session_" + g.port
+}
+
 type boardSession struct {
 	exp  time.Time
 	page string
@@ -180,7 +202,7 @@ const pageKeyHeader = "X-Dibs-Board-Key"
 // holdsPageKey reports whether this request came from a page that redeemed the
 // magic link, rather than from something replaying the cookie it was given.
 func (g *authGate) holdsPageKey(r *http.Request) bool {
-	c, err := r.Cookie("dibs_session")
+	c, err := r.Cookie(g.sessionCookieName())
 	if err != nil || c.Value == "" {
 		return false
 	}
@@ -195,6 +217,39 @@ func (g *authGate) holdsPageKey(r *http.Request) bool {
 		return false
 	}
 	return subtle.ConstantTimeCompare([]byte(given), []byte(sess.page)) == 1
+}
+
+// browsableWithSession covers the routes a BROWSER fetches without JavaScript.
+//
+// A browser cannot put a custom header on an ordinary navigation or on a
+// favicon request. Requiring the page key everywhere in this tier therefore
+// 401'd the two things the board's own HTML points at: the favicon in its
+// <link> and the Protocol link a reader clicks. A logged-in operator saw a
+// broken icon and a dead link, which reads as the board being broken rather
+// than as a security control working. Found by the pre-release review.
+//
+// Safe because neither carries board state: /help renders a static template
+// with nil data, and /icon.svg is an image. A cookie thief that reaches them
+// learns the protocol documentation, which is published.
+//
+// Deliberately a CLOSED list rather than a prefix. The reason the page key
+// exists is that this tier also holds /mcp, where register hands out an agent
+// token; a rule wide enough to be convenient here is how that got exposed the
+// first time.
+func browsableWithSession(r *http.Request, g *authGate) bool {
+	if !g.validSession(r) {
+		return false
+	}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+	default:
+		return false
+	}
+	switch path.Clean(r.URL.Path) {
+	case "/help", "/icon.svg":
+		return true
+	}
+	return false
 }
 
 // boardPageSession is a session that has proved it is the board's own page.
@@ -216,7 +271,7 @@ func (g *authGate) pageKeyFor(sess string) string {
 }
 
 func (g *authGate) validSession(r *http.Request) bool {
-	c, err := r.Cookie("dibs_session")
+	c, err := r.Cookie(g.sessionCookieName())
 	if err != nil || c.Value == "" {
 		return false
 	}
@@ -392,12 +447,49 @@ func (g *authGate) presenceBootstrap(w http.ResponseWriter, r *http.Request) {
 	// to whoever asked, which is the fact that makes an unprompted sheet worth
 	// declining. A pre-release review reproduced the escalation: a request
 	// received the token, redeemed it, and reached an admin role handler.
-	const reason = "give a full-access board session to whatever just asked for it: " +
-		"every agent's decrypted mail, and the power to change roles. Decline this " +
-		"unless you started it yourself, just now"
+	// THE CODE THE ASKING TERMINAL NAMED, so the person can tell whose sheet
+	// this is.
+	//
+	// Everything else here is fixed text, and the code is validated to four
+	// letters from a fixed alphabet before it goes anywhere near the prompt:
+	// the one variable part of a biometric sheet is the part worth attacking,
+	// and this file already learned that with agent names.
+	//
+	// Without a code the sheet says so, in those words, because "no code" is
+	// exactly what an agent's request looks like and an operator who has just
+	// run `dibs web` is holding one to compare.
+	reason := "give a full-access board session to whatever just asked for it: " +
+		"every agent's decrypted mail, and the power to change roles. " +
+		presenceCodeLine(r.Header.Get("X-Dibs-Presence-Code")) +
+		" Decline this unless you started it yourself, just now"
+	// ONE SHEET AT A TIME, enforced inside humanauth.Check rather than here.
+	//
+	// The warning above asks the operator to decline a prompt they did not
+	// cause, and that is the whole defence; it cannot work while two are
+	// waiting, because they approve the one they expected and the credential
+	// goes to whichever request the race picked. The first version of this
+	// serialised in THIS handler, which covered exactly this caller while
+	// `human_unlock` over MCP called the same function directly and could
+	// overlap it. The lock lives with the prompt now, because the prompt is the
+	// shared thing: one person, one Mac, one sheet.
 	verdict, err := humanauth.Check(r.Context(), reason)
+	if errors.Is(err, humanauth.ErrPromptBusy) {
+		// SAYS WHAT IT DOES, and no more.
+		//
+		// This claimed that serialising means "an approval cannot be taken by a
+		// request it was not raised for", which is false and was the wrong way
+		// round: first-request-wins IS the confusion primitive. An agent can
+		// leave a request waiting, the operator's own `dibs web` is refused
+		// with this very message, and the sheet they then approve completes the
+		// agent's. What actually distinguishes the two is the code on the sheet.
+		http.Error(w, "another presence check is already waiting for an answer. If "+
+			"you did not start one, DECLINE the sheet on screen: it belongs to "+
+			"whatever asked first, which is not this request. Then try again",
+			statusForPresenceErr(err))
+		return
+	}
 	if err != nil && verdict != humanauth.Unavailable {
-		http.Error(w, "presence check failed: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "presence check failed: "+err.Error(), statusForPresenceErr(err))
 		return
 	}
 	switch verdict {
@@ -517,7 +609,7 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 				// over plain HTTP is never sent back, which would break the loopback board
 				// rather than protect it. HttpOnly and SameSite=Strict are unconditional.
 				http.SetCookie(w, &http.Cookie{
-					Name: "dibs_session", Value: sess, Path: "/",
+					Name: g.sessionCookieName(), Value: sess, Path: "/",
 					HttpOnly: true, SameSite: http.SameSiteStrictMode,
 					// Secure only when the connection actually is: the daemon
 					// serves plain HTTP on loopback and TLS on any reachable
@@ -584,7 +676,7 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 			r = r.WithContext(web.WithRevalidator(r.Context(), func() bool {
 				return g.godViewAuthorized(r)
 			}))
-		} else if !g.headerSecret(r) && !g.boardPageSession(r) {
+		} else if !g.headerSecret(r) && !g.boardPageSession(r) && !browsableWithSession(r, g) {
 			// Coordination tier: the local secret (agents), or a board page
 			// that has proved itself, for the assets and polling the document
 			// needs.
@@ -715,3 +807,36 @@ func hostOnly(h string) string {
 	}
 	return h
 }
+
+// statusForPresenceErr picks the HTTP answer for a failed presence check.
+//
+// A busy prompt is a CONFLICT, not a server error. Reporting 500 tells the
+// operator this machine cannot check presence, which sends them to set an admin
+// password they do not need, for a condition that clears the moment they answer
+// the sheet already in front of them.
+func statusForPresenceErr(err error) int {
+	if errors.Is(err, humanauth.ErrPromptBusy) {
+		return http.StatusConflict
+	}
+	return http.StatusInternalServerError
+}
+
+// presenceCodeLine renders the asking terminal's confirmation code for the
+// system sheet.
+//
+// Strictly validated, because this is caller-supplied text on a biometric
+// prompt: four letters from the alphabet `dibs web` draws from, and anything
+// else is treated as no code at all rather than shown. An attacker who can put
+// arbitrary words here can write their own prompt.
+func presenceCodeLine(code string) string {
+	if !presenceCodeShape.MatchString(code) {
+		return "This request named NO confirmation code, so it did not come from " +
+			"`dibs web` on this terminal."
+	}
+	return "It named the code " + code + ": approve only if that is the code your " +
+		"own terminal just printed."
+}
+
+// presenceCodeShape is exactly what presenceCode() produces: four letters, no
+// vowels, so nothing here can spell a word or be confused with a digit.
+var presenceCodeShape = regexp.MustCompile(`^[BCDFGHJKLMNPQRSTVWXZ]{4}$`)
