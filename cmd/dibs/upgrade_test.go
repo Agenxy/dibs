@@ -105,3 +105,36 @@ func TestARestartIsNotBelievedUntilTheBoardAnswers(t *testing.T) {
 		t.Error("restartUnit no longer reloads the unit before restarting it")
 	}
 }
+
+// The proof must be about the daemon that will actually be started.
+//
+// `proveReplacement` runs `dibd -check` and treats a zero exit as licence to
+// stop the running daemon. It passed only `-dir`, while the replacement is
+// started a few steps later with `-addr <what the running daemon bound>`: so
+// everything address- and TLS-specific was proved for the DEFAULT address and
+// then not used. Recovery retries this same binary rather than the previous
+// build, so a failure at that point leaves the fleet down.
+//
+// This asserts the argv, because the fault was in the argv: the two commands
+// have to describe one daemon.
+func TestTheReplacementIsProvedForTheAddressItWillBeStartedOn(t *testing.T) {
+	p := &plan{dir: "/tmp/board", running: daemonState{addr: "192.168.1.205:4777"}}
+	got := checkArgs(p)
+	joined := strings.Join(got, " ")
+	if !strings.Contains(joined, "-addr 192.168.1.205:4777") {
+		t.Errorf("the proof runs `dibd %s`, which does not name the address the "+
+			"replacement will be started on. Everything about binding and TLS is "+
+			"then answered for a different daemon, after which the running one is "+
+			"stopped", joined)
+	}
+	if !strings.Contains(joined, "-dir /tmp/board") {
+		t.Errorf("the proof does not name the board: %s", joined)
+	}
+
+	// A daemon whose address was never recorded still gets checked, on whatever
+	// it resolves for itself: passing an empty -addr would be worse than none.
+	bare := checkArgs(&plan{dir: "/tmp/board"})
+	if strings.Contains(strings.Join(bare, " "), "-addr") {
+		t.Errorf("an empty address was passed as a flag: %v", bare)
+	}
+}

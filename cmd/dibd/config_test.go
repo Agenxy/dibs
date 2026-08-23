@@ -1029,3 +1029,76 @@ func TestHalfASigningIdentityIsRefusedRatherThanReplaced(t *testing.T) {
 		})
 	}
 }
+
+// `-check` must refuse what startup would refuse, not only what replay would.
+//
+// Its own message says it answers whether this build "could take over", and
+// `dibs upgrade` reads a zero exit as licence to stop the running daemon. It
+// returned before the address was resolved and before any certificate was
+// looked at, so a malformed -addr, a malformed DIBS_ADDR, or a damaged signing
+// identity all passed: the fleet then went down at a bind or a ServeTLS nobody
+// had asked about, and recovery retries the same replacement rather than the
+// previous build, so it stays down.
+//
+// The address rules live in resolveListenAddr and the transport ones in
+// checkTransportUsable, both shared with startup, so this asks those rather
+// than restating them.
+func TestCheckRefusesWhatStartupWouldRefuse(t *testing.T) {
+	t.Run("a malformed -addr flag", func(t *testing.T) {
+		for _, bad := range []string{"hub:not-a-port", "127.0.0.1:99999", "127.0.0.1"} {
+			if _, _, err := resolveListenAddr(bad, Config{}); err == nil {
+				t.Errorf("-addr %q was accepted; net.Listen refuses it, and `dibs "+
+					"upgrade` will have stopped the running daemon by then", bad)
+			}
+		}
+		// And the ordinary ones still work.
+		for _, ok := range []string{"127.0.0.1:4777", "0.0.0.0:4777", "https://hub:4777"} {
+			if _, _, err := resolveListenAddr(ok, Config{}); err != nil {
+				t.Errorf("-addr %q was refused: %v", ok, err)
+			}
+		}
+	})
+
+	t.Run("DIBS_ADDR outranks the file and is checked too", func(t *testing.T) {
+		t.Setenv("DIBS_ADDR", "127.0.0.1:99999")
+		if _, _, err := resolveListenAddr("", Config{Addr: "127.0.0.1:4777"}); err == nil {
+			t.Error("a malformed DIBS_ADDR was accepted because the config file was " +
+				"valid. The variable outranks the file, so it is what gets bound")
+		}
+	})
+
+	t.Run("a damaged signing identity", func(t *testing.T) {
+		dir := t.TempDir()
+		// A board that has served TLS before.
+		if _, _, err := ensureSelfSignedCert(dir, "192.168.1.205:4777"); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		if err := checkTransportUsable(dir, "192.168.1.205:4777", "", Config{}); err != nil {
+			t.Fatalf("setup: a healthy board failed the transport check: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "tls-ca.pem"), []byte("not a certificate"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := checkTransportUsable(dir, "192.168.1.205:4777", "", Config{}); err == nil {
+			t.Error("a corrupt signing identity passed the check. The replacement " +
+				"would be started after the running daemon is stopped, and fail")
+		}
+	})
+
+	t.Run("a first run creates nothing and is not a fault", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := checkTransportUsable(dir, "192.168.1.205:4777", "", Config{}); err != nil {
+			t.Errorf("a board with no certificate yet was reported unusable: %v", err)
+		}
+		// AND NOTHING WAS WRITTEN. `dibs upgrade` runs this against a directory
+		// another daemon is still serving.
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 0 {
+			t.Errorf("the check wrote %d file(s) into a live data directory it does "+
+				"not own: %v", len(entries), entries)
+		}
+	})
+}

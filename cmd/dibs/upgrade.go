@@ -164,9 +164,18 @@ func planUpgrade(o upgradeOpts) (*plan, error) {
 // exactly the thing in doubt.
 func (p *plan) proveReplacement() error {
 	step("checking that " + filepath.Base(p.installed) + " can rebuild this board")
+	// THE ADDRESS THIS DAEMON ACTUALLY SERVES, because that is what the
+	// replacement will be started with a few steps below.
+	//
+	// Without it, -check answered for the DEFAULT address while the replacement
+	// was started on the real one, so everything address- and TLS-specific went
+	// unasked: the proof and the thing proved were about different daemons.
+	// Recovery retries this same binary rather than the previous build, so a
+	// failure there leaves the fleet down.
 	// #nosec G204 -- installed comes from daemonPath(), which resolves the
-	// daemon beside this binary or on PATH; dir is the resolved data directory.
-	out, err := exec.Command(p.installed, "-check", "-dir", p.dir).CombinedOutput()
+	// daemon beside this binary or on PATH; dir and addr are this machine's own
+	// resolved data directory and the address its daemon registered.
+	out, err := exec.Command(p.installed, checkArgs(p)...).CombinedOutput()
 	switch {
 	case err != nil && tooOldForCheck(out):
 		// A refusal, and a different one, said in its own words.
@@ -656,4 +665,18 @@ func unitIsWritable(unit string) error {
 		return fmt.Errorf("%s: %w", unit, err)
 	}
 	return f.Close()
+}
+
+// checkArgs is what `dibd -check` is asked, separated so a test can read it.
+//
+// The argv IS the defect: it named only the directory, while the replacement is
+// started with the address the running daemon bound. A test that ran the whole
+// upgrade could not isolate that, and one that restated the list would not
+// notice it changing.
+func checkArgs(p *plan) []string {
+	args := []string{"-check", "-dir", p.dir}
+	if p.running.addr != "" {
+		args = append(args, "-addr", p.running.addr)
+	}
+	return args
 }
