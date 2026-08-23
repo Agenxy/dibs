@@ -194,16 +194,40 @@ if (first.length === 1) {
     `not merely that mail exists`)
 }
 
-// ── a burst is one wake ───────────────────────────────────────────────────
-// Three questions arriving together are one reason to start a process, not
-// three. Without this an agent that has fallen behind is woken once per unread.
+// ── a burst does not scale into processes ────────────────────────────────
+// Six questions arriving together are one reason to start a process, not six.
+// Without this an agent that has fallen behind is woken once per unread.
+//
+// SIX, not three, so the count distinguishes coalescing from arithmetic: three
+// would be indistinguishable from "one per message" the moment a re-ask is also
+// legitimate, and six is not.
+//
+// A PROPERTY, covered by two suppressors, and a passing run is not proof that
+// both work. `running` excludes a second process while one is alive and the
+// cooldown excludes one started too recently; either alone coalesces this
+// burst, so disabling one leaves this green. Verified by disabling BOTH, which
+// produces exactly six. Anything that needs to know which mechanism fired is a
+// unit test in internal/engine, and both have one.
+//
+// One or two, and the second is deliberate. Mail that arrives while a wake is
+// running is re-asked when that wake EXITS, because the command reads its inbox
+// near the start of a turn bounded at two hours and anything arriving after
+// that read would otherwise sit until an unrelated event. This recorder never
+// reads anything, so the mail is still blocking at the exit and the board
+// correctly tries once more; a real agent answers, hasBlockingMail goes false,
+// and nothing fires. The re-ask lands inside this window only because the
+// cooldown here is one second, and it happens at most once because no new mail
+// arrives during the second command.
 await Bun.sleep(1200)
 const before = wakes().length
-await Promise.all([1, 2, 3].map(n =>
+await Promise.all([1, 2, 3, 4, 5, 6].map(n =>
   call("send", { token: asker.token, to: "sleeper", type: "question", body: `burst ${n}`, deadline_s: 600 })))
 await settle()
-check("three questions at once are one wake", wakes().length - before === 1,
-  `${wakes().length - before} wakes for a burst of three`)
+const burst = wakes().length - before
+check("a burst of six is one wake, and at most one re-ask", burst >= 1 && burst <= 2,
+  `${burst} wakes for a burst of six: one per message is the failure this ` +
+  `catches, and more than two means the exit re-check is looping rather than ` +
+  `asking once`)
 
 // ── a FAILED wake does not consume the agent's one attempt ────────────────
 // The cooldown is taken before the process starts, which is right: two messages

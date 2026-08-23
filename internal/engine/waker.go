@@ -64,6 +64,16 @@ type wakers struct {
 	// prevent, arriving through the gap between "recently started" and "still
 	// going".
 	running map[string]bool
+	// arrived: mail turned up for this agent while its wake command was still
+	// running, so the exit has to look again.
+	//
+	// The running branch used to discard those events outright, on the reading
+	// that the command IS this agent's activation and will read the mail. It
+	// reads its inbox near the START of a turn that may last two hours, so
+	// anything arriving after that read and before the exit was stranded until
+	// some unrelated event happened to wake the agent again. Same defect as the
+	// cooldown suppressing mail and forgetting it, one branch earlier.
+	arrived map[string]bool
 }
 
 // SetWakeCommands installs the operator's wake table. Keyed by harness, as the
@@ -226,7 +236,7 @@ func (e *Engine) maybeWake(ev core.Event) {
 	cool := e.wakers.byHarness[wakeHarness(l)].cooldown
 	e.wakers.mu.Unlock()
 	go func() {
-		defer e.wakeFinished(agent)
+		defer e.wakeExited(agent)
 		if runWake(cmd, agent) {
 			return
 		}
@@ -335,7 +345,7 @@ func (e *Engine) retryWakeDecision(agent string) {
 	}
 	stamp := e.wakeStamp(agent)
 	go func() {
-		defer e.wakeFinished(agent)
+		defer e.wakeExited(agent)
 		if !runWake(cmd, agent) {
 			// Released so the next EVENT may try, but no timer armed: this is
 			// already the retry, and a command that fails twice fails.
@@ -363,11 +373,30 @@ func (e *Engine) hasBlockingMail(agent string) bool {
 }
 
 // wakeFinished records that this agent's wake command has exited, so a later
-// blocking message may start another.
-func (e *Engine) wakeFinished(agent string) {
+// blocking message may start another. It reports whether mail arrived while it
+// was running, which is a question only the exit can answer.
+func (e *Engine) wakeFinished(agent string) bool {
 	e.wakers.mu.Lock()
 	defer e.wakers.mu.Unlock()
 	delete(e.wakers.running, agent)
+	if e.wakers.arrived[agent] {
+		delete(e.wakers.arrived, agent)
+		return true
+	}
+	return false
+}
+
+// wakeExited is wakeFinished plus the re-check, for the goroutine that ran the
+// command.
+//
+// Split for the reason retryWake is split from retryWakeDecision: query() sends
+// on e.ops, which is nil on an engine with no running loop, so a test calling
+// this would block forever rather than fail. Tests take wakeFinished and its
+// answer; production takes this.
+func (e *Engine) wakeExited(agent string) {
+	if e.wakeFinished(agent) {
+		e.retryWake(agent)
+	}
 }
 
 // wakeStamp reads back the cooldown this wake just took, so its failure can be
@@ -480,15 +509,25 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) ([]string
 		// outlives the cooldown: the command IS the activation, so a second one
 		// is a second agent in the same thread.
 		//
-		// NOT DEFERRED. Mail arriving while a wake runs is mail that wake is
-		// about to read: the command IS an activation of this agent. Arming a
-		// re-check here woke it a second time for the same burst, which is the
-		// coalescing this branch exists to provide, and on a command that never
-		// reads mail it is a retry loop with a ninety-second fuse.
+		// RECORDED, AND RE-ASKED AT EXIT. Not on a timer.
 		//
-		// What the review actually found is the FAILED case, and that is
-		// handled where failure is known rather than guessed at here.
-		slog.Debug("no wake: the last one is still running", "agent", l.ID)
+		// A timer here fires DURING the command and starts a second one beside
+		// it, which is the coalescing this branch exists to provide and, on a
+		// command that never reads mail, a retry loop with a ninety-second
+		// fuse. Both of those were shipped and the wake e2e caught them.
+		//
+		// The exit is the right moment and has neither problem: any number of
+		// messages during one run set one flag, nothing starts while the
+		// command is alive, and the re-check asks hasBlockingMail, so an
+		// activation that DID read its mail produces no second wake. What it
+		// fixes is the case that reading early cannot cover, which is mail
+		// arriving during the rest of a two-hour turn.
+		if e.wakers.arrived == nil {
+			e.wakers.arrived = map[string]bool{}
+		}
+		e.wakers.arrived[l.ID] = true
+		slog.Debug("no wake: the last one is still running; re-checking at its exit",
+			"agent", l.ID)
 		return nil, false
 	}
 	if last, seen := e.wakers.last[l.ID]; seen && now.Sub(last) < cmd.cooldown {

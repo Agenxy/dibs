@@ -891,6 +891,45 @@ machines for real work. Their priority order, not ours.
   macOS caches a signature verdict against the inode, and set the codesign
   identifiers, which the Go toolchain leaves as `a.out`.
 
+- **Mail arriving during a wake was discarded.** A wake command is bounded at
+  two hours and reads its inbox near the start of that turn, and the branch that
+  refuses a second command while one is running threw the later event away on
+  the reading that the running activation would see it. Anything arriving after
+  that inbox read therefore waited for an unrelated event that might never come:
+  a question could sit unanswered for a day with the board reporting it
+  delivered. It is re-asked when the command exits, which is the one moment that
+  neither starts a process beside a live one nor loops, and the re-ask asks
+  whether anybody is still waiting, so an activation that answered its mail
+  produces nothing.
+
+- **The MCP Registry could publish a version the release gate refused.** The
+  registry workflow listened for the same tag push as the release and waited for
+  nothing, so it could authenticate and publish while the gate was still
+  running, or after it had failed and produced no release at all. The comment
+  claiming the two "cannot drift from each other" described a correlation as an
+  ordering. It is a reusable workflow called from the release behind `needs:`
+  now, so the ordering is GitHub's to enforce, and there is still one copy of
+  the publish steps.
+
+- **A purged agent's outbound mail became the next agent's.** The sweep
+  deliberately keeps what a purged agent SENT, because that inbox belongs to
+  whoever received it, and the id is derived from the name and goes straight
+  back into use. So the envelopes went on naming an address the next registrant
+  was handed: it appeared to have written mail it never sent, and because a
+  response routes by sender, answering the purged agent's question delivered the
+  answer to a stranger and told the responder it was delivered. The check that
+  reports an answer with nowhere to go was the path being defeated, because a
+  live replacement makes the sender look present. Those senders are retired to
+  an address outside the alphabet ids are minted from, so no name can ever be
+  turned into one.
+
+- **`go install` gives macOS two of the four artifacts**, and said nothing about
+  it. The Touch ID helper is Swift and the notifier is an app bundle, so neither
+  can come from `go install`: the board falls back to the admin password and
+  notifications lose their name and their buttons, with nothing to suggest the
+  installation was partial. The section says so, and points at the two paths
+  that carry everything.
+
 - **The onboarding sent macOS operators to create the credential this release
   replaced.** `dibs web` raises the daemon-owned Touch ID sheet first and asks
   for an admin password only where there is no sensor, and the README called the

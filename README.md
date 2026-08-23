@@ -178,6 +178,15 @@ account to create. Any tagged, public repository is installable by path, and
 automatically. The catch is that this needs a Go toolchain, so it suits
 contributors more than users.
 
+**On macOS this gives you two of the four artifacts.** `go install` builds Go
+programs, and the Touch ID helper is Swift and the notifier is an app bundle:
+without them `dibs web` falls back to asking for an admin password and
+notifications are posted by `osascript` under Script Editor's name, with no
+buttons. Neither failure says "you installed it wrong", which is why it is said
+here. `dibs doctor` reports both. Use Homebrew or the release archive if you
+want the whole thing, or build the other two from a checkout as
+[From source](#from-source) describes.
+
 ### From source
 
 The toolchain is pinned with [mise](https://mise.jdx.dev), so a checkout builds

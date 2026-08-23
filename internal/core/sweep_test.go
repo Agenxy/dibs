@@ -382,3 +382,83 @@ func TestPurgingAnAgentTakesItsMailbox(t *testing.T) {
 		t.Error("a live agent's inbox lost a message because its SENDER was purged")
 	}
 }
+
+// A purged agent's outbound mail names an address nobody can register.
+//
+// The purge above deliberately keeps what the agent SENT, because that inbox
+// belongs to whoever received it. But the id is derived from the name and goes
+// straight back into use, so those envelopes went on naming an address the next
+// agent to take that name was handed: it appeared to have written mail it never
+// sent, and a response routes by From, so answering the purged agent's question
+// delivered the answer to a stranger and reported it delivered.
+//
+// The one path that would have caught it was the path being defeated. The
+// "nobody will read this" apology reads s.Agents[m.From], and a live
+// replacement makes that non-nil and not gone.
+//
+// The test above stops at "outbound mail survives", which locks in the setup
+// and never registers a replacement, so it cannot see any of this.
+func TestAPurgedAgentsOutboundMailDoesNotBecomeTheNextAgentsMail(t *testing.T) {
+	s := NewState("test", DefaultLimits())
+	now := time.Now()
+
+	s.Agents["alice"] = &Agent{
+		ID: "alice", Name: "alice", Kind: KindPersistent,
+		Status: StatusArchived, ArchivedAt: now.Add(-s.Limits.ArchiveRetention - time.Hour),
+		Nonce: "n-alice",
+	}
+	s.Nonces["n-alice"] = "alice"
+	s.Agents["live"] = &Agent{
+		ID: "live", Name: "live", Status: StatusActive, Token: "t-live",
+	}
+	// A question the recipient has not answered yet: the case where a response
+	// is still to be routed.
+	s.Messages[7] = &Message{
+		Serial: 7, From: "alice", To: "live", Type: MsgQuestion,
+		Body: "which branch?", State: MsgStateDelivered,
+	}
+
+	if _, _, err := s.Apply(&Op{Kind: OpSweep}, now); err != nil {
+		t.Fatalf("setup: sweep: %v", err)
+	}
+	if _, still := s.Agents["alice"]; still {
+		t.Fatal("setup: the archived agent was not purged, so this is not about a " +
+			"released id")
+	}
+	m := s.Messages[7]
+	if m == nil {
+		t.Fatal("setup: the outbound question was deleted, which is a different bug " +
+			"and means this test is not exercising the one it names")
+	}
+	if m.From == "alice" {
+		t.Fatal("the purged agent's outbound mail still names `alice`, which is free " +
+			"again: the next agent to register that name is handed the id, appears to " +
+			"have written this, and receives the answer to a question it never asked")
+	}
+	if !IsRetiredSender(m.From) {
+		t.Fatalf("outbound mail is from %q, which is neither the original nor a "+
+			"retired address; whatever it is, agentID may hand it out", m.From)
+	}
+	// And that address cannot be minted from any name, however chosen.
+	if got := agentID(s, m.From); got == m.From {
+		t.Errorf("registering under a name that slugs to %q was handed that very "+
+			"address, so the retirement bought nothing", got)
+	}
+	// The replacement is a different agent, and the responder is told so.
+	s.Agents["alice"] = &Agent{ID: "alice", Name: "alice", Status: StatusActive}
+	res, _, err := s.Apply(&Op{
+		Kind: OpRespond, Token: "t-live", MsgSerial: 7,
+		Disposition: "answer", Body: "the main one",
+	}, now)
+	if err != nil {
+		t.Fatalf("respond: %v", err)
+	}
+	if d, _ := res["delivered"].(bool); d {
+		t.Error("the answer was reported delivered. Its reader was purged, and the " +
+			"agent holding that name now is a different one")
+	}
+	if note, _ := res["note"].(string); !strings.Contains(note, "purged") {
+		t.Errorf("the responder is told %q, which does not say the asker was purged "+
+			"and the name has been taken by somebody else", note)
+	}
+}

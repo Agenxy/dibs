@@ -1042,3 +1042,76 @@ func TestTheDeferredRecheckWakesNobodyWhoNoLongerNeedsIt(t *testing.T) {
 		t.Error("the re-check resumed an agent that has signed off")
 	}
 }
+
+// Mail arriving during a running wake is re-asked when that wake exits.
+//
+// The running branch excludes a second command, which is right: both are `codex
+// exec resume` against one thread. But it used to DISCARD the event, on the
+// reading that the command is this agent's activation and will read the mail.
+// It reads its inbox near the start of a turn the release bounds at two hours,
+// so anything arriving after that read was stranded until an unrelated event
+// happened to wake the agent again. A question could sit unanswered for a day
+// with the board reporting it delivered.
+//
+// Not a timer, which is the version that shipped and was wrong twice: firing
+// during the command starts a second one beside it, and on a command that never
+// reads mail it is a retry loop with a ninety-second fuse. The exit is the one
+// moment that has neither problem.
+//
+// The one-command-at-a-time test above cannot see any of this. It calls
+// wakeFinished by hand and then calls wakeFor again itself, so it never asks
+// what happened to the event that arrived while the command was running.
+func TestMailArrivingDuringAWakeIsReAskedWhenItExits(t *testing.T) {
+	e, st := wakeEngine(t, WakeCommand{
+		Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute,
+	})
+	l := bridgeAgent("busy", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	st.Agents["busy"] = l
+	ev := core.Event{
+		Type: "message.sent", To: "busy",
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	}
+
+	if _, ok := e.wakeFor(l, core.MsgQuestion, ev); !ok {
+		t.Fatal("no first wake, so there is no running command for a later message " +
+			"to arrive during: this test is not exercising what it names")
+	}
+	// A second question, while the first command is still going.
+	if _, ok := e.wakeFor(l, core.MsgQuestion, ev); ok {
+		t.Fatal("a second command started beside the first")
+	}
+
+	if owed := e.wakeFinished("busy"); !owed {
+		t.Fatal("the exit reports nothing owed, so mail that arrived during the " +
+			"command is discarded and the recipient stays asleep with somebody " +
+			"blocked on it, until an unrelated event happens to arrive")
+	}
+	// And it is owed ONCE: a burst is one re-check, not one per message.
+	if owed := e.wakeFinished("busy"); owed {
+		t.Error("the exit still reports mail owed after clearing it, which is a " +
+			"re-check per exit forever rather than per burst")
+	}
+}
+
+// And an exit with nothing new owes nothing.
+//
+// Without this, the check above passes against a wakeFinished that always
+// reports true, which would wake the agent again after every single command:
+// the retry loop the timer version was rejected for, moved to the exit.
+func TestAWakeThatExitsWithNoNewMailOwesNothing(t *testing.T) {
+	e, st := wakeEngine(t, WakeCommand{
+		Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute,
+	})
+	l := bridgeAgent("quiet", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	st.Agents["quiet"] = l
+	ev := core.Event{
+		Type: "message.sent", To: "quiet",
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	}
+	if _, ok := e.wakeFor(l, core.MsgQuestion, ev); !ok {
+		t.Fatal("no wake started")
+	}
+	if owed := e.wakeFinished("quiet"); owed {
+		t.Error("an exit with no message during the run still asks for another wake")
+	}
+}

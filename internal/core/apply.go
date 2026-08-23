@@ -1717,8 +1717,18 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 	// treat the exchange as closed by agreement.
 	if asker := s.Agents[m.From]; asker.Gone() {
 		res["delivered"] = false
-		res["note"] = "recorded, but " + m.From + " closed its agent before this arrived. " +
-			"nobody will read this answer, and no follow-up is coming"
+		// Two ways to have no reader, and they are not the same news. A closed
+		// agent chose to leave; a purged one was swept after its retention
+		// window, and its address was retired with it precisely so this answer
+		// could not be handed to whoever registered that name next.
+		if IsRetiredSender(m.From) {
+			res["note"] = "recorded, but the agent that asked this was purged after its " +
+				"retention window. Nobody will read this answer, and the name is free " +
+				"again: an agent using it now is a different one"
+		} else {
+			res["note"] = "recorded, but " + m.From + " closed its agent before this arrived. " +
+				"nobody will read this answer, and no follow-up is coming"
+		}
 	}
 	evs := []Event{{Type: "message." + st, Agent: l.ID, To: m.From, Data: map[string]any{
 		"msg_serial": m.Serial,

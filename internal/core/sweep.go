@@ -333,16 +333,34 @@ func (s *State) gc(now time.Time) ([]Event, bool) {
 		// Only mail TO the purged agent. What it SENT belongs to whoever
 		// received it, and deleting that would take a live agent's inbox with
 		// somebody else's retirement.
-		mail := 0
+		//
+		// WHAT IT SENT IS RETIRED WITH IT, because the address is what gets
+		// reused. Keeping those envelopes pointing at a released id meant the
+		// next agent to take the name appeared to have written them, and a
+		// response routes by m.From: answering the purged agent's question
+		// delivered the answer to a stranger, and told the responder it was
+		// delivered. The apology below for "the asker closed its agent" reads
+		// s.Agents[m.From], which a live replacement makes non-nil, so the one
+		// path that would have caught it was the path being defeated.
+		//
+		// A suffix outside slug's alphabet, so no name can ever be turned into
+		// it: agentID only ever emits [a-z0-9-]. The provenance survives and
+		// says what happened to the sender, and s.Agents lookup returns nil,
+		// which Gone() reports as gone.
+		mail, retired := 0, 0
 		for serial, m := range s.Messages {
-			if m.To == id {
+			switch {
+			case m.To == id:
 				delete(s.Messages, serial)
 				mail++
+			case m.From == id:
+				m.From = RetiredSender(id)
+				retired++
 			}
 		}
 		evs = append(evs, Event{
 			Type: "agent.purged", Agent: id,
-			Data: map[string]any{"messages_dropped": mail},
+			Data: map[string]any{"messages_dropped": mail, "messages_retired": retired},
 		})
 	}
 
@@ -678,6 +696,19 @@ func sortedKeys[K cmp.Ordered, V any](m map[K]V) []K {
 // their names had been discarded. The original survives in Agent.Name; the
 // registration result now says when the id owes nothing to it, and the board
 // shows the name so a human can still tell who they are looking at.
+// retiredSuffix marks a sender whose agent has been purged.
+//
+// `~` is deliberately outside slug's alphabet: agentID emits only [a-z0-9-],
+// so this address can never be handed to a registering agent, which is the
+// whole point of it.
+const retiredSuffix = "~purged"
+
+// RetiredSender is the address a purged agent's outbound mail is left under.
+func RetiredSender(id string) string { return id + retiredSuffix }
+
+// IsRetiredSender reports whether this address belonged to a purged agent.
+func IsRetiredSender(id string) bool { return strings.HasSuffix(id, retiredSuffix) }
+
 func agentID(s *State, name string) string {
 	base := slug(name)
 	if base == "" {
