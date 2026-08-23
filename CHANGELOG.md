@@ -143,6 +143,53 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **An agent that is not running can be woken: `[wake.exec]`.** Mail arrived for
+  agents that were not executing, and sat there. Dibs would deliver it at their
+  next activation, which for a dormant agent is whenever a human next happens to
+  start them, so a question with a ten-minute deadline expired unread and the
+  answer looked like a Dibs failure. That is the difference between a message
+  bus and a phone.
+
+  An operator may now name, per harness, the command that resumes a thread:
+
+  ```toml
+  [wake.exec.codex]
+  argv = ["/Applications/ChatGPT.app/Contents/Resources/codex",
+          "exec", "resume", "{thread}", "{message}"]
+  ```
+
+  `docs/CONFIGURATION.md` records why that command and not `codex queue`, which
+  was measured on the same day and wakes a thread only when one is already
+  loaded: pointed at a stopped one it returns `Queued message` and nothing
+  stirs.
+
+  Dibs runs it when a message that somebody is waiting on lands for an agent it
+  has not heard from recently: `question`, `request` and `handoff`, plus the
+  verdicts (`approved`, `denied`, `answered`, `declined`) that resolve one. A
+  `notify` never wakes anybody, because nobody is waiting on it. `{thread}` is
+  the harness's own thread identifier, taken from the agent's session aliases
+  and only when it has the shape a resume command accepts. It is deliberately
+  NOT the agent's `session_id`: that names the harness process (`host-92368`)
+  and dies with it, so an agent whose only identifier is one of those is not
+  woken, because there would be nothing to hand the command. Wakes are rate-limited per agent (90s by default, `cooldown =`), so a
+  burst of three messages is one wake and not three.
+
+  **The operator decides this, not Dibs and not the agent.** There is no default
+  command for any harness: with no `[wake.exec]` section nothing is ever
+  executed, which is the behaviour of every release before this one. An agent
+  cannot ask to be woken by a command of its choosing, and cannot name the
+  argv. PHILOSOPHY rule 5 says Dibs does not drive harnesses; this is the
+  operator driving their own, through a line they wrote, and `WAKE-MECHANISMS.md`
+  records why the earlier shell-hook version was deleted and why this one is not
+  the same thing.
+
+- **The Codex plugin binds `hook_poll` to the thread lifecycle.**
+  `plugins/codex/hooks/hooks.json` registers `mcp_tool` handlers on
+  SessionStart, Stop and SubagentStop, so a Codex thread that is running
+  collects its mail at each of them without polling. Measured against a live
+  daemon: three hooks, three deliveries. This covers a thread that is alive;
+  `[wake.exec]` above is what covers one that is not.
+
 - **The multi-machine board is documented and has a command.** Everything needed
   for a real-time fleet board already shipped; the operator who runs Dibs for
   that reason nearly gave up on it. `dibs mcp-config --board <addr>` prints the

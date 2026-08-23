@@ -62,7 +62,7 @@ blocked on arrives for one of its agents that has stopped:
 ```toml
 [wake.exec.codex]
 argv = ["/Applications/ChatGPT.app/Contents/Resources/codex",
-        "exec", "resume", "{session_id}", "{message}"]
+        "exec", "resume", "{thread}", "{message}"]
 cooldown = "90s"
 ```
 
@@ -86,12 +86,19 @@ The key under `exec` is the harness as agents report it, lowercased: `codex`,
 `claude code`. Each takes `argv` and an optional `cooldown`.
 
 **`argv`, never a shell string.** There is no shell anywhere in this path.
-`{session_id}`, `{agent}`, `{from}`, `{type}` and `{message}` each replace one
+`{thread}`, `{agent}`, `{from}`, `{type}` and `{message}` each replace one
 whole element and are passed to the command as single arguments, so a message
 written by a hostile peer is an argument and not a command. Nothing an agent
 sends reaches this: the command comes from this file and there is no tool, op
 or admin route that can change it. That is deliberate, because a wake command
 is arbitrary code running as you.
+
+**`{thread}` is the harness's thread, not the agent's `session_id`.** They are
+different identifiers and only one of them can be resumed: a `session_id` names
+the harness process (`host-92368`), and dies with it. Dibs fills `{thread}` from
+the agent's session aliases, taking the first with the shape a resume command
+accepts. An agent that has published no such identifier is never woken, because
+there would be nothing to hand the command.
 
 `{message}` is a fixed line telling the agent to check in. **The mail itself is
 never put on a command line**: the agent reads it over its authenticated

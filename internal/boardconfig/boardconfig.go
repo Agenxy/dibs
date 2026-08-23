@@ -230,9 +230,9 @@ type MatchConfig struct {
 // which is the one failure that would be worse than not delivering at all.
 //
 //	[wake.exec.codex]
-//	argv = ["codex", "queue", "--thread", "{session_id}", "--message", "{message}"]
+//	argv = ["codex", "queue", "--thread", "{thread}", "--message", "{message}"]
 //
-// Placeholders, each replaced as a COMPLETE element: {session_id}, {agent},
+// Placeholders, each replaced as a COMPLETE element: {thread}, {agent},
 // {from}, {type}, {message}. Anything else is left alone.
 type WakeExec struct {
 	// Argv is the command and its arguments. Empty means this harness has no

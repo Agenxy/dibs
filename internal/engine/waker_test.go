@@ -32,7 +32,7 @@ func bridgeAgent(id, harness, thread string) *core.Agent {
 func TestMailForAnAgentThatIsNotRunningStartsTheOperatorsCommand(t *testing.T) {
 	e := &Engine{}
 	e.SetWakeCommands(map[string]WakeCommand{
-		"codex": {Argv: []string{"codex", "queue", "--thread", "{session_id}", "--message", "{message}"}, Cooldown: time.Minute},
+		"codex": {Argv: []string{"codex", "queue", "--thread", "{thread}", "--message", "{message}"}, Cooldown: time.Minute},
 	})
 
 	l := bridgeAgent("sleeper", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
@@ -67,7 +67,7 @@ func TestMailForAnAgentThatIsNotRunningStartsTheOperatorsCommand(t *testing.T) {
 func TestAMessageCannotInfluenceWhatTheWakeCommandRuns(t *testing.T) {
 	e := &Engine{}
 	e.SetWakeCommands(map[string]WakeCommand{
-		"codex": {Argv: []string{"codex", "queue", "--thread", "{session_id}", "--message", "{message}"}, Cooldown: time.Minute},
+		"codex": {Argv: []string{"codex", "queue", "--thread", "{thread}", "--message", "{message}"}, Cooldown: time.Minute},
 	})
 
 	// The hostile string goes where an AGENT can actually put one: its own id
@@ -168,7 +168,7 @@ func TestTheBoardDoesNotStartAnythingItDoesNotNeedTo(t *testing.T) {
 func TestTheWakeTargetsTheThreadTheHarnessCanActuallyResume(t *testing.T) {
 	e := &Engine{}
 	e.SetWakeCommands(map[string]WakeCommand{
-		"codex": {Argv: []string{"codex", "exec", "resume", "{session_id}"}, Cooldown: time.Minute},
+		"codex": {Argv: []string{"codex", "exec", "resume", "{thread}"}, Cooldown: time.Minute},
 	})
 	ev := core.Event{
 		Type: "message.sent", To: "a",
@@ -212,7 +212,7 @@ func TestAnApprovalReachesTheSubprocessWake(t *testing.T) {
 			st := core.NewState("t", core.DefaultLimits())
 			e.state = st
 			e.SetWakeCommands(map[string]WakeCommand{
-				"codex": {Argv: []string{"echo", "{session_id}"}, Cooldown: time.Hour},
+				"codex": {Argv: []string{"echo", "{thread}"}, Cooldown: time.Hour},
 			})
 			l := bridgeAgent("asker", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
 			st.Agents = map[string]*core.Agent{"asker": l}
@@ -237,7 +237,7 @@ func TestALeaseThatHasNotLapsedIsNotProofTheAgentIsRunning(t *testing.T) {
 	st := core.NewState("t", core.DefaultLimits())
 	e.state = st
 	e.SetWakeCommands(map[string]WakeCommand{
-		"codex": {Argv: []string{"echo", "{session_id}"}, Cooldown: time.Minute},
+		"codex": {Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute},
 	})
 	l := bridgeAgent("justStopped", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
 	l.Status = core.StatusActive

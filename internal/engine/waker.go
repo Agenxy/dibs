@@ -94,19 +94,23 @@ type WakeCommand struct {
 // so a message body containing a semicolon is a message body containing a
 // semicolon.
 type wakeFields struct {
-	sessionID string
-	agent     string
-	from      string
-	msgType   string
-	message   string
+	// thread is the identifier the harness's own resume command accepts,
+	// which is NOT the agent's session_id: that one names the harness
+	// PROCESS ("host-92368") and no resume command has ever heard of it.
+	// threadIDOf finds this; when it finds nothing, nothing is woken.
+	thread  string
+	agent   string
+	from    string
+	msgType string
+	message string
 }
 
 func (f wakeFields) apply(argv []string) []string {
 	out := make([]string, 0, len(argv))
 	for _, a := range argv {
 		switch a {
-		case "{session_id}":
-			out = append(out, f.sessionID)
+		case "{thread}":
+			out = append(out, f.thread)
 		case "{agent}":
 			out = append(out, f.agent)
 		case "{from}":
@@ -254,10 +258,10 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) ([]string
 
 	from, _ := ev.Data["from"].(string)
 	return wakeFields{
-		sessionID: thread,
-		agent:     l.ID,
-		from:      from,
-		msgType:   msgType,
+		thread:  thread,
+		agent:   l.ID,
+		from:    from,
+		msgType: msgType,
 		// Deliberately NOT the body. A wake says that mail exists; the agent
 		// reads it over the authenticated channel with its own token. Putting
 		// the text in an argv would hand a message's contents to whatever the
