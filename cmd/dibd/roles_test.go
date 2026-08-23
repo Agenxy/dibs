@@ -711,3 +711,68 @@ func keysOf(m map[string]string) []string {
 	}
 	return out
 }
+
+// A pin records who took a role. It is not permission to keep it.
+//
+// The established-pin branch returned success the moment the stored pin matched
+// the live agent, without looking at what the operator currently authorises. So
+// both revocations did nothing: deleting an agent from `[roles.identity]` left
+// it holding the role, and pointing that entry at a successor left the old
+// credential accepted beside it. On the next restart the reconciler passed the
+// new configuration in, was told yes, and re-granted the old identity. For
+// admin that is every decrypted mailbox on the board, restored against the
+// operator's written instruction.
+//
+// SECURITY.md says `[roles.identity]` names the agent allowed to hold the role.
+// That has to be true at every grant, not only at the first one.
+//
+// The existing tests cover an unpinned mismatch and a DIFFERENT live agent under
+// an old pin. Neither covers the case where the pin still matches the agent and
+// the configuration no longer does, which is what revocation looks like.
+func TestAnEstablishedPinDoesNotOutrankTheCurrentConfiguration(t *testing.T) {
+	const (
+		held      = "1111111111111111111111111111111111111111111111111111111111111111"
+		successor = "2222222222222222222222222222222222222222222222222222222222222222"
+	)
+	// A legitimately established pin: config and agent agreed at the time.
+	fresh := func(t *testing.T) *rolePins {
+		t.Helper()
+		p := loadRolePins(t.TempDir())
+		if err := p.check(core.RoleAdmin, "fleet-lead", held, held); err != nil {
+			t.Fatalf("setup: the first grant was refused (%v), so nothing below is "+
+				"about an established pin", err)
+		}
+		return p
+	}
+
+	t.Run("the operator withdraws the authorisation", func(t *testing.T) {
+		p := fresh(t)
+		// [roles.identity] no longer names this agent.
+		if err := p.check(core.RoleAdmin, "fleet-lead", held, ""); err == nil {
+			t.Error("admin was re-granted to an agent the operator has removed from " +
+				"[roles.identity]. Deleting the entry is the obvious way to revoke a " +
+				"standing role, and it did nothing: on the next restart the same " +
+				"credential is handed the god view again")
+		}
+	})
+
+	t.Run("the operator names a successor", func(t *testing.T) {
+		p := fresh(t)
+		// [roles.identity] points at somebody else; the predecessor is still
+		// the agent registered under that name.
+		if err := p.check(core.RoleAdmin, "fleet-lead", held, successor); err == nil {
+			t.Error("admin was re-granted to the predecessor while [roles.identity] " +
+				"names a successor's fingerprint. The handover the operator wrote down " +
+				"has not happened, and the old credential keeps every mailbox")
+		}
+	})
+
+	t.Run("and the ordinary case still works", func(t *testing.T) {
+		p := fresh(t)
+		if err := p.check(core.RoleAdmin, "fleet-lead", held, held); err != nil {
+			t.Errorf("the agent the operator names, holding the pin it was granted "+
+				"under, was refused: %v. Every reconciliation tick runs this, so a "+
+				"board would lose its admin fifteen seconds after start", err)
+		}
+	})
+}

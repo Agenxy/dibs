@@ -128,13 +128,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   called the right thing before the intended agent was. Present in v0.0.5 and
   v0.0.6, and reproduced against a live daemon before it was changed.
 
-  A grant is now pinned to the credential of the agent it first lands on,
-  recorded in `<data-dir>/roles.pinned`, and the same name is refused later
-  under a different identity. The agent must have registered with a nonce,
-  since without one it cannot prove it is itself after a restart, which is the
-  whole of what a standing role needs. The grant window also closes about two
-  minutes after start, so an unclaimed name stops being a standing invitation
-  to whoever registers under it later; it is reported once and left alone.
+  A declared role now requires the operator to name that agent's **fingerprint**
+  under `[roles.identity]`, and without one nothing is granted: see the Security
+  entry above, which is the shipping behaviour. The first version of this fix
+  pinned the credential of the agent the grant first landed on and welcomed that
+  first agent without a question, which is first-registrant-wins wearing a pin;
+  the two-minute window made it a race rather than a standing offer, which is
+  not the same as making it safe. The pin file survives as a record of which
+  identity took the role, and it is checked ALONGSIDE the current configuration
+  rather than instead of it, so removing an entry from `[roles.identity]`
+  revokes the role. The agent must also have registered with a nonce, since
+  without one it cannot prove it is itself after a restart, which is the whole
+  of what a standing role needs.
 
   Preconditions were narrow: the attacker had to be on the board already, and
   `[roles]` had to be configured at all, which is not the default. That is why
@@ -893,7 +898,8 @@ machines for real work. Their priority order, not ours.
 - **`E_MSG_FINAL` carried no hint**, in breach of the rule that every error
   names the corrective call, and it is the error an agent hits exactly when it
   has come back late to something it missed. It now names the corrective call:
-  send a new message, and if that agent is gone, the human's row outlives them.
+  `send` a new message to that agent, and if they are gone, `check_in` for who
+  is on the board now.
 
 - **README: building without mise or task.** On a network that allows the Go
   module proxy but not the object store it redirects to, neither tool installs
@@ -903,6 +909,18 @@ machines for real work. Their priority order, not ours.
   install rules that are not obvious from them: remove before copying, because
   macOS caches a signature verdict against the inode, and set the codesign
   identifiers, which the Go toolchain leaves as `a.out`.
+
+- **An established role pin outranked the operator's current configuration.**
+  The pin records which identity a standing role was granted to, so that the
+  same NAME cannot later be taken by a different agent. Once it existed, the
+  check returned success on the pin alone and never looked at
+  `[roles.identity]` again, so both ways of revoking a role did nothing:
+  deleting the entry left the agent holding it, and pointing it at a successor
+  left the predecessor's credential accepted beside them. Each restart passed
+  the new configuration in, was told yes, and re-granted the old identity, which
+  for admin is every decrypted mailbox on the board restored against the
+  operator's written instruction. The pin is a floor now, not a grant: both the
+  pin and the current configuration have to name the agent.
 
 - **Mail arriving after a wake exited was refused as "still working".** The
   commoner ordering, and the last of this one: a wake runs, the woken agent
