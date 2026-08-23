@@ -253,6 +253,34 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A board's certificate could not both expire and stay trusted.** `dibs trust`
+  pins what a daemon presents, ssh-style, so a single self-signed certificate
+  made the pinned identity and the served certificate one object and the two
+  requirements mutually exclusive: a bounded lifetime needs the certificate
+  replaced, and replacing it makes every joined machine refuse the board until a
+  human repeats the fingerprint ceremony there. Not replacing it means an
+  always-on hub sails past `NotAfter` and serves an expired certificate to
+  everybody. Both are silent on the daemon and total on the clients.
+
+  The daemon now keeps a long-lived signing identity (`tls-ca.pem`) and serves a
+  short-lived certificate under it. `dibs trust` records the identity, so
+  renewal, a new interface, and a change of network are all invisible to
+  machines that have already trusted the board. **Anyone who has run `dibs
+  trust` against a v0.0.6 board re-runs it once**, and never again; that
+  ceremony was already owed, because a v0.0.6 certificate does not carry the
+  SANs a reachable address needs.
+
+- **An interrupted certificate rotation could not be recovered from.** The pair
+  is two files, and the reuse check asked only whether the key file existed. A
+  crash between the writes therefore left a mismatch that every later boot
+  declared usable: startup failed inside `ServeTLS` and exited, and the
+  predicate responsible for regenerating kept saying there was nothing to
+  regenerate. It loads the pair now, which is the same question `ServeTLS` asks.
+
+- **An empty `[wake.exec]` entry reported a wake capability that could not wake
+  anybody.** `argv = []` loaded, startup took the "there is a wake command"
+  branch, skipped the entry for want of an argv, and logged `harnesses=0`.
+
 - **Every lifecycle hook announces its session, not just `hook_session`.** The
   announced-session join is how an agent learns the identifier its own harness
   uses, and it is the only source of the thread `[wake.exec]` resumes. The

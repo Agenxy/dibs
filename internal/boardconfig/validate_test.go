@@ -147,6 +147,17 @@ func TestLoadRefusesSettingsThatWouldNotTakeEffect(t *testing.T) {
 			"a wake command whose executable is the empty string",
 			"[wake.exec.codex]\nargv = [\"\", \"exec\"]\n",
 		},
+		// An entry with no argv at all: the section loaded, startup took the
+		// "there is a wake command" branch, skipped the entry for want of an
+		// argv, and logged `harnesses=0` as though that were a capability.
+		{
+			"a wake entry with no argv, which can start nothing",
+			"[wake.exec.codex]\nargv = []\n",
+		},
+		{
+			"a wake entry that sets only a cooldown",
+			"[wake.exec.codex]\ncooldown = \"2m\"\n",
+		},
 		// The identity table is a CREDENTIAL-shaped setting, and the first
 		// version of the feature asked for the nonce itself. A nonce in a file
 		// every same-user process can read is that process's route to

@@ -675,7 +675,17 @@ func (c Config) validateWake() error {
 				"below zero was silently becoming that default while reading as "+
 				"a setting you had chosen", harness, x.Cooldown)
 		}
-		if len(x.Argv) > 0 && x.Argv[0] == "" {
+		// An empty argv is the whole entry doing nothing. It loaded, startup
+		// took the "there is a wake command" branch, skipped the entry for want
+		// of an argv, and logged `harnesses=0` as though that were a capability:
+		// success reported for a table that can start nobody. Refused with the
+		// same words as the rest of this list, because it is the same mistake.
+		if len(x.Argv) == 0 {
+			return fmt.Errorf("[wake.exec.%s] has no argv, so nothing can be run for "+
+				"that harness and the section does nothing at all. Give it the "+
+				"command that resumes a thread, or remove the section", harness)
+		}
+		if x.Argv[0] == "" {
 			return fmt.Errorf("[wake.exec.%s] argv starts with an empty string, so "+
 				"there is no program to run. The first element is the executable, "+
 				"and the rest are its arguments: there is no shell in this path "+

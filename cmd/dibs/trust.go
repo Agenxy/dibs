@@ -117,7 +117,19 @@ func trustCmd(args []string) error {
 	if len(certs) == 0 {
 		return fmt.Errorf("%s presented no certificate", target)
 	}
-	leaf := certs[0]
+	// THE TOP OF THE CHAIN, not the leaf.
+	//
+	// The daemon presents a short-lived leaf under a long-lived board CA, and
+	// the CA is the identity worth pinning: it carries no addresses, so nothing
+	// about that machine invalidates it, and every later leaf verifies through
+	// it. Pinning the leaf instead would make this ceremony due again on every
+	// renewal and every time the board changed networks, on every joined
+	// machine at once, which is exactly what the split was made to end.
+	//
+	// A single self-signed certificate is still a chain of one, so a daemon
+	// that predates the split, or one fronted by a real certificate, records
+	// what it presents.
+	pinned := certs[len(certs)-1]
 
 	if err := os.MkdirAll(paths.DataDir(), 0o700); err != nil {
 		return err
@@ -127,13 +139,13 @@ func trustCmd(args []string) error {
 		return err
 	}
 	defer func() { _ = f.Close() }()
-	if err := pem.Encode(f, &pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw}); err != nil {
+	if err := pem.Encode(f, &pem.Block{Type: "CERTIFICATE", Bytes: pinned.Raw}); err != nil {
 		return err
 	}
 
 	fmt.Printf("trusted %s\n", target)
-	fmt.Printf("  fingerprint  SHA256:%s\n", fingerprint(leaf.Raw))
-	fmt.Printf("  expires      %s\n", leaf.NotAfter.Format("2006-01-02"))
+	fmt.Printf("  fingerprint  SHA256:%s\n", fingerprint(pinned.Raw))
+	fmt.Printf("  expires      %s\n", pinned.NotAfter.Format("2006-01-02"))
 	fmt.Printf("  recorded in  %s\n\n", trustFile())
 	fmt.Println("  Verify it: run `dibs fingerprint` on that machine and compare.")
 	fmt.Println("  They must match exactly. If they do not, something is answering")
@@ -150,13 +162,31 @@ func fingerprintCmd(_ []string) error {
 		return fmt.Errorf("no certificate at %s: this daemon serves plaintext on "+
 			"loopback and only generates one for an address other machines can reach", certFile)
 	}
-	block, _ := pem.Decode(pemBytes)
-	if block == nil {
-		return fmt.Errorf("%s is not a PEM certificate", certFile)
+	// THE LAST BLOCK, because that is what the other machine pinned.
+	//
+	// This file is a chain now: the short-lived leaf, then the board CA that
+	// signed it. `dibs trust` records the top, so printing the first block here
+	// would give the operator two different values to compare and tell them
+	// something was answering that was not their daemon. The two commands read
+	// the same certificate or the ceremony is worse than none.
+	var cert *x509.Certificate
+	for rest := pemBytes; ; {
+		block, more := pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		rest = more
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+		c, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return err
+		}
+		cert = c
 	}
-	cert, err := x509.ParseCertificate(block.Bytes)
-	if err != nil {
-		return err
+	if cert == nil {
+		return fmt.Errorf("%s is not a PEM certificate", certFile)
 	}
 	fmt.Printf("SHA256:%s\n", fingerprint(cert.Raw))
 	fmt.Printf("expires %s\n", cert.NotAfter.Format("2006-01-02"))

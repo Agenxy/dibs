@@ -4,6 +4,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -545,13 +546,13 @@ func TestAnExpiringCertificateIsReplaced(t *testing.T) {
 	}
 	first := parseCert(t, certFile).SerialNumber.String()
 
-	if !usableCert(certFile, keyFile, addr) {
+	if !leafOK(t, dir, certFile, keyFile, addr) {
 		t.Fatal("a freshly issued certificate was judged unusable")
 	}
 
 	// Rewind it to inside the renewal window by reissuing with a near NotAfter.
 	writeCertExpiring(t, certFile, keyFile, time.Now().Add(24*time.Hour))
-	if usableCert(certFile, keyFile, addr) {
+	if leafOK(t, dir, certFile, keyFile, addr) {
 		t.Error("a certificate expiring tomorrow was judged usable, so it is served " +
 			"until it fails on every client at once")
 	}
@@ -715,6 +716,17 @@ func TestTheSharedLoaderRefusesEverythingTheDaemonRefuses(t *testing.T) {
 	}
 }
 
+// leafOK asks the production predicate the way the daemon does: against the
+// board CA that signs for this directory.
+func leafOK(t *testing.T, dir, certFile, keyFile, addr string) bool {
+	t.Helper()
+	ca, _, err := ensureCA(filepath.Join(dir, "tls-ca.pem"), filepath.Join(dir, "tls-ca-key.pem"))
+	if err != nil {
+		t.Fatalf("reading the board CA: %v", err)
+	}
+	return usableLeaf(certFile, keyFile, addr, ca)
+}
+
 // A still-valid certificate that no longer names the address is replaced.
 //
 // Expiry was the only reason a stored pair was ever regenerated, and it is not
@@ -740,14 +752,14 @@ func TestACertificateThatNoLongerNamesTheAddressIsReplaced(t *testing.T) {
 		t.Fatalf("setup: %v", err)
 	}
 	first := parseCert(t, certFile).SerialNumber.String()
-	if !usableCert(certFile, keyFile, "127.0.0.1:4777") {
+	if !leafOK(t, dir, certFile, keyFile, "127.0.0.1:4777") {
 		t.Fatal("setup: a freshly issued certificate was judged unusable for its " +
 			"own address, so nothing below distinguishes anything")
 	}
 
 	// The machine is now reached on a name that certificate never carried.
 	const moved = "192.168.1.205:4777"
-	if usableCert(certFile, keyFile, moved) {
+	if leafOK(t, dir, certFile, keyFile, moved) {
 		t.Fatalf("a certificate that does not name %s was judged usable for it. It "+
 			"is unexpired and the daemon will serve it happily; every client dialing "+
 			"that address fails hostname verification, and nothing on this side "+
@@ -771,5 +783,168 @@ func TestACertificateThatNoLongerNamesTheAddressIsReplaced(t *testing.T) {
 	// board to fix the remote one.
 	if err := got.VerifyHostname("127.0.0.1"); err != nil {
 		t.Errorf("the reissued certificate dropped loopback: %v", err)
+	}
+}
+
+// A machine that trusted this board once keeps working across renewal.
+//
+// This is the property `dibs trust` promises and the one a single self-signed
+// certificate could not deliver. Pinning what the daemon presents makes the
+// pinned identity and the served certificate one object, and then the two
+// things certificate handling must do are mutually exclusive: a bounded
+// lifetime requires replacement, and replacement invalidates every pin. The
+// review put both branches side by side, and there is no third one.
+//
+// So the test is the client's question, not the daemon's: build a pool holding
+// ONLY what `dibs trust` would have recorded on the first visit, then verify
+// what the daemon serves after it has rotated for every reason it rotates for.
+// Asserting that a serial changed, which is what the old test did, cannot see
+// any of this.
+func TestAPinnedBoardStaysTrustedAcrossRenewalAndAMoveOfNetwork(t *testing.T) {
+	dir := t.TempDir()
+	const first = "192.168.1.205:4777"
+
+	certFile, keyFile, err := ensureSelfSignedCert(dir, first)
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	// What `dibs trust` records: the TOP of the presented chain.
+	chain := parseChain(t, certFile)
+	if len(chain) < 2 {
+		t.Fatalf("the daemon presents %d certificate(s); a client that pins what it "+
+			"sees has pinned the leaf, so every renewal breaks it", len(chain))
+	}
+	pinned := chain[len(chain)-1]
+	pool := x509.NewCertPool()
+	pool.AddCert(pinned)
+
+	verify := func(what, host string) {
+		t.Helper()
+		leaf := parseChain(t, certFile)[0]
+		inter := x509.NewCertPool()
+		for _, c := range parseChain(t, certFile)[1:] {
+			inter.AddCert(c)
+		}
+		if _, err := leaf.Verify(x509.VerifyOptions{
+			Roots: pool, Intermediates: inter, DNSName: host,
+			KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		}); err != nil {
+			t.Errorf("%s: a machine that ran `dibs trust` once can no longer verify "+
+				"this board (%v). It refuses every connection until a human repeats "+
+				"the fingerprint ceremony there, and nothing on the daemon reports a "+
+				"problem", what, err)
+		}
+	}
+	verify("first issue", "192.168.1.205")
+
+	// RENEWAL. Push the leaf into the renewal window and re-run the same call
+	// the daemon makes at startup.
+	writeCertExpiring(t, certFile, keyFile, time.Now().Add(24*time.Hour))
+	if _, _, err := ensureSelfSignedCert(dir, first); err != nil {
+		t.Fatal(err)
+	}
+	if parseChain(t, certFile)[0].SerialNumber.Cmp(chain[0].SerialNumber) == 0 {
+		t.Fatal("the expiring leaf was not replaced, so this proves nothing about " +
+			"renewal")
+	}
+	verify("after renewal", "192.168.1.205")
+
+	// A MOVE OF NETWORK, the other reason a leaf is reissued.
+	const moved = "10.0.0.9:4777"
+	if _, _, err := ensureSelfSignedCert(dir, moved); err != nil {
+		t.Fatal(err)
+	}
+	verify("after the board changed networks", "10.0.0.9")
+
+	// And the pinned identity itself never moved.
+	if got := parseChain(t, certFile); !got[len(got)-1].Equal(pinned) {
+		t.Error("the board's CA changed, so every joined machine must be re-trusted: " +
+			"the identity that gets pinned has to outlive every reason a leaf is " +
+			"replaced, or the split buys nothing")
+	}
+}
+
+// parseChain reads every certificate in a PEM file, leaf first.
+func parseChain(t *testing.T, path string) []*x509.Certificate {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []*x509.Certificate
+	for rest := b; ; {
+		block, more := pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		rest = more
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+		c, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, c)
+	}
+	if len(out) == 0 {
+		t.Fatalf("%s holds no certificate", path)
+	}
+	return out
+}
+
+// An interrupted rotation repairs itself on the next boot.
+//
+// The certificate and the key are two files and the pair is only valid
+// together, so a crash between the writes leaves a mismatch. The predicate that
+// decides whether to regenerate checked only that the key FILE existed, so it
+// declared the mismatch usable on every later start; ServeTLS then failed to
+// load it and the daemon exited, and nothing ever regenerated because the
+// thing responsible for deciding kept saying there was nothing to decide. A
+// daemon that cannot repair itself from its own data directory is worse than
+// one that never wrote the file, because the operator has no way to tell what
+// is wrong.
+//
+// The existing fixture hid it precisely: writeCertExpiring pairs a new
+// certificate with the retained old key, and expiry rejects it before the
+// mismatch is ever reached.
+func TestAMismatchedCertificateAndKeyAreRegenerated(t *testing.T) {
+	dir := t.TempDir()
+	const addr = "192.168.1.205:4777"
+	certFile, keyFile, err := ensureSelfSignedCert(dir, addr)
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if !leafOK(t, dir, certFile, keyFile, addr) {
+		t.Fatal("setup: a freshly issued pair was judged unusable")
+	}
+
+	// A rotation that wrote one file and not the other: an UNEXPIRED
+	// certificate beside a key that does not match it.
+	other := t.TempDir()
+	if _, _, err := ensureSelfSignedCert(other, addr); err != nil {
+		t.Fatal(err)
+	}
+	strangerKey, err := os.ReadFile(filepath.Join(other, "tls-key.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyFile, strangerKey, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if leafOK(t, dir, certFile, keyFile, addr) {
+		t.Fatal("an unexpired certificate beside a key that does not match it was " +
+			"judged usable. The daemon will try to serve it, fail inside ServeTLS " +
+			"and exit, and the next boot makes exactly the same decision")
+	}
+
+	// And the next boot fixes it rather than repeating the failure.
+	certFile2, keyFile2, err := ensureSelfSignedCert(dir, addr)
+	if err != nil {
+		t.Fatalf("the daemon could not regenerate from a mismatched pair: %v", err)
+	}
+	if _, err := tls.LoadX509KeyPair(certFile2, keyFile2); err != nil {
+		t.Errorf("the regenerated pair still does not load: %v", err)
 	}
 }
