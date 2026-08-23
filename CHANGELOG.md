@@ -928,6 +928,14 @@ machines for real work. Their priority order, not ours.
   exactly the set still owed and cannot drift from what the ring happens to
   still hold.
 
+  The first version keyed on `Message.Consumed`, which is about the other
+  party: the RECIPIENT consumes a message when they answer it, so every verdict
+  is consumed the instant it exists and nothing was rebuilt at all. Its unit
+  test set that field by hand and passed. What found it was running a real
+  daemon, from the built archive, and restarting it: `task test:human` does that
+  now, because a fixture a test wrote itself can only confirm the assumption in
+  the fixture.
+
 - **The published Stop-hook verification could not fail.** The Codex plugin
   tells an operator to call `spawned_agents` before and after a turn and
   compare, and it said to look for "the entry changing": `since_seconds` and

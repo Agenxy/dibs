@@ -370,9 +370,16 @@ func answeredNotice(ev core.Event) string {
 // FROM STATE, not from the event ring. state == fold(ledger), so a terminal
 // message its asker has not consumed is exactly the set still owed, and it
 // cannot drift from whatever the ring happens to still hold after eviction.
-// Consumed is the right boundary because it means the asker has fetched the
-// outcome; re-notifying there would be a duplicate, and not notifying at all
-// was the bug.
+// THE ASKER'S OWN WATERMARK, not Message.Consumed. Consumed was the obvious
+// field and it is about the wrong party: the RECIPIENT consumes a message when
+// they answer it, so every verdict is consumed the instant it exists and the
+// first version of this rebuilt nothing at all. The unit test set the field by
+// hand and passed. An end-to-end run against a real daemon restart is what
+// showed it, which is the whole reason for running one.
+//
+// AckedSerial is the awareness-gate watermark, it is replayable state, and it
+// answers the actual question: the asker has caught up to everything at or
+// below it, so a verdict that landed after it is news it has not had.
 //
 // Called once, before the loop starts, so the maps are not shared yet.
 func (e *Engine) rebuildBlockingNotices() {
@@ -381,8 +388,15 @@ func (e *Engine) rebuildBlockingNotices() {
 	}
 	owed := make([]*core.Message, 0, 8)
 	for _, m := range e.state.Messages {
-		if m == nil || m.Consumed || m.From == "" || verdictEvent(m.State) == "" {
+		if m == nil || m.From == "" || verdictEvent(m.State) == "" {
 			continue
+		}
+		asker := e.state.Agents[m.From]
+		if asker == nil || asker.Gone() {
+			continue // nobody left to tell
+		}
+		if m.RespondedAt != 0 && m.RespondedAt <= asker.AckedSerial {
+			continue // it has already caught up past this
 		}
 		owed = append(owed, m)
 	}

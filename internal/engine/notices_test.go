@@ -917,10 +917,26 @@ func TestAnApprovalSurvivesARestart(t *testing.T) {
 			"from the wording of its own mail", found)
 	}
 
-	// A consumed outcome is not re-announced: the asker has already fetched it.
-	st.Messages[42].Consumed = true
+	// AND AN AGENT THAT HAS CAUGHT UP IS NOT TOLD AGAIN.
+	//
+	// The boundary is the ASKER's awareness watermark, and the first version of
+	// this used Message.Consumed, which is about the other party entirely: the
+	// recipient consumes a message when they answer it, so every verdict is
+	// consumed the instant it exists and nothing was ever rebuilt. This test
+	// passed anyway, because it set that field by hand; the end-to-end run
+	// against a real daemon restart is what caught it.
+	st.Agents["asker"].AckedSerial = 43
 	if n := New(st, &memLedger{}, deadProber{}).blockingNotices("asker"); n != 0 {
-		t.Errorf("%d blocking notice(s) for an outcome the agent has already read: "+
-			"every restart would hand it the same news again", n)
+		t.Errorf("%d blocking notice(s) for an agent whose watermark is already past "+
+			"the verdict: every restart would hand it the same news again", n)
+	}
+	// And Consumed must NOT be what decides it, in either direction.
+	st.Agents["asker"].AckedSerial = 0
+	st.Messages[42].Consumed = true
+	if n := New(st, &memLedger{}, deadProber{}).blockingNotices("asker"); n == 0 {
+		t.Error("the rebuild skipped a verdict because the message is marked consumed. " +
+			"Consumed is set when the RECIPIENT answers, so it is true for every " +
+			"verdict that exists: keying on it rebuilds nothing, which is exactly " +
+			"what shipped and what the end-to-end restart caught")
 	}
 }
