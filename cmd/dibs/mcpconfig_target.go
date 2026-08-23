@@ -181,6 +181,15 @@ func nonDefaultEnv(scheme string) map[string]string {
 		env["DIBS_ADDR"] = a
 	}
 	if d := os.Getenv("DIBS_DIR"); d != "" {
+		// ABSOLUTE, because this is written into a harness config that outlives
+		// the shell that produced it. A relative DIBS_DIR resolves against
+		// whatever directory the bridge is later launched from, so the same
+		// line means a different board, or no board, depending on who started
+		// it: the credential directory is the one value here that must not be
+		// re-interpreted somewhere else.
+		if abs, err := filepath.Abs(d); err == nil {
+			d = abs
+		}
 		env["DIBS_DIR"] = d
 	}
 	return env
@@ -227,6 +236,9 @@ func trustCommand() string {
 	// different program.
 	cmd := "dibs trust " + shellArg(addr())
 	if d := os.Getenv("DIBS_DIR"); d != "" {
+		if abs, err := filepath.Abs(d); err == nil {
+			d = abs // same reason as the bridge env above
+		}
 		return "DIBS_DIR=" + shellArg(d) + " " + cmd
 	}
 	return cmd

@@ -14,6 +14,7 @@ package boardconfig
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"math"
@@ -562,11 +563,33 @@ func (c Config) validateTLS() error {
 	//
 	// Loading it is the same question ServeTLS asks, moved to the one moment
 	// where the answer is still cheap.
-	if _, err := tls.LoadX509KeyPair(cert, key); err != nil {
+	pair, err := tls.LoadX509KeyPair(cert, key)
+	if err != nil {
 		return fmt.Errorf("tls_cert %q and tls_key %q cannot be loaded as a pair "+
 			"(%w), so this daemon would report itself configured and then fail every "+
 			"connection. Check that both exist, are readable, and belong together",
 			cert, key, err)
+	}
+	// AND IT HAS TO BE VALID TODAY.
+	//
+	// Loading proves the pair belongs together, not that anybody will accept
+	// it. An expired certificate serves perfectly and every client refuses the
+	// connection, which is the same total, silent, all-at-once failure the
+	// auto-managed path already renews to avoid; the explicitly configured path
+	// had no such check at all, so `dibd -check` blessed a board nobody could
+	// reach.
+	leaf, perr := x509.ParseCertificate(pair.Certificate[0])
+	if perr != nil {
+		return fmt.Errorf("tls_cert %q does not parse (%w)", cert, perr)
+	}
+	now := time.Now()
+	switch {
+	case now.After(leaf.NotAfter):
+		return fmt.Errorf("tls_cert %q expired on %s. It will serve, and every client "+
+			"will refuse the connection", cert, leaf.NotAfter.Format("2006-01-02"))
+	case now.Before(leaf.NotBefore):
+		return fmt.Errorf("tls_cert %q is not valid until %s. Until then every client "+
+			"refuses the connection", cert, leaf.NotBefore.Format("2006-01-02"))
 	}
 	return nil
 }

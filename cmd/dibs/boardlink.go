@@ -66,7 +66,23 @@ func mintBoard(secret, adminPass string, presence bool, code string) (boardGrant
 		}
 		return out, fmt.Errorf("bootstrap failed: %s", resp.Status)
 	}
-	return out, json.NewDecoder(resp.Body).Decode(&out)
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return out, err
+	}
+	// A 200 THAT CARRIES NOTHING IS NOT A GRANT.
+	//
+	// Any object that decodes was accepted, so a truncated or unexpected
+	// response produced an empty token, printBoardLink emitted `/?bt=` and the
+	// command exited zero. The operator opens a link that cannot unlock
+	// anything and has no idea why: success reported for a credential that was
+	// never issued, which is the shape this release has spent its whole review
+	// removing everywhere else.
+	if out.BT == "" {
+		return out, errors.New("the daemon returned no bootstrap token, so there is " +
+			"no link to open. Nothing was unlocked; try again, and if it repeats " +
+			"check the daemon's log for what it refused")
+	}
+	return out, nil
 }
 
 func printBoardLink(out boardGrant) error {
