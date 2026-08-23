@@ -48,7 +48,7 @@ func TestTypingDoesNotSpendTheWakeThatStopNeeds(t *testing.T) {
 	}
 
 	// The person types. Nothing may be delivered here.
-	typed, err := e.HookPoll(ctx, "worker-session", "UserPromptSubmit", "", false)
+	typed, err := e.HookPoll(ctx, "worker-session", "UserPromptSubmit", "", false, false)
 	if err != nil {
 		t.Fatalf("UserPromptSubmit: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestTypingDoesNotSpendTheWakeThatStopNeeds(t *testing.T) {
 	}
 
 	// The turn ends. THIS is the event the wake exists for.
-	stopped, err := e.HookPoll(ctx, "worker-session", "Stop", "", false)
+	stopped, err := e.HookPoll(ctx, "worker-session", "Stop", "", false, false)
 	if err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
@@ -107,12 +107,12 @@ func TestAPollThatDeliversNothingSpendsNothing(t *testing.T) {
 	}
 
 	// A stranger polls against the victim's session on an event that cannot deliver.
-	if _, err := e.HookPoll(ctx, "victim-session", "UserPromptSubmit", "", false); err != nil {
+	if _, err := e.HookPoll(ctx, "victim-session", "UserPromptSubmit", "", false, false); err != nil {
 		t.Fatalf("poll: %v", err)
 	}
 
 	// The victim's own turn-end must still wake it.
-	stopped, err := e.HookPoll(ctx, "victim-session", "Stop", "", false)
+	stopped, err := e.HookPoll(ctx, "victim-session", "Stop", "", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}

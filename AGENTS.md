@@ -32,9 +32,13 @@ change it when reality disagrees, and record why).
 3. **Non-deterministic things live outside the core** as derived, rebuildable views.
    Losing a derived view must not lose coordination state.
 4. **Advisory, not coercive.** Declaring work never fails. Don't add blocking semantics.
-5. **Don't drive harnesses.** No shelling out to agents, no prompt injection, no session
-   management. Dibs is pulled from, not a driver. (We built and deleted a shell-hook
-   version: see `WAKE-MECHANISMS.md` for why.)
+5. **The board may WAKE an agent, and may not steer one.** Reaching an idle agent so it
+   can read its own mail is the product: a message service whose recipient must already
+   be running is a polling API. The one way it does that is `[wake.exec]`, argv from the
+   operator's config, no shell, nothing an agent said, rate limited, logged. Everything
+   past "you have mail" is still forbidden: no prompt injection, no session management,
+   no deciding what an agent does next. See `WAKE-MECHANISMS.md`, which argued the other
+   way for months and now records why that was wrong.
 6. **Honesty in errors.** Every error carries a `hint` that tells a drifted agent the
    corrective call.
 

@@ -384,6 +384,10 @@ var toolDefs = func() []map[string]any {
 					"differs from the one the agent registered with"),
 				"stop_hook_active": str("the harness's stop_hook_active: pass it on Stop and " +
 					"SubagentStop so a wake never continues a turn that a wake already continued"),
+				"strict_output": str("true for a harness that VALIDATES hook output against a " +
+					"schema and refuses unknown keys. Codex does: one key it does not know fails " +
+					"the parse, so the hook is reported failed and its additionalContext is " +
+					"dropped. Claude Code ignores extras, so it does not need this"),
 			}, "session_id"),
 		},
 		{

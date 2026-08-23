@@ -130,7 +130,7 @@ func TestAReturningSessionIsToldItCanReattach(t *testing.T) {
 	// Yesterday's process is gone.
 	st.Agents["returner"].Status = core.StatusDormant
 
-	res, err := e.HookPoll(ctx, "todays-session", "SessionStart", "/work/api", false)
+	res, err := e.HookPoll(ctx, "todays-session", "SessionStart", "/work/api", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}

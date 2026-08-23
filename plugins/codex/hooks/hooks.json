@@ -1,0 +1,64 @@
+{
+  "description": "Dibs: deliver a fleet's mail at Codex lifecycle boundaries.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "dibs",
+            "tool": "hook_poll",
+            "input": {
+              "session_id": "${session_id}",
+              "event": "${hook_event_name}",
+              "cwd": "${cwd}",
+              "strict_output": true
+            },
+            "timeout": 10,
+            "statusMessage": "Checking Dibs"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "dibs",
+            "tool": "hook_poll",
+            "input": {
+              "session_id": "${session_id}",
+              "event": "${hook_event_name}",
+              "cwd": "${cwd}",
+              "stop_hook_active": "${stop_hook_active}",
+              "strict_output": true
+            },
+            "timeout": 10,
+            "statusMessage": "Checking Dibs"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "dibs",
+            "tool": "hook_poll",
+            "input": {
+              "session_id": "${session_id}",
+              "event": "${hook_event_name}",
+              "cwd": "${cwd}",
+              "stop_hook_active": "${stop_hook_active}",
+              "strict_output": true
+            },
+            "timeout": 10,
+            "statusMessage": "Checking Dibs"
+          }
+        ]
+      }
+    ]
+  }
+}

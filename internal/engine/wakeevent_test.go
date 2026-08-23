@@ -179,7 +179,7 @@ func TestNothingIsSaidToTheHumanWhenTheyType(t *testing.T) {
 		t.Fatal("setup:", err)
 	}
 
-	typed, err := e.HookPoll(ctx, "sid-w", "UserPromptSubmit", "", false)
+	typed, err := e.HookPoll(ctx, "sid-w", "UserPromptSubmit", "", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func TestNothingIsSaidToTheHumanWhenTheyType(t *testing.T) {
 
 	// Stop is where ambient awareness belongs: the turn is over, and a line
 	// saying what is outstanding is the whole reason this channel exists.
-	ended, err := e.HookPoll(ctx, "sid-w", "Stop", "", false)
+	ended, err := e.HookPoll(ctx, "sid-w", "Stop", "", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
