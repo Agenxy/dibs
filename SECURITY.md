@@ -61,14 +61,24 @@ not start. That makes an unexpected prompt refusable, which is a real property
 and a weaker one than binding. **If a prompt appears that you did not cause,
 decline it, and treat it as a report worth making.**
 
-**And only one prompt waits at a time.** A refusable prompt is no defence while
-two are outstanding: the operator opens the board, an agent asks in the same
-moment, one sheet is approved, and which request receives the credential is a
-race the person cannot see. They approved exactly the prompt they expected. So
-`/bootstrap` serialises: a second presence check while one is waiting is
-refused with 409 rather than queued. That does not bind the requester, which
-this path still cannot do. It removes the silent case, so an agent has to raise
-its own sheet at its own moment, which is the case the sentence above is about.
+**Only one prompt waits at a time, and the sheet names a code.** A refusable
+prompt is no defence while two are outstanding, so `/bootstrap` serialises: a
+second presence check while one is waiting is refused with 409 rather than
+queued.
+
+Serialising alone is not enough, and an earlier version of this section claimed
+otherwise. First-request-wins is itself a confusion primitive: an agent leaves a
+request waiting, the operator's own `dibs web` is refused, and the sheet they
+then approve — at exactly the moment they expected one — completes the agent's
+request. Nothing in the transport separates the two, because every agent
+legitimately holds the same local secret.
+
+So the person is the channel. `dibs web` prints a four-letter code and asks the
+daemon to put it on the sheet; a prompt showing a different code, or none, was
+raised by something else. The code is generated with `crypto/rand` and validated
+to that exact shape before it is shown, because caller-supplied text on a
+biometric prompt is the part worth attacking. **A sheet whose code does not
+match the one your terminal just printed is not yours: decline it.**
 
 ### What the presence check does and does not bind
 

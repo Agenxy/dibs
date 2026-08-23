@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -794,4 +795,74 @@ func TestTheNoticeBoundHoldsForIdenticalNotices(t *testing.T) {
 	if n := len(e2.notices["agent"]); n > maxNotices {
 		t.Errorf("the list holds %d, past the %d bound", n, maxNotices)
 	}
+}
+
+// And HookPoll ITSELF spends a turn on an approval.
+//
+// The test above proves the pieces work when a test connects them: it takes
+// blockingNotices, hands the result to hookWakeTerms, and calls
+// deliverToModel. What it cannot prove is that PRODUCTION connects them.
+// Deleting the `waiting` lookup inside HookPoll, or passing zero, leaves it
+// green, and that lookup is the entire approval fix.
+//
+// So this asks HookPoll, the way a harness Stop hook does.
+func TestHookPollDeliversAnApproval(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "asker", Nonce: "n-asker"})
+	if err != nil {
+		t.Fatalf("setup: register: %v", err)
+	}
+	const sid = "harness-session-approval"
+	if _, err := e.BindSession(ctx, res["token"].(string), sid); err != nil {
+		t.Fatalf("setup: bind: %v", err)
+	}
+
+	// A quiet Stop with nothing waiting: the baseline, so a pass below cannot
+	// come from a hook that always delivers.
+	quiet, err := e.HookPoll(ctx, sid, "Stop", "", false, false)
+	if err != nil {
+		t.Fatalf("hook_poll: %v", err)
+	}
+	if deliveredSomething(quiet) {
+		t.Fatalf("a Stop with nothing waiting delivered %v, so this test cannot tell "+
+			"an approval from the ordinary case", quiet)
+	}
+
+	// The human approves the thing this agent stopped for. Notices are turned
+	// DOWN, because that switch is what the Blocking flag has to survive.
+	e.SetNoticesWake(false)
+	e.noteEvent(core.Event{
+		Type: "message.approved", Agent: "lael", To: "asker", Serial: 11,
+		Data: map[string]any{"msg_serial": uint64(7)},
+	})
+
+	got, err := e.HookPoll(ctx, sid, "Stop", "", false, false)
+	if err != nil {
+		t.Fatalf("hook_poll: %v", err)
+	}
+	if !deliveredSomething(got) {
+		t.Errorf("HookPoll delivered nothing after an approval: %v\n"+
+			"The agent asked, stopped, and has no other way to learn the answer. "+
+			"The request is terminal, so it is not pending mail anywhere and "+
+			"check_in cannot reconstruct it", got)
+	}
+}
+
+// deliveredSomething reports whether a hook result carries anything for the
+// model, whichever key this hook shape uses to say so.
+func deliveredSomething(res core.Result) bool {
+	if res == nil {
+		return false
+	}
+	for _, k := range []string{"additionalContext", "hookSpecificOutput", "context", "text"} {
+		if v, ok := res[k]; ok && v != nil && v != "" {
+			return true
+		}
+	}
+	return false
 }

@@ -402,11 +402,19 @@ func (e *Engine) noteNewMember(ev core.Event) {
 func staffBriefing(role string) string {
 	switch role {
 	case core.RoleCoordinator:
+		// "You still cannot READ another agent's mail" was false about the
+		// capability named in the same sentence. Adoption moves a dormant
+		// agent's mailbox ONTO a live one, and the point of doing that is to
+		// read it. core/roles.go and dibs://staff both state the exception; the
+		// briefing that a newly promoted agent is guaranteed to read denied it,
+		// which is the worst place of the three to be wrong.
 		return "As coordinator you are STAFF, not a louder agent: you may adopt_agent " +
 			"an abandoned mailbox onto a live agent, prune a dormant peer's row and its " +
 			"stale declarations, force_release a claim, and evict or close a space. You " +
-			"still cannot READ another agent's mail: breadth, not intrusion. Read " +
-			"dibs://staff before using any of them."
+			"cannot inspect a LIVE peer's mail: there is no all_mail for you, and " +
+			"breadth is not intrusion. Adoption is the one exception and it is a real " +
+			"one: what you adopt, you can read, so adopt only what is genuinely " +
+			"abandoned and say why. Read dibs://staff before using any of them."
 	default:
 		return "Read dibs://staff for what the role lets you do."
 	}

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -446,9 +447,21 @@ func (g *authGate) presenceBootstrap(w http.ResponseWriter, r *http.Request) {
 	// to whoever asked, which is the fact that makes an unprompted sheet worth
 	// declining. A pre-release review reproduced the escalation: a request
 	// received the token, redeemed it, and reached an admin role handler.
-	const reason = "give a full-access board session to whatever just asked for it: " +
-		"every agent's decrypted mail, and the power to change roles. Decline this " +
-		"unless you started it yourself, just now"
+	// THE CODE THE ASKING TERMINAL NAMED, so the person can tell whose sheet
+	// this is.
+	//
+	// Everything else here is fixed text, and the code is validated to four
+	// letters from a fixed alphabet before it goes anywhere near the prompt:
+	// the one variable part of a biometric sheet is the part worth attacking,
+	// and this file already learned that with agent names.
+	//
+	// Without a code the sheet says so, in those words, because "no code" is
+	// exactly what an agent's request looks like and an operator who has just
+	// run `dibs web` is holding one to compare.
+	reason := "give a full-access board session to whatever just asked for it: " +
+		"every agent's decrypted mail, and the power to change roles. " +
+		presenceCodeLine(r.Header.Get("X-Dibs-Presence-Code")) +
+		" Decline this unless you started it yourself, just now"
 	// ONE SHEET AT A TIME, enforced inside humanauth.Check rather than here.
 	//
 	// The warning above asks the operator to decline a prompt they did not
@@ -461,9 +474,17 @@ func (g *authGate) presenceBootstrap(w http.ResponseWriter, r *http.Request) {
 	// shared thing: one person, one Mac, one sheet.
 	verdict, err := humanauth.Check(r.Context(), reason)
 	if errors.Is(err, humanauth.ErrPromptBusy) {
-		http.Error(w, "another presence check is already waiting for an answer: "+
-			"finish or dismiss that one first. Only one at a time, so an approval "+
-			"cannot be taken by a request it was not raised for",
+		// SAYS WHAT IT DOES, and no more.
+		//
+		// This claimed that serialising means "an approval cannot be taken by a
+		// request it was not raised for", which is false and was the wrong way
+		// round: first-request-wins IS the confusion primitive. An agent can
+		// leave a request waiting, the operator's own `dibs web` is refused
+		// with this very message, and the sheet they then approve completes the
+		// agent's. What actually distinguishes the two is the code on the sheet.
+		http.Error(w, "another presence check is already waiting for an answer. If "+
+			"you did not start one, DECLINE the sheet on screen: it belongs to "+
+			"whatever asked first, which is not this request. Then try again",
 			statusForPresenceErr(err))
 		return
 	}
@@ -799,3 +820,23 @@ func statusForPresenceErr(err error) int {
 	}
 	return http.StatusInternalServerError
 }
+
+// presenceCodeLine renders the asking terminal's confirmation code for the
+// system sheet.
+//
+// Strictly validated, because this is caller-supplied text on a biometric
+// prompt: four letters from the alphabet `dibs web` draws from, and anything
+// else is treated as no code at all rather than shown. An attacker who can put
+// arbitrary words here can write their own prompt.
+func presenceCodeLine(code string) string {
+	if !presenceCodeShape.MatchString(code) {
+		return "This request named NO confirmation code, so it did not come from " +
+			"`dibs web` on this terminal."
+	}
+	return "It named the code " + code + ": approve only if that is the code your " +
+		"own terminal just printed."
+}
+
+// presenceCodeShape is exactly what presenceCode() produces: four letters, no
+// vowels, so nothing here can spell a word or be confused with a digit.
+var presenceCodeShape = regexp.MustCompile(`^[BCDFGHJKLMNPQRSTVWXZ]{4}$`)

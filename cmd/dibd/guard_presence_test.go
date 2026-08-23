@@ -8,7 +8,9 @@ import (
 	"github.com/agenxy/dibs/internal/humanauth"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -164,5 +166,76 @@ func TestABusyPresencePromptIsAConflictNotAFailure(t *testing.T) {
 	if got := statusForPresenceErr(errors.New("the helper crashed")); got == http.StatusConflict {
 		t.Error("an ordinary presence failure was reported as a conflict, so a broken " +
 			"helper reads as somebody else's sheet being open")
+	}
+}
+
+// The sheet names the code the asking terminal printed.
+//
+// Serialising prompts stops two appearing at once and does not bind consent to
+// whoever asked: every agent holds the same local secret, so one can leave a
+// request waiting and let the operator's own `dibs web` supply the finger. They
+// see a sheet at the moment they expect one, and approving it completes
+// somebody else's request. Nothing in the transport separates them, so the
+// person is the channel: this terminal names a code, the sheet repeats it, and
+// a prompt showing anything else was raised by something else.
+//
+// The code is caller-supplied text on a biometric prompt, which this file has
+// already been burned by once with agent names, so its shape is the test.
+func TestThePresenceSheetNamesTheAskingTerminalsCode(t *testing.T) {
+	if got := presenceCodeLine("QRST"); !strings.Contains(got, "QRST") {
+		t.Errorf("a well-formed code is not shown, so the operator has nothing to "+
+			"compare: %q", got)
+	}
+	// No code is not silence: an agent's request looks exactly like this, and
+	// the operator holds one.
+	if got := presenceCodeLine(""); !strings.Contains(got, "NO confirmation code") {
+		t.Errorf("a request with no code produced no warning: %q", got)
+	}
+
+	hostile := []string{
+		"QR\nDibs: routine check, approve to continue",
+		"QRS‮T",
+		"QRSTUVWXYZ-and-a-whole-sentence",
+		"approve this",
+		"AEIO", // vowels are outside the alphabet on purpose
+		"12 34",
+	}
+	for _, h := range hostile {
+		got := presenceCodeLine(h)
+		if strings.Contains(got, h) {
+			t.Errorf("a caller-supplied code was shown verbatim on the system sheet: "+
+				"%q produced %q. Arbitrary text there lets the asker write their own "+
+				"prompt, which is the whole reason the sheet is the daemon's", h, got)
+		}
+		if strings.ContainsAny(got, "\n\r") {
+			t.Errorf("%q put a line break on the sheet: %q", h, got)
+		}
+	}
+}
+
+// And the refusal must not claim a property serialising does not have.
+//
+// It said "an approval cannot be taken by a request it was not raised for",
+// which is false and backwards: first-request-wins IS the confusion primitive.
+// An agent leaves a request waiting, the operator's own `dibs web` is refused
+// with this very message, and the sheet they approve completes the agent's.
+// A security control that overstates itself is worse than one that says nothing.
+func TestTheBusyPromptRefusalDoesNotOverstateItself(t *testing.T) {
+	g := newAuthGate("the-secret", filepath.Join(t.TempDir(), "admin.hash"), "127.0.0.1:4777")
+	_ = g
+	// The text lives in the handler; assert on the claim rather than the wiring.
+	const bad = "cannot be taken by a request it was not raised for"
+	src, err := os.ReadFile("guard.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(src), bad) {
+		t.Error("the busy-prompt refusal still claims serialising binds the approval " +
+			"to the requester. It does not: whichever request asked first owns the " +
+			"sheet, and the operator cannot see which that is without the code")
+	}
+	if !strings.Contains(string(src), "DECLINE the sheet on screen") {
+		t.Error("the refusal does not tell the operator what to actually do when a " +
+			"prompt they did not start is already waiting")
 	}
 }

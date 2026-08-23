@@ -4,6 +4,7 @@ package main
 
 import (
 	"bufio"
+	"crypto/rand"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
@@ -821,8 +822,27 @@ func webURL(args []string) error {
 	// stdin only, deliberately: `dibs web | pbcopy` is an ordinary thing to do
 	// and says nothing about whether somebody is sitting here.
 	if humanauth.Available() && !*usePassword && atATerminal() {
-		fmt.Fprintln(os.Stderr, "# Confirming it is you, on the system sheet.")
-		out, err := mintBoard(s, "", true)
+		// A CODE THE OPERATOR CAN COMPARE.
+		//
+		// Every agent holds the same local secret, so any of them may raise this
+		// sheet. Serialising prompts stops two appearing at once and does NOT
+		// bind the approval to whoever asked: an agent can leave a request
+		// waiting and let the operator's own `dibs web` supply the finger. They
+		// see a sheet at exactly the moment they expect one, and approving it
+		// completes somebody else's request.
+		//
+		// Nothing in the transport can tell the two apart, so the person is the
+		// channel: this terminal names a code, the daemon prints that code on
+		// the sheet, and a prompt showing anything else was raised by something
+		// else. It is the ssh fingerprint trade, and it works for the same
+		// reason: the comparison happens outside the thing being attacked.
+		code, err := presenceCode()
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "# Confirming it is you. Approve the sheet showing "+
+			"%s, and ONLY that one.\n", code)
+		out, err := mintBoard(s, "", true, code)
 		if err == nil {
 			return printBoardLink(out)
 		}
@@ -850,7 +870,7 @@ func webURL(args []string) error {
 	if err != nil {
 		return err
 	}
-	out, err := mintBoard(s, adminPass, false)
+	out, err := mintBoard(s, adminPass, false, "")
 	if err != nil {
 		return err
 	}
@@ -881,7 +901,7 @@ type boardGrant struct {
 
 // mintBoard asks the daemon for a one-time bootstrap token. The durable secret
 // never enters the URL.
-func mintBoard(secret, adminPass string, presence bool) (boardGrant, error) {
+func mintBoard(secret, adminPass string, presence bool, code string) (boardGrant, error) {
 	var out boardGrant
 	req, err := http.NewRequest(http.MethodPost, origin()+"/bootstrap", nil)
 	if err != nil {
@@ -890,6 +910,7 @@ func mintBoard(secret, adminPass string, presence bool) (boardGrant, error) {
 	req.Header.Set("X-Dibs-Local", secret)
 	if presence {
 		req.Header.Set("X-Dibs-Presence", "1")
+		req.Header.Set("X-Dibs-Presence-Code", code)
 	} else {
 		req.Header.Set("X-Dibs-Admin", adminPass)
 	}
@@ -1930,4 +1951,25 @@ func self() string {
 		return resolved
 	}
 	return exe
+}
+
+// presenceCode is the short word this terminal asks the daemon to print on the
+// system sheet, so the operator can tell their own request from somebody
+// else's.
+//
+// Short enough to compare at a glance and read out loud, from crypto/rand
+// because guessing it is the whole attack. Letters only, and no vowels: a code
+// that can spell something is a code somebody argues with, and I and O next to
+// 1 and 0 is how a comparison gets waved through.
+func presenceCode() (string, error) {
+	const alphabet = "BCDFGHJKLMNPQRSTVWXZ"
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("could not generate a confirmation code: %w", err)
+	}
+	out := make([]byte, len(b))
+	for i, v := range b {
+		out[i] = alphabet[int(v)%len(alphabet)]
+	}
+	return string(out), nil
 }
