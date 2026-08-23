@@ -637,6 +637,13 @@ func wakeEngine(t *testing.T, cmd WakeCommand) (*Engine, *core.State) {
 	e.seen = map[string]time.Time{}
 	e.turnEnded = map[string]time.Time{}
 	e.SetWakeCommands(map[string]WakeCommand{"codex": cmd})
+	// The maps wakeFor creates lazily, made real here so a test that inspects or
+	// seeds them does not panic on a nil map: the same reason this helper exists
+	// at all, which is that the zero value looks usable and is not.
+	e.wakers.mu.Lock()
+	e.wakers.last = map[string]time.Time{}
+	e.wakers.running = map[string]bool{}
+	e.wakers.mu.Unlock()
 	return e, st
 }
 
@@ -772,18 +779,19 @@ func TestAVerdictWakeCarriesWhoAnsweredAndWhatTheyDid(t *testing.T) {
 	}
 }
 
-// A stale failure must not release a newer wake's cooldown.
+// One agent, one wake command, at a time.
 //
-// A wake command may run for up to two hours, which is longer than any
-// cooldown, so a later wake can start while an earlier one is still going.
-// Releasing unconditionally let the earlier failure delete the NEWER attempt's
-// cooldown, and the next event then started a third command beside the one
-// already running: two resumptions of one thread, produced by the code that
-// exists to stop exactly that.
+// The cooldown was the whole exclusion and it is a START-time rule: ninety
+// seconds by default, against a command that may run for two hours. A later
+// blocking event therefore launched a second `codex exec resume` beside the
+// first, and one thread got two activations interleaving into a single
+// transcript: the duplicate-process failure the cooldown exists to prevent,
+// arriving through the gap between "recently started" and "still going".
 //
-// The sequential case, which the existing coverage has, cannot see this: it
-// needs two generations alive at once.
-func TestAnOldFailureDoesNotReleaseANewerWakesCooldown(t *testing.T) {
+// An earlier version of this test constructed exactly that overlap in order to
+// check the cleanup afterwards, which normalised the dangerous state instead of
+// refusing it.
+func TestOneAgentGetsOneWakeCommandAtATime(t *testing.T) {
 	e, st := wakeEngine(t, WakeCommand{
 		Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute,
 	})
@@ -794,42 +802,56 @@ func TestAnOldFailureDoesNotReleaseANewerWakesCooldown(t *testing.T) {
 		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
 	}
 
-	// Wake A takes a cooldown.
 	if _, ok := e.wakeFor(l, core.MsgQuestion, ev); !ok {
-		t.Fatal("no first wake, so there is no generation to go stale")
+		t.Fatal("no first wake, so there is nothing running to exclude a second")
 	}
-	stampA := e.wakeStamp("busy")
 
-	// Its cooldown lapses and wake B takes a new one, while A is still running.
+	// The cooldown lapses while that command is STILL RUNNING, which is the
+	// ordinary case: 90 seconds against a two-hour bound.
 	e.wakers.mu.Lock()
 	e.wakers.last["busy"] = time.Now().Add(-2 * time.Minute)
 	e.wakers.mu.Unlock()
-	if _, ok := e.wakeFor(l, core.MsgQuestion, ev); !ok {
-		t.Fatal("no second wake after the cooldown lapsed, so B never started")
-	}
-	stampB := e.wakeStamp("busy")
-	if stampB.Equal(stampA) {
-		t.Fatal("the two wakes share a timestamp, so this cannot tell them apart")
-	}
 
-	// NOW A fails.
-	e.releaseWake("busy", stampA)
-
-	if got := e.wakeStamp("busy"); !got.Equal(stampB) {
-		t.Error("an old failed wake released the cooldown a newer one had just " +
-			"taken. The next message starts another command beside the one still " +
-			"running, so one thread gets two resumptions interleaving into a " +
-			"single transcript")
-	}
 	if _, ok := e.wakeFor(l, core.MsgQuestion, ev); ok {
-		t.Error("a third wake was allowed inside B's cooldown, which is the " +
-			"duplicate-process case this cooldown exists to prevent")
+		t.Error("a second wake started while the first was still running. Both are " +
+			"`codex exec resume` against one thread, so that thread now has two " +
+			"activations writing into one transcript, which is what the cooldown " +
+			"was for")
 	}
 
-	// And B's OWN failure still releases, or a failing command locks the agent
-	// out for the whole cooldown, which is the bug this was added to fix.
-	e.releaseWake("busy", stampB)
+	// And once it exits, the agent is reachable again: this must not become a
+	// permanent lockout on a command that hangs and is then killed.
+	e.wakeFinished("busy")
 	if _, ok := e.wakeFor(l, core.MsgQuestion, ev); !ok {
-		t.Error("the current wake's own failure did not release its cooldown")
+		t.Error("no wake after the previous command exited and its cooldown had " +
+			"lapsed, so one finished wake makes the agent permanently unreachable")
+	}
+}
+
+// A stale failure must not release a newer wake's cooldown.
+//
+// Second line of defence, and deliberately kept. With the running-wake
+// exclusion above, two generations should never be alive at once; this is the
+// rule that holds if that ordering is ever changed, and it is cheap. Asked
+// directly, because the situation it covers is one the public path no longer
+// produces.
+func TestAStaleFailureReleasesOnlyItsOwnCooldown(t *testing.T) {
+	e, _ := wakeEngine(t, WakeCommand{Argv: []string{"echo"}, Cooldown: time.Minute})
+
+	older := time.Now().Add(-time.Hour)
+	e.wakers.mu.Lock()
+	e.wakers.last["busy"] = time.Now()
+	newer := e.wakers.last["busy"]
+	e.wakers.mu.Unlock()
+
+	e.releaseWake("busy", older) // a wake from a previous generation, failing late
+	if got := e.wakeStamp("busy"); !got.Equal(newer) {
+		t.Error("an old failed wake released a cooldown it did not take. The next " +
+			"message would start another command beside the one still running")
+	}
+	e.releaseWake("busy", newer) // its own
+	if got := e.wakeStamp("busy"); !got.IsZero() {
+		t.Error("a wake's own failure did not release its cooldown, so a command " +
+			"that could not run still costs the agent its one attempt")
 	}
 }

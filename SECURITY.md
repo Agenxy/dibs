@@ -49,7 +49,13 @@ with a sentence the caller wrote itself.
 
 What holds the line now is the sentence on the sheet, so it is written by the
 daemon rather than by the caller: `human_unlock` names the requesting agent,
-which it can resolve from the authenticated token, and `/bootstrap` says the
+which it can resolve from the authenticated token. That NAME is still the
+agent's own, chosen at register, so it is flattened to one line of printable
+characters and quoted before it reaches the prompt: a newline, a bidirectional
+override or a stray quote in a display name would otherwise let an agent
+rewrite what a person reads at the moment they decide. What an agent can still
+do is pick a misleading name, which is the same thing it can do everywhere else
+on the board and is visible as a name. `/bootstrap` says the
 credential goes to whoever just asked and to decline anything the operator did
 not start. That makes an unexpected prompt refusable, which is a real property
 and a weaker one than binding. **If a prompt appears that you did not cause,

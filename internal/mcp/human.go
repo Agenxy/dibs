@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"errors"
+	"strings"
+	"unicode"
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/humanauth"
@@ -60,6 +62,23 @@ func (s *Server) humanUnlock(ctx context.Context, a *toolArgs) (core.Result, err
 	reason := unlockReason(who)
 
 	verdict, err := humanauth.Check(ctx, reason)
+	if errors.Is(err, humanauth.ErrPromptBusy) {
+		// NOBODY WAS ASKED. The busy slot returns Declined so that no caller
+		// treating the verdict alone can mistake it for approval, and the
+		// handler below reported that as the human saying no, telling the agent
+		// to ask them to press the button again. There is no button: there is
+		// another sheet already waiting, and raising a second one is the exact
+		// thing being prevented. Saying "declined" here also teaches an agent
+		// that a decline is worth retrying, which is the opposite of true.
+		return core.Result{
+			"ok": false,
+			"why": "a presence check is already waiting for an answer on this " +
+				"machine, so nothing was asked. Only one prompt at a time, so an " +
+				"approval cannot be taken by a request it was not raised for",
+			"hint": "wait for the prompt already on screen to be answered or " +
+				"dismissed, then try again. This is not a refusal by the human",
+		}, nil
+	}
 
 	// A dev build answering from a script says so, in the result, every time.
 	// Silence here would make a mocked unlock indistinguishable from a real one
@@ -138,10 +157,59 @@ func (s *Server) humanUnlock(ctx context.Context, a *toolArgs) (core.Result, err
 
 // unlockReason is the sentence shown on the system sheet.
 //
-// A function so it can be asserted on. The guarantee is that nothing a caller
-// supplies appears here: `who` is resolved by the daemon from the token the
-// request authenticated with, and everything else is fixed text.
+// A function so it can be asserted on. The sentence is the daemon's: every word
+// of it except the name is fixed text, and the name is resolved by the daemon
+// from the token the request authenticated with rather than taken from the
+// call.
+//
+// THE NAME IS STILL THE AGENT'S OWN, and this used to claim otherwise. An agent
+// chooses its display name at register, and admission only bounds the length,
+// so the one variable part of a biometric prompt was attacker-shaped: newlines
+// to push the real sentence out of view, bidirectional overrides to reverse what
+// follows, or text imitating the rest of the prompt. A prompt is a security
+// control only to the extent the person can read it.
+//
+// So the name is flattened to one line of printable characters and quoted, and
+// it comes first in a sentence whose remainder cannot be moved. What an agent
+// can still do is choose a misleading NAME, which is the same thing it can do
+// everywhere else on the board and is visible as a name.
 func unlockReason(who string) string {
-	return "give " + who + " your identity on the Dibs board: it will be able " +
-		"to act as you, including approving role grants"
+	return "give " + quotedAgentName(who) + " your identity on the Dibs board: it " +
+		"will be able to act as you, including approving role grants"
+}
+
+// maxPromptName bounds the agent name on a system sheet. Long enough for any
+// name worth having, short enough that the daemon's own sentence stays on
+// screen next to it.
+const maxPromptName = 48
+
+// quotedAgentName renders an agent-chosen name safely inside a prompt.
+//
+// Control characters, line breaks and bidirectional overrides all go: each is a
+// way to make the fixed text around this either invisible or read backwards,
+// and a person cannot decline a sentence they cannot see.
+func quotedAgentName(who string) string {
+	var b strings.Builder
+	for _, r := range who {
+		switch {
+		case r == '"':
+			b.WriteRune('\'')
+		case unicode.IsControl(r), unicode.Is(unicode.Bidi_Control, r):
+			b.WriteRune(' ')
+		case !unicode.IsPrint(r):
+			b.WriteRune(' ')
+		default:
+			b.WriteRune(r)
+		}
+		if b.Len() >= maxPromptName {
+			return `"` + strings.TrimSpace(b.String()) + `…"`
+		}
+	}
+	name := strings.TrimSpace(b.String())
+	if name == "" {
+		// Never an empty pair of quotes: "give "" your identity" reads as a
+		// glitch, and a glitch is something people click through.
+		return "an agent that did not name itself"
+	}
+	return `"` + name + `"`
 }

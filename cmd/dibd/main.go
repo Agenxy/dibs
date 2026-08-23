@@ -13,6 +13,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -698,10 +699,24 @@ func checkTransportUsable(dir, listenAddr, askedScheme string, cfg Config) error
 	}
 	caCert := filepath.Join(dir, "tls-ca.pem")
 	caKey := filepath.Join(dir, "tls-ca-key.pem")
-	// Neither file present is a first run, and startup issuing one then is not
-	// a fault. Only whether they EXIST matters here; whether they work is
-	// ensureCA's answer, below.
-	if !fileExists(caCert) && !fileExists(caKey) {
+	// ABSENT, not merely unreadable.
+	//
+	// This asked fileExists, which turned every os.Stat error into "not there":
+	// a dangling symlink, a permissions problem or an I/O error all read as a
+	// first run, so the check reported a board this build could serve and
+	// startup then failed to load or replace the identity. `dibs upgrade` takes
+	// a clean check as licence to stop the running daemon, so the preflight
+	// could authorise the outage it exists to prevent.
+	certGone, certErr := absent(caCert)
+	keyGone, keyErr := absent(caKey)
+	if err := errors.Join(certErr, keyErr); err != nil {
+		return fmt.Errorf("this build could rebuild the board at %s, but cannot tell "+
+			"whether it holds a signing identity: %w\n\n"+
+			"  Do NOT stop the daemon now running. Something is wrong with those\n"+
+			"  files that is not simply their absence, and a replacement started\n"+
+			"  here may be unable to serve at all", dir, err)
+	}
+	if certGone && keyGone {
 		return nil
 	}
 	// Present, so it has to work. ensureCA reads and refuses; it only writes
@@ -831,9 +846,20 @@ func manArgs() []string {
 	return nil
 }
 
-// fileExists is os.Stat read as the question it is being asked, so a check that
-// only cares whether a path is there does not carry an error it will not use.
-func fileExists(path string) bool {
+// absent reports whether a path is genuinely not there, and says so when it
+// cannot tell.
+//
+// The distinction is the whole point: "no file" is a first run and is fine,
+// while "I could not look" is a reason to stop. Collapsing them is how a
+// preflight approves a daemon that cannot start.
+func absent(path string) (bool, error) {
 	_, err := os.Stat(path)
-	return err == nil
+	switch {
+	case err == nil:
+		return false, nil
+	case errors.Is(err, fs.ErrNotExist):
+		return true, nil
+	default:
+		return false, err
+	}
 }

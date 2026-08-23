@@ -215,7 +215,17 @@ func (e *Engine) pushNoticeAs(who, text string, serial, msg uint64, blocking boo
 	e.notices[who] = append(e.notices[who],
 		notice{Serial: serial, Msg: msg, Text: text, Blocking: blocking})
 	if n := len(e.notices[who]); n > maxNotices {
-		e.notices[who] = e.notices[who][n-maxNotices:]
+		// BLOCKING ONES SURVIVE THE TRIM.
+		//
+		// This dropped the oldest, which is right for situational awareness and
+		// wrong for a verdict. A `Blocking` notice is the answer to something
+		// this agent asked and then stopped for; the request is terminal, so it
+		// is not sitting in anybody's inbox and check_in cannot reconstruct it.
+		// Sixteen later "somebody joined your space" notices therefore erased an
+		// approval outright, and the agent waited for an answer that had already
+		// been given. That is the failure the Blocking flag was added for,
+		// reappearing one layer down.
+		e.notices[who] = trimNotices(e.notices[who], maxNotices)
 	}
 }
 
@@ -400,4 +410,38 @@ func staffBriefing(role string) string {
 	default:
 		return "Read dibs://staff for what the role lets you do."
 	}
+}
+
+// trimNotices keeps the newest `limit`, sacrificing situational notices before
+// blocking ones.
+//
+// Order is preserved within each group, so what an agent reads still reads
+// chronologically. If there are more blocking notices than the limit, the
+// newest of those win: an agent with sixteen unanswered requests has a problem
+// that dropping the seventeenth verdict does not make worse.
+func trimNotices(all []notice, limit int) []notice {
+	if len(all) <= limit {
+		return all
+	}
+	keep := make([]notice, 0, limit)
+	// Walk newest-first, taking blocking ones, then fill with the rest.
+	for pass := 0; pass < 2 && len(keep) < limit; pass++ {
+		wantBlocking := pass == 0
+		for i := len(all) - 1; i >= 0 && len(keep) < limit; i-- {
+			if all[i].Blocking == wantBlocking {
+				keep = append(keep, all[i])
+			}
+		}
+	}
+	// Back into the order they arrived in.
+	out := make([]notice, 0, len(keep))
+	for _, n := range all {
+		for _, k := range keep {
+			if n.Serial == k.Serial && n.Text == k.Text {
+				out = append(out, n)
+				break
+			}
+		}
+	}
+	return out
 }

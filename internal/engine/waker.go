@@ -50,6 +50,16 @@ type wakers struct {
 	mu        sync.Mutex
 	byHarness map[string]wakeCommand
 	last      map[string]time.Time
+	// running: agents whose wake command has not exited yet.
+	//
+	// The cooldown alone was the whole exclusion, and it is a START-time rule:
+	// ninety seconds by default against a command that may run for two hours,
+	// so a later blocking event launched a second `codex exec resume` beside
+	// the first and one thread got two activations interleaving into one
+	// transcript. Which is the duplicate-process failure the cooldown exists to
+	// prevent, arriving through the gap between "recently started" and "still
+	// going".
+	running map[string]bool
 }
 
 // SetWakeCommands installs the operator's wake table. Keyed by harness, as the
@@ -209,6 +219,7 @@ func (e *Engine) maybeWake(ev core.Event) {
 	}
 	agent, stamp := l.ID, e.wakeStamp(l.ID)
 	go func() {
+		defer e.wakeFinished(agent)
 		if runWake(cmd, agent) {
 			return
 		}
@@ -230,6 +241,14 @@ func (e *Engine) maybeWake(ev core.Event) {
 		// behaviour an agent waiting for mail actually needs.
 		e.releaseWake(agent, stamp)
 	}()
+}
+
+// wakeFinished records that this agent's wake command has exited, so a later
+// blocking message may start another.
+func (e *Engine) wakeFinished(agent string) {
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	delete(e.wakers.running, agent)
 }
 
 // wakeStamp reads back the cooldown this wake just took, so its failure can be
@@ -337,11 +356,22 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) ([]string
 	if e.wakers.last == nil {
 		e.wakers.last = map[string]time.Time{}
 	}
+	if e.wakers.running[l.ID] {
+		// STILL GOING is a stronger reason than recently started, and it
+		// outlives the cooldown: the command IS the activation, so a second one
+		// is a second agent in the same thread.
+		slog.Debug("no wake: the last one is still running", "agent", l.ID)
+		return nil, false
+	}
 	if last, seen := e.wakers.last[l.ID]; seen && now.Sub(last) < cmd.cooldown {
 		slog.Debug("no wake: still inside the cooldown", "agent", l.ID)
 		return nil, false
 	}
 	e.wakers.last[l.ID] = now
+	if e.wakers.running == nil {
+		e.wakers.running = map[string]bool{}
+	}
+	e.wakers.running[l.ID] = true
 
 	// A VERDICT PUTS THESE SOMEWHERE ELSE.
 	//
@@ -465,7 +495,16 @@ func runWake(argv []string, agent string) bool {
 	// substitution replaces whole elements rather than building a string. There
 	// is no shell in this path.
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	out, err := cmd.CombinedOutput()
+	// BOUNDED. CombinedOutput holds every byte until the process exits, and the
+	// documented command is `codex exec resume`, which runs a whole agent turn
+	// and may print a transcript for two hours. All of it sat in the daemon's
+	// memory and was then thrown away on success. Only the tail is ever used:
+	// it goes in the warning when the command fails, and a wake that failed says
+	// why in its last few lines rather than its first thousand.
+	tail := &tailBuffer{limit: 8 << 10}
+	cmd.Stdout, cmd.Stderr = tail, tail
+	err := cmd.Run()
+	out := tail.Bytes()
 	if err != nil {
 		slog.Warn("wake command failed; the next message somebody is blocked on "+
 			"will try again", "agent", agent, "cmd", argv[0],
@@ -474,4 +513,36 @@ func runWake(argv []string, agent string) bool {
 	}
 	slog.Info("woke an agent that was not running", "agent", agent, "cmd", argv[0])
 	return true
+}
+
+// tailBuffer keeps the last `limit` bytes written to it and discards the rest.
+//
+// A wake command is somebody else's program running for as long as an agent
+// turn takes. Buffering all of it is an unbounded allocation controlled by
+// whatever that program decides to print; keeping the tail is what a failure
+// message actually needs.
+type tailBuffer struct {
+	mu    sync.Mutex
+	limit int
+	buf   []byte
+}
+
+func (t *tailBuffer) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	n := len(p)
+	if len(p) > t.limit {
+		p = p[len(p)-t.limit:]
+	}
+	t.buf = append(t.buf, p...)
+	if over := len(t.buf) - t.limit; over > 0 {
+		t.buf = append(t.buf[:0], t.buf[over:]...)
+	}
+	return n, nil
+}
+
+func (t *tailBuffer) Bytes() []byte {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return append([]byte(nil), t.buf...)
 }

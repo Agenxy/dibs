@@ -424,6 +424,31 @@ func (c Config) Validate() error {
 // validateRoles catches the two ways a standing role reads as configured and
 // is not.
 func (c Config) validateRoles() error {
+	// A NAME HAS TO BE ONE. An empty or whitespace-only entry is never granted
+	// to anybody, and with a fingerprint beside it the daemon reads the
+	// declaration as "the operator has chosen a coordinator" and withholds the
+	// launch claim. The board then gets neither the standing role nor the
+	// bootstrap path that exists for its absence: a fresh install with no
+	// coordinator and no way to take one, from a typo.
+	for _, names := range []struct {
+		key  string
+		list []string
+	}{{"coordinator", c.Roles.Coordinator}, {"admin", c.Roles.Admin}} {
+		for _, n := range names.list {
+			if strings.TrimSpace(n) == "" {
+				return fmt.Errorf("[roles] %s contains an empty name. No agent can "+
+					"register under it, so the role is granted to nobody, and a "+
+					"declared coordinator also withholds the launch claim: the board "+
+					"would come up with no coordinator and no way to take one",
+					names.key)
+			}
+			if n != strings.TrimSpace(n) {
+				return fmt.Errorf("[roles] %s names %q, which has leading or trailing "+
+					"space. Agents register the trimmed name, so this matches nobody "+
+					"and waits forever", names.key, n)
+			}
+		}
+	}
 	declared := map[string]int{}
 	for _, n := range c.Roles.Coordinator {
 		declared[n] |= 1

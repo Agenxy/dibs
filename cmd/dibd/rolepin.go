@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -71,6 +72,16 @@ func loadRolePins(dir string) *rolePins {
 		// prints, so a parse failure belongs in it exactly as a read failure
 		// does.
 		p.readErr = err
+	}
+	// VALID JSON CAN STILL BE CORRUPTION. `{"pins":null}` unmarshals cleanly and
+	// leaves the map nil, which fails closed correctly and then explained
+	// itself as "cannot be read (<nil>)": the operator is told the file is
+	// unreadable, given no reason, and sent to check permissions that are fine.
+	// The structure is the fault, so the structure is what the error says.
+	if p.readErr == nil && p.Pins == nil {
+		p.readErr = errors.New("the file parsed but holds no pins object, so every " +
+			"declared role would be treated as unverifiable. Delete it to re-pin " +
+			"from the agents holding these names now")
 	}
 	return p
 }

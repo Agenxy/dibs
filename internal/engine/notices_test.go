@@ -695,3 +695,57 @@ func TestTheWakePathSpendsATurnOnAnApproval(t *testing.T) {
 		})
 	}
 }
+
+// A verdict is not evicted by a burst of ordinary notices.
+//
+// The Blocking flag exists so an approval reaches an agent that stopped waiting
+// for it. One layer below that, the notice list keeps only the newest sixteen
+// and dropped the oldest regardless of kind, so ordinary situational updates
+// pushed the verdict out. That loss is unrecoverable by any other path: the
+// request is terminal, so it is not pending mail in anybody's inbox and
+// check_in cannot reconstruct it. The agent waits for an answer it was already
+// given.
+//
+// Pushed directly, because the trim is what is under test and the several event
+// shapes that reach it are beside the point.
+func TestABlockingNoticeSurvivesABurstOfOrdinaryOnes(t *testing.T) {
+	e := &Engine{}
+	e.SetNoticesWake(true)
+
+	// The approval it is waiting on, FIRST, so eviction by age takes it.
+	e.pushNoticeAs("asker", "lael approved your request to be coordinator", 1, 7, true)
+	if e.blockingNotices("asker") != 1 {
+		t.Fatal("the approval produced no blocking notice, so this test has nothing " +
+			"to protect")
+	}
+
+	for i := 2; i < 2+maxNotices*2; i++ {
+		e.pushNotice("asker", "newcomer joined a space you are in", uint64(i))
+	}
+	if n := len(e.notices["asker"]); n != maxNotices {
+		t.Fatalf("the list holds %d notices, not the %d bound, so nothing was "+
+			"evicted and this cannot see the eviction it names", n, maxNotices)
+	}
+
+	if got := e.blockingNotices("asker"); got == 0 {
+		t.Errorf("the approval was evicted by %d later situational notices. The "+
+			"request is terminal, so it is not in any inbox and check_in cannot "+
+			"reconstruct it: the agent stopped for an answer that had already been "+
+			"given, and nothing will ever tell it", maxNotices*2)
+	}
+
+	// And recent news is still recent: keeping the verdict must not mean
+	// keeping a stale list instead.
+	got := e.notices["asker"]
+	for i := 1; i < len(got); i++ {
+		if got[i].Serial < got[i-1].Serial {
+			t.Errorf("notices came back out of order (%d after %d): an agent reads "+
+				"these as a sequence", got[i].Serial, got[i-1].Serial)
+			break
+		}
+	}
+	if newest := got[len(got)-1].Serial; newest != uint64(1+maxNotices*2) {
+		t.Errorf("the newest notice is serial %d, not %d: the trim dropped recent "+
+			"news to keep old news", newest, 1+maxNotices*2)
+	}
+}
