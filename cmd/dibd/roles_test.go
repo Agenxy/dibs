@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -357,6 +358,75 @@ func TestAFreshBoardWillNotGrantADeclaredRoleToWhoeverAsksFirst(t *testing.T) {
 			t.Error("the agent the operator named, presenting the nonce the operator " +
 				"configured, was NOT granted its declared role: the check refuses " +
 				"everybody, which is a broken feature rather than a closed hole")
+		}
+	})
+}
+
+// The corrective errors on the role-pin path must not talk an operator into
+// making things worse.
+//
+// PHILOSOPHY's honesty rule says every error carries the corrective call. Two
+// on this path named the wrong one, and both are security-relevant:
+//
+//   - The "no identity configured" refusal said to add `<that agent's nonce>`
+//     to [roles.identity]. A 256-bit nonce is 64 hex characters, exactly the
+//     shape the fingerprint check accepts, so the file loaded and nothing ever
+//     objected. Anything that could read dibs.toml could then register with
+//     that name and that nonce and be handed the agent's own token, mailbox and
+//     role: an upgrade from a two-minute startup race to a standing key. The
+//     startup log already printed the correct line, so the two contradicted
+//     each other and the dangerous one came first.
+//
+//   - The mismatch refusal offered a handover repair of one step. Both the pin
+//     file and dibs.toml are read once at startup, so that step changes nothing
+//     under a running daemon and still fails on the next boot against the old
+//     fingerprint. An error naming a fix that does not fix anything spends the
+//     operator's trust in every other error this daemon prints.
+//
+// Prose is not checkable by reading, so it is checked here.
+func TestTheRolePinErrorsNameTheCorrectiveThatWorks(t *testing.T) {
+	t.Run("the first-pin refusal never asks for the nonce", func(t *testing.T) {
+		p := loadRolePins(t.TempDir())
+		err := p.check("fleet-lead", core.RoleAdmin, engine.RolePinFingerprint("n"), "")
+		if err == nil {
+			t.Fatal("a declared role with no [roles.identity] was accepted, so this " +
+				"check is reading an error that no longer exists")
+		}
+		got := err.Error()
+		if strings.Contains(got, "nonce>") || strings.Contains(got, "agent's nonce\"") {
+			t.Errorf("the refusal tells the operator to put a NONCE in dibs.toml:\n  %s\n"+
+				"A nonce is the whole recovery credential and is the same 64-hex shape "+
+				"as a fingerprint, so it is accepted silently and anything that reads "+
+				"the file can then become that agent", got)
+		}
+		if !strings.Contains(strings.ToLower(got), "fingerprint") {
+			t.Errorf("the refusal does not say to use the FINGERPRINT:\n  %s", got)
+		}
+	})
+
+	t.Run("the handover repair names every step it needs", func(t *testing.T) {
+		dir := t.TempDir()
+		p := loadRolePins(dir)
+		// An established pin, then a different agent under the same name.
+		if err := p.check("fleet-lead", core.RoleAdmin,
+			engine.RolePinFingerprint("the-original"), engine.RolePinFingerprint("the-original")); err != nil {
+			t.Fatalf("establishing the pin: %v", err)
+		}
+		err := p.check("fleet-lead", core.RoleAdmin,
+			engine.RolePinFingerprint("a-successor"), engine.RolePinFingerprint("the-original"))
+		if err == nil {
+			t.Fatal("a different agent under a pinned name was accepted, so there is " +
+				"no mismatch error to check")
+		}
+		got := strings.ToLower(err.Error())
+		for _, want := range []string{"roles.identity", "restart"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("the handover repair does not mention %q:\n  %s\n"+
+					"Removing the pin alone cannot work: both files are read once at "+
+					"startup, so the running daemon keeps its loaded copy and the next "+
+					"boot still checks the successor against the old fingerprint",
+					want, err.Error())
+			}
 		}
 	})
 }

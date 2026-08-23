@@ -209,8 +209,23 @@ func (e *Engine) recentlyInTouch(l *core.Agent) bool {
 	if !ok {
 		return false
 	}
-	return !l.LastCoordination.IsZero() &&
-		time.Since(l.LastCoordination) < cmd.cooldown
+	// THE EPHEMERAL TIMESTAMP, because the durable one is deliberately stale.
+	//
+	// Every authenticated read touches e.seen immediately and only checkpoints
+	// LastCoordination once per AgentTTL/2, so a perfectly healthy agent's
+	// durable timestamp is routinely minutes old. Reading only that one, this
+	// declared a running agent asleep and started a second `codex exec resume`
+	// against the thread it was already working in: the duplicate-process case
+	// this check exists to prevent, produced by the check itself.
+	//
+	// Both, and the later wins: seen is authoritative when present, and
+	// LastCoordination still covers an agent last heard from before this daemon
+	// booted, whose seen entry does not exist.
+	last := l.LastCoordination
+	if s, ok := e.seen[l.ID]; ok && s.After(last) {
+		last = s
+	}
+	return !last.IsZero() && time.Since(last) < cmd.cooldown
 }
 
 // wakeFor picks the command for this agent and spends its cooldown.
@@ -292,14 +307,25 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) ([]string
 // Returning "" means no wake. Starting a resume against an identifier the
 // harness cannot resolve costs a process and delivers nothing, and starting one
 // against a DIFFERENT valid thread would wake somebody else.
+//
+// THE NEWEST ONE, and the order matters. bindHarnessSession APPENDS, so a
+// persistent agent that has reattached three times holds three uuids with the
+// current activation last. Taking the first ran `codex exec resume` against a
+// thread the agent rotated away from days ago: a real thread, so the command
+// succeeded, and the wrong one, so the agent that was waiting stayed asleep
+// while a stale activation woke up holding somebody else's mail prompt. Every
+// wake test built exactly one alias, which is the one arrangement that cannot
+// tell the two orders apart.
 func threadIDOf(l *core.Agent) string {
+	for i := len(l.SessionAliases) - 1; i >= 0; i-- {
+		if looksLikeThreadID(l.SessionAliases[i]) {
+			return l.SessionAliases[i]
+		}
+	}
+	// Only if no alias is a thread: the primary is the OLDEST name this agent
+	// has had whenever aliases exist at all, because reattachment appends.
 	if looksLikeThreadID(l.SessionID) {
 		return l.SessionID
-	}
-	for _, alias := range l.SessionAliases {
-		if looksLikeThreadID(alias) {
-			return alias
-		}
 	}
 	return ""
 }
@@ -326,9 +352,21 @@ func looksLikeThreadID(s string) bool {
 	return true
 }
 
+// wakeTimeout is the longest a wake command may run before it is killed.
+//
+// This was 30 seconds, which is a sensible bound for a notification and a
+// catastrophic one for the command actually documented: `codex exec resume`
+// continues the thread IN THIS PROCESS, so the timeout is a cap on the agent's
+// whole turn. An ordinary turn passes 30s easily, and the kill landed mid-work
+// with the cooldown already spent and no retry, so the wake destroyed the
+// activation it had just created and the blocking message stayed unread. The
+// bound exists only to stop a wedged process living forever; it must be far
+// past any turn a person would wait for, and this is.
+const wakeTimeout = 2 * time.Hour
+
 // runWake executes one wake, bounded and out of the way.
 func runWake(argv []string, agent string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), wakeTimeout)
 	defer cancel()
 	// #nosec G204 -- argv comes from the operator's own config file and nowhere
 	// else: SetWakeCommands is the only writer, no tool or op reaches it, and

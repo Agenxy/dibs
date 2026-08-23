@@ -624,6 +624,26 @@ func (c Config) validateSupervise() error {
 }
 
 func (c Config) validateWake() error {
+	// A setting that reads as applied and is not is this file's oldest bug, and
+	// [wake.exec] arrived with a fresh one: cooldown accepted any duration, and
+	// the waker maps everything <= 0 to the 90s default. So `cooldown = "-1s"`
+	// passed `dibd -check`, startup reported the harness configured, and the
+	// operator's explicit value did nothing at all. Zero is documented as "use
+	// the default" and stays legal; a negative one is a mistake and is refused.
+	for harness, x := range c.Wake.Exec {
+		if x.Cooldown < 0 {
+			return fmt.Errorf("[wake.exec.%s] cooldown = %q: a wake cooldown cannot "+
+				"be negative. Omit it, or set 0, to take the default; anything "+
+				"below zero was silently becoming that default while reading as "+
+				"a setting you had chosen", harness, x.Cooldown)
+		}
+		if len(x.Argv) > 0 && x.Argv[0] == "" {
+			return fmt.Errorf("[wake.exec.%s] argv starts with an empty string, so "+
+				"there is no program to run. The first element is the executable, "+
+				"and the rest are its arguments: there is no shell in this path "+
+				"to work out what was meant", harness)
+		}
+	}
 	w := c.Wake.ExtendTurnFor
 	if w == "" {
 		return nil

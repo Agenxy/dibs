@@ -105,11 +105,24 @@ func (p *rolePins) check(role, name, fingerprint, want string) error {
 		// choose the agent's nonce; naming it in [roles.identity] is a secret
 		// the config and the agent share and an impostor does not.
 		if want == "" {
+			// THE FINGERPRINT, NEVER THE NONCE.
+			//
+			// This said `<that agent's nonce>`, and an operator who followed it
+			// wrote the raw credential into dibs.toml. A 256-bit nonce is 64 hex
+			// characters, which is exactly the shape isFingerprint accepts, so
+			// the file loaded, the board came up, and nothing ever said the
+			// value was wrong. Any same-user process that read the file could
+			// then register with that name AND that nonce and be handed the
+			// agent's own token and mailbox: not a race any more, a standing
+			// key. The line printed at startup (roles.go) was already correct,
+			// so the two corrective messages contradicted each other and the
+			// dangerous one came first.
 			return fmt.Errorf("%q has no identity in [roles.identity], so the first "+
 				"agent to register under that name would be granted %s on trust "+
-				"alone. Add `%s = \"<that agent's nonce>\"` under [roles.identity] "+
-				"in dibs.toml: a name authenticates nobody, and the nonce is the "+
-				"credential that agent already presents", name, role, name)
+				"alone. Add its FINGERPRINT under [roles.identity] in dibs.toml, "+
+				"which %q prints at startup and `register` returns: never the nonce "+
+				"itself, which is that agent's whole recovery credential and would "+
+				"let anything that can read the file become it", name, role, name)
 		}
 		if want != fingerprint {
 			return fmt.Errorf("the agent registering as %q did not present the nonce "+
@@ -135,10 +148,20 @@ func (p *rolePins) check(role, name, fingerprint, want string) error {
 	case fingerprint:
 		return nil
 	default:
+		// The repair takes BOTH files and a restart, and saying only half of it
+		// sent the operator down a path that cannot work: pins are read once at
+		// startup, so editing the pin file leaves the running reconciler on its
+		// loaded copy, and a successor with the pin removed still fails against
+		// the old [roles.identity] fingerprint on the next boot. An error that
+		// names a corrective action which does not correct anything is worse
+		// than one that names none.
 		return fmt.Errorf("the agent now called %q is not the one this board granted "+
 			"%s to. A standing role follows an identity, not a name, and a name is "+
 			"free for anyone to take once its holder is gone. If this is a deliberate "+
-			"handover, remove %q from %s and it will pin to whoever holds the name next",
+			"handover it takes three steps, all of them: put the NEW agent's "+
+			"fingerprint under [roles.identity] in dibs.toml, remove %q from %s, and "+
+			"restart dibd. Both files are read at startup, so editing either one "+
+			"under a running daemon changes nothing",
 			name, role, name, p.path)
 	}
 }

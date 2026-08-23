@@ -78,11 +78,23 @@ func TestTheCodexHookFileOnlyUsesFieldsCodexAccepts(t *testing.T) {
 				}
 				// The whole point: a response Codex refuses to parse delivers
 				// nothing, however correct the daemon's side effect was.
+				// A STRING, because that is what the tool advertises.
+				//
+				// This required the boolean `true`, which is the natural JSON and
+				// not what hook_poll's inputSchema declares: every flag on that
+				// tool is a string, because a harness template expands to one. A
+				// host that validates arguments against the advertised schema
+				// would reject the bundled call before the deliberately-loose
+				// handler ever saw it, and the whole file would go quiet. The
+				// handler accepting either is not a licence for the shipped
+				// config to disagree with the schema.
 				in, _ := handler["input"].(map[string]any)
-				if in["strict_output"] != true {
-					t.Errorf("%s: input is missing strict_output, so hook_poll may answer "+
-						"with its own diagnostic keys and Codex will reject the whole "+
-						"object and inject no mail", event)
+				if in["strict_output"] != "true" {
+					t.Errorf("%s: strict_output is %#v; hook_poll declares it a STRING, and "+
+						"a host that validates against the advertised schema refuses the "+
+						"call. Without it hook_poll may answer with its own diagnostic "+
+						"keys, Codex rejects the whole object, and no mail is injected",
+						event, in["strict_output"])
 				}
 			}
 		}

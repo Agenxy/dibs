@@ -121,6 +121,19 @@ func TestLoadRefusesSettingsThatWouldNotTakeEffect(t *testing.T) {
 		// NaN passed `< 0 || > 1` because no comparison against NaN is true,
 		// and was then ignored by the `> 0` test on the way in. TOML has NaN.
 		{"a duty fraction of nan, which no comparison catches", "[supervise]\nmin_duty = nan\n"},
+		// [wake.exec] arrived with this list's own subject in it: cooldown took
+		// any duration and the waker maps everything <= 0 to the 90s default,
+		// so a negative one passed `dibd -check`, startup reported the harness
+		// configured, and the operator's explicit value did nothing. Zero is
+		// documented as "take the default" and stays legal.
+		{
+			"a negative wake cooldown, which silently becomes the default",
+			"[wake.exec.codex]\nargv = [\"codex\"]\ncooldown = \"-1s\"\n",
+		},
+		{
+			"a wake command whose executable is the empty string",
+			"[wake.exec.codex]\nargv = [\"\", \"exec\"]\n",
+		},
 		// The identity table is a CREDENTIAL-shaped setting, and the first
 		// version of the feature asked for the nonce itself. A nonce in a file
 		// every same-user process can read is that process's route to
