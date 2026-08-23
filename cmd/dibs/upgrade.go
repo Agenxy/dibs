@@ -705,11 +705,40 @@ func replacementAddr(dir, addr string) string {
 	if _, _, found := strings.Cut(addr, "://"); found {
 		return addr // already stated, nothing to add
 	}
+	// ONLY WHEN THE CONFIG DESCRIBES THIS ADDRESS.
+	//
+	// resolveTransport answers for the address the CONFIG names, and the
+	// running daemon may be on a different one: started with `-addr
+	// 0.0.0.0:4777` against a config that names nothing, it resolves loopback
+	// and returns http, so a TLS wildcard board would be handed
+	// `http://0.0.0.0:4777` and restarted in plaintext. Losing the scheme is
+	// bad; asserting the wrong one is worse, because the daemon can still
+	// re-resolve correctly from a bare address and cannot recover from a lie.
+	//
+	// So the scheme is added only when the config is talking about the same
+	// address the daemon actually bound. Otherwise the bare form goes through
+	// and the replacement resolves it exactly as the original did.
+	configured, cerr := readConfiguredAddr(paths.DataDir())
+	if cerr != nil || !sameHostPort(configured, addr) {
+		return addr
+	}
 	scheme, _, err := resolveTransport(dir)
 	if err != nil || scheme == "" {
-		// Unreadable config: the bare address is what today does, and a guess
-		// here would be the same guess the daemon makes anyway.
 		return addr
 	}
 	return scheme + "://" + addr
+}
+
+// sameHostPort reports whether two addresses name the same listener, ignoring
+// any scheme on either side.
+func sameHostPort(a, b string) bool {
+	return bare(a) != "" && bare(a) == bare(b)
+}
+
+// bare strips a scheme, so "https://h:1" and "h:1" compare equal.
+func bare(a string) string {
+	if _, rest, found := strings.Cut(a, "://"); found {
+		return rest
+	}
+	return a
 }

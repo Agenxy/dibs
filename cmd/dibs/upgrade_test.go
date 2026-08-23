@@ -130,18 +130,36 @@ func TestTheReplacementIsProvedForTheAddressItWillBeStartedOn(t *testing.T) {
 		t.Errorf("the proof does not name the board: %s", joined)
 	}
 
-	// AND THE TRANSPORT, which the registry does not store.
+	// AND THE TRANSPORT, when the configuration is describing THIS address.
 	//
-	// resolveListenAddr strips any scheme before the daemon registers, so the
-	// recorded address is a bare host:port and handing it back makes the
-	// replacement re-infer: an http:// LAN board is checked and restarted as
-	// HTTPS, an https:// loopback board becomes plaintext. The preflight then
-	// approves a different daemon than the one it authorises stopping. This
-	// test pinned the bare form and so could not fail on either case.
-	if _, _, found := strings.Cut(addrFlag(checkArgs(p)), "://"); !found {
-		t.Errorf("the proof is given %q, which states no transport: the replacement "+
-			"infers one from the host, and the two can disagree",
-			addrFlag(checkArgs(p)))
+	// The registry stores a bare host:port, so handing it back makes the
+	// replacement re-infer and the two can disagree. Stating it is only safe
+	// when the config names the same listener: a daemon started with `-addr`
+	// against a config that names nothing resolves loopback, and asserting
+	// http:// on a TLS wildcard board is worse than saying nothing, because a
+	// bare address still resolves correctly and a wrong one cannot.
+	//
+	// This test pinned the bare form and could not fail on either case; then it
+	// required a scheme unconditionally and could not fail on the wrong-guess
+	// case. Both halves now.
+	t.Setenv("DIBS_DIR", p.dir)
+	if err := os.WriteFile(filepath.Join(p.dir, "dibs.toml"),
+		[]byte("addr = \"192.168.1.205:4777\"\ninsecure_plaintext = true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := addrFlag(checkArgs(p)); got != "http://192.168.1.205:4777" {
+		t.Errorf("the proof is given %q for a board the config describes as plaintext "+
+			"on that exact address. The transport is derivable here and stating it "+
+			"is the whole point", got)
+	}
+
+	// A daemon on an address the config does not name: no guess.
+	other := &plan{dir: p.dir, running: daemonState{addr: "10.0.0.9:4777"}}
+	if got := addrFlag(checkArgs(other)); got != "10.0.0.9:4777" {
+		t.Errorf("the proof is given %q for an address this config says nothing "+
+			"about. Inventing a transport there restarts a TLS board in plaintext; "+
+			"the bare form lets the replacement resolve it the same way the "+
+			"original did", got)
 	}
 
 	// The restart must be given the SAME thing, or the proof was about a

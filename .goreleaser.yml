@@ -264,8 +264,15 @@ homebrew_casks:
     # FOUR. The notifier bundle is the component whose entire job is putting a
     # notification in front of the person, and a cask without it installs a
     # board that cannot ask them anything.
-    app:
-      - Dibs.app
+    #
+    # Through custom_block, because GoReleaser's cask type has no `app` field:
+    # `app` is Homebrew's own DSL stanza and this is the supported way to emit
+    # one. The first version of this wrote `app:` directly, which `goreleaser
+    # check` rejects outright, so the tag workflow would have stopped before
+    # building anything. It was not caught by `task ci`, which did not validate
+    # this file at all; it does now.
+    custom_block: |
+      app "Dibs.app"
     # So `man dibs` answers on a brew install, which is where most people
     # first look for it.
     manpages:

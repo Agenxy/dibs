@@ -1208,17 +1208,27 @@ func TestEveryBundledHelperShipsInTheRelease(t *testing.T) {
 				"the runtime does not look for", where, name)
 			continue
 		}
-		for _, place := range []struct{ what, needle string }{
-			{"built by a before hook", name},
-			{"carried in the archive", "src: " + name},
-			{"installed by the Homebrew cask", "- " + name},
-		} {
-			if !strings.Contains(release, place.needle) {
-				t.Errorf("%s is resolved at runtime by %s and is not %s (%q missing "+
-					"from .goreleaser.yml). Every published archive and brew install "+
-					"would be without it, while a source build has it and CI passes",
-					name, where, place.what, place.needle)
-			}
+		if !strings.Contains(release, "src: "+name) {
+			t.Errorf("%s is resolved at runtime by %s and is not carried in the "+
+				"archive (%q missing from .goreleaser.yml). Every published archive "+
+				"would be without it, while a source build has it and CI passes",
+				name, where, "src: "+name)
+		}
+		// THE CASK SECTION, in whatever stanza carries it.
+		//
+		// The first version looked for the list form `- Dibs.app` and the valid
+		// configuration turned out to be a `custom_block` emitting Homebrew's
+		// own `app` stanza, so the guard failed on a correct file. A check that
+		// knows one spelling finds the artifact only where somebody already put
+		// it in that spelling; what matters is that the cask mentions it at all.
+		at := strings.Index(release, "homebrew_casks:")
+		if at < 0 {
+			t.Fatal(".goreleaser.yml has no homebrew_casks section, so this check " +
+				"cannot say whether the cask installs anything")
+		}
+		if !strings.Contains(release[at:], name) {
+			t.Errorf("%s is resolved at runtime by %s and the Homebrew cask never "+
+				"mentions it, so every brew install would be without it", name, where)
 		}
 	}
 }

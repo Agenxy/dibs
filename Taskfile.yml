@@ -352,6 +352,16 @@ tasks:
       - cd internal/mcp/e2e && bun install --frozen-lockfile
       - cd internal/mcp/e2e && bunx playwright install --with-deps chromium
 
+  release:check:
+    desc: "Validate .goreleaser.yml against the pinned GoReleaser"
+    # NOTHING VALIDATED THIS FILE. A cask key that GoReleaser rejects outright
+    # passed the whole gate and would have stopped the tag workflow before it
+    # built anything: the release surface is the one place where "it failed on
+    # CI" means the release did not happen, and it was the only surface with no
+    # local check. `check` parses the config the same way `release` does.
+    cmds:
+      - goreleaser check
+
   test:wake:
     env:
       # No dialogs from a test run: these suites spawn real daemons,
@@ -503,6 +513,7 @@ tasks:
       - task: test:guard
       - task: test:space
       - task: test:wake
+      - task: release:check
       - task: test:sidecar
       - task: test:human
       - task: test:minimal
