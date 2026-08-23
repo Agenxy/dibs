@@ -55,6 +55,32 @@ func (e *Engine) hookOutput(out core.Result, strict bool) core.Result {
 	return out
 }
 
+// announceHookSession records the session a hook arrived from, whichever hook
+// TOOL the harness bound.
+//
+// The announced-session join is how an agent learns the identifier its own
+// harness uses, and it is the only source of the thread id that [wake.exec]
+// resumes. It was fed by hook_session alone. The Claude Code plugin binds four
+// tools and so had one; the Codex plugin binds hook_poll and only hook_poll, so
+// a Codex thread announced nothing, no agent ever adopted its uuid, and the
+// wake command had no thread to resume. The feature could not reach the one
+// harness it was built for, and every unit test passed, because they all built
+// an agent that already held the alias.
+//
+// A hook arriving here already carries everything the announcement needs, and
+// it is a hook by construction, so recording it belongs at this level rather
+// than in each plugin's json, where the next harness would forget it again.
+// The children map is engine-ephemeral and rebuildable, so nothing here reaches
+// the fold.
+//
+// Callers hold the writer loop: noteChild is not safe off it.
+func (e *Engine) announceHookSession(sessionID, cwd, event string) {
+	if sessionID == "" {
+		return
+	}
+	e.noteChild(Child{SessionID: sessionID, CWD: cwd, State: StateForEvent(event)}, time.Now())
+}
+
 // HookPoll answers a harness lifecycle hook: "is there anything this session
 // needs to know?" It is the subprocess-free wake path. Claude Code's
 // `type: "mcp_tool"` hook calls it on the connection the model already holds,
@@ -71,6 +97,7 @@ func (e *Engine) HookPoll(
 	ctx context.Context, sessionID, event, cwd string, stopActive, strict bool,
 ) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
+		e.announceHookSession(sessionID, cwd, event)
 		l := e.state.AgentForHook(sessionID, cwd)
 		e.noteHook("poll", l != nil)
 		if l == nil {
