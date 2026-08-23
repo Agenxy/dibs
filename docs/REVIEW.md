@@ -37,5 +37,15 @@ Weight your attention here, hardest first:
    string rather than a behaviour, anything that would pass against the code it
    was written to catch.
 
+5. THE SHIPPED PROSE, against the code it describes. CHANGELOG.md is what a
+   user reads to decide whether to take a version, and it is written by hand
+   while everything around it is written by tests: it fell twelve review rounds
+   behind in this cycle and no round noticed, because nothing was asked to look.
+   A user-visible fix that is in the diff and not in the changelog has shipped
+   silently. So has a documented claim the code now contradicts: this repository
+   has had the tool count go stale three times in three different spellings, a
+   configuration doc argue a reader back into a fixed bug, and a security
+   document describe an exposure as closed while two routes still carried it.
+
 Report concrete findings with file:line and why it is wrong. Say plainly if a
 section looks fine. Do not fix anything; I want the list.
