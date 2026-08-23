@@ -109,9 +109,24 @@ never put on a command line**: the agent reads it over its authenticated
 connection with its own token, which is the same reason the bodies are
 encrypted at rest.
 
-Only a question, a request or a handoff wakes anything, and only for an agent
-that is not already active. A notice does not justify starting a process, and
-an agent that is running was going to see the message anyway.
+Only work somebody is blocked on starts a process: a question, a request, a
+handoff, or a **verdict**, which is the answer to something this agent asked and
+then stopped for. A notice does not justify starting a process on the operator's
+machine.
+
+The other half of the test is whether the agent is *reachable already*, and it
+is not `active`. `active` means the idle lease has not lapsed, which is
+forty-five minutes by default, so an agent whose turn ended seconds ago is still
+`active` and is still not running: treating that as "no wake needed" discards
+the one attempt the message gets. What is asked instead is whether the agent has
+called Dibs within the wake cooldown, which is real evidence of a live process
+rather than an unexpired lease.
+
+### `extend_turn_for`: which news may extend a turn already running
+
+Everything above is about a stopped process. This is the separate question of
+what an agent that IS running is told at its next turn boundary, and it has no
+power to start anything.
 
 
 `all` means anything unread wakes its recipient, once, when it arrives. A fleet

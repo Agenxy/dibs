@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,26 +68,27 @@ func TestTheAdoptedDirectoryIsASiblingNotAChild(t *testing.T) {
 // undo: the daemon is not considered restored until the BOARD answers, so the
 // recovery still fires when the start reported success and produced nothing.
 //
-// WHAT THIS DOES NOT PROVE, said plainly because a reader who skims it will
-// otherwise assume more. It reads the SOURCE for an ordering. It never runs a
-// failed cutover, never starts a daemon, and never shows the recovery putting a
-// board back. A pre-release review made exactly that criticism and it is
-// correct: two defects lived inside the recovery this test sits next to, a
-// directory that had been renamed out from under it and a message claiming a
-// rollback that never happens, and neither is the kind of thing an ordering
-// check can see. Proving those needs cutover's start, stop and verify to be
-// injectable, which is a refactor rather than a test.
+// WHAT THIS DOES NOT PROVE. It reads the SOURCE for an ordering: it never runs
+// a cutover and never shows the recovery putting a board back. Two review rounds
+// made that criticism, the second one after the first had only been answered
+// with the paragraph admitting it, and they were right both times: two defects
+// lived inside the recovery this test sits next to, a directory renamed out
+// from under it and a message claiming a rollback that never happens, and
+// neither is the kind of thing an ordering check can see.
 //
-// It is kept because the ordering is genuinely load-bearing and a structural
-// check catches a genuine regression class. It is not a behavioural guarantee
-// and must not be quoted as one.
+// So the behavioural half now exists, below, in
+// TestTheRecoveryFiresOnlyWhenTheBoardDidNotComeBack: cutover's stop, start and
+// board check are fields on the plan, and that test drives a silent board and
+// asserts the recovery fires. This one is kept because it is free and catches
+// the regression a second earlier, but it is not the guarantee and must not be
+// quoted as one.
 func TestARestartIsNotBelievedUntilTheBoardAnswers(t *testing.T) {
 	src, err := os.ReadFile("upgrade.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 	body := string(src)
-	verify := strings.Index(body, "if err := p.verify(newDir); err != nil {")
+	verify := strings.Index(body, "if err := p.doConfirm(newDir); err != nil {")
 	restored := strings.Index(body, "\trestored = true\n")
 	if verify < 0 || restored < 0 {
 		t.Fatal("cutover no longer verifies the board or no longer marks the restart " +
@@ -245,5 +247,73 @@ func TestAUnitThatNamesAnotherBoardIsNotUsedForRecovery(t *testing.T) {
 	if !unitNames(ampUnit, amp) {
 		t.Errorf("a unit naming %s, XML-escaped as a plist requires, was not "+
 			"recognised as naming it", amp)
+	}
+}
+
+// The recovery fires when the board does not answer, and not when it does.
+//
+// This is the behavioural half of the ordering above, and the half that was
+// missing. `launchctl kickstart` exits 0 having merely SCHEDULED a spawn, and
+// launchd reads a plist at LOAD time, so the program it schedules can be one
+// that no longer exists: measured on a live board, which stayed down while the
+// command reported success. A start returning nil is therefore not a daemon
+// that is serving, and the recovery has to survive that exact case.
+//
+// The old test read this file for the positions of two string literals. It
+// could not tell a live path from an unreachable branch, and two real defects
+// lived inside the recovery while it was green: a directory renamed out from
+// under the restart, and a message claiming a rollback that never happens.
+//
+// Both directions, because a recovery that always fires proves nothing either:
+// it would restart a daemon that is already up, on every successful upgrade.
+func TestTheRecoveryFiresOnlyWhenTheBoardDidNotComeBack(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		boardBack error
+		wantStart int // the recovery start, beyond cutover's own
+	}{
+		{"board answers", nil, 0},
+		{"board silent", errors.New("no board answered in 90s"), 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			var starts []string
+			stopped := 0
+			p := &plan{
+				dir:       dir,
+				installed: filepath.Join(dir, "dibd"),
+				serving:   true, // there is a daemon to lose
+				stop:      func(string) error { stopped++; return nil },
+				start: func(_, d, _ string, _ daemonState) error {
+					starts = append(starts, d)
+					return nil
+				},
+				confirm: func(string) error { return tc.boardBack },
+			}
+
+			err := p.cutover()
+			if (err != nil) != (tc.boardBack != nil) {
+				t.Fatalf("cutover error = %v, want error: %v", err, tc.boardBack != nil)
+			}
+			if stopped != 1 {
+				t.Fatalf("the daemon was stopped %d times, want 1: this test is not "+
+					"exercising the path it names", stopped)
+			}
+			// One start is cutover's own. Any second is the recovery.
+			if got := len(starts) - 1; got != tc.wantStart {
+				t.Errorf("the recovery started the daemon %d times, want %d.\n"+
+					"A start that reported success and served nothing must still leave "+
+					"the recovery armed, because the fleet has no board and this command "+
+					"is the one that stopped it", got, tc.wantStart)
+			}
+			// And it must start against a directory that exists.
+			for i, d := range starts {
+				if _, serr := os.Stat(d); serr != nil {
+					t.Errorf("start %d used %q, which does not exist: a daemon pointed at "+
+						"a path that was moved out from under it is the failure this "+
+						"recovery had once and reported as unchanged", i, d)
+				}
+			}
+		})
 	}
 }

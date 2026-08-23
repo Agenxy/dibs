@@ -1359,3 +1359,72 @@ func TestEveryReleaseHookOutputIsIgnored(t *testing.T) {
 		}
 	}
 }
+
+// No shipped document calls the admin password a prerequisite.
+//
+// It is not one. `dibs web` raises the daemon-owned Touch ID sheet first and
+// asks for a password only where there is no sensor to ask, which is the whole
+// point of the presence work in this release. Four documents still said the
+// password had to be set first, including the primary README and the Homebrew
+// caveat that every macOS installer reads, so the release announced that it had
+// removed a weaker credential while its own onboarding sent operators to create
+// one.
+//
+// The check is CONDITIONALITY, not wording. Anywhere the command appears, the
+// text around it has to say when it applies; a document is free to phrase that
+// however it likes. Pinning one sentence would find the claim only where
+// somebody already wrote it that way, which is how the same defect survived in
+// four spellings and in two more places than the reviewer reached: the embedded
+// plugin copy, which is the one that actually ships, and the tutorial.
+//
+// The changelog is exempt. It is a historical record, and an entry describing
+// what an older version required is correct precisely because it is dated.
+func TestNoDocumentMakesTheAdminPasswordAPrerequisite(t *testing.T) {
+	const window = 10
+	root := repoRoot(t)
+	// Any of these near the command means the condition is stated.
+	conditions := []string{"touch id", "sensor", "presence", "biometric", "fingerprint"}
+
+	seen := 0
+	walk(t, root, func(rel, abs string) {
+		switch strings.ToLower(filepath.Ext(rel)) {
+		case ".md", ".yml", ".yaml":
+		default:
+			return
+		}
+		if strings.EqualFold(filepath.Base(rel), "CHANGELOG.md") {
+			return
+		}
+		body, err := os.ReadFile(abs) // #nosec G304 -- walking this repository
+		if err != nil {
+			return
+		}
+		lines := strings.Split(string(body), "\n")
+		for i, line := range lines {
+			if !strings.Contains(line, "set-password") {
+				continue
+			}
+			seen++
+			lo, hi := max(0, i-window), min(len(lines), i+window+1)
+			near := strings.ToLower(strings.Join(lines[lo:hi], "\n"))
+			stated := false
+			for _, c := range conditions {
+				if strings.Contains(near, c) {
+					stated = true
+					break
+				}
+			}
+			if !stated {
+				t.Errorf("%s:%d introduces `admin set-password` without saying when it "+
+					"applies. `dibs web` uses the Touch ID sheet first and falls back to a "+
+					"password only where there is no sensor, so a document that presents "+
+					"the password as the way in sends macOS operators to create the weaker "+
+					"credential this release exists to stop needing.\n  %s",
+					rel, i+1, strings.TrimSpace(line))
+			}
+		}
+	})
+	if seen == 0 {
+		t.Fatal("no document mentions `admin set-password`, so this check verified nothing")
+	}
+}

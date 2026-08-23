@@ -303,7 +303,7 @@ homebrew_casks:
 
         dibd &                  # 127.0.0.1:4777, data in ~/.dibs
         dibs mcp-config          # MCP config to add to your harness
-        dibs admin set-password  # once, before `dibs web`
+        dibs web                 # the board; Touch ID unlocks it on this Mac
         dibs doctor              # what is quietly broken, and how to fix it
 
       Signed for provenance with cosign, but not notarised by Apple, so this

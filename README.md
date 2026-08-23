@@ -261,7 +261,7 @@ Then:
 ```sh
 dibd &                  # daemon on 127.0.0.1:4777, data in ~/.dibs
 dibs mcp-config          # print the MCP host config (add to e.g. .mcp.json)
-dibs admin set-password  # once: the board is yours, not the agents'
+dibs admin set-password  # only where Touch ID is unavailable: see below
 dibs web                 # print the live board URL
 dibs board               # the same board, in the terminal
 dibs doctor              # what is quietly broken, and how to fix it
@@ -439,11 +439,18 @@ The identity names the workflow AND the tag, so it has to match the release you
 downloaded. `Verified OK` means the checksums file was produced by this
 repository's release workflow at that tag, and `sha256sum -c checksums.txt` then covers the archives.
 
-`admin set-password` is a prerequisite for `dibs web`, not optional hardening.
 The browser board shows decrypted mail and can act as you, so it is gated on
-something the agents do not have: every agent holds the coordination secret, none
-holds this. `dibs board` in the terminal needs no password: it shows only what
-the board shows.
+something the agents do not have: every agent holds the coordination secret, and
+none of them is you. **On a Mac with Touch ID that gate is the sensor**, and
+`dibs web` uses it first: there is nothing to set up and no password to store.
+
+`admin set-password` is what you set when there is no sensor to ask, which means
+Linux, a Mac without Touch ID, or a session that is not at the keyboard.
+Setting one anyway is a way in that does not depend on the hardware; it is not
+required, and it is a weaker credential than the one it stands in for. `dibs
+doctor` says which of the two applies on this machine.
+
+`dibs board` in the terminal needs neither: it shows only what the board shows.
 
 Agents then coordinate through MCP tools: `register` → `check_in` →
 `declare` / `claim` / `send` / `await_events`. The server's instructions

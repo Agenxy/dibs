@@ -98,6 +98,44 @@ type plan struct {
 	running            daemonState
 	before             fleet
 	serving            bool
+
+	// THE THREE EFFECTS CUTOVER HAS ON A LIVE FLEET, behind fields so a test
+	// can drive them.
+	//
+	// The guarantee here is an ORDERING: the restart is not believed until the
+	// board answers, so the recovery still fires when a start reported success
+	// and produced nothing. That was pinned by a test that read this file for
+	// the positions of two string literals, which cannot tell a live path from
+	// an unreachable branch and cannot see a recovery that starts the wrong
+	// directory: two such defects lived inside this function while that test
+	// was green, and a review round said so in those words.
+	//
+	// Nil means the real thing. Set in planUpgrade, so a plan built anywhere
+	// else behaves identically and nothing has to remember to wire them.
+	stop    func(dir string) error
+	start   func(installed, dir, unit string, was daemonState) error
+	confirm func(newDir string) error
+}
+
+func (p *plan) doStop(dir string) error {
+	if p.stop != nil {
+		return p.stop(dir)
+	}
+	return stopDaemon(dir)
+}
+
+func (p *plan) doStart(dir string) error {
+	if p.start != nil {
+		return p.start(p.installed, dir, p.unit, p.running)
+	}
+	return startDaemon(p.installed, dir, p.unit, p.running)
+}
+
+func (p *plan) doConfirm(newDir string) error {
+	if p.confirm != nil {
+		return p.confirm(newDir)
+	}
+	return p.verify(newDir)
 }
 
 func say(format string, a ...any) { fmt.Printf(format+"\n", a...) }
@@ -265,7 +303,7 @@ func (p *plan) cutover() error {
 	stopped := false
 	if p.serving {
 		step("stopping the daemon")
-		if err := stopDaemon(p.dir); err != nil {
+		if err := p.doStop(p.dir); err != nil {
 			return fmt.Errorf("could not stop the daemon, so nothing else was changed: %w", err)
 		}
 		stopped = true
@@ -287,7 +325,7 @@ func (p *plan) cutover() error {
 		if !stopped || restored {
 			return
 		}
-		if err := startDaemon(p.installed, recoverDir, p.unit, p.running); err != nil {
+		if err := p.doStart(recoverDir); err != nil {
 			fmt.Fprintf(os.Stderr, "\n%s could not restart the daemon after the failure "+
 				"above: start it with `%s -dir %s`: %v\n",
 				ui.Bold("AND:"), p.installed, recoverDir, err)
@@ -328,7 +366,7 @@ func (p *plan) cutover() error {
 	}
 
 	step("starting " + filepath.Base(p.installed))
-	if err := startDaemon(p.installed, newDir, p.unit, p.running); err != nil {
+	if err := p.doStart(newDir); err != nil {
 		return err
 	}
 	// NOT here, and this is the whole guarantee.
@@ -339,7 +377,7 @@ func (p *plan) cutover() error {
 	// exited. A start that returned no error is not a daemon that is serving:
 	// `launchctl kickstart` exits 0 having merely SCHEDULED a spawn, and the
 	// program it schedules can be missing. Only the board answering proves it.
-	if err := p.verify(newDir); err != nil {
+	if err := p.doConfirm(newDir); err != nil {
 		return err
 	}
 	restored = true

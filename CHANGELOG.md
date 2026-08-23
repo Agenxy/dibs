@@ -891,6 +891,26 @@ machines for real work. Their priority order, not ours.
   macOS caches a signature verdict against the inode, and set the codesign
   identifiers, which the Go toolchain leaves as `a.out`.
 
+- **The onboarding sent macOS operators to create the credential this release
+  replaced.** `dibs web` raises the daemon-owned Touch ID sheet first and asks
+  for an admin password only where there is no sensor, and the README called the
+  password "a prerequisite for `dibs web`, not optional hardening". So did the
+  Homebrew caveat every macOS installer reads, and the Claude Code plugin's
+  prerequisites, in both the repository copy and the embedded one that actually
+  ships. The tutorial had it right, which is the wording the rest now follow.
+
+- **The wake documentation described two mechanisms as one.** Inside the
+  `[wake.exec]` section, one paragraph said only a question, request or handoff
+  wakes anything and only for an agent "not already active", and five lines
+  later the `all` and `urgent` values of `extend_turn_for` were explained as
+  though they were the same setting. They are not: `[wake.exec]` starts a
+  stopped process, `extend_turn_for` decides what a running one is told at its
+  next turn boundary and can start nothing. The wake test is also not `active`,
+  which means only that the forty-five minute idle lease has not lapsed: an
+  agent whose turn ended seconds ago is `active` and is not running, and waking
+  it is the case the code deliberately handles. Both halves say what the code
+  does, and `extend_turn_for` has its own heading.
+
 - **`dibd -check` answered a question it was not asked.** It says it reports
   whether this build could take over, and `dibs upgrade` reads a zero exit as
   licence to stop the running daemon. It returned before the effective listen

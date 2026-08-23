@@ -23,7 +23,8 @@ plugin gives every Claude Code session in a project:
 1. The `dibs`/`dibd` binaries on your `PATH` (`go install ./cmd/...` from the repo, or
    the release archive). 
 2. The daemon running: `dibd &` (or via your process manager).
-3. Set the board's admin password once if you want the web board: `dibs admin set-password`.
+3. For the web board: nothing on a Mac with Touch ID, which `dibs web` uses first.
+   Without a sensor, set a password once: `dibs admin set-password`.
 
 ## Install
 
