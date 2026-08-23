@@ -1102,3 +1102,99 @@ func TestCheckRefusesWhatStartupWouldRefuse(t *testing.T) {
 		}
 	})
 }
+
+// The preflight answers exactly what startup would, and never writes.
+//
+// checkTransportUsable re-derived startup's decision tree, and every branch was
+// a chance to disagree with the real one. Three did: `http://` with a
+// configured certificate is a contradiction startup refuses and the preflight
+// passed; `https://` with insecure_plaintext likewise; and a dangling CA
+// symlink read as an absence, so both halves looked like a first run and the
+// daemon issued a NEW signing identity, locking out every machine that had
+// trusted the board while reporting itself healthy.
+//
+// `dibs upgrade` reads a clean preflight as licence to stop a live daemon, so a
+// disagreement here is an outage the check was supposed to prevent.
+func TestThePreflightAgreesWithStartupAndWritesNothing(t *testing.T) {
+	realCert, realKey := writeUsablePair(t)
+
+	for _, c := range []struct {
+		name       string
+		cfg        Config
+		asked      string
+		addr       string
+		wantRefuse bool
+	}{
+		{
+			"http with a configured certificate is a contradiction",
+			Config{TLSCert: realCert, TLSKey: realKey},
+			"http", "10.0.0.9:4777", true,
+		},
+		// NOT a contradiction: transport.Resolve is explicit that a stated
+		// scheme outranks every inference below it, because the operator said
+		// it and the clients will believe them. insecure_plaintext is one of
+		// those inferences. What matters here is that the preflight gives the
+		// SAME answer, which it now does by asking that function rather than
+		// re-deriving it; the old copy returned early on the plaintext branch.
+		{
+			"https outranks insecure_plaintext, and both sides agree",
+			Config{InsecurePlaintext: true},
+			"https", "10.0.0.9:4777", false,
+		},
+		{
+			"an explicit pair on a LAN address is fine",
+			Config{TLSCert: realCert, TLSKey: realKey},
+			"", "10.0.0.9:4777", false,
+		},
+		{
+			"plaintext on loopback is fine",
+			Config{},
+			"", "127.0.0.1:4777", false,
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			err := checkTransportUsable(dir, c.addr, c.asked, c.cfg)
+			if c.wantRefuse && err == nil {
+				t.Error("the preflight accepted a configuration startup refuses. " +
+					"`dibs upgrade` reads that as licence to stop the running daemon, " +
+					"and the replacement then does not come up")
+			}
+			if !c.wantRefuse && err != nil {
+				t.Errorf("the preflight refused a configuration startup accepts: %v", err)
+			}
+			// NOTHING WRITTEN, ever: this runs against a directory another
+			// daemon is still serving.
+			if entries, rerr := os.ReadDir(dir); rerr == nil && len(entries) != 0 {
+				t.Errorf("the preflight wrote %d file(s) into a live data directory",
+					len(entries))
+			}
+		})
+	}
+
+	// A dangling CA symlink is not a first run.
+	t.Run("a dangling CA symlink", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.Symlink(filepath.Join(dir, "nowhere.pem"),
+			filepath.Join(dir, "tls-ca.pem")); err != nil {
+			t.Skipf("symlinks unavailable here: %v", err)
+		}
+		if err := checkTransportUsable(dir, "10.0.0.9:4777", "", Config{}); err == nil {
+			t.Error("a CA symlink whose target is gone read as an absence, so this " +
+				"looks like a first run and startup issues a NEW signing identity: " +
+				"every machine that ran `dibs trust` is locked out by a daemon that " +
+				"reports itself healthy")
+		}
+	})
+}
+
+// writeUsablePair is a certificate and key that actually load.
+func writeUsablePair(t *testing.T) (certPath, keyPath string) {
+	t.Helper()
+	dir := t.TempDir()
+	c, k, err := ensureSelfSignedCert(dir, "10.0.0.9:4777")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c, k
+}

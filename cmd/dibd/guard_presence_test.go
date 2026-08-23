@@ -5,7 +5,6 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"github.com/agenxy/dibs/internal/humanauth"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/agenxy/dibs/internal/humanauth"
 )
 
 // These need a scripted presence verdict, so they live behind the dibdev tag

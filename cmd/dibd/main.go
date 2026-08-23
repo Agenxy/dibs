@@ -35,6 +35,7 @@ import (
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/notify"
 	"github.com/agenxy/dibs/internal/paths"
+	xport "github.com/agenxy/dibs/internal/transport"
 	"github.com/agenxy/dibs/internal/web"
 )
 
@@ -684,53 +685,71 @@ func resolveListenAddr(flagAddr string, cfg Config) (listenAddr, askedScheme str
 // signing identity that EXISTS has to be usable. An absent identity is not a
 // fault, because startup will create it.
 func checkTransportUsable(dir, listenAddr, askedScheme string, cfg Config) error {
-	if cfg.TLSCert != "" || cfg.TLSKey != "" {
-		// boardconfig already loaded this pair; saying so again here would be
-		// noise. What it cannot know is whether THIS daemon will reach for it,
-		// which resolveTransport decides, and that decision has no side effects
-		// for an explicitly configured pair.
-		return nil
+	// ASK THE RESOLVER STARTUP ASKS, with generation refused.
+	//
+	// This re-derived the decision tree: configured pair, then plaintext, then
+	// loopback, then the signing identity. Every branch was a chance to
+	// disagree with the real one, and three of them did. `http://` with a
+	// configured certificate is refused at startup as a contradiction and
+	// passed here on the configured-pair branch. `https://` with
+	// insecure_plaintext is refused there and passed here on the plaintext
+	// branch. A copy of a decision is a decision that will drift, and this one
+	// gates `dibs upgrade` stopping a live daemon.
+	//
+	// transport.Resolve takes cert generation as a callback, so passing one
+	// that refuses turns the real function into a side-effect-free question.
+	// That matters: this runs against a directory another daemon is serving,
+	// and writing into it is the one thing a check must not do.
+	wouldGenerate := false
+	_, err := xport.Resolve(cfg.TLSCert, cfg.TLSKey, listenAddr, askedScheme,
+		cfg.InsecurePlaintext, func() (string, string, error) {
+			wouldGenerate = true
+			return "", "", errWouldGenerate
+		})
+	switch {
+	case errors.Is(err, errWouldGenerate) || (err == nil && wouldGenerate):
+		// A board that needs a certificate it does not have yet. Whether that
+		// is a first run or a damaged identity is the next question.
+	case err != nil:
+		return fmt.Errorf("this build could rebuild the board at %s, but could not "+
+			"serve it: %w\n\n"+
+			"  Do NOT stop the daemon now running: this configuration is refused\n"+
+			"  at startup, so the replacement would not come up", dir, err)
+	default:
+		return nil // an explicit pair, or plaintext: nothing to generate
 	}
-	if cfg.InsecurePlaintext || askedScheme == "http" {
-		return nil // nothing to serve a certificate for
-	}
-	if isLoopbackAddr(listenAddr) && askedScheme != "https" {
-		return nil // plaintext on loopback: no certificate is involved
-	}
+
 	caCert := filepath.Join(dir, "tls-ca.pem")
 	caKey := filepath.Join(dir, "tls-ca-key.pem")
-	// ABSENT, not merely unreadable.
-	//
-	// This asked fileExists, which turned every os.Stat error into "not there":
-	// a dangling symlink, a permissions problem or an I/O error all read as a
-	// first run, so the check reported a board this build could serve and
-	// startup then failed to load or replace the identity. `dibs upgrade` takes
-	// a clean check as licence to stop the running daemon, so the preflight
-	// could authorise the outage it exists to prevent.
 	certGone, certErr := absent(caCert)
 	keyGone, keyErr := absent(caKey)
-	if err := errors.Join(certErr, keyErr); err != nil {
+	if jerr := errors.Join(certErr, keyErr); jerr != nil {
 		return fmt.Errorf("this build could rebuild the board at %s, but cannot tell "+
 			"whether it holds a signing identity: %w\n\n"+
 			"  Do NOT stop the daemon now running. Something is wrong with those\n"+
 			"  files that is not simply their absence, and a replacement started\n"+
-			"  here may be unable to serve at all", dir, err)
+			"  here may be unable to serve at all", dir, jerr)
 	}
 	if certGone && keyGone {
-		return nil
+		return nil // first run here: startup issues one, and that is not a fault
 	}
 	// Present, so it has to work. ensureCA reads and refuses; it only writes
 	// when BOTH files are absent, which the branch above has already returned
 	// for.
-	if _, _, err := ensureCA(caCert, caKey); err != nil {
+	if _, _, cerr := ensureCA(caCert, caKey); cerr != nil {
 		return fmt.Errorf("this build could rebuild the board at %s, but could not "+
 			"serve it: %w\n\n"+
 			"  Do NOT stop the daemon now running. It is serving with an identity\n"+
 			"  this check cannot reproduce, and stopping it is what makes that\n"+
-			"  visible to every machine that joined", dir, err)
+			"  visible to every machine that joined", dir, cerr)
 	}
 	return nil
 }
+
+// errWouldGenerate is how the preflight tells transport.Resolve's callback
+// apart from a real failure: it means "this board needs a certificate", which
+// is a question about the signing identity rather than a fault.
+var errWouldGenerate = errors.New("a certificate would be generated")
 
 // checkReplay answers "could this build take over this board", and answers it
 // while the board is still being served by somebody else.
@@ -858,6 +877,18 @@ func absent(path string) (bool, error) {
 	case err == nil:
 		return false, nil
 	case errors.Is(err, fs.ErrNotExist):
+		// A DANGLING SYMLINK IS NOT AN ABSENCE.
+		//
+		// os.Stat follows links, so a link whose target is gone reports
+		// ErrNotExist and read as "no signing identity here": a first run. Both
+		// halves then looked absent, ensureCA generated a NEW identity, and
+		// every machine that had run `dibs trust` was locked out by a daemon
+		// that reported itself healthy. That is the silent rotation this file
+		// has already refused three other ways, arriving through the one call
+		// that could not see the difference. Lstat does not follow.
+		if _, lerr := os.Lstat(path); lerr == nil {
+			return false, fmt.Errorf("%s is a symlink whose target is missing", path)
+		}
 		return true, nil
 	default:
 		return false, err
