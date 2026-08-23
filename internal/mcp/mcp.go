@@ -827,18 +827,23 @@ type toolArgs struct {
 	// arrives as the string a template substitution produced on one harness and
 	// as a JSON boolean on another, and refusing one spelling would silently
 	// disable the loop guard on that harness.
-	StopActive any    `json:"stop_hook_active"`
-	View       string `json:"view"`
-	Detail     bool   `json:"detail"`
-	Harness    string `json:"harness"`
-	Model      string `json:"model"`
-	Provider   string `json:"provider"`
-	Surface    string `json:"surface"`
-	Effort     string `json:"effort"`
-	Title      string `json:"title"`
-	CWD        string `json:"cwd"`
-	Branch     string `json:"branch"`
-	Host       string `json:"host"`
+	StopActive any `json:"stop_hook_active"`
+	// StrictOutput asks for a response carrying only the keys a hook-output
+	// schema accepts. Codex validates with deny_unknown_fields and reports the
+	// whole hook failed on one extra key; Claude Code ignores what it does not
+	// know. See Engine.hookOutput.
+	StrictOutput any    `json:"strict_output"`
+	View         string `json:"view"`
+	Detail       bool   `json:"detail"`
+	Harness      string `json:"harness"`
+	Model        string `json:"model"`
+	Provider     string `json:"provider"`
+	Surface      string `json:"surface"`
+	Effort       string `json:"effort"`
+	Title        string `json:"title"`
+	CWD          string `json:"cwd"`
+	Branch       string `json:"branch"`
+	Host         string `json:"host"`
 
 	// Spaces (SPEC-CHANNELS.md). The parameter is `space`, because it names one.
 	//
@@ -1154,7 +1159,8 @@ func (s *Server) run(
 		// compared as a string against the cwd the bridge recorded, and a
 		// harness that passes the alias the user typed (/tmp/x) would never
 		// match an agent registered from the resolved name (/private/tmp/x).
-		return s.eng.HookPoll(ctx, a.SessionID, a.Event, canonPath(a.CWD), truthy(a.StopActive))
+		return s.eng.HookPoll(ctx, a.SessionID, a.Event, canonPath(a.CWD),
+			truthy(a.StopActive), truthy(a.StrictOutput))
 	case "hook_session":
 		return s.eng.NoteChildSession(ctx, engine.Child{
 			SessionID: a.SessionID, CWD: canonPath(a.CWD), Model: a.Model,

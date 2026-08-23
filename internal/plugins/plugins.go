@@ -182,31 +182,54 @@ var catalog = []struct {
 		harness: "codex",
 		dir:     "codex",
 		aliases: []string{"chatgpt-desktop", "chatgpt", "gpt"},
-		buys: "nothing to install, and no hook file yet. Codex is close to being " +
-			"able to wake you: as of 2026-08-17 it parses `mcp_tool` hooks and its " +
-			"hooks engine has a handler for them, but no session supplies an MCP " +
-			"executor, so every such hook is dropped at startup. The only handler " +
-			"it actually runs is a subprocess, which Dibs will not be: a plugin " +
-			"that spawned a process to drive your harness would make Dibs a " +
-			"wrapper rather than a service, and the real mechanism is weeks away. " +
-			"So on this harness mail is pull-only: call await_events or inbox when " +
-			"you choose. That is the honest floor and it works everywhere. Dibs " +
-			"shipped a hooks.json here for three releases and not one entry in it " +
-			"ever fired.",
+		buys: "mail delivered at a turn boundary, on a build new enough. Codex gained " +
+			"a real hooks MCP executor on 2026-08-18 (openai/codex#39296), so an " +
+			"`mcp_tool` hook now runs against the session's own MCP runtime: no " +
+			"subprocess, and nothing that drives your harness. Dibs ships hooks.json " +
+			"for SessionStart, Stop and SubagentStop. Older builds parse the file and " +
+			"drop every entry, which is why this said for months that there was no " +
+			"wake path here: that was true until it was not, and the note outlived " +
+			"the fact. Two limits worth knowing. A hook fires only if the Dibs server " +
+			"is ALREADY connected; Codex refuses an unconnected server rather than " +
+			"starting one, and connections are established asynchronously, so " +
+			"SessionStart can lose that race while Stop is later and likelier. And a " +
+			"hook is a callback on YOUR lifecycle: it delivers when your turn ends, " +
+			"and nothing outside can make an idle thread wake. For that Codex has its " +
+			"own durable queue, which is a harness control surface and not something " +
+			"Dibs will reach into.",
 		root: "~/.codex",
 		setup: []Step{
 			{
-				Do: "Set a pull rhythm instead of waiting to be woken: check_in at the " +
-					"start of each activation, await_events when you are about to block. " +
-					"Those are the two moments where news changes what you do next.",
+				Do: "Copy hooks.json into ~/.codex/ (or the config folder for this " +
+					"project: hooks are layered, and a project layer overrides the user one).",
+				Check: "the file is at ~/.codex/hooks.json and parses: it must have only " +
+					"`description` and `hooks` at the top level, because Codex refuses a " +
+					"hook file with any key it does not know",
+				IfNot: "Codex reports the hook as failed rather than the config as wrong, " +
+					"so a typo here looks like Dibs being broken",
+			},
+			{
+				Do: "Check the server name matches. The hook says server \"dibs\", which " +
+					"has to be the key under [mcp_servers] in your config.toml.",
+				Check: "`mcp_servers.dibs` exists in the config Codex actually loads",
+				IfNot: "the hook resolves to no server and fails immediately, because " +
+					"Codex will not start a server on a hook's behalf",
+			},
+			{
+				Do: "Keep the pull rhythm anyway: check_in at the start of each " +
+					"activation, await_events when you are about to block. On a build " +
+					"without the executor this is the whole delivery path, and on a build " +
+					"with it, it is what covers the SessionStart race.",
 				Check: "await_events returns rather than erroring, and check_in reports a " +
 					"cursor serial",
 				IfNot: "you are registered but not acknowledging: declare and claim " +
 					"refuse until check_in has succeeded this activation",
 			},
 		},
-		verify: "call check_in and then inbox: if both answer, this harness is as " +
-			"configured as it can be. There is no wake path to verify here, by design",
+		verify: "call spawned_agents after a turn ends: if this session is listed, a " +
+			"Stop hook reached the daemon and the wake is live. If it is not, the " +
+			"build is older than 2026-08-18 or the server was not connected when the " +
+			"hook ran, and mail is pull-only until you fix that",
 		delivers: false,
 	},
 }

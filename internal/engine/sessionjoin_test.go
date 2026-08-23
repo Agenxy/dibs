@@ -168,7 +168,7 @@ func TestMailReachesAnAgentRegisteredByABlindBridge(t *testing.T) {
 
 	// Stop fires with the id the HARNESS knows, which is not the id the bridge
 	// registered under.
-	out, err := e.HookPoll(ctx, "codex-abc", "Stop", "/repo/app", false)
+	out, err := e.HookPoll(ctx, "codex-abc", "Stop", "/repo/app", false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +276,7 @@ func TestNoAnnouncementMeansNoSession(t *testing.T) {
 	if sid, _ := r["session_id"].(string); sid != "" {
 		t.Errorf("an agent that announced nothing was given session %q", sid)
 	}
-	if _, err := e.HookPoll(ctx, "some-strangers-session", "Stop", "/repo/app", false); err != nil {
+	if _, err := e.HookPoll(ctx, "some-strangers-session", "Stop", "/repo/app", false, false); err != nil {
 		t.Fatal(err)
 	}
 }
