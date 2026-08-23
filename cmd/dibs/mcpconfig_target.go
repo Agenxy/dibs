@@ -354,7 +354,7 @@ func dialableAddr(a string) (string, error) {
 // agreeing with the bridge costs nothing and is worth leaving unsaid, and
 // disagreeing with it is the whole bug.
 func inferredScheme(a string) string {
-	if tunnel, _ := boardShape(a); tunnel {
+	if tunnel, _ := boardShape(a, ""); tunnel {
 		return "http"
 	}
 	return "https"

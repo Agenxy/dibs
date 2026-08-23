@@ -492,7 +492,7 @@ func mcpConfig(args []string) error {
 	if derr != nil {
 		return derr
 	}
-	joiner, jerr := joinerAddr()
+	joiner, jerr := joinerAddr(scheme)
 	if jerr != nil {
 		return jerr
 	}
@@ -648,6 +648,14 @@ args = ["mcp-stdio"]
 // verified TLS to the daemon, trusting exactly the certificate this machine
 // recorded and nothing else, so the harness needs no TLS configuration and no
 // certificate of its own. It is also the only shape some harnesses accept.
+// servedScheme names the transport for boardShape.
+func servedScheme(servesTLS bool) string {
+	if servesTLS {
+		return "https"
+	}
+	return "http"
+}
+
 func printRemoteRecipe(servesTLS bool, joiner string) {
 	fmt.Printf(`
 # ── Agents on ANOTHER machine ───────────────────────────────────────────────
@@ -685,12 +693,12 @@ func printRemoteRecipe(servesTLS bool, joiner string) {
 	// named http:// off loopback was described as loopback and told to tunnel.
 	// boardShape already answers both from the address; there is no reason for
 	// this recipe to guess separately.
-	tunnel, trust := boardShape(rawAddr())
-	// The address says what a daemon off loopback USUALLY serves; the resolved
-	// transport says what this one does. `insecure_plaintext = true` is the
-	// operator overriding the default, and printing "this daemon serves HTTPS"
-	// at them, with a certificate to record, describes a different machine.
-	trust = trust && servesTLS
+	tunnel, trust := boardShape(rawAddr(), servedScheme(servesTLS))
+	// boardShape is now TOLD the resolved transport, so it no longer guesses and
+	// this no longer has to correct it. The old `trust && servesTLS` could only
+	// ever narrow, which was right for insecure_plaintext on a LAN address and
+	// wrong for a certificate pair on loopback: that case needs a trust step the
+	// address alone will never ask for.
 	if tunnel {
 		// The tunnel, for the daemon this actually is.
 		//

@@ -466,26 +466,62 @@ func TestAnEmptyBoardIsNeitherWaivedNorTreatedAsLocal(t *testing.T) {
 // loopback and told to tunnel. Found by the pre-release review running the
 // binary; `--board` had been fixed and this had not.
 func TestTheOrdinaryRecipeReadsTheAddress(t *testing.T) {
+	// EACH CASE CARRIES THE TRANSPORT ITS DAEMON ACTUALLY SERVES.
+	//
+	// This passed servesTLS=true for every row while expecting a bare loopback
+	// address to omit the trust step, so it pinned the answer for a daemon that
+	// does not exist: TLS on loopback needs a trust step and was asserted not to
+	// print one. The two config-derived rows at the end are the ones the
+	// pre-release review found broken, and neither could be expressed before,
+	// because the recipe read only the address.
 	cases := []struct {
+		name                  string
 		addr                  string
+		servesTLS             bool
 		wantTunnel, wantTrust bool
 	}{
-		{"https://127.0.0.1:5777", true, true},
-		{"http://hub.example:4777", false, false},
-		{"127.0.0.1:4777", true, false},
-		{"hub.example:4777", false, true},
+		{
+			"https on loopback: forward it AND trust the certificate",
+			"https://127.0.0.1:5777", true, true, true,
+		},
+		{
+			"http off loopback: neither",
+			"http://hub.example:4777", false, false, false,
+		},
+		{
+			"the default loopback daemon: forward, nothing to trust",
+			"127.0.0.1:4777", false, true, false,
+		},
+		{
+			"a LAN daemon on the default transport: TLS, so trust it",
+			"hub.example:4777", true, false, true,
+		},
+		{
+			"a bare loopback address whose daemon was given a certificate",
+			"127.0.0.1:4777", true, true, true,
+		},
+		{
+			"a bare LAN address with insecure_plaintext",
+			"hub.example:4777", false, false, false,
+		},
 	}
 	for _, c := range cases {
 		t.Setenv("DIBS_ADDR", c.addr)
-		out, err := captureStdout(t, func() error { printRemoteRecipe(true, mustJoiner(t)); return nil })
+		out, err := captureStdout(t, func() error {
+			printRemoteRecipe(c.servesTLS, mustJoinerFor(t, c.servesTLS))
+			return nil
+		})
 		if err != nil {
 			t.Fatal(err)
 		}
 		if got := strings.Contains(out, "ssh -N -L"); got != c.wantTunnel {
-			t.Errorf("%s: forward printed = %v, want %v", c.addr, got, c.wantTunnel)
+			t.Errorf("%s (%s): forward printed = %v, want %v", c.name, c.addr, got, c.wantTunnel)
 		}
 		if got := strings.Contains(out, "dibs trust"); got != c.wantTrust {
-			t.Errorf("%s: trust step printed = %v, want %v", c.addr, got, c.wantTrust)
+			t.Errorf("%s (%s): trust step printed = %v, want %v. A daemon serving TLS "+
+				"needs its certificate recorded, and one serving plaintext has nothing "+
+				"to record: the ADDRESS cannot answer that on its own",
+				c.name, c.addr, got, c.wantTrust)
 		}
 	}
 }
@@ -901,11 +937,24 @@ func TestAnUnresolvableHomeIsRefusedNotInvented(t *testing.T) {
 	}
 }
 
+// mustJoinerFor resolves the joining address for a daemon serving a KNOWN
+// transport, which is what mcp-config has when it prints the recipe.
+func mustJoinerFor(t *testing.T, servesTLS bool) string {
+	t.Helper()
+	j, err := joinerAddr(servedScheme(servesTLS))
+	if err != nil {
+		t.Fatalf("resolving the joining address: %v", err)
+	}
+	return j
+}
+
 // mustJoiner resolves the address another machine reaches this daemon on, the
 // way mcp-config does before printing anything.
 func mustJoiner(t *testing.T) string {
 	t.Helper()
-	j, err := joinerAddr()
+	// "" is "the caller does not know the transport", which is the shape the
+	// callers that only have an address still use.
+	j, err := joinerAddr("")
 	if err != nil {
 		t.Fatalf("resolving the joining address: %v", err)
 	}

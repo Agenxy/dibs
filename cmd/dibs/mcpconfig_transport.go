@@ -107,19 +107,34 @@ func clientHost(a string) (string, error) {
 // wrong daemon, and then, further down, correctly explained that the local end
 // of a forward is that machine's choice. Two halves of one recipe contradicting
 // each other. It names the placeholder the rest of the recipe uses.
-func joinerAddr() (string, error) {
-	if tunnel, _ := boardShape(rawAddr()); tunnel {
+// served is the transport this daemon actually resolved. It is STATED in the
+// address handed to the other machine, always, rather than left for the
+// joining bridge to infer from the host: a bare LAN address with
+// `insecure_plaintext = true` was emitted without a scheme and the bridge
+// re-inferred HTTPS, and a bare loopback address with a certificate pair was
+// emitted without one and the bridge re-inferred HTTP. Both configurations are
+// supported and both produced a recipe that cannot connect. Found by the
+// pre-release review.
+func joinerAddr(served string) (string, error) {
+	if tunnel, _ := boardShape(rawAddr(), served); tunnel {
 		return "127.0.0.1:<local-port>", nil
 	}
 	raw := rawAddr()
-	if scheme, rest, found := strings.Cut(raw, "://"); found {
-		h, err := clientHost(rest)
-		if err != nil {
-			return "", err
+	rest := raw
+	if scheme, r, found := strings.Cut(raw, "://"); found {
+		rest = r
+		if served == "" {
+			served = strings.ToLower(scheme)
 		}
-		return scheme + "://" + h, nil
 	}
-	return clientHost(raw)
+	h, err := clientHost(rest)
+	if err != nil {
+		return "", err
+	}
+	if served == "" {
+		return h, nil
+	}
+	return served + "://" + h, nil
 }
 
 // statedScheme returns the transport an address NAMES, lowercased, or "" when
