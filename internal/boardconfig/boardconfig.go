@@ -24,6 +24,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
+	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/liveness"
 )
 
@@ -246,8 +247,17 @@ type WakeExec struct {
 
 // RolesConfig is the [roles] table.
 type RolesConfig struct {
-	// Coordinator gets breadth without intrusion: broadcast, force-release,
-	// merge and evict, but never another agent's mail.
+	// Coordinator gets breadth with ONE narrow reach into private content:
+	// broadcast, force-release, merge and evict, plus adopting a peer that is
+	// not active, which moves that agent's messages into a live mailbox so they
+	// can be read. That last one is the point of adoption and it is ledgered.
+	//
+	// This said "never another agent's mail", which is the flat claim
+	// internal/core/roles.go records as already found wrong once. Repeating it
+	// in the newly centralised config type would have reintroduced a false
+	// authorisation contract in the file an operator reads to decide who gets
+	// this. Admin is still the difference in kind: it reads every mailbox,
+	// without adopting anything.
 	Coordinator []string `toml:"coordinator"`
 	// Admin adds the god view, mail included. Grant it only to an agent trusted
 	// as the operator trusts themselves.
@@ -524,13 +534,41 @@ func (c Config) validateLimits() error {
 		return fmt.Errorf("[limits] blob_store_bytes = %d: a store cannot hold a "+
 			"negative number of bytes", c.Limits.BlobStoreBytes)
 	}
-	// Only when the file sets BOTH: with one unset the daemon's default is the
-	// other side of the comparison, and that default is not ours to know.
-	if c.Limits.MaxAgents > 0 && c.Limits.MaxPersistentAgents > c.Limits.MaxAgents {
-		return fmt.Errorf("[limits] max_persistent_agents = %d exceeds max_agents = %d, "+
+	// AGAINST THE DEFAULT WHEN THE FILE OMITS THE OTHER SIDE.
+	//
+	// This compared the two only when the file set BOTH, on the reasoning that
+	// the daemon's default "is not ours to know". It is: core.DefaultLimits is
+	// the same value the daemon folds these over, and refusing to look at it
+	// left exactly the hole this loader exists to close. With max_agents
+	// omitted, `max_persistent_agents = 65` passed here and was refused by the
+	// daemon at startup, so `dibs mcp-config` printed a complete configuration
+	// and exited zero for a board that cannot boot. A shared loader that
+	// accepts what the daemon rejects is worse than two loaders, because it
+	// reads as a guarantee.
+	limits := core.DefaultLimits()
+	maxAgents := c.Limits.MaxAgents
+	if maxAgents == 0 {
+		maxAgents = limits.MaxAgents
+	}
+	if c.Limits.MaxPersistentAgents > maxAgents {
+		how := fmt.Sprintf("max_agents = %d", maxAgents)
+		if c.Limits.MaxAgents == 0 {
+			how = fmt.Sprintf("the default max_agents of %d", maxAgents)
+		}
+		return fmt.Errorf("[limits] max_persistent_agents = %d exceeds %s, "+
 			"so the lower ceiling is the one that binds and this setting would do "+
 			"nothing: raise max_agents too, or lower this",
-			c.Limits.MaxPersistentAgents, c.Limits.MaxAgents)
+			c.Limits.MaxPersistentAgents, how)
+	}
+	// A store that cannot hold one maximum-sized blob evicts everything the
+	// moment it is used, which looks like attachments not working rather than
+	// like a setting. The daemon refuses it; so must anything describing the
+	// daemon.
+	if min := int64(limits.MaxBlobSize); c.Limits.BlobStoreBytes > 0 && c.Limits.BlobStoreBytes < min {
+		return fmt.Errorf("[limits] blob_store_bytes = %d is smaller than one "+
+			"maximum-sized blob (%d): the store would evict every attachment as "+
+			"soon as it held one, and the daemon refuses to start on it",
+			c.Limits.BlobStoreBytes, min)
 	}
 	return nil
 }

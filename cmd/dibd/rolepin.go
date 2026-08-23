@@ -64,6 +64,13 @@ func loadRolePins(dir string) *rolePins {
 	// grant is treated as unverifiable until the operator removes the file.
 	if err := json.Unmarshal(b, p); err != nil {
 		p.Pins = nil
+		// AND KEEP THE REASON. Dropping it left `check` reporting that the file
+		// "cannot be read (<nil>)", which tells an operator staring at a
+		// refused grant nothing at all: the decision was safely fail-closed and
+		// the one line explaining it was thrown away. readErr is what `check`
+		// prints, so a parse failure belongs in it exactly as a read failure
+		// does.
+		p.readErr = err
 	}
 	return p
 }

@@ -121,6 +121,19 @@ func TestLoadRefusesSettingsThatWouldNotTakeEffect(t *testing.T) {
 		// NaN passed `< 0 || > 1` because no comparison against NaN is true,
 		// and was then ignored by the `> 0` test on the way in. TOML has NaN.
 		{"a duty fraction of nan, which no comparison catches", "[supervise]\nmin_duty = nan\n"},
+		// The two the shared loader accepted while the daemon refused them, which
+		// is the one failure this loader exists to make impossible: `dibs
+		// mcp-config` printed a complete configuration and exited zero for a
+		// board that cannot boot. Both need the DEFAULT for the other side of
+		// the comparison, and the omission was deliberate ("not ours to know").
+		{
+			"a persistent ceiling above the DEFAULT max_agents",
+			"[limits]\nmax_persistent_agents = 65\n",
+		},
+		{
+			"a blob store too small for one maximum-sized blob",
+			"[limits]\nblob_store_bytes = 1024\n",
+		},
 		// [wake.exec] arrived with this list's own subject in it: cooldown took
 		// any duration and the waker maps everything <= 0 to the 90s default,
 		// so a negative one passed `dibd -check`, startup reported the harness

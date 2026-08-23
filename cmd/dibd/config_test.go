@@ -650,3 +650,66 @@ func TestWakePhasesMatchTheEngine(t *testing.T) {
 		}
 	}
 }
+
+// Whatever the daemon refuses, the shared loader must refuse first.
+//
+// That is the whole reason boardconfig exists: `dibs mcp-config` reads the same
+// file and describes the same daemon, so a configuration it accepts and the
+// daemon rejects is a command that exits zero for a board that cannot boot.
+// The invariant was stated in the loader's doc comment and checked nowhere, and
+// two settings had already slipped through it, both for the same reason: the
+// loader declined to compare against `core.DefaultLimits()` on the grounds that
+// the default was "not ours to know".
+//
+// So this asks both, over the same inputs, and compares the ANSWERS. It is not
+// a list of known-bad values; it is the relation between two validators, which
+// is what the next omission will break.
+func TestTheSharedLoaderRefusesEverythingTheDaemonRefuses(t *testing.T) {
+	cases := []struct{ name, body string }{
+		{"a persistent ceiling above the default total", "[limits]\nmax_persistent_agents = 65\n"},
+		{"a persistent ceiling above an explicit total", "[limits]\nmax_agents = 8\nmax_persistent_agents = 9\n"},
+		{"a blob store too small for one blob", "[limits]\nblob_store_bytes = 1024\n"},
+		{"a blob store of exactly one blob", "[limits]\nblob_store_bytes = 67108864\n"},
+		{"a negative blob store", "[limits]\nblob_store_bytes = -1\n"},
+		{"a negative agent count", "[limits]\nmax_agents = -1\n"},
+		{"a bad duration", "[limits]\nagent_ttl = \"soon\"\n"},
+		{"nothing at all", ""},
+		{"ordinary values", "[limits]\nmax_agents = 128\nmax_persistent_agents = 32\nagent_ttl = \"30m\"\n"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(c.body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, loaderErr := boardconfig.Load(dir)
+
+			// What the daemon does with the same file. A load failure means the
+			// daemon never gets here, which is the loader refusing: agreement.
+			daemonErr := loaderErr
+			if loaderErr == nil {
+				base, err := applyLimits(cfg.Limits, core.DefaultLimits())
+				if err == nil {
+					err = applyBlobCap(cfg.Limits, &base)
+				}
+				daemonErr = err
+			}
+
+			if loaderErr == nil && daemonErr != nil {
+				t.Errorf("the shared loader ACCEPTED a configuration the daemon "+
+					"refuses:\n  %s\n  daemon: %v\n"+
+					"`dibs mcp-config` would print a complete configuration and exit "+
+					"zero for a board that cannot start, which is the failure this "+
+					"loader was added to make impossible",
+					strings.ReplaceAll(strings.TrimSpace(c.body), "\n", " / "), daemonErr)
+			}
+			if loaderErr != nil && daemonErr == nil {
+				t.Errorf("the shared loader REFUSED a configuration the daemon "+
+					"accepts:\n  %s\n  loader: %v\n"+
+					"Refusing more than the daemon is not the safe direction: it "+
+					"stops an operator using a board that works",
+					strings.ReplaceAll(strings.TrimSpace(c.body), "\n", " / "), loaderErr)
+			}
+		})
+	}
+}

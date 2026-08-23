@@ -475,3 +475,39 @@ func TestANoncePastedIntoTheIdentityTableIsRefusedAsAnExposure(t *testing.T) {
 		t.Errorf("a correct fingerprint was refused: %v", err)
 	}
 }
+
+// A corrupt pin file must say WHY every grant is refused.
+//
+// Refusing is the safe direction and was never in doubt. But the parse error
+// was dropped on the floor, so `check` reported that the file "cannot be read
+// (<nil>)": an operator whose declared roles have all stopped working is told
+// the file is unreadable, given no reason, and sent to look at permissions on a
+// file whose permissions are fine. readErr is the field that error prints, and
+// its own contract says it holds why. Existing coverage used an OS-level read
+// failure, which is the one case that already populated it.
+func TestACorruptPinFileExplainsItself(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "roles.pinned"),
+		[]byte("{ this is not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := loadRolePins(dir)
+	if p.Pins != nil {
+		t.Fatal("a corrupt pin file left the pins usable, so a damaged file " +
+			"silently un-pins every role: the failure the file exists to prevent")
+	}
+	err := p.check(core.RoleAdmin, "fleet-lead", engine.RolePinFingerprint("n"), "")
+	if err == nil {
+		t.Fatal("a grant was allowed against an unreadable pin file")
+	}
+	if strings.Contains(err.Error(), "<nil>") {
+		t.Errorf("the refusal reports no reason:\n  %s\n"+
+			"The operator sees every declared role stop working and is told the "+
+			"file cannot be read, with the parse error that would explain it "+
+			"thrown away", err)
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "json") &&
+		!strings.Contains(err.Error(), "invalid character") {
+		t.Errorf("the refusal does not name the parse failure:\n  %s", err)
+	}
+}
