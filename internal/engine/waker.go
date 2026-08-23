@@ -58,21 +58,33 @@ type wakers struct {
 // Called once at startup from the config. There is deliberately no tool, no
 // admin route and no op that can reach this: a wake command is arbitrary code
 // on the operator's machine, and the only party who may name it is the operator.
-func (e *Engine) SetWakeCommands(cmds map[string][]string, cooldown time.Duration) {
+func (e *Engine) SetWakeCommands(cmds map[string]WakeCommand) {
 	e.wakers.mu.Lock()
 	defer e.wakers.mu.Unlock()
 	if e.wakers.byHarness == nil {
 		e.wakers.byHarness = map[string]wakeCommand{}
 	}
-	if cooldown <= 0 {
-		cooldown = wakeCooldown
-	}
-	for harness, argv := range cmds {
-		if len(argv) == 0 {
+	for harness, c := range cmds {
+		if len(c.Argv) == 0 {
 			continue
 		}
-		e.wakers.byHarness[strings.ToLower(harness)] = wakeCommand{argv: argv, cooldown: cooldown}
+		cool := c.Cooldown
+		if cool <= 0 {
+			cool = wakeCooldown
+		}
+		e.wakers.byHarness[strings.ToLower(harness)] = wakeCommand{argv: c.Argv, cooldown: cool}
 	}
+}
+
+// WakeCommand is one harness's entry, as the operator wrote it.
+//
+// Each carries its OWN cooldown. The first version took a single duration for
+// the whole table and startup passed the largest one in it, so a cautious
+// harness set to ten minutes silently throttled every other harness to ten
+// minutes: settings that parsed, reported success, and did nothing they said.
+type WakeCommand struct {
+	Argv     []string
+	Cooldown time.Duration
 }
 
 // wakeFields are the only substitutions a wake command gets.
@@ -114,7 +126,19 @@ func (f wakeFields) apply(argv []string) []string {
 // reached any other way. Called from publish, on the writer loop, and returns
 // immediately: the command itself runs in its own goroutine.
 func (e *Engine) maybeWake(ev core.Event) {
-	if ev.Type != "message.sent" || ev.To == "" {
+	// Mail AND verdicts. The first version took only message.sent, which
+	// excluded every answer and approval: message.approved, .denied, .answered
+	// and .declined are addressed to the agent that ASKED, and an agent that
+	// asked and then stopped is the single clearest case for starting it again.
+	// Leaving them out recreated, on the new mechanism, the exact defect the
+	// notice work had just fixed on the old one.
+	switch ev.Type {
+	case "message.sent", "message.approved", "message.denied",
+		"message.answered", "message.declined":
+	default:
+		return
+	}
+	if ev.To == "" {
 		return
 	}
 	// Guarded, because this runs on the event path and must not be able to take
@@ -129,25 +153,60 @@ func (e *Engine) maybeWake(ev core.Event) {
 	if !ok {
 		return
 	}
-	// An agent that is ACTIVE will see this the ordinary way: its next call, or
-	// its own turn boundary. Starting something for it would be paying for a
-	// wake that was already going to happen.
-	if l.Status == core.StatusActive {
+	// RECENTLY IN TOUCH, not merely "active".
+	//
+	// Status was the first test here and it was wrong. `active` means the idle
+	// lease has not lapsed, which is 45 minutes by default; Stop and SessionEnd
+	// only finish the separate supervision child, so an agent whose turn ended
+	// seconds ago is still `active` and is not running. Skipping on that
+	// discarded the one wake attempt this message will ever get, because
+	// maybeWake fires once when the event is published and the dormant sweep
+	// never retries the mail. A message arriving just after a turn ended waited
+	// for a human. Found by the pre-release review, which also pointed out my
+	// test could not see it: nil engine state returned before this branch.
+	//
+	// Having called Dibs inside the cooldown is real evidence of a live agent,
+	// and it is the same window that bounds the wake itself.
+	if e.recentlyInTouch(l) {
 		return
 	}
-	// Only mail somebody is blocked on. An FYI does not justify starting a
-	// process on the operator's machine, and the classification already exists.
+	// Only news somebody is blocked on. An FYI does not justify starting a
+	// process on the operator's machine.
+	//
+	// A VERDICT is always blocking and carries no msg_type: it is an answer to
+	// something this agent asked and then stopped for. Filtering verdicts by a
+	// field they do not have dropped every one of them, which is how the first
+	// version excluded exactly the case with the strongest claim on a wake.
 	msgType, _ := ev.Data["msg_type"].(string)
-	switch msgType {
-	case core.MsgQuestion, core.MsgRequest, core.MsgHandoff:
-	default:
-		return
+	if ev.Type == "message.sent" {
+		switch msgType {
+		case core.MsgQuestion, core.MsgRequest, core.MsgHandoff:
+		default:
+			return
+		}
 	}
 	cmd, ok := e.wakeFor(l, msgType, ev)
 	if !ok {
 		return
 	}
 	go runWake(cmd, l.ID)
+}
+
+// recentlyInTouch reports whether this agent has spoken to the board lately
+// enough that it is certainly running and will see the message on its own.
+func (e *Engine) recentlyInTouch(l *core.Agent) bool {
+	e.wakers.mu.Lock()
+	harness := ""
+	if l.Agent != nil {
+		harness = strings.ToLower(l.Agent.Harness)
+	}
+	cmd, ok := e.wakers.byHarness[harness]
+	e.wakers.mu.Unlock()
+	if !ok {
+		return false
+	}
+	return !l.LastCoordination.IsZero() &&
+		time.Since(l.LastCoordination) < cmd.cooldown
 }
 
 // wakeFor picks the command for this agent and spends its cooldown.
@@ -166,10 +225,21 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) ([]string
 	if !ok || len(cmd.argv) == 0 {
 		return nil, false
 	}
-	// No session id, nowhere to send it. Every wake mechanism we know of
-	// addresses a thread, and guessing one would wake somebody else.
-	if l.SessionID == "" {
-		slog.Debug("no wake: the agent has no session id", "agent", l.ID)
+	// THE THREAD ID, WHICH IS USUALLY NOT SessionID.
+	//
+	// This passed SessionID and that is wrong on the ordinary path. The stdio
+	// bridge derives `host-<ppid>` and stores it as the primary id, while the
+	// identifier `codex exec resume` accepts arrives separately as the harness's
+	// own `_meta.threadId` and is kept as an ALIAS. So the shipped command ran
+	// as `codex exec resume host-10602`, which resolves to no thread: the
+	// subprocess started, failed, and the mail stayed unread. The feature did
+	// not work in the one configuration anybody would use. Found by the
+	// pre-release review; my test invented an agent whose primary id already
+	// looked like a thread, so it could never have caught it.
+	thread := threadIDOf(l)
+	if thread == "" {
+		slog.Debug("no wake: no harness thread id for this agent",
+			"agent", l.ID, "session_id", l.SessionID)
 		return nil, false
 	}
 	now := time.Now()
@@ -184,7 +254,7 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) ([]string
 
 	from, _ := ev.Data["from"].(string)
 	return wakeFields{
-		sessionID: l.SessionID,
+		sessionID: thread,
 		agent:     l.ID,
 		from:      from,
 		msgType:   msgType,
@@ -205,6 +275,51 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) ([]string
 		// "Check" is true whenever it arrives.
 		message: "Dibs: check the board. Call check_in, then inbox, and act on anything there.",
 	}.apply(cmd.argv), true
+}
+
+// threadIDOf finds the identifier a harness's own resume command will accept.
+//
+// A harness thread id is a UUID; the bridge's synthetic `host-<ppid>` is not,
+// and neither is a name a person typed. Shape is a weak discriminator in
+// general and an exact one here, which is why it is used rather than guessed
+// provenance: the alternative was a new replayable field, and a json tag added
+// to core is a thing this repository has already lost data to.
+//
+// Returning "" means no wake. Starting a resume against an identifier the
+// harness cannot resolve costs a process and delivers nothing, and starting one
+// against a DIFFERENT valid thread would wake somebody else.
+func threadIDOf(l *core.Agent) string {
+	if looksLikeThreadID(l.SessionID) {
+		return l.SessionID
+	}
+	for _, alias := range l.SessionAliases {
+		if looksLikeThreadID(alias) {
+			return alias
+		}
+	}
+	return ""
+}
+
+// looksLikeThreadID reports whether s has the shape of a UUID: 8-4-4-4-12 hex
+// with hyphens.
+func looksLikeThreadID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, r := range s {
+		switch i {
+		case 8, 13, 18, 23:
+			if r != '-' {
+				return false
+			}
+		default:
+			isHex := (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+			if !isHex {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // runWake executes one wake, bounded and out of the way.

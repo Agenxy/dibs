@@ -20,7 +20,18 @@ before:
     # documentation described a presence-first flow. A source install got it and
     # a released one did not, which is the worst way round. The release job runs
     # on macos-latest, so swiftc is there. Found by the pre-release review.
-    - swiftc -O -o dibs-presence internal/humanauth/presence_darwin.swift
+    # UNIVERSAL, because one archive is built per architecture and this file is
+    # copied into both. A single-architecture helper meant one macOS release
+    # shipped a correctly built dibd beside a presence binary the machine cannot
+    # execute, and the failure is silent: humanauth finds no usable helper and
+    # falls back to the admin password, so Touch ID quietly stops existing on
+    # whichever architecture the release runner was not. Found by the
+    # pre-release review; the drift guard only checked that the NAME appeared in
+    # the build, the archive and the cask, never what was inside.
+    - swiftc -O -target arm64-apple-macos11 -o dibs-presence-arm64 internal/humanauth/presence_darwin.swift
+    - swiftc -O -target x86_64-apple-macos11 -o dibs-presence-amd64 internal/humanauth/presence_darwin.swift
+    - lipo -create -output dibs-presence dibs-presence-arm64 dibs-presence-amd64
+    - lipo -info dibs-presence
 
 builds:
   - id: dibd
