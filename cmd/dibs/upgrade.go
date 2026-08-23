@@ -775,6 +775,26 @@ func replacementAddr(dir, addr string) string {
 	// So the scheme is added only when the config is talking about the same
 	// address the daemon actually bound. Otherwise the bare form goes through
 	// and the replacement resolves it exactly as the original did.
+	// DIBS_ADDR FIRST, BECAUSE THE DAEMON READS IT FIRST.
+	//
+	// resolveListenAddr takes -addr, then DIBS_ADDR, then the config. This
+	// command passes -addr, which OUTRANKS the variable still set in the
+	// environment the replacement inherits: a board launched with
+	// DIBS_ADDR=http://10.0.0.9:4777 whose dibs.toml does not repeat that
+	// address was handed a bare `10.0.0.9:4777`, and the replacement re-inferred
+	// TLS for a non-loopback host while every client went on speaking plaintext.
+	// The reverse turns an explicitly plaintext loopback board into one.
+	//
+	// Same rule as the config below: state the scheme only where the source is
+	// talking about the listener the daemon actually bound.
+	if env := os.Getenv("DIBS_ADDR"); sameHostPort(env, addr) {
+		if scheme, _, found := strings.Cut(env, "://"); found {
+			switch strings.ToLower(scheme) {
+			case "http", "https":
+				return strings.ToLower(scheme) + "://" + addr
+			}
+		}
+	}
 	configured, cerr := readConfiguredAddr(paths.DataDir())
 	if cerr != nil || !sameHostPort(configured, addr) {
 		return addr

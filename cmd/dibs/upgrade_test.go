@@ -317,3 +317,49 @@ func TestTheRecoveryFiresOnlyWhenTheBoardDidNotComeBack(t *testing.T) {
 		})
 	}
 }
+
+// DIBS_ADDR's scheme survives the restart, because the daemon reads it.
+//
+// resolveListenAddr takes -addr, then DIBS_ADDR, then dibs.toml. `dibs upgrade`
+// passes -addr, which OUTRANKS the variable that is still set in the
+// environment the replacement inherits, so an operator who launched the board
+// with an explicit scheme and did not repeat it in the config had it silently
+// dropped: the replacement re-inferred TLS for a non-loopback address while
+// every client went on speaking plaintext, and the reverse turns an explicitly
+// plaintext loopback board into a TLS one.
+//
+// The test above covers only a scheme stored in dibs.toml, and deliberately
+// expects a bare address when the file does not describe the listener, so it
+// passes against exactly this case.
+func TestAnExplicitSchemeInTheEnvironmentSurvivesTheUpgrade(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DIBS_DIR", dir)
+	const listener = "10.0.0.9:4777"
+
+	// No dibs.toml naming the address: the whole point is that the environment
+	// is the only place the scheme was ever stated.
+	t.Setenv("DIBS_ADDR", "http://"+listener)
+	if got := replacementAddr(dir, listener); got != "http://"+listener {
+		t.Errorf("the replacement is started on %q; DIBS_ADDR says http://%s.\n"+
+			"A bare address is re-inferred, and 10.0.0.9 is not loopback, so the "+
+			"board comes back on TLS while its clients speak plaintext", got, listener)
+	}
+
+	// And the other direction, which loses a board just as completely.
+	t.Setenv("DIBS_ADDR", "https://127.0.0.1:4777")
+	if got := replacementAddr(dir, "127.0.0.1:4777"); got != "https://127.0.0.1:4777" {
+		t.Errorf("the replacement is started on %q; DIBS_ADDR says https://. Loopback "+
+			"re-infers to plaintext, so a board every client reaches over TLS comes "+
+			"back speaking neither", got)
+	}
+
+	// A variable about some OTHER listener states nothing, exactly as the
+	// config does not: asserting a scheme we cannot know is worse than a bare
+	// address, which the daemon still resolves correctly.
+	t.Setenv("DIBS_ADDR", "https://192.168.1.50:4777")
+	if got := replacementAddr(dir, listener); got != listener {
+		t.Errorf("replacementAddr returned %q from a DIBS_ADDR naming a different "+
+			"listener: a guessed transport cannot be recovered from, and a bare "+
+			"address can", got)
+	}
+}

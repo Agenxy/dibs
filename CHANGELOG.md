@@ -273,10 +273,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the newest is last, and resuming an older thread would start a real session
   that is not the one holding the mail.
 
-  Wakes are rate-limited per agent (90s by default, `cooldown =`), so a burst of
-  three messages is one wake and not three, and an agent that has made an
+  Wakes are rate-limited per agent (90s by default, `cooldown =`), so a burst
+  never becomes one process per message, and an agent that has made an
   authenticated call inside that window is left alone because it is plainly
-  running. The command itself is bounded at two hours, not at anything shorter:
+  running. Mail that arrives while a command is running is re-asked once when
+  that command exits, so a burst is one wake and at most one re-ask: the exit
+  asks whether anybody is still waiting, and an agent that answered its mail
+  produces nothing. The command itself is bounded at two hours, not at anything shorter:
   `codex exec resume` runs the agent's whole turn in that process, so a short
   bound is a cap on the work rather than on starting it.
 
@@ -890,6 +893,30 @@ machines for real work. Their priority order, not ours.
   install rules that are not obvious from them: remove before copying, because
   macOS caches a signature verdict against the inode, and set the codesign
   identifiers, which the Go toolchain leaves as `a.out`.
+
+- **`dibs upgrade` could change the board's transport on a direct restart.**
+  The daemon resolves `-addr`, then `DIBS_ADDR`, then the config, and upgrade
+  passes `-addr`, which outranks the variable still set in the environment the
+  replacement inherits. A board launched with `DIBS_ADDR=http://10.0.0.9:4777`
+  whose `dibs.toml` does not repeat that address was therefore handed the bare
+  form, and the replacement re-inferred TLS for a non-loopback host while every
+  client went on speaking plaintext; the reverse turns an explicitly TLS
+  loopback board into one nobody can reach. The environment is consulted with
+  the same rule as the config, which is to state the scheme only where the
+  source names the listener the daemon actually bound.
+
+- **`SECURITY.md`'s summary table described an authorisation model two rounds
+  out of date.** It put `/` and `/events` under "needs the admin password, never
+  the secret alone", where a session cookie alone is sufficient by design
+  (`EventSource` cannot send a header) and that session is minted by Touch ID on
+  a Mac that has no admin password; the document's own detailed section had it
+  right. It also still described a standing role as pinned to the first agent it
+  landed on, which was replaced by the `[roles.identity]` fingerprint
+  requirement in this same release, and said the launch claim is suppressed
+  whenever `[roles] coordinator` names somebody, where a bare name decides
+  nothing precisely because it can never be granted. A security document that
+  contradicts the code is worse than none, and these were contract errors rather
+  than wording.
 
 - **Mail arriving during a wake was discarded.** A wake command is bounded at
   two hours and reads its inbox near the start of that turn, and the branch that
