@@ -4,6 +4,8 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
+	"github.com/agenxy/dibs/internal/humanauth"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -140,39 +142,27 @@ func TestDeclinedAndUnavailableAreDistinguished(t *testing.T) {
 	}
 }
 
-// One approval can satisfy only the request it was raised for.
+// The board maps a busy prompt to 409 rather than to a failure.
 //
-// The defence against an agent obtaining a god-view session is a sentence on
-// the system sheet asking the operator to decline a prompt they did not cause.
-// That cannot work while two requests are outstanding: the operator opens the
-// board, an agent asks in the same moment, one sheet is approved, and which
-// request receives the token is a race. The person approved exactly the prompt
-// they expected, and the token went somewhere else.
-//
-// This does NOT make presence bind the requester. That needs something this
-// path does not have, and SECURITY.md says so plainly. What it removes is the
-// silent case: an agent must now raise its own sheet, at its own moment, which
-// is the situation the warning text is about.
-func TestOnlyOnePresenceCheckWaitsAtATime(t *testing.T) {
-	g := newAuthGate("the-secret", filepath.Join(t.TempDir(), "admin.hash"), "127.0.0.1:4777")
-
-	if !g.beginPresence() {
-		t.Fatal("the first presence check was refused with nothing outstanding")
+// The serialisation itself lives in internal/humanauth, with the prompt, and is
+// tested there against the real Check. What is this package's business is that
+// the handler says the right thing: an operator who gets "presence check
+// failed" while a sheet is on their screen has been told the machine is broken
+// when the answer is "answer the one you already have".
+func TestABusyPresencePromptIsAConflictNotAFailure(t *testing.T) {
+	if !errors.Is(humanauth.ErrPromptBusy, humanauth.ErrPromptBusy) {
+		t.Fatal("the sentinel is not comparable, so the handler cannot distinguish it")
 	}
-	if g.beginPresence() {
-		t.Error("a second presence check was allowed to wait alongside the first. " +
-			"One approval would then satisfy whichever request the race picked, and " +
-			"an agent could take a session from a prompt the operator raised for " +
-			"the board")
+	// The mapping the handler makes, stated where a reader of this package will
+	// find it: 409 Conflict, because the request is fine and the timing is not.
+	if got := statusForPresenceErr(humanauth.ErrPromptBusy); got != http.StatusConflict {
+		t.Errorf("a busy prompt answers %d; it must be %d Conflict. Anything in the "+
+			"500 range tells the operator this machine cannot check presence, which "+
+			"sends them to set an admin password they do not need",
+			got, http.StatusConflict)
 	}
-
-	// And the slot is released, so a declined or abandoned check does not lock
-	// the operator out of their own board.
-	g.endPresence()
-	if !g.beginPresence() {
-		t.Error("the presence slot was not released, so one declined prompt leaves " +
-			"this machine unable to raise another: the board becomes unopenable " +
-			"until the daemon restarts")
+	if got := statusForPresenceErr(errors.New("the helper crashed")); got == http.StatusConflict {
+		t.Error("an ordinary presence failure was reported as a conflict, so a broken " +
+			"helper reads as somebody else's sheet being open")
 	}
-	g.endPresence()
 }

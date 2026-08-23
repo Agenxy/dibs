@@ -207,7 +207,7 @@ func (e *Engine) maybeWake(ev core.Event) {
 	if !ok {
 		return
 	}
-	agent := l.ID
+	agent, stamp := l.ID, e.wakeStamp(l.ID)
 	go func() {
 		if runWake(cmd, agent) {
 			return
@@ -228,16 +228,36 @@ func (e *Engine) maybeWake(ev core.Event) {
 		// against a command that is simply wrong, and the operator's log
 		// already says so; letting the NEXT blocking message try again is the
 		// behaviour an agent waiting for mail actually needs.
-		e.releaseWake(agent)
+		e.releaseWake(agent, stamp)
 	}()
+}
+
+// wakeStamp reads back the cooldown this wake just took, so its failure can be
+// matched to it later.
+func (e *Engine) wakeStamp(agent string) time.Time {
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	return e.wakers.last[agent]
 }
 
 // releaseWake forgets a cooldown whose wake never happened, so the next
 // blocking message may try again.
-func (e *Engine) releaseWake(agent string) {
+//
+// ONLY ITS OWN. A wake command may run for up to two hours, which is longer
+// than any cooldown, so a later wake can start and take a new cooldown while an
+// earlier one is still going. Deleting unconditionally let that earlier
+// failure erase the NEWER attempt's cooldown, and the next event then started a
+// third command beside the one already running: two resumptions of one thread,
+// produced by the code that exists to stop exactly that.
+//
+// The timestamp is the generation. If it has moved, this failure is stale and
+// has nothing to release.
+func (e *Engine) releaseWake(agent string, mine time.Time) {
 	e.wakers.mu.Lock()
 	defer e.wakers.mu.Unlock()
-	delete(e.wakers.last, agent)
+	if cur, ok := e.wakers.last[agent]; ok && cur.Equal(mine) {
+		delete(e.wakers.last, agent)
+	}
 }
 
 // recentlyInTouch reports whether this agent has spoken to the board lately

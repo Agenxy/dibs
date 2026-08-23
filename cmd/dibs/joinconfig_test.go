@@ -919,6 +919,17 @@ func TestTheCLIAgreesWithTheDaemonAboutTransport(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// AND THE CLI'S OWN ANSWER, which is what the name of this test
+			// promises. Calling the shared resolver alone proved that the
+			// resolver is right, which it was: this passed for months while
+			// origin() inferred the scheme from the address by itself and every
+			// CLI command talked to a correctly configured board the wrong way.
+			// A test named for an agreement has to ask both sides.
+			if got := origin(); !strings.HasPrefix(got, c.wantScheme+"://") {
+				t.Errorf("the daemon resolves %q and the CLI dials %q. The resolver "+
+					"being right is not the property this names: what matters is that "+
+					"the caller asks it", c.wantScheme, got)
+			}
 			if scheme != c.wantScheme {
 				t.Errorf("scheme = %q, want %q", scheme, c.wantScheme)
 			}
@@ -1213,5 +1224,36 @@ func TestNoRequestCarriesCredentialsToAHiddenAuthority(t *testing.T) {
 	}
 	if err != nil && strings.Contains(err.Error(), "refusing to send") {
 		t.Errorf("an ordinary loopback address was refused as a hidden authority: %v", err)
+	}
+}
+
+// The boundary from resolved transport into the recipe.
+//
+// The recipe suite passes `servesTLS` and a joining address that are both
+// derived from the answer each row expects, so it tests the renderer and not
+// the handoff: an inverted comparison, a constant, or an address built from the
+// wrong scheme would leave every row green while the shipped command printed a
+// recipe for a daemon that does not exist. This is the two lines in between.
+func TestTheRecipeIsGivenWhatTheTransportActuallyResolved(t *testing.T) {
+	for _, c := range []struct {
+		scheme string
+		want   bool
+	}{
+		{"https", true},
+		{"http", false},
+		{"", false}, // unknown: a recipe must not invent TLS
+	} {
+		t.Run("scheme "+c.scheme, func(t *testing.T) {
+			servesTLS, addr := recipeInputs(c.scheme, "hub.example:4777")
+			if servesTLS != c.want {
+				t.Errorf("a daemon serving %q is handed servesTLS=%v to the recipe. "+
+					"The trust step and the emitted scheme both follow this, so the "+
+					"printed instructions describe a different daemon",
+					c.scheme, servesTLS)
+			}
+			if addr != "hub.example:4777" {
+				t.Errorf("the joining address became %q on the way into the recipe", addr)
+			}
+		})
 	}
 }

@@ -36,9 +36,19 @@ func TestMailForAnAgentThatIsNotRunningStartsTheOperatorsCommand(t *testing.T) {
 	})
 
 	l := bridgeAgent("sleeper", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	// A RECOGNISABLE BODY on the event, because the check below is about the
+	// body. This carried only msg_type and from, and then searched the argv for
+	// "asker", which is the SENDER: a future change that read a body field and
+	// put it in {message} would have passed. The command line is the
+	// confidentiality boundary this test names, so something that could only
+	// have come from the body has to be present to be looked for.
+	const secretBody = "the deploy key is hunter2 and the incident is not public"
 	ev := core.Event{
 		Type: "message.sent", To: "sleeper",
-		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+		Data: map[string]any{
+			"msg_type": core.MsgQuestion, "from": "asker",
+			"body": secretBody, "text": secretBody, "preview": secretBody,
+		},
 	}
 	argv, ok := e.wakeFor(l, core.MsgQuestion, ev)
 	if !ok {
@@ -51,9 +61,22 @@ func TestMailForAnAgentThatIsNotRunningStartsTheOperatorsCommand(t *testing.T) {
 			"process that finds nothing and the mail stays unread", argv)
 	}
 	// The BODY never goes on a command line. A wake says mail exists; the agent
-	// reads it over the authenticated channel with its own token.
-	if strings.Contains(strings.Join(argv, " "), "asker") {
-		t.Errorf("argv = %v: it carries message content", argv)
+	// reads it over the authenticated channel with its own token, and mail is
+	// encrypted at rest for the same reason an argv is the wrong place for it:
+	// a command line is visible to every process on the machine.
+	joined := strings.Join(argv, " ")
+	for _, leak := range []string{secretBody, "hunter2", "incident"} {
+		if strings.Contains(joined, leak) {
+			t.Errorf("argv = %v: it carries message content (%q). Every process on "+
+				"this machine can read a command line, and the operator's wake "+
+				"command is arbitrary code that may log its arguments", argv, leak)
+		}
+	}
+	// And {message} was substituted with SOMETHING, or the check above passes
+	// for a wake that carries no message placeholder at all.
+	if !strings.Contains(strings.ToLower(joined), "board") {
+		t.Errorf("argv = %v: {message} carried nothing recognisable, so the "+
+			"body check above had nothing to be a check of", argv)
 	}
 }
 
@@ -746,5 +769,67 @@ func TestAVerdictWakeCarriesWhoAnsweredAndWhatTheyDid(t *testing.T) {
 					kind, c.wantType)
 			}
 		})
+	}
+}
+
+// A stale failure must not release a newer wake's cooldown.
+//
+// A wake command may run for up to two hours, which is longer than any
+// cooldown, so a later wake can start while an earlier one is still going.
+// Releasing unconditionally let the earlier failure delete the NEWER attempt's
+// cooldown, and the next event then started a third command beside the one
+// already running: two resumptions of one thread, produced by the code that
+// exists to stop exactly that.
+//
+// The sequential case, which the existing coverage has, cannot see this: it
+// needs two generations alive at once.
+func TestAnOldFailureDoesNotReleaseANewerWakesCooldown(t *testing.T) {
+	e, st := wakeEngine(t, WakeCommand{
+		Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute,
+	})
+	l := bridgeAgent("busy", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	st.Agents["busy"] = l
+	ev := core.Event{
+		Type: "message.sent", To: "busy",
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	}
+
+	// Wake A takes a cooldown.
+	if _, ok := e.wakeFor(l, core.MsgQuestion, ev); !ok {
+		t.Fatal("no first wake, so there is no generation to go stale")
+	}
+	stampA := e.wakeStamp("busy")
+
+	// Its cooldown lapses and wake B takes a new one, while A is still running.
+	e.wakers.mu.Lock()
+	e.wakers.last["busy"] = time.Now().Add(-2 * time.Minute)
+	e.wakers.mu.Unlock()
+	if _, ok := e.wakeFor(l, core.MsgQuestion, ev); !ok {
+		t.Fatal("no second wake after the cooldown lapsed, so B never started")
+	}
+	stampB := e.wakeStamp("busy")
+	if stampB.Equal(stampA) {
+		t.Fatal("the two wakes share a timestamp, so this cannot tell them apart")
+	}
+
+	// NOW A fails.
+	e.releaseWake("busy", stampA)
+
+	if got := e.wakeStamp("busy"); !got.Equal(stampB) {
+		t.Error("an old failed wake released the cooldown a newer one had just " +
+			"taken. The next message starts another command beside the one still " +
+			"running, so one thread gets two resumptions interleaving into a " +
+			"single transcript")
+	}
+	if _, ok := e.wakeFor(l, core.MsgQuestion, ev); ok {
+		t.Error("a third wake was allowed inside B's cooldown, which is the " +
+			"duplicate-process case this cooldown exists to prevent")
+	}
+
+	// And B's OWN failure still releases, or a failing command locks the agent
+	// out for the whole cooldown, which is the bug this was added to fix.
+	e.releaseWake("busy", stampB)
+	if _, ok := e.wakeFor(l, core.MsgQuestion, ev); !ok {
+		t.Error("the current wake's own failure did not release its cooldown")
 	}
 }

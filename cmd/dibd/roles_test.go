@@ -51,6 +51,33 @@ func TestRolesDeclaredInConfigAreGrantedAtStartup(t *testing.T) {
 				"dibs.toml that does not take effect is a config that lies", agent, want)
 		}
 	}
+
+	// AND THE ONE THAT HAS NOT REGISTERED YET, which is the case the comment
+	// above this test is about and the reason production reapplies on a ticker.
+	//
+	// Both agents were registered before the first pass, so every assertion so
+	// far describes a board where everybody is already present: the startup
+	// order that actually happens, an operator's daemon coming up before their
+	// agents do, went untested, and deleting the reconciliation loop would have
+	// left this green.
+	pins := loadRolePins(t.TempDir())
+	late := RolesConfig{
+		Coordinator: []string{"latecomer"},
+		Identity:    map[string]string{"latecomer": engine.RolePinFingerprint("nonce-late")},
+	}
+	applyDeclaredRoles(ctx, eng, late, pins) // nobody by that name yet
+	if holdsRole(t, eng, "latecomer", core.RoleCoordinator) {
+		t.Fatal("a role was granted to an agent that has never registered, so the " +
+			"grant is following the NAME again")
+	}
+	registerAgentAs(t, eng, "latecomer", "nonce-late")
+	applyDeclaredRoles(ctx, eng, late, pins) // the ticker's next pass
+	if !holdsRole(t, eng, "latecomer", core.RoleCoordinator) {
+		t.Error("an agent that registered after startup never received its declared " +
+			"role. The daemon comes up before the agents do, so this is the ordinary " +
+			"order rather than an edge case, and without a later pass the operator's " +
+			"config silently applies to nobody")
+	}
 }
 
 // An empty [roles] table must grant nothing.
@@ -233,17 +260,72 @@ func TestADeclaredRoleWillNotFollowAStolenName(t *testing.T) {
 }
 
 // And the pin must not be satisfiable by an agent with no durable identity.
+//
+// WITH AN IDENTITY CONFIGURED, which is what makes this about the nonce. The
+// first version left [roles.identity] empty as well, so the grant was refused
+// for having no configured fingerprint and the nonce rule could have been
+// deleted outright with this still green: two protections, one assertion, and
+// the wrong one doing the work.
+//
+// The configured identity is a REAL fingerprint, of some nonce the operator
+// chose. RolePinFingerprint("") is itself empty, so pinning that would recreate
+// the same masking with an extra step.
 func TestADeclaredRoleNeedsAnAgentThatCanProveItselfTomorrow(t *testing.T) {
 	eng, ctx := testEngine(t)
 	if _, err := eng.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "no-nonce"}); err != nil {
 		t.Fatal(err)
 	}
-	applyDeclaredRoles(ctx, eng, RolesConfig{Admin: []string{"no-nonce"}},
-		loadRolePins(t.TempDir()))
+	intended := engine.RolePinFingerprint("the-nonce-the-operator-chose")
+	if intended == "" {
+		t.Fatal("the configured identity is empty, so the refusal below would be " +
+			"about the missing config rather than about the agent")
+	}
+	cfg := RolesConfig{
+		Admin:    []string{"no-nonce"},
+		Identity: map[string]string{"no-nonce": intended},
+	}
+	applyDeclaredRoles(ctx, eng, cfg, loadRolePins(t.TempDir()))
 	if holdsRole(t, eng, "no-nonce", core.RoleAdmin) {
 		t.Error("an agent with no nonce was granted a standing role: it cannot prove " +
 			"it is itself after a restart, so the role would pass to whoever takes " +
 			"the name next")
+	}
+
+	// And the same configuration DOES grant to an agent that has one, so this
+	// cannot pass by refusing everything.
+	registerAgentAs(t, eng, "has-nonce", "a-durable-secret")
+	ok := RolesConfig{
+		Admin:    []string{"has-nonce"},
+		Identity: map[string]string{"has-nonce": engine.RolePinFingerprint("a-durable-secret")},
+	}
+	applyDeclaredRoles(ctx, eng, ok, loadRolePins(t.TempDir()))
+	if !holdsRole(t, eng, "has-nonce", core.RoleAdmin) {
+		t.Fatal("no agent can hold a declared role at all, so the refusal above says " +
+			"nothing about nonces")
+	}
+
+	// THE NONCE RULE ON ITS OWN.
+	//
+	// Several protections deliver the property above and any of them will
+	// refuse a nonce-less agent, so the whole-path assertion cannot say WHICH
+	// one is doing it: with no identity configured the missing-config branch
+	// answers, and with one configured the mismatch branch does. Both are
+	// correct and neither is this rule. Asked directly, the empty fingerprint
+	// is the only thing wrong.
+	for _, want := range []struct{ name, configured string }{
+		{"with no identity configured", ""},
+		{"with an identity configured", intended},
+	} {
+		t.Run("the nonce rule "+want.name, func(t *testing.T) {
+			err := loadRolePins(t.TempDir()).check(core.RoleAdmin, "no-nonce", "", want.configured)
+			if err == nil {
+				t.Fatal("an agent with no durable identity was accepted for a standing role")
+			}
+			if !strings.Contains(err.Error(), "no nonce") {
+				t.Errorf("refused for a different reason, so this says nothing about "+
+					"the nonce rule: %v", err)
+			}
+		})
 	}
 }
 

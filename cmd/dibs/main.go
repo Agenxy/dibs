@@ -637,8 +637,20 @@ args = ["mcp-stdio"]
 	// invisible to exactly the operators who needed it. One reported nearly
 	// abandoning the multi-machine board, which is the reason they run Dibs,
 	// while the instructions for it were in the binary the whole time.
-	printRemoteRecipe(scheme == "https", joiner)
+	printRemoteRecipe(recipeInputs(scheme, joiner))
 	return nil
+}
+
+// recipeInputs is the handoff from the resolved transport to the recipe.
+//
+// TWO LINES, named, because the tests could not reach them. Every case in the
+// recipe suite passed `servesTLS` and a joining address BOTH derived from the
+// answer it expected, so an inverted comparison here, a constant, or a joining
+// address built from the wrong scheme would have left every row green while the
+// shipped command printed a recipe for a daemon that does not exist. The
+// renderer was well covered; the boundary into it was not covered at all.
+func recipeInputs(scheme, joiner string) (servesTLS bool, addr string) {
+	return scheme == "https", joiner
 }
 
 // printRemoteRecipe is the setup for agents on OTHER machines.
