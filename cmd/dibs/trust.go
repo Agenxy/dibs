@@ -73,13 +73,52 @@ func trustedPool() *x509.CertPool {
 // daemonClient is the http.Client every command should use to reach dibd.
 func daemonClient(timeout time.Duration) *http.Client {
 	c := &http.Client{Timeout: timeout}
+	rt := http.DefaultTransport
 	if pool := trustedPool(); pool != nil {
-		c.Transport = &http.Transport{TLSClientConfig: &tls.Config{
+		rt = &http.Transport{TLSClientConfig: &tls.Config{
 			RootCAs:    pool,
 			MinVersion: tls.VersionTLS12,
 		}}
 	}
+	// HERE, because here is the one place every credential-bearing request
+	// passes through.
+	//
+	// The address check and the broken-config check were wired into the callers
+	// that had been noticed: mcp-config, the generic get() helper, mcp-stdio.
+	// Fifteen call sites build requests with this client, and await, watch,
+	// monitor, the admin routes, the hook paths and several doctor probes went
+	// straight past both while attaching X-Dibs-Local, and sometimes the admin
+	// password. Safety that depends on every future caller remembering is not
+	// safety; it is a list of the callers somebody thought of.
+	c.Transport = &guardedTransport{next: rt}
 	return c
+}
+
+// guardedTransport refuses a request that would send this board's credentials
+// somewhere they do not belong.
+//
+// A RoundTripper rather than a helper, so it cannot be skipped by building the
+// request differently: whatever assembles the URL, this is what dials it.
+type guardedTransport struct{ next http.RoundTripper }
+
+func (g *guardedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	// A dibs.toml the daemon will not start on means the board this was meant
+	// for is not running, so the endpoint reached now is something else.
+	if err := checkConfigReadable(); err != nil {
+		return nil, err
+	}
+	// AND THE AUTHORITY MUST BE THE HOST IT LOOKS LIKE. Everything before an
+	// `@` is userinfo: `DIBS_ADDR=http://trusted.example@evil.example:4777`
+	// reads as trusted.example everywhere it is printed and dials
+	// evil.example. checkAddr catches it, and checkAddr was reachable only
+	// through mcp-config.
+	if r.URL.User != nil {
+		return nil, fmt.Errorf("refusing to send this board's credentials to %q: the "+
+			"address names %q before an `@`, which is a username rather than a host, "+
+			"so the request would go to %q instead. Name the host on its own",
+			r.URL.Host, r.URL.User.Username(), r.URL.Hostname())
+	}
+	return g.next.RoundTrip(r)
 }
 
 // trustCmd implements `dibs trust <host:port>`.

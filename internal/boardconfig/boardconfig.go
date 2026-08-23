@@ -20,6 +20,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -489,8 +490,24 @@ func (c Config) validateAddr() error {
 			"listens on cannot: write it as host:port. dibd hands this to net.Listen "+
 			"verbatim, so it would fail at bind rather than here", c.Addr)
 	}
-	if _, _, err := net.SplitHostPort(c.Addr); err != nil {
+	_, port, err := net.SplitHostPort(c.Addr)
+	if err != nil {
 		return fmt.Errorf("[addr] %q is not a host:port address: %w", c.Addr, err)
+	}
+	// AND THE PORT HAS TO BE ONE.
+	//
+	// SplitHostPort is a parse, not a check: it takes "not-a-port" and "99999"
+	// happily, and `dibd -check` returns after replay without ever attempting
+	// the bind. So the check an operator runs BEFORE stopping the daemon they
+	// are replacing reported success for a configuration that cannot start.
+	// A stronger version of this rule already existed in the CLI and had no
+	// callers at all, which is the shape of a rule that was written and never
+	// wired up.
+	n, perr := strconv.Atoi(port)
+	if perr != nil || n < 1 || n > 65535 {
+		return fmt.Errorf("[addr] %q is not a port number in %q: net.Listen refuses "+
+			"it, so the daemon would fail at bind. Ports run from 1 to 65535",
+			port, c.Addr)
 	}
 	return nil
 }

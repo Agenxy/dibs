@@ -103,6 +103,12 @@ func TestLoadRefusesSettingsThatWouldNotTakeEffect(t *testing.T) {
 			"addr = \"https://127.0.0.1:4777\"\n",
 		},
 		{"a listen address that is not host:port", "addr = \"127.0.0.1\"\n"},
+		// SplitHostPort parses these and net.Listen refuses them, and `dibd
+		// -check` never attempts the bind: it is what an operator runs before
+		// stopping the daemon being replaced.
+		{"a port that is not a number", "addr = \"hub:not-a-port\"\n"},
+		{"a port above 65535", "addr = \"127.0.0.1:99999\"\n"},
+		{"port zero, which binds something arbitrary", "addr = \"127.0.0.1:0\"\n"},
 		{"a certificate with no key", "tls_cert = \"/c.pem\"\n"},
 		{"a key with no certificate", "tls_key = \"/k.pem\"\n"},
 		{"a negative blob store", "[limits]\nblob_store_bytes = -1\n"},

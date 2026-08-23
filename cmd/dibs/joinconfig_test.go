@@ -8,6 +8,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1161,5 +1162,56 @@ func TestAWildcardBindIsNotMistakenForLoopback(t *testing.T) {
 			t.Errorf("%s got no forward, and it is reachable from nowhere else: the "+
 				"joining machine has no way in at all", addr)
 		}
+	}
+}
+
+// No credential-bearing request may leave for an authority the address hides.
+//
+// Everything before an `@` is userinfo, so
+// `DIBS_ADDR=http://trusted.example@evil.example:4777` reads as trusted.example
+// in every place the CLI prints it and dials evil.example. checkAddr catches
+// that, and checkAddr was reachable only through mcp-config: fifteen call sites
+// build requests with the shared client, and await, watch, monitor, the admin
+// routes, the hook paths and several doctor probes went straight past it while
+// attaching X-Dibs-Local, and sometimes the admin password.
+//
+// So the check moved to the ROUND TRIPPER, and this asks it the way a request
+// does. A per-caller version of this test would only ever cover the callers
+// somebody thought of, which is the defect itself.
+func TestNoRequestCarriesCredentialsToAHiddenAuthority(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DIBS_DIR", dir)
+
+	req, err := http.NewRequest(http.MethodGet, "http://trusted.example@evil.example:4777/api/board", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-Dibs-Local", "the-secret")
+	resp, err := daemonClient(2 * time.Second).Transport.RoundTrip(req)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("a request to an address whose real authority is evil.example was " +
+			"sent, with this board's local secret on it. Nothing downstream can " +
+			"catch that: explicit http skips the trust ceremony entirely")
+	}
+	if !strings.Contains(err.Error(), "trusted.example") {
+		t.Errorf("the refusal does not name what the address hides, so an operator "+
+			"cannot see why: %v", err)
+	}
+
+	// And an ordinary address still goes through, so this cannot pass by
+	// refusing everything.
+	ok, err := http.NewRequest(http.MethodGet, "http://127.0.0.1:1/api/board", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	okResp, err := daemonClient(2 * time.Second).Transport.RoundTrip(ok)
+	if okResp != nil {
+		_ = okResp.Body.Close()
+	}
+	if err != nil && strings.Contains(err.Error(), "refusing to send") {
+		t.Errorf("an ordinary loopback address was refused as a hidden authority: %v", err)
 	}
 }

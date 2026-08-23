@@ -1104,3 +1104,53 @@ func firstLine(s string) string {
 	}
 	return s
 }
+
+// Every tool has an ignore entry, so building one cannot commit it.
+//
+// `go build ./tools/<name>` writes the binary into the working directory, and
+// `git add -A` then stages it. Three went in on one commit exactly that way,
+// and the gate that forbids committed binaries did not stop them: it reads
+// TRACKED files, and it had run before the add. So the gate was green, the
+// binaries were staged afterwards, and nothing looked again.
+//
+// A list of names in .gitignore is the fix, and a list of names is also this
+// repository's most reliable way to go stale: the entry it will be missing is
+// the one for the tool somebody adds next, which is the one nobody has learned
+// to expect yet. So the list is checked against the directory rather than
+// remembered, and the check names the line to add.
+func TestEveryToolBinaryIsIgnored(t *testing.T) {
+	root := repoRoot(t)
+	entries, err := os.ReadDir(filepath.Join(root, "tools"))
+	if err != nil {
+		t.Fatalf("reading tools/: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, ".gitignore"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ignored := map[string]bool{}
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "/") && !strings.HasSuffix(line, "/") {
+			ignored[strings.TrimPrefix(line, "/")] = true
+		}
+	}
+	seen := 0
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		seen++
+		if !ignored[e.Name()] {
+			t.Errorf("tools/%s has no anchored .gitignore entry. `go build "+
+				"./tools/%s` leaves ./%s in the working directory, and the next "+
+				"`git add -A` commits a binary. Add this line:\n\n    /%s\n\n"+
+				"Anchored: unanchored, it would also match the tools/%s DIRECTORY "+
+				"and the source would stop being committed at all",
+				e.Name(), e.Name(), e.Name(), e.Name(), e.Name())
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no tool directories found, so this check verified nothing")
+	}
+}

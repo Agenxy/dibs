@@ -318,12 +318,23 @@ func ensureCA(caCert, caKey string) (*x509.Certificate, *ecdsa.PrivateKey, error
 	// changes only when the operator deletes it. Absent means first run and is
 	// the one case worth guessing at; anything else is the operator's call,
 	// because only they can redo the ceremony on the other machines.
-	if _, statErr := os.Stat(caCert); statErr == nil {
-		return nil, nil, fmt.Errorf("the board's signing identity at %s exists but "+
-			"cannot be loaded with %s (%v). Machines that trusted this board are "+
-			"pinned to it, so a replacement is not this daemon's to make: restore "+
-			"the pair, or delete both files and re-trust each machine once",
-			caCert, caKey, loadErr)
+	// EITHER FILE. This asked only about the certificate, so a surviving KEY
+	// beside a missing certificate, which is what an interrupted restore or a
+	// half-finished deletion leaves, fell through and overwrote the key: the
+	// identity every joined machine has pinned, replaced by a daemon that then
+	// reported itself healthy. Half a pair present is the state that most
+	// needs a person, because it is the one where the other half may still be
+	// recoverable.
+	for _, f := range []string{caCert, caKey} {
+		if _, statErr := os.Stat(f); statErr != nil {
+			continue
+		}
+		return nil, nil, fmt.Errorf("the board's signing identity is half here: %s "+
+			"exists and the pair (%s, %s) cannot be loaded (%v). Machines that "+
+			"trusted this board are pinned to that identity, so replacing it is not "+
+			"this daemon's to decide: restore the missing half, or delete both and "+
+			"run `dibs trust` again on every machine that joined",
+			f, caCert, caKey, loadErr)
 	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -978,4 +979,53 @@ func daemonErrFor(t *testing.T, body string) error {
 	base, err := applyLimits(raw.Limits, core.DefaultLimits())
 	_ = base
 	return err
+}
+
+// Half a signing identity is a question for a person, not a new identity.
+//
+// ensureCA generates only when there is nothing there, and "nothing there" was
+// read as "no certificate". A surviving KEY beside a missing certificate is
+// what an interrupted restore or a half-finished deletion leaves, and that fell
+// through to generation and overwrote the key: the identity every joined
+// machine has pinned, silently replaced, by a daemon that then reported itself
+// healthy while the whole fleet was locked out.
+//
+// Both partial states, because only one of them was refused.
+func TestHalfASigningIdentityIsRefusedRatherThanReplaced(t *testing.T) {
+	for _, keep := range []string{"tls-ca.pem", "tls-ca-key.pem"} {
+		t.Run("only "+keep+" survives", func(t *testing.T) {
+			dir := t.TempDir()
+			if _, _, err := ensureSelfSignedCert(dir, "192.168.1.205:4777"); err != nil {
+				t.Fatalf("setup: %v", err)
+			}
+			before, err := os.ReadFile(filepath.Join(dir, keep))
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Delete the other half.
+			gone := "tls-ca-key.pem"
+			if keep == gone {
+				gone = "tls-ca.pem"
+			}
+			if err := os.Remove(filepath.Join(dir, gone)); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, _, err := ensureSelfSignedCert(dir, "192.168.1.205:4777"); err == nil {
+				t.Fatalf("the daemon issued itself a new signing identity with %s still "+
+					"present. Every machine that ran `dibs trust` is pinned to the old "+
+					"one and now refuses this board, and nothing here reports a problem",
+					keep)
+			}
+			after, err := os.ReadFile(filepath.Join(dir, keep))
+			if err != nil {
+				t.Fatalf("the surviving half was removed: %v", err)
+			}
+			if !bytes.Equal(before, after) {
+				t.Errorf("%s was overwritten. It may be the only remaining copy of an "+
+					"identity a whole fleet is pinned to, and the other half might "+
+					"still be recoverable from a backup", keep)
+			}
+		})
+	}
 }
