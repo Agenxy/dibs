@@ -40,6 +40,58 @@ See `plugins/claude-desktop/README.md`.
 
 ---
 
+## 0. Can an outside process wake a thread that is already running?
+
+Measured on 2026-08-22 against codex `8e649e3a` and the installed builds, after
+an operator asked the question this document had never actually answered. The
+short version: **not the way Dibs was reaching for, and not by default at all.**
+
+Three surfaces exist, and only one of them wakes the ORIGINAL thread.
+
+| Surface | Wakes the original? | Why |
+|---|---|---|
+| `mcp_tool` hooks | **Yes, at its own boundary** | Runs inside the thread. A callback on ITS lifecycle: nothing outside can trigger one |
+| app-server `thread/resume` + `turn/start` / `turn/steer` | **Yes, if addressable** | Direct injection into a loaded thread. See below for why it usually is not |
+| `codex exec resume <uuid>` | **No** | Starts a SUCCESSOR process on the same transcript. Two rows appear on the board |
+| `codex queue --thread <uuid>` | Only if loaded | Enqueues durably and calls `wake_if_loaded`. Measured against an unloaded thread: returned `Queued message` and nothing stirred |
+
+**Why the good one is usually unreachable.** The app-server owns live threads,
+and its RPC surface has everything waking needs: `thread/loaded/list`,
+`thread/resume`, `turn/start`, `turn/steer`, `thread/queue/add`. But the
+Desktop app runs its OWN app-server as a child over private stdio pipes. Checked
+directly: that process holds fds 0, 1 and 2 as anonymous unix socketpairs to its
+Electron parent and listens on nothing. `~/.codex/app-server-control/
+app-server-control.sock` exists but is a stale file from an earlier run; a
+connect gets ECONNREFUSED and no process holds it.
+
+So a thread in the Desktop app is not addressable from another process, by
+construction rather than by oversight.
+
+`codex remote-control start` is the supported way to change that: it runs the
+app-server daemon with remote control enabled, `codex remote-control pair`
+issues a short-lived pairing code, and `--remote` accepts `ws://`, `wss://` and
+`unix://`. Threads that live in THAT daemon can be woken by an outside process.
+
+**What this means for Dibs.** Waking the original thread is a property of how
+the agent was STARTED, not something a coordination service can retrofit onto a
+conversation already running inside a desktop app. An agent that must be
+wakeable has to live in a remote-control-enabled daemon, and starting that
+daemon is the OPERATOR'S step, the same as starting `dibd`.
+
+Being exact about who starts what, because the three paths differ and the
+difference is the whole argument:
+
+- A **hook** starts nothing. The agent calls out at its own turn boundary.
+- **`[wake.exec]`** is Dibs spawning a process: the operator's command, which
+  for Codex starts a headless `codex exec resume`. Headless, and a SUCCESSOR
+  rather than the original thread.
+- **Remote control** would have Dibs open a socket to a daemon that is already
+  running and ask it to start a turn. It launches nothing; if the daemon is not
+  there, the wake does not happen and says so.
+
+Dibs does not, and should not, launch a desktop application. Opening somebody's
+GUI is a different product, and none of the mechanisms above need it.
+
 ## 1. Measured, not researched
 
 A daemon with `DIBS_LOG_RPC=1` recorded exactly what each client sends when it connects
