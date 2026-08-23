@@ -969,8 +969,8 @@ machines for real work. Their priority order, not ours.
   saying so is the point of this paragraph: edit the config, then `dibs admin
   member <agent>`. Making the config sufficient on its own means the reconciler
   demoting agents it did not grant this run, which is a change to how standing
-  privilege is withdrawn rather than a wording fix, and it is an open issue
-  rather than something to add in the hour before a tag.
+  privilege is withdrawn rather than a wording fix: issue #73 has the edges that
+  make it worth doing deliberately rather than in the hour before a tag.
 
 - **Mail arriving after a wake exited was refused as "still working".** The
   commoner ordering, and the last of this one: a wake runs, the woken agent
