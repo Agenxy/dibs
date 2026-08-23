@@ -138,30 +138,29 @@ nothing outside can make an idle thread wake through it. Reaching a thread that
 is not running is `[wake.exec]`, which is the operator's business and documented
 in `docs/CONFIGURATION.md`.
 
-**And we do not reach for the alternative.** Codex declares four handler types
-and runs exactly one. `prompt` and `agent` are empty structs, skipped by name
-("prompt hooks are not supported yet"); `mcp_tool` is dropped for want of an
-executor. That leaves `command`, a subprocess. Two commits in ten days say
-`mcp_tool` is landing in stages, so shipping subprocess glue now means shipping
-the thing `WAKE-MECHANISMS.md` §6 rejected in order to delete it again within
-weeks.
+**And we still do not reach for the alternative.** Codex declares four handler
+types and runs two. `prompt` and `agent` are empty structs, skipped by name
+("prompt hooks are not supported yet"). That leaves `mcp_tool`, which Dibs uses,
+and `command`, a subprocess, which Dibs will not: shipping subprocess glue is
+shipping the thing `WAKE-MECHANISMS.md` §6 rejected.
 
-**What to re-check, and it is not the enum.** The enum was there before any of
-this worked, and reading it is what produced two wrong conclusions. Check
-whether a session supplies an executor:
+**How to check what YOUR build does, which is not the enum.** The enum was there
+before any of this worked, and reading it is what produced two wrong conclusions
+in this file, in opposite directions. Ask a session, not the source:
 
 ```
-grep -rn "mcp_executor:" codex-rs/ | grep -v codex-rs/hooks/
+codex --version                 # 2026-08-18 or later has the executor
 ```
 
-When that stops saying `None`, Codex can wake an agent over the connection it
-already holds, and the file to restore is in this repository's history.
+and then, from a live thread, `spawned_agents`: if this session is listed, a
+Stop hook reached the daemon and delivery is live. If it is not, the build
+predates the executor or the Dibs server was not connected when the hook ran.
 
-**Until then Codex is pull-only.** `check_in` at the start of every activation,
-`await_events` before blocking, which is what `dibs://skills` already tells
-every agent. Mail is not lost: it waits, and the `waiting` line on every
-authenticated result names it on the next call. The digest does not reach the
-human either, on any harness.
+**On an older build Codex is pull-only.** `check_in` at the start of every
+activation, `await_events` before blocking, which is what `dibs://skills`
+already tells every agent. Mail is not lost either way: it waits, and the
+`waiting` line on every authenticated result names it on the next call. The
+digest does not reach the human on any harness.
 
 ### When a Codex hook takes effect (traced, not assumed)
 

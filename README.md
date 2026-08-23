@@ -807,6 +807,15 @@ min_duty = 0.0005  # CPU share below which a long-lived process counts as idle
 # re-granted by hand.
 coordinator = ["orchestrator"]   # broadcast, force-release, merge, evict
 admin       = ["fleet-lead"]     # all of that, plus reading every agent's mail
+
+[roles.identity]
+# REQUIRED, and this is the half that makes the block above safe. A name
+# authenticates nobody: any agent may register as "fleet-lead". Each entry is
+# the FINGERPRINT of the agent allowed to hold that name, which `register`
+# returns and the daemon prints at startup for you to paste. Never the nonce
+# itself, which is that agent's whole recovery credential.
+orchestrator = "…64 hex characters, from the startup log…"
+fleet-lead   = "…64 hex characters…"
 ```
 
 **Declaring a role in config is a human decision.**

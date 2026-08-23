@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
 )
 
 // A correct secret that the core then refuses must not spend the claim.
@@ -161,7 +162,13 @@ func TestAConfiguredCoordinatorIsNotRaceableBeforeItRegisters(t *testing.T) {
 	// The state at `installCoordinatorClaim` on a fresh board: no coordinator
 	// has been granted, because no agent exists to grant it to.
 	const hasCoordinator = false
-	declared := RolesConfig{Coordinator: []string{"fleet-lead"}}
+	// WITH AN IDENTITY, because that is what makes the declaration grantable.
+	// A name on its own can never receive the role, so it decides nothing and
+	// the board still needs its bootstrap claim; see the inert case below.
+	declared := RolesConfig{
+		Coordinator: []string{"fleet-lead"},
+		Identity:    map[string]string{"fleet-lead": engine.RolePinFingerprint("n")},
+	}
 
 	c := newCoordinatorClaim(dir, coordinatorAlreadyDecided(hasCoordinator, declared))
 	if c.secret != "" {
@@ -181,12 +188,30 @@ func TestAConfiguredCoordinatorIsNotRaceableBeforeItRegisters(t *testing.T) {
 	// looked only at Coordinator, so that board still minted a claim an
 	// opportunist could spend, and later reconciliation grants the admin
 	// without demoting whoever took it.
-	if coordinatorAlreadyDecided(false, RolesConfig{Admin: []string{"fleet-lead"}}) != true {
+	adminOnly := RolesConfig{
+		Admin:    []string{"fleet-lead"},
+		Identity: map[string]string{"fleet-lead": engine.RolePinFingerprint("n")},
+	}
+	if coordinatorAlreadyDecided(false, adminOnly) != true {
 		t.Error("a board that declares an ADMIN was still offered a launch claim. " +
 			"Admin carries coordinator authority, so the operator has answered the " +
 			"question the claim asks, and an agent that reads the claim file first " +
 			"keeps broadcast, eviction and force-release on a board it was never " +
 			"meant to run")
+	}
+
+	// A NAME WITH NO IDENTITY IS INERT, and must not suppress the claim.
+	//
+	// A standing role needs a fingerprint in [roles.identity]; without one the
+	// grant is refused forever rather than delayed. Reading the bare name as an
+	// answer left a board with neither the standing authority its config
+	// promised nor the bootstrap path that exists for its absence: no
+	// coordinator, ever, and no way to take the role. The README's own copyable
+	// example was exactly that file.
+	if coordinatorAlreadyDecided(false, RolesConfig{Coordinator: []string{"nobody"}}) {
+		t.Error("a coordinator declared with no [roles.identity] suppressed the " +
+			"launch claim. That grant can never be made, so the declaration decides " +
+			"nothing and the board is left with no coordinator and no way to get one")
 	}
 
 	// A board that names NOBODY still gets one: this must not disable the

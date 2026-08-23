@@ -191,3 +191,81 @@ func TestTheCodexPayloadPutsItsHookWhereCodexReadsIt(t *testing.T) {
 			"has nothing to check the structured path against")
 	}
 }
+
+// A plugin's own README must not deny the hook file shipped beside it.
+//
+// The Codex guide said, in the same document, that the executor landed and Dibs
+// ships a working hooks.json AND that mcp_tool is dropped for want of an
+// executor, that the reader should wait until it stops being None, and that
+// Codex is pull-only. Two rewrites fixed the passages somebody happened to
+// read; the contradiction survived twice, further down each time.
+//
+// This is not archival prose. The README is embedded into the plugin payload
+// and served to agents over dibs://plugin, so the contradiction ships to a
+// reader who cannot check it against the tree. The drift guard proves the two
+// copies are identical, which only means both copies are wrong together.
+//
+// So the falsifiable half is checked: a plugin that HAS a hook file may not
+// state, unconditionally, that it has none or that its harness cannot run one.
+// Conditional statements are fine and necessary, because the answer depends on
+// the reader's build; a bare present-tense denial is not.
+func TestAPluginReadmeDoesNotDenyItsOwnHookFile(t *testing.T) {
+	checked := 0
+	for _, name := range Names() {
+		p, ok := For(name)
+		if !ok {
+			t.Fatalf("catalogue lists %q and For() does not return it", name)
+		}
+		readme, has := p.Files["README.md"]
+		if !has {
+			continue
+		}
+		ships := false
+		for k := range p.Files {
+			if path.Base(k) == "hooks.json" {
+				ships = true
+			}
+		}
+		if !ships {
+			continue
+		}
+		checked++
+		// BY SENTENCE, not by line. Markdown wraps, so a denial and the past
+		// tense that excuses it routinely sit on different lines; a line-based
+		// version of this flagged the paragraph explaining the history of the
+		// very mistake it was written to catch.
+		flat := strings.Join(strings.Fields(strings.ReplaceAll(readme, "\n", " ")), " ")
+		for _, sentence := range strings.Split(flat, ". ") {
+			l := strings.ToLower(sentence)
+			denies := false
+			for _, d := range []string{"ships no hook", "ships no `hooks.json`", "ships no hooks.json"} {
+				if strings.Contains(l, d) {
+					denies = true
+				}
+			}
+			if !denies {
+				continue
+			}
+			// A sentence that names a version, a date, a condition or the past
+			// is describing WHEN, which is the honest way to say this and the
+			// way this file now does. A bare present-tense denial is not.
+			for _, qualified := range []string{
+				"if ", "predates", "older", "until", "used to", "went on saying",
+				"earlier", "no longer", "the second said", "the first ",
+			} {
+				if strings.Contains(l, qualified) {
+					denies = false
+				}
+			}
+			if denies {
+				t.Errorf("%s/README.md ships a hooks.json and says it does not:\n  %s\n"+
+					"This file is embedded and served over dibs://plugin, so the reader "+
+					"cannot check it against the tree", name, strings.TrimSpace(sentence))
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no plugin was found that ships both a README and a hooks.json, " +
+			"so this check verified nothing")
+	}
+}

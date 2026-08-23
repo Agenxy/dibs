@@ -282,9 +282,18 @@ That is deliberate. Pinning whoever registered first held every later impostor
 to the first one's identity and asked the first one nothing, so an agent that
 read this file, or simply guessed that `admin = ["fleet-lead"]` is a likely
 line, could register under that name before your own agent came up and be handed
-the god view with every agent's mail in it. The nonce is a secret you already
-choose and already give that agent; naming it here is what makes the first grant
-provable rather than merely recorded.
+the god view with every agent's mail in it. The fingerprint is derived from a
+secret you already choose and already give that agent, so naming it here is what
+makes the first grant provable rather than merely recorded, while the secret
+itself never enters this file.
+
+Twenty lines above, this document tells you never to write the nonce here. It
+used to say the opposite down here, and both sentences were in the same
+release: a reader who followed the nearer one put the recovery credential in
+`dibs.toml`, where anything running as them could read it, register as that
+agent and take its token, its mailbox and its role. The daemon now detects and
+refuses that value, so following the old advice bought the exposure and not
+even the grant.
 
 If you genuinely mean to hand the role to a different agent, put the new
 agent's fingerprint here and delete that name from `roles.pinned`.

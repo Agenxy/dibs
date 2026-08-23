@@ -8,6 +8,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net"
 	"os"
@@ -182,7 +183,7 @@ func resolveTransport(dir, addr, scheme string, c Config) (transport, error) {
 func ensureSelfSignedCert(dir, addr string) (string, string, error) {
 	certFile := filepath.Join(dir, "tls-cert.pem")
 	keyFile := filepath.Join(dir, "tls-key.pem")
-	if usableCert(certFile, keyFile) {
+	if usableCert(certFile, keyFile, addr) {
 		return certFile, keyFile, nil
 	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -193,10 +194,6 @@ func ensureSelfSignedCert(dir, addr string) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-	host, _, splitErr := net.SplitHostPort(addr)
-	if splitErr != nil {
-		host = addr
-	}
 	tmpl := x509.Certificate{
 		SerialNumber:          serial,
 		Subject:               pkix.Name{CommonName: "dibs"},
@@ -206,12 +203,15 @@ func ensureSelfSignedCert(dir, addr string) (string, string, error) {
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 		IsCA:                  true,
-		DNSNames:              []string{"localhost"},
 	}
-	if ip := net.ParseIP(host); ip != nil {
-		tmpl.IPAddresses = []net.IP{ip}
-	} else if host != "" {
-		tmpl.DNSNames = append(tmpl.DNSNames, host)
+	// ONE list, shared with the reuse check, so a name added here makes every
+	// certificate lacking it renewable instead of quietly outliving the rule.
+	for _, n := range certNames(addr) {
+		if ip := net.ParseIP(n); ip != nil {
+			tmpl.IPAddresses = append(tmpl.IPAddresses, ip)
+		} else {
+			tmpl.DNSNames = append(tmpl.DNSNames, n)
+		}
 	}
 	// A WILDCARD bind needs the addresses a client will actually dial.
 	//
@@ -226,8 +226,6 @@ func ensureSelfSignedCert(dir, addr string) (string, string, error) {
 	// The interfaces are enumerated at generation time. A machine that later
 	// moves networks needs a new certificate, which is true of any name in a
 	// certificate and is why the file is regenerated rather than patched.
-	tmpl.IPAddresses = append(tmpl.IPAddresses, localAddresses(host)...)
-	tmpl.IPAddresses = append(tmpl.IPAddresses, net.IPv4(127, 0, 0, 1), net.IPv6loopback)
 	der, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, &key.PublicKey, key)
 	if err != nil {
 		return "", "", err
@@ -282,14 +280,26 @@ const certLifetime = 365 * 24 * time.Hour
 // machine away at once, with nothing having changed on either side.
 const certRenewBefore = 30 * 24 * time.Hour
 
-// usableCert reports whether the stored pair can still be served.
+// usableCert reports whether the stored pair can still be served FOR addr.
 //
 // The old check was os.Stat on both files, which answers "does a certificate
 // exist" and never "is it any good". With a ten-year life that was nearly the
 // same question. With a bounded life it is not: an expired certificate on disk
 // would be served forever, and the failure surfaces on the CLIENTS, all of
 // them, at once.
-func usableCert(certFile, keyFile string) bool {
+//
+// AND EXPIRY IS NOT THE ONLY WAY A CERTIFICATE STOPS WORKING. It also stops
+// working when it no longer names the address clients dial, which is not
+// hypothetical: the SANs a wildcard bind needs were added in this release, so
+// every board upgrading from v0.0.6 holds a still-valid certificate covering
+// 0.0.0.0 and localhost and nothing else. `dibs mcp-config` then correctly
+// hands out the LAN address, the daemon starts, and every client fails
+// hostname verification. A machine that changes networks lands in the same
+// place. Both are silent: the daemon is healthy and only the clients see it.
+//
+// So the question is whether this certificate covers what a fresh one would.
+// If not it is regenerated, which is the same answer expiry already gets.
+func usableCert(certFile, keyFile, addr string) bool {
 	if _, err := os.Stat(keyFile); err != nil {
 		return false
 	}
@@ -305,7 +315,58 @@ func usableCert(certFile, keyFile string) bool {
 	if err != nil {
 		return false
 	}
-	return time.Now().Before(cert.NotAfter.Add(-certRenewBefore))
+	if !time.Now().Before(cert.NotAfter.Add(-certRenewBefore)) {
+		return false
+	}
+	return covers(cert, addr)
+}
+
+// covers reports whether cert names every address a fresh one would name for
+// this bind.
+//
+// Compared against what generation WOULD produce rather than against a fixed
+// list, so the two cannot drift: adding a name to the template automatically
+// makes every certificate lacking it renewable.
+func covers(cert *x509.Certificate, addr string) bool {
+	have := map[string]bool{}
+	for _, ip := range cert.IPAddresses {
+		have[ip.String()] = true
+	}
+	for _, d := range cert.DNSNames {
+		have[d] = true
+	}
+	for _, want := range certNames(addr) {
+		if !have[want] {
+			slog.Info("the stored certificate does not name an address clients dial; "+
+				"generating a new one", "missing", want, "addr", addr)
+			return false
+		}
+	}
+	return true
+}
+
+// certNames is every name a self-signed certificate for this bind must carry.
+//
+// Shared by generation and by the reuse check, and that is the point: the two
+// disagreed, so a board that upgraded kept a still-valid certificate from
+// before the wildcard SANs existed and served it to clients that could not
+// verify it. One list means adding a name here renews every certificate that
+// lacks it, and there is no second place to remember.
+func certNames(addr string) []string {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	names := []string{"localhost", "127.0.0.1", net.IPv6loopback.String()}
+	if ip := net.ParseIP(host); ip != nil {
+		names = append(names, ip.String())
+	} else if host != "" {
+		names = append(names, host)
+	}
+	for _, ip := range localAddresses(host) {
+		names = append(names, ip.String())
+	}
+	return names
 }
 
 // localAddresses is every address of this machine a client could dial, for a

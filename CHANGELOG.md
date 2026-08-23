@@ -193,7 +193,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the same thing.
 
 - **The Codex plugin binds `hook_poll` to the thread lifecycle.**
-  `plugins/codex/hooks/hooks.json` registers `mcp_tool` handlers on
+  `plugins/codex/hooks.json` registers `mcp_tool` handlers on
   SessionStart, Stop and SubagentStop, so a Codex thread that is running
   collects its mail at each of them without polling. Measured against a live
   daemon: three hooks, three deliveries. This covers a thread that is alive;

@@ -392,16 +392,38 @@ func TestTheRolePinErrorsNameTheCorrectiveThatWorks(t *testing.T) {
 			t.Fatal("a declared role with no [roles.identity] was accepted, so this " +
 				"check is reading an error that no longer exists")
 		}
-		got := err.Error()
-		if strings.Contains(got, "nonce>") || strings.Contains(got, "agent's nonce\"") {
-			t.Errorf("the refusal tells the operator to put a NONCE in dibs.toml:\n  %s\n"+
-				"A nonce is the whole recovery credential and is the same 64-hex shape "+
-				"as a fingerprint, so it is accepted silently and anything that reads "+
-				"the file can then become that agent", got)
+		assertDoesNotAskForANonce(t, "the first-pin refusal", err)
+		if !strings.Contains(strings.ToLower(err.Error()), "fingerprint") {
+			t.Errorf("the refusal does not say to use the FINGERPRINT:\n  %s", err)
 		}
-		if !strings.Contains(strings.ToLower(got), "fingerprint") {
-			t.Errorf("the refusal does not say to use the FINGERPRINT:\n  %s", got)
+	})
+
+	// The MISMATCH refusal too, which is the one an operator reads while
+	// debugging a role that stopped working, and which said the longest for
+	// "the nonce [roles.identity] names for it". The first version of this
+	// guard listed two literal phrases and walked straight past that sentence:
+	// a check that knows only the spellings already fixed is a check that finds
+	// nothing new, which is this repository's most-repeated lesson about
+	// guarding prose.
+	t.Run("the identity-mismatch refusal never asks for the nonce", func(t *testing.T) {
+		// UNPINNED, which is the branch that carried the wording. A role that
+		// is already pinned takes the handover path instead; the first version
+		// of this subtest established a pin and so never reached the sentence
+		// it was written for, and passed against it.
+		p := loadRolePins(t.TempDir())
+		err := p.check(core.RoleAdmin, "fleet-lead",
+			engine.RolePinFingerprint("the agent that turned up"),
+			engine.RolePinFingerprint("the agent the operator meant"))
+		if err == nil {
+			t.Fatal("an agent whose fingerprint is not the one [roles.identity] " +
+				"names was granted the role")
 		}
+		if strings.Contains(err.Error(), "cannot be read") ||
+			strings.Contains(err.Error(), "has no nonce") {
+			t.Fatalf("this reached a different refusal, so the wording under test "+
+				"was never produced: %v", err)
+		}
+		assertDoesNotAskForANonce(t, "the identity-mismatch refusal", err)
 	})
 
 	t.Run("the handover repair names every step it needs", func(t *testing.T) {
@@ -429,6 +451,41 @@ func TestTheRolePinErrorsNameTheCorrectiveThatWorks(t *testing.T) {
 			}
 		}
 	})
+}
+
+// assertDoesNotAskForANonce fails if an error points the operator at
+// [roles.identity] and calls what belongs there a nonce.
+//
+// ONE PLACE, and it matches on the RELATION rather than on remembered wording.
+// The first version of this check listed the two exact phrases that had already
+// been fixed, so the next occurrence -- "did not present the nonce
+// [roles.identity] names for it" -- passed it untouched, in the error an
+// operator is most likely to be reading when they decide what to put in that
+// field. A nonce is the agent's whole recovery credential and has the same
+// 64-hex shape as a fingerprint, so a file that holds one loads silently and
+// hands that agent to anything running as the operator.
+func assertDoesNotAskForANonce(t *testing.T, what string, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("%s: no error to inspect, so this check verified nothing", what)
+	}
+	got := err.Error()
+	lower := strings.ToLower(got)
+	// The hazard is the two ideas in one sentence: this field, and that word.
+	if strings.Contains(lower, "nonce") && strings.Contains(got, "[roles.identity]") {
+		// Saying "never the nonce" is the correct use and must stay allowed.
+		for _, safe := range []string{"never its nonce", "never the nonce", "not the nonce"} {
+			if strings.Contains(lower, safe) {
+				return
+			}
+		}
+		t.Errorf("%s describes [roles.identity] as holding a nonce:\n  %s\n"+
+			"That field takes a FINGERPRINT. A nonce is the agent's whole recovery "+
+			"credential and is the same 64-hex shape, so an operator who follows this "+
+			"puts it in a file anything running as them can read, and whatever reads "+
+			"it can register as that agent and take its token, mailbox and role",
+			what, got)
+	}
 }
 
 // A nonce pasted into [roles.identity] is caught, and named as an exposure.

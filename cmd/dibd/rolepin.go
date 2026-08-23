@@ -157,9 +157,16 @@ func (p *rolePins) check(role, name, fingerprint, want string) error {
 				"let anything that can read the file become it", name, role, name)
 		}
 		if want != fingerprint {
-			return fmt.Errorf("the agent registering as %q did not present the nonce "+
-				"[roles.identity] names for it, so it is not the agent you meant to "+
-				"grant %s to", name, role)
+			// "the nonce [roles.identity] names" was the last place in this
+			// release still describing that field as holding one. An operator
+			// reading it while debugging a refused grant would reasonably go
+			// and put the nonce there, which is the exposure the field was
+			// changed to avoid.
+			return fmt.Errorf("the agent registering as %q does not match the "+
+				"fingerprint [roles.identity] names for it, so it is not the agent "+
+				"you meant to grant %s to. Its own fingerprint is %s: if that is "+
+				"the agent you mean, put THAT here, never its nonce",
+				name, role, fingerprint)
 		}
 		// PERSIST FIRST, then remember.
 		//

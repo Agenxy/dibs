@@ -538,19 +538,20 @@ func TestTheSelfSignedCertIsOneAppleWillAccept(t *testing.T) {
 // other machine, at the same moment, with nothing having changed on either side.
 func TestAnExpiringCertificateIsReplaced(t *testing.T) {
 	dir := t.TempDir()
-	certFile, keyFile, err := ensureSelfSignedCert(dir, "192.168.1.205:4777")
+	const addr = "192.168.1.205:4777"
+	certFile, keyFile, err := ensureSelfSignedCert(dir, addr)
 	if err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 	first := parseCert(t, certFile).SerialNumber.String()
 
-	if !usableCert(certFile, keyFile) {
+	if !usableCert(certFile, keyFile, addr) {
 		t.Fatal("a freshly issued certificate was judged unusable")
 	}
 
 	// Rewind it to inside the renewal window by reissuing with a near NotAfter.
 	writeCertExpiring(t, certFile, keyFile, time.Now().Add(24*time.Hour))
-	if usableCert(certFile, keyFile) {
+	if usableCert(certFile, keyFile, addr) {
 		t.Error("a certificate expiring tomorrow was judged usable, so it is served " +
 			"until it fails on every client at once")
 	}
@@ -711,5 +712,64 @@ func TestTheSharedLoaderRefusesEverythingTheDaemonRefuses(t *testing.T) {
 					strings.ReplaceAll(strings.TrimSpace(c.body), "\n", " / "), loaderErr)
 			}
 		})
+	}
+}
+
+// A still-valid certificate that no longer names the address is replaced.
+//
+// Expiry was the only reason a stored pair was ever regenerated, and it is not
+// the only way one stops working. It also stops working when it does not cover
+// what clients dial, which is not hypothetical for this release: the SANs a
+// wildcard bind needs were ADDED here, so every board upgrading from v0.0.6
+// holds an unexpired certificate naming 0.0.0.0 and localhost and nothing else.
+// `dibs mcp-config` then correctly hands out the LAN address, the daemon starts
+// cleanly, and every client fails hostname verification. A laptop that changes
+// networks lands in the same place.
+//
+// Both failures are silent on the daemon and total on the clients, which is the
+// worst pair of properties a TLS problem can have. The certificate tests
+// covered fresh issuance and expiry; neither starts from a valid certificate
+// whose names no longer match.
+func TestACertificateThatNoLongerNamesTheAddressIsReplaced(t *testing.T) {
+	dir := t.TempDir()
+
+	// The v0.0.6 shape: issued for a wildcard bind, before local addresses were
+	// added to the template.
+	certFile, keyFile, err := ensureSelfSignedCert(dir, "127.0.0.1:4777")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	first := parseCert(t, certFile).SerialNumber.String()
+	if !usableCert(certFile, keyFile, "127.0.0.1:4777") {
+		t.Fatal("setup: a freshly issued certificate was judged unusable for its " +
+			"own address, so nothing below distinguishes anything")
+	}
+
+	// The machine is now reached on a name that certificate never carried.
+	const moved = "192.168.1.205:4777"
+	if usableCert(certFile, keyFile, moved) {
+		t.Fatalf("a certificate that does not name %s was judged usable for it. It "+
+			"is unexpired and the daemon will serve it happily; every client dialing "+
+			"that address fails hostname verification, and nothing on this side "+
+			"reports a problem", moved)
+	}
+
+	// And it is actually reissued, covering the new address.
+	certFile2, _, err := ensureSelfSignedCert(dir, moved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := parseCert(t, certFile2)
+	if got.SerialNumber.String() == first {
+		t.Fatal("the same certificate was returned for an address it does not name")
+	}
+	if err := got.VerifyHostname("192.168.1.205"); err != nil {
+		t.Errorf("the reissued certificate still does not verify for the address it "+
+			"was generated for: %v", err)
+	}
+	// The loopback names survive, so moving networks does not break the local
+	// board to fix the remote one.
+	if err := got.VerifyHostname("127.0.0.1"); err != nil {
+		t.Errorf("the reissued certificate dropped loopback: %v", err)
 	}
 }
