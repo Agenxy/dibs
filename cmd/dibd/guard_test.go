@@ -293,3 +293,60 @@ func TestAStolenSessionCannotChangeStateWithoutABrowser(t *testing.T) {
 		t.Error("a write from another port's origin was accepted")
 	}
 }
+
+// A logged-in browser must still be able to load the board's own links.
+//
+// The page key closed the coordination tier to a bare cookie, which was right:
+// /mcp lives in that tier and register hands out an agent token. But a browser
+// cannot put a custom header on an ordinary navigation or on a favicon request,
+// so the two things the board's own HTML points at, the icon in its <link> and
+// the Protocol anchor a reader clicks, started returning 401 to a perfectly
+// valid session. The operator sees a broken icon and a dead link and concludes
+// the board is broken. Found by the pre-release review.
+//
+// Both are safe: /help renders a static template with nil data and /icon.svg is
+// an image. Neither carries board state, and the protocol documentation is
+// published anyway.
+func TestABoardSessionCanLoadTheIconAndTheProtocolLink(t *testing.T) {
+	g := newAuthGate("the-secret", filepath.Join(t.TempDir(), "admin.hash"), "127.0.0.1:4777")
+	const token, pageKey = "a-real-session", "a-real-page-key"
+	gate := g.wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	g.sessions[token] = boardSession{exp: time.Now().Add(time.Hour), page: pageKey}
+
+	browse := func(method, target string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, "http://127.0.0.1:4777"+target, nil)
+		r.AddCookie(&http.Cookie{Name: "dibs_session", Value: token})
+		// No page key: a browser cannot add one to a navigation or a favicon.
+		rec := httptest.NewRecorder()
+		gate.ServeHTTP(rec, r)
+		return rec
+	}
+
+	for _, target := range []string{"/icon.svg", "/help"} {
+		if got := browse(http.MethodGet, target).Code; got == http.StatusUnauthorized {
+			t.Errorf("GET %s returned 401 for a valid board session: the browser cannot "+
+				"send the page key on this request, so the board's own icon and "+
+				"Protocol link break for a logged-in operator", target)
+		}
+	}
+
+	// And the allowance stays a CLOSED list. The reason the page key exists is
+	// that this same tier holds /mcp, where register hands out an agent token
+	// to anything that asks; a rule wide enough to be convenient here is how
+	// that got exposed the first time.
+	for _, target := range []string{"/mcp", "/api/messages", "/api/admin/role"} {
+		if got := browse(http.MethodGet, target).Code; got != http.StatusUnauthorized {
+			t.Errorf("GET %s returned %d for a cookie with no page key: the browsable "+
+				"exception has widened past the two routes a browser actually needs",
+				target, got)
+		}
+	}
+
+	// A write to a browsable route is still refused: the exception is for
+	// fetching a page, not for doing anything.
+	if got := browse(http.MethodPost, "/help").Code; got != http.StatusUnauthorized {
+		t.Errorf("POST /help returned %d: the exception must not carry state changes", got)
+	}
+}

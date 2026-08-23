@@ -940,7 +940,27 @@ try {
     // This suite covered answering a QUESTION and nothing else, which is why it
     // stayed green. Found by a pre-release review.
     const me = ((await (await fetch(`http://${ADDR}/api/me`, { headers: keyed })).json()) as any).agent
-    const asked = await tool("send", { token: b.token, to: me, type: "request",
+    // ASKED BY `a`, WHICH IS NOT ALREADY A COORDINATOR.
+    //
+    // b was promoted during setup, so when b asked for coordinator the approval
+    // could not show it had DONE anything: the only assertion was that the
+    // message said "approved", which stays true whether or not the grant lands.
+    // That is the precise regression the comments here claim to guard. Found by
+    // the pre-release review.
+    //
+    // `admin` would be the sharper contrast and is deliberately not offered on
+    // this path at all: it reads every mailbox, so the grant enum is
+    // coordinator and member only.
+    const roleOf = async (id: string): Promise<string> => {
+      const board = await tool("board", { token: b.token, detail: true })
+      const rows = (board?.board?.agents ?? board?.agents ?? []) as any[]
+      return String(rows.find((r) => r.id === id)?.role ?? "")
+    }
+    const roleBefore = await roleOf(a.agent_id)
+    check("the requester does not already hold the role it will ask for",
+      roleBefore !== "coordinator", roleBefore || "(none)")
+
+    const asked = await tool("send", { token: a.token, to: me, type: "request",
       body: "may I coordinate the release?", grant: "coordinator",
       op_id: "ask-human-grant", deadline_s: 600 })
 
@@ -960,10 +980,17 @@ try {
     await approve.click()
     await Bun.sleep(300)
 
-    const got = await tool("read_mail", { token: b.token, msg_serial: asked.msg_serial })
+    const got = await tool("read_mail", { token: a.token, msg_serial: asked.msg_serial })
     const state = got.message?.state ?? got.state ?? ""
     check("the request is approved, from the board alone",
       String(state) === "approved", String(state))
+
+    // And the EFFECT landed. "approved" is a word in a message; the grant is
+    // what the operator pressed the button for, and a board that records one
+    // without the other is the failure worth catching.
+    const roleAfter = await roleOf(a.agent_id)
+    check("approving from the board actually granted the role",
+      roleAfter === "coordinator", `${roleBefore || "(none)"} -> ${roleAfter || "(none)"}`)
   }
 
   // ── the human sends a message unprompted ───────────────────────────────

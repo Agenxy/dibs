@@ -197,6 +197,39 @@ func (g *authGate) holdsPageKey(r *http.Request) bool {
 	return subtle.ConstantTimeCompare([]byte(given), []byte(sess.page)) == 1
 }
 
+// browsableWithSession covers the routes a BROWSER fetches without JavaScript.
+//
+// A browser cannot put a custom header on an ordinary navigation or on a
+// favicon request. Requiring the page key everywhere in this tier therefore
+// 401'd the two things the board's own HTML points at: the favicon in its
+// <link> and the Protocol link a reader clicks. A logged-in operator saw a
+// broken icon and a dead link, which reads as the board being broken rather
+// than as a security control working. Found by the pre-release review.
+//
+// Safe because neither carries board state: /help renders a static template
+// with nil data, and /icon.svg is an image. A cookie thief that reaches them
+// learns the protocol documentation, which is published.
+//
+// Deliberately a CLOSED list rather than a prefix. The reason the page key
+// exists is that this tier also holds /mcp, where register hands out an agent
+// token; a rule wide enough to be convenient here is how that got exposed the
+// first time.
+func browsableWithSession(r *http.Request, g *authGate) bool {
+	if !g.validSession(r) {
+		return false
+	}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead:
+	default:
+		return false
+	}
+	switch path.Clean(r.URL.Path) {
+	case "/help", "/icon.svg":
+		return true
+	}
+	return false
+}
+
 // boardPageSession is a session that has proved it is the board's own page.
 //
 // The coordination tier accepts it for the assets and polling the document
@@ -584,7 +617,7 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 			r = r.WithContext(web.WithRevalidator(r.Context(), func() bool {
 				return g.godViewAuthorized(r)
 			}))
-		} else if !g.headerSecret(r) && !g.boardPageSession(r) {
+		} else if !g.headerSecret(r) && !g.boardPageSession(r) && !browsableWithSession(r, g) {
 			// Coordination tier: the local secret (agents), or a board page
 			// that has proved itself, for the assets and polling the document
 			// needs.

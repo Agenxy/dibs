@@ -98,14 +98,22 @@ func TestThePluginDocIsServableAndHonest(t *testing.T) {
 	}
 }
 
-// A harness with hooks but no wake path is never told it can stop polling.
+// A harness whose delivery is not guaranteed is never told it can stop polling.
 //
-// Hook traffic and DELIVERY are different facts. Codex fires hooks as
-// subprocesses, which Dibs refuses to be, so it can have live hooks and still
-// have no way to wake an agent. The hint used one sentence for every harness, so
-// a Codex agent whose hooks had fired was told "mail will arrive, you do not need
-// to poll" in the same result whose catalogue entry said mail is pull-only. An
-// agent that believed the first stops checking and silently loses mail.
+// Hook traffic and DELIVERY are different facts, and the hint once used one
+// sentence for every harness: a Codex agent whose hooks had fired was told
+// "mail will arrive, you do not need to poll" in the same result whose
+// catalogue entry said pull-only. An agent that believes the first stops
+// checking and silently loses mail. That is the guarantee here and it has not
+// changed.
+//
+// The REASON changed, and this test used to freeze the old one. It said Codex
+// fires hooks only as subprocesses, which Dibs refuses to be, so it could never
+// wake an agent. That stopped being true on 2026-08-18: openai/codex#39296
+// wired an MCP executor into every session and mcp_tool hooks now execute. So
+// the assertion no longer demands the words "PULL-ONLY", which asserted a fact
+// about the harness. It demands the INSTRUCTION, which is what protects the
+// agent: keep checking in, whatever the harness turns out to support.
 func TestAHarnessWithNoWakePathIsNotToldToStopPolling(t *testing.T) {
 	codex := pluginHint("codex", false, true, true)
 	if codex == nil {
@@ -115,8 +123,10 @@ func TestAHarnessWithNoWakePathIsNotToldToStopPolling(t *testing.T) {
 	if strings.Contains(note, "do not need to poll") {
 		t.Errorf("codex was told it need not poll, but it has no wake path: %q", note)
 	}
-	if !strings.Contains(note, "PULL-ONLY") {
-		t.Errorf("codex was not told mail is pull-only there: %q", note)
+	if !strings.Contains(note, "check_in") {
+		t.Errorf("codex was not told to keep checking in: on a harness whose delivery "+
+			"depends on the build, the pull rhythm is the floor and dropping it is "+
+			"how mail goes unread: %q", note)
 	}
 
 	// And the harness that DOES deliver still says so: the fix must not flatten

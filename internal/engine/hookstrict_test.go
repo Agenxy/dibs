@@ -33,21 +33,59 @@ func TestAStrictHookResponseCarriesOnlySchemaKeys(t *testing.T) {
 	defer cancel()
 	go e.Run(ctx)
 
-	if _, err := e.Do(ctx, &core.Op{
+	// THE MAIL HAS TO EXIST, and the first version of this did not make it.
+	//
+	// The send carried no token, was refused with E_BAD_TOKEN, and the test
+	// logged that and carried on with a note saying the mail was not essential.
+	// It was: without it every case exercised the no-news branch, so the only
+	// thing asserted was that an EMPTY object has no forbidden keys. Deleting
+	// additionalContext from the delivering path left it green. Found by the
+	// pre-release review, which ran it and read the setup line.
+	res, err := e.Do(ctx, &core.Op{
 		Kind: core.OpRegister, Name: "asker", Nonce: "n-asker",
 		AgentKind: core.KindPersistent, SessionID: "sess-1",
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatalf("setup: register: %v", err)
+	}
+	token, _ := res["token"].(string)
+	if token == "" {
+		t.Fatal("setup: register returned no token, so the send below cannot be made")
 	}
 	var id string
 	for agentID := range st.Agents {
 		id = agentID
 	}
 	if _, err := e.Do(ctx, &core.Op{
-		Kind: core.OpSendMessage, To: id, MsgType: core.MsgQuestion,
+		Kind: core.OpSendMessage, Token: token, To: id, MsgType: core.MsgQuestion,
 		Body: "something somebody is waiting on",
 	}); err != nil {
-		t.Logf("setup: send returned %v (the mail is not essential; the key set is)", err)
+		t.Fatalf("setup: send: %v. Without mail every case below tests the empty "+
+			"response and proves nothing about the delivering path", err)
+	}
+
+	// FIRST, while the news is still fresh. A wake is spent once, so the loop
+	// below would leave nothing to deliver and this assertion would test the
+	// empty branch: the very shape that made the original test vacuous.
+	//
+	// A strict filter that answered {} for everything satisfies every
+	// forbidden-key check in that loop, so something has to prove the payload
+	// survives the filter.
+	delivered, err := e.HookPoll(ctx, "sess-1", "Stop", "", false, true)
+	if err != nil {
+		t.Fatalf("hook_poll: %v", err)
+	}
+	hso, ok := delivered["hookSpecificOutput"].(map[string]any)
+	if !ok {
+		t.Fatalf("a Stop with unread mail carried no hookSpecificOutput: %v. The "+
+			"strict filter is allowed to remove Dibs' own diagnosis and nothing "+
+			"else; dropping the payload would deliver a passing hook and no mail",
+			keysOf(delivered))
+	}
+	if ctxText, _ := hso["additionalContext"].(string); ctxText == "" {
+		t.Error("hookSpecificOutput has no additionalContext: the hook reports success " +
+			"and the model is told nothing, which is the failure this whole path exists " +
+			"to avoid")
 	}
 
 	// Every event, because the branch that produced the offending keys is the
