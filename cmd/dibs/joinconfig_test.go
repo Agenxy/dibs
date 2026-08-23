@@ -1009,3 +1009,50 @@ func TestOriginHonoursTransportSettingsOnlyTheFileNames(t *testing.T) {
 		})
 	}
 }
+
+// The forwarded address states its transport too.
+//
+// joinerAddr was changed so the emitted address always says http or https,
+// because the joining bridge otherwise re-infers one from the host and gets it
+// wrong on two supported configurations. The TUNNEL branch kept returning the
+// bare placeholder, which is the same defect surviving in the one case that
+// function's own comment names: a loopback daemon holding a certificate pair.
+// The forward carries TLS to the far end, the bridge sees a bare loopback
+// address and speaks plain HTTP into it, and the recipe prints a trust step for
+// a certificate that is never presented. It exits zero and cannot connect.
+//
+// The two tests over this path checked only that a forward and a trust step
+// appeared, and both passed against that configuration.
+func TestTheForwardedAddressSaysWhichTransportIsOnTheOtherEnd(t *testing.T) {
+	for _, c := range []struct {
+		name       string
+		addr       string
+		servesTLS  bool
+		wantPrefix string
+	}{
+		{"a loopback daemon given a certificate pair", "127.0.0.1:4777", true, "https://"},
+		{"the ordinary plaintext loopback daemon", "127.0.0.1:4777", false, "http://"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("DIBS_ADDR", c.addr)
+			got, err := joinerAddr(servedScheme(c.servesTLS))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.HasPrefix(got, c.wantPrefix) {
+				t.Errorf("the joining machine is handed %q, which does not say the "+
+					"transport. A forward carries whatever the daemon serves to the "+
+					"far end, and the bridge on that machine infers a scheme from the "+
+					"host: for a loopback address it guesses plaintext, so a TLS "+
+					"daemon behind the forward is unreachable and the recipe still "+
+					"exits successfully", got)
+			}
+			// It is still the OTHER machine's local end of the forward, not
+			// this daemon's own address.
+			if !strings.Contains(got, "<local-port>") {
+				t.Errorf("the forwarded address %q lost its placeholder port: the local "+
+					"end of a forward is the joining machine's choice", got)
+			}
+		})
+	}
+}

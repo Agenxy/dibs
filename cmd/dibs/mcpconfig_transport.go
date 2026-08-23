@@ -99,6 +99,15 @@ func clientHost(a string) (string, error) {
 	return a, nil
 }
 
+// schemePrefix turns a resolved scheme into what goes in front of an address,
+// and "" into "" so a caller with nothing to say says nothing.
+func schemePrefix(served string) string {
+	if served == "" {
+		return ""
+	}
+	return served + "://"
+}
+
 // joinerAddr is the address the OTHER machine reaches this daemon on.
 //
 // Not this daemon's own address, which is what it printed. For a loopback hub
@@ -117,7 +126,15 @@ func clientHost(a string) (string, error) {
 // pre-release review.
 func joinerAddr(served string) (string, error) {
 	if tunnel, _ := boardShape(rawAddr(), served); tunnel {
-		return "127.0.0.1:<local-port>", nil
+		// STATED HERE TOO. This branch returned the bare placeholder and threw
+		// `served` away, which is the same defect the rest of this function was
+		// written to fix, surviving in the one case the comment above names
+		// explicitly: a loopback daemon with a certificate pair. The forward
+		// carries TLS to the far end, the joining bridge saw a bare loopback
+		// address and inferred plain HTTP, and the recipe printed a trust step
+		// for a certificate it would then never present. Successful exit,
+		// unusable configuration.
+		return schemePrefix(served) + "127.0.0.1:<local-port>", nil
 	}
 	raw := rawAddr()
 	rest := raw

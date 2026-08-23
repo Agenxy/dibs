@@ -128,6 +128,13 @@ func installCoordinatorClaim(eng *engine.Engine, dir string, alreadyHas bool) {
 // looks ownerless. It was handed a claim in that window, which any same-user
 // agent could read and spend, and later reconciliation grants the intended
 // coordinator without demoting whoever got there first.
+// ADMIN COUNTS TOO, because admin INCLUDES coordinator authority
+// (internal/core/roles.go). A board configured `[roles] admin = ["fleet-lead"]`
+// and nothing else has named who coordinates just as surely as one that spells
+// it out, and the first version of this looked only at Coordinator: the claim
+// was still minted, and an opportunist could take coordinator before the
+// declared admin registered and keep it, because later reconciliation grants
+// the admin without demoting anybody.
 func coordinatorAlreadyDecided(granted bool, roles RolesConfig) bool {
-	return granted || len(roles.Coordinator) > 0
+	return granted || len(roles.Coordinator) > 0 || len(roles.Admin) > 0
 }

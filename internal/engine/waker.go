@@ -157,6 +157,20 @@ func (e *Engine) maybeWake(ev core.Event) {
 	if !ok {
 		return
 	}
+	// A RETIRED IDENTITY IS NOT WOKEN.
+	//
+	// Answering a closed or archived asker is allowed and returns
+	// delivered:false, saying plainly that nobody will read it. The event is
+	// still published, and every published event reaches this, so the board
+	// said "nobody will read this answer" and then started the thread anyway.
+	// Two costs: a subprocess spent on a mailbox that cannot be restored, and
+	// worse, a closed PERSISTENT identity resuming into the nonce-registration
+	// path and coming back ACTIVE, which is precisely the finality sign_off
+	// promises.
+	if l.Gone() {
+		slog.Debug("no wake: this agent has signed off", "agent", l.ID)
+		return
+	}
 	// RECENTLY IN TOUCH, not merely "active".
 	//
 	// Status was the first test here and it was wrong. `active` means the idle
@@ -279,12 +293,27 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) ([]string
 	}
 	e.wakers.last[l.ID] = now
 
+	// A VERDICT PUTS THESE SOMEWHERE ELSE.
+	//
+	// `message.sent` carries from and msg_type in Data. A verdict carries
+	// neither: the responder is Event.Agent and the disposition is the event
+	// TYPE itself. Reading Data alone left `{from}` and `{type}` substituted
+	// with empty strings on every approval, denial, answer and decline, so two
+	// documented placeholders silently produced nothing in the one case with
+	// the strongest claim on a wake. Whichever field the event actually used.
 	from, _ := ev.Data["from"].(string)
+	if from == "" {
+		from = ev.Agent
+	}
+	kind := msgType
+	if kind == "" {
+		kind = strings.TrimPrefix(ev.Type, "message.")
+	}
 	return wakeFields{
 		thread:  thread,
 		agent:   l.ID,
 		from:    from,
-		msgType: msgType,
+		msgType: kind,
 		// Deliberately NOT the body. A wake says that mail exists; the agent
 		// reads it over the authenticated channel with its own token. Putting
 		// the text in an argv would hand a message's contents to whatever the

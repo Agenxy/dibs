@@ -175,6 +175,20 @@ func TestAConfiguredCoordinatorIsNotRaceableBeforeItRegisters(t *testing.T) {
 		t.Error("coordinator.claim was written for a board that names a coordinator")
 	}
 
+	// AND ADMIN COUNTS, because admin includes coordinator authority. A board
+	// configured with only `[roles] admin = [...]` has named who coordinates
+	// just as surely as one that spells it out; the first version of this fix
+	// looked only at Coordinator, so that board still minted a claim an
+	// opportunist could spend, and later reconciliation grants the admin
+	// without demoting whoever took it.
+	if coordinatorAlreadyDecided(false, RolesConfig{Admin: []string{"fleet-lead"}}) != true {
+		t.Error("a board that declares an ADMIN was still offered a launch claim. " +
+			"Admin carries coordinator authority, so the operator has answered the " +
+			"question the claim asks, and an agent that reads the claim file first " +
+			"keeps broadcast, eviction and force-release on a board it was never " +
+			"meant to run")
+	}
+
 	// A board that names NOBODY still gets one: this must not disable the
 	// bootstrap path it exists to provide.
 	c2 := newCoordinatorClaim(t.TempDir(), coordinatorAlreadyDecided(false, RolesConfig{}))

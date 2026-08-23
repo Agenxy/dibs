@@ -652,3 +652,99 @@ func TestMaybeWakeOnAnEngineWithNoStateDoesNothingAtAll(t *testing.T) {
 			"every test built on it is as vacuous as the ones it replaced")
 	}
 }
+
+// An agent that has signed off is not started again.
+//
+// Answering a closed or archived asker is allowed: the response records
+// delivered:false and says outright that nobody will read it. The event is
+// published all the same, and every published event reaches maybeWake, so the
+// board told the responder "nobody will read this" and then launched the
+// operator's resume command against the retired thread. The wasted subprocess
+// is the small half. The large half is that a closed PERSISTENT identity
+// resuming goes through the nonce-registration path and comes back ACTIVE,
+// which is exactly the finality sign_off promises.
+func TestAnAgentThatSignedOffIsNotResumed(t *testing.T) {
+	for _, status := range []core.AgentStatus{core.StatusClosed, core.StatusArchived} {
+		t.Run(string(status), func(t *testing.T) {
+			e, st := wakeEngine(t, WakeCommand{
+				Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute,
+			})
+			l := bridgeAgent("retired", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+			l.Status = status
+			st.Agents["retired"] = l
+
+			// A verdict on something it asked before it went: the case that
+			// actually happens, and the one with the strongest claim on a wake
+			// if the agent were still here.
+			e.maybeWake(core.Event{
+				Type: "message.approved", Agent: "lael", To: "retired",
+				Data: map[string]any{"msg_serial": uint64(7)},
+			})
+			if _, spent := e.wakers.last["retired"]; spent {
+				t.Errorf("the board resumed a %s agent. The answer it is being woken "+
+					"for was recorded as delivered:false because nobody will read it, "+
+					"and resuming a closed persistent identity walks it back to active: "+
+					"sign_off is supposed to be final", status)
+			}
+		})
+	}
+
+	// And a live agent in the same shape IS woken, so this cannot pass by
+	// waking nobody.
+	e, st := wakeEngine(t, WakeCommand{Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute})
+	st.Agents["here"] = bridgeAgent("here", "Codex", "019fff00-1111-7f60-81cc-6ab1298d76ec")
+	e.maybeWake(core.Event{
+		Type: "message.approved", Agent: "lael", To: "here",
+		Data: map[string]any{"msg_serial": uint64(7)},
+	})
+	if _, spent := e.wakers.last["here"]; !spent {
+		t.Fatal("no agent is woken by an approval at all, so the checks above say " +
+			"nothing about having signed off")
+	}
+}
+
+// A verdict fills {from} and {type}, which it did not.
+//
+// `message.sent` carries from and msg_type inside Data; a verdict carries
+// neither, because the responder is Event.Agent and the disposition is the
+// event type itself. Reading Data alone substituted empty strings into two
+// documented placeholders, on exactly the events an agent stopped and waited
+// for. An operator's command would receive `--from "" --kind ""` and could not
+// say who had answered.
+func TestAVerdictWakeCarriesWhoAnsweredAndWhatTheyDid(t *testing.T) {
+	for _, c := range []struct{ event, wantType string }{
+		{"message.approved", "approved"},
+		{"message.denied", "denied"},
+		{"message.answered", "answered"},
+		{"message.declined", "declined"},
+	} {
+		t.Run(c.event, func(t *testing.T) {
+			e, st := wakeEngine(t, WakeCommand{
+				Argv:     []string{"codex", "resume", "{thread}", "--from", "{from}", "--kind", "{type}"},
+				Cooldown: time.Minute,
+			})
+			l := bridgeAgent("asker", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+			st.Agents["asker"] = l
+
+			ev := core.Event{
+				Type: c.event, Agent: "lael", To: "asker",
+				Data: map[string]any{"msg_serial": uint64(7)},
+			}
+			argv, ok := e.wakeFor(l, "", ev)
+			if !ok {
+				t.Fatal("no wake for a verdict, so this proves nothing about its fields")
+			}
+			from, kind := argv[4], argv[6]
+			if from != "lael" {
+				t.Errorf("{from} = %q, want \"lael\": the responder is Event.Agent on a "+
+					"verdict, and reading only Data hands the operator's command an "+
+					"empty string where the answerer's name belongs", from)
+			}
+			if kind != c.wantType {
+				t.Errorf("{type} = %q, want %q: a verdict's disposition is the event "+
+					"type, and it is the thing the woken agent most needs to know",
+					kind, c.wantType)
+			}
+		})
+	}
+}
