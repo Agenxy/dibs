@@ -93,6 +93,11 @@ type WakeConfig struct {
 	// recipient, because somebody is blocked on that and nobody is blocked on
 	// knowing who joined a space.
 	NoticesWake *bool `toml:"notices_wake"`
+
+	// Exec is how to REACH an agent that is not running, per harness. See
+	// WakeExec. Absent means the board cannot start anything, which is the
+	// default and was the only behaviour before this existed.
+	Exec map[string]WakeExec `toml:"exec"`
 }
 
 // LimitsConfig is the [limits] table: the timings an operator's fleet actually
@@ -207,6 +212,36 @@ type MatchConfig struct {
 	// proposal for the agent to judge. See engine.MatchConfig.AutoJoin for why
 	// that turned out to be the right split.
 	AutoJoin string `toml:"auto_join"`
+}
+
+// WakeExec is how the board reaches an agent that is not running.
+//
+// Dibs is meant to be a phone, and a phone that only rings while you are
+// already holding it is not one. Until this existed, an agent had to be
+// executing for mail to arrive: hooks fire on an agent's own turn boundary, and
+// an idle session has no boundary coming. That made the delivery guarantee
+// conditional on the recipient already being awake, which is the opposite of
+// what a message service is for.
+//
+// ARGV, NEVER A SHELL STRING, and never anything an agent said. The command is
+// the operator's, out of their own config file, and the only substitutions are
+// whole argv elements. An agent that could contribute any part of this would
+// have arbitrary code execution on the machine through the message it sends,
+// which is the one failure that would be worse than not delivering at all.
+//
+//	[wake.exec.codex]
+//	argv = ["codex", "queue", "--thread", "{session_id}", "--message", "{message}"]
+//
+// Placeholders, each replaced as a COMPLETE element: {session_id}, {agent},
+// {from}, {type}, {message}. Anything else is left alone.
+type WakeExec struct {
+	// Argv is the command and its arguments. Empty means this harness has no
+	// wake command, which is the default and is not an error.
+	Argv []string `toml:"argv"`
+	// Cooldown is the shortest gap between two wakes of the same agent. Zero
+	// takes the default; a fleet that wakes on every message is a fork bomb
+	// with better manners.
+	Cooldown time.Duration `toml:"cooldown"`
 }
 
 // RolesConfig is the [roles] table.

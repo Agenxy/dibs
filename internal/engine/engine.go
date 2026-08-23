@@ -98,6 +98,9 @@ type Engine struct {
 	// Guarded because it is read on every lifecycle hook and written once at
 	// startup, from a different goroutine.
 	wake wakeState
+	// wakers is how the board REACHES an agent that is not running. Distinct
+	// from `wake` above, which is only the policy for extending a turn.
+	wakers wakers
 
 	// matchStatus is why matching did or did not do anything, so a declaration
 	// never comes back silently ambiguous. See matchstatus.go.
@@ -841,6 +844,9 @@ func (e *Engine) publish(evs []core.Event) {
 			}
 		}
 		e.noteEvent(ev) // record what an agent needs told; drained by hook_poll
+		// And, for an agent that is not running at all, start the operator's
+		// way in. Every other path here waits for the agent to come to us.
+		e.maybeWake(ev)
 	}
 	e.ring = append(e.ring, evs...)
 	if len(e.ring) > e.ringCap {

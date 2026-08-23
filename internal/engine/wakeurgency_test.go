@@ -34,7 +34,7 @@ func TestEveryKindOfMailWakesItsRecipientOnArrival(t *testing.T) {
 			}); err != nil {
 				t.Fatalf("setup: send %s: %v", kind, err)
 			}
-			got, err := e.HookPoll(ctx, "sess-"+id, "Stop", "", false)
+			got, err := e.HookPoll(ctx, "sess-"+id, "Stop", "", false, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -64,11 +64,11 @@ func TestAWakeDoesNotNagAboutSomethingAlreadyDelivered(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	first, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false)
+	first, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false, false)
 	if first["hookSpecificOutput"] == nil {
 		t.Fatal("the arrival did not wake it: this test cannot see what it guards")
 	}
-	second, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false)
+	second, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false, false)
 	if second["hookSpecificOutput"] != nil {
 		t.Error("the same FYI woke the agent twice: an agent that decided not to act on it " +
 			"would be interrupted every turn for the rest of its life")
@@ -134,7 +134,7 @@ func TestAWakeNeverContinuesATurnAWakeAlreadyContinued(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	again, err := e.HookPoll(ctx, "sess-"+id, "Stop", "", true)
+	again, err := e.HookPoll(ctx, "sess-"+id, "Stop", "", true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,11 +159,11 @@ func TestTheOperatorCanNarrowOrSilenceTheWake(t *testing.T) {
 	}
 
 	e.SetWakePolicy(WakeUrgent)
-	if got, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false); got["hookSpecificOutput"] != nil {
+	if got, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false, false); got["hookSpecificOutput"] != nil {
 		t.Error("`urgent` extended a turn for an FYI")
 	}
 	e.SetWakePolicy(WakeNone)
-	quiet, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false)
+	quiet, _ := e.HookPoll(ctx, "sess-"+id, "Stop", "", false, false)
 	if quiet["hookSpecificOutput"] != nil {
 		t.Error("`none` extended a turn")
 	}
@@ -178,7 +178,7 @@ func TestTheOperatorCanNarrowOrSilenceTheWake(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := fresh.HookPoll(ctx, "sess-"+freshID, "Stop", "", false); got["hookSpecificOutput"] == nil {
+	if got, _ := fresh.HookPoll(ctx, "sess-"+freshID, "Stop", "", false, false); got["hookSpecificOutput"] == nil {
 		t.Error("the DEFAULT held an FYI back: a fleet with nobody at the keyboard would " +
 			"never hear about it")
 	}

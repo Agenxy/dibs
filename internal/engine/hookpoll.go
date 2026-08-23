@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +18,43 @@ import (
 // few turns.
 const AnnounceRetry = 120 * time.Second
 
+// strict drops the keys that are Dibs' own diagnosis rather than hook output.
+//
+// Codex validates a hook's JSON against a schema with deny_unknown_fields at
+// every level: `continue`, `stopReason`, `suppressOutput`, `systemMessage` and
+// `hookSpecificOutput{hookEventName, additionalContext}`, and nothing else. One
+// extra key fails the whole parse, so the hook is reported FAILED and its
+// additionalContext is dropped. Claude Code ignores keys it does not know, which
+// is why `agent` and `queued` were free there and are not here.
+//
+// Measured against a running daemon: hook_poll on an event that cannot carry
+// news returns exactly {"agent":…,"queued":…}, both rejected. Nothing was due
+// for injection in that case, so the effect is only that Codex marks a
+// correctly behaving hook as failed. That is still worth fixing: an operator
+// reading "Failed" concludes the integration is broken, and a diagnosis nobody
+// can read is not a diagnosis. The reasoning behind those two keys, that "the
+// agent was not told" and "there was nothing to tell" must not look alike, is
+// preserved in the daemon log rather than thrown away.
+func (e *Engine) hookOutput(out core.Result, strict bool) core.Result {
+	if !strict {
+		return out
+	}
+	for k := range out {
+		switch k {
+		case "continue", "stopReason", "suppressOutput", "systemMessage", "hookSpecificOutput":
+		default:
+			// Logged, not merely dropped. The distinction these keys carry, that
+			// "the agent was not told" and "there was nothing to tell" must not
+			// look alike, is worth keeping for whoever is debugging even when
+			// the caller's schema will not accept it on the wire.
+			slog.Debug("dropped from a strict hook response",
+				"key", k, "value", out[k])
+			delete(out, k)
+		}
+	}
+	return out
+}
+
 // HookPoll answers a harness lifecycle hook: "is there anything this session
 // needs to know?" It is the subprocess-free wake path. Claude Code's
 // `type: "mcp_tool"` hook calls it on the connection the model already holds,
@@ -29,7 +67,9 @@ const AnnounceRetry = 120 * time.Second
 //
 // Nothing is consumed. Mail stays in the inbox until the agent reads and acts on
 // it with its own token, so a hook firing can never silently swallow a message.
-func (e *Engine) HookPoll(ctx context.Context, sessionID, event, cwd string, stopActive bool) (core.Result, error) {
+func (e *Engine) HookPoll(
+	ctx context.Context, sessionID, event, cwd string, stopActive, strict bool,
+) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
 		l := e.state.AgentForHook(sessionID, cwd)
 		e.noteHook("poll", l != nil)
@@ -88,7 +128,7 @@ func (e *Engine) HookPoll(ctx context.Context, sessionID, event, cwd string, sto
 			// whenever there IS news, to the same unauthenticated caller. What
 			// stays absent is the DIGEST, which is the thing a harness injects
 			// into a model's context, so the silence that matters is unchanged.
-			return core.Result{"agent": l.ID}
+			return e.hookOutput(core.Result{"agent": l.ID}, strict)
 		}
 		if event == "" {
 			event = "Stop"
@@ -191,11 +231,14 @@ func (e *Engine) HookPoll(ctx context.Context, sessionID, event, cwd string, sto
 		} else {
 			// Said out loud, because "the agent was not told" and "there was
 			// nothing to tell" must not look the same from outside.
+			// Kept out of a STRICT response, and said in the log instead, so the
+			// distinction survives for whoever is debugging without failing the
+			// caller's schema. See hookOutput.
 			out["queued"] = "informational only: held for this agent's next activation " +
 				"rather than extending a finished turn"
 			out["agent"] = l.ID
 		}
-		return out
+		return e.hookOutput(out, strict)
 	})
 }
 

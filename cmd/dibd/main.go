@@ -263,6 +263,25 @@ func run() error {
 	// "unset" and "explicitly false" are distinguishable, which is the whole
 	// reason a bool setting with a true default needs one.
 	eng.SetNoticesWake(cfg.Wake.NoticesWake == nil || *cfg.Wake.NoticesWake)
+	// How to REACH an agent that is not running. Operator's config only: there
+	// is no tool, op or admin route that can set this, because it is arbitrary
+	// code on this machine and only the person at it may name it.
+	if len(cfg.Wake.Exec) > 0 {
+		cmds := make(map[string][]string, len(cfg.Wake.Exec))
+		cool := time.Duration(0)
+		for harness, x := range cfg.Wake.Exec {
+			if len(x.Argv) == 0 {
+				continue
+			}
+			cmds[harness] = x.Argv
+			if x.Cooldown > cool {
+				cool = x.Cooldown
+			}
+		}
+		eng.SetWakeCommands(cmds, cool)
+		slog.Info("the board can start an agent that is not running",
+			"harnesses", len(cmds))
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	go eng.Run(ctx)

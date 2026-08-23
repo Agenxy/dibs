@@ -34,19 +34,32 @@ import (
 // of what its types are named. When Codex supplies that executor, move
 // `mcp_tool` into the codex row deliberately, having watched a hook fire.
 func TestShippedHooksUseOnlySupportedTypes(t *testing.T) {
-	// Measured against running binaries on 2026-08-17, not read from source.
-	// Claude Code documents five handler types and runs them. Codex declares
-	// `mcp_tool` and has an engine handler for it, but no session supplies the
-	// MCP executor it needs, so it is dropped at startup: declared is not run,
-	// and this table is about what runs.
+	// Measured against running binaries, not read from source. This table is
+	// what a harness RUNS, and it changed once already by the harness changing
+	// under it.
 	supported := map[string]map[string]bool{
 		"claude-code": {"command": true, "http": true, "mcp_tool": true, "prompt": true, "agent": true},
-		// Codex declares four and runs ONE. `prompt` and `agent` are empty
-		// structs that discovery skips by name ("prompt hooks are not supported
-		// yet"), and `mcp_tool` is dropped for want of an executor. Listing a
-		// declared-but-skipped type here would be the original mistake with a
-		// different spelling.
-		"codex": {"command": true},
+		// CODEX RUNS `mcp_tool` SINCE 2026-08-18, and this row was moved on the
+		// terms the comment above demanded: having watched a hook fire.
+		//
+		// openai/codex#39296 "Enable MCP tool hooks in Codex sessions" added
+		// CoreHookMcpExecutor (core/src/hook_mcp_executor.rs) and wired it into
+		// every session (core/src/session/session.rs, Hooks::new with an
+		// Arc<CoreHookMcpExecutor>). The executor is real: it calls
+		// latest_call_tool and injects the thread id into request metadata.
+		//
+		// The evidence that moved this row is a measurement, not the diff. On
+		// 2026-08-22 three mcp_tool hooks calling a real Dibs server were
+		// installed in a live Codex 0.149.0-alpha.4.1 session, and all three
+		// reached the daemon: SessionStart 17:44:42.383, UserPromptSubmit
+		// 17:44:42.408, Stop 17:44:44.049. Run by a second model working from
+		// the source independently, which is why the times are in the record.
+		//
+		// `prompt` and `agent` stay out: still empty structs that discovery
+		// skips by name. And a build older than 2026-08-18 still drops
+		// mcp_tool, so the plugin text says which builds this needs rather than
+		// promising delivery everywhere.
+		"codex": {"command": true, "mcp_tool": true},
 	}
 
 	var files []string
