@@ -465,7 +465,7 @@ func verdictEvent(state string) string {
 // is created during live processing and is gone. Some of the resulting board
 // state can be inferred by looking, and the causal half cannot: who did it, why,
 // and above all the imperative ones, where an agent that was told to stop can
-// carry on because the instruction evaporated. That is a real gap and issue #74
+// carry on because the instruction evaporated. That is a real gap and issue #75
 // is where it is being worked, not a cost worth waving through in a comment.
 
 // noteNewMember tells the existing members that somebody joined.
