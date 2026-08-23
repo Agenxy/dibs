@@ -62,9 +62,25 @@ blocked on arrives for one of its agents that has stopped:
 ```toml
 [wake.exec.codex]
 argv = ["/Applications/ChatGPT.app/Contents/Resources/codex",
-        "queue", "--thread", "{session_id}", "--message", "{message}"]
+        "exec", "resume", "{session_id}", "{message}"]
 cooldown = "90s"
 ```
+
+**Which Codex command, and why this one.** Both were measured on 2026-08-22.
+
+`codex exec resume <uuid> "<text>"` continues that thread's history in a new
+headless process, which registers, reads its mail and acts. It works whether or
+not anything has the thread open, which is what a wake has to do. On builds from
+2026-08-18 it takes a per-thread writer lock, so it refuses rather than colliding
+with a session that is already running; on older builds two of them interleave
+into one transcript, which is a good reason to keep the cooldown.
+
+`codex queue --thread <uuid> --message "<text>"` is the other candidate and is
+**not** sufficient on its own. It enqueues durably and wakes the thread only if
+it is already **loaded** in a running app server. Pointed at a thread whose app
+was not running it returned `Queued message …` and nothing woke: the message
+waits for somebody to open that conversation. Useful when you know the app is
+up and you want the existing window to act; not a wake on its own.
 
 The key under `exec` is the harness as agents report it, lowercased: `codex`,
 `claude code`. Each takes `argv` and an optional `cooldown`.

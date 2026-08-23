@@ -193,7 +193,17 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) ([]string
 		// the text in an argv would hand a message's contents to whatever the
 		// operator's command does with it, and mail is encrypted at rest for
 		// exactly the opposite reason.
-		message: "Dibs: you have mail. Call check_in, then inbox, and act on what is there.",
+		// Phrased as an INSTRUCTION, never as a fact with a shelf life.
+		//
+		// "You have mail" can be false by the time it lands. A wake may be
+		// queued durably and delivered minutes later, and another activation
+		// may have read the mail in between; a resumed thread then wakes, finds
+		// an empty inbox, and reasonably reports the wake as spurious. That
+		// happened during this feature's own testing and cost a peer an
+		// activation working out whether Dibs was lying to it.
+		//
+		// "Check" is true whenever it arrives.
+		message: "Dibs: check the board. Call check_in, then inbox, and act on anything there.",
 	}.apply(cmd.argv), true
 }
 
