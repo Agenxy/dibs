@@ -156,19 +156,47 @@ func TestTheBoardDoesNotStartAnythingItDoesNotNeedTo(t *testing.T) {
 	e := &Engine{}
 	e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{"codex", "queue"}, Cooldown: time.Minute}})
 
-	t.Run("an active agent is already reachable", func(t *testing.T) {
+	// THE AGENT HAS TO BE ON THE BOARD.
+	//
+	// This built an agent locally and never put it in the engine's state, so
+	// maybeWake returned at the nil-state guard before it looked anything up.
+	// The assertion then confirmed that an untouched map was empty, which it
+	// would have been with the recency check deleted outright: a vacuous guard
+	// standing exactly where the real one is claimed to be.
+	t.Run("an agent that has just called in is already reachable", func(t *testing.T) {
+		en := &Engine{}
+		st := core.NewState("t", core.DefaultLimits())
+		en.state = st
+		en.seen = map[string]time.Time{}
+		en.SetWakeCommands(map[string]WakeCommand{
+			"codex": {Argv: []string{"codex", "queue"}, Cooldown: time.Minute},
+		})
 		l := bridgeAgent("live", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
 		l.Status = core.StatusActive
 		l.LastCoordination = time.Now()
-		e.maybeWake(core.Event{
+		st.Agents = map[string]*core.Agent{"live": l}
+
+		en.maybeWake(core.Event{
 			Type: "message.sent", To: "live",
-			Data: map[string]any{"msg_type": core.MsgQuestion},
+			Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
 		})
-		// maybeWake returns before deciding for an active agent; wakeFor is the
-		// decision, and it must never have been asked.
-		if _, seen := e.wakers.last["live"]; seen {
-			t.Error("an active agent was woken: it was going to see this on its own " +
-				"next call, and starting something for it is paying twice")
+		if _, seen := en.wakers.last["live"]; seen {
+			t.Error("an agent that called the board a moment ago was woken: it will " +
+				"see this on its own next call, and starting a second activation " +
+				"for it is paying twice and interleaving two processes in one thread")
+		}
+		// And a stopped one in the same engine IS woken, so this cannot pass by
+		// waking nobody at all, which is how it passed before.
+		gone := bridgeAgent("gone", "Codex", "019fff00-1111-7f60-81cc-6ab1298d76ec")
+		gone.LastCoordination = time.Now().Add(-time.Hour)
+		st.Agents["gone"] = gone
+		en.maybeWake(core.Event{
+			Type: "message.sent", To: "gone",
+			Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+		})
+		if _, seen := en.wakers.last["gone"]; !seen {
+			t.Fatal("no agent in this engine can be woken at all, so the check above " +
+				"proves nothing about recency")
 		}
 	})
 
@@ -489,7 +517,7 @@ func TestATurnThatEndedIsNotMistakenForARunningAgent(t *testing.T) {
 	// It called the board five seconds ago: well inside the cooldown.
 	e.seen["stopped"] = time.Now().Add(-5 * time.Second)
 	// And then its turn ended, which is what the harness tells us on Stop.
-	e.noteTurnEnded(l, "Stop")
+	e.noteTurnState(l, "Stop")
 
 	// Blocking mail arrives while the old rule still called it "in touch".
 	e.maybeWake(core.Event{
@@ -504,6 +532,44 @@ func TestATurnThatEndedIsNotMistakenForARunningAgent(t *testing.T) {
 			"retries it")
 	}
 
+	// A NEW TURN RETRACTS THE STOP, before the model has called anything.
+	//
+	// The first version of this fix recorded only the stop, so one true
+	// statement became a permanent one: SessionStart resolved to the agent, the
+	// stale verdict still won, and blocking mail arriving before the model's
+	// first authenticated call resumed a thread that was already running. That
+	// is the duplicate activation the recency guard exists to prevent,
+	// reintroduced by the fix for its opposite. The case below models an
+	// authenticated call after the stop, which is a LATER point in the same
+	// sequence and cannot see this.
+	for _, start := range []string{"SessionStart", "UserPromptSubmit"} {
+		t.Run("a new turn began with "+start, func(t *testing.T) {
+			en := &Engine{}
+			st := core.NewState("t", core.DefaultLimits())
+			en.state = st
+			en.seen = map[string]time.Time{}
+			en.SetWakeCommands(map[string]WakeCommand{
+				"codex": {Argv: []string{"echo", "{thread}"}, Cooldown: 90 * time.Second},
+			})
+			a := bridgeAgent("restarted", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+			st.Agents = map[string]*core.Agent{"restarted": a}
+
+			en.seen["restarted"] = time.Now().Add(-5 * time.Second)
+			en.noteTurnState(a, "Stop") // the turn ended
+			en.noteTurnState(a, start)  // and a new one began
+			en.maybeWake(core.Event{
+				Type: "message.sent", To: "restarted",
+				Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+			})
+			if _, spent := en.wakers.last["restarted"]; spent {
+				t.Errorf("%s did not retract the earlier Stop, so the board resumed a "+
+					"thread that is running right now. The model has not called Dibs "+
+					"in this turn yet, and it does not have to: the harness already "+
+					"said the session started", start)
+			}
+		})
+	}
+
 	// And contact AFTER the stop means it is running again, so it is left alone:
 	// otherwise this passes by waking an agent that can never be quiet.
 	e2 := &Engine{}
@@ -515,7 +581,7 @@ func TestATurnThatEndedIsNotMistakenForARunningAgent(t *testing.T) {
 	})
 	back := bridgeAgent("resumed", "Codex", "019fff00-1111-7f60-81cc-6ab1298d76ec")
 	st2.Agents = map[string]*core.Agent{"resumed": back}
-	e2.noteTurnEnded(back, "Stop")
+	e2.noteTurnState(back, "Stop")
 	e2.seen["resumed"] = time.Now() // a new turn, after the stop
 	e2.maybeWake(core.Event{
 		Type: "message.sent", To: "resumed",
@@ -525,5 +591,64 @@ func TestATurnThatEndedIsNotMistakenForARunningAgent(t *testing.T) {
 		t.Error("woke an agent that called in after its last stop: a finished turn " +
 			"is not a permanent verdict, and starting a second activation on top " +
 			"of a live one is what the recency check exists to prevent")
+	}
+}
+
+// wakeEngine builds an engine the waker can actually run against.
+//
+// EXISTS BECAUSE THE ZERO VALUE IS A TRAP. maybeWake returns at `e.state == nil`
+// before it looks up anything, so a test that builds `&Engine{}`, constructs an
+// agent locally and calls maybeWake asserts nothing at all: the wakers map it
+// then inspects was never going to be written to. Four tests in this file were
+// written that way and every one of them passed against the bug it named, one
+// of them for the recency check it was the only guard for.
+//
+// The fix is not to remember; it is to have a way of building one that works.
+// Every wake test that goes through maybeWake uses this.
+func wakeEngine(t *testing.T, cmd WakeCommand) (*Engine, *core.State) {
+	t.Helper()
+	e := &Engine{}
+	st := core.NewState("t", core.DefaultLimits())
+	st.Agents = map[string]*core.Agent{}
+	e.state = st
+	e.seen = map[string]time.Time{}
+	e.turnEnded = map[string]time.Time{}
+	e.SetWakeCommands(map[string]WakeCommand{"codex": cmd})
+	return e, st
+}
+
+// The trap itself: a wake test that forgets the state proves nothing, and it
+// proves nothing SILENTLY, which is why it happened four times.
+//
+// This is not testing the nil guard for its own sake. It pins the reason
+// wakeEngine exists, so that a later reader who finds the helper redundant and
+// inlines `&Engine{}` again is told what that costs.
+func TestMaybeWakeOnAnEngineWithNoStateDoesNothingAtAll(t *testing.T) {
+	bare := &Engine{}
+	bare.SetWakeCommands(map[string]WakeCommand{
+		"codex": {Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute},
+	})
+	// A dormant agent with a resumable thread: everything a wake needs, except
+	// that the engine has never heard of it.
+	bare.maybeWake(core.Event{
+		Type: "message.sent", To: "sleeper",
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	})
+	if len(bare.wakers.last) != 0 {
+		t.Fatal("this engine woke something, so the premise below is wrong and " +
+			"wakeEngine's comment needs rewriting")
+	}
+
+	// The same call against a wired engine DOES wake it. That difference is the
+	// whole hazard: both look like a passing test, and only one is one.
+	e, st := wakeEngine(t, WakeCommand{Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute})
+	st.Agents["sleeper"] = bridgeAgent("sleeper", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	e.maybeWake(core.Event{
+		Type: "message.sent", To: "sleeper",
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	})
+	if _, spent := e.wakers.last["sleeper"]; !spent {
+		t.Error("wakeEngine does not produce an engine that can wake anybody, so " +
+			"every test built on it is as vacuous as the ones it replaced")
 	}
 }

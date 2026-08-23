@@ -102,8 +102,8 @@ func hookWakeTerms(unreadWakes, announced, notices, waiting int, someoneWaiting 
 	return fresh, blocked
 }
 
-// noteTurnEnded records that this agent has STOPPED, so its last call to the
-// board stops being evidence that it is running.
+// noteTurnState records what the harness just said about this agent's turn, in
+// BOTH directions.
 //
 // The waker treats recent contact as proof of a live agent, and it has to: an
 // idle lease says nothing, because it lapses in 45 minutes. But recency alone
@@ -115,14 +115,31 @@ func hookWakeTerms(unreadWakes, announced, notices, waiting int, someoneWaiting 
 //
 // A finishing hook is the harness saying the turn is over, which is exactly the
 // fact recency was standing in for.
-func (e *Engine) noteTurnEnded(l *core.Agent, event string) {
-	if l == nil || StateForEvent(event) != "finished" {
+//
+// AND A STARTING HOOK RETRACTS IT. The first version recorded only the stop,
+// which turned one true statement into a permanent one: after Stop, a new turn
+// began, its SessionStart resolved to the same agent, and the stale verdict
+// still won until the model happened to make an authenticated call. Blocking
+// mail arriving in that window resumed a thread that was already running, which
+// is the duplicate activation the recency guard exists to prevent, reintroduced
+// by the fix for the opposite bug. A running event is newer information and
+// replaces the older one rather than sitting beside it.
+func (e *Engine) noteTurnState(l *core.Agent, event string) {
+	if l == nil {
 		return
 	}
-	if e.turnEnded == nil {
-		e.turnEnded = map[string]time.Time{}
+	switch StateForEvent(event) {
+	case "finished":
+		if e.turnEnded == nil {
+			e.turnEnded = map[string]time.Time{}
+		}
+		e.turnEnded[l.ID] = time.Now()
+	case "running":
+		// Deleted rather than stamped: the question recentlyInTouch asks is
+		// "has it stopped since we last heard from it", and the answer is now
+		// no. A timestamp here would have to race the contact clock to say so.
+		delete(e.turnEnded, l.ID)
 	}
-	e.turnEnded[l.ID] = time.Now()
 }
 
 // HookPoll answers a harness lifecycle hook: "is there anything this session
@@ -144,7 +161,7 @@ func (e *Engine) HookPoll(
 		e.announceHookSession(sessionID, cwd, event)
 		l := e.state.AgentForHook(sessionID, cwd)
 		e.noteHook("poll", l != nil)
-		e.noteTurnEnded(l, event)
+		e.noteTurnState(l, event)
 		if l == nil {
 			// A session that resolves to nobody may still BE somebody, returning.
 			//
