@@ -10,7 +10,10 @@ One `dibd` serves the fleet. It is self-hosted and answers to nobody else: no ac
 no external service, no telemetry. That is what "local" means here, and it does not
 mean the agents must share a computer.
 
-It is a **service agents pull from**, never a harness that drives them. Nothing in Dibs
+It is a **service agents pull from**, and it may ring a phone. When mail arrives for an
+agent that is not running, the board can start the operator's own command so that agent
+can come and read it: that is the difference between a message service and a mailbox
+nobody is told about. What it never does is decide what an agent works on. Nothing in Dibs
 can make an agent do anything; the strongest thing you can receive is a message you may
 decline.
 
@@ -33,7 +36,8 @@ over the few genuinely exclusive resources.
   control solved that, and suppressing it would destroy the parallelism that makes a
   fleet worth running. Real exclusion is reserved for things git does *not* isolate: a
   discrete work item (a PR/issue), a local install, a device, a port.
-- **Not a harness, wrapper, or process manager.** It does not shell out to drive agents,
+- **Not a harness, wrapper, or process manager.** It runs one operator-configured command
+  to say "you have mail" to an agent that is asleep, and nothing else: it does not drive agents,
   inject into their prompts, or manage their sessions.
 - **Not an industrial framework.** It should feel like a Unix utility: one job, done
   well, composable with everything else.
