@@ -189,7 +189,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 	if len(history) > 0 {
 		ring = history[0]
 	}
-	return &Engine{
+	e := &Engine{
 		ring: ring,
 		ops:  make(chan request), subs: make(chan subReq), unsubs: make(chan chan core.Event),
 		state: st, led: led, prober: prober,
@@ -200,6 +200,16 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 		announceSent: map[string]time.Time{}, announceTries: map[string]int{},
 		wokeFor: map[string]time.Time{},
 	}
+	// HERE, not in the daemon, so nobody has to remember.
+	//
+	// Blocking notices are engine-ephemeral and were created only by live event
+	// processing, so a restart between an approval and the asker's next turn
+	// boundary lost it: the effect stayed ledgered and the agent was never told.
+	// A derived view is allowed to be ephemeral only if something rebuilds it,
+	// and putting that in the one constructor means an embedder or a test cannot
+	// get an engine that has skipped it.
+	e.rebuildBlockingNotices()
+	return e
 }
 
 // Run drives the loop until ctx is done. Call in exactly one goroutine.

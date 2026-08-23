@@ -866,3 +866,61 @@ func deliveredSomething(res core.Result) bool {
 	}
 	return false
 }
+
+// An approval survives a restart of the board that granted it.
+//
+// A blocking notice is what reaches an agent that asked for something and then
+// stopped waiting, and it existed only in memory, created by live event
+// processing. So a daemon restarting between the approval and the asker's next
+// turn boundary lost it entirely: the grant stayed ledgered and correct, and
+// hook_poll, [wake.exec] and check_in all saw nothing. The agent waited
+// indefinitely for news that had already happened, which is the exact failure
+// the notice was added to prevent.
+//
+// A REBUILT ENGINE, not a re-injected event. The existing test for this injects
+// the approval with noteEvent and polls the same live engine, so it can only
+// ever prove that live processing works; nothing in it restarts. The state a
+// restart produces is state == fold(ledger), so this builds the second engine
+// over the same state, which is what the daemon does.
+func TestAnApprovalSurvivesARestart(t *testing.T) {
+	st := core.NewState("t", core.DefaultLimits())
+	st.Agents = map[string]*core.Agent{
+		"asker": {ID: "asker", Name: "asker", Status: core.StatusActive},
+		"human": {ID: "human", Name: "human", Status: core.StatusActive},
+	}
+	// A request the human approved, which the asker has not read yet.
+	st.Messages[42] = &core.Message{
+		Serial: 42, From: "asker", To: "human", Type: core.MsgRequest,
+		State: core.MsgStateApproved, Grant: core.RoleCoordinator,
+		RespondedAt: 43, Consumed: false,
+	}
+
+	// The daemon comes back up over the replayed state.
+	restarted := New(st, &memLedger{}, deadProber{})
+
+	if n := restarted.blockingNotices("asker"); n == 0 {
+		t.Fatal("the agent that asked has no blocking notice after the restart. Its " +
+			"request was approved, the grant is in the ledger, and nothing will tell " +
+			"it: hook_poll, the wake path and check_in all read this list, and it is " +
+			"empty. It waits for news that already happened")
+	}
+	// And the notice says what happened, not merely that something did.
+	var found string
+	for _, x := range restarted.notices["asker"] {
+		if x.Blocking {
+			found = x.Text
+		}
+	}
+	if !strings.Contains(found, "APPROVED") || !strings.Contains(found, "coordinator") {
+		t.Errorf("the rebuilt notice reads %q; it has to name the approval and the "+
+			"role, because an agent must not be able to tell that its board restarted "+
+			"from the wording of its own mail", found)
+	}
+
+	// A consumed outcome is not re-announced: the asker has already fetched it.
+	st.Messages[42].Consumed = true
+	if n := New(st, &memLedger{}, deadProber{}).blockingNotices("asker"); n != 0 {
+		t.Errorf("%d blocking notice(s) for an outcome the agent has already read: "+
+			"every restart would hand it the same news again", n)
+	}
+}

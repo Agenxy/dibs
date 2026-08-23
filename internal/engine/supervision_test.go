@@ -117,3 +117,63 @@ func TestAChildsOwnProgressCounterIsUsedAndIsMonotonic(t *testing.T) {
 		t.Errorf("progress = %d, want 9: a real advance was dropped", got)
 	}
 }
+
+// The field the published verification tells an operator to compare must not
+// move on its own.
+//
+// The Codex plugin's verify step says to call spawned_agents before and after a
+// turn boundary and compare. It used to say to compare "the entry", and
+// spawned_agents computes since_seconds and seen_seconds with time.Since on
+// every read: the entry changes because time passed, so an operator whose Stop
+// hook never reached the daemon could follow the procedure exactly and be told
+// delivery works. A verification step that cannot fail is worse than none,
+// because it is the thing somebody runs when they already suspect a problem.
+//
+// So: `state` is stable across reads with no lifecycle event, and a Stop moves
+// it. Both halves, because a field that never changes would also be "stable".
+func TestTheStateFieldIsWhatALifecycleEventMoves(t *testing.T) {
+	e := &Engine{children: map[string]Child{
+		"s1": {SessionID: "s1", State: "running", Since: time.Now(), Seen: time.Now()},
+	}}
+
+	// Two reads, no event between them.
+	first := e.childrenSnapshot()
+	second := e.childrenSnapshot()
+	if first["s1"]["state"] != second["s1"]["state"] {
+		t.Errorf("`state` changed between two reads with no lifecycle event: %v then %v. "+
+			"The published verification compares it across a turn boundary, and a "+
+			"field that moves on its own makes that check pass for a broken hook",
+			first["s1"]["state"], second["s1"]["state"])
+	}
+	// The elapsed fields DO move, which is why the instruction must not name
+	// them. If this ever stops being true the instruction can be simplified.
+	if first["s1"]["since_seconds"] == second["s1"]["since_seconds"] {
+		t.Log("since_seconds did not move between reads; the instruction's caution " +
+			"about elapsed fields may no longer be needed")
+	}
+
+	// And a Stop moves `state`, or comparing it proves nothing either.
+	if got := StateForEvent("Stop"); got != "finished" {
+		t.Fatalf("Stop maps to %q, not \"finished\": the published verification tells "+
+			"an operator to look for `finished` after the boundary", got)
+	}
+	if StateForEvent("SessionStart") == StateForEvent("Stop") {
+		t.Error("SessionStart and Stop put the child in the same state, so comparing " +
+			"across the boundary cannot distinguish them, which is the entire point " +
+			"of the check")
+	}
+}
+
+// childrenSnapshot is the map Children builds, keyed by session, without the
+// query plumbing: Children goes through the writer loop and this engine has
+// none.
+func (e *Engine) childrenSnapshot() map[string]map[string]any {
+	out := map[string]map[string]any{}
+	for _, c := range e.children {
+		out[c.SessionID] = map[string]any{
+			"state":         c.State,
+			"since_seconds": time.Since(c.Since).Seconds(),
+		}
+	}
+	return out
+}

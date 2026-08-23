@@ -355,6 +355,76 @@ func answeredNotice(ev core.Event) string {
 	}
 }
 
+// rebuildBlockingNotices restores the notices a verdict creates, from state.
+//
+// Notices are engine-ephemeral by design, and the architecture's rule is that
+// such a view must be REBUILDABLE. Nothing rebuilt this one: an approval became
+// a blocking notice only in live publish processing, so a daemon restart
+// between the approval and the asker's next turn boundary lost it outright. The
+// effect stayed ledgered and correct, and the agent that asked was never told:
+// hook_poll, [wake.exec] and check_in all saw nothing, and it waited
+// indefinitely for news that had already happened. That is the precise failure
+// the blocking notice was added to prevent, arriving through the one event
+// nobody replays.
+//
+// FROM STATE, not from the event ring. state == fold(ledger), so a terminal
+// message its asker has not consumed is exactly the set still owed, and it
+// cannot drift from whatever the ring happens to still hold after eviction.
+// Consumed is the right boundary because it means the asker has fetched the
+// outcome; re-notifying there would be a duplicate, and not notifying at all
+// was the bug.
+//
+// Called once, before the loop starts, so the maps are not shared yet.
+func (e *Engine) rebuildBlockingNotices() {
+	if e.state == nil {
+		return
+	}
+	owed := make([]*core.Message, 0, 8)
+	for _, m := range e.state.Messages {
+		if m == nil || m.Consumed || m.From == "" || verdictEvent(m.State) == "" {
+			continue
+		}
+		owed = append(owed, m)
+	}
+	// By serial: map order is random, and the notice list keeps the newest
+	// sixteen, so an unordered rebuild would drop a different set every boot.
+	sort.Slice(owed, func(i, j int) bool { return owed[i].Serial < owed[j].Serial })
+	for _, m := range owed {
+		ev := core.Event{
+			Type: verdictEvent(m.State), Agent: m.To, To: m.From,
+			Serial: m.RespondedAt,
+			Data:   map[string]any{"msg_serial": m.Serial},
+		}
+		// The same extras publish puts on the live event, so the rebuilt line
+		// reads identically: an agent must not be able to tell that its board
+		// restarted from the wording of its own mail.
+		if m.Grant != "" && m.State == core.MsgStateApproved {
+			ev.Data["granted"] = m.Grant
+		}
+		if m.Adopt != "" && m.State == core.MsgStateApproved {
+			ev.Data["adopted"] = m.Adopt
+		}
+		e.pushNoticeAs(m.From, answeredNotice(ev), m.RespondedAt, m.Serial, true)
+	}
+}
+
+// verdictEvent names the event a terminal state was published as, or "" when
+// the state is not a verdict. Expiries and displacement are not answers and
+// carry no notice.
+func verdictEvent(state string) string {
+	switch state {
+	case core.MsgStateApproved:
+		return "message.approved"
+	case core.MsgStateDenied:
+		return "message.denied"
+	case core.MsgStateAnswered:
+		return "message.answered"
+	case core.MsgStateDeclined:
+		return "message.declined"
+	}
+	return ""
+}
+
 // noteNewMember tells the existing members that somebody joined.
 //
 // Not the joiner, who already knows and gets joinedNotice, and not a member

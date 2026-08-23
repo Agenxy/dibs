@@ -234,13 +234,24 @@ var catalog = []struct {
 		// the session, and spawned_agents does not say which event did it, so
 		// "am I listed" was satisfied by startup delivery alone: a thread whose
 		// every Stop was broken could run this check and be told the wake is
-		// live. Comparing before and after a turn boundary is the difference.
+		// live.
+		//
+		// AND IT HAS TO NAME THE FIELD. "the entry CHANGING across the boundary"
+		// was no better: spawned_agents computes since_seconds and seen_seconds
+		// from time.Since on every read, so the entry changes because time
+		// passed. An operator with a completely broken Stop could follow the
+		// published procedure exactly and be told it works, which is a
+		// verification step that verifies nothing. `state` is the field a
+		// lifecycle event actually moves, and Stop is what moves it to
+		// `finished`.
 		verify: "call spawned_agents at the START of an activation and again after a " +
-			"turn ends, and compare: SessionStart records the session too, so merely " +
-			"being listed proves only that startup reached the daemon. What proves " +
-			"Stop delivery is the entry CHANGING across the boundary. If it does not, " +
-			"the build is older than 2026-08-18 or the server was not connected when " +
-			"the hook ran, and mail is pull-only until you fix that",
+			"turn ends, and compare the `state` field for your session: SessionStart " +
+			"records the session too, so merely being listed proves only that startup " +
+			"reached the daemon, and since_seconds/seen_seconds move on their own " +
+			"because they are elapsed times. What proves Stop delivery is `state` " +
+			"reading `finished` after the boundary where it read `running` before. If " +
+			"it does not, the build is older than 2026-08-18 or the server was not " +
+			"connected when the hook ran, and mail is pull-only until you fix that",
 		delivers: false,
 	},
 }

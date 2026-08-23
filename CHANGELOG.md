@@ -136,8 +136,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the two-minute window made it a race rather than a standing offer, which is
   not the same as making it safe. The pin file survives as a record of which
   identity took the role, and it is checked ALONGSIDE the current configuration
-  rather than instead of it, so removing an entry from `[roles.identity]`
-  revokes the role. The agent must also have registered with a nonce, since
+  rather than instead of it, so an agent the operator has stopped naming is not
+  granted the role again. **That is not the same as taking it away**: a role is
+  replayable state, so an agent that already holds one keeps it across a restart
+  until something demotes it, and `dibs admin member <agent>` is what does.
+  Editing the config stops the grant recurring; the demotion is a second step
+  and there is an issue open for making the config sufficient on its own. The
+  agent must also have registered with a nonce, since
   without one it cannot prove it is itself after a restart, which is the whole
   of what a standing role needs.
 
@@ -910,17 +915,62 @@ machines for real work. Their priority order, not ours.
   macOS caches a signature verdict against the inode, and set the codesign
   identifiers, which the Go toolchain leaves as `a.out`.
 
+- **An approval was lost if the board restarted before the asker heard it.** A
+  blocking notice is what reaches an agent that asked for something and then
+  stopped waiting, and it existed only in memory, created by live event
+  processing. A daemon restarting between the approval and that agent's next
+  turn boundary therefore lost it outright: the grant stayed ledgered and
+  correct, `hook_poll`, `[wake.exec]` and `check_in` all saw nothing, and the
+  agent waited indefinitely for news that had already happened. Notices are
+  ephemeral by design and the architecture's rule is that such a view must be
+  rebuildable; nothing rebuilt this one. It is rebuilt from state rather than
+  from the event ring, because a terminal message its asker has not consumed is
+  exactly the set still owed and cannot drift from what the ring happens to
+  still hold.
+
+- **The published Stop-hook verification could not fail.** The Codex plugin
+  tells an operator to call `spawned_agents` before and after a turn and
+  compare, and it said to look for "the entry changing": `since_seconds` and
+  `seen_seconds` are computed with `time.Since` on every read, so the entry
+  changes because time passed. Somebody whose Stop hook never reached the daemon
+  could follow the procedure exactly and be told delivery works, which is the
+  worst possible outcome for a step people run when they already suspect a
+  problem. It names `state`, which is the field a lifecycle event actually
+  moves, and the value to look for.
+
+- **A long space name opened no space, and said it had.** The generated id was
+  truncated to the limit and then retried at the same length, so all four
+  attempts collided with the same existing space: the declaration succeeded
+  while the space it promised was never opened. The retry suffix is preserved
+  now.
+
+- **The board panel's human control said "act as yourself".** It reads the
+  board and it does not act, and the two are separate capabilities: the panel
+  renders in the human's UI but speaks over the agent's connection, so reading
+  it is not authority to do anything. The control says "confirm it's you", and
+  the panel explains the distinction rather than leaving it to be inferred from
+  a button.
+
 - **An established role pin outranked the operator's current configuration.**
   The pin records which identity a standing role was granted to, so that the
   same NAME cannot later be taken by a different agent. Once it existed, the
   check returned success on the pin alone and never looked at
-  `[roles.identity]` again, so both ways of revoking a role did nothing:
-  deleting the entry left the agent holding it, and pointing it at a successor
-  left the predecessor's credential accepted beside them. Each restart passed
-  the new configuration in, was told yes, and re-granted the old identity, which
-  for admin is every decrypted mailbox on the board restored against the
-  operator's written instruction. The pin is a floor now, not a grant: both the
-  pin and the current configuration have to name the agent.
+  `[roles.identity]` again, so neither way of withdrawing an authorisation had
+  any effect on the next grant: deleting the entry re-granted the agent anyway,
+  and pointing it at a successor re-granted the predecessor beside them. Each
+  restart passed the new configuration in, was told yes, and re-granted the old
+  identity, which for admin is every decrypted mailbox on the board restored
+  against the operator's written instruction. The pin is a floor now, not a
+  grant: both the pin and the current configuration have to name the agent.
+
+  **A refused grant is not a demotion.** A role is replayable state, so an agent
+  that already holds one keeps it until something takes it away, and nothing in
+  the reconciler does: it only ever grants. So the sequence is two steps, and
+  saying so is the point of this paragraph: edit the config, then `dibs admin
+  member <agent>`. Making the config sufficient on its own means the reconciler
+  demoting agents it did not grant this run, which is a change to how standing
+  privilege is withdrawn rather than a wording fix, and it is an open issue
+  rather than something to add in the hour before a tag.
 
 - **Mail arriving after a wake exited was refused as "still working".** The
   commoner ordering, and the last of this one: a wake runs, the woken agent

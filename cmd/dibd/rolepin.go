@@ -219,21 +219,23 @@ func (p *rolePins) check(role, name, fingerprint, want string) error {
 		// and the config refuses an agent the operator no longer names.
 		if want == "" {
 			return fmt.Errorf("%q is pinned as the holder of %s, and [roles.identity] "+
-				"no longer names it. A pin records which identity took the role; it is "+
-				"not permission to keep it. To hand the role over, put the new agent's "+
-				"fingerprint under [roles.identity] and remove %q from %s; to withdraw "+
-				"it entirely, remove the name from [roles] as well. Both files are read "+
-				"at startup", name, role, name, p.path)
+				"no longer names it, so it is not granted again. IT IS NOT DEMOTED "+
+				"EITHER: a role is replayable state and survives restarts until "+
+				"something takes it away, so run `dibs admin member %q` to actually "+
+				"withdraw it. To hand it over instead, put the successor's fingerprint "+
+				"under [roles.identity], remove %q from %s, and restart; both files are "+
+				"read at startup", name, role, name, name, p.path)
 		}
 		if want != fingerprint {
 			return fmt.Errorf("[roles.identity] names a different fingerprint for %q "+
 				"than the one this board pinned when it granted %s, and the agent "+
-				"holding that name now matches the PIN. So the operator has named a "+
-				"successor and the predecessor is still registered: granting on the "+
-				"pin alone would keep the old credential authorised against the "+
-				"current configuration. Remove %q from %s and restart, once the "+
-				"successor is the agent registering under that name",
-				name, role, name, p.path)
+				"holding that name now matches the PIN. So a successor has been named "+
+				"and the predecessor is still registered: granting on the pin alone "+
+				"would keep the old credential authorised against the current "+
+				"configuration. The predecessor KEEPS the role it already holds until "+
+				"`dibs admin member %q` takes it; then remove %q from %s and restart, "+
+				"once the successor is the agent registering under that name",
+				name, role, name, name, p.path)
 		}
 		return nil
 	default:
