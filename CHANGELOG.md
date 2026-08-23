@@ -171,8 +171,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and only when it has the shape a resume command accepts. It is deliberately
   NOT the agent's `session_id`: that names the harness process (`host-92368`)
   and dies with it, so an agent whose only identifier is one of those is not
-  woken, because there would be nothing to hand the command. Wakes are rate-limited per agent (90s by default, `cooldown =`), so a
-  burst of three messages is one wake and not three.
+  woken, because there would be nothing to hand the command. Where an agent has
+  reattached and holds several, it is the CURRENT one: aliases are appended, so
+  the newest is last, and resuming an older thread would start a real session
+  that is not the one holding the mail.
+
+  Wakes are rate-limited per agent (90s by default, `cooldown =`), so a burst of
+  three messages is one wake and not three, and an agent that has made an
+  authenticated call inside that window is left alone because it is plainly
+  running. The command itself is bounded at two hours, not at anything shorter:
+  `codex exec resume` runs the agent's whole turn in that process, so a short
+  bound is a cap on the work rather than on starting it.
 
   **The operator decides this, not Dibs and not the agent.** There is no default
   command for any harness: with no `[wake.exec]` section nothing is ever
@@ -243,6 +252,24 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   paragraph again every time.
 
 ### Fixed
+
+- **Every lifecycle hook announces its session, not just `hook_session`.** The
+  announced-session join is how an agent learns the identifier its own harness
+  uses, and it is the only source of the thread `[wake.exec]` resumes. The
+  Claude Code plugin binds four hook tools and so had one; the Codex plugin
+  binds `hook_poll` and only `hook_poll`, so a Codex thread announced nothing
+  and the wake command had no thread to resume. `hook_poll` announces too, so a
+  harness that binds the obvious single tool gets a working wake path instead of
+  a silent no-op. Found by `internal/mcp/e2e/wake_e2e.ts`, which walks the whole
+  chain against a real daemon.
+
+- **The second-machine recipe guessed its transport from the address.** An ssh
+  forward and a `dibs trust` step both depend on what the daemon serves, and
+  both were inferred from where it listens. A LAN daemon with
+  `insecure_plaintext = true` was handed an address with no scheme and the
+  joiner's bridge re-inferred https against a plaintext port; a loopback daemon
+  with a certificate pair also lost its trust step, so the joiner had no way to
+  accept the certificate. The recipe is told what is served.
 
 - **The CLI decided its transport from the address alone.** `dibs.toml`
   supports `insecure_plaintext` and an explicit certificate pair, and the daemon
