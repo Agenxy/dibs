@@ -398,8 +398,30 @@ func (e *Engine) pendingMail(agent string) []string {
 	var out []string
 	for _, m := range e.state.Inbox(agent) {
 		if m.State == core.MsgStatePending || m.State == core.MsgStateDelivered {
-			out = append(out, fmt.Sprintf("#%d %s from %q: read it with read_mail(%d)",
-				m.Serial, m.Type, m.From, m.Serial))
+			// AND THE CALL THAT CLEARS IT, which is not read_mail.
+			//
+			// Reading fetches the body and consumes nothing, so an agent that
+			// reads its mail and moves on is told about the same messages at
+			// every turn boundary for the rest of the session. It habituates,
+			// and then it stops looking at a line that is sometimes about
+			// something urgent. Measured on the author of this function, who
+			// read two notices and went on being told about them for hours.
+			//
+			// The announcement line three functions down already learned this
+			// and says so in its own comment: "an announcement the model reads
+			// but does not acknowledge keeps coming back, which reads as a
+			// broken loop unless the way out is stated in the same breath."
+			// Mail is the same loop and was not given the same sentence.
+			//
+			// WHICH call depends on the type, so it is not one string: a
+			// question or a request is cleared by answering, and saying `ack`
+			// there would teach an agent to silence somebody who is waiting.
+			clears := fmt.Sprintf("ack(%d) closes it", m.Serial)
+			if m.Expecting() {
+				clears = fmt.Sprintf("respond(%d) closes it; the sender is waiting", m.Serial)
+			}
+			out = append(out, fmt.Sprintf("#%d %s from %q: read it with read_mail(%d), %s",
+				m.Serial, m.Type, m.From, m.Serial, clears))
 		}
 	}
 	return out

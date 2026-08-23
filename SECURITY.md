@@ -69,7 +69,7 @@ queued.
 Serialising alone is not enough, and an earlier version of this section claimed
 otherwise. First-request-wins is itself a confusion primitive: an agent leaves a
 request waiting, the operator's own `dibs web` is refused, and the sheet they
-then approve — at exactly the moment they expected one — completes the agent's
+then approve, at exactly the moment they expected one, completes the agent's
 request. Nothing in the transport separates the two, because every agent
 legitimately holds the same local secret.
 
