@@ -55,6 +55,15 @@ not start. That makes an unexpected prompt refusable, which is a real property
 and a weaker one than binding. **If a prompt appears that you did not cause,
 decline it, and treat it as a report worth making.**
 
+**And only one prompt waits at a time.** A refusable prompt is no defence while
+two are outstanding: the operator opens the board, an agent asks in the same
+moment, one sheet is approved, and which request receives the credential is a
+race the person cannot see. They approved exactly the prompt they expected. So
+`/bootstrap` serialises: a second presence check while one is waiting is
+refused with 409 rather than queued. That does not bind the requester, which
+this path still cannot do. It removes the silent case, so an agent has to raise
+its own sheet at its own moment, which is the case the sentence above is about.
+
 ### What the presence check does and does not bind
 
 It binds the TRANSPORT. An agent speaking to Dibs over MCP cannot forge presence:

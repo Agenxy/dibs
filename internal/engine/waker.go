@@ -207,7 +207,37 @@ func (e *Engine) maybeWake(ev core.Event) {
 	if !ok {
 		return
 	}
-	go runWake(cmd, l.ID)
+	agent := l.ID
+	go func() {
+		if runWake(cmd, agent) {
+			return
+		}
+		// A FAILED WAKE MUST NOT SPEND THE ATTEMPT.
+		//
+		// The cooldown is taken before the process starts, which is right: two
+		// messages arriving together must not become two processes. But a
+		// command that fails to start, exits nonzero or times out woke nobody,
+		// and holding the cooldown after it meant the ONE attempt this message
+		// was ever going to get was consumed by a process that did nothing.
+		// maybeWake fires per event and never retries, so `send` reported the
+		// mailbox written while the recipient stayed stopped until some
+		// unrelated event happened to arrive after the window: success with no
+		// effect, on the one path this release exists to add.
+		//
+		// Released rather than retried here. Retrying in place would loop
+		// against a command that is simply wrong, and the operator's log
+		// already says so; letting the NEXT blocking message try again is the
+		// behaviour an agent waiting for mail actually needs.
+		e.releaseWake(agent)
+	}()
+}
+
+// releaseWake forgets a cooldown whose wake never happened, so the next
+// blocking message may try again.
+func (e *Engine) releaseWake(agent string) {
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	delete(e.wakers.last, agent)
 }
 
 // recentlyInTouch reports whether this agent has spoken to the board lately
@@ -401,8 +431,13 @@ func looksLikeThreadID(s string) bool {
 // past any turn a person would wait for, and this is.
 const wakeTimeout = 2 * time.Hour
 
-// runWake executes one wake, bounded and out of the way.
-func runWake(argv []string, agent string) {
+// runWake executes one wake, bounded and out of the way, and reports whether
+// anything was actually woken.
+//
+// The boolean is load-bearing: the caller releases the cooldown when this is
+// false, so a command that could not run does not consume the single attempt
+// the message was going to get.
+func runWake(argv []string, agent string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), wakeTimeout)
 	defer cancel()
 	// #nosec G204 -- argv comes from the operator's own config file and nowhere
@@ -412,9 +447,11 @@ func runWake(argv []string, agent string) {
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		slog.Warn("wake command failed", "agent", agent, "cmd", argv[0],
+		slog.Warn("wake command failed; the next message somebody is blocked on "+
+			"will try again", "agent", agent, "cmd", argv[0],
 			"err", err, "output", strings.TrimSpace(string(out)))
-		return
+		return false
 	}
 	slog.Info("woke an agent that was not running", "agent", agent, "cmd", argv[0])
+	return true
 }

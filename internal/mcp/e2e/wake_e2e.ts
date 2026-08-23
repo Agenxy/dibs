@@ -61,9 +61,13 @@ mkdirSync(project)
 // merely observing that something ran.
 const recorder = join(dir, "recorder.ts")
 const log = join(dir, "wakes.jsonl")
+// It can also FAIL, on demand: a wake command that cannot run is the case the
+// cooldown accounting gets wrong, and a recorder that always exits 0 can never
+// show it.
 await Bun.write(recorder, `
 const line = JSON.stringify(Bun.argv.slice(3)) + "\\n"
 await Bun.write(Bun.argv[2], (await Bun.file(Bun.argv[2]).text().catch(() => "")) + line)
+if (await Bun.file(Bun.argv[2] + ".fail").exists()) process.exit(3)
 `)
 
 // cooldown doubles as the recency window: an agent that spoke to the board
@@ -188,6 +192,103 @@ await Promise.all([1, 2, 3].map(n =>
 await settle()
 check("three questions at once are one wake", wakes().length - before === 1,
   `${wakes().length - before} wakes for a burst of three`)
+
+// ── a FAILED wake does not consume the agent's one attempt ────────────────
+// The cooldown is taken before the process starts, which is right: two messages
+// arriving together must not become two processes. Keeping it after the command
+// FAILED spent the single attempt this message was ever going to get on a
+// process that woke nobody, and `send` still reported the mailbox written. That
+// is this release's recurring shape, on the one path it exists to add.
+//
+// ITS OWN BOARD, with a long cooldown. On the board above the cooldown is one
+// second, so a second wake would be allowed by simple expiry and would prove
+// nothing; measuring inside that second works and is a race on a loaded
+// machine, which is a flaky gate rather than a check. Sixty seconds makes the
+// question unambiguous: a second wake in that window happened because the
+// failure released the cooldown, or not at all.
+await failedWakeDoesNotConsumeTheAttempt()
+
+async function failedWakeDoesNotConsumeTheAttempt() {
+  const d = mkdtempSync(join(tmpdir(), "dibs-wake-fail-"))
+  const proj = join(d, "project")
+  mkdirSync(proj)
+  const rec = join(d, "recorder.ts")
+  const lg = join(d, "wakes.jsonl")
+  await Bun.write(rec, `
+const line = JSON.stringify(Bun.argv.slice(3)) + "\\n"
+await Bun.write(Bun.argv[2], (await Bun.file(Bun.argv[2]).text().catch(() => "")) + line)
+if (await Bun.file(Bun.argv[2] + ".fail").exists()) process.exit(3)
+`)
+  await Bun.write(join(d, "dibs.toml"), `
+[wake.exec.codex]
+argv = ["${process.execPath}", "${rec}", "${lg}", "{thread}"]
+cooldown = "60s"
+`)
+  const port = String(Number(PORT) + 1)
+  const a = `127.0.0.1:${port}`
+  const dae = Bun.spawn({
+    cmd: [dibd, "-dir", d, "-addr", a],
+    env: { ...process.env, DIBS_ALLOW_PARALLEL: "1" },
+    stdout: "ignore", stderr: "ignore",
+  })
+  try {
+    let sec = ""
+    for (let i = 0; i < 60 && !sec; i++) {
+      try { sec = (await Bun.file(`${d}/local.secret`).text()).trim() } catch { await Bun.sleep(100) }
+    }
+    if (!sec) {
+      check("a failed wake does not consume the attempt", false,
+        "the second daemon never came up, so this measured nothing")
+      return
+    }
+    const c = async (name: string, args: Record<string, unknown>) => {
+      const r = await fetch(`http://${a}/mcp`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "X-Dibs-Local": sec },
+        body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call", params: { name, arguments: args } }),
+      })
+      return JSON.parse(((await r.json()) as any).result.content[0].text)
+    }
+    const count = () => existsSync(lg)
+      ? readFileSync(lg, "utf8").trim().split("\n").filter(Boolean).length
+      : 0
+
+    await c("hook_poll", { session_id: THREAD, event: "SessionStart", cwd: proj })
+    await c("register", {
+      name: "sleeper", description: "wake e2e", session_id: `host-${process.pid}`,
+      cwd: proj, harness: "Codex", nonce: "e2e-fail-nonce-0123456789abcdef0123456789abcd",
+    })
+    const from = await c("register", {
+      name: "asker", description: "wake e2e", session_id: "asker-session",
+      nonce: "e2e-failasker-nonce-0123456789abcdef01234567",
+    })
+    // A finished turn, so the 60s cooldown does not also read as "recently in
+    // touch" and suppress the wake for a reason that is not the one under test.
+    await c("hook_poll", { session_id: THREAD, event: "Stop", cwd: proj })
+
+    await Bun.write(lg + ".fail", "x")
+    await c("send", { token: from.token, to: "sleeper", type: "question", body: "will fail", deadline_s: 600 })
+    await settle(2500)
+    if (count() !== 1) {
+      check("a failed wake does not consume the attempt", false,
+        `the failing command ran ${count()} times, not once, so nothing below ` +
+        "says anything about what happens when one fails")
+      return
+    }
+
+    await Bun.file(lg + ".fail").unlink()
+    await c("hook_poll", { session_id: THREAD, event: "Stop", cwd: proj })
+    await c("send", { token: from.token, to: "sleeper", type: "question", body: "after the failure", deadline_s: 600 })
+    await settle(2500)
+    check("a failed wake does not consume the attempt", count() > 1,
+      "no second wake inside a 60s cooldown. The failed command woke nobody and " +
+      "kept the cooldown, so this agent is unreachable until some unrelated " +
+      "event happens to arrive after the window, while send reported success")
+  } finally {
+    try { dae.kill() } catch {}
+    try { rmSync(d, { recursive: true, force: true }) } catch {}
+  }
+}
 
 // ── an agent with no resumable identifier is left alone ───────────────────
 // Its only name is the bridge's host-<ppid>. There is nothing to resume, so

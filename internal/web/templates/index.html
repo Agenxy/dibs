@@ -684,9 +684,18 @@ const es = new EventSource("/events")
 
 // refreshMail pulls the mailbox over the keyed route. Coalesced, because a
 // burst of board frames should not become a burst of requests.
+//
+// COALESCED, NOT DROPPED. This returned when a fetch was outstanding, so an
+// event arriving mid-flight lost its refresh entirely: the in-flight response
+// then painted the mailbox as it was BEFORE that event, and nothing was
+// scheduled to correct it. An approval or an answer stayed invisible until the
+// server's next thirty-second snapshot, and if the pending fetch hung, until
+// the page was reloaded. Dropping the trailing update is the classic way to
+// turn "fewer requests" into "wrong screen".
 let mailPending = false
+let mailAgain = false
 async function refreshMail() {
-  if (mailPending) return
+  if (mailPending) { mailAgain = true; return }
   mailPending = true
   try {
     const res = await boardFetch("/api/messages")
@@ -694,7 +703,12 @@ async function refreshMail() {
     const d = await res.json()
     if (Array.isArray(d.messages)) { state.messages = d.messages; draw() }
   } catch (_) { /* keep the last good view rather than blanking it */ }
-  finally { mailPending = false }
+  finally {
+    mailPending = false
+    // Exactly one more, however many arrived while that was in flight: the
+    // point is that the LAST event is reflected, not that each gets a request.
+    if (mailAgain) { mailAgain = false; void refreshMail() }
+  }
 }
 // Announced on TRANSITION, never on every heartbeat: a live region that fires
 // each time the stream breathes is a region people turn off.

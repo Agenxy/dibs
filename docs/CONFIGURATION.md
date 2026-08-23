@@ -96,9 +96,13 @@ is arbitrary code running as you.
 **`{thread}` is the harness's thread, not the agent's `session_id`.** They are
 different identifiers and only one of them can be resumed: a `session_id` names
 the harness process (`host-92368`), and dies with it. Dibs fills `{thread}` from
-the agent's session aliases, taking the first with the shape a resume command
-accepts. An agent that has published no such identifier is never woken, because
-there would be nothing to hand the command.
+the agent's session aliases, taking the NEWEST with the shape a resume command
+accepts. Newest, not first: aliases are appended, so a persistent agent that has
+reattached holds several and only the last one is the activation it is in.
+Resuming an older one starts a real session that is not the one holding the
+mail, and the board logs a successful wake for an agent that hears nothing. An
+agent that has published no such identifier is never woken, because there would
+be nothing to hand the command.
 
 `{message}` is a fixed line telling the agent to check in. **The mail itself is
 never put on a command line**: the agent reads it over its authenticated

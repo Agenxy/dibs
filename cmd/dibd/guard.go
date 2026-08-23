@@ -85,6 +85,7 @@ type authGate struct {
 	mu            sync.Mutex
 	boot          map[string]time.Time    // one-time bootstrap tokens
 	sessions      map[string]boardSession // god-view session cookie tokens
+	presenceBusy  bool                    // a presence sheet is on screen right now
 	adminFails    int                     // consecutive wrong admin passwords
 	adminLockTill time.Time               // throttle window for /bootstrap
 }
@@ -448,6 +449,27 @@ func (g *authGate) presenceBootstrap(w http.ResponseWriter, r *http.Request) {
 	const reason = "give a full-access board session to whatever just asked for it: " +
 		"every agent's decrypted mail, and the power to change roles. Decline this " +
 		"unless you started it yourself, just now"
+	// ONE AT A TIME.
+	//
+	// The warning above asks the operator to decline a sheet they did not
+	// cause, and that is the whole defence. It cannot work while two requests
+	// are outstanding: the operator opens the board, an agent asks in the same
+	// moment, one sheet is approved, and which request receives the token is a
+	// race. The person approved exactly the prompt they expected and the token
+	// went somewhere else.
+	//
+	// Serialising does not make presence bind the requester, which needs
+	// something this path does not have and which SECURITY.md says plainly.
+	// What it removes is the silent case: an agent must raise its OWN sheet, at
+	// its own moment, which is the situation the warning text is about.
+	if !g.beginPresence() {
+		http.Error(w, "another presence check is already waiting for an answer: "+
+			"finish or dismiss that one first. Only one at a time, so an approval "+
+			"cannot be taken by a request it was not raised for",
+			http.StatusConflict)
+		return
+	}
+	defer g.endPresence()
 	verdict, err := humanauth.Check(r.Context(), reason)
 	if err != nil && verdict != humanauth.Unavailable {
 		http.Error(w, "presence check failed: "+err.Error(), http.StatusInternalServerError)
@@ -767,4 +789,25 @@ func hostOnly(h string) string {
 		return host
 	}
 	return h
+}
+
+// beginPresence claims the single presence slot, reporting whether it was free.
+//
+// Split from the handler so the decision is testable without an OS sheet: the
+// property is "two concurrent requests cannot both be waiting", and asking that
+// through humanauth would mean asking a person.
+func (g *authGate) beginPresence() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.presenceBusy {
+		return false
+	}
+	g.presenceBusy = true
+	return true
+}
+
+func (g *authGate) endPresence() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.presenceBusy = false
 }

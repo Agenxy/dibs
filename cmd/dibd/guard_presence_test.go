@@ -139,3 +139,40 @@ func TestDeclinedAndUnavailableAreDistinguished(t *testing.T) {
 		})
 	}
 }
+
+// One approval can satisfy only the request it was raised for.
+//
+// The defence against an agent obtaining a god-view session is a sentence on
+// the system sheet asking the operator to decline a prompt they did not cause.
+// That cannot work while two requests are outstanding: the operator opens the
+// board, an agent asks in the same moment, one sheet is approved, and which
+// request receives the token is a race. The person approved exactly the prompt
+// they expected, and the token went somewhere else.
+//
+// This does NOT make presence bind the requester. That needs something this
+// path does not have, and SECURITY.md says so plainly. What it removes is the
+// silent case: an agent must now raise its own sheet, at its own moment, which
+// is the situation the warning text is about.
+func TestOnlyOnePresenceCheckWaitsAtATime(t *testing.T) {
+	g := newAuthGate("the-secret", filepath.Join(t.TempDir(), "admin.hash"), "127.0.0.1:4777")
+
+	if !g.beginPresence() {
+		t.Fatal("the first presence check was refused with nothing outstanding")
+	}
+	if g.beginPresence() {
+		t.Error("a second presence check was allowed to wait alongside the first. " +
+			"One approval would then satisfy whichever request the race picked, and " +
+			"an agent could take a session from a prompt the operator raised for " +
+			"the board")
+	}
+
+	// And the slot is released, so a declined or abandoned check does not lock
+	// the operator out of their own board.
+	g.endPresence()
+	if !g.beginPresence() {
+		t.Error("the presence slot was not released, so one declined prompt leaves " +
+			"this machine unable to raise another: the board becomes unopenable " +
+			"until the daemon restarts")
+	}
+	g.endPresence()
+}
