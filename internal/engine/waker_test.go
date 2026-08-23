@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1380,91 +1379,54 @@ func TestARetriedWakeNamesTheWorkItIsFor(t *testing.T) {
 	}
 }
 
-// Mail arriving during the wake exit handoff is never simply dropped.
+// The wake exit produces its two facts together, or not at all.
 //
-// The exit produces two facts that different branches of maybeWake read: the
-// agent is no longer running, and its turn has ended. They were produced in
-// different places, one outside the writer loop and one in a closure queued
-// onto it, so a message arriving in between saw the agent as not running AND
-// as recently in touch. noteArrivalDuringWake declined to mark it,
-// recentlyInTouch declined to wake it, and no deferred re-check was armed
-// either: the sender was told it was delivered and the recipient was never
-// reached.
+// The exit tells maybeWake two things, read by different branches: the agent is
+// no longer running, and its turn has ended. They were produced in different
+// places, one off the writer loop and one in a closure queued onto it, so a
+// message arriving between them saw the agent as neither running nor finished
+// and was dropped without even a deferred re-check. Both are produced by
+// wakeExitedDecision now, which runs as one closure on the loop that maybeWake
+// also runs on, so the intermediate state cannot be observed.
 //
-// A REAL LOOP, because the defect is an interleaving and the unit tests above
-// call the pieces back to back, which is precisely the window they skip. The
-// engine is driven here the way production drives it, and the assertion is the
-// one that matters: after everything settles, the message is either woken or
-// owed, never neither.
-func TestMailDuringTheWakeExitHandoffIsNeverDropped(t *testing.T) {
-	for i := 0; i < 50; i++ {
-		// A WHOLE engine, not wakeEngine's bare one: this test runs the real
-		// loop, and the loop sweeps and ledgers.
-		st := core.NewState("t", core.DefaultLimits())
-		st.Agents = map[string]*core.Agent{}
-		e := New(st, &memLedger{}, deadProber{})
-		e.SetWakeCommands(map[string]WakeCommand{
-			"codex": {Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute},
-		})
-		l := bridgeAgent("done", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
-		st.Agents[l.ID] = l
-		st.Messages[1] = &core.Message{
-			Serial: 1, From: "asker", To: l.ID,
-			Type: core.MsgQuestion, State: core.MsgStatePending,
-		}
-		ev := core.Event{
-			Type: "message.sent", To: l.ID,
-			Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
-		}
+// A TIMING TEST FOR THIS WAS WRITTEN AND DELETED. It raced maybeWake against
+// wakeExited fifty times and passed against the defect: the natural window is
+// too narrow to hit, and the only run that caught it had a two-millisecond
+// sleep I had inserted into the production path to widen it. A review pointed
+// out that the test, applied to the commit before the fix, passed a hundred
+// times out of a hundred. That is a decoration, and a decoration in the place
+// where regression evidence is supposed to be is worse than an empty space.
+//
+// What is left is deterministic and smaller: the decision produces both facts.
+// The claim it cannot make on its own is that nothing observes them apart, and
+// that rests on the two lines being in one closure, which is why they are
+// written where they are and why this comment is here.
+func TestTheWakeExitProducesBothOfItsFactsTogether(t *testing.T) {
+	e, st := wakeEngine(t, WakeCommand{
+		Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute,
+	})
+	l := bridgeAgent("done", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	st.Agents[l.ID] = l
+	ev := core.Event{
+		Type: "message.sent", To: l.ID,
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	}
+	if _, ok := e.wakeFor(l, core.MsgQuestion, ev); !ok {
+		t.Fatal("setup: no wake to exit from")
+	}
+	e.seen[l.ID] = time.Now()
 
-		ctx, cancel := context.WithCancel(context.Background())
-		go e.Run(ctx)
+	e.wakeExitedDecision(l.ID)
 
-		if _, ok := e.wakeFor(l, core.MsgQuestion, ev); !ok {
-			cancel()
-			t.Fatal("setup: no wake to exit from")
-		}
-		// The woken agent called Dibs, which is what makes the recency branch
-		// live: without this the exit window is not the one being tested.
-		_, _ = e.query(ctx, func() core.Result {
-			e.seen[l.ID] = time.Now()
-			return core.Result{}
-		})
-
-		// The wake this message must be distinguished from. `last` is already
-		// set by the wake above, so "a wake happened" has to mean it ADVANCED:
-		// the first version of this compared it against zero, which the initial
-		// wake makes false forever, so the drop condition could never fire. A
-		// test written to catch a dropped message that cannot report one is the
-		// same defect as the code it is watching.
-		e.wakers.mu.Lock()
-		before := e.wakers.last[l.ID]
-		e.wakers.mu.Unlock()
-
-		// The exit and a new message, racing.
-		done := make(chan struct{})
-		go func() { e.wakeExited(l.ID); close(done) }()
-		_, _ = e.query(ctx, func() core.Result { e.maybeWake(ev); return core.Result{} })
-		<-done
-
-		e.wakers.mu.Lock()
-		running := e.wakers.running[l.ID]
-		deferred := e.wakers.deferred[l.ID] != nil
-		last := e.wakers.last[l.ID]
-		e.wakers.mu.Unlock()
-		inTouch := false
-		_, _ = e.query(ctx, func() core.Result {
-			inTouch = e.recentlyInTouch(l)
-			return core.Result{}
-		})
-		cancel()
-
-		// Woken, owed a re-check, still running, or correctly judged awake.
-		// Anything else is a message that was accepted and then forgotten.
-		if !running && !deferred && !inTouch && !last.After(before) {
-			t.Fatalf("iteration %d: mail arrived during the exit handoff and was "+
-				"neither woken nor deferred nor judged already-awake. The board told "+
-				"the sender it was delivered and the recipient is asleep", i)
-		}
+	e.wakers.mu.Lock()
+	running := e.wakers.running[l.ID]
+	e.wakers.mu.Unlock()
+	if running {
+		t.Error("the exit left the agent marked as still running, so every later " +
+			"message is refused as a duplicate wake")
+	}
+	if e.recentlyInTouch(l) {
+		t.Error("the exit did not record that the turn ended, so the next message is " +
+			"refused on the strength of the inbox read of a turn that is over")
 	}
 }

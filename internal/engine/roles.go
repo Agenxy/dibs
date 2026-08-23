@@ -170,7 +170,15 @@ func (e *Engine) resolveConfiguredAgentDecision(nameOrID string) core.Result {
 	}
 	// An exact id wins outright. An operator who wrote the id meant the id, and
 	// it cannot be ambiguous.
-	if _, ok := e.state.Agents[nameOrID]; ok {
+	//
+	// A GONE ONE DOES NOT. The by-name branch below already refuses closed and
+	// archived agents and this did not, and a name IS the first agent's id: a
+	// retired `fleet-lead` therefore shadowed the live `fleet-lead-2` that had
+	// taken the name over, so the documented handover resolved the predecessor
+	// forever and the successor was never considered. It fails closed, at the
+	// pin, which is the right direction and still leaves the board without the
+	// coordinator its config names.
+	if l, ok := e.state.Agents[nameOrID]; ok && !l.Gone() {
 		return core.Result{"id": nameOrID}
 	}
 	var byName []string

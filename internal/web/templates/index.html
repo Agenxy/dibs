@@ -119,8 +119,19 @@
 // localStorage IS scoped by port. Fetching this page with a stolen cookie
 // returns HTML with no key in it.
 const KEY_STORE = "dibs_board_key"
+// A FALLBACK IN MEMORY, because the fragment is erased either way.
+//
+// The key was written to localStorage inside a try/catch that swallowed the
+// failure, and the fragment was then cleared unconditionally. Where storage is
+// unavailable and cookies still work (a private window, a hardened profile,
+// storage disabled for the origin) the document and /events loaded and every
+// keyed request went without the header: an unlocked board whose mail is empty
+// and whose buttons do nothing, with nothing on screen saying why. The tab
+// holds it now, which is enough for the session it was minted for.
+let memKey = ""
 if (location.hash.startsWith("#k=")) {
-  try { localStorage.setItem(KEY_STORE, location.hash.slice(3)) } catch {}
+  memKey = location.hash.slice(3)
+  try { localStorage.setItem(KEY_STORE, memKey) } catch {}
   // Out of the address bar, so it is not shoulder-read, bookmarked or pasted
   // into a bug report. replaceState leaves no history entry to go back to.
   history.replaceState(null, "", location.pathname + location.search)
@@ -129,8 +140,8 @@ if (location.hash.startsWith("#k=")) {
 // which is why /events and this document are the only two routes the cookie
 // still opens by itself, and why neither of them carries mail.
 const boardFetch = (url, opts = {}) => {
-  let key = ""
-  try { key = localStorage.getItem(KEY_STORE) || "" } catch {}
+  let key = memKey
+  try { key = localStorage.getItem(KEY_STORE) || key } catch {}
   const headers = new Headers(opts.headers || {})
   if (key) headers.set("X-Dibs-Board-Key", key)
   return fetch(url, { ...opts, headers })

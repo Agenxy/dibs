@@ -244,14 +244,16 @@ var catalog = []struct {
 		// verification step that verifies nothing. `state` is the field a
 		// lifecycle event actually moves, and Stop is what moves it to
 		// `finished`.
-		verify: "call spawned_agents at the START of an activation and again after a " +
-			"turn ends, and compare the `state` field for your session: SessionStart " +
-			"records the session too, so merely being listed proves only that startup " +
-			"reached the daemon, and since_seconds/seen_seconds move on their own " +
-			"because they are elapsed times. What proves Stop delivery is `state` " +
-			"reading `finished` after the boundary where it read `running` before. If " +
-			"it does not, the build is older than 2026-08-18 or the server was not " +
-			"connected when the hook ran, and mail is pull-only until you fix that",
+		verify: "have a SECOND agent call spawned_agents while this one is between " +
+			"turns, and read the `state` field for this session: `finished` is what a " +
+			"delivered Stop leaves behind. You cannot check this yourself, and that is " +
+			"the whole difficulty: a tool call requires a turn, and your next one " +
+			"begins with SessionStart, which sets `state` back to `running` before you " +
+			"can look. Merely being listed proves nothing either, because SessionStart " +
+			"creates the listing, and since_seconds/seen_seconds are elapsed times that " +
+			"move on their own. If no peer can see `finished`, the build is older than " +
+			"2026-08-18 or the server was not connected when the hook ran, and mail is " +
+			"pull-only until you fix that",
 		delivers: false,
 	},
 }

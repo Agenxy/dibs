@@ -490,41 +490,50 @@ func (e *Engine) wakeFinished(agent string) bool {
 // answer; production takes this.
 func (e *Engine) wakeExited(agent string) {
 	_, _ = e.query(context.Background(), func() core.Result {
-		// CLEARED AND RECORDED IN ONE TURN OF THE LOOP.
-		//
-		// wakeFinished ran out here, before the closure was queued, and the two
-		// facts it produces are read by different branches of maybeWake. So an
-		// ordinary message arriving in that window saw the agent as no longer
-		// running (running was cleared) AND as recently in touch (the turn end
-		// was not recorded yet): noteArrivalDuringWake declined to mark it,
-		// recentlyInTouch declined to wake it, and nothing armed a deferred
-		// re-check either. The sender was told it was delivered and the stopped
-		// recipient was not reached.
-		//
-		// maybeWake runs on this loop too, so doing both inside one closure
-		// makes the intermediate state unobservable rather than unlikely. A
-		// window this narrow is not worth closing with a smaller window.
-		owed := e.wakeFinished(agent)
-		// ALWAYS, not only when a re-check is owed.
-		//
-		// The command runs the agent's whole turn in that process, so the
-		// process exiting IS the turn finishing: that is true whether or not
-		// mail happened to arrive while it ran, and it is what turnEnded means
-		// on every path that has a Stop hook to say so. This one has none.
-		//
-		// Stamping it only on the owed path left the commonest ordering broken.
-		// A wake runs, the agent reads its inbox (which is a call to Dibs, so it
-		// is "recently in touch"), the command exits with nothing having
-		// arrived, and THEN a question lands. maybeWake found no running wake,
-		// found the agent recently in touch on the strength of a turn that had
-		// already ended, and returned without even arming a deferred re-check.
-		// The message was stored, reported delivered, and waited for a human.
-		e.noteWakeEnded(agent)
-		if owed {
-			e.retryWakeDecision(agent)
-		}
+		e.wakeExitedDecision(agent)
 		return core.Result{"ok": true}
 	})
+}
+
+// wakeExitedDecision is the exit, split from the loop plumbing so a test can
+// call it: query() sends on e.ops, nil on an engine with no running loop, so a
+// test calling the wrapper would block forever rather than fail.
+//
+// Callers run on the writer loop.
+func (e *Engine) wakeExitedDecision(agent string) {
+	// CLEARED AND RECORDED IN ONE TURN OF THE LOOP.
+	//
+	// wakeFinished ran out here, before the closure was queued, and the two
+	// facts it produces are read by different branches of maybeWake. So an
+	// ordinary message arriving in that window saw the agent as no longer
+	// running (running was cleared) AND as recently in touch (the turn end
+	// was not recorded yet): noteArrivalDuringWake declined to mark it,
+	// recentlyInTouch declined to wake it, and nothing armed a deferred
+	// re-check either. The sender was told it was delivered and the stopped
+	// recipient was not reached.
+	//
+	// maybeWake runs on this loop too, so doing both inside one closure
+	// makes the intermediate state unobservable rather than unlikely. A
+	// window this narrow is not worth closing with a smaller window.
+	owed := e.wakeFinished(agent)
+	// ALWAYS, not only when a re-check is owed.
+	//
+	// The command runs the agent's whole turn in that process, so the
+	// process exiting IS the turn finishing: that is true whether or not
+	// mail happened to arrive while it ran, and it is what turnEnded means
+	// on every path that has a Stop hook to say so. This one has none.
+	//
+	// Stamping it only on the owed path left the commonest ordering broken.
+	// A wake runs, the agent reads its inbox (which is a call to Dibs, so it
+	// is "recently in touch"), the command exits with nothing having
+	// arrived, and THEN a question lands. maybeWake found no running wake,
+	// found the agent recently in touch on the strength of a turn that had
+	// already ended, and returned without even arming a deferred re-check.
+	// The message was stored, reported delivered, and waited for a human.
+	e.noteWakeEnded(agent)
+	if owed {
+		e.retryWakeDecision(agent)
+	}
 }
 
 // noteWakeEnded records that a wake command has exited, which is the end of

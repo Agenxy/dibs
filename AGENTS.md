@@ -197,7 +197,12 @@ without advancing the serial, a renamed json tag, anything that reports success
 while doing nothing) and its newest authorisation paths. Fix what it finds, run
 `task ci`, and go round again until a pass turns up nothing worth fixing.
 
-**`task release VERSION=0.0.6` is the one step before the tag.** It claims the
+**`task release VERSION=<the next version>` is the one step before the tag.**
+This used to name a literal `0.0.6`, which is the version already tagged: the
+command as written refuses, because a release that goes backwards would leave
+every installer offering an older build than the one before it. An instruction
+that cannot be followed is worse than none, and this one sits at the step where
+somebody is following instructions exactly. It claims the
 changelog's `## [Unreleased]` section for that version and stamps every manifest that
 states one, then stops: tagging publishes, so it stays yours to do. Doing it by hand is
 how two manifests sat at `0.0.0` through five releases, and the tagged commit is now

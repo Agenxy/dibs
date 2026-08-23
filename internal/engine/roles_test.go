@@ -70,4 +70,23 @@ func TestAConfiguredRoleNameResolvesToTheAgentThatRegisteredIt(t *testing.T) {
 			"name is free once its holder is gone, and the declared role would never "+
 			"be granted again", id)
 	}
+
+	// AND A RETIRED AGENT DOES NOT SHADOW ITS SUCCESSOR THROUGH THE ID BRANCH.
+	//
+	// A name IS the first agent's id, so when `fleet-lead` retires and a
+	// replacement registers under the same name it becomes `fleet-lead-2`. The
+	// exact-id branch matched the retired row and returned it, forever: the
+	// documented handover resolved the predecessor, the pin then refused, and
+	// the board never got the coordinator its config names. The by-name branch
+	// had the Gone check and the id branch did not, which is why the case above
+	// passes and this one did not exist.
+	e.state.Agents = map[string]*core.Agent{
+		"fleet-lead":   {ID: "fleet-lead", Name: "fleet-lead", Status: core.StatusArchived},
+		"fleet-lead-2": {ID: "fleet-lead-2", Name: "fleet-lead", Status: core.StatusActive},
+	}
+	if id, _ := e.resolveConfiguredAgentDecision("fleet-lead")["id"].(string); id != "fleet-lead-2" {
+		t.Errorf("`[roles]` naming fleet-lead resolved to %q, and that agent is "+
+			"archived while its live successor holds the name. The handover the "+
+			"operator wrote down can never complete", id)
+	}
 }

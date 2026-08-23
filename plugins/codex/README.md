@@ -152,9 +152,13 @@ in this file, in opposite directions. Ask a session, not the source:
 codex --version                 # 2026-08-18 or later has the executor
 ```
 
-and then, from a live thread, `spawned_agents`: if this session is listed, a
-Stop hook reached the daemon and delivery is live. If it is not, the build
-predates the executor or the Dibs server was not connected when the hook ran.
+and then `spawned_agents`, read by a SECOND agent while this thread is between
+turns: `state` reading `finished` for the session is what a delivered Stop
+leaves behind. Being listed proves nothing on its own, because SessionStart
+creates the listing too, and you cannot check it yourself: a tool call needs a
+turn, and your next turn opens with SessionStart, which puts `state` back to
+`running` before you can look. If no peer sees `finished`, the build predates
+the executor or the Dibs server was not connected when the hook ran.
 
 **On an older build Codex is pull-only.** `check_in` at the start of every
 activation, `await_events` before blocking, which is what `dibs://skills`

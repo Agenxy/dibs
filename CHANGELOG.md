@@ -980,6 +980,44 @@ machines for real work. Their priority order, not ours.
   privilege is withdrawn rather than a wording fix: issue #73 has the edges that
   make it worth doing deliberately rather than in the hour before a tag.
 
+- **A retired agent shadowed its live successor in `[roles]`.** A name is the
+  first agent's id, so when `fleet-lead` retires and a replacement registers
+  under the same name it becomes `fleet-lead-2`. Resolution matched the exact id
+  first and did not ask whether that agent was gone, where the by-name branch
+  beside it always had: the documented handover therefore resolved the
+  predecessor forever, the pin refused it, and the board never got the
+  coordinator its config names. It fails closed, which is the right direction
+  and is still a board without its coordinator.
+
+- **The rebuilt verdict notices were ordered by the wrong serial.** The notice
+  carries the serial of the *verdict*, and the rebuild sorted by the serial of
+  the *request*, so a very old question answered a moment ago was inserted
+  first, where the sixteen-notice trim discards it, while older verdicts for
+  newer requests survived. That is the reverse of the "newest win" the trim
+  promises. Only visible with more than sixteen owed at once.
+
+- **The board could report itself unlocked while discarding its only
+  credential.** The page key arrives in the redirect's fragment, is written to
+  `localStorage`, and the fragment is then erased. The write was wrapped in a
+  `catch` that swallowed the failure, so where storage is unavailable and
+  cookies still work the document and `/events` loaded and every keyed request
+  went without the header: an unlocked board with an empty mailbox and buttons
+  that do nothing, and nothing on screen saying why. The tab keeps it in memory
+  as well, which is enough for the session it was minted for.
+
+- **The Codex Stop verification asked for something an agent cannot do.**
+  Correcting it to name the `state` field was right and not sufficient: a tool
+  call requires a turn, and an agent's next turn opens with `SessionStart`,
+  which puts `state` back to `running` before it can look. It has to be a
+  *second* agent that reads `spawned_agents` while the first is between turns.
+  The shipped plugin README was worse and said that being listed at all proves a
+  Stop arrived, which `SessionStart` alone also achieves.
+
+- **`AGENTS.md` prescribed a release command that refuses.** It named a literal
+  `task release VERSION=0.0.6`, and 0.0.6 is the version already tagged, so the
+  command declines rather than going backwards. It sits at the step where
+  somebody is following instructions exactly.
+
 - **Mail arriving after a wake exited was refused as "still working".** The
   commoner ordering, and the last of this one: a wake runs, the woken agent
   reads its inbox, which is a call to Dibs and makes it recently in touch, the

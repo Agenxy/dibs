@@ -388,21 +388,23 @@ func (e *Engine) rebuildBlockingNotices() {
 	}
 	owed := make([]*core.Message, 0, 8)
 	for _, m := range e.state.Messages {
-		if m == nil || m.From == "" || verdictEvent(m.State) == "" {
-			continue
+		if e.stillOwed(m) {
+			owed = append(owed, m)
 		}
-		asker := e.state.Agents[m.From]
-		if asker == nil || asker.Gone() {
-			continue // nobody left to tell
-		}
-		if m.RespondedAt != 0 && m.RespondedAt <= asker.AckedSerial {
-			continue // it has already caught up past this
-		}
-		owed = append(owed, m)
 	}
-	// By serial: map order is random, and the notice list keeps the newest
-	// sixteen, so an unordered rebuild would drop a different set every boot.
-	sort.Slice(owed, func(i, j int) bool { return owed[i].Serial < owed[j].Serial })
+	// BY WHEN THE VERDICT HAPPENED, which is RespondedAt and not the serial of
+	// the request. Map order is random and the notice list keeps the newest
+	// sixteen, so the order here decides what survives a rebuild; sorting by the
+	// request serial inserted a very old question answered a moment ago FIRST,
+	// where the trim discards it, and kept older verdicts for newer requests.
+	// That is the opposite of the "newest win" the trim promises, and the
+	// difference only shows once more than sixteen are owed at once.
+	sort.Slice(owed, func(i, j int) bool {
+		if owed[i].RespondedAt != owed[j].RespondedAt {
+			return owed[i].RespondedAt < owed[j].RespondedAt
+		}
+		return owed[i].Serial < owed[j].Serial
+	})
 	for _, m := range owed {
 		ev := core.Event{
 			Type: verdictEvent(m.State), Agent: m.To, To: m.From,
@@ -422,6 +424,22 @@ func (e *Engine) rebuildBlockingNotices() {
 	}
 }
 
+// stillOwed reports whether this message's verdict is news its asker has not
+// had. Split out to keep the rebuild under the complexity limit, which is worth
+// keeping here: this decides what an agent is told after a restart.
+func (e *Engine) stillOwed(m *core.Message) bool {
+	if m == nil || m.From == "" || verdictEvent(m.State) == "" {
+		return false
+	}
+	asker := e.state.Agents[m.From]
+	if asker == nil || asker.Gone() {
+		return false // nobody left to tell
+	}
+	// AckedSerial is the awareness watermark: at or below it, the agent has
+	// caught up and telling it again is a duplicate.
+	return m.RespondedAt == 0 || m.RespondedAt > asker.AckedSerial
+}
+
 // verdictEvent names the event a terminal state was published as, or "" when
 // the state is not a verdict. Expiries and displacement are not answers and
 // carry no notice.
@@ -438,6 +456,17 @@ func verdictEvent(state string) string {
 	}
 	return ""
 }
+
+// WHAT A RESTART STILL LOSES, said here because the paragraph above used to
+// imply it lost nothing that mattered.
+//
+// Only verdicts are rebuilt. A notice about something that HAPPENED TO an agent
+// (joined, admitted, absorbed, requeued, evicted, told to stop exclusive work)
+// is created during live processing and is gone. Some of the resulting board
+// state can be inferred by looking, and the causal half cannot: who did it, why,
+// and above all the imperative ones, where an agent that was told to stop can
+// carry on because the instruction evaporated. That is a real gap and issue #74
+// is where it is being worked, not a cost worth waving through in a comment.
 
 // noteNewMember tells the existing members that somebody joined.
 //
