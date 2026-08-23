@@ -182,7 +182,11 @@ var catalog = []struct {
 		harness: "codex",
 		dir:     "codex",
 		aliases: []string{"chatgpt-desktop", "chatgpt", "gpt"},
-		buys: "mail delivered at a turn boundary, on a build new enough. Codex gained " +
+		buys: "a wake path that WORKS on a new enough build, and pull-only until you " +
+			"have checked that yours is. This entry still reports pull-only, " +
+			"deliberately: the conservative answer is the safe one when the fact " +
+			"depends on a version, and an agent told mail will arrive that then does " +
+			"not arrive stops checking and loses it. Codex gained " +
 			"a real hooks MCP executor on 2026-08-18 (openai/codex#39296), so an " +
 			"`mcp_tool` hook now runs against the session's own MCP runtime: no " +
 			"subprocess, and nothing that drives your harness. Dibs ships hooks.json " +

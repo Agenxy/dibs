@@ -267,18 +267,17 @@ func run() error {
 	// is no tool, op or admin route that can set this, because it is arbitrary
 	// code on this machine and only the person at it may name it.
 	if len(cfg.Wake.Exec) > 0 {
-		cmds := make(map[string][]string, len(cfg.Wake.Exec))
-		cool := time.Duration(0)
+		// Each harness keeps its OWN cooldown. Collapsing the table to its
+		// largest value, which this did, let one cautious entry throttle every
+		// other harness while both settings still read as configured.
+		cmds := make(map[string]engine.WakeCommand, len(cfg.Wake.Exec))
 		for harness, x := range cfg.Wake.Exec {
 			if len(x.Argv) == 0 {
 				continue
 			}
-			cmds[harness] = x.Argv
-			if x.Cooldown > cool {
-				cool = x.Cooldown
-			}
+			cmds[harness] = engine.WakeCommand{Argv: x.Argv, Cooldown: x.Cooldown}
 		}
-		eng.SetWakeCommands(cmds, cool)
+		eng.SetWakeCommands(cmds)
 		slog.Info("the board can start an agent that is not running",
 			"harnesses", len(cmds))
 	}

@@ -793,6 +793,31 @@ func TestThePresenceHelperIsTheOneThatGetsBuilt(t *testing.T) {
 		}
 	}
 
+	// AND IT MUST RUN ON BOTH MACS.
+	//
+	// GoReleaser builds darwin/amd64 and darwin/arm64 and copies ONE helper into
+	// both archives. Built without a target it is whatever the release runner
+	// was, so one of the two releases carried a presence binary that machine
+	// cannot execute, and the failure is silent: no usable helper means the
+	// password path, and Touch ID disappears from a release that advertises it.
+	// The name checks below could not see this, which is the point of adding it
+	// here: they verify the word, not the artifact.
+	relRaw, err := os.ReadFile(filepath.Join(root, ".goreleaser.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(relRaw), "lipo -create") {
+		t.Error("the presence helper is not built as a universal binary: one of the " +
+			"two macOS archives will carry a helper for the wrong architecture, and " +
+			"Touch ID will silently fall back to the password there")
+	}
+	for _, target := range []string{"arm64-apple-macos", "x86_64-apple-macos"} {
+		if !strings.Contains(string(relRaw), target) {
+			t.Errorf("no swiftc -target for %s: lipo cannot join a slice that was "+
+				"never compiled", target)
+		}
+	}
+
 	// AND THE RELEASE, which is what almost everybody installs.
 	//
 	// This compared the runtime name with the Taskfile only, so it was green
