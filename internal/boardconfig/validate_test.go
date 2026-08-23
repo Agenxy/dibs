@@ -161,6 +161,17 @@ func TestLoadRefusesSettingsThatWouldNotTakeEffect(t *testing.T) {
 			"a wake command whose executable is the empty string",
 			"[wake.exec.codex]\nargv = [\"\", \"exec\"]\n",
 		},
+		// " " is a valid TOML string and a useless program name: it passed the
+		// check, startup announced a configured harness, and every wake failed
+		// inside exec before starting anything.
+		{
+			"a wake command whose executable is only whitespace",
+			"[wake.exec.codex]\nargv = [\" \", \"exec\"]\n",
+		},
+		{
+			"a wake entry whose harness name is blank",
+			"[wake.exec.\" \"]\nargv = [\"/bin/echo\"]\n",
+		},
 		// An entry with no argv at all: the section loaded, startup took the
 		// "there is a wake command" branch, skipped the entry for want of an
 		// argv, and logged `harnesses=0` as though that were a capability.

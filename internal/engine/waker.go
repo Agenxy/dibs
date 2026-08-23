@@ -482,6 +482,23 @@ func looksLikeThreadID(s string) bool {
 // past any turn a person would wait for, and this is.
 const wakeTimeout = 2 * time.Hour
 
+// wakeGrace bounds the wait AFTER the deadline kills the command.
+//
+// cmd.WaitDelay, and it has to be set because stdout and stderr are not files.
+// For a non-file writer os/exec copies through a pipe, and killing the process
+// at the deadline does not close descriptors a GRANDCHILD inherited: Wait then
+// blocks on EOF that never comes, forever, well past the two-hour bound this
+// package advertises. `codex exec resume` starting a helper that outlives it is
+// an ordinary thing for a wake command to do.
+//
+// The consequence was worse than a stuck goroutine. wakeFinished runs on defer,
+// so it never ran, wakers.running kept that agent marked as still going, and
+// every later message to it was refused as a duplicate: one leaked descriptor
+// made an agent permanently unreachable until the daemon restarted. Two fixes
+// of mine met, the tail buffer and the running map, and neither was wrong
+// alone.
+const wakeGrace = 10 * time.Second
+
 // runWake executes one wake, bounded and out of the way, and reports whether
 // anything was actually woken.
 //
@@ -489,7 +506,15 @@ const wakeTimeout = 2 * time.Hour
 // false, so a command that could not run does not consume the single attempt
 // the message was going to get.
 func runWake(argv []string, agent string) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), wakeTimeout)
+	return runWakeFor(argv, agent, wakeTimeout, wakeGrace)
+}
+
+// runWakeFor is runWake with its bounds as arguments, so a test can assert that
+// this RETURNS rather than assert that a constant is large. The old test
+// checked only that wakeTimeout was at least two hours, which stays true while
+// Wait blocks past it.
+func runWakeFor(argv []string, agent string, timeout, grace time.Duration) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	// #nosec G204 -- argv comes from the operator's own config file and nowhere
 	// else: SetWakeCommands is the only writer, no tool or op reaches it, and
@@ -504,6 +529,7 @@ func runWake(argv []string, agent string) bool {
 	// why in its last few lines rather than its first thousand.
 	tail := &tailBuffer{limit: 8 << 10}
 	cmd.Stdout, cmd.Stderr = tail, tail
+	cmd.WaitDelay = grace
 	err := cmd.Run()
 	out := tail.Bytes()
 	if err != nil {

@@ -772,6 +772,15 @@ func (c Config) validateWake() error {
 	// operator's explicit value did nothing at all. Zero is documented as "use
 	// the default" and stays legal; a negative one is a mistake and is refused.
 	for harness, x := range c.Wake.Exec {
+		// The KEY is matched against the harness an agent reports, lowercased.
+		// A blank one matches nothing that will ever register, so the entry is
+		// unreachable while still counting towards "harnesses configured".
+		if strings.TrimSpace(harness) == "" {
+			return fmt.Errorf("[wake.exec] has an entry with a blank harness name. " +
+				"The key is matched against the harness an agent reports, so this " +
+				"one can never match anybody, and it still counts as a configured " +
+				"harness at startup")
+		}
 		if x.Cooldown < 0 {
 			return fmt.Errorf("[wake.exec.%s] cooldown = %q: a wake cooldown cannot "+
 				"be negative. Omit it, or set 0, to take the default; anything "+
@@ -788,7 +797,13 @@ func (c Config) validateWake() error {
 				"that harness and the section does nothing at all. Give it the "+
 				"command that resumes a thread, or remove the section", harness)
 		}
-		if x.Argv[0] == "" {
+		// TRIMMED, because " " is a perfectly good TOML string and a perfectly
+		// useless program name. It passed `dibd -check`, startup logged "the
+		// board can start an agent that is not running" with one harness
+		// configured, and every wake then failed inside exec before starting
+		// anything. Configuration approved, capability announced, nobody ever
+		// woken: this list's own subject, in the section it was added for.
+		if strings.TrimSpace(x.Argv[0]) == "" {
 			return fmt.Errorf("[wake.exec.%s] argv starts with an empty string, so "+
 				"there is no program to run. The first element is the executable, "+
 				"and the rest are its arguments: there is no shell in this path "+

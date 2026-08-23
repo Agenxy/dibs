@@ -1,6 +1,9 @@
 package engine
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -853,5 +856,113 @@ func TestAStaleFailureReleasesOnlyItsOwnCooldown(t *testing.T) {
 	if got := e.wakeStamp("busy"); !got.IsZero() {
 		t.Error("a wake's own failure did not release its cooldown, so a command " +
 			"that could not run still costs the agent its one attempt")
+	}
+}
+
+// A wake command that leaves a descendant holding stdout must still return.
+//
+// stdout and stderr are a non-file writer (the tail buffer), so os/exec copies
+// through a pipe. Killing the command at the deadline does NOT close a
+// descriptor a grandchild inherited, and with WaitDelay unset Wait blocks on an
+// EOF that never comes: past the two-hour bound, forever. `codex exec resume`
+// starting a helper that outlives it is an ordinary thing for a wake command
+// to do.
+//
+// The consequence is worse than a stuck goroutine. wakeFinished runs on defer,
+// so it never runs, wakers.running keeps that agent marked as still going, and
+// every later message to it is refused as a duplicate. One leaked descriptor
+// makes an agent permanently unreachable until the daemon restarts.
+//
+// The old test asserted only that wakeTimeout was at least two hours, which
+// stays true while Wait hangs past it. This one asserts the thing that matters:
+// runWake RETURNS.
+func TestAWakeReturnsEvenWhenADescendantHoldsItsOutput(t *testing.T) {
+	if os.Getenv("DIBS_WAKE_HELPER") != "" {
+		wakeOrphanHelper()
+		return
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Skipf("cannot find the test binary to re-exec: %v", err)
+	}
+	// SET AFTER the check above, so this process stays the parent and the child
+	// it spawns becomes the helper. runWakeFor takes argv only and inherits the
+	// environment, which is the only channel available to say which role the
+	// re-exec is playing. Without this the child ran the parent branch, spawned
+	// nothing, and the test passed against the bug.
+	// The orphan holds the pipe until this file appears, so the assertion
+	// window below is what decides the outcome rather than a sleep that has to
+	// be guessed longer than it. Written in a defer, so nothing is left behind
+	// even when the assertion fails.
+	release := filepath.Join(t.TempDir(), "release")
+	t.Setenv("DIBS_WAKE_RELEASE", release)
+	defer func() { _ = os.WriteFile(release, []byte("go"), 0o600) }()
+	t.Setenv("DIBS_WAKE_HELPER", "1")
+
+	done := make(chan bool, 1)
+	go func() {
+		// Short bounds: the property is that it comes back, not how long it
+		// waits before giving up.
+		done <- runWakeFor([]string{self, "-test.run=TestAWakeReturnsEvenWhenADescendantHoldsItsOutput"},
+			"holder", 500*time.Millisecond, 500*time.Millisecond)
+	}()
+
+	select {
+	case <-done:
+		// Whether it reports success does not matter here; returning does.
+	case <-time.After(10 * time.Second):
+		t.Fatal("runWake never returned. The command was killed at its deadline and " +
+			"Wait is still blocked on an output pipe a descendant inherited, so " +
+			"wakeFinished never ran: that agent is now refused every wake as " +
+			"'already running', for as long as the daemon lives")
+	}
+}
+
+// wakeOrphanHelper is the child side of the test above: it starts a descendant
+// that inherits stdout and outlives it, then exits.
+//
+// Go re-execing its own test binary, rather than a shell one-liner, because
+// this repository does not use shell and because the hazard is precisely about
+// inherited descriptors, which a helper has to create deliberately.
+func wakeOrphanHelper() {
+	self, err := os.Executable()
+	if err != nil {
+		return
+	}
+	child := exec.Command(self, "-test.run=TestAWakeSleeperDoesNothing")
+	child.Env = append(os.Environ(), "DIBS_WAKE_SLEEPER=1", "DIBS_WAKE_HELPER=")
+	child.Stdout, child.Stderr = os.Stdout, os.Stderr // the inherited pipe
+	_ = child.Start()
+	// Exit immediately, orphaning it with our stdout still open.
+}
+
+// TestAWakeSleeperDoesNothing is the orphan. It holds the inherited pipe for
+// longer than the bounds above and is never asserted on.
+func TestAWakeSleeperDoesNothing(t *testing.T) {
+	if os.Getenv("DIBS_WAKE_SLEEPER") == "" {
+		t.Skip("only run as the orphan of TestAWakeReturnsEvenWhenADescendantHoldsItsOutput")
+	}
+	// Held until released, with a hard cap so a crashed parent cannot leave
+	// this running on somebody's machine.
+	//
+	// A ticker rather than a sleep: the lint forbids sleeps in tests for good
+	// reason, and this is a test binary even though this function is really the
+	// orphan process rather than an assertion.
+	release := os.Getenv("DIBS_WAKE_RELEASE")
+	tick := time.NewTicker(100 * time.Millisecond)
+	defer tick.Stop()
+	cap := time.After(60 * time.Second)
+	for {
+		select {
+		case <-cap:
+			return
+		case <-tick.C:
+			if release == "" {
+				continue
+			}
+			if _, err := os.Stat(release); err == nil {
+				return
+			}
+		}
 	}
 }
