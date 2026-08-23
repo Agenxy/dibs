@@ -602,7 +602,7 @@ func (c Config) validateTLS() error {
 	// Only when the address is known and is a real host. A wildcard bind serves
 	// whatever the client dialled and no certificate can name that in advance,
 	// which is why the generated one enumerates interfaces instead.
-	if host := configuredHost(c.Addr); host != "" {
+	if host := HostToVerify(c.Addr); host != "" {
 		if err := leaf.VerifyHostname(host); err != nil {
 			return fmt.Errorf("tls_cert %q does not name %s (%w). It will serve, and "+
 				"every client dialling that address will refuse it. Reissue the "+
@@ -613,13 +613,21 @@ func (c Config) validateTLS() error {
 	return nil
 }
 
-// configuredHost is the host an explicit certificate has to name, or "".
+// HostToVerify is the host an explicit certificate has to name, or "".
 //
 // Empty for a wildcard bind: 0.0.0.0 and :: serve whatever the client dialled,
-// so nothing can be verified in advance. Empty when no address is configured,
-// because then the default is loopback and a configured certificate is being
-// asked for by some other means.
-func configuredHost(addr string) string {
+// so nothing can be verified in advance. Empty for an empty address, because
+// this package cannot see `-addr` or `DIBS_ADDR`, both of which outrank the
+// config: assuming loopback here would refuse an explicit certificate that is
+// correct for the address the daemon was actually told to bind, and `dibs
+// upgrade` always passes `-addr`, so that refusal would land mid-cutover with
+// the previous daemon already stopped.
+//
+// The daemon calls this again with its RESOLVED address, which is the one that
+// closes the gap: a board with an explicit pair, no `addr` in dibs.toml and a
+// certificate naming neither loopback nor anything else it serves used to reach
+// ServeTLS and be refused by every client. Exported for that caller.
+func HostToVerify(addr string) string {
 	if addr == "" {
 		return ""
 	}

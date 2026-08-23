@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 )
 
@@ -165,12 +166,45 @@ func identity() string {
 	return "-"
 }
 
+// swiftc builds the helper for BOTH Macs and joins them.
+//
+// It compiled once, for whatever the build host happened to be, and the release
+// then copied that one bundle into every archive: `dibs-notify` was arm64-only
+// in the darwin_amd64 tarball, so on an Intel Mac the notifier could not run at
+// all. The passive path returns the exec error rather than falling back to
+// osascript, and an interactive request fails before it reaches a person, so
+// the release's whole human-in-the-loop story was absent on that target while
+// every check was green.
+//
+// `dibs-presence` is built exactly this way in .goreleaser.yml, three lines
+// above the hook that calls this, and the difference between them is the whole
+// defect. Same targets, same floor.
 func swiftc(out, src string) error {
-	// #nosec G204 -- both paths are built from this tool's own flags and the
-	// fixed source directory.
-	// #nosec G204 -- see the comment above: build-tool paths, not input.
-	if o, err := exec.Command("swiftc", "-O", "-o", out, src).CombinedOutput(); err != nil {
-		return fmt.Errorf("swiftc %s: %w: %s", src, err, o)
+	// macos12, not the macos11 the presence helper uses. This source calls
+	// interruptionLevel and timeSensitiveSetting unconditionally, which are
+	// macOS 12, so 12 is what it already required at runtime; stating it is what
+	// makes the compiler agree. Building with no -target at all took the host's
+	// default deployment target, which is how the arch went unnoticed too.
+	slices := map[string]string{
+		"arm64-apple-macos12":  out + ".arm64",
+		"x86_64-apple-macos12": out + ".amd64",
+	}
+	var parts []string
+	for target, path := range slices {
+		// #nosec G204 -- a fixed target triple, and paths built from this
+		// tool's own flags and the fixed source directory.
+		if o, err := exec.Command("swiftc", "-O", "-target", target, "-o", path, src).
+			CombinedOutput(); err != nil {
+			return fmt.Errorf("swiftc %s for %s: %w: %s", src, target, err, o)
+		}
+		defer func() { _ = os.Remove(path) }()
+		parts = append(parts, path)
+	}
+	sort.Strings(parts) // so the fat header is the same on every build
+	args := append([]string{"-create", "-output", out}, parts...)
+	// #nosec G204 -- paths this function just produced.
+	if o, err := exec.Command("lipo", args...).CombinedOutput(); err != nil {
+		return fmt.Errorf("lipo %s: %w: %s", out, err, o)
 	}
 	return nil
 }

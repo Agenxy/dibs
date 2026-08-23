@@ -894,6 +894,48 @@ machines for real work. Their priority order, not ours.
   macOS caches a signature verdict against the inode, and set the codesign
   identifiers, which the Go toolchain leaves as `a.out`.
 
+- **Reading the inbox cancelled the re-check that exists for what comes after
+  it.** Mail arriving during a running wake is re-asked when that command exits,
+  and the woken agent's inbox read is itself a call to Dibs, so the agent became
+  "recently in touch" and the short-circuit fired before anything recorded the
+  arrival. The fix shipped one round earlier was therefore unreachable on
+  precisely the ordering it was written for, and the test could not see it
+  because it drove the decision directly and skipped that branch. The arrival is
+  recorded before the recency test, and only where a wake is known to be
+  running: an agent working at its own keyboard is still left alone.
+
+- **The Intel archive shipped an Apple-silicon notifier.** `Dibs.app` was built
+  once, for whatever the release host happened to be, and copied into every
+  archive, so `dibs-notify` was arm64-only inside `darwin_amd64`. On an Intel
+  Mac the passive path returns the exec error rather than falling back to
+  `osascript`, and an interactive request fails before it reaches a person, so
+  the release's whole human-in-the-loop story was absent on a supported target
+  while every check was green. The helper beside it, `dibs-presence`, has been
+  built for both Macs and joined with `lipo` all along, three lines above in the
+  same file. It is built the same way now, and the archive check opens **every**
+  darwin archive and reads the Mach-O headers, because a file at the right path
+  that cannot execute is not an installation.
+
+- **A standing role declared by name was never granted.** `[roles]` is
+  documented to take agent names, `register` turns a name into an id, and the
+  reconciler passed the configured string straight to a lookup keyed by id: the
+  documented `admin = ["Fleet Lead"]` waited forever for an agent whose id was
+  literally that, while the agent that registered under the name sat there as
+  `fleet-lead`. Every existing test used an already-slugged name, so the
+  distinction never showed. Names resolve now, and a name held by two live
+  agents is refused rather than resolved to whichever came first.
+
+- **A configured certificate was checked against the config's address, and the
+  daemon may not be listening there.** `-addr` and `DIBS_ADDR` both outrank
+  `dibs.toml`, so a board with an explicit pair and no configured address passed
+  `dibd -check` and config loading, served TLS on the default loopback listener,
+  and was refused by every client on hostname verification. The check cannot
+  live where the config is loaded, because that code cannot see the flag and
+  assuming loopback there would refuse a certificate that is right for the
+  address the daemon was told to bind, which `dibs upgrade` always passes: the
+  refusal would land mid-cutover with the previous daemon already stopped. It is
+  asked at startup, where the address is finally settled.
+
 - **`dibs upgrade` could change the board's transport on a direct restart.**
   The daemon resolves `-addr`, then `DIBS_ADDR`, then the config, and upgrade
   passes `-addr`, which outranks the variable still set in the environment the

@@ -124,33 +124,14 @@ func applyDeclaredRoles(ctx context.Context, eng *engine.Engine, c RolesConfig, 
 			if agent == "" {
 				continue
 			}
-			if !mayHoldDeclaredRole(ctx, eng, pins, c, spec.role, agent) {
+			id := resolveDeclared(ctx, eng, spec.role, agent)
+			if id == "" {
 				continue
 			}
-			res, err := eng.GrantRole(ctx, agent, spec.role)
-			if err != nil {
-				// An agent that has not registered yet is the NORMAL case on a
-				// fresh board, not a misconfiguration, so it is logged at debug
-				// and retried on the next tick. Anything else is worth seeing.
-				var cerr *core.Error
-				if errors.As(err, &cerr) && cerr.Code == "E_NO_AGENT" {
-					slog.Debug("declared role is waiting for its agent to register",
-						"agent", agent, "role", spec.role)
-					continue
-				}
-				// Never fatal: a daemon that refuses to start over one wrong name
-				// in a config file leaves the fleet with nowhere to coordinate
-				// and the operator unable to read the complaint.
-				slog.Warn("could not grant a role declared in dibs.toml",
-					"agent", agent, "role", spec.role, "err", err)
+			if !mayHoldDeclaredRole(ctx, eng, pins, c, spec.role, agent, id) {
 				continue
 			}
-			// Only announce a real change, or the log fills with the same line
-			// every fifteen seconds forever.
-			if changed, _ := res["changed"].(bool); changed {
-				slog.Info("granted a role declared in dibs.toml",
-					"agent", agent, "role", spec.role)
-			}
+			grantDeclared(ctx, eng, spec.role, agent, id)
 		}
 	}
 }
@@ -171,10 +152,73 @@ func describeDeclaredRoles(c RolesConfig) string {
 // the role is what makes a standing role follow an identity, and refusing an
 // agent with no nonce is what stops it being pinned to something that cannot
 // prove itself tomorrow.
+// grantDeclared performs one declared grant and says what happened.
+//
+// Split out for the same reason resolveDeclared is: this loop hands out
+// standing privilege, and a reader has to be able to hold all of it at once.
+func grantDeclared(ctx context.Context, eng *engine.Engine, role, agent, id string) {
+	res, err := eng.GrantRole(ctx, id, role)
+	if err != nil {
+		// An agent that has not registered yet is the NORMAL case on a fresh
+		// board, not a misconfiguration, so it is logged at debug and retried on
+		// the next tick. Anything else is worth seeing.
+		var cerr *core.Error
+		if errors.As(err, &cerr) && cerr.Code == "E_NO_AGENT" {
+			slog.Debug("declared role is waiting for its agent to register",
+				"agent", agent, "role", role)
+			return
+		}
+		// Never fatal: a daemon that refuses to start over one wrong name in a
+		// config file leaves the fleet with nowhere to coordinate and the
+		// operator unable to read the complaint.
+		slog.Warn("could not grant a role declared in dibs.toml",
+			"agent", agent, "role", role, "err", err)
+		return
+	}
+	// Only announce a real change, or the log fills with the same line every
+	// fifteen seconds forever.
+	if changed, _ := res["changed"].(bool); changed {
+		slog.Info("granted a role declared in dibs.toml", "agent", agent, "role", role)
+	}
+}
+
+// resolveDeclared turns what the operator wrote in `[roles]` into an agent id,
+// or "" when there is nothing to do this tick.
+//
+// THE CONFIG NAMES AN AGENT; THE ENGINE IS KEYED BY ID. The configured string
+// used to go straight through, so the documented `admin = ["Fleet Lead"]`
+// waited forever for an agent whose id was literally that, while the agent that
+// registered under the name sat there as `fleet-lead`.
+//
+// Split out because applyDeclaredRoles is already at the complexity limit, and
+// the reason it is worth keeping under one is that this loop grants standing
+// privilege: a reader has to be able to hold all of it at once.
+func resolveDeclared(ctx context.Context, eng *engine.Engine, role, agent string) string {
+	id, err := eng.ResolveConfiguredAgent(ctx, agent)
+	if err == nil {
+		return id
+	}
+	// Not registered yet is the NORMAL case on a fresh board: the daemon comes
+	// up before its agents do, and the reconciler runs on a ticker. Anything
+	// else means the config names something that cannot be resolved, which a
+	// person has to fix and should therefore be able to see.
+	var cerr *core.Error
+	if errors.As(err, &cerr) && cerr.Code == "E_NO_AGENT" {
+		slog.Debug("declared role is waiting for its agent to register",
+			"agent", agent, "role", role)
+	} else {
+		slog.Warn("declared role names no single agent",
+			"agent", agent, "role", role, "err", err)
+	}
+	return ""
+}
+
+// agent is what the operator wrote, and keys the pin file and [roles.identity];
+// id is the agent it resolved to, and is what the engine is asked about.
 func mayHoldDeclaredRole(ctx context.Context, eng *engine.Engine, pins *rolePins,
-	c RolesConfig, role, agent string,
+	c RolesConfig, role, agent, id string,
 ) bool {
-	fp, err := eng.AgentIdentity(ctx, agent)
+	fp, err := eng.AgentIdentity(ctx, id)
 	if err != nil {
 		// Not registered yet is the ordinary case while the window is open.
 		slog.Debug("declared role is waiting for its agent to register",

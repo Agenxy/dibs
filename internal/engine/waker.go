@@ -207,11 +207,6 @@ func (e *Engine) maybeWake(ev core.Event) {
 	// for a human. Found by the pre-release review, which also pointed out my
 	// test could not see it: nil engine state returned before this branch.
 	//
-	// Having called Dibs inside the cooldown is real evidence of a live agent,
-	// and it is the same window that bounds the wake itself.
-	if e.recentlyInTouch(l) {
-		return
-	}
 	// Only news somebody is blocked on. An FYI does not justify starting a
 	// process on the operator's machine.
 	//
@@ -226,6 +221,29 @@ func (e *Engine) maybeWake(ev core.Event) {
 		default:
 			return
 		}
+	}
+	// BEFORE THE RECENCY SHORT-CIRCUIT, because the wake IS what is in touch.
+	//
+	// The exit re-check was added so mail arriving after a running command has
+	// read its inbox is not stranded for the rest of a two-hour turn. Reading
+	// that inbox is a call to Dibs, so it updates e.seen and makes the agent
+	// recently in touch, and the return below therefore fired before anything
+	// recorded the arrival: the re-check never armed, on precisely the ordering
+	// it exists for. The fix was correct and unreachable.
+	//
+	// Marked here, where a wake is known to be running for this agent, and only
+	// for blocking news. Recently in touch with NO wake running is a different
+	// agent altogether: one that is genuinely working and will see this at its
+	// own turn boundary, which is why the short-circuit stays.
+	if e.noteArrivalDuringWake(l.ID) {
+		slog.Debug("mail arrived during a running wake; re-checking at its exit",
+			"agent", l.ID)
+		return
+	}
+	// Having called Dibs inside the cooldown is real evidence of a live agent,
+	// and it is the same window that bounds the wake itself.
+	if e.recentlyInTouch(l) {
+		return
 	}
 	cmd, ok := e.wakeFor(l, msgType, ev)
 	if !ok {
@@ -370,6 +388,22 @@ func (e *Engine) hasBlockingMail(agent string) bool {
 		}
 	}
 	return false
+}
+
+// noteArrivalDuringWake records blocking news that turned up while this agent's
+// wake command was still running, so the exit looks again. It reports whether
+// one was running, which is also the answer to "is there any point going on".
+func (e *Engine) noteArrivalDuringWake(agent string) bool {
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	if !e.wakers.running[agent] {
+		return false
+	}
+	if e.wakers.arrived == nil {
+		e.wakers.arrived = map[string]bool{}
+	}
+	e.wakers.arrived[agent] = true
+	return true
 }
 
 // wakeFinished records that this agent's wake command has exited, so a later

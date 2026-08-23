@@ -1115,3 +1115,83 @@ func TestAWakeThatExitsWithNoNewMailOwesNothing(t *testing.T) {
 		t.Error("an exit with no message during the run still asks for another wake")
 	}
 }
+
+// The whole path: reading the inbox must not cancel the exit re-check.
+//
+// This is the ordering the re-check exists for, and the version that shipped
+// could not reach it. A wake starts; the woken agent calls Dibs to read its
+// inbox, which updates e.seen and makes it "recently in touch"; more blocking
+// mail arrives during the rest of a turn bounded at two hours. maybeWake
+// returned at the recency check, before anything recorded the arrival, so no
+// re-check was ever armed and the message waited for an unrelated event.
+//
+// THROUGH maybeWake, deliberately. The unit tests above call wakeFor directly
+// for both events, which skips the recency short-circuit entirely: they pass
+// against this defect, and did.
+func TestReadingTheInboxDoesNotCancelTheExitRecheck(t *testing.T) {
+	e, st := wakeEngine(t, WakeCommand{
+		Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute,
+	})
+	l := bridgeAgent("busy", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	st.Agents["busy"] = l
+	ev := core.Event{
+		Type: "message.sent", To: "busy",
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	}
+
+	// The first question starts a command, which is what makes this agent
+	// "running" for everything below.
+	if _, ok := e.wakeFor(l, core.MsgQuestion, ev); !ok {
+		t.Fatal("no first wake, so there is no running command: this test is not " +
+			"exercising the ordering it names")
+	}
+
+	// The woken agent reads its inbox. That is an authenticated call, so the
+	// board records it and the agent is now recently in touch.
+	e.seen["busy"] = time.Now()
+	if !e.recentlyInTouch(l) {
+		t.Fatal("setup: the agent is not recently in touch after calling Dibs, so " +
+			"the short-circuit this test is about would not fire anyway")
+	}
+
+	// A second question, later in the same turn: after the inbox read.
+	e.maybeWake(ev)
+
+	if owed := e.wakeFinished("busy"); !owed {
+		t.Error("the exit owes nothing, so mail that arrived after the running " +
+			"activation read its inbox is discarded. It waits for an unrelated event " +
+			"that may never come, while the board reports it delivered: exactly the " +
+			"case the exit re-check was added for")
+	}
+}
+
+// And an agent that is genuinely working, with no wake running, is still left
+// alone.
+//
+// Without this the check above passes against a version that marks every
+// arrival regardless, which would re-check at the exit of a command that is not
+// running and, worse, remove the reason the recency short-circuit exists: an
+// agent at its own keyboard sees this message at its next turn boundary and
+// does not need a process started for it.
+func TestAWorkingAgentWithNoWakeRunningIsStillLeftAlone(t *testing.T) {
+	e, st := wakeEngine(t, WakeCommand{
+		Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute,
+	})
+	l := bridgeAgent("awake", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	st.Agents["awake"] = l
+	e.seen["awake"] = time.Now()
+
+	e.maybeWake(core.Event{
+		Type: "message.sent", To: "awake",
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	})
+
+	e.wakers.mu.Lock()
+	marked := e.wakers.arrived["awake"]
+	e.wakers.mu.Unlock()
+	if marked {
+		t.Error("an arrival was recorded for an agent with no wake running, so an " +
+			"exit that never happens owes a re-check, and a live agent working at " +
+			"its own keyboard is queued for a process it does not need")
+	}
+}
