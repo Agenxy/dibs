@@ -73,13 +73,52 @@ func trustedPool() *x509.CertPool {
 // daemonClient is the http.Client every command should use to reach dibd.
 func daemonClient(timeout time.Duration) *http.Client {
 	c := &http.Client{Timeout: timeout}
+	rt := http.DefaultTransport
 	if pool := trustedPool(); pool != nil {
-		c.Transport = &http.Transport{TLSClientConfig: &tls.Config{
+		rt = &http.Transport{TLSClientConfig: &tls.Config{
 			RootCAs:    pool,
 			MinVersion: tls.VersionTLS12,
 		}}
 	}
+	// HERE, because here is the one place every credential-bearing request
+	// passes through.
+	//
+	// The address check and the broken-config check were wired into the callers
+	// that had been noticed: mcp-config, the generic get() helper, mcp-stdio.
+	// Fifteen call sites build requests with this client, and await, watch,
+	// monitor, the admin routes, the hook paths and several doctor probes went
+	// straight past both while attaching X-Dibs-Local, and sometimes the admin
+	// password. Safety that depends on every future caller remembering is not
+	// safety; it is a list of the callers somebody thought of.
+	c.Transport = &guardedTransport{next: rt}
 	return c
+}
+
+// guardedTransport refuses a request that would send this board's credentials
+// somewhere they do not belong.
+//
+// A RoundTripper rather than a helper, so it cannot be skipped by building the
+// request differently: whatever assembles the URL, this is what dials it.
+type guardedTransport struct{ next http.RoundTripper }
+
+func (g *guardedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	// A dibs.toml the daemon will not start on means the board this was meant
+	// for is not running, so the endpoint reached now is something else.
+	if err := checkConfigReadable(); err != nil {
+		return nil, err
+	}
+	// AND THE AUTHORITY MUST BE THE HOST IT LOOKS LIKE. Everything before an
+	// `@` is userinfo: `DIBS_ADDR=http://trusted.example@evil.example:4777`
+	// reads as trusted.example everywhere it is printed and dials
+	// evil.example. checkAddr catches it, and checkAddr was reachable only
+	// through mcp-config.
+	if r.URL.User != nil {
+		return nil, fmt.Errorf("refusing to send this board's credentials to %q: the "+
+			"address names %q before an `@`, which is a username rather than a host, "+
+			"so the request would go to %q instead. Name the host on its own",
+			r.URL.Host, r.URL.User.Username(), r.URL.Hostname())
+	}
+	return g.next.RoundTrip(r)
 }
 
 // trustCmd implements `dibs trust <host:port>`.
@@ -117,7 +156,19 @@ func trustCmd(args []string) error {
 	if len(certs) == 0 {
 		return fmt.Errorf("%s presented no certificate", target)
 	}
-	leaf := certs[0]
+	// THE TOP OF THE CHAIN, not the leaf.
+	//
+	// The daemon presents a short-lived leaf under a long-lived board CA, and
+	// the CA is the identity worth pinning: it carries no addresses, so nothing
+	// about that machine invalidates it, and every later leaf verifies through
+	// it. Pinning the leaf instead would make this ceremony due again on every
+	// renewal and every time the board changed networks, on every joined
+	// machine at once, which is exactly what the split was made to end.
+	//
+	// A single self-signed certificate is still a chain of one, so a daemon
+	// that predates the split, or one fronted by a real certificate, records
+	// what it presents.
+	pinned := certs[len(certs)-1]
 
 	if err := os.MkdirAll(paths.DataDir(), 0o700); err != nil {
 		return err
@@ -127,13 +178,13 @@ func trustCmd(args []string) error {
 		return err
 	}
 	defer func() { _ = f.Close() }()
-	if err := pem.Encode(f, &pem.Block{Type: "CERTIFICATE", Bytes: leaf.Raw}); err != nil {
+	if err := pem.Encode(f, &pem.Block{Type: "CERTIFICATE", Bytes: pinned.Raw}); err != nil {
 		return err
 	}
 
 	fmt.Printf("trusted %s\n", target)
-	fmt.Printf("  fingerprint  SHA256:%s\n", fingerprint(leaf.Raw))
-	fmt.Printf("  expires      %s\n", leaf.NotAfter.Format("2006-01-02"))
+	fmt.Printf("  fingerprint  SHA256:%s\n", fingerprint(pinned.Raw))
+	fmt.Printf("  expires      %s\n", pinned.NotAfter.Format("2006-01-02"))
 	fmt.Printf("  recorded in  %s\n\n", trustFile())
 	fmt.Println("  Verify it: run `dibs fingerprint` on that machine and compare.")
 	fmt.Println("  They must match exactly. If they do not, something is answering")
@@ -150,13 +201,31 @@ func fingerprintCmd(_ []string) error {
 		return fmt.Errorf("no certificate at %s: this daemon serves plaintext on "+
 			"loopback and only generates one for an address other machines can reach", certFile)
 	}
-	block, _ := pem.Decode(pemBytes)
-	if block == nil {
-		return fmt.Errorf("%s is not a PEM certificate", certFile)
+	// THE LAST BLOCK, because that is what the other machine pinned.
+	//
+	// This file is a chain now: the short-lived leaf, then the board CA that
+	// signed it. `dibs trust` records the top, so printing the first block here
+	// would give the operator two different values to compare and tell them
+	// something was answering that was not their daemon. The two commands read
+	// the same certificate or the ceremony is worse than none.
+	var cert *x509.Certificate
+	for rest := pemBytes; ; {
+		block, more := pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		rest = more
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+		c, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return err
+		}
+		cert = c
 	}
-	cert, err := x509.ParseCertificate(block.Bytes)
-	if err != nil {
-		return err
+	if cert == nil {
+		return fmt.Errorf("%s is not a PEM certificate", certFile)
 	}
 	fmt.Printf("SHA256:%s\n", fingerprint(cert.Raw))
 	fmt.Printf("expires %s\n", cert.NotAfter.Format("2006-01-02"))

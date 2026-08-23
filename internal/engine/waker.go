@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os/exec"
 	"strings"
@@ -50,6 +51,19 @@ type wakers struct {
 	mu        sync.Mutex
 	byHarness map[string]wakeCommand
 	last      map[string]time.Time
+	// deferred: a re-check armed for when an agent's cooldown expires, because
+	// maybeWake fires once per event and nothing else retries.
+	deferred map[string]*time.Timer
+	// running: agents whose wake command has not exited yet.
+	//
+	// The cooldown alone was the whole exclusion, and it is a START-time rule:
+	// ninety seconds by default against a command that may run for two hours,
+	// so a later blocking event launched a second `codex exec resume` beside
+	// the first and one thread got two activations interleaving into one
+	// transcript. Which is the duplicate-process failure the cooldown exists to
+	// prevent, arriving through the gap between "recently started" and "still
+	// going".
+	running map[string]bool
 }
 
 // SetWakeCommands installs the operator's wake table. Keyed by harness, as the
@@ -94,19 +108,23 @@ type WakeCommand struct {
 // so a message body containing a semicolon is a message body containing a
 // semicolon.
 type wakeFields struct {
-	sessionID string
-	agent     string
-	from      string
-	msgType   string
-	message   string
+	// thread is the identifier the harness's own resume command accepts,
+	// which is NOT the agent's session_id: that one names the harness
+	// PROCESS ("host-92368") and no resume command has ever heard of it.
+	// threadIDOf finds this; when it finds nothing, nothing is woken.
+	thread  string
+	agent   string
+	from    string
+	msgType string
+	message string
 }
 
 func (f wakeFields) apply(argv []string) []string {
 	out := make([]string, 0, len(argv))
 	for _, a := range argv {
 		switch a {
-		case "{session_id}":
-			out = append(out, f.sessionID)
+		case "{thread}":
+			out = append(out, f.thread)
 		case "{agent}":
 			out = append(out, f.agent)
 		case "{from}":
@@ -153,6 +171,20 @@ func (e *Engine) maybeWake(ev core.Event) {
 	if !ok {
 		return
 	}
+	// A RETIRED IDENTITY IS NOT WOKEN.
+	//
+	// Answering a closed or archived asker is allowed and returns
+	// delivered:false, saying plainly that nobody will read it. The event is
+	// still published, and every published event reaches this, so the board
+	// said "nobody will read this answer" and then started the thread anyway.
+	// Two costs: a subprocess spent on a mailbox that cannot be restored, and
+	// worse, a closed PERSISTENT identity resuming into the nonce-registration
+	// path and coming back ACTIVE, which is precisely the finality sign_off
+	// promises.
+	if l.Gone() {
+		slog.Debug("no wake: this agent has signed off", "agent", l.ID)
+		return
+	}
 	// RECENTLY IN TOUCH, not merely "active".
 	//
 	// Status was the first test here and it was wrong. `active` means the idle
@@ -189,7 +221,181 @@ func (e *Engine) maybeWake(ev core.Event) {
 	if !ok {
 		return
 	}
-	go runWake(cmd, l.ID)
+	agent, stamp := l.ID, e.wakeStamp(l.ID)
+	e.wakers.mu.Lock()
+	cool := e.wakers.byHarness[wakeHarness(l)].cooldown
+	e.wakers.mu.Unlock()
+	go func() {
+		defer e.wakeFinished(agent)
+		if runWake(cmd, agent) {
+			return
+		}
+		// A FAILED wake read nothing, so whatever arrived during it is still
+		// owed. One re-check, armed here where failure is actually known:
+		// retryWakeDecision does not arm another on ITS failure, so a command
+		// that is simply wrong costs two attempts rather than looping.
+		defer e.deferWakeLocked(agent, cool)
+		// A FAILED WAKE MUST NOT SPEND THE ATTEMPT.
+		//
+		// The cooldown is taken before the process starts, which is right: two
+		// messages arriving together must not become two processes. But a
+		// command that fails to start, exits nonzero or times out woke nobody,
+		// and holding the cooldown after it meant the ONE attempt this message
+		// was ever going to get was consumed by a process that did nothing.
+		// maybeWake fires per event and never retries, so `send` reported the
+		// mailbox written while the recipient stayed stopped until some
+		// unrelated event happened to arrive after the window: success with no
+		// effect, on the one path this release exists to add.
+		//
+		// Released rather than retried here. Retrying in place would loop
+		// against a command that is simply wrong, and the operator's log
+		// already says so; letting the NEXT blocking message try again is the
+		// behaviour an agent waiting for mail actually needs.
+		e.releaseWake(agent, stamp)
+	}()
+}
+
+// deferWake re-asks the wake question when this agent's cooldown expires.
+//
+// Callers hold wakers.mu.
+//
+// The timer is stored so a second suppressed event replaces it rather than
+// adding one: three questions inside the window are one re-check, which is the
+// same coalescing the cooldown was for. Stopping the old timer first is what
+// makes that true; leaving it running would be the fork bomb with extra steps.
+func (e *Engine) deferWake(agent string, in time.Duration) {
+	if e.wakers.deferred == nil {
+		e.wakers.deferred = map[string]*time.Timer{}
+	}
+	if t := e.wakers.deferred[agent]; t != nil {
+		t.Stop()
+	}
+	// A small margin, so the timer does not land a microsecond early and find
+	// the cooldown still nominally unexpired.
+	e.wakers.deferred[agent] = time.AfterFunc(in+50*time.Millisecond, func() {
+		e.retryWake(agent)
+	})
+}
+
+// retryWake re-decides, on the writer loop, whether this agent still needs one.
+//
+// From scratch rather than from a remembered event: by now the agent may have
+// come back on its own and read everything, another wake may be running, or the
+// message may have been answered. The only thing worth carrying across the
+// timer is the agent's name.
+func (e *Engine) retryWake(agent string) {
+	_, _ = e.query(context.Background(), func() core.Result {
+		e.retryWakeDecision(agent)
+		return core.Result{"ok": true}
+	})
+}
+
+// deferWakeLocked is deferWake for callers that do not already hold the lock.
+func (e *Engine) deferWakeLocked(agent string, in time.Duration) {
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	e.deferWake(agent, in)
+}
+
+// retryWakeDecision is the decision, split from the loop plumbing.
+//
+// Split because query() sends on e.ops, which is nil on an engine whose loop is
+// not running: a test that called the wrapper would block forever rather than
+// fail, which AGENTS.md records as having hung CI for five minutes once. It
+// hung this one too, before the split.
+//
+// Callers run on the writer loop.
+func (e *Engine) retryWakeDecision(agent string) {
+	e.wakers.mu.Lock()
+	delete(e.wakers.deferred, agent)
+	e.wakers.mu.Unlock()
+	if e.state == nil {
+		return
+	}
+	l := e.state.Agents[agent]
+	if l == nil || l.Gone() || e.recentlyInTouch(l) {
+		return
+	}
+	if !e.hasBlockingMail(agent) {
+		return
+	}
+	// A wake that is STILL running is already this agent's activation; the
+	// mail will be read by it. Nothing owed, nothing to arm.
+	e.wakers.mu.Lock()
+	stillRunning := e.wakers.running[agent]
+	e.wakers.mu.Unlock()
+	if stillRunning {
+		return
+	}
+	// A verdict carries no msg_type, and this is not replaying a specific
+	// event: the question is only whether somebody is still waiting.
+	cmd, ok := e.wakeFor(l, core.MsgQuestion, core.Event{Type: "wake.retry", To: agent})
+	if !ok {
+		return
+	}
+	stamp := e.wakeStamp(agent)
+	go func() {
+		defer e.wakeFinished(agent)
+		if !runWake(cmd, agent) {
+			// Released so the next EVENT may try, but no timer armed: this is
+			// already the retry, and a command that fails twice fails.
+			e.releaseWake(agent, stamp)
+		}
+	}()
+}
+
+// hasBlockingMail reports whether anybody is still waiting on this agent.
+//
+// Callers run on the writer loop.
+func (e *Engine) hasBlockingMail(agent string) bool {
+	if e.blockingNotices(agent) > 0 {
+		return true
+	}
+	for _, m := range e.state.Inbox(agent) {
+		if m.Expecting() && (m.State == core.MsgStatePending || m.State == core.MsgStateDelivered) {
+			return true
+		}
+		if m.Type == core.MsgHandoff && m.State != core.MsgStateAcked {
+			return true
+		}
+	}
+	return false
+}
+
+// wakeFinished records that this agent's wake command has exited, so a later
+// blocking message may start another.
+func (e *Engine) wakeFinished(agent string) {
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	delete(e.wakers.running, agent)
+}
+
+// wakeStamp reads back the cooldown this wake just took, so its failure can be
+// matched to it later.
+func (e *Engine) wakeStamp(agent string) time.Time {
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	return e.wakers.last[agent]
+}
+
+// releaseWake forgets a cooldown whose wake never happened, so the next
+// blocking message may try again.
+//
+// ONLY ITS OWN. A wake command may run for up to two hours, which is longer
+// than any cooldown, so a later wake can start and take a new cooldown while an
+// earlier one is still going. Deleting unconditionally let that earlier
+// failure erase the NEWER attempt's cooldown, and the next event then started a
+// third command beside the one already running: two resumptions of one thread,
+// produced by the code that exists to stop exactly that.
+//
+// The timestamp is the generation. If it has moved, this failure is stale and
+// has nothing to release.
+func (e *Engine) releaseWake(agent string, mine time.Time) {
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	if cur, ok := e.wakers.last[agent]; ok && cur.Equal(mine) {
+		delete(e.wakers.last, agent)
+	}
 }
 
 // recentlyInTouch reports whether this agent has spoken to the board lately
@@ -205,8 +411,31 @@ func (e *Engine) recentlyInTouch(l *core.Agent) bool {
 	if !ok {
 		return false
 	}
-	return !l.LastCoordination.IsZero() &&
-		time.Since(l.LastCoordination) < cmd.cooldown
+	// THE EPHEMERAL TIMESTAMP, because the durable one is deliberately stale.
+	//
+	// Every authenticated read touches e.seen immediately and only checkpoints
+	// LastCoordination once per AgentTTL/2, so a perfectly healthy agent's
+	// durable timestamp is routinely minutes old. Reading only that one, this
+	// declared a running agent asleep and started a second `codex exec resume`
+	// against the thread it was already working in: the duplicate-process case
+	// this check exists to prevent, produced by the check itself.
+	//
+	// Both, and the later wins: seen is authoritative when present, and
+	// LastCoordination still covers an agent last heard from before this daemon
+	// booted, whose seen entry does not exist.
+	last := l.LastCoordination
+	if s, ok := e.seen[l.ID]; ok && s.After(last) {
+		last = s
+	}
+	// A STOP SINCE THEN ENDS IT. Recency is a stand-in for "is it running", and
+	// the harness answers that question directly when a turn finishes. Without
+	// this, an agent that called in and then stopped two seconds later read as
+	// running for the rest of the cooldown, and the one wake its next blocking
+	// message was ever going to get was skipped.
+	if done, ok := e.turnEnded[l.ID]; ok && done.After(last) {
+		return false
+	}
+	return !last.IsZero() && time.Since(last) < cmd.cooldown
 }
 
 // wakeFor picks the command for this agent and spends its cooldown.
@@ -246,18 +475,68 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) ([]string
 	if e.wakers.last == nil {
 		e.wakers.last = map[string]time.Time{}
 	}
+	if e.wakers.running[l.ID] {
+		// STILL GOING is a stronger reason than recently started, and it
+		// outlives the cooldown: the command IS the activation, so a second one
+		// is a second agent in the same thread.
+		//
+		// NOT DEFERRED. Mail arriving while a wake runs is mail that wake is
+		// about to read: the command IS an activation of this agent. Arming a
+		// re-check here woke it a second time for the same burst, which is the
+		// coalescing this branch exists to provide, and on a command that never
+		// reads mail it is a retry loop with a ninety-second fuse.
+		//
+		// What the review actually found is the FAILED case, and that is
+		// handled where failure is known rather than guessed at here.
+		slog.Debug("no wake: the last one is still running", "agent", l.ID)
+		return nil, false
+	}
 	if last, seen := e.wakers.last[l.ID]; seen && now.Sub(last) < cmd.cooldown {
-		slog.Debug("no wake: still inside the cooldown", "agent", l.ID)
+		// SUPPRESSED, NOT DISCARDED.
+		//
+		// maybeWake fires once per event and nothing retries, so a message
+		// arriving after a wake has EXITED but inside its cooldown was lost
+		// outright: the recipient is asleep again, somebody is blocked on it,
+		// and the next attempt waits for an unrelated event that may never
+		// come. Ninety seconds is a rate limit on starting processes; it was
+		// behaving as a rate limit on delivering mail, which is the failure
+		// this whole path exists to remove.
+		//
+		// A timer for the remainder, re-deciding from scratch when it fires.
+		// One per agent, replaced rather than stacked, so a burst inside the
+		// window is still one wake at the end of it.
+		e.deferWake(l.ID, cmd.cooldown-now.Sub(last))
+		slog.Debug("no wake yet: inside the cooldown, re-checking when it expires",
+			"agent", l.ID)
 		return nil, false
 	}
 	e.wakers.last[l.ID] = now
+	if e.wakers.running == nil {
+		e.wakers.running = map[string]bool{}
+	}
+	e.wakers.running[l.ID] = true
 
+	// A VERDICT PUTS THESE SOMEWHERE ELSE.
+	//
+	// `message.sent` carries from and msg_type in Data. A verdict carries
+	// neither: the responder is Event.Agent and the disposition is the event
+	// TYPE itself. Reading Data alone left `{from}` and `{type}` substituted
+	// with empty strings on every approval, denial, answer and decline, so two
+	// documented placeholders silently produced nothing in the one case with
+	// the strongest claim on a wake. Whichever field the event actually used.
 	from, _ := ev.Data["from"].(string)
+	if from == "" {
+		from = ev.Agent
+	}
+	kind := msgType
+	if kind == "" {
+		kind = strings.TrimPrefix(ev.Type, "message.")
+	}
 	return wakeFields{
-		sessionID: thread,
-		agent:     l.ID,
-		from:      from,
-		msgType:   msgType,
+		thread:  thread,
+		agent:   l.ID,
+		from:    from,
+		msgType: kind,
 		// Deliberately NOT the body. A wake says that mail exists; the agent
 		// reads it over the authenticated channel with its own token. Putting
 		// the text in an argv would hand a message's contents to whatever the
@@ -288,14 +567,25 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) ([]string
 // Returning "" means no wake. Starting a resume against an identifier the
 // harness cannot resolve costs a process and delivers nothing, and starting one
 // against a DIFFERENT valid thread would wake somebody else.
+//
+// THE NEWEST ONE, and the order matters. bindHarnessSession APPENDS, so a
+// persistent agent that has reattached three times holds three uuids with the
+// current activation last. Taking the first ran `codex exec resume` against a
+// thread the agent rotated away from days ago: a real thread, so the command
+// succeeded, and the wrong one, so the agent that was waiting stayed asleep
+// while a stale activation woke up holding somebody else's mail prompt. Every
+// wake test built exactly one alias, which is the one arrangement that cannot
+// tell the two orders apart.
 func threadIDOf(l *core.Agent) string {
+	for i := len(l.SessionAliases) - 1; i >= 0; i-- {
+		if looksLikeThreadID(l.SessionAliases[i]) {
+			return l.SessionAliases[i]
+		}
+	}
+	// Only if no alias is a thread: the primary is the OLDEST name this agent
+	// has had whenever aliases exist at all, because reattachment appends.
 	if looksLikeThreadID(l.SessionID) {
 		return l.SessionID
-	}
-	for _, alias := range l.SessionAliases {
-		if looksLikeThreadID(alias) {
-			return alias
-		}
 	}
 	return ""
 }
@@ -322,20 +612,129 @@ func looksLikeThreadID(s string) bool {
 	return true
 }
 
-// runWake executes one wake, bounded and out of the way.
-func runWake(argv []string, agent string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+// wakeTimeout is the longest a wake command may run before it is killed.
+//
+// This was 30 seconds, which is a sensible bound for a notification and a
+// catastrophic one for the command actually documented: `codex exec resume`
+// continues the thread IN THIS PROCESS, so the timeout is a cap on the agent's
+// whole turn. An ordinary turn passes 30s easily, and the kill landed mid-work
+// with the cooldown already spent and no retry, so the wake destroyed the
+// activation it had just created and the blocking message stayed unread. The
+// bound exists only to stop a wedged process living forever; it must be far
+// past any turn a person would wait for, and this is.
+const wakeTimeout = 2 * time.Hour
+
+// wakeGrace bounds the wait AFTER the deadline kills the command.
+//
+// cmd.WaitDelay, and it has to be set because stdout and stderr are not files.
+// For a non-file writer os/exec copies through a pipe, and killing the process
+// at the deadline does not close descriptors a GRANDCHILD inherited: Wait then
+// blocks on EOF that never comes, forever, well past the two-hour bound this
+// package advertises. `codex exec resume` starting a helper that outlives it is
+// an ordinary thing for a wake command to do.
+//
+// The consequence was worse than a stuck goroutine. wakeFinished runs on defer,
+// so it never ran, wakers.running kept that agent marked as still going, and
+// every later message to it was refused as a duplicate: one leaked descriptor
+// made an agent permanently unreachable until the daemon restarted. Two fixes
+// of mine met, the tail buffer and the running map, and neither was wrong
+// alone.
+const wakeGrace = 10 * time.Second
+
+// runWake executes one wake, bounded and out of the way, and reports whether
+// anything was actually woken.
+//
+// The boolean is load-bearing: the caller releases the cooldown when this is
+// false, so a command that could not run does not consume the single attempt
+// the message was going to get.
+func runWake(argv []string, agent string) bool {
+	return runWakeFor(argv, agent, wakeTimeout, wakeGrace)
+}
+
+// runWakeFor is runWake with its bounds as arguments, so a test can assert that
+// this RETURNS rather than assert that a constant is large. The old test
+// checked only that wakeTimeout was at least two hours, which stays true while
+// Wait blocks past it.
+func runWakeFor(argv []string, agent string, timeout, grace time.Duration) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	// #nosec G204 -- argv comes from the operator's own config file and nowhere
 	// else: SetWakeCommands is the only writer, no tool or op reaches it, and
 	// substitution replaces whole elements rather than building a string. There
 	// is no shell in this path.
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	out, err := cmd.CombinedOutput()
+	// BOUNDED. CombinedOutput holds every byte until the process exits, and the
+	// documented command is `codex exec resume`, which runs a whole agent turn
+	// and may print a transcript for two hours. All of it sat in the daemon's
+	// memory and was then thrown away on success. Only the tail is ever used:
+	// it goes in the warning when the command fails, and a wake that failed says
+	// why in its last few lines rather than its first thousand.
+	tail := &tailBuffer{limit: 8 << 10}
+	cmd.Stdout, cmd.Stderr = tail, tail
+	cmd.WaitDelay = grace
+	err := cmd.Run()
+	out := tail.Bytes()
 	if err != nil {
-		slog.Warn("wake command failed", "agent", agent, "cmd", argv[0],
-			"err", err, "output", strings.TrimSpace(string(out)))
-		return
+		// WHAT THE OS SAID, not what the agent printed.
+		//
+		// The documented wake command runs an entire agent turn, so its stdout
+		// is transcript: decrypted mail, tool output, a model's summary of a
+		// private message. Logging it put all of that on stderr and in
+		// /api/logs, which undoes the reason mail is encrypted at rest.
+		//
+		// A command that never STARTED is different. There is no agent then,
+		// and the bytes are the operating system's own complaint, which is the
+		// half an operator actually needs to fix a wrong argv.
+		fields := []any{"agent", agent, "cmd", argv[0], "err", err}
+		var ee *exec.Error
+		if errors.As(err, &ee) {
+			fields = append(fields, "output", strings.TrimSpace(string(out)))
+		}
+		slog.Warn("wake command failed; the next message somebody is blocked on "+
+			"will try again", fields...)
+		return false
 	}
 	slog.Info("woke an agent that was not running", "agent", agent, "cmd", argv[0])
+	return true
+}
+
+// tailBuffer keeps the last `limit` bytes written to it and discards the rest.
+//
+// A wake command is somebody else's program running for as long as an agent
+// turn takes. Buffering all of it is an unbounded allocation controlled by
+// whatever that program decides to print; keeping the tail is what a failure
+// message actually needs.
+type tailBuffer struct {
+	mu    sync.Mutex
+	limit int
+	buf   []byte
+}
+
+func (t *tailBuffer) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	n := len(p)
+	if len(p) > t.limit {
+		p = p[len(p)-t.limit:]
+	}
+	t.buf = append(t.buf, p...)
+	if over := len(t.buf) - t.limit; over > 0 {
+		t.buf = append(t.buf[:0], t.buf[over:]...)
+	}
+	return n, nil
+}
+
+func (t *tailBuffer) Bytes() []byte {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return append([]byte(nil), t.buf...)
+}
+
+// wakeHarness is the table key for this agent, lowercased as SetWakeCommands
+// stores it.
+func wakeHarness(l *core.Agent) string {
+	if l == nil || l.Agent == nil {
+		return ""
+	}
+	return strings.ToLower(l.Agent.Harness)
 }

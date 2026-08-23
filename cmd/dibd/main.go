@@ -7,17 +7,20 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -32,6 +35,7 @@ import (
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/notify"
 	"github.com/agenxy/dibs/internal/paths"
+	xport "github.com/agenxy/dibs/internal/transport"
 	"github.com/agenxy/dibs/internal/web"
 )
 
@@ -119,37 +123,11 @@ func run() error {
 	// The whole value of this mode is that it can run against a board a
 	// different daemon is currently serving.
 	if *check {
-		return checkReplay(*dir, cfg)
+		return checkReplay(*dir, cfg, *addr)
 	}
-	// DIBS_ADDR sits between the flag and the config file, because the CLI
-	// already honours it and a daemon that ignored it silently bound the
-	// default instead: on a machine already running one, that is a collision
-	// reported as "address already in use" for an address the operator never
-	// named. Every other Dibs binary reads this variable; this one not doing so
-	// was an inconsistency, not a design.
-	listenAddr := firstNonEmpty(*addr, os.Getenv("DIBS_ADDR"), cfg.Addr, "127.0.0.1:4777")
-	// A scheme is a CLIENT's grammar, and this is a listen address.
-	//
-	// DIBS_ADDR may carry http:// or https:// because a client needs to say what
-	// to speak to a remote board. net.Listen takes host:port and answers "too
-	// many colons in address", after the daemon has already announced itself and
-	// claimed the host slot. Reading the variable here was right; passing its
-	// scheme through to Listen was not. Raised by the pre-release review, which
-	// noted the test for it grepped main.go for the variable's name and stayed
-	// green while the shipped daemon could not use the value.
-	// The scheme is REMEMBERED, not just stripped. Removing it made net.Listen
-	// work and left the transport decision to be re-inferred from the bare
-	// address, which is how a daemon told to serve http:// on a LAN address
-	// served TLS while its clients spoke plaintext.
-	var askedScheme string
-	if scheme, rest, found := strings.Cut(listenAddr, "://"); found {
-		switch strings.ToLower(scheme) {
-		case "http", "https":
-			askedScheme, listenAddr = strings.ToLower(scheme), rest
-		default:
-			return fmt.Errorf("DIBS_ADDR=%q names a scheme Dibs does not speak: use "+
-				"http:// or https://, or give a bare host:port", listenAddr)
-		}
+	listenAddr, askedScheme, err := resolveListenAddr(*addr, cfg)
+	if err != nil {
+		return err
 	}
 	scorer.applyConfig(cfg.Match)
 
@@ -308,7 +286,18 @@ func run() error {
 	// After declared roles are applied, so a board configured with a coordinator
 	// is not offered a claim it does not need. Asked THROUGH the engine: st is
 	// the state the loop now owns, and the goroutine above may be writing to it.
-	installCoordinatorClaim(eng, *dir, eng.HasCoordinator(ctx))
+	//
+	// DECLARED counts, not merely granted. On a FRESH board the pinned agent has
+	// not registered yet, so the pass above grants nothing and HasCoordinator is
+	// false: the daemon then minted a generic claim that any same-user agent
+	// could read and spend, taking coordinator before the intended identity ever
+	// started. Later reconciliation grants the real one and does not demote the
+	// opportunist, so the board ends with a coordinator the operator did not
+	// choose holding broadcast, eviction and force-release. The claim exists for
+	// boards that named nobody; an operator who named somebody has already
+	// answered the question it asks.
+	installCoordinatorClaim(eng, *dir,
+		coordinatorAlreadyDecided(eng.HasCoordinator(ctx), cfg.Roles))
 	startSupervision(ctx, eng, cfg.Supervise)
 	// Indexing shells out to git across thousands of commits; the daemon must be
 	// answering agents long before that finishes, so it lands asynchronously.
@@ -358,6 +347,28 @@ func run() error {
 	if err != nil {
 		return bindFailure(listenAddr, err)
 	}
+	// AND THE CERTIFICATE, before announcing anything.
+	//
+	// Binding was made to precede the log for exactly this reason and only
+	// solved half of it: ServeTLS loads and validates the pair AFTER Serve is
+	// called, so a missing, malformed or mismatched key printed the same
+	// confident "dibd up" and then died. `dibd -check` could not catch it
+	// either, because validateTLS only checks that both path strings are
+	// present. Loading here is the same work ServeTLS would do, done while
+	// there is still nothing claiming to be up.
+	var tlsPair []tls.Certificate
+	if tr.certFile != "" {
+		cert, cerr := tls.LoadX509KeyPair(tr.certFile, tr.keyFile)
+		if cerr != nil {
+			_ = ln.Close()
+			return fmt.Errorf("the TLS certificate and key in %s cannot be used "+
+				"together (%w), so this daemon would report itself up and then "+
+				"immediately fail every connection. Check that tls_cert and tls_key "+
+				"exist, are readable, and are a matching pair; removing both makes "+
+				"dibd generate its own", *dir, cerr)
+		}
+		tlsPair = []tls.Certificate{cert}
+	}
 	// Roles are the one part of the config that grants standing privilege, and
 	// a typo in an agent name means the grant silently applies to nobody. Saying
 	// what it did lets an operator see that from the log rather than by reading
@@ -373,8 +384,11 @@ func run() error {
 	up = append(up, "hint", "run `dibs web` for a board link, `dibs mcp-config` for the agent config")
 	slog.Info("dibd up", up...)
 	serve := func() error { return srv.Serve(ln) }
-	if tr.certFile != "" {
-		serve = func() error { return srv.ServeTLS(ln, tr.certFile, tr.keyFile) }
+	if len(tlsPair) > 0 {
+		// The pair already loaded above, so nothing is read from disk here and
+		// there is no second chance for it to fail after the log line.
+		srv.TLSConfig = &tls.Config{Certificates: tlsPair, MinVersion: tls.VersionTLS12}
+		serve = func() error { return srv.ServeTLS(ln, "", "") }
 	}
 	if err := serve(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
@@ -610,6 +624,133 @@ func retiredVocabulary(ledgerPath string) string {
 	return ""
 }
 
+// resolveListenAddr answers what this daemon would bind, and refuses what it
+// could not.
+//
+// SHARED WITH -check, which is the point. `-check` returned before any of this,
+// so it proved only that the ledger replays: a malformed -addr or DIBS_ADDR was
+// never read at all, and `dibs upgrade` treats a zero exit as licence to stop
+// the running daemon. The replacement then failed at bind, and recovery retries
+// the same binary rather than the previous one, so a board could go down and
+// stay down on a question the check claimed to have answered.
+//
+// DIBS_ADDR sits between the flag and the config file, because the CLI already
+// honours it and a daemon that ignored it silently bound the default instead:
+// on a machine already running one, that is a collision reported as "address
+// already in use" for an address the operator never named.
+//
+// A scheme is a CLIENT's grammar, and this is a listen address. DIBS_ADDR may
+// carry http:// or https:// because a client needs to say what to speak to a
+// remote board; net.Listen takes host:port and answers "too many colons in
+// address" after the daemon has announced itself and claimed the host slot.
+// The scheme is REMEMBERED rather than merely stripped: removing it made
+// net.Listen work and left the transport to be re-inferred from the bare
+// address, which is how a daemon told to serve http:// on a LAN address served
+// TLS while its clients spoke plaintext.
+func resolveListenAddr(flagAddr string, cfg Config) (listenAddr, askedScheme string, err error) {
+	listenAddr = firstNonEmpty(flagAddr, os.Getenv("DIBS_ADDR"), cfg.Addr, "127.0.0.1:4777")
+	if scheme, rest, found := strings.Cut(listenAddr, "://"); found {
+		switch strings.ToLower(scheme) {
+		case "http", "https":
+			askedScheme, listenAddr = strings.ToLower(scheme), rest
+		default:
+			return "", "", fmt.Errorf("DIBS_ADDR=%q names a scheme Dibs does not speak: "+
+				"use http:// or https://, or give a bare host:port", listenAddr)
+		}
+	}
+	// The config path is checked by boardconfig; an -addr flag and DIBS_ADDR
+	// are not, and they OUTRANK it. Same rule, one place.
+	host, port, serr := net.SplitHostPort(listenAddr)
+	if serr != nil {
+		return "", "", fmt.Errorf("the address to listen on, %q, is not host:port: %w. "+
+			"net.Listen is handed this verbatim", listenAddr, serr)
+	}
+	n, perr := strconv.Atoi(port)
+	if perr != nil || n < 1 || n > 65535 {
+		return "", "", fmt.Errorf("the address to listen on, %q, has no usable port "+
+			"(%q): ports run from 1 to 65535, and net.Listen refuses anything else",
+			listenAddr, port)
+	}
+	_ = host
+	return listenAddr, askedScheme, nil
+}
+
+// checkTransportUsable answers whether this daemon could serve TLS here,
+// WITHOUT creating anything.
+//
+// resolveTransport is the real path and it generates a certificate when one is
+// needed, which is exactly what a check running against somebody else's live
+// data directory must not do. So this asks the two questions that can be
+// answered by reading: a configured pair has to load, and an auto-managed
+// signing identity that EXISTS has to be usable. An absent identity is not a
+// fault, because startup will create it.
+func checkTransportUsable(dir, listenAddr, askedScheme string, cfg Config) error {
+	// ASK THE RESOLVER STARTUP ASKS, with generation refused.
+	//
+	// This re-derived the decision tree: configured pair, then plaintext, then
+	// loopback, then the signing identity. Every branch was a chance to
+	// disagree with the real one, and three of them did. `http://` with a
+	// configured certificate is refused at startup as a contradiction and
+	// passed here on the configured-pair branch. `https://` with
+	// insecure_plaintext is refused there and passed here on the plaintext
+	// branch. A copy of a decision is a decision that will drift, and this one
+	// gates `dibs upgrade` stopping a live daemon.
+	//
+	// transport.Resolve takes cert generation as a callback, so passing one
+	// that refuses turns the real function into a side-effect-free question.
+	// That matters: this runs against a directory another daemon is serving,
+	// and writing into it is the one thing a check must not do.
+	wouldGenerate := false
+	_, err := xport.Resolve(cfg.TLSCert, cfg.TLSKey, listenAddr, askedScheme,
+		cfg.InsecurePlaintext, func() (string, string, error) {
+			wouldGenerate = true
+			return "", "", errWouldGenerate
+		})
+	switch {
+	case errors.Is(err, errWouldGenerate) || (err == nil && wouldGenerate):
+		// A board that needs a certificate it does not have yet. Whether that
+		// is a first run or a damaged identity is the next question.
+	case err != nil:
+		return fmt.Errorf("this build could rebuild the board at %s, but could not "+
+			"serve it: %w\n\n"+
+			"  Do NOT stop the daemon now running: this configuration is refused\n"+
+			"  at startup, so the replacement would not come up", dir, err)
+	default:
+		return nil // an explicit pair, or plaintext: nothing to generate
+	}
+
+	caCert := filepath.Join(dir, "tls-ca.pem")
+	caKey := filepath.Join(dir, "tls-ca-key.pem")
+	certGone, certErr := absent(caCert)
+	keyGone, keyErr := absent(caKey)
+	if jerr := errors.Join(certErr, keyErr); jerr != nil {
+		return fmt.Errorf("this build could rebuild the board at %s, but cannot tell "+
+			"whether it holds a signing identity: %w\n\n"+
+			"  Do NOT stop the daemon now running. Something is wrong with those\n"+
+			"  files that is not simply their absence, and a replacement started\n"+
+			"  here may be unable to serve at all", dir, jerr)
+	}
+	if certGone && keyGone {
+		return nil // first run here: startup issues one, and that is not a fault
+	}
+	// Present, so it has to work. ensureCA reads and refuses; it only writes
+	// when BOTH files are absent, which the branch above has already returned
+	// for.
+	if _, _, cerr := ensureCA(caCert, caKey); cerr != nil {
+		return fmt.Errorf("this build could rebuild the board at %s, but could not "+
+			"serve it: %w\n\n"+
+			"  Do NOT stop the daemon now running. It is serving with an identity\n"+
+			"  this check cannot reproduce, and stopping it is what makes that\n"+
+			"  visible to every machine that joined", dir, cerr)
+	}
+	return nil
+}
+
+// errWouldGenerate is how the preflight tells transport.Resolve's callback
+// apart from a real failure: it means "this board needs a certificate", which
+// is a question about the signing identity rather than a fault.
+var errWouldGenerate = errors.New("a certificate would be generated")
+
 // checkReplay answers "could this build take over this board", and answers it
 // while the board is still being served by somebody else.
 //
@@ -629,7 +770,26 @@ func retiredVocabulary(ledgerPath string) string {
 // the running daemon), no listener, no ops, and nothing appended. It opens the
 // ledger and the key because folding requires decrypting, and those files
 // already exist for any board worth checking.
-func checkReplay(dir string, cfg Config) error {
+func checkReplay(dir string, cfg Config, flagAddr string) error {
+	// EVERYTHING STARTUP WOULD REFUSE, not just the ledger.
+	//
+	// This proved replay and nothing else, while its own message claimed to
+	// answer whether the build "could take over". `dibs upgrade` reads a zero
+	// exit as licence to stop the running daemon, so a malformed -addr, a
+	// malformed DIBS_ADDR, an unloadable configured certificate pair or a
+	// damaged signing identity all passed the check, and the fleet went down at
+	// a bind or a ServeTLS that nobody had asked about. Recovery then retries
+	// the same replacement rather than the previous build, so it stays down.
+	//
+	// Nothing here writes: `dibs upgrade` runs this against a directory another
+	// daemon is still serving.
+	listenAddr, askedScheme, err := resolveListenAddr(flagAddr, cfg)
+	if err != nil {
+		return err
+	}
+	if err := checkTransportUsable(dir, listenAddr, askedScheme, cfg); err != nil {
+		return err
+	}
 	if _, err := os.Stat(filepath.Join(dir, "ledger.jsonl")); err != nil {
 		return fmt.Errorf("no board at %s: there is nothing to check", dir)
 	}
@@ -703,4 +863,34 @@ func manArgs() []string {
 		}
 	}
 	return nil
+}
+
+// absent reports whether a path is genuinely not there, and says so when it
+// cannot tell.
+//
+// The distinction is the whole point: "no file" is a first run and is fine,
+// while "I could not look" is a reason to stop. Collapsing them is how a
+// preflight approves a daemon that cannot start.
+func absent(path string) (bool, error) {
+	_, err := os.Stat(path)
+	switch {
+	case err == nil:
+		return false, nil
+	case errors.Is(err, fs.ErrNotExist):
+		// A DANGLING SYMLINK IS NOT AN ABSENCE.
+		//
+		// os.Stat follows links, so a link whose target is gone reports
+		// ErrNotExist and read as "no signing identity here": a first run. Both
+		// halves then looked absent, ensureCA generated a NEW identity, and
+		// every machine that had run `dibs trust` was locked out by a daemon
+		// that reported itself healthy. That is the silent rotation this file
+		// has already refused three other ways, arriving through the one call
+		// that could not see the difference. Lstat does not follow.
+		if _, lerr := os.Lstat(path); lerr == nil {
+			return false, fmt.Errorf("%s is a symlink whose target is missing", path)
+		}
+		return true, nil
+	default:
+		return false, err
+	}
 }

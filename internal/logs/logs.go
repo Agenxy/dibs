@@ -77,7 +77,15 @@ func (r *Ring) Tail(n int) []Record {
 // redactKeys are attribute names whose values must never reach the log. Matched
 // case-insensitively as substrings, so "token", "lane_token", and "NewToken"
 // are all covered.
-var redactKeys = []string{"token", "secret", "password", "nonce", "body", "response", "key", "cookie", "authorization"}
+//
+// "output" and "transcript" are here because a wake command IS an agent turn:
+// whatever it prints can contain decrypted mail, a tool's credentials, or a
+// model's summary of a private message. Bounding the quantity to a few kilobytes
+// bounds nothing about what is in them.
+var redactKeys = []string{
+	"token", "secret", "password", "nonce", "body", "response", "key", "cookie",
+	"authorization", "output", "transcript",
+}
 
 func sensitive(key string) bool {
 	k := strings.ToLower(key)
@@ -117,7 +125,43 @@ func (h *Handler) Handle(ctx context.Context, r slog.Record) error {
 		rec.Attrs = nil
 	}
 	h.ring.add(rec)
-	return h.base.Handle(ctx, r)
+	// AND THE BASE HANDLER GETS THE REDACTED ONE TOO.
+	//
+	// This forwarded the ORIGINAL record, so every value the list above calls
+	// sensitive was hidden from `/api/logs` and printed in full on stderr,
+	// which is where an operator's service manager collects it, where a crash
+	// reporter picks it up, and where anything reading the daemon's output can
+	// see it. The redaction list read as a guarantee about logging and was a
+	// guarantee about one of its two destinations.
+	return h.base.Handle(ctx, redacted(r))
+}
+
+// redacted returns a copy of r whose sensitive attributes are replaced.
+//
+// A copy, because slog.Record shares its backing array with the caller: editing
+// in place would mutate a record another handler may already hold.
+func redacted(r slog.Record) slog.Record {
+	var hit bool
+	r.Attrs(func(a slog.Attr) bool {
+		if sensitive(a.Key) {
+			hit = true
+			return false
+		}
+		return true
+	})
+	if !hit {
+		return r
+	}
+	out := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
+	r.Attrs(func(a slog.Attr) bool {
+		if sensitive(a.Key) {
+			out.AddAttrs(slog.String(a.Key, "[redacted]"))
+		} else {
+			out.AddAttrs(a)
+		}
+		return true
+	})
+	return out
 }
 
 func putAttr(m map[string]any, a slog.Attr) {
@@ -129,11 +173,33 @@ func putAttr(m map[string]any, a slog.Attr) {
 }
 
 // WithAttrs returns a handler carrying additional attributes.
+//
+// REDACTED ON THE WAY IN, for the base handler as well.
+//
+// The record path was fixed to redact before forwarding, and this one was
+// missed: attributes bound with log.With go into the base handler HERE and are
+// no longer in the record that Handle later sanitises, so
+// `log.With("local_secret", s)` printed the secret on stderr while the board's
+// own log view showed it redacted. Same guarantee, other door. The ring keeps
+// the originals in h.attrs because putAttr redacts them at capture.
 func (h *Handler) WithAttrs(as []slog.Attr) slog.Handler {
 	n := *h
-	n.base = h.base.WithAttrs(as)
+	n.base = h.base.WithAttrs(redactAttrs(as))
 	n.attrs = append(append([]slog.Attr(nil), h.attrs...), as...)
 	return &n
+}
+
+// redactAttrs replaces sensitive values in a slice, leaving the input alone.
+func redactAttrs(as []slog.Attr) []slog.Attr {
+	out := make([]slog.Attr, len(as))
+	for i, a := range as {
+		if sensitive(a.Key) {
+			out[i] = slog.String(a.Key, "[redacted]")
+			continue
+		}
+		out[i] = a
+	}
+	return out
 }
 
 // WithGroup returns a handler nested under a group name.

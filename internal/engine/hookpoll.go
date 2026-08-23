@@ -55,6 +55,93 @@ func (e *Engine) hookOutput(out core.Result, strict bool) core.Result {
 	return out
 }
 
+// announceHookSession records the session a hook arrived from, whichever hook
+// TOOL the harness bound.
+//
+// The announced-session join is how an agent learns the identifier its own
+// harness uses, and it is the only source of the thread id that [wake.exec]
+// resumes. It was fed by hook_session alone. The Claude Code plugin binds four
+// tools and so had one; the Codex plugin binds hook_poll and only hook_poll, so
+// a Codex thread announced nothing, no agent ever adopted its uuid, and the
+// wake command had no thread to resume. The feature could not reach the one
+// harness it was built for, and every unit test passed, because they all built
+// an agent that already held the alias.
+//
+// A hook arriving here already carries everything the announcement needs, and
+// it is a hook by construction, so recording it belongs at this level rather
+// than in each plugin's json, where the next harness would forget it again.
+// The children map is engine-ephemeral and rebuildable, so nothing here reaches
+// the fold.
+//
+// Callers hold the writer loop: noteChild is not safe off it.
+func (e *Engine) announceHookSession(sessionID, cwd, event string) {
+	if sessionID == "" {
+		return
+	}
+	e.noteChild(Child{SessionID: sessionID, CWD: cwd, State: StateForEvent(event)}, time.Now())
+}
+
+// hookWakeTerms decides whether there is anything worth a turn, and whether
+// somebody is blocked on it.
+//
+// The DECISION, separated from HookPoll so a guard can reach it. Written inline
+// it could only be restated by a test, and the test that existed did restate
+// it: it computed `waiting` itself, passed it to deliverToModel twice, and so
+// stayed green with the real term deleted from the expression above. That term
+// is the whole approval fix, and its regression test could not see it go.
+//
+// waiting is counted SEPARATELY from notices and added to both results on
+// purpose. `notices_wake = false` trades latency for tokens on "somebody joined
+// your space"; it silently also stopped an agent being woken when a human
+// approved the request it had asked for and stopped for. An answer you are
+// blocked on is the definition of urgent, so it survives that switch and
+// reaches an `urgent` operator too.
+func hookWakeTerms(unreadWakes, announced, notices, waiting int, someoneWaiting bool) (fresh, blocked bool) {
+	fresh = unreadWakes > 0 || announced > 0 || notices > 0 || waiting > 0
+	blocked = someoneWaiting || announced > 0 || notices > 0 || waiting > 0
+	return fresh, blocked
+}
+
+// noteTurnState records what the harness just said about this agent's turn, in
+// BOTH directions.
+//
+// The waker treats recent contact as proof of a live agent, and it has to: an
+// idle lease says nothing, because it lapses in 45 minutes. But recency alone
+// is wrong in the ordinary case, which is a turn that ends seconds after its
+// last call. For the rest of the cooldown that agent read as running, so
+// blocking mail arriving in the window got no wake, and maybeWake fires once
+// per event and never retries: the message simply waited for a human. A longer
+// configured cooldown widens the hole rather than making it safer.
+//
+// A finishing hook is the harness saying the turn is over, which is exactly the
+// fact recency was standing in for.
+//
+// AND A STARTING HOOK RETRACTS IT. The first version recorded only the stop,
+// which turned one true statement into a permanent one: after Stop, a new turn
+// began, its SessionStart resolved to the same agent, and the stale verdict
+// still won until the model happened to make an authenticated call. Blocking
+// mail arriving in that window resumed a thread that was already running, which
+// is the duplicate activation the recency guard exists to prevent, reintroduced
+// by the fix for the opposite bug. A running event is newer information and
+// replaces the older one rather than sitting beside it.
+func (e *Engine) noteTurnState(l *core.Agent, event string) {
+	if l == nil {
+		return
+	}
+	switch StateForEvent(event) {
+	case "finished":
+		if e.turnEnded == nil {
+			e.turnEnded = map[string]time.Time{}
+		}
+		e.turnEnded[l.ID] = time.Now()
+	case "running":
+		// Deleted rather than stamped: the question recentlyInTouch asks is
+		// "has it stopped since we last heard from it", and the answer is now
+		// no. A timestamp here would have to race the contact clock to say so.
+		delete(e.turnEnded, l.ID)
+	}
+}
+
 // HookPoll answers a harness lifecycle hook: "is there anything this session
 // needs to know?" It is the subprocess-free wake path. Claude Code's
 // `type: "mcp_tool"` hook calls it on the connection the model already holds,
@@ -71,8 +158,10 @@ func (e *Engine) HookPoll(
 	ctx context.Context, sessionID, event, cwd string, stopActive, strict bool,
 ) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
+		e.announceHookSession(sessionID, cwd, event)
 		l := e.state.AgentForHook(sessionID, cwd)
 		e.noteHook("poll", l != nil)
+		e.noteTurnState(l, event)
 		if l == nil {
 			// A session that resolves to nobody may still BE somebody, returning.
 			//
@@ -196,9 +285,8 @@ func (e *Engine) HookPoll(
 		// is one that can actually carry it. See wakeKeys.
 		now := time.Now()
 		wake := e.wakeKeys(l.ID, now)
-		fresh := len(wake) > 0 || len(announced) > 0 || noticesCount > 0 || waiting > 0
-		blocked := e.somebodyIsWaiting(l.ID) || len(announced) > 0 ||
-			noticesCount > 0 || waiting > 0
+		fresh, blocked := hookWakeTerms(len(wake), len(announced), noticesCount,
+			waiting, e.somebodyIsWaiting(l.ID))
 		if e.deliverToModel(event, fresh, blocked, stopActive) {
 			// Marked on DELIVERY, and that is a deliberate trade rather than an
 			// oversight, so it is written down here and in SECURITY.md.
@@ -259,6 +347,21 @@ func (e *Engine) AdoptSession(ctx context.Context, token, sessionID string) (boo
 	if token == "" || sessionID == "" {
 		return false, nil
 	}
+	// CHECK AND BIND AS ONE.
+	//
+	// These are two separate trips through the writer loop, so concurrent
+	// callers all saw an empty SessionID and all bound: twenty ambient repairs
+	// were each told they had adopted the agent, nineteen of them wrongly, and
+	// the id that stuck was whichever finished last. Hook delivery then reaches
+	// one session while every other holder believes it owns the mailbox, which
+	// is the failure this repair exists to prevent, caused by the repair.
+	//
+	// The lock rather than a loop-side rule because binding is an OP: it goes
+	// through the ledger, and an op cannot be issued from inside a query
+	// without deadlocking the single writer. Serialising the pair is enough,
+	// since the second caller's check then sees the first caller's bind.
+	e.adoptMu.Lock()
+	defer e.adoptMu.Unlock()
 	res, err := e.query(ctx, func() core.Result {
 		l := e.state.AgentByToken(token)
 		return core.Result{"needs": l != nil && l.SessionID == ""}
@@ -310,8 +413,30 @@ func (e *Engine) pendingMail(agent string) []string {
 	var out []string
 	for _, m := range e.state.Inbox(agent) {
 		if m.State == core.MsgStatePending || m.State == core.MsgStateDelivered {
-			out = append(out, fmt.Sprintf("#%d %s from %q: read it with read_mail(%d)",
-				m.Serial, m.Type, m.From, m.Serial))
+			// AND THE CALL THAT CLEARS IT, which is not read_mail.
+			//
+			// Reading fetches the body and consumes nothing, so an agent that
+			// reads its mail and moves on is told about the same messages at
+			// every turn boundary for the rest of the session. It habituates,
+			// and then it stops looking at a line that is sometimes about
+			// something urgent. Measured on the author of this function, who
+			// read two notices and went on being told about them for hours.
+			//
+			// The announcement line three functions down already learned this
+			// and says so in its own comment: "an announcement the model reads
+			// but does not acknowledge keeps coming back, which reads as a
+			// broken loop unless the way out is stated in the same breath."
+			// Mail is the same loop and was not given the same sentence.
+			//
+			// WHICH call depends on the type, so it is not one string: a
+			// question or a request is cleared by answering, and saying `ack`
+			// there would teach an agent to silence somebody who is waiting.
+			clears := fmt.Sprintf("ack(%d) closes it", m.Serial)
+			if m.Expecting() {
+				clears = fmt.Sprintf("respond(%d) closes it; the sender is waiting", m.Serial)
+			}
+			out = append(out, fmt.Sprintf("#%d %s from %q: read it with read_mail(%d), %s",
+				m.Serial, m.Type, m.From, m.Serial, clears))
 		}
 	}
 	return out

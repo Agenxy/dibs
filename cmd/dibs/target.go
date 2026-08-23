@@ -10,6 +10,7 @@ package main
 // rather than deciding anything on their own.
 
 import (
+	"fmt"
 	"net"
 	"strings"
 
@@ -92,11 +93,15 @@ func origin() string {
 	// transport by itself; the pre-release review pointed out the agreement
 	// test calls the shared resolver directly and so could not see that this
 	// function never did.
-	if scheme, _, err := resolveTransport(paths.DataDir()); err == nil && scheme != "" {
+	scheme, _, err := resolveTransport(paths.DataDir())
+	if err == nil && scheme != "" {
 		return scheme + "://" + addr()
 	}
-	// Unreadable or absent config: back to the inference, which is right for
-	// the default board and is the only answer available.
+	// Absent config: back to the inference, which is right for the default
+	// board and is the only answer available. A BROKEN one is a different thing
+	// and is refused by checkConfigReadable, which the shared transport asks
+	// before any request leaves: not here, because this returns a string and a
+	// caller that cannot be told is a caller that guesses.
 	if isLoopbackHostPort(addr()) {
 		return schemePlain + addr()
 	}
@@ -116,4 +121,29 @@ func isLoopbackHostPort(hostPort string) bool {
 	}
 	ip := net.ParseIP(strings.Trim(host, "[]"))
 	return ip != nil && ip.IsLoopback()
+}
+
+// checkConfigReadable refuses to continue when this data directory's config is
+// broken.
+//
+// The daemon will not start on that file, so nothing the CLI reaches is the
+// board the operator configured, and every request carries their local secret.
+//
+// IT ASKS THE LOADER ITSELF. The first version read a `configFault` global that
+// origin() set as a side effect, which was wrong three ways at once. origin()
+// returns early when DIBS_ADDR carries an explicit scheme, so the commonest way
+// to point the CLI somewhere skipped the check entirely. The global was sticky,
+// so a long-lived `mcp-stdio` stayed blocked after the operator repaired the
+// file. And two guarded requests read and wrote it without a lock, which is a
+// data race. A check that depends on another function's side effects is not a
+// check; it is a coincidence.
+func checkConfigReadable() error {
+	if _, err := readConfiguredAddr(paths.DataDir()); err != nil {
+		return fmt.Errorf("this board's dibs.toml cannot be read (%w). The daemon "+
+			"will not start on it either, so anything reachable now is not the board "+
+			"you configured, and requests would carry this directory's local secret "+
+			"to it. Fix the file, or run `dibd -check` to see what it objects to",
+			err)
+	}
+	return nil
 }

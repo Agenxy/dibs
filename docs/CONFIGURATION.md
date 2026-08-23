@@ -62,7 +62,7 @@ blocked on arrives for one of its agents that has stopped:
 ```toml
 [wake.exec.codex]
 argv = ["/Applications/ChatGPT.app/Contents/Resources/codex",
-        "exec", "resume", "{session_id}", "{message}"]
+        "exec", "resume", "{thread}", "{message}"]
 cooldown = "90s"
 ```
 
@@ -86,12 +86,23 @@ The key under `exec` is the harness as agents report it, lowercased: `codex`,
 `claude code`. Each takes `argv` and an optional `cooldown`.
 
 **`argv`, never a shell string.** There is no shell anywhere in this path.
-`{session_id}`, `{agent}`, `{from}`, `{type}` and `{message}` each replace one
+`{thread}`, `{agent}`, `{from}`, `{type}` and `{message}` each replace one
 whole element and are passed to the command as single arguments, so a message
 written by a hostile peer is an argument and not a command. Nothing an agent
 sends reaches this: the command comes from this file and there is no tool, op
 or admin route that can change it. That is deliberate, because a wake command
 is arbitrary code running as you.
+
+**`{thread}` is the harness's thread, not the agent's `session_id`.** They are
+different identifiers and only one of them can be resumed: a `session_id` names
+the harness process (`host-92368`), and dies with it. Dibs fills `{thread}` from
+the agent's session aliases, taking the NEWEST with the shape a resume command
+accepts. Newest, not first: aliases are appended, so a persistent agent that has
+reattached holds several and only the last one is the activation it is in.
+Resuming an older one starts a real session that is not the one holding the
+mail, and the board logs a successful wake for an agent that hears nothing. An
+agent that has published no such identifier is never woken, because there would
+be nothing to hand the command.
 
 `{message}` is a fixed line telling the agent to check in. **The mail itself is
 never put on a command line**: the agent reads it over its authenticated
@@ -275,9 +286,18 @@ That is deliberate. Pinning whoever registered first held every later impostor
 to the first one's identity and asked the first one nothing, so an agent that
 read this file, or simply guessed that `admin = ["fleet-lead"]` is a likely
 line, could register under that name before your own agent came up and be handed
-the god view with every agent's mail in it. The nonce is a secret you already
-choose and already give that agent; naming it here is what makes the first grant
-provable rather than merely recorded.
+the god view with every agent's mail in it. The fingerprint is derived from a
+secret you already choose and already give that agent, so naming it here is what
+makes the first grant provable rather than merely recorded, while the secret
+itself never enters this file.
+
+Twenty lines above, this document tells you never to write the nonce here. It
+used to say the opposite down here, and both sentences were in the same
+release: a reader who followed the nearer one put the recovery credential in
+`dibs.toml`, where anything running as them could read it, register as that
+agent and take its token, its mailbox and its role. The daemon now detects and
+refuses that value, so following the old advice bought the exposure and not
+even the grant.
 
 If you genuinely mean to hand the role to a different agent, put the new
 agent's fingerprint here and delete that name from `roles.pinned`.

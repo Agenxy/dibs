@@ -39,6 +39,20 @@ jobs:
       # The manifest describes the server; the version says which release it is.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      # The steps below run this repository's own Go tools rather than shell,
+      # so the toolchain is pinned here the same way ci.yml and release.yml pin
+      # it. The runner image ships a Go, and which one it ships is not ours to
+      # depend on.
+      - uses: jdx/mise-action@3c2e0cf82a5b2e5249f0d3635a4d83d0ae861518 # v4.2.5
+        with:
+          # PINNED, like ci.yml and release.yml. The action commit was pinned
+          # and the mise VERSION was not, so this step downloaded whatever
+          # `latest` meant that morning, in a job holding id-token: write. That
+          # is the same "a moving target with our identity" shape the comment
+          # below refuses for mcp-publisher, three lines further down, and it
+          # went in with the step that quotes it.
+          version: 2026.7.7
+
       # PINNED and CHECKSUMMED, not piped from a redirect.
       #
       # The registry's own guide suggests `curl -L .../latest/download/... | tar
@@ -46,17 +60,14 @@ jobs:
       # that would let whoever controls that asset run code with our OIDC
       # identity and no version recorded. release.yml already refuses the same
       # shape for mise, with the reasoning written out; this matches it.
+      # The version and digest live on the command line and nowhere else: two
+      # copies of a pin is how a pin goes stale in one of them.
       - name: Install mcp-publisher (pinned)
-        env:
-          VERSION: 1.8.1
-          SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
-        run: |
-          set -euo pipefail
-          url="https://github.com/modelcontextprotocol/registry/releases/download/v${VERSION}/mcp-publisher_linux_amd64.tar.gz"
-          curl -fsSL "$url" -o mcp-publisher.tar.gz
-          echo "${SHA256}  mcp-publisher.tar.gz" | sha256sum -c -
-          tar xzf mcp-publisher.tar.gz mcp-publisher
-          chmod +x mcp-publisher
+        run: >-
+          go run ./tools/fetchpinned
+          -url https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz
+          -sha256 a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
+          -extract mcp-publisher
 
       # The tag is the truth. server.json carries a version so the file is valid
       # on its own and readable in the tree, but what gets published is whatever
@@ -64,22 +75,13 @@ jobs:
       - name: Stamp the released version into server.json
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          if [ -n "${{ inputs.version }}" ]; then
-            version="${{ inputs.version }}"
-          elif [ "${{ github.ref_type }}" = "tag" ]; then
-            version="${GITHUB_REF_NAME#v}"
-          else
-            # A dispatch with no version publishes whatever is currently released,
-            # which is the only answer that cannot invent a version nobody shipped.
-            version="$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName')"
-          fi
-          version="${version#v}"
-          jq --arg v "$version" '.version = $v' server.json > server.tmp
-          mv server.tmp server.json
-          echo "publishing version $version"
-          cat server.json
+          # THROUGH THE ENVIRONMENT, never interpolated into the command.
+          # `${{ }}` is substituted into the run line as text before anything
+          # runs, so a dispatch input becomes part of the command itself. That
+          # is GitHub's own documented script-injection shape, and it is the
+          # same reason this repository does not write shell here at all.
+          DIBS_PUBLISH_VERSION: ${{ inputs.version }}
+        run: go run ./tools/stampserver
 
       - name: Authenticate to the MCP Registry
         run: ./mcp-publisher login github-oidc

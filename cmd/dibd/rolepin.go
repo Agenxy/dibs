@@ -2,9 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/agenxy/dibs/internal/engine"
 )
 
 // rolePins remembers WHICH agent a declared role was granted to.
@@ -62,6 +65,23 @@ func loadRolePins(dir string) *rolePins {
 	// grant is treated as unverifiable until the operator removes the file.
 	if err := json.Unmarshal(b, p); err != nil {
 		p.Pins = nil
+		// AND KEEP THE REASON. Dropping it left `check` reporting that the file
+		// "cannot be read (<nil>)", which tells an operator staring at a
+		// refused grant nothing at all: the decision was safely fail-closed and
+		// the one line explaining it was thrown away. readErr is what `check`
+		// prints, so a parse failure belongs in it exactly as a read failure
+		// does.
+		p.readErr = err
+	}
+	// VALID JSON CAN STILL BE CORRUPTION. `{"pins":null}` unmarshals cleanly and
+	// leaves the map nil, which fails closed correctly and then explained
+	// itself as "cannot be read (<nil>)": the operator is told the file is
+	// unreadable, given no reason, and sent to check permissions that are fine.
+	// The structure is the fault, so the structure is what the error says.
+	if p.readErr == nil && p.Pins == nil {
+		p.readErr = errors.New("the file parsed but holds no pins object, so every " +
+			"declared role would be treated as unverifiable. Delete it to re-pin " +
+			"from the agents holding these names now")
 	}
 	return p
 }
@@ -80,6 +100,29 @@ func (p *rolePins) check(role, name, fingerprint, want string) error {
 		return fmt.Errorf("agent %q has no nonce, so it has no identity that survives "+
 			"a restart and nothing here can be pinned to it. Register it with a nonce, "+
 			"which is what makes it the same agent tomorrow", name)
+	}
+	// THE OPERATOR PASTED THE NONCE ITSELF.
+	//
+	// A 256-bit nonce is 64 lowercase hex characters, which is exactly the shape
+	// a fingerprint has, so no validator reading dibs.toml alone can tell them
+	// apart and isFingerprint accepts both. Here both values exist, and that
+	// makes the test exact rather than heuristic: hashing what the operator
+	// wrote yields the agent's own fingerprint only if what they wrote was the
+	// agent's own nonce.
+	//
+	// It matters far more than a mistyped setting. The nonce is the whole
+	// recovery credential: anything running as the operator that can read the
+	// file can register with that name and that nonce, be handed the agent's
+	// token and mailbox, and inherit whatever role it holds. Refusing the grant
+	// is not enough on its own, because the exposure has already happened, so
+	// the error says to rotate rather than merely to correct.
+	if want != "" && want != fingerprint && engine.RolePinFingerprint(want) == fingerprint {
+		return fmt.Errorf("[roles.identity] holds agent %q's NONCE, not its "+
+			"fingerprint. That is its whole recovery credential sitting in a "+
+			"config file: anything running as you that reads dibs.toml can "+
+			"register as %q with it and take its token, its mailbox and this "+
+			"role. Give %q a new nonce, then put the fingerprint it reports "+
+			"here instead. %s is refused until then", name, name, name, role)
 	}
 	byName := p.Pins[role]
 	if byName == nil {
@@ -105,16 +148,36 @@ func (p *rolePins) check(role, name, fingerprint, want string) error {
 		// choose the agent's nonce; naming it in [roles.identity] is a secret
 		// the config and the agent share and an impostor does not.
 		if want == "" {
+			// THE FINGERPRINT, NEVER THE NONCE.
+			//
+			// This said `<that agent's nonce>`, and an operator who followed it
+			// wrote the raw credential into dibs.toml. A 256-bit nonce is 64 hex
+			// characters, which is exactly the shape isFingerprint accepts, so
+			// the file loaded, the board came up, and nothing ever said the
+			// value was wrong. Any same-user process that read the file could
+			// then register with that name AND that nonce and be handed the
+			// agent's own token and mailbox: not a race any more, a standing
+			// key. The line printed at startup (roles.go) was already correct,
+			// so the two corrective messages contradicted each other and the
+			// dangerous one came first.
 			return fmt.Errorf("%q has no identity in [roles.identity], so the first "+
 				"agent to register under that name would be granted %s on trust "+
-				"alone. Add `%s = \"<that agent's nonce>\"` under [roles.identity] "+
-				"in dibs.toml: a name authenticates nobody, and the nonce is the "+
-				"credential that agent already presents", name, role, name)
+				"alone. Add its FINGERPRINT under [roles.identity] in dibs.toml, "+
+				"which %q prints at startup and `register` returns: never the nonce "+
+				"itself, which is that agent's whole recovery credential and would "+
+				"let anything that can read the file become it", name, role, name)
 		}
 		if want != fingerprint {
-			return fmt.Errorf("the agent registering as %q did not present the nonce "+
-				"[roles.identity] names for it, so it is not the agent you meant to "+
-				"grant %s to", name, role)
+			// "the nonce [roles.identity] names" was the last place in this
+			// release still describing that field as holding one. An operator
+			// reading it while debugging a refused grant would reasonably go
+			// and put the nonce there, which is the exposure the field was
+			// changed to avoid.
+			return fmt.Errorf("the agent registering as %q does not match the "+
+				"fingerprint [roles.identity] names for it, so it is not the agent "+
+				"you meant to grant %s to. Its own fingerprint is %s: if that is "+
+				"the agent you mean, put THAT here, never its nonce",
+				name, role, fingerprint)
 		}
 		// PERSIST FIRST, then remember.
 		//
@@ -135,10 +198,20 @@ func (p *rolePins) check(role, name, fingerprint, want string) error {
 	case fingerprint:
 		return nil
 	default:
+		// The repair takes BOTH files and a restart, and saying only half of it
+		// sent the operator down a path that cannot work: pins are read once at
+		// startup, so editing the pin file leaves the running reconciler on its
+		// loaded copy, and a successor with the pin removed still fails against
+		// the old [roles.identity] fingerprint on the next boot. An error that
+		// names a corrective action which does not correct anything is worse
+		// than one that names none.
 		return fmt.Errorf("the agent now called %q is not the one this board granted "+
 			"%s to. A standing role follows an identity, not a name, and a name is "+
 			"free for anyone to take once its holder is gone. If this is a deliberate "+
-			"handover, remove %q from %s and it will pin to whoever holds the name next",
+			"handover it takes three steps, all of them: put the NEW agent's "+
+			"fingerprint under [roles.identity] in dibs.toml, remove %q from %s, and "+
+			"restart dibd. Both files are read at startup, so editing either one "+
+			"under a running daemon changes nothing",
 			name, role, name, p.path)
 	}
 }

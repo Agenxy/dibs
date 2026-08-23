@@ -215,7 +215,17 @@ func (e *Engine) pushNoticeAs(who, text string, serial, msg uint64, blocking boo
 	e.notices[who] = append(e.notices[who],
 		notice{Serial: serial, Msg: msg, Text: text, Blocking: blocking})
 	if n := len(e.notices[who]); n > maxNotices {
-		e.notices[who] = e.notices[who][n-maxNotices:]
+		// BLOCKING ONES SURVIVE THE TRIM.
+		//
+		// This dropped the oldest, which is right for situational awareness and
+		// wrong for a verdict. A `Blocking` notice is the answer to something
+		// this agent asked and then stopped for; the request is terminal, so it
+		// is not sitting in anybody's inbox and check_in cannot reconstruct it.
+		// Sixteen later "somebody joined your space" notices therefore erased an
+		// approval outright, and the agent waited for an answer that had already
+		// been given. That is the failure the Blocking flag was added for,
+		// reappearing one layer down.
+		e.notices[who] = trimNotices(e.notices[who], maxNotices)
 	}
 }
 
@@ -392,12 +402,61 @@ func (e *Engine) noteNewMember(ev core.Event) {
 func staffBriefing(role string) string {
 	switch role {
 	case core.RoleCoordinator:
+		// "You still cannot READ another agent's mail" was false about the
+		// capability named in the same sentence. Adoption moves a dormant
+		// agent's mailbox ONTO a live one, and the point of doing that is to
+		// read it. core/roles.go and dibs://staff both state the exception; the
+		// briefing that a newly promoted agent is guaranteed to read denied it,
+		// which is the worst place of the three to be wrong.
 		return "As coordinator you are STAFF, not a louder agent: you may adopt_agent " +
 			"an abandoned mailbox onto a live agent, prune a dormant peer's row and its " +
 			"stale declarations, force_release a claim, and evict or close a space. You " +
-			"still cannot READ another agent's mail: breadth, not intrusion. Read " +
-			"dibs://staff before using any of them."
+			"cannot inspect a LIVE peer's mail: there is no all_mail for you, and " +
+			"breadth is not intrusion. Adoption is the one exception and it is a real " +
+			"one: what you adopt, you can read, so adopt only what is genuinely " +
+			"abandoned and say why. Read dibs://staff before using any of them."
 	default:
 		return "Read dibs://staff for what the role lets you do."
 	}
+}
+
+// trimNotices keeps the newest `limit`, sacrificing situational notices before
+// blocking ones.
+//
+// Order is preserved within each group, so what an agent reads still reads
+// chronologically. If there are more blocking notices than the limit, the
+// newest of those win: an agent with sixteen unanswered requests has a problem
+// that dropping the seventeenth verdict does not make worse.
+func trimNotices(all []notice, limit int) []notice {
+	if len(all) <= limit {
+		return all
+	}
+	// BY POSITION, never by value.
+	//
+	// The first version selected `limit` entries and then rebuilt the result by
+	// matching (Serial, Text) back against the original. That pair is not an
+	// identity: supervisor notices deliberately use serial zero, so a repeated
+	// stall and recovery for one observation produces entries that are equal in
+	// both fields. Seventeen identical notices each matched one of the sixteen
+	// selected, so all seventeen came back and every further push grew the list
+	// again: a bound that fails open, in the function added to enforce it.
+	//
+	// Indices are unique whatever the contents are.
+	keep := make([]bool, len(all))
+	kept := 0
+	for pass := 0; pass < 2 && kept < limit; pass++ {
+		wantBlocking := pass == 0
+		for i := len(all) - 1; i >= 0 && kept < limit; i-- {
+			if !keep[i] && all[i].Blocking == wantBlocking {
+				keep[i], kept = true, kept+1
+			}
+		}
+	}
+	out := make([]notice, 0, kept)
+	for i, n := range all {
+		if keep[i] {
+			out = append(out, n)
+		}
+	}
+	return out
 }

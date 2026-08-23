@@ -244,6 +244,17 @@ const (
 	// It happens on every slot refresh after an auto-join, which is to say
 	// constantly, to precisely the agents that DID coordinate.
 	matchedAlreadyIn
+	// matchedNoSpace: nothing matched AND the fallback space could not be
+	// opened.
+	//
+	// Distinct because the two halves fail differently and the agent acts on
+	// them differently. `matchedNothing` promises a space was opened for this
+	// work so the next agent joins it; when openFirstSpace hits a limit,
+	// exhausts its retries, or comes back without an id, that promise is false
+	// and the agent is told it has the field to itself while having nowhere for
+	// anybody to find it. Reporting the second as the first is this release's
+	// signature failure, in the function whose comments already say so twice.
+	matchedNoSpace
 )
 
 // declarationOf is everything the agent just said about its work, in one value.
@@ -356,6 +367,9 @@ func (e *Engine) matchDeclaration(
 		if s := e.openFirstSpace(ctx, token, declaration, declRefs, cfg.Repo, pred, recorded); s != nil {
 			return []Suggestion{*s}, matchedNothing
 		}
+		// It was TRIED and did not happen. Saying matchedNothing here claims a
+		// space exists for this work.
+		return out, matchedNoSpace
 	}
 	return out, matchedNothing
 }
@@ -951,6 +965,13 @@ func annotateMatching(res core.Result, sug []Suggestion, outcome matchOutcome, s
 	case outcome == matchedAlreadyIn:
 		res["matching_hint"] = "the work closest to this is in an agent you are already in. " +
 			"read it with read_space; you are not working alone"
+	case outcome == matchedNoSpace:
+		res["matching_hint"] = "nothing matched this work, and the space Dibs would " +
+			"have opened for it could not be created: a limit, or a name it could " +
+			"not disambiguate. So there is no space for the next agent to find you " +
+			"in, and this is NOT a finding that you are working alone. Open one " +
+			"yourself with open_space, or check `dibs doctor` for a limit you have " +
+			"reached"
 	case outcome == matchedNoOpinion:
 		res["matching"] = "no-opinion"
 		res["matching_hint"] = "Dibs could not tell what this work touches, so it has " +
@@ -1050,7 +1071,7 @@ func (e *Engine) agentsNeedingFootprints(ctx context.Context) (need map[string]s
 			if len(ch.Predicted) > 0 || ch.Topic == "" {
 				continue
 			}
-			if _, done := e.footprints[id]; done {
+			if e.footprintCached(id) {
 				continue
 			}
 			if need == nil {
@@ -1061,6 +1082,24 @@ func (e *Engine) agentsNeedingFootprints(ctx context.Context) (need map[string]s
 		return core.Result{}
 	})
 	return need, live
+}
+
+// footprintCached reports whether this agent's footprint is already backfilled.
+//
+// UNDER THE LOCK, which this read was not.
+//
+// Every other access to e.footprints takes matchMu, and this one ran inside
+// e.query on the writer loop and read the map bare. The writes come from
+// backfillFootprints, which runs OFF the loop precisely so a slow scorer cannot
+// stall coordination, so the loop and a backfill goroutine touched the same map
+// at the same time: a data race, and on a map the runtime turns that into a
+// crash rather than a wrong answer. The writer loop being single is a guarantee
+// about STATE, not about every map an engine happens to hold.
+func (e *Engine) footprintCached(id string) bool {
+	e.matchMu.RLock()
+	defer e.matchMu.RUnlock()
+	_, done := e.footprints[id]
+	return done
 }
 
 // forgetFootprint drops one agent's cached footprint the moment that agent ends.

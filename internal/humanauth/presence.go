@@ -35,6 +35,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -99,6 +100,26 @@ const helperName = "dibs-presence"
 // say what is being approved. Callers pass the actual action ("post to the agent
 // auth-work") rather than a generic sentence.
 func Check(ctx context.Context, reason string) (Verdict, error) {
+	// ONE SHEET AT A TIME, and HERE rather than in a caller.
+	//
+	// The premise of the warning written on the sheet is that the operator can
+	// decline a prompt they did not cause. That fails while two are waiting:
+	// they approve the one they expected and the credential goes to whichever
+	// request the race picked. Serialising was added to `/bootstrap` first and
+	// covered exactly that one caller, while `human_unlock` over MCP called
+	// this function directly and could still overlap it, or overlap another
+	// unlock, with a reason line the requesting agent influences.
+	//
+	// The lock lives with the prompt because the prompt is the shared thing.
+	// A per-caller version is a list of the callers somebody thought of, which
+	// is how this was wrong the first time.
+	//
+	// It does NOT bind the approval to the requester; nothing here can, and
+	// SECURITY.md says so. It removes the silent case.
+	if !claimPrompt() {
+		return Declined, ErrPromptBusy
+	}
+	defer releasePrompt()
 	// A scripted verdict, in dev builds only: see mock_release.go. Consulted
 	// before the helper so the mock can also stand in for a machine that has one,
 	// which is what makes the Declined and Unavailable branches testable at all.
@@ -221,4 +242,35 @@ func Available() bool {
 	}
 	_, err := findHelper()
 	return err == nil
+}
+
+// ErrPromptBusy is returned when a presence sheet is already waiting.
+//
+// A refusal rather than a queue: queueing is what lets one approval satisfy a
+// request it was not raised for, which is the whole thing being prevented. The
+// caller is expected to say "try again" rather than to wait.
+var ErrPromptBusy = errors.New("a presence check is already waiting for an answer")
+
+// promptBusy guards the single on-screen prompt. Package level because the
+// SCREEN is package level: two authGates, or a gate and an MCP handler, are
+// still one person looking at one Mac.
+var promptBusy struct {
+	sync.Mutex
+	held bool
+}
+
+func claimPrompt() bool {
+	promptBusy.Lock()
+	defer promptBusy.Unlock()
+	if promptBusy.held {
+		return false
+	}
+	promptBusy.held = true
+	return true
+}
+
+func releasePrompt() {
+	promptBusy.Lock()
+	defer promptBusy.Unlock()
+	promptBusy.held = false
 }

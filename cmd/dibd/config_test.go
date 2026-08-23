@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -13,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/BurntSushi/toml"
 
 	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/core"
@@ -538,19 +542,20 @@ func TestTheSelfSignedCertIsOneAppleWillAccept(t *testing.T) {
 // other machine, at the same moment, with nothing having changed on either side.
 func TestAnExpiringCertificateIsReplaced(t *testing.T) {
 	dir := t.TempDir()
-	certFile, keyFile, err := ensureSelfSignedCert(dir, "192.168.1.205:4777")
+	const addr = "192.168.1.205:4777"
+	certFile, keyFile, err := ensureSelfSignedCert(dir, addr)
 	if err != nil {
 		t.Fatalf("setup: %v", err)
 	}
 	first := parseCert(t, certFile).SerialNumber.String()
 
-	if !usableCert(certFile, keyFile) {
+	if !leafOK(t, dir, certFile, keyFile, addr) {
 		t.Fatal("a freshly issued certificate was judged unusable")
 	}
 
 	// Rewind it to inside the renewal window by reissuing with a near NotAfter.
 	writeCertExpiring(t, certFile, keyFile, time.Now().Add(24*time.Hour))
-	if usableCert(certFile, keyFile) {
+	if leafOK(t, dir, certFile, keyFile, addr) {
 		t.Error("a certificate expiring tomorrow was judged usable, so it is served " +
 			"until it fails on every client at once")
 	}
@@ -649,4 +654,547 @@ func TestWakePhasesMatchTheEngine(t *testing.T) {
 				"valid configuration is rejected before the daemon sees it", p)
 		}
 	}
+}
+
+// Whatever the daemon refuses, the shared loader must refuse first.
+//
+// That is the whole reason boardconfig exists: `dibs mcp-config` reads the same
+// file and describes the same daemon, so a configuration it accepts and the
+// daemon rejects is a command that exits zero for a board that cannot boot.
+// The invariant was stated in the loader's doc comment and checked nowhere, and
+// two settings had already slipped through it, both for the same reason: the
+// loader declined to compare against `core.DefaultLimits()` on the grounds that
+// the default was "not ours to know".
+//
+// So this asks both, over the same inputs, and compares the ANSWERS. It is not
+// a list of known-bad values; it is the relation between two validators, which
+// is what the next omission will break.
+func TestTheSharedLoaderRefusesEverythingTheDaemonRefuses(t *testing.T) {
+	cases := []struct{ name, body string }{
+		{"a persistent ceiling above the default total", "[limits]\nmax_persistent_agents = 65\n"},
+		{"a persistent ceiling above an explicit total", "[limits]\nmax_agents = 8\nmax_persistent_agents = 9\n"},
+		{"a blob store too small for one blob", "[limits]\nblob_store_bytes = 1024\n"},
+		{"a blob store of exactly one blob", "[limits]\nblob_store_bytes = 67108864\n"},
+		{"a negative blob store", "[limits]\nblob_store_bytes = -1\n"},
+		{"a negative agent count", "[limits]\nmax_agents = -1\n"},
+		{"a bad duration", "[limits]\nagent_ttl = \"soon\"\n"},
+		{"nothing at all", ""},
+		{"ordinary values", "[limits]\nmax_agents = 128\nmax_persistent_agents = 32\nagent_ttl = \"30m\"\n"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(c.body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, loaderErr := boardconfig.Load(dir)
+
+			// What the daemon does with the same file. A load failure means the
+			// daemon never gets here, which is the loader refusing: agreement.
+			//
+			// applyLimits ONLY, because that is the whole call the daemon makes.
+			// This called applyBlobCap itself as well, which meant that if
+			// production stopped calling it the test supplied the missing
+			// wiring and stayed green: a test that repairs the thing it is
+			// checking. The blob rule is inside applyLimits, so asking for it
+			// separately was also asserting the wiring was NOT there.
+			var daemonErr error
+			if loaderErr == nil {
+				_, daemonErr = applyLimits(cfg.Limits, core.DefaultLimits())
+			}
+
+			// Both directions, and the loader-refused branch has to be
+			// reachable: it was initialised from loaderErr, so `loaderErr != nil
+			// && daemonErr == nil` could never be true and half this test was
+			// dead code. daemonErr is now only ever the daemon's answer.
+			if loaderErr == nil && daemonErr != nil {
+				t.Errorf("the shared loader ACCEPTED a configuration the daemon "+
+					"refuses:\n  %s\n  daemon: %v\n"+
+					"`dibs mcp-config` would print a complete configuration and exit "+
+					"zero for a board that cannot start, which is the failure this "+
+					"loader was added to make impossible",
+					strings.ReplaceAll(strings.TrimSpace(c.body), "\n", " / "), daemonErr)
+			}
+			if loaderErr != nil && daemonErrFor(t, c.body) == nil {
+				t.Errorf("the shared loader REFUSED a configuration the daemon "+
+					"accepts:\n  %s\n  loader: %v\n"+
+					"Refusing more than the daemon is not the safe direction: it "+
+					"stops an operator using a board that works",
+					strings.ReplaceAll(strings.TrimSpace(c.body), "\n", " / "), loaderErr)
+			}
+		})
+	}
+}
+
+// leafOK asks the production predicate the way the daemon does: against the
+// board CA that signs for this directory.
+func leafOK(t *testing.T, dir, certFile, keyFile, addr string) bool {
+	t.Helper()
+	ca, _, err := ensureCA(filepath.Join(dir, "tls-ca.pem"), filepath.Join(dir, "tls-ca-key.pem"))
+	if err != nil {
+		t.Fatalf("reading the board CA: %v", err)
+	}
+	return usableLeaf(certFile, keyFile, addr, ca)
+}
+
+// A still-valid certificate that no longer names the address is replaced.
+//
+// Expiry was the only reason a stored pair was ever regenerated, and it is not
+// the only way one stops working. It also stops working when it does not cover
+// what clients dial, which is not hypothetical for this release: the SANs a
+// wildcard bind needs were ADDED here, so every board upgrading from v0.0.6
+// holds an unexpired certificate naming 0.0.0.0 and localhost and nothing else.
+// `dibs mcp-config` then correctly hands out the LAN address, the daemon starts
+// cleanly, and every client fails hostname verification. A laptop that changes
+// networks lands in the same place.
+//
+// Both failures are silent on the daemon and total on the clients, which is the
+// worst pair of properties a TLS problem can have. The certificate tests
+// covered fresh issuance and expiry; neither starts from a valid certificate
+// whose names no longer match.
+func TestACertificateThatNoLongerNamesTheAddressIsReplaced(t *testing.T) {
+	dir := t.TempDir()
+
+	// The v0.0.6 shape: issued for a wildcard bind, before local addresses were
+	// added to the template.
+	certFile, keyFile, err := ensureSelfSignedCert(dir, "127.0.0.1:4777")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	first := parseCert(t, certFile).SerialNumber.String()
+	if !leafOK(t, dir, certFile, keyFile, "127.0.0.1:4777") {
+		t.Fatal("setup: a freshly issued certificate was judged unusable for its " +
+			"own address, so nothing below distinguishes anything")
+	}
+
+	// The machine is now reached on a name that certificate never carried.
+	const moved = "192.168.1.205:4777"
+	if leafOK(t, dir, certFile, keyFile, moved) {
+		t.Fatalf("a certificate that does not name %s was judged usable for it. It "+
+			"is unexpired and the daemon will serve it happily; every client dialing "+
+			"that address fails hostname verification, and nothing on this side "+
+			"reports a problem", moved)
+	}
+
+	// And it is actually reissued, covering the new address.
+	certFile2, _, err := ensureSelfSignedCert(dir, moved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := parseCert(t, certFile2)
+	if got.SerialNumber.String() == first {
+		t.Fatal("the same certificate was returned for an address it does not name")
+	}
+	if err := got.VerifyHostname("192.168.1.205"); err != nil {
+		t.Errorf("the reissued certificate still does not verify for the address it "+
+			"was generated for: %v", err)
+	}
+	// The loopback names survive, so moving networks does not break the local
+	// board to fix the remote one.
+	if err := got.VerifyHostname("127.0.0.1"); err != nil {
+		t.Errorf("the reissued certificate dropped loopback: %v", err)
+	}
+}
+
+// A machine that trusted this board once keeps working across renewal.
+//
+// This is the property `dibs trust` promises and the one a single self-signed
+// certificate could not deliver. Pinning what the daemon presents makes the
+// pinned identity and the served certificate one object, and then the two
+// things certificate handling must do are mutually exclusive: a bounded
+// lifetime requires replacement, and replacement invalidates every pin. The
+// review put both branches side by side, and there is no third one.
+//
+// So the test is the client's question, not the daemon's: build a pool holding
+// ONLY what `dibs trust` would have recorded on the first visit, then verify
+// what the daemon serves after it has rotated for every reason it rotates for.
+// Asserting that a serial changed, which is what the old test did, cannot see
+// any of this.
+func TestAPinnedBoardStaysTrustedAcrossRenewalAndAMoveOfNetwork(t *testing.T) {
+	dir := t.TempDir()
+	const first = "192.168.1.205:4777"
+
+	certFile, keyFile, err := ensureSelfSignedCert(dir, first)
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	// What `dibs trust` records: the TOP of the presented chain.
+	chain := parseChain(t, certFile)
+	if len(chain) < 2 {
+		t.Fatalf("the daemon presents %d certificate(s); a client that pins what it "+
+			"sees has pinned the leaf, so every renewal breaks it", len(chain))
+	}
+	pinned := chain[len(chain)-1]
+	pool := x509.NewCertPool()
+	pool.AddCert(pinned)
+
+	verify := func(what, host string) {
+		t.Helper()
+		leaf := parseChain(t, certFile)[0]
+		inter := x509.NewCertPool()
+		for _, c := range parseChain(t, certFile)[1:] {
+			inter.AddCert(c)
+		}
+		if _, err := leaf.Verify(x509.VerifyOptions{
+			Roots: pool, Intermediates: inter, DNSName: host,
+			KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		}); err != nil {
+			t.Errorf("%s: a machine that ran `dibs trust` once can no longer verify "+
+				"this board (%v). It refuses every connection until a human repeats "+
+				"the fingerprint ceremony there, and nothing on the daemon reports a "+
+				"problem", what, err)
+		}
+	}
+	verify("first issue", "192.168.1.205")
+
+	// RENEWAL. Push the leaf into the renewal window and re-run the same call
+	// the daemon makes at startup.
+	writeCertExpiring(t, certFile, keyFile, time.Now().Add(24*time.Hour))
+	if _, _, err := ensureSelfSignedCert(dir, first); err != nil {
+		t.Fatal(err)
+	}
+	if parseChain(t, certFile)[0].SerialNumber.Cmp(chain[0].SerialNumber) == 0 {
+		t.Fatal("the expiring leaf was not replaced, so this proves nothing about " +
+			"renewal")
+	}
+	verify("after renewal", "192.168.1.205")
+
+	// A MOVE OF NETWORK, the other reason a leaf is reissued.
+	const moved = "10.0.0.9:4777"
+	if _, _, err := ensureSelfSignedCert(dir, moved); err != nil {
+		t.Fatal(err)
+	}
+	verify("after the board changed networks", "10.0.0.9")
+
+	// And the pinned identity itself never moved.
+	if got := parseChain(t, certFile); !got[len(got)-1].Equal(pinned) {
+		t.Error("the board's CA changed, so every joined machine must be re-trusted: " +
+			"the identity that gets pinned has to outlive every reason a leaf is " +
+			"replaced, or the split buys nothing")
+	}
+}
+
+// parseChain reads every certificate in a PEM file, leaf first.
+func parseChain(t *testing.T, path string) []*x509.Certificate {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []*x509.Certificate
+	for rest := b; ; {
+		block, more := pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		rest = more
+		if block.Type != "CERTIFICATE" {
+			continue
+		}
+		c, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, c)
+	}
+	if len(out) == 0 {
+		t.Fatalf("%s holds no certificate", path)
+	}
+	return out
+}
+
+// An interrupted rotation repairs itself on the next boot.
+//
+// The certificate and the key are two files and the pair is only valid
+// together, so a crash between the writes leaves a mismatch. The predicate that
+// decides whether to regenerate checked only that the key FILE existed, so it
+// declared the mismatch usable on every later start; ServeTLS then failed to
+// load it and the daemon exited, and nothing ever regenerated because the
+// thing responsible for deciding kept saying there was nothing to decide. A
+// daemon that cannot repair itself from its own data directory is worse than
+// one that never wrote the file, because the operator has no way to tell what
+// is wrong.
+//
+// The existing fixture hid it precisely: writeCertExpiring pairs a new
+// certificate with the retained old key, and expiry rejects it before the
+// mismatch is ever reached.
+func TestAMismatchedCertificateAndKeyAreRegenerated(t *testing.T) {
+	dir := t.TempDir()
+	const addr = "192.168.1.205:4777"
+	certFile, keyFile, err := ensureSelfSignedCert(dir, addr)
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if !leafOK(t, dir, certFile, keyFile, addr) {
+		t.Fatal("setup: a freshly issued pair was judged unusable")
+	}
+
+	// A rotation that wrote one file and not the other: an UNEXPIRED
+	// certificate beside a key that does not match it.
+	other := t.TempDir()
+	if _, _, err := ensureSelfSignedCert(other, addr); err != nil {
+		t.Fatal(err)
+	}
+	strangerKey, err := os.ReadFile(filepath.Join(other, "tls-key.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyFile, strangerKey, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if leafOK(t, dir, certFile, keyFile, addr) {
+		t.Fatal("an unexpired certificate beside a key that does not match it was " +
+			"judged usable. The daemon will try to serve it, fail inside ServeTLS " +
+			"and exit, and the next boot makes exactly the same decision")
+	}
+
+	// And the next boot fixes it rather than repeating the failure.
+	certFile2, keyFile2, err := ensureSelfSignedCert(dir, addr)
+	if err != nil {
+		t.Fatalf("the daemon could not regenerate from a mismatched pair: %v", err)
+	}
+	if _, err := tls.LoadX509KeyPair(certFile2, keyFile2); err != nil {
+		t.Errorf("the regenerated pair still does not load: %v", err)
+	}
+}
+
+// daemonErrFor asks the daemon's validators about a configuration the shared
+// loader refused, by decoding the file directly.
+//
+// Needed because the loader is how everything else reads dibs.toml, so a file
+// it rejects yields no Config to hand the daemon: the "loader refused, daemon
+// would not" branch could not be evaluated at all and was quietly dead. Refusing
+// MORE than the daemon is a real failure -- it stops an operator using a board
+// that works -- so the branch has to be reachable.
+func daemonErrFor(t *testing.T, body string) error {
+	t.Helper()
+	var raw struct {
+		Limits boardconfig.LimitsConfig `toml:"limits"`
+	}
+	if _, err := toml.Decode(body, &raw); err != nil {
+		// Not even valid TOML: the daemon refuses it too, so they agree.
+		return err
+	}
+	base, err := applyLimits(raw.Limits, core.DefaultLimits())
+	_ = base
+	return err
+}
+
+// Half a signing identity is a question for a person, not a new identity.
+//
+// ensureCA generates only when there is nothing there, and "nothing there" was
+// read as "no certificate". A surviving KEY beside a missing certificate is
+// what an interrupted restore or a half-finished deletion leaves, and that fell
+// through to generation and overwrote the key: the identity every joined
+// machine has pinned, silently replaced, by a daemon that then reported itself
+// healthy while the whole fleet was locked out.
+//
+// Both partial states, because only one of them was refused.
+func TestHalfASigningIdentityIsRefusedRatherThanReplaced(t *testing.T) {
+	for _, keep := range []string{"tls-ca.pem", "tls-ca-key.pem"} {
+		t.Run("only "+keep+" survives", func(t *testing.T) {
+			dir := t.TempDir()
+			if _, _, err := ensureSelfSignedCert(dir, "192.168.1.205:4777"); err != nil {
+				t.Fatalf("setup: %v", err)
+			}
+			before, err := os.ReadFile(filepath.Join(dir, keep))
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Delete the other half.
+			gone := "tls-ca-key.pem"
+			if keep == gone {
+				gone = "tls-ca.pem"
+			}
+			if err := os.Remove(filepath.Join(dir, gone)); err != nil {
+				t.Fatal(err)
+			}
+
+			if _, _, err := ensureSelfSignedCert(dir, "192.168.1.205:4777"); err == nil {
+				t.Fatalf("the daemon issued itself a new signing identity with %s still "+
+					"present. Every machine that ran `dibs trust` is pinned to the old "+
+					"one and now refuses this board, and nothing here reports a problem",
+					keep)
+			}
+			after, err := os.ReadFile(filepath.Join(dir, keep))
+			if err != nil {
+				t.Fatalf("the surviving half was removed: %v", err)
+			}
+			if !bytes.Equal(before, after) {
+				t.Errorf("%s was overwritten. It may be the only remaining copy of an "+
+					"identity a whole fleet is pinned to, and the other half might "+
+					"still be recoverable from a backup", keep)
+			}
+		})
+	}
+}
+
+// `-check` must refuse what startup would refuse, not only what replay would.
+//
+// Its own message says it answers whether this build "could take over", and
+// `dibs upgrade` reads a zero exit as licence to stop the running daemon. It
+// returned before the address was resolved and before any certificate was
+// looked at, so a malformed -addr, a malformed DIBS_ADDR, or a damaged signing
+// identity all passed: the fleet then went down at a bind or a ServeTLS nobody
+// had asked about, and recovery retries the same replacement rather than the
+// previous build, so it stays down.
+//
+// The address rules live in resolveListenAddr and the transport ones in
+// checkTransportUsable, both shared with startup, so this asks those rather
+// than restating them.
+func TestCheckRefusesWhatStartupWouldRefuse(t *testing.T) {
+	t.Run("a malformed -addr flag", func(t *testing.T) {
+		for _, bad := range []string{"hub:not-a-port", "127.0.0.1:99999", "127.0.0.1"} {
+			if _, _, err := resolveListenAddr(bad, Config{}); err == nil {
+				t.Errorf("-addr %q was accepted; net.Listen refuses it, and `dibs "+
+					"upgrade` will have stopped the running daemon by then", bad)
+			}
+		}
+		// And the ordinary ones still work.
+		for _, ok := range []string{"127.0.0.1:4777", "0.0.0.0:4777", "https://hub:4777"} {
+			if _, _, err := resolveListenAddr(ok, Config{}); err != nil {
+				t.Errorf("-addr %q was refused: %v", ok, err)
+			}
+		}
+	})
+
+	t.Run("DIBS_ADDR outranks the file and is checked too", func(t *testing.T) {
+		t.Setenv("DIBS_ADDR", "127.0.0.1:99999")
+		if _, _, err := resolveListenAddr("", Config{Addr: "127.0.0.1:4777"}); err == nil {
+			t.Error("a malformed DIBS_ADDR was accepted because the config file was " +
+				"valid. The variable outranks the file, so it is what gets bound")
+		}
+	})
+
+	t.Run("a damaged signing identity", func(t *testing.T) {
+		dir := t.TempDir()
+		// A board that has served TLS before.
+		if _, _, err := ensureSelfSignedCert(dir, "192.168.1.205:4777"); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		if err := checkTransportUsable(dir, "192.168.1.205:4777", "", Config{}); err != nil {
+			t.Fatalf("setup: a healthy board failed the transport check: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "tls-ca.pem"), []byte("not a certificate"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := checkTransportUsable(dir, "192.168.1.205:4777", "", Config{}); err == nil {
+			t.Error("a corrupt signing identity passed the check. The replacement " +
+				"would be started after the running daemon is stopped, and fail")
+		}
+	})
+
+	t.Run("a first run creates nothing and is not a fault", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := checkTransportUsable(dir, "192.168.1.205:4777", "", Config{}); err != nil {
+			t.Errorf("a board with no certificate yet was reported unusable: %v", err)
+		}
+		// AND NOTHING WAS WRITTEN. `dibs upgrade` runs this against a directory
+		// another daemon is still serving.
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(entries) != 0 {
+			t.Errorf("the check wrote %d file(s) into a live data directory it does "+
+				"not own: %v", len(entries), entries)
+		}
+	})
+}
+
+// The preflight answers exactly what startup would, and never writes.
+//
+// checkTransportUsable re-derived startup's decision tree, and every branch was
+// a chance to disagree with the real one. Three did: `http://` with a
+// configured certificate is a contradiction startup refuses and the preflight
+// passed; `https://` with insecure_plaintext likewise; and a dangling CA
+// symlink read as an absence, so both halves looked like a first run and the
+// daemon issued a NEW signing identity, locking out every machine that had
+// trusted the board while reporting itself healthy.
+//
+// `dibs upgrade` reads a clean preflight as licence to stop a live daemon, so a
+// disagreement here is an outage the check was supposed to prevent.
+func TestThePreflightAgreesWithStartupAndWritesNothing(t *testing.T) {
+	realCert, realKey := writeUsablePair(t)
+
+	for _, c := range []struct {
+		name       string
+		cfg        Config
+		asked      string
+		addr       string
+		wantRefuse bool
+	}{
+		{
+			"http with a configured certificate is a contradiction",
+			Config{TLSCert: realCert, TLSKey: realKey},
+			"http", "10.0.0.9:4777", true,
+		},
+		// NOT a contradiction: transport.Resolve is explicit that a stated
+		// scheme outranks every inference below it, because the operator said
+		// it and the clients will believe them. insecure_plaintext is one of
+		// those inferences. What matters here is that the preflight gives the
+		// SAME answer, which it now does by asking that function rather than
+		// re-deriving it; the old copy returned early on the plaintext branch.
+		{
+			"https outranks insecure_plaintext, and both sides agree",
+			Config{InsecurePlaintext: true},
+			"https", "10.0.0.9:4777", false,
+		},
+		{
+			"an explicit pair on a LAN address is fine",
+			Config{TLSCert: realCert, TLSKey: realKey},
+			"", "10.0.0.9:4777", false,
+		},
+		{
+			"plaintext on loopback is fine",
+			Config{},
+			"", "127.0.0.1:4777", false,
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			err := checkTransportUsable(dir, c.addr, c.asked, c.cfg)
+			if c.wantRefuse && err == nil {
+				t.Error("the preflight accepted a configuration startup refuses. " +
+					"`dibs upgrade` reads that as licence to stop the running daemon, " +
+					"and the replacement then does not come up")
+			}
+			if !c.wantRefuse && err != nil {
+				t.Errorf("the preflight refused a configuration startup accepts: %v", err)
+			}
+			// NOTHING WRITTEN, ever: this runs against a directory another
+			// daemon is still serving.
+			if entries, rerr := os.ReadDir(dir); rerr == nil && len(entries) != 0 {
+				t.Errorf("the preflight wrote %d file(s) into a live data directory",
+					len(entries))
+			}
+		})
+	}
+
+	// A dangling CA symlink is not a first run.
+	t.Run("a dangling CA symlink", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.Symlink(filepath.Join(dir, "nowhere.pem"),
+			filepath.Join(dir, "tls-ca.pem")); err != nil {
+			t.Skipf("symlinks unavailable here: %v", err)
+		}
+		if err := checkTransportUsable(dir, "10.0.0.9:4777", "", Config{}); err == nil {
+			t.Error("a CA symlink whose target is gone read as an absence, so this " +
+				"looks like a first run and startup issues a NEW signing identity: " +
+				"every machine that ran `dibs trust` is locked out by a daemon that " +
+				"reports itself healthy")
+		}
+	})
+}
+
+// writeUsablePair is a certificate and key that actually load.
+func writeUsablePair(t *testing.T) (certPath, keyPath string) {
+	t.Helper()
+	dir := t.TempDir()
+	c, k, err := ensureSelfSignedCert(dir, "10.0.0.9:4777")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c, k
 }

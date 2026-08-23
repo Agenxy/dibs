@@ -74,7 +74,7 @@ func TestSessionCookieIsSecureOnlyOverTLS(t *testing.T) {
 
 		var found *http.Cookie
 		for _, c := range rec.Result().Cookies() {
-			if c.Name == "dibs_session" {
+			if c.Name == g.sessionCookieName() {
 				found = c
 			}
 		}
@@ -237,7 +237,7 @@ func TestAStolenSessionCannotChangeStateWithoutABrowser(t *testing.T) {
 	// is not a browser, so it declares whatever Origin it likes.
 	thief := func(method, target string) *http.Request {
 		r := httptest.NewRequest(method, "http://127.0.0.1:4777"+target, nil)
-		r.AddCookie(&http.Cookie{Name: "dibs_session", Value: token})
+		r.AddCookie(&http.Cookie{Name: g.sessionCookieName(), Value: token})
 		r.Header.Set("Origin", "http://127.0.0.1:4777") // forged, and free to forge
 		return r
 	}
@@ -287,9 +287,108 @@ func TestAStolenSessionCannotChangeStateWithoutABrowser(t *testing.T) {
 	// But a hostile PAGE still cannot write through them: a browser sets Origin
 	// itself and will not let a page lie about it.
 	crossOrigin := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:4777/", nil)
-	crossOrigin.AddCookie(&http.Cookie{Name: "dibs_session", Value: token})
+	crossOrigin.AddCookie(&http.Cookie{Name: g.sessionCookieName(), Value: token})
 	crossOrigin.Header.Set("Origin", "http://127.0.0.1:9999")
 	if g.godViewAuthorized(crossOrigin) {
 		t.Error("a write from another port's origin was accepted")
+	}
+}
+
+// A logged-in browser must still be able to load the board's own links.
+//
+// The page key closed the coordination tier to a bare cookie, which was right:
+// /mcp lives in that tier and register hands out an agent token. But a browser
+// cannot put a custom header on an ordinary navigation or on a favicon request,
+// so the two things the board's own HTML points at, the icon in its <link> and
+// the Protocol anchor a reader clicks, started returning 401 to a perfectly
+// valid session. The operator sees a broken icon and a dead link and concludes
+// the board is broken. Found by the pre-release review.
+//
+// Both are safe: /help renders a static template with nil data and /icon.svg is
+// an image. Neither carries board state, and the protocol documentation is
+// published anyway.
+func TestABoardSessionCanLoadTheIconAndTheProtocolLink(t *testing.T) {
+	g := newAuthGate("the-secret", filepath.Join(t.TempDir(), "admin.hash"), "127.0.0.1:4777")
+	const token, pageKey = "a-real-session", "a-real-page-key"
+	gate := g.wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	g.sessions[token] = boardSession{exp: time.Now().Add(time.Hour), page: pageKey}
+
+	browse := func(method, target string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, "http://127.0.0.1:4777"+target, nil)
+		r.AddCookie(&http.Cookie{Name: g.sessionCookieName(), Value: token})
+		// No page key: a browser cannot add one to a navigation or a favicon.
+		rec := httptest.NewRecorder()
+		gate.ServeHTTP(rec, r)
+		return rec
+	}
+
+	for _, target := range []string{"/icon.svg", "/help"} {
+		if got := browse(http.MethodGet, target).Code; got == http.StatusUnauthorized {
+			t.Errorf("GET %s returned 401 for a valid board session: the browser cannot "+
+				"send the page key on this request, so the board's own icon and "+
+				"Protocol link break for a logged-in operator", target)
+		}
+	}
+
+	// And the allowance stays a CLOSED list. The reason the page key exists is
+	// that this same tier holds /mcp, where register hands out an agent token
+	// to anything that asks; a rule wide enough to be convenient here is how
+	// that got exposed the first time.
+	for _, target := range []string{"/mcp", "/api/messages", "/api/admin/role"} {
+		if got := browse(http.MethodGet, target).Code; got != http.StatusUnauthorized {
+			t.Errorf("GET %s returned %d for a cookie with no page key: the browsable "+
+				"exception has widened past the two routes a browser actually needs",
+				target, got)
+		}
+	}
+
+	// A write to a browsable route is still refused: the exception is for
+	// fetching a page, not for doing anything.
+	if got := browse(http.MethodPost, "/help").Code; got != http.StatusUnauthorized {
+		t.Errorf("POST /help returned %d: the exception must not carry state changes", got)
+	}
+}
+
+// Two boards on one host do not overwrite each other's browser session.
+//
+// Cookies are host-scoped and never port-scoped, so both boards wrote
+// `dibs_session` and whichever was redeemed last won. `-allow-parallel` exists
+// so an operator can run separate boards for agents they do not trust together,
+// and their web interfaces could not both stay signed in: the older tab kept
+// its own port-scoped page key and began sending the other board's session
+// token, so stream revalidation and every keyed request failed with nothing on
+// screen to explain it. The boards stayed isolated; their operator could not
+// use them. Every existing test builds one daemon and one cookie jar.
+func TestTwoBoardsOnOneHostDoNotShareACookieName(t *testing.T) {
+	a := newAuthGate("secret-a", "", "127.0.0.1:4777")
+	b := newAuthGate("secret-b", "", "127.0.0.1:4778")
+
+	if a.sessionCookieName() == b.sessionCookieName() {
+		t.Fatalf("both boards issue %q. A cookie is host-scoped, so redeeming the "+
+			"second board's link overwrites the first board's session and signs the "+
+			"operator out of a board they never touched",
+			a.sessionCookieName())
+	}
+
+	// The name has to identify the board, not merely differ: a random one would
+	// pass the check above and be a new cookie on every restart.
+	for _, c := range []struct {
+		g    *authGate
+		port string
+	}{{a, "4777"}, {b, "4778"}} {
+		if !strings.Contains(c.g.sessionCookieName(), c.port) {
+			t.Errorf("the cookie for the board on :%s is %q, which does not name it. "+
+				"It must be derived from the port, so it is stable across restarts "+
+				"and distinct from every other board on this host",
+				c.port, c.g.sessionCookieName())
+		}
+	}
+
+	// A board whose listen address could not be parsed still gets a workable
+	// name rather than an empty one.
+	if n := newAuthGate("s", "", "not-an-address").sessionCookieName(); n == "" {
+		t.Error("a daemon with an unparseable listen address issues a nameless cookie")
 	}
 }

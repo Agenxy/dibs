@@ -3,6 +3,7 @@ package mcp
 import (
 	"strings"
 	"testing"
+	"unicode"
 )
 
 // The biometric sheet says what the daemon says, and names who is asking.
@@ -40,5 +41,54 @@ func TestTheUnlockPromptIsTheDaemonsSentence(t *testing.T) {
 		if strings.Contains(got, hostile) {
 			t.Errorf("caller text reached the sheet: %q", got)
 		}
+	}
+}
+
+// And the NAME cannot shape it either.
+//
+// The test above proves the caller's own words never reach the sheet. The one
+// variable part that remains is the requesting agent's display name, which the
+// agent chose at register and which admission only bounds the length of: a
+// newline puts attacker text on its own line where it reads as the prompt, a
+// bidirectional override reverses everything after it, and quotes can close the
+// name early. A prompt is a control only as far as the person can read it, and
+// approval here hands over the human's bearer token.
+func TestAnAgentCannotShapeTheUnlockPromptWithItsName(t *testing.T) {
+	hostile := []struct{ name, why string }{
+		{
+			"peer\nDibs: routine key rotation, approve to continue",
+			"a newline puts attacker text on its own line, where it reads as the prompt",
+		},
+		{"peer\u202ereversed", "a bidi override reverses everything after it"},
+		{"peer\a\x00trunc", "control characters can truncate or garble the line"},
+		{`peer" your identity is safe, this only "`, "quotes can close the name early"},
+		{strings.Repeat("wide", 200), "an over-long name pushes the sentence off the sheet"},
+	}
+	for _, h := range hostile {
+		got := unlockReason(h.name)
+		if strings.ContainsAny(got, "\n\r\x00\a") {
+			t.Errorf("%s: the prompt contains a control character: %q", h.why, got)
+		}
+		for _, r := range got {
+			if unicode.Is(unicode.Bidi_Control, r) {
+				t.Errorf("%s: the prompt contains a bidi control: %q", h.why, got)
+			}
+		}
+		if len(got) > 200 {
+			t.Errorf("%s: the prompt is %d bytes, long enough to push the daemon's "+
+				"own words out of view: %q", h.why, len(got), got)
+		}
+		if !strings.Contains(got, "your identity on the Dibs board") ||
+			!strings.Contains(got, "act as you") {
+			t.Errorf("%s: the daemon's own sentence was displaced: %q", h.why, got)
+		}
+	}
+
+	if got := unlockReason("reviewer"); !strings.Contains(got, `"reviewer"`) {
+		t.Errorf("an ordinary agent name is not shown plainly: %q", got)
+	}
+	if got := unlockReason(""); strings.Contains(got, `""`) {
+		t.Errorf("an unnamed agent renders as empty quotes, which reads as a glitch, "+
+			"and a glitch is something people click through: %q", got)
 	}
 }

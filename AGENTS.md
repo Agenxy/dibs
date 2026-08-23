@@ -54,7 +54,7 @@ mise trust && mise install
 Then:
 
 ```bash
-task ci                   # THE gate: vet, lint, -race, build, 4 e2e suites + the
+task ci                   # THE gate: vet, lint, -race, build, 6 e2e suites + the
                           # sidecar contract, and the SPEC §17 coverage floor.
                           # Includes cross-compilation to all four release
                           # targets and govulncheck.
@@ -133,6 +133,16 @@ Things that have cost real time here, none of which are visible in the diff:
   `Tools (40)`. The check read `N tools` only, so two of those passed it for
   months and were found by a person reading. When you add a claim a test
   guards, add the SHAPE of the claim too.
+- **The CHANGELOG is release surface, and nothing runs it.** Every other claim
+  here is checked by something: the tool count, the e2e suite count, the frozen
+  json tags, the drift between `SKILLS.md` and its embedded copy. The changelog
+  is prose written by hand about code written by tests, so it goes stale in the
+  one direction no gate looks: silently, while `task ci` stays green. It fell
+  twelve review rounds behind during the v0.0.7 cycle, and the fix is not a
+  guard, it is remembering that a user-visible change which is in the diff and
+  not in the changelog has shipped without being announced. `docs/REVIEW.md`
+  asks the reviewer to check it now.
+
 - **A PASSING probe proves nothing until you have seen it fail.** The same
   session that produced those three then wrote four consecutive versions of one
   test that passed against the code they were written to catch: the fixture gave

@@ -230,10 +230,17 @@ var catalog = []struct {
 					"refuse until check_in has succeeded this activation",
 			},
 		},
-		verify: "call spawned_agents after a turn ends: if this session is listed, a " +
-			"Stop hook reached the daemon and the wake is live. If it is not, the " +
-			"build is older than 2026-08-18 or the server was not connected when the " +
-			"hook ran, and mail is pull-only until you fix that",
+		// The check has to distinguish a STOP from a SessionStart. Both record
+		// the session, and spawned_agents does not say which event did it, so
+		// "am I listed" was satisfied by startup delivery alone: a thread whose
+		// every Stop was broken could run this check and be told the wake is
+		// live. Comparing before and after a turn boundary is the difference.
+		verify: "call spawned_agents at the START of an activation and again after a " +
+			"turn ends, and compare: SessionStart records the session too, so merely " +
+			"being listed proves only that startup reached the daemon. What proves " +
+			"Stop delivery is the entry CHANGING across the boundary. If it does not, " +
+			"the build is older than 2026-08-18 or the server was not connected when " +
+			"the hook ran, and mail is pull-only until you fix that",
 		delivers: false,
 	},
 }

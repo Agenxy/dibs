@@ -71,7 +71,7 @@ func printJoinConfig(remote string) error {
 	// configuration was complete-looking and rejected the board's certificate.
 	// boardShape had computed both answers correctly; the branch below threw
 	// one away.
-	tunnel, trust := boardShape(remote)
+	tunnel, trust := boardShape(remote, "")
 	if tunnel {
 		// The hub's port is NOT this one.
 		//
@@ -164,7 +164,17 @@ env = { DIBS_ADDR = %q, DIBS_DIR = %q, CODEX_MCP_PROTOCOL_VERSION = "2026-07-28"
 // operator to trust a certificate it does not serve sends them to a command
 // that cannot succeed. Without a scheme, loopback means a forward and anything
 // else means the HTTPS a daemon off loopback serves by default.
-func boardShape(addr string) (tunnel, trust bool) {
+// served is the transport the daemon RESOLVED, "http" or "https", or "" when
+// the caller does not know. When it is known it decides `trust`, because the
+// address can only ever guess: a bare loopback address with tls_cert
+// configured serves HTTPS and was described as plaintext, so the recipe
+// omitted the trust step and the joining bridge was told to speak the wrong
+// protocol. `insecure_plaintext` on a LAN address is the same mistake
+// inverted. Found by the pre-release review.
+//
+// `tunnel` stays address-derived, because reachability is a property of what
+// the daemon BINDS and not of what it speaks.
+func boardShape(addr, served string) (tunnel, trust bool) {
 	scheme, rest, hasScheme := strings.Cut(addr, "://")
 	scheme = strings.ToLower(scheme)
 	if !hasScheme {
@@ -174,9 +184,20 @@ func boardShape(addr string) (tunnel, trust bool) {
 	if err != nil {
 		h = rest
 	}
-	loopback := h == "" || h == "localhost"
+	// An EMPTY host is a wildcard bind, not loopback.
+	//
+	// `:4777` means every interface, which is the one shape that is definitely
+	// reachable from another machine, and this classified it as confined to
+	// this one: a board deliberately bound wide was handed an ssh-forward
+	// recipe instead of the direct one, and on a host without ssh that advice
+	// cannot be followed at all. The shared transport code already reads it
+	// correctly, so the two disagreed.
+	loopback := h == "localhost"
 	if ip := net.ParseIP(strings.Trim(h, "[]")); ip != nil {
 		loopback = ip.IsLoopback()
+	}
+	if served != "" {
+		return loopback, served == "https"
 	}
 	if hasScheme {
 		return loopback, scheme == "https"

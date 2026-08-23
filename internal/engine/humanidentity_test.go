@@ -446,3 +446,90 @@ func TestApprovingCannotAdoptTheHumansMailbox(t *testing.T) {
 			"mailbox to the agent that asked for it")
 	}
 }
+
+// And an ARCHIVED human still owns their mailbox, at both doors.
+//
+// humanIdentityLocked answers "who may act as the human" and correctly returns
+// nothing once that row is archived. Both mailbox guards read the same answer
+// and therefore treated an archived human as no human at all, which is fail-open
+// on the one question where ownership, not authority, is what matters.
+//
+// The state arrives on its own: thirty days dormant archives the human, and the
+// row and its mail survive the seven-day retention window after that. Core
+// rejects only an ACTIVE source as unabandoned, so for that week the operator's
+// private mailbox was adoptable by a coordinator, directly or by approving a
+// peer's request for it. Whose mail it is does not change when they stop typing.
+//
+// The two tests above use a DORMANT human, which is the state that was already
+// covered and the one branch this hole is not in.
+func TestAnArchivedHumansMailboxIsStillTheirs(t *testing.T) {
+	for _, door := range []string{"adopt_agent", "approving a request"} {
+		t.Run(door, func(t *testing.T) {
+			st := core.NewState("test", core.DefaultLimits())
+			e := New(st, &memLedger{}, deadProber{})
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			go e.Run(ctx)
+
+			humanID, _, err := e.HumanAgent(ctx)
+			if err != nil {
+				t.Fatal("setup:", err)
+			}
+			mk := func(name, nonce string) string {
+				r, err := e.Do(ctx, &core.Op{
+					Kind: core.OpRegister, Name: name, AgentKind: core.KindPersistent, Nonce: nonce,
+				})
+				if err != nil {
+					t.Fatal("setup:", err)
+				}
+				tok, _ := r["token"].(string)
+				return tok
+			}
+			attacker, boss := mk("attacker", "n-a"), mk("boss", "n-b")
+			st.Agents["boss"].Role = core.RoleCoordinator
+
+			// SOMETHING TO TAKE. Adoption refuses an empty mailbox, so without
+			// this both doors answer "nothing to adopt" and the test passes on a
+			// board with the hole wide open.
+			if _, err := e.Do(ctx, &core.Op{
+				Kind: core.OpSendMessage, Token: attacker, To: humanID,
+				MsgType: core.MsgNotify, Body: "a private note for the operator",
+			}); err != nil {
+				t.Fatal("setup:", err)
+			}
+
+			// The state the sweep produces after thirty dormant days. The row
+			// and its mail are still here for the retention week.
+			st.Agents[humanID].Status = core.StatusArchived
+			if got := e.HumanIdentity(); got != "" {
+				t.Fatalf("setup: an archived human still resolves as the acting "+
+					"identity (%q), so this test is not in the state it names", got)
+			}
+
+			var err2 error
+			if door == "adopt_agent" {
+				_, err2 = e.Do(ctx, &core.Op{
+					Kind: core.OpAdoptAgent, Token: boss, To: humanID,
+				})
+			} else {
+				sent, serr := e.Do(ctx, &core.Op{
+					Kind: core.OpSendMessage, Token: attacker, To: "boss",
+					MsgType: core.MsgRequest, Body: "that mailbox is mine", Adopt: humanID,
+				})
+				if serr != nil {
+					t.Fatal("setup:", serr)
+				}
+				_, err2 = e.Do(ctx, &core.Op{
+					Kind: core.OpRespond, Token: boss, MsgSerial: sent["msg_serial"].(uint64),
+					Disposition: "approve",
+				})
+			}
+			if err2 == nil {
+				t.Errorf("%s moved an ARCHIVED operator's entire mailbox to an agent. "+
+					"Archiving is what happens to a human who has not typed for a "+
+					"month; their mail is still theirs, and it is still there to take",
+					door)
+			}
+		})
+	}
+}

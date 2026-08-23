@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -668,12 +669,200 @@ func TestTheWakePathSpendsATurnOnAnApproval(t *testing.T) {
 				Type: "message.approved", Agent: "lael", To: "asker", Serial: 11,
 				Data: map[string]any{"msg_serial": uint64(7), "adopted": "old-self"},
 			})
+			// THE PRODUCTION EXPRESSION, not a copy of it.
+			//
+			// This computed `waiting` and handed it to deliverToModel as both
+			// terms itself, so the real one in HookPoll could be deleted
+			// outright and the test stayed green: it asserted that an approval
+			// WOULD wake an agent if the wake path asked about approvals, which
+			// is the thing in question. hookWakeTerms is that expression, and
+			// nothing here restates it.
+			//
+			// Every other term is zero on purpose: no unread wakes, no
+			// announcements, no notices. If the approval is not carried by
+			// `waiting`, nothing else is left to carry it.
 			waiting := e.blockingNotices("asker")
-			if !e.deliverToModel("Stop", waiting > 0, waiting > 0, false) {
+			if waiting == 0 {
+				t.Fatalf("blockingNotices sees no approval under %q, so the check "+
+					"below would pass for a wake path that ignores them entirely",
+					c.name)
+			}
+			fresh, blocked := hookWakeTerms(0, 0, 0, waiting, false)
+			if !e.deliverToModel("Stop", fresh, blocked, false) {
 				t.Errorf("the wake path declined to deliver an approval under %q: the "+
 					"agent asked, stopped, and has no other way to learn the answer",
 					c.name)
 			}
 		})
 	}
+}
+
+// A verdict is not evicted by a burst of ordinary notices.
+//
+// The Blocking flag exists so an approval reaches an agent that stopped waiting
+// for it. One layer below that, the notice list keeps only the newest sixteen
+// and dropped the oldest regardless of kind, so ordinary situational updates
+// pushed the verdict out. That loss is unrecoverable by any other path: the
+// request is terminal, so it is not pending mail in anybody's inbox and
+// check_in cannot reconstruct it. The agent waits for an answer it was already
+// given.
+//
+// Pushed directly, because the trim is what is under test and the several event
+// shapes that reach it are beside the point.
+func TestABlockingNoticeSurvivesABurstOfOrdinaryOnes(t *testing.T) {
+	e := &Engine{}
+	e.SetNoticesWake(true)
+
+	// The approval it is waiting on, FIRST, so eviction by age takes it.
+	e.pushNoticeAs("asker", "lael approved your request to be coordinator", 1, 7, true)
+	if e.blockingNotices("asker") != 1 {
+		t.Fatal("the approval produced no blocking notice, so this test has nothing " +
+			"to protect")
+	}
+
+	for i := 2; i < 2+maxNotices*2; i++ {
+		e.pushNotice("asker", "newcomer joined a space you are in", uint64(i))
+	}
+	if n := len(e.notices["asker"]); n != maxNotices {
+		t.Fatalf("the list holds %d notices, not the %d bound, so nothing was "+
+			"evicted and this cannot see the eviction it names", n, maxNotices)
+	}
+
+	if got := e.blockingNotices("asker"); got == 0 {
+		t.Errorf("the approval was evicted by %d later situational notices. The "+
+			"request is terminal, so it is not in any inbox and check_in cannot "+
+			"reconstruct it: the agent stopped for an answer that had already been "+
+			"given, and nothing will ever tell it", maxNotices*2)
+	}
+
+	// And recent news is still recent: keeping the verdict must not mean
+	// keeping a stale list instead.
+	got := e.notices["asker"]
+	for i := 1; i < len(got); i++ {
+		if got[i].Serial < got[i-1].Serial {
+			t.Errorf("notices came back out of order (%d after %d): an agent reads "+
+				"these as a sequence", got[i].Serial, got[i-1].Serial)
+			break
+		}
+	}
+	if newest := got[len(got)-1].Serial; newest != uint64(1+maxNotices*2) {
+		t.Errorf("the newest notice is serial %d, not %d: the trim dropped recent "+
+			"news to keep old news", newest, 1+maxNotices*2)
+	}
+}
+
+// The bound holds when notices are indistinguishable from each other.
+//
+// trimNotices rebuilt its result by matching (Serial, Text) back against the
+// original list, and that pair is not an identity: supervisor notices use
+// serial zero deliberately, so a repeated stall and recovery for one
+// observation produces entries equal in both fields. Every one of seventeen
+// identical notices then matched one of the sixteen selected, all seventeen
+// came back, and each further push grew the list again. A bound that fails
+// open, inside the function added to enforce it.
+func TestTheNoticeBoundHoldsForIdenticalNotices(t *testing.T) {
+	var all []notice
+	for i := 0; i < maxNotices*2+1; i++ {
+		// Serial zero and one text, which is what the supervisor produces.
+		all = append(all, notice{Serial: 0, Text: "still working on the same thing"})
+	}
+	if got := trimNotices(all, maxNotices); len(got) != maxNotices {
+		t.Errorf("trimNotices kept %d of %d identical notices, bound %d. An agent "+
+			"that never polls accumulates without limit, which is the one thing this "+
+			"bound exists for", len(got), len(all), maxNotices)
+	}
+
+	// And through the real push path, repeatedly, because the growth compounds.
+	e := &Engine{}
+	for i := 0; i < maxNotices*3; i++ {
+		e.pushNotice("agent", "still working on the same thing", 0)
+	}
+	if n := len(e.notices["agent"]); n > maxNotices {
+		t.Errorf("after %d identical pushes the list holds %d, past the %d bound",
+			maxNotices*3, n, maxNotices)
+	}
+
+	// A blocking notice among duplicates still survives, or the fix above has
+	// traded one failure for the other.
+	e2 := &Engine{}
+	e2.pushNoticeAs("agent", "lael approved your request", 1, 7, true)
+	for i := 0; i < maxNotices*2; i++ {
+		e2.pushNotice("agent", "still working on the same thing", 0)
+	}
+	if e2.blockingNotices("agent") == 0 {
+		t.Error("the approval was evicted by identical situational notices")
+	}
+	if n := len(e2.notices["agent"]); n > maxNotices {
+		t.Errorf("the list holds %d, past the %d bound", n, maxNotices)
+	}
+}
+
+// And HookPoll ITSELF spends a turn on an approval.
+//
+// The test above proves the pieces work when a test connects them: it takes
+// blockingNotices, hands the result to hookWakeTerms, and calls
+// deliverToModel. What it cannot prove is that PRODUCTION connects them.
+// Deleting the `waiting` lookup inside HookPoll, or passing zero, leaves it
+// green, and that lookup is the entire approval fix.
+//
+// So this asks HookPoll, the way a harness Stop hook does.
+func TestHookPollDeliversAnApproval(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "asker", Nonce: "n-asker"})
+	if err != nil {
+		t.Fatalf("setup: register: %v", err)
+	}
+	const sid = "harness-session-approval"
+	if _, err := e.BindSession(ctx, res["token"].(string), sid); err != nil {
+		t.Fatalf("setup: bind: %v", err)
+	}
+
+	// A quiet Stop with nothing waiting: the baseline, so a pass below cannot
+	// come from a hook that always delivers.
+	quiet, err := e.HookPoll(ctx, sid, "Stop", "", false, false)
+	if err != nil {
+		t.Fatalf("hook_poll: %v", err)
+	}
+	if deliveredSomething(quiet) {
+		t.Fatalf("a Stop with nothing waiting delivered %v, so this test cannot tell "+
+			"an approval from the ordinary case", quiet)
+	}
+
+	// The human approves the thing this agent stopped for. Notices are turned
+	// DOWN, because that switch is what the Blocking flag has to survive.
+	e.SetNoticesWake(false)
+	e.noteEvent(core.Event{
+		Type: "message.approved", Agent: "lael", To: "asker", Serial: 11,
+		Data: map[string]any{"msg_serial": uint64(7)},
+	})
+
+	got, err := e.HookPoll(ctx, sid, "Stop", "", false, false)
+	if err != nil {
+		t.Fatalf("hook_poll: %v", err)
+	}
+	if !deliveredSomething(got) {
+		t.Errorf("HookPoll delivered nothing after an approval: %v\n"+
+			"The agent asked, stopped, and has no other way to learn the answer. "+
+			"The request is terminal, so it is not pending mail anywhere and "+
+			"check_in cannot reconstruct it", got)
+	}
+}
+
+// deliveredSomething reports whether a hook result carries anything for the
+// model, whichever key this hook shape uses to say so.
+func deliveredSomething(res core.Result) bool {
+	if res == nil {
+		return false
+	}
+	for _, k := range []string{"additionalContext", "hookSpecificOutput", "context", "text"} {
+		if v, ok := res[k]; ok && v != nil && v != "" {
+			return true
+		}
+	}
+	return false
 }
