@@ -489,8 +489,22 @@ func (e *Engine) wakeFinished(agent string) bool {
 // this would block forever rather than fail. Tests take wakeFinished and its
 // answer; production takes this.
 func (e *Engine) wakeExited(agent string) {
-	owed := e.wakeFinished(agent)
 	_, _ = e.query(context.Background(), func() core.Result {
+		// CLEARED AND RECORDED IN ONE TURN OF THE LOOP.
+		//
+		// wakeFinished ran out here, before the closure was queued, and the two
+		// facts it produces are read by different branches of maybeWake. So an
+		// ordinary message arriving in that window saw the agent as no longer
+		// running (running was cleared) AND as recently in touch (the turn end
+		// was not recorded yet): noteArrivalDuringWake declined to mark it,
+		// recentlyInTouch declined to wake it, and nothing armed a deferred
+		// re-check either. The sender was told it was delivered and the stopped
+		// recipient was not reached.
+		//
+		// maybeWake runs on this loop too, so doing both inside one closure
+		// makes the intermediate state unobservable rather than unlikely. A
+		// window this narrow is not worth closing with a smaller window.
+		owed := e.wakeFinished(agent)
 		// ALWAYS, not only when a re-check is owed.
 		//
 		// The command runs the agent's whole turn in that process, so the

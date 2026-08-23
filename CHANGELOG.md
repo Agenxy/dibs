@@ -991,6 +991,14 @@ machines for real work. Their priority order, not ours.
   now, which is simply true and makes both orderings answer correctly, rather
   than adding a third branch for the third case.
 
+  And the two facts the exit produces arrive together. Clearing "running"
+  happened outside the writer loop while recording the turn end was queued onto
+  it, and different branches read each: a message landing in between saw the
+  agent as no longer running AND as recently in touch, so it was neither marked,
+  nor woken, nor deferred. Both happen in one turn of the loop, which makes the
+  intermediate state unobservable rather than merely unlikely. A window that
+  narrow is not worth closing with a narrower one.
+
 - **A retried wake said "question" from nobody.** The retry passed a hard-coded
   message type and a bare event, so `{type}` and `{from}` were wrong on every
   wake that went through a cooldown or an exit re-check, which this release
