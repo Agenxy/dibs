@@ -668,8 +668,26 @@ func TestTheWakePathSpendsATurnOnAnApproval(t *testing.T) {
 				Type: "message.approved", Agent: "lael", To: "asker", Serial: 11,
 				Data: map[string]any{"msg_serial": uint64(7), "adopted": "old-self"},
 			})
+			// THE PRODUCTION EXPRESSION, not a copy of it.
+			//
+			// This computed `waiting` and handed it to deliverToModel as both
+			// terms itself, so the real one in HookPoll could be deleted
+			// outright and the test stayed green: it asserted that an approval
+			// WOULD wake an agent if the wake path asked about approvals, which
+			// is the thing in question. hookWakeTerms is that expression, and
+			// nothing here restates it.
+			//
+			// Every other term is zero on purpose: no unread wakes, no
+			// announcements, no notices. If the approval is not carried by
+			// `waiting`, nothing else is left to carry it.
 			waiting := e.blockingNotices("asker")
-			if !e.deliverToModel("Stop", waiting > 0, waiting > 0, false) {
+			if waiting == 0 {
+				t.Fatalf("blockingNotices sees no approval under %q, so the check "+
+					"below would pass for a wake path that ignores them entirely",
+					c.name)
+			}
+			fresh, blocked := hookWakeTerms(0, 0, 0, waiting, false)
+			if !e.deliverToModel("Stop", fresh, blocked, false) {
 				t.Errorf("the wake path declined to deliver an approval under %q: the "+
 					"agent asked, stopped, and has no other way to learn the answer",
 					c.name)

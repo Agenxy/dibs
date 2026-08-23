@@ -113,3 +113,21 @@ func installCoordinatorClaim(eng *engine.Engine, dir string, alreadyHas bool) {
 	c := newCoordinatorClaim(dir, alreadyHas)
 	eng.SetCoordinatorClaim(c.verify)
 }
+
+// coordinatorAlreadyDecided reports whether the question the launch claim asks
+// has already been answered.
+//
+// The DECISION, separated from main.go so a test can ask it. Written inline it
+// could only be re-stated by a test rather than exercised, which is the shape
+// of guard this repository keeps finding green against the bug it named.
+//
+// Two answers count, and only one of them was consulted. A granted coordinator
+// is the obvious one. A DECLARED one matters just as much and arrives later: on
+// a fresh board the pass that grants declared roles runs before any agent has
+// registered, so it grants nothing, and until the named agent starts the board
+// looks ownerless. It was handed a claim in that window, which any same-user
+// agent could read and spend, and later reconciliation grants the intended
+// coordinator without demoting whoever got there first.
+func coordinatorAlreadyDecided(granted bool, roles RolesConfig) bool {
+	return granted || len(roles.Coordinator) > 0
+}

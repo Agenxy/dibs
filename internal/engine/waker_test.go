@@ -66,8 +66,19 @@ func TestMailForAnAgentThatIsNotRunningStartsTheOperatorsCommand(t *testing.T) {
 // metacharacters is just a body.
 func TestAMessageCannotInfluenceWhatTheWakeCommandRuns(t *testing.T) {
 	e := &Engine{}
+	// THE AGENT-DERIVED PLACEHOLDERS ARE IN THE COMMAND.
+	//
+	// This used a command containing only {thread} and {message}, so the hostile
+	// agent id and sender it then set never entered argv at all and the loop
+	// below had nothing to inspect. It passed whatever the substitution did,
+	// which is the behaviour it exists to constrain. {agent}, {from} and {type}
+	// are the three an agent can actually influence, so they are the three that
+	// have to be here.
 	e.SetWakeCommands(map[string]WakeCommand{
-		"codex": {Argv: []string{"codex", "queue", "--thread", "{thread}", "--message", "{message}"}, Cooldown: time.Minute},
+		"codex": {Argv: []string{
+			"codex", "queue", "--thread", "{thread}", "--message", "{message}",
+			"--for", "{agent}", "--from", "{from}", "--kind", "{type}",
+		}, Cooldown: time.Minute},
 	})
 
 	// The hostile string goes where an AGENT can actually put one: its own id
@@ -86,14 +97,37 @@ func TestAMessageCannotInfluenceWhatTheWakeCommandRuns(t *testing.T) {
 	if argv[0] != "codex" {
 		t.Errorf("the executable changed to %q: only the operator names that", argv[0])
 	}
+	// The hostile string may appear ONLY where a placeholder invited it, and
+	// only as one whole element: exec takes it as a single argument, and there
+	// is no shell in this path to reparse it.
+	invited := map[int]bool{}
+	for i, a := range []string{
+		"codex", "queue", "--thread", "{thread}", "--message", "{message}",
+		"--for", "{agent}", "--from", "{from}", "--kind", "{type}",
+	} {
+		invited[i] = strings.HasPrefix(a, "{")
+	}
+	seen := 0
 	for i, a := range argv {
-		if i > 0 && a == nasty && argv[i-1] != "--thread" {
-			t.Errorf("argv[%d] took hostile input outside a declared placeholder: %v", i, argv)
+		if strings.Contains(a, nasty) {
+			if !invited[i] {
+				t.Errorf("argv[%d] = %q took hostile input at a position the operator "+
+					"wrote literally: %v", i, a, argv)
+			}
+			if a != nasty {
+				t.Errorf("argv[%d] = %q: a substituted value must replace a WHOLE "+
+					"element. Pasting it into a larger string is where quoting bugs "+
+					"live, and there is no shell here to blame for them", i, a)
+			}
+			seen++
 		}
 	}
-	// The hostile string may only appear where a placeholder put it, as ONE
-	// element. exec receives it as a single argument, never parsed by a shell.
-	if len(argv) != 6 {
+	if seen == 0 {
+		t.Fatal("the hostile agent id reached no argv element at all, so this test " +
+			"inspected nothing. The command must contain the agent-derived " +
+			"placeholders for the check below to mean anything")
+	}
+	if len(argv) != 12 {
 		t.Errorf("argv = %v: substitution changed the shape of the command", argv)
 	}
 }
@@ -423,5 +457,73 @@ func TestAWakeCommandIsNotKilledMidTurn(t *testing.T) {
 			"anything shorter kills real work: the cooldown is spent, maybeWake is "+
 			"not called again for that event, and the message stays unread",
 			wakeTimeout, longestAnyoneWaits)
+	}
+}
+
+// A turn that ENDED must not go on looking like a running agent.
+//
+// The waker treats recent contact as evidence the agent is live, which it has
+// to: an idle lease says nothing, since it lapses in 45 minutes. But recency
+// alone is wrong in the ordinary case, and the ordinary case is a turn that
+// ends seconds after its last call. For the remainder of the cooldown that
+// agent read as running, so the next blocking message got no wake, and
+// maybeWake fires once per event and never retries: the message waited for a
+// human. A longer configured cooldown makes the hole bigger, not safer.
+//
+// This is the production sequence and nothing else: call in, Stop, then mail.
+// The two existing tests use a 30-minute-old stopped agent and a two-second-old
+// live one, and neither drives a stop after recent contact.
+func TestATurnThatEndedIsNotMistakenForARunningAgent(t *testing.T) {
+	e := &Engine{}
+	st := core.NewState("t", core.DefaultLimits())
+	e.state = st
+	e.seen = map[string]time.Time{}
+	e.SetWakeCommands(map[string]WakeCommand{
+		"codex": {Argv: []string{"echo", "{thread}"}, Cooldown: 90 * time.Second},
+	})
+
+	l := bridgeAgent("stopped", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	l.SessionID = "019ffe52-0eaf-7f60-81cc-6ab1298d76ec"
+	st.Agents = map[string]*core.Agent{"stopped": l}
+
+	// It called the board five seconds ago: well inside the cooldown.
+	e.seen["stopped"] = time.Now().Add(-5 * time.Second)
+	// And then its turn ended, which is what the harness tells us on Stop.
+	e.noteTurnEnded(l, "Stop")
+
+	// Blocking mail arrives while the old rule still called it "in touch".
+	e.maybeWake(core.Event{
+		Type: "message.sent", To: "stopped",
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	})
+	if _, spent := e.wakers.last["stopped"]; !spent {
+		t.Error("no wake for an agent whose turn ended after its last call. " +
+			"Recent contact is a stand-in for \"is it running\", and Stop answers " +
+			"that question outright: treating the cooldown as proof of life " +
+			"discards the single wake this message will ever get, and nothing " +
+			"retries it")
+	}
+
+	// And contact AFTER the stop means it is running again, so it is left alone:
+	// otherwise this passes by waking an agent that can never be quiet.
+	e2 := &Engine{}
+	st2 := core.NewState("t", core.DefaultLimits())
+	e2.state = st2
+	e2.seen = map[string]time.Time{}
+	e2.SetWakeCommands(map[string]WakeCommand{
+		"codex": {Argv: []string{"echo", "{thread}"}, Cooldown: 90 * time.Second},
+	})
+	back := bridgeAgent("resumed", "Codex", "019fff00-1111-7f60-81cc-6ab1298d76ec")
+	st2.Agents = map[string]*core.Agent{"resumed": back}
+	e2.noteTurnEnded(back, "Stop")
+	e2.seen["resumed"] = time.Now() // a new turn, after the stop
+	e2.maybeWake(core.Event{
+		Type: "message.sent", To: "resumed",
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	})
+	if _, spent := e2.wakers.last["resumed"]; spent {
+		t.Error("woke an agent that called in after its last stop: a finished turn " +
+			"is not a permanent verdict, and starting a second activation on top " +
+			"of a live one is what the recency check exists to prevent")
 	}
 }

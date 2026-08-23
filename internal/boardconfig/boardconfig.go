@@ -643,6 +643,21 @@ func (c Config) validateWake() error {
 				"and the rest are its arguments: there is no shell in this path "+
 				"to work out what was meant", harness)
 		}
+		// NOTHING AN AGENT SAID MAY CHOOSE THE PROGRAM.
+		//
+		// Whole-element substitution keeps a message body from being parsed as a
+		// command, which is what makes the argv form safe. It does not make the
+		// VALUES trustworthy: {agent}, {from} and {type} are derived from agents,
+		// and argv[0] is handed straight to exec. A placeholder there would let a
+		// peer's chosen name select the executable, which is a different rule
+		// from quoting and the one this project actually states: the wake command
+		// comes from the operator's file and nothing an agent said reaches it.
+		if len(x.Argv) > 0 && strings.HasPrefix(x.Argv[0], "{") {
+			return fmt.Errorf("[wake.exec.%s] argv[0] is %q: the program to run must "+
+				"be named in this file and cannot be a placeholder. Substituted "+
+				"values come from agents, and the one thing an agent must never "+
+				"choose is which executable the board starts", harness, x.Argv[0])
+		}
 	}
 	w := c.Wake.ExtendTurnFor
 	if w == "" {

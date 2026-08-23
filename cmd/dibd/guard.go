@@ -167,6 +167,26 @@ func (g *authGate) redeemBootstrap(t string) (string, bool) {
 // for the page and gets HTML with no key in it. The board's own JavaScript
 // reads the fragment once, keeps the key in localStorage (which IS scoped by
 // port) and sends it as a header on every call that matters.
+// sessionCookieName is the board session cookie for THIS daemon.
+//
+// Cookies are host-scoped and never port-scoped, so two boards on 127.0.0.1
+// both wrote `dibs_session` and each redemption silently overwrote the other's.
+// `-allow-parallel` exists precisely so an operator can run separate boards for
+// agents they do not trust together, and the web interfaces of two such boards
+// could not stay signed in at the same time: the older tab kept its own
+// port-scoped page key and started sending the newer board's session token, so
+// its stream revalidation and every keyed request failed for no visible reason.
+//
+// The port is the one thing that distinguishes them, and it is already known
+// here. This is not isolation, which cookies cannot give across ports; it is
+// simply not colliding.
+func (g *authGate) sessionCookieName() string {
+	if g.port == "" {
+		return "dibs_session"
+	}
+	return "dibs_session_" + g.port
+}
+
 type boardSession struct {
 	exp  time.Time
 	page string
@@ -180,7 +200,7 @@ const pageKeyHeader = "X-Dibs-Board-Key"
 // holdsPageKey reports whether this request came from a page that redeemed the
 // magic link, rather than from something replaying the cookie it was given.
 func (g *authGate) holdsPageKey(r *http.Request) bool {
-	c, err := r.Cookie("dibs_session")
+	c, err := r.Cookie(g.sessionCookieName())
 	if err != nil || c.Value == "" {
 		return false
 	}
@@ -249,7 +269,7 @@ func (g *authGate) pageKeyFor(sess string) string {
 }
 
 func (g *authGate) validSession(r *http.Request) bool {
-	c, err := r.Cookie("dibs_session")
+	c, err := r.Cookie(g.sessionCookieName())
 	if err != nil || c.Value == "" {
 		return false
 	}
@@ -550,7 +570,7 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 				// over plain HTTP is never sent back, which would break the loopback board
 				// rather than protect it. HttpOnly and SameSite=Strict are unconditional.
 				http.SetCookie(w, &http.Cookie{
-					Name: "dibs_session", Value: sess, Path: "/",
+					Name: g.sessionCookieName(), Value: sess, Path: "/",
 					HttpOnly: true, SameSite: http.SameSiteStrictMode,
 					// Secure only when the connection actually is: the daemon
 					// serves plain HTTP on loopback and TLS on any reachable

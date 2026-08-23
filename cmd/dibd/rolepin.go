@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/agenxy/dibs/internal/engine"
 )
 
 // rolePins remembers WHICH agent a declared role was granted to.
@@ -80,6 +82,29 @@ func (p *rolePins) check(role, name, fingerprint, want string) error {
 		return fmt.Errorf("agent %q has no nonce, so it has no identity that survives "+
 			"a restart and nothing here can be pinned to it. Register it with a nonce, "+
 			"which is what makes it the same agent tomorrow", name)
+	}
+	// THE OPERATOR PASTED THE NONCE ITSELF.
+	//
+	// A 256-bit nonce is 64 lowercase hex characters, which is exactly the shape
+	// a fingerprint has, so no validator reading dibs.toml alone can tell them
+	// apart and isFingerprint accepts both. Here both values exist, and that
+	// makes the test exact rather than heuristic: hashing what the operator
+	// wrote yields the agent's own fingerprint only if what they wrote was the
+	// agent's own nonce.
+	//
+	// It matters far more than a mistyped setting. The nonce is the whole
+	// recovery credential: anything running as the operator that can read the
+	// file can register with that name and that nonce, be handed the agent's
+	// token and mailbox, and inherit whatever role it holds. Refusing the grant
+	// is not enough on its own, because the exposure has already happened, so
+	// the error says to rotate rather than merely to correct.
+	if want != "" && want != fingerprint && engine.RolePinFingerprint(want) == fingerprint {
+		return fmt.Errorf("[roles.identity] holds agent %q's NONCE, not its "+
+			"fingerprint. That is its whole recovery credential sitting in a "+
+			"config file: anything running as you that reads dibs.toml can "+
+			"register as %q with it and take its token, its mailbox and this "+
+			"role. Give %q a new nonce, then put the fingerprint it reports "+
+			"here instead. %s is refused until then", name, name, name, role)
 	}
 	byName := p.Pins[role]
 	if byName == nil {

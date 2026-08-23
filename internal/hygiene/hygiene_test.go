@@ -833,8 +833,13 @@ func TestThePresenceHelperIsTheOneThatGetsBuilt(t *testing.T) {
 	}
 	// It has to be BUILT and it has to be PACKAGED: the before hook produces it
 	// and the archive carries it. Either one alone ships nothing usable.
+	// The needle for the before hook was `-o dibs-presence`, which is a PREFIX
+	// of `-o dibs-presence-arm64`: deleting the lipo output left the per-slice
+	// compiles matching it and every assertion here green, while the archive had
+	// no universal helper to carry. A guard that a partial build satisfies is
+	// not watching the thing it names, so this looks for lipo's own output flag.
 	for _, place := range []struct{ what, needle string }{
-		{"built by a before hook", "-o " + want},
+		{"joined into a universal binary", "-output " + want},
 		{"carried in the archive", "src: " + want},
 		{"linked by the Homebrew cask", "- " + want},
 	} {

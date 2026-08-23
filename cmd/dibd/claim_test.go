@@ -138,3 +138,48 @@ func TestAClaimIsRefusedOnceTheRoleIsHeld(t *testing.T) {
 		t.Error("the claim was refused and the role landed anyway")
 	}
 }
+
+// A board that NAMES a coordinator is never offered a claim, even before that
+// agent has registered.
+//
+// The claim is minted when the board has no coordinator, and on a fresh board
+// that is true for as long as it takes the pinned agent to start: the declared
+// pass runs before anybody has registered and grants nothing, and the
+// reconciler waits for a later tick. In that gap `coordinator.claim` sat in the
+// data directory for any same-user agent to read and spend. Later
+// reconciliation grants the intended coordinator and does not demote the one
+// that got there first, so a board ends with a coordinator its operator did not
+// choose, holding broadcast, eviction, force-release and mailbox adoption.
+//
+// The existing test grants the legitimate coordinator BEFORE the opportunist
+// presents the claim, so it exercises the already-settled board and cannot see
+// this ordering at all. This one is the fresh board: nobody registered, nothing
+// granted, exactly as at startup.
+func TestAConfiguredCoordinatorIsNotRaceableBeforeItRegisters(t *testing.T) {
+	dir := t.TempDir()
+
+	// The state at `installCoordinatorClaim` on a fresh board: no coordinator
+	// has been granted, because no agent exists to grant it to.
+	const hasCoordinator = false
+	declared := RolesConfig{Coordinator: []string{"fleet-lead"}}
+
+	c := newCoordinatorClaim(dir, coordinatorAlreadyDecided(hasCoordinator, declared))
+	if c.secret != "" {
+		t.Error("a board whose dibs.toml names a coordinator was still offered a " +
+			"launch claim. The claim answers \"who coordinates here\", and the " +
+			"operator has already answered it: minting one lets any agent that " +
+			"can read the data directory take the role before the named identity " +
+			"has even started")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "coordinator.claim")); err == nil {
+		t.Error("coordinator.claim was written for a board that names a coordinator")
+	}
+
+	// A board that names NOBODY still gets one: this must not disable the
+	// bootstrap path it exists to provide.
+	c2 := newCoordinatorClaim(t.TempDir(), coordinatorAlreadyDecided(false, RolesConfig{}))
+	if c2.secret == "" {
+		t.Error("a board with no declared coordinator was offered no claim, so a " +
+			"fleet with no human at the keyboard can never have one at all")
+	}
+}

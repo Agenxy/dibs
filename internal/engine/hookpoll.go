@@ -81,6 +81,50 @@ func (e *Engine) announceHookSession(sessionID, cwd, event string) {
 	e.noteChild(Child{SessionID: sessionID, CWD: cwd, State: StateForEvent(event)}, time.Now())
 }
 
+// hookWakeTerms decides whether there is anything worth a turn, and whether
+// somebody is blocked on it.
+//
+// The DECISION, separated from HookPoll so a guard can reach it. Written inline
+// it could only be restated by a test, and the test that existed did restate
+// it: it computed `waiting` itself, passed it to deliverToModel twice, and so
+// stayed green with the real term deleted from the expression above. That term
+// is the whole approval fix, and its regression test could not see it go.
+//
+// waiting is counted SEPARATELY from notices and added to both results on
+// purpose. `notices_wake = false` trades latency for tokens on "somebody joined
+// your space"; it silently also stopped an agent being woken when a human
+// approved the request it had asked for and stopped for. An answer you are
+// blocked on is the definition of urgent, so it survives that switch and
+// reaches an `urgent` operator too.
+func hookWakeTerms(unreadWakes, announced, notices, waiting int, someoneWaiting bool) (fresh, blocked bool) {
+	fresh = unreadWakes > 0 || announced > 0 || notices > 0 || waiting > 0
+	blocked = someoneWaiting || announced > 0 || notices > 0 || waiting > 0
+	return fresh, blocked
+}
+
+// noteTurnEnded records that this agent has STOPPED, so its last call to the
+// board stops being evidence that it is running.
+//
+// The waker treats recent contact as proof of a live agent, and it has to: an
+// idle lease says nothing, because it lapses in 45 minutes. But recency alone
+// is wrong in the ordinary case, which is a turn that ends seconds after its
+// last call. For the rest of the cooldown that agent read as running, so
+// blocking mail arriving in the window got no wake, and maybeWake fires once
+// per event and never retries: the message simply waited for a human. A longer
+// configured cooldown widens the hole rather than making it safer.
+//
+// A finishing hook is the harness saying the turn is over, which is exactly the
+// fact recency was standing in for.
+func (e *Engine) noteTurnEnded(l *core.Agent, event string) {
+	if l == nil || StateForEvent(event) != "finished" {
+		return
+	}
+	if e.turnEnded == nil {
+		e.turnEnded = map[string]time.Time{}
+	}
+	e.turnEnded[l.ID] = time.Now()
+}
+
 // HookPoll answers a harness lifecycle hook: "is there anything this session
 // needs to know?" It is the subprocess-free wake path. Claude Code's
 // `type: "mcp_tool"` hook calls it on the connection the model already holds,
@@ -100,6 +144,7 @@ func (e *Engine) HookPoll(
 		e.announceHookSession(sessionID, cwd, event)
 		l := e.state.AgentForHook(sessionID, cwd)
 		e.noteHook("poll", l != nil)
+		e.noteTurnEnded(l, event)
 		if l == nil {
 			// A session that resolves to nobody may still BE somebody, returning.
 			//
@@ -223,9 +268,8 @@ func (e *Engine) HookPoll(
 		// is one that can actually carry it. See wakeKeys.
 		now := time.Now()
 		wake := e.wakeKeys(l.ID, now)
-		fresh := len(wake) > 0 || len(announced) > 0 || noticesCount > 0 || waiting > 0
-		blocked := e.somebodyIsWaiting(l.ID) || len(announced) > 0 ||
-			noticesCount > 0 || waiting > 0
+		fresh, blocked := hookWakeTerms(len(wake), len(announced), noticesCount,
+			waiting, e.somebodyIsWaiting(l.ID))
 		if e.deliverToModel(event, fresh, blocked, stopActive) {
 			// Marked on DELIVERY, and that is a deliberate trade rather than an
 			// oversight, so it is written down here and in SECURITY.md.

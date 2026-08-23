@@ -106,13 +106,13 @@ State on **2026-08-17**, against codex main `32a383c0` and the Codex Desktop
 |---|---|
 | `mcp_tool` hook config parsed | yes, since `81b9bc21` (2026-08-07, #37363) |
 | hooks engine has an `mcp_tool` handler | yes, since `85fc4def` (2026-08-15, #38705) |
-| a real session supplies an MCP executor | **no** |
-| so an `mcp_tool` hook actually runs | **no** |
+| a real session supplies an MCP executor | **yes, since 2026-08-18 (#39296)** |
+| so an `mcp_tool` hook actually runs | **yes, on a build from that date or later** |
 
-The last wire is the missing one. `codex-rs/core/src/session/mod.rs` builds the
-`HooksConfig` for every real session and passes `mcp_executor: None`, set in the
-same commit that added the handler, and it is the only construction site outside
-the hooks crate. The engine then drops every `mcp_tool` handler at startup:
+That last wire was missing for three days and this file spent months saying so.
+`codex-rs/core/src/session/mod.rs` built the `HooksConfig` for every real
+session with `mcp_executor: None`, and the engine dropped every `mcp_tool`
+handler at startup:
 
 ```rust
 if mcp_executor.is_none() {
@@ -120,14 +120,23 @@ if mcp_executor.is_none() {
 }
 ```
 
-Observed on the shipped Desktop build as `skipping MCP tool hook in
-~/.codex/hooks.json: MCP tool hooks are not supported yet`, once per entry.
-Either way the hook does not fire.
+On a build older than 2026-08-18 you will still see `skipping MCP tool hook in
+~/.codex/hooks.json`, once per entry, and the hook does not fire. Upgrade or
+accept pull-only delivery; nothing here can work around it.
 
-**So Dibs ships no `hooks.json` for Codex today**, because one that cannot run
-is not a wake path waiting to be wired: it is a warning per session, and on a
-build that rejects the variant outright it takes the whole file down with it.
-`TestShippedHooksUseOnlySupportedTypes` keeps it out until this table changes.
+**So Dibs ships `hooks.json` for Codex**, and it is at the ROOT of the config
+directory: `~/.codex/hooks.json`, not `~/.codex/hooks/hooks.json`, which is
+Claude Code's layout and a path Codex does not read. It binds `hook_poll` on
+SessionStart, Stop and SubagentStop. Measured against a live daemon on
+2026-08-22: three hooks, three deliveries.
+
+Two limits worth knowing before you rely on it. A hook fires only if the Dibs
+server is ALREADY connected, and connections are established asynchronously, so
+SessionStart can lose that race while Stop is later and reliably wins. And a
+hook is a callback on YOUR OWN lifecycle: it delivers when your turn ends, and
+nothing outside can make an idle thread wake through it. Reaching a thread that
+is not running is `[wake.exec]`, which is the operator's business and documented
+in `docs/CONFIGURATION.md`.
 
 **And we do not reach for the alternative.** Codex declares four handler types
 and runs exactly one. `prompt` and `agent` are empty structs, skipped by name
@@ -277,20 +286,26 @@ endpoint and cannot be disabled."* Set `model_reasoning_effort` to `medium`.
 
 ## No supervision hooks, deliberately
 
-Dibs ships no hook file for Codex, and that is a decision rather than a gap.
+Dibs ships a MAIL hook file for Codex and no supervision one. The second half of
+that is a decision rather than a gap.
 
-Codex fires hooks as SUBPROCESSES. A hook that shells out to fetch mail makes
-Dibs a thing that drives your harness, which
+Codex can also fire hooks as SUBPROCESSES, and that is the type Dibs will not
+use. A hook that shells out makes Dibs a thing that drives your harness, which
 [PHILOSOPHY.md](https://github.com/agenxy/dibs/blob/main/PHILOSOPHY.md) rules
-out. Codex's `mcp_tool` hook type, which Claude Code uses to call a tool on the
-connection the model already holds, is not available here.
+out; `mcp_tool` calls a tool on the connection the model already holds, spawns
+nothing, and is the only type in the shipped file.
 
-So on this harness mail is pull-only: call `check_in` at the start of an
-activation and `await_events` when you are about to block. That is the honest
-floor, it needs no configuration, and it works everywhere.
+If your build predates 2026-08-18 the hook is skipped and mail is pull-only:
+call `check_in` at the start of an activation and `await_events` when you are
+about to block. That is the honest floor, it needs no configuration, and it
+works everywhere, hook or no hook.
 
-An earlier version of this document described a `hooks/hooks.json` and claimed
-it registered Dibs against Codex's lifecycle. It was never functional: six of
-its seven entries used the unsupported type, and the seventh was the subprocess
-this project refuses to be.
+Two earlier versions of this document were wrong in opposite directions, which
+is why the dates above are exact. The first described a `hooks/hooks.json` that
+had never worked: six of its seven entries used a type no session supported, and
+the seventh was the subprocess this project refuses to be. The second said Dibs
+ships no hook file for Codex at all, and went on saying it after one shipped,
+because the note outlived the fact it was written about. A file that reaches
+agents through `dibs://plugin` is documentation with a reader who cannot check
+it, so it says what is true today and when that was measured.
 

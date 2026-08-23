@@ -430,3 +430,48 @@ func TestTheRolePinErrorsNameTheCorrectiveThatWorks(t *testing.T) {
 		}
 	})
 }
+
+// A nonce pasted into [roles.identity] is caught, and named as an exposure.
+//
+// A 256-bit nonce is 64 lowercase hex characters, exactly the shape of a
+// fingerprint, so no validator reading dibs.toml on its own can tell them
+// apart: the shape check accepts both, the board comes up, and nothing ever
+// says the value is wrong. The regression case in boardconfig used
+// "the-secret-nonce", which is neither 64 characters nor hex, so it only proved
+// that obviously malformed values fail.
+//
+// Where the grant is decided both values exist, which makes the test exact:
+// hashing what the operator wrote gives this agent's fingerprint only if what
+// they wrote was this agent's nonce.
+func TestANoncePastedIntoTheIdentityTableIsRefusedAsAnExposure(t *testing.T) {
+	// The realistic representation, and the one the old case could not model.
+	nonce := strings.Repeat("a1b2c3d4", 8) // 64 lowercase hex
+	if len(nonce) != 64 {
+		t.Fatalf("fixture is %d characters, not the 64 a 256-bit nonce has", len(nonce))
+	}
+	fp := engine.RolePinFingerprint(nonce)
+
+	p := loadRolePins(t.TempDir())
+	err := p.check(core.RoleAdmin, "fleet-lead", fp, nonce)
+	if err == nil {
+		t.Fatal("a raw nonce in [roles.identity] was accepted as an identity. It is " +
+			"the agent's whole recovery credential: anything running as the operator " +
+			"that reads dibs.toml can register with that name and nonce and be handed " +
+			"the agent's token, mailbox and role")
+	}
+	got := strings.ToLower(err.Error())
+	if !strings.Contains(got, "nonce") {
+		t.Errorf("the refusal does not say the value is a nonce:\n  %s", err)
+	}
+	// Refusing is not the whole remedy: the credential is already in a file.
+	if !strings.Contains(got, "new nonce") && !strings.Contains(got, "rotate") {
+		t.Errorf("the refusal does not tell the operator to rotate the nonce:\n  %s\n"+
+			"Correcting the file leaves a credential that has been sitting on disk", err)
+	}
+
+	// And the correct value still works, so this cannot pass by refusing
+	// everything.
+	if err := p.check(core.RoleAdmin, "fleet-lead", fp, fp); err != nil {
+		t.Errorf("a correct fingerprint was refused: %v", err)
+	}
+}

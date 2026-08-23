@@ -21,7 +21,7 @@ import (
 // them this test is what says the file may now say more; if Codex narrows them
 // a released Dibs breaks quietly, which is the failure this guards.
 func TestTheCodexHookFileOnlyUsesFieldsCodexAccepts(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "plugins", "codex", "hooks", "hooks.json"))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "plugins", "codex", "hooks.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

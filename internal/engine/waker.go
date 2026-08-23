@@ -225,6 +225,14 @@ func (e *Engine) recentlyInTouch(l *core.Agent) bool {
 	if s, ok := e.seen[l.ID]; ok && s.After(last) {
 		last = s
 	}
+	// A STOP SINCE THEN ENDS IT. Recency is a stand-in for "is it running", and
+	// the harness answers that question directly when a turn finishes. Without
+	// this, an agent that called in and then stopped two seconds later read as
+	// running for the rest of the cooldown, and the one wake its next blocking
+	// message was ever going to get was skipped.
+	if done, ok := e.turnEnded[l.ID]; ok && done.After(last) {
+		return false
+	}
 	return !last.IsZero() && time.Since(last) < cmd.cooldown
 }
 

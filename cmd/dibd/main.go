@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -308,7 +309,18 @@ func run() error {
 	// After declared roles are applied, so a board configured with a coordinator
 	// is not offered a claim it does not need. Asked THROUGH the engine: st is
 	// the state the loop now owns, and the goroutine above may be writing to it.
-	installCoordinatorClaim(eng, *dir, eng.HasCoordinator(ctx))
+	//
+	// DECLARED counts, not merely granted. On a FRESH board the pinned agent has
+	// not registered yet, so the pass above grants nothing and HasCoordinator is
+	// false: the daemon then minted a generic claim that any same-user agent
+	// could read and spend, taking coordinator before the intended identity ever
+	// started. Later reconciliation grants the real one and does not demote the
+	// opportunist, so the board ends with a coordinator the operator did not
+	// choose holding broadcast, eviction and force-release. The claim exists for
+	// boards that named nobody; an operator who named somebody has already
+	// answered the question it asks.
+	installCoordinatorClaim(eng, *dir,
+		coordinatorAlreadyDecided(eng.HasCoordinator(ctx), cfg.Roles))
 	startSupervision(ctx, eng, cfg.Supervise)
 	// Indexing shells out to git across thousands of commits; the daemon must be
 	// answering agents long before that finishes, so it lands asynchronously.
@@ -358,6 +370,28 @@ func run() error {
 	if err != nil {
 		return bindFailure(listenAddr, err)
 	}
+	// AND THE CERTIFICATE, before announcing anything.
+	//
+	// Binding was made to precede the log for exactly this reason and only
+	// solved half of it: ServeTLS loads and validates the pair AFTER Serve is
+	// called, so a missing, malformed or mismatched key printed the same
+	// confident "dibd up" and then died. `dibd -check` could not catch it
+	// either, because validateTLS only checks that both path strings are
+	// present. Loading here is the same work ServeTLS would do, done while
+	// there is still nothing claiming to be up.
+	var tlsPair []tls.Certificate
+	if tr.certFile != "" {
+		cert, cerr := tls.LoadX509KeyPair(tr.certFile, tr.keyFile)
+		if cerr != nil {
+			_ = ln.Close()
+			return fmt.Errorf("the TLS certificate and key in %s cannot be used "+
+				"together (%w), so this daemon would report itself up and then "+
+				"immediately fail every connection. Check that tls_cert and tls_key "+
+				"exist, are readable, and are a matching pair; removing both makes "+
+				"dibd generate its own", *dir, cerr)
+		}
+		tlsPair = []tls.Certificate{cert}
+	}
 	// Roles are the one part of the config that grants standing privilege, and
 	// a typo in an agent name means the grant silently applies to nobody. Saying
 	// what it did lets an operator see that from the log rather than by reading
@@ -373,8 +407,11 @@ func run() error {
 	up = append(up, "hint", "run `dibs web` for a board link, `dibs mcp-config` for the agent config")
 	slog.Info("dibd up", up...)
 	serve := func() error { return srv.Serve(ln) }
-	if tr.certFile != "" {
-		serve = func() error { return srv.ServeTLS(ln, tr.certFile, tr.keyFile) }
+	if len(tlsPair) > 0 {
+		// The pair already loaded above, so nothing is read from disk here and
+		// there is no second chance for it to fail after the log line.
+		srv.TLSConfig = &tls.Config{Certificates: tlsPair, MinVersion: tls.VersionTLS12}
+		serve = func() error { return srv.ServeTLS(ln, "", "") }
 	}
 	if err := serve(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err

@@ -6,6 +6,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -145,5 +146,48 @@ func TestHarnessNamesResolveHowAgentsSpellThem(t *testing.T) {
 	if _, ok := For("emacs"); ok {
 		t.Error("For(\"emacs\") matched something; unknown harnesses must not be given " +
 			"a plugin that does not fit them")
+	}
+}
+
+// The Codex payload's file key must be the path Codex actually reads.
+//
+// `Files` maps a path RELATIVE TO Root, and Codex's root is `~/.codex`. The key
+// was `hooks/hooks.json`, which is Claude Code's layout, so a consumer honouring
+// the structured contract wrote `~/.codex/hooks/hooks.json`: a valid file in a
+// place Codex never looks. The catalogue's own prose said `~/.codex/hooks.json`
+// in the same breath, so the two halves of one document disagreed and only the
+// half a human reads was right.
+//
+// This is the failure this project keeps paying for: an install that reports
+// success and does nothing. Nothing compared the key with the instruction, so
+// nothing could see it.
+func TestTheCodexPayloadPutsItsHookWhereCodexReadsIt(t *testing.T) {
+	p, ok := For("codex")
+	if !ok {
+		t.Fatal("no codex plugin")
+	}
+	if _, has := p.Files["hooks.json"]; !has {
+		t.Errorf("the codex payload has no \"hooks.json\" at its root; keys are %v. "+
+			"Files are written relative to Root (%s), and Codex reads hooks.json "+
+			"there: a nested key writes a correct file to a path it never opens",
+			keysOf(p.Files), p.Root)
+	}
+	if _, wrong := p.Files["hooks/hooks.json"]; wrong {
+		t.Error("the codex payload still keys its hook under \"hooks/hooks.json\", " +
+			"which is Claude Code's layout. Codex reads ~/.codex/hooks.json")
+	}
+	// And the setup prose must name the same place, because the two halves of
+	// this catalogue disagreeing is how the defect survived: a machine follows
+	// Files, a person follows the steps, and only one of them was right.
+	var says bool
+	for _, st := range p.Setup {
+		if strings.Contains(st.Check, "~/.codex/hooks.json") ||
+			strings.Contains(st.Do, "~/.codex/") {
+			says = true
+		}
+	}
+	if !says {
+		t.Error("no setup step names ~/.codex as where hooks.json goes, so a reader " +
+			"has nothing to check the structured path against")
 	}
 }

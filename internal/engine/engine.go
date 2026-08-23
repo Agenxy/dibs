@@ -41,6 +41,20 @@ type Engine struct {
 	// seen: ephemeral lease freshness (reads/heartbeats). Never replayed;
 	// folded into recorded sweep decisions (SPEC §2 tier 2).
 	seen map[string]time.Time
+	// turnEnded: when a finishing lifecycle hook (Stop, SessionEnd,
+	// SubagentStop) last said this agent's TURN is over.
+	//
+	// Separate from `seen` because they answer different questions and only one
+	// of them decays. `seen` is "when did we last hear from it", which the lease
+	// sweep needs; this is "has it stopped since then", which the waker needs.
+	// Reading recency alone, a turn that ended two seconds after its last call
+	// looked like a running agent for the whole cooldown, so blocking mail
+	// arriving in that window got no wake at all and was never retried: the
+	// exact loss the wake path exists to prevent, inside its own guard.
+	//
+	// Ephemeral and rebuildable, same tier as `seen`: losing it on restart costs
+	// at most one unnecessary wake.
+	turnEnded map[string]time.Time
 
 	// announceSent throttles announcement redelivery, keyed "agent\x00serial".
 	//
@@ -178,6 +192,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 		ringCap: 65536, buckets: map[string]*bucket{},
 		resumeAt: map[string]time.Time{},
 		streams:  map[chan core.Event]bool{}, seen: map[string]time.Time{},
+		turnEnded:    map[string]time.Time{},
 		announceSent: map[string]time.Time{}, announceTries: map[string]int{},
 		wokeFor: map[string]time.Time{},
 	}

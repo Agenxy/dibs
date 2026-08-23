@@ -35,9 +35,23 @@ func TestShippedHooksMatchTheAdvertisedToolSchemas(t *testing.T) {
 		t.Fatal("no tool schemas found; this check would pass against anything")
 	}
 
-	files, err := filepath.Glob(filepath.Join("..", "..", "plugins", "*", "hooks", "hooks.json"))
-	if err != nil || len(files) == 0 {
-		t.Fatalf("no shipped hooks.json found (%v): this check verified nothing", err)
+	// Both layouts. Claude Code reads plugins/<name>/hooks/hooks.json; Codex
+	// reads a hooks.json at the root of its config directory, so the shipped
+	// tree has to mirror wherever each harness actually looks.
+	var files []string
+	for _, pat := range []string{
+		filepath.Join("..", "..", "plugins", "*", "hooks", "hooks.json"),
+		filepath.Join("..", "..", "plugins", "*", "hooks.json"),
+	} {
+		found, err := filepath.Glob(pat)
+		if err != nil {
+			t.Fatalf("globbing %s: %v", pat, err)
+		}
+		files = append(files, found...)
+	}
+	if len(files) < 2 {
+		t.Fatalf("found %d shipped hooks.json (%v); both the Codex and Claude Code "+
+			"plugins ship one, so this check is not seeing them all", len(files), files)
 	}
 
 	checked := 0
@@ -66,7 +80,7 @@ func TestShippedHooksMatchTheAdvertisedToolSchemas(t *testing.T) {
 					props, known := schemas[tool]
 					if !known {
 						t.Errorf("%s %s: calls tool %q, which this server does not define",
-							filepath.Base(filepath.Dir(filepath.Dir(f))), event, tool)
+							filepath.Base(filepath.Dir(f)), event, tool)
 						continue
 					}
 					input, _ := handler["input"].(map[string]any)
