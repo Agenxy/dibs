@@ -965,12 +965,31 @@ func (e *Engine) PullOnlyNote(l *core.Agent) string {
 	e.wakers.mu.Lock()
 	cmd, ok := e.wakers.byHarness[harness]
 	e.wakers.mu.Unlock()
-	if ok && len(cmd.argv) > 0 {
+	configured := ok && len(cmd.argv) > 0
+	// CONFIGURED IS NOT THE SAME AS CAPABLE, and this asked only the first.
+	//
+	// wakeFor has a second mandatory condition: the agent must have a
+	// UUID-shaped thread id for the resume command to name. Without one it
+	// returns before starting anything. So an active agent whose harness HAS a
+	// [wake.exec] entry, but which never supplied a thread id, got no wake and,
+	// because this went quiet the moment an argv existed, no warning either:
+	// precisely the silent success this note was added to remove, reintroduced
+	// one condition further along. Found by the pre-release review, which also
+	// caught that my own test fixture had no thread id and therefore pinned the
+	// wrong behaviour while reading as if it proved the right one.
+	if configured && threadIDOf(l) != "" {
 		return ""
 	}
 	named := harness
 	if named == "" {
 		named = "its harness"
+	}
+	if configured {
+		return "delivered to " + l.ID + ", which is active, and " + named + " HAS a wake " +
+			"command, but that agent has never supplied a harness thread id for it to " +
+			"resume: the command needs one and will not run without it. So this is " +
+			"pull-only in practice, and arrives when that agent next calls inbox or " +
+			"check_in. If it is a harness that reports a thread id, it has not yet."
 	}
 	return "delivered to " + l.ID + ", which is active, but nothing on this board can " +
 		"wake " + named + ": mail there is pull-only, so it arrives when that agent " +

@@ -18,10 +18,18 @@ import (
 // mail you cannot answer. In the reported case the only correct reply was to
 // tell the sender the desk had changed hands.
 //
-// BOTH READ PATHS are asserted. check_in builds this in the fold and the inbox
-// tool builds it in the engine, and a fix to one of two doors is a mistake this
-// release has already made twice: the adoption note, and `messages` versus
-// `inbox` disagreeing about which key carries the mail.
+// THIS COVERS check_in ONLY, and it used to claim otherwise.
+//
+// It said "BOTH READ PATHS are asserted". Every assertion below reads the
+// result of OpAckBoard, which is the fold's half; the inbox TOOL is separate
+// code in internal/engine. Deleting the engine assignment left this test green,
+// verified by doing it, so the sentence was worse than no sentence: it told a
+// reader the second door was guarded when nothing touched it. The same
+// two-doors mistake as the adoption note, this time in the comment written to
+// warn about the adoption note.
+//
+// The other door is TestTheInboxToolAlsoNamesUnanswerableSenders, in the engine
+// package, where it has to be. Found by the pre-release review.
 func TestTheInboxSaysWhenASenderCannotBeAnswered(t *testing.T) {
 	s := NewState("t", DefaultLimits())
 	reg(t, s, "reader", "tok-reader", t0)

@@ -1139,8 +1139,8 @@ func (e *Engine) refuseStealingAnotherThreadsSession(op *core.Op) error {
 	if self := e.state.AgentByToken(op.Token); self != nil && self.ID == holder.ID {
 		return nil
 	}
-	if op.Kind == core.OpRegister && op.Name != "" && holder.Name == op.Name {
-		return nil // reattaching to your own row, before any token exists
+	if op.Kind == core.OpRegister && e.registerLandsOn(op, holder) {
+		return nil // genuinely reattaching to that row, not minting a sibling
 	}
 	return &core.Error{
 		Code: "E_SESSION_TAKEN",
@@ -1150,6 +1150,39 @@ func (e *Engine) refuseStealingAnotherThreadsSession(op *core.Op) error {
 			"agent is you returning, register with the same name and your nonce " +
 			"instead, which reattaches you to it",
 	}
+}
+
+// registerLandsOn reports whether this register will resolve TO the holder
+// rather than mint a sibling beside it.
+//
+// This used to ask only whether the names matched, and a name is public. So the
+// bypass was: send the victim's NAME, the victim's thread id, and a fresh nonce
+// of your own. The name matched, the guard stood aside, and then the fold took
+// neither reattachment branch, because the nonce was not the victim's, and
+// created a sibling holding the victim's thread. Two live agents on one thread:
+// hook lookup ambiguous, and waking the sibling resumes the victim. The guard
+// let through exactly the thing it exists to stop, and my own regression test
+// missed it because its attacker used a DIFFERENT name.
+//
+// The hint that guard prints has always said "the same name and your nonce".
+// The nonce is the credential; this now checks it.
+//
+// The question is deliberately "will the fold land on this row", not "is this
+// caller entitled", because the harm is the SIBLING. A register that resolves
+// to the holder binds no new thread and steals nothing.
+func (e *Engine) registerLandsOn(op *core.Op, holder *core.Agent) bool {
+	if op.Nonce != "" {
+		// Reattachment by credential: the nonce index is what the fold uses.
+		return e.state.Nonces[op.Nonce] == holder.ID
+	}
+	// And the fold's session-only reattach, which needs no nonce and applies
+	// only to a row that HAS no nonce. SECURITY.md already describes such an
+	// agent as reclaimable by anyone who learns its session id, deliberately,
+	// because the alternative is that an agent which lost its context can never
+	// recover. Refusing it here would break that recovery without closing
+	// anything: that path lands on the holder, so no second binding appears.
+	return holder.Nonce == "" && holder.Name == op.Name &&
+		(holder.Status == core.StatusActive || holder.Status == core.StatusStale)
 }
 
 // refuseClaimWhenCoordinatorExists closes a claim the board has outgrown.

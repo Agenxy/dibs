@@ -46,9 +46,15 @@ func TestSendingToAnUnwakeableActiveAgentSaysSo(t *testing.T) {
 		t.Errorf("the warning does not name the harness or what is wrong with it: %q", note)
 	}
 
-	// And once a wake command IS configured for that harness, it goes quiet.
-	// Without this half the function could simply always warn, which would be
-	// the habituation failure this release spent three commits on.
+	// CONFIGURING A COMMAND IS NOT ENOUGH, and my first version of this test
+	// stopped here and asserted it was.
+	//
+	// wakeFor needs a UUID-shaped thread id as well: without one it returns
+	// before starting anything. This fixture has no thread id, so adding an
+	// argv makes the board configured and still incapable, and the warning must
+	// STAY. The earlier test asserted the opposite and called this recipient one
+	// the board "CAN wake", which pinned the silent-success bug it was written
+	// to prevent. Found by the pre-release review.
 	e.wakers.mu.Lock()
 	if e.wakers.byHarness == nil {
 		e.wakers.byHarness = map[string]wakeCommand{}
@@ -56,8 +62,32 @@ func TestSendingToAnUnwakeableActiveAgentSaysSo(t *testing.T) {
 	e.wakers.byHarness["some-harness"] = wakeCommand{argv: []string{"echo", "wake"}}
 	e.wakers.mu.Unlock()
 
+	if threadIDOf(l) != "" {
+		t.Fatal("setup: this fixture is supposed to have no thread id, which is the " +
+			"whole point of the case below")
+	}
+	configured := e.PullOnlyNote(l)
+	if configured == "" {
+		t.Error("went quiet as soon as a wake command was configured, while the agent " +
+			"still has no thread id for it to resume. wakeFor will not run the command, " +
+			"so the sender gets neither a wake nor a warning: the exact silent success " +
+			"this note exists to remove")
+	}
+	if !strings.Contains(configured, "thread id") {
+		t.Errorf("the warning does not say WHY a configured harness still cannot be "+
+			"woken, which is the one thing an operator could act on: %q", configured)
+	}
+
+	// And with both halves present, configured AND resumable, it finally goes
+	// quiet. Without this the function could just always warn.
+	l.SessionAliases = append(l.SessionAliases, "3f2504e0-4f89-11d3-9a0c-0305e82c3301")
+	if threadIDOf(l) == "" {
+		t.Fatal("setup: the alias was not accepted as a thread id, so the case below " +
+			"is not the one intended")
+	}
 	if n := e.PullOnlyNote(l); n != "" {
-		t.Errorf("still warning about an agent this board CAN wake: %q", n)
+		t.Errorf("still warning about an agent this board genuinely CAN wake, with a "+
+			"command configured and a thread to resume: %q", n)
 	}
 }
 

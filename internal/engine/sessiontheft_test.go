@@ -62,6 +62,38 @@ func TestAnotherAgentsThreadCannotBeClaimed(t *testing.T) {
 		}
 	})
 
+	// THE NAME IS PUBLIC; THE NONCE IS THE CREDENTIAL.
+	//
+	// The first version of this guard stood aside whenever the supplied NAME
+	// matched the holder's, on the theory that it was the row reattaching to
+	// itself before it had a token. A name is on the board for anyone to read.
+	// So the bypass was: the victim's name, the victim's thread id, and a fresh
+	// nonce of your own. The name matched, the guard allowed it, and the fold
+	// then took neither reattachment branch, because the nonce was not the
+	// victim's, and minted a SIBLING holding the victim's thread.
+	//
+	// My own regression test above missed it because its attacker used the name
+	// "attacker-a", and the same-name case I did write supplied the correct
+	// nonce. Neither covered same name with the wrong one. Found by the
+	// pre-release review.
+	t.Run("the victim's name with an attacker's own nonce", func(t *testing.T) {
+		before := len(st.Agents)
+		_, err := e.Do(ctx, &core.Op{
+			Kind: core.OpRegister, Name: "victim", Nonce: "n-not-the-victims",
+			AgentKind: core.KindPersistent, SessionID: victimThread,
+		})
+		if err == nil {
+			t.Error("an agent registered under the victim's NAME with its own nonce and " +
+				"took the victim's thread id. The board now has two live agents bound " +
+				"to one thread: hook lookup is ambiguous and waking the sibling resumes " +
+				"the victim's session")
+		}
+		if got := len(st.Agents); got != before {
+			t.Errorf("the agent count moved from %d to %d, so a sibling was created",
+				before, got)
+		}
+	})
+
 	t.Run("bind_session cannot assert it either", func(t *testing.T) {
 		res, err := e.Do(ctx, &core.Op{
 			Kind: core.OpRegister, Name: "attacker-b", Nonce: "n-b",

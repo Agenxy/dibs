@@ -1799,8 +1799,17 @@ machines for real work. Their priority order, not ours.
   harness on the machine. The test applied is the same one the wake path applies
   before treating an id as a thread to resume, so there is one answer to the
   question rather than two. Rebinding your own id, reattaching with your own
-  name and nonce, and taking an id from a closed or archived agent all still
-  work.
+  NONCE, and taking an id from a closed or archived agent all still work.
+
+  The check is the nonce and not the name, and the first version got that
+  wrong. It stood aside whenever the supplied name matched the holder's, on the
+  theory that this was a row reattaching to itself before it had a token. A name
+  is public. So the victim's name plus a fresh nonce of your own walked through
+  the guard, the fold took neither reattachment branch, and it minted a SIBLING
+  holding the victim's thread: two live agents on one thread, which is the thing
+  the guard exists to prevent, let through by the guard. The regression test
+  missed it because its attacker used a different name. Caught by the next
+  review round.
 
   Refused at the ingress and not in the fold, because `Ledger.Replay` calls
   `Apply` directly: a refusal there would reject bindings that were legal when
@@ -1847,9 +1856,14 @@ machines for real work. Their priority order, not ours.
   that had coordinated four minutes earlier and nothing stirred. Nothing is
   broken when this fires: some harnesses are pull-only by design and Dibs will
   not spawn a process to drive one that has not asked for it. The defect was the
-  silence. It is quiet again the moment a `[wake.exec]` entry exists for that
-  harness, and a dormant recipient keeps the better sentence it already had
-  rather than collecting two warnings about one delivery.
+  silence. It goes quiet when the board can actually wake that agent, which
+  needs BOTH a `[wake.exec]` entry for the harness and a harness thread id for
+  the command to resume. The first version asked only whether a command was
+  CONFIGURED, so an agent with a command and no thread id got neither a wake nor
+  a warning: the same silent success, one condition further along, and the test
+  pinned it by using a fixture that could never have been woken. A dormant
+  recipient keeps the better sentence it already had rather than collecting two
+  warnings about one delivery.
 
 - **Restoring a recovered agent's nonce rewrote history.** Archival blanks
   `Agent.Nonce` while keeping the nonce index, so an agent recovered from
