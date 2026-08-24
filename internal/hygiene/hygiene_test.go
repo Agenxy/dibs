@@ -339,7 +339,26 @@ func walk(t *testing.T, root string, visit func(rel, abs string)) {
 		t.Skip("not a git work tree (a release tarball, most likely): repository " +
 			"hygiene is only meaningful in a checkout")
 	}
-	out, err := exec.Command(git, "-C", root, "ls-files", "-z").Output() // #nosec G204
+	// TRACKED AND UNTRACKED BOTH, and the untracked half is the point.
+	//
+	// This was `ls-files -z`, which lists tracked files only, so every hygiene
+	// guard built on this walk silently skipped a file that had not been `git
+	// add`ed yet. That is exactly backwards: a brand new file is the one most
+	// likely to break a convention, because nothing about it has ever been
+	// reviewed.
+	//
+	// The way it goes wrong is quiet and complete. Write a new file, run the
+	// gate, watch it pass having read none of it, commit, and the guard first
+	// fires on the NEXT run, against code that has already shipped. Caught by
+	// doing precisely that: a new test file with two em dashes in its doc
+	// comment went through a green `task ci` and was reported by the following
+	// one. Same shape as everything else in this repository's list of things
+	// that report success while doing nothing.
+	//
+	// --exclude-standard keeps .gitignore honoured, so build output and vendor
+	// trees stay out.
+	out, err := exec.Command(git, "-C", root, // #nosec G204
+		"ls-files", "-z", "--cached", "--others", "--exclude-standard").Output()
 	if err != nil {
 		t.Fatalf("listing tracked files: %v", err)
 	}

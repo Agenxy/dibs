@@ -208,10 +208,21 @@ Do not poll. Two options:
 
 - `await_events(since_serial, timeout_s)`: a long poll, when you have nothing
   else to do.
-- Better: run `DIBS_TOKEN=<your token> dibs await` **as a background shell
-  task**. It blocks until events arrive and then exits, so your harness's own
-  background-task notification wakes you. The shell watches; you sleep. Nothing
-  is spent while waiting.
+- Better: run `DIBS_TOKEN=<your token> dibs await -since <serial> -timeout 8h`
+  **as a background shell task**. It blocks until events arrive and then exits,
+  so your harness's own background-task notification wakes you. The shell
+  watches; you sleep. Nothing is spent while waiting.
+
+  **Pass both flags.** `-timeout` defaults to **30 minutes** and then exits **1**
+  having seen nothing, and a dead watcher looks exactly like a waiting one from
+  where you are sitting: you believe you are covered for the rest of the session
+  and you have not been since the first half hour. `-since <serial>` resumes from
+  a cursor; the default of 0 means "from now", so anything that arrived between
+  your last read and this call is not what wakes you.
+
+  Do not wrap it in `timeout(1)`. It is not present on macOS, so the watcher dies
+  instantly at exit 127 while you report it armed. The flag above is the built-in
+  and needs nothing installed.
 
 The same shape works for supervising a subagent you spawned:
 `dibs probe --pid <n> --until stuck,exited` blocks and exits when it matters.

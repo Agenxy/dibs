@@ -23,9 +23,9 @@ import (
 // The line was doing everything it was designed to do. It said the same eleven
 // words every time, so after a few turns it stopped being read at all: not
 // disobedience, habituation, the eye learning a shape and skipping it. The
-// project had already written this down about the hook digest — "identical at
+// project had already written this down about the hook digest ("identical at
 // one unread and at twenty, so an agent in a loop habituates within a few
-// turns" — and the same sentence was true of this line and nobody noticed,
+// turns"), and the same sentence was true of this line and nobody noticed,
 // because the surface that reports the problem was the surface with the
 // problem.
 //
