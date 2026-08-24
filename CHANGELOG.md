@@ -1818,6 +1818,22 @@ machines for real work. Their priority order, not ours.
 
 ### Added
 
+- **The daemon records which agent every lifecycle hook resolved to.** The wake
+  path fails silently by construction: `hook_poll` answers, the agent it
+  answered for is not the one asking, and nothing anywhere says so. The only
+  observable is an agent reporting that its mail never arrives, which is
+  indistinguishable from an agent that did not look. Three agents on this
+  project's own board spent a night on exactly that and produced five
+  successive, confident, mostly wrong accounts of the cause, while the daemon
+  knew the answer on every single call and wrote none of them down. It logs the
+  arriving session id beside the resolved agent now, at debug, and at INFO when
+  a hook resolves to NOBODY in a directory that HAS agents, which is the case
+  that is a fault rather than background noise. Operator-only, in the daemon's
+  own log, which already redacts tokens, nonces and bodies: counts and mail are
+  not in it. The arriving id is the point, because a Claude Code session carries
+  several and only a coincidence makes the one the hook sends match the one
+  register bound.
+
 - **The inbox says when a sender can no longer be answered.** Mail arrives from
   agents that have since closed or been archived, and nothing said so: replying
   returned `E_NO_AGENT` with a helpful suggestion of who to try instead, so the

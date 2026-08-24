@@ -171,6 +171,7 @@ func (e *Engine) HookPoll(
 		l := e.state.AgentForHook(sessionID, cwd)
 		e.noteHook("poll", l != nil)
 		e.noteTurnState(l, event)
+		e.logHookResolution(sessionID, cwd, event, l)
 		if l == nil {
 			// A session that resolves to nobody may still BE somebody, returning.
 			//
@@ -953,6 +954,48 @@ func (e *Engine) markWoken(keys []string, now time.Time) {
 	for _, k := range keys {
 		e.wokeFor[k] = now
 	}
+}
+
+// logHookResolution records WHICH agent a hook resolved to, and says so loudly
+// when it resolved to nobody in a directory that has agents.
+//
+// The wake path fails silently by construction: hook_poll answers, the agent it
+// answered for is simply not the one asking, and nothing anywhere says so. A
+// whole night went into diagnosing exactly that on this board, with three
+// agents producing three different and mostly wrong accounts of it, because the
+// only observable was "my mail never arrives". The daemon knew the answer on
+// every single call and never wrote it down.
+//
+// The id is logged because it is the thing that differs. A Claude Code session
+// carries several (its session UUID, a host session id, and the `host-<ppid>`
+// the stdio bridge derives), the hook sends one and register may have bound
+// another, and only a coincidence makes them match. Seeing the arriving id
+// beside the resolved agent is the whole diagnosis.
+//
+// Operator-only, in the daemon's own log, which already redacts tokens, nonces
+// and message bodies. No mail, no counts, nothing about what is waiting.
+//
+// The unresolved case is INFO and only when this directory has agents. A
+// session in a directory nobody has ever coordinated from resolving to nobody
+// is the ordinary case and would drown the signal; a session in a directory
+// that HAS agents, resolving to none of them, is the fault.
+func (e *Engine) logHookResolution(sessionID, cwd, event string, l *core.Agent) {
+	if sessionID == "" {
+		return
+	}
+	if l != nil {
+		slog.Debug("hook resolved",
+			"session_id", sessionID, "agent", l.ID, "event", event, "cwd", cwd)
+		return
+	}
+	if !e.state.AgentsIn(cwd) {
+		slog.Debug("hook resolved to nobody, and this directory has no agents",
+			"session_id", sessionID, "event", event, "cwd", cwd)
+		return
+	}
+	slog.Info("hook resolved to NOBODY in a directory that has agents: "+
+		"the wake path is reaching no one for this session",
+		"session_id", sessionID, "event", event, "cwd", cwd)
 }
 
 // reattachHint tells an unresolved session that an agent of its own may be

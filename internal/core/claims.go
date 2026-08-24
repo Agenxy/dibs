@@ -255,6 +255,31 @@ func (s *State) releaseClaims(agent string) []string {
 	return released
 }
 
+// AgentsIn reports whether any agent that still exists works in this directory,
+// whatever its status.
+//
+// Deliberately NOT ReattachableIn, which answers a different question and was
+// briefly used for this one. That one lists rows somebody could reclaim, so it
+// excludes ACTIVE agents and rows with no nonce. For "did this hook arrive
+// somewhere that coordinates at all", a live agent obviously counts, and it is
+// the case that matters most: a directory whose agents are all busy is exactly
+// where a hook resolving to nobody is a fault rather than background noise.
+func (s *State) AgentsIn(cwd string) bool {
+	if cwd == "" {
+		return false
+	}
+	want := cleanPath(cwd)
+	for _, l := range s.Agents {
+		if l.Gone() || l.Agent == nil {
+			continue
+		}
+		if cleanPath(l.Agent.CWD) == want {
+			return true
+		}
+	}
+	return false
+}
+
 // ReattachableIn names the idle agents that were working in this directory and
 // still hold a nonce, sorted, so the answer is stable.
 //
