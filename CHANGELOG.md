@@ -1867,6 +1867,17 @@ machines for real work. Their priority order, not ours.
   registrations written by this version restore, every historical one keeps the
   semantics it was written under. Found by a pre-release review round.
 
+- **The icon shipped broken, in the copy that is compiled into the binary.** A
+  `--` sequence is illegal inside an XML comment, and both icon files carry a
+  design-rationale comment naming the `--accent` custom property, so neither was
+  well-formed XML. An SVG that does not parse does not degrade, it does not
+  render: the browser stops at the first error and draws nothing. It had never
+  rendered, and a person noticed rather than the gate. The fix then landed on
+  `docs/icon.svg` alone, leaving `internal/assets/icon.svg`, which `go:embed`
+  compiles in and the board serves, still broken while the repository looked
+  repaired: the same copy-drift shape as `SKILLS.md` and its embedded twin.
+  Both are fixed and every tracked `.svg` is now parsed by the gate.
+
 ## [0.0.6] - 2026-08-20
 
 ### Security
