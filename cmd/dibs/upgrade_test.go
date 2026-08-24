@@ -410,3 +410,56 @@ func TestUpgradeCanReadTheUnitsDibsWrites(t *testing.T) {
 		})
 	}
 }
+
+// A daemon the registry knows about is stopped even if it did not answer.
+//
+// There are two independent signals that something is running: a request to the
+// board, and the registry the daemon writes for itself. Cutover consulted only
+// the first, so any transient failure of that one request, a timeout, a
+// certificate hiccup, an address resolving differently, skipped the stop
+// entirely. The replacement then started, exited at once on the directory lock
+// the original still holds, and the original kept answering: verification found
+// a board, had no pre-upgrade serial to compare it against, and printed
+// `upgraded:` for the process this command exists to replace. With --adopt-dir
+// the data directory is renamed under that live writer too.
+func TestARegisteredDaemonIsStoppedEvenIfItDidNotAnswer(t *testing.T) {
+	dir := t.TempDir()
+	stopped := 0
+	p := &plan{
+		dir:       dir,
+		installed: filepath.Join(dir, "dibd"),
+		// The snapshot failed, and the registry says one is live.
+		serving: false,
+		running: daemonState{addr: "127.0.0.1:4777"},
+		stop:    func(string) error { stopped++; return nil },
+		start:   func(_, _, _ string, _ daemonState) error { return nil },
+		confirm: func(string) error { return nil },
+	}
+	if err := p.cutover(); err != nil {
+		t.Fatalf("cutover: %v", err)
+	}
+	if stopped != 1 {
+		t.Errorf("the daemon was stopped %d times, want 1. The registry names one for "+
+			"this directory; the board simply did not answer this instant. Skipping "+
+			"the stop leaves the original running, the replacement dying on its lock, "+
+			"and the command reporting an upgrade that did not happen", stopped)
+	}
+
+	// And a board that is genuinely absent is not stopped, or the fix would be
+	// a cutover that always signals something.
+	stopped = 0
+	p2 := &plan{
+		dir: dir, installed: filepath.Join(dir, "dibd"),
+		serving: false, running: daemonState{},
+		stop:    func(string) error { stopped++; return nil },
+		start:   func(_, _, _ string, _ daemonState) error { return nil },
+		confirm: func(string) error { return nil },
+	}
+	if err := p2.cutover(); err != nil {
+		t.Fatalf("cutover on an absent board: %v", err)
+	}
+	if stopped != 0 {
+		t.Errorf("a board with nothing registered and nothing answering was stopped "+
+			"%d times", stopped)
+	}
+}

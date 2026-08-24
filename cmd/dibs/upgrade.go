@@ -183,9 +183,16 @@ func planUpgrade(o upgradeOpts) (*plan, error) {
 	var serveErr error
 	p.before, serveErr = fleetSnapshot()
 	p.serving = serveErr == nil
-	if p.serving {
+	switch {
+	case p.serving:
 		say("%s serial %d, %d agent(s)", ui.Dim("running  "), p.before.Serial, p.before.Agents)
-	} else {
+	case p.running.addr != "":
+		// The registry says one is there and it did not answer. Saying only
+		// "nothing is answering" invites the reader to believe the board is
+		// already down, which is the assumption that made the stop skippable.
+		say("%s registered on %s and not answering (%v): it will still be stopped",
+			ui.Dim("running  "), p.running.addr, serveErr)
+	default:
 		say("%s nothing is answering on %s", ui.Dim("running  "), origin())
 	}
 
@@ -301,7 +308,21 @@ func (p *plan) preflight() error {
 // daemon being up again however it ends.
 func (p *plan) cutover() error {
 	stopped := false
-	if p.serving {
+	// EITHER SIGNAL IS ENOUGH TO MEAN "SOMETHING IS RUNNING".
+	//
+	// p.serving is one request to the board, and p.running comes from the
+	// registry the daemon writes: two independent pieces of evidence, and this
+	// consulted only the first. Any transient failure of that request, a
+	// timeout, a certificate hiccup, an address that resolved differently, made
+	// serving false and skipped the stop entirely. The replacement then started,
+	// exited at once on the directory lock the original still holds, and the
+	// original went on answering: verification found a board, found no
+	// pre-upgrade serial to compare it against, and printed `upgraded:` for the
+	// process this command was supposed to replace. With --adopt-dir the data
+	// directory is renamed under that live writer as well.
+	//
+	// A registered daemon is stopped whether or not it answered a moment ago.
+	if p.serving || p.running.addr != "" {
 		step("stopping the daemon")
 		if err := p.doStop(p.dir); err != nil {
 			return fmt.Errorf("could not stop the daemon, so nothing else was changed: %w", err)
@@ -889,7 +910,11 @@ func bare(a string) string {
 // So the file is split into candidate values, unescaped, and compared as whole
 // paths.
 func unitNames(unit, dir string) bool {
-	b, err := os.ReadFile(unit) // #nosec G304 -- the operator's own unit path
+	// #nosec G304,G703 -- `unit` is a service-unit path this project builds from
+	// the process's own HOME (or XDG_CONFIG_HOME) plus a fixed filename, or one
+	// the operator passed for their own machine. It is read and compared, never
+	// written, and unitPinning is the caller that made the taint visible.
+	b, err := os.ReadFile(unit)
 	if err != nil {
 		return true
 	}

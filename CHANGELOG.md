@@ -998,6 +998,39 @@ machines for real work. Their priority order, not ours.
   arrival is recorded and passed, which is the same redundancy the burst check
   has.
 
+- **`dibs upgrade` could leave the old daemon running and call it upgraded.**
+  Two independent signals say something is running: a request to the board, and
+  the registry the daemon writes for itself. Cutover consulted only the first,
+  so any transient failure of that one request skipped the stop entirely: the
+  replacement started, exited at once on the directory lock the original still
+  holds, and the original went on answering. Verification then found a board,
+  had no pre-upgrade serial to compare it against, and printed `upgraded:` for
+  the process the command exists to replace. With `--adopt-dir` the data
+  directory is renamed under that live writer as well. A registered daemon is
+  stopped whether or not it answered a moment ago.
+
+- **`dibs upgrade` could rewrite another board's service unit.** The function
+  that decides which unit belongs to this board asked `strings.Contains`, so a
+  unit for `~/.dibs-old` was accepted as the unit for `~/.dibs` and then
+  rewritten and reloaded. `--adopt-dir` renames a directory to exactly that
+  shape, which makes the two most likely to collide the two most likely to be
+  present. The exact-token matcher was already in the same package, written for
+  this question, with the tests that prove a substring is wrong; it simply was
+  not called here.
+
+- **The approval panel showed the Approve button and not the reason.** Two
+  carriers arrive for the same state: `_meta` holds a body-redacted copy,
+  because it travels through hosts that put tool results in front of the model,
+  and the content beside it holds the readable answer the panel asked for with
+  its own token. The panel preferred the redacted one in all three paths, so a
+  request card kept its grant, its adopt and its Approve button and showed no
+  body at all, and a question lost its declared choices. That is the worst
+  version of this surface: it asks somebody to decide with the deciding part
+  removed. The redacted copy still decides which messages there are, because it
+  is also the filtered one; the readable copy fills in what redaction emptied.
+  All 88 panel checks passed against the unreadable state, because they counted
+  messages and read action labels and never looked at the text.
+
 - **An unauthorised admin alias took a valid coordinator grant down with it.**
   The one-agent-one-role rule collected every admin alias that RESOLVED and
   skipped a coordinator naming the same agent, and resolving is not being
