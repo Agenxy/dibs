@@ -1745,6 +1745,21 @@ machines for real work. Their priority order, not ours.
   name. Both routes now return one shared sentence, because two hand-written
   copies of a sentence are two chances to be wrong about it.
 
+- **`SECURITY.md` promised that only one presence prompt waits at a time, and
+  the lock behind that sentence is per process.** `promptBusy` is a mutex inside
+  one `dibd`, and `dibd -allow-parallel` is a supported way to run several on
+  one Mac, so two boards can each have a Touch ID check outstanding and the
+  serialisation does not reach between them. The comment on the lock argued the
+  right premise and drew the wrong conclusion from it, that a screen is package
+  level when a screen is machine level. The document now says "per daemon" and
+  names the gap, and the code comment says what the lock actually covers. The
+  control that does hold across daemons is the one the same section already
+  rests on: `dibs web` prints a four-letter code and a sheet showing a different
+  one is not yours. Whether two sheets can be on screen at once is a question
+  about macOS that has not been measured here, and saying Dibs provides the
+  machine-wide guarantee when it does not is the part that was wrong either way.
+  Found by the pre-release review.
+
 ## [0.0.6] - 2026-08-20
 
 ### Security

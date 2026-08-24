@@ -62,10 +62,21 @@ not start. That makes an unexpected prompt refusable, which is a real property
 and a weaker one than binding. **If a prompt appears that you did not cause,
 decline it, and treat it as a report worth making.**
 
-**Only one prompt waits at a time, and the sheet names a code.** A refusable
-prompt is no defence while two are outstanding, so `/bootstrap` serialises: a
-second presence check while one is waiting is refused with 409 rather than
-queued.
+**Only one prompt waits at a time per daemon, and the sheet names a code.** A
+refusable prompt is no defence while two are outstanding, so `/bootstrap`
+serialises: a second presence check while one is waiting is refused with 409
+rather than queued.
+
+**Per daemon, and this used to say it without the qualifier.** The lock is a
+mutex inside one `dibd`, and `dibd -allow-parallel` is a supported way to run
+several on one Mac, each with its own. So two boards can have a presence check
+outstanding at the same time, and the serialisation above does not reach
+between them. Whether both sheets can actually be on screen at once depends on
+how macOS schedules LocalAuthentication from two signed helpers, which has not
+been measured here; the honest statement is that Dibs does not provide the
+machine-wide guarantee, not that the operating system fails to. Anyone running
+parallel daemons should read the next paragraph as the control that applies to
+them, because it is the one that still does.
 
 Serialising alone is not enough, and an earlier version of this section claimed
 otherwise. First-request-wins is itself a confusion primitive: an agent leaves a

@@ -273,9 +273,30 @@ func Available() bool {
 // caller is expected to say "try again" rather than to wait.
 var ErrPromptBusy = errors.New("a presence check is already waiting for an answer")
 
-// promptBusy guards the single on-screen prompt. Package level because the
-// SCREEN is package level: two authGates, or a gate and an MCP handler, are
-// still one person looking at one Mac.
+// promptBusy guards the single on-screen prompt WITHIN ONE DAEMON, which is
+// less than the screen it is reasoning about.
+//
+// This said "package level because the SCREEN is package level: two authGates,
+// or a gate and an MCP handler, are still one person looking at one Mac". The
+// premise is right and the conclusion does not follow from it: a screen is
+// MACHINE level, and a package-level mutex is per PROCESS. `dibd
+// -allow-parallel` is a supported deployment of exactly several processes on
+// one Mac, and each of them holds its own copy of this, so each can have a
+// presence check waiting at the same time. The one thing the refusal exists to
+// prevent, an approval satisfying a request it was not raised for, is
+// prevented inside a daemon and not between them.
+//
+// NOT YET CLOSED, and said here rather than left as a guarantee that is not
+// one. Whether it is reachable in practice depends on something this comment
+// cannot assert: whether macOS serialises the LocalAuthentication sheets from
+// two signed helpers, and whether a person can tell the two apart. That needs
+// two release daemons with separate data directories and concurrent
+// human_unlock calls, and until somebody runs it the honest statement is that
+// Dibs does not provide the machine-wide control, rather than that it does.
+//
+// If it is closed, the shape already exists: parallel.go claims its daemon slot
+// under a host-wide lock for the same reason, so that two daemons starting
+// together cannot both conclude they are alone.
 var promptBusy struct {
 	sync.Mutex
 	held bool
