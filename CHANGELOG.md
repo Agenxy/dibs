@@ -1038,6 +1038,17 @@ machines for real work. Their priority order, not ours.
   decides what an agent does next, which is the part that mattered, and saying
   the broader thing made the narrower one unbelievable.
 
+- **A permission hint was chosen by folder rather than by failure.** Anything
+  under `~/Desktop`, `~/Documents` or `~/Downloads` that matching could not read
+  was told it was a macOS protected-folder problem, and advised to move the
+  checkout or grant the daemon Full Disk Access. A directory that simply has no
+  `.git` got the same advice, with the real answer sitting in the error text
+  beside it. Both remedies are heavier than the fix and one of them moves a
+  working tree for nothing. The distinguishing symptom was already written in
+  that function's own comment and not used: the protected-folder case makes git
+  BLOCK, so it presents as a deadline, and a clean fast answer from git means
+  git ran. Reported by an agent that followed the advice.
+
 - **`dibs upgrade` could leave the old daemon running and call it upgraded.**
   Two independent signals say something is running: a request to the board, and
   the registry the daemon writes for itself. Cutover consulted only the first,
