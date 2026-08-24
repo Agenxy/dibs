@@ -1651,6 +1651,61 @@ machines for real work. Their priority order, not ours.
   first is a thread the agent left: a document that would have argued a future
   reader back into a fixed bug.
 
+- **The nudge that tells an agent it has mail never changed, so it stopped
+  being read.** The `waiting` line rides on every authenticated write, which
+  makes it the most reliable delivery path here: no hook, no plugin, no session
+  id, and it cannot be misrouted. It fired correctly on roughly forty
+  consecutive tool calls of one session with a message unread throughout, and
+  was deferred every time; the operator found the mail. It said the same eleven
+  words on the fortieth call as on the first, so within a few turns there was
+  nothing in it for the eye to catch on. `pendingMail` had already diagnosed
+  exactly this in its own comment and left the line unchanged, which is how the
+  surface that reports the problem came to have it. Both that line and the hook
+  digest now carry the AGE of what is waiting: a fact worth triaging on, since
+  five minutes and five hours deserve different answers, and different text on
+  every call, so there is no fixed shape to learn. Silent under five minutes,
+  because spending the novelty on mail that arrived a moment ago is how it went
+  blind in the first place. Still counts and ages only: no bodies.
+
+- **`adopt_agent`'s result read as a standing redirect, and it is not one.** It
+  said "the source agent still exists and keeps its history: only where its mail
+  is delivered has changed", which is true of the messages it moved and reads as
+  a rule. A coordinator that adopted three mailboxes concluded it had become the
+  delivery address for that NAME and would hand the address back if the original
+  returned, and reported that to the operator. Adoption re-addresses the
+  messages that exist at that instant and creates no alias and no forwarding
+  entry; mail sent afterwards reaches whoever it is addressed to, including the
+  source the moment it comes back. The difference is the whole safety of the
+  operation, since a standing redirect would be a coordinator-approvable
+  interception of a live agent's mail. The note now says what it does, and a
+  test sends to the source after an adoption to keep it that way.
+
+- **`SKILLS.md` told agents to run `dibs await` and omitted the flag that
+  decides whether it works.** `-timeout` defaults to **30 minutes** and then
+  exits 1, so an agent following the example verbatim gets a watcher that gives
+  up half an hour in while the agent believes it is covered for the session, and
+  a dead watcher is indistinguishable from a waiting one. `-since` was missing
+  too, so the default of "from now" silently skipped anything that arrived
+  before the call. Both are in the example now, with what exit 1 means and a
+  note not to reach for `timeout(1)`, which does not exist on macOS and dies
+  instantly at 127 while reporting as armed. Reported by an agent that hit both.
+
+- **Every repository-hygiene guard was blind to files nobody had committed
+  yet.** The walk all of those checks are built on listed TRACKED files, so a
+  file that had not been `git add`ed was the one file none of them read. That is
+  exactly backwards: a brand new file is the one most likely to break a
+  convention, because nothing about it has ever been reviewed. The way it goes
+  wrong is quiet and it completes: write the file, run `task ci`, watch it pass
+  having opened none of it, commit, and the guard first fires on the NEXT run,
+  against code that has already shipped. Found by doing precisely that, two em
+  dashes in a new test file went through a green gate and were reported by the
+  following one, one commit too late to be prevention. The walk now passes
+  `--cached --others --exclude-standard`, so untracked files are read and
+  `.gitignore` still keeps build output out. The regression test is written
+  against the WALK rather than against em dashes, because the hole belonged to
+  every rule in the package equally and that one rule was only what happened to
+  notice it.
+
 ## [0.0.6] - 2026-08-20
 
 ### Security

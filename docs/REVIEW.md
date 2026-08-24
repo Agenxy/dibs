@@ -17,8 +17,15 @@ Weight your attention here, hardest first:
    - An op that changes replayable state without advancing the serial, or the
      reverse. The engine ledgers exactly when the serial advanced.
    - New json tags on core.Op / core.Message: `choices`, `grant`, `adopt`,
-     `no_process`. Renaming one is silent data loss. Check they are frozen and
-     that nothing reads a field it never sets.
+     `no_process`, `purge_mail`. Renaming one is silent data loss. Check they
+     are frozen and that nothing reads a field it never sets.
+   - `purge_mail` is the one to read hardest, and it is here because this list
+     was missing it for a whole round. It exists because CHANGING WHAT AN
+     EXISTING OP DOES is the same replay hazard as adding a rule to Apply, and
+     it has the same answer: record the decision in the Op, so a sweep written
+     by an older build keeps the semantics it was written under. That is the
+     newest instance of this repository's most expensive bug class, and the
+     brief was pointing you at the four tags that came before it.
    - Concurrency: the engine is a single writer. Anything touching e.state
      outside the loop, or blocking the loop on a human, is a bug.
 
@@ -28,10 +35,15 @@ Weight your attention here, hardest first:
    approve for it, or to take a mailbox it should not have. Also
    cmd/dibd/guard.go, which now mints a board session against Touch ID.
 
-3. Anything that reports success while doing nothing. This release fixed four
-   of those and it is clearly a pattern here: a hook that returns a digest
-   nobody reads, a notification posted into a Focus mode, an approval recorded
-   with no effect, a repair spelled as a register that short-circuits.
+3. Anything that reports success while doing nothing. It is the most common
+   defect in this cycle by some margin, which makes it the thing to hunt: a
+   hook that returns a digest nobody reads, a notification posted into a Focus
+   mode, an approval recorded with no effect, a repair spelled as a register
+   that short-circuits, an upgrade that leaves the old daemon serving and
+   prints `upgraded:`, and a hygiene gate that passed a file it never opened.
+   Deliberately not a count. This document is prose that nothing runs, and a
+   number here is stale the next time one of these is found, which is the
+   failure this repository has already had three times over its tool count.
 
 4. Tests that cannot fail. Probes asserting on their own setup, tests pinning a
    string rather than a behaviour, anything that would pass against the code it
