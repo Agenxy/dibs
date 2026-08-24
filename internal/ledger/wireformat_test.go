@@ -134,6 +134,13 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		// absence is what stops a v0.0.6 ledger replaying into a board with an
 		// extra sibling agent in it.
 		"restore_nonce": true,
+		// session_guessed: whether THIS op's session alias was inferred by the
+		// daemon from the working directory rather than stated by the caller. A
+		// guess yields to a first-hand claim; without the distinction recorded,
+		// a mis-bound session id is permanent. Historical ops lack the field,
+		// decode false, and are therefore treated as STATED, which is the
+		// conservative reading: nothing already on disk starts yielding.
+		"session_guessed": true,
 	}
 
 	// Every tag the Op DECLARES, not merely the ones this fixture happens to
@@ -244,10 +251,11 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 // at build time: a value a sweep can recompute defends nothing.
 const (
 	// Updated deliberately when `session_alias` was added, again for
-	// `purge_mail`, and again for `restore_nonce`: one new tag each time, no
+	// `purge_mail`, again for `restore_nonce`, and again for `session_guessed`:
+	// one new tag each time, no
 	// rename. If you are here because a sweep moved this value, the sweep is
 	// the bug, and the tag it renamed is the data loss.
-	frozenOpFingerprint       = "sha256:9cacf683bfd55054"
+	frozenOpFingerprint       = "sha256:8d58dd298316bdd5"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

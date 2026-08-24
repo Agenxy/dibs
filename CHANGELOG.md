@@ -1848,6 +1848,26 @@ machines for real work. Their priority order, not ours.
   is ours rather than one we inherited. Nested processes fail that test, and the
   fallback is unchanged for harnesses that write no sidecar at all.
 
+- **A mis-bound session id can now find its way home.** Preventing new bad
+  bindings did nothing for the ones already on disk, and the guard that refuses
+  a held id refused the rightful session too, so the state was permanent: the
+  agent that owns the mailbox never received a wake, the agent that inherited
+  the id had no reason to notice it was holding one, and restarting the daemon
+  replayed it faithfully. Bindings now record whether they were STATED by the
+  caller or GUESSED by the daemon from the working directory, and a stated claim
+  takes an id back from a guess while taking nothing from an agent that stated
+  its own. Historical ops carry no such field, decode as stated, and are
+  therefore left alone: the conservative direction on purpose, since treating
+  them as guesses would make every agent on an upgraded board reclaimable by
+  whoever states its id first.
+
+  Resolution prefers a stated holder too, which fixes a second thing. Two agents
+  could hold one id, and the lookup returned whichever Go's map iteration
+  reached first, so the same hook could resolve to a different agent on
+  consecutive turns. That is settled by preference rather than by deleting the
+  loser's binding, because a delete belongs in the fold and would be
+  retroactive.
+
 - **A caller that says which session it is running in is now believed, instead
   of guessed at.** With no session alias on a call, the engine INFERS one by
   directory: it takes an id announced from that cwd recently and assumes the

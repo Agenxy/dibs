@@ -120,23 +120,53 @@ func (s *State) AgentBySession(sid string) *Agent {
 	if sid == "" {
 		return nil
 	}
+	// A STATED holder beats a GUESSED one, and beats map order.
+	//
+	// Two agents can hold one id: the daemon inferred it for one by directory,
+	// and the session it actually belongs to later stated it. Returning
+	// whichever Go's map iteration reached first made the answer random per
+	// call, so the same hook could resolve to a different agent on consecutive
+	// turns. Preferring the agent that STATED the id resolves that in favour of
+	// the one that can prove it is the session, and it removes the
+	// nondeterminism whether or not a reclaim ever happens.
+	//
+	// Done by preference rather than by deleting the loser's binding, because a
+	// delete belongs in the fold and would be retroactive: replaying a ledger
+	// written before this existed would start stripping bindings that were legal
+	// when they were made.
+	var guessed *Agent
 	for _, l := range s.Agents {
 		if l.Status == StatusArchived || l.Status == StatusClosed {
 			continue
 		}
-		if l.SessionID == sid {
+		if !l.holdsSession(sid) {
+			continue
+		}
+		if !l.SessionGuessed {
 			return l
 		}
-		// Also the names the harness's OTHER half uses for this same session:
-		// the bridge says `host-<ppid>`, a configured hook says whatever the
-		// harness calls its session. See Agent.SessionAliases.
-		for _, alias := range l.SessionAliases {
-			if alias == sid {
-				return l
-			}
+		// Sorted by id so two guessed holders do not swap between calls either.
+		if guessed == nil || l.ID < guessed.ID {
+			guessed = l
 		}
 	}
-	return nil
+	// Only a guess holds it: still an answer, and a stable one.
+	return guessed
+}
+
+// holdsSession reports whether this agent answers to that session id, as its
+// primary or as one of the OTHER names the same session goes by. See
+// Agent.SessionAliases.
+func (a *Agent) holdsSession(sid string) bool {
+	if a.SessionID == sid {
+		return true
+	}
+	for _, alias := range a.SessionAliases {
+		if alias == sid {
+			return true
+		}
+	}
+	return false
 }
 
 // AgentForHook resolves the agent a lifecycle hook is speaking for.
@@ -306,6 +336,18 @@ const maxSessionAliases = 8
 // fixes are already registered. An agent registered before the join existed has
 // no reason to ever register again; without this it stays unreachable by its
 // own harness's hooks forever, while every call it makes reports success.
+// bindHarnessSessionAs is bindHarnessSession plus whether the id was a GUESS.
+//
+// Recorded on the agent so a later first-hand claim can take an inferred
+// binding back without being able to take a stated one. See Op.SessionGuessed.
+func (a *Agent) bindHarnessSessionAs(sid string, guessed bool) string {
+	bound := a.bindHarnessSession(sid)
+	if bound != "" {
+		a.SessionGuessed = guessed
+	}
+	return bound
+}
+
 func (a *Agent) bindHarnessSession(sid string) string {
 	if sid == "" || sid == a.SessionID {
 		return ""

@@ -428,7 +428,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				if op.RestoreNonce && l.Nonce == "" && op.Nonce != "" {
 					l.Nonce = op.Nonce
 				}
-				l.bindHarnessSession(op.SessionAlias)
+				l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
 				// LEDGERED, like every other transition.
 				//
 				// This branch rotates the token, wakes the agent, re-arms the
@@ -507,7 +507,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				if op.PID != 0 {
 					l.PID, l.ProcStart = op.PID, op.ProcStart
 				}
-				l.bindHarnessSession(op.SessionAlias)
+				l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
 				// Ledgered for the same reason as the nonce branch above.
 				evs := []Event{{Type: "agent.reattached", Agent: l.ID, Data: map[string]any{
 					"via": "session_id",
@@ -580,7 +580,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 		Slots: map[string]Slot{},
 	}
 	s.Agents[id] = l
-	l.bindHarnessSession(op.SessionAlias) // the name its hooks use, if different
+	l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed) // the name its hooks use, if different
 	if op.Nonce != "" {
 		s.Nonces[op.Nonce] = id
 	}
@@ -830,7 +830,7 @@ func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
 	if op.Agent != nil {
 		res["identity"] = l.mergeIdentity(op.Agent)
 	}
-	if sid := l.bindHarnessSession(op.SessionAlias); sid != "" {
+	if sid := l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed); sid != "" {
 		res["session_id"] = sid
 	}
 	// A participant that HAS no process says so, which is the only way to clear
@@ -982,7 +982,7 @@ func (s *State) applyAckBoard(l *Agent, op *Op) (Result, []Event) {
 	evs := []Event{{Type: "board.acked", Agent: l.ID}}
 	// check_in is how an agent ALREADY on the board gets the name its hooks
 	// use: it is the one call they all keep making. See bindHarnessSession.
-	bound := l.bindHarnessSession(op.SessionAlias)
+	bound := l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
 	for _, m := range s.Inbox(l.ID) {
 		if m.State == MsgStatePending {
 			m.State = MsgStateDelivered

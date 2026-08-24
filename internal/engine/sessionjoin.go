@@ -153,5 +153,21 @@ func (e *Engine) mayClaimSession(sid, token string) bool {
 		return true // unclaimed
 	}
 	// Already ours is fine and idempotent; already somebody else's is not.
-	return e.state.AgentByToken(token) == holder
+	if e.state.AgentByToken(token) == holder {
+		return true
+	}
+	// UNLESS THE HOLDER ONLY GUESSED IT.
+	//
+	// A binding the daemon inferred by directory is an assumption, not a claim,
+	// and it is wrong in exactly one situation: two sessions share a directory
+	// and the agent holding the id was swept while its session kept running. The
+	// agent that actually IS this session states the id on every call it makes;
+	// the one that inherited it never said anything about it.
+	//
+	// So a stated claim takes an inferred binding back, and takes nothing from
+	// an agent that stated its own. Without this the mis-binding is permanent:
+	// the rightful session is refused its own id and the holder has no reason to
+	// notice it is holding one. That was the state of this project's own board
+	// for hours, with one agent's mail announced into another's context.
+	return holder.SessionGuessed
 }

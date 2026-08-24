@@ -174,10 +174,28 @@ type Op struct {
 	// it and keeps the semantics it was written under. Same rule AGENTS.md
 	// gives for validation in Apply, applied to changed behaviour: record the
 	// decision in the Op so replay makes the decision that was actually made.
-	RestoreNonce bool     `json:"restore_nonce,omitempty"`
-	DeadAgents   []string `json:"dead_agents,omitempty"`
-	StaleAgents  []string `json:"stale_agents,omitempty"`
-	AlivePIDs    []int    `json:"alive_pids,omitempty"`
+	RestoreNonce bool `json:"restore_nonce,omitempty"`
+
+	// SessionGuessed says this op's SessionAlias was INFERRED by the daemon from
+	// the working directory, rather than stated by the caller.
+	//
+	// The two are not equally good and were previously indistinguishable. A
+	// caller behind the stdio bridge states the session it is running inside on
+	// every call; with nothing stated, the engine falls back to picking an id
+	// announced from this cwd recently and assuming the agent registering now is
+	// that session. That guess is how a swept row's still-LIVE session id was
+	// handed to the next agent in its directory, which then received its wake
+	// notifications for hours.
+	//
+	// Recording which it was lets a first-hand claim take an id back from a
+	// guess, without letting anything take one from an agent that stated it.
+	// Set at ingress and carried into the ledger, so replay reaches the same
+	// board rather than re-deciding with today's children map, which is exactly
+	// the hazard PurgeMail and RestoreNonce above were added for.
+	SessionGuessed bool     `json:"session_guessed,omitempty"`
+	DeadAgents     []string `json:"dead_agents,omitempty"`
+	StaleAgents    []string `json:"stale_agents,omitempty"`
+	AlivePIDs      []int    `json:"alive_pids,omitempty"`
 
 	// mark_delivered: ledgered pending→delivered receipts
 	MsgSerials []uint64 `json:"msg_serials,omitempty"`
