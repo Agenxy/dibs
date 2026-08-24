@@ -1770,6 +1770,15 @@ machines for real work. Their priority order, not ours.
   one-prompt-at-a-time guarantee stops holding, and the two sentences are eight
   lines apart. Both now say so and point at each other.
 
+- **And the nudge that reports all of this walked the mailbox twice.** Splitting
+  the age out into its own helper left it calling `Inbox` a second time, which
+  scans every message on the board and sorts them. That line rides on every
+  authenticated write, which is the whole reason it is the most reliable
+  delivery path here, and it is therefore the last place to do the same
+  expensive walk twice to re-derive something the first one already had. One
+  pass now returns both the count and the oldest. Caught reviewing the fix that
+  introduced it, before it was ever tagged.
+
 ## [0.0.6] - 2026-08-20
 
 ### Security
