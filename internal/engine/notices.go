@@ -444,7 +444,20 @@ func (e *Engine) rebuildBlockingNotices() {
 		ev := core.Event{
 			Type: verdictEvent(m.State), Agent: m.To, To: m.From,
 			Serial: m.RespondedAt,
-			Data:   map[string]any{"msg_serial": m.Serial},
+			// TS, because the notice takes its age from the event, and a
+			// rebuilt event with no TS gives a notice no age at all.
+			//
+			// TerminalAt is when the verdict actually happened, which is set on
+			// the same line as RespondedAt. Left unset, every notice restored
+			// after a restart came back ageless, so a notice-only nudge went
+			// back to printing identical bytes forever: exactly the habituation
+			// the age was added to remove, reappearing on every restart. The
+			// comment three lines down already asks for more than that, and it
+			// is right: an agent must not be able to tell that its board
+			// restarted from the wording of its own mail, and an age that
+			// vanishes tells it.
+			TS:   m.TerminalAt,
+			Data: map[string]any{"msg_serial": m.Serial},
 		}
 		// The same extras publish puts on the live event, so the rebuilt line
 		// reads identically: an agent must not be able to tell that its board

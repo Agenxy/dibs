@@ -316,9 +316,11 @@ func (p *plan) preflight() error {
 		// write will do, and the real write sets it. Asking without it would
 		// refuse on the existing current unit, which is the file upgrade exists
 		// to rewrite.
-		replaceUnits = true
-		conflict := refuseIfUnitConflicts()
-		replaceUnits = false
+		conflict := func() error {
+			replaceUnits = true
+			defer func() { replaceUnits = false }()
+			return refuseIfUnitConflicts()
+		}()
 		if conflict != nil {
 			return fmt.Errorf("the service unit cannot be rewritten, so nothing has been "+
 				"stopped: %w", conflict)
