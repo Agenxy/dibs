@@ -192,7 +192,26 @@ type Op struct {
 	// Set at ingress and carried into the ledger, so replay reaches the same
 	// board rather than re-deciding with today's children map, which is exactly
 	// the hazard PurgeMail and RestoreNonce above were added for.
-	SessionGuessed bool     `json:"session_guessed,omitempty"`
+	SessionGuessed bool `json:"session_guessed,omitempty"`
+
+	// ReleaseSession drops the CALLER's own session bindings, primary and
+	// aliases, so the session they belong to can claim them back.
+	//
+	// The repair for a binding that is already wrong. Recording whether a
+	// binding was stated or guessed stops NEW ones going astray and does nothing
+	// for the ones on disk: a binding written before that field existed decodes
+	// as stated, deliberately, because reading old ones as guesses would make
+	// every agent on an upgraded board reclaimable by whoever states its id
+	// first. So the rightful session is refused its own id with E_SESSION_TAKEN
+	// and there is otherwise no way out. Measured here, where one agent held
+	// another's session id across a daemon restart and the owner could not take
+	// it back.
+	//
+	// Only ever the caller's OWN, which is what makes it safe without a role: an
+	// agent giving up its own bindings can strand nothing but itself, and it is
+	// the one participant that can always tell whether an id is really its
+	// session.
+	ReleaseSession bool     `json:"release_session,omitempty"`
 	DeadAgents     []string `json:"dead_agents,omitempty"`
 	StaleAgents    []string `json:"stale_agents,omitempty"`
 	AlivePIDs      []int    `json:"alive_pids,omitempty"`

@@ -141,6 +141,10 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		// decode false, and are therefore treated as STATED, which is the
 		// conservative reading: nothing already on disk starts yielding.
 		"session_guessed": true,
+		// release_session: whether THIS update gives up the caller's own session
+		// bindings. The repair for a binding that is already wrong, and only ever
+		// the caller's own, so it can strand nothing but itself.
+		"release_session": true,
 	}
 
 	// Every tag the Op DECLARES, not merely the ones this fixture happens to
@@ -251,11 +255,11 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 // at build time: a value a sweep can recompute defends nothing.
 const (
 	// Updated deliberately when `session_alias` was added, again for
-	// `purge_mail`, again for `restore_nonce`, and again for `session_guessed`:
-	// one new tag each time, no
+	// `purge_mail`, again for `restore_nonce`, and again for `session_guessed`
+	// and `release_session`: one new tag each time, no
 	// rename. If you are here because a sweep moved this value, the sweep is
 	// the bug, and the tag it renamed is the data loss.
-	frozenOpFingerprint       = "sha256:8d58dd298316bdd5"
+	frozenOpFingerprint       = "sha256:0e20c47da7fe4e0e"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

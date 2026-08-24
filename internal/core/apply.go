@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -845,6 +846,17 @@ func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
 		l.PID, l.ProcStart = 0, 0
 		res["process"] = "no process recorded: liveness is silence from here on"
 	}
+	// The repair for a binding that is already wrong. See Op.ReleaseSession:
+	// only ever the caller's own, so it can strand nothing but itself.
+	if op.ReleaseSession {
+		had := l.SessionID
+		l.SessionID, l.SessionAliases, l.SessionGuessed = "", nil, false
+		res["session_released"] = true
+		res["session"] = "released " + quoteOrNone(had) + ": lifecycle hooks quoting it " +
+			"now reach nobody until an agent binds it again, and the session it " +
+			"belongs to can claim it back. Re-register or check_in from that " +
+			"session to bind your own"
+	}
 	res["name"], res["description"] = l.Name, l.Description
 	return res, []Event{{Type: "agent.updated", Agent: l.ID}}, nil
 }
@@ -1371,6 +1383,14 @@ func (s *State) UnanswerableSenders(mail []*Message) []Result {
 
 // nearestAgentsHint lists live agents, closest-looking first, so a misaddressed
 // message can be fixed in one step instead of a board round trip.
+// quoteOrNone renders a session id for a result, or says there was none.
+func quoteOrNone(s string) string {
+	if s == "" {
+		return "no primary session id"
+	}
+	return strconv.Quote(s)
+}
+
 func nearestAgentsHint(s *State, want string) string {
 	var near, live []string
 	w := strings.ToLower(want)

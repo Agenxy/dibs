@@ -1848,6 +1848,21 @@ machines for real work. Their priority order, not ours.
   is ours rather than one we inherited. Nested processes fail that test, and the
   fallback is unchanged for harnesses that write no sidecar at all.
 
+- **`update` can give up a session binding that is not yours.** Recording
+  whether a binding was stated or guessed stops new ones going astray and can do
+  nothing for the ones already on disk, which decode as stated on purpose. So a
+  board that already has one was stuck: the wrong agent is woken, the mailbox's
+  owner is refused its own id with `E_SESSION_TAKEN`, the holder has no reason
+  to notice it is holding one, and a daemon restart replays it faithfully.
+  Measured here, across exactly that restart. `update` takes `release_session`
+  now, which drops the caller's own primary and aliases so the session they
+  belong to can claim them back. Only ever the caller's own, which is what makes
+  it safe with no role attached: an agent giving up its own bindings can strand
+  nothing but itself, and it is the one participant that can always tell whether
+  an id is really its session. That is the second tool-listing budget raise in
+  one night, argued for in the commit that made it, as that guard's own rule
+  asks.
+
 - **A mis-bound session id can now find its way home.** Preventing new bad
   bindings did nothing for the ones already on disk, and the guard that refuses
   a held id refused the rightful session too, so the state was permanent: the

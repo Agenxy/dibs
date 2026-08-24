@@ -79,8 +79,22 @@ func TestToolListingStaysAffordable(t *testing.T) {
 	// Worth noticing that the listing sat at 34499 against a 34500 budget, so
 	// the next parameter after this one will land here too. That is the guard
 	// working: growth is visible, and each step has to be argued for.
+	//
+	// Raised again from 34700, by 200, and this is the second raise in one
+	// night, which is worth saying rather than hiding. `update` gained
+	// `release_session`. What the agent gets for the tokens is the only exit
+	// from a state that was otherwise permanent: when a session id is bound to
+	// the wrong agent, the board wakes that agent instead of the mailbox's
+	// owner, the owner is refused its own id with E_SESSION_TAKEN, and nothing
+	// on the board could undo it. Measured here, across a daemon restart, which
+	// replayed the mis-binding faithfully. One parameter buys the fleet a way to
+	// repair itself without an operator.
+	//
+	// Two raises in a night is the guard doing its job, not failing: each one
+	// had to be argued for in the commit that made it, which is the whole point
+	// of a bound that is visible rather than absolute.
 	const (
-		budget  = 34700 // ~8.7k tokens
+		budget  = 34900 // ~8.7k tokens
 		perTool = 800   // the average that keeps a description worth reading
 	)
 	if len(b) > budget {

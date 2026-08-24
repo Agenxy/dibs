@@ -856,18 +856,19 @@ type toolArgs struct {
 	AgentRef string `json:"agent"`
 	// Into is the agent RECEIVING something, distinct from AgentRef, which is
 	// the one being acted on.
-	Into        string   `json:"into"`
-	Limit       int      `json:"limit"`
-	Topic       string   `json:"topic"`
-	Exclusive   bool     `json:"exclusive"`
-	Score       float64  `json:"score"`
-	Threshold   float64  `json:"threshold"`
-	ScorerID    string   `json:"scorer_id"`
-	ScorerVer   string   `json:"scorer_version"`
-	Evidence    []string `json:"evidence"`
-	Auto        bool     `json:"auto"`
-	Parent      string   `json:"parent"`
-	ParentNonce string   `json:"parent_nonce"`
+	Into           string   `json:"into"`
+	Limit          int      `json:"limit"`
+	Topic          string   `json:"topic"`
+	Exclusive      bool     `json:"exclusive"`
+	ReleaseSession bool     `json:"release_session"`
+	Score          float64  `json:"score"`
+	Threshold      float64  `json:"threshold"`
+	ScorerID       string   `json:"scorer_id"`
+	ScorerVer      string   `json:"scorer_version"`
+	Evidence       []string `json:"evidence"`
+	Auto           bool     `json:"auto"`
+	Parent         string   `json:"parent"`
+	ParentNonce    string   `json:"parent_nonce"`
 }
 
 // argErr turns a json decode failure into something an agent can act on.
@@ -1142,6 +1143,7 @@ func (s *Server) run(
 	case "update":
 		op.Kind, op.Name, op.Description = core.OpUpdate, a.Name, a.Description
 		op.Agent = selfReported(a)
+		op.ReleaseSession = a.ReleaseSession
 		// A CORRECTED cwd, which had no way in at all.
 		//
 		// register short-circuits a same-nonce retry inside one TTL and returns

@@ -1,0 +1,65 @@
+package core
+
+import "testing"
+
+// An agent can give up a session binding that is not its session's.
+//
+// This is the only exit from a state that was otherwise permanent. When an id
+// is bound to the wrong agent, the board wakes that agent rather than the
+// mailbox's owner; the owner is refused its own id, correctly, because somebody
+// holds it; and the holder has no reason to notice. Recording whether a binding
+// was stated or guessed stops NEW ones going wrong and cannot help the ones
+// already on disk, which decode as stated on purpose. Measured on this
+// project's own board, where a daemon restart replayed the mis-binding exactly
+// and left the owner with no move to make.
+//
+// Only ever the CALLER's own, which is what makes it safe with no role
+// attached: an agent giving up its own bindings can strand nothing but itself.
+func TestAnAgentCanReleaseItsOwnSessionBinding(t *testing.T) {
+	s := NewState("t", DefaultLimits())
+	reg(t, s, "holder", "tok", t0)
+	l := s.Agents["holder"]
+	l.SessionID = "19d67315-7718-491e-be3f-3864f577eeed"
+	l.SessionAliases = []string{"host-5360"}
+	l.SessionGuessed = true
+
+	// Setup must hold, or the release below proves nothing.
+	if s.AgentBySession("host-5360") == nil {
+		t.Fatal("setup: the alias does not resolve, so releasing it changes nothing")
+	}
+
+	res := mustApply(t, s, &Op{
+		Kind: OpUpdate, Token: "tok", Description: "d", ReleaseSession: true,
+	}, t0)
+
+	if got := s.Agents["holder"].SessionID; got != "" {
+		t.Errorf("the primary session id survived the release: %q", got)
+	}
+	if got := s.Agents["holder"].SessionAliases; len(got) != 0 {
+		t.Errorf("aliases survived the release: %v. Each one is still a live wake "+
+			"target pointing at the wrong agent", got)
+	}
+	if s.AgentBySession("19d67315-7718-491e-be3f-3864f577eeed") != nil {
+		t.Error("the released id still resolves to this agent, so the session it " +
+			"belongs to still cannot claim it back")
+	}
+	if res["session_released"] != true {
+		t.Errorf("the release is not reported (%v), so a caller cannot tell it "+
+			"happened from a call that quietly did nothing", res["session_released"])
+	}
+}
+
+// And an ordinary update leaves the binding alone, or every agent would lose
+// its wake path on the call it makes to change its own description.
+func TestAnOrdinaryUpdateKeepsTheSessionBinding(t *testing.T) {
+	s := NewState("t", DefaultLimits())
+	reg(t, s, "keeper", "tok", t0)
+	s.Agents["keeper"].SessionID = "19d67315-7718-491e-be3f-3864f577eeed"
+
+	mustApply(t, s, &Op{Kind: OpUpdate, Token: "tok", Description: "just a description"}, t0)
+
+	if got := s.Agents["keeper"].SessionID; got == "" {
+		t.Error("an ordinary update cleared the session binding, so any agent that " +
+			"revises its description stops being wakeable")
+	}
+}
