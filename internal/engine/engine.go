@@ -647,7 +647,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// only push that reaches an agent whose harness has no hooks, and the one
 	// that still works when the hooks are there and cannot resolve it.
 	if actor != nil && res != nil && op.Kind != core.OpAckBoard {
-		if w := e.waiting(actor.ID); w != "" {
+		if w := e.waiting(actor.ID, now); w != "" {
 			res["waiting"] = w
 		}
 	}

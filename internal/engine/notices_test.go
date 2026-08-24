@@ -335,7 +335,7 @@ func TestTheWakePathNamesWhatIsWaitingWithoutQuotingIt(t *testing.T) {
 	}
 
 	e := &Engine{state: st}
-	lines := e.pendingMail("victim")
+	lines := e.pendingMail("victim", time.Now())
 	if len(lines) != 1 {
 		t.Fatalf("one message is waiting, got %d", len(lines))
 	}

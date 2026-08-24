@@ -58,7 +58,7 @@ func TestNoWakeSurfaceLeaksAMessageBody(t *testing.T) {
 		t.Fatal("setup:", err)
 	}
 
-	mail := e.pendingMail("receiver")
+	mail := e.pendingMail("receiver", time.Now())
 	if len(mail) == 0 {
 		t.Fatal("setup: no pending mail, so this test would pass vacuously")
 	}
@@ -66,7 +66,7 @@ func TestNoWakeSurfaceLeaksAMessageBody(t *testing.T) {
 	surfaces := map[string]string{
 		"the wake digest (hook additionalContext)":    hookDigest("receiver", mail, nil, nil),
 		"the human notice (hook systemMessage)":       humanNotice("receiver", mail, nil, nil),
-		"the waiting line (every tool result)":        e.waiting("receiver"),
+		"the waiting line (every tool result)":        e.waiting("receiver", time.Now()),
 		"pendingMail (the lines both are built from)": strings.Join(mail, "\n"),
 	}
 	for name, text := range surfaces {
