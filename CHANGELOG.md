@@ -1848,6 +1848,27 @@ machines for real work. Their priority order, not ours.
   is ours rather than one we inherited. Nested processes fail that test, and the
   fallback is unchanged for harnesses that write no sidecar at all.
 
+- **A caller that says which session it is running in is now believed, instead
+  of guessed at.** With no session alias on a call, the engine INFERS one by
+  directory: it takes an id announced from that cwd recently and assumes the
+  agent registering now is that session. It skips ids an agent already holds,
+  which is not the same as ids still in USE. So when an agent is swept while its
+  session keeps running, the id it held becomes unheld and stays live, and the
+  next agent to register in that directory inherits a live session's id along
+  with its wake stream. Measured on this project's own board: an ephemeral row
+  was swept, the session behind it kept announcing, and the next agent resolved
+  that session's hooks to itself, so one agent's unread list was rendered into
+  another's context for hours and three agents spent a night deriving why.
+
+  There was never a need to guess for anything behind the stdio bridge, which
+  already sends the session it is running inside on every call. That is
+  preferred now, and the directory inference is left for callers that send
+  neither it nor a harness thread id. Still vetted rather than trusted: it goes
+  through the same check as any other claim, so naming somebody else's session
+  is refused rather than believed. The inference itself is unchanged and still
+  asks whether an AGENT holds an id rather than whether a SESSION is alive
+  behind it, which remains the open half.
+
 - **The daemon records which agent every lifecycle hook resolved to.** The wake
   path fails silently by construction: `hook_poll` answers, the agent it
   answered for is not the one asking, and nothing anywhere says so. The only

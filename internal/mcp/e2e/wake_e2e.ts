@@ -112,11 +112,13 @@ if (!secret) {
 }
 
 let rpcId = 0
-async function call(name: string, args: Record<string, unknown>): Promise<any> {
+async function call(name: string, args: Record<string, unknown>, meta?: Record<string, unknown>): Promise<any> {
+  const params: Record<string, unknown> = { name, arguments: args }
+  if (meta) params._meta = meta
   const res = await fetch(`http://${ADDR}/mcp`, {
     method: "POST",
     headers: { "content-type": "application/json", "X-Dibs-Local": secret },
-    body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call", params: { name, arguments: args } }),
+    body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call", params }),
   })
   const body = await res.json() as any
   return JSON.parse(body.result.content[0].text)
@@ -536,6 +538,62 @@ check("an unheld session id resolves to nobody, not to a neighbour",
   !/for your agent/.test(stranger) && !/"agent":"/.test(stranger),
   `an unknown session was attributed to an agent: ${stranger.slice(0, 300)}. ` +
   `The directory fallback must not hand a stranger somebody else's mailbox`)
+
+// ── THE CALLER'S OWN SESSION BEATS THE DIRECTORY GUESS ───────────────────
+// When no alias arrives, the engine INFERS a session by directory: it takes an
+// id announced from this cwd recently and assumes the agent registering now is
+// that session. It skips ids an agent already holds, which is not the same as
+// ids still in USE. So a swept row frees a LIVE session's id and the next agent
+// registering in that directory inherits it, along with its wake stream. That
+// happened on this project's own board and took three agents a night to find.
+//
+// The stdio bridge already sends the session it runs inside on every call, so
+// there is nothing to infer for anything behind it. This proves the ordering:
+// an id that arrives with the call wins, and the guess is only for callers that
+// send none.
+const GHOST = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"   // announced, then abandoned
+const OWN = "1f2e3d4c-5b6a-4978-8695-a4b3c2d1e0f9"      // this caller's real one
+
+// A session announces from the project directory and its agent never registers,
+// which is exactly the state a sweep leaves behind.
+await call("hook_poll", { session_id: GHOST, event: "SessionStart", cwd: project })
+await Bun.sleep(300)
+
+const claimed = await call("register", {
+  name: "own-session", description: "wake e2e", cwd: project, harness: "Claude Code",
+  nonce: "e2e-own-nonce-0123456789abcdef0123456789abcdef",
+}, { "com.dibs/session": OWN })
+
+// ASSERTED ON WHAT A HOOK RESOLVES TO, not on the register result. Two earlier
+// versions of this check were wrong about where to look. The first asked only
+// that the stranger's id was absent from the result, which binding NOTHING also
+// satisfies, so it passed against the unfixed commit. The second asked the
+// result to echo the caller's id, and the result echoes the PRIMARY session id
+// while this binds an alias, so it failed against the fix. The behaviour that
+// matters is not in that field at all: it is which agent a hook reaches.
+const ghostHook = JSON.stringify(await call("hook_poll",
+  { session_id: GHOST, event: "Stop", cwd: project }) ?? {})
+// A REGRESSION GUARD, not a reproduction, and worth labelling as such. Against
+// the commit before this fix it also passes, because there the agent bound
+// nothing at all rather than binding the stranger. It earns its place by
+// failing if preferring the caller's id is ever removed in a way that lets the
+// directory guess capture a live session; it does not by itself demonstrate the
+// original defect. The check below is the one that fails without the fix.
+check("registering does not capture a stranger's announced session",
+  !/own-session/.test(ghostHook),
+  `a hook quoting ${GHOST}, announced by a DIFFERENT session in this directory, ` +
+  `resolves to own-session: ${ghostHook.slice(0, 300)}. That agent has taken ` +
+  `over somebody else's wake stream without asking for it`)
+
+// And its own id must actually reach it, or the wake path is no better off.
+await call("send", { token: asker.token, to: "own-session", type: "question",
+  body: "does the caller's own id resolve?", deadline_s: 600 })
+await settle()
+const own = JSON.stringify(await call("hook_poll",
+  { session_id: OWN, event: "Stop", cwd: project }) ?? {})
+check("and a hook quoting that id reaches it",
+  /own-session/.test(own) && /unread message/.test(own),
+  `a hook for ${OWN} did not reach own-session: ${own.slice(0, 300)}`)
 
 console.log("─".repeat(60))
 console.log(failures === 0 ? `\x1b[32m${checks} checks passed\x1b[0m` : `\x1b[31m${failures} of ${checks} failed\x1b[0m`)
