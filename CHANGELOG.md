@@ -985,6 +985,19 @@ machines for real work. Their priority order, not ours.
   privilege is withdrawn rather than a wording fix: issue #73 has the edges that
   make it worth doing deliberately rather than in the hour before a tag.
 
+- **The wake path's long-turn ordering is exercised end to end.** Every
+  recorder in the wake suite exited at once, so what happens *during* a turn was
+  answered only by unit tests calling the pieces in the order the author
+  expected, and three defects lived in that gap: mail arriving after the woken
+  agent read its inbox was discarded, then it was recorded and the re-check
+  could not get past the same test, then the two facts the exit produces were
+  published separately and a message landing between them saw neither. The
+  suite now runs a recorder that checks in like a real agent, keeps running,
+  checks in again, and exits. Verified by disabling each fix in turn and
+  watching it fail: the first attempt disabled one of the two places the
+  arrival is recorded and passed, which is the same redundancy the burst check
+  has.
+
 - **`dibs upgrade` could not read the service unit Dibs itself writes.**
   `configure --service` emits `ExecStart` through a quoter that wraps the value
   and doubles a backslash, a quote, a `%` and a `$`; the reader split on quotes

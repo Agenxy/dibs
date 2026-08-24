@@ -330,6 +330,124 @@ cooldown = "60s"
   }
 }
 
+// ── mail arriving DURING a long turn reaches the agent ───────────────────
+// The ordering the wake path has been rewritten four times for, and the one
+// nothing here has ever run: every recorder above exits at once, so the whole
+// question of what happens during a two-hour turn was answered only by unit
+// tests that call the pieces in the order they expect.
+//
+// The three defects those unit tests missed were all in that gap. Mail arriving
+// after the woken agent read its inbox was discarded, because reading the inbox
+// is a call to Dibs and made the agent look busy. Then it was recorded and the
+// re-check still could not get past the same test. Then the two facts the exit
+// produces were published separately and a message landing between them saw
+// neither.
+//
+// So: a recorder that CHECKS IN, like a real woken agent, and then keeps
+// running. Mail arrives while it is alive. It exits. Nothing else happens.
+await mailDuringALongTurnIsNotLost()
+
+async function mailDuringALongTurnIsNotLost() {
+  const name = "mail during a long turn reaches the agent after it ends"
+  const d = mkdtempSync(join(tmpdir(), "dibs-wake-slow-"))
+  const proj = join(d, "project")
+  mkdirSync(proj)
+  const rec = join(d, "recorder.ts")
+  const lg = join(d, "wakes.jsonl")
+  const tokenFile = join(d, "sleeper.token")
+  const port = String(Number(PORT) + 2)
+  const a = `127.0.0.1:${port}`
+
+  // Records the wake, then behaves like the agent it stands in for: calls
+  // check_in, which is what makes it "recently in touch", and stays alive.
+  await Bun.write(rec, `
+await Bun.write(Bun.argv[2] + "." + process.pid + "." + Bun.nanoseconds(), "woken")
+const tok = (await Bun.file(Bun.argv[3]).text()).trim()
+const sec = (await Bun.file(Bun.argv[4]).text()).trim()
+// A real agent coordinates THROUGHOUT its turn, not only at the start. The
+// second one, just before exiting, is what makes the agent "recently in touch"
+// at the moment the command ends: without it the recency simply lapses while
+// the process sleeps, and the exit's turn-end record is never load-bearing.
+const checkIn = () => fetch("http://${a}/mcp", {
+  method: "POST",
+  headers: { "content-type": "application/json", "X-Dibs-Local": sec },
+  body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call",
+    params: { name: "check_in", arguments: { token: tok } } }),
+})
+await checkIn()
+await Bun.sleep(3000)
+await checkIn()
+`)
+  await Bun.write(join(d, "dibs.toml"), `
+[wake.exec.codex]
+argv = ["${process.execPath}", "${rec}", "${lg}", "${tokenFile}", "${join(d, "local.secret")}"]
+cooldown = "6s"
+`)
+  const dae = Bun.spawn({
+    cmd: [dibd, "-dir", d, "-addr", a],
+    env: { ...process.env, DIBS_ALLOW_PARALLEL: "1" },
+    stdout: "ignore", stderr: "ignore",
+  })
+  try {
+    let sec = ""
+    for (let i = 0; i < 60 && !sec; i++) {
+      try { sec = (await Bun.file(`${d}/local.secret`).text()).trim() } catch { await Bun.sleep(100) }
+    }
+    if (!sec) { check(name, false, "the third daemon never came up"); return }
+    const c = async (tool: string, args: Record<string, unknown>) => {
+      const r = await fetch(`http://${a}/mcp`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "X-Dibs-Local": sec },
+        body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call", params: { name: tool, arguments: args } }),
+      })
+      return JSON.parse(((await r.json()) as any).result.content[0].text)
+    }
+    const count = () => readdirSync(d).filter(f => f.startsWith(basename(lg) + ".")).length
+
+    await c("hook_poll", { session_id: THREAD, event: "SessionStart", cwd: proj })
+    const sleeper = await c("register", {
+      name: "sleeper", description: "wake e2e", session_id: `host-${process.pid}`,
+      cwd: proj, harness: "Codex", nonce: "e2e-slow-nonce-0123456789abcdef0123456789ab",
+    })
+    await Bun.write(tokenFile, sleeper.token)
+    const from = await c("register", {
+      name: "asker", description: "wake e2e", session_id: "asker-slow",
+      cwd: proj, nonce: "e2e-slow-asker-0123456789abcdef0123456789ab",
+    })
+    // Its turn is over: this is an agent that has stopped.
+    await c("hook_poll", { session_id: THREAD, event: "Stop", cwd: proj })
+
+    await c("send", { token: from.token, to: "sleeper", type: "question", body: "first", deadline_s: 600 })
+    await settle(1200)
+    if (count() !== 1) {
+      check(name, false, `the first question started ${count()} command(s), not one, ` +
+        "so there is no running turn for the second to arrive during")
+      return
+    }
+
+    // The command is alive and has checked in. This is the moment that has
+    // never been exercised: the agent looks busy, and it is about to stop.
+    await c("send", { token: from.token, to: "sleeper", type: "question", body: "during the turn", deadline_s: 600 })
+    await settle(1000)
+    if (count() !== 1) {
+      check(name, false, "a second command started beside the first, which is two " +
+        "activations of one thread: the coalescing the running check exists for")
+      return
+    }
+
+    // Let it exit, plus the cooldown, plus room for the re-check.
+    await settle(9000)
+    check(name, count() > 1,
+      "the question that arrived during the turn woke nobody after it ended. " +
+      "The agent read its inbox before that message existed, so it never saw it, " +
+      "and send reported it delivered: this is the case the exit re-check exists " +
+      "for and the one no recorder here could reach")
+  } finally {
+    try { dae.kill() } catch {}
+    try { rmSync(d, { recursive: true, force: true }) } catch {}
+  }
+}
+
 // ── an agent with no resumable identifier is left alone ───────────────────
 // Its only name is the bridge's host-<ppid>. There is nothing to resume, so
 // running the command would start a process that fails: silently, on the
