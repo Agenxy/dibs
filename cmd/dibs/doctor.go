@@ -646,13 +646,32 @@ func checkLedgerAndBoard(dir string, ok reportFn, bad, warn fixFn) {
 // wantServer is the id a Claude Code plugin hook must address: plugin:<plugin>:<server>.
 const wantServer = "plugin:dibs:dibs"
 
+// codexServer is what a Codex hook names: the server directly, no plugin
+// prefix, which is the convention of the harness that reads it.
+const codexServer = "dibs"
+
+// serverIDFor is the id a hook in THIS file has to address.
+//
+// The two shipped layouts are two harnesses: Claude Code reads
+// `<plugin>/hooks/hooks.json` and addresses `plugin:<plugin>:<server>`; Codex
+// reads a `hooks.json` at the root of its config directory and addresses the
+// server directly. Comparing both against one spelling is how doctor came to
+// report the correct Codex hook as broken.
+func serverIDFor(file string) string {
+	if filepath.Base(filepath.Dir(file)) == "hooks" {
+		return wantServer
+	}
+	return codexServer
+}
+
 func checkPluginsMatchDaemon(c *http.Client, secret string, served map[string]bool, ok reportFn, warn fixFn) {
 	wanted, misaddressed := scanShippedHooks()
 	for id, file := range misaddressed {
 		warn("a shipped hook is addressed to a server that does not exist",
-			file+" names "+id+", but this plugin publishes "+wantServer+". A hook pointed "+
-				"at an unknown server never runs and reports nothing: mail is not injected "+
-				"and the claim guard does not fire. Reinstall the plugin to pick up the fix")
+			file+" names "+id+", but that plugin publishes "+serverIDFor(file)+". A hook "+
+				"pointed at an unknown server never runs and reports nothing: mail is not "+
+				"injected and the claim guard does not fire. Reinstall the plugin to pick "+
+				"up the fix")
 	}
 	if len(wanted) == 0 {
 		return // not running from a checkout; nothing to compare
@@ -664,8 +683,14 @@ func checkPluginsMatchDaemon(c *http.Client, secret string, served map[string]bo
 		}
 		missing = append(missing, tool)
 	}
-	if len(missing) == 0 && len(misaddressed) == 0 {
-		ok("shipped hooks name tools this daemon serves, on the server it publishes")
+	if len(missing) == 0 {
+		if len(misaddressed) == 0 {
+			ok("shipped hooks name tools this daemon serves, on the server it publishes")
+		}
+		// A misaddressed hook has already been reported above, with its own
+		// remedy. Falling through here printed a second warning listing the
+		// tools this daemon does not serve, with the list empty, which reads as
+		// a fault with no content and sends the reader looking for one.
 		return
 	}
 	sort.Strings(missing)
@@ -1151,8 +1176,17 @@ func scanShippedHooks() (wanted, misaddressed map[string]string) {
 			// never runs, so mail injection and the claim guard were off with a
 			// tick beside them. Found when a coordinator holding two unread
 			// messages, one a request with a deadline, was never woken.
+			// THE EXPECTED ID DEPENDS ON THE LAYOUT, because the two harnesses
+			// address servers differently. A Claude Code plugin hook names
+			// `plugin:<plugin>:<server>`; Codex names the server directly. When
+			// this scanner learned to read both layouts it kept comparing every
+			// file against the Claude Code spelling, so `dibs doctor` reported
+			// the correct shipped Codex hook as addressed to a server that does
+			// not exist, and told the operator to reinstall the plugin, which
+			// cannot fix a file that is already right.
+			want := serverIDFor(f)
 			for _, m := range server.FindAllStringSubmatch(string(raw), -1) {
-				if m[1] != wantServer {
+				if m[1] != want {
 					misaddressed[m[1]] = f
 				}
 			}

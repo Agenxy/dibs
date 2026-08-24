@@ -507,10 +507,21 @@ tasks:
     # five releases and the Claude Desktop one still did, both valid JSON,
     # both passing every validator, neither caught by anything.
     #
-    # Stamps and stops. Tagging publishes signed artifacts, moves the Homebrew
-    # cask and writes to the MCP registry, so it stays the owner's to perform;
-    # this prints the commands rather than running them.
-    desc: 'Stamp a release across the changelog and every manifest: task release VERSION=0.0.6'
+    # Stamps and stops. Tagging publishes signed artifacts and writes to the MCP
+    # registry, so it stays the owner's to perform; this prints the commands
+    # rather than running them.
+    #
+    # It does NOT move the Homebrew cask, which this line used to claim.
+    # GoReleaser pushes the updated cask to a `cask-<version>` branch of the tap
+    # and cannot open the pull request, because the deploy key it uses can push
+    # and cannot call the API. Until somebody merges that branch, the release is
+    # published and `brew upgrade` still serves the previous build.
+    #
+    # The example version is a placeholder and has to look like one: it said
+    # `VERSION=0.0.6`, which is a version already tagged, so the command as
+    # printed is refused by the stamper. An instruction that cannot be followed
+    # is worse than none, at the step where somebody is following instructions.
+    desc: 'Stamp a release across the changelog and every manifest: task release VERSION=<next>'
     requires:
       vars: [VERSION]
     cmds:

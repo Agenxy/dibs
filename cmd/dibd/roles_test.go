@@ -776,3 +776,74 @@ func TestAnEstablishedPinDoesNotOutrankTheCurrentConfiguration(t *testing.T) {
 		}
 	})
 }
+
+// One agent gets one role, however many ways the config spells its name.
+//
+// boardconfig refuses the same STRING in both role lists, and a name and an id
+// are two strings for one agent: an agent named `Fleet Lead` registers as
+// `fleet-lead`, so `coordinator = ["fleet-lead"]` beside `admin = ["Fleet
+// Lead"]` passes validation and resolves to one identity. Every reconciliation
+// pass then granted coordinator and then admin: two ledger entries every
+// fifteen seconds, and a window in between where admin-only calls fail. That is
+// the oscillation the validator's own error message says it prevents, reachable
+// by spelling the agent two ways.
+//
+// Admin wins. It already includes coordinator authority, so the operator loses
+// nothing, and the board stops flapping.
+func TestAnAgentSpelledTwoWaysGetsOneRole(t *testing.T) {
+	eng, ctx := testEngine(t)
+	res, err := eng.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "Fleet Lead", Nonce: "n-fleet-lead-1",
+	})
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	id, _ := res["agent_id"].(string)
+	if id == "" || id == "Fleet Lead" {
+		t.Fatalf("setup: registered as %q; this test needs a name that slugs to a "+
+			"different id, which is the whole aliasing route", id)
+	}
+
+	fp, err := eng.AgentIdentity(ctx, id)
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	c := RolesConfig{
+		Coordinator: []string{id},           // the id
+		Admin:       []string{"Fleet Lead"}, // the display name: the same agent
+		Identity:    map[string]string{id: fp, "Fleet Lead": fp},
+	}
+	// THE NUMBER OF GRANTS, not the role at the end.
+	//
+	// Granting coordinator and then admin leaves the agent on admin, so reading
+	// the role afterwards passes whether or not the defect is present: the
+	// first version of this test did exactly that and could not fail. What is
+	// wrong is that it happens TWICE, every pass, for ever. A grant that
+	// changes the role advances the serial, so counting the advance counts the
+	// grants.
+	before, err := eng.EventsSince(ctx, "", 0, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	applyDeclaredRoles(ctx, eng, c, loadRolePins(t.TempDir()))
+	after, err := eng.EventsSince(ctx, "", 0, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved := after["serial"].(uint64) - before["serial"].(uint64)
+	if moved != 1 {
+		t.Errorf("one reconciliation pass advanced the serial by %d, want 1. Both "+
+			"spellings name one agent, so the pass grants coordinator and then admin: "+
+			"two ledger entries every fifteen seconds for ever, and a window in "+
+			"between where admin-only calls fail", moved)
+	}
+
+	role, err := eng.AgentRole(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if role != core.RoleAdmin {
+		t.Errorf("the agent holds %q, want admin: admin includes what coordinator can "+
+			"do, so it is the one to keep", role)
+	}
+}

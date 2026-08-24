@@ -283,6 +283,16 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 		// message terminal and consumed. An instruction that does not clear when
 		// obeyed teaches an agent that the channel nags, and the notification
 		// channel is the one thing here that has to stay worth reading.
+		//
+		// LIVE ONLY, AND IT DOES NOT SURVIVE A RESTART. Notices are ephemeral
+		// and rebuilt from replayable state, and this clearing writes nothing
+		// replayable: the rebuild asks whether the asker's awareness watermark
+		// has passed the verdict, and read_mail does not move that watermark. So
+		// a daemon restarted after the agent read its mail hands the same notice
+		// back once. It is a duplicate rather than a loss, and closing it needs
+		// a replayable record that the SENDER read an outcome, which is a new
+		// field on a ledgered message: issue #76, not something to add in the
+		// hour before a tag.
 		e.clearNoticesFor(l.ID, serial)
 		return core.Result{"message": m, "serial": e.state.Serial}
 	})

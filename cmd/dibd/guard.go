@@ -45,9 +45,19 @@ func loadOrCreateSecret(path string) (string, error) {
 	return s, nil
 }
 
+// randHex returns n random bytes as hex, or "" when the OS RNG failed.
+//
+// FAIL CLOSED. The error was discarded and the buffer returned regardless, so a
+// failing RNG produced a zero or half-filled bootstrap token, session token and
+// page key, and authentication continued with them: predictable credentials for
+// the board's front door, minted silently. Every other secret in this tree
+// propagates an entropy failure. Both callers refuse now, and a refused mint is
+// a link that does not work, which is the correct outcome and a loud one.
 func randHex(n int) string {
 	b := make([]byte, n)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		return ""
+	}
 	return hex.EncodeToString(b)
 }
 
@@ -126,6 +136,9 @@ func (g *authGate) adminHash() string {
 
 func (g *authGate) mintBootstrap() string {
 	t := randHex(32)
+	if t == "" {
+		return "" // no entropy: no token, rather than a guessable one
+	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.gcLocked()
@@ -145,6 +158,9 @@ func (g *authGate) redeemBootstrap(t string) (string, bool) {
 		return "", false
 	}
 	sess, page := randHex(32), randHex(32)
+	if sess == "" || page == "" {
+		return "", false // no entropy: no session, rather than a guessable one
+	}
 	g.sessions[sess] = boardSession{exp: time.Now().Add(sessionTTL), page: page}
 	return sess, true
 }

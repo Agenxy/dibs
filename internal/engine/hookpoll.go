@@ -43,11 +43,20 @@ func (e *Engine) hookOutput(out core.Result, strict bool) core.Result {
 		switch k {
 		case "continue", "stopReason", "suppressOutput", "systemMessage", "hookSpecificOutput":
 		default:
-			// Logged, not merely dropped. The distinction these keys carry, that
-			// "the agent was not told" and "there was nothing to tell" must not
-			// look alike, is worth keeping for whoever is debugging even when
-			// the caller's schema will not accept it on the wire.
-			slog.Debug("dropped from a strict hook response",
+			// Logged, not merely dropped, and at a level the daemon actually
+			// emits. The distinction these keys carry, that "the agent was not
+			// told" and "there was nothing to tell" must not look alike, is
+			// worth keeping for whoever is debugging even when the caller's
+			// schema will not accept it on the wire.
+			//
+			// This said the same thing and used Debug, while the daemon starts
+			// at Info: the record was dropped by the handler, so a strict hook
+			// returned {} with nothing anywhere to say which of the two had
+			// happened, and the comment promising otherwise was the only trace.
+			// Info, because it is rare (only when news existed and could not be
+			// carried) and it is exactly what somebody debugging silence needs.
+			slog.Info("dropped from a strict hook response: the caller's schema "+
+				"cannot carry it, and it is not nothing",
 				"key", k, "value", out[k])
 			delete(out, k)
 		}

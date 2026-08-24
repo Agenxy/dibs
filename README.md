@@ -927,7 +927,7 @@ each project's latest commit:
 
 | harness | speaks | why |
 |---|---|---|
-| Codex | 2025-11-25 (negotiates **2025-06-18**) | flag `mcp_2026_07_28` exists but is stage `UnderDevelopment`, default off. Its SDK supports 2025-11-25; what it actually sends in `initialize` is 2025-06-18, measured, see [plugins/codex](plugins/codex/) |
+| Codex | 2025-11-25 by default, **2026-07-28 when configured** | The flag `mcp_2026_07_28` is stage `UnderDevelopment` and off by default, so an unconfigured Codex sends 2025-06-18, measured. With the flag AND `CODEX_MCP_PROTOCOL_VERSION` on that server's entry, which is what `dibs mcp-config` prints, it runs entirely on 2026-07-28 against Dibs: this row said legacy-only for a while, and the paragraph under the table is what is current. See [plugins/codex](plugins/codex/) |
 | opencode | 2025-11-25 | bound by the TypeScript SDK (1.29.0) |
 | pi-mono | 2025-11-25 | bound by the TypeScript SDK (^1.25.2) |
 | Gemini CLI | 2025-06-18 | not stated |
@@ -941,8 +941,9 @@ The reason is one level below the harnesses, and it is the useful part:
   beta space: still declares `LATEST_PROTOCOL_VERSION = '2025-11-25'`.
 
 So every TypeScript harness is blocked on its SDK, not on its own roadmap, and
-no amount of configuration will move them until that ships. Codex is the only one
-that exposes the flag at all, and as measured above, the flag ALONE does not
+no amount of configuration will move them until that ships. **Codex is not among
+them**: it is the only one that exposes the flag at all, and it does reach 2026
+once configured. The flag ALONE does not
 change what goes on the wire: it moves only when `CODEX_MCP_PROTOCOL_VERSION` is
 set on that server's own entry as well, which is what `dibs mcp-config` prints.
 The rest of this list has no switch to set:

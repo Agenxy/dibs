@@ -114,6 +114,24 @@ const rolesReapplyEvery = 15 * time.Second
 
 // applyDeclaredRoles grants each declared role once.
 func applyDeclaredRoles(ctx context.Context, eng *engine.Engine, c RolesConfig, pins *rolePins) {
+	// ONE AGENT, ONE ROLE, decided after resolution rather than on the strings.
+	//
+	// boardconfig refuses the same STRING in both lists, and a name and an id
+	// are two strings for one agent: `coordinator = ["fleet-lead"]` beside
+	// `admin = ["Fleet Lead"]` passed validation and resolved to the same
+	// identity, so every pass granted coordinator and then admin. Two ledger
+	// entries every fifteen seconds and a window in between where admin-only
+	// calls fail: the exact oscillation the validator says it prevents,
+	// reachable by spelling the agent two ways.
+	//
+	// Admin wins, because admin already includes coordinator authority, so the
+	// operator loses nothing by the choice and the board stops flapping.
+	admins := map[string]bool{}
+	for _, a := range c.Admin {
+		if id := resolveDeclared(ctx, eng, core.RoleAdmin, a); id != "" {
+			admins[id] = true
+		}
+	}
 	for _, spec := range []struct {
 		role   string
 		agents []string
@@ -127,6 +145,13 @@ func applyDeclaredRoles(ctx context.Context, eng *engine.Engine, c RolesConfig, 
 			}
 			id := resolveDeclared(ctx, eng, spec.role, agent)
 			if id == "" {
+				continue
+			}
+			if spec.role == core.RoleCoordinator && admins[id] {
+				slog.Warn("an agent is declared as both coordinator and admin under "+
+					"different spellings; granting admin only, which includes what "+
+					"coordinator can do",
+					"agent", agent, "id", id)
 				continue
 			}
 			if !mayHoldDeclaredRole(ctx, eng, pins, c, spec.role, agent, id) {

@@ -607,7 +607,15 @@ func (e *Engine) recentlyInTouch(l *core.Agent) bool {
 	// this, an agent that called in and then stopped two seconds later read as
 	// running for the rest of the cooldown, and the one wake its next blocking
 	// message was ever going to get was skipped.
-	if done, ok := e.turnEnded[l.ID]; ok && done.After(last) {
+	// NOT STRICTLY AFTER. Both timestamps come from time.Now(), and a check-in
+	// immediately followed by the wake command exiting can read the same
+	// instant: the turn end was then ignored and the finished turn went on
+	// looking like a running one, so the next message was refused. It also made
+	// TestTheWakeExitProducesBothOfItsFactsTogether fail once at the release
+	// gate and pass two thousand times after, which is the shape of a race
+	// nobody can reproduce on demand. Equal means the end is at least as recent
+	// as the contact, and the end is the later fact by construction.
+	if done, ok := e.turnEnded[l.ID]; ok && !done.Before(last) {
 		return false
 	}
 	return !last.IsZero() && time.Since(last) < cmd.cooldown

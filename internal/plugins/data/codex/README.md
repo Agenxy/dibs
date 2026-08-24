@@ -149,7 +149,7 @@ before any of this worked, and reading it is what produced two wrong conclusions
 in this file, in opposite directions. Ask a session, not the source:
 
 ```
-codex --version                 # 2026-08-18 or later has the executor
+codex --version                 # 2026-08-18 or later has the mcp_tool executor
 ```
 
 and then `spawned_agents`, read by a SECOND agent while this thread is between

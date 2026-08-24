@@ -107,8 +107,10 @@ over plain HTTP (no stdio bridge in the way):
 | Pi | latest | **no MCP at all** | none | none |
 
 **Nobody sends `subscriptions/listen`, `resources/subscribe`, or `resources/read`.**
-Codex never even calls `resources/list`, so Dibs' resources are invisible there; only
-tools reach it.
+Codex did not call `resources/list` either when this table was measured, which is
+corrected immediately below and was contradicted by it for a while: on 2026-07-28 it
+does, and Dibs' resources are visible there. The table is a measurement with a date on
+it, and the paragraph under it is what is true now.
 
 **"Nobody speaks MCP 2026" was true when measured and is now false. Amended 2026-08-17.**
 Codex runs entirely on 2026-07-28 against Dibs today. That took a fix here, and the
@@ -262,8 +264,10 @@ model) per `codex-rs/rmcp-client/src/logging_client_handler.rs`.
   `_meta["com.dibs/token"]`) and `dibs://board`. Verified end-to-end. Unused by clients
   today; ready for the 07-28 wave.
 - **`resources.subscribe` advertised on BOTH handshakes**: including legacy
-  `initialize`, since that's the path 100% of clients take. Advertising only on
-  `server/discover` made the capability invisible.
+  `initialize`. That was every client when it was written, and it is not now:
+  Codex runs entirely on 2026-07-28 against Dibs. Advertising on both is still
+  right, because the legacy path is the transitional courtesy PHILOSOPHY.md rule
+  9 describes, and "100% of clients" is the sentence that went stale.
 
 **Not built (the next bet):** legacy `resources/subscribe` / `unsubscribe` + a GET SSE
 space to deliver `notifications/resources/updated` on 2025-11-25. This is what pays off

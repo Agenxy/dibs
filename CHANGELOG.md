@@ -998,6 +998,52 @@ machines for real work. Their priority order, not ours.
   arrival is recorded and passed, which is the same redundancy the burst check
   has.
 
+- **`dibs doctor` called the correct shipped Codex hook broken.** Teaching the
+  scanner to read both plugin layouts without teaching it that they address
+  servers differently made it judge every file against the Claude Code spelling:
+  a Codex hook correctly naming `dibs` was reported as pointed at a server that
+  does not exist, with "reinstall the plugin" as the remedy, which cannot fix a
+  file that is already right. A second warning then listed the tools the daemon
+  does not serve, with the list empty. Both fixed, and the guard runs the
+  scanner from the repository root, because the first version of it ran in the
+  package directory, scanned nothing, and passed.
+
+- **One agent could hold two roles by being spelled two ways.** The validator
+  refuses the same string in both role lists, and a name and an id are two
+  strings for one agent: `coordinator = ["fleet-lead"]` beside `admin = ["Fleet
+  Lead"]` passed and resolved to one identity, so every reconciliation granted
+  coordinator and then admin. Two ledger entries every fifteen seconds and a
+  window in between where admin-only calls fail, which is the oscillation the
+  validator's own message says it prevents. Decided after resolution now, where
+  aliases are visible, and admin wins because it already includes what
+  coordinator can do.
+
+- **A wake exit at the same instant as a check-in was ignored.** The turn end is
+  compared against the last contact with a strict `After`, and both come from
+  `time.Now()`: an agent that called in and exited within the same clock tick
+  looked like it was still running, so the next message was refused. It also
+  made a test fail once at the release gate and pass two thousand times after,
+  which is what a race nobody can reproduce looks like from the outside.
+
+- **Board credentials were minted even when the OS random source failed.** The
+  error from `crypto/rand` was discarded and the buffer returned regardless, so
+  a failing RNG produced a zero or half-filled bootstrap token, session token
+  and page key, and authentication continued with them. Both mints refuse now:
+  a link that does not work is the correct outcome, and a loud one.
+
+- **A strict hook's dropped keys were logged where the daemon does not look.**
+  The Codex strict schema cannot carry `agent` and `queued`, and the comment
+  said the distinction they encode is kept in the daemon log. It used `Debug`,
+  and the daemon starts at `Info`, so the record was dropped by the handler: a
+  strict hook returned `{}` with nothing anywhere to separate "news is queued
+  and this event could not carry it" from "there was nothing to say".
+
+- **The Codex documentation contradicted itself about what Codex can do.**
+  Several current-facing pages still described it as legacy-only, pull-only, on
+  HTTP, or unable to run `mcp_tool` hooks, in some cases a few lines from the
+  correction. The measured tables keep their dates and now point at what is
+  true; the claims that read as current say what current builds do.
+
 - **`dibs upgrade` could not read the service unit Dibs itself writes.**
   `configure --service` emits `ExecStart` through a quoter that wraps the value
   and doubles a backslash, a quote, a `%` and a `$`; the reader split on quotes
