@@ -1989,8 +1989,25 @@ func (s *State) applyAdoptAgent(op *Op, l *Agent, now time.Time) (Result, []Even
 	serial := s.finish(&evs, now)
 	return Result{
 		"ok": true, "from": from.ID, "into": into.ID, "messages": moved,
-		"note": "read them with inbox. The source agent still exists and keeps its history: " +
-			"only where its mail is delivered has changed",
+		// WHAT MOVED IS THE MAIL THAT EXISTED, and the wording has to say so.
+		//
+		// This read "only where its mail is delivered has changed", which a
+		// careful agent took to mean a standing redirect: it announced that it
+		// was now the delivery address for that NAME and would hand the address
+		// back if the original returned. Nothing here creates a rule. The loop
+		// above re-addresses the messages that exist at this instant, and mail
+		// sent afterwards goes to whoever it is addressed to, including the
+		// original the moment it comes back.
+		//
+		// The difference is the whole safety of the operation: a standing
+		// redirect would be a coordinator-approvable interception of a live
+		// agent's mail, and this is a one-time recovery of mail nobody could
+		// read. Saying it the ambiguous way invited the reader to believe the
+		// dangerous one.
+		"note": "read them with inbox. This moved the " + itoa(moved) + " message(s) " +
+			"that existed just now, once: it is not a standing redirect. The source " +
+			"agent keeps its history, and anything sent to it from here on reaches " +
+			"IT, including after it comes back",
 		"serial": serial,
 	}, evs, nil
 }
