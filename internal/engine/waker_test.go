@@ -206,7 +206,7 @@ func TestTheBoardDoesNotStartAnythingItDoesNotNeedTo(t *testing.T) {
 			Type: "message.sent", To: "live",
 			Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
 		})
-		if _, seen := en.wakers.last["live"]; seen {
+		if en.wakeSpent("live") {
 			t.Error("an agent that called the board a moment ago was woken: it will " +
 				"see this on its own next call, and starting a second activation " +
 				"for it is paying twice and interleaving two processes in one thread")
@@ -220,7 +220,7 @@ func TestTheBoardDoesNotStartAnythingItDoesNotNeedTo(t *testing.T) {
 			Type: "message.sent", To: "gone",
 			Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
 		})
-		if _, seen := en.wakers.last["gone"]; !seen {
+		if !en.wakeSpent("gone") {
 			t.Fatal("no agent in this engine can be woken at all, so the check above " +
 				"proves nothing about recency")
 		}
@@ -242,7 +242,7 @@ func TestTheBoardDoesNotStartAnythingItDoesNotNeedTo(t *testing.T) {
 			Type: "message.sent", To: "sleeper2",
 			Data: map[string]any{"msg_type": core.MsgNotify, "from": "someone"},
 		})
-		if _, woken := e.wakers.last["sleeper2"]; woken {
+		if e.wakeSpent("sleeper2") {
 			t.Error("a notify started the operator's wake command. Nobody is " +
 				"blocked on an FYI: it arrives at the agent's next activation " +
 				"and costs nothing, and spawning a process for one is what " +
@@ -255,7 +255,7 @@ func TestTheBoardDoesNotStartAnythingItDoesNotNeedTo(t *testing.T) {
 			Type: "message.sent", To: "sleeper2",
 			Data: map[string]any{"msg_type": core.MsgQuestion, "from": "someone"},
 		})
-		if _, woken := e.wakers.last["sleeper2"]; !woken {
+		if !e.wakeSpent("sleeper2") {
 			t.Fatal("a question did not wake the same agent either, so the check " +
 				"above proved nothing about the TYPE filter")
 		}
@@ -331,7 +331,7 @@ func TestAnApprovalReachesTheSubprocessWake(t *testing.T) {
 			st.Agents = map[string]*core.Agent{"asker": l}
 
 			e.maybeWake(core.Event{Type: evType, To: "asker", Data: map[string]any{}})
-			if _, spent := e.wakers.last["asker"]; !spent {
+			if !e.wakeSpent("asker") {
 				t.Errorf("%s did not reach the wake path: the agent asked, stopped, "+
 					"and has no other way to learn the answer", evType)
 			}
@@ -361,7 +361,7 @@ func TestALeaseThatHasNotLapsedIsNotProofTheAgentIsRunning(t *testing.T) {
 		Type: "message.sent", To: "justStopped",
 		Data: map[string]any{"msg_type": core.MsgQuestion},
 	})
-	if _, spent := e.wakers.last["justStopped"]; !spent {
+	if !e.wakeSpent("justStopped") {
 		t.Error("an agent whose turn ended half an hour ago was treated as running " +
 			"because its lease had not lapsed: the message waits for a human")
 	}
@@ -380,7 +380,7 @@ func TestALeaseThatHasNotLapsedIsNotProofTheAgentIsRunning(t *testing.T) {
 		Type: "message.sent", To: "live",
 		Data: map[string]any{"msg_type": core.MsgQuestion},
 	})
-	if _, spent := e2.wakers.last["live"]; spent {
+	if e2.wakeSpent("live") {
 		t.Error("started a process for an agent that called Dibs a moment ago")
 	}
 }
@@ -464,7 +464,7 @@ func TestAnAgentThatJustCalledInIsNotWokenOnTopOfItself(t *testing.T) {
 		Type: "message.sent", To: "working",
 		Data: map[string]any{"msg_type": core.MsgRequest, "from": "asker"},
 	})
-	if _, spent := e.wakers.last["working"]; spent {
+	if e.wakeSpent("working") {
 		t.Error("started a wake for an agent that called in two seconds ago. " +
 			"LastCoordination is a coalesced checkpoint and is stale on every " +
 			"healthy agent; e.seen is the authoritative one. Resuming a thread " +
@@ -480,7 +480,7 @@ func TestAnAgentThatJustCalledInIsNotWokenOnTopOfItself(t *testing.T) {
 		Type: "message.sent", To: "beforeBoot",
 		Data: map[string]any{"msg_type": core.MsgRequest, "from": "asker"},
 	})
-	if _, spent := e.wakers.last["beforeBoot"]; !spent {
+	if !e.wakeSpent("beforeBoot") {
 		t.Error("an agent with no e.seen entry and a two-hour-old checkpoint was " +
 			"treated as running: preferring e.seen must not mean ignoring the " +
 			"durable timestamp when there is nothing else")
@@ -550,7 +550,7 @@ func TestATurnThatEndedIsNotMistakenForARunningAgent(t *testing.T) {
 		Type: "message.sent", To: "stopped",
 		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
 	})
-	if _, spent := e.wakers.last["stopped"]; !spent {
+	if !e.wakeSpent("stopped") {
 		t.Error("no wake for an agent whose turn ended after its last call. " +
 			"Recent contact is a stand-in for \"is it running\", and Stop answers " +
 			"that question outright: treating the cooldown as proof of life " +
@@ -587,7 +587,7 @@ func TestATurnThatEndedIsNotMistakenForARunningAgent(t *testing.T) {
 				Type: "message.sent", To: "restarted",
 				Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
 			})
-			if _, spent := en.wakers.last["restarted"]; spent {
+			if en.wakeSpent("restarted") {
 				t.Errorf("%s did not retract the earlier Stop, so the board resumed a "+
 					"thread that is running right now. The model has not called Dibs "+
 					"in this turn yet, and it does not have to: the harness already "+
@@ -613,7 +613,7 @@ func TestATurnThatEndedIsNotMistakenForARunningAgent(t *testing.T) {
 		Type: "message.sent", To: "resumed",
 		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
 	})
-	if _, spent := e2.wakers.last["resumed"]; spent {
+	if e2.wakeSpent("resumed") {
 		t.Error("woke an agent that called in after its last stop: a finished turn " +
 			"is not a permanent verdict, and starting a second activation on top " +
 			"of a live one is what the recency check exists to prevent")
@@ -631,6 +631,21 @@ func TestATurnThatEndedIsNotMistakenForARunningAgent(t *testing.T) {
 //
 // The fix is not to remember; it is to have a way of building one that works.
 // Every wake test that goes through maybeWake uses this.
+// wakeSpent reports whether a wake has been recorded for this agent, under the
+// lock that guards it.
+//
+// maybeWake starts a GOROUTINE that writes these maps, so reading them bare
+// from the test goroutine is a data race between the test and the wake it just
+// caused. Every local run passed and CI went red once, which is how a race
+// behaves and why it took a release gate on somebody else's machine to show it.
+// The product locks correctly on both sides; the tests did not.
+func (e *Engine) wakeSpent(agent string) bool {
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	_, ok := e.wakers.last[agent]
+	return ok
+}
+
 func wakeEngine(t *testing.T, cmd WakeCommand) (*Engine, *core.State) {
 	t.Helper()
 	e := &Engine{}
@@ -680,7 +695,7 @@ func TestMaybeWakeOnAnEngineWithNoStateDoesNothingAtAll(t *testing.T) {
 		Type: "message.sent", To: "sleeper",
 		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
 	})
-	if _, spent := e.wakers.last["sleeper"]; !spent {
+	if !e.wakeSpent("sleeper") {
 		t.Error("wakeEngine does not produce an engine that can wake anybody, so " +
 			"every test built on it is as vacuous as the ones it replaced")
 	}
@@ -713,7 +728,7 @@ func TestAnAgentThatSignedOffIsNotResumed(t *testing.T) {
 				Type: "message.approved", Agent: "lael", To: "retired",
 				Data: map[string]any{"msg_serial": uint64(7)},
 			})
-			if _, spent := e.wakers.last["retired"]; spent {
+			if e.wakeSpent("retired") {
 				t.Errorf("the board resumed a %s agent. The answer it is being woken "+
 					"for was recorded as delivered:false because nobody will read it, "+
 					"and resuming a closed persistent identity walks it back to active: "+
@@ -730,7 +745,7 @@ func TestAnAgentThatSignedOffIsNotResumed(t *testing.T) {
 		Type: "message.approved", Agent: "lael", To: "here",
 		Data: map[string]any{"msg_serial": uint64(7)},
 	})
-	if _, spent := e.wakers.last["here"]; !spent {
+	if !e.wakeSpent("here") {
 		t.Fatal("no agent is woken by an approval at all, so the checks above say " +
 			"nothing about having signed off")
 	}
@@ -1029,7 +1044,7 @@ func TestTheDeferredRecheckWakesNobodyWhoNoLongerNeedsIt(t *testing.T) {
 		t.Fatal("setup: something is already blocking, so this proves nothing")
 	}
 	e.retryWakeDecision("quiet")
-	if _, spent := e.wakers.last["quiet"]; spent {
+	if e.wakeSpent("quiet") {
 		t.Error("the re-check started a wake for an agent nobody is waiting on")
 	}
 
@@ -1038,7 +1053,7 @@ func TestTheDeferredRecheckWakesNobodyWhoNoLongerNeedsIt(t *testing.T) {
 	gone.Status = core.StatusClosed
 	st.Agents["retired"] = gone
 	e.retryWakeDecision("retired")
-	if _, spent := e.wakers.last["retired"]; spent {
+	if e.wakeSpent("retired") {
 		t.Error("the re-check resumed an agent that has signed off")
 	}
 }

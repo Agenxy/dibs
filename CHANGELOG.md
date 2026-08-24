@@ -998,6 +998,14 @@ machines for real work. Their priority order, not ours.
   arrival is recorded and passed, which is the same redundancy the burst check
   has.
 
+- **The wake tests raced the wakes they caused.** `maybeWake` starts a
+  goroutine, and seventeen assertions read the maps that goroutine writes
+  without taking the lock that guards them. Every local run passed and CI went
+  red once, which is how a race behaves and why it took a gate on another
+  machine to show it. The production locking was correct on both sides; only
+  the tests were wrong, and a red release gate nobody can reproduce is its own
+  kind of defect.
+
 - **`dibs doctor` called the correct shipped Codex hook broken.** Teaching the
   scanner to read both plugin layouts without teaching it that they address
   servers differently made it judge every file against the Claude Code spelling:
