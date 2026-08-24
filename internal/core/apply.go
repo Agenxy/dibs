@@ -1051,6 +1051,20 @@ func (a *Agent) mergeIdentity(in *AgentInfo) []string {
 			changed = append(changed, f.name)
 		}
 	}
+	// The location group, together, and only when a cwd came with it.
+	//
+	// Together because they are one fact: project and the repo fields are
+	// DERIVED from the cwd by the server at ingress, so applying the cwd and
+	// leaving them would leave an agent whose recorded repository describes
+	// where it used to be. Only-when-cwd because that derivation is what keeps
+	// the rule above true: an agent asserts where it is working, and the server
+	// says what repository that is. Nothing reads these off the wire.
+	if in.CWD != "" && in.CWD != a.Agent.CWD {
+		a.Agent.CWD = in.CWD
+		a.Agent.Project, a.Agent.RepoDir = in.Project, in.RepoDir
+		a.Agent.RepoRemote, a.Agent.RepoRoots = in.RepoRemote, in.RepoRoots
+		changed = append(changed, "cwd")
+	}
 	return changed
 }
 
@@ -1149,8 +1163,11 @@ func (s *State) applyAckBoard(l *Agent, op *Op) (Result, []Event) {
 			})
 		}
 	}
+	// One walk, and reused below: Inbox scans every message on the board and
+	// sorts, and this result asked for it twice under two names.
+	inbox := s.Inbox(l.ID)
 	l.AckedSerial = s.Serial + 1
-	return Result{
+	res := Result{
 		"ok": true, "acked_serial": s.Serial + 1, "serial": s.Serial + 1,
 		// Both names for the same mail: the inbox tool calls this `messages` and
 		// this call named it `inbox`, each using the other's name, so an agent
@@ -1167,13 +1184,18 @@ func (s *State) applyAckBoard(l *Agent, op *Op) (Result, []Event) {
 		// board.serial as the cut, which is the obvious reading, would re-fetch
 		// one event it already held or reason from a board a serial behind its
 		// own cursor.
-		"board": s.boardAtNextSerial(), "inbox": s.Inbox(l.ID), "messages": s.Inbox(l.ID),
+		"board": s.boardAtNextSerial(), "inbox": inbox, "messages": inbox,
 		"truncated_before_serial": l.TruncatedBefore,
 		"announcements":           s.UnackedFor(l.ID),
 		// Empty unless this call bound one: a binding nothing reports is a
 		// binding nobody can check.
 		"session_id": bound,
-	}, evs
+	}
+	// Absent unless it applies, which is nearly always. See UnanswerableSenders.
+	if gone := s.UnanswerableSenders(inbox); len(gone) > 0 {
+		res["unanswerable_senders"] = gone
+	}
+	return res, evs
 }
 
 // applyPrune closes agents the human has finished with. Reaching a dead agent is
@@ -1471,6 +1493,52 @@ func (s *State) applyClearSlot(l *Agent, op *Op) (Result, []Event, error) {
 		[]Event{{Type: "slot.cleared", Agent: l.ID, Data: map[string]any{"slot_id": op.SlotID}}}, nil
 }
 
+// Answerable reports whether mail addressed to this id can be delivered.
+//
+// ONE predicate, because there are two callers and they disagreed by omission.
+// applySend refused a send to a closed or archived agent; the inbox said
+// nothing about receiving mail FROM one, so the only way to find out was to try
+// and be refused. Two places asking "can this agent receive mail" is two places
+// to answer it differently, which is how the inbox came to be silent about the
+// one fact a reader needs.
+func (s *State) Answerable(id string) bool {
+	return id != "" && !s.Agents[id].Gone()
+}
+
+// UnanswerableSenders names the senders of this mail that can no longer be
+// replied to, with the SAME hint the send path would have given.
+//
+// Computed at read time and never stored: liveness is a fact about now, and
+// core.Message is a ledgered struct whose json tags are frozen, so a
+// `from_status` field on it would freeze a wire name for something that is
+// stale the moment it is written.
+//
+// Empty, and therefore absent from the result, on the overwhelmingly common
+// path where every sender is still there. This matters most for adopted mail:
+// inherited mail is old by definition, so its senders are the likeliest rows on
+// the board to have evaporated, and the feature that recovers stranded mail is
+// the one that most reliably hands you mail you cannot answer. Reported from a
+// live board, where the only correct reply was telling the sender the desk had
+// changed hands, and that was the one reply the board could not deliver.
+func (s *State) UnanswerableSenders(mail []*Message) []Result {
+	seen := map[string]bool{}
+	var out []Result
+	for _, m := range mail {
+		if m.From == "" || seen[m.From] || s.Answerable(m.From) {
+			continue
+		}
+		seen[m.From] = true
+		out = append(out, Result{
+			"from": m.From,
+			"hint": nearestAgentsHint(s, m.From),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i]["from"].(string) < out[j]["from"].(string)
+	})
+	return out
+}
+
 // nearestAgentsHint lists live agents, closest-looking first, so a misaddressed
 // message can be fixed in one step instead of a board round trip.
 func nearestAgentsHint(s *State, want string) string {
@@ -1538,8 +1606,8 @@ func operatorFallback(s *State) string {
 }
 
 func (s *State) applySend(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
-	to, ok := s.Agents[op.To]
-	if !ok || to.Status == StatusClosed || to.Status == StatusArchived {
+	to := s.Agents[op.To]
+	if !s.Answerable(op.To) {
 		// Name the candidates. "Check the board" is advice the agent has to act
 		// on with another call, and it already told us who it meant: an agent
 		// that addressed "claude" and was told to go looking gave up instead,

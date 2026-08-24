@@ -923,6 +923,61 @@ func (t *tailBuffer) Bytes() []byte {
 	return append([]byte(nil), t.buf...)
 }
 
+// PullOnlyNoteFor is PullOnlyNote by agent id, read inside the loop.
+func (e *Engine) PullOnlyNoteFor(ctx context.Context, agentID string) string {
+	res, err := e.query(ctx, func() core.Result {
+		return core.Result{"note": e.PullOnlyNote(e.state.Agents[agentID])}
+	})
+	if err != nil {
+		return "" // never fail a delivered send over an advisory note
+	}
+	n, _ := res["note"].(string)
+	return n
+}
+
+// PullOnlyNote warns that mail to this agent will sit until somebody types.
+//
+// `send` already warns when the recipient is DORMANT: "it will see this when it
+// next wakes". It said nothing when the recipient was ACTIVE on a harness with
+// no wake path, which is the more misleading of the two, because an active row
+// plus a silent ok reads as "this will arrive shortly" when in fact it arrives
+// whenever a human next happens to type into that session. Measured: a request
+// with a ninety-minute deadline went to an agent that had coordinated four
+// minutes earlier, and nothing stirred.
+//
+// Nothing is broken when this fires. Some harnesses are pull-only by design,
+// and Dibs will not spawn a process to drive one that has not asked
+// (PHILOSOPHY rule 5). The defect was silence, not the absence of a wake.
+//
+// Here rather than in sleepingNote, which is where the other warning lives,
+// because THIS one depends on the operator's `[wake.exec]` config. That is an
+// impure input the fold must never read: it is not replayable, it changes
+// without an op, and a note derived from it inside Apply would make replay
+// depend on today's configuration file.
+//
+// Empty when the agent is sleeping: core already says something better about
+// that case, and two notes about one delivery is how an agent learns to skim.
+func (e *Engine) PullOnlyNote(l *core.Agent) string {
+	if l == nil || l.Sleeping() || l.Gone() {
+		return ""
+	}
+	harness := wakeHarness(l)
+	e.wakers.mu.Lock()
+	cmd, ok := e.wakers.byHarness[harness]
+	e.wakers.mu.Unlock()
+	if ok && len(cmd.argv) > 0 {
+		return ""
+	}
+	named := harness
+	if named == "" {
+		named = "its harness"
+	}
+	return "delivered to " + l.ID + ", which is active, but nothing on this board can " +
+		"wake " + named + ": mail there is pull-only, so it arrives when that agent " +
+		"next calls inbox or check_in, which may be when a person types into it. If you " +
+		"set a deadline, that is the clock it is racing."
+}
+
 // wakeHarness is the table key for this agent, lowercased as SetWakeCommands
 // stores it.
 func wakeHarness(l *core.Agent) string {

@@ -1061,6 +1061,27 @@ func blobContent(res core.Result) []map[string]any {
 	}
 }
 
+// noteIfNobodyCanWake adds the pull-only warning when core said nothing.
+//
+// Only when core said nothing: a dormant recipient already gets a better
+// sentence from sleepingNote, and two warnings about one delivery is how an
+// agent learns to skim the one that mattered.
+//
+// Out of line because run() is the busiest function in this file and sits on a
+// complexity ceiling, which this tipped over when it was three inline branches.
+func (s *Server) noteIfNobodyCanWake(ctx context.Context, to string, res core.Result) core.Result {
+	if res == nil {
+		return res
+	}
+	if _, said := res["note"]; said {
+		return res
+	}
+	if n := s.eng.PullOnlyNoteFor(ctx, to); n != "" {
+		res["note"] = n
+	}
+	return res
+}
+
 func (s *Server) run(
 	ctx context.Context, name string, a *toolArgs,
 	params json.RawMessage, sessionClient *clientInfoJSON,
@@ -1095,6 +1116,25 @@ func (s *Server) run(
 	case "update":
 		op.Kind, op.Name, op.Description = core.OpUpdate, a.Name, a.Description
 		op.Agent = selfReported(a)
+		// A CORRECTED cwd, which had no way in at all.
+		//
+		// register short-circuits a same-nonce retry inside one TTL and returns
+		// the original result without applying anything: right for a retried
+		// registration, and silently a no-op for a correction spelled the same
+		// way. PID got an escape hatch here (no_process) and cwd did not, so the
+		// one field the matching hint BLAMES when a path is unreadable was the
+		// one field an agent could not fix without abandoning its identity.
+		// Reported from a live board by an agent that tried.
+		//
+		// Resolved at ingress like register's, so the derived repo fields cannot
+		// drift away from the cwd they describe, and so the fold never calls
+		// Git. Only when one is actually supplied: this is the impure step.
+		if strings.TrimSpace(a.CWD) != "" {
+			if op.Agent == nil {
+				op.Agent = &core.AgentInfo{}
+			}
+			resolveLocation(op.Agent, a.CWD)
+		}
 		// Omitting `description` means "leave it alone", not "erase it".
 		//
 		// The tool invites branch-only and title-only updates, and decoding into
@@ -1234,8 +1274,14 @@ func (s *Server) run(
 		return nil, fmt.Errorf("unknown tool %q", name)
 	}
 	res, err := s.eng.Do(ctx, op)
-	if err != nil || name != "register" {
+	if err != nil {
 		return res, err
+	}
+	if name == "send" {
+		return s.noteIfNobodyCanWake(ctx, a.To, res), nil
+	}
+	if name != "register" {
+		return res, nil
 	}
 	// A first registration is the one moment an agent has just told us what
 	// harness it is running, and the only moment the answer is news. Reattaching

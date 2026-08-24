@@ -20,6 +20,37 @@ import (
 //
 // None of it grants anything: a wrong value misleads a reader, it cannot
 // escalate. That is why it is safe to accept self-reported fields at all.
+// resolveLocation records where an agent is working and everything the server
+// derives from that, as one group.
+//
+// The agent asserts the CWD and the SERVER derives the rest. That split is the
+// whole reason mergeIdentity refuses project and the repo fields as settable:
+// an agent asserting them could make its work look like it lives in a
+// repository it has never touched. Deriving them here keeps that true while
+// letting the agent correct the one field it does own.
+//
+// Canonicalised, because this is not just a label: it is what a lifecycle hook
+// matches against when it has no session id to resolve. Stored as given, an
+// agent registered from /tmp/x could never be found by a hook asking about
+// /private/tmp/x, or vice versa.
+//
+// The only impure step in assembling an identity: paths.ProjectName shells out
+// to Git on a cache miss, bounded at a second. Affordable because it runs at
+// registration, and now on the rare update that carries a cwd, and it must not
+// move anywhere hotter. In particular it cannot be derived when the board is
+// READ: that runs on the single-writer loop, where a cold `git rev-parse` per
+// agent would hold every other agent's declare still. The engine learned that
+// once already, which is why the matcher's repo lens is resolved off the loop
+// and handed in.
+func resolveLocation(info *core.AgentInfo, cwd string) {
+	info.CWD = canonPath(cwd)
+	info.Project = paths.ProjectName(info.CWD)
+	// The identity behind the label, resolved in the same breath because both
+	// come from one memoised Identify, and recorded because the fold compares
+	// them and the fold cannot call Git.
+	info.RepoDir, info.RepoRemote, info.RepoRoots, _ = paths.Identify(info.CWD).Identity()
+}
+
 func agentInfo(params json.RawMessage, a *toolArgs, session *clientInfoJSON) *core.AgentInfo {
 	info := &core.AgentInfo{
 		Model:    a.Model,
@@ -31,23 +62,10 @@ func agentInfo(params json.RawMessage, a *toolArgs, session *clientInfoJSON) *co
 		// what a lifecycle hook matches against when it has no session id to
 		// resolve. Stored as given, an agent registered from /tmp/x could never
 		// be found by a hook asking about /private/tmp/x, or vice versa.
-		CWD:    canonPath(a.CWD),
 		Branch: a.Branch,
 		Host:   a.Host,
 	}
-	// Resolved HERE, once, at registration. This is the only impure step in
-	// assembling an identity: paths.ProjectName shells out to Git on a cache
-	// miss, bounded at a second. It is affordable because register happens
-	// once per agent, and it must not move anywhere hotter. In particular it
-	// cannot be derived when the board is read: that runs on the single-writer
-	// loop, where a cold `git rev-parse` per agent would hold every other agent's
-	// declare still. The engine already learned this once, which is why the
-	// matcher's repo lens is resolved off the loop and handed in.
-	info.Project = paths.ProjectName(info.CWD)
-	// The identity behind the label. Resolved in the same breath because both
-	// come from one memoised Identify, and recorded because the fold compares
-	// them and the fold cannot call Git.
-	info.RepoDir, info.RepoRemote, info.RepoRoots, _ = paths.Identify(info.CWD).Identity()
+	resolveLocation(info, a.CWD)
 	h, v := clientIdentity(params)
 	if h == "" && session != nil {
 		// Nothing on this request, but the session introduced itself at

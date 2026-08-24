@@ -1807,6 +1807,50 @@ machines for real work. Their priority order, not ours.
   they were written and the daemon would decline to start on its own history.
   There is a test that folds exactly such a binding to keep it that way.
 
+### Added
+
+- **The inbox says when a sender can no longer be answered.** Mail arrives from
+  agents that have since closed or been archived, and nothing said so: replying
+  returned `E_NO_AGENT` with a helpful suggestion of who to try instead, so the
+  board knew the answer and was computing it one call too late. `inbox` and
+  `check_in` now carry `unanswerable_senders` when, and only when, some sender
+  of the mail in front of you is gone, each with the same hint the send path
+  would have given. It matters most for exactly the mail adoption recovers:
+  inherited mail is old by definition, so its senders are the likeliest rows on
+  the board to have evaporated, and the feature that rescues stranded mail is
+  the one that most reliably hands you mail you cannot answer. Reported from a
+  live board, where the only correct reply was to tell the sender the desk had
+  changed hands. Nothing is stored: liveness is a fact about now, and
+  `core.Message`'s json tags are frozen. One predicate answers it for both the
+  send path and the inbox, so they cannot drift.
+
+- **`update` can correct the working directory.** Re-registering with a
+  corrected `cwd` reported `resumed: true` and kept the old value, because
+  register short-circuits a same-nonce retry inside one TTL and returns the
+  original result without applying anything: right for a retried registration,
+  and silently a no-op for a correction spelled the same way. `pid` already had
+  an escape hatch here and `cwd` had none, which made it the one field an agent
+  could not fix in-session, and the matching hint BLAMES the cwd when a path
+  cannot be read. So the field an agent was told was at fault was the field it
+  could only change by abandoning its identity and registering a sibling. The
+  project and repository travel with it, resolved by the server at ingress the
+  way register resolves them, so a corrected cwd cannot leave a repo identity
+  describing where the agent used to be, and an agent still cannot assert what
+  repository it lives in. Reported by an agent that hit it.
+
+- **`send` says when the recipient is active but nothing can wake it.** It
+  already warned about a DORMANT recipient, and said nothing about an active one
+  on a harness with no wake path, which is the more misleading of the two: an
+  active row plus a silent `ok` reads as "this will arrive shortly", when in
+  fact it arrives whenever a person next types into that session. Measured on a
+  live board, where a request carrying a ninety-minute deadline reached an agent
+  that had coordinated four minutes earlier and nothing stirred. Nothing is
+  broken when this fires: some harnesses are pull-only by design and Dibs will
+  not spawn a process to drive one that has not asked for it. The defect was the
+  silence. It is quiet again the moment a `[wake.exec]` entry exists for that
+  harness, and a dormant recipient keeps the better sentence it already had
+  rather than collecting two warnings about one delivery.
+
 ## [0.0.6] - 2026-08-20
 
 ### Security

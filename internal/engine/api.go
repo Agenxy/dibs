@@ -176,6 +176,16 @@ func (e *Engine) Inbox(ctx context.Context, token string) (core.Result, error) {
 		// Aliased rather than renamed: `messages` is what the tool has always
 		// returned and something will be reading it.
 		res["inbox"] = mail
+		// BOTH READ PATHS, or this is a fix to one of two doors again.
+		//
+		// check_in carries the same key from the fold. An agent that recovers
+		// context with check_in and one that polls inbox must not disagree about
+		// whether the sender of a message can be answered: that is exactly the
+		// shape of the `messages` / `inbox` split three lines up, which cost a
+		// debugging cycle because each tool used the other's name.
+		if gone := e.state.UnanswerableSenders(mail); len(gone) > 0 {
+			res["unanswerable_senders"] = gone
+		}
 		// Surfaced here, but NOT cleared here. Exactly one call consumes a
 		// notice, check_in, the documented checkpoint, because two owners of
 		// a clear is how the first version of this went wrong twice over: it

@@ -157,6 +157,8 @@ var toolDefs = func() []map[string]any {
 				"provider":    str("who serves that model"),
 				"effort":      str("reasoning effort, if your harness exposes it"),
 				"surface":     str("where you run: cli, claude-desktop, ide"),
+				"cwd": str("the directory you work in, if it was wrong at register or you " +
+					"have moved: your project and repository are re-derived from it"),
 			}, "token"),
 		},
 		{
