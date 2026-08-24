@@ -92,10 +92,27 @@ func (s *State) applyAdoptAgent(op *Op, l *Agent, now time.Time) (Result, []Even
 		// agent's mail, and this is a one-time recovery of mail nobody could
 		// read. Saying it the ambiguous way invited the reader to believe the
 		// dangerous one.
-		"note": "read them with inbox. This moved the " + itoa(moved) + " message(s) " +
-			"that existed just now, once: it is not a standing redirect. The source " +
-			"agent keeps its history, and anything sent to it from here on reaches " +
-			"IT, including after it comes back",
+		"note":   adoptNote(moved),
 		"serial": serial,
 	}, evs, nil
+}
+
+// adoptNote is the wording BOTH adoption paths return, and it lives here so
+// there is one of it.
+//
+// There are two ways a mailbox moves: `adopt_agent` directly, above, and
+// approving a `request` that carries `adopt`, in apply.go. They are the same
+// operation with the same consequences, and they had two hand-written notes.
+// Round forty-five fixed the dangerous wording on this one and left the other
+// saying "only where its mail is delivered has changed", so an agent that got
+// there by the approval route was still being told the thing that made a
+// careful reader announce itself as the standing delivery address for a name.
+// A second copy of a sentence is a second chance to be wrong about it, which
+// is a lesson this repository has already paid for in its embedded skills file
+// and its plugin manifests.
+func adoptNote(moved int) string {
+	return "read them with inbox. This moved the " + itoa(moved) + " message(s) " +
+		"that existed just now, once: it is not a standing redirect. The source " +
+		"agent keeps its history, and anything sent to it from here on reaches " +
+		"IT, including after it comes back"
 }

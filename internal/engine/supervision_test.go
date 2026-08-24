@@ -131,6 +131,19 @@ func TestAChildsOwnProgressCounterIsUsedAndIsMonotonic(t *testing.T) {
 //
 // So: `state` is stable across reads with no lifecycle event, and a Stop moves
 // it. Both halves, because a field that never changes would also be "stable".
+//
+// WHAT THIS DOES NOT COVER, said plainly because the omission was read as
+// coverage. Both halves stop short of production: the stability check reads
+// through childrenSnapshot below rather than through Children, and the "a Stop
+// moves it" half asks StateForEvent, which is a pure mapper, rather than
+// sending an event through HookPoll. Cut announceHookSession out of HookPoll
+// and every assertion here still passes while the published procedure this
+// guard exists for silently stops working. That was verified by doing it.
+//
+// TestALifecycleEventReachesThePublishedChildState covers the wiring end to
+// end; this one covers the two decisions underneath it. Keep both: the
+// end-to-end test says the chain is connected, and these say the pieces are
+// individually right, which is what tells you WHICH link broke.
 func TestTheStateFieldIsWhatALifecycleEventMoves(t *testing.T) {
 	e := &Engine{children: map[string]Child{
 		"s1": {SessionID: "s1", State: "running", Since: time.Now(), Seen: time.Now()},

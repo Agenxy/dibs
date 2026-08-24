@@ -293,6 +293,36 @@ func (p *plan) preflight() error {
 			return fmt.Errorf("the service unit cannot be rewritten, so nothing has been "+
 				"stopped: %w", err)
 		}
+		// AND THE REFUSALS THE WRITE ITSELF APPLIES, not only the file mode.
+		//
+		// unitIsWritable answers "can this file be opened for writing", and
+		// writeServiceUnit refuses for a second reason that has nothing to do
+		// with permissions: a unit under one of the legacy labels is still
+		// installed, and writing the current one beside it would leave two jobs
+		// on one data directory. `replaceUnits` waives the "refusing to
+		// overwrite a unit you may have tuned" check and deliberately does not
+		// waive that one.
+		//
+		// So an operator on a legacy-labelled unit passed preflight, had the
+		// daemon stopped, and only then met a refusal that was knowable before
+		// anything moved. Recovery restarted through that same legacy unit,
+		// whose ExecStart still pins the OLD binary, and printed "This is the
+		// NEW build, not a rollback": an upgrade that did not upgrade, saying it
+		// did. That is the failure class this command has already shipped once.
+		// Migrating exactly such an installation is ordinary use, which
+		// reconcile's own comment says.
+		//
+		// Asked with replaceUnits set, because the question is what the REAL
+		// write will do, and the real write sets it. Asking without it would
+		// refuse on the existing current unit, which is the file upgrade exists
+		// to rewrite.
+		replaceUnits = true
+		conflict := refuseIfUnitConflicts()
+		replaceUnits = false
+		if conflict != nil {
+			return fmt.Errorf("the service unit cannot be rewritten, so nothing has been "+
+				"stopped: %w", conflict)
+		}
 	}
 	if p.moveDir {
 		if _, err := os.Stat(adoptedName(p.inherited)); err == nil {

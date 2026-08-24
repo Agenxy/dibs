@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/agenxy/dibs/internal/core"
 )
@@ -44,6 +45,21 @@ type notice struct {
 	// the wake path repeated it every turn.
 	Msg  uint64
 	Text string
+	// At is when the thing being reported HAPPENED, not when this notice was
+	// queued, and the difference is the whole reason it is a parameter rather
+	// than a time.Now() in pushNoticeAs.
+	//
+	// The notice cache is derived and is rebuilt from the event stream on
+	// restart. Stamped at push time, every notice an agent had been ignoring
+	// for three hours would come back reading as brand new, and the nudge
+	// built on this would confidently report the wrong age: worse than the
+	// no-age line it replaced, because that one at least did not claim a fact.
+	// So it comes from the event's own TS wherever there is an event, and only
+	// an observation made here and now (a stalled child) is stamped here.
+	//
+	// Zero is allowed and means "no time known": waitedFor renders it as no
+	// age at all rather than as a very old one.
+	At time.Time
 	// Blocking marks a notice somebody is WAITING on, as opposed to one that
 	// merely keeps them current.
 	//
@@ -182,7 +198,7 @@ func (e *Engine) noteEvent(ev core.Event) {
 	// The message this notice points at, when it points at one. ev.Serial is
 	// the event; msg_serial is what the agent is told to read.
 	msg, _ := ev.Data["msg_serial"].(uint64)
-	e.pushNoticeAs(who, text, ev.Serial, msg, blocking)
+	e.pushNoticeAs(who, text, ev.Serial, msg, blocking, ev.TS)
 }
 
 // pushNotice queues one thing an agent must be told, for the wake path.
@@ -192,17 +208,17 @@ func (e *Engine) noteEvent(ev core.Event) {
 // machine, made by the supervision loop, with no op behind it and no serial of
 // its own, but it is exactly what a notice is FOR: something that happened to
 // you which you could not have inferred.
-func (e *Engine) pushNotice(who, text string, serial uint64) {
-	e.pushNoticeFor(who, text, serial, 0)
+func (e *Engine) pushNotice(who, text string, serial uint64, at time.Time) {
+	e.pushNoticeFor(who, text, serial, 0, at)
 }
 
 // pushNoticeFor is pushNotice plus the message the notice refers to.
-func (e *Engine) pushNoticeFor(who, text string, serial, msg uint64) {
-	e.pushNoticeAs(who, text, serial, msg, false)
+func (e *Engine) pushNoticeFor(who, text string, serial, msg uint64, at time.Time) {
+	e.pushNoticeAs(who, text, serial, msg, false, at)
 }
 
 // pushNoticeAs is pushNoticeFor plus whether somebody is waiting on it.
-func (e *Engine) pushNoticeAs(who, text string, serial, msg uint64, blocking bool) {
+func (e *Engine) pushNoticeAs(who, text string, serial, msg uint64, blocking bool, at time.Time) {
 	if who == "" || text == "" {
 		return
 	}
@@ -213,7 +229,7 @@ func (e *Engine) pushNoticeAs(who, text string, serial, msg uint64, blocking boo
 	// newest matter most: being told you were admitted an hour ago and then
 	// evicted is worse than being told only the eviction.
 	e.notices[who] = append(e.notices[who],
-		notice{Serial: serial, Msg: msg, Text: text, Blocking: blocking})
+		notice{Serial: serial, Msg: msg, Text: text, Blocking: blocking, At: at})
 	if n := len(e.notices[who]); n > maxNotices {
 		// BLOCKING ONES SURVIVE THE TRIM.
 		//
@@ -273,6 +289,25 @@ func (e *Engine) pendingNotices(agent string) []string {
 		out = append(out, n.Text)
 	}
 	return out
+}
+
+// oldestNotice is when the earliest outstanding notice for this agent actually
+// happened, or the zero time if none of them knows.
+//
+// Separate from pendingNotices because that one renders text for the model and
+// this one is a fact about the queue. Notices with no time are skipped rather
+// than treated as ancient: an unknown age must not become the loudest one.
+func (e *Engine) oldestNotice(agent string) time.Time {
+	var oldest time.Time
+	for _, n := range e.notices[agent] {
+		if n.At.IsZero() {
+			continue
+		}
+		if oldest.IsZero() || n.At.Before(oldest) {
+			oldest = n.At
+		}
+	}
+	return oldest
 }
 
 // clearNoticesFor drops the notices that pointed at one message, leaving the
@@ -420,7 +455,7 @@ func (e *Engine) rebuildBlockingNotices() {
 		if m.Adopt != "" && m.State == core.MsgStateApproved {
 			ev.Data["adopted"] = m.Adopt
 		}
-		e.pushNoticeAs(m.From, answeredNotice(ev), m.RespondedAt, m.Serial, true)
+		e.pushNoticeAs(m.From, answeredNotice(ev), m.RespondedAt, m.Serial, true, ev.TS)
 	}
 }
 
@@ -497,7 +532,8 @@ func (e *Engine) noteNewMember(ev core.Event) {
 			continue
 		}
 		e.pushNotice(member,
-			fmt.Sprintf("%s %s the space %q you are in", joiner, how, spaceID), ev.Serial)
+			fmt.Sprintf("%s %s the space %q you are in", joiner, how, spaceID),
+			ev.Serial, ev.TS)
 	}
 }
 

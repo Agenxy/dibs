@@ -1771,8 +1771,7 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 		}
 		res["adopted"], res["messages"] = adopted.ID, moved
 		evs[0].Data["adopted"] = adopted.ID
-		res["adopt_note"] = "the source agent keeps its history; only where its mail is " +
-			"delivered has changed"
+		res["adopt_note"] = adoptNote(moved)
 		evs = append(evs, Event{
 			Type: "agent.updated", Agent: into.ID,
 			Data: map[string]any{

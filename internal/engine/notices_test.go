@@ -714,14 +714,16 @@ func TestABlockingNoticeSurvivesABurstOfOrdinaryOnes(t *testing.T) {
 	e.SetNoticesWake(true)
 
 	// The approval it is waiting on, FIRST, so eviction by age takes it.
-	e.pushNoticeAs("asker", "lael approved your request to be coordinator", 1, 7, true)
+	e.pushNoticeAs("asker", "lael approved your request to be coordinator", 1, 7, true,
+		time.Unix(1700000000, 0))
 	if e.blockingNotices("asker") != 1 {
 		t.Fatal("the approval produced no blocking notice, so this test has nothing " +
 			"to protect")
 	}
 
 	for i := 2; i < 2+maxNotices*2; i++ {
-		e.pushNotice("asker", "newcomer joined a space you are in", uint64(i))
+		e.pushNotice("asker", "newcomer joined a space you are in", uint64(i),
+			time.Unix(1700000000, 0))
 	}
 	if n := len(e.notices["asker"]); n != maxNotices {
 		t.Fatalf("the list holds %d notices, not the %d bound, so nothing was "+
@@ -775,7 +777,8 @@ func TestTheNoticeBoundHoldsForIdenticalNotices(t *testing.T) {
 	// And through the real push path, repeatedly, because the growth compounds.
 	e := &Engine{}
 	for i := 0; i < maxNotices*3; i++ {
-		e.pushNotice("agent", "still working on the same thing", 0)
+		e.pushNotice("agent", "still working on the same thing", 0,
+			time.Unix(1700000000, 0))
 	}
 	if n := len(e.notices["agent"]); n > maxNotices {
 		t.Errorf("after %d identical pushes the list holds %d, past the %d bound",
@@ -785,9 +788,11 @@ func TestTheNoticeBoundHoldsForIdenticalNotices(t *testing.T) {
 	// A blocking notice among duplicates still survives, or the fix above has
 	// traded one failure for the other.
 	e2 := &Engine{}
-	e2.pushNoticeAs("agent", "lael approved your request", 1, 7, true)
+	e2.pushNoticeAs("agent", "lael approved your request", 1, 7, true,
+		time.Unix(1700000000, 0))
 	for i := 0; i < maxNotices*2; i++ {
-		e2.pushNotice("agent", "still working on the same thing", 0)
+		e2.pushNotice("agent", "still working on the same thing", 0,
+			time.Unix(1700000000, 0))
 	}
 	if e2.blockingNotices("agent") == 0 {
 		t.Error("the approval was evicted by identical situational notices")

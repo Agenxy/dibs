@@ -1706,6 +1706,45 @@ machines for real work. Their priority order, not ours.
   every rule in the package equally and that one rule was only what happened to
   notice it.
 
+- **`dibs upgrade` stopped the daemon for a rewrite it already knew would be
+  refused, then restarted the OLD binary and called it the new one.** The
+  rewrite is refused for two independent reasons: the file cannot be written,
+  which preflight checked, and a unit under one of the pre-`org.agenxy.dibs`
+  labels is still installed, which it did not. Preflight exists so that nothing
+  is stopped for a failure that was knowable in advance, and this one was
+  knowable the whole time. What followed is the worse half: recovery restarts
+  through the unit it could not rewrite, that unit still names this board so it
+  is preferred, its `ExecStart` still pins the previous build, and the operator
+  is told "the daemon was started again ... This is the NEW build, not a
+  rollback". So the upgrade did not happen, the old daemon is serving, and the
+  command said otherwise. Migrating exactly such an installation is ordinary
+  use. Preflight now asks the same question the real write asks, with the same
+  override set, so the refusal arrives while the board is still up.
+
+- **The waiting nudge aged the mail and nothing else.** The line reports unread
+  messages, unacknowledged announcements and updates to you, and the age added
+  above was taken from the inbox alone. With no unread mail it therefore went
+  back to printing identical bytes on every call, which is the habituation it
+  was changed to cure, still alive on two of the three things it reports: an
+  agent sitting on an announcement for six hours read the same sentence it read
+  six hours ago. The previous entry claimed both surfaces carry the age of what
+  is waiting, and the code carried the age of one source in three. It now takes
+  the oldest of whichever kinds are actually waiting. Announcements already
+  recorded when they were made; notices recorded no time at all and now carry
+  the time of the event that caused them, rather than the time they were
+  queued, so that rebuilding the cache after a restart does not report old news
+  as fresh.
+
+- **Approving a mailbox request still described a one-time move as a standing
+  redirect.** A mailbox moves by two routes, `adopt_agent` and approving a
+  `request` that carries `adopt`, and the fix above reached one of them. The
+  approval route is the one a stranded agent is actually pointed at, since the
+  hint on a taken name says to ask a coordinator, and it went on returning
+  "only where its mail is delivered has changed": the exact wording that led a
+  coordinator to announce itself as the delivery address for somebody else's
+  name. Both routes now return one shared sentence, because two hand-written
+  copies of a sentence are two chances to be wrong about it.
+
 ## [0.0.6] - 2026-08-20
 
 ### Security

@@ -212,7 +212,13 @@ func (e *Engine) reportStallLocked(a liveness.Agent, v liveness.Verdict, transcr
 	}
 	// Serial 0: this has no ledger op behind it, and claiming one would point a
 	// reader at an entry that does not exist.
-	e.pushNotice(agent, text, 0)
+	//
+	// time.Now() rather than an event's TS because there is no event: a stalled
+	// child is an observation the supervision loop just made about this machine,
+	// so now IS when it happened. Every other notice takes its time from the
+	// event that caused it, so that a rebuild after a restart does not report
+	// three-hour-old news as fresh.
+	e.pushNotice(agent, text, 0, time.Now())
 	return true
 }
 
