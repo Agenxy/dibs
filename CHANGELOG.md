@@ -1851,6 +1851,22 @@ machines for real work. Their priority order, not ours.
   harness, and a dormant recipient keeps the better sentence it already had
   rather than collecting two warnings about one delivery.
 
+- **Restoring a recovered agent's nonce rewrote history.** Archival blanks
+  `Agent.Nonce` while keeping the nonce index, so an agent recovered from
+  archive had no durable identity: `AgentIdentity` returned `""` and a role
+  declared in `dibs.toml` could never reconcile onto it again. An admin dormant
+  for a month came back as itself, with its mail and its claims, and permanently
+  without its role. Putting the nonce back is correct, and doing it
+  unconditionally was not: `Apply` is the fold and the fold runs over ops
+  accepted by older code, so every `register` already on disk began meaning
+  something different depending on which binary read it. A later same-session
+  registration then skipped that row and minted a **sibling**, so one ledger
+  reconstructed two different boards and `state == fold(ledger)` stopped holding
+  across the upgrade. The decision is now recorded in the op (`restore_nonce`),
+  the way `purge_mail` and the omitted-description flag already are:
+  registrations written by this version restore, every historical one keeps the
+  semantics it was written under. Found by a pre-release review round.
+
 ## [0.0.6] - 2026-08-20
 
 ### Security

@@ -297,6 +297,14 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	op.ClaimVerified = false
 	op.AdoptAuthorised = false
 
+	// Registrations minted by THIS version restore a recovered agent's nonce;
+	// ops already on disk do not, and must not start to. Set at ingress and
+	// carried into the ledger, so replay applies the decision that was made
+	// rather than the one this binary would make today. See Op.RestoreNonce.
+	if op.Kind == core.OpRegister {
+		op.RestoreNonce = true
+	}
+
 	// Ingress-only validation. Deliberately NOT inside Apply: Apply is also the
 	// fold that replays the ledger, so a rule added there binds history
 	// retroactively and a daemon can refuse to replay ops it wrote itself.
