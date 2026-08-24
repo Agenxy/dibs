@@ -900,9 +900,11 @@ func TestAnApprovalSurvivesARestart(t *testing.T) {
 
 	if n := restarted.blockingNotices("asker"); n == 0 {
 		t.Fatal("the agent that asked has no blocking notice after the restart. Its " +
-			"request was approved, the grant is in the ledger, and nothing will tell " +
-			"it: hook_poll, the wake path and check_in all read this list, and it is " +
-			"empty. It waits for news that already happened")
+			"request was approved, the grant is in the ledger, and check_in and " +
+			"hook_poll read this list to tell it, and it is empty. NOT the wake path: " +
+			"a rebuild publishes no event, so nothing here starts a process to bring " +
+			"a stopped agent back, and saying otherwise is how a test's own message " +
+			"comes to claim more than it checked (issue #75)")
 	}
 	// And the notice says what happened, not merely that something did.
 	var found string

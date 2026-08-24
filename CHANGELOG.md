@@ -928,6 +928,11 @@ machines for real work. Their priority order, not ours.
   exactly the set still owed and cannot drift from what the ring happens to
   still hold.
 
+  **It does not re-arm `[wake.exec]`.** The notice is waiting when the agent
+  next calls in, and nothing starts a process to bring it back: wake evaluation
+  happens when an event is published, and a rebuild publishes none. Issue #75
+  is where that half is being worked.
+
   The first version keyed on `Message.Consumed`, which is about the other
   party: the RECIPIENT consumes a message when they answer it, so every verdict
   is consumed the instant it exists and nothing was rebuilt at all. Its unit

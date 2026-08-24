@@ -708,6 +708,54 @@ func runningDaemon(dir string) daemonState {
 	return daemonState{addr: mine.Addr, parallel: others > 0}
 }
 
+// systemdTokens splits a unit the way systemd does, and reverses what
+// systemdArg escaped.
+//
+// The inverse of systemdArg, and it has to stay that way: double quotes group,
+// a backslash escapes the next character, and `%%` and `$$` are systemd's own
+// doubling for a literal percent and dollar. Reading the file with a plain
+// field split is what made a board with a space in its path invisible to the
+// command that upgrades it.
+func systemdTokens(body string) []string {
+	var out []string
+	for _, line := range strings.Split(body, "\n") {
+		rs := []rune(strings.TrimSpace(line))
+		var cur strings.Builder
+		inQuote, started := false, false
+		flush := func() {
+			if started {
+				out = append(out, undouble(cur.String()))
+				cur.Reset()
+				started = false
+			}
+		}
+		for i := 0; i < len(rs); i++ {
+			switch r := rs[i]; {
+			case r == '\\' && i+1 < len(rs):
+				i++
+				cur.WriteRune(rs[i])
+				started = true
+			case r == '"':
+				inQuote = !inQuote
+				started = true // `""` is an empty argument, not nothing
+			case !inQuote && (r == ' ' || r == '\t'):
+				flush()
+			default:
+				cur.WriteRune(r)
+				started = true
+			}
+		}
+		flush()
+	}
+	return out
+}
+
+// undouble reverses systemd's own escaping for a literal percent and dollar.
+func undouble(s string) string {
+	s = strings.ReplaceAll(s, "%%", "%")
+	return strings.ReplaceAll(s, "$$", "$")
+}
+
 // unitIsWritable answers, before anything is stopped, whether the unit rewrite
 // that comes after the stop can actually happen.
 //
@@ -872,12 +920,16 @@ func unitTokens(body string) []string {
 	for _, m := range plistString.FindAllStringSubmatch(body, -1) {
 		out = append(out, html.UnescapeString(m[1]))
 	}
-	// And a systemd ExecStart is whitespace-separated, where a path containing
-	// a space is quoted. Splitting on both covers it; the comparison afterwards
-	// is exact, so a stray token costs nothing.
-	for _, chunk := range strings.FieldsFunc(body, func(r rune) bool {
-		return r == '"' || r == '\'' || r == '\n' || r == '\r' || r == '\t' || r == ' '
-	}) {
+	// And a systemd unit is parsed the way systemd parses it, because this
+	// project WRITES it with systemdArg and could not read its own output.
+	// Splitting on quotes as if they were separators turned `-dir "/tmp/Fleet
+	// Review"` into `/tmp/Fleet` and `Review`, neither of which matches the
+	// board, so the unit describing this very daemon read as another board's:
+	// upgrade then started a detached process instead of the service, and
+	// systemd stopped supervising it across logout and reboot. It printed a
+	// warning and accepted that. Same for any path holding `%`, `$` or a
+	// backslash, which systemdArg doubles and this never undid.
+	for _, chunk := range systemdTokens(body) {
 		if chunk != "" {
 			out = append(out, html.UnescapeString(chunk))
 		}

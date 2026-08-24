@@ -363,3 +363,50 @@ func TestAnExplicitSchemeInTheEnvironmentSurvivesTheUpgrade(t *testing.T) {
 			"address can", got)
 	}
 }
+
+// The unit reader is the inverse of the unit writer, on the paths that need one.
+//
+// `dibs configure --service` writes ExecStart through systemdArg, which quotes
+// the value and doubles a backslash, a quote, a `%` and a `$`. The reader split
+// on quotes and whitespace and reversed none of it, so `-dir "/tmp/Fleet
+// Review"` came back as `/tmp/Fleet` and `Review`: neither matches the board,
+// the unit describing this very daemon read as another board's, and upgrade
+// started a detached process instead of the service. It prints a warning and
+// accepts that, so the board comes back and systemd is no longer supervising it
+// across logout or reboot.
+//
+// ROUND-TRIPPED THROUGH THE REAL WRITER. Hand-writing the expected unit text
+// would pin my idea of what systemdArg emits, and the defect was precisely that
+// the two disagreed. systemdArg goes in one end and unitNames comes out the
+// other.
+func TestUpgradeCanReadTheUnitsDibsWrites(t *testing.T) {
+	for _, dir := range []string{
+		"/tmp/plain",
+		"/tmp/Fleet Review",      // a space, which systemdArg quotes
+		"/tmp/100% fleet",        // a percent, which it doubles
+		"/tmp/$HOME-ish",         // a dollar, which systemd would expand
+		`/tmp/back\slash`,        // a backslash, which it escapes
+		`/tmp/say "hello" board`, // quotes inside the value
+	} {
+		t.Run(dir, func(t *testing.T) {
+			unit := filepath.Join(t.TempDir(), "dibd.service")
+			body := "[Service]\nExecStart=/usr/local/bin/dibd -dir " +
+				systemdArg(dir) + " -addr 127.0.0.1:4777\n"
+			if err := os.WriteFile(unit, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if !unitNames(unit, dir) {
+				t.Errorf("the unit this project writes for %q does not read as naming "+
+					"it.\n  unit: %s\n  tokens: %q\n\nUpgrade treats that as another "+
+					"board's unit and starts a detached process instead, so the board "+
+					"comes back unsupervised and does not survive a logout",
+					dir, strings.TrimSpace(body), systemdTokens(body))
+			}
+			// And it must not match a DIFFERENT board, or the fix would be a
+			// reader that says yes to everything.
+			if unitNames(unit, dir+"-other") {
+				t.Errorf("the unit for %q also reads as naming %q", dir, dir+"-other")
+			}
+		})
+	}
+}

@@ -837,6 +837,21 @@ func checkReplay(dir string, cfg Config, flagAddr string) error {
 	if err := checkTransportUsable(dir, listenAddr, askedScheme, cfg); err != nil {
 		return err
 	}
+	// AND THE CERTIFICATE NAMES THIS LISTENER. Same question startup asks, at
+	// the same point: after the address is resolved. boardconfig cannot ask it,
+	// because `-addr` and DIBS_ADDR outrank the file it reads, and `dibs
+	// upgrade` reads this command's exit status as licence to stop a live
+	// daemon.
+	if cfg.TLSCert != "" {
+		pair, perr := tls.LoadX509KeyPair(cfg.TLSCert, cfg.TLSKey)
+		if perr != nil {
+			return fmt.Errorf("the TLS certificate and key in %s cannot be used "+
+				"together: %w", dir, perr)
+		}
+		if err := certificateNamesListener(pair, listenAddr); err != nil {
+			return fmt.Errorf("%s: %w", dir, err)
+		}
+	}
 	if _, err := os.Stat(filepath.Join(dir, "ledger.jsonl")); err != nil {
 		return fmt.Errorf("no board at %s: there is nothing to check", dir)
 	}

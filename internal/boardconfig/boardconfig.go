@@ -599,17 +599,18 @@ func (c Config) validateTLS() error {
 	// same silent, total, all-at-once failure the auto-managed path renews and
 	// re-issues to avoid, and the configured path accepted it.
 	//
-	// Only when the address is known and is a real host. A wildcard bind serves
-	// whatever the client dialled and no certificate can name that in advance,
-	// which is why the generated one enumerates interfaces instead.
-	if host := HostToVerify(c.Addr); host != "" {
-		if err := leaf.VerifyHostname(host); err != nil {
-			return fmt.Errorf("tls_cert %q does not name %s (%w). It will serve, and "+
-				"every client dialling that address will refuse it. Reissue the "+
-				"certificate for the address this daemon listens on, or remove "+
-				"tls_cert and tls_key and let Dibs manage one", cert, host, err)
-		}
-	}
+	// THE HOSTNAME IS NOT ASKED HERE, and the reason is precedence.
+	//
+	// This layer sees `addr` in dibs.toml, and `-addr` and DIBS_ADDR both
+	// outrank it. Checking against the file therefore refused a certificate
+	// that is CORRECT for the address the daemon was told to bind: a board
+	// configured for one address and started on another failed to load at all,
+	// which is worse than the hole it was closing, and it happened at the layer
+	// that cannot see the answer. The check belongs where the address is
+	// settled, and cmd/dibd does it there for both startup and `-check`.
+	//
+	// What stays here is what this layer CAN answer: the pair loads, they match
+	// each other, and the certificate is inside its validity window.
 	return nil
 }
 

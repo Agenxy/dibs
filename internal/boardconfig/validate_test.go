@@ -294,3 +294,24 @@ func writeTestPair(t *testing.T) (certPath, keyPath string) {
 	write(keyPath, "EC PRIVATE KEY", keyDER, 0o600)
 	return certPath, keyPath
 }
+
+// A certificate for the address the daemon will actually bind must load.
+//
+// `-addr` and DIBS_ADDR both outrank `addr` in dibs.toml, and this layer sees
+// only the file. Verifying the hostname here therefore refused a pair that is
+// CORRECT for the address the daemon was told to serve: the board did not start
+// at all, at the layer with the least information about which address wins.
+// That is worse than the hole it was closing, and cmd/dibd asks the same
+// question after resolving, for both startup and `-check`.
+//
+// What this layer still owes: the pair loads, matches, and is in date.
+func TestConfigLoadDoesNotJudgeTheHostname(t *testing.T) {
+	cert, key := writeTestPair(t)
+	c := Config{Addr: "10.0.0.9:4777", TLSCert: cert, TLSKey: key}
+	if err := c.validateTLS(); err != nil {
+		t.Errorf("a certificate that names no address was refused because dibs.toml "+
+			"says 10.0.0.9. An operator starting this daemon with `-addr` elsewhere is "+
+			"correct while the file is stale, and this layer cannot see which address "+
+			"wins: %v", err)
+	}
+}
