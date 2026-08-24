@@ -1061,16 +1061,41 @@ func TestWorkflowsDoNotEmbedShellScripts(t *testing.T) {
 		t.Fatalf("reading %s: %v", dir, err)
 	}
 	// Shell constructs that make a `run:` a program rather than an invocation.
+	//
+	// THE LIST WAS SHORTER THAN THE RULE IT CLAIMED. The prose above says
+	// multiple statements, pipelines, redirections, substitutions and control
+	// flow are all forbidden, and this checked nine substrings: `cmd1; cmd2`
+	// passed, so did an unspaced `a|b`, a single `>`, a backtick, a `while`
+	// loop, and a block of two ordinary commands on separate lines. A guard that
+	// states a property and enforces a subset of it is the kind this repository
+	// keeps finding, and it found this one in itself.
 	constructs := []struct{ token, why string }{
 		{"${", "parameter expansion (${VAR#prefix} and friends) is shell string surgery"},
 		{"$(", "command substitution runs a second program to build the first one's arguments"},
+		{"`", "backtick substitution is command substitution wearing older syntax"},
 		{"&&", "a conditional sequence is control flow"},
 		{"||", "a fallback is control flow, and the silent kind"},
-		{" | ", "a pipeline hides the exit status of everything but the last stage"},
-		{">>", "a redirection is the script deciding where output goes"},
+		{"|", "a pipeline hides the exit status of everything but the last stage"},
+		{";", "two statements on one line is a script"},
+		{">", "a redirection is the script deciding where output goes"},
+		{"<", "a redirection is the script deciding where input comes from"},
 		{"if ", "a conditional is control flow"},
 		{"for ", "a loop is control flow"},
+		{"while ", "a loop is control flow"},
+		{"case ", "a conditional is control flow"},
 		{"set -e", "needing this is the admission that shell continues past failures"},
+	}
+	// AND MORE THAN ONE COMMAND, which no substring can see. A folded block of
+	// two ordinary lines is a script by the definition at the top of this test,
+	// and every token above would miss it.
+	multiline := func(body string) int {
+		n := 0
+		for _, l := range strings.Split(body, "\n") {
+			if t := strings.TrimSpace(l); t != "" && !strings.HasPrefix(t, "#") {
+				n++
+			}
+		}
+		return n
 	}
 	checked := 0
 	for _, e := range entries {
@@ -1083,6 +1108,14 @@ func TestWorkflowsDoNotEmbedShellScripts(t *testing.T) {
 		}
 		checked++
 		for _, block := range runBlocks(string(raw)) {
+			if n := multiline(block.body); n > 1 && !block.folded {
+				t.Errorf("%s line %d: this `run:` holds %d commands, which is a script "+
+					"whatever it contains. Write it as a Go program under tools/ and "+
+					"invoke that, or split it into one step per command so a failure "+
+					"names itself.\n  %s",
+					e.Name(), block.line, n, strings.TrimSpace(firstLine(block.body)))
+				continue
+			}
 			for _, c := range constructs {
 				if !strings.Contains(block.body, c.token) {
 					continue
@@ -1105,6 +1138,10 @@ func TestWorkflowsDoNotEmbedShellScripts(t *testing.T) {
 type runBlock struct {
 	line int
 	body string
+	// folded is a `>` block, whose lines join into ONE command. A `|` block
+	// keeps them separate, and that is the difference between an invocation
+	// spread over four readable lines and a four-line script.
+	folded bool
 }
 
 // runBlocks returns every `run:` value in a workflow, folded blocks included.
@@ -1119,9 +1156,13 @@ func runBlocks(s string) []runBlock {
 		rest := strings.TrimSpace(strings.TrimPrefix(trimmed, "run:"))
 		// A single-line command.
 		if rest != "" && rest != "|" && rest != ">" && rest != ">-" && rest != "|-" {
-			out = append(out, runBlock{i + 1, rest})
+			out = append(out, runBlock{i + 1, rest, false})
 			continue
 		}
+		// FOLDED (`>`) joins its lines into ONE command; literal (`|`) keeps
+		// them as separate ones. The difference decides whether several lines
+		// are several commands, so it has to travel with the body.
+		folded := strings.HasPrefix(rest, ">")
 		// A block scalar: everything indented under it.
 		indent := len(lines[i]) - len(strings.TrimLeft(lines[i], " "))
 		var body []string
@@ -1135,7 +1176,7 @@ func runBlocks(s string) []runBlock {
 			}
 			body = append(body, strings.TrimSpace(lines[j]))
 		}
-		out = append(out, runBlock{i + 1, strings.Join(body, "\n")})
+		out = append(out, runBlock{i + 1, strings.Join(body, "\n"), folded})
 	}
 	return out
 }

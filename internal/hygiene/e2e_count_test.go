@@ -65,8 +65,17 @@ func TestDocumentedE2ESuiteCountMatchesTheGate(t *testing.T) {
 		if i+1 < len(blocks) {
 			end = blocks[i+1][0]
 		}
-		if inCI[name] && strings.Contains(string(tf)[b[0]:end], "_e2e.ts") {
-			suites++
+		// THE FILES, not the tasks. This counted a task at most once, so a task
+		// running two suites counted as one and the documented number stayed
+		// green while the gate ran an extra one. The sentence is about suites;
+		// count suites.
+		if inCI[name] {
+			seen := map[string]bool{}
+			for _, m := range regexp.MustCompile(`[\w./-]+_e2e\.ts`).
+				FindAllString(string(tf)[b[0]:end], -1) {
+				seen[filepath.Base(m)] = true
+			}
+			suites += len(seen)
 		}
 	}
 	if suites == 0 {

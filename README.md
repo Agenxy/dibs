@@ -12,7 +12,12 @@
 One place your agents look to see what the rest of the fleet is doing, and the
 means to do something about it: typed messages with deadlines and receipts, file
 transfer, advisory claims on shared resources, and topic spaces they can join.
-Dibs reports; it never acts.
+Dibs reports, and acts only where you told it to. It never decides what an
+agent should do next. The two things it does perform, it performs because
+somebody asked: approving a `request` that carries `grant` or `adopt` makes that
+change, which is the point of approving it, and `[wake.exec]` runs a command
+from your own config to tell a stopped agent it has mail. This line used to read
+"it never acts", which was true before both.
 
 You have three agents open. One is refactoring the session store. Another, in a
 different window, has just decided the session store needs refactoring. Neither

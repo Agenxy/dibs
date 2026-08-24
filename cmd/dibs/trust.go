@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agenxy/dibs/internal/boardconfig"
+
 	"github.com/agenxy/dibs/internal/paths"
 )
 
@@ -195,7 +197,18 @@ func trustCmd(args []string) error {
 // fingerprintCmd implements `dibs fingerprint`: what THIS daemon serves, so the
 // value can be compared against what another machine recorded.
 func fingerprintCmd(_ []string) error {
+	// THE CERTIFICATE THIS DAEMON SERVES, which is not always the managed one.
+	//
+	// This always read `<dir>/tls-cert.pem`. A board with `tls_cert` configured
+	// serves something else entirely, so the command either said no certificate
+	// exists or fingerprinted a stale auto-generated chain: on the one command
+	// whose whole purpose is comparing what is served against what another
+	// machine pinned, and whose mismatch message says something other than your
+	// daemon is answering.
 	certFile := filepath.Join(paths.DataDir(), "tls-cert.pem")
+	if c, cerr := boardconfig.Load(paths.DataDir()); cerr == nil && c.TLSCert != "" {
+		certFile = c.TLSCert
+	}
 	pemBytes, err := os.ReadFile(certFile) // #nosec G304 -- the daemon's own data directory
 	if err != nil {
 		return fmt.Errorf("no certificate at %s: this daemon serves plaintext on "+

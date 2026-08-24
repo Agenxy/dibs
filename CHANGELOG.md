@@ -998,6 +998,46 @@ machines for real work. Their priority order, not ours.
   arrival is recorded and passed, which is the same redundancy the burst check
   has.
 
+- **A verdict now reaches an agent whatever `notices_wake` says.** An answer, an
+  approval, a denial or a decline is the reply to something that agent asked and
+  then stopped for, so it is treated as blocking: counted separately, delivered
+  at `urgent`, and not suppressed by `notices_wake = false`. That is an
+  operator-visible change to what a configuration switch does and it was never
+  announced; `docs/CONFIGURATION.md` still named an approved request as an
+  example of what the setting governs, so somebody turning it off to save tokens
+  would have expected to stop hearing the one thing they cannot afford to miss.
+
+- **`dibs fingerprint` could fingerprint the wrong certificate.** It always read
+  the managed `tls-cert.pem`, and a board with `tls_cert` configured serves
+  something else: the command either reported no certificate or fingerprinted a
+  stale auto-generated chain. On the one command whose entire purpose is
+  comparing what is served against what another machine pinned, and whose
+  mismatch message says something other than your daemon is answering.
+
+- **A wildcard bind was published as a client's destination.** `DIBS_ADDR` was
+  copied verbatim into every generated configuration, because the scheme it may
+  carry cannot be inferred, so a daemon started with `:4777` or `0.0.0.0:4777`
+  told its clients to dial the address it LISTENS on. `:4777` has no host in it
+  at all. It goes through the same resolver the configuration branch beside it
+  has always used, which keeps the scheme.
+
+- **Two guards enforced less than they claimed.** The workflow shell check
+  described multiple statements, pipelines, redirections, substitutions and
+  control flow as forbidden and tested nine substrings: `cmd1; cmd2` passed, so
+  did an unspaced pipeline, a single `>`, a backtick, a `while` loop, and a
+  block of two ordinary commands. And the e2e suite count counted TASKS, so a
+  task running two suites counted as one and the documented number could stay
+  green while the gate ran an extra. Both now check the property they state, and
+  the shell one distinguishes a folded block, whose lines are one command, from
+  a literal one, whose lines are several.
+
+- **The README's opening line said Dibs never acts.** Two things in this release
+  act, both because somebody asked: approving a `request` carrying `grant` or
+  `adopt` performs that change, which is the point of approving it, and
+  `[wake.exec]` runs a command from the operator's own config. It still never
+  decides what an agent does next, which is the part that mattered, and saying
+  the broader thing made the narrower one unbelievable.
+
 - **`dibs upgrade` could leave the old daemon running and call it upgraded.**
   Two independent signals say something is running: a request to the board, and
   the registry the daemon writes for itself. Cutover consulted only the first,

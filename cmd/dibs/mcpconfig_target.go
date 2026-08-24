@@ -158,7 +158,18 @@ func nonDefaultEnv(scheme string) map[string]string {
 	// bridge bare host:port makes it infer HTTPS and fail to connect. Whatever
 	// this process was told is what the bridge should be told.
 	if raw := os.Getenv("DIBS_ADDR"); raw != "" {
-		env["DIBS_ADDR"] = raw
+		// THROUGH dialableAddr, LIKE THE BRANCH BELOW. A wildcard is a bind
+		// address and not a destination: a daemon legitimately started with
+		// `DIBS_ADDR=:4777` or `0.0.0.0:4777` had that copied verbatim into
+		// every generated client config, and `:4777` has no host to dial at all.
+		// The config branch below has always resolved it; this one passed the
+		// raw value through because the scheme is the thing it exists to
+		// preserve, and resolving keeps the scheme too.
+		if a, aerr := dialableAddr(raw); aerr == nil {
+			env["DIBS_ADDR"] = a
+		} else {
+			env["DIBS_ADDR"] = raw
+		}
 	} else if a, aerr := dialableAddr(rawAddr()); aerr == nil &&
 		(a != "127.0.0.1:4777" || scheme != inferredScheme(a)) {
 		// The RESOLVED scheme, when the bridge would infer a different one.

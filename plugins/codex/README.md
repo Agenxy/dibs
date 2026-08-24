@@ -94,7 +94,7 @@ the flag resolved `true` via `codex features list`:
 Codex marks it "under development": it gates unfinished work, not a protocol
 switch. Do not assume 2026 support from the flag's presence.
 
-## Waking an agent: not yet, but it is being built, and we should wait for it
+## Waking a STOPPED agent: the operator's command, not the plugin, but it is being built, and we should wait for it
 
 **This section has flipped twice on the strength of reading a type, so this
 time it is dated, and the evidence is runtime behaviour.**

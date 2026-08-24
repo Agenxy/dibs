@@ -146,19 +146,28 @@ not to act is not asked again. Work somebody is blocked on comes back on the
 announcement retry. See [WAKE-MECHANISMS.md](../WAKE-MECHANISMS.md).
 
 `notices_wake` covers the other half: a **notice** is something that happened
-TO an agent and that it could not infer, such as being evicted, having a request
-approved, or another agent joining a space it is working in.
+TO an agent and that it could not infer, such as being evicted or another agent
+joining a space it is working in.
+
+**A verdict is not one of them.** An answer, an approval, a denial or a decline
+is the reply to something this agent asked and then stopped for, so it is
+BLOCKING: it is counted separately, it reaches `urgent` delivery, and
+`notices_wake = false` does not suppress it. This section named an approved
+request as an example of what the setting governs, which is the opposite of what
+the code does, and an operator turning it off to save tokens would have expected
+to stop hearing the one thing they cannot afford to miss.
 
 On by default, because "an agent is told what happened to it" is a guarantee
 Dibs already makes, and a guarantee that holds only for operators who found a
 config file is not one.
 
-Turn it **off** to buy the tokens back. Extending a turn revives a thread that
-may be long and whose prompt cache is cold, and on a fleet of idle sessions that
-is a real bill to pay for "somebody joined your space". Nothing is lost when you
-do: notices queue, ride along on any wake that happens for another reason, and
-arrive in full at the agent's own `check_in`, which it makes once per activation
-anyway. What you give up is latency, not delivery.
+Turn it **off** to buy the tokens back on the situational half. Extending a turn
+revives a thread that may be long and whose prompt cache is cold, and on a fleet
+of idle sessions that is a real bill to pay for "somebody joined your space".
+Nothing is lost when you do: those notices queue, ride along on any wake that
+happens for another reason, and arrive in full at the agent's own `check_in`,
+which it makes once per activation anyway. What you give up is latency, not
+delivery, and verdicts are unaffected either way.
 
 Mail is unaffected either way, because somebody is blocked on an unanswered
 question and nobody is blocked on knowing who joined a space.
