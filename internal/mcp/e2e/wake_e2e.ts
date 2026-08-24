@@ -463,6 +463,80 @@ await settle()
 check("an agent with no thread id is not woken", wakes().length === beforeNoThread,
   "the command would have been handed host-<ppid>, which resolves to no thread")
 
+// ── DELIVERY REACHES THE AGENT THAT OWNS THE MAILBOX ─────────────────────
+// The property Dibs exists for, asserted end to end against a real daemon,
+// because everything above tests the WAKE COMMAND and none of it tests who the
+// notification is actually about.
+//
+// This is the failure that made Dibs' own messaging worse than the harness's
+// native channel on this project's board: an agent registered under one session
+// id while its lifecycle hooks quoted another, so hook_poll resolved it to
+// nobody, or worse to a DIFFERENT agent, and its mail surfaced in that agent's
+// context instead. Three agents spent a night on it. Nothing here would have
+// caught it, because no check asked "does the digest name the right agent".
+//
+// Both harness shapes are covered. Codex is the block far above: the thread
+// uuid arrives as an alias and the wake command resolves it. This is the Claude
+// Code shape, where the hooks quote the harness SESSION id and the agent must
+// be reachable by exactly that.
+const CC_SESSION = "7c3f0a11-2b44-4d90-9e57-1f2a3b4c5d6e"
+const cc = await call("register", {
+  name: "cc-agent", description: "wake e2e", session_id: CC_SESSION,
+  cwd: project, harness: "Claude Code",
+  nonce: "e2e-cc-nonce-0123456789abcdef0123456789abcdef01",
+})
+check("an agent registers under the session id its hooks will quote",
+  cc.session_id === CC_SESSION,
+  `session_id = ${JSON.stringify(cc.session_id)}, want ${CC_SESSION}`)
+
+// Nothing waiting yet: the digest must not invent news.
+const quiet = await call("hook_poll", { session_id: CC_SESSION, event: "Stop", cwd: project })
+const quietText = JSON.stringify(quiet ?? {})
+check("a hook for an agent with no mail announces none",
+  !/unread message/.test(quietText),
+  `got ${quietText.slice(0, 200)}`)
+
+await call("send", { token: asker.token, to: "cc-agent", type: "question",
+  body: "does delivery reach the right mailbox?", deadline_s: 600 })
+await settle()
+
+const mine = JSON.stringify(await call("hook_poll",
+  { session_id: CC_SESSION, event: "Stop", cwd: project }) ?? {})
+check("the hook names the agent that owns the mailbox",
+  /cc-agent/.test(mine) && /unread message/.test(mine),
+  `the digest for ${CC_SESSION} does not announce cc-agent's mail: ${mine.slice(0, 300)}`)
+check("and it names who the message is from",
+  /asker/.test(mine),
+  `the digest does not say who is waiting: ${mine.slice(0, 300)}`)
+
+// THE HALF THAT ACTUALLY BROKE. Another agent's hook must not carry this
+// mailbox. On the live board a swept row freed a session id, the next agent in
+// that directory inherited it, and one agent's unread list was rendered into
+// another's context for hours.
+const theirs = JSON.stringify(await call("hook_poll",
+  { session_id: THREAD, event: "Stop", cwd: project }) ?? {})
+check("another agent's hook names ITS OWN agent, not this mailbox",
+  /sleeper/.test(theirs) && !/cc-agent/.test(theirs),
+  `the digest for sleeper's session should name sleeper and never cc-agent: ` +
+  `${theirs.slice(0, 300)}. Anything else is one agent's mail announced into ` +
+  `another agent's context`)
+
+// And an id nobody holds resolves to nobody, rather than to whoever is nearest.
+const stranger = JSON.stringify(await call("hook_poll",
+  { session_id: "5d9e1c77-0000-4000-8000-000000000000", event: "Stop", cwd: project }) ?? {})
+// Asserted on ATTRIBUTION in either shape it can take, not on any particular
+// NAME. Three versions of this check were decorative before this one. The first
+// asked only that cc-agent was absent, which a resolver handing the stranger a
+// different neighbour passes. The second asked for "for your agent", which
+// misses the {"agent": ...,"queued": ...} shape the same endpoint returns when
+// it declines to extend a turn. Both were verified by mutating hook resolution
+// to answer every session with whichever agent had mail: the suite reported all
+// checks passing while every hook carried the wrong mailbox.
+check("an unheld session id resolves to nobody, not to a neighbour",
+  !/for your agent/.test(stranger) && !/"agent":"/.test(stranger),
+  `an unknown session was attributed to an agent: ${stranger.slice(0, 300)}. ` +
+  `The directory fallback must not hand a stranger somebody else's mailbox`)
+
 console.log("─".repeat(60))
 console.log(failures === 0 ? `\x1b[32m${checks} checks passed\x1b[0m` : `\x1b[31m${failures} of ${checks} failed\x1b[0m`)
 process.exit(failures === 0 ? 0 : 1)

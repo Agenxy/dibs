@@ -1818,6 +1818,36 @@ machines for real work. Their priority order, not ours.
 
 ### Added
 
+- **An agent could register under an id its own hooks never quote, so nothing
+  could wake it.** The stdio bridge fills `session_id` on registration from the
+  harness's own sidecar, and it read that sidecar only when the MCP handshake
+  had already identified the client as Claude Code. `clientIs` answers from the
+  `clientInfo` an `initialize` left behind, and the 2026 path need not send one
+  at all. When it had not been seen, the sidecar went unread and the agent
+  registered under the bridge's `host-<ppid>` instead: an id no lifecycle hook
+  ever quotes. `hook_poll` then resolved that agent to nobody, and no message
+  ever woke it.
+
+  It could not heal, which is what made it permanent rather than intermittent.
+  The ambient repair binds the correct id, which the bridge already sends in
+  `_meta` on every call, but only when the agent has NO session id. The primary
+  was already filled with the wrong one, so the repair was a no-op for the life
+  of the board. Measured on this project's own board: an agent registered as
+  `host-5360` while both its sidecar and its hooks named the same UUID, and for
+  hours its mail was announced into a different agent's session instead.
+
+  **The sidecar is now trusted when the harness is this bridge's own parent**,
+  handshake or not. `CLAUDE_PID` alone is not enough and dropping the gate
+  outright was tried and reverted: that variable is INHERITED by every process a
+  Claude Code session spawns, so an ungated read lets an unrelated nested bridge
+  adopt its parent's session and answer to its wake path. The guard end-to-end
+  suite caught that immediately, with test daemons registering under the
+  developer's own session. A harness spawns its bridge as a DIRECT child, which
+  is the same fact the `host-<ppid>` fallback already relies on, so
+  `CLAUDE_PID` matching this process's parent is positive evidence the session
+  is ours rather than one we inherited. Nested processes fail that test, and the
+  fallback is unchanged for harnesses that write no sidecar at all.
+
 - **The daemon records which agent every lifecycle hook resolved to.** The wake
   path fails silently by construction: `hook_poll` answers, the agent it
   answered for is not the one asking, and nothing anywhere says so. The only

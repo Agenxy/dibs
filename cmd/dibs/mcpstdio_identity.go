@@ -234,8 +234,32 @@ func enrichRegister(line []byte) []byte {
 	// process.env plus user config, so there is nothing else to observe. THIS
 	// PROCESS is the session: re-registering inside it reattaches, while a
 	// genuinely new session gets a new bridge and correctly gets a new agent.
+	//
+	// sessionID(), NOT bridgeSessionID(), and the difference is the whole wake
+	// path for Claude Code.
+	//
+	// sessionID() prefers the harness's OWN session id, read from the sidecar it
+	// writes at ~/.claude/sessions/<pid>.json, and falls back to the bridge's
+	// `host-<ppid>` only when there is nothing better. This line called the
+	// fallback directly, so an agent registered under `host-<ppid>` as its
+	// PRIMARY session id, while its lifecycle hooks quote the harness session id
+	// the sidecar names. Those never match, so hook_poll resolved that agent to
+	// nobody and its mail was never delivered by a wake.
+	//
+	// Worse, it could not heal. The ambient repair binds the id from
+	// `_meta com.dibs/session`, which is this same correct value and is already
+	// sent on every call, but it only binds when the agent has NO session id.
+	// The primary was already filled with the wrong one, so the repair was
+	// permanently a no-op and the agent stayed unreachable for the life of the
+	// board. Measured on this project's own board: register bound `host-5360`
+	// while the sidecar and the hooks both said
+	// 19d67315-7718-491e-be3f-3864f577eeed.
+	//
+	// The fallback still matters and is unchanged for harnesses that write no
+	// sidecar: opencode passes no session identifier at all, and the bridge
+	// process is the right thing to key on there.
 	if cur, ok := args["session_id"].(string); !ok || cur == "" {
-		args["session_id"] = bridgeSessionID()
+		args["session_id"] = sessionID()
 		touched = true
 	}
 	if !touched && lastClientInfo == nil {
@@ -261,6 +285,18 @@ var sessionOnce struct {
 
 func sessionID() string {
 	sessionOnce.Do(func() {
+		// STILL GATED ON clientIs("claude"), and I removed it once and put it
+		// back. The reasoning for removing it was that clientIs answers from a
+		// handshake and this call is not handshake-ordered, so a 2026 caller
+		// that sends no `initialize` would read no sidecar. That risk is real.
+		//
+		// The gate is load-bearing for a bigger one. CLAUDE_PID is INHERITED by
+		// every process a Claude Code session spawns, so an unrelated bridge
+		// started anywhere beneath one reads that session's sidecar and adopts
+		// its session id. Removing the gate broke nine checks in the guard e2e
+		// immediately, where test daemons began registering under the developer's
+		// own session. In production that would mean a nested harness silently
+		// answering to its parent's wake path.
 		if v := sessionContext(clientIs("claude"))["session_id"]; v != "" {
 			sessionOnce.id = v
 			return
