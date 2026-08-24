@@ -33,7 +33,7 @@ func TestASpaceRecordsWhyItStoppedCountingAsLive(t *testing.T) {
 			}
 			id, _ := res["agent_id"].(string)
 
-			op := &Op{Kind: OpSweep}
+			op := &Op{Kind: OpSweep, PurgeMail: true}
 			if tc.dead {
 				op.DeadAgents = []string{id}
 			} else {
@@ -169,7 +169,7 @@ func TestExpiryTellsTheTruthAboutWhyNobodyAnswered(t *testing.T) {
 			case "gone":
 				delete(s.Agents, "target")
 			}
-			if _, _, err := s.Apply(&Op{Kind: OpSweep}, now.Add(2*time.Hour)); err != nil {
+			if _, _, err := s.Apply(&Op{Kind: OpSweep, PurgeMail: true}, now.Add(2*time.Hour)); err != nil {
 				t.Fatal(err)
 			}
 
@@ -365,7 +365,7 @@ func TestPurgingAnAgentTakesItsMailbox(t *testing.T) {
 		Body: "still relevant", State: MsgStateDelivered,
 	}
 
-	if _, _, err := s.Apply(&Op{Kind: OpSweep}, now); err != nil {
+	if _, _, err := s.Apply(&Op{Kind: OpSweep, PurgeMail: true}, now); err != nil {
 		t.Fatalf("setup: sweep: %v", err)
 	}
 
@@ -418,7 +418,7 @@ func TestAPurgedAgentsOutboundMailDoesNotBecomeTheNextAgentsMail(t *testing.T) {
 		Body: "which branch?", State: MsgStateDelivered,
 	}
 
-	if _, _, err := s.Apply(&Op{Kind: OpSweep}, now); err != nil {
+	if _, _, err := s.Apply(&Op{Kind: OpSweep, PurgeMail: true}, now); err != nil {
 		t.Fatalf("setup: sweep: %v", err)
 	}
 	if _, still := s.Agents["alice"]; still {

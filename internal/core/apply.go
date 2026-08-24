@@ -146,9 +146,24 @@ type Op struct {
 	// state), so like every other impure sweep input it arrives RECORDED,
 	// replay marks exactly the same announcements without counting anything.
 	GiveUpAnnounce []uint64 `json:"give_up_announce,omitempty"`
-	DeadAgents     []string `json:"dead_agents,omitempty"`
-	StaleAgents    []string `json:"stale_agents,omitempty"`
-	AlivePIDs      []int    `json:"alive_pids,omitempty"`
+	// PurgeMail says this sweep may take a purged agent's mailbox with it.
+	//
+	// A FLAG BECAUSE THE FOLD CHANGED. Purging used to delete the agent row and
+	// leave its mail, so the next agent to take that name inherited the mailbox.
+	// Fixing that changed what an EXISTING op does, and replay applies today's
+	// Apply to yesterday's ops: a sweep recorded by v0.0.6 was replayed with the
+	// new behaviour, deleted mail the original run had kept, and a later ack
+	// that v0.0.6 had accepted then failed with E_NO_MESSAGE, so the daemon
+	// refused its own ledger on upgrade.
+	//
+	// Sweeps written by this version set it; every historical one lacks it and
+	// keeps the semantics it was written under. This is the same rule AGENTS.md
+	// gives for validation in Apply, applied to changed behaviour: record the
+	// decision in the Op so replay makes the decision that was actually made.
+	PurgeMail   bool     `json:"purge_mail,omitempty"`
+	DeadAgents  []string `json:"dead_agents,omitempty"`
+	StaleAgents []string `json:"stale_agents,omitempty"`
+	AlivePIDs   []int    `json:"alive_pids,omitempty"`
 
 	// mark_delivered: ledgered pending→delivered receipts
 	MsgSerials []uint64 `json:"msg_serials,omitempty"`

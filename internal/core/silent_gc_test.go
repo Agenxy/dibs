@@ -85,7 +85,7 @@ func TestDedupEvictionIsDeterministicWhenTimestampsTie(t *testing.T) {
 		return s
 	}
 	survivors := func(s *State) []string {
-		s.gc(time.Now())
+		s.gc(time.Now(), true)
 		var out []string
 		for _, rec := range s.Dedup {
 			out = append(out, rec.ID)

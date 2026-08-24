@@ -22,10 +22,17 @@ func TestAWildcardEnvironmentAddressIsResolvedForClients(t *testing.T) {
 	} {
 		t.Run(tc.set, func(t *testing.T) {
 			t.Setenv("DIBS_ADDR", tc.set)
-			got, err := dialableAddr(tc.set)
-			if err != nil {
-				t.Skipf("this machine cannot name itself (%v), so the resolution "+
-					"cannot be checked here", err)
+			// THROUGH nonDefaultEnv, which is the branch that was broken.
+			//
+			// The first version of this called dialableAddr directly, and
+			// dialableAddr already resolved wildcards before the fix: the test
+			// would have passed with the fix removed and the raw wildcard
+			// published again. The environment it sets up was not reaching the
+			// assertion at all.
+			got := nonDefaultEnv(inferredScheme(tc.set))["DIBS_ADDR"]
+			if got == "" {
+				t.Fatalf("nonDefaultEnv published no DIBS_ADDR for %q, so this check "+
+					"verified nothing", tc.set)
 			}
 			if got == tc.wantNot {
 				t.Errorf("a client is told to dial %q, which is where the daemon "+

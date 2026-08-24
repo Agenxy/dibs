@@ -273,7 +273,7 @@ func (e *Engine) Run(ctx context.Context) {
 // durable coordination checkpoint is within one TTL; the rest transition now,
 // ledgered, healed later by wake if the agent lives.
 func (e *Engine) boot(now time.Time) {
-	op := &core.Op{Kind: core.OpSweep}
+	op := &core.Op{Kind: core.OpSweep, PurgeMail: true}
 	for id, l := range e.state.Agents {
 		if l.Status != core.StatusActive {
 			continue
@@ -772,7 +772,10 @@ func (e *Engine) touchDurable(l *core.Agent, now time.Time) {
 func (e *Engine) sweep(now time.Time) {
 	// Anything found before the board had anybody on it. See flushFaults.
 	e.flushFaults()
-	op := &core.Op{Kind: core.OpSweep, GiveUpAnnounce: e.exhaustedAnnouncements()}
+	op := &core.Op{
+		Kind: core.OpSweep, PurgeMail: true,
+		GiveUpAnnounce: e.exhaustedAnnouncements(),
+	}
 	for id, l := range e.state.Agents {
 		if l.Status != core.StatusActive {
 			continue

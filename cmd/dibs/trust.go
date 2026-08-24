@@ -196,6 +196,22 @@ func trustCmd(args []string) error {
 
 // fingerprintCmd implements `dibs fingerprint`: what THIS daemon serves, so the
 // value can be compared against what another machine recorded.
+// servedCertPath is the certificate THIS daemon presents, which is not always
+// the managed one.
+//
+// Split from the command so a test can ask it. `dibs fingerprint` always read
+// `<dir>/tls-cert.pem`, and a board with `tls_cert` configured serves something
+// else: the command either said no certificate exists or fingerprinted a stale
+// auto-generated chain, on the one command whose whole purpose is comparing
+// what is served against what another machine pinned, and whose mismatch
+// message says something other than your daemon is answering.
+func servedCertPath(dir string) string {
+	if c, err := boardconfig.Load(dir); err == nil && c.TLSCert != "" {
+		return c.TLSCert
+	}
+	return filepath.Join(dir, "tls-cert.pem")
+}
+
 func fingerprintCmd(_ []string) error {
 	// THE CERTIFICATE THIS DAEMON SERVES, which is not always the managed one.
 	//
@@ -205,10 +221,7 @@ func fingerprintCmd(_ []string) error {
 	// whose whole purpose is comparing what is served against what another
 	// machine pinned, and whose mismatch message says something other than your
 	// daemon is answering.
-	certFile := filepath.Join(paths.DataDir(), "tls-cert.pem")
-	if c, cerr := boardconfig.Load(paths.DataDir()); cerr == nil && c.TLSCert != "" {
-		certFile = c.TLSCert
-	}
+	certFile := servedCertPath(paths.DataDir())
 	pemBytes, err := os.ReadFile(certFile) // #nosec G304 -- the daemon's own data directory
 	if err != nil {
 		return fmt.Errorf("no certificate at %s: this daemon serves plaintext on "+

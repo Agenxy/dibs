@@ -123,6 +123,11 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		"msg_serial": true, "msg_serials": true, "attachments": true,
 		"blob": true, "mime": true, "size": true,
 		"dead_agents": true, "give_up_announce": true,
+		// purge_mail: whether THIS sweep may take a purged agent's mailbox with
+		// it. Absent on every sweep written before v0.0.7, and that absence is
+		// load-bearing: it is what makes those ops replay with the semantics
+		// they were written under instead of today's.
+		"purge_mail": true,
 	}
 
 	// Every tag the Op DECLARES, not merely the ones this fixture happens to
@@ -232,10 +237,11 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 // Fingerprints of the frozen sets above. Deliberately not derived from anything
 // at build time: a value a sweep can recompute defends nothing.
 const (
-	// Updated deliberately when `session_alias` was added: one new tag, no
-	// rename. If you are here because a sweep moved this value, the sweep is the
-	// bug, and the tag it renamed is the data loss.
-	frozenOpFingerprint       = "sha256:644f727b01467102"
+	// Updated deliberately when `session_alias` was added, and again for
+	// `purge_mail`: one new tag each time, no rename. If you are here because a
+	// sweep moved this value, the sweep is the bug, and the tag it renamed is
+	// the data loss.
+	frozenOpFingerprint       = "sha256:f66bb393b72daf67"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

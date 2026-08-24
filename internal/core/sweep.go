@@ -228,7 +228,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 		}})
 	}
 
-	gcEvents, pruned := s.gc(now)
+	gcEvents, pruned := s.gc(now, op.PurgeMail)
 	evs = append(evs, gcEvents...)
 	evs = append(evs, s.gcBlobs(now, 0)...) // TTL/cap blob eviction (A5)
 
@@ -255,7 +255,10 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 // terminal messages; unconsumed terminal beyond per-agent retention (advancing
 // the recipient's loss watermark); archived agents past retention (with their
 // nonces and dedup records); dedup records past the lesser-of bound.
-func (s *State) gc(now time.Time) ([]Event, bool) {
+// purgeMail is the sweep op's own decision, threaded in rather than assumed:
+// see Op.PurgeMail. A sweep from before that field existed keeps the semantics
+// it was written under, because replay runs today's fold over yesterday's ops.
+func (s *State) gc(now time.Time, purgeMail bool) ([]Event, bool) {
 	var evs []Event
 	// pruned records mutation that emits no event. See applySweep: a deletion the
 	// ledger never hears about is a deletion replay will not repeat.
@@ -347,6 +350,26 @@ func (s *State) gc(now time.Time) ([]Event, bool) {
 		// it: agentID only ever emits [a-z0-9-]. The provenance survives and
 		// says what happened to the sender, and s.Agents lookup returns nil,
 		// which Gone() reports as gone.
+		//
+		// AND ONLY WHEN THE OP SAYS SO, which is what keeps this out of the past.
+		//
+		// This is a change to an EXISTING fold. Replay applies today's Apply to
+		// yesterday's ops, so a sweep recorded by v0.0.6, which purged the row
+		// and left the mail, was replayed here and deleted it: a later ack that
+		// v0.0.6 accepted and ledgered then referred to nothing, returned
+		// E_NO_MESSAGE, and the daemon refused its own ledger on upgrade.
+		// Reproduced before this line existed.
+		//
+		// AGENTS.md states the rule for a new RULE in Apply and it is the same
+		// hazard for changed BEHAVIOUR: record the decision in the Op. A sweep
+		// written by this version carries the flag; one written by any earlier
+		// version does not, and keeps exactly the semantics it had. Nothing can
+		// be done about mail that was already inherited on those boards, and
+		// pretending otherwise costs the board its ability to start.
+		if !purgeMail {
+			evs = append(evs, Event{Type: "agent.purged", Agent: id})
+			continue
+		}
 		mail, retired := 0, 0
 		for serial, m := range s.Messages {
 			switch {
