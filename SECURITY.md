@@ -22,7 +22,17 @@ it, but a malicious agent in your own fleet is not an attacker Dibs can lock
 out, because you gave it the key.
 
 **If you run agents you do not trust, do not point them at the same daemon.**
-Run a second `dibd` with its own data directory; they share nothing.
+Run a second `dibd` with its own data directory (`-allow-parallel`); they share
+no coordination state: separate ledgers, separate mailboxes, separate boards.
+
+They do share the SCREEN, and that is not a quibble, because the screen is where
+the presence check happens. This said "they share nothing", which is true of
+everything Dibs stores and false of the one channel that asks a human to
+authorise something. Two daemons each serialise their own presence prompts and
+neither knows about the other's, so the guarantee below holds per daemon and
+not across them: see "Only one prompt waits at a time per daemon". If you are
+running parallel daemons for this reason, the four-letter code is the control
+you are relying on, not the serialisation.
 
 ## What holds inside that boundary
 

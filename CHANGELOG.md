@@ -1760,6 +1760,16 @@ machines for real work. Their priority order, not ours.
   machine-wide guarantee when it does not is the part that was wrong either way.
   Found by the pre-release review.
 
+  And the sentence that recommends the affected deployment said the opposite.
+  "If you run agents you do not trust, do not point them at the same daemon. Run
+  a second `dibd` with its own data directory; **they share nothing**." They
+  share no coordination state, which is what that sentence was about, and they
+  share the screen, which is the one channel that asks a human to authorise
+  something. So the configuration `SECURITY.md` recommends for isolating agents
+  you do not trust is exactly the configuration in which its own
+  one-prompt-at-a-time guarantee stops holding, and the two sentences are eight
+  lines apart. Both now say so and point at each other.
+
 ## [0.0.6] - 2026-08-20
 
 ### Security
