@@ -1779,6 +1779,34 @@ machines for real work. Their priority order, not ours.
   pass now returns both the count and the oldest. Caught reviewing the fix that
   introduced it, before it was ever tagged.
 
+### Security
+
+- **An agent could claim another agent's thread and have the board wake it.**
+  `register` and `bind_session` both take a caller-supplied `session_id`, and it
+  was written down without a question being asked about it. Downstream, the wake
+  path turns a UUID-shaped session id into the thread argument of the operator's
+  own `[wake.exec]` command. So an agent that knew a peer's thread id could
+  assert it, and the board would resume THAT thread on its behalf, while hook
+  resolution for the peer went ambiguous at the same time. No mail body was
+  exposed; what crossed the boundary was whose thread the operator's command
+  starts. Reported by the pre-release review, which reproduced it.
+
+  **Thread-shaped ids only, and the narrowness is the design.** Session ids are
+  deliberately shared in the ordinary case: the stdio bridge derives
+  `host-<ppid>` from the harness process, so every agent registering through one
+  bridge presents the same id on purpose. The obvious reading of this defect,
+  that session ids must be unique, would have refused the second agent in every
+  harness on the machine. The test applied is the same one the wake path applies
+  before treating an id as a thread to resume, so there is one answer to the
+  question rather than two. Rebinding your own id, reattaching with your own
+  name and nonce, and taking an id from a closed or archived agent all still
+  work.
+
+  Refused at the ingress and not in the fold, because `Ledger.Replay` calls
+  `Apply` directly: a refusal there would reject bindings that were legal when
+  they were written and the daemon would decline to start on its own history.
+  There is a test that folds exactly such a binding to keep it that way.
+
 ## [0.0.6] - 2026-08-20
 
 ### Security

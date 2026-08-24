@@ -498,6 +498,10 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		return nil, err
 	}
 
+	if err := e.refuseStealingAnotherThreadsSession(op); err != nil {
+		return nil, err
+	}
+
 	// An omitted description keeps the one the agent already has.
 	//
 	// Resolved at ingress and written INTO the op, so the ledger records the
@@ -1080,6 +1084,64 @@ func matchingHint(st MatchStatus) string {
 			"explicitly until it is back. "
 	}
 	return lead + st.Hint
+}
+
+// refuseStealingAnotherThreadsSession stops an agent claiming a session id that
+// is already somebody else's THREAD.
+//
+// `register` and `bind_session` both take a caller-supplied session_id, and the
+// fold wrote it down unconditionally. Downstream, wakeFor turns a UUID-shaped
+// session id into the thread argument of the operator's `[wake.exec]` command.
+// So an agent that knew another Codex thread's UUID could assert it, and the
+// board would then resume THAT thread on the victim's behalf, and hook
+// resolution for the victim became ambiguous into the bargain. Found by the
+// pre-release review, which reproduced it against a clean HEAD.
+//
+// THREAD-SHAPED IDS ONLY, and that narrowness is the whole design rather than
+// timidity. Session ids are deliberately SHARED in the common case: the stdio
+// bridge derives `host-<ppid>` from the harness process, so every agent
+// registering through one bridge presents the same id, on purpose, and
+// mcpstdio_session.go argues for that at length. A uniqueness rule would have
+// refused the second agent in every ordinary harness. What must not be shared
+// is the narrower thing that becomes authority: looksLikeThreadID is exactly
+// the test wakeFor applies before treating an id as a thread to resume, so it
+// is the test applied here. One resolver, one answer, which is the lesson the
+// coordinator guard above records.
+//
+// AT INGRESS, never in the fold, for the same reason as that guard: Apply
+// replays the ledger, so refusing here refuses new callers and leaves boards
+// that already recorded such a binding able to boot.
+//
+// Rebinding your own id is fine, and so is taking one from an agent that is
+// closed or archived: AgentBySession already skips those, because a retired
+// agent has no thread left to resume.
+func (e *Engine) refuseStealingAnotherThreadsSession(op *core.Op) error {
+	if op.Kind != core.OpRegister && op.Kind != core.OpBindSession {
+		return nil
+	}
+	if !looksLikeThreadID(op.SessionID) {
+		return nil
+	}
+	holder := e.state.AgentBySession(op.SessionID)
+	if holder == nil {
+		return nil
+	}
+	// The caller, when it has one. A register that reattaches by nonce resolves
+	// to the same agent, and re-asserting your own thread is not theft.
+	if self := e.state.AgentByToken(op.Token); self != nil && self.ID == holder.ID {
+		return nil
+	}
+	if op.Kind == core.OpRegister && op.Name != "" && holder.Name == op.Name {
+		return nil // reattaching to your own row, before any token exists
+	}
+	return &core.Error{
+		Code: "E_SESSION_TAKEN",
+		Msg:  "session id " + op.SessionID + " is already held by agent " + holder.ID,
+		Hint: "use your own harness session id, or none: this one names another " +
+			"agent's thread, and the board resumes a thread by that id. If that " +
+			"agent is you returning, register with the same name and your nonce " +
+			"instead, which reattaches you to it",
+	}
 }
 
 // refuseClaimWhenCoordinatorExists closes a claim the board has outgrown.
