@@ -985,6 +985,59 @@ machines for real work. Their priority order, not ours.
   privilege is withdrawn rather than a wording fix: issue #73 has the edges that
   make it worth doing deliberately rather than in the hour before a tag.
 
+- **`dibs upgrade` could not read the service unit Dibs itself writes.**
+  `configure --service` emits `ExecStart` through a quoter that wraps the value
+  and doubles a backslash, a quote, a `%` and a `$`; the reader split on quotes
+  and whitespace and reversed none of it. So `-dir "/tmp/Fleet Review"` came
+  back as two tokens, neither matching the board, and the unit describing this
+  very daemon read as another board's: upgrade started a detached process
+  instead of the service, printed a warning, and accepted the result. The board
+  comes back and systemd is no longer supervising it across logout or reboot.
+  Any path holding a space, a `%`, a `$` or a backslash was affected. The reader
+  parses what the writer emits now, and its test round-trips through the real
+  writer rather than a hand-written unit, because the defect was exactly that
+  the two disagreed.
+
+- **A configured certificate was judged against an address that may not win.**
+  Moving the hostname check to startup was right and left the old one at config
+  load, where `-addr` and `DIBS_ADDR` are both invisible: a board whose
+  `dibs.toml` names one address and which is started on another refused to load
+  at all, holding a certificate that was correct for the address it was told to
+  serve. That is worse than the hole it closed, and this changelog said in as
+  many words that the check cannot live there. It is asked once, after the
+  address is resolved, for both startup and `dibd -check`.
+
+- **A failed fallback space was reported as "no join threshold is set".** The
+  matching-status hint took precedence, and one exists for every non-ready
+  phase, including the suggest-only phase a zero join threshold produces, which
+  is the default. So on an ordinary board the agent got a true but irrelevant
+  sentence and never the relevant one: nothing matched, no space was opened,
+  and there is nowhere for the next agent to find it. That is the misreading
+  the outcome was added to prevent, previously only reachable on a board
+  configured in a way most are not.
+
+- **Two parallel boards logged each other out.** The session cookie was named
+  `dibs_session` on every board, and cookies are scoped to a host and never to
+  a port, so each redemption silently overwrote the other's. `-allow-parallel`
+  exists so an operator can run separate boards for agents they do not trust
+  together, and their two web interfaces could not both stay signed in: the
+  older tab kept its own port-scoped page key and started sending the newer
+  board's session token, so its stream revalidation and every keyed request
+  failed with nothing on screen to explain it. The name carries the port now.
+  That fixes the collision and changes nothing about the exposure `SECURITY.md`
+  describes: a different name is the same jar, sent to the same host, by the
+  same browser.
+
+- **The Codex plugin's hooks were outside the test that checks hook arguments.**
+  `TestShippedHooksSatisfyTheSchemasTheyCall` globbed `plugins/*/hooks/hooks.json`
+  and said in a comment that Codex uses that layout. It does not: Codex reads a
+  `hooks.json` at the root of its config directory, which is how the plugin
+  ships it. So the one plugin whose hooks carry required parameters was the one
+  the required-parameter test could not see, and removing `session_id` from
+  every Codex hook would have left it green. `dibs doctor` scanned the same
+  single layout and printed the all-clear over the same blind spot. Both read
+  both layouts now.
+
 - **A retired agent shadowed its live successor in `[roles]`.** A name is the
   first agent's id, so when `fleet-lead` retires and a replacement registers
   under the same name it becomes `fleet-lead-2`. Resolution matched the exact id

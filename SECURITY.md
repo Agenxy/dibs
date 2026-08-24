@@ -30,7 +30,7 @@ These are enforced, not advisory:
 
 | Surface | Rule |
 |---|---|
-| Mail and acting (`/api/messages`, `/api/admin/*`, `/api/act/*`, `/api/me`) | Needs a board session **and** the page key, never the local secret alone. `/api/admin/` is gated by prefix, so a route added later is closed by default rather than open until somebody remembers |
+| Mail and acting (`/api/messages`, `/api/admin/*`, `/api/act/*`, `/api/me`) | Either a board session **and** the page key, or, for the CLI, the local secret **and** the admin password in headers. Never the local secret alone, which is what every agent holds: both combinations require something an agent cannot produce. This row named only the first for a while, which understated nothing but described the boundary incompletely, and a security document that lists one of two accepted credentials is telling you less than it appears to. `/api/admin/` is gated by prefix, so a route added later is closed by default rather than open until somebody remembers |
 | Board document and stream (`/`, `/events`) | The session cookie alone, because `EventSource` cannot send a header. **These two carry board state and no mail**, which is the entire reason they are separated from the row above. This table used to put them under "needs the admin password", which was wrong twice over: a cookie is sufficient here, and the session behind it is minted by Touch ID on a Mac where no admin password exists |
 | Acting as the human (`/api/act/*`, `/api/me`) | Same, an agent with the secret cannot post, announce or send as the operator |
 | Agent tokens | Rotated, and the previous one revoked, on register, reattach and resume. Compared in constant time, never on the board. An agent woken from `stale` or `dormant` by its own token keeps that token: it re-arms the awareness gate, not the credential |
@@ -131,9 +131,12 @@ evidence that the real path works.
 
 **The board session cookie reaches the board and its stream, and nothing else.**
 Cookies are scoped to a *host* and never to a port, and `SameSite` does not
-separate ports either, so every service you visit on `127.0.0.1` is handed
-`dibs_session` by your own browser. Nothing the daemon can set on that cookie
-changes this.
+separate ports either, so every service you visit on `127.0.0.1` is handed this
+board's session cookie by your own browser. Nothing the daemon can set on that
+cookie changes this. The NAME carries the port (`dibs_session_4777`), which
+stops two boards on one host overwriting each other's session and does nothing
+whatever for this: a different name is still the same jar, sent to the same
+host, by the same browser.
 
 So the cookie is not the credential. Redeeming the magic link also hands the
 browser a **page key**, in the redirect's *fragment*: browsers never send a

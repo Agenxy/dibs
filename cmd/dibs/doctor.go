@@ -1123,7 +1123,18 @@ func scanShippedHooks() (wanted, misaddressed map[string]string) {
 	tool := regexp.MustCompile(`"tool"\s*:\s*"([a-z_]+)"`)
 	server := regexp.MustCompile(`"server"\s*:\s*"([^"]+)"`)
 	for _, root := range roots {
-		matches, _ := filepath.Glob(filepath.Join(root, "*", "hooks", "hooks.json"))
+		// BOTH LAYOUTS, for the reason internal/mcp/required_test.go carries at
+		// length: Codex reads a hooks.json at the root of its config directory,
+		// not the nested Claude Code path, so scanning only the nested one left
+		// the Codex plugin's hooks unexamined while doctor printed the all-clear.
+		var matches []string
+		for _, pat := range [][]string{
+			{root, "*", "hooks", "hooks.json"},
+			{root, "*", "hooks.json"},
+		} {
+			found, _ := filepath.Glob(filepath.Join(pat...))
+			matches = append(matches, found...)
+		}
 		for _, f := range matches {
 			raw, err := os.ReadFile(f) // #nosec G304 -- a repo path from a glob
 			if err != nil {
