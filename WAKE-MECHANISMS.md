@@ -277,12 +277,44 @@ legacy capability advertisement and the split transport are all in
 was not updated: a document that describes shipped work as unbuilt sends an
 integrator looking for an alternative that is already here.
 
+## 5b. The harness's own session socket (SHIPPED)
+
+Claude Code publishes, per session, a unix socket and an authentication key,
+both on disk, and accepts newline-delimited JSON on it. Dibs uses it.
+
+**Why this is not the `turn/steer` the table below rejects.** That rejection is
+about OWNING a thread: driving it, deciding what it does next. This sends one
+sentence, the same one `[wake.exec]` carries, and then closes the connection.
+It cannot read the thread, cannot steer it, and cannot see what happens next.
+Delivery is mediated by the recipient's own harness, which labels the message
+as coming from a peer, tells the model it is not user input, and gates it on
+that human's permission mode.
+
+**Why it is better than a command.** A command has to be told which thread to
+resume, so Dibs has to work out which id the agent answers to, and every wake
+defect this project has had is downstream of getting that wrong. A socket is
+the address. It needs no operator configuration, spawns no process, and needs
+no thread id, which was the single largest class of unwakeable agent.
+
+**Measured, not inferred**, because §3 of this document exists. A message was
+sent to a live session over this path and watched arrive; a wrong token
+produced nothing, which is how we know auth is enforced. Three defects were
+caught by that probe and by nothing else: `os.TempDir()` is the wrong base on
+macOS, the liveness stamp is UTC while `ps` answers local, and the wire test was
+flaky. Any one of them would have shipped a feature that silently never fired.
+
+**What is unchanged.** One gate for both routes: the cooldown, the
+still-running flag and the deferral are shared, because each was paid for by a
+bug. No command and no socket is still no wake. No process is ever spawned for
+a thread that cannot be resumed. The notice carries counts and senders, never a
+body.
+
 ## 6. Rejected approaches, and why
 
 | Approach | Verdict |
 |---|---|
 | Shell hooks (`dibs codex-hook`, plugin `monitor`) | **Deleted.** A CLI reformatting mail into the harness's continuation protocol is us driving the agent, a wrapper, not a service. |
-| Codex app-server `turn/steer` (true mid-turn inject) | Rejected: requires *owning* the thread over a Unix socket = orchestration. |
+| Codex app-server `turn/steer` (true mid-turn inject) | Rejected: requires *owning* the thread over a Unix socket = orchestration. Note §5b: delivering one notice over a socket the harness itself publishes is a different thing, and ships. |
 | `@openai/codex-sdk` supervisor | Rejected: TS-only (no Go SDK), and it means managing sessions. |
 | Claude **Spaces** (`notifications/claude/space`) | Genuinely elegant (zero agent steps) but **CLI-only** (platforms matrix), so unavailable in the Desktop app; research-preview + allowlist. |
 | `Monitor(ws)` tool | Works in Claude Desktop (one agentic tool call, WebSocket push, no shell) but is Claude-specific. |

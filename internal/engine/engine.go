@@ -119,6 +119,7 @@ type Engine struct {
 	// wakers is how the board REACHES an agent that is not running. Distinct
 	// from `wake` above, which is only the policy for extending a turn.
 	wakers wakers
+	peers  peerCache
 
 	// matchStatus is why matching did or did not do anything, so a declaration
 	// never comes back silently ambiguous. See matchstatus.go.
@@ -216,6 +217,12 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 func (e *Engine) Run(ctx context.Context) {
 	e.boot(time.Now())
 	e.reconcileBlobs() // startup reconcile: drop crash orphans (A4.1)
+	// OFF THE LOOP, and before the first event can be published. Finding the
+	// sockets a harness publishes costs a directory read and a `ps` per
+	// candidate, which the wake gate cannot afford to do inline, so it reads a
+	// cache and refuses when that cache is cold. Priming here is what stops the
+	// first wake of a session's life being the one that is refused.
+	go e.primePeerSessions()
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	reconcileTick := time.NewTicker(30 * time.Second)
@@ -225,7 +232,8 @@ func (e *Engine) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-reconcileTick.C:
-			e.reconcileBlobs() // delete evicted/orphan blob files off-thread
+			e.reconcileBlobs()       // delete evicted/orphan blob files off-thread
+			go e.primePeerSessions() // sessions come and go; keep the cache warm
 		case req := <-e.ops:
 			if req.fn != nil {
 				res := req.fn()

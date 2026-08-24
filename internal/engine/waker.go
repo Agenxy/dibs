@@ -255,7 +255,7 @@ func (e *Engine) maybeWake(ev core.Event) {
 	e.wakers.mu.Unlock()
 	go func() {
 		defer e.wakeExited(agent)
-		if runWake(cmd, agent) {
+		if e.runWake(cmd, agent) {
 			return
 		}
 		// A FAILED wake read nothing, so whatever arrived during it is still
@@ -395,7 +395,7 @@ func (e *Engine) retryWakeDecision(agent string) {
 	stamp := e.wakeStamp(agent)
 	go func() {
 		defer e.wakeExited(agent)
-		if !runWake(cmd, agent) {
+		if !e.runWake(cmd, agent) {
 			// Released so the next EVENT may try, but no timer armed: this is
 			// already the retry, and a command that fails twice fails.
 			e.releaseWake(agent, stamp)
@@ -626,34 +626,82 @@ func (e *Engine) recentlyInTouch(l *core.Agent) bool {
 // Split from maybeWake so the DECISION is testable without running anything: a
 // test that has to spawn a process to find out whether it would have is a test
 // nobody runs.
-func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) ([]string, bool) {
+// argvFor is the operator's command for this agent's harness. Caller holds
+// e.wakers.mu, and wakeRoute has already established that one exists.
+func (e *Engine) argvFor(l *core.Agent) []string {
 	harness := ""
 	if l.Agent != nil {
 		harness = l.Agent.Harness
 	}
+	return e.wakers.byHarness[strings.ToLower(harness)].argv
+}
+
+// wakeRoute decides HOW this agent would be reached, before asking whether it
+// may be reached now.
+//
+// Split out of wakeFor because there are two routes and the choice between them
+// is its own decision with its own reasons, none of which have anything to do
+// with cooldowns. Caller holds e.wakers.mu.
+//
+// Returns the cooldown that route carries and whether a command is what will
+// run; ok is false when neither route can reach this agent at all.
+func (e *Engine) wakeRoute(l *core.Agent) (cool time.Duration, byCommand, ok bool) {
+	harness := ""
+	if l.Agent != nil {
+		harness = l.Agent.Harness
+	}
+	cmd, found := e.wakers.byHarness[strings.ToLower(harness)]
+	byCommand = found && len(cmd.argv) > 0
+
+	// NO COMMAND IS NO LONGER NO WAKE.
+	//
+	// This used to return here, so an agent whose harness had no [wake.exec]
+	// entry could not be woken at all. That was correct while spawning a process
+	// was the only way to reach one, and it stopped being true: a harness that
+	// publishes a per-session socket is reachable without the operator
+	// configuring anything. The absence of a command is no longer the absence of
+	// an address.
+	//
+	// No command AND no socket is still no wake, which is what the
+	// operator-said-nothing guard asserts and what it should keep asserting.
+	if !byCommand {
+		if !e.mightReachOverSocket(l) {
+			return 0, false, false
+		}
+		return defaultPeerCooldown, false, true
+	}
+
+	// THE THREAD IS THE EXEC PATH'S REQUIREMENT, NOT THE WAKE'S.
+	//
+	// `codex exec resume` needs a thread id to name, and the stdio bridge stores
+	// `host-<ppid>` as the primary id while the resumable thread arrives
+	// separately as an alias: a command run against the wrong one starts a
+	// process that resolves no thread and leaves the mail unread. So the exec
+	// path still refuses without one.
+	//
+	// A socket needs no thread, because the socket IS the address. Refusing here
+	// used to refuse both, which made every agent with no thread id unwakeable
+	// even while its session was listening: the single largest class of
+	// unwakeable agent on this machine.
+	if threadIDOf(l) == "" {
+		slog.Debug("no wake by command: no harness thread id for this agent",
+			"agent", l.ID, "session_id", l.SessionID)
+		if !e.mightReachOverSocket(l) {
+			return 0, false, false
+		}
+		return defaultPeerCooldown, false, true
+	}
+	return cmd.cooldown, true, true
+}
+
+func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan, bool) {
 	e.wakers.mu.Lock()
 	defer e.wakers.mu.Unlock()
-	cmd, ok := e.wakers.byHarness[strings.ToLower(harness)]
-	if !ok || len(cmd.argv) == 0 {
-		return nil, false
+	cooldown, configured, ok := e.wakeRoute(l)
+	if !ok {
+		return wakePlan{}, false
 	}
-	// THE THREAD ID, WHICH IS USUALLY NOT SessionID.
-	//
-	// This passed SessionID and that is wrong on the ordinary path. The stdio
-	// bridge derives `host-<ppid>` and stores it as the primary id, while the
-	// identifier `codex exec resume` accepts arrives separately as the harness's
-	// own `_meta.threadId` and is kept as an ALIAS. So the shipped command ran
-	// as `codex exec resume host-10602`, which resolves to no thread: the
-	// subprocess started, failed, and the mail stayed unread. The feature did
-	// not work in the one configuration anybody would use. Found by the
-	// pre-release review; my test invented an agent whose primary id already
-	// looked like a thread, so it could never have caught it.
 	thread := threadIDOf(l)
-	if thread == "" {
-		slog.Debug("no wake: no harness thread id for this agent",
-			"agent", l.ID, "session_id", l.SessionID)
-		return nil, false
-	}
 	now := time.Now()
 	if e.wakers.last == nil {
 		e.wakers.last = map[string]time.Time{}
@@ -682,9 +730,9 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) ([]string
 		e.wakers.arrived[l.ID] = true
 		slog.Debug("no wake: the last one is still running; re-checking at its exit",
 			"agent", l.ID)
-		return nil, false
+		return wakePlan{}, false
 	}
-	if last, seen := e.wakers.last[l.ID]; seen && now.Sub(last) < cmd.cooldown {
+	if last, seen := e.wakers.last[l.ID]; seen && now.Sub(last) < cooldown {
 		// SUPPRESSED, NOT DISCARDED.
 		//
 		// maybeWake fires once per event and nothing retries, so a message
@@ -698,10 +746,10 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) ([]string
 		// A timer for the remainder, re-deciding from scratch when it fires.
 		// One per agent, replaced rather than stacked, so a burst inside the
 		// window is still one wake at the end of it.
-		e.deferWake(l.ID, cmd.cooldown-now.Sub(last))
+		e.deferWake(l.ID, cooldown-now.Sub(last))
 		slog.Debug("no wake yet: inside the cooldown, re-checking when it expires",
 			"agent", l.ID)
-		return nil, false
+		return wakePlan{}, false
 	}
 	e.wakers.last[l.ID] = now
 	if e.wakers.running == nil {
@@ -725,7 +773,7 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) ([]string
 	if kind == "" {
 		kind = strings.TrimPrefix(ev.Type, "message.")
 	}
-	return wakeFields{
+	f := wakeFields{
 		thread:  thread,
 		agent:   l.ID,
 		from:    from,
@@ -746,7 +794,44 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) ([]string
 		//
 		// "Check" is true whenever it arrives.
 		message: "Dibs: check the board. Call check_in, then inbox, and act on anything there.",
-	}.apply(cmd.argv), true
+	}
+	if !configured {
+		// The socket carries the same sentence the command would have carried.
+		// One notice, one wording, whichever way it travels.
+		return wakePlan{agent: l.ID, session: sessionOf(l), notice: f.message}, true
+	}
+	return wakePlan{argv: f.apply(e.argvFor(l))}, true
+}
+
+// wakePlan is how one wake will be delivered: the operator's command, or the
+// harness's own per-session socket.
+//
+// A struct rather than an argv because there are now two ways to reach an
+// agent and exactly one gate in front of them. Keeping the cooldown, the
+// still-running flag and the deferral in one place is the whole point: those
+// rules were each paid for by a bug, and a second delivery path that skipped
+// them would re-buy every one.
+type wakePlan struct {
+	argv    []string // the operator's command
+	agent   string   // whose wake this is, for the socket path
+	session string   // the harness session to deliver to
+	notice  string   // what to say; never a message body
+}
+
+// defaultPeerCooldown bounds socket wakes the way [wake.exec] entries bound
+// process wakes. Shorter, because nothing is spawned: the cost of one is a
+// connection and two lines, not an agent turn, so the rate limit is here to
+// stop a burst becoming a stream of interruptions rather than to stop a fork
+// bomb.
+const defaultPeerCooldown = 20 * time.Second
+
+// sessionOf is every name this agent answers to, primary first, for matching
+// against the sessions a harness publishes.
+func sessionOf(l *core.Agent) string {
+	if l == nil {
+		return ""
+	}
+	return l.SessionID
 }
 
 // threadIDOf finds the identifier a harness's own resume command will accept.
@@ -840,8 +925,18 @@ const wakeGrace = 10 * time.Second
 // The boolean is load-bearing: the caller releases the cooldown when this is
 // false, so a command that could not run does not consume the single attempt
 // the message was going to get.
-func runWake(argv []string, agent string) bool {
-	return runWakeFor(argv, agent, wakeTimeout, wakeGrace)
+// runWake delivers one wake, by whichever route the plan names.
+//
+// Returns whether the agent was actually reached, which is what the caller's
+// retry machinery turns on: a wake that failed spent no attempt and is still
+// owed. That contract is why the socket path reports honestly rather than
+// optimistically. Nothing here decides WHETHER to wake; that was settled under
+// one lock in wakeFor.
+func (e *Engine) runWake(plan wakePlan, agent string) bool {
+	if len(plan.argv) > 0 {
+		return runWakeFor(plan.argv, agent, wakeTimeout, wakeGrace)
+	}
+	return e.wakeOverSocket(plan, agent)
 }
 
 // runWakeFor is runWake with its bounds as arguments, so a test can assert that

@@ -53,33 +53,33 @@ func TestMailForAnAgentThatIsNotRunningStartsTheOperatorsCommand(t *testing.T) {
 			"body": secretBody, "text": secretBody, "preview": secretBody,
 		},
 	}
-	argv, ok := e.wakeFor(l, core.MsgQuestion, ev)
+	plan, ok := e.wakeFor(l, core.MsgQuestion, ev)
 	if !ok {
 		t.Fatal("no wake for a dormant agent with a configured harness: the board " +
 			"cannot reach it, which is the defect this exists to fix")
 	}
-	if argv[0] != "codex" || argv[3] != "019ffe52-0eaf-7f60-81cc-6ab1298d76ec" {
+	if plan.argv[0] != "codex" || plan.argv[3] != "019ffe52-0eaf-7f60-81cc-6ab1298d76ec" {
 		t.Errorf("argv = %v: the wake must carry the HARNESS THREAD id. The bridge's "+
 			"host-<ppid> resolves to no thread, so a resume against it starts a "+
-			"process that finds nothing and the mail stays unread", argv)
+			"process that finds nothing and the mail stays unread", plan.argv)
 	}
 	// The BODY never goes on a command line. A wake says mail exists; the agent
 	// reads it over the authenticated channel with its own token, and mail is
 	// encrypted at rest for the same reason an argv is the wrong place for it:
 	// a command line is visible to every process on the machine.
-	joined := strings.Join(argv, " ")
+	joined := strings.Join(plan.argv, " ")
 	for _, leak := range []string{secretBody, "hunter2", "incident"} {
 		if strings.Contains(joined, leak) {
 			t.Errorf("argv = %v: it carries message content (%q). Every process on "+
 				"this machine can read a command line, and the operator's wake "+
-				"command is arbitrary code that may log its arguments", argv, leak)
+				"command is arbitrary code that may log its arguments", plan.argv, leak)
 		}
 	}
 	// And {message} was substituted with SOMETHING, or the check above passes
 	// for a wake that carries no message placeholder at all.
 	if !strings.Contains(strings.ToLower(joined), "board") {
 		t.Errorf("argv = %v: {message} carried nothing recognisable, so the "+
-			"body check above had nothing to be a check of", argv)
+			"body check above had nothing to be a check of", plan.argv)
 	}
 }
 
@@ -116,12 +116,12 @@ func TestAMessageCannotInfluenceWhatTheWakeCommandRuns(t *testing.T) {
 		Type: "message.sent", To: nasty,
 		Data: map[string]any{"msg_type": core.MsgRequest, "from": nasty},
 	}
-	argv, ok := e.wakeFor(l, core.MsgRequest, ev)
+	plan, ok := e.wakeFor(l, core.MsgRequest, ev)
 	if !ok {
 		t.Fatal("setup: no wake, so this proves nothing about what it would run")
 	}
-	if argv[0] != "codex" {
-		t.Errorf("the executable changed to %q: only the operator names that", argv[0])
+	if plan.argv[0] != "codex" {
+		t.Errorf("the executable changed to %q: only the operator names that", plan.argv[0])
 	}
 	// The hostile string may appear ONLY where a placeholder invited it, and
 	// only as one whole element: exec takes it as a single argument, and there
@@ -134,14 +134,14 @@ func TestAMessageCannotInfluenceWhatTheWakeCommandRuns(t *testing.T) {
 		invited[i] = strings.HasPrefix(a, "{")
 	}
 	seen := 0
-	for i, a := range argv {
+	for i, a := range plan.argv {
 		if strings.Contains(a, nasty) {
 			if !invited[i] {
-				t.Errorf("argv[%d] = %q took hostile input at a position the operator "+
-					"wrote literally: %v", i, a, argv)
+				t.Errorf("plan.argv[%d] = %q took hostile input at a position the operator "+
+					"wrote literally: %v", i, a, plan.argv)
 			}
 			if a != nasty {
-				t.Errorf("argv[%d] = %q: a substituted value must replace a WHOLE "+
+				t.Errorf("plan.argv[%d] = %q: a substituted value must replace a WHOLE "+
 					"element. Pasting it into a larger string is where quoting bugs "+
 					"live, and there is no shell here to blame for them", i, a)
 			}
@@ -149,12 +149,12 @@ func TestAMessageCannotInfluenceWhatTheWakeCommandRuns(t *testing.T) {
 		}
 	}
 	if seen == 0 {
-		t.Fatal("the hostile agent id reached no argv element at all, so this test " +
+		t.Fatal("the hostile agent id reached no plan.argv element at all, so this test " +
 			"inspected nothing. The command must contain the agent-derived " +
 			"placeholders for the check below to mean anything")
 	}
-	if len(argv) != 12 {
-		t.Errorf("argv = %v: substitution changed the shape of the command", argv)
+	if len(plan.argv) != 12 {
+		t.Errorf("argv = %v: substitution changed the shape of the command", plan.argv)
 	}
 }
 
@@ -299,12 +299,12 @@ func TestTheWakeTargetsTheThreadTheHarnessCanActuallyResume(t *testing.T) {
 
 	t.Run("the alias is used when the primary is synthetic", func(t *testing.T) {
 		l := bridgeAgent("b", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
-		argv, ok := e.wakeFor(l, core.MsgQuestion, ev)
+		plan, ok := e.wakeFor(l, core.MsgQuestion, ev)
 		if !ok {
 			t.Fatal("no wake although the harness thread id is on the agent")
 		}
-		if argv[3] != "019ffe52-0eaf-7f60-81cc-6ab1298d76ec" {
-			t.Errorf("argv = %v: took the synthetic id over the real thread", argv)
+		if plan.argv[3] != "019ffe52-0eaf-7f60-81cc-6ab1298d76ec" {
+			t.Errorf("argv = %v: took the synthetic id over the real thread", plan.argv)
 		}
 	})
 }
@@ -412,11 +412,11 @@ func TestTheWakeResumesTheAgentsCurrentThreadAndNotAnOldOne(t *testing.T) {
 	// The order bindHarnessSession produces: appended, oldest first.
 	l.SessionAliases = []string{yesterday, earlier, now}
 
-	argv, ok := e.wakeFor(l, core.MsgQuestion, core.Event{})
+	plan, ok := e.wakeFor(l, core.MsgQuestion, core.Event{})
 	if !ok {
 		t.Fatal("no wake for a dormant agent with three known threads")
 	}
-	got := argv[len(argv)-1]
+	got := plan.argv[len(plan.argv)-1]
 	if got == yesterday || got == earlier {
 		t.Fatalf("the wake resumes %s, which this agent left. Aliases are appended, "+
 			"so the CURRENT activation is the last one (%s): resuming an older thread "+
@@ -778,11 +778,11 @@ func TestAVerdictWakeCarriesWhoAnsweredAndWhatTheyDid(t *testing.T) {
 				Type: c.event, Agent: "lael", To: "asker",
 				Data: map[string]any{"msg_serial": uint64(7)},
 			}
-			argv, ok := e.wakeFor(l, "", ev)
+			plan, ok := e.wakeFor(l, "", ev)
 			if !ok {
 				t.Fatal("no wake for a verdict, so this proves nothing about its fields")
 			}
-			from, kind := argv[4], argv[6]
+			from, kind := plan.argv[4], plan.argv[6]
 			if from != "lael" {
 				t.Errorf("{from} = %q, want \"lael\": the responder is Event.Agent on a "+
 					"verdict, and reading only Data hands the operator's command an "+
@@ -1372,14 +1372,14 @@ func TestARetriedWakeNamesTheWorkItIsFor(t *testing.T) {
 	}
 
 	// And the substitution actually carries them.
-	argv, ok := e.wakeFor(l, kind, core.Event{
+	plan, ok := e.wakeFor(l, kind, core.Event{
 		Type: "wake.retry", To: "stuck", Agent: from,
 		Data: map[string]any{"msg_type": kind, "from": from},
 	})
 	if !ok {
 		t.Fatal("no command for the retry")
 	}
-	joined := strings.Join(argv, " ")
+	joined := strings.Join(plan.argv, " ")
 	if !strings.Contains(joined, "handoff") || !strings.Contains(joined, "dispatcher") {
 		t.Errorf("the retried command runs %q. {type} and {from} are documented "+
 			"placeholders, and a command told `question` from nobody acts on the "+

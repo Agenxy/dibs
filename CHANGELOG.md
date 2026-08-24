@@ -1883,6 +1883,24 @@ machines for real work. Their priority order, not ours.
   loser's binding, because a delete belongs in the fold and would be
   retroactive.
 
+- **An agent can be woken over the socket its own harness publishes, with no
+  configuration at all.** Claude Code publishes a unix socket and an
+  authentication key per session; Dibs reads both and delivers the same notice
+  `[wake.exec]` would have carried. A command has to be told which thread to
+  resume, so Dibs had to work out which id an agent answers to, and every wake
+  defect this cycle is downstream of getting that wrong. A socket is the
+  address. It needs no operator config, spawns no process, and needs no thread
+  id, which was the largest class of unwakeable agent on this machine. Verified
+  against a live session rather than inferred: a message was sent over the path
+  and watched arrive, and a wrong token produced nothing, which is how the auth
+  is known to be enforced.
+
+  Unchanged, deliberately: one gate in front of both routes, so the cooldown,
+  the still-running flag and the deferral are shared rather than re-bought; no
+  command and no socket is still no wake; no process is ever spawned for a
+  thread that cannot be resumed; and the notice carries counts and senders,
+  never a body, on this route as on the other.
+
 - **A caller that says which session it is running in is now believed, instead
   of guessed at.** With no session alias on a call, the engine INFERS one by
   directory: it takes an id announced from that cwd recently and assumes the
