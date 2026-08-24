@@ -269,9 +269,13 @@ model) per `codex-rs/rmcp-client/src/logging_client_handler.rs`.
   right, because the legacy path is the transitional courtesy PHILOSOPHY.md rule
   9 describes, and "100% of clients" is the sentence that went stale.
 
-**Not built (the next bet):** legacy `resources/subscribe` / `unsubscribe` + a GET SSE
-space to deliver `notifications/resources/updated` on 2025-11-25. This is what pays off
-first, because it's what shipping clients speak.
+**Built, and this line said "not built" for a while:** legacy
+`resources/subscribe` / `unsubscribe` and a GET SSE space delivering
+`notifications/resources/updated` on 2025-11-25. Dispatch, the SSE space, the
+legacy capability advertisement and the split transport are all in
+`internal/mcp`. It was written as the next bet, it was taken, and the sentence
+was not updated: a document that describes shipped work as unbuilt sends an
+integrator looking for an alternative that is already here.
 
 ## 6. Rejected approaches, and why
 

@@ -510,9 +510,23 @@ func (g *authGate) presenceBootstrap(w http.ResponseWriter, r *http.Request) {
 	}
 	switch verdict {
 	case humanauth.Verified:
+		// A REFUSED MINT IS NOT A SUCCESS. mintBootstrap returns "" when the OS
+		// random source failed, and this reported 200 with an empty token: the
+		// operator's fingerprint was spent on an answer that grants nothing, and
+		// the API said it worked. The CLI happens to reject the empty token, so
+		// nothing was ever handed out; a handler whose success depends on its
+		// caller noticing is not a handler that refuses.
+		bt := g.mintBootstrap()
+		if bt == "" {
+			http.Error(w, "could not mint a board token: the system random source "+
+				"failed. Nothing was granted; try again, and if it persists this "+
+				"machine cannot generate credentials safely",
+				http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json")
-		out := map[string]string{"bt": g.mintBootstrap(), "proof": "presence"}
+		out := map[string]string{"bt": bt, "proof": "presence"}
 		// A dev build answering from a script says so, in the response, every
 		// time: the same rule internal/mcp/human.go holds. A mocked unlock that
 		// looked identical to a real one would be evidence of nothing, in exactly
@@ -612,9 +626,19 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 			g.mu.Lock()
 			g.adminFails, g.adminLockTill = 0, time.Time{}
 			g.mu.Unlock()
+			// Same as the presence path above: an empty token is a refusal, and
+			// it has to be reported as one.
+			bt := g.mintBootstrap()
+			if bt == "" {
+				http.Error(w, "could not mint a board token: the system random source "+
+					"failed. Nothing was granted; try again, and if it persists this "+
+					"machine cannot generate credentials safely",
+					http.StatusInternalServerError)
+				return
+			}
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]string{"bt": g.mintBootstrap()})
+			_ = json.NewEncoder(w).Encode(map[string]string{"bt": bt})
 			return
 		}
 

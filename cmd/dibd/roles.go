@@ -114,52 +114,69 @@ const rolesReapplyEvery = 15 * time.Second
 
 // applyDeclaredRoles grants each declared role once.
 func applyDeclaredRoles(ctx context.Context, eng *engine.Engine, c RolesConfig, pins *rolePins) {
-	// ONE AGENT, ONE ROLE, decided after resolution rather than on the strings.
+	// ADMIN FIRST, AND ONLY WHAT WAS ACTUALLY GRANTED SUPPRESSES A COORDINATOR.
 	//
-	// boardconfig refuses the same STRING in both lists, and a name and an id
-	// are two strings for one agent: `coordinator = ["fleet-lead"]` beside
-	// `admin = ["Fleet Lead"]` passed validation and resolved to the same
-	// identity, so every pass granted coordinator and then admin. Two ledger
+	// One agent holds one role, and a name and an id are two strings for one
+	// agent: `coordinator = ["fleet-lead"]` beside `admin = ["Fleet Lead"]`
+	// passes validation, which compares strings, and resolves to one identity.
+	// Granting both meant coordinator and then admin on every pass: two ledger
 	// entries every fifteen seconds and a window in between where admin-only
-	// calls fail: the exact oscillation the validator says it prevents,
-	// reachable by spelling the agent two ways.
+	// calls fail.
 	//
-	// Admin wins, because admin already includes coordinator authority, so the
-	// operator loses nothing by the choice and the board stops flapping.
-	admins := map[string]bool{}
-	for _, a := range c.Admin {
-		if id := resolveDeclared(ctx, eng, core.RoleAdmin, a); id != "" {
-			admins[id] = true
+	// The first fix for that collected every admin alias that RESOLVED and
+	// skipped a coordinator naming the same agent. Resolving is not being
+	// authorised: with the admin alias missing from `[roles.identity]`, the
+	// coordinator grant was skipped for an admin grant that was then refused,
+	// so nothing was granted at all, and the launch claim stays suppressed
+	// because the config did name a coordinator. A fresh board came up with no
+	// coordinator and no way to get one, which is the state the claim exists to
+	// prevent.
+	//
+	// So admin runs first and reports what it actually did. Only an agent
+	// HOLDING admin suppresses its own coordinator declaration, and admin
+	// already includes coordinator authority, so nothing is lost either way.
+	held := map[string]bool{}
+	for _, agent := range c.Admin {
+		if id := grantOne(ctx, eng, c, pins, core.RoleAdmin, agent); id != "" {
+			held[id] = true
 		}
 	}
-	for _, spec := range []struct {
-		role   string
-		agents []string
-	}{
-		{core.RoleCoordinator, c.Coordinator},
-		{core.RoleAdmin, c.Admin},
-	} {
-		for _, agent := range spec.agents {
-			if agent == "" {
-				continue
-			}
-			id := resolveDeclared(ctx, eng, spec.role, agent)
-			if id == "" {
-				continue
-			}
-			if spec.role == core.RoleCoordinator && admins[id] {
-				slog.Warn("an agent is declared as both coordinator and admin under "+
-					"different spellings; granting admin only, which includes what "+
-					"coordinator can do",
-					"agent", agent, "id", id)
-				continue
-			}
-			if !mayHoldDeclaredRole(ctx, eng, pins, c, spec.role, agent, id) {
-				continue
-			}
-			grantDeclared(ctx, eng, spec.role, agent, id)
+	for _, agent := range c.Coordinator {
+		id := resolveDeclared(ctx, eng, core.RoleCoordinator, agent)
+		if id == "" {
+			continue
 		}
+		if held[id] {
+			slog.Info("an agent is declared as both coordinator and admin under "+
+				"different spellings; it holds admin, which includes what coordinator "+
+				"can do", "agent", agent, "id", id)
+			continue
+		}
+		if !mayHoldDeclaredRole(ctx, eng, pins, c, core.RoleCoordinator, agent, id) {
+			continue
+		}
+		grantDeclared(ctx, eng, core.RoleCoordinator, agent, id)
 	}
+}
+
+// grantOne resolves a declared name, grants the role if it may, and reports the
+// agent id when the role is now held. "" means nothing was granted, for any
+// reason: not registered, not authorised, or refused by the pin.
+func grantOne(ctx context.Context, eng *engine.Engine, c RolesConfig, pins *rolePins,
+	role, agent string,
+) string {
+	if agent == "" {
+		return ""
+	}
+	id := resolveDeclared(ctx, eng, role, agent)
+	if id == "" {
+		return ""
+	}
+	if !mayHoldDeclaredRole(ctx, eng, pins, c, role, agent, id) {
+		return ""
+	}
+	grantDeclared(ctx, eng, role, agent, id)
+	return id
 }
 
 // describeDeclaredRoles renders the roles for the startup banner, so an operator

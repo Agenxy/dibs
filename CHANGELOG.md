@@ -998,6 +998,39 @@ machines for real work. Their priority order, not ours.
   arrival is recorded and passed, which is the same redundancy the burst check
   has.
 
+- **An unauthorised admin alias took a valid coordinator grant down with it.**
+  The one-agent-one-role rule collected every admin alias that RESOLVED and
+  skipped a coordinator naming the same agent, and resolving is not being
+  authorised: with the admin spelling absent from `[roles.identity]`, the valid
+  coordinator grant was skipped for an admin grant that was then refused, so
+  nothing was granted. The launch claim stays suppressed either way, because the
+  config does name a coordinator, so a fresh board came up with no coordinator
+  and no way to get one: the state the claim exists to prevent, produced by the
+  fix for a different defect. Admin runs first and reports what it actually did,
+  and only an agent holding admin suppresses its own coordinator declaration.
+
+- **The documented role handover left the predecessor holding the role.**
+  `docs/CONFIGURATION.md` said to install the successor's fingerprint and delete
+  the old pin, and omitted the demotion: a role already held is replayable state
+  that nothing in the reconciler takes away, so an operator following the guide
+  believed the role had moved while the predecessor went on reading every
+  mailbox. It is three steps now, with the demotion first, which is the wrong
+  thing for a security document to have been quiet about.
+
+- **The only test protecting the cancelled-Touch-ID verdict never ran.** It
+  skipped unless the presence helper happened to sit beside the Go test binary,
+  which neither the ordinary gate nor `-tags dibdev` arranges, so reverting
+  "cancelled means abandoned" to "cancelled means declined" left everything
+  green. That distinction is the whole point of the package: a decline is a
+  claim about a person, and nobody was asked. The decision is split from the
+  plumbing and tested directly, which is what this package already did once for
+  the same reason.
+
+- **`WAKE-MECHANISMS.md` called a shipped protocol path "not built".** Legacy
+  `resources/subscribe` and the GET SSE notification space were written up as
+  the next bet, the bet was taken, and the sentence stayed: an integrator
+  reading it goes looking for an alternative to something that is already here.
+
 - **The wake tests raced the wakes they caused.** `maybeWake` starts a
   goroutine, and seventeen assertions read the maps that goroutine writes
   without taking the lock that guards them. Every local run passed and CI went
@@ -1036,8 +1069,11 @@ machines for real work. Their priority order, not ours.
 - **Board credentials were minted even when the OS random source failed.** The
   error from `crypto/rand` was discarded and the buffer returned regardless, so
   a failing RNG produced a zero or half-filled bootstrap token, session token
-  and page key, and authentication continued with them. Both mints refuse now:
-  a link that does not work is the correct outcome, and a loud one.
+  and page key, and authentication continued with them. Both mints refuse now,
+  and both HTTP handlers report the refusal: returning 200 with an empty token
+  spends the operator's fingerprint on an answer that grants nothing and calls
+  it success, and a handler whose failure depends on the caller noticing is not
+  one that refuses.
 
 - **A strict hook's dropped keys were logged where the daemon does not look.**
   The Codex strict schema cannot carry `agent` and `queued`, and the comment

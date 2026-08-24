@@ -144,11 +144,28 @@ func Check(ctx context.Context, reason string) (Verdict, error) {
 	// there is no shell here.
 	cmd := exec.CommandContext(ctx, helper, reason)
 	err = cmd.Run()
-	if err == nil {
+	return verdictFor(err, parent.Err(), ctx.Err())
+}
+
+// verdictFor turns what happened into what may be said about the person.
+//
+// SPLIT FROM Check so a test can reach it, which is the same reason helperIn
+// exists a few lines down and for the same failure: the only test protecting
+// the Abandoned branch called Check, Check refuses before it gets here when no
+// helper is installed beside the binary, and no gate arranges one. It skipped
+// in the ordinary run AND under -tags dibdev, so reverting this branch to
+// Declined left every gate green. That is the third time this package has
+// needed the split and the second time it was found by a review rather than by
+// a red test.
+//
+// runErr is what the helper's process returned; parentErr and deadlineErr are
+// the caller's context and our own timeout, in that order of precedence.
+func verdictFor(runErr, parentErr, deadlineErr error) (Verdict, error) {
+	if runErr == nil {
 		return Verified, nil
 	}
 	var ee *exec.ExitError
-	if errors.As(err, &ee) {
+	if errors.As(runErr, &ee) {
 		// The helper's exit codes ARE the API: 1 asked-and-refused, 2 cannot ask.
 		switch ee.ExitCode() {
 		case 1:
@@ -158,16 +175,21 @@ func Check(ctx context.Context, reason string) (Verdict, error) {
 		}
 	}
 	// The caller went away: not a decision, and not a broken machine.
-	if parent.Err() != nil {
-		return Abandoned, nil
+	//
+	// The VERDICT is the answer here, and the error return is reserved for "we
+	// could not decide at all": returning the process's failure alongside
+	// Abandoned would make every caller that checks err treat a known outcome as
+	// a fault. That is why the two branches below discard runErr deliberately.
+	if parentErr != nil {
+		return Abandoned, nil //nolint:nilerr // the verdict is the answer; see above
 	}
 	// Our own deadline expired: a human who never answered, which IS a decline:
 	// nothing was approved, and telling them their Mac cannot do this would be
 	// false.
-	if ctx.Err() != nil {
-		return Declined, nil
+	if deadlineErr != nil {
+		return Declined, nil //nolint:nilerr // the verdict is the answer; see above
 	}
-	return Unavailable, err
+	return Unavailable, runErr
 }
 
 // findHelper looks beside the running binary, and refuses a symlink.

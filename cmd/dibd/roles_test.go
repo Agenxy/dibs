@@ -847,3 +847,48 @@ func TestAnAgentSpelledTwoWaysGetsOneRole(t *testing.T) {
 			"do, so it is the one to keep", role)
 	}
 }
+
+// An unauthorised admin alias must not take the coordinator grant with it.
+//
+// The first version of the one-agent-one-role rule collected every admin alias
+// that RESOLVED and skipped a coordinator naming the same agent. Resolving is
+// not being authorised: with the admin spelling missing from
+// `[roles.identity]`, the valid coordinator grant was skipped in favour of an
+// admin grant that was then refused, so nothing was granted at all. The launch
+// claim stays suppressed either way, because the config does name a
+// coordinator, so a fresh board came up with no coordinator and no way to get
+// one: the exact state the claim exists to prevent, produced by the fix for a
+// different defect.
+func TestAnUnauthorisedAdminAliasDoesNotCostTheCoordinatorGrant(t *testing.T) {
+	eng, ctx := testEngine(t)
+	res, err := eng.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "Fleet Lead", Nonce: "n-fleet-lead-2",
+	})
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	id, _ := res["agent_id"].(string)
+	fp, err := eng.AgentIdentity(ctx, id)
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+
+	// The coordinator spelling is pinned; the admin spelling is not.
+	c := RolesConfig{
+		Coordinator: []string{id},
+		Admin:       []string{"Fleet Lead"},
+		Identity:    map[string]string{id: fp},
+	}
+	applyDeclaredRoles(ctx, eng, c, loadRolePins(t.TempDir()))
+
+	role, err := eng.AgentRole(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if role != core.RoleCoordinator {
+		t.Errorf("the agent holds %q, want coordinator. Its coordinator declaration is "+
+			"pinned and valid; the admin one is not authorised and was refused, and "+
+			"taking the coordinator grant down with it leaves this board with no "+
+			"coordinator at all, and no claim either", role)
+	}
+}

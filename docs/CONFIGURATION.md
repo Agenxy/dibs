@@ -314,13 +314,27 @@ agent and take its token, its mailbox and its role. The daemon now detects and
 refuses that value, so following the old advice bought the exposure and not
 even the grant.
 
-If you genuinely mean to hand the role to a different agent, put the new
-agent's fingerprint here and delete that name from `roles.pinned`.
+If you genuinely mean to hand the role to a different agent, it is **three
+steps and all of them matter**, in this order:
+
+1. `dibs admin member <the old agent>`. Editing config decides what is
+   GRANTED, and a role already held is replayable state that nothing in the
+   reconciler takes away: skip this and the predecessor keeps reading every
+   mailbox while you believe the role moved. This paragraph used to name only
+   the two steps below, which is the wrong direction for a security document
+   to be wrong in. See `SECURITY.md`, and issue #73 for making the config
+   sufficient on its own.
+2. Put the new agent's fingerprint here, and delete the old name from
+   `roles.pinned`.
+3. Restart `dibd`. Both files are read at startup, so editing either one under
+   a running daemon changes nothing.
 
 **One agent, one role.** Naming the same agent under both `coordinator` and
-`admin` is refused: an agent holds a single role, so the reconciler would grant
-one and then the other every fifteen seconds for the whole startup window.
-`admin` already includes everything `coordinator` can do.
+`admin` is refused when you spell it the same way in both lists, and validation
+compares strings: a name and an id are two strings for one agent, so
+`coordinator = ["fleet-lead"]` beside `admin = ["Fleet Lead"]` gets past it.
+The reconciler settles that after resolving, where the aliases are visible, and
+`admin` wins because it already includes everything `coordinator` can do.
 
 The grant window closes about two minutes after start. A name that never
 appears is reported once and then left alone, rather than standing open for
