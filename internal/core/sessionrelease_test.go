@@ -68,3 +68,43 @@ func TestAnOrdinaryUpdateKeepsTheSessionBinding(t *testing.T) {
 			"revises its description stops being wakeable")
 	}
 }
+
+// Stating an id you already hold must clear the guess against it.
+//
+// bindHarnessSession reports "" when there is nothing NEW to bind, which is
+// exactly the case when a session names an id the agent already carries. The
+// provenance update sat behind that early return, so an agent that explicitly
+// confirmed its own session stayed marked as having only inherited it, and
+// remained reclaimable by any other authenticated agent. The binding was right;
+// the claim about where it came from was not. Found by the pre-release review.
+func TestReassertingAnInferredSessionMakesItStated(t *testing.T) {
+	s := NewState("t", DefaultLimits())
+	reg(t, s, "owner", "tok", t0)
+	const sid = "19d67315-7718-491e-be3f-3864f577eeed"
+
+	// Inferred first, which is how the daemon binds when a caller states none.
+	mustApply(t, s, &Op{
+		Kind: OpUpdate, Token: "tok", Description: "d",
+		SessionAlias: sid, SessionGuessed: true,
+	}, t0)
+	if !s.Agents["owner"].GuessedSession(sid) {
+		t.Fatal("setup: the binding is not recorded as a guess, so there is nothing " +
+			"for the reassertion below to upgrade")
+	}
+
+	// Now the session says so itself. The binding does not change; its
+	// provenance must.
+	mustApply(t, s, &Op{
+		Kind: OpUpdate, Token: "tok", Description: "d",
+		SessionAlias: sid, SessionGuessed: false,
+	}, t0)
+
+	if s.Agents["owner"].GuessedSession(sid) {
+		t.Error("an agent that stated its own session id is still marked as having " +
+			"inherited it, so any other authenticated agent can take it away and " +
+			"redirect this one's wakes")
+	}
+	if !s.Agents["owner"].HoldsSessionForTest(sid) {
+		t.Error("the reassertion lost the binding it was confirming")
+	}
+}

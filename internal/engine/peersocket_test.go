@@ -272,3 +272,126 @@ func TestASocketWakeDoesNotRaceTheWriter(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// The wake gate must never do discovery I/O, because it runs on the writer
+// loop and the whole board waits behind it.
+//
+// The first version called the lookup that REFRESHES an expired cache, while
+// its own comment said it read the cache and never refreshed. With a
+// five-second TTL and a thirty-second background prime, most wake decisions did
+// a directory scan and a `ps` per candidate inline on the loop, or blocked
+// behind a goroutine holding the same mutex. A slow filesystem or a stuck `ps`
+// stalls every board operation. Found by the pre-release review.
+//
+// Asserted by counting probes: the gate must run none.
+func TestTheWakeGateDoesNoDiscovery(t *testing.T) {
+	st := core.NewState("t", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	if _, _, err := st.Apply(&core.Op{
+		Kind: core.OpRegister, Name: "a", NewToken: "tok",
+		SessionID: "some-session", Agent: &core.AgentInfo{Harness: "Claude Code"},
+	}, t0Engine()); err != nil {
+		t.Fatal("setup:", err)
+	}
+
+	var probes int
+	prev := peerAlive
+	peerAlive = func(int, string) bool { probes++; return true }
+	t.Cleanup(func() { peerAlive = prev })
+
+	// A warm cache, then let the TTL lapse so a refreshing lookup would fire.
+	e.primePeerSessions()
+	e.peers.mu.Lock()
+	e.peers.at = time.Now().Add(-time.Hour)
+	e.peers.mu.Unlock()
+	probes = 0
+
+	for i := 0; i < 5; i++ {
+		e.mightReachOverSocket(st.Agents["a"])
+	}
+	if probes != 0 {
+		t.Errorf("the gate ran %d liveness probe(s). Each one is a process spawned "+
+			"while the single writer is held, so every other agent's declare, send "+
+			"and check_in waits behind it", probes)
+	}
+}
+
+// Priming happens before the loop serves, so the first wake of a daemon's life
+// has a real answer rather than a cold cache.
+//
+// It was a goroutine racing the loop: an event arriving first was refused
+// before any cooldown or deferral state existed, and a later prime only fills
+// the cache, so nothing reconsidered mail that was already waiting. That wake
+// was lost outright. Found by the pre-release review.
+//
+// SLOW ON PURPOSE. The first version simply asserted the cache was warm after
+// one operation, and it passed against an ASYNC prime five times out of five,
+// because a fast goroutine wins that race anyway. A test that cannot fail
+// against the bug it names is worth less than no test. This one makes
+// discovery take long enough that the ordering is decided rather than raced,
+// and records whether priming had finished when the loop served.
+func TestPrimingHappensBeforeTheLoopServes(t *testing.T) {
+	sock, _ := listeningSession(t) // a real fixture, so discovery probes it
+	go func() {
+		for {
+			c, err := sock.Accept()
+			if err != nil {
+				return
+			}
+			_ = c.Close()
+		}
+	}()
+
+	// HELD, not slept on. Discovery blocks inside the probe until this test
+	// lets it go, so the ordering is decided by the code under test rather than
+	// by whichever goroutine happens to be quicker.
+	var once sync.Once
+	probing, release := make(chan struct{}), make(chan struct{})
+	prev := peerAlive
+	peerAlive = func(int, string) bool {
+		once.Do(func() { close(probing) })
+		<-release
+		return true
+	}
+	t.Cleanup(func() { peerAlive = prev })
+
+	st := core.NewState("t", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	select {
+	case <-probing:
+	case <-time.After(5 * time.Second):
+		close(release)
+		t.Fatal("discovery never probed the fixture session, so this test cannot " +
+			"observe the ordering it exists for")
+	}
+
+	// Priming is in flight and held. A synchronous prime means the loop has not
+	// started serving, so this must NOT complete.
+	held, cancelHeld := context.WithTimeout(ctx, 300*time.Millisecond)
+	_, err := e.Do(held, &core.Op{
+		Kind: core.OpRegister, Name: "early", Nonce: "n-early", AgentKind: core.KindPersistent,
+	})
+	cancelHeld()
+	close(release)
+
+	if err == nil {
+		t.Error("the loop served an operation while discovery was still running. " +
+			"An event arriving in that window is refused a socket wake before any " +
+			"retry state exists, and nothing reconsiders it: the first socket " +
+			"wake of this daemon's life is lost")
+	}
+
+	// And once priming is done the loop serves normally, with a warm cache.
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "later", Nonce: "n-later", AgentKind: core.KindPersistent,
+	}); err != nil {
+		t.Fatalf("the loop never recovered after priming: %v", err)
+	}
+	if e.peerSnapshot() == nil {
+		t.Error("the peer cache was still cold after priming completed")
+	}
+}

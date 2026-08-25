@@ -342,6 +342,18 @@ const maxSessionAliases = 8
 // binding back without being able to take a stated one. See Op.SessionGuessed.
 func (a *Agent) bindHarnessSessionAs(sid string, guessed bool) string {
 	bound := a.bindHarnessSession(sid)
+	// AN ALREADY-HELD ID STILL CARRIES PROVENANCE, and this returned early on
+	// one.
+	//
+	// bindHarnessSession reports "" when there is nothing NEW to bind, which is
+	// the case when the caller names an id this agent already holds. That is
+	// precisely the moment a session confirms an id first-hand, so returning
+	// here left it marked as a guess: an agent that explicitly stated its own
+	// session went on being reclaimable by anyone. The binding is unchanged; the
+	// claim about where it came from is not. Found by the pre-release review.
+	if bound == "" && sid != "" && a.holdsSession(sid) {
+		bound = sid
+	}
 	if bound == "" {
 		return ""
 	}

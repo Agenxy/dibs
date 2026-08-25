@@ -73,6 +73,11 @@ var peerToken = regexp.MustCompile(`^[0-9a-f]{32}$`)
 // ours to guess at.
 const maxSocketPath = 103
 
+// aliveProbeTimeout bounds one `ps`. Generous next to the milliseconds a real
+// one takes, and short enough that a wedged filesystem costs a startup pause
+// rather than a startup hang.
+const aliveProbeTimeout = 300 * time.Millisecond
+
 // Discover lists the sessions on this machine that can be woken, newest first.
 //
 // Reads only: the sidecar directory the harness writes for itself. Nothing here
@@ -193,7 +198,13 @@ func socketFor(pid int) (string, bool) {
 // it differently: liveness alone is the answer then, which is weaker and is the
 // best that can honestly be said.
 func Alive(pid int, procStart string) bool {
-	cmd := exec.Command("ps", "-o", "lstart=", "-p", strconv.Itoa(pid)) // #nosec G204 -- pid is an int
+	// BOUNDED. This runs once per candidate session, and discovery is on the
+	// path that primes the daemon's cache at startup: an unbounded `ps` on a
+	// wedged filesystem would hang boot with nothing to say. A liveness probe
+	// that has not answered in this long has answered.
+	ctx, cancel := context.WithTimeout(context.Background(), aliveProbeTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "ps", "-o", "lstart=", "-p", strconv.Itoa(pid)) // #nosec G204 -- pid is an int
 	cmd.Env = append(os.Environ(), "LC_ALL=C", "TZ=UTC")
 	out, err := cmd.Output()
 	if err != nil {

@@ -1910,6 +1910,29 @@ machines for real work. Their priority order, not ours.
   its list simply did not know this op existed, which is the weakness that test's
   own comment admits to. The op is in the list now.
 
+- **Finding sockets no longer happens on the writer loop.** The wake gate read a
+  cache, and the lookup it used refreshed that cache when it expired: a
+  directory scan and a bounded `ps` per candidate, inline, while the single
+  writer was held, so every other agent's `declare`, `send` and `check_in`
+  waited behind it. With a five-second cache and a thirty-second background
+  refresh, most wake decisions did it. The gate now reads a snapshot and never
+  refreshes; only the wake goroutine, which is off the loop, may. The liveness
+  probe is bounded too, so a wedged filesystem costs a pause rather than a hang.
+
+- **The first socket wake after a restart could be lost outright.** Priming ran
+  in a goroutine while the daemon began serving, so an event arriving first was
+  refused before any cooldown or retry state existed, and a later prime only
+  fills the cache: nothing reconsiders mail that was already waiting. Priming is
+  synchronous now, before the loop serves anything, which is affordable because
+  every probe behind it is bounded.
+
+- **Confirming a session id you already hold now counts as stating it.** The
+  provenance update sat behind an early return taken when there is nothing NEW
+  to bind, which is exactly what happens when a session names an id it already
+  carries. So an agent that explicitly confirmed its own session stayed marked
+  as having merely inherited it, and remained reclaimable by any other
+  authenticated agent.
+
 - **An agent can be woken over the socket its own harness publishes, with no
   configuration at all.** Claude Code publishes a unix socket and an
   authentication key per session; Dibs reads both and delivers the same notice

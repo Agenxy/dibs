@@ -61,7 +61,13 @@ func (e *Engine) peerSessions() map[string]peerwake.Session {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil
+		// WARM AND EMPTY, never left cold. "Cold" means "not looked yet" and the
+		// gate treats it as a reason to try anyway; if a permanent failure left
+		// it nil, that optimism would never end and every wake for an
+		// unconfigured harness would loop through a goroutine that finds
+		// nothing. An attempt that found nothing is an answer.
+		e.peers.live, e.peers.at = map[string]peerwake.Session{}, time.Now()
+		return e.peers.live
 	}
 	found, err := peerwake.Discover(home, peerAlive)
 	if err != nil {
@@ -81,8 +87,19 @@ func (e *Engine) peerSessions() map[string]peerwake.Session {
 // Aliases as well as the primary, because which of the two a harness quotes is
 // exactly what this project spent a night failing to predict. Matching both
 // removes the prediction rather than improving it.
-func (e *Engine) peerSessionFor(ids []string) (peerwake.Session, bool) {
-	live := e.peerSessions()
+// peerSnapshot returns the cache WITHOUT refreshing it.
+//
+// The refreshing accessor does filesystem work and runs `ps` once per
+// candidate, so it must never be reached from the writer loop. This is what the
+// gate uses; peerSessions is for the wake goroutine, which is off the loop.
+func (e *Engine) peerSnapshot() map[string]peerwake.Session {
+	e.peers.mu.Lock()
+	defer e.peers.mu.Unlock()
+	return e.peers.live
+}
+
+// peerSessionIn is the pure lookup: no I/O, no lock, no refresh.
+func peerSessionIn(live map[string]peerwake.Session, ids []string) (peerwake.Session, bool) {
 	if len(live) == 0 {
 		return peerwake.Session{}, false
 	}
@@ -95,6 +112,12 @@ func (e *Engine) peerSessionFor(ids []string) (peerwake.Session, bool) {
 		}
 	}
 	return peerwake.Session{}, false
+}
+
+// peerSessionFor looks this agent up, refreshing the cache if it is stale.
+// OFF THE WRITER LOOP ONLY.
+func (e *Engine) peerSessionFor(ids []string) (peerwake.Session, bool) {
+	return peerSessionIn(e.peerSessions(), ids)
 }
 
 // mightReachOverSocket is the question the GATE asks: is there any point
@@ -116,13 +139,29 @@ func (e *Engine) mightReachOverSocket(l *core.Agent) bool {
 	if l == nil {
 		return false
 	}
-	e.peers.mu.Lock()
-	cold := e.peers.live == nil
-	e.peers.mu.Unlock()
-	if cold {
+	// THE SNAPSHOT, NEVER THE REFRESH, and the first version of this got it
+	// wrong while its own comment described the right thing. It called the
+	// lookup that refreshes an expired cache, so with a five-second TTL and a
+	// thirty-second background prime, most wake decisions did a directory scan
+	// and a `ps` per candidate INLINE on the writer loop, or waited behind a
+	// goroutine holding the same mutex. A slow filesystem or a stuck `ps` would
+	// stall every board operation. Found by the pre-release review.
+	live := e.peerSnapshot()
+	if live == nil {
+		// NOT LOOKED YET, and after Run that cannot happen: priming is
+		// synchronous, before the loop serves anything, so the first event of a
+		// daemon's life already has a real answer. This branch is what an engine
+		// built without Run sees, which is every unit test that is not about
+		// sockets, and strict is the behaviour those guards assert.
+		//
+		// It was briefly optimistic instead, to avoid losing that first wake.
+		// That traded a startup race for a permanent one: an engine that never
+		// primes would admit every wake forever. Priming before serving removes
+		// the race without the trade, which is why the `ps` behind it is
+		// bounded.
 		return false
 	}
-	_, ok := e.peerSessionFor(sessionsOf(l))
+	_, ok := peerSessionIn(live, sessionsOf(l))
 	return ok
 }
 

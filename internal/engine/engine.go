@@ -217,12 +217,19 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 func (e *Engine) Run(ctx context.Context) {
 	e.boot(time.Now())
 	e.reconcileBlobs() // startup reconcile: drop crash orphans (A4.1)
-	// OFF THE LOOP, and before the first event can be published. Finding the
-	// sockets a harness publishes costs a directory read and a `ps` per
-	// candidate, which the wake gate cannot afford to do inline, so it reads a
-	// cache and refuses when that cache is cold. Priming here is what stops the
-	// first wake of a session's life being the one that is refused.
-	go e.primePeerSessions()
+	// SYNCHRONOUS, and before the loop serves anything.
+	//
+	// The wake gate reads a cache and refuses when it is cold, because finding
+	// the sockets a harness publishes costs a directory read and a bounded `ps`
+	// per candidate, which must never happen on the writer loop. Priming in a
+	// goroutine left a window where an event could arrive first, be refused
+	// before any cooldown or deferral state existed, and never be reconsidered:
+	// the first socket wake of a daemon's life, lost outright. Found by the
+	// pre-release review.
+	//
+	// Affordable because every probe behind it is bounded, so this is a startup
+	// pause measured in milliseconds rather than an unbounded wait on `ps`.
+	e.primePeerSessions()
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	reconcileTick := time.NewTicker(30 * time.Second)
