@@ -1,9 +1,11 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -155,7 +157,10 @@ func listeningSession(t *testing.T) (net.Listener, string) {
 	if err := os.WriteFile(filepath.Join(dir, name), key, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	side, _ := json.Marshal(map[string]any{"pid": pid, "sessionId": sessionID})
+	// cwd included, because a sidecar has one and the mismatch warning compares
+	// against it. Without it that warning can never fire and the test asserting
+	// it stays quiet passes for the wrong reason.
+	side, _ := json.Marshal(map[string]any{"pid": pid, "sessionId": sessionID, "cwd": "/w"})
 	if err := os.WriteFile(filepath.Join(dir, strconv.Itoa(pid)+".json"), side, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +231,13 @@ func TestASocketWakeDoesNotRaceTheWriter(t *testing.T) {
 			if err != nil {
 				return
 			}
-			_ = c.Close()
+			// DRAINED, not slammed shut. Closing on accept races the sender's
+			// write and produces a broken pipe, which made a test about the
+			// mismatch warning fail for an unrelated reason.
+			go func(c net.Conn) {
+				_, _ = io.Copy(io.Discard, c)
+				_ = c.Close()
+			}(c)
 		}
 	}()
 
@@ -338,7 +349,13 @@ func TestPrimingHappensBeforeTheLoopServes(t *testing.T) {
 			if err != nil {
 				return
 			}
-			_ = c.Close()
+			// DRAINED, not slammed shut. Closing on accept races the sender's
+			// write and produces a broken pipe, which made a test about the
+			// mismatch warning fail for an unrelated reason.
+			go func(c net.Conn) {
+				_, _ = io.Copy(io.Discard, c)
+				_ = c.Close()
+			}(c)
 		}
 	}()
 
@@ -393,5 +410,93 @@ func TestPrimingHappensBeforeTheLoopServes(t *testing.T) {
 	}
 	if e.peerSnapshot() == nil {
 		t.Error("the peer cache was still cold after priming completed")
+	}
+}
+
+// A wake that lands in a session working somewhere else must say so.
+//
+// The wake goes wherever the binding points, and a binding can be wrong: a
+// swept row frees a live session's id and the next agent registering in that
+// directory inherits it. Before the socket route existed that misdelivery was
+// invisible because the wake simply failed; now it succeeds, into the wrong
+// session, which is more effective and no more correct.
+//
+// Logged rather than refused, deliberately. The daemon cannot tell which of the
+// two is wrong, and a heuristic refusal would ground legitimate wakes for
+// agents that genuinely moved. What this asserts is that it is not SILENT.
+func TestAWakeIntoAnUnrelatedDirectoryIsReported(t *testing.T) {
+	sock, sessionID := listeningSession(t)
+	go func() {
+		for {
+			c, err := sock.Accept()
+			if err != nil {
+				return
+			}
+			// DRAINED, not slammed shut. Closing on accept races the sender's
+			// write and produces a broken pipe, which made a test about the
+			// mismatch warning fail for an unrelated reason.
+			go func(c net.Conn) {
+				_, _ = io.Copy(io.Discard, c)
+				_ = c.Close()
+			}(c)
+		}
+	}()
+
+	st := core.NewState("t", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	e.primePeerSessions()
+
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	defer slog.SetDefault(prev)
+
+	// The fixture session reports /w; this agent says it works elsewhere.
+	e.runWake(wakePlan{
+		agent: "stranger", sessions: []string{sessionID},
+		notice: "Dibs: check the board.", cwd: "/somewhere/entirely/else",
+	}, "stranger")
+
+	if got := buf.String(); !strings.Contains(got, "different working directory") {
+		t.Errorf("a wake landed in a session whose directory does not match the "+
+			"agent's, and nothing said so. That is a misdelivery nobody can find:\n  %q", got)
+	}
+}
+
+// And the ordinary case stays quiet, or the warning is noise and gets skimmed.
+func TestAWakeIntoTheSameDirectoryIsQuiet(t *testing.T) {
+	sock, sessionID := listeningSession(t)
+	go func() {
+		for {
+			c, err := sock.Accept()
+			if err != nil {
+				return
+			}
+			// DRAINED, not slammed shut. Closing on accept races the sender's
+			// write and produces a broken pipe, which made a test about the
+			// mismatch warning fail for an unrelated reason.
+			go func(c net.Conn) {
+				_, _ = io.Copy(io.Discard, c)
+				_ = c.Close()
+			}(c)
+		}
+	}()
+
+	st := core.NewState("t", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	e.primePeerSessions()
+
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	defer slog.SetDefault(prev)
+
+	e.runWake(wakePlan{
+		agent: "resident", sessions: []string{sessionID},
+		notice: "Dibs: check the board.", cwd: "/w", // the fixture's own cwd
+	}, "resident")
+
+	if got := buf.String(); strings.Contains(got, "different working directory") {
+		t.Errorf("an ordinary wake was reported as a directory mismatch: %q", got)
 	}
 }

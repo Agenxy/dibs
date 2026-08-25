@@ -185,6 +185,30 @@ func (e *Engine) wakeOverSocket(plan wakePlan, agent string) bool {
 			"agent", agent, "sessions", len(plan.sessions))
 		return false
 	}
+	// A SESSION WORKING SOMEWHERE ELSE IS THE SHAPE OF A MIS-BOUND ID.
+	//
+	// The wake goes wherever the binding points, and a binding can be wrong: a
+	// swept row frees a live session's id and the next agent in that directory
+	// inherits it. Before this route existed that misdelivery was invisible,
+	// because the wake simply failed. Now it succeeds, into the wrong session,
+	// which is more effective and no more correct.
+	//
+	// Logged, never enforced. The daemon cannot know which of the two is wrong,
+	// and refusing on a heuristic would ground legitimate wakes for agents that
+	// genuinely moved. Saying so is what turns an invisible misdelivery into
+	// one somebody can find.
+	//
+	// BEFORE the delivery, not after. The mismatch is a fact about which session
+	// we are ABOUT to wake, and it is just as true when the write then fails.
+	// Reporting it only on success also made the test for it depend on the
+	// write landing, which is a race.
+	if plan.cwd != "" && s.CWD != "" && plan.cwd != s.CWD {
+		slog.Warn("waking a session that reports a different working directory: "+
+			"this agent's session id may belong to another session",
+			"agent", agent, "session_id", s.SessionID,
+			"agent_cwd", plan.cwd, "session_cwd", s.CWD)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := peerwake.Deliver(ctx, s, plan.notice); err != nil {

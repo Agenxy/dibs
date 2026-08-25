@@ -93,10 +93,27 @@ async function measureTheBar(): Promise<number> {
     const a = await mk("m-one"), b = await mk("m-two")
     await c("declare", { token: a, text: "enforcing exclusive claims in the guard" })
     await c("open_space", { token: a, space: "guard-work", topic: "claim guard denies edits to claimed paths" })
-    const r = await c("declare", { token: b, text: "guard path enforcement for exclusive claims" })
-    const m = (r.spaces ?? []).find((l: any) => l.space === "guard-work")
-    if (!m || typeof m.score !== "number" || !(m.score > 0)) {
-      throw new Error(`could not measure a score for the guard pair: ${JSON.stringify(r).slice(0, 300)}`)
+    // WAIT FOR THE INDEX, because declaring before it is ready is not a
+    // failure and the daemon says so: "the repository is still being indexed
+    // ... declare again shortly and you will be matched. Nothing is wrong."
+    //
+    // This measured once and threw. Indexing a repository of this size takes a
+    // moment, so the suite failed intermittently on a message telling it to
+    // retry: one run in two here. A gate that cries wolf is worse than no gate,
+    // because the response it teaches is to run it again rather than to look,
+    // and that is how a real failure gets waved through.
+    //
+    // Bounded, so a genuinely broken matcher still fails rather than hanging.
+    let m: any
+    const deadline = Date.now() + 60_000
+    for (;;) {
+      const r = await c("declare", { token: b, text: "guard path enforcement for exclusive claims" })
+      m = (r.spaces ?? []).find((l: any) => l.space === "guard-work")
+      if (m && typeof m.score === "number" && m.score > 0) break
+      if (r.matching !== "indexing" || Date.now() > deadline) {
+        throw new Error(`could not measure a score for the guard pair: ${JSON.stringify(r).slice(0, 300)}`)
+      }
+      await Bun.sleep(500)
     }
     return m.score
   } finally {

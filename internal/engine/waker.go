@@ -798,7 +798,7 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 	if !configured {
 		// The socket carries the same sentence the command would have carried.
 		// One notice, one wording, whichever way it travels.
-		return wakePlan{agent: l.ID, sessions: sessionsOf(l), notice: f.message}, true
+		return wakePlan{agent: l.ID, sessions: sessionsOf(l), notice: f.message, cwd: cwdOf(l)}, true
 	}
 	return wakePlan{argv: f.apply(e.argvFor(l))}, true
 }
@@ -815,6 +815,7 @@ type wakePlan struct {
 	argv   []string // the operator's command
 	agent  string   // whose wake this is, for the socket path
 	notice string   // what to say; never a message body
+	cwd    string   // where the agent says it works, for the mismatch warning
 	// sessions are every id this agent answers to, COPIED while the writer
 	// loop holds still.
 	//
@@ -835,6 +836,14 @@ type wakePlan struct {
 // stop a burst becoming a stream of interruptions rather than to stop a fork
 // bomb.
 const defaultPeerCooldown = 20 * time.Second
+
+// cwdOf is where this agent says it works, copied on the loop.
+func cwdOf(l *core.Agent) string {
+	if l == nil || l.Agent == nil {
+		return ""
+	}
+	return l.Agent.CWD
+}
 
 // sessionsOf copies every name this agent answers to, primary first.
 //

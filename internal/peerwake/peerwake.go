@@ -53,8 +53,15 @@ import (
 type Session struct {
 	PID       int
 	SessionID string // the id the harness's own hooks quote
-	Socket    string
-	token     string // never logged, never returned in a result
+	// CWD is where that session is running, as the harness records it.
+	//
+	// Carried so a caller can notice that the session it is about to wake is
+	// working somewhere else entirely, which is what a mis-bound session id
+	// looks like from the outside. Read, never used to decide: a wake is not
+	// refused over it.
+	CWD    string
+	Socket string
+	token  string // never logged, never returned in a result
 }
 
 // keyFile is <pid>.<64 hex>.key, which is the shape the harness writes and the
@@ -135,6 +142,7 @@ func load(dir string, pid int, key string, alive func(int, string) bool) (Sessio
 	}
 	var side struct {
 		SessionID string `json:"sessionId"`
+		CWD       string `json:"cwd"`
 	}
 	sb, err := os.ReadFile(filepath.Join(dir, strconv.Itoa(pid)+".json")) // #nosec G304
 	if err != nil || json.Unmarshal(sb, &side) != nil || side.SessionID == "" {
@@ -147,7 +155,10 @@ func load(dir string, pid int, key string, alive func(int, string) bool) (Sessio
 	if fi, err := os.Stat(sock); err != nil || fi.Mode()&os.ModeSocket == 0 {
 		return Session{}, false // no live endpoint: nothing to deliver to
 	}
-	return Session{PID: pid, SessionID: side.SessionID, Socket: sock, token: k.PeerToken}, true
+	return Session{
+		PID: pid, SessionID: side.SessionID, CWD: side.CWD,
+		Socket: sock, token: k.PeerToken,
+	}, true
 }
 
 // socketFor is where the harness binds, and every part of this order was

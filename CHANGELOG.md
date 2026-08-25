@@ -1910,6 +1910,16 @@ machines for real work. Their priority order, not ours.
   its list simply did not know this op existed, which is the weakness that test's
   own comment admits to. The op is in the list now.
 
+- **A wake that lands in a session working somewhere else now says so.** The
+  socket route delivers wherever the binding points, and a binding can be wrong:
+  a swept row frees a live session's id and the next agent registering in that
+  directory inherits it. Before this route existed that misdelivery was
+  invisible, because the wake simply failed; now it succeeds, into the wrong
+  session, which is more effective and no more correct. The harness records each
+  session's working directory, so a wake into an unrelated one is logged.
+  Reported, never refused: the daemon cannot tell which of the two is wrong, and
+  a heuristic refusal would ground legitimate wakes for agents that moved.
+
 - **A dangling symlink could silently rotate the board's signing identity.**
   `os.Stat` follows links, so a link whose target is gone reads as absent. With
   one dangling half and one truly missing file, both looked absent, the daemon
