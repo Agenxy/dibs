@@ -798,7 +798,7 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 	if !configured {
 		// The socket carries the same sentence the command would have carried.
 		// One notice, one wording, whichever way it travels.
-		return wakePlan{agent: l.ID, session: sessionOf(l), notice: f.message}, true
+		return wakePlan{agent: l.ID, sessions: sessionsOf(l), notice: f.message}, true
 	}
 	return wakePlan{argv: f.apply(e.argvFor(l))}, true
 }
@@ -812,10 +812,21 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 // rules were each paid for by a bug, and a second delivery path that skipped
 // them would re-buy every one.
 type wakePlan struct {
-	argv    []string // the operator's command
-	agent   string   // whose wake this is, for the socket path
-	session string   // the harness session to deliver to
-	notice  string   // what to say; never a message body
+	argv   []string // the operator's command
+	agent  string   // whose wake this is, for the socket path
+	notice string   // what to say; never a message body
+	// sessions are every id this agent answers to, COPIED while the writer
+	// loop holds still.
+	//
+	// The wake runs in a goroutine, and core.State is single-writer: reading
+	// e.state.Agents or an agent's alias slice from that goroutine is a data
+	// race against the loop, and a concurrent map access is a fatal crash
+	// rather than a wrong answer. The first version of the socket route did
+	// exactly that, and its tests missed it because they call the path against
+	// quiescent state. Found by the pre-release review with a race probe.
+	//
+	// So the plan carries values, not a pointer into the board.
+	sessions []string
 }
 
 // defaultPeerCooldown bounds socket wakes the way [wake.exec] entries bound
@@ -825,13 +836,21 @@ type wakePlan struct {
 // bomb.
 const defaultPeerCooldown = 20 * time.Second
 
-// sessionOf is every name this agent answers to, primary first, for matching
-// against the sessions a harness publishes.
-func sessionOf(l *core.Agent) string {
+// sessionsOf copies every name this agent answers to, primary first.
+//
+// A COPY. The caller is on the writer loop and the result outlives it: handing
+// the goroutine l.SessionAliases itself would share a slice the loop goes on
+// appending to.
+func sessionsOf(l *core.Agent) []string {
 	if l == nil {
-		return ""
+		return nil
 	}
-	return l.SessionID
+	out := make([]string, 0, len(l.SessionAliases)+1)
+	if l.SessionID != "" {
+		out = append(out, l.SessionID)
+	}
+	out = append(out, l.SessionAliases...)
+	return out
 }
 
 // threadIDOf finds the identifier a harness's own resume command will accept.

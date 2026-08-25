@@ -1876,6 +1876,12 @@ machines for real work. Their priority order, not ours.
   them as guesses would make every agent on an upgraded board reclaimable by
   whoever states its id first.
 
+  Provenance is recorded against each BINDING rather than each agent, which is
+  the difference between a repair and a hole: an agent holds a primary and any
+  number of aliases, so one flag per agent meant whichever binding happened last
+  decided the answer for all of them, and a single guessed alias would have made
+  a STATED primary claimable by anyone.
+
   Resolution prefers a stated holder too, which fixes a second thing. Two agents
   could hold one id, and the lookup returned whichever Go's map iteration
   reached first, so the same hook could resolve to a different agent on

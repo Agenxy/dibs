@@ -142,7 +142,7 @@ func (s *State) AgentBySession(sid string) *Agent {
 		if !l.holdsSession(sid) {
 			continue
 		}
-		if !l.SessionGuessed {
+		if !l.GuessedSession(sid) {
 			return l
 		}
 		// Sorted by id so two guessed holders do not swap between calls either.
@@ -342,10 +342,46 @@ const maxSessionAliases = 8
 // binding back without being able to take a stated one. See Op.SessionGuessed.
 func (a *Agent) bindHarnessSessionAs(sid string, guessed bool) string {
 	bound := a.bindHarnessSession(sid)
-	if bound != "" {
-		a.SessionGuessed = guessed
+	if bound == "" {
+		return ""
+	}
+	// Against THIS id, not against the agent. A stated re-assert of an id that
+	// was previously a guess upgrades it, which is what makes an agent that
+	// later names its own session stop being reclaimable.
+	a.GuessedSessions = withoutString(a.GuessedSessions, bound)
+	if guessed {
+		a.GuessedSessions = append(a.GuessedSessions, bound)
 	}
 	return bound
+}
+
+// HoldsSessionForTest reports whether this agent answers to that id. Exported
+// for engine tests that assert on a binding the ingress made.
+func (a *Agent) HoldsSessionForTest(sid string) bool { return a.holdsSession(sid) }
+
+// GuessedSession reports whether THIS id was inferred for this agent rather
+// than stated by it.
+//
+// Exported because the authorisation decision lives in the engine, at ingress,
+// where a rejecting rule belongs: putting it in the fold would make replay
+// depend on today's answer. See mayClaimSession.
+func (a *Agent) GuessedSession(sid string) bool {
+	for _, g := range a.GuessedSessions {
+		if g == sid {
+			return true
+		}
+	}
+	return false
+}
+
+func withoutString(xs []string, drop string) []string {
+	out := xs[:0]
+	for _, x := range xs {
+		if x != drop {
+			out = append(out, x)
+		}
+	}
+	return out
 }
 
 func (a *Agent) bindHarnessSession(sid string) string {

@@ -355,10 +355,17 @@ type Agent struct {
 	// woken. Neither id is a credential; the connection is already
 	// authenticated, and these are only ever added by the daemon's own join.
 	SessionAliases []string `json:"session_aliases,omitempty"`
-	// SessionGuessed marks a session binding the daemon INFERRED by directory
-	// rather than one the caller stated. A guess yields to a first-hand claim;
-	// a stated binding does not. See Op.SessionGuessed.
-	SessionGuessed bool `json:"session_guessed,omitempty"`
+	// GuessedSessions are the session ids on this agent that the daemon
+	// INFERRED by directory rather than the caller stating them. A guess yields
+	// to a first-hand claim; a stated binding does not. See Op.SessionGuessed.
+	//
+	// A SET, NOT A BOOLEAN, and the difference is a hole rather than a detail.
+	// One flag per agent was overwritten by whichever binding happened last, so
+	// adding a single guessed ALIAS to an agent made its STATED primary
+	// claimable by anyone, and adding a later stated alias made an earlier guess
+	// permanently non-yielding. Authorisation asks about one specific id, so the
+	// provenance has to be recorded against that id.
+	GuessedSessions []string `json:"guessed_sessions,omitempty"`
 	// Agent is who is behind this agent: harness, version, model, surface. In a
 	// large fleet "reviewer" is not enough; the human needs to know that it is
 	// Codex 0.145 rather than Opus 5 in Claude Desktop. Purely descriptive: it

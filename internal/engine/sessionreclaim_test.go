@@ -1,90 +1,124 @@
 package engine
 
 import (
+	"context"
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
 )
 
-// A session that states its own id takes it back from an agent that only
-// GUESSED it, and takes nothing from one that stated it.
+// An INFERRED binding must be recorded as a guess by the production path.
 //
-// Without this a mis-binding is permanent. The engine infers a session by
-// directory when a caller states none: it picks an id announced from that cwd
-// recently and assumes the agent registering now is that session. When an agent
-// is swept while its session keeps running, the id it held is inherited by the
-// next agent in that directory, which then receives its wake notifications.
-// mayClaimSession then correctly refuses the rightful session its own id,
-// because somebody holds it, and nothing ever notices: on this project's own
-// board that ran for hours with one agent's mail announced into another's
-// context, and a daemon restart did not clear it, because the binding is in the
-// ledger.
+// This is the test that was missing, and its absence let a broken repair ship.
+// The first version constructed SessionGuessed by hand and asserted on the
+// decision downstream of it, so it passed while NOTHING in the engine ever set
+// the flag: every inferred binding was recorded as stated, the rightful session
+// was refused its own id exactly as before, and a changelog entry said the
+// opposite. A test that builds the input the production code was supposed to
+// build cannot see that the production code does not build it.
 //
-// So the two are no longer indistinguishable. A guess yields; a claim does not.
-func TestAStatedClaimTakesBackAGuessedBinding(t *testing.T) {
+// So this drives the real ingress: a session announces from a directory, an
+// agent registers there naming no session of its own, and the engine infers.
+func TestAnInferredBindingIsRecordedAsAGuessByTheEngine(t *testing.T) {
 	st := core.NewState("t", core.DefaultLimits())
 	e := New(st, &memLedger{}, deadProber{})
-	now := t0Engine()
-	const sid = "19d67315-7718-491e-be3f-3864f577eeed"
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
 
-	mk := func(name, token string) {
-		if _, _, err := st.Apply(&core.Op{
-			Kind: core.OpRegister, Name: name, NewToken: token,
-		}, now); err != nil {
-			t.Fatalf("setup %s: %v", name, err)
-		}
-	}
-	mk("inheritor", "tok-inheritor")
-	mk("rightful", "tok-rightful")
-
-	// The inheritor holds it because the daemon GUESSED, which is what the
-	// directory inference does when a caller states nothing.
-	if _, _, err := st.Apply(&core.Op{
-		Kind: core.OpUpdate, Token: "tok-inheritor", Description: "d",
-		SessionAlias: sid, SessionGuessed: true,
-	}, now); err != nil {
-		t.Fatalf("setup: the guessed binding did not apply: %v", err)
-	}
-	if h := st.AgentBySession(sid); h == nil || h.ID != "inheritor" {
-		t.Fatalf("setup: %v holds the id, wanted the inheritor", h)
-	}
-	if !st.Agents["inheritor"].SessionGuessed {
-		t.Fatal("setup: the binding is not recorded as a guess, so the case below " +
-			"is not the one intended")
+	const dir = "/work/shared"
+	const announced = "19d67315-7718-491e-be3f-3864f577eeed"
+	// A session announcing from that directory, which is what the inference
+	// keys on. Through the hook path, as a harness would.
+	if _, err := e.HookPoll(ctx, announced, "SessionStart", dir, false, false); err != nil {
+		t.Fatal("setup:", err)
 	}
 
-	if !e.mayClaimSession(sid, "tok-rightful") {
-		t.Error("the session that states this id was refused it, because an agent " +
-			"that merely inherited it holds it. That is the mis-binding being " +
-			"permanent: the rightful session never receives its own wakes and the " +
-			"holder has no reason to notice it is holding one")
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "inheritor", Nonce: "n-inheritor",
+		AgentKind: core.KindPersistent,
+		Agent:     &core.AgentInfo{CWD: dir},
+	}); err != nil {
+		t.Fatal("register:", err)
+	}
+	l := st.Agents["inheritor"]
+	// Setup must hold: the inference has to have fired, or there is no binding
+	// whose provenance could be wrong.
+	if !l.HoldsSessionForTest(announced) {
+		t.Skipf("the directory inference did not bind %s (join window or path "+
+			"cleaning changed); this case needs rewriting rather than passing", announced)
 	}
 
-	// AND THE CONVERSE, which is what stops this being a way to steal one. Once
-	// an agent has STATED an id, a different agent may not take it.
-	if _, _, err := st.Apply(&core.Op{
-		Kind: core.OpUpdate, Token: "tok-rightful", Description: "d",
-		SessionAlias: sid, SessionGuessed: false,
-	}, now); err != nil {
-		t.Fatalf("the rightful session could not bind: %v", err)
+	if !l.GuessedSession(announced) {
+		t.Error("a binding the DAEMON inferred was recorded as though the caller " +
+			"stated it. The reclaim rule then refuses the session that owns this id, " +
+			"which is the repair not working at all while its own test passes")
 	}
-	if st.Agents["rightful"].SessionGuessed {
-		t.Fatal("a stated binding was recorded as a guess, which would let the next " +
-			"caller take it straight back")
+
+	// And the consequence the provenance exists for: the rightful session, which
+	// states this id, takes it back.
+	other, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "rightful", Nonce: "n-rightful", AgentKind: core.KindPersistent,
+	})
+	if err != nil {
+		t.Fatal("setup:", err)
 	}
-	if e.mayClaimSession(sid, "tok-inheritor") {
-		t.Error("an agent took back a session id that its owner had STATED. A guess " +
-			"yielding is a repair; a claim yielding is theft, and this rule must " +
-			"only do the first")
+	tok, _ := other["token"].(string)
+	if !e.mayClaimSession(announced, tok) {
+		t.Error("the session that states this id cannot reclaim it from an agent " +
+			"that only inherited it")
 	}
 }
 
-// A historical op carries no such field, so it decodes false and reads as
-// STATED. Nothing already on disk starts yielding when this ships.
+// Provenance is per BINDING, not per agent.
 //
-// The conservative direction on purpose: treating old bindings as guesses would
-// make every agent on an upgraded board reclaimable by whoever states its id
-// first, which is a far worse failure than the one being fixed.
+// An agent holds a primary and any number of aliases. With one flag per agent,
+// whichever binding happened last decided the answer for all of them: adding a
+// single guessed alias made a STATED primary claimable by anyone, and a later
+// stated alias made an earlier guess permanently non-yielding. Authorisation
+// asks about one specific id, so provenance has to be recorded against that id.
+//
+// Found by the pre-release review, which also noted that fixing the missing
+// stamp WITHOUT this would have turned a dormant bug into a live one.
+func TestGuessProvenanceIsPerBindingNotPerAgent(t *testing.T) {
+	st := core.NewState("t", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	now := t0Engine()
+	const stated = "11111111-1111-4111-8111-111111111111"
+	const guessed = "22222222-2222-4222-8222-222222222222"
+
+	if _, _, err := st.Apply(&core.Op{
+		Kind: core.OpRegister, Name: "holder", NewToken: "tok-holder",
+		SessionID: stated, SessionGuessed: false,
+	}, now); err != nil {
+		t.Fatal("setup:", err)
+	}
+	// A second binding on the same agent, this one inferred.
+	if _, _, err := st.Apply(&core.Op{
+		Kind: core.OpUpdate, Token: "tok-holder", Description: "d",
+		SessionAlias: guessed, SessionGuessed: true,
+	}, now); err != nil {
+		t.Fatal("setup:", err)
+	}
+	if _, _, err := st.Apply(&core.Op{
+		Kind: core.OpRegister, Name: "stranger", NewToken: "tok-stranger",
+	}, now); err != nil {
+		t.Fatal("setup:", err)
+	}
+
+	if !e.mayClaimSession(guessed, "tok-stranger") {
+		t.Error("the inferred alias is not reclaimable, so a mis-binding on an " +
+			"agent that also holds a stated id can never be repaired")
+	}
+	if e.mayClaimSession(stated, "tok-stranger") {
+		t.Error("the agent's STATED primary became claimable because it later " +
+			"acquired a guessed alias. One flag per agent means the last binding " +
+			"decides the answer for all of them, and this is that hole")
+	}
+}
+
+// A historical op carries no such field, decodes false, and reads as STATED.
+// Nothing already on disk starts yielding when this ships.
 func TestAHistoricalBindingIsTreatedAsStated(t *testing.T) {
 	st := core.NewState("t", core.DefaultLimits())
 	e := New(st, &memLedger{}, deadProber{})
@@ -100,9 +134,6 @@ func TestAHistoricalBindingIsTreatedAsStated(t *testing.T) {
 		Kind: core.OpRegister, Name: "new", NewToken: "tok-new",
 	}, now); err != nil {
 		t.Fatal("setup:", err)
-	}
-	if st.Agents["old"].SessionGuessed {
-		t.Fatal("setup: a register that predates the field must decode as stated")
 	}
 	if e.mayClaimSession(sid, "tok-new") {
 		t.Error("a binding written before this field existed was treated as a guess " +

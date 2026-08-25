@@ -850,7 +850,7 @@ func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
 	// only ever the caller's own, so it can strand nothing but itself.
 	if op.ReleaseSession {
 		had := l.SessionID
-		l.SessionID, l.SessionAliases, l.SessionGuessed = "", nil, false
+		l.SessionID, l.SessionAliases, l.GuessedSessions = "", nil, nil
 		res["session_released"] = true
 		res["session"] = "released " + quoteOrNone(had) + ": lifecycle hooks quoting it " +
 			"now reach nobody until an agent binds it again, and the session it " +

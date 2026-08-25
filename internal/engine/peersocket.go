@@ -81,15 +81,12 @@ func (e *Engine) peerSessions() map[string]peerwake.Session {
 // Aliases as well as the primary, because which of the two a harness quotes is
 // exactly what this project spent a night failing to predict. Matching both
 // removes the prediction rather than improving it.
-func (e *Engine) peerSessionFor(l *core.Agent) (peerwake.Session, bool) {
-	if l == nil {
-		return peerwake.Session{}, false
-	}
+func (e *Engine) peerSessionFor(ids []string) (peerwake.Session, bool) {
 	live := e.peerSessions()
 	if len(live) == 0 {
 		return peerwake.Session{}, false
 	}
-	for _, id := range append([]string{l.SessionID}, l.SessionAliases...) {
+	for _, id := range ids {
 		if id == "" {
 			continue
 		}
@@ -125,7 +122,7 @@ func (e *Engine) mightReachOverSocket(l *core.Agent) bool {
 	if cold {
 		return false
 	}
-	_, ok := e.peerSessionFor(l)
+	_, ok := e.peerSessionFor(sessionsOf(l))
 	return ok
 }
 
@@ -138,14 +135,15 @@ func (e *Engine) primePeerSessions() { _ = e.peerSessions() }
 
 // wakeOverSocket delivers one notice and says honestly whether it landed.
 func (e *Engine) wakeOverSocket(plan wakePlan, agent string) bool {
-	l := e.state.Agents[plan.agent]
-	s, ok := e.peerSessionFor(l)
+	// NO e.state HERE. This runs in a goroutine and the board is single-writer;
+	// the plan carries the ids, copied while the loop held still.
+	s, ok := e.peerSessionFor(plan.sessions)
 	if !ok {
 		// Not a failure of delivery: there is nobody listening under any name
 		// this agent answers to. Logged at debug because on a board of Codex
 		// agents it is the ordinary case and would otherwise be noise.
 		slog.Debug("no peer socket for this agent; nothing was woken",
-			"agent", agent, "session_id", plan.session)
+			"agent", agent, "sessions", len(plan.sessions))
 		return false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

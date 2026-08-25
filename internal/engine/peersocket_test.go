@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -52,7 +54,7 @@ func TestAnAgentWithNoConfiguredCommandIsWokenOverItsSocket(t *testing.T) {
 		t.Fatalf("setup: %d wake command(s) configured; this case is about having none", nCommands)
 	}
 	e.primePeerSessions()
-	if _, ok := e.peerSessionFor(l); !ok {
+	if _, ok := e.peerSessionFor(sessionsOf(l)); !ok {
 		t.Fatal("setup: the fixture session was not discovered, so the wake below " +
 			"would be refused for the wrong reason")
 	}
@@ -202,4 +204,71 @@ func peerwakeAliveForTest(t *testing.T) {
 	prev := peerAlive
 	peerAlive = func(int, string) bool { return true }
 	t.Cleanup(func() { peerAlive = prev })
+}
+
+// The wake goroutine must not read the board.
+//
+// core.State is single-writer. The socket wake runs in a goroutine, and the
+// first version of it reached e.state.Agents from there and then read the
+// agent's alias slice: a data race against the loop, and a concurrent map
+// access is a fatal crash rather than a wrong answer. The socket tests missed
+// it because they call the path against quiescent state, which is exactly the
+// shape of test that cannot see a race.
+//
+// So this registers agents on the loop WHILE wakes run, under -race. The plan
+// carries copied ids, so the goroutine has nothing to race on; if it ever
+// reaches into the board again this fails or crashes.
+func TestASocketWakeDoesNotRaceTheWriter(t *testing.T) {
+	sock, sessionID := listeningSession(t)
+	go func() {
+		for {
+			c, err := sock.Accept()
+			if err != nil {
+				return
+			}
+			_ = c.Close()
+		}
+	}()
+
+	st := core.NewState("t", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "sleeper", Nonce: "n-sleeper",
+		AgentKind: core.KindPersistent, SessionID: sessionID,
+		Agent: &core.AgentInfo{Harness: "Claude Code"},
+	}); err != nil {
+		t.Fatal("setup:", err)
+	}
+	e.primePeerSessions()
+
+	plan := wakePlan{
+		agent:    "sleeper",
+		sessions: []string{sessionID},
+		notice:   "Dibs: check the board.",
+	}
+
+	var wg sync.WaitGroup
+	// Wakes, concurrently with writes.
+	for i := 0; i < 12; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); e.runWake(plan, "sleeper") }()
+	}
+	// The writer, mutating the very fields the goroutine used to read: each
+	// register binds a session and appends to an alias slice.
+	for i := 0; i < 12; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			_, _ = e.Do(ctx, &core.Op{
+				Kind: core.OpRegister, Name: "churn" + strconv.Itoa(n),
+				Nonce: "n-churn" + strconv.Itoa(n), AgentKind: core.KindPersistent,
+				Agent: &core.AgentInfo{Harness: "Claude Code", CWD: "/w"},
+			})
+		}(i)
+	}
+	wg.Wait()
 }

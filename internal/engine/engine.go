@@ -371,8 +371,21 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		if !e.mayClaimSession(claimed, op.Token) {
 			op.SessionAlias = ""
 		}
+		// STATED: the caller named this session itself. Recorded so a later
+		// claim cannot take it away. See Op.SessionGuessed.
+		op.SessionGuessed = false
 	}
 	if op.SessionAlias == "" {
+		// ANYTHING SET BELOW IS A GUESS, AND THIS LINE IS THE WHOLE REPAIR.
+		//
+		// It was missing. The reclaim rule, its test and a changelog entry all
+		// shipped while nothing ever set this, so every inferred binding was
+		// recorded as STATED and the rightful session was refused its own id
+		// exactly as before. The test constructed the flag by hand and so tested
+		// the decision while bypassing the wiring that feeds it. Found by the
+		// pre-release review, which is the only thing that looked at the two
+		// together.
+		op.SessionGuessed = true
 		switch op.Kind {
 		case core.OpRegister, core.OpUpdate:
 			if op.Agent != nil {

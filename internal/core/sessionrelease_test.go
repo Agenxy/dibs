@@ -21,7 +21,7 @@ func TestAnAgentCanReleaseItsOwnSessionBinding(t *testing.T) {
 	l := s.Agents["holder"]
 	l.SessionID = "19d67315-7718-491e-be3f-3864f577eeed"
 	l.SessionAliases = []string{"host-5360"}
-	l.SessionGuessed = true
+	l.GuessedSessions = []string{"19d67315-7718-491e-be3f-3864f577eeed"}
 
 	// Setup must hold, or the release below proves nothing.
 	if s.AgentBySession("host-5360") == nil {
@@ -34,6 +34,11 @@ func TestAnAgentCanReleaseItsOwnSessionBinding(t *testing.T) {
 
 	if got := s.Agents["holder"].SessionID; got != "" {
 		t.Errorf("the primary session id survived the release: %q", got)
+	}
+	if got := s.Agents["holder"].GuessedSessions; len(got) != 0 {
+		t.Errorf("released bindings left their provenance behind: %v. A later "+
+			"binding of the same id would inherit a verdict from an agent that no "+
+			"longer holds it", got)
 	}
 	if got := s.Agents["holder"].SessionAliases; len(got) != 0 {
 		t.Errorf("aliases survived the release: %v. Each one is still a live wake "+

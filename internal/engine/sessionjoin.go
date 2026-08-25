@@ -169,5 +169,5 @@ func (e *Engine) mayClaimSession(sid, token string) bool {
 	// the rightful session is refused its own id and the holder has no reason to
 	// notice it is holding one. That was the state of this project's own board
 	// for hours, with one agent's mail announced into another's context.
-	return holder.SessionGuessed
+	return holder.GuessedSession(sid)
 }
