@@ -283,7 +283,7 @@ homebrew_casks:
       # cask step, after the tag was already pushed and spent.
     directory: Casks
     homepage: https://github.com/agenxy/dibs
-    description: "Coordination and situational-awareness board for AI agents on one machine"
+    description: "Coordination and situational-awareness board for fleets of AI agents"
     license: Apache-2.0
     # BOTH binaries. The default links only the project name, which generated a
     # cask installing `dibs` and not `dibd`: a CLI with no daemon, so

@@ -274,3 +274,50 @@ func TestTheBusyPromptRefusalDoesNotOverstateItself(t *testing.T) {
 			"prompt they did not start is already waiting")
 	}
 }
+
+// The HANDLER must derive its status from the mapping, not restate one.
+//
+// The test above exercises statusForPresenceErr and nothing else, so changing
+// presenceBootstrap to answer 500 on a busy prompt, while leaving that helper
+// correct, keeps it green. The behaviour it protects is the handler's, and the
+// handler was never reached. Found by the pre-release review.
+//
+// Asserted over the SOURCE rather than by driving the handler, and that is a
+// second-best worth naming: presenceBootstrap calls humanauth.Check directly,
+// which takes a real lock and prompts a real person, so reaching it from a test
+// needs a seam in production code. This closes the stated hole, that the
+// mapping can be bypassed at the call site, without adding one. If this file
+// ever grows that seam, replace this with a request against the handler.
+func TestThePresenceHandlerUsesTheMappingRatherThanALiteral(t *testing.T) {
+	body, err := os.ReadFile("guard.go")
+	if err != nil {
+		t.Fatalf("reading the handler's source: %v", err)
+	}
+	src := string(body)
+
+	i := strings.Index(src, "errors.Is(err, humanauth.ErrPromptBusy)")
+	if i < 0 {
+		t.Fatal("the busy-prompt branch is gone from guard.go, so this test guards " +
+			"nothing: find where that error is handled now and re-point it")
+	}
+	// The branch is short; take enough of it to cover the reply it sends.
+	end := i + 1200
+	if end > len(src) {
+		end = len(src)
+	}
+	branch := src[i:end]
+
+	if !strings.Contains(branch, "statusForPresenceErr(err)") {
+		t.Error("the busy-prompt branch does not pass statusForPresenceErr(err) to " +
+			"its reply. A status written literally there can drift from the mapping " +
+			"this file tests, and a 500 tells the operator the machine cannot check " +
+			"presence, which sends them to set an admin password they do not need")
+	}
+	for _, literal := range []string{"http.StatusInternalServerError", "http.StatusServiceUnavailable"} {
+		if strings.Contains(branch, literal) {
+			t.Errorf("the busy-prompt branch names %s directly; a busy prompt is a "+
+				"409 Conflict, because the request is fine and only the timing is not",
+				literal)
+		}
+	}
+}

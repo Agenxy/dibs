@@ -1910,6 +1910,43 @@ machines for real work. Their priority order, not ours.
   its list simply did not know this op existed, which is the weakness that test's
   own comment admits to. The op is in the list now.
 
+- **A dangling symlink could silently rotate the board's signing identity.**
+  `os.Stat` follows links, so a link whose target is gone reads as absent. With
+  one dangling half and one truly missing file, both looked absent, the daemon
+  found nothing to refuse and generated a NEW identity: every machine that ran
+  `dibs trust` locked out, by a daemon that then reported itself healthy. The
+  startup preflight already documents this hazard at length and calls `Lstat`;
+  the lesson had been applied in one of the two places that need it, and the
+  dangling-symlink test drives that one and never reaches this one, so it stayed
+  green while startup behaved differently.
+
+- **`dibs fingerprint` could describe a certificate no daemon can serve.** It
+  discarded the error from loading `dibs.toml`, so an unparseable config fell
+  back to the managed path and fingerprinted whatever stale certificate was
+  there, while `dibd` refuses to start on that same file. On the one command
+  whose purpose is comparing what is SERVED against what another machine pinned,
+  and it exited zero. An absent config is still fine; a broken one now says so.
+
+- **The registry could publish a version that was never released.** The manual
+  recovery dispatch passed an operator-supplied version straight through, so
+  `-version 9.9.9` stamped and published 9.9.9 for something never built, tagged
+  or released. The release job's `needs:` closes that on the normal path and
+  this walked around it, while the changelog claimed the hole was shut. An
+  explicit version is now checked against a real GitHub release. The registry is
+  public and permanent, so advertising an install nobody can complete is worse
+  than a failed job.
+
+- **Two guards had stopped guarding.** The tool-count gate skipped any document
+  it could not read, backed only by a global "did we check anything at all", so
+  one renamed file dropped out of coverage permanently and silently while the
+  test stayed green. It now names them and fails. And the busy-presence
+  regression test exercised only the status mapping, never the handler, so
+  changing the handler to answer 500 kept it passing; the handler's use of that
+  mapping is asserted now.
+
+- **The Homebrew description still called Dibs single-machine**, which this
+  release stopped being.
+
 - **Finding sockets no longer happens on the writer loop.** The wake gate read a
   cache, and the lookup it used refreshed that cache when it expired: a
   directory scan and a bounded `ps` per candidate, inline, while the single

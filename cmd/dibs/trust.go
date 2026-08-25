@@ -205,11 +205,29 @@ func trustCmd(args []string) error {
 // auto-generated chain, on the one command whose whole purpose is comparing
 // what is served against what another machine pinned, and whose mismatch
 // message says something other than your daemon is answering.
-func servedCertPath(dir string) string {
-	if c, err := boardconfig.Load(dir); err == nil && c.TLSCert != "" {
-		return c.TLSCert
+//
+// A BROKEN CONFIG IS NOT A MISSING ONE, and this discarded the difference.
+//
+// boardconfig.Load already separates them: an absent dibs.toml returns no error
+// and an unparseable one returns a real error. Swallowing both meant a
+// malformed config fell back to the managed path and fingerprinted whatever
+// stale certificate was lying there, while `dibd` refuses to start on that same
+// file. So the one command whose purpose is comparing what is SERVED against
+// what another machine pinned reported a certificate no daemon could serve, and
+// exited zero. Found by the pre-release review.
+func servedCertPath(dir string) (string, error) {
+	c, err := boardconfig.Load(dir)
+	if err != nil {
+		return "", fmt.Errorf("this board's configuration cannot be read, so which "+
+			"certificate it serves is unknown: %w\n"+
+			"  A daemon will not start on this file either, so any fingerprint "+
+			"printed here would describe a certificate nothing is serving. Fix "+
+			"dibs.toml, then ask again", err)
 	}
-	return filepath.Join(dir, "tls-cert.pem")
+	if c.TLSCert != "" {
+		return c.TLSCert, nil
+	}
+	return filepath.Join(dir, "tls-cert.pem"), nil
 }
 
 func fingerprintCmd(_ []string) error {
@@ -221,7 +239,10 @@ func fingerprintCmd(_ []string) error {
 	// whose whole purpose is comparing what is served against what another
 	// machine pinned, and whose mismatch message says something other than your
 	// daemon is answering.
-	certFile := servedCertPath(paths.DataDir())
+	certFile, err := servedCertPath(paths.DataDir())
+	if err != nil {
+		return err
+	}
 	pemBytes, err := os.ReadFile(certFile) // #nosec G304 -- the daemon's own data directory
 	if err != nil {
 		return fmt.Errorf("no certificate at %s: this daemon serves plaintext on "+

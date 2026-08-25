@@ -325,8 +325,21 @@ func ensureCA(caCert, caKey string) (*x509.Certificate, *ecdsa.PrivateKey, error
 	// reported itself healthy. Half a pair present is the state that most
 	// needs a person, because it is the one where the other half may still be
 	// recoverable.
+	//
+	// LSTAT, NOT STAT, AND FOR THE REASON PREFLIGHT ALREADY WROTE DOWN. os.Stat
+	// follows symlinks, so a link whose target is gone reports ErrNotExist and
+	// reads here as "this half is absent". With one dangling link and one truly
+	// missing file, BOTH halves looked absent, this loop found nothing to refuse,
+	// and the daemon generated a new signing identity: every machine that had run
+	// `dibs trust` locked out by a daemon reporting itself healthy.
+	//
+	// preflightCertReadable says exactly this, in this package, and calls Lstat.
+	// The reasoning was learned once and applied in one of the two places that
+	// need it, which is why the dangling-symlink test stayed green while startup
+	// behaved differently: it drives that implementation and never reaches this
+	// one. Found by the pre-release review.
 	for _, f := range []string{caCert, caKey} {
-		if _, statErr := os.Stat(f); statErr != nil {
+		if _, statErr := os.Lstat(f); statErr != nil {
 			continue
 		}
 		return nil, nil, fmt.Errorf("the board's signing identity is half here: %s "+

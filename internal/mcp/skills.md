@@ -188,13 +188,19 @@ be warned about.
   `parent_nonce`. Without it the child is an ordinary stranger: it queues behind
   your exclusive agents instead of inheriting them, and the two of you deadlock,
   it waiting for an agent you hold, you waiting for it to finish.
-- **Do not bother with Codex's `mcp_2026_07_28` flag.** It reads like a protocol
-  switch and is not one: measured with the flag resolved true, Codex still
-  negotiates `2025-06-18` and sends no `server/discover`. It gates unfinished
-  work. `plugins/codex/README.md` has the measurement. This entry used to tell
-  you to turn it on for stateless reconnects, which was advice the project's own
-  evidence contradicted. Do not edit your operator's global config to do
-  it: pass it on the command you are already running.
+- **Codex's `mcp_2026_07_28` flag does nothing ON ITS OWN, and that is not the
+  same as "do not set it".** Measured with the flag resolved true and nothing
+  else changed, Codex still negotiates `2025-06-18` and sends no
+  `server/discover`. So it is not the protocol switch it looks like.
+
+  It is still REQUIRED, alongside a per-server `CODEX_MCP_PROTOCOL_VERSION`, and
+  `dibs mcp-config` emits both together for exactly that reason: the feature
+  alone leaves the connection on 2025, and the variable alone is read by a
+  client that never offers 2026. This entry used to say "do not bother with it"
+  and "do not edit your operator's global config to do it", which read as
+  advice to strip a line the generated configuration requires, on the one path
+  an agent is most likely to be following verbatim. Take the config `dibs
+  mcp-config` prints, whole. `plugins/codex/README.md` has the measurement.
 
 In Claude Code, Dibs will also watch the child for you: a `PreToolUse` hook
 stamps the spawned command with your agent, so when it stalls the report comes

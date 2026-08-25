@@ -123,7 +123,7 @@ func TestFingerprintReadsTheCertificateTheDaemonServes(t *testing.T) {
 		t.Fatal(err)
 	}
 	// No configuration: the managed one is what is served.
-	if got := servedCertPath(dir); got != managed {
+	if got, err := servedCertPath(dir); err != nil || got != managed {
 		t.Errorf("with no tls_cert configured the command reads %q, want the managed "+
 			"certificate at %q", got, managed)
 	}
@@ -139,7 +139,7 @@ func TestFingerprintReadsTheCertificateTheDaemonServes(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := servedCertPath(dir); got != configured {
+	if got, err := servedCertPath(dir); err != nil || got != configured {
 		t.Errorf("the board serves the certificate at %q and the command reads %q. "+
 			"It reports the wrong fingerprint, or none, and its mismatch message says "+
 			"something other than your daemon is answering", configured, got)
@@ -176,4 +176,40 @@ func writeRealPair(t *testing.T, certPath, keyPath string) {
 	}
 	write(certPath, "CERTIFICATE", der)
 	write(keyPath, "EC PRIVATE KEY", kd)
+}
+
+// An unreadable configuration must refuse, not fall back.
+//
+// boardconfig.Load separates an absent dibs.toml, which returns no error, from
+// an unparseable one, which returns a real error. servedCertPath swallowed
+// both, so a malformed config fell back to the managed path and fingerprinted
+// whatever stale certificate was lying there. `dibd` refuses to start on that
+// same file, so the one command whose purpose is comparing what is SERVED
+// against what another machine pinned described a certificate nothing serves,
+// and exited zero.
+//
+// The existing cases here cover absent and valid configuration. This one covers
+// invalid-plus-stale-fallback, which is the combination that lies. Found by the
+// pre-release review.
+func TestServedCertRefusesAnUnreadableConfig(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "dibs.toml"),
+		[]byte("this is not = valid toml ["), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A stale managed certificate sitting where the fallback would find it: the
+	// thing that made the old behaviour plausible rather than obviously wrong.
+	if err := os.WriteFile(filepath.Join(dir, "tls-cert.pem"), []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := servedCertPath(dir)
+	if err == nil {
+		t.Fatalf("an unparseable dibs.toml fell back to %q. A daemon will not start "+
+			"on that file, so this reports a certificate nothing is serving, on the "+
+			"command whose entire purpose is telling you what IS served", got)
+	}
+	if !strings.Contains(err.Error(), "dibs.toml") {
+		t.Errorf("the refusal does not name the file to fix: %v", err)
+	}
 }

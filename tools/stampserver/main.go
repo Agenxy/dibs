@@ -73,7 +73,23 @@ func run(path, explicit string) error {
 // invent one nobody shipped.
 func resolve(explicit string) (string, error) {
 	if v := strings.TrimSpace(explicit); v != "" {
-		return strings.TrimPrefix(v, "v"), nil
+		// VERIFIED AGAINST A REAL RELEASE, because this branch took any string.
+		//
+		// The comment above says this order "cannot invent one nobody shipped",
+		// and the explicit branch could: a manual dispatch with `-version 9.9.9`
+		// stamped and published 9.9.9 to the registry, for a version that was
+		// never built, tagged or released. That is precisely the hole the
+		// release job's `needs:` was added to close, reachable through the
+		// recovery path beside it, and the changelog claims it is shut. Found by
+		// the pre-release review, which reproduced it read-only.
+		//
+		// A dispatch with no version still means "whatever is currently
+		// released", which is the branch below and needs no such check.
+		want := strings.TrimPrefix(v, "v")
+		if err := mustBeReleased(want); err != nil {
+			return "", err
+		}
+		return want, nil
 	}
 	if os.Getenv("GITHUB_REF_TYPE") == "tag" {
 		if v := os.Getenv("GITHUB_REF_NAME"); v != "" {
@@ -106,6 +122,37 @@ func resolve(explicit string) (string, error) {
 		return "", fmt.Errorf("%s has no published release to take a version from", repo)
 	}
 	return strings.TrimPrefix(v, "v"), nil
+}
+
+// mustBeReleased refuses a version GitHub has no release for.
+//
+// The registry is public and permanent: a version published there that nobody
+// can download is worse than a failed job, because every client that indexes
+// from it now offers an install that cannot succeed.
+//
+// Skipped only when there is nothing to ask, which is a local run: refusing
+// there would make the tool untestable without a network, and a local run
+// publishes nothing.
+func mustBeReleased(version string) error {
+	repo := os.Getenv("GITHUB_REPOSITORY")
+	if repo == "" {
+		return nil
+	}
+	if !repoName.MatchString(repo) {
+		return fmt.Errorf("GITHUB_REPOSITORY is %q, which is not owner/name", repo)
+	}
+	for _, tag := range []string{"v" + version, version} {
+		args := []string{"release", "view", tag, "--repo", repo, "--json", "tagName"}
+		// #nosec G204,G702 -- argv, not a shell line; repo is shape-checked above
+		// and tag is the version we are being asked to publish.
+		if err := exec.Command("gh", args...).Run(); err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("%s has no release for %s, so publishing it to the registry "+
+		"would advertise an install nobody can complete. Tag and release it "+
+		"first, or run this with no -version to publish whatever is currently "+
+		"released", repo, version)
 }
 
 // repoName is the owner/name shape GITHUB_REPOSITORY always has.
