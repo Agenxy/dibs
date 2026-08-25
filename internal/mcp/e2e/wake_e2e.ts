@@ -32,7 +32,7 @@
  *
  * Run: DIBD=$PWD/bin/dibd bun internal/mcp/e2e/wake_e2e.ts
  */
-import { mkdtempSync, rmSync, mkdirSync, readFileSync, readdirSync } from "node:fs"
+import { mkdtempSync, rmSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, dirname, join } from "node:path"
 
@@ -86,10 +86,49 @@ argv = ["${process.execPath}", "${recorder}", "${log}", "{thread}", "{message}",
 cooldown = "1s"
 `)
 
+// ── a harness session the daemon can actually reach ──────────────────────
+// The socket wake is the route that needs no [wake.exec] entry, so proving it
+// needs a session that really is listening. This stands up what Claude Code
+// publishes: a key file, a sidecar, and a bound socket.
+//
+// THIS PROCESS'S OWN PID, because the discovery guard checks the pid is alive
+// before offering a session. An invented one is correctly refused, so a fixture
+// that used one would be asserting nothing.
+const PEER_PID = process.pid
+const PEER_SESSION = "5e6d7c8b-9a01-4b2c-8d3e-4f5a6b7c8d9e"
+const peerHome = mkdtempSync(join(tmpdir(), "wakehome-"))
+mkdirSync(join(peerHome, ".claude", "sessions"), { recursive: true })
+writeFileSync(
+  join(peerHome, ".claude", "sessions", `${PEER_PID}.${"c".repeat(64)}.key`),
+  JSON.stringify({ peerToken: "d".repeat(32) }))
+writeFileSync(
+  join(peerHome, ".claude", "sessions", `${PEER_PID}.json`),
+  JSON.stringify({ pid: PEER_PID, sessionId: PEER_SESSION, cwd: project }))
+// A SHORT runtime dir: a unix socket path is bounded near 104 bytes, and the
+// default temp dir is long enough on macOS that binding under it fails.
+const peerRun = mkdtempSync("/tmp/wr")
+mkdirSync(join(peerRun, "cc-socks"), { recursive: true })
+const peerSock = join(peerRun, "cc-socks", `${PEER_PID}.sock`)
+let peerGot = ""
+let peerResolve: (v: string) => void = () => {}
+const peerHeard = new Promise<string>((r) => { peerResolve = r })
+Bun.listen({
+  unix: peerSock,
+  socket: {
+    data(_s, d) {
+      peerGot += d.toString()
+      if (peerGot.split("\n").filter(Boolean).length >= 2) peerResolve(peerGot)
+    },
+  },
+})
+
 const daemonErr = join(dir, "dibd.err")
 const daemon = Bun.spawn({
   cmd: [dibd, "-dir", dir, "-addr", ADDR],
-  env: { ...process.env, DIBS_ALLOW_PARALLEL: "1" },
+  env: {
+    ...process.env, DIBS_ALLOW_PARALLEL: "1",
+    HOME: peerHome, XDG_RUNTIME_DIR: peerRun,
+  },
   stdout: "ignore", stderr: Bun.file(daemonErr),
 })
 const cleanup = () => {
@@ -594,6 +633,62 @@ const own = JSON.stringify(await call("hook_poll",
 check("and a hook quoting that id reaches it",
   /own-session/.test(own) && /unread message/.test(own),
   `a hook for ${OWN} did not reach own-session: ${own.slice(0, 300)}`)
+
+// ── A WAKE OVER THE HARNESS SOCKET, WITH NO COMMAND CONFIGURED ───────────
+// The route that removes the operator from the loop. dibs.toml above declares a
+// command for `codex` and nothing else, so an agent on another harness has no
+// command at all: before this existed it simply could not be woken, which is
+// the state most agents on a real machine are in.
+//
+// Everything here is the real thing: a real daemon, a real unix socket, a real
+// message through send. What is synthetic is only the session fixture, and its
+// pid is this process's own so the liveness guard is genuinely satisfied.
+const socketAgent = await call("register", {
+  name: "socket-sleeper", description: "wake e2e", cwd: project,
+  harness: "Claude Code", session_id: PEER_SESSION,
+  nonce: "e2e-socket-nonce-0123456789abcdef0123456789abcd",
+})
+check("an agent on a harness with no configured command still registers",
+  socketAgent.session_id === PEER_SESSION,
+  `session_id = ${JSON.stringify(socketAgent.session_id)}`)
+
+const beforeSocket = wakes().length
+await Bun.sleep(1200)
+await call("send", { token: asker.token, to: "socket-sleeper", type: "question",
+  body: "can you be reached without a wake command?", deadline_s: 600 })
+
+const heard = await Promise.race([
+  peerHeard,
+  new Promise<string>((r) => setTimeout(() => r(""), 8000)),
+])
+
+check("a question reaches it over its own harness socket",
+  heard !== "",
+  "nothing arrived on the session socket within 8s. An agent whose harness has " +
+  "no [wake.exec] entry is unreachable again, which is the defect this route exists to remove")
+
+if (heard !== "") {
+  const lines = heard.split("\n").filter(Boolean)
+  let auth: any = {}, msg: any = {}
+  try { auth = JSON.parse(lines[0]) } catch {}
+  try { msg = JSON.parse(lines[1] ?? "{}") } catch {}
+  check("the connection authenticates before it speaks",
+    auth.type === "auth" && auth.token === "d".repeat(32),
+    `first line was ${JSON.stringify(lines[0])}; the harness refuses a connection ` +
+    `whose first line is not the auth line`)
+  check("and the notice tells it to check the board",
+    msg.type === "user" && /board/i.test(msg.message?.content ?? ""),
+    `second line was ${JSON.stringify(lines[1])}`)
+  check("the socket wake carries no message body",
+    !/reached without a wake command/.test(heard),
+    "the question's text was delivered to the harness socket. A wake says mail " +
+    "EXISTS; the agent reads it with its own token, which is why mail is encrypted at rest")
+}
+
+check("and no process was spawned for it",
+  wakes().length === beforeSocket,
+  `${wakes().length - beforeSocket} command(s) ran for an agent whose harness has ` +
+  `none configured: the socket route must not also spend a process`)
 
 console.log("─".repeat(60))
 console.log(failures === 0 ? `\x1b[32m${checks} checks passed\x1b[0m` : `\x1b[31m${failures} of ${checks} failed\x1b[0m`)
