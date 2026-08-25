@@ -174,10 +174,18 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		// deliberately disables the cwd fallback, so after a restart mail stopped
 		// being injected and the claim guard failed open. Nothing reported an
 		// error; the wake path simply stopped waking anybody.
-		if len(op.SessionID) > s.Limits.MaxNameBytes {
-			err = errTooLarge("session_id", s.Limits.MaxNameBytes)
-			break
-		}
+		// THE SIZE BOUND IS ADMIT'S, AND IT WAS REPEATED HERE.
+		//
+		// Apply is the fold. A bound checked here makes replay conditional on
+		// TODAY's limit: lower MaxNameBytes in a later release and the daemon
+		// refuses bind_session ops it accepted, fsynced and acknowledged under
+		// the old one, and will not boot on its own ledger. Admit already
+		// rejects an oversized session id at ingress, which is where a
+		// restriction on what callers may DO belongs.
+		//
+		// The same mistake the announcement bound made, in the same shape, which
+		// is why TestApplyFoldsWhateverAdmitRejects exists; its list did not
+		// know about this op. It does now. Found by the pre-release review.
 		l.SessionID = op.SessionID
 		res = Result{"ok": true, "agent": l.ID, "session_id": l.SessionID}
 		evs = []Event{{Type: "agent.updated", Agent: l.ID}}

@@ -1889,6 +1889,27 @@ machines for real work. Their priority order, not ours.
   loser's binding, because a delete belongs in the fold and would be
   retroactive.
 
+- **A sweep could delete mail without writing it down, so a restart brought it
+  back.** Mail outlives its recipient by design: a sweep written before v0.0.7
+  removes the agent row and leaves the messages. Retention evicts those later
+  with no row to attribute them to, and the eviction reported a change only
+  through an event it could not emit without one. So the sweep returned
+  `changed: false`, the engine ledgers exactly when the serial advanced and
+  therefore wrote nothing, and the next restart replayed a board where the
+  messages still existed: deleted in memory, alive on disk, back after a bounce.
+  `state == fold(ledger)` failing with nothing logged and nothing erroring. The
+  flag that records a mutation emitting no event already existed and the other
+  two deletion sites already set it; this one did not.
+
+- **`bind_session` checked a size limit inside the fold.** `Admit` already
+  rejects an oversized session id at ingress, and `Apply` repeated it, which
+  makes replay conditional on today's configuration: lower the limit in a later
+  release and the daemon refuses ops it accepted, fsynced and acknowledged under
+  the old one, and will not boot on its own ledger. The same shape as the
+  announcement bound that `TestApplyFoldsWhateverAdmitRejects` was written for;
+  its list simply did not know this op existed, which is the weakness that test's
+  own comment admits to. The op is in the list now.
+
 - **An agent can be woken over the socket its own harness publishes, with no
   configuration at all.** Claude Code publishes a unix socket and an
   authentication key per session; Dibs reads both and delivers the same notice

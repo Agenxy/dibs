@@ -43,6 +43,12 @@ func TestApplyFoldsWhateverAdmitRejects(t *testing.T) {
 		{Kind: OpUpdate, Name: long(lim.MaxNameBytes)},
 		{Kind: OpUpdate, Description: long(lim.MaxDescBytes)},
 		{Kind: OpSpaceRetitle, Text: long(lim.MaxNameBytes)},
+		// bind_session repeated Admit's size bound inside the fold, so replay of
+		// an op accepted under a larger limit would have been refused by a
+		// daemon running a smaller one. The list did not know this op existed,
+		// which is the standing weakness this test's own comment admits to:
+		// every entry has to be added by hand when a rule is added.
+		{Kind: OpBindSession, SessionID: long(lim.MaxNameBytes)},
 	}
 
 	for _, proto := range rejected {

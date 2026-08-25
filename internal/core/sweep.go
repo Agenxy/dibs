@@ -290,6 +290,22 @@ func (s *State) gc(now time.Time, purgeMail bool) ([]Event, bool) {
 		l := s.Agents[agent]
 		for _, m := range evict {
 			delete(s.Messages, m.Serial)
+			// A DELETION IS A CHANGE EVEN WHEN NOBODY IS LEFT TO TELL.
+			//
+			// This relied on the event below, which is only emitted when the
+			// recipient row still exists. Mail can outlive its recipient: a
+			// historical `purge_mail:false` sweep removes the row and leaves the
+			// mail, deliberately, so retention later evicts messages with l ==
+			// nil. Those deletions emitted no event and set nothing, so the
+			// sweep returned changed:false, the engine did not ledger it, and
+			// the next restart replayed a board where the messages were still
+			// there. Deleted from memory, alive on disk, back after a bounce.
+			//
+			// `pruned` exists for exactly this: mutation that emits no event.
+			// The two other sites that delete already set it; this one did not.
+			// Found by the pre-release review, reproduced with two orphaned
+			// terminal messages and a retention of one.
+			pruned = true
 			if l != nil && m.Serial >= l.TruncatedBefore {
 				l.TruncatedBefore = m.Serial + 1
 			}
