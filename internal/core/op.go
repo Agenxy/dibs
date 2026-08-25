@@ -86,7 +86,21 @@ type Op struct {
 	ResumeID  string `json:"resume_id,omitempty"`
 	SessionID string `json:"session_id,omitempty"` // harness session, for hook lookup
 	// SessionAlias is another name this same harness session goes by, joined by
-	// the daemon at ingress. Never sent by a caller. See Agent.SessionAliases.
+	// the daemon at ingress. See Agent.SessionAliases.
+	//
+	// THE CALLER CAN WRITE IT, and this comment used to say the opposite.
+	//
+	// "Never sent by a caller" was true of every tool SCHEMA and false of the
+	// wire: mcp.go fills this from `_meta.threadId`, which is transport
+	// metadata the caller writes, so the value arrives from whoever is calling.
+	// The old sentence was sound about tools and silent about _meta, which is
+	// why nobody spotted it, and a future change that trusted it would have been
+	// trusting the wrong surface. Reported by an agent that read the tree.
+	//
+	// What makes it safe is not the claim, it is mayClaimSession at ingress: an
+	// id already held by a DIFFERENT agent is refused and cleared, unless that
+	// agent only inherited it by inference. Nothing here is trusted; it is
+	// vetted.
 	SessionAlias string     `json:"session_alias,omitempty"`
 	Agent        *AgentInfo `json:"agent,omitempty"`  // who is behind the agent (descriptive only)
 	Parent       string     `json:"parent,omitempty"` // the agent that spawned this one (§8.2)

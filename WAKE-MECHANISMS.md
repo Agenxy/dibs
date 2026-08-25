@@ -322,8 +322,18 @@ body.
 
 ## 7. Honest limits
 
-- "Interrupt me mid-work the instant mail arrives" is **not** achievable natively today
-  without a shellout or thread ownership. We don't fake it.
+- "Interrupt me mid-work the instant mail arrives" IS achievable on Claude Code,
+  and Dibs now does it: see §5b. This bullet used to say it was not achievable
+  "without a shellout or thread ownership", which was accurate about the
+  alternatives available when it was written and became false when the harness
+  began publishing a per-session socket. Peer messages on that socket arrive
+  mid-turn in a live session, with no shellout. Measured on this machine by
+  three agents independently.
+
+  What remains true is the shape of the limit rather than its severity: this
+  works where a harness publishes such an endpoint, which today means Claude
+  Code. For everything else the bullets below still hold, and Dibs will not
+  fake it by driving a harness that has not offered a way in.
 - MCP 2026 is deliberately moving *away* from unsolicited push (SEP-2260); even the Tasks
   extension is pull-then-stream and presupposes the agent called a tool first.
 - So: the agent receives mail when it **chooses to listen** (`await_events`) or at a
