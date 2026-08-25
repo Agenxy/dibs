@@ -500,3 +500,82 @@ func TestAWakeIntoTheSameDirectoryIsQuiet(t *testing.T) {
 		t.Errorf("an ordinary wake was reported as a directory mismatch: %q", got)
 	}
 }
+
+// The gate must not WAIT on a refresh either, which is a stronger claim than
+// not performing one.
+//
+// The first fix removed discovery from the gate's call path and left the lock:
+// peerSessions held peers.mu across a directory read and a `ps` per candidate,
+// and peerSnapshot takes that same mutex, so the "I/O-free" gate on the writer
+// loop still waited behind any concurrent refresh, up to 300ms per candidate.
+//
+// The test written for that fix asserted only that the gate ran no probe
+// ITSELF. It never overlapped the gate with a refresh, so it could not see the
+// contention its own comment described, and a changelog entry claimed wake
+// decisions were free of discovery waits. Found by the pre-release review,
+// which reproduced the wait.
+//
+// This holds a refresh open inside the probe and asks the gate meanwhile. It is
+// event-driven: the gate answering is the signal, and a hung gate fails on the
+// deadline rather than by sleeping.
+func TestTheWakeGateDoesNotWaitOnARefresh(t *testing.T) {
+	sock, _ := listeningSession(t)
+	go func() {
+		for {
+			c, err := sock.Accept()
+			if err != nil {
+				return
+			}
+			_ = c.Close()
+		}
+	}()
+
+	st := core.NewState("t", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	if _, _, err := st.Apply(&core.Op{
+		Kind: core.OpRegister, Name: "a", NewToken: "tok",
+		SessionID: "unrelated-session", Agent: &core.AgentInfo{Harness: "Claude Code"},
+	}, t0Engine()); err != nil {
+		t.Fatal("setup:", err)
+	}
+
+	// Warm it once with the real probe, then arrange for the NEXT refresh to
+	// block inside discovery until this test releases it.
+	e.primePeerSessions()
+	var once sync.Once
+	probing, release := make(chan struct{}), make(chan struct{})
+	prev := peerAlive
+	peerAlive = func(int, string) bool {
+		once.Do(func() { close(probing) })
+		<-release
+		return true
+	}
+	t.Cleanup(func() { peerAlive = prev })
+
+	e.peers.mu.Lock()
+	e.peers.at = time.Now().Add(-time.Hour) // stale, so the next call refreshes
+	e.peers.mu.Unlock()
+
+	go func() { _ = e.peerSessions() }() // the refresh, which will block
+	select {
+	case <-probing:
+	case <-time.After(5 * time.Second):
+		close(release)
+		t.Fatal("discovery never started, so the overlap this test needs did not happen")
+	}
+
+	answered := make(chan struct{})
+	go func() {
+		e.mightReachOverSocket(st.Agents["a"])
+		close(answered)
+	}()
+	select {
+	case <-answered:
+	case <-time.After(3 * time.Second):
+		close(release)
+		t.Fatal("the wake gate blocked behind a discovery refresh. It runs on the " +
+			"single-writer loop, so every other agent's declare, send and check_in " +
+			"waits with it, for as long as a `ps` per candidate takes")
+	}
+	close(release)
+}

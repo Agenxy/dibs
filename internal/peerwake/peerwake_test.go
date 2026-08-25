@@ -304,3 +304,49 @@ func TestAKeyWithNoStampFallsBackToLiveness(t *testing.T) {
 		t.Error("an impossible pid reported alive")
 	}
 }
+
+// A receiver that rejects everything is indistinguishable from one that
+// accepts, and that limit is recorded here rather than left to be rediscovered.
+//
+// Deliver returning nil proves the kernel took the bytes and nothing else.
+// There is no acknowledgement in this protocol: measured against a live Claude
+// Code session, a correct peer token and a deliberately wrong one both produced
+// two successful writes and a zero-byte EOF. So no caller may report a
+// successful write as "the agent was woken".
+//
+// This test exists so that a future change claiming confirmation has to delete
+// it deliberately. If the harness ever gains an acknowledgement, this is the
+// test that should start failing.
+func TestDeliverCannotTellAcceptanceFromRejection(t *testing.T) {
+	const pid, session, token = 4250, "s", "768509232a525210ee1a5a6d9699de93"
+	home, sock := fixture(t, pid, session, token, "", true)
+
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	// A receiver that reads the bytes and refuses them, saying nothing.
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			_, _ = io.Copy(io.Discard, c)
+			_ = c.Close() // rejected, silently, exactly as the real one does
+		}
+	}()
+
+	sessions, err := Discover(home, alwaysAlive)
+	if err != nil || len(sessions) != 1 {
+		t.Fatalf("setup: discovered %d session(s): %v", len(sessions), err)
+	}
+	if err := Deliver(context.Background(), sessions[0], "Dibs: check the board."); err != nil {
+		t.Fatalf("delivery to a rejecting receiver reported an error (%v). If the "+
+			"protocol has gained an acknowledgement, this limitation is over: say "+
+			"so in Deliver's comment and let callers claim confirmation", err)
+	}
+	t.Log("recorded: a rejecting receiver is indistinguishable from an accepting " +
+		"one, so a nil return means written, never delivered")
+}

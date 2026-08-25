@@ -250,9 +250,8 @@ func (e *Engine) maybeWake(ev core.Event) {
 		return
 	}
 	agent, stamp := l.ID, e.wakeStamp(l.ID)
-	e.wakers.mu.Lock()
-	cool := e.wakers.byHarness[wakeHarness(l)].cooldown
-	e.wakers.mu.Unlock()
+	// THE PLAN'S COOLDOWN, not another lookup. See wakePlan.cooldown.
+	cool := cmd.cooldown
 	go func() {
 		defer e.wakeExited(agent)
 		if e.runWake(cmd, agent) {
@@ -798,9 +797,12 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 	if !configured {
 		// The socket carries the same sentence the command would have carried.
 		// One notice, one wording, whichever way it travels.
-		return wakePlan{agent: l.ID, sessions: sessionsOf(l), notice: f.message, cwd: cwdOf(l)}, true
+		return wakePlan{
+			agent: l.ID, sessions: sessionsOf(l), notice: f.message,
+			cwd: cwdOf(l), cooldown: cooldown,
+		}, true
 	}
-	return wakePlan{argv: f.apply(e.argvFor(l))}, true
+	return wakePlan{argv: f.apply(e.argvFor(l)), cooldown: cooldown}, true
 }
 
 // wakePlan is how one wake will be delivered: the operator's command, or the
@@ -816,6 +818,16 @@ type wakePlan struct {
 	agent  string   // whose wake this is, for the socket path
 	notice string   // what to say; never a message body
 	cwd    string   // where the agent says it works, for the mismatch warning
+	// cooldown is the rate limit THIS route carries.
+	//
+	// Carried rather than re-read, because re-reading it looked up the
+	// operator's [wake.exec] entry and a socket route has none: the lookup
+	// returned Go's zero duration, so a failed socket wake re-armed after the
+	// 50ms margin instead of twenty seconds, on precisely the new
+	// no-configuration path. wakeRoute already decided this; discarding its
+	// answer and asking a map that was never going to have it is how the two
+	// disagreed. Found by the pre-release review.
+	cooldown time.Duration
 	// sessions are every id this agent answers to, COPIED while the writer
 	// loop holds still.
 	//

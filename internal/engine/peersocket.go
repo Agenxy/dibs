@@ -54,31 +54,53 @@ type peerCache struct {
 // peerSessions returns the sessions this machine can deliver to, refreshing at
 // most once per TTL.
 func (e *Engine) peerSessions() map[string]peerwake.Session {
+	// THE DISCOVERY HAPPENS OUTSIDE THE LOCK, and the first version did not.
+	//
+	// Holding peers.mu across a directory read and a sequential `ps` per
+	// candidate made the lock itself the contention: peerSnapshot takes the same
+	// mutex, so the "I/O-free" gate on the writer loop waited behind a refresh
+	// for up to 300ms per candidate. Removing the I/O from the gate's call path
+	// was necessary and not sufficient, and the test written for it proved only
+	// that the gate invokes no probe ITSELF, never overlapping it with a
+	// refresh, so it could not see the very contention its comment named.
+	// Found by the pre-release review, which reproduced the wait.
+	//
+	// The lock now covers reading the cache and swapping a result in. Two
+	// refreshes racing cost one redundant scan and agree on the outcome, which
+	// is cheaper than making every board operation wait for either.
 	e.peers.mu.Lock()
-	defer e.peers.mu.Unlock()
-	if time.Since(e.peers.at) < peerCacheTTL && e.peers.live != nil {
-		return e.peers.live
+	fresh := time.Since(e.peers.at) < peerCacheTTL && e.peers.live != nil
+	live := e.peers.live
+	e.peers.mu.Unlock()
+	if fresh {
+		return live
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		// WARM AND EMPTY, never left cold. "Cold" means "not looked yet" and the
-		// gate treats it as a reason to try anyway; if a permanent failure left
-		// it nil, that optimism would never end and every wake for an
-		// unconfigured harness would loop through a goroutine that finds
-		// nothing. An attempt that found nothing is an answer.
-		e.peers.live, e.peers.at = map[string]peerwake.Session{}, time.Now()
-		return e.peers.live
+		// WARM AND EMPTY, never left cold. Cold means "not looked yet", and the
+		// gate refuses on it; a permanent failure that left this nil would make
+		// every daemon without a home directory refuse socket wakes forever
+		// without ever recording that it had asked. An attempt that found
+		// nothing is an answer.
+		return e.storePeers(map[string]peerwake.Session{})
 	}
 	found, err := peerwake.Discover(home, peerAlive)
 	if err != nil {
 		slog.Debug("peer wake: could not read the harness session directory", "err", err)
 	}
-	live := make(map[string]peerwake.Session, len(found))
+	next := make(map[string]peerwake.Session, len(found))
 	for _, s := range found {
-		live[s.SessionID] = s
+		next[s.SessionID] = s
 	}
-	e.peers.live, e.peers.at = live, time.Now()
-	return live
+	return e.storePeers(next)
+}
+
+// storePeers swaps a freshly discovered set in, holding the lock only for that.
+func (e *Engine) storePeers(next map[string]peerwake.Session) map[string]peerwake.Session {
+	e.peers.mu.Lock()
+	defer e.peers.mu.Unlock()
+	e.peers.live, e.peers.at = next, time.Now()
+	return next
 }
 
 // peerSessionFor finds the listening session for this agent, by any of the
@@ -219,7 +241,21 @@ func (e *Engine) wakeOverSocket(plan wakePlan, agent string) bool {
 			"agent", agent, "session_id", s.SessionID, "pid", s.PID, "err", err)
 		return false
 	}
-	slog.Info("woke an agent over its harness socket",
+	// HANDED OVER, not "woken", because that is all this knows.
+	//
+	// The write succeeding proves the kernel took the bytes. There is no
+	// acknowledgement to read, and a correct token is indistinguishable from a
+	// wrong one from this side, so claiming the agent was woken asserts three
+	// things nobody checked: that the harness authenticated it, that its
+	// permission mode allowed it, and that anybody saw it. Saying so in a log is
+	// how a wake path comes to report success while doing nothing, which is the
+	// failure this whole route was built to remove.
+	//
+	// The attempt is still spent. Retrying an unacknowledgeable delivery would
+	// mean waking on a loop for every message the recipient's own permission
+	// mode holds, which is worse than a notice that may not land.
+	slog.Info("handed a wake notice to the harness socket; delivery is the "+
+		"recipient's to accept",
 		"agent", agent, "session_id", s.SessionID, "pid", s.PID)
 	return true
 }

@@ -233,6 +233,21 @@ func Alive(pid int, procStart string) bool {
 
 // Deliver hands one notice to one session and returns when it has been written.
 //
+// WRITTEN IS ALL IT MEANS, and the difference matters enough to measure.
+//
+// A nil return proves the kernel accepted the bytes. It does not prove the
+// harness authenticated them, parsed them, was permitted to show them, or
+// showed them: there is no acknowledgement to read. Measured against a live
+// session, a correct peer token and a deliberately wrong one are
+// indistinguishable from here, both writes succeeding and both reads returning
+// EOF with zero bytes.
+//
+// So a caller must not report this as "the agent was woken". It is "the notice
+// was handed over", which is the most that can honestly be said, and the
+// recipient's own permission mode may still hold or decline it before anybody
+// sees it. Found by the pre-release review, which caught a log line and a
+// changelog entry both claiming more than this.
+//
 // COUNTS AND SENDERS, NEVER BODIES. The caller passes the same digest the rest
 // of the wake path uses, and that rule lives there: this function will send
 // whatever it is given, so it is the caller's business not to give it a message
