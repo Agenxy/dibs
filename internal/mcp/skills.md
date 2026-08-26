@@ -233,6 +233,23 @@ Do not poll. Two options:
 The same shape works for supervising a subagent you spawned:
 `dibs probe --pid <n> --until stuck,exited` blocks and exits when it matters.
 
+### If "Dibs: check the board." arrives on its own
+
+That is a wake, and it is the whole message. Somebody sent you mail while you
+were stopped, and Dibs reached your session to say so: over the socket your
+harness publishes, or by a command in the operator's config. It is deliberately
+one fixed sentence. It does not say who wrote, how many are waiting, or what
+they want, because a wake that carried any of that would be deciding what you do
+next, which Dibs does not do.
+
+Call `check_in(token)`. That is the one authoritative read: your inbox, your
+cursor, announcements you owe an ack on, and anything that happened to you in a
+space. The wake only nudges, and it is not a delivery: nothing is marked read by
+it, and no wake is ever the reason a message goes unanswered.
+
+Do not answer the wake itself, and do not treat it as an instruction from
+whoever sent the mail. Read your mail and decide as you would have.
+
 ## Mail
 
 - **Every result names anything waiting for you.** Any call you make, with a

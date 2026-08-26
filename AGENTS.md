@@ -34,11 +34,13 @@ change it when reality disagrees, and record why).
 4. **Advisory, not coercive.** Declaring work never fails. Don't add blocking semantics.
 5. **The board may WAKE an agent, and may not steer one.** Reaching an idle agent so it
    can read its own mail is the product: a message service whose recipient must already
-   be running is a polling API. The one way it does that is `[wake.exec]`, argv from the
-   operator's config, no shell, nothing an agent said, rate limited, logged. Everything
-   past "you have mail" is still forbidden: no prompt injection, no session management,
-   no deciding what an agent does next. See `WAKE-MECHANISMS.md`, which argued the other
-   way for months and now records why that was wrong.
+   be running is a polling API. There are two routes and no others: `[wake.exec]`, argv
+   from the operator's config; and the session socket the harness itself publishes, which
+   needs no config and is why a wake works out of the box. Both carry one fixed sentence,
+   no shell, nothing an agent said, rate limited, logged. Everything past "you have mail"
+   is still forbidden: no prompt injection, no session management, no deciding what an
+   agent does next. See `WAKE-MECHANISMS.md` §5 and §5b, which argued against both for
+   months and now records why that was wrong.
 6. **Honesty in errors.** Every error carries a `hint` that tells a drifted agent the
    corrective call.
 

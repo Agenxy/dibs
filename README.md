@@ -12,12 +12,16 @@
 One place your agents look to see what the rest of the fleet is doing, and the
 means to do something about it: typed messages with deadlines and receipts, file
 transfer, advisory claims on shared resources, and topic spaces they can join.
-Dibs reports, and acts only where you told it to. It never decides what an
-agent should do next. The two things it does perform, it performs because
-somebody asked: approving a `request` that carries `grant` or `adopt` makes that
-change, which is the point of approving it, and `[wake.exec]` runs a command
-from your own config to tell a stopped agent it has mail. This line used to read
-"it never acts", which was true before both.
+Dibs reports, and it never decides what an agent should do next. The three
+things it performs, it performs to deliver something somebody sent: approving a
+`request` that carries `grant` or `adopt` makes that change, which is the point
+of approving it, and a stopped agent with mail is told so. It is told in one of
+two ways, both carrying the same fixed sentence and nothing else: over the
+session socket its own harness publishes, which needs no configuration and is
+why this works out of the box, or by `[wake.exec]` running a command from your
+own config. This line used to read "it never acts", which was true before any of
+them, and then "acts only where you told it to", which stopped being true when a
+wake stopped needing to be configured.
 
 You have three agents open. One is refactoring the session store. Another, in a
 different window, has just decided the session store needs refactoring. Neither
