@@ -1937,7 +1937,17 @@ machines for real work. Their priority order, not ours.
   would trade one silent loss for another. What was wrong is that they were
   still delivered: measured, a new agent registering the same name was shown the
   previous occupant's question verbatim, body included. It now starts with a
-  watermark past them.
+  watermark past them, and `read_mail` refuses a serial older than the agent
+  itself.
+
+  **Not listing it was not protecting it.** The watermark was enforced only when
+  enumerating an inbox, so a replacement could not SEE that mail and could still
+  fetch the body by serial. And the watermark is built from mail addressed TO
+  the id, so it never covered what the predecessor SENT: `read_mail` matched on
+  the reused id and handed over the other half of somebody else's conversation.
+  The rule is "older than this agent" now, which covers both directions, reads
+  as no filtering for rows registered before the field existed, and leaves a
+  reattaching agent its own history, because a reattach is the same agent.
 
   **That watermark had never filtered anything.** It was set by the retention
   sweep and reported to callers, and nothing consulted it, which went unnoticed
@@ -1949,7 +1959,8 @@ machines for real work. Their priority order, not ours.
   targets and advanced the serial anyway, so the engine appended an op recording
   that nothing happened, on demand, forever. And pruning an agent that was
   already closed closed it again, emitting a second `agent.closed` for a
-  transition that happened once: the audit stream is what `dibs log` and every
+  transition that happened once, on BOTH prune paths, the agent's own and the
+  administrator's: the audit stream is what `dibs log` and every
   `events_since` consumer reads, and an invented transition is worse there than
   a missing one because it is indistinguishable from a real one.
 
