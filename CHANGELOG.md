@@ -1996,6 +1996,24 @@ machines for real work. Their priority order, not ours.
   Reported, never refused: the daemon cannot tell which of the two is wrong, and
   a heuristic refusal would ground legitimate wakes for agents that moved.
 
+- **A certificate that is not a CA could become the board's signing identity.**
+  The check asked only whether the certificate and key matched and whether it
+  had expired, which a restored or misnamed SERVER certificate satisfies: `dibd
+  -check` then called the board healthy, the daemon signed leaves with it, and
+  every client rejected the chain. The basic constraints, the certificate-signing
+  key usage and `NotBefore` are checked now, each with its own message, because
+  a wrong clock and a restored leaf need opposite responses.
+
+- **Twelve ledger op kinds were not frozen**, including `respond`, `ack`,
+  `bind_session`, `prune_own`, `claim_coordinator`, `vouch_child` and four space
+  operations. The table calls itself the authoritative list of ledger
+  vocabulary, so renaming any of them left the guard green while every ledger
+  containing that string stopped replaying: the check against silent data loss,
+  silently not checking. They are frozen, and a new test reads the SOURCE and
+  fails when a kind is declared without being frozen, because a list somebody
+  must remember is exactly as good as the memory, which this repository has now
+  said about itself three times.
+
 - **A dangling symlink could silently rotate the board's signing identity.**
   `os.Stat` follows links, so a link whose target is gone reads as absent. With
   one dangling half and one truly missing file, both looked absent, the daemon

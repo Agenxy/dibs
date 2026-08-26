@@ -1,10 +1,18 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // A dangling symlink is not an absence, and ensureCA must not treat it as one.
@@ -68,5 +76,60 @@ func TestEnsureCAStillGeneratesOnAFirstRun(t *testing.T) {
 	}
 	if cert == nil || key == nil {
 		t.Error("a first run produced no signing identity")
+	}
+}
+
+// A matching pair that is not a CA must be refused.
+//
+// ensureCA asked only whether the certificate and key matched and whether
+// NotAfter had passed. A restored or misnamed SERVER certificate satisfies
+// both, so `dibd -check` called the board healthy, the daemon signed leaves
+// with something that is not a CA, and every client rejected the chain: a
+// takeover reporting success while producing a board nobody can connect to.
+// Found by the pre-release review.
+func TestEnsureCARefusesALeafPretendingToBeACA(t *testing.T) {
+	dir := t.TempDir()
+	caCert := filepath.Join(dir, "ca-cert.pem")
+	caKey := filepath.Join(dir, "ca-key.pem")
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A LEAF: no CA basic constraint, which is the whole difference.
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(2),
+		Subject:      pkix.Name{CommonName: "dibs board"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		IsCA:         false,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The production writer, so the fixture is a file the daemon would produce.
+	if err := writePEM(caCert, "CERTIFICATE", der, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	kb, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writePEM(caKey, "EC PRIVATE KEY", kb, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Setup must hold: the pair has to LOAD, or this refuses for the old reason
+	// rather than the new one.
+	if _, err := tls.LoadX509KeyPair(caCert, caKey); err != nil {
+		t.Fatalf("setup: the pair does not load, so this tests the wrong branch: %v", err)
+	}
+
+	if _, _, err := ensureCA(caCert, caKey); err == nil {
+		t.Error("a matching leaf pair was accepted as the board's signing identity. " +
+			"Every leaf it signs is rejected by clients, and the daemon reports " +
+			"itself healthy while serving a chain nobody accepts")
 	}
 }

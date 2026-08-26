@@ -282,6 +282,62 @@ func ensureSelfSignedCert(dir, addr string) (string, string, error) {
 	return certFile, keyFile, nil
 }
 
+// validSigningIdentity says whether this pair can actually sign leaves clients
+// will accept, and why not when it cannot.
+//
+// Split out of ensureCA because each of these refusals is a separate reason the
+// board must not quietly issue a new identity, and the list grew past the
+// complexity the linter allows in one function. The reasons are the value here:
+// a caller that sees only "invalid" cannot tell a wrong clock from a restored
+// server certificate, and those need opposite responses.
+func validSigningIdentity(cert *x509.Certificate, perr error, keyOK bool, caCert, caKey string) error {
+	switch {
+	case perr != nil || !keyOK:
+		return fmt.Errorf("the board's signing identity at %s cannot be "+
+			"read (%v). Every machine that ran `dibs trust` against this board is "+
+			"pinned to it, so this daemon will not quietly issue a new one: "+
+			"restore the file, or delete %s and %s and re-trust each of those "+
+			"machines once", caCert, perr, caCert, caKey)
+	case !time.Now().Before(cert.NotAfter):
+		return fmt.Errorf("the board's signing identity at %s expired on "+
+			"%s. Delete it and %s, restart, and run `dibs trust` again on every "+
+			"machine that joined this board: a new identity is not something this "+
+			"daemon may choose on their behalf",
+			caCert, cert.NotAfter.Format("2006-01-02"), caKey)
+		// A LEAF IS NOT A SIGNING IDENTITY, and this asked only whether the pair
+		// matched and had not expired.
+		//
+		// A restored or misnamed server certificate satisfies both: the key
+		// matches, the dates are fine, and `dibd -check` calls the board healthy.
+		// The daemon then signs leaves with something that is not a CA, and every
+		// client rejects the chain. That is the takeover reporting success while
+		// producing a board nobody can connect to, which is the exact shape this
+		// file already refuses three other ways.
+		//
+		// x509 says what a signing identity is, so ask it: the basic constraints
+		// have to be present and say CA, and the key usage has to include signing
+		// certificates. Found by the pre-release review.
+	case !cert.BasicConstraintsValid || !cert.IsCA:
+		return fmt.Errorf("the certificate at %s is not a signing "+
+			"identity: it carries no CA basic constraint, so leaves signed with "+
+			"it are rejected by every client that checks. This is what a restored "+
+			"or misnamed SERVER certificate looks like. Put the real CA back, or "+
+			"delete it and %s and re-trust each machine that joined once",
+			caCert, caKey)
+	case cert.KeyUsage != 0 && cert.KeyUsage&x509.KeyUsageCertSign == 0:
+		return fmt.Errorf("the certificate at %s declares key usages "+
+			"that do not include signing certificates, so the leaves this daemon "+
+			"issues are rejected. Put the real CA back, or delete it and %s and "+
+			"re-trust each machine that joined once", caCert, caKey)
+	case time.Now().Before(cert.NotBefore):
+		return fmt.Errorf("the signing identity at %s is not valid until "+
+			"%s, so nothing it signs is accepted yet. Check this machine's clock "+
+			"before replacing anything: a wrong clock looks exactly like this",
+			caCert, cert.NotBefore.Format("2006-01-02 15:04"))
+	}
+	return nil
+}
+
 // ensureCA returns the board's long-lived signing identity, generating it once.
 //
 // This is the thing `dibs trust` pins, so it must outlive every leaf and must
@@ -292,19 +348,8 @@ func ensureCA(caCert, caKey string) (*x509.Certificate, *ecdsa.PrivateKey, error
 	if loadErr == nil {
 		cert, perr := x509.ParseCertificate(pair.Certificate[0])
 		signer, ok := pair.PrivateKey.(*ecdsa.PrivateKey)
-		switch {
-		case perr != nil || !ok:
-			return nil, nil, fmt.Errorf("the board's signing identity at %s cannot be "+
-				"read (%v). Every machine that ran `dibs trust` against this board is "+
-				"pinned to it, so this daemon will not quietly issue a new one: "+
-				"restore the file, or delete %s and %s and re-trust each of those "+
-				"machines once", caCert, perr, caCert, caKey)
-		case !time.Now().Before(cert.NotAfter):
-			return nil, nil, fmt.Errorf("the board's signing identity at %s expired on "+
-				"%s. Delete it and %s, restart, and run `dibs trust` again on every "+
-				"machine that joined this board: a new identity is not something this "+
-				"daemon may choose on their behalf",
-				caCert, cert.NotAfter.Format("2006-01-02"), caKey)
+		if err := validSigningIdentity(cert, perr, ok, caCert, caKey); err != nil {
+			return nil, nil, err
 		}
 		return cert, signer, nil
 	}
