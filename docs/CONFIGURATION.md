@@ -82,8 +82,42 @@ was not running it returned `Queued message …` and nothing woke: the message
 waits for somebody to open that conversation. Useful when you know the app is
 up and you want the existing window to act; not a wake on its own.
 
+**Claude Code.** Measured on 2026-08-26, the same way.
+
+```toml
+[wake.exec."claude code"]
+argv = ["claude", "--resume", "{thread}", "-p", "{message}"]
+cooldown = "90s"
+```
+
+`claude --resume <session-id> -p "<text>"` continues that session in a new
+headless process. Watched end to end: a seeded session's transcript went from 15
+lines to 56, the notice arrived as a turn, and the agent's first action was to
+call `register` to go and look at the board, which is exactly what a wake is for
+and the whole of what it should cause.
+
+One caveat worth knowing before you rely on it. A headless `-p` process does not
+have the permissions an interactive session does, so an agent woken this way can
+find its own Dibs calls refused, which is what happened on the measured run
+after it decided to look. It still beats not being told: the session is running
+and its own hooks fire from there. If your agents need tool access on a wake,
+give that process the permissions it needs rather than assuming it inherits
+them.
+
+**Why you want one of these even though the socket route needs no setup.** The
+socket is best effort: the receiving session decides whether to accept a peer
+message and sends no receipt, and a Claude Code session running in
+`bypassPermissions` mode HOLDS peer messages for its human. That is the mode an
+unattended fleet runs in, so for those agents the socket route delivers nothing
+and nothing reports it. A command is the route the daemon can confirm, because
+it sees the exit status. `dibs doctor` tells you which of the two a board has.
+
 The key under `exec` is the harness as agents report it, lowercased: `codex`,
-`claude code`. Each takes `argv` and an optional `cooldown`.
+`claude code`. Each takes `argv` and an optional `cooldown`. Check what your
+agents actually report before trusting a key to match: the board shows values
+like `Codex`, `Claude Code` and `codex-quarters`, and only an exact lowercased
+match is a match, so a harness that reports a variant gets no wake and nothing
+says so.
 
 **`argv`, never a shell string.** There is no shell anywhere in this path.
 `{thread}`, `{agent}`, `{from}`, `{type}` and `{message}` each replace one
