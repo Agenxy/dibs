@@ -530,6 +530,15 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		return nil, err
 	}
 
+	// EVERY op this build writes says which semantics it was written under.
+	//
+	// Stamped at ingress and carried into the ledger, so replay applies a
+	// v0.0.7 repair to v0.0.7 ops and leaves older ones exactly as they were
+	// folded when they were written. See Op.V7Semantics: two fixes this cycle
+	// changed what an EXISTING op does, which rewrites history and is the one
+	// hazard this repository has paid for repeatedly.
+	op.V7Semantics = true
+
 	if err := e.refuseClaimWhenCoordinatorExists(op); err != nil {
 		return nil, err
 	}

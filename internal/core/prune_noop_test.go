@@ -14,7 +14,9 @@ func TestAPruneWithNoDebrisIsNotLedgered(t *testing.T) {
 	reg(t, s, "busy", "tok-busy", t0) // active, so never a target
 	before := s.Serial
 
-	res := mustApply(t, s, &Op{Kind: OpPrune}, t0)
+	// V7Semantics: this asserts v0.0.7's rules, and an op only gets them
+	// if it records that it was written under them.
+	res := mustApply(t, s, &Op{Kind: OpPrune, V7Semantics: true}, t0)
 
 	if n, _ := res["count"].(int); n != 0 {
 		t.Fatalf("setup: pruned %d agent(s); this case is about pruning none", n)
@@ -42,7 +44,7 @@ func TestPruningAClosedAgentDoesNotCloseItAgain(t *testing.T) {
 	}
 	before := s.Serial
 
-	res, evs, err := s.Apply(&Op{Kind: OpPrune, To: "done"}, t0)
+	res, evs, err := s.Apply(&Op{Kind: OpPrune, To: "done", V7Semantics: true}, t0)
 	if err != nil {
 		t.Fatalf("pruning an already-closed agent was refused: %v. A refusal in "+
 			"the fold is retroactive and would stop a daemon replaying its own "+

@@ -458,8 +458,49 @@ func TestAWakeIntoAnUnrelatedDirectoryIsReported(t *testing.T) {
 	}, "stranger")
 
 	if got := buf.String(); !strings.Contains(got, "different working directory") {
-		t.Errorf("a wake landed in a session whose directory does not match the "+
+		t.Errorf("a wake targeted a session whose directory does not match the "+
 			"agent's, and nothing said so. That is a misdelivery nobody can find:\n  %q", got)
+	}
+}
+
+// And it must REFUSE, not merely mention it.
+//
+// Delivering anyway interrupts a session that is not the recipient, leaves the
+// intended agent asleep, and reports success, which spends the only attempt the
+// retry machinery would have given it. Three failures at once, and the third is
+// the "success with no effect" defect this release exists to remove. Found by
+// the pre-release review.
+func TestAWakeIntoAnUnrelatedDirectoryIsRefused(t *testing.T) {
+	sock, sessionID := listeningSession(t)
+	got := make(chan string, 1)
+	go func() {
+		c, err := sock.Accept()
+		if err != nil {
+			return
+		}
+		b, _ := io.ReadAll(c)
+		_ = c.Close()
+		got <- string(b)
+	}()
+
+	st := core.NewState("t", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	e.primePeerSessions()
+
+	if e.runWake(wakePlan{
+		agent: "stranger", sessions: []string{sessionID},
+		notice: wakeNotice, cwd: "/somewhere/entirely/else",
+	}, "stranger") {
+		t.Error("a wake into a session working elsewhere reported SUCCESS. The " +
+			"retry machinery now believes the agent was reached, so its one " +
+			"attempt is spent while it is still asleep and somebody else was " +
+			"interrupted instead")
+	}
+	select {
+	case wire := <-got:
+		t.Errorf("bytes were delivered to the wrong session: %q", wire)
+	case <-time.After(300 * time.Millisecond):
+		// nothing arrived, which is the point
 	}
 }
 

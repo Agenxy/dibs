@@ -1445,3 +1445,34 @@ func TestTheWakeExitProducesBothOfItsFactsTogether(t *testing.T) {
 			"refused on the strength of the inbox read of a turn that is over")
 	}
 }
+
+// A wake POINTS. It does not tell the agent what to do next.
+//
+// PHILOSOPHY rule 5 draws the line here: the board may wake an agent and may
+// not steer one. The notice used to read "Dibs: check the board. Call check_in,
+// then inbox, and act on anything there", which names two tools in order and
+// directs what to do with what they return. The only test on it required the
+// word "board", so it passed that sentence without noticing. Found by the
+// pre-release review.
+//
+// Asserted on what must NOT be there, because the failure is additive: the way
+// this goes wrong is somebody appending one more helpful clause to a sentence
+// that already works.
+func TestTheWakeNoticePointsRatherThanInstructs(t *testing.T) {
+	notice := wakeNotice
+	for _, banned := range []string{
+		"check_in", "inbox", "read_mail", "respond", "ack", // named tools
+		"act on", "then ", "and then", "you should", "make sure",
+	} {
+		if strings.Contains(strings.ToLower(notice), banned) {
+			t.Errorf("the wake notice contains %q:\n  %q\n"+
+				"A wake says there is something for you and stops. Naming tools in "+
+				"order, or saying what to do with what they return, is deciding what "+
+				"the agent does next, which is the one thing rule 5 forbids.",
+				banned, notice)
+		}
+	}
+	if !strings.Contains(strings.ToLower(notice), "board") {
+		t.Errorf("the notice does not point anywhere: %q", notice)
+	}
+}

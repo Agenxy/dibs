@@ -225,10 +225,30 @@ type Op struct {
 	// agent giving up its own bindings can strand nothing but itself, and it is
 	// the one participant that can always tell whether an id is really its
 	// session.
-	ReleaseSession bool     `json:"release_session,omitempty"`
-	DeadAgents     []string `json:"dead_agents,omitempty"`
-	StaleAgents    []string `json:"stale_agents,omitempty"`
-	AlivePIDs      []int    `json:"alive_pids,omitempty"`
+	ReleaseSession bool `json:"release_session,omitempty"`
+
+	// V7Semantics says this op was written by a build that applies v0.0.7's
+	// mailbox and prune repairs, and may therefore have them applied on replay.
+	//
+	// THE SAME HAZARD AS PurgeMail AND RestoreNonce, arrived at twice more. Two
+	// fixes changed what an EXISTING op does: register began raising a new
+	// agent's watermark past mail left by a vanished predecessor, and prune
+	// stopped closing an already-closed agent or advancing the serial for a
+	// no-op. Both are right for ops written from now on and both rewrite
+	// history: replay of a v0.0.6 ledger reconstructs a different inbox, and
+	// silently drops an `agent.closed` the original fold really did emit,
+	// routing a deliberate semantic change through the serial-gap path that
+	// exists for corruption.
+	//
+	// Recording it means old ops keep exactly the semantics they were written
+	// under, which is the only version of this that lets a daemon replay its own
+	// history. One flag rather than two because both repairs arrived in the same
+	// version and a build either has them or does not; splitting it would freeze
+	// two names for one fact. Found by the pre-release review, twice.
+	V7Semantics bool     `json:"v7_semantics,omitempty"`
+	DeadAgents  []string `json:"dead_agents,omitempty"`
+	StaleAgents []string `json:"stale_agents,omitempty"`
+	AlivePIDs   []int    `json:"alive_pids,omitempty"`
 
 	// mark_delivered: ledgered pending→delivered receipts
 	MsgSerials []uint64 `json:"msg_serials,omitempty"`

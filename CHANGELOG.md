@@ -1910,6 +1910,25 @@ machines for real work. Their priority order, not ours.
   its list simply did not know this op existed, which is the weakness that test's
   own comment admits to. The op is in the list now.
 
+- **Two v0.0.7 repairs now say which version wrote them.** Both changed what an
+  EXISTING op does: a register began raising a new agent's watermark past mail
+  its vanished predecessor left, and a prune stopped re-closing an already-closed
+  agent or advancing the serial for a no-op. Right for ops written from here on,
+  and applied to an older ledger they reconstruct a board that never existed: a
+  different inbox, and an `agent.closed` the original fold really did emit
+  silently dropped, with the serial difference repaired by the path that exists
+  for corruption. Ops now record the semantics they were written under, the same
+  treatment `purge_mail` and `restore_nonce` already had.
+
+- **A wake into a session that reports a different working directory is now
+  refused rather than logged.** Delivering it interrupts a session that is not
+  the recipient, leaves the intended agent asleep, and reports success, which
+  spends the only attempt the retry machinery would have given it: three
+  failures at once, the third being the "success with no effect" defect this
+  release keeps finding. Both directories are canonicalised before comparing,
+  because the agent's is canonical at registration and the harness writes its
+  own raw, and on macOS that difference alone refused a correct delivery.
+
 - **A new agent no longer inherits the previous occupant's mail.** An id is
   derived from the name, so a name that comes back reuses the id, and mail
   outlives the row it was addressed to: a sweep written before v0.0.7 removes
@@ -2040,9 +2059,18 @@ machines for real work. Their priority order, not ours.
 
   Unchanged, deliberately: one gate in front of both routes, so the cooldown,
   the still-running flag and the deferral are shared rather than re-bought; no
-  command and no socket is still no wake; no process is ever spawned for a
-  thread that cannot be resumed; and the notice carries counts and senders,
-  never a body, on this route as on the other.
+  command and no socket is still no wake; and no process is ever spawned for a
+  thread that cannot be resumed.
+
+  **The notice is one sentence and points rather than instructs.** It said
+  "Dibs: check the board. Call check_in, then inbox, and act on anything there",
+  which names two tools in order and says what to do with what they return: that
+  is deciding what the agent does next, which is the one thing the wake path is
+  forbidden to do. It is "Dibs: check the board." now, on both routes, and the
+  test asserts what must NOT be in it, because the way this goes wrong is
+  somebody appending one more helpful clause. An earlier draft of this entry
+  said the notice carries counts and senders; it carries neither, and never
+  did.
 
 - **A caller that says which session it is running in is now believed, instead
   of guessed at.** With no session alias on a call, the engine INFERS one by

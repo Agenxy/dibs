@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/paths"
 	"github.com/agenxy/dibs/internal/peerwake"
 )
 
@@ -215,20 +216,38 @@ func (e *Engine) wakeOverSocket(plan wakePlan, agent string) bool {
 	// because the wake simply failed. Now it succeeds, into the wrong session,
 	// which is more effective and no more correct.
 	//
-	// Logged, never enforced. The daemon cannot know which of the two is wrong,
-	// and refusing on a heuristic would ground legitimate wakes for agents that
-	// genuinely moved. Saying so is what turns an invisible misdelivery into
-	// one somebody can find.
+	// REFUSED, not merely logged, and the first version of this got that wrong.
 	//
-	// BEFORE the delivery, not after. The mismatch is a fact about which session
-	// we are ABOUT to wake, and it is just as true when the write then fails.
-	// Reporting it only on success also made the test for it depend on the
-	// write landing, which is a race.
-	if plan.cwd != "" && s.CWD != "" && plan.cwd != s.CWD {
-		slog.Warn("waking a session that reports a different working directory: "+
-			"this agent's session id may belong to another session",
+	// Logging it and delivering anyway does three things at once: it interrupts
+	// a session that is not the recipient, it leaves the intended agent asleep,
+	// and it tells the retry machinery the wake succeeded so the attempt is
+	// spent. That is the "reports success while doing nothing" defect this
+	// release has spent four rounds removing, reintroduced by the route built to
+	// remove it. Found by the pre-release review.
+	//
+	// The argument for delivering was that the daemon cannot tell which of the
+	// two is wrong. True, and it does not need to: refusing costs a wake the
+	// retry path already treats as un-spent, while delivering costs somebody
+	// else's turn and the recipient's only attempt. The asymmetry decides it.
+	//
+	// Before the delivery, because the mismatch is a fact about which session we
+	// are ABOUT to wake.
+	// CANONICALISED ON BOTH SIDES, or this refuses wakes it should allow.
+	//
+	// The agent's cwd is canonicalised when it registers; the harness writes its
+	// sidecar cwd raw. On macOS that alone is enough to make /var and
+	// /private/var look like different directories, so a comparison of the two
+	// spellings refused a delivery that was perfectly correct. The wake e2e
+	// caught it within one run of this check becoming a refusal rather than a
+	// warning, which is the risk that made it a warning first.
+	if plan.cwd != "" && s.CWD != "" && paths.Canonical(plan.cwd) != paths.Canonical(s.CWD) {
+		slog.Warn("refusing to wake a session that reports a different working "+
+			"directory: this agent's session id appears to belong to another "+
+			"session, so waking it would interrupt the wrong agent and leave this "+
+			"one asleep",
 			"agent", agent, "session_id", s.SessionID,
 			"agent_cwd", plan.cwd, "session_cwd", s.CWD)
+		return false
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -608,9 +608,11 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	// The messages are untouched, which is what keeps the sender's record and
 	// any later ack of one working: an ack resolves by serial and does not
 	// consult this.
-	for _, m := range s.Messages {
-		if m.To == id && m.Serial >= l.TruncatedBefore {
-			l.TruncatedBefore = m.Serial + 1
+	if op.V7Semantics {
+		for _, m := range s.Messages {
+			if m.To == id && m.Serial >= l.TruncatedBefore {
+				l.TruncatedBefore = m.Serial + 1
+			}
 		}
 	}
 	s.Agents[id] = l
@@ -1213,7 +1215,7 @@ func (s *State) applyPrune(op *Op, now time.Time) (Result, []Event, error) {
 		// transition that never happened is worse there than a missing one,
 		// because it is indistinguishable from a real one. Found by the
 		// pre-release review.
-		if l.Status == StatusClosed {
+		if op.V7Semantics && l.Status == StatusClosed {
 			continue
 		}
 		r, e := s.applyClose(l, now)
@@ -1235,7 +1237,7 @@ func (s *State) applyPrune(op *Op, now time.Time) (Result, []Event, error) {
 	// behind the ledger's own number. That is the tolerated case, not the fatal
 	// one: Replay resyncs forward on a gap and only refuses when state runs
 	// AHEAD. Choosing that over an ever-growing ledger of no-ops is deliberate.
-	if len(ids) == 0 {
+	if op.V7Semantics && len(ids) == 0 {
 		return Result{"ok": true, "pruned": ids, "count": 0, "serial": s.Serial}, nil, nil
 	}
 	// LEDGERED. applyPrune closes agents, blanks their tokens and releases their

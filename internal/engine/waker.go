@@ -792,7 +792,22 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 		// activation working out whether Dibs was lying to it.
 		//
 		// "Check" is true whenever it arrives.
-		message: "Dibs: check the board. Call check_in, then inbox, and act on anything there.",
+		//
+		// AND THAT IS THE WHOLE SENTENCE. It used to continue "Call check_in,
+		// then inbox, and act on anything there", which names two tools in order
+		// and tells the model what to do with what it finds. That is steering,
+		// and PHILOSOPHY rule 5 draws the line in exactly this place: the board
+		// may WAKE an agent and may not decide what it does next. A wake that
+		// arrives as a sequence of instructions is prompt injection with a
+		// friendly justification, and the justification is the dangerous part
+		// because it is the reason nobody re-read the sentence.
+		//
+		// What survives points at the channel and stops. An agent that has been
+		// woken knows how to read its own mail; if it does not, that is a gap in
+		// dibs://skills rather than something to fix one wake at a time. Found
+		// by the pre-release review, which also noted the test for this only
+		// required the word "board" and so passed the steering sentence.
+		message: wakeNotice,
 	}
 	if !configured {
 		// The socket carries the same sentence the command would have carried.
@@ -841,6 +856,24 @@ type wakePlan struct {
 	// So the plan carries values, not a pointer into the board.
 	sessions []string
 }
+
+// wakeNotice is every word a wake carries, on either route.
+//
+// A POINTER, NOT AN INSTRUCTION. It read "Dibs: check the board. Call check_in,
+// then inbox, and act on anything there", which names two tools in order and
+// says what to do with what they return: that is deciding what the agent does
+// next, which PHILOSOPHY rule 5 forbids in the same breath as permitting the
+// wake itself. Found by the pre-release review.
+//
+// "Check" rather than "you have mail" because a wake can be queued durably and
+// land minutes later, by which time another activation may have read the mail:
+// a resumed thread then finds an empty inbox and reasonably reports the wake as
+// a lie. That happened in this feature's own testing. "Check" is true whenever
+// it arrives.
+//
+// One constant, so both routes carry the same words and a test can read them
+// without running a wake.
+const wakeNotice = "Dibs: check the board."
 
 // defaultPeerCooldown bounds socket wakes the way [wake.exec] entries bound
 // process wakes. Shorter, because nothing is spawned: the cost of one is a

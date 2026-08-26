@@ -41,8 +41,14 @@ func TestANewAgentDoesNotInheritTheLastOccupantsMail(t *testing.T) {
 			"and the sender has lost the record it is kept for")
 	}
 
-	// The name comes back.
-	reg(t, s, "target", "tok-t2", t0)
+	// The name comes back, on a build that has the repair. V7Semantics is what
+	// says so: an op only gets v0.0.7's fold rules if it was written under them,
+	// which is what keeps an older ledger replaying as itself.
+	if _, _, err := s.Apply(&Op{
+		Kind: OpRegister, Name: "target", NewToken: "tok-t2", V7Semantics: true,
+	}, t0); err != nil {
+		t.Fatal("setup:", err)
+	}
 
 	for _, m := range s.Inbox("target") {
 		if m.Serial == ser {
