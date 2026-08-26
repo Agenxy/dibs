@@ -109,9 +109,21 @@ func runBridge(_ []string) error {
 	// the harness is gone, or something is stopping this process on purpose.
 	// Nothing in flight is worth finishing for a client that is not there, so
 	// the only thing owed is the flush.
-	sigCtx, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
-	defer stopSignals()
-	go endSessionWhenTheHarnessGoes(ctx, sigCtx, endSession, out)
+	// A CHANNEL, not signal.NotifyContext.
+	//
+	// NotifyContext's stop function CANCELS the context it returned, and a
+	// deferred stop runs before the deferred endSession above it, so every
+	// ordinary shutdown cancelled the signal context first. The watcher below
+	// woke on that, could not tell it from a real SIGTERM, and took the
+	// os.Exit(0) path: not occasionally, but as the normal exit, skipping the
+	// bounded wait that is the only guarantee no stream goroutine outlives this
+	// process. It also makes the read loop untestable, because a test binary
+	// does not survive os.Exit. A channel only ever carries a signal that
+	// actually arrived.
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigs)
+	go endSessionWhenTheHarnessGoes(ctx, sigs, endSession, out)
 
 	// A Reader rather than a Scanner, for one reason: Buffered().
 	//
@@ -172,17 +184,37 @@ func runBridge(_ []string) error {
 			continue
 		}
 
-		resp, err := doWithRestartGrace(client, req, line)
-		if err != nil {
-			return reachErr(err)
+		forward(client, req, line, out)
+	}
+}
+
+// forward sends one request and writes whatever the daemon answers.
+//
+// It ALWAYS returns, and that is the point of it being separate. This was
+// inline and returned the error, which ends the process, and no harness
+// restarts a stdio MCP server: the agent lost Dibs for the rest of its session
+// and was told only that a server had disconnected. Not which one, not that its
+// board was gone, not that the mail it was waiting on would never arrive. The
+// grace window covers an upgrade measured in milliseconds; anything slower,
+// including an operator rebuilding the daemon they are working on, fell off
+// that cliff. Verified by doing exactly that: one restart left six live
+// sessions with no bridge process at all, and no way back short of restarting
+// the harness.
+//
+// Answering and staying up means the next call dials again, so a session
+// reattaches by itself the moment the daemon is back.
+func forward(client *http.Client, req *http.Request, line []byte, out *syncWriter) {
+	resp, err := doWithRestartGrace(client, req, line)
+	if err != nil {
+		if reply := unreachableReply(line, err); reply != nil {
+			out.line(reply)
 		}
-		body, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		body = bytes.TrimSpace(body)
-		if len(body) == 0 {
-			continue // notification / 202: no response line
-		}
-		out.line(body)
+		return
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if body = bytes.TrimSpace(body); len(body) > 0 {
+		out.line(body) // empty means a notification / 202: no response line
 	}
 }
 
@@ -308,7 +340,12 @@ func pumpSSE(body io.Reader, out *syncWriter) {
 // Without this an upgrade turns every in-flight agent call into a hard error,
 // and an operator who has watched that happen once will stay on an old build
 // rather than risk it, which is the real cost of a disruptive update.
-const upgradeGrace = 10 * time.Second
+//
+// A var, not a const, for one reason: the test that proves a bridge survives a
+// daemon outage longer than this window has to outlast the window, and a
+// ten-second wait per call is not a thing to put in a unit suite. Nothing but a
+// test writes it.
+var upgradeGrace = 10 * time.Second
 
 // dialFailed reports a request that PROVABLY never reached the daemon.
 //
@@ -452,6 +489,38 @@ func relayRefusal(resp *http.Response, listen []byte, out *syncWriter) {
 // idOf reports a JSON-RPC request's id so a synthesized reply can be paired
 // with the call it answers. A request with no id gets JSON null, which is what
 // the spec says to use when the id cannot be determined.
+// unreachableReply answers one request that never got a response, so the agent
+// hears "the daemon is down" instead of waiting on a call that will not return.
+//
+// It is careful about what it promises. doWithRestartGrace only ever retries a
+// REFUSED dial, because refused proves the request was never read; every other
+// failure reaches here with the question of whether the daemon acted on it
+// still open. Saying "retrying is safe" in that case is the same mistake the
+// ECONNRESET retry was, one layer up, so it says which case this is.
+func unreachableReply(line []byte, err error) []byte {
+	id := idOf(line)
+	if string(id) == "null" {
+		return nil // a notification: JSON-RPC has nothing to reply to
+	}
+	hint := "the call may or may not have been applied, because the daemon was reached " +
+		"and the answer was not: check the board before repeating it, or use op_id to " +
+		"make the retry idempotent"
+	if dialFailed(err) {
+		hint = "nothing was applied, because the connection was refused before the " +
+			"request was read: start the daemon (`dibs service start`, or `dibd`) and call again"
+	}
+	msg, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"error": map[string]any{
+			"code":    -32000,
+			"message": "the Dibs daemon did not answer: " + reachErr(err).Error(),
+			"data":    map[string]any{"hint": hint},
+		},
+	})
+	return msg
+}
+
 func idOf(line []byte) json.RawMessage {
 	var req struct {
 		ID json.RawMessage `json:"id"`
@@ -510,13 +579,19 @@ func waitBounded(wg *sync.WaitGroup, limit time.Duration) {
 // harness is gone, or something is stopping this process deliberately. Nothing
 // in flight is worth finishing for a client that is not there, so the only
 // thing owed is the flush.
-func endSessionWhenTheHarnessGoes(ctx, sigCtx context.Context, endSession func(), out *syncWriter) {
+func endSessionWhenTheHarnessGoes(ctx context.Context, sigs <-chan os.Signal, endSession func(), out *syncWriter) {
 	gone := parentGone(ctx)
 	select {
 	case <-ctx.Done(): // ordinary EOF: the loop is returning on its own
 		return
 	case <-gone:
-	case <-sigCtx.Done():
+		// parentGone's watcher ALSO returns when ctx is cancelled, and it
+		// closes this channel on the way out either way, so the ordinary exit
+		// arrives here too. Only an orphaned process is a reason to exit.
+		if ctx.Err() != nil {
+			return
+		}
+	case <-sigs:
 	}
 	endSession() // stop the streams before the process goes
 	out.flush()

@@ -399,6 +399,32 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Restarting the daemon disconnected every agent on the machine, for the rest
+  of its session.** The bridge returned on a request it could not deliver, which
+  ends the process, and no harness restarts a stdio MCP server. The agent saw
+  one "server disconnected" line: not which server, not that its board was gone,
+  not that the mail it was waiting on would never arrive. It kept working with
+  no coordination at all. The ten-second grace covers an upgrade, which is
+  drain-swap-start and takes milliseconds; it was never going to cover an
+  operator rebuilding the daemon they are working on, and that is what a person
+  actually does. Measured here after one restart: six live sessions, zero bridge
+  processes.
+
+  The bridge now answers the call and keeps serving. The reply says whether the
+  request could have been applied, because a refused dial proves it was not read
+  and any other failure leaves the question open, and the next call dials again,
+  so a session reattaches by itself the moment the daemon is back.
+
+- **The bridge's ordinary shutdown ran the emergency exit.**
+  `signal.NotifyContext`'s stop function cancels the context it returned, and a
+  deferred stop runs before the deferred cancel above it, so every clean exit
+  cancelled the signal context first. The watcher could not tell that from a
+  real SIGTERM and called `os.Exit(0)`, skipping the bounded wait that is the
+  only guarantee no stream goroutine outlives the process. Both paths ended at
+  status 0, which is why nothing surfaced it. Found while writing the test for
+  the entry above, which could not run at all: a test binary does not survive
+  `os.Exit`.
+
 - **A refused `subscriptions/listen` retried forever and told the harness
   nothing.** A listen answers with a stream, so the bridge stopped reading the
   response as a reply and pumped it for SSE frames. A refusal is not a stream:
