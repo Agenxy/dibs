@@ -27,6 +27,7 @@
 import { mkdtempSync, rmSync, mkdirSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { daemonReady } from "./ready.ts"
 
 const PORT = process.env.PORT ?? "4933"
 const ADDR = `127.0.0.1:${PORT}`
@@ -63,11 +64,9 @@ process.env.DIBS_ADDR = ADDR
 process.env.DIBS_DIR = dir
 
 // ── wait for the daemon, then talk to it directly for setup ──────────────
-let secret = ""
-for (let i = 0; i < 60 && !secret; i++) {
-  try { secret = (await Bun.file(`${dir}/local.secret`).text()).trim() } catch { await Bun.sleep(100) }
-}
-if (!secret) { console.error("daemon never wrote local.secret"); process.exit(1) }
+// Waits for the LISTENER, not for local.secret: see ready.ts. The file appears
+// most of a startup before the socket does.
+const secret = await daemonReady(dir, `http://${ADDR}`, { proc: daemon, label: "guard" })
 
 let rpcId = 0
 async function call(name: string, args: Record<string, unknown>): Promise<any> {
@@ -306,10 +305,7 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
   const ADDR2 = `127.0.0.1:${Number(PORT) + 5}`
   const p2 = Bun.spawn({ cmd: [dibd, "-dir", dBad, "-addr", ADDR2], stdout: "ignore", stderr: "ignore" })
   try {
-    let s2 = ""
-    for (let i = 0; i < 60 && !s2; i++) {
-      try { s2 = (await Bun.file(`${dBad}/local.secret`).text()).trim() } catch { await Bun.sleep(100) }
-    }
+    const s2 = await daemonReady(dBad, `http://${ADDR2}`, { proc: p2, label: "inert-guard" })
     const ask = async (sid: string) => fetch(`http://${ADDR2}/mcp`, {
       method: "POST",
       headers: { "content-type": "application/json", "X-Dibs-Local": s2 },

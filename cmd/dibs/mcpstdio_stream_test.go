@@ -3,12 +3,17 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -153,5 +158,126 @@ func TestTheRestartGraceIsBounded(t *testing.T) {
 	if upgradeGrace > time.Minute {
 		t.Errorf("grace of %v: a daemon that is never coming back leaves the agent hanging "+
 			"with no error to act on", upgradeGrace)
+	}
+}
+
+// A subscription the daemon REFUSES reaches the harness as a refusal.
+//
+// `subscriptions/listen` answers with a stream, so the bridge stopped reading
+// the response as a reply and pumped it for SSE frames instead. A refusal is
+// not a stream: the daemon writes an ordinary JSON-RPC error (no token for
+// dibs://inbox, a token it does not know, a ResponseWriter that cannot flush).
+// pumpSSE drops every line without a `data: ` prefix, so the whole error was
+// discarded, the loop treated the instant end-of-body as a daemon that had gone
+// away, and it re-POSTed the same doomed request every 150ms for the life of
+// the session. The harness heard nothing: it had asked to be told about mail
+// and would wait forever, while the bridge hammered the daemon seven times a
+// second.
+//
+// Rule 6 says every error carries a hint that tells a drifted agent the
+// corrective call. An error that is thrown away carries nothing.
+func TestARefusedSubscriptionIsReportedRatherThanRetriedForever(t *testing.T) {
+	const refusal = `{"jsonrpc":"2.0","id":7,"error":{"code":-32602,"message":"dibs://inbox subscription requires an agent token"}}`
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, refusal)
+	}))
+	defer srv.Close()
+
+	var buf bytes.Buffer
+	out := &syncWriter{w: newBufWriter(&buf)}
+	listen := []byte(`{"jsonrpc":"2.0","id":7,"method":"subscriptions/listen","params":{}}`)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	done := make(chan struct{})
+	go func() { defer close(done); followStream(ctx, srv.Client(), srv.URL, "s", listen, out) }()
+
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatalf("followStream never returned: it retried the refusal %d times", hits.Load())
+	}
+	out.flush()
+
+	if n := hits.Load(); n != 1 {
+		t.Errorf("asked the daemon %d times; a refusal is an answer, so once is the only right number", n)
+	}
+	got := strings.TrimSpace(buf.String())
+	if !strings.Contains(got, `"error"`) || !strings.Contains(got, "requires an agent token") {
+		t.Errorf("the harness was told %q; it must receive the daemon's own refusal", got)
+	}
+	var reply struct {
+		ID json.RawMessage `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(got), &reply); err != nil {
+		t.Fatalf("what reached the harness is not JSON-RPC: %v", err)
+	}
+	if string(reply.ID) != "7" {
+		t.Errorf("reply id %s; it must match the listen call so the harness can pair them", reply.ID)
+	}
+}
+
+// The same, when the refusal is not JSON-RPC at all.
+//
+// stdout is a JSON-RPC channel: pumpSSE drops keepalive comments for exactly
+// this reason, because a harness that gets a non-JSON line has to decide what
+// it means, which is a question no MCP client should be asked. A proxy's HTML
+// error page must not be forwarded verbatim; it has to become a reply.
+func TestANonJSONRefusalStillReachesTheHarnessAsJSONRPC(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = io.WriteString(w, "<html>502 Bad Gateway</html>")
+	}))
+	defer srv.Close()
+
+	var buf bytes.Buffer
+	out := &syncWriter{w: newBufWriter(&buf)}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		followStream(ctx, srv.Client(), srv.URL,
+			"s", []byte(`{"jsonrpc":"2.0","id":"abc","method":"subscriptions/listen"}`), out)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatal("followStream never returned on a non-JSON refusal")
+	}
+	out.flush()
+
+	got := strings.TrimSpace(buf.String())
+	if strings.Contains(got, "<html>") {
+		t.Errorf("forwarded raw HTML to a JSON-RPC channel: %q", got)
+	}
+	var reply struct {
+		ID    json.RawMessage `json:"id"`
+		Error *struct {
+			Message string `json:"message"`
+			Data    struct {
+				Hint string `json:"hint"`
+			} `json:"data"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(got), &reply); err != nil {
+		t.Fatalf("what reached the harness is not JSON: %v (%q)", err, got)
+	}
+	if reply.Error == nil {
+		t.Fatal("a refused subscription must reach the harness as an error")
+	}
+	if !strings.Contains(reply.Error.Message, "502") {
+		t.Errorf("error message %q does not say what the daemon answered", reply.Error.Message)
+	}
+	if reply.Error.Data.Hint == "" {
+		t.Error("rule 6: every error carries a hint naming the corrective call")
+	}
+	if string(reply.ID) != `"abc"` {
+		t.Errorf("reply id %s; it must match the listen call", reply.ID)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"os/signal"
@@ -377,6 +378,18 @@ func followStream(ctx context.Context, client *http.Client, url, secret string, 
 		resp, err := client.Do(req)
 		switch {
 		case err == nil:
+			if !isEventStream(resp) {
+				// Not a stream: an ANSWER. The daemon refuses a listen with an
+				// ordinary JSON-RPC error (no token for dibs://inbox, a token
+				// it does not know, a writer it cannot flush), and a refusal is
+				// not a condition that improves by asking again. Hand it to the
+				// harness as the reply to its own call and stop. Retrying it
+				// discarded the error, hammered the daemon, and left a harness
+				// waiting forever for events that were never coming.
+				relayRefusal(resp, listen, out)
+				_ = resp.Body.Close()
+				return
+			}
 			pumpSSE(resp.Body, out)
 			_ = resp.Body.Close()
 			// The stream ended. A daemon that is going away closes it, so try
@@ -393,6 +406,60 @@ func followStream(ctx context.Context, client *http.Client, url, secret string, 
 		case <-time.After(150 * time.Millisecond):
 		}
 	}
+}
+
+// isEventStream reports whether a listen response is the stream that was asked
+// for, rather than a reply refusing it.
+//
+// The status code is not the test: one of the daemon's three refusal paths
+// answers 200 with a JSON-RPC error in the body, because that is what JSON-RPC
+// over HTTP looks like. The content type is what distinguishes a stream.
+func isEventStream(resp *http.Response) bool {
+	mt, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	return err == nil && mt == "text/event-stream"
+}
+
+// relayRefusal hands a refused subscription back as the reply to the harness's
+// own call, so it can pair the two by id and stop waiting.
+//
+// stdout is a JSON-RPC channel, which is why pumpSSE drops keepalive comments
+// rather than forwarding them: a harness that gets a non-JSON line has to
+// decide what it means, and that is a question no MCP client should be asked.
+// So a body that is not a JSON-RPC message (a proxy's HTML error page, an empty
+// 502) becomes one here rather than being passed through.
+func relayRefusal(resp *http.Response, listen []byte, out *syncWriter) {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if body = bytes.TrimSpace(body); json.Valid(body) && bytes.HasPrefix(body, []byte("{")) {
+		out.line(body)
+		return
+	}
+	msg, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      idOf(listen),
+		"error": map[string]any{
+			"code": -32603,
+			"message": fmt.Sprintf(
+				"subscriptions/listen was refused with HTTP %d and no JSON-RPC reply", resp.StatusCode),
+			"data": map[string]any{
+				"hint": "the daemon did not accept this subscription; call await_events to wait for " +
+					"the same changes, or check `dibs doctor` if this daemon is behind a proxy",
+			},
+		},
+	})
+	out.line(msg)
+}
+
+// idOf reports a JSON-RPC request's id so a synthesized reply can be paired
+// with the call it answers. A request with no id gets JSON null, which is what
+// the spec says to use when the id cannot be determined.
+func idOf(line []byte) json.RawMessage {
+	var req struct {
+		ID json.RawMessage `json:"id"`
+	}
+	if json.Unmarshal(line, &req) != nil || len(req.ID) == 0 {
+		return json.RawMessage("null")
+	}
+	return req.ID
 }
 
 // upgradeIfReplaced hands this session to a newly installed binary, and returns

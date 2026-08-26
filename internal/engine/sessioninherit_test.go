@@ -38,13 +38,29 @@ func TestALiveSessionIsStillInheritedByDirectory(t *testing.T) {
 		t.Fatal("setup: no agent must hold this id, which is what makes it look free")
 	}
 
+	// ASSERTED, not logged, and asserted in the direction of the DEFECT.
+	//
+	// This used to skip when the inference stopped firing and otherwise print a
+	// line, so it could not fail either way: a test named for a regression that
+	// guarded nothing. The review said so.
+	//
+	// A known-open defect is worth pinning in the shape it actually has, so the
+	// day somebody fixes it this FAILS and they delete it on purpose, rather
+	// than the fix landing beside a test that quietly kept passing. What is
+	// wrong: the join asks whether an AGENT holds a recently announced id, never
+	// whether the SESSION behind it is alive and somebody else's, so a swept row
+	// leaves a live session's id for the next agent registering in that
+	// directory. See CHANGELOG, which discloses it as open.
 	got := announcedSession(e.children, st, dir, now)
 	if got != live {
-		t.Skipf("the directory inference did not fire (%q): the join window or path "+
-			"cleaning has changed and this case needs rewriting rather than "+
-			"silently passing", got)
+		t.Fatalf("the directory inference no longer hands out a live session's id "+
+			"(got %q, expected %q).\n"+
+			"  If that is because the join now checks whether the SESSION is alive, "+
+			"this defect is FIXED: delete this test and the open-defect note in the "+
+			"changelog. If it is because the join window or path cleaning changed, "+
+			"rewrite the fixture: this must not go back to passing by accident.",
+			got, live)
 	}
-	t.Logf("still inherited: %s is handed to whoever registers in %s next", live, dir)
 }
 
 // And the caller's OWN id is preferred over that guess, which is what removes

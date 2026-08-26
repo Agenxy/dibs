@@ -1643,3 +1643,63 @@ func TestNoDocumentMakesTheAdminPasswordAPrerequisite(t *testing.T) {
 		t.Fatal("no document mentions `admin set-password`, so this check verified nothing")
 	}
 }
+
+// No comment block says the same thing twice.
+//
+// Inserting a function between an existing doc comment and the function it
+// documents orphans the comment, and revive catches that: "should have comment
+// or be unexported". Fixing it by pasting the comment back above its function
+// while leaving the original where it fell does NOT get caught, because two
+// comment blocks separated by nothing are one comment block as far as go/ast is
+// concerned, and it is still attached to the right function. The file compiles,
+// lints clean, and carries the same paragraph twice.
+//
+// This happened in this repository, to CallerName, in the same session that had
+// already tripped the orphan check four times. The orphan is loud and the
+// duplicate is silent, which is the wrong way round: the orphan costs a lint
+// re-run, and the duplicate ships.
+func TestNoCommentBlockRepeatsALine(t *testing.T) {
+	root := repoRoot(t)
+	walk(t, root, func(rel, abs string) {
+		if !strings.HasSuffix(rel, ".go") {
+			return
+		}
+		b, err := os.ReadFile(abs) // #nosec G304
+		if err != nil {
+			return
+		}
+		var block []int
+		seen := map[string]int{}
+		lines := strings.Split(string(b), "\n")
+		flush := func() {
+			for text, first := range seen {
+				for _, n := range block {
+					if n > first && strings.TrimSpace(lines[n-1]) == text {
+						t.Errorf("%s:%d repeats a comment line already at line %d:\n\t%s\n"+
+							"A doc comment pasted above its function without deleting the copy "+
+							"that was left behind still lints clean. Delete one.", rel, n, first, text)
+						break
+					}
+				}
+			}
+			block, seen = nil, map[string]int{}
+		}
+		for i, line := range lines {
+			text := strings.TrimSpace(line)
+			if !strings.HasPrefix(text, "//") {
+				flush()
+				continue
+			}
+			// Short lines repeat legitimately: bare "//" separators, a "// ok"
+			// beside two cases, the rules of an ASCII diagram. A repeated full
+			// sentence is what this is looking for.
+			if len(text) > 20 {
+				if _, ok := seen[text]; !ok {
+					seen[text] = i + 1
+				}
+				block = append(block, i+1)
+			}
+		}
+		flush()
+	})
+}

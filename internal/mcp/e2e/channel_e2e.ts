@@ -21,6 +21,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { daemonReady } from "./ready.ts"
 
 const ADDR = `127.0.0.1:${process.env.PORT ?? 4934}`
 
@@ -68,11 +69,7 @@ async function measureTheBar(): Promise<number> {
     stdout: "ignore", stderr: "ignore",
   })
   try {
-    let sec = ""
-    for (let i = 0; i < 60 && !sec; i++) {
-      try { sec = (await Bun.file(`${mdir}/local.secret`).text()).trim() } catch { await Bun.sleep(100) }
-    }
-    if (!sec) throw new Error("measurement daemon never wrote local.secret")
+    const sec = await daemonReady(mdir, `http://${maddr}`, { proc: md, label: "bar-measurement" })
     let id = 0
     const c = async (name: string, args: Record<string, unknown>) => {
       const res = await fetch(`http://${maddr}/mcp`, {
@@ -144,11 +141,8 @@ const cleanup = () => {
 }
 process.on("exit", cleanup)
 
-let secret = ""
-for (let i = 0; i < 60 && !secret; i++) {
-  try { secret = (await Bun.file(`${dir}/local.secret`).text()).trim() } catch { await Bun.sleep(100) }
-}
-if (!secret) { console.error("daemon never wrote local.secret"); process.exit(1) }
+// Waits for the LISTENER, not for local.secret: see ready.ts.
+const secret = await daemonReady(dir, `http://${ADDR}`, { proc: daemon, label: "space" })
 
 let rpcId = 0
 async function raw(name: string, args: Record<string, unknown>): Promise<any> {
@@ -647,10 +641,7 @@ let annSerial = 0
     stdout: "ignore", stderr: "ignore",
   })
   try {
-    let sec3 = ""
-    for (let i = 0; i < 60 && !sec3; i++) {
-      try { sec3 = (await Bun.file(`${dirDir}/local.secret`).text()).trim() } catch { await Bun.sleep(100) }
-    }
+    const sec3 = await daemonReady(dirDir, `http://${ADDR3}`, { proc: d3, label: "director-gate" })
     const c3 = async (name: string, args: Record<string, unknown>) => {
       const res = await fetch(`http://${ADDR3}/mcp`, {
         method: "POST",
@@ -745,10 +736,7 @@ let annSerial = 0
     stdout: "ignore", stderr: "ignore",
   })
   try {
-    let sec2 = ""
-    for (let i = 0; i < 60 && !sec2; i++) {
-      try { sec2 = (await Bun.file(`${dir2}/local.secret`).text()).trim() } catch { await Bun.sleep(100) }
-    }
+    const sec2 = await daemonReady(dir2, `http://${ADDR2}`, { proc: d2, label: "high-bar" })
     const call2 = async (name: string, args: Record<string, unknown>) => {
       const res = await fetch(`http://${ADDR2}/mcp`, {
         method: "POST",
@@ -836,10 +824,7 @@ let annSerial = 0
       stdout: "ignore", stderr: "ignore",
     })
     try {
-      let sec = ""
-      for (let i = 0; i < 60 && !sec; i++) {
-        try { sec = (await Bun.file(`${d2}/local.secret`).text()).trim() } catch { await Bun.sleep(100) }
-      }
+      const sec = await daemonReady(d2, `http://${ADDR3}`, { proc, label: "embedding" })
       const c3 = async (name: string, args: Record<string, unknown>) => {
         const res = await fetch(`http://${ADDR3}/mcp`, {
           method: "POST",
@@ -921,10 +906,7 @@ let annSerial = 0
     stdout: "ignore", stderr: "ignore",
   })
   try {
-    let sec = ""
-    for (let i = 0; i < 80 && !sec; i++) {
-      try { sec = (await Bun.file(`${d3}/local.secret`).text()).trim() } catch { await Bun.sleep(100) }
-    }
+    const sec = await daemonReady(d3, `http://${ADDR5}`, { proc, label: "author-match" })
     const c5 = async (name: string, args: Record<string, unknown>) => {
       const res = await fetch(`http://${ADDR5}/mcp`, {
         method: "POST",
@@ -1054,10 +1036,7 @@ let annSerial = 0
   const ADDR4 = `127.0.0.1:${Number(process.env.PORT ?? 4934) + 3}`
   const off = Bun.spawn({ cmd: [dibd, "-dir", dOff, "-addr", ADDR4], stdout: "ignore", stderr: "ignore" })
   try {
-    let sec4 = ""
-    for (let i = 0; i < 60 && !sec4; i++) {
-      try { sec4 = (await Bun.file(`${dOff}/local.secret`).text()).trim() } catch { await Bun.sleep(100) }
-    }
+    const sec4 = await daemonReady(dOff, `http://${ADDR4}`, { proc: off, label: "matching-off" })
     const c4 = async (name: string, args: Record<string, unknown>) => {
       const res = await fetch(`http://${ADDR4}/mcp`, {
         method: "POST",

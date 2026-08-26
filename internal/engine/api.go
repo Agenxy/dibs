@@ -452,6 +452,25 @@ func errCursorTooOld(floor uint64) error {
 	return core.ErrCursorTooOld(floor)
 }
 
+// CallerIsKnown reports whether this token resolves to an agent on the board.
+//
+// Separate from CallerName because that one ANSWERS for an unknown token, with
+// "an unidentified caller", which is right for a log line and wrong for an
+// authorisation decision. human_unlock used it and raised a system sheet
+// naming that phrase: SECURITY.md says the requester is resolved "from the
+// authenticated token", and nothing authenticated it. Found by the pre-release
+// review.
+func (e *Engine) CallerIsKnown(ctx context.Context, token string) bool {
+	res, err := e.query(ctx, func() core.Result {
+		return core.Result{"known": e.state.AgentByToken(token) != nil}
+	})
+	if err != nil {
+		return false
+	}
+	known, _ := res["known"].(bool)
+	return known
+}
+
 // CallerName is a display name for whoever holds this token, for a prompt that
 // has to say WHO is asking.
 //

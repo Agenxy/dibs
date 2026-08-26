@@ -7,6 +7,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- **`human_unlock` raised a system sheet on the operator's screen for a caller
+  it had not authenticated.** The sentence on that sheet is the entire control:
+  a person is asked to approve something, and the one field telling them who is
+  asking came from `CallerName`, which ANSWERS for a token it does not know,
+  with "an unidentified caller". Right in a log line, wrong here. So anything
+  holding the coordination secret could make the machine ask its human to
+  approve a request attributed to nobody, while `SECURITY.md` claimed the
+  requester was resolved "from the authenticated token". Nothing authenticated
+  it. The call now refuses an unknown token before the sheet is raised.
+
+  Physical approval was still required, so this was never a biometric bypass.
+  The attribution was false, and the attribution is what the human decides on.
+  Found by the pre-release review.
+
 - **A stolen board session could read every mailbox and grant a role.** Cookies
   are host-scoped and never port-scoped, and `SameSite` does not separate ports
   either, so a second server on `127.0.0.1` receives `dibs_session` as soon as
@@ -384,6 +398,32 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   teach it to silence somebody who is waiting.
 
 ### Fixed
+
+- **A refused `subscriptions/listen` retried forever and told the harness
+  nothing.** A listen answers with a stream, so the bridge stopped reading the
+  response as a reply and pumped it for SSE frames. A refusal is not a stream:
+  the daemon writes an ordinary JSON-RPC error when `dibs://inbox` arrives
+  without a token, when the token is one it does not know, or when the writer
+  cannot flush. `pumpSSE` drops every line lacking a `data: ` prefix, so the
+  error was discarded whole, the instant end-of-body read as a daemon that had
+  gone away, and the bridge re-POSTed the same doomed request every 150ms for
+  the life of the session. The harness had asked to be told about mail and
+  would have waited forever. A response that is not `text/event-stream` is now
+  an answer: it goes back as the reply to the harness's own call, paired by id,
+  and the loop stops. A body that is not JSON-RPC at all (a proxy's error page)
+  becomes one, because stdout is a JSON-RPC channel, with a hint naming
+  `await_events` as the corrective call.
+
+- **Six end-to-end suites raced the daemon they had just started.** Each polled
+  for `local.secret` and treated the file appearing as "the daemon is up". The
+  daemon writes that secret most of a startup before it binds its listener, so
+  the first request after the poll raced the bind and lost often enough to fail
+  a CI run on a working daemon: `ConnectionRefused`, from a suite whose subject
+  was fine. Several sites did not even check the secret was found, and would
+  have gone on to send an empty one. They now wait for a socket that answers a
+  request. A daemon that dies during startup reports its exit status instead of
+  presenting as a timeout, because "dibd exited with status 1" is the finding
+  and "waited ten seconds" sends the reader to look at timing.
 
 - **A board's certificate could not both expire and stay trusted.** `dibs trust`
   pins what a daemon presents, ssh-style, so a single self-signed certificate

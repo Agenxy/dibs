@@ -35,6 +35,7 @@
 import { mkdtempSync, rmSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { basename, dirname, join } from "node:path"
+import { daemonReady } from "./ready.ts"
 
 const PORT = process.env.PORT ?? "4939"
 const ADDR = `127.0.0.1:${PORT}`
@@ -137,15 +138,15 @@ const cleanup = () => {
 }
 process.on("exit", cleanup)
 
+// Waits for the LISTENER, not for local.secret: see ready.ts.
 let secret = ""
-for (let i = 0; i < 60 && !secret; i++) {
-  try { secret = (await Bun.file(`${dir}/local.secret`).text()).trim() } catch { await Bun.sleep(100) }
-}
-if (!secret) {
+try {
+  secret = await daemonReady(dir, `http://${ADDR}`, { proc: daemon, label: "wake" })
+} catch (err) {
   // A failing probe is usually a broken probe: say WHY the daemon did not come
   // up rather than leaving a reader to guess. This test spent a run on a
   // refusal it swallowed.
-  console.error("daemon never wrote local.secret. Its stderr:")
+  console.error(`${(err as Error).message}. Its stderr:`)
   try { console.error(readFileSync(daemonErr, "utf8")) } catch {}
   process.exit(1)
 }
@@ -313,12 +314,11 @@ cooldown = "60s"
   })
   try {
     let sec = ""
-    for (let i = 0; i < 60 && !sec; i++) {
-      try { sec = (await Bun.file(`${d}/local.secret`).text()).trim() } catch { await Bun.sleep(100) }
-    }
-    if (!sec) {
+    try {
+      sec = await daemonReady(d, `http://${a}`, { proc: dae, label: "second-wake" })
+    } catch (err) {
       check("a failed wake does not consume the attempt", false,
-        "the second daemon never came up, so this measured nothing")
+        `the second daemon never came up, so this measured nothing: ${(err as Error).message}`)
       return
     }
     const c = async (name: string, args: Record<string, unknown>) => {
