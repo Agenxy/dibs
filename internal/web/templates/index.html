@@ -261,7 +261,7 @@ function flash(msg, bad) {
 // EventSource cannot send a header, and cookies are host-scoped so any local
 // service the operator visits is handed one. Mail comes from /api/messages,
 // which requires the page key.
-let state = { board: {{.BoardJSON}}, messages: [], events: {{.EventsJSON}},
+let state = { board: {{.BoardJSON}}, messages: [], announcements: [], events: {{.EventsJSON}},
   // Which agents the reader opened. Held here because the roster is rebuilt
   // from scratch on every board change and a `details` does not survive that.
   expanded: new Set() }
@@ -409,7 +409,20 @@ function drawPanes() {
 
   // Spaces of work. selfId stays null for the same reason the roster's does:
   // on an operator view no agent is "you", and marking one would be a lie.
-  const chans = b?.spaces || []
+  // The transcript's TEXT is merged in here, not served with the board.
+  //
+  // Board() is what check_in returns to every agent, so it carries the
+  // announcement metadata and deliberately not the bodies. The renderer still
+  // draws a body for each line, which meant every row showed a sender and an
+  // acknowledgement state above an empty span: a transcript of a conversation
+  // with the conversation removed. board.js is data-in, HTML-out and holds no
+  // state, so the join belongs here, where the page-key-gated mail already is.
+  // Found by the pre-release review.
+  const saidBody = new Map((state.announcements || []).map((a) => [a.serial, a.body]))
+  const chans = (b?.spaces || []).map((c) => !c.said ? c : ({
+    ...c,
+    said: c.said.map((a) => saidBody.has(a.serial) ? { ...a, body: saidBody.get(a.serial) } : a),
+  }))
   const chEl = document.getElementById("pane-agents")
   chEl.innerHTML = (chans.length
     ? chans.map((c) => {
@@ -712,6 +725,7 @@ async function refreshMail() {
     const res = await boardFetch("/api/messages")
     if (!res.ok) return
     const d = await res.json()
+    if (Array.isArray(d.announcements)) state.announcements = d.announcements
     if (Array.isArray(d.messages)) { state.messages = d.messages; draw() }
   } catch (_) { /* keep the last good view rather than blanking it */ }
   finally {

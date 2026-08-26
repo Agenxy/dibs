@@ -520,10 +520,15 @@ func (s *State) Board() map[string]any {
 // to agents that had joined none of them: the same defect as the agent.post
 // event, on a wider surface, and reachable without even asking for it.
 //
-// Nothing consumed the body. The board renderer shows counts (unacked,
-// abandoned, blocked); no template, script or Go caller read `said[].body`. It
-// was cost with no reader, and the text still belongs to the agent: members and
-// subscribers get it from read_space, which checks who is asking.
+// The board renderer DOES consume the body, which this used to deny, and the
+// denial is how it went unnoticed that removing the field left the operator's
+// transcript rendering a sender and an acknowledgement state above an empty
+// span: a conversation with the conversation taken out, under a comment below
+// promising bodies rather than a count. The text still belongs to the agents:
+// members and subscribers get it from read_space, which checks who is asking,
+// and the OPERATOR gets it from /api/messages, which needs the page key, where
+// the same argument already put decrypted mail. The page joins the two by
+// serial. Found by the pre-release review.
 func (s *State) spaceSaid(id string) []map[string]any {
 	var all []*Announcement
 	for _, a := range s.Announcements {

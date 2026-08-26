@@ -156,6 +156,10 @@ try {
   await tool("open_space", { token: a.token, space: "web-render", topic: "drawing the operator board" })
   await tool("join_space", { token: b.token, space: "web-render", score: 0.71, threshold: 0.33,
     scorer_id: "lexical+cochange", evidence: ["internal/web/web.go"], auto: true })
+  // Something SAID in a space, because the operator's transcript is the reason
+  // a human joins one and nothing rendered its text for a release.
+  await tool("announce", { token: a.token, space: "web-render",
+    body: "the operator must be able to read this sentence" })
   await tool("open_space", { token: a.token, space: "web-locked", topic: "single-writer work", exclusive: true })
   await tool("join_space", { token: b.token, space: "web-locked", score: 0.42 })
   // A subagent and a coordinator, so the board has the two facts that change
@@ -227,6 +231,16 @@ try {
     // 401 or 403: which one is the gate's business, and either refuses. What
     // matters here is that it is not 200.
     check(`a replayed cookie cannot read ${path}`,
+      r.status === 401 || r.status === 403, String(r.status))
+  }
+  // And the COORDINATION secret does not open it either, which matters more
+  // since this route started carrying space announcement bodies as well as
+  // mail. Every agent's bridge holds that secret: if it reached here, moving
+  // the bodies off the board and onto this route would have been a wider leak
+  // than the one it fixed, not a narrower one.
+  {
+    const r = await fetch(`http://${ADDR}/api/messages`, { headers: { "X-Dibs-Local": secret } })
+    check("the coordination secret cannot read mail or space transcripts",
       r.status === 401 || r.status === 403, String(r.status))
   }
   const roleReplay = await fetch(`http://${ADDR}/api/admin/role`, {
@@ -798,6 +812,23 @@ try {
       (await ghostChip.locator(".member-tag.gone").count()) === 1, await agent.innerText())
     check("and says what happened to it",
       (await ghostChip.innerText()).toLowerCase().includes("process gone"), await ghostChip.innerText())
+
+    // WHAT WAS SAID, not that something was.
+    //
+    // The board payload carries announcement metadata and deliberately not the
+    // bodies, because Board() is what check_in returns to every agent and the
+    // text belongs to the space's members. The renderer still drew a body for
+    // each line, so every row showed a sender and an acknowledgement state
+    // above an empty span. The Go test guarding the confidentiality half passed
+    // throughout: it asserts the metadata survives, and nothing asserted the
+    // operator could still read anything. The text comes from /api/messages
+    // now, behind the page key, joined by serial.
+    const said = agent.locator(".space-said li").first()
+    await said.waitFor({ timeout: 5000 })
+    check("the transcript carries what was said, not just who said it",
+      (await said.locator(".said-body").innerText()).includes(
+        "the operator must be able to read this sentence"),
+      await said.innerText())
     check("while a live member is left unmarked",
       (await agent.locator(".member", { hasText: "checker" }).locator(".member-tag.gone").count()) === 0)
     await page.locator('.views button[data-view="board"]').click()

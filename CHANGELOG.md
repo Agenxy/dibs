@@ -7,6 +7,24 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- **Adopting a mailbox handed over mail the mailbox had been told was not its
+  own.** `TruncatedBefore` is the watermark that stops a name coming back from
+  reading the previous occupant's mail: an id is derived from the name, so a
+  returning name reuses the id, and a sweep written before v0.0.7 removes the
+  agent row while keeping the messages. `Inbox` filters on it. Both adoption
+  paths, direct and approved-request, read every message matching the id and
+  readdressed it, so the one route that exists to RECOVER an abandoned mailbox
+  was also the route that disclosed the mail that mailbox had been excluded
+  from.
+
+  Worse than an ordinary leak because of who authorises it: the approver is
+  shown a count. Nothing in the request says some of those messages were
+  addressed to somebody else entirely, so the human granting it cannot see what
+  they are granting. Authorising the recovery of an identity is not authorising
+  the disclosure of its predecessor's mail. Both paths go through one helper
+  now, since two copies of one rule is how only one of them got fixed the last
+  three times. Found by the pre-release review, with a reproduction.
+
 - **`human_unlock` raised a system sheet on the operator's screen for a caller
   it had not authenticated.** The sentence on that sheet is the entire control:
   a person is asked to approve something, and the one field telling them who is
@@ -398,6 +416,25 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   teach it to silence somebody who is waiting.
 
 ### Fixed
+
+- **The operator's space transcript rendered every announcement with no text.**
+  The board payload carried announcement bodies until it turned out `Board()` is
+  what `check_in` returns to every agent on every activation, so every
+  announcement in every space was going to agents that had joined none of them.
+  Stripping it there was right. What it left was a transcript rendering the
+  sender and the acknowledgement state above an empty span, under a comment
+  promising "bodies, not a count, because the whole reason a human joins a space
+  is to see what the agents are saying", and another asserting that nothing read
+  the field, which the board renderer had been doing all along. The test guarding
+  the confidentiality half passed throughout, because it asserts the metadata
+  survives and nothing asserted the operator could still read anything.
+
+  The text comes from `/api/messages` now, joined to the transcript by serial:
+  the route that already solves this for decrypted mail, behind the page key,
+  which is port-scoped and so is not handed to every local service the operator
+  visits. The coordination secret does not open it, which is now asserted rather
+  than assumed, because a route that started carrying more had better be the
+  narrow one. Found by the pre-release review.
 
 - **Restarting the daemon disconnected every agent on the machine, for the rest
   of its session.** The bridge returned on a request it could not deliver, which

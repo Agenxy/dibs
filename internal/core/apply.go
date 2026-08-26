@@ -1761,12 +1761,12 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 	}
 	if adopted != nil {
 		into := s.Agents[m.From]
-		moved := 0
-		for _, msg := range s.Messages {
-			if msg.To == adopted.ID {
-				msg.To, moved = into.ID, moved+1
-			}
-		}
+		// Through the same helper as the direct path, and for the reason the
+		// helper exists: this loop ignored the source's TruncatedBefore, so an
+		// APPROVED adoption disclosed the predecessor mail the source had
+		// already been told was not its own. Two implementations of one rule is
+		// how only one of them got fixed the last three times.
+		moved := s.readdressMail(adopted, into)
 		res["adopted"], res["messages"] = adopted.ID, moved
 		evs[0].Data["adopted"] = adopted.ID
 		res["adopt_note"] = adoptNote(moved)

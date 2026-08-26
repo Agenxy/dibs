@@ -411,7 +411,28 @@ func (e *Engine) AllMessages(ctx context.Context) (core.Result, error) {
 		for _, m := range e.state.Messages {
 			out = append(out, m)
 		}
-		return core.Result{"messages": out}
+		// Announcement bodies ride WITH the mail, and for the same reason.
+		//
+		// The board payload used to carry them, until it turned out Board() is
+		// what check_in returns to every agent on every activation, so every
+		// announcement in every space was going to agents that had joined none
+		// of them. Stripping it there was right. What it left behind was an
+		// operator transcript that renders the sender and the acknowledgement
+		// state with an empty space where the text goes, above a comment
+		// promising "bodies, not a count", which is the whole reason a human
+		// joins a space. Found by the pre-release review.
+		//
+		// This route is the one that already solves this problem for mail: it
+		// needs the page key, which is kept in localStorage and is therefore
+		// port-scoped, so unlike the session cookie it is not handed to every
+		// local service the operator visits.
+		said := make([]core.Result, 0, len(e.state.Announcements))
+		for _, a := range e.state.Announcements {
+			said = append(said, core.Result{
+				"serial": a.Serial, "space": a.Space, "from": a.From, "body": a.Body,
+			})
+		}
+		return core.Result{"messages": out, "announcements": said}
 	})
 }
 

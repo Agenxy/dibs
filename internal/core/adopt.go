@@ -51,14 +51,7 @@ func (s *State) applyAdoptAgent(op *Op, l *Agent, now time.Time) (Result, []Even
 			"adopt into an agent that can still read: a retired one receives nothing",
 			"agent %q is retired", into.ID)
 	}
-	var moved int
-	for _, m := range s.Messages {
-		if m.To != from.ID {
-			continue
-		}
-		m.To = into.ID
-		moved++
-	}
+	moved := s.readdressMail(from, into)
 	// The actor's durable checkpoint, which the common path sets and this one
 	// returns before reaching.
 	//
@@ -115,4 +108,35 @@ func adoptNote(moved int) string {
 		"that existed just now, once: it is not a standing redirect. The source " +
 		"agent keeps its history, and anything sent to it from here on reaches " +
 		"IT, including after it comes back"
+}
+
+// readdressMail moves the abandoned agent's mailbox to the agent adopting it,
+// and returns how many messages moved.
+//
+// It honours the SOURCE's watermark, which the loop it replaces did not.
+// TruncatedBefore says "mail below this is not mine": it is what stops a name
+// that comes back from being handed the previous occupant's mail, since an id
+// is derived from the name and mail can outlive the row it was addressed to.
+// Adoption read every message matching the id and readdressed it, so the one
+// path that exists to recover an abandoned mailbox also disclosed the mail that
+// mailbox had already been told was not its own. Authorisation to recover an
+// identity is not authorisation to read its predecessor's mail, and the
+// approver is shown a count, so nothing about the request says that is what
+// they are granting. Found by the pre-release review, with a reproduction.
+//
+// Not retroactive, despite being a change inside the fold. TruncatedBefore is
+// raised in exactly two places: a register op carrying V7Semantics, which no
+// ledger written before this release contains, and the retention sweep, which
+// DELETES the messages it covers. So on any older ledger this filters nothing,
+// because there is nothing below the watermark left to filter.
+func (s *State) readdressMail(from, into *Agent) int {
+	moved := 0
+	for _, m := range s.Messages {
+		if m.To != from.ID || m.Serial < from.TruncatedBefore {
+			continue
+		}
+		m.To = into.ID
+		moved++
+	}
+	return moved
 }
