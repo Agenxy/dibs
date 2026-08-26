@@ -417,6 +417,45 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The socket wake could not deliver to the sessions a fleet actually runs in,
+  and every document said it worked out of the box.** Measured, not reasoned:
+  a notice was delivered to an IDLE live Claude Code session, the write
+  succeeded, and that session's transcript never grew. The reason is in the
+  receiving client. Inbound peer messages pass a `crossSessionInbound` policy,
+  and with no explicit setting a receiver in **bypassPermissions** mode HOLDS
+  any peer message whose sender asserts no mode of its own; the branch that
+  would read an asserted mode sits behind a feature flag that is off by
+  default. So no message a sender can construct is delivered to a session in
+  bypass, which is what an unattended fleet runs in.
+
+  There is also no receipt. The protocol carries a `peer_message_status` frame
+  (held / denied / expired / delivered) addressed back to a `uds:` reply socket,
+  and a daemon has none to give, so Dibs writes the bytes and learns nothing.
+
+  Nothing about the code was wrong; the claims around it were. `WAKE-MECHANISMS.md`
+  §5b said a message had been "watched arrive", which had been measured against a
+  socket rather than a session. The README and AGENTS.md rule 5 presented the two
+  routes as equals. They are not: `[wake.exec]` spawns a process and the daemon
+  sees its exit status, and the socket is best effort. All three now say so, the
+  wake e2e's check names say "reaches the socket" rather than "reaches it"
+  (its receiver is the test, which accepts anything a real client would gate),
+  and `SKILLS.md` tells agents not to rely on being woken.
+
+  `dibs doctor` reports wake coverage now, because the difference was invisible:
+  a board with no `[wake.exec]` is told, in those words, that its only route
+  cannot be confirmed.
+
+- **`dibs doctor` called a correctly configured harness broken.** It matched any
+  64-hex run anywhere in a config file, so the SHA-256 in an unrelated MCP
+  server's `NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S` was read as a stale Dibs
+  secret and reported as "codex config has a STALE secret: that harness sees
+  ZERO Dibs tools". The codex install it said that about was on the stdio bridge
+  and working, and the advice, to re-copy the block from `dibs mcp-config`,
+  would have replaced it with an HTTP one. A harness config holds every server
+  that harness has, and other people's servers carry their own credentials; a
+  Dibs secret is only ever the value of `X-Dibs-Local` or a bearer token, and
+  that is what is matched now. Found in live use.
+
 - **A dormant agent held a live session's id forever, and that is what stopped
   Dibs working.** A session id names a harness thread, and a thread has one
   occupant. Register refused any id another agent held unless that agent was

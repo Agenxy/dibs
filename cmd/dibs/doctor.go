@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/humanauth"
 	"github.com/agenxy/dibs/internal/liveness"
 	"github.com/agenxy/dibs/internal/notify"
@@ -223,6 +224,7 @@ func (d *diagnosis) run(verbose bool) error {
 	checkHarnessConfigs(sec, addr(), ok, warn, bad)
 	checkPanelBuild(client, sec, ok, warn, d.prose)
 	checkMatching(client, sec, ok, warn)
+	checkWakeRoutes(dir, ok, warn)
 	checkHooks(client, sec, ok, bad, warn)
 	checkLedgerAndBoard(dir, ok, bad, warn)
 	checkGit(verbose, ok, bad)
@@ -280,10 +282,35 @@ func earlyDoctorResult(problems, warnings int) error {
 	return nil
 }
 
-// secretPattern matches a Dibs local secret as it appears in a harness config:
-// 64 hex characters. Used to tell "this config embeds a secret" from "this
-// config uses the stdio bridge", which embeds none.
-var secretPattern = regexp.MustCompile(`\b[0-9a-f]{64}\b`)
+// secretPattern matches a Dibs local secret WHERE DIBS PUTS ONE: as the value
+// of the X-Dibs-Local header, or as a bearer token. Used to tell "this config
+// embeds a secret" from "this config uses the stdio bridge", which embeds none.
+//
+// SCOPED TO THE HEADER, not to any 64 hex characters in the file. A harness
+// config holds every MCP server that harness has, and other people's servers
+// carry their own credentials and hashes. This matched a bare 64-hex run
+// anywhere in the file, so the SHA-256 in an unrelated server's
+// NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S was read as Dibs's secret, found not
+// to be the current one, and reported as: "codex config has a STALE secret,
+// that harness sees ZERO Dibs tools", against a codex install that was
+// correctly configured on the stdio bridge and working.
+//
+// Two things make that worse than a wrong line. The advice is "run
+// `dibs mcp-config` and re-copy the block", which would replace a working stdio
+// configuration; and the comment on the branch below already records this
+// exact class being fixed once, because a diagnostic that cries wolf is one
+// people learn to ignore. Found in live use, against a real config.
+var secretPattern = regexp.MustCompile(
+	`(?i)(?:x-dibs-local["']?\s*[:=]\s*["']?|authorization["']?\s*[:=]\s*["']?bearer\s+)([0-9a-f]{64})`)
+
+// embeddedSecrets returns the Dibs secrets a config carries, if any.
+func embeddedSecrets(body string) []string {
+	var out []string
+	for _, m := range secretPattern.FindAllStringSubmatch(body, -1) {
+		out = append(out, m[1])
+	}
+	return out
+}
 
 // mcpURL matches the endpoint a harness config points a Dibs server at, so a
 // config written for ANOTHER daemon can be told apart from a stale one.
@@ -394,7 +421,7 @@ func checkHarnessConfigs(sec, addr string, ok reportFn, warn, bad fixFn) {
 		// false positive fired on the first real run of this tool, against a
 		// perfectly healthy Claude Desktop config, and a diagnostic that cries
 		// wolf is one people learn to ignore.
-		found := secretPattern.FindAllString(string(body), -1)
+		found := embeddedSecrets(string(body))
 		switch {
 		case len(found) == 0:
 			ok(c.name + " config uses the stdio bridge (no embedded secret to go stale)")
@@ -418,6 +445,41 @@ func checkHarnessConfigs(sec, addr string, ok reportFn, warn, bad fixFn) {
 					"Run `dibs mcp-config` and re-copy the block")
 		}
 	}
+}
+
+// checkWakeRoutes says which way this board can actually reach a stopped agent.
+//
+// There are two, and they are not equals. `[wake.exec]` starts a process and
+// the daemon sees its exit status, so a wake either happened or it did not.
+// The session socket needs no configuration and is BEST EFFORT: the receiving
+// harness decides whether to accept a peer message and sends no receipt, so a
+// notice that is held looks exactly like one that was read.
+//
+// This check exists because the difference was invisible. Measured on the
+// machine this is developed on: notices delivered to an idle live session,
+// every write succeeding, and nothing arriving, because a Claude Code session
+// in bypassPermissions mode holds peer messages for its human. The board
+// reported healthy throughout. An operator running an unattended fleet is
+// running exactly that mode, and should be told that the only route they have
+// is the one that cannot be confirmed.
+func checkWakeRoutes(dir string, ok reportFn, warn fixFn) {
+	cfg, err := boardconfig.Load(dir)
+	if err != nil {
+		warn("cannot read the board configuration, so wake coverage is unknown",
+			"fix "+filepath.Join(dir, "dibs.toml")+" and run this again: "+err.Error())
+		return
+	}
+	if n := len(cfg.Wake.Exec); n > 0 {
+		ok(fmt.Sprintf("%d wake command(s) configured: a wake either runs or reports why", n))
+		return
+	}
+	warn("no wake command is configured, so the only route is best effort",
+		"the harness session socket needs no setup and is tried first, but the "+
+			"receiving session decides whether to accept a peer message and sends "+
+			"no receipt: a Claude Code session in bypassPermissions mode HOLDS it "+
+			"for its human, which is what an unattended fleet runs in. Nothing "+
+			"will report a wake that was held. Add a [wake.exec.<harness>] block "+
+			"to "+filepath.Join(dir, "dibs.toml")+" for a route this daemon can confirm")
 }
 
 func checkMatching(client *http.Client, sec string, ok reportFn, warn fixFn) {

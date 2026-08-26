@@ -662,7 +662,15 @@ const heard = await Promise.race([
   new Promise<string>((r) => setTimeout(() => r(""), 8000)),
 ])
 
-check("a question reaches it over its own harness socket",
+// REACHES THE SOCKET, which is not the same as reaching the agent, and the
+// name used to say the second thing. The receiver here is this test, and it
+// accepts whatever it is given; a real Claude Code session applies a
+// crossSessionInbound policy and HOLDS a peer message when it is running in
+// bypassPermissions mode, sending no receipt either way. So these checks prove
+// Dibs writes a correct, authenticated frame to the right socket, and cannot
+// prove delivery. See WAKE-MECHANISMS.md §5b, which was corrected after a
+// notice was delivered to an idle live session and its transcript never grew.
+check("a question reaches the agent's own harness socket",
   heard !== "",
   "nothing arrived on the session socket within 8s. An agent whose harness has " +
   "no [wake.exec] entry is unreachable again, which is the defect this route exists to remove")

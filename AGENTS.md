@@ -35,8 +35,10 @@ change it when reality disagrees, and record why).
 5. **The board may WAKE an agent, and may not steer one.** Reaching an idle agent so it
    can read its own mail is the product: a message service whose recipient must already
    be running is a polling API. There are two routes and no others: `[wake.exec]`, argv
-   from the operator's config; and the session socket the harness itself publishes, which
-   needs no config and is why a wake works out of the box. Both carry one fixed sentence,
+   from the operator's config, which spawns a process and is the one Dibs can confirm;
+   and the session socket the harness publishes, which needs no config and is BEST
+   EFFORT, because the receiver decides whether to accept a peer message and sends no
+   receipt. A session in bypassPermissions mode holds them. Both carry one fixed sentence,
    no shell, nothing an agent said, rate limited, logged. Everything past "you have mail"
    is still forbidden: no prompt injection, no session management, no deciding what an
    agent does next. See `WAKE-MECHANISMS.md` §5 and §5b, which argued against both for

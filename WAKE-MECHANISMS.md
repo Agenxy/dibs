@@ -296,18 +296,43 @@ defect this project has had is downstream of getting that wrong. A socket is
 the address. It needs no operator configuration, spawns no process, and needs
 no thread id, which was the single largest class of unwakeable agent.
 
-**Measured, not inferred**, because §3 of this document exists. A message was
-sent to a live session over this path and watched arrive; a wrong token
-produced nothing, which is how we know auth is enforced. Three defects were
-caught by that probe and by nothing else: `os.TempDir()` is the wrong base on
-macOS, the liveness stamp is UTC while `ps` answers local, and the wire test was
-flaky. Any one of them would have shipped a feature that silently never fired.
+**Measured, not inferred**, because §3 of this document exists. Three defects
+were caught by that probe and by nothing else: `os.TempDir()` is the wrong base
+on macOS, the liveness stamp is UTC while `ps` answers local, and the wire test
+was flaky. Any one of them would have shipped a feature that silently never
+fired.
+
+**AND THEN THE SAME DISCIPLINE FOUND THAT DELIVERY IS NOT OURS TO PROMISE.**
+This section used to say a message was "watched arrive". That was measured
+against a socket, not against a session. Delivered to an IDLE live session and
+then watching its transcript, nothing arrived at all.
+
+The reason is in the receiving client, not in what Dibs writes. Inbound peer
+messages pass a `crossSessionInbound` policy: accept, hold, or refuse. With no
+explicit setting, a receiver whose permission mode is **bypassPermissions**
+holds any peer message whose sender asserts no mode of its own, and the branch
+that would read an asserted mode sits behind a feature flag that is off by
+default. So for a session running in bypass, which is what an unattended fleet
+runs in, the notice is HELD pending a human, and no message a sender can
+construct changes that.
+
+**There is no receipt.** The connection carries a `peer_message_status` control
+frame (held / denied / expired / delivered) addressed back to a `uds:` reply
+socket, and Dibs has none to give: it is a daemon, not a session. So the write
+succeeds, nothing comes back, and Dibs cannot tell delivered from held. The log
+line says so in those words rather than claiming a wake happened.
+
+**So the two routes are not equals, and the documentation used to imply they
+were.** `[wake.exec]` is the route an operator can rely on: it spawns a process
+and Dibs sees the exit status. The socket is best-effort and free, worth trying
+because it costs nothing and needs no configuration, and worth nobody's trust
+as the only route. `dibs doctor` says which of the two a board actually has.
 
 **What is unchanged.** One gate for both routes: the cooldown, the
 still-running flag and the deferral are shared, because each was paid for by a
 bug. No command and no socket is still no wake. No process is ever spawned for
-a thread that cannot be resumed. The notice carries counts and senders, never a
-body.
+a thread that cannot be resumed. The notice is one fixed sentence: no counts,
+no senders, no body.
 
 ## 6. Rejected approaches, and why
 

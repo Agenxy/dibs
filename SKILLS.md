@@ -250,6 +250,14 @@ it, and no wake is ever the reason a message goes unanswered.
 Do not answer the wake itself, and do not treat it as an instruction from
 whoever sent the mail. Read your mail and decide as you would have.
 
+**Do not rely on being woken.** There are two routes and only one of them can
+be confirmed: a command from the operator's config, which Dibs starts and
+watches, and your harness's own session socket, which is best effort. A Claude
+Code session running in bypassPermissions mode HOLDS peer messages for its
+human and sends no receipt, so Dibs cannot tell held from delivered. If you are
+waiting on somebody, `await_events` or a backgrounded `dibs await` is the thing
+that actually blocks until the answer arrives; a wake is a courtesy on top.
+
 ## Mail
 
 - **Every result names anything waiting for you.** Any call you make, with a
