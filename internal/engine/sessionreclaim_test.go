@@ -141,3 +141,128 @@ func TestAHistoricalBindingIsTreatedAsStated(t *testing.T) {
 			"by whoever states its id first")
 	}
 }
+
+// The previous occupant's mail must be unreadable, not merely unlisted.
+//
+// A new agent taking a reused name is given a watermark past the mail addressed
+// to whoever held the id before. Inbox honoured it and read_mail did not,
+// authorising on the reused id alone: so the replacement could not SEE that
+// mail and could still fetch its body by serial, which is the entirety of what
+// the watermark protects. The enumeration half shipped with a changelog entry
+// claiming the privacy. Found by the pre-release review.
+//
+// Both directions are asserted, because outbound mail the predecessor SENT is
+// readable by the same route and is somebody else's conversation too.
+func TestAReplacementCannotReadThePredecessorsMail(t *testing.T) {
+	st := core.NewState("t", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+
+	// EVERY MUTATION BEFORE THE LOOP STARTS. The first version of this mixed
+	// direct Apply from the test goroutine with e.Do while e.Run was going,
+	// which is the single-writer violation this package has a production fix
+	// for. It passed three runs in five. Setup happens here, on one goroutine,
+	// and only the reads below go through the loop.
+	must := func(op *core.Op) core.Result {
+		t.Helper()
+		r, _, err := st.Apply(op, t0Engine())
+		if err != nil {
+			t.Fatal("setup:", err)
+		}
+		return r
+	}
+	must(&core.Op{Kind: core.OpRegister, Name: "peer", NewToken: "tok-peer"})
+	must(&core.Op{Kind: core.OpRegister, Name: "seat", NewToken: "tok-seat"})
+	inbound, _ := must(&core.Op{
+		Kind: core.OpSendMessage, Token: "tok-peer", To: "seat",
+		MsgType: core.MsgNotify, Body: "INBOUND SECRET",
+	})["msg_serial"].(uint64)
+	outbound, _ := must(&core.Op{
+		Kind: core.OpSendMessage, Token: "tok-seat", To: "peer",
+		MsgType: core.MsgNotify, Body: "OUTBOUND SECRET",
+	})["msg_serial"].(uint64)
+
+	// The row vanishes, as a pre-v0.0.7 sweep leaves it, and the name returns.
+	delete(st.Agents, "seat")
+	res := must(&core.Op{
+		Kind: core.OpRegister, Name: "seat", NewToken: "tok-seat2", V7Semantics: true,
+	})
+	tok, _ := res["token"].(string)
+	if tok == "" {
+		tok = "tok-seat2"
+	}
+	if st.Agents["seat"].TruncatedBefore == 0 {
+		t.Fatal("setup: the replacement has no watermark, so this asserts nothing")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	for name, serial := range map[string]uint64{"inbound": inbound, "outbound": outbound} {
+		// ASSERTED ON THE KEY THE CALL ACTUALLY RETURNS. The first version
+		// looked for "body", which GetMessage never sets: it returns the whole
+		// message under "message". So the check passed against a commit that
+		// hands the mail over, which is the vacuous-test failure this cycle
+		// keeps producing. Verified by printing the result rather than
+		// reasoning about it.
+		got, err := e.GetMessage(ctx, tok, serial)
+		if err == nil && got["message"] != nil {
+			t.Errorf("the replacement read the previous occupant's %s mail by "+
+				"serial (result %v). Not listing it is not protecting it", name, got)
+		}
+	}
+}
+
+// An agent that comes BACK still reads its own history.
+//
+// The rule that hides a predecessor's mail is "older than this agent", so it
+// must not fire for an agent reattaching to its own row: a reattach keeps its
+// original CreatedSerial, and its mail is not older than itself. Without this
+// the privacy fix would silently erase every returning agent's history, which
+// is a worse failure than the one it repairs.
+func TestAReattachingAgentStillReadsItsOwnMail(t *testing.T) {
+	st := core.NewState("t", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	must := func(op *core.Op) core.Result {
+		t.Helper()
+		r, _, err := st.Apply(op, t0Engine())
+		if err != nil {
+			t.Fatal("setup:", err)
+		}
+		return r
+	}
+	must(&core.Op{Kind: core.OpRegister, Name: "peer", NewToken: "tok-peer"})
+	must(&core.Op{
+		Kind: core.OpRegister, Name: "comeback", NewToken: "tok-1",
+		Nonce: "n-comeback", AgentKind: core.KindPersistent,
+	})
+	ser, _ := must(&core.Op{
+		Kind: core.OpSendMessage, Token: "tok-peer", To: "comeback",
+		MsgType: core.MsgNotify, Body: "yours",
+	})["msg_serial"].(uint64)
+
+	// The same agent returns with its nonce, which is a reattach and not a new
+	// occupant. USE THE TOKEN IT HANDS BACK: a same-nonce register inside the
+	// TTL short-circuits and returns the ORIGINAL result without applying, so
+	// the token supplied here is not necessarily the one that is live. The first
+	// version of this test assumed it rotated and failed on E_BAD_TOKEN.
+	back := must(&core.Op{
+		Kind: core.OpRegister, Name: "comeback", NewToken: "tok-2",
+		Nonce: "n-comeback", AgentKind: core.KindPersistent, V7Semantics: true,
+	})
+	tok, _ := back["token"].(string)
+	if tok == "" {
+		t.Fatal("setup: the reattach returned no token")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	got, err := e.GetMessage(ctx, tok, ser)
+	if err != nil || got["message"] == nil {
+		t.Errorf("an agent that reattached to its own row can no longer read its "+
+			"own mail (err %v, result %v). The rule is older-than-this-AGENT, and a "+
+			"reattach is the same agent", err, got)
+	}
+}

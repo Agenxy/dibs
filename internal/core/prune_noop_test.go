@@ -64,3 +64,42 @@ func TestPruningAClosedAgentDoesNotCloseItAgain(t *testing.T) {
 		t.Errorf("reported %d pruned; nothing was", n)
 	}
 }
+
+// prune_own must not re-close a closed agent either.
+//
+// The admin path was fixed a round earlier and this one was not, which is the
+// shape of half the defects in this cycle: a rule applied at one of two doors.
+// applyPruneOwn rejects an ACTIVE target and let a CLOSED one fall through to
+// applyClose, which emits agent.closed unconditionally, and to finish, which
+// advances the serial. The audit stream then claims a transition that never
+// happened. Found by the pre-release review, which also noted the changelog
+// described only the admin half as repaired.
+func TestPruneOwnDoesNotRecloseAClosedAgent(t *testing.T) {
+	s := NewState("t", DefaultLimits())
+	// A PARENT tidying a finished child, which is the case this op exists for.
+	// The child cannot be the actor: sign_off blanks its token, and a closed
+	// agent cannot call at all.
+	reg(t, s, "parent", "tok-parent", t0)
+	reg(t, s, "child", "tok-child", t0)
+	s.Agents["child"].Parent = "parent"
+	s.Agents["child"].ParentProven = true
+	s.Agents["child"].Status = StatusClosed
+	before := s.Serial
+
+	_, evs, err := s.Apply(&Op{
+		Kind: OpPruneOwn, Token: "tok-parent", To: "child", V7Semantics: true,
+	}, t0)
+	if err != nil {
+		// A refusal in the fold would be retroactive; doing nothing is the answer.
+		t.Fatalf("prune_own of an already-closed agent was refused: %v", err)
+	}
+	for _, e := range evs {
+		if e.Type == "agent.closed" {
+			t.Error("a second agent.closed was emitted for an agent that closed once")
+		}
+	}
+	if s.Serial != before {
+		t.Errorf("the serial advanced (%d to %d) for a prune that changed nothing",
+			before, s.Serial)
+	}
+}

@@ -1179,6 +1179,23 @@ func (s *State) applyPruneOwn(op *Op, actor *Agent, now time.Time) (Result, []Ev
 	// board, and back three minutes later when the daemon restarted. The five
 	// tests below were green throughout, because in-process state is exactly
 	// what a prune with no ledger record gets right.
+	// ALREADY CLOSED IS NOT A TRANSITION, and the admin path beside this one
+	// learned that a round ago while this did not.
+	//
+	// The active check above rejects a working agent; a CLOSED one fell straight
+	// through to applyClose, which emits agent.closed unconditionally, and to
+	// finish, which advances the serial. So pruning a closed record wrote down a
+	// close that had already happened and moved the serial for no change to
+	// replayable state: the audit stream then claims a transition that never
+	// occurred, and `dibs log` cannot tell it from a real one.
+	//
+	// Gated on V7Semantics for the same reason as the sibling repair: a v0.0.6
+	// prune really did emit that event and really did advance, and replay has to
+	// reach the board that existed. Found by the pre-release review, which noted
+	// the changelog overstated the repair by describing only the admin half.
+	if op.V7Semantics && target.Status == StatusClosed {
+		return Result{"ok": true, "pruned": target.ID, "serial": s.Serial}, nil, nil
+	}
 	_, evs := s.applyClose(target, now)
 	serial := s.finish(&evs, now)
 	return Result{"ok": true, "pruned": target.ID, "serial": serial}, evs, nil

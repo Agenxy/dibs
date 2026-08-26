@@ -266,7 +266,35 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 			return errRes
 		}
 		m, ok := e.state.Messages[serial]
-		if !ok || (m.From != l.ID && m.To != l.ID) {
+		// THE WATERMARK APPLIES HERE TOO, and enforcing it in one place was not
+		// enforcing it.
+		//
+		// An id is derived from the name, so a name that comes back reuses the
+		// id, and mail can outlive the row it was addressed to. A new agent is
+		// given a watermark past that mail, and Inbox honours it: this did not,
+		// authorising on the reused id alone. So the replacement could not SEE
+		// the previous occupant's mail and could still read its body by serial,
+		// which is the whole of what the watermark was protecting. Outbound mail
+		// the predecessor sent was readable the same way.
+		//
+		// A serial below the watermark belongs to whoever held this id before,
+		// and is refused for the same reason a stranger's is. Found by the
+		// pre-release review, one round after the enumeration half shipped with
+		// a changelog entry claiming the privacy.
+		//
+		// CREATED-BEFORE-ME, which covers both directions where the watermark
+		// covers one. TruncatedBefore is built from mail addressed TO the id, so
+		// it hides the predecessor's inbox and leaves what the predecessor SENT
+		// readable: `m.From == l.ID` matches on the reused id and hands over the
+		// other half of somebody else's conversation. A message older than this
+		// agent's own creation was never its mail, in either direction.
+		//
+		// Zero for agents registered before this field existed, which reads as
+		// no filtering and preserves exactly what those boards did. A reattach
+		// keeps its original CreatedSerial, so an agent coming back still reads
+		// its own history.
+		inherited := ok && l.CreatedSerial > 0 && serial < l.CreatedSerial
+		if !ok || inherited || (m.From != l.ID && m.To != l.ID) {
 			// An ANNOUNCEMENT serial is the overwhelmingly likely mistake here,
 			// because the wake nudge hands the agent a serial and says to go
 			// read it, and a serial in hand makes read_mail the obvious call.
