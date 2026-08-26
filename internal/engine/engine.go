@@ -1179,13 +1179,36 @@ func (e *Engine) refuseStealingAnotherThreadsSession(op *core.Op) error {
 	if op.Kind == core.OpRegister && e.registerLandsOn(op, holder) {
 		return nil // genuinely reattaching to that row, not minting a sibling
 	}
+	// A HOLDER THAT HAS STOPPED ANSWERING IS NOT THE LIVE THREAD.
+	//
+	// Closed and archived rows were already skipped, by AgentBySession, because
+	// a retired agent has no thread left to resume. Dormant and stale were not,
+	// so one row that went quiet held its session id against the session that
+	// actually owns it, permanently: the rightful caller was refused and handed
+	// a hint naming register-with-your-nonce, which is a call only the OTHER
+	// agent can make. There was no way out that the refused party could take.
+	//
+	// Measured on this project's own board: 29 lifecycle hooks from working
+	// sessions, none resolving to any agent, the claim guard allowing every edit
+	// and no mail ever injected, because the one session that could have
+	// registered was refused its own id by a row dormant for days.
+	//
+	// Nothing about mail moves. The old row keeps its mailbox, its history and
+	// its claims; only where a WAKE is delivered changes, and a dormant agent
+	// was not receiving those anyway. An ACTIVE holder still wins: two live
+	// agents claiming one thread is a genuine conflict, not stale state.
+	if holder.Status != core.StatusActive {
+		op.SessionTakenFrom = holder.ID
+		return nil
+	}
 	return &core.Error{
 		Code: "E_SESSION_TAKEN",
 		Msg:  "session id " + op.SessionID + " is already held by agent " + holder.ID,
-		Hint: "use your own harness session id, or none: this one names another " +
-			"agent's thread, and the board resumes a thread by that id. If that " +
-			"agent is you returning, register with the same name and your nonce " +
-			"instead, which reattaches you to it",
+		Hint: "that agent is ACTIVE and answering, so this id is in use. Register " +
+			"without a session_id and Dibs will bind yours when your harness " +
+			"reports it; if that agent is you returning, register with the same " +
+			"name and your nonce, which reattaches you to it. If it is stale, it " +
+			"can call update(release_session: true), or a human can prune it",
 	}
 }
 

@@ -580,6 +580,14 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 			parentProven = true
 		}
 	}
+	// The previous occupant of this thread loses it, from the field the ingress
+	// check recorded. Read from the op rather than re-decided here, so replay
+	// strips the same row without asking what "dormant" means today.
+	if op.SessionTakenFrom != "" {
+		if prev := s.Agents[op.SessionTakenFrom]; prev != nil {
+			prev.dropSession(op.SessionID)
+		}
+	}
 	l := &Agent{
 		ID: id, Kind: kind, Name: op.Name, Description: op.Description, Agent: op.Agent,
 		PID: op.PID, ProcStart: op.ProcStart, Status: StatusActive, SessionID: op.SessionID,

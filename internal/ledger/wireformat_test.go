@@ -141,6 +141,13 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		// decode false, and are therefore treated as STATED, which is the
 		// conservative reading: nothing already on disk starts yielding.
 		"session_guessed": true,
+		// session_taken_from: the agent that held this register's session id and
+		// is losing it. A session id names one harness thread, and the register
+		// path refused any id another agent held unless that agent was closed,
+		// so a DORMANT row blocked the live session behind it forever. Resolved
+		// at ingress and recorded here so replay strips the same row rather than
+		// re-deciding what "dormant" means today.
+		"session_taken_from": true,
 		// release_session: whether THIS update gives up the caller's own session
 		// bindings. The repair for a binding that is already wrong, and only ever
 		// the caller's own, so it can strand nothing but itself.
@@ -260,11 +267,12 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 // at build time: a value a sweep can recompute defends nothing.
 const (
 	// Updated deliberately when `session_alias` was added, again for
-	// `purge_mail`, again for `restore_nonce`, and again for `session_guessed`
-	// `release_session` and `v7_semantics`: one new tag each time, no
-	// rename. If you are here because a sweep moved this value, the sweep is
-	// the bug, and the tag it renamed is the data loss.
-	frozenOpFingerprint       = "sha256:254524470d5e5dd7"
+	// `purge_mail`, again for `restore_nonce`, again for `session_guessed`
+	// `release_session` and `v7_semantics`, and again for
+	// `session_taken_from`: one new tag each time, no rename. If you are here
+	// because a sweep moved this value, the sweep is the bug, and the tag it
+	// renamed is the data loss.
+	frozenOpFingerprint       = "sha256:c41a7216dd7479f7"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

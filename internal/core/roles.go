@@ -201,6 +201,23 @@ func (s *State) SessionSpokenFor(sid string) bool {
 	return false
 }
 
+// dropSession removes one session id from this agent, primary or alias, so
+// exactly one row answers to a thread after it changes hands.
+//
+// Leaving it on both is worse than either outcome on its own: AgentBySession
+// then has two stated holders to choose between and resolves by id order, so
+// which agent a hook reaches stops depending on anything a reader can see.
+func (a *Agent) dropSession(sid string) {
+	if sid == "" {
+		return
+	}
+	if a.SessionID == sid {
+		a.SessionID = ""
+	}
+	a.SessionAliases = withoutString(a.SessionAliases, sid)
+	a.GuessedSessions = withoutString(a.GuessedSessions, sid)
+}
+
 // holdsSession reports whether this agent answers to that session id, as its
 // primary or as one of the OTHER names the same session goes by. See
 // Agent.SessionAliases.

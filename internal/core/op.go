@@ -208,6 +208,25 @@ type Op struct {
 	// the hazard PurgeMail and RestoreNonce above were added for.
 	SessionGuessed bool `json:"session_guessed,omitempty"`
 
+	// SessionTakenFrom is the agent that held this session id and is losing it,
+	// resolved at ingress and recorded so replay strips the same row.
+	//
+	// A session id names a HARNESS THREAD, and a thread has one occupant. The
+	// register path refused any id another agent held unless that agent was
+	// closed or archived, so a DORMANT holder blocked the live session behind it
+	// forever: the rightful session was told "already held by <agent>" and
+	// pointed at register-with-your-nonce, which is a call only that other agent
+	// can make. Measured on this project's own board, where every hook from a
+	// working session resolved to nobody for days because one dormant row held
+	// its id and nothing could take it back.
+	//
+	// Dormant is not "still using it". An agent that has stopped answering is
+	// not the live thread presenting that id, and nothing about mail moves with
+	// this: the old row keeps its mailbox and its history, and only where WAKES
+	// are delivered changes. An ACTIVE holder still wins, because two live
+	// agents claiming one thread is a real conflict rather than stale state.
+	SessionTakenFrom string `json:"session_taken_from,omitempty"`
+
 	// ReleaseSession drops the CALLER's own session bindings, primary and
 	// aliases, so the session they belong to can claim them back.
 	//

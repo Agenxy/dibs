@@ -417,6 +417,33 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A dormant agent held a live session's id forever, and that is what stopped
+  Dibs working.** A session id names a harness thread, and a thread has one
+  occupant. Register refused any id another agent held unless that agent was
+  closed or archived, so a DORMANT row blocked the session behind it
+  permanently: the rightful caller was told "already held by <agent>" and
+  pointed at register-with-your-nonce, which is a call only the other agent can
+  make. The documented remedy, `update(release_session: true)`, needs that
+  agent's own token. There was no remedy the refused party could take.
+
+  Measured on this project's own board, which is where this was found: 29
+  lifecycle hooks arriving from working sessions, **not one** resolving to an
+  agent, the claim guard allowing every edit and no mail ever injected, because
+  the session that could have registered was refused its own id by a row that
+  had been dormant for days. The daemon said so plainly the whole time
+  (`dibs doctor`, `/api/hook-health`: "not one call has resolved to a registered
+  agent"), and nobody had looked.
+
+  A holder that has stopped answering now loses the id to the session
+  presenting it, and the losing row is recorded on the op so replay strips the
+  same one rather than re-deciding what dormant means today. **Nothing about
+  mail moves**: the old row keeps its mailbox, its history, its claims and its
+  recovery credential, and only where a WAKE is delivered changes. An ACTIVE
+  holder still wins, because two live agents claiming one thread is a real
+  conflict rather than stale state, and taking it would redirect a working
+  agent's wakes. The refusal that remains names calls the refused party can
+  actually make.
+
 - **`release_session` reported and recorded a release of nothing.** It cleared
   the primary id, the aliases and the provenance and then said
   `session_released: true` whatever it had found, so calling it against an agent
