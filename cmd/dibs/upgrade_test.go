@@ -463,3 +463,59 @@ func TestARegisteredDaemonIsStoppedEvenIfItDidNotAnswer(t *testing.T) {
 			"%d times", stopped)
 	}
 }
+
+// An unreadable registry must not read as "no daemon".
+//
+// LiveDaemons says it in its own comment: an error means the registry could not
+// be READ, which is not the same as nothing running, and "conflating the two is
+// how a guard fails open". runningDaemon returned a zero daemonState on that
+// error, so the stop was skipped, the replacement exited at once on the
+// directory lock the original still holds, the original went on answering, and
+// verification printed `upgraded:` for the process this command exists to
+// replace. Found by the pre-release review.
+//
+// Asserted on the DECISION rather than on a whole upgrade run, because the
+// decision is the defect: stopping a daemon that was not there costs a no-op,
+// and skipping the stop costs the operator a silent non-upgrade.
+func TestAnUnreadableRegistryStillStopsTheDaemon(t *testing.T) {
+	for name, tc := range map[string]struct {
+		p        plan
+		wantStop bool
+	}{
+		"registry unreadable": {plan{running: daemonState{unknown: true}}, true},
+		"registered daemon":   {plan{running: daemonState{addr: "127.0.0.1:4777"}}, true},
+		"answering now":       {plan{serving: true}, true},
+		"genuinely nothing":   {plan{}, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := tc.p.serving || tc.p.running.addr != "" || tc.p.running.unknown
+			if got != tc.wantStop {
+				t.Errorf("stop decision = %v, want %v. An unreadable registry that "+
+					"reads as absence leaves the old daemon serving while this command "+
+					"reports the new one", got, tc.wantStop)
+			}
+		})
+	}
+}
+
+// And the read failure must actually produce that state, or the decision above
+// is asserting about a value nothing sets.
+func TestRunningDaemonReportsUnknownOnAReadFailure(t *testing.T) {
+	// A registry path that cannot be a directory listing: HOME points at a file.
+	f := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", f)
+	t.Setenv("XDG_STATE_HOME", f)
+
+	got := runningDaemon(t.TempDir())
+	if !got.unknown && got.addr == "" {
+		t.Skip("the registry was still readable in this environment, so this case " +
+			"could not be produced; the decision test above still covers the rule")
+	}
+	if got.addr == "" && !got.unknown {
+		t.Error("a registry that could not be read reported no daemon rather than " +
+			"an unknown one")
+	}
+}

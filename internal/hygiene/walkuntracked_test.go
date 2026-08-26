@@ -23,6 +23,50 @@ import (
 // check happened to be what noticed; the hole belonged to every check equally,
 // and a regression test written against em dashes would go green the moment
 // somebody reorganised that one rule.
+// An unreadable tracked file must FAIL the walk, not be counted as checked.
+//
+// The walk counted every callback it invoked and described that as "what was
+// actually opened". Most callbacks return silently when ReadFile fails, so a
+// file nothing could read still counted toward the minimum-files floor while no
+// check examined a byte of it: the guard reporting coverage it does not have.
+// Found by the pre-release review, one round after the untracked-files fix
+// landed in this same function.
+func TestTheWalkRefusesAFileItCannotRead(t *testing.T) {
+	root := repoRoot(t)
+	name := "zz_hygiene_unreadable_probe.md"
+	abs := filepath.Join(root, name)
+	if _, err := os.Stat(abs); err == nil {
+		t.Fatalf("%s already exists: this probe would be reading somebody else's file", name)
+	}
+	// A REAL file with no read permission. A dangling symlink was the first
+	// attempt and is filtered earlier, by the Stat check that skips "deleted but
+	// still staged": it never reaches the read at all, so it tested nothing.
+	if err := os.WriteFile(abs, []byte("unreadable\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(abs, 0o600); _ = os.Remove(abs) })
+	if err := os.Chmod(abs, 0o000); err != nil {
+		t.Skipf("cannot make a file unreadable here: %v", err)
+	}
+	if _, err := os.ReadFile(abs); err == nil {
+		t.Skip("this process can read a 0000 file, which means it is running as " +
+			"root: the case cannot be produced here")
+	}
+
+	// The walk must report it. Run it against a throwaway T so this test can
+	// assert on the failure rather than inherit it.
+	sub := &testing.T{}
+	func() {
+		defer func() { _ = recover() }()
+		walk(sub, root, func(string, string) {})
+	}()
+	if !sub.Failed() {
+		t.Error("the walk accepted a tracked file it could not read. It counts " +
+			"toward the floor that proves the walk looked at something, while no " +
+			"check in this package examined it")
+	}
+}
+
 func TestTheHygieneWalkSeesUntrackedFiles(t *testing.T) {
 	root := repoRoot(t)
 

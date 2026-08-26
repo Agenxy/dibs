@@ -354,7 +354,11 @@ func (p *plan) cutover() error {
 	// directory is renamed under that live writer as well.
 	//
 	// A registered daemon is stopped whether or not it answered a moment ago.
-	if p.serving || p.running.addr != "" {
+	// UNKNOWN COUNTS AS RUNNING. Stopping a daemon that was not there costs a
+	// no-op; skipping the stop because the registry was unreadable leaves the
+	// old one serving while this command reports the new one. The asymmetry
+	// decides it, and it is the same asymmetry as everywhere else in this file.
+	if p.serving || p.running.addr != "" || p.running.unknown {
 		step("stopping the daemon")
 		if err := p.doStop(p.dir); err != nil {
 			return fmt.Errorf("could not stop the daemon, so nothing else was changed: %w", err)
@@ -740,6 +744,18 @@ func tooOldForCheck(out []byte) bool {
 type daemonState struct {
 	addr     string
 	parallel bool
+	// unknown means the registry could not be READ, which is not the same as
+	// nothing running.
+	//
+	// LiveDaemons says so in its own comment: "conflating the two is how a
+	// guard fails open". This returned a zero daemonState on a read error, so
+	// an unreadable registry read as "no daemon here", the stop was skipped,
+	// the replacement exited at once on the directory lock the original still
+	// holds, and the original went on answering. Verification then found a
+	// board, had no pre-upgrade serial to compare against, and printed
+	// `upgraded:` for the process this command exists to replace. Found by the
+	// pre-release review, which noted the adjacent comment already forbids it.
+	unknown bool
 }
 
 // runningDaemon reads the registry for the daemon serving dir, and notes
@@ -752,7 +768,7 @@ type daemonState struct {
 func runningDaemon(dir string) daemonState {
 	live, err := paths.LiveDaemons()
 	if err != nil {
-		return daemonState{}
+		return daemonState{unknown: true}
 	}
 	mine, others, err := selectDaemon(live, dir)
 	if err != nil || mine == nil {

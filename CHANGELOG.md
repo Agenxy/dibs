@@ -1996,6 +1996,24 @@ machines for real work. Their priority order, not ours.
   Reported, never refused: the daemon cannot tell which of the two is wrong, and
   a heuristic refusal would ground legitimate wakes for agents that moved.
 
+- **An unreadable daemon registry no longer reads as "no daemon".** `upgrade`
+  turned every registry-read failure into an empty result, so an unreadable
+  registry meant "nothing is running": the stop was skipped, the replacement
+  exited at once on the directory lock the original still holds, the original
+  went on answering, and verification printed `upgraded:` for the process the
+  command exists to replace. `LiveDaemons` says so in its own comment, that an
+  error is not an absence and conflating them is how a guard fails open, and the
+  caller conflated them anyway. Unknown now counts as running: stopping a daemon
+  that was not there costs a no-op, and the other way costs a silent non-upgrade.
+
+- **The hygiene walk counted files it had not opened.** It counted every
+  callback it invoked and called that "what was actually opened", while most
+  checks return silently when the read fails: an unreadable file counted toward
+  the floor that proves the walk looked at something, with no check having
+  examined a byte of it. The walk reads each file itself now and fails on one it
+  cannot, which is the state a bad merge leaves and exactly what should not pass
+  quietly.
+
 - **A certificate that is not a CA could become the board's signing identity.**
   The check asked only whether the certificate and key matched and whether it
   had expired, which a restored or misnamed SERVER certificate satisfies: `dibd

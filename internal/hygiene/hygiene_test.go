@@ -371,6 +371,25 @@ func walk(t *testing.T, root string, visit func(rel, abs string)) {
 		if st, err := os.Stat(abs); err != nil || st.IsDir() {
 			continue // deleted but still staged, or a submodule
 		}
+		// READ IT HERE, so "visited" means the content was available.
+		//
+		// This counted callbacks INVOKED and called that "what was actually
+		// opened". Most callbacks return silently when ReadFile fails, so an
+		// unreadable file was counted toward the floor while none of its content
+		// was checked: the walk reports coverage it does not have, which is the
+		// same failure as the version that counted `ls-files` output. Found by
+		// the pre-release review, one round after the untracked-files fix.
+		//
+		// Failing rather than skipping, because a file this repository tracks and
+		// cannot read is a real problem: it is the state a bad merge or a broken
+		// symlink leaves, and quietly not checking it is how a convention breaks
+		// without anybody being told.
+		if _, err := os.ReadFile(abs); err != nil { // #nosec G304 -- this repo's own tracked files
+			t.Errorf("%s is tracked and could not be read (%v), so no check in this "+
+				"package examined it. A file that cannot be opened is not a file that "+
+				"passed", rel, err)
+			continue
+		}
 		visit(rel, abs)
 		visited++
 	}
