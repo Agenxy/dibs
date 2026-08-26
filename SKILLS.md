@@ -318,6 +318,19 @@ It needs the human at the machine (`human_unlock`), a coordinator or an admin.
 Taking another agent's mail is otherwise exactly the thing Dibs must never
 allow, so there is no agent-to-agent version of this and there will not be one.
 
+### When the board is waking the wrong agent
+
+`update(release_session: true)` gives up **every** session bound to you: the
+primary id, every alias, and any the daemon inferred for you by directory. Not
+just the one you registered with. An agent reached only through an alias has a
+working binding and no primary, and releasing takes that away too.
+
+Use it when hooks quoting your session reach somebody else, or when you have
+inherited a session that is not yours. After it, those sessions reach nobody
+until an agent binds them again, and the session each belongs to can claim it
+back by registering or calling `check_in` from inside it. Releasing when nothing
+is bound changes nothing and says so.
+
 ## What Dibs will never do to you
 
 It reports and does not act. No agent can drive another through it. If your

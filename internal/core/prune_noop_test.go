@@ -1,6 +1,9 @@
 package core
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // A prune that closes nothing must not be written down.
 //
@@ -101,5 +104,67 @@ func TestPruneOwnDoesNotRecloseAClosedAgent(t *testing.T) {
 	if s.Serial != before {
 		t.Errorf("the serial advanced (%d to %d) for a prune that changed nothing",
 			before, s.Serial)
+	}
+}
+
+// The durable checkpoint, and an answer that does not claim a prune that did
+// not happen.
+//
+// Two defects in one path, both from the same escape: claim_coordinator and
+// prune_own return straight out of the dispatcher, before `l.LastCoordination =
+// now` under the comment that says every ledgered actor op refreshes it. The
+// engine's derived `seen` map hides that while the daemon runs and is
+// deliberately not replayable, so after a restart an agent is judged against
+// the checkpoint it had BEFORE the op and can be swept stale immediately after
+// doing something. Adoption already carries the identical repair.
+//
+// And the no-op repair stopped at the ledger: pruning an already-closed record
+// correctly emitted nothing and advanced nothing, then answered
+// {"ok":true,"pruned":<id>}. The sibling admin path truthfully returns an empty
+// list and count 0. The existing regression test discarded the result, so the
+// false success went unseen. Both found by the pre-release review.
+func TestPruningReportsHonestlyAndKeepsTheCheckpoint(t *testing.T) {
+	s := NewState("n", DefaultLimits())
+	reg(t, s, "owner", "tok", t0)
+	reg(t, s, "child", "tokc", t0)
+	kid := s.Agents["child"]
+	kid.Parent, kid.ParentProven = "owner", true
+
+	// Dormant, not closed: prune_own refuses an ACTIVE agent and treats a
+	// CLOSED one as nothing to do, so the state a real prune acts on is in
+	// between. Signing the child off here put it straight into the no-op case
+	// and the first draft of this test measured that instead.
+	kid.Status = StatusDormant
+	later := t0.Add(2 * time.Hour)
+
+	owner := s.Agents["owner"]
+	owner.LastCoordination = t0
+	res := mustApply(t, s, &Op{
+		Kind: OpPruneOwn, Token: "tok", To: "child", V7Semantics: true,
+	}, later)
+	if res["changed"] != true || res["pruned"] != "child" {
+		t.Errorf("a real prune must say so: %#v", res)
+	}
+	if !owner.LastCoordination.Equal(later) {
+		t.Errorf("the actor's durable checkpoint is %v, not the op's %v: after a "+
+			"restart it is judged against the time before it did this",
+			owner.LastCoordination, later)
+	}
+
+	// The same prune again: nothing left to close.
+	before := s.Serial
+	owner.LastCoordination = t0
+	again := mustApply(t, s, &Op{
+		Kind: OpPruneOwn, Token: "tok", To: "child", V7Semantics: true,
+	}, later.Add(time.Hour))
+	if s.Serial != before {
+		t.Errorf("the serial moved for an already-closed target: %d -> %d", before, s.Serial)
+	}
+	if again["changed"] != false {
+		t.Errorf("changed = %v: nothing was pruned, and the answer must say so", again["changed"])
+	}
+	if again["pruned"] != nil {
+		t.Errorf("pruned = %v: naming the agent reads as a prune that did not happen",
+			again["pruned"])
 	}
 }

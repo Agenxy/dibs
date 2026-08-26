@@ -160,8 +160,8 @@ var toolDefs = func() []map[string]any {
 				"cwd": str("the directory you work in, if it was wrong at register or you " +
 					"have moved: your project and repository are re-derived from it"),
 				"release_session": map[string]any{"type": "boolean", "description": "give up " +
-					"the harness session id bound to you. Use it when the board is waking " +
-					"the wrong agent: the session it belongs to can then claim it back"},
+					"EVERY session bound to you: the primary, its aliases, and any the " +
+					"daemon inferred. Use it when the board wakes the wrong agent"},
 			}, "token"),
 		},
 		{

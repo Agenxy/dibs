@@ -84,13 +84,22 @@ func originFor(hostPort string) string {
 	if scheme, rest, found := strings.Cut(hostPort, "://"); found {
 		return strings.ToLower(scheme) + "://" + rest
 	}
-	// The same shared resolver origin() consults, for the same reason: the
-	// daemon honours insecure_plaintext and tls_cert/tls_key, and inferring the
-	// transport from the address alone speaks the wrong one to a correctly
-	// configured board.
-	if scheme, _, err := resolveTransport(paths.DataDir()); err == nil && scheme != "" {
-		return scheme + "://" + hostPort
+	// ONLY WHEN THE CONFIG DESCRIBES THIS ADDRESS, which is the guard
+	// replacementAddr already carries a paragraph about.
+	//
+	// resolveTransport answers for the address the CONFIG names, consulting
+	// rawAddr() itself, so borrowing its scheme for a DIFFERENT address asserts
+	// the configured board's transport about somebody else's: a TLS target
+	// beside a plaintext config is then contacted over HTTP, and a loopback
+	// target beside a TLS config over HTTPS. Both fail at the transport, which
+	// upgrade reads as "the board did not come back". Found by the pre-release
+	// review, in the fix for the round before it.
+	if sameHostPort(hostPort, addr()) {
+		return origin()
 	}
+	// A different daemon, so the address is all there is to go on: this is the
+	// daemon's own default rule, and it is what that daemon resolved from a
+	// bare address unless its config says otherwise.
 	if isLoopbackHostPort(hostPort) {
 		return schemePlain + hostPort
 	}

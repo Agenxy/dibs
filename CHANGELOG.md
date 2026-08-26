@@ -417,6 +417,35 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`release_session` reported and recorded a release of nothing.** It cleared
+  the primary id, the aliases and the provenance and then said
+  `session_released: true` whatever it had found, so calling it against an agent
+  with nothing bound advanced the serial, appended an op that changed no
+  replayable state, and told the caller a binding had been taken away. "An op is
+  ledgered iff it changed replayable state" is the rule this repository states
+  about itself. Its test only ever exercised a populated binding.
+
+  The agent-facing schema also understated what it destroys: it said "the
+  harness session id" and reported only the primary, so an agent reached through
+  an alias was told it released nothing while the alias it was actually reached
+  by had just been taken away. Both found by the pre-release review.
+
+- **`claim_coordinator` and `prune_own` skipped the durable coordination
+  checkpoint.** Both return straight out of the dispatcher, before the line
+  under the comment saying every ledgered actor op refreshes it. The daemon's
+  derived `seen` map hides that while it runs and is deliberately not
+  replayable, so after a restart an agent is judged against the checkpoint it
+  held BEFORE the op: one that had just claimed coordinator could be swept stale
+  immediately. Adoption already carried the identical repair, which is what made
+  it findable. Found by the pre-release review.
+
+- **Pruning an already-closed record said it pruned it.** The repair that
+  stopped the no-op reaching the ledger stopped there: nothing was emitted and
+  the serial did not move, and the answer was still `{"ok":true,"pruned":<id>}`.
+  The sibling admin path truthfully returns an empty list and `count: 0`. Its
+  regression test discarded the result, so the false success was never in view.
+  Found by the pre-release review.
+
 - **`dibs upgrade` verified a different daemon than the one it restarted.** The
   plan discovers the target's real address from the registry each live daemon
   writes, and it does that on purpose: assuming the address is how a board
@@ -434,6 +463,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   decides which one it then looks at, and the shipped help has been claiming it
   "verifies the fleet came back" throughout. Found by the pre-release review,
   with a reproduction.
+
+  The first version of that fix then borrowed the CONFIGURED board's transport
+  for the discovered address, because the resolver answers for the address the
+  config names: a TLS target beside a plaintext config was contacted over HTTP,
+  and a loopback target beside a TLS config over HTTPS, both failing inside the
+  transport and reading as "the board did not come back". The restart half of
+  this command already carried that argument and a `sameHostPort` guard; the
+  reading half now does too. Caught by the next review round, whose regression
+  test the first one could not have failed: it used two plain-HTTP servers.
 
 - **A role was checked for spelling inside the replay fold.** `applyGrantRole`
   rejected an unknown role in `Apply`, which is the fold that replays ops

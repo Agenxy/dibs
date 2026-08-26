@@ -74,3 +74,44 @@ func TestUpgradeReadsTheBoardItIsUpgrading(t *testing.T) {
 			"target must still be used", fallback.Serial)
 	}
 }
+
+// The transport is not borrowed from a board at a different address.
+//
+// resolveTransport answers for the address the CONFIG names, so asking it about
+// a discovered one asserts the configured board's transport about somebody
+// else's. A TLS target beside a plaintext config is then contacted over HTTP,
+// and a loopback target beside a TLS config over HTTPS. Both fail inside the
+// transport, which upgrade reads as "the board did not come back" and reports
+// as a failed upgrade that in fact succeeded.
+//
+// replacementAddr already carries the argument and the sameHostPort guard;
+// this is the same rule, on the reading half. The first regression test here
+// used two plain-HTTP servers and so could not see it. Found by the pre-release
+// review, in the previous round's fix.
+func TestTheTransportIsNotBorrowedFromADifferentBoard(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DIBS_DIR", dir)
+
+	// A configured board that is remote and TLS.
+	t.Setenv("DIBS_ADDR", "https://192.0.2.10:4777")
+	if got := originFor("127.0.0.1:59999"); got != "http://127.0.0.1:59999" {
+		t.Errorf("a loopback target beside a TLS config resolved to %q: the "+
+			"configured board's transport is not a fact about this one", got)
+	}
+	// And the configured address itself still resolves the configured way.
+	if got := originFor("192.0.2.10:4777"); got != "https://192.0.2.10:4777" {
+		t.Errorf("the configured address resolved to %q, want https", got)
+	}
+
+	// The mirror image: a plaintext loopback config and a remote target.
+	t.Setenv("DIBS_ADDR", "http://127.0.0.1:4777")
+	if got := originFor("192.0.2.10:4777"); got != "https://192.0.2.10:4777" {
+		t.Errorf("a remote target beside a plaintext loopback config resolved "+
+			"to %q: it must not be assumed plaintext", got)
+	}
+
+	// A scheme stated on the discovered address always wins: it is not a guess.
+	if got := originFor("HTTPS://198.51.100.7:1234"); got != "https://198.51.100.7:1234" {
+		t.Errorf("a stated scheme was not honoured: %q", got)
+	}
+}

@@ -844,6 +844,28 @@ func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
 	// The size bounds for this op are in Admit, not here. A bound in the fold is
 	// retroactive, and this one was found by the test that asserts Apply folds
 	// whatever Admit rejects, once that test learned about update.
+	// A RELEASE OF NOTHING IS NOT AN EVENT. Rule 2: an op is ledgered iff it
+	// changed replayable state, and the engine ledgers exactly when the serial
+	// advanced, so the two must never disagree.
+	//
+	// release_session cleared the primary, the aliases and the provenance and
+	// then said session_released: true whatever it found, so calling it against
+	// an agent with nothing bound advanced the serial and appended an op that
+	// changed nothing, and told the caller a binding had been taken away. Its
+	// test only ever exercised a populated binding. Found by the pre-release
+	// review.
+	//
+	// Checked FIRST because everything below mutates, and gated on V7Semantics
+	// because a fold that stops advancing where it used to is retroactive: an
+	// older ledger holding one of these expects the serial to move.
+	if op.V7Semantics && op.ReleaseSession && bareRelease(op, l) && !l.hasSessionBinding() {
+		return Result{
+			"ok": true, "id": l.ID, "name": l.Name, "description": l.Description,
+			"session_released": false,
+			"session": "nothing to release: no session id, alias or guess was bound " +
+				"to you, so nothing changed and nothing was recorded",
+		}, nil, nil
+	}
 	res := Result{"ok": true, "id": l.ID}
 	// Taking a live agent's name is refused, not suffixed. Register suffixes
 	// because a new agent has no history to protect; here both agents already
@@ -885,15 +907,39 @@ func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
 	// only ever the caller's own, so it can strand nothing but itself.
 	if op.ReleaseSession {
 		had := l.SessionID
+		aliases := len(l.SessionAliases) + len(l.GuessedSessions)
+		bound := l.hasSessionBinding()
 		l.SessionID, l.SessionAliases, l.GuessedSessions = "", nil, nil
-		res["session_released"] = true
-		res["session"] = "released " + quoteOrNone(had) + ": lifecycle hooks quoting it " +
-			"now reach nobody until an agent binds it again, and the session it " +
-			"belongs to can claim it back. Re-register or check_in from that " +
-			"session to bind your own"
+		// Honest even when this op DID change something else, which is the case
+		// the early return above deliberately does not cover.
+		res["session_released"] = bound
+		// ALIASES COUNTED, not just the primary. This named only `had`, so an
+		// agent holding a working alias and no primary read "released no
+		// primary session id" while the alias it was actually reached by had
+		// just been taken away. Found by the pre-release review.
+		res["session"] = "released " + quoteOrNone(had) + " and " + itoa(aliases) +
+			" alias(es): lifecycle hooks quoting any of them now reach nobody until " +
+			"an agent binds them again, and the sessions they belong to can claim " +
+			"them back. Re-register or check_in from that session to bind your own"
 	}
 	res["name"], res["description"] = l.Name, l.Description
 	return res, []Event{{Type: "agent.updated", Agent: l.ID}}, nil
+}
+
+// hasSessionBinding reports whether anything would actually be taken away by a
+// release: the primary, any alias, or the provenance of a guessed one.
+func (a *Agent) hasSessionBinding() bool {
+	return a.SessionID != "" || len(a.SessionAliases) > 0 || len(a.GuessedSessions) > 0
+}
+
+// bareRelease reports whether this update asks for nothing but the release.
+//
+// Description is compared rather than assumed absent: an empty description
+// CLEARS, because ledgers already hold update ops whose recorded effect was
+// exactly that, so "unset" cannot mean "leave alone" here.
+func bareRelease(op *Op, l *Agent) bool {
+	return op.Name == "" && op.Description == l.Description &&
+		op.Agent == nil && op.SessionAlias == "" && !op.NoProcess
 }
 
 // mergeIdentity overlays the self-reported identity fields an agent may revise,
@@ -1124,6 +1170,14 @@ func (s *State) applyClaimCoordinator(op *Op, actor *Agent, now time.Time) (Resu
 		Type: "agent.role", Agent: actor.ID,
 		Data: map[string]any{"role": RoleCoordinator, "via": "launch claim"},
 	}}
+	// The actor's durable checkpoint, which the common path sets and this one
+	// returns before reaching. Same escape as the missing finish() above, and
+	// the same one adoption already carries a paragraph about: the engine's
+	// derived `seen` map hides it while the daemon runs and is deliberately not
+	// replayable, so after a restart an agent is judged against the checkpoint
+	// it had BEFORE the op, and one that has just claimed coordinator can be
+	// swept stale immediately. Found by the pre-release review.
+	actor.LastCoordination = now
 	serial := s.finish(&evs, now)
 	return Result{"ok": true, "agent_id": actor.ID, "role": RoleCoordinator, "serial": serial}, evs, nil
 }
@@ -1194,11 +1248,24 @@ func (s *State) applyPruneOwn(op *Op, actor *Agent, now time.Time) (Result, []Ev
 	// reach the board that existed. Found by the pre-release review, which noted
 	// the changelog overstated the repair by describing only the admin half.
 	if op.V7Semantics && target.Status == StatusClosed {
-		return Result{"ok": true, "pruned": target.ID, "serial": s.Serial}, nil, nil
+		// CHANGED: FALSE, because the repair stopped at the ledger and left the
+		// answer saying a prune happened. The admin path beside this one
+		// truthfully returns an empty list and count 0; this returned
+		// {"ok":true,"pruned":<id>}, which reads as a prune to anything that
+		// reads results, and its own regression test discarded the result and
+		// so never saw it. Found by the pre-release review.
+		return Result{
+			"ok": true, "pruned": nil, "changed": false, "serial": s.Serial,
+			"note": "agent " + target.ID + " was already closed: nothing to prune, " +
+				"and nothing was recorded",
+		}, nil, nil
 	}
+	// The actor's durable checkpoint. See applyClaimCoordinator: this returns
+	// out of the dispatcher too, so it misses the common path's assignment.
+	actor.LastCoordination = now
 	_, evs := s.applyClose(target, now)
 	serial := s.finish(&evs, now)
-	return Result{"ok": true, "pruned": target.ID, "serial": serial}, evs, nil
+	return Result{"ok": true, "pruned": target.ID, "changed": true, "serial": serial}, evs, nil
 }
 
 func (s *State) applyPrune(op *Op, now time.Time) (Result, []Event, error) {

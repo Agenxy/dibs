@@ -108,3 +108,62 @@ func TestReassertingAnInferredSessionMakesItStated(t *testing.T) {
 		t.Error("the reassertion lost the binding it was confirming")
 	}
 }
+
+// Releasing a binding that is not there changes nothing and records nothing.
+//
+// Rule 2: an op is ledgered iff it changed replayable state, and the engine
+// ledgers exactly when the serial advanced, so the two must never disagree.
+// release_session cleared the primary, the aliases and the provenance and then
+// reported session_released: true whatever it had found, so calling it against
+// an agent with nothing bound advanced the serial, appended an op that changed
+// nothing, and told the caller a binding had been taken away.
+//
+// The existing test only ever exercised a populated binding, which is why this
+// survived. Found by the pre-release review.
+func TestReleasingNothingIsNotAnEvent(t *testing.T) {
+	s := NewState("n", DefaultLimits())
+	reg(t, s, "solo", "tok", t0)
+	// Registering can bind a session, and this is about an agent with none.
+	l := s.Agents["solo"]
+	l.SessionID, l.SessionAliases, l.GuessedSessions = "", nil, nil
+
+	before := s.Serial
+	res, evs, err := s.Apply(&Op{
+		Kind: OpUpdate, Token: "tok", Description: l.Description,
+		ReleaseSession: true, V7Semantics: true,
+	}, t0)
+	if err != nil {
+		t.Fatalf("releasing nothing must succeed, not fail: %v", err)
+	}
+	if s.Serial != before {
+		t.Errorf("the serial moved from %d to %d for an op that changed nothing: "+
+			"the engine ledgers exactly when the serial advances", before, s.Serial)
+	}
+	if len(evs) != 0 {
+		t.Errorf("an event was emitted for a release of nothing: %#v", evs)
+	}
+	if res["session_released"] != false {
+		t.Errorf("session_released = %v: nothing was bound, so nothing was released",
+			res["session_released"])
+	}
+
+	// And a real release still works, or this passes against a release that
+	// never releases.
+	l.SessionID = "sess-1"
+	before = s.Serial
+	res, evs, err = s.Apply(&Op{
+		Kind: OpUpdate, Token: "tok", Description: l.Description,
+		ReleaseSession: true, V7Semantics: true,
+	}, t0)
+	if err != nil {
+		t.Fatalf("release: %v", err)
+	}
+	if res["session_released"] != true || len(evs) == 0 || s.Serial == before {
+		t.Errorf("a real release must change state, emit an event and advance the "+
+			"serial: released=%v events=%d serial %d->%d",
+			res["session_released"], len(evs), before, s.Serial)
+	}
+	if l.SessionID != "" {
+		t.Errorf("the binding survived the release: %q", l.SessionID)
+	}
+}
