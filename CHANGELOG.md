@@ -417,6 +417,64 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`dibs upgrade` verified a different daemon than the one it restarted.** The
+  plan discovers the target's real address from the registry each live daemon
+  writes, and it does that on purpose: assuming the address is how a board
+  serving on a LAN address gets restarted on loopback, taking every remote agent
+  off it while every local check still passes. Having found the address, both
+  the before-snapshot and the verification then called the address-free helper,
+  which resolves through the CLI's own environment and config, so the proof that
+  the board came back was collected from whichever daemon THAT named.
+
+  Reproduced with two boards: upgrade stopped one, read the other, printed
+  `upgraded: serial 0, 0 agent(s)` and returned success while its target was
+  serving nothing. With a single board on an address the CLI does not know, the
+  restart works and a failure is reported that did not happen. An earlier
+  release fixed *whether* upgrade stops the right daemon; this is the half that
+  decides which one it then looks at, and the shipped help has been claiming it
+  "verifies the fleet came back" throughout. Found by the pre-release review,
+  with a reproduction.
+
+- **A role was checked for spelling inside the replay fold.** `applyGrantRole`
+  rejected an unknown role in `Apply`, which is the fold that replays ops
+  accepted by older code, so removing or renaming a role would make the new
+  build refuse a `grant_role` already in its own ledger and stop the daemon
+  booting. The typed request path immediately beside it does this in `Admit` and
+  carries the paragraph explaining why. The test meant to guard the rule asked
+  `State.Apply` to reject `"superuser"`, so it froze the wrong placement: the
+  test written to protect the rule was pinning the bug that broke it. It asserts
+  both halves now, and `grant_role` is enumerated in the guard that walks this
+  class. Fifth time this mistake has been caught here. Found by the pre-release
+  review.
+
+- **Adoption reported records the heir could not read as rescued mail.**
+  `Inbox` excludes a finished message once its addressee has collected it. The
+  handover moved and counted every record above the watermark, consumed ones
+  included, beside a note that says "read them with inbox", so a mailbox holding
+  one unread message and one already acknowledged reported two and showed one,
+  to a coordinator deciding whether the rescue was worth authorising. One
+  definition of "would this appear in an inbox" now serves both. Found by the
+  pre-release review.
+
+- **Mail the recipient could not see filled its mailbox and was reported
+  delivered.** Two more readings of the ownership watermark that asked only
+  whether a message was addressed to an id, found by sweeping for the class the
+  previous round turned up.
+
+  The capacity metric counted a previous occupant's mail, so a send could be
+  refused with `E_MAILBOX_FULL` against an agent whose inbox reads as empty, and
+  nothing could clear it: the recipient cannot see the mail, so it cannot read,
+  answer, ack or consume it, and the sender is simply refused. Only a notify may
+  displace, so a question to that agent was refused permanently. Rule 6 says an
+  error names the corrective call; this one had none to name.
+
+  The delivery marker had the same gap, and that one is a claim made to the
+  SENDER. Mail below the watermark is not in the inbox the agent just read, so
+  marking it delivered told its sender it had reached somebody who had not seen
+  it and never would. Worse than a message that fails to arrive, because an
+  undelivered message still reads as undelivered and this removes the one signal
+  that would have prompted them to ask.
+
 - **The operator's space transcript rendered every announcement with no text.**
   The board payload carried announcement bodies until it turned out `Board()` is
   what `check_in` returns to every agent on every activation, so every

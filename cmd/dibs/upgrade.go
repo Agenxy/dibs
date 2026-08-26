@@ -181,7 +181,7 @@ func planUpgrade(o upgradeOpts) (*plan, error) {
 	// What is serving right now, so the end of this can prove the board came
 	// back rather than assert it.
 	var serveErr error
-	p.before, serveErr = fleetSnapshot()
+	p.before, serveErr = fleetSnapshotAt(p.running.addr)
 	p.serving = serveErr == nil
 	switch {
 	case p.serving:
@@ -497,7 +497,7 @@ func (p *plan) reconcile() (newDir string, err error) {
 // the requirement (R12). So: subtract.
 func (p *plan) verify(newDir string) error {
 	step("waiting for the board")
-	after, err := waitForBoard(90 * time.Second)
+	after, err := waitForBoard(p.running.addr, 90*time.Second)
 	if err != nil {
 		return fmt.Errorf("the daemon did not start serving: %w\n\n"+
 			"  The ledger is untouched and the board is still in it. Start the daemon\n"+
@@ -696,9 +696,22 @@ type fleet struct {
 // Through the same `get` every other verb uses, so it authenticates and pins
 // the certificate the same way, and a remote board is read the same as a local
 // one rather than through a second half-built client.
-func fleetSnapshot() (fleet, error) {
+func fleetSnapshot() (fleet, error) { return fleetSnapshotAt("") }
+
+// fleetSnapshotAt reads the board of the daemon at a DISCOVERED address.
+//
+// The address matters because upgrade already goes to the trouble of finding
+// it: the registry records what each live daemon bound, so a board serving on a
+// LAN address is not restarted on loopback. Both the before-snapshot and the
+// verification then called the address-free form, which asks this CLI's own
+// environment and config, so the proof that "the board came back" was collected
+// from whichever daemon that named. With two boards up it stopped one and read
+// the other, then reported success. With one board bound to an address the CLI
+// does not know, it restarts correctly and reports a failure that did not
+// happen. Found by the pre-release review, with a reproduction.
+func fleetSnapshotAt(addr string) (fleet, error) {
 	var b boardView
-	if err := get("/api/board", &b); err != nil {
+	if err := getAt(originFor(addr), "/api/board", &b); err != nil {
 		return fleet{}, err
 	}
 	return fleet{Serial: b.Serial, Agents: len(b.Agents)}, nil
@@ -710,18 +723,18 @@ func fleetSnapshot() (fleet, error) {
 // act on rather than a hang, and it waits on the BOARD rather than on /livez:
 // liveness answers before replay finishes, and an upgrade that reported success
 // while the board was still rebuilding would be reporting the wrong thing.
-func waitForBoard(limit time.Duration) (fleet, error) {
+func waitForBoard(addr string, limit time.Duration) (fleet, error) {
 	deadline := time.Now().Add(limit)
 	var last error
 	for {
-		f, err := fleetSnapshot()
+		f, err := fleetSnapshotAt(addr)
 		if err == nil {
 			return f, nil
 		}
 		last = err
 		if time.Now().After(deadline) {
 			return f, fmt.Errorf("nothing served the board on %s within %s: %w",
-				origin(), limit, last)
+				originFor(addr), limit, last)
 		}
 		time.Sleep(250 * time.Millisecond)
 	}

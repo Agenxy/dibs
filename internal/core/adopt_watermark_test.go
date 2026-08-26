@@ -107,3 +107,48 @@ func TestAdoptionDoesNotExposeMailBelowTheSourceWatermark(t *testing.T) {
 		})
 	}
 }
+
+// The count an adoption reports is the number the heir can actually read.
+//
+// The note printed beside it says "read them with inbox", so the number has to
+// be what inbox shows. It was every record above the watermark, consumed ones
+// included, and Inbox excludes a terminal message once its addressee has
+// collected it. So a mailbox holding one unread message and one already
+// acknowledged reported two and showed one, to a coordinator deciding whether a
+// rescue was worth authorising. Found by the pre-release review.
+func TestAdoptionCountsOnlyWhatTheHeirCanRead(t *testing.T) {
+	s := NewState("probe", DefaultLimits())
+	now := time.Unix(1700000000, 0)
+	reg(t, s, "sender", "tok-s", now)
+	reg(t, s, "lost", "tok-l", now)
+	reg(t, s, "heir", "tok-h", now)
+
+	done := mustApply(t, s, &Op{
+		Kind: OpSendMessage, Token: "tok-s", To: "lost",
+		MsgType: MsgNotify, Body: "ALREADY HANDLED",
+	}, now)["msg_serial"].(uint64)
+	mustApply(t, s, &Op{Kind: OpAckMessage, Token: "tok-l", MsgSerial: done}, now.Add(time.Minute))
+	if !s.Messages[done].Consumed {
+		t.Fatal("setup: the acknowledged message is not consumed, so this proves nothing")
+	}
+	unread := mustApply(t, s, &Op{
+		Kind: OpSendMessage, Token: "tok-s", To: "lost",
+		MsgType: MsgNotify, Body: "STILL WAITING",
+	}, now.Add(2*time.Minute))["msg_serial"].(uint64)
+
+	mustApply(t, s, &Op{Kind: OpSignOff, Token: "tok-l"}, now.Add(3*time.Minute))
+	res := mustApply(t, s, &Op{
+		Kind: OpAdoptAgent, Token: "tok-h", To: "lost", AdoptAuthorised: true,
+	}, now.Add(4*time.Minute))
+
+	inbox := s.Inbox("heir")
+	if got, ok := res["messages"].(int); !ok || got != len(inbox) {
+		t.Errorf("adoption reported %v message(s) and the heir's inbox holds %d. "+
+			"The note beside that number says to read them with inbox",
+			res["messages"], len(inbox))
+	}
+	if len(inbox) != 1 || inbox[0].Serial != unread {
+		t.Errorf("the heir should hold exactly the unread message #%d, holds %#v",
+			unread, inbox)
+	}
+}

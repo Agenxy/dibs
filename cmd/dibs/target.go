@@ -66,6 +66,37 @@ const (
 	schemeTLS   = "https://"
 )
 
+// originFor is origin() for an address this process was TOLD, rather than the
+// one it would choose for itself.
+//
+// `dibs upgrade` discovers the address the target daemon actually bound, from
+// the registry each live daemon writes, precisely because assuming it is how a
+// LAN board gets restarted on loopback. It then verified through origin(),
+// which asks the CLI's own environment and config, so the check ran against
+// whichever board that named. Reproduced by the pre-release review with two
+// boards: upgrade stopped board A, read board B, printed "upgraded" and
+// returned success while A was serving nothing. Discovering an address and not
+// using it is worse than never discovering it, because the report is confident.
+func originFor(hostPort string) string {
+	if hostPort == "" {
+		return origin() // nothing discovered: the CLI's own target is the only answer
+	}
+	if scheme, rest, found := strings.Cut(hostPort, "://"); found {
+		return strings.ToLower(scheme) + "://" + rest
+	}
+	// The same shared resolver origin() consults, for the same reason: the
+	// daemon honours insecure_plaintext and tls_cert/tls_key, and inferring the
+	// transport from the address alone speaks the wrong one to a correctly
+	// configured board.
+	if scheme, _, err := resolveTransport(paths.DataDir()); err == nil && scheme != "" {
+		return scheme + "://" + hostPort
+	}
+	if isLoopbackHostPort(hostPort) {
+		return schemePlain + hostPort
+	}
+	return schemeTLS + hostPort
+}
+
 func origin() string {
 	if a := rawAddr(); a != "" {
 		if scheme, _, found := strings.Cut(a, "://"); found {

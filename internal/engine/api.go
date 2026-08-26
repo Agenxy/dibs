@@ -336,14 +336,34 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 	})
 }
 
-// markDelivered ledgers pending→delivered for the agent's mailbox.
-func (e *Engine) markDelivered(l *core.Agent, now time.Time) {
+// pendingFor is the mail this agent has just been shown and not yet been
+// recorded as having received.
+//
+// It honours the agent's watermark, which the loop it replaces did not, and
+// this is the reading of the watermark that matters most: "delivered" is what
+// the SENDER is told. Mail below the watermark was addressed to a previous
+// occupant of this name, so it is not in the inbox this agent just read.
+// Marking it delivered told the sender their message had reached somebody who
+// had not seen it and never would, which is worse than not delivering it: it
+// removes the one signal that would have made them ask.
+//
+// Split from markDelivered so it can be tested. An exported wrapper on a
+// zero-value Engine sends on a nil channel and blocks forever rather than
+// failing, so a decision only reachable through one is effectively untested.
+// See AGENTS.md.
+func pendingFor(st *core.State, l *core.Agent) []uint64 {
 	var serials []uint64
-	for _, m := range e.state.Messages {
-		if m.To == l.ID && m.State == core.MsgStatePending {
+	for _, m := range st.Messages {
+		if m.To == l.ID && m.Serial >= l.TruncatedBefore && m.State == core.MsgStatePending {
 			serials = append(serials, m.Serial)
 		}
 	}
+	return serials
+}
+
+// markDelivered ledgers pending→delivered for the agent's mailbox.
+func (e *Engine) markDelivered(l *core.Agent, now time.Time) {
+	serials := pendingFor(e.state, l)
 	if len(serials) > 0 {
 		_, _ = e.applyAndLedger(&core.Op{Kind: core.OpMarkDelivered, MsgSerials: serials}, now)
 	}

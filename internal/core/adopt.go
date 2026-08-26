@@ -132,7 +132,12 @@ func adoptNote(moved int) string {
 func (s *State) readdressMail(from, into *Agent) int {
 	moved := 0
 	for _, m := range s.Messages {
-		if m.To != from.ID || m.Serial < from.TruncatedBefore {
+		// readable(), so what moves is what the heir can actually open. This
+		// counted consumed records too and the note beside the count says "read
+		// them with inbox", so a mailbox holding one unread message and one
+		// acknowledged one reported two and showed one. The source keeps its
+		// finished history, which is what the note already promises.
+		if m.To != from.ID || m.Serial < from.TruncatedBefore || !m.readable() {
 			continue
 		}
 		m.To = into.ID

@@ -46,6 +46,29 @@ func (l *Agent) IsCoordinator() bool { return l.Role == RoleCoordinator || l.Rol
 // other agents' mail. Only a human grants this.
 func (l *Agent) IsAdmin() bool { return l.Role == RoleAdmin }
 
+// checkGrantRole rejects a role nobody has ever defined.
+//
+// Called from Admit, NOT from Apply, for the reason spelled out at
+// checkGrantRequest: this is payload vocabulary, and Apply is the fold that
+// replays a ledger written by older code. A vocabulary rule enforced there is
+// retroactive, so the day the accepted set changes is the day the daemon
+// refuses to boot on its own history. It sat in Apply here while the typed
+// request path beside it did this correctly and carried the paragraph
+// explaining why. Found by the pre-release review, which is now the fifth time
+// this mistake has been caught in this repository.
+func checkGrantRole(op *Op) error {
+	if op.Kind != OpGrantRole {
+		return nil
+	}
+	switch op.Mode {
+	case RoleMember, RoleCoordinator, RoleAdmin:
+		return nil
+	}
+	return errf("E_BAD_ROLE",
+		"use member (default) | coordinator (broadcast + force_release) | admin (everything, including reading all mail)",
+		"unknown role %q", op.Mode)
+}
+
 // applyGrantRole sets an agent's role. The engine admits this op only on the
 // admin path (local secret + admin password), so an agent can never promote
 // itself or another; the core just applies the recorded decision.
@@ -54,12 +77,8 @@ func (s *State) applyGrantRole(op *Op, now time.Time) (Result, []Event, error) {
 	if !ok {
 		return nil, nil, errf("E_NO_AGENT", "check the board for live agents", "no agent %q", op.To)
 	}
+	// The vocabulary check is in Admit, not here. See checkGrantRole.
 	role := op.Mode
-	if role != RoleMember && role != RoleCoordinator && role != RoleAdmin {
-		return nil, nil, errf("E_BAD_ROLE",
-			"use member (default) | coordinator (broadcast + force_release) | admin (everything, including reading all mail)",
-			"unknown role %q", role)
-	}
 	if l.Role == role || (l.Role == "" && role == RoleMember) {
 		return Result{"ok": true, "agent": l.ID, "role": role, "changed": false}, nil, nil
 	}

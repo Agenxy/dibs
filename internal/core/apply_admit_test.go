@@ -49,6 +49,13 @@ func TestApplyFoldsWhateverAdmitRejects(t *testing.T) {
 		// which is the standing weakness this test's own comment admits to:
 		// every entry has to be added by hand when a rule is added.
 		{Kind: OpBindSession, SessionID: long(lim.MaxNameBytes)},
+		// grant_role checked its own vocabulary inside the fold while the typed
+		// request path beside it did the same job in Admit and carried the
+		// paragraph saying why. The list did not know about this op either,
+		// which is this test's standing weakness: every entry is added by hand.
+		// A role removed or renamed by a later build would have made that build
+		// refuse a grant_role already in its own ledger.
+		{Kind: OpGrantRole, To: "speaker", Mode: "superuser"},
 	}
 
 	for _, proto := range rejected {

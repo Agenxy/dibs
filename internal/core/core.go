@@ -680,21 +680,28 @@ func (s *State) Inbox(agent string) []*Message {
 	// messages. Those are expired with a reason the SENDER reads, so they are
 	// deliberately kept, and the next agent to take that name was handed them,
 	// bodies included. Measured. Found by the pre-release review.
-	var floor uint64
-	if l := s.Agents[agent]; l != nil {
-		floor = l.TruncatedBefore
-	}
+	floor := s.mailFloor(agent)
 	for _, m := range s.Messages {
 		if m.Serial < floor {
 			continue
 		}
-		if m.To == agent && (!m.Terminal() || !m.Consumed) {
+		if m.To == agent && m.readable() {
 			out = append(out, m)
 		}
 	}
 	sortMessages(out)
 	return out
 }
+
+// readable reports whether this message would appear in its addressee's inbox:
+// still live, or finished and not yet collected (SPEC §8).
+//
+// One definition, because adoption had a second one. It readdressed and COUNTED
+// every record above the watermark, consumed ones included, and told the heir
+// to "read them with inbox": a mailbox with one unread message and one
+// acknowledged one reported two and showed one. A count handed to a person
+// approving the request has to be the number they would see.
+func (m *Message) readable() bool { return !m.Terminal() || !m.Consumed }
 
 func sortMessages(ms []*Message) {
 	for i := 1; i < len(ms); i++ {
@@ -704,11 +711,37 @@ func sortMessages(ms []*Message) {
 	}
 }
 
+// mailFloor is the serial below which mail addressed to this agent is not the
+// agent's own. See Agent.TruncatedBefore.
+//
+// One function because "is this message mine" is asked in more than one place
+// and was answered differently in each. Inbox filtered on the watermark; the
+// capacity metric and the delivery marker did not, and both of those decide
+// something a SENDER is told.
+func (s *State) mailFloor(agent string) uint64 {
+	if l := s.Agents[agent]; l != nil {
+		return l.TruncatedBefore
+	}
+	return 0
+}
+
 // nonTerminalCount is the mailbox-capacity metric (SPEC §8).
+//
+// It honours the watermark, which it did not. Mail below it belongs to a
+// previous occupant of this name: the current agent cannot see it, so it cannot
+// read, answer, ack or consume it, and nothing it does will ever retire it.
+// Counting it against capacity meant a send could be refused with
+// E_MAILBOX_FULL against an agent whose inbox reads as empty, with no
+// corrective action available to either party: the recipient cannot clear what
+// it cannot see, and the sender is simply refused. Rule 6 says an error names
+// the corrective call, and this one had none to name. Reproduced before fixing:
+// two pending notifies to a swept name, the name returns, and a question to it
+// is refused forever.
 func nonTerminalCount(s *State, agent string) int {
 	n := 0
+	floor := s.mailFloor(agent)
 	for _, m := range s.Messages {
-		if m.To == agent && !m.Terminal() {
+		if m.To == agent && m.Serial >= floor && !m.Terminal() {
 			n++
 		}
 	}
