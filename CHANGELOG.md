@@ -2202,9 +2202,18 @@ machines for real work. Their priority order, not ours.
   preferred now, and the directory inference is left for callers that send
   neither it nor a harness thread id. Still vetted rather than trusted: it goes
   through the same check as any other claim, so naming somebody else's session
-  is refused rather than believed. The inference itself is unchanged and still
-  asks whether an AGENT holds an id rather than whether a SESSION is alive
-  behind it, which remains the open half.
+  is refused rather than believed.
+
+  The inference itself asked whether an AGENT holds an id, using the same lookup
+  that resolves a hook to a mailbox. That one skips archived and closed rows,
+  correctly, because mail must not be delivered to an agent that is gone; asked
+  as "is this id free for somebody else", the skip was the hole. It asks whether
+  the id has EVER had an owner now, archived rows included, which is what a
+  swept agent leaves behind: a sweep archives, and the row is only removed after
+  seven days against a one-hour join window, so a recently swept id always still
+  has one. An id nobody has ever held is still joined, which is what the
+  inference is for and what a companion test pins, because a refusal that
+  refuses everything is indistinguishable from deleting the feature.
 
 - **The daemon records which agent every lifecycle hook resolved to.** The wake
   path fails silently by construction: `hook_poll` answers, the agent it

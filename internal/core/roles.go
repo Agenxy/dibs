@@ -154,6 +154,34 @@ func (s *State) AgentBySession(sid string) *Agent {
 	return guessed
 }
 
+// SessionSpokenFor reports whether ANY agent row has ever answered to this
+// session id, archived and closed rows included.
+//
+// A different question from AgentBySession, and the difference is the whole
+// point. That one answers "who should this hook's mail go to", so it skips
+// archived and closed rows: mail must not be delivered to an agent that is
+// gone. Asked instead as "is this id free for somebody else to be given", that
+// skip is a hole. An ephemeral row swept while its session kept running leaves
+// a LIVE session's id looking unheld, and the directory inference then handed
+// it to the next agent registering in that directory. Measured on this
+// project's own board: one agent's unread list was rendered into another's
+// context for hours.
+//
+// Archived is not free. The row is kept for ArchiveRetention, which is seven
+// days against a one-hour join window, so an id whose agent was swept recently
+// enough for the inference to consider it always still has a row here.
+func (s *State) SessionSpokenFor(sid string) bool {
+	if sid == "" {
+		return false
+	}
+	for _, l := range s.Agents {
+		if l.holdsSession(sid) {
+			return true
+		}
+	}
+	return false
+}
+
 // holdsSession reports whether this agent answers to that session id, as its
 // primary or as one of the OTHER names the same session goes by. See
 // Agent.SessionAliases.

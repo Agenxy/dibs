@@ -100,7 +100,14 @@ func announcedSession(children map[string]Child, st *core.State, cwd string, now
 		// Already somebody's. Adopting it would move another agent's mail
 		// delivery onto this one, which is the disclosure this whole path is
 		// careful about.
-		if st != nil && st.AgentBySession(sid) != nil {
+		//
+		// SessionSpokenFor, not AgentBySession: that one skips archived and
+		// closed rows, correctly, because mail must not be delivered to an
+		// agent that is gone. Asked here it meant a swept row left a still-live
+		// session's id looking free, and the next agent to register in that
+		// directory inherited it along with the hooks and mail behind it. An id
+		// that has ever had an owner is not free, however that owner ended.
+		if st != nil && st.SessionSpokenFor(sid) {
 			continue
 		}
 		if found != "" {
