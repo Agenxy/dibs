@@ -666,7 +666,28 @@ func (s *State) AgentByToken(tok string) *Agent {
 // oldest first (SPEC §8).
 func (s *State) Inbox(agent string) []*Message {
 	var out []*Message
+	// THE WATERMARK FILTERS, and until now it only reported.
+	//
+	// TruncatedBefore says "mail below this is not mine". It was set by the
+	// retention sweep and returned to callers as truncated_before_serial, and
+	// nothing ever consulted it, which went unnoticed because the sweep that
+	// sets it has already DELETED the messages it covers: there was nothing left
+	// to filter, so an inert watermark and a working one looked identical.
+	//
+	// They stop looking identical when mail outlives the row it was addressed
+	// to. An id is derived from the name, so a name that comes back reuses the
+	// id, and a sweep written before v0.0.7 removes the row while keeping the
+	// messages. Those are expired with a reason the SENDER reads, so they are
+	// deliberately kept, and the next agent to take that name was handed them,
+	// bodies included. Measured. Found by the pre-release review.
+	var floor uint64
+	if l := s.Agents[agent]; l != nil {
+		floor = l.TruncatedBefore
+	}
 	for _, m := range s.Messages {
+		if m.Serial < floor {
+			continue
+		}
 		if m.To == agent && (!m.Terminal() || !m.Consumed) {
 			out = append(out, m)
 		}

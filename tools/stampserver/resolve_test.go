@@ -49,3 +49,33 @@ func TestALeadingVIsStripped(t *testing.T) {
 		t.Errorf("resolved %q, wanted 4.5.6", got)
 	}
 }
+
+// A value that is not a version must be refused before it becomes an argument.
+//
+// The explicit version went positionally to `gh release view`, and anything
+// starting with a dash is not positional: `--help` was parsed by gh as an
+// OPTION, exited zero, and the release-existence check read that as "the
+// release exists". The manifest was stamped and the tool printed "publishing
+// version --help". The check was real; its input was not. Found by the
+// pre-release review.
+func TestAVersionThatIsNotAVersionIsRefused(t *testing.T) {
+	t.Setenv("GITHUB_REPOSITORY", "agenxy/dibs")
+	for _, bad := range []string{"--help", "-h", "--repo", "latest", "", "1.2", "v"} {
+		if bad == "" {
+			continue // empty means "whatever is released", handled elsewhere
+		}
+		if _, err := resolve(bad); err == nil {
+			t.Errorf("%q was accepted as a version to publish to the public registry", bad)
+		}
+	}
+}
+
+// And ordinary versions, including prereleases, still resolve.
+func TestOrdinaryVersionsStillResolve(t *testing.T) {
+	t.Setenv("GITHUB_REPOSITORY", "")
+	for _, good := range []string{"1.2.3", "v1.2.3", "0.0.7", "1.2.3-rc.1"} {
+		if _, err := resolve(good); err != nil {
+			t.Errorf("%q was refused: %v", good, err)
+		}
+	}
+}

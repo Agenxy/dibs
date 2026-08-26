@@ -1072,6 +1072,112 @@ func TestBothBinariesShipAManualThatRenders(t *testing.T) {
 // anything at all, and forbidding it would forbid workflows. What is refused is
 // shell LOGIC: multiple statements, conditionals, pipelines, redirections,
 // substitutions, and parameter expansion.
+// shellTokens are the constructs that make a YAML command a PROGRAM rather
+// than an invocation. One definition, shared by the workflow and Taskfile
+// guards: two copies of a rule is two rules, and the second one rots.
+var shellTokens = []struct {
+	token, why string
+}{
+	{"${", "parameter expansion (${VAR#prefix} and friends) is shell string surgery"},
+	{"$(", "command substitution runs a second program to build the first one's arguments"},
+	{"`", "backtick substitution is command substitution wearing older syntax"},
+	{"&&", "a conditional sequence is control flow"},
+	{"||", "a fallback is control flow, and the silent kind"},
+	{"|", "a pipeline hides the exit status of everything but the last stage"},
+	{";", "two statements on one line is a script"},
+	{">", "a redirection is the script deciding where output goes"},
+	{"<", "a redirection is the script deciding where input comes from"},
+	{"if ", "a conditional is control flow"},
+	{"for ", "a loop is control flow"},
+	{"while ", "a loop is control flow"},
+	{"case ", "a conditional is control flow"},
+	{"set -e", "needing this is the admission that shell continues past failures"},
+}
+
+// shellBody is a block with the things that LOOK like shell operators but are
+// not, removed before matching.
+//
+// An arrow is not a redirection. The Taskfile carries prose telling an operator
+// to open "Keychain Access -> Certificate Assistant", and a bare `>` search
+// called that a script. A guard with false positives gets weakened or deleted,
+// so it has to be right about the ordinary case to be trusted about the real
+// one. Comparison operators go for the same reason.
+func shellBody(body string) string {
+	// TEMPLATE ACTIONS ARE NOT SHELL. `{{if eq .SIGNER "-"}}` is rendered by the
+	// task runner before anything is executed, so its `if` is not control flow
+	// in a script: matching it called a one-line `echo` a program. Removed
+	// first, so what remains is only what a shell would actually see.
+	body = templateAction.ReplaceAllString(body, " ")
+	// QUOTED TEXT IS AN ARGUMENT, NOT LOGIC. `echo "asked for Desktop access"`
+	// is one command, and searching its prose for shell tokens found `for` and
+	// called it a loop. The Taskfile's help strings are full of English that
+	// contains `if`, `for` and `>`, so a guard that reads inside quotes reports
+	// a script every time somebody writes a sentence. What matters is what the
+	// shell would EXECUTE, which is what is left once arguments are removed.
+	body = quoted.ReplaceAllString(body, " ")
+	r := strings.NewReplacer("->", " ", "=>", " ", "<-", " ", ">=", " ", "<=", " ")
+	return r.Replace(body)
+}
+
+// templateAction matches a `{{ ... }}` directive, which the runner evaluates.
+var templateAction = regexp.MustCompile(`\{\{[^}]*\}\}`)
+
+// quoted matches a double- or single-quoted argument, across lines.
+var quoted = regexp.MustCompile(`(?s)"[^"]*"|'[^']*'`)
+
+// countStatements counts the real commands in a block: blank lines and
+// comments are neither.
+func countStatements(body string) int {
+	n := 0
+	for _, l := range strings.Split(body, "\n") {
+		if t := strings.TrimSpace(l); t != "" && !strings.HasPrefix(t, "#") {
+			n++
+		}
+	}
+	return n
+}
+
+// The Taskfile must not embed shell programs either.
+//
+// The no-shell rule is about what shell IS, not where the bytes live, and this
+// repository's own guard read `run:` blocks in .github/workflows and nothing
+// else. A Taskfile `cmd: |` with conditionals, command substitution and
+// redirection is the same object: unbuildable, unvettable, untestable, and
+// invisible to every check. review:release was exactly that, for its whole
+// life, while CHANGELOG claimed the YAML-shell class was removed and guarded.
+// Found by the pre-release review, about the task that runs it.
+func TestTheTaskfileDoesNotEmbedShellScripts(t *testing.T) {
+	root := repoRoot(t)
+	raw, err := os.ReadFile(filepath.Join(root, "Taskfile.yml")) // #nosec G304 -- this repo's own
+	if err != nil {
+		t.Fatalf("reading Taskfile.yml: %v", err)
+	}
+	// The file has to have been READ, which is a different claim from "it has
+	// cmd: blocks". Zero blocks is a legitimate state, and it is the one this
+	// repository is in now that review:release is a Go program; asserting
+	// otherwise would make the guard fail for having nothing to complain about.
+	if !strings.Contains(string(raw), "cmds:") {
+		t.Fatal("Taskfile.yml has no cmds: at all, so this guard read the wrong " +
+			"file or the format has changed: re-point it rather than leaving it green")
+	}
+	blocks := yamlBlocks(string(raw), "cmd:")
+	for _, b := range blocks {
+		for _, bad := range shellTokens {
+			if strings.Contains(shellBody(b.body), bad.token) {
+				t.Errorf("Taskfile.yml:%d embeds a shell program: %s\n  %s\n"+
+					"  Write it as a Go program under tools/ and call that. Shell in "+
+					"YAML is still shell: it cannot be built, vetted or run on its own.",
+					b.line, bad.why, firstLine(b.body))
+				break
+			}
+		}
+		if !b.folded && countStatements(b.body) > 1 {
+			t.Errorf("Taskfile.yml:%d is several commands in one block, which is a "+
+				"script:\n  %s", b.line, firstLine(b.body))
+		}
+	}
+}
+
 func TestWorkflowsDoNotEmbedShellScripts(t *testing.T) {
 	root := repoRoot(t)
 	dir := filepath.Join(root, ".github", "workflows")
@@ -1088,34 +1194,10 @@ func TestWorkflowsDoNotEmbedShellScripts(t *testing.T) {
 	// loop, and a block of two ordinary commands on separate lines. A guard that
 	// states a property and enforces a subset of it is the kind this repository
 	// keeps finding, and it found this one in itself.
-	constructs := []struct{ token, why string }{
-		{"${", "parameter expansion (${VAR#prefix} and friends) is shell string surgery"},
-		{"$(", "command substitution runs a second program to build the first one's arguments"},
-		{"`", "backtick substitution is command substitution wearing older syntax"},
-		{"&&", "a conditional sequence is control flow"},
-		{"||", "a fallback is control flow, and the silent kind"},
-		{"|", "a pipeline hides the exit status of everything but the last stage"},
-		{";", "two statements on one line is a script"},
-		{">", "a redirection is the script deciding where output goes"},
-		{"<", "a redirection is the script deciding where input comes from"},
-		{"if ", "a conditional is control flow"},
-		{"for ", "a loop is control flow"},
-		{"while ", "a loop is control flow"},
-		{"case ", "a conditional is control flow"},
-		{"set -e", "needing this is the admission that shell continues past failures"},
-	}
+	// see shellTokens
 	// AND MORE THAN ONE COMMAND, which no substring can see. A folded block of
 	// two ordinary lines is a script by the definition at the top of this test,
 	// and every token above would miss it.
-	multiline := func(body string) int {
-		n := 0
-		for _, l := range strings.Split(body, "\n") {
-			if t := strings.TrimSpace(l); t != "" && !strings.HasPrefix(t, "#") {
-				n++
-			}
-		}
-		return n
-	}
 	checked := 0
 	for _, e := range entries {
 		if e.IsDir() || (filepath.Ext(e.Name()) != ".yml" && filepath.Ext(e.Name()) != ".yaml") {
@@ -1127,7 +1209,7 @@ func TestWorkflowsDoNotEmbedShellScripts(t *testing.T) {
 		}
 		checked++
 		for _, block := range runBlocks(string(raw)) {
-			if n := multiline(block.body); n > 1 && !block.folded {
+			if n := countStatements(block.body); n > 1 && !block.folded {
 				t.Errorf("%s line %d: this `run:` holds %d commands, which is a script "+
 					"whatever it contains. Write it as a Go program under tools/ and "+
 					"invoke that, or split it into one step per command so a failure "+
@@ -1135,8 +1217,8 @@ func TestWorkflowsDoNotEmbedShellScripts(t *testing.T) {
 					e.Name(), block.line, n, strings.TrimSpace(firstLine(block.body)))
 				continue
 			}
-			for _, c := range constructs {
-				if !strings.Contains(block.body, c.token) {
+			for _, c := range shellTokens {
+				if !strings.Contains(shellBody(block.body), c.token) {
 					continue
 				}
 				t.Errorf("%s line %d: this `run:` is a shell script, not a command: %s\n"+
@@ -1164,15 +1246,28 @@ type runBlock struct {
 }
 
 // runBlocks returns every `run:` value in a workflow, folded blocks included.
-func runBlocks(s string) []runBlock {
+func runBlocks(s string) []runBlock { return yamlBlocks(s, "run:") }
+
+// yamlBlocks returns every value of one YAML key, folded blocks included.
+//
+// Generalised from runBlocks over the KEY, because the shell it was written to
+// catch is not only in workflows. A Taskfile `cmd:` is the same thing: a
+// multiline program with conditionals and redirection, indented under YAML,
+// which cannot be built, vetted or run on its own. The guard scanned
+// .github/workflows and nothing else, so the task that runs the pre-release
+// review was itself a shell script for as long as it existed, while the
+// changelog said the class had been removed and guarded. Found by that review.
+func yamlBlocks(s, key string) []runBlock {
 	var out []runBlock
 	lines := strings.Split(s, "\n")
 	for i := 0; i < len(lines); i++ {
 		trimmed := strings.TrimSpace(lines[i])
-		if !strings.HasPrefix(trimmed, "run:") {
+		// A list item carries its own dash: `- cmd: |` is the same key.
+		trimmed = strings.TrimPrefix(trimmed, "- ")
+		if !strings.HasPrefix(trimmed, key) {
 			continue
 		}
-		rest := strings.TrimSpace(strings.TrimPrefix(trimmed, "run:"))
+		rest := strings.TrimSpace(strings.TrimPrefix(trimmed, key))
 		// A single-line command.
 		if rest != "" && rest != "|" && rest != ">" && rest != ">-" && rest != "|-" {
 			out = append(out, runBlock{i + 1, rest, false})

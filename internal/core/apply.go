@@ -588,6 +588,31 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 		LastCoordination: now, Token: op.NewToken, Nonce: op.Nonce,
 		Slots: map[string]Slot{},
 	}
+	// A NEW AGENT DOES NOT INHERIT THE LAST ONE'S MAIL.
+	//
+	// An id is derived from the name, so a name that comes back reuses the id,
+	// and mail outlives the row it was addressed to: a sweep written before
+	// v0.0.7 deletes the row and keeps the messages, deliberately and
+	// unchangeably, because its op does not carry the decision. Those messages
+	// are expired with a reason the SENDER reads, which is why they are kept and
+	// must not be deleted. But they are still addressed to this id, so the next
+	// agent to take the name saw them in its inbox, bodies and all. Measured:
+	// registering the same name after such a sweep showed the previous
+	// occupant's question verbatim.
+	//
+	// The watermark is the mechanism that already exists for exactly this,
+	// "mail with serial below it is not mine", and the retention sweep uses it.
+	// Raising it here loses the new agent nothing: every message below it was
+	// addressed to somebody else.
+	//
+	// The messages are untouched, which is what keeps the sender's record and
+	// any later ack of one working: an ack resolves by serial and does not
+	// consult this.
+	for _, m := range s.Messages {
+		if m.To == id && m.Serial >= l.TruncatedBefore {
+			l.TruncatedBefore = m.Serial + 1
+		}
+	}
 	s.Agents[id] = l
 	l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed) // the name its hooks use, if different
 	if op.Nonce != "" {
@@ -1179,12 +1204,40 @@ func (s *State) applyPrune(op *Op, now time.Time) (Result, []Event, error) {
 	var evs []Event
 	var ids []string
 	for _, l := range targets {
+		// ALREADY CLOSED IS NOT A TRANSITION.
+		//
+		// The all-agent branch skips closed agents; the named branch did not, so
+		// pruning one twice ran applyClose again and emitted a second
+		// `agent.closed` for an agent that closed once. The audit stream is the
+		// thing `dibs log` and every events_since consumer reads, and a
+		// transition that never happened is worse there than a missing one,
+		// because it is indistinguishable from a real one. Found by the
+		// pre-release review.
+		if l.Status == StatusClosed {
+			continue
+		}
 		r, e := s.applyClose(l, now)
 		_ = r
 		evs = append(evs, e...)
 		ids = append(ids, l.ID)
 	}
 	slices.Sort(ids)
+	// NOTHING CLOSED MEANS NOTHING TO WRITE DOWN.
+	//
+	// This called finish unconditionally, so a prune that found no debris
+	// advanced the serial and the engine appended an op recording that nothing
+	// happened. "An op is ledgered iff it changed replayable state" is the rule
+	// this repository states about itself, and an idle prune broke it in the
+	// direction that grows the ledger forever.
+	//
+	// Worth being explicit about the replay consequence: a historical empty
+	// prune DID advance the serial, so replaying one now leaves the state one
+	// behind the ledger's own number. That is the tolerated case, not the fatal
+	// one: Replay resyncs forward on a gap and only refuses when state runs
+	// AHEAD. Choosing that over an ever-growing ledger of no-ops is deliberate.
+	if len(ids) == 0 {
+		return Result{"ok": true, "pruned": ids, "count": 0, "serial": s.Serial}, nil, nil
+	}
 	// LEDGERED. applyPrune closes agents, blanks their tokens and releases their
 	// claims, and it returned without finish(), so the serial never moved, the
 	// engine never appended, and replay undid all of it. The human was told the

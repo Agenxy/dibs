@@ -202,23 +202,7 @@ tasks:
     # reviewer that is NOT what wrote the code does the job. What it is pointed
     # at matters more than which one it is: docs/REVIEW.md holds the brief.
     cmds:
-      - cmd: |
-          if ! command -v codex >/dev/null 2>&1; then
-            echo "no reviewer found: install codex, or run docs/REVIEW.md's brief"
-            echo "through whichever model you have. The point is that it is not the"
-            echo "one that wrote the change."
-            exit 1
-          fi
-          # stdin closed, because the prompt is an argument and the reviewer
-          # needs nothing from it. Left open, `codex exec` waits on stdin when it
-          # is not a terminal: run from a script, or after anything that consumed
-          # stdin, this task printed "Reading additional input from stdin..." and
-          # sat there until it was killed. A release gate that hangs instead of
-          # reviewing is a release gate somebody stops running.
-          codex exec "$(cat docs/REVIEW.md)
-
-          The diff under review is: git diff $(git describe --tags --abbrev=0)..HEAD
-          Read it with git, in pieces if you need to. Work read-only." < /dev/null
+      - go run ./tools/reviewrelease
 
   test:dev:
     env:

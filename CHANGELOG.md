@@ -1910,6 +1910,52 @@ machines for real work. Their priority order, not ours.
   its list simply did not know this op existed, which is the weakness that test's
   own comment admits to. The op is in the list now.
 
+- **A new agent no longer inherits the previous occupant's mail.** An id is
+  derived from the name, so a name that comes back reuses the id, and mail
+  outlives the row it was addressed to: a sweep written before v0.0.7 removes
+  the row and keeps the messages, which its op records and replay must preserve.
+  Those messages are expired with a reason the SENDER reads, so deleting them
+  would trade one silent loss for another. What was wrong is that they were
+  still delivered: measured, a new agent registering the same name was shown the
+  previous occupant's question verbatim, body included. It now starts with a
+  watermark past them.
+
+  **That watermark had never filtered anything.** It was set by the retention
+  sweep and reported to callers, and nothing consulted it, which went unnoticed
+  because the sweep that sets it has already deleted the mail it covers: there
+  was nothing left to filter, so an inert watermark and a working one looked
+  identical. They stop looking identical the moment mail outlives its row.
+
+- **A prune no longer writes down that it did nothing.** An empty prune built no
+  targets and advanced the serial anyway, so the engine appended an op recording
+  that nothing happened, on demand, forever. And pruning an agent that was
+  already closed closed it again, emitting a second `agent.closed` for a
+  transition that happened once: the audit stream is what `dibs log` and every
+  `events_since` consumer reads, and an invented transition is worse there than
+  a missing one because it is indistinguishable from a real one.
+
+- **The registry check accepted things that are not versions.** An explicit
+  value went positionally to `gh release view`, and anything starting with a
+  dash is not positional: `--help` was read as an option, exited zero, and the
+  release-existence check took that as proof the release was there. It is
+  checked against a semantic-version shape first now.
+
+- **The no-shell rule now covers the Taskfile.** The guard read `run:` blocks in
+  `.github/workflows` and nothing else, so `review:release` was a multiline
+  shell program with conditionals and redirection for its whole life, while the
+  changelog claimed the class was removed and guarded. It is a Go program under
+  `tools/`, and the guard reads `cmd:` blocks too. The predicate is shared
+  rather than copied, and it ignores template actions and quoted arguments,
+  because a guard that calls `echo "asked for Desktop access"` a loop is one
+  that gets deleted.
+
+- **The Homebrew cask no longer promises what it does not check.** It says it
+  clears the macOS quarantine flag, and ran `xattr` without treating failure as
+  fatal, so a real failure left the install green and the flag in place. Making
+  it fatal would be worse, since `xattr` exits non-zero in ordinary cases, so
+  the claim now matches the behaviour and both the cask and the README say what
+  to run if macOS still refuses.
+
 - **A wake that lands in a session working somewhere else now says so.** The
   socket route delivers wherever the binding points, and a binding can be wrong:
   a swept row frees a live session's id and the next agent registering in that

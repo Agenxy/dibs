@@ -86,6 +86,19 @@ func resolve(explicit string) (string, error) {
 		// A dispatch with no version still means "whatever is currently
 		// released", which is the branch below and needs no such check.
 		want := strings.TrimPrefix(v, "v")
+		// A VERSION, CHECKED AS ONE, BEFORE IT BECOMES AN ARGUMENT.
+		//
+		// This went straight to `gh release view <want>` positionally, and a
+		// value beginning with a dash is not positional at all: `--help` was
+		// parsed by gh as an OPTION, exited zero, and the release-existence check
+		// read that as "the release is there". The manifest was then stamped,
+		// printing "publishing version --help". The check I added last round was
+		// real and its input was not. Found by the pre-release review.
+		if !semver.MatchString(want) {
+			return "", fmt.Errorf("%q is not a version. Give a semantic version like "+
+				"1.2.3, or no -version at all to publish whatever is currently "+
+				"released", v)
+		}
 		if err := mustBeReleased(want); err != nil {
 			return "", err
 		}
@@ -154,6 +167,11 @@ func mustBeReleased(version string) error {
 		"first, or run this with no -version to publish whatever is currently "+
 		"released", repo, version)
 }
+
+// semver is the shape a published version has: digits and dots, with the
+// optional prerelease and build parts the registry accepts. Anchored, and
+// deliberately refusing anything that could be read as a flag.
+var semver = regexp.MustCompile(`^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`)
 
 // repoName is the owner/name shape GITHUB_REPOSITORY always has.
 var repoName = regexp.MustCompile(`^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`)

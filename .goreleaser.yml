@@ -324,6 +324,15 @@ homebrew_casks:
         install: |
           system_command "/usr/bin/xattr",
                          args:         ["-dr", "com.apple.quarantine", staged_path.to_s],
+                         # NOT fatal, and the caveats say so rather than
+                         # claiming this always works. xattr exits non-zero in
+                         # ordinary cases, including having no such attribute to
+                         # remove, so failing the install over it would be worse
+                         # than the warning it prevents. What was wrong was the
+                         # caveat asserting the flag IS cleared while this could
+                         # silently not clear it: an operator then meets a
+                         # "developer cannot be verified" dialog that the
+                         # documentation says is impossible.
                          must_succeed: false
     caveats: |
       Start the daemon and point your agents at it:
@@ -334,4 +343,12 @@ homebrew_casks:
         dibs doctor              # what is quietly broken, and how to fix it
 
       Signed for provenance with cosign, but not notarised by Apple, so this
-      cask clears the quarantine flag on install.
+      cask TRIES to clear the quarantine flag on install. It is not treated as
+      fatal: `xattr` exits non-zero in ordinary cases, including when there is
+      no such attribute to remove, and failing the install over that would be
+      worse than the warning it prevents.
+
+      So if macOS still says the developer cannot be verified, it did not work
+      and you can finish it by hand:
+
+        xattr -dr com.apple.quarantine "$(brew --prefix)/bin/dibd" "$(brew --prefix)/bin/dibs"

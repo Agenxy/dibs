@@ -165,10 +165,17 @@ only part that changes. `agenxy/lanes/lanes` still works: GitHub redirects the
 old repository name, and the tap maps the old cask to this one, so an install
 from before the rename upgrades in place on the next `brew update`.
 
-Installs both binaries. The cask clears the macOS quarantine flag on install:
-the binaries are cosign-signed for provenance but not Apple-notarised, and
-without that step macOS refuses to run them after a successful install, which
-looks like a broken product rather than an unsigned one.
+Installs both binaries. The cask TRIES to clear the macOS quarantine flag on
+install: the binaries are cosign-signed for provenance but not Apple-notarised,
+and without that step macOS refuses to run them after a successful install,
+which looks like a broken product rather than an unsigned one.
+
+It is not treated as fatal, because `xattr` exits non-zero in ordinary cases
+and failing the install over that would be worse than the warning it prevents.
+So if macOS still says the developer cannot be verified, it did not work, and
+`xattr -dr com.apple.quarantine "$(brew --prefix)/bin/dibd"` finishes the job.
+Saying it always works would leave you meeting a dialog the documentation calls
+impossible.
 
 ### Go
 
