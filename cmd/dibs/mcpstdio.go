@@ -132,6 +132,8 @@ func runBridge(_ []string) error {
 	// discarded by that exec. Bytes still in the kernel's pipe buffer survive,
 	// because the fd does; bytes in a userspace buffer do not. Scanner cannot
 	// answer how much it is holding, so it cannot be made safe here.
+	var watcher inboxWatcher
+	onRegistered := watchOnRegister(ctx, &watcher, streamClient, url, secret)
 	in := bufio.NewReaderSize(os.Stdin, 1<<20)
 	self, haveSelf := currentSelf()
 	// Anything a previous image was holding, re-established before the first
@@ -184,7 +186,7 @@ func runBridge(_ []string) error {
 			continue
 		}
 
-		forward(client, req, line, out)
+		forward(client, req, line, out, onRegistered)
 	}
 }
 
@@ -203,7 +205,7 @@ func runBridge(_ []string) error {
 //
 // Answering and staying up means the next call dials again, so a session
 // reattaches by itself the moment the daemon is back.
-func forward(client *http.Client, req *http.Request, line []byte, out *syncWriter) {
+func forward(client *http.Client, req *http.Request, line []byte, out *syncWriter, saw func(req, reply []byte)) {
 	resp, err := doWithRestartGrace(client, req, line)
 	if err != nil {
 		if reply := unreachableReply(line, err); reply != nil {
@@ -215,7 +217,50 @@ func forward(client *http.Client, req *http.Request, line []byte, out *syncWrite
 	_ = resp.Body.Close()
 	if body = bytes.TrimSpace(body); len(body) > 0 {
 		out.line(body) // empty means a notification / 202: no response line
+		if saw != nil {
+			saw(line, body)
+		}
 	}
+}
+
+// toolNameOf reports which tool a tools/call names, or "".
+func toolNameOf(line []byte) string {
+	var m struct {
+		Method string `json:"method"`
+		Params struct {
+			Name string `json:"name"`
+		} `json:"params"`
+	}
+	if json.Unmarshal(line, &m) != nil || m.Method != "tools/call" {
+		return ""
+	}
+	return m.Params.Name
+}
+
+// agentTokenIn digs the token out of a register reply, or "".
+//
+// A tool result is JSON wrapped in text wrapped in JSON-RPC, so this unwraps
+// twice. Returns "" for anything that is not a register that succeeded, which
+// includes the error results register hands back as ordinary content.
+func agentTokenIn(reply []byte) string {
+	var env struct {
+		Result struct {
+			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if json.Unmarshal(reply, &env) != nil || env.Result.IsError || len(env.Result.Content) == 0 {
+		return ""
+	}
+	var res struct {
+		Token string `json:"token"`
+	}
+	if json.Unmarshal([]byte(env.Result.Content[0].Text), &res) != nil {
+		return ""
+	}
+	return res.Token
 }
 
 // readLine reads one newline-delimited message, or nil at EOF.

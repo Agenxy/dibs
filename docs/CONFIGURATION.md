@@ -104,6 +104,21 @@ and its own hooks fire from there. If your agents need tool access on a wake,
 give that process the permissions it needs rather than assuming it inherits
 them.
 
+**A service cannot sign in as you.** If `dibd` runs as a service, which is the
+recommended setup, its parent is launchd and it lives in a different security
+session from the person who configured it: no login keychain, no GUI session. A
+wake command that authenticates through either fails there and succeeds the
+moment you run the identical argv, with the daemon's own environment, from a
+terminal. Measured here: `codex exec resume` exits 1 under the service and 0
+from a shell, with the same env and the same thread.
+
+The daemon says so when it happens now, and prints the argv so you can run it
+yourself; it will not print the command's output, because `codex exec resume`
+runs a whole agent turn and that output is somebody's decrypted mail. If your
+harness needs your login session, either run `dibd` in your own session rather
+than as a service, or give the wake command a path to credentials that does not
+depend on the keychain.
+
 **Why you want one of these even though the socket route needs no setup.** The
 socket is best effort: the receiving session decides whether to accept a peer
 message and sends no receipt, and a Claude Code session running in

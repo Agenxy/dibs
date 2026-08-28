@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -1050,6 +1051,28 @@ func runWakeFor(argv []string, agent string, timeout, grace time.Duration) bool 
 		var ee *exec.Error
 		if errors.As(err, &ee) {
 			fields = append(fields, "output", strings.TrimSpace(string(out)))
+		}
+		// THE COMMAND, SO SOMEBODY CAN RUN IT THEMSELVES.
+		//
+		// The output stays withheld for the reason above, and that left
+		// "exit status 1" and nothing else: an operator cannot act on that.
+		// The argv is the operator's own config, so printing it discloses
+		// nothing they did not write, and running it by hand is the one way to
+		// see the output this deliberately will not log.
+		fields = append(fields, "run_it_yourself", strings.Join(argv, " "))
+		// AND WHERE IT RAN, because that is the difference that bites.
+		//
+		// A daemon started as a service is in a different security session from
+		// the person who configured it: no login keychain, no GUI session. The
+		// documented `codex exec resume` authenticates through the keychain, so
+		// it exits non-zero under launchd and succeeds the moment the same argv
+		// with the same environment is run from a terminal. Measured here,
+		// twice, before this line existed to say so.
+		if os.Getppid() == 1 {
+			fields = append(fields,
+				"note", "this daemon runs as a service (parent is launchd/init), which "+
+					"cannot reach your login session or keychain: a wake command that "+
+					"signs in through either will fail here and work from a terminal")
 		}
 		slog.Warn("wake command failed; the next message somebody is blocked on "+
 			"will try again", fields...)

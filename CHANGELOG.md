@@ -415,7 +415,47 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   request is closed by answering, and telling an agent to `ack` there would
   teach it to silence somebody who is waiting.
 
+### Added
+
+- **A wake that reaches an idle Claude Code session, with nothing configured.**
+  The bridge is a direct child of the session it serves, and the harness hands
+  its children `CLAUDE_CODE_MESSAGING_SOCKET` and `CLAUDE_CODE_MESSAGING_TOKEN`
+  for exactly this. A message from a session's own descendants is `selfSent`,
+  which the inbound policy ACCEPTS rather than holds, so it lands where the
+  daemon's peer-socket route could never reach: a session in bypassPermissions
+  mode, which is what an unattended fleet runs in.
+
+  The bridge subscribes to its own agent's inbox over the connection it already
+  has (SEP-2575, which Dibs already serves), and on an update puts the same one
+  fixed sentence into its own session. No operator configuration, no key file to
+  find, no process spawned, no cross-session gate. Verified live: mail sent to
+  an agent, and the notice arriving in that session moments later, in bypass
+  mode.
+
+  Nothing about the rule changes. It carries no counts, no senders, no body and
+  nothing an agent wrote, and it cannot read the session or steer it.
+
 ### Fixed
+
+- **A wake command that fails under a service said only "exit status 1".** The
+  documented `codex exec resume` exits non-zero when the daemon runs as a
+  service and succeeds from a terminal with the identical argv and the daemon's
+  own environment: launchd puts it in a different security session, with no
+  login keychain to authenticate against. Measured both ways, twice.
+
+  The command's output stays withheld, because it is a whole agent turn and
+  therefore somebody's decrypted mail. What was missing is everything else: the
+  failure now prints the argv, so an operator can run it themselves and see what
+  is being hidden, and says when the daemon is running under launchd, which is
+  the difference that causes it. `docs/CONFIGURATION.md` says so too.
+
+- **Codex hands a child MCP server nothing**, which is why the local wake above
+  is Claude Code only. Measured by having a probe MCP server dump its own
+  environment under Codex: no session id, no socket, no token. Codex sends its
+  thread id in `_meta` on every call, so an agent binds correctly and mail
+  arrives at its turn boundaries through the shipped hooks; reaching one that
+  has STOPPED still needs `[wake.exec]`, and that is now the documented
+  difference rather than an omission.
 
 - **The socket wake could not deliver to the sessions a fleet actually runs in,
   and every document said it worked out of the box.** Measured, not reasoned:
