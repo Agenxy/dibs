@@ -84,6 +84,12 @@ type Engine struct {
 	// the same way. Ephemeral for the same reason: it is delivery bookkeeping,
 	// and the decision it feeds is recorded in the sweep op.
 	announceTries map[string]int
+	// hinted records the sessions that have already been offered a reattach
+	// pointer, so each is offered it exactly once. Keyed by the harness's
+	// session id, which is the only identifier an unresolved session has: it
+	// is not in state, by definition, because being in state is what "resolved"
+	// means. See reattachHint for why once is the whole budget.
+	hinted map[string]time.Time
 
 	// Work-overlap scoring (SPEC-CHANNELS.md). Guarded by its own mutex rather
 	// than the loop: Predict runs OFF the writer goroutine, because a model that
@@ -199,7 +205,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 		streams:  map[chan core.Event]bool{}, seen: map[string]time.Time{},
 		turnEnded:    map[string]time.Time{},
 		announceSent: map[string]time.Time{}, announceTries: map[string]int{},
-		wokeFor: map[string]time.Time{},
+		wokeFor: map[string]time.Time{}, hinted: map[string]time.Time{},
 	}
 	// HERE, not in the daemon, so nobody has to remember.
 	//

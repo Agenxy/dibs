@@ -200,7 +200,7 @@ func (e *Engine) HookPoll(
 			// Not an error when there is nothing to say: most sessions have no
 			// agent, and a hook that fails noisily on every turn would be worse
 			// than useless.
-			return unresolvedSession(e.reattachHint(sessionID, cwd), event)
+			return unresolvedSession(e.reattachHint(sessionID, cwd, time.Now()), event)
 		}
 		mail := e.pendingMail(l.ID, time.Now())
 		announced, announceKeys := e.dueAnnouncements(l.ID, time.Now())
@@ -1011,24 +1011,75 @@ func (e *Engine) logHookResolution(sessionID, cwd, event string, l *core.Agent) 
 // Empty when there is nothing useful to say, which is the common case: a
 // session in a directory nobody has ever coordinated from should see nothing at
 // all, and a hook that speaks on every turn is one people disable.
-func (e *Engine) reattachHint(sessionID, cwd string) string {
+//
+// That last clause was written here before the code under it did the opposite,
+// and the prediction came true exactly as stated. This was a pure function of
+// (session, cwd) and state, with no memory of having spoken; the Claude Code
+// plugin installs hook_poll on SessionStart, UserPromptSubmit, Stop AND
+// SubagentStop, so an unregistered session in a directory holding idle agents
+// was told to reattach before every prompt it answered, forever.
+//
+// An operator reported it from the other end, and their agent had already
+// reasoned out the trap: it could not turn this off. Unregistering makes it
+// fire MORE, since "not registered" is the trigger condition, and the only
+// switch is the plugin's global one, which would take Dibs away from every
+// other session on the machine. A hint you cannot decline, repeated on every
+// turn, is coercive whatever it says, and rule 4 is that this service is
+// advisory.
+//
+// So: once per session, and that is the whole budget. This is a POINTER, and a
+// pointer that did not land the first time does not land the tenth. An agent
+// that read it and chose not to reattach has DECIDED, and asking again is
+// nagging a decision that was already Dibs's to accept.
+func (e *Engine) reattachHint(sessionID, cwd string, now time.Time) string {
 	if sessionID == "" || cwd == "" {
 		return "" // the directory fallback already handles this case
 	}
+	// Pruned here rather than in sweep because this is the only path that
+	// writes it, and an unresolved session is in no live set to prune against:
+	// not being in state is what makes it unresolved. Time is the only bound
+	// available, so it is the one used.
+	for id, when := range e.hinted {
+		if now.Sub(when) > hintMemory {
+			delete(e.hinted, id)
+		}
+	}
+	if _, said := e.hinted[sessionID]; said {
+		return ""
+	}
 	names := e.state.ReattachableIn(cwd)
 	if len(names) == 0 {
-		return ""
+		return "" // nothing to point at, so nothing is spent
 	}
 	if len(names) > 3 {
 		names = names[:3]
 	}
+	e.hinted[sessionID] = now
+	// Grammar, because this is prose a person reads over their agent's
+	// shoulder: a list of three that "is idle now" reads as a machine talking.
+	were, mine, theirs := "is", "If that is you", "If it is not"
+	if len(names) > 1 {
+		were, mine, theirs = "are", "If one of those is you", "If none of them is you"
+	}
 	return "Dibs: this session is not registered, and " + strings.Join(names, ", ") +
-		" worked in this directory before and is idle now. If one of those is you " +
-		"returning, register with the SAME name and the nonce you kept: you reattach " +
+		" worked in this directory before and " + were + " idle now. " + mine +
+		" returning, register with the SAME name and the nonce you kept: you reattach " +
 		"to it, and anything waiting for it becomes visible to you. Registering under " +
 		"a new name instead makes a sibling that cannot read its predecessor's mail. " +
-		"If none of them is you, register as yourself and ignore this."
+		theirs + ", register as yourself and ignore this: you will not be asked again today."
 }
+
+// hintMemory is how long a spent reattach pointer is remembered.
+//
+// Not a retry interval: nothing re-fires at the end of it. It exists only so a
+// map keyed by session id cannot grow for the life of the daemon, and it is a
+// day because a session still running a day later is a new working day, and
+// being told once more is the cheapest possible way to be wrong about it.
+//
+// The hint's closing promise says "again today" and not "again" for exactly
+// this reason. A promise this constant does not keep would be a lie in the one
+// sentence whose whole job is to stop the reader worrying about the next one.
+const hintMemory = 24 * time.Hour
 
 // hookEvent defaults the event name, which some harnesses omit.
 func hookEvent(event string) string {

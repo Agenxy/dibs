@@ -437,6 +437,31 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The reattach hint was repeated before every prompt, forever.** An
+  unregistered session in a directory holding idle agents was told it could
+  reattach on SessionStart, and then again on every UserPromptSubmit, Stop and
+  SubagentStop for the life of the session. The function that composes it
+  carried the reason in its own comment, "a hook that speaks on every turn is
+  one people disable", and then did exactly that, because it was a pure
+  function of session and directory with no memory of having spoken.
+
+  Reported by an operator whose agent had already worked out the trap and said
+  so: it could not turn this off. Unregistering makes it fire MORE, since "not
+  registered" is the trigger condition, and the only switch is the plugin's
+  global one, which would take Dibs away from every other session on the
+  machine. A hint you cannot decline, repeated on every turn, is coercive
+  whatever it says, and rule 4 is that this service is advisory.
+
+  Said once per session now, and the hint says so. It is a pointer, and a
+  pointer that did not land the first time does not land the tenth; an agent
+  that read it and chose not to reattach has decided. The same class of bug was
+  fixed once already for the install nudge, which is the argument for the test
+  that now watches this one.
+
+- **The hint did not agree with itself in number**, so three agents "is idle
+  now". Prose a person reads over their agent's shoulder, and the tell that
+  nobody had looked at the output.
+
 - **A wake command that fails under a service said only "exit status 1".** The
   documented `codex exec resume` exits non-zero when the daemon runs as a
   service and succeeds from a terminal with the identical argv and the daemon's
