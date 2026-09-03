@@ -104,20 +104,23 @@ and its own hooks fire from there. If your agents need tool access on a wake,
 give that process the permissions it needs rather than assuming it inherits
 them.
 
-**A service cannot sign in as you.** If `dibd` runs as a service, which is the
-recommended setup, its parent is launchd and it lives in a different security
-session from the person who configured it: no login keychain, no GUI session. A
-wake command that authenticates through either fails there and succeeds the
-moment you run the identical argv, with the daemon's own environment, from a
-terminal. Measured here: `codex exec resume` exits 1 under the service and 0
-from a shell, with the same env and the same thread.
+**A wake runs in the agent's own directory.** It has to, and for a long time it
+did not. `codex exec resume` refuses to start outside a trusted directory, and a
+daemon started by launchd has `/` as its working directory, so every wake it
+attempted exited 1 without reaching anyone.
 
-The daemon says so when it happens now, and prints the argv so you can run it
-yourself; it will not print the command's output, because `codex exec resume`
-runs a whole agent turn and that output is somebody's decrypted mail. If your
-harness needs your login session, either run `dibd` in your own session rather
-than as a service, or give the wake command a path to credentials that does not
-depend on the keychain.
+This was diagnosed twice as launchd putting the daemon in a different security
+session with no login keychain. **That was wrong**, and the wrong explanation is
+recorded here because it cost two investigations: a probe LaunchAgent in the
+identical domain and `ProcessType` as `dibd` read the login keychain without
+trouble and ran a complete `claude --resume` turn, exit 0. The security session
+was never involved. The working directory was the whole difference.
+
+The daemon now runs each wake in the directory the agent registered from, and
+names that directory when a command fails. It still will not print the command's
+output, because a wake command runs a whole agent turn and that output is
+somebody's decrypted mail; it prints the argv instead, so you can run it
+yourself and see what is being withheld.
 
 **Why you want one of these even though the socket route needs no setup.** The
 socket is best effort: the receiving session decides whether to accept a peer

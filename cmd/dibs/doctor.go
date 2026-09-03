@@ -224,7 +224,7 @@ func (d *diagnosis) run(verbose bool) error {
 	checkHarnessConfigs(sec, addr(), ok, warn, bad)
 	checkPanelBuild(client, sec, ok, warn, d.prose)
 	checkMatching(client, sec, ok, warn)
-	checkWakeRoutes(dir, ok, warn)
+	checkWakeRoutes(dir, boardOrNil(), ok, warn)
 	checkHooks(client, sec, ok, bad, warn)
 	checkLedgerAndBoard(dir, ok, bad, warn)
 	checkGit(verbose, ok, bad)
@@ -462,7 +462,7 @@ func checkHarnessConfigs(sec, addr string, ok reportFn, warn, bad fixFn) {
 // reported healthy throughout. An operator running an unattended fleet is
 // running exactly that mode, and should be told that the only route they have
 // is the one that cannot be confirmed.
-func checkWakeRoutes(dir string, ok reportFn, warn fixFn) {
+func checkWakeRoutes(dir string, b *boardView, ok reportFn, warn fixFn) {
 	cfg, err := boardconfig.Load(dir)
 	if err != nil {
 		warn("cannot read the board configuration, so wake coverage is unknown",
@@ -470,7 +470,16 @@ func checkWakeRoutes(dir string, ok reportFn, warn fixFn) {
 		return
 	}
 	if n := len(cfg.Wake.Exec); n > 0 {
-		ok(fmt.Sprintf("%d wake command(s) configured: a wake either runs or reports why", n))
+		// COVERAGE, NOT COUNT.
+		//
+		// This used to stop at "1 wake command(s) configured" and report it as
+		// a tick. On the board it was written against, that one command covered
+		// three of thirty-one agents: twelve Claude Code agents had no
+		// `[wake.exec]` entry of their own and could not be woken at all, and
+		// nothing anywhere said so. A health check that confirms you wrote some
+		// configuration, without asking what it covers, is the same failure as
+		// a wake that reports success and reaches nobody.
+		reportWakeCoverage(cfg.Wake.Exec, b, dir, ok, warn)
 		return
 	}
 	warn("no wake command is configured, so the only route is best effort",
@@ -1294,4 +1303,136 @@ func isJoinedBoard(dir string) bool {
 		}
 	}
 	return true
+}
+
+// suggestedWake is the command that resumes a thread, per harness we know.
+//
+// SUGGESTION ONLY. Dibs does not run any of these unless the operator puts one
+// in their own `dibs.toml`: rule 5 is that the argv comes from the operator's
+// config, and a coordination service that starts paid agent turns nobody asked
+// for would be helping itself to somebody's money. What was missing is not
+// consent, it is the twenty minutes of reading needed to find out what to
+// write, and that part costs nothing to give away.
+//
+// Both were measured on this machine before being printed: `claude --resume`
+// keeps full thread context and resolves a session by UUID from any directory,
+// and `codex exec resume` needs to be run inside the agent's own directory,
+// which the daemon now does.
+var suggestedWake = map[string]string{
+	"claude code": `[wake.exec."claude code"]` + "\n" +
+		`argv = ["claude", "--resume", "{thread}", "-p", "{message}"]`,
+	"codex": `[wake.exec.codex]` + "\n" +
+		`argv = ["codex", "exec", "resume", "{thread}", "{message}"]`,
+}
+
+// reportWakeCoverage says how many agents on THIS board the configured wake
+// commands can actually reach.
+//
+// Persistent agents only. An ephemeral agent ends with its session and is not
+// something anybody expects to wake; counting it as uncovered would report a
+// fault on every correctly configured board, and a check that cries wolf is
+// one people stop reading.
+func reportWakeCoverage(exec map[string]boardconfig.WakeExec, b *boardView, dir string, ok reportFn, warn fixFn) {
+	have := map[string]bool{}
+	for h := range exec {
+		have[strings.ToLower(h)] = true
+	}
+	if b == nil {
+		// Say what is true and no more: the commands exist, and whether they
+		// cover this board could not be established. Passed in rather than
+		// fetched here, so the decision can be tested without a daemon: the
+		// first version called the network from inside the check and the unit
+		// test silently measured the developer's own live board.
+		ok(fmt.Sprintf("%d wake command(s) configured (board unreachable, so "+
+			"coverage is unknown)", len(exec)))
+		return
+	}
+	covered, missing := 0, map[string]int{}
+	for _, a := range b.Agents {
+		if a.Kind != "persistent" || !wakeable(a) {
+			continue
+		}
+		h := ""
+		if a.Agent != nil {
+			h = strings.ToLower(a.Agent.Harness)
+		}
+		if have[h] {
+			covered++
+			continue
+		}
+		if h == "" {
+			h = "(no harness recorded)"
+		}
+		missing[h]++
+	}
+	total := covered
+	for _, n := range missing {
+		total += n
+	}
+	if len(missing) == 0 {
+		ok(fmt.Sprintf("%d wake command(s) covering all %d persistent agent(s): "+
+			"a wake either runs or reports why", len(exec), total))
+		return
+	}
+	names := make([]string, 0, len(missing))
+	for h := range missing {
+		names = append(names, fmt.Sprintf("%s (%d)", h, missing[h]))
+	}
+	sort.Strings(names)
+	uncovered := total - covered
+	fix := "these agents can only be reached while their session is still " +
+		"running, which is the case a wake exists for. Add to " +
+		filepath.Join(dir, "dibs.toml") + ":"
+	for _, h := range sortedKeys(missing) {
+		if sug, known := suggestedWake[h]; known {
+			fix += "\n\n" + sug
+		}
+	}
+	warn(fmt.Sprintf("%d of %d persistent agent(s) have no wake route: %s",
+		uncovered, total, strings.Join(names, ", ")), fix)
+}
+
+// sortedKeys is the map order this file needs twice: stable, so a health report
+// does not reorder itself between runs.
+func sortedKeys(m map[string]int) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// wakeable reports whether this row is something a wake command could ever
+// resume, so coverage is measured against agents and not against Dibs itself.
+//
+// The person is not a thread, and neither is the daemon's own row or the web
+// board's. Left in, they showed as two harnesses with "no wake route" on a
+// correctly configured board, which is the shape of finding that teaches an
+// operator to skim past this check. A guard that reports a defect which is not
+// there is worse than no guard.
+func wakeable(a boardAgent) bool {
+	if a.Human {
+		return false
+	}
+	if a.Agent == nil {
+		return true // no metadata at all is a real gap, not one of ours
+	}
+	switch strings.ToLower(a.Agent.Surface) {
+	case "daemon", "web":
+		return false
+	}
+	return true
+}
+
+// boardOrNil is the board if this daemon will give us one, and nil otherwise.
+//
+// doctor's checks each take what they need as a value, so that a check is a
+// decision over data rather than a thing that talks to the network.
+func boardOrNil() *boardView {
+	b, err := boardSnapshot()
+	if err != nil {
+		return nil
+	}
+	return b
 }

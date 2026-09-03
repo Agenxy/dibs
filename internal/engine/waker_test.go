@@ -919,7 +919,7 @@ func TestAWakeReturnsEvenWhenADescendantHoldsItsOutput(t *testing.T) {
 		// Short bounds: the property is that it comes back, not how long it
 		// waits before giving up.
 		done <- runWakeFor([]string{self, "-test.run=TestAWakeReturnsEvenWhenADescendantHoldsItsOutput"},
-			"holder", 500*time.Millisecond, 500*time.Millisecond)
+			"holder", "", 500*time.Millisecond, 500*time.Millisecond)
 	}()
 
 	select {
@@ -1474,5 +1474,47 @@ func TestTheWakeNoticePointsRatherThanInstructs(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(notice), "board") {
 		t.Errorf("the notice does not point anywhere: %q", notice)
+	}
+}
+
+// A wake runs in the AGENT'S directory, not the daemon's.
+//
+// This is the whole reason the wake path has never once worked in production on
+// the machine it was written on. `wakePlan` has carried a `cwd` field, set from
+// the agent's own record and documented as "where the agent says it works",
+// since the path shipped. Nothing ever read it. The command therefore ran in
+// the daemon's working directory, which under launchd is `/`.
+//
+// Measured, not reasoned: the configured `codex exec resume <uuid> <msg>` exits
+// 1 from `/` with "Not inside a trusted directory and --skip-git-repo-check was
+// not specified", and exits 0 with the same argv from the session's own
+// directory. Three failures in this repository's daemon log match that exit
+// code exactly. It was diagnosed twice as launchd keychain isolation, which a
+// LaunchAgent probe in the identical domain and ProcessType later disproved:
+// it read the login keychain and ran a full `claude --resume` turn, exit 0.
+//
+// A dead field is worse than a missing one. The plan looked complete, the
+// comment said what the value was for, and the effect silently did not happen,
+// which is this repository's most expensive recurring bug class.
+//
+// Asserted with a RELATIVE path, because that is the only thing that can tell
+// the two directories apart from outside: `touch marker` lands in the agent's
+// directory when cmd.Dir is set, and nowhere it can be found when it is not.
+func TestAWakeRunsInTheAgentsDirectory(t *testing.T) {
+	if _, err := os.Stat("/usr/bin/touch"); err != nil {
+		t.Skip("no /usr/bin/touch on this platform")
+	}
+	dir := t.TempDir()
+	ok := runWakeFor([]string{"/usr/bin/touch", "marker"}, "somebody", dir,
+		10*time.Second, time.Second)
+	if !ok {
+		t.Fatal("the wake command did not run at all, so this proves nothing " +
+			"about where it ran: check the probe before the product")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "marker")); err != nil {
+		t.Errorf("the wake did not run in the agent's directory %s: %v.\n"+
+			"It ran in the daemon's instead, which under launchd is \"/\". "+
+			"`codex exec resume` refuses to start there, which is why no wake "+
+			"has ever reached an agent on this machine", dir, err)
 	}
 }

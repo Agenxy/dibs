@@ -437,6 +437,26 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`doctor` reported a healthy wake configuration on a board where 28 of 31
+  agents could not be woken.** It counted the operator's `[wake.exec]` blocks and
+  called that coverage. One command was configured, it covered one harness, and
+  twelve Claude Code agents had no route at all: the check said
+  "1 wake command(s) configured" and moved on. Counting what you configured is
+  not measuring what it covers, which is the same error as a wake that reports
+  success and reaches nobody.
+
+  It now compares the configured harnesses against the persistent agents
+  actually on the board, names the harnesses with no route and how many agents
+  each leaves stranded, and prints the exact `dibs.toml` block to paste for the
+  harnesses whose resume command has been measured. Dibs still runs nothing the
+  operator did not configure (rule 5); what was missing was never consent, it
+  was knowing what to write.
+
+  Rows that are not threads are excluded: the human, the daemon's own agent and
+  the web board are not things a command can resume, and reporting them as
+  unreachable is the kind of false alarm that teaches people to skim a health
+  check.
+
 - **The reattach hint was repeated before every prompt, forever.** An
   unregistered session in a directory holding idle agents was told it could
   reattach on SessionStart, and then again on every UserPromptSubmit, Stop and
@@ -462,17 +482,30 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now". Prose a person reads over their agent's shoulder, and the tell that
   nobody had looked at the output.
 
-- **A wake command that fails under a service said only "exit status 1".** The
-  documented `codex exec resume` exits non-zero when the daemon runs as a
-  service and succeeds from a terminal with the identical argv and the daemon's
-  own environment: launchd puts it in a different security session, with no
-  login keychain to authenticate against. Measured both ways, twice.
+- **The wake ran in the daemon's working directory, so it never reached anybody.**
+  `wakePlan` has carried a `cwd` field since the path shipped, set from the
+  agent's own record and commented as "where the agent says it works". Nothing
+  ever read it. The command therefore inherited the DAEMON'S directory, which
+  under launchd is `/`, and `codex exec resume` refuses to start there: "Not
+  inside a trusted directory". Exit 1, which is exactly the failure this
+  repository's own daemon log recorded three times.
 
-  The command's output stays withheld, because it is a whole agent turn and
-  therefore somebody's decrypted mail. What was missing is everything else: the
-  failure now prints the argv, so an operator can run it themselves and see what
-  is being hidden, and says when the daemon is running under launchd, which is
-  the difference that causes it. `docs/CONFIGURATION.md` says so too.
+  A field that is declared, populated, documented and never read is worse than a
+  missing one, because the mechanism looks finished. That is this project's most
+  expensive recurring bug class and it was sitting in the middle of the feature
+  whose entire purpose is reaching an agent nobody else can.
+
+  **The previous entry here blamed launchd's security session and the login
+  keychain, and that was wrong.** It is left described rather than deleted
+  because the wrong explanation cost two investigations and shaped a paragraph
+  of `docs/CONFIGURATION.md`: a probe LaunchAgent in the identical domain and
+  `ProcessType` as `dibd` read the login keychain and ran a complete
+  `claude --resume` turn, exit 0. A confident diagnosis that names the wrong
+  cause is more expensive than no diagnosis, because it stops anyone looking.
+
+  A failing wake now names the directory it really ran in. Its output stays
+  withheld, because a wake command runs a whole agent turn and that output is
+  somebody's decrypted mail; the argv is printed instead.
 
 - **Codex hands a child MCP server nothing**, which is why the local wake above
   is Claude Code only. Measured by having a probe MCP server dump its own

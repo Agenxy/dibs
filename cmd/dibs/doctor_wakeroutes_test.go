@@ -21,7 +21,7 @@ import (
 // arriving, because a Claude Code session in bypassPermissions mode holds peer
 // messages for its human. An unattended fleet runs in exactly that mode.
 func TestDoctorSaysWhichWakeRoutesExist(t *testing.T) {
-	run := func(t *testing.T, toml string) (oks, warns []string) {
+	run := func(t *testing.T, toml string, board *boardView) (oks, warns []string) {
 		t.Helper()
 		dir := t.TempDir()
 		if toml != "" {
@@ -29,14 +29,14 @@ func TestDoctorSaysWhichWakeRoutesExist(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		checkWakeRoutes(dir,
+		checkWakeRoutes(dir, board,
 			func(s string) { oks = append(oks, s) },
 			func(s, fix string) { warns = append(warns, s+" || "+fix) })
 		return
 	}
 
 	t.Run("no command configured", func(t *testing.T) {
-		oks, warns := run(t, "")
+		oks, warns := run(t, "", nil)
 		if len(warns) != 1 {
 			t.Fatalf("expected one warning, got oks=%v warns=%v", oks, warns)
 		}
@@ -48,13 +48,87 @@ func TestDoctorSaysWhichWakeRoutesExist(t *testing.T) {
 		}
 	})
 
-	t.Run("a command is configured", func(t *testing.T) {
-		oks, warns := run(t, "[wake.exec.claude]\nargv = [\"echo\", \"{message}\"]\n")
+	t.Run("a command that covers every agent", func(t *testing.T) {
+		oks, warns := run(t, "[wake.exec.claude]\nargv = [\"echo\", \"{message}\"]\n",
+			boardOf(agentRow("a", "persistent", "claude"), agentRow("b", "persistent", "CLAUDE")))
 		if len(warns) != 0 {
-			t.Errorf("warned about a board that HAS a confirmable route: %v", warns)
+			t.Errorf("warned about a board every one of whose agents has a route: %v", warns)
 		}
-		if len(oks) != 1 || !strings.Contains(oks[0], "1 wake command") {
-			t.Errorf("did not report the configured route: %v", oks)
+		if len(oks) != 1 || !strings.Contains(oks[0], "covering all 2") {
+			t.Errorf("did not report the coverage: %v", oks)
 		}
 	})
+
+	// THE CASE THE OLD CHECK CALLED HEALTHY.
+	//
+	// It counted configured commands, so one [wake.exec] block reported a tick
+	// however many agents it left with no route. On the board this was written
+	// against that was twelve Claude Code agents unreachable behind a green
+	// line. Configuring something is not covering anything.
+	t.Run("a command that covers only some agents", func(t *testing.T) {
+		oks, warns := run(t, "[wake.exec.codex]\nargv = [\"echo\", \"{message}\"]\n",
+			boardOf(agentRow("a", "persistent", "codex"),
+				agentRow("b", "persistent", "Claude Code"),
+				agentRow("c", "persistent", "Claude Code")))
+		if len(oks) != 0 {
+			t.Errorf("reported healthy while two agents cannot be woken: %v", oks)
+		}
+		if len(warns) != 1 {
+			t.Fatalf("expected one warning, got %v", warns)
+		}
+		for _, want := range []string{"2 of 3", "claude code (2)", `[wake.exec."claude code"]`} {
+			if !strings.Contains(warns[0], want) {
+				t.Errorf("the warning is missing %q, so it does not say who is stranded "+
+					"or what to write: %s", want, warns[0])
+			}
+		}
+	})
+
+	// An ephemeral agent ends with its session, so nobody expects to wake one
+	// and counting it as stranded would report a fault on every correct board.
+	t.Run("ephemeral agents are not counted", func(t *testing.T) {
+		oks, warns := run(t, "[wake.exec.codex]\nargv = [\"echo\", \"{message}\"]\n",
+			boardOf(agentRow("a", "persistent", "codex"),
+				agentRow("scratch", "ephemeral", "Claude Code")))
+		if len(warns) != 0 {
+			t.Errorf("counted an ephemeral agent as needing a wake route: %v", warns)
+		}
+		if len(oks) != 1 || !strings.Contains(oks[0], "all 1 persistent") {
+			t.Errorf("expected coverage of the one persistent agent: %v", oks)
+		}
+	})
+
+	// Dibs's own rows are not threads, and reporting them as unreachable is the
+	// false alarm that teaches an operator to skim this check.
+	t.Run("the human and the daemon are not counted", func(t *testing.T) {
+		b := boardOf(agentRow("a", "persistent", "codex"))
+		human := agentRow("lael", "persistent", "dibs web")
+		human.Human = true
+		human.Agent.Surface = "web"
+		daemon := agentRow("dibs", "persistent", "dibs")
+		daemon.Agent.Surface = "daemon"
+		b.Agents = append(b.Agents, human, daemon)
+		oks, warns := run(t, "[wake.exec.codex]\nargv = [\"echo\", \"{message}\"]\n", b)
+		if len(warns) != 0 {
+			t.Errorf("counted Dibs's own rows as agents needing a wake: %v", warns)
+		}
+		if len(oks) != 1 || !strings.Contains(oks[0], "all 1 persistent") {
+			t.Errorf("expected coverage of the one real agent: %v", oks)
+		}
+	})
+}
+
+// agentRow is one board row with just the fields wake coverage reads.
+func agentRow(id, kind, harness string) boardAgent {
+	a := boardAgent{ID: id, Kind: kind, Status: "dormant"}
+	a.Agent = &struct {
+		Harness string `json:"harness,omitempty"`
+		CWD     string `json:"cwd,omitempty"`
+		Surface string `json:"surface,omitempty"`
+	}{Harness: harness}
+	return a
+}
+
+func boardOf(rows ...boardAgent) *boardView {
+	return &boardView{Agents: rows}
 }

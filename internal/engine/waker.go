@@ -1008,7 +1008,7 @@ const wakeGrace = 10 * time.Second
 // one lock in wakeFor.
 func (e *Engine) runWake(plan wakePlan, agent string) bool {
 	if len(plan.argv) > 0 {
-		return runWakeFor(plan.argv, agent, wakeTimeout, wakeGrace)
+		return runWakeFor(plan.argv, agent, plan.cwd, wakeTimeout, wakeGrace)
 	}
 	return e.wakeOverSocket(plan, agent)
 }
@@ -1017,7 +1017,7 @@ func (e *Engine) runWake(plan wakePlan, agent string) bool {
 // this RETURNS rather than assert that a constant is large. The old test
 // checked only that wakeTimeout was at least two hours, which stays true while
 // Wait blocks past it.
-func runWakeFor(argv []string, agent string, timeout, grace time.Duration) bool {
+func runWakeFor(argv []string, agent, dir string, timeout, grace time.Duration) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	// #nosec G204 -- argv comes from the operator's own config file and nowhere
@@ -1025,6 +1025,32 @@ func runWakeFor(argv []string, agent string, timeout, grace time.Duration) bool 
 	// substitution replaces whole elements rather than building a string. There
 	// is no shell in this path.
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	// IN THE AGENT'S DIRECTORY, WHICH IS THE WHOLE REASON THIS EVER WORKED.
+	//
+	// Without this the command inherits the DAEMON'S working directory, and a
+	// daemon started by launchd has "/". Both documented wake commands care:
+	// `codex exec resume` refuses outright there ("Not inside a trusted
+	// directory"), exit 1, which is precisely the failure in this repository's
+	// own daemon log, three times; and an agent resumed anywhere else would run
+	// its next turn in the wrong tree even where the harness tolerates it.
+	//
+	// The plan has carried this value since the path shipped, set from the
+	// agent's own record and commented as what it was for, and nothing read it.
+	// That is worse than never having had it: the mechanism looked finished.
+	//
+	// Empty, or gone since the agent registered, means run where the daemon is
+	// rather than refuse. A wake that might work beats one that certainly does
+	// not, and the log says which happened so a failure is not a mystery.
+	if dir != "" {
+		if st, err := os.Stat(dir); err == nil && st.IsDir() {
+			cmd.Dir = dir
+		} else {
+			slog.Warn("the agent's directory is gone, so its wake runs where the "+
+				"daemon does; a harness that resolves sessions per directory will "+
+				"not find this one",
+				"agent", agent, "cwd", dir, "err", err)
+		}
+	}
 	// BOUNDED. CombinedOutput holds every byte until the process exits, and the
 	// documented command is `codex exec resume`, which runs a whole agent turn
 	// and may print a transcript for two hours. All of it sat in the daemon's
@@ -1062,17 +1088,23 @@ func runWakeFor(argv []string, agent string, timeout, grace time.Duration) bool 
 		fields = append(fields, "run_it_yourself", strings.Join(argv, " "))
 		// AND WHERE IT RAN, because that is the difference that bites.
 		//
-		// A daemon started as a service is in a different security session from
-		// the person who configured it: no login keychain, no GUI session. The
-		// documented `codex exec resume` authenticates through the keychain, so
-		// it exits non-zero under launchd and succeeds the moment the same argv
-		// with the same environment is run from a terminal. Measured here,
-		// twice, before this line existed to say so.
+		// This line used to blame the login keychain, and that was wrong. It
+		// said a service cannot reach the operator's keychain or GUI session,
+		// which sounded right and sent two investigations down a dead end. A
+		// LaunchAgent probe in the identical domain and ProcessType as this
+		// daemon read the login keychain and ran a complete `claude --resume`
+		// turn, exit 0. The security session was never the problem.
+		//
+		// What actually differed was the working directory, now fixed above, so
+		// the honest note names the directory the command really ran in and
+		// leaves the diagnosis to whoever reads it.
+		fields = append(fields, "ran_in", runDir(dir))
 		if os.Getppid() == 1 {
 			fields = append(fields,
-				"note", "this daemon runs as a service (parent is launchd/init), which "+
-					"cannot reach your login session or keychain: a wake command that "+
-					"signs in through either will fail here and work from a terminal")
+				"note", "this daemon runs as a service, so it starts with the system's "+
+					"environment and not the shell you configured it from: a wake that "+
+					"needs something only your login shell sets will fail here and work "+
+					"from a terminal")
 		}
 		slog.Warn("wake command failed; the next message somebody is blocked on "+
 			"will try again", fields...)
@@ -1195,4 +1227,16 @@ func wakeHarness(l *core.Agent) string {
 		return ""
 	}
 	return strings.ToLower(l.Agent.Harness)
+}
+
+// runDir names the directory a wake really ran in, for the failure log.
+//
+// Says "the daemon's own" rather than printing it, because the useful fact is
+// that it was NOT the agent's: an operator reading "/" has to know what it was
+// supposed to be before that means anything.
+func runDir(dir string) string {
+	if dir == "" {
+		return "the daemon's own working directory (the agent recorded none)"
+	}
+	return dir
 }

@@ -931,6 +931,22 @@ type (
 		// description string.
 		Human bool        `json:"human,omitempty"`
 		Slots []boardSlot `json:"slots"`
+		// Kind and Harness, so a check can ask whether the agents actually on
+		// this board can be reached. Decoded from a view the daemon already
+		// published and nobody read: `doctor` counted the operator's CONFIGURED
+		// wake commands and called that coverage, which reported a healthy tick
+		// on a board where twenty-eight of thirty-one agents had no route at
+		// all. Counting what you configured is not measuring what it covers.
+		Kind  string `json:"kind,omitempty"`
+		Agent *struct {
+			Harness string `json:"harness,omitempty"`
+			CWD     string `json:"cwd,omitempty"`
+			// Surface separates a HARNESS from one of Dibs's own front doors.
+			// The daemon and the web board register agents too, and neither is
+			// a thread anything can resume, so counting them as unreachable
+			// reports a defect that is not there.
+			Surface string `json:"surface,omitempty"`
+		} `json:"agent,omitempty"`
 	}
 	boardClaim struct {
 		Agent   string    `json:"agent"`
