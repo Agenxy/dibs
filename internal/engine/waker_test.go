@@ -1518,3 +1518,48 @@ func TestAWakeRunsInTheAgentsDirectory(t *testing.T) {
 			"has ever reached an agent on this machine", dir, err)
 	}
 }
+
+// The plan for a COMMAND carries the agent's directory.
+//
+// The companion to TestAWakeRunsInTheAgentsDirectory, and the half that
+// actually shipped broken. `wakeFor` has two returns: the socket route, which
+// needs no directory and has always carried one, and the command route, which
+// is the only thing that runs a process and carried none. So `cwd` was
+// assigned, and read as used, on the branch that cannot use it.
+//
+// The first test of this called runWakeFor directly with a directory of its
+// own. It passed while every real wake still ran in "/", because it exercised
+// the executor and never the decision that feeds it. Testing one layer below
+// the bug is how a green suite sat on top of a feature that had never once
+// worked in production.
+func TestTheCommandPlanCarriesTheAgentsDirectory(t *testing.T) {
+	e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
+	e.SetWakeCommands(map[string]WakeCommand{
+		"codex": {Argv: []string{"/bin/echo", "{message}"}},
+	})
+	l := &core.Agent{
+		ID: "worker", Name: "worker", Status: core.StatusDormant,
+		SessionID: "0199a0b1-c2d3-4e5f-8a9b-0c1d2e3f4a5b",
+		Agent:     &core.AgentInfo{Harness: "Codex", CWD: "/work/api"},
+		Slots:     map[string]core.Slot{},
+	}
+	e.state.Agents["worker"] = l
+
+	plan, ok := e.wakeFor(l, core.MsgQuestion, core.Event{
+		Type: "message.sent", Agent: "asker", To: "worker",
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	})
+	if !ok {
+		t.Fatal("no wake was planned at all, so this proves nothing about the " +
+			"directory: check the probe before the product")
+	}
+	if len(plan.argv) == 0 {
+		t.Fatal("the plan took the socket route, not the command route this test is about")
+	}
+	if plan.cwd != "/work/api" {
+		t.Errorf("the command plan carries cwd %q, not the agent's %q.\n"+
+			"The command then runs wherever the daemon happens to be, which under "+
+			"launchd is \"/\", and `codex exec resume` refuses to start there",
+			plan.cwd, "/work/api")
+	}
+}

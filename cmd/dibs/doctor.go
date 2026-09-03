@@ -1347,24 +1347,7 @@ func reportWakeCoverage(exec map[string]boardconfig.WakeExec, b *boardView, dir 
 			"coverage is unknown)", len(exec)))
 		return
 	}
-	covered, missing := 0, map[string]int{}
-	for _, a := range b.Agents {
-		if a.Kind != "persistent" || !wakeable(a) {
-			continue
-		}
-		h := ""
-		if a.Agent != nil {
-			h = strings.ToLower(a.Agent.Harness)
-		}
-		if have[h] {
-			covered++
-			continue
-		}
-		if h == "" {
-			h = "(no harness recorded)"
-		}
-		missing[h]++
-	}
+	covered, missing := wakeCoverage(b, have)
 	total := covered
 	for _, n := range missing {
 		total += n
@@ -1383,10 +1366,22 @@ func reportWakeCoverage(exec map[string]boardconfig.WakeExec, b *boardView, dir 
 	fix := "these agents can only be reached while their session is still " +
 		"running, which is the case a wake exists for. Add to " +
 		filepath.Join(dir, "dibs.toml") + ":"
+	suggested := 0
 	for _, h := range sortedKeys(missing) {
-		if sug, known := suggestedWake[h]; known {
+		if sug, known := suggestedWake[h]; known && !have[h] {
 			fix += "\n\n" + sug
+			suggested++
 		}
+	}
+	if suggested == 0 {
+		// Nothing to paste: every harness here already HAS a command, and what
+		// these agents lack is a thread it could name. Saying "add this block"
+		// under a block they already have is the kind of advice that makes an
+		// operator distrust the rest of the report.
+		fix = "these agents have a wake command for their harness but no thread " +
+			"id for it to resume, so the command cannot name them. An agent gets " +
+			"one by registering through its harness's Dibs plugin rather than by " +
+			"hand: see plugins/ for the one it runs in"
 	}
 	warn(fmt.Sprintf("%d of %d persistent agent(s) have no wake route: %s",
 		uncovered, total, strings.Join(names, ", ")), fix)
@@ -1435,4 +1430,40 @@ func boardOrNil() *boardView {
 		return nil
 	}
 	return b
+}
+
+// wakeCoverage counts, per harness, the agents on this board that a configured
+// wake command could actually start, and the ones it could not.
+//
+// Split from the reporting because the counting is the part with the rules in
+// it, and a function that both decides and renders is one nobody can test
+// either half of.
+func wakeCoverage(b *boardView, have map[string]bool) (covered int, missing map[string]int) {
+	missing = map[string]int{}
+	for _, a := range b.Agents {
+		if a.Kind != "persistent" || !wakeable(a) {
+			continue
+		}
+		h := ""
+		if a.Agent != nil {
+			h = strings.ToLower(a.Agent.Harness)
+		}
+		// BOTH HALVES. A command exists for this harness AND there is a thread
+		// for it to name. Either alone is not a route: `wakeRoute` refuses the
+		// exec path without a UUID-shaped thread id, so an agent counted
+		// covered on harness alone can still be unreachable, which is the
+		// optimism this whole check was rewritten to remove.
+		if have[h] && a.Resumable {
+			covered++
+			continue
+		}
+		switch {
+		case h == "":
+			h = "(no harness recorded)"
+		case have[h]:
+			h += " (no resumable thread)"
+		}
+		missing[h]++
+	}
+	return covered, missing
 }

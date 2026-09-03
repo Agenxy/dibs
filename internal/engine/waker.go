@@ -818,7 +818,19 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 			cwd: cwdOf(l), cooldown: cooldown,
 		}, true
 	}
-	return wakePlan{argv: f.apply(e.argvFor(l)), cooldown: cooldown}, true
+	// cwd ON THIS BRANCH TOO, and this is the branch that needs it.
+	//
+	// The socket return above has carried it since the field existed; this one,
+	// the only route that runs a process and therefore the only one a working
+	// directory means anything to, did not. So the field was assigned, and
+	// looked used, on the path that cannot use it. `codex exec resume` then ran
+	// in the daemon's directory and refused to start: "Not inside a trusted
+	// directory", exit 1, which is every wake failure in this repository's log.
+	//
+	// Setting cmd.Dir was only half the fix and the half that tests cleanly.
+	// The first version of that test called runWakeFor directly, so it passed
+	// against a plan that never carried a directory at all.
+	return wakePlan{argv: f.apply(e.argvFor(l)), cwd: cwdOf(l), cooldown: cooldown}, true
 }
 
 // wakePlan is how one wake will be delivered: the operator's command, or the

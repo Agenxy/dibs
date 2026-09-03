@@ -420,6 +420,16 @@ func (e *Engine) decoratedBoard() core.Result {
 		if l.PID != 0 && e.prober != nil && e.ownsHost(l) {
 			lm["proc_alive"] = e.prober.Alive(l.PID)
 		}
+		// WHETHER A COMMAND COULD RESUME THIS AGENT, without saying what to
+		// resume. The id itself stays off the board; this is the one bit a
+		// health check needs, and it needs it because harness alone is not
+		// enough: `wakeRoute` refuses the exec path when the agent holds no
+		// UUID-shaped thread, so an agent whose harness HAS a [wake.exec] entry
+		// can still be unreachable. Reporting it as covered would be the same
+		// optimism as counting configured commands and calling it coverage.
+		if threadIDOf(l) != "" {
+			lm["resumable"] = true
+		}
 	}
 	return core.Result(b)
 }

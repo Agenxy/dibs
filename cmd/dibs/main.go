@@ -937,8 +937,13 @@ type (
 		// wake commands and called that coverage, which reported a healthy tick
 		// on a board where twenty-eight of thirty-one agents had no route at
 		// all. Counting what you configured is not measuring what it covers.
-		Kind  string `json:"kind,omitempty"`
-		Agent *struct {
+		Kind string `json:"kind,omitempty"`
+		// Resumable is whether a wake COMMAND could name this agent's thread.
+		// The id is deliberately not published; whether one exists is what a
+		// coverage check has to know, because a harness with a configured
+		// command still cannot resume an agent that has no thread to name.
+		Resumable bool `json:"resumable,omitempty"`
+		Agent     *struct {
 			Harness string `json:"harness,omitempty"`
 			CWD     string `json:"cwd,omitempty"`
 			// Surface separates a HARNESS from one of Dibs's own front doors.

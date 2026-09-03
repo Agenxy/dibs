@@ -98,6 +98,31 @@ func TestDoctorSaysWhichWakeRoutesExist(t *testing.T) {
 		}
 	})
 
+	// A COMMAND IS NOT A ROUTE ON ITS OWN.
+	//
+	// wakeRoute refuses the exec path when the agent holds no UUID-shaped
+	// thread id, because `--resume` and `exec resume` both need something to
+	// name. Counting such an agent as covered because its HARNESS has a command
+	// is the same optimism as counting configured commands and calling it
+	// coverage: the report would be green and the agent still unreachable.
+	t.Run("a covered harness with no thread to resume", func(t *testing.T) {
+		stranded := agentRow("no-thread", "persistent", "codex")
+		stranded.Resumable = false
+		oks, warns := run(t, "[wake.exec.codex]\nargv = [\"echo\", \"{message}\"]\n",
+			boardOf(agentRow("fine", "persistent", "codex"), stranded))
+		if len(oks) != 0 {
+			t.Errorf("called an agent covered when nothing can name its thread: %v", oks)
+		}
+		if len(warns) != 1 || !strings.Contains(warns[0], "no resumable thread") {
+			t.Fatalf("did not say WHY that agent is stranded: %v", warns)
+		}
+		// And it must not tell them to add a block they already have.
+		if strings.Contains(warns[0], "[wake.exec.codex]") {
+			t.Errorf("told the operator to add a command that is already configured, "+
+				"which is how a report loses the reader's trust: %s", warns[0])
+		}
+	})
+
 	// Dibs's own rows are not threads, and reporting them as unreachable is the
 	// false alarm that teaches an operator to skim this check.
 	t.Run("the human and the daemon are not counted", func(t *testing.T) {
@@ -120,7 +145,10 @@ func TestDoctorSaysWhichWakeRoutesExist(t *testing.T) {
 
 // agentRow is one board row with just the fields wake coverage reads.
 func agentRow(id, kind, harness string) boardAgent {
-	a := boardAgent{ID: id, Kind: kind, Status: "dormant"}
+	// Resumable by default: the common case is an agent that registered through
+	// its harness's plugin and therefore holds a thread id. The case that does
+	// not has its own subtest.
+	a := boardAgent{ID: id, Kind: kind, Status: "dormant", Resumable: true}
 	a.Agent = &struct {
 		Harness string `json:"harness,omitempty"`
 		CWD     string `json:"cwd,omitempty"`

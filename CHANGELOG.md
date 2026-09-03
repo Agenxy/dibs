@@ -495,6 +495,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   expensive recurring bug class and it was sitting in the middle of the feature
   whose entire purpose is reaching an agent nobody else can.
 
+  It was in fact two bugs stacked, and the first fix only found one. `wakeFor`
+  has two returns: the socket route, which needs no directory and had carried
+  one since the field existed, and the command route, which runs the process and
+  carried none. So the field WAS assigned, on the branch that cannot use it,
+  which is exactly why it read as used. Setting `cmd.Dir` alone changed nothing
+  in production, and the test that covered it passed anyway because it called
+  the executor directly and never the decision that feeds it. Both layers are
+  tested now, and both tests were watched failing.
+
+  Verified end to end on both harnesses, against real stopped threads rather
+  than fixtures: `claude --resume` and `codex exec resume` each resumed their
+  own thread and delivered the one fixed sentence, with the daemon logging
+  "woke an agent that was not running" for each.
+
   **The previous entry here blamed launchd's security session and the login
   keychain, and that was wrong.** It is left described rather than deleted
   because the wrong explanation cost two investigations and shaped a paragraph
