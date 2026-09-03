@@ -482,6 +482,29 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now". Prose a person reads over their agent's shoulder, and the tell that
   nobody had looked at the output.
 
+- **A resuming agent's thread id was dropped, so it could not be woken
+  afterwards.** The `resumed` branch of `register` was written as a
+  response-loss retry: the same nonce twice inside one TTL means the client
+  never saw the first answer, so return it again and change nothing. Right for
+  a retry, and not the only traffic that lands there. An active agent
+  re-registering at the start of an activation, which is what `dibs://skills`
+  instructs, also comes back `resumed`, and it may be doing so from a session
+  the board has never seen. Codex sends `threadId` in `_meta` on every call and
+  that id is exactly what `codex exec resume` takes, so this was the moment a
+  returning agent handed over the one thing that makes it reachable, and it went
+  in the bin. The agent stayed wakeable only for as long as it kept making other
+  calls: register, then stop, and nothing could start it again.
+
+  Measured before the fix: 15 of 29 persistent agents on this board had a wake
+  command for their harness and no thread for it to name, one of which had
+  registered that morning.
+
+  Gated on `V7Semantics` and on the alias being NEW. Binding is replayable state
+  so it has to advance the serial and be ledgered, and doing that ungated would
+  make replay of a v0.0.6 ledger advance the serial where the original fold did
+  not, leaving every serial after it disagreeing with what the ledger records.
+  A genuine retry still writes nothing, which has its own test.
+
 - **The wake ran in the daemon's working directory, so it never reached anybody.**
   `wakePlan` has carried a `cwd` field since the path shipped, set from the
   agent's own record and commented as "where the agent says it works". Nothing

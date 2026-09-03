@@ -365,10 +365,8 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 		if id, ok := s.Nonces[op.Nonce]; ok {
 			l := s.Agents[id]
 			if l != nil && l.Status == StatusActive && now.Sub(l.LastCoordination) <= s.Limits.AgentTTL && l.CreatedSerial > 0 {
-				return Result{
-					"agent_id": id, "token": l.Token, "serial": s.Serial,
-					"resumed": true, "board": s.Board(),
-				}, nil, nil
+				res, evs := s.resumeLiveAgent(l, op, now)
+				return res, evs, nil
 			}
 			// The nonce IS the recovery credential: for every kind of agent, not
 			// just persistent ones.
