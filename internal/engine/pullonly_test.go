@@ -91,24 +91,66 @@ func TestSendingToAnUnwakeableActiveAgentSaysSo(t *testing.T) {
 	}
 }
 
-// A sleeping recipient keeps core's better sentence, and does not get both.
-func TestASleepingRecipientIsNotWarnedTwice(t *testing.T) {
-	st := core.NewState("t", core.DefaultLimits())
-	e := New(st, &memLedger{}, deadProber{})
-	if _, _, err := st.Apply(&core.Op{
-		Kind: core.OpRegister, Name: "sleeper", NewToken: "tok",
-		AgentKind: core.KindPersistent, Nonce: "n-sleeper",
-		Agent: &core.AgentInfo{Harness: "some-harness"},
-	}, t0Engine()); err != nil {
-		t.Fatal("setup:", err)
+// A sleeping recipient gets exactly one note, and it is the true one.
+//
+// This test used to assert that PullOnlyNote stays SILENT for a sleeping agent,
+// on the reasoning that core already says something better and "two warnings
+// about one delivery" teaches a sender to skim. The concern is right and the
+// mechanism was wrong. What core says is "it will see this when it next wakes",
+// which is false whenever nothing can wake that agent, so silence here left the
+// sender holding the untrue half of the two.
+//
+// The rule now: the engine speaks only when it disagrees, and where it speaks
+// its note REPLACES core's rather than joining it. So there is still exactly
+// one sentence, and it is the one that knows about the operator's wake
+// configuration, which the fold cannot read and must not.
+func TestASleepingRecipientGetsOneTrueNote(t *testing.T) {
+	mk := func(t *testing.T, harness string, alias string) (*Engine, *core.Agent) {
+		t.Helper()
+		st := core.NewState("t", core.DefaultLimits())
+		e := New(st, &memLedger{}, deadProber{})
+		if _, _, err := st.Apply(&core.Op{
+			Kind: core.OpRegister, Name: "sleeper", NewToken: "tok",
+			AgentKind: core.KindPersistent, Nonce: "n-sleeper",
+			Agent: &core.AgentInfo{Harness: harness},
+		}, t0Engine()); err != nil {
+			t.Fatal("setup:", err)
+		}
+		l := st.Agents["sleeper"]
+		l.Status = core.StatusDormant
+		if alias != "" {
+			l.SessionAliases = append(l.SessionAliases, alias)
+		}
+		if !l.Sleeping() {
+			t.Fatal("setup: the recipient is not sleeping, so this tests nothing")
+		}
+		return e, l
 	}
-	l := st.Agents["sleeper"]
-	l.Status = core.StatusDormant
-	if !l.Sleeping() {
-		t.Fatal("setup: the recipient is not sleeping, so this tests nothing")
-	}
-	if n := e.PullOnlyNote(l); n != "" {
-		t.Errorf("a dormant recipient got the pull-only note as well as core's own "+
-			"sleeping note: two warnings about one delivery: %q", n)
-	}
+
+	// Reachable: a command for its harness and a thread to name. Core's sentence
+	// is true, so the engine keeps quiet and the sender reads one note.
+	t.Run("reachable keeps the fold's sentence", func(t *testing.T) {
+		e, l := mk(t, "some-harness", "3f2504e0-4f89-11d3-9a0c-0305e82c3301")
+		e.SetWakeCommands(map[string]WakeCommand{
+			"some-harness": {Argv: []string{"echo", "wake"}},
+		})
+		if n := e.PullOnlyNote(l); n != "" {
+			t.Errorf("warned about an agent this board genuinely can wake, so the "+
+				"sender reads two notes about one delivery: %q", n)
+		}
+	})
+
+	// Unreachable: the fold's sentence is a promise nothing will keep, and the
+	// engine is the only participant that can tell.
+	t.Run("unreachable is contradicted", func(t *testing.T) {
+		e, l := mk(t, "some-harness", "")
+		n := e.PullOnlyNote(l)
+		if n == "" {
+			t.Fatal("silent, so the sender is left with core's \"it will see this when " +
+				"it next wakes\" for an agent nothing is going to wake")
+		}
+		if !strings.Contains(n, "nothing is going to wake it") {
+			t.Errorf("does not contradict the promise it exists to correct: %q", n)
+		}
+	})
 }

@@ -1190,10 +1190,29 @@ func (e *Engine) PullOnlyNoteFor(ctx context.Context, agentID string) string {
 // without an op, and a note derived from it inside Apply would make replay
 // depend on today's configuration file.
 //
-// Empty when the agent is sleeping: core already says something better about
-// that case, and two notes about one delivery is how an agent learns to skim.
+// AND IT SPEAKS FOR A SLEEPING AGENT TOO, which it used to refuse to do.
+//
+// The comment here read "empty when the agent is sleeping: core already says
+// something better about that case". What core says is "it will see this when
+// it next wakes", and when nothing can wake that agent, that is not something
+// better. It is the one sentence the sender acts on, and it is false.
+//
+// The same shape the fold already fixed one branch over, for a message sent to
+// an agent superseded by a live sibling, where the comment records that Dibs
+// "told the senders it would be seen when it next wakes. Nobody was coming."
+// This is that failure again, arrived at from the other direction: not a
+// retired identity, but a live one nothing has a route to.
+//
+// Measured: a question sent to an idle codex agent with no thread id. Accepted,
+// the sender told it would be seen when the agent next wakes, no wake attempted
+// anywhere in the daemon log, and the message unread an hour later.
+//
+// Core cannot decide this and must not try: whether a wake is possible depends
+// on the operator's `[wake.exec]` config, which is impure, not replayable, and
+// changes without an op. So the engine's note wins wherever it has one, because
+// it is the participant that knows.
 func (e *Engine) PullOnlyNote(l *core.Agent) string {
-	if l == nil || l.Sleeping() || l.Gone() {
+	if l == nil || l.Gone() {
 		return ""
 	}
 	harness := wakeHarness(l)
@@ -1213,11 +1232,29 @@ func (e *Engine) PullOnlyNote(l *core.Agent) string {
 	// caught that my own test fixture had no thread id and therefore pinned the
 	// wrong behaviour while reading as if it proved the right one.
 	if configured && threadIDOf(l) != "" {
-		return ""
+		return "" // a wake can really run, so core's wording is true as it stands
 	}
 	named := harness
 	if named == "" {
 		named = "its harness"
+	}
+	// A SLEEPING AGENT NOTHING CAN REACH. Said plainly, because the alternative
+	// is the sender believing a wake is coming.
+	//
+	// The socket route is not a rescue here the way it can be for an active
+	// agent: it lives in the harness session, and this agent's session has
+	// ended. Configured-and-nameable is the whole of what is left.
+	if l.Sleeping() {
+		why := "nothing on this board can wake " + named
+		if configured {
+			why = named + " has a wake command, but " + l.ID + " has never supplied " +
+				"a harness thread id for it to resume"
+		}
+		return "delivered to " + l.ID + ", which is " + string(l.Status) + ", and " +
+			why + ". Nothing will start it: this is NOT a message that will be seen " +
+			"when it next wakes, because nothing is going to wake it. It waits until " +
+			"a person starts that agent again. The message is not lost, and any " +
+			"deadline on it will expire unread."
 	}
 	if configured {
 		return "delivered to " + l.ID + ", which is active, and " + named + " HAS a wake " +

@@ -1074,11 +1074,17 @@ func (s *Server) noteIfNobodyCanWake(ctx context.Context, to string, res core.Re
 	if res == nil {
 		return res
 	}
-	if _, said := res["note"]; said {
-		return res
-	}
+	// THE ENGINE'S NOTE WINS, and this used to defer to the fold's.
+	//
+	// core writes "it will see this when it next wakes" for any sleeping
+	// recipient, which is true only if something can wake it. Whether anything
+	// can depends on the operator's wake configuration, which the fold cannot
+	// read and must not: it is impure and not replayable. So when the engine
+	// has something to say here it knows strictly more, and skipping it left the
+	// sender holding the false half of the two.
 	if n := s.eng.PullOnlyNoteFor(ctx, to); n != "" {
 		res["note"] = n
+		return res
 	}
 	return res
 }

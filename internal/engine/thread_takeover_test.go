@@ -74,3 +74,74 @@ func TestALiveAgentTakesAThreadFromADormantHolder(t *testing.T) {
 		}
 	})
 }
+
+// An agent is recovered by ANY id it answers to, including a parked one.
+//
+// Two gaps, found together while trying to retire a test row and making two
+// more instead of one fewer.
+//
+// The reattach path matched an agent's PRIMARY session id only. An agent goes
+// by several: the bridge derives one, and a harness that names its own thread
+// contributes another as an alias. Codex sends `threadId` in `_meta` on every
+// call, so for a codex agent the identifier that actually identifies it is
+// almost always the alias, and it was the one id that would not work.
+//
+// And the status pair was active-or-stale. `stale` is where an EPHEMERAL agent
+// lands; `dormant` is the persistent equivalent and was absent. Harmless while
+// persistent agents were rare and held operator-chosen nonces; not harmless
+// once persistent became the default, because the common case is now an agent
+// that parked, holds a nonce it was given rather than chose, and can offer
+// nothing but its thread.
+func TestAnAgentIsRecoveredByAnyIDItAnswersTo(t *testing.T) {
+	const thread = "01a0696b-9999-7821-a992-9dc7f6a43a11"
+
+	mk := func(t *testing.T, status core.AgentStatus, minted bool) *core.State {
+		t.Helper()
+		st := core.NewState("test", core.DefaultLimits())
+		l := &core.Agent{
+			ID: "worker", Name: "worker", Status: status,
+			SessionID: "bridge-1234", Nonce: "n-worker", NonceMinted: minted,
+			Agent: &core.AgentInfo{CWD: "/work"}, Slots: map[string]core.Slot{},
+		}
+		l.SessionAliases = []string{thread} // the harness's own name for it
+		st.Agents["worker"] = l
+		return st
+	}
+
+	for _, c := range []struct {
+		name   string
+		status core.AgentStatus
+	}{
+		{"parked", core.StatusDormant},
+		{"lapsed", core.StatusStale},
+		{"working", core.StatusActive},
+	} {
+		t.Run(c.name+" recovers by its thread id", func(t *testing.T) {
+			st := mk(t, c.status, true)
+			res, _ := st.ReattachBySessionIDForTest(&core.Op{
+				Kind: core.OpRegister, Name: "worker", SessionID: thread,
+				NewToken: "tok-new",
+			})
+			if res == nil {
+				t.Fatalf("a %s agent could not be recovered by the one id its harness "+
+					"gives it, so re-registering forks a sibling that cannot read its "+
+					"own mail", c.name)
+			}
+			if id, _ := res["agent_id"].(string); id != "worker" {
+				t.Errorf("recovered %q instead of the agent itself", id)
+			}
+		})
+	}
+
+	// And a chosen credential is still not reachable by an id somebody guesses.
+	t.Run("an agent that chose its own nonce is not", func(t *testing.T) {
+		st := mk(t, core.StatusDormant, false)
+		if res, _ := st.ReattachBySessionIDForTest(&core.Op{
+			Kind: core.OpRegister, Name: "worker", SessionID: thread, NewToken: "tok-new",
+		}); res != nil {
+			t.Error("an agent holding a nonce IT chose was reattached by a session id. " +
+				"A real secret must beat a guessable identifier, which is the whole " +
+				"reason this branch checks the credential at all")
+		}
+	})
+}

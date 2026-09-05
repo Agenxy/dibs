@@ -34,8 +34,33 @@ func (s *State) reattachBySessionID(op *Op, now time.Time) (Result, []Event) {
 		if l.Nonce != "" && !l.NonceMinted {
 			continue // it chose a real credential; a guessable one will not do
 		}
-		if l.SessionID == op.SessionID && l.Name == op.Name &&
-			(l.Status == StatusActive || l.Status == StatusStale) {
+		// ANY ID THIS AGENT ANSWERS TO, not only its primary one.
+		//
+		// An agent goes by several: the bridge derives one, and a harness that
+		// names its own thread contributes another as an ALIAS. Codex sends
+		// `threadId` in `_meta` on every call, so for a codex agent the id that
+		// actually identifies it is almost always the alias. Matching the
+		// primary alone meant the one identifier such an agent can present was
+		// the one that would not recover it, and the call forked a sibling
+		// instead. Found while trying to retire a test row by the only id it
+		// had, which made two more.
+		//
+		// AND DORMANT, which is where a persistent agent waits.
+		//
+		// The old pair was active-or-stale. `stale` is where an EPHEMERAL agent
+		// lands when its lease lapses; `dormant` is the persistent equivalent,
+		// and it was missing. That asymmetry was harmless while persistent
+		// agents were rare and always held a nonce their operator had chosen,
+		// and stopped being harmless the moment persistent became the default:
+		// the common case is now an agent that parked, holds a nonce it was
+		// given rather than one it chose, and can offer nothing but its thread.
+		//
+		// The credential rule above is what protects anybody, and it is
+		// unchanged: an agent that brought its own nonce is still not
+		// recoverable by an id somebody could guess.
+		if l.holdsSession(op.SessionID) && l.Name == op.Name &&
+			(l.Status == StatusActive || l.Status == StatusStale ||
+				l.Status == StatusDormant) {
 			l.Token = op.NewToken
 			l.LastCoordination = now
 			l.Status, l.StaleReason = StatusActive, ""
@@ -60,4 +85,11 @@ func (s *State) reattachBySessionID(op *Op, now time.Time) (Result, []Event) {
 		}
 	}
 	return nil, nil
+}
+
+// ReattachBySessionIDForTest exposes the decision to engine tests, which own the
+// fixtures for who may recover whom. Exported for that and nothing else: the
+// live path reaches it through applyRegister.
+func (s *State) ReattachBySessionIDForTest(op *Op) (Result, []Event) {
+	return s.reattachBySessionID(op, time.Now())
 }

@@ -482,6 +482,47 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now". Prose a person reads over their agent's shoulder, and the tell that
   nobody had looked at the output.
 
+- **`send` promised a wake that could not happen.** A message to a sleeping
+  recipient returned "it will see this when it next wakes". True when something
+  can wake it, and a lie otherwise, in the one sentence the sender acts on.
+  Measured: a question to an idle codex agent holding no thread id. Accepted,
+  that promise returned, no wake attempted anywhere in the daemon log, unread an
+  hour later.
+
+  The identical shape the fold already fixed one branch over, for a message to
+  an agent superseded by a live sibling, where the comment records that Dibs
+  "told the senders it would be seen when it next wakes. Nobody was coming."
+  This is that failure reached from the other direction: not a retired identity,
+  but a live one with no route to it.
+
+  The fold cannot decide this and must not try, because whether a wake is
+  possible depends on the operator's `[wake.exec]` configuration, which is
+  impure and not replayable. So the engine's note now wins wherever it has one.
+  There is still exactly one sentence, and it is the half that knows. The test
+  that pinned the old behaviour asserted the right concern, two warnings about
+  one delivery, through the wrong mechanism, and now asserts the property
+  directly.
+
+- **An agent could not be recovered by the only id its harness gives it.**
+  Reattach matched an agent's PRIMARY session id. An agent answers to several:
+  the bridge derives one, and a harness that names its own thread contributes
+  another as an alias. Codex sends `threadId` in `_meta` on every call, so for a
+  codex agent the identifier that identifies it is almost always the alias, and
+  it was the one that would not work: re-registering forked a sibling that could
+  not read its predecessor's mail.
+
+  The status test was wrong in the same way. It admitted `active` and `stale`,
+  where `stale` is the EPHEMERAL lapse and `dormant`, its persistent equivalent,
+  was simply absent. Harmless while persistent agents were rare and held nonces
+  their operators chose; not harmless once persistent became the default, since
+  the common case is now an agent that parked, holds a nonce it was given rather
+  than chose, and can present nothing but its thread. The credential rule is
+  unchanged: an agent that brought its own nonce is still not reachable by an id
+  somebody could guess.
+
+  Found while trying to retire a leftover test row by the only id it had, which
+  created two more.
+
 - **A dormant agent held a live thread hostage, and both ends of the wake path
   broke.** `mayClaimSession` refused to bind a session id already held by
   another agent, on the grounds that moving it would redirect that agent's wake
