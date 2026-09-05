@@ -482,6 +482,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now". Prose a person reads over their agent's shoulder, and the tell that
   nobody had looked at the output.
 
+- **A dormant agent held a live thread hostage, and both ends of the wake path
+  broke.** `mayClaimSession` refused to bind a session id already held by
+  another agent, on the grounds that moving it would redirect that agent's wake
+  delivery. Right for a live holder, and wrong for one that has stopped
+  answering: a dormant agent's session ended with its process, so it cannot be
+  occupying the thread it still owns.
+
+  While it did, both directions failed at once and each looked like success. A
+  wake for the dormant row started the thread and reached whoever was running in
+  it now, who checked their own mailbox, found it empty and truthfully reported
+  no mail; and the agent that actually WAS that session, refused its own id,
+  held no thread at all and could never be woken by anything. Measured with
+  `codex-root-2` dormant for three weeks and a live agent in the thread it
+  owned.
+
+  THE SAME RULE AS `refuseStealingAnotherThreadsSession`, which learned it first
+  and alone. Two implementations of one rule is this repository's most expensive
+  recurring bug and it happened again, four hundred lines away, reached by a
+  different call. Both are now exercised by one fixture in one test, so the next
+  person to change either finds the other.
+
 - **An agent that stated no kind got one that could not park, be woken, or hold
   mail.** `ephemeral` was the default. It means swept to `stale` rather than
   `dormant` when the session ends, no durable mailbox, and no nonce, which is

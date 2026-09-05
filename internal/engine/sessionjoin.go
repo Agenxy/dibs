@@ -163,6 +163,31 @@ func (e *Engine) mayClaimSession(sid, token string) bool {
 	if e.state.AgentByToken(token) == holder {
 		return true
 	}
+	// A HOLDER THAT HAS STOPPED ANSWERING IS NOT THE LIVE THREAD.
+	//
+	// THE SAME RULE AS refuseStealingAnotherThreadsSession, which grew it first
+	// and alone. Two implementations of one rule is this repository's most
+	// expensive recurring bug and it happened again here: that guard learned
+	// that a dormant row cannot be occupying the session it holds, and this one,
+	// four hundred lines away and reached by a different call, went on refusing.
+	// The fix is written twice because the two paths answer different questions
+	// (may this op proceed / may this id be bound); what they must agree about
+	// is who counts as the live thread.
+	//
+	// Measured on this project's own board: `codex-root-2`, dormant since a date
+	// three weeks past, still held the thread a live agent was running in. Both
+	// ends broke at once. A wake for the dormant row started the thread and
+	// reached whoever was in it now, who read their own empty mailbox and
+	// truthfully reported no mail; and the live occupant, refused its own id,
+	// held no thread at all and so could never be woken by anything.
+	//
+	// Nothing about mail moves. The old row keeps its mailbox, its history and
+	// its claims; only where a wake is delivered changes, and a dormant agent
+	// was not receiving those anyway. An ACTIVE holder still wins: two live
+	// agents claiming one thread is a real conflict, not stale state.
+	if holder.Status != core.StatusActive {
+		return true
+	}
 	// UNLESS THE HOLDER ONLY GUESSED IT.
 	//
 	// A binding the daemon inferred by directory is an assumption, not a claim,
