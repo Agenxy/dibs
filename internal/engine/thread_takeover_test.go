@@ -145,3 +145,65 @@ func TestAnAgentIsRecoveredByAnyIDItAnswersTo(t *testing.T) {
 		}
 	})
 }
+
+// Two rows that both match one reattach resolve the same way every time.
+//
+// A name that comes back is suffixed in the ID and keeps the NAME, so
+// `worker` and `worker-2` are both named "worker", and both can hold one
+// thread: the first as an alias, the second as the id it registered under. The
+// loop that picked between them ranged over a Go map and took the first hit,
+// which is randomised. A coin flip inside the fold breaks state == fold(ledger):
+// one ledger replays to different boards on different runs, and nothing reports
+// it, because each run is internally consistent.
+//
+// Observed on this board within a minute of widening the match to aliases and
+// dormant rows, which turned a collision from exotic into ordinary.
+//
+// Run repeatedly ON PURPOSE. Map order is randomised per iteration, so a single
+// pass proves nothing at all: it is exactly the shape of test that passes
+// against the bug it was written for.
+func TestOneSessionIDAlwaysRecoversTheSameRow(t *testing.T) {
+	const thread = "01a0696b-8446-7821-a992-9dc7f6a43a25"
+
+	board := func() *core.State {
+		st := core.NewState("test", core.DefaultLimits())
+		// Holds the thread only as an alias, and has stopped answering.
+		old := &core.Agent{
+			ID: "worker", Name: "worker", Status: core.StatusDormant,
+			SessionID: "bridge-1", Nonce: "n1", NonceMinted: true,
+			Slots: map[string]core.Slot{},
+		}
+		old.SessionAliases = []string{thread}
+		// Registered UNDER the thread, and still working.
+		st.Agents["worker"] = old
+		st.Agents["worker-2"] = &core.Agent{
+			ID: "worker-2", Name: "worker", Status: core.StatusActive,
+			SessionID: thread, Nonce: "n2", NonceMinted: true,
+			Slots: map[string]core.Slot{},
+		}
+		return st
+	}
+
+	seen := map[string]int{}
+	for range 50 {
+		res, _ := board().ReattachBySessionIDForTest(&core.Op{
+			Kind: core.OpRegister, Name: "worker", SessionID: thread, NewToken: "tok",
+		})
+		if res == nil {
+			t.Fatal("no row was recovered at all, so this proves nothing about which")
+		}
+		id, _ := res["agent_id"].(string)
+		seen[id]++
+	}
+	if len(seen) != 1 {
+		t.Fatalf("one session id recovered different rows across identical runs: %v.\n"+
+			"Replaying a single ledger now reaches different boards, and nothing "+
+			"reports it because each run is internally consistent", seen)
+	}
+	// And it is the row that registered under this id, not the one that merely
+	// answers to it as well.
+	if _, ok := seen["worker-2"]; !ok {
+		t.Errorf("recovered %v. The row whose PRIMARY session id this is has the "+
+			"stronger claim than one holding it as an alias", seen)
+	}
+}

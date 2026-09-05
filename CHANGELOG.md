@@ -503,6 +503,25 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one delivery, through the wrong mechanism, and now asserts the property
   directly.
 
+- **Which row a session id recovered was a coin flip.** The reattach loop ranged
+  over the agent map and took the first match, and Go randomises map iteration.
+  Two rows can match one reattach: a name that comes back is suffixed in the ID
+  and keeps the NAME, so `bridgekind` and `bridgekind-3` are both named
+  "bridgekind", and both can hold one thread, the first as an alias and the
+  second as the id it registered under.
+
+  A coin flip inside the fold breaks `state == fold(ledger)`: one ledger replays
+  to different boards on different runs, and nothing reports it because each run
+  is internally consistent. Observed on this board within a minute of widening
+  the match to aliases and dormant rows, which is what turned a collision from
+  exotic into ordinary.
+
+  Selection is now ordered: a primary session id beats an alias, then the
+  liveliest status, then the lowest id for stability. Its test runs the same
+  case fifty times per pass, because map order is randomised per iteration and a
+  single run is exactly the shape of check that passes against the bug it was
+  written for. Against the unordered version it splits 45/5.
+
 - **An agent could not be recovered by the only id its harness gives it.**
   Reattach matched an agent's PRIMARY session id. An agent answers to several:
   the bridge derives one, and a harness that names its own thread contributes
