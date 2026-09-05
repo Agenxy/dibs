@@ -518,6 +518,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   project guards `tools/list` with a hard test at 8,700 tokens and was shipping
   twice that per activation with nothing measuring it at all.
 
+- **Mail arriving while an agent was "recently in touch" was thrown away.**
+  `maybeWake` short-circuits when the recipient called Dibs inside the wake
+  cooldown, reasoning that it "is genuinely working and will see this at its own
+  turn boundary". That holds only where a turn boundary REACHES Dibs. An agent
+  whose harness sends no lifecycle hooks has none, so nothing ever marks its turn
+  ended, recency decays into silence, and because `maybeWake` fires once per
+  event with nothing retrying, the message's only delivery attempt was spent on
+  the assumption.
+
+  Measured, when the operator asked for a specific agent to be contacted: a
+  question sent to an active codex agent 40 seconds after its last call, inside
+  the 90-second window. No wake then, none after, and the daemon's log showed
+  that harness had never delivered a single lifecycle hook, because it runs under
+  the desktop app, which does not read the CLI's hooks file. Every Codex desktop
+  agent on that board was in the same position.
+
+  The window is a deferral now rather than a verdict, and the re-check re-arms
+  while the mail is still blocking somebody: deferring once only moves the loss
+  one window later, since an agent that calls again consumes the retry.
+  `hasBlockingMail` ends the loop when the message is read, answered or expires.
+
 - **`send` promised a wake that could not happen.** A message to a sleeping
   recipient returned "it will see this when it next wakes". True when something
   can wake it, and a lie otherwise, in the one sentence the sender acts on.

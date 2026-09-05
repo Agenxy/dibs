@@ -243,7 +243,31 @@ func (e *Engine) maybeWake(ev core.Event) {
 	}
 	// Having called Dibs inside the cooldown is real evidence of a live agent,
 	// and it is the same window that bounds the wake itself.
+	//
+	// BUT COME BACK, rather than spending the only attempt this message gets.
+	//
+	// A bare return here was the whole delivery for a message that arrived
+	// inside the window. The justification was that the agent "is genuinely
+	// working and will see this at its own turn boundary", and that is true only
+	// where a turn boundary REACHES Dibs. An agent whose harness sends no
+	// lifecycle hooks has none: nothing marks its turn ended, so recency simply
+	// decays into silence and the message is never delivered by anything.
+	//
+	// Measured on this board. A question was sent to an active codex agent 40
+	// seconds after its last call, well inside the 90-second window. No wake was
+	// attempted, none was ever attempted afterwards, and the daemon's log shows
+	// that harness has never delivered a lifecycle hook at all: it runs under
+	// the desktop app, which does not read the CLI's hooks file. Every Codex
+	// desktop agent on that board is in the same position.
+	//
+	// So the window becomes a deferral instead of a verdict. If the agent really
+	// is working it will call again, the re-check will find it recently in touch
+	// and defer once more; when it stops, the wake fires. hasBlockingMail bounds
+	// the loop: it ends the moment the mail is read, answered or expires.
 	if e.recentlyInTouch(l) {
+		e.deferWakeLocked(l.ID, e.recencyWindow(l))
+		slog.Debug("no wake yet: called Dibs recently, so re-checking when that "+
+			"window closes", "agent", l.ID)
 		return
 	}
 	cmd, ok := e.wakeFor(l, msgType, ev)
@@ -356,7 +380,16 @@ func (e *Engine) retryWakeDecision(agent string) {
 	// The turn end is recorded by wakeExited, not here: the cooldown timer can
 	// fire while a command is still running, and claiming a finished turn there
 	// would be false. See noteWakeEnded.
+	//
+	// RE-ARMED, for the same reason maybeWake now defers rather than returning.
+	// Returning here made the deferral a single extra look: an agent that called
+	// Dibs once more in the meantime consumed the retry and the message was
+	// stranded exactly as before, one window later. Only while somebody is still
+	// blocked, which is what ends the loop.
 	if e.recentlyInTouch(l) {
+		if e.hasBlockingMail(agent) {
+			e.deferWakeLocked(agent, e.recencyWindow(l))
+		}
 		return
 	}
 	if !e.hasBlockingMail(agent) {
@@ -1288,4 +1321,23 @@ func runDir(dir string) string {
 		return "the daemon's own working directory (the agent recorded none)"
 	}
 	return dir
+}
+
+// recencyWindow is how long to wait before asking again whether this agent has
+// stopped.
+//
+// The same window recentlyInTouch measures against, so a re-check lands when
+// that judgement could actually have changed rather than at some unrelated
+// interval. Falls back to the default peer cooldown for an agent whose harness
+// has no configured command, which is the case recentlyInTouch already answers
+// false for; carried anyway so this never returns zero and spins.
+func (e *Engine) recencyWindow(l *core.Agent) time.Duration {
+	harness := wakeHarness(l)
+	e.wakers.mu.Lock()
+	cmd, ok := e.wakers.byHarness[harness]
+	e.wakers.mu.Unlock()
+	if ok && cmd.cooldown > 0 {
+		return cmd.cooldown
+	}
+	return defaultPeerCooldown
 }
