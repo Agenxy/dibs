@@ -39,12 +39,16 @@ were copied into this file all three went stale at once while reading as
 current. What is true of the protocol, the hook types and the wake path is
 whatever that file says today.
 
-The short version, current as of 2026-08-17: Codex reaches **MCP 2026-07-28**
+The short version, current as of 2026-08-23: Codex reaches **MCP 2026-07-28**
 when the `mcp_2026_07_28` feature and `CODEX_MCP_PROTOCOL_VERSION=2026-07-28`
-are both set, and then it does call `resources/list`. **Wake is still
-pull-only**: of the four hook handler types it declares, `prompt` and `agent`
-are skipped by name and `mcp_tool` is dropped for want of an executor, leaving
-only `command`, which is a subprocess. See
+are both set, and then it does call `resources/list`. Builds from 2026-08-18
+also execute `mcp_tool` hooks, so mail is injected at a turn boundary rather
+than waited for. That paragraph used to end "**wake is still pull-only**",
+because `mcp_tool` was dropped for want of an executor, and the executor
+arrived: what is still true is narrower and worth keeping straight. A hook of
+any kind reaches an agent that is RUNNING, at its own turn boundary. Reaching
+one that has STOPPED is `[wake.exec]`, which starts a process from the
+operator's own configuration and is not a plugin capability at all. See
 [PHILOSOPHY.md](https://github.com/agenxy/dibs/blob/main/PHILOSOPHY.md).
 
 ## Developer mode is the one thing that differs

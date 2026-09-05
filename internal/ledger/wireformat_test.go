@@ -96,6 +96,14 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	wantOp := map[string]bool{
 		"kind": true, "agent": true, "name": true, "pid": true, "token": true,
 		"nonce": true, "agent_kind": true, "session_id": true, "agent_id": true,
+		// A nonce the DAEMON generated for a caller that sent none, used only
+		// if the registration creates an agent. Added in v0.0.7 when persistent became the default
+		// and every agent started getting a nonce whether it asked or not: it is
+		// what still lets `session_id` reattach an agent that never chose a
+		// credential of its own. Renaming it would read as false on replay, and
+		// every such agent would silently lose context-loss recovery and fork a
+		// sibling that cannot read its own mail.
+		"minted_nonce": true,
 		// The OTHER name one harness session goes by, joined by the daemon at
 		// ingress. Frozen from the day it shipped, like every tag here: it
 		// records which agent a lifecycle hook resolves to, so renaming it later
@@ -123,6 +131,40 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		"msg_serial": true, "msg_serials": true, "attachments": true,
 		"blob": true, "mime": true, "size": true,
 		"dead_agents": true, "give_up_announce": true,
+		// purge_mail: whether THIS sweep may take a purged agent's mailbox with
+		// it. Absent on every sweep written before v0.0.7, and that absence is
+		// load-bearing: it is what makes those ops replay with the semantics
+		// they were written under instead of today's.
+		"purge_mail": true,
+		// restore_nonce: whether THIS register may put a recovered agent's
+		// nonce back. Same shape as purge_mail and load-bearing in the same
+		// way. Absent on every register written before v0.0.7, and that
+		// absence is what stops a v0.0.6 ledger replaying into a board with an
+		// extra sibling agent in it.
+		"restore_nonce": true,
+		// session_guessed: whether THIS op's session alias was inferred by the
+		// daemon from the working directory rather than stated by the caller. A
+		// guess yields to a first-hand claim; without the distinction recorded,
+		// a mis-bound session id is permanent. Historical ops lack the field,
+		// decode false, and are therefore treated as STATED, which is the
+		// conservative reading: nothing already on disk starts yielding.
+		"session_guessed": true,
+		// session_taken_from: the agent that held this register's session id and
+		// is losing it. A session id names one harness thread, and the register
+		// path refused any id another agent held unless that agent was closed,
+		// so a DORMANT row blocked the live session behind it forever. Resolved
+		// at ingress and recorded here so replay strips the same row rather than
+		// re-deciding what "dormant" means today.
+		"session_taken_from": true,
+		// release_session: whether THIS update gives up the caller's own session
+		// bindings. The repair for a binding that is already wrong, and only ever
+		// the caller's own, so it can strand nothing but itself.
+		"release_session": true,
+		// v7_semantics: which version's fold semantics this op was written
+		// under. Two v0.0.7 repairs changed what an existing op does, so
+		// replaying an older ledger through them would reconstruct a different
+		// board; ops that lack this decode false and keep what they had.
+		"v7_semantics": true,
 	}
 
 	// Every tag the Op DECLARES, not merely the ones this fixture happens to
@@ -232,10 +274,13 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 // Fingerprints of the frozen sets above. Deliberately not derived from anything
 // at build time: a value a sweep can recompute defends nothing.
 const (
-	// Updated deliberately when `session_alias` was added: one new tag, no
-	// rename. If you are here because a sweep moved this value, the sweep is the
-	// bug, and the tag it renamed is the data loss.
-	frozenOpFingerprint       = "sha256:644f727b01467102"
+	// Updated deliberately when `session_alias` was added, again for
+	// `purge_mail`, again for `restore_nonce`, again for `session_guessed`
+	// `release_session` and `v7_semantics`, and again for
+	// `session_taken_from`: one new tag each time, no rename. If you are here
+	// because a sweep moved this value, the sweep is the bug, and the tag it
+	// renamed is the data loss.
+	frozenOpFingerprint       = "sha256:19b2a3df30fad33b"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
@@ -318,6 +363,24 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		"OpSpaceAck":       {core.OpSpaceAck, "ack_announcement"},
 		"OpAdoptAgent":     {core.OpAdoptAgent, "adopt_agent"},
 		"OpSpaceRetitle":   {core.OpSpaceRetitle, "retitle_space"},
+		// THE EIGHT THIS TABLE DID NOT KNOW ABOUT. It called itself the single
+		// authoritative list and omitted these, so renaming any one of them left
+		// this test green while every ledger containing it stopped replaying.
+		// A hand-maintained list somebody must remember is exactly as good as the
+		// memory, which is why the completeness check below now enumerates the
+		// package rather than trusting this. Found by the pre-release review.
+		"OpActivityCheckpoint": {core.OpActivityCheckpoint, "activity_checkpoint"},
+		"OpBindSession":        {core.OpBindSession, "bind_session"},
+		"OpRespond":            {core.OpRespond, "respond"},
+		"OpAckMessage":         {core.OpAckMessage, "ack"},
+		"OpPruneOwn":           {core.OpPruneOwn, "prune_own"},
+		"OpClaimCoordinator":   {core.OpClaimCoordinator, "claim_coordinator"},
+		"OpVouchChild":         {core.OpVouchChild, "vouch_child"},
+		"OpSpaceForceRelease":  {core.OpSpaceForceRelease, "unlock_space"},
+		"OpSpaceAdmit":         {core.OpSpaceAdmit, "admit"},
+		"OpSpaceClose":         {core.OpSpaceClose, "close_space"},
+		"OpSpaceEvict":         {core.OpSpaceEvict, "evict"},
+		"OpSpaceMerge":         {core.OpSpaceMerge, "merge_spaces"},
 	} {
 		// FROZEN AGAIN, at new values, and the break was deliberate. 0.0.3 renamed
 		// the product to Dibs and its vocabulary with it, and these strings went

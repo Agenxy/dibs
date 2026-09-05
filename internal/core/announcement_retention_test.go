@@ -37,7 +37,7 @@ func TestSettledAnnouncementsAreBoundedButObligationsAreNot(t *testing.T) {
 	add(11, AnnounceOpen)    // still owed
 	add(12, AnnounceUnacked) // redelivery gave up; documented as never dropped
 
-	s.gc(now)
+	s.gc(now, true)
 
 	acked := 0
 	for _, a := range s.Announcements {
@@ -82,8 +82,8 @@ func TestAnnouncementPruningIsDeterministic(t *testing.T) {
 	}
 	now := time.Now()
 	a, b := build(), build()
-	a.gc(now)
-	b.gc(now)
+	a.gc(now, true)
+	b.gc(now, true)
 	if len(a.Announcements) != len(b.Announcements) {
 		t.Fatalf("two identical states pruned differently: %d vs %d",
 			len(a.Announcements), len(b.Announcements))

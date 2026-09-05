@@ -176,6 +176,16 @@ func (e *Engine) Inbox(ctx context.Context, token string) (core.Result, error) {
 		// Aliased rather than renamed: `messages` is what the tool has always
 		// returned and something will be reading it.
 		res["inbox"] = mail
+		// BOTH READ PATHS, or this is a fix to one of two doors again.
+		//
+		// check_in carries the same key from the fold. An agent that recovers
+		// context with check_in and one that polls inbox must not disagree about
+		// whether the sender of a message can be answered: that is exactly the
+		// shape of the `messages` / `inbox` split three lines up, which cost a
+		// debugging cycle because each tool used the other's name.
+		if gone := e.state.UnanswerableSenders(mail); len(gone) > 0 {
+			res["unanswerable_senders"] = gone
+		}
 		// Surfaced here, but NOT cleared here. Exactly one call consumes a
 		// notice, check_in, the documented checkpoint, because two owners of
 		// a clear is how the first version of this went wrong twice over: it
@@ -256,7 +266,35 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 			return errRes
 		}
 		m, ok := e.state.Messages[serial]
-		if !ok || (m.From != l.ID && m.To != l.ID) {
+		// THE WATERMARK APPLIES HERE TOO, and enforcing it in one place was not
+		// enforcing it.
+		//
+		// An id is derived from the name, so a name that comes back reuses the
+		// id, and mail can outlive the row it was addressed to. A new agent is
+		// given a watermark past that mail, and Inbox honours it: this did not,
+		// authorising on the reused id alone. So the replacement could not SEE
+		// the previous occupant's mail and could still read its body by serial,
+		// which is the whole of what the watermark was protecting. Outbound mail
+		// the predecessor sent was readable the same way.
+		//
+		// A serial below the watermark belongs to whoever held this id before,
+		// and is refused for the same reason a stranger's is. Found by the
+		// pre-release review, one round after the enumeration half shipped with
+		// a changelog entry claiming the privacy.
+		//
+		// CREATED-BEFORE-ME, which covers both directions where the watermark
+		// covers one. TruncatedBefore is built from mail addressed TO the id, so
+		// it hides the predecessor's inbox and leaves what the predecessor SENT
+		// readable: `m.From == l.ID` matches on the reused id and hands over the
+		// other half of somebody else's conversation. A message older than this
+		// agent's own creation was never its mail, in either direction.
+		//
+		// Zero for agents registered before this field existed, which reads as
+		// no filtering and preserves exactly what those boards did. A reattach
+		// keeps its original CreatedSerial, so an agent coming back still reads
+		// its own history.
+		inherited := ok && l.CreatedSerial > 0 && serial < l.CreatedSerial
+		if !ok || inherited || (m.From != l.ID && m.To != l.ID) {
 			// An ANNOUNCEMENT serial is the overwhelmingly likely mistake here,
 			// because the wake nudge hands the agent a serial and says to go
 			// read it, and a serial in hand makes read_mail the obvious call.
@@ -283,19 +321,49 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 		// message terminal and consumed. An instruction that does not clear when
 		// obeyed teaches an agent that the channel nags, and the notification
 		// channel is the one thing here that has to stay worth reading.
+		//
+		// LIVE ONLY, AND IT DOES NOT SURVIVE A RESTART. Notices are ephemeral
+		// and rebuilt from replayable state, and this clearing writes nothing
+		// replayable: the rebuild asks whether the asker's awareness watermark
+		// has passed the verdict, and read_mail does not move that watermark. So
+		// a daemon restarted after the agent read its mail hands the same notice
+		// back once. It is a duplicate rather than a loss, and closing it needs
+		// a replayable record that the SENDER read an outcome, which is a new
+		// field on a ledgered message: issue #76, not something to add in the
+		// hour before a tag.
 		e.clearNoticesFor(l.ID, serial)
 		return core.Result{"message": m, "serial": e.state.Serial}
 	})
 }
 
-// markDelivered ledgers pending→delivered for the agent's mailbox.
-func (e *Engine) markDelivered(l *core.Agent, now time.Time) {
+// pendingFor is the mail this agent has just been shown and not yet been
+// recorded as having received.
+//
+// It honours the agent's watermark, which the loop it replaces did not, and
+// this is the reading of the watermark that matters most: "delivered" is what
+// the SENDER is told. Mail below the watermark was addressed to a previous
+// occupant of this name, so it is not in the inbox this agent just read.
+// Marking it delivered told the sender their message had reached somebody who
+// had not seen it and never would, which is worse than not delivering it: it
+// removes the one signal that would have made them ask.
+//
+// Split from markDelivered so it can be tested. An exported wrapper on a
+// zero-value Engine sends on a nil channel and blocks forever rather than
+// failing, so a decision only reachable through one is effectively untested.
+// See AGENTS.md.
+func pendingFor(st *core.State, l *core.Agent) []uint64 {
 	var serials []uint64
-	for _, m := range e.state.Messages {
-		if m.To == l.ID && m.State == core.MsgStatePending {
+	for _, m := range st.Messages {
+		if m.To == l.ID && m.Serial >= l.TruncatedBefore && m.State == core.MsgStatePending {
 			serials = append(serials, m.Serial)
 		}
 	}
+	return serials
+}
+
+// markDelivered ledgers pending→delivered for the agent's mailbox.
+func (e *Engine) markDelivered(l *core.Agent, now time.Time) {
+	serials := pendingFor(e.state, l)
 	if len(serials) > 0 {
 		_, _ = e.applyAndLedger(&core.Op{Kind: core.OpMarkDelivered, MsgSerials: serials}, now)
 	}
@@ -352,6 +420,16 @@ func (e *Engine) decoratedBoard() core.Result {
 		if l.PID != 0 && e.prober != nil && e.ownsHost(l) {
 			lm["proc_alive"] = e.prober.Alive(l.PID)
 		}
+		// WHETHER A COMMAND COULD RESUME THIS AGENT, without saying what to
+		// resume. The id itself stays off the board; this is the one bit a
+		// health check needs, and it needs it because harness alone is not
+		// enough: `wakeRoute` refuses the exec path when the agent holds no
+		// UUID-shaped thread, so an agent whose harness HAS a [wake.exec] entry
+		// can still be unreachable. Reporting it as covered would be the same
+		// optimism as counting configured commands and calling it coverage.
+		if threadIDOf(l) != "" {
+			lm["resumable"] = true
+		}
 	}
 	return core.Result(b)
 }
@@ -363,7 +441,28 @@ func (e *Engine) AllMessages(ctx context.Context) (core.Result, error) {
 		for _, m := range e.state.Messages {
 			out = append(out, m)
 		}
-		return core.Result{"messages": out}
+		// Announcement bodies ride WITH the mail, and for the same reason.
+		//
+		// The board payload used to carry them, until it turned out Board() is
+		// what check_in returns to every agent on every activation, so every
+		// announcement in every space was going to agents that had joined none
+		// of them. Stripping it there was right. What it left behind was an
+		// operator transcript that renders the sender and the acknowledgement
+		// state with an empty space where the text goes, above a comment
+		// promising "bodies, not a count", which is the whole reason a human
+		// joins a space. Found by the pre-release review.
+		//
+		// This route is the one that already solves this problem for mail: it
+		// needs the page key, which is kept in localStorage and is therefore
+		// port-scoped, so unlike the session cookie it is not handed to every
+		// local service the operator visits.
+		said := make([]core.Result, 0, len(e.state.Announcements))
+		for _, a := range e.state.Announcements {
+			said = append(said, core.Result{
+				"serial": a.Serial, "space": a.Space, "from": a.From, "body": a.Body,
+			})
+		}
+		return core.Result{"messages": out, "announcements": said}
 	})
 }
 
@@ -402,6 +501,25 @@ func clampCursor(serial, floor uint64) uint64 {
 
 func errCursorTooOld(floor uint64) error {
 	return core.ErrCursorTooOld(floor)
+}
+
+// CallerIsKnown reports whether this token resolves to an agent on the board.
+//
+// Separate from CallerName because that one ANSWERS for an unknown token, with
+// "an unidentified caller", which is right for a log line and wrong for an
+// authorisation decision. human_unlock used it and raised a system sheet
+// naming that phrase: SECURITY.md says the requester is resolved "from the
+// authenticated token", and nothing authenticated it. Found by the pre-release
+// review.
+func (e *Engine) CallerIsKnown(ctx context.Context, token string) bool {
+	res, err := e.query(ctx, func() core.Result {
+		return core.Result{"known": e.state.AgentByToken(token) != nil}
+	})
+	if err != nil {
+		return false
+	}
+	known, _ := res["known"].(bool)
+	return known
 }
 
 // CallerName is a display name for whoever holds this token, for a prompt that

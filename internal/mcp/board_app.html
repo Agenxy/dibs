@@ -1177,6 +1177,48 @@ function toolFailure(result) {
   }
 }
 
+// mergePanel keeps the redacted copy's SHAPE and restores its readable fields.
+//
+// Two carriers arrive for the same state. `_meta["com.dibs/panel"]` is
+// redacted, because it passes through hosts that put tool results in front of
+// the model, and it is also the NORMALISED copy: the server filters and
+// reshapes it for this panel. The ordinary content beside it is the full,
+// unfiltered answer.
+//
+// Preferring _meta threw the readable half away, so a request card kept its
+// grant, its adopt and its Approve button and showed no body or reason, and a
+// question lost its declared choices. Preferring the content threw the
+// filtering away, so acknowledged mail came back. Neither carrier is simply
+// better: one has the right set of messages, the other has what they say.
+//
+// So the redacted copy decides WHICH messages there are, and the full one fills
+// in what was redacted from each, matched by serial.
+function mergePanel(redacted, full) {
+  if (!full || typeof full !== "object") return redacted || null
+  if (!redacted || typeof redacted !== "object") return full
+  const fullMsgs = (full.inbox && full.inbox.messages) || full.messages
+  const shown = redacted.inbox && redacted.inbox.messages
+  if (!Array.isArray(fullMsgs) || !Array.isArray(shown)) return redacted
+  const bySerial = new Map(fullMsgs.map((m) => [m && m.serial, m]))
+  return {
+    ...redacted,
+    inbox: {
+      ...redacted.inbox,
+      messages: shown.map((m) => {
+        const f = bySerial.get(m && m.serial)
+        if (!f) return m
+        // Only the fields redaction empties. Everything else is the panel's
+        // own normalisation and must survive.
+        const out = { ...m }
+        for (const k of ["body", "response", "choices"]) {
+          if (f[k] !== undefined && (out[k] === undefined || out[k] === "")) out[k] = f[k]
+        }
+        return out
+      }),
+    },
+  }
+}
+
 function toolJSON(result) {
   const raw = result?.content?.find((c) => c?.type === "text")?.text
   if (typeof raw !== "string") return null
@@ -1252,7 +1294,19 @@ function fetchBoard() {
         arguments: { token: state.token, detail: true },
       })
       if (toolFailure(res)) return
-      const payload = res?._meta?.["com.dibs/panel"] || toolJSON(res)
+      // MERGED, NOT CHOSEN, and the full content wins.
+      //
+      // _meta carries a BODY-REDACTED copy, because it travels through hosts
+      // that show tool results to the model; the content beside it is the real
+      // detail:true answer this panel asked for with its own token. Preferring
+      // _meta meant a request card kept its grant, its adopt and its Approve
+      // button and showed no body or reason at all, and a question lost its
+      // declared choices. The whole point of this fetch is the private copy.
+      //
+      // The redacted one is still the fallback, for hosts that forward no
+      // content: what changes is that when both arrive, the readable one is
+      // used.
+      const payload = mergePanel(res?._meta?.["com.dibs/panel"], toolJSON(res))
       // Guard against re-entry: render() calls back here when a push carries no
       // board, so handing it another boardless payload would spin.
       if (payload && (payload.board || payload.inbox)) render({ structuredContent: payload })
@@ -1363,8 +1417,11 @@ async function act(serial, disposition) {
       "tools/call", { name: "inbox", arguments: { token: state.token } })
     const refreshRefusal = toolFailure(refreshed)
     if (refreshRefusal) throw new Error(refreshRefusal)
-    const panelInbox = refreshed?._meta?.["com.dibs/panel"]
-      || refreshed?.structuredContent
+    // Same merge as the private fetch above: the redacted carrier is the
+    // fallback, not the preference.
+    const panelInbox = mergePanel(
+      refreshed?._meta?.["com.dibs/panel"],
+      toolJSON(refreshed) || refreshed?.structuredContent)
     if (panelInbox && Object.prototype.hasOwnProperty.call(panelInbox, "inbox")) {
       render({ structuredContent: panelInbox })
     } else {
@@ -1790,11 +1847,13 @@ function render(params) {
   // one field every host forwards. Reading it costs nothing and needs nothing
   // from the host beyond delivering the result it already delivered: unlike
   // fetching, which needs the host to proxy a tool call back to Dibs.
-  const carried = (params && params._meta && params._meta["com.dibs/panel"])
-    || (params && params.structuredContent) || {}
-  const d = (carried.board || carried.inbox || carried.events)
-    ? carried
-    : { ...carried, ...(contentState(params) || {}) }
+  const carried = mergePanel(
+    params && params._meta && params._meta["com.dibs/panel"],
+    (params && params.structuredContent) || null) || {}
+  // The content always merges over the carrier, rather than only when the
+  // carrier looked empty: a redacted copy that HAS an inbox is exactly the case
+  // where the readable bodies were being thrown away.
+  const d = { ...carried, ...(contentState(params) || {}) }
   const previousInbox = new Set(state.inbox.map((m) => m.serial))
   // Status, not just presence. An agent going out of touch is the most
   // consequential change this board can show: an agent stopped answering and

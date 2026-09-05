@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -19,165 +20,6 @@ func boundStrings(max int, what string, vals []string) error {
 		}
 	}
 	return nil
-}
-
-// Op is the single command type. The ledger stores ops verbatim (command
-// sourcing); all impure inputs are recorded in the op so replay applies
-// decisions rather than recomputing them (SPEC §2, §4).
-type Op struct {
-	Kind string `json:"kind"`
-
-	// ClaimVerified records that the engine checked a coordinator claim against
-	// the daemon's own data directory. An impure input, so the VERDICT is
-	// recorded rather than the secret, and replay applies the same decision
-	// without reading a file that may since have been consumed (SPEC §2, §4).
-	// Blanked on ingress like AgentID: an agent cannot assert it.
-	ClaimVerified bool `json:"claim_verified,omitempty"`
-
-	// AdoptAuthorised records that the ENGINE checked the caller may take over
-	// an abandoned mailbox: the human proven present at this machine, or an
-	// agent the operator promoted. Same rule as ClaimVerified: an impure
-	// authorisation decision is made once, at ingress, and the VERDICT is
-	// recorded so replay reaches the same answer without re-deciding it. Blanked
-	// on ingress like AgentID, so an agent cannot assert it.
-	AdoptAuthorised bool `json:"adopt_authorised,omitempty"`
-
-	// HumanMint marks the ONE registration that may create or reattach the
-	// operator's own agent. An ingress decision like the two above, and the
-	// reasoning is with the guard that reads it (engine.wouldTakeHumanIdentity).
-	//
-	// No json name, deliberately: it is neither ledgered nor settable by a
-	// caller, so replay sees the ordinary registration it always was.
-	HumanMint bool `json:"-"`
-
-	// KeepDescription means the caller OMITTED `description`, so the engine
-	// fills the current one in rather than letting the fold assign "".
-	//
-	// No json name, like HumanMint: an ingress decision, and the op that reaches
-	// the ledger carries the resolved text, so replay is unchanged. The fold
-	// assigns Description unconditionally and must keep doing so, because an op
-	// already on disk that cleared a description meant to clear it.
-	KeepDescription bool `json:"-"`
-
-	// Actor resolution. Token authenticates (live path); Agent is set by Apply
-	// and used on replay (the engine blanks it on ingress: unforgeable).
-	Token   string `json:"-"`
-	AgentID string `json:"agent_id,omitempty"`
-
-	// register / resume / update
-	Name        string `json:"name,omitempty"`
-	Description string `json:"description,omitempty"`
-	PID         int    `json:"pid,omitempty"`
-	// NoProcess says this participant HAS no process, which is different from
-	// omitting a pid.
-	//
-	// An omitted pid means "unchanged", so an agent that reattaches without one
-	// keeps whatever it had: that rule protects an agent whose harness does not
-	// know its own pid, and it is right. It leaves no way to say that a pid
-	// recorded earlier was wrong, and the human at the board is exactly that
-	// case. Their agent was registered with the DAEMON's pid, so after a
-	// restart the sweep probed a dead process and reported a person as
-	// `process_exited`, which is both false and a grim thing to say about
-	// somebody who is simply not typing.
-	//
-	// A person's liveness is silence, not a process table entry.
-	NoProcess bool `json:"no_process,omitempty"`
-	// Choices enumerates the answers a question will accept, so the answer space
-	// is stated by whoever knows it rather than guessed by whoever reads it.
-	Choices []string `json:"choices,omitempty"`
-	// Grant is the role a request ASKS FOR, so that approving the request IS the
-	// grant rather than a note recording that somebody agreed one should happen.
-	Grant string `json:"grant,omitempty"`
-	// Adopt is the ABANDONED agent a request asks to reclaim, so that approving
-	// it moves that mailbox rather than telling somebody they may go and do it.
-	Adopt     string `json:"adopt,omitempty"`
-	ProcStart int64  `json:"proc_start,omitempty"`
-	NewToken  string `json:"token,omitempty"` // engine-generated; encrypted at rest
-	Nonce     string `json:"nonce,omitempty"` // encrypted at rest
-	ResumeID  string `json:"resume_id,omitempty"`
-	SessionID string `json:"session_id,omitempty"` // harness session, for hook lookup
-	// SessionAlias is another name this same harness session goes by, joined by
-	// the daemon at ingress. Never sent by a caller. See Agent.SessionAliases.
-	SessionAlias string     `json:"session_alias,omitempty"`
-	Agent        *AgentInfo `json:"agent,omitempty"`  // who is behind the agent (descriptive only)
-	Parent       string     `json:"parent,omitempty"` // the agent that spawned this one (§8.2)
-	// ParentNonce is the one-time secret the parent issued for this child.
-	//
-	// Parent alone is a claim anyone can make; this is the proof. A parent that
-	// actually spawned a child can hand it a secret: same process, same trust
-	// domain, and nobody else has it.
-	ParentNonce string    `json:"parent_nonce,omitempty"`
-	AgentKind   AgentKind `json:"agent_kind,omitempty"`
-
-	// declare / undeclare
-	SlotID string   `json:"slot_id,omitempty"`
-	Text   string   `json:"text,omitempty"`
-	Dirs   []string `json:"dirs,omitempty"`
-	Refs   []string `json:"refs,omitempty"` // objective ids: pr:1186, gate:typos …
-	// Activity is the ROLE this agent has on the work (implement, review, test).
-	// Holds are exclusive host resources it needs (port:8080, lock:.git/index).
-	Activity string   `json:"activity,omitempty"`
-	Holds    []string `json:"holds,omitempty"`
-
-	// send / respond / ack
-	To          string       `json:"to,omitempty"`
-	MsgType     string       `json:"msg_type,omitempty"`
-	Body        string       `json:"body,omitempty"` // encrypted at rest
-	DeadlineSec int          `json:"deadline_sec,omitempty"`
-	OpID        string       `json:"op_id,omitempty"`
-	MsgSerial   uint64       `json:"msg_serial,omitempty"`
-	Disposition string       `json:"disposition,omitempty"`
-	Attachments []Attachment `json:"attachments,omitempty"` // send (A2)
-
-	// put_blob (bytes already staged off-thread; op carries the recorded id)
-	Blob string `json:"blob,omitempty"`
-	Mime string `json:"mime,omitempty"`
-	Size int64  `json:"size,omitempty"`
-
-	// claim / release
-	Path string `json:"path,omitempty"`
-	Mode string `json:"mode,omitempty"`
-	Note string `json:"note,omitempty"`
-
-	// sweep: recorded impure inputs (SPEC §7)
-	//
-	// GiveUpAnnounce lists announcements whose redelivery budget is spent. The
-	// count lives in the engine (it is delivery bookkeeping, not coordination
-	// state), so like every other impure sweep input it arrives RECORDED,
-	// replay marks exactly the same announcements without counting anything.
-	GiveUpAnnounce []uint64 `json:"give_up_announce,omitempty"`
-	DeadAgents     []string `json:"dead_agents,omitempty"`
-	StaleAgents    []string `json:"stale_agents,omitempty"`
-	AlivePIDs      []int    `json:"alive_pids,omitempty"`
-
-	// mark_delivered: ledgered pending→delivered receipts
-	MsgSerials []uint64 `json:"msg_serials,omitempty"`
-
-	// Spaces (SPEC-CHANNELS.md). "Space" is the Go name; the wire name is
-	// "agent", which is the vocabulary the protocol and the spec both use.
-	Space     string `json:"space,omitempty"`
-	Exclusive bool   `json:"exclusive,omitempty"`
-
-	// Recorded scoring inputs: the replay contract (SPEC-CHANNELS.md §4.3).
-	//
-	// These are IMPURE and therefore travel in the op, exactly as the sweep's
-	// PID verdicts do. Apply must treat them as fact: it may not invoke a
-	// scorer, read the filesystem, or recompute any of them. Recomputing a
-	// similarity score during replay yields a different number against a
-	// reindexed repository, which would reconstruct different membership and
-	// make the hash chain meaningless.
-	Score         float64  `json:"score,omitempty"`
-	Threshold     float64  `json:"threshold,omitempty"`
-	ScorerID      string   `json:"scorer_id,omitempty"`
-	ScorerVersion string   `json:"scorer_version,omitempty"`
-	Evidence      []string `json:"evidence,omitempty"`
-	Auto          bool     `json:"auto,omitempty"`
-
-	// Predicted is the recorded file footprint of the declaring work: what a
-	// scorer said this agent will touch. Recorded for the same reason the score
-	// is: it decides agent membership, and recomputing it on replay reconstructs
-	// a different fleet.
-	Predicted []PredFile `json:"predicted,omitempty"`
 }
 
 // Op kinds.
@@ -332,10 +174,18 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		// deliberately disables the cwd fallback, so after a restart mail stopped
 		// being injected and the claim guard failed open. Nothing reported an
 		// error; the wake path simply stopped waking anybody.
-		if len(op.SessionID) > s.Limits.MaxNameBytes {
-			err = errTooLarge("session_id", s.Limits.MaxNameBytes)
-			break
-		}
+		// THE SIZE BOUND IS ADMIT'S, AND IT WAS REPEATED HERE.
+		//
+		// Apply is the fold. A bound checked here makes replay conditional on
+		// TODAY's limit: lower MaxNameBytes in a later release and the daemon
+		// refuses bind_session ops it accepted, fsynced and acknowledged under
+		// the old one, and will not boot on its own ledger. Admit already
+		// rejects an oversized session id at ingress, which is where a
+		// restriction on what callers may DO belongs.
+		//
+		// The same mistake the announcement bound made, in the same shape, which
+		// is why TestApplyFoldsWhateverAdmitRejects exists; its list did not
+		// know about this op. It does now. Found by the pre-release review.
 		l.SessionID = op.SessionID
 		res = Result{"ok": true, "agent": l.ID, "session_id": l.SessionID}
 		evs = []Event{{Type: "agent.updated", Agent: l.ID}}
@@ -504,7 +354,9 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	if kind != KindEphemeral && kind != KindPersistent {
 		return nil, nil, errf("E_BAD_KIND", "use ephemeral|persistent", "unknown agent kind %q", kind)
 	}
-	if kind == KindPersistent && op.Nonce == "" {
+	// Either the caller's own nonce or one minted for it. Old ops carry no
+	// MintedNonce, so this refuses exactly what it always refused.
+	if kind == KindPersistent && op.Nonce == "" && op.MintedNonce == "" {
 		return nil, nil, errf("E_BAD_NONCE", "persistent agents require a client-generated nonce (≥128-bit random); it "+
 			"doubles as the resume recovery credential: treat it as a secret", "nonce required for persistent agents")
 	}
@@ -515,10 +367,8 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 		if id, ok := s.Nonces[op.Nonce]; ok {
 			l := s.Agents[id]
 			if l != nil && l.Status == StatusActive && now.Sub(l.LastCoordination) <= s.Limits.AgentTTL && l.CreatedSerial > 0 {
-				return Result{
-					"agent_id": id, "token": l.Token, "serial": s.Serial,
-					"resumed": true, "board": s.Board(),
-				}, nil, nil
+				res, evs := s.resumeLiveAgent(l, op, now)
+				return res, evs, nil
 			}
 			// The nonce IS the recovery credential: for every kind of agent, not
 			// just persistent ones.
@@ -580,10 +430,14 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				//
 				// It is the same secret this branch just matched on, so putting
 				// it back asserts nothing new.
-				if l.Nonce == "" && op.Nonce != "" {
+				//
+				// GATED ON THE RECORDED DECISION, never on the current code's
+				// opinion. Without the gate this rewrote history: see
+				// Op.RestoreNonce for what a v0.0.6 ledger replays to.
+				if op.RestoreNonce && l.Nonce == "" && op.Nonce != "" {
 					l.Nonce = op.Nonce
 				}
-				l.bindHarnessSession(op.SessionAlias)
+				l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
 				// LEDGERED, like every other transition.
 				//
 				// This branch rotates the token, wakes the agent, re-arms the
@@ -645,36 +499,8 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	//
 	// What this does NOT fix: every agent shares one coordination secret, so
 	// agent-to-agent isolation is a bar to raise, not a wall. See SECURITY.md.
-	if op.SessionID != "" && op.Nonce == "" {
-		for _, l := range s.Agents {
-			if l.Nonce != "" {
-				continue // it has a real credential; a guessable one will not do
-			}
-			if l.SessionID == op.SessionID && l.Name == op.Name &&
-				(l.Status == StatusActive || l.Status == StatusStale) {
-				l.Token = op.NewToken
-				l.LastCoordination = now
-				l.Status, l.StaleReason = StatusActive, ""
-				l.AckedSerial = 0 // re-arm the awareness gate: this is a new activation
-				if op.Agent != nil {
-					l.Agent = op.Agent
-				}
-				if op.PID != 0 {
-					l.PID, l.ProcStart = op.PID, op.ProcStart
-				}
-				l.bindHarnessSession(op.SessionAlias)
-				// Ledgered for the same reason as the nonce branch above.
-				evs := []Event{{Type: "agent.reattached", Agent: l.ID, Data: map[string]any{
-					"via": "session_id",
-				}}}
-				serial := s.finish(&evs, now)
-				return Result{
-					"agent_id": l.ID, "token": l.Token, "serial": serial,
-					"reattached": true, "via": "session_id", "board": s.Board(),
-					"session_id": l.SessionID,
-				}, evs, nil
-			}
-		}
+	if res, evs := s.reattachBySessionID(op, now); res != nil {
+		return res, evs, nil
 	}
 
 	live, persistent := 0, 0
@@ -726,18 +552,64 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 			parentProven = true
 		}
 	}
+	// The previous occupant of this thread loses it, from the field the ingress
+	// check recorded. Read from the op rather than re-decided here, so replay
+	// strips the same row without asking what "dormant" means today.
+	if op.SessionTakenFrom != "" {
+		if prev := s.Agents[op.SessionTakenFrom]; prev != nil {
+			prev.dropSession(op.SessionID)
+		}
+	}
+	// THE MINTED NONCE IS USED HERE AND NOWHERE ELSE.
+	//
+	// Only a registration that CREATES an agent takes it. Every path above this
+	// point reattaches or resumes an agent that already has a credential, and
+	// the minted one is dropped: the daemon does not hand a returning agent a
+	// new secret and it does not tell it about one.
+	nonce, nonceMinted := op.Nonce, false
+	if nonce == "" && op.MintedNonce != "" {
+		nonce, nonceMinted = op.MintedNonce, true
+	}
 	l := &Agent{
 		ID: id, Kind: kind, Name: op.Name, Description: op.Description, Agent: op.Agent,
 		PID: op.PID, ProcStart: op.ProcStart, Status: StatusActive, SessionID: op.SessionID,
 		Parent:           op.Parent,
 		ParentProven:     parentProven,
-		LastCoordination: now, Token: op.NewToken, Nonce: op.Nonce,
-		Slots: map[string]Slot{},
+		LastCoordination: now, Token: op.NewToken, Nonce: nonce,
+		NonceMinted: nonceMinted,
+		Slots:       map[string]Slot{},
+	}
+	// A NEW AGENT DOES NOT INHERIT THE LAST ONE'S MAIL.
+	//
+	// An id is derived from the name, so a name that comes back reuses the id,
+	// and mail outlives the row it was addressed to: a sweep written before
+	// v0.0.7 deletes the row and keeps the messages, deliberately and
+	// unchangeably, because its op does not carry the decision. Those messages
+	// are expired with a reason the SENDER reads, which is why they are kept and
+	// must not be deleted. But they are still addressed to this id, so the next
+	// agent to take the name saw them in its inbox, bodies and all. Measured:
+	// registering the same name after such a sweep showed the previous
+	// occupant's question verbatim.
+	//
+	// The watermark is the mechanism that already exists for exactly this,
+	// "mail with serial below it is not mine", and the retention sweep uses it.
+	// Raising it here loses the new agent nothing: every message below it was
+	// addressed to somebody else.
+	//
+	// The messages are untouched, which is what keeps the sender's record and
+	// any later ack of one working: an ack resolves by serial and does not
+	// consult this.
+	if op.V7Semantics {
+		for _, m := range s.Messages {
+			if m.To == id && m.Serial >= l.TruncatedBefore {
+				l.TruncatedBefore = m.Serial + 1
+			}
+		}
 	}
 	s.Agents[id] = l
-	l.bindHarnessSession(op.SessionAlias) // the name its hooks use, if different
-	if op.Nonce != "" {
-		s.Nonces[op.Nonce] = id
+	l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed) // the name its hooks use, if different
+	if nonce != "" {
+		s.Nonces[nonce] = id
 	}
 	evs := []Event{{Type: "agent.registered", Agent: id, Data: map[string]any{
 		"name": op.Name, "kind": kind, "description": op.Description,
@@ -747,6 +619,17 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	res := Result{
 		"agent_id": id, "token": op.NewToken, "serial": serial, "board": s.Board(),
 		"gate": "call check_in to acknowledge the board before declare or claim",
+	}
+	// A MINTED NONCE IS HANDED BACK, or it protects nothing.
+	//
+	// The nonce is the only credential that outlives the process, so an agent
+	// that is never told the one made for it is an agent nobody can ever become
+	// again: a durable mailbox with no way back into it, which is exactly the
+	// orphan `adopt_agent` exists to clean up after. Returned here, on the one
+	// path that actually minted one, so a reattach or a resume cannot echo a
+	// secret the caller already holds.
+	if nonceMinted {
+		res["nonce"] = nonce
 	}
 	// Hand back the session_id the agent was actually filed under.
 	//
@@ -963,6 +846,28 @@ func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
 	// The size bounds for this op are in Admit, not here. A bound in the fold is
 	// retroactive, and this one was found by the test that asserts Apply folds
 	// whatever Admit rejects, once that test learned about update.
+	// A RELEASE OF NOTHING IS NOT AN EVENT. Rule 2: an op is ledgered iff it
+	// changed replayable state, and the engine ledgers exactly when the serial
+	// advanced, so the two must never disagree.
+	//
+	// release_session cleared the primary, the aliases and the provenance and
+	// then said session_released: true whatever it found, so calling it against
+	// an agent with nothing bound advanced the serial and appended an op that
+	// changed nothing, and told the caller a binding had been taken away. Its
+	// test only ever exercised a populated binding. Found by the pre-release
+	// review.
+	//
+	// Checked FIRST because everything below mutates, and gated on V7Semantics
+	// because a fold that stops advancing where it used to is retroactive: an
+	// older ledger holding one of these expects the serial to move.
+	if op.V7Semantics && op.ReleaseSession && bareRelease(op, l) && !l.hasSessionBinding() {
+		return Result{
+			"ok": true, "id": l.ID, "name": l.Name, "description": l.Description,
+			"session_released": false,
+			"session": "nothing to release: no session id, alias or guess was bound " +
+				"to you, so nothing changed and nothing was recorded",
+		}, nil, nil
+	}
 	res := Result{"ok": true, "id": l.ID}
 	// Taking a live agent's name is refused, not suffixed. Register suffixes
 	// because a new agent has no history to protect; here both agents already
@@ -985,7 +890,7 @@ func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
 	if op.Agent != nil {
 		res["identity"] = l.mergeIdentity(op.Agent)
 	}
-	if sid := l.bindHarnessSession(op.SessionAlias); sid != "" {
+	if sid := l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed); sid != "" {
 		res["session_id"] = sid
 	}
 	// A participant that HAS no process says so, which is the only way to clear
@@ -1000,8 +905,43 @@ func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
 		l.PID, l.ProcStart = 0, 0
 		res["process"] = "no process recorded: liveness is silence from here on"
 	}
+	// The repair for a binding that is already wrong. See Op.ReleaseSession:
+	// only ever the caller's own, so it can strand nothing but itself.
+	if op.ReleaseSession {
+		had := l.SessionID
+		aliases := len(l.SessionAliases) + len(l.GuessedSessions)
+		bound := l.hasSessionBinding()
+		l.SessionID, l.SessionAliases, l.GuessedSessions = "", nil, nil
+		// Honest even when this op DID change something else, which is the case
+		// the early return above deliberately does not cover.
+		res["session_released"] = bound
+		// ALIASES COUNTED, not just the primary. This named only `had`, so an
+		// agent holding a working alias and no primary read "released no
+		// primary session id" while the alias it was actually reached by had
+		// just been taken away. Found by the pre-release review.
+		res["session"] = "released " + quoteOrNone(had) + " and " + itoa(aliases) +
+			" alias(es): lifecycle hooks quoting any of them now reach nobody until " +
+			"an agent binds them again, and the sessions they belong to can claim " +
+			"them back. Re-register or check_in from that session to bind your own"
+	}
 	res["name"], res["description"] = l.Name, l.Description
 	return res, []Event{{Type: "agent.updated", Agent: l.ID}}, nil
+}
+
+// hasSessionBinding reports whether anything would actually be taken away by a
+// release: the primary, any alias, or the provenance of a guessed one.
+func (a *Agent) hasSessionBinding() bool {
+	return a.SessionID != "" || len(a.SessionAliases) > 0 || len(a.GuessedSessions) > 0
+}
+
+// bareRelease reports whether this update asks for nothing but the release.
+//
+// Description is compared rather than assumed absent: an empty description
+// CLEARS, because ledgers already hold update ops whose recorded effect was
+// exactly that, so "unset" cannot mean "leave alone" here.
+func bareRelease(op *Op, l *Agent) bool {
+	return op.Name == "" && op.Description == l.Description &&
+		op.Agent == nil && op.SessionAlias == "" && !op.NoProcess
 }
 
 // mergeIdentity overlays the self-reported identity fields an agent may revise,
@@ -1035,6 +975,20 @@ func (a *Agent) mergeIdentity(in *AgentInfo) []string {
 			*f.dst = f.src
 			changed = append(changed, f.name)
 		}
+	}
+	// The location group, together, and only when a cwd came with it.
+	//
+	// Together because they are one fact: project and the repo fields are
+	// DERIVED from the cwd by the server at ingress, so applying the cwd and
+	// leaving them would leave an agent whose recorded repository describes
+	// where it used to be. Only-when-cwd because that derivation is what keeps
+	// the rule above true: an agent asserts where it is working, and the server
+	// says what repository that is. Nothing reads these off the wire.
+	if in.CWD != "" && in.CWD != a.Agent.CWD {
+		a.Agent.CWD = in.CWD
+		a.Agent.Project, a.Agent.RepoDir = in.Project, in.RepoDir
+		a.Agent.RepoRemote, a.Agent.RepoRoots = in.RepoRemote, in.RepoRoots
+		changed = append(changed, "cwd")
 	}
 	return changed
 }
@@ -1123,7 +1077,7 @@ func (s *State) applyAckBoard(l *Agent, op *Op) (Result, []Event) {
 	evs := []Event{{Type: "board.acked", Agent: l.ID}}
 	// check_in is how an agent ALREADY on the board gets the name its hooks
 	// use: it is the one call they all keep making. See bindHarnessSession.
-	bound := l.bindHarnessSession(op.SessionAlias)
+	bound := l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
 	for _, m := range s.Inbox(l.ID) {
 		if m.State == MsgStatePending {
 			m.State = MsgStateDelivered
@@ -1134,8 +1088,11 @@ func (s *State) applyAckBoard(l *Agent, op *Op) (Result, []Event) {
 			})
 		}
 	}
+	// One walk, and reused below: Inbox scans every message on the board and
+	// sorts, and this result asked for it twice under two names.
+	inbox := s.Inbox(l.ID)
 	l.AckedSerial = s.Serial + 1
-	return Result{
+	res := Result{
 		"ok": true, "acked_serial": s.Serial + 1, "serial": s.Serial + 1,
 		// Both names for the same mail: the inbox tool calls this `messages` and
 		// this call named it `inbox`, each using the other's name, so an agent
@@ -1152,13 +1109,18 @@ func (s *State) applyAckBoard(l *Agent, op *Op) (Result, []Event) {
 		// board.serial as the cut, which is the obvious reading, would re-fetch
 		// one event it already held or reason from a board a serial behind its
 		// own cursor.
-		"board": s.boardAtNextSerial(), "inbox": s.Inbox(l.ID), "messages": s.Inbox(l.ID),
+		"board": s.boardAtNextSerial(), "inbox": inbox, "messages": inbox,
 		"truncated_before_serial": l.TruncatedBefore,
 		"announcements":           s.UnackedFor(l.ID),
 		// Empty unless this call bound one: a binding nothing reports is a
 		// binding nobody can check.
 		"session_id": bound,
-	}, evs
+	}
+	// Absent unless it applies, which is nearly always. See UnanswerableSenders.
+	if gone := s.UnanswerableSenders(inbox); len(gone) > 0 {
+		res["unanswerable_senders"] = gone
+	}
+	return res, evs
 }
 
 // applyPrune closes agents the human has finished with. Reaching a dead agent is
@@ -1210,6 +1172,14 @@ func (s *State) applyClaimCoordinator(op *Op, actor *Agent, now time.Time) (Resu
 		Type: "agent.role", Agent: actor.ID,
 		Data: map[string]any{"role": RoleCoordinator, "via": "launch claim"},
 	}}
+	// The actor's durable checkpoint, which the common path sets and this one
+	// returns before reaching. Same escape as the missing finish() above, and
+	// the same one adoption already carries a paragraph about: the engine's
+	// derived `seen` map hides it while the daemon runs and is deliberately not
+	// replayable, so after a restart an agent is judged against the checkpoint
+	// it had BEFORE the op, and one that has just claimed coordinator can be
+	// swept stale immediately. Found by the pre-release review.
+	actor.LastCoordination = now
 	serial := s.finish(&evs, now)
 	return Result{"ok": true, "agent_id": actor.ID, "role": RoleCoordinator, "serial": serial}, evs, nil
 }
@@ -1265,9 +1235,39 @@ func (s *State) applyPruneOwn(op *Op, actor *Agent, now time.Time) (Result, []Ev
 	// board, and back three minutes later when the daemon restarted. The five
 	// tests below were green throughout, because in-process state is exactly
 	// what a prune with no ledger record gets right.
+	// ALREADY CLOSED IS NOT A TRANSITION, and the admin path beside this one
+	// learned that a round ago while this did not.
+	//
+	// The active check above rejects a working agent; a CLOSED one fell straight
+	// through to applyClose, which emits agent.closed unconditionally, and to
+	// finish, which advances the serial. So pruning a closed record wrote down a
+	// close that had already happened and moved the serial for no change to
+	// replayable state: the audit stream then claims a transition that never
+	// occurred, and `dibs log` cannot tell it from a real one.
+	//
+	// Gated on V7Semantics for the same reason as the sibling repair: a v0.0.6
+	// prune really did emit that event and really did advance, and replay has to
+	// reach the board that existed. Found by the pre-release review, which noted
+	// the changelog overstated the repair by describing only the admin half.
+	if op.V7Semantics && target.Status == StatusClosed {
+		// CHANGED: FALSE, because the repair stopped at the ledger and left the
+		// answer saying a prune happened. The admin path beside this one
+		// truthfully returns an empty list and count 0; this returned
+		// {"ok":true,"pruned":<id>}, which reads as a prune to anything that
+		// reads results, and its own regression test discarded the result and
+		// so never saw it. Found by the pre-release review.
+		return Result{
+			"ok": true, "pruned": nil, "changed": false, "serial": s.Serial,
+			"note": "agent " + target.ID + " was already closed: nothing to prune, " +
+				"and nothing was recorded",
+		}, nil, nil
+	}
+	// The actor's durable checkpoint. See applyClaimCoordinator: this returns
+	// out of the dispatcher too, so it misses the common path's assignment.
+	actor.LastCoordination = now
 	_, evs := s.applyClose(target, now)
 	serial := s.finish(&evs, now)
-	return Result{"ok": true, "pruned": target.ID, "serial": serial}, evs, nil
+	return Result{"ok": true, "pruned": target.ID, "changed": true, "serial": serial}, evs, nil
 }
 
 func (s *State) applyPrune(op *Op, now time.Time) (Result, []Event, error) {
@@ -1292,12 +1292,40 @@ func (s *State) applyPrune(op *Op, now time.Time) (Result, []Event, error) {
 	var evs []Event
 	var ids []string
 	for _, l := range targets {
+		// ALREADY CLOSED IS NOT A TRANSITION.
+		//
+		// The all-agent branch skips closed agents; the named branch did not, so
+		// pruning one twice ran applyClose again and emitted a second
+		// `agent.closed` for an agent that closed once. The audit stream is the
+		// thing `dibs log` and every events_since consumer reads, and a
+		// transition that never happened is worse there than a missing one,
+		// because it is indistinguishable from a real one. Found by the
+		// pre-release review.
+		if op.V7Semantics && l.Status == StatusClosed {
+			continue
+		}
 		r, e := s.applyClose(l, now)
 		_ = r
 		evs = append(evs, e...)
 		ids = append(ids, l.ID)
 	}
 	slices.Sort(ids)
+	// NOTHING CLOSED MEANS NOTHING TO WRITE DOWN.
+	//
+	// This called finish unconditionally, so a prune that found no debris
+	// advanced the serial and the engine appended an op recording that nothing
+	// happened. "An op is ledgered iff it changed replayable state" is the rule
+	// this repository states about itself, and an idle prune broke it in the
+	// direction that grows the ledger forever.
+	//
+	// Worth being explicit about the replay consequence: a historical empty
+	// prune DID advance the serial, so replaying one now leaves the state one
+	// behind the ledger's own number. That is the tolerated case, not the fatal
+	// one: Replay resyncs forward on a gap and only refuses when state runs
+	// AHEAD. Choosing that over an ever-growing ledger of no-ops is deliberate.
+	if op.V7Semantics && len(ids) == 0 {
+		return Result{"ok": true, "pruned": ids, "count": 0, "serial": s.Serial}, nil, nil
+	}
 	// LEDGERED. applyPrune closes agents, blanks their tokens and releases their
 	// claims, and it returned without finish(), so the serial never moved, the
 	// engine never appended, and replay undid all of it. The human was told the
@@ -1456,8 +1484,62 @@ func (s *State) applyClearSlot(l *Agent, op *Op) (Result, []Event, error) {
 		[]Event{{Type: "slot.cleared", Agent: l.ID, Data: map[string]any{"slot_id": op.SlotID}}}, nil
 }
 
+// Answerable reports whether mail addressed to this id can be delivered.
+//
+// ONE predicate, because there are two callers and they disagreed by omission.
+// applySend refused a send to a closed or archived agent; the inbox said
+// nothing about receiving mail FROM one, so the only way to find out was to try
+// and be refused. Two places asking "can this agent receive mail" is two places
+// to answer it differently, which is how the inbox came to be silent about the
+// one fact a reader needs.
+func (s *State) Answerable(id string) bool {
+	return id != "" && !s.Agents[id].Gone()
+}
+
+// UnanswerableSenders names the senders of this mail that can no longer be
+// replied to, with the SAME hint the send path would have given.
+//
+// Computed at read time and never stored: liveness is a fact about now, and
+// core.Message is a ledgered struct whose json tags are frozen, so a
+// `from_status` field on it would freeze a wire name for something that is
+// stale the moment it is written.
+//
+// Empty, and therefore absent from the result, on the overwhelmingly common
+// path where every sender is still there. This matters most for adopted mail:
+// inherited mail is old by definition, so its senders are the likeliest rows on
+// the board to have evaporated, and the feature that recovers stranded mail is
+// the one that most reliably hands you mail you cannot answer. Reported from a
+// live board, where the only correct reply was telling the sender the desk had
+// changed hands, and that was the one reply the board could not deliver.
+func (s *State) UnanswerableSenders(mail []*Message) []Result {
+	seen := map[string]bool{}
+	var out []Result
+	for _, m := range mail {
+		if m.From == "" || seen[m.From] || s.Answerable(m.From) {
+			continue
+		}
+		seen[m.From] = true
+		out = append(out, Result{
+			"from": m.From,
+			"hint": nearestAgentsHint(s, m.From),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i]["from"].(string) < out[j]["from"].(string)
+	})
+	return out
+}
+
 // nearestAgentsHint lists live agents, closest-looking first, so a misaddressed
 // message can be fixed in one step instead of a board round trip.
+// quoteOrNone renders a session id for a result, or says there was none.
+func quoteOrNone(s string) string {
+	if s == "" {
+		return "no primary session id"
+	}
+	return strconv.Quote(s)
+}
+
 func nearestAgentsHint(s *State, want string) string {
 	var near, live []string
 	w := strings.ToLower(want)
@@ -1523,8 +1605,8 @@ func operatorFallback(s *State) string {
 }
 
 func (s *State) applySend(l *Agent, op *Op, now time.Time) (Result, []Event, error) {
-	to, ok := s.Agents[op.To]
-	if !ok || to.Status == StatusClosed || to.Status == StatusArchived {
+	to := s.Agents[op.To]
+	if !s.Answerable(op.To) {
 		// Name the candidates. "Check the board" is advice the agent has to act
 		// on with another call, and it already told us who it meant: an agent
 		// that addressed "claude" and was told to go looking gave up instead,
@@ -1717,8 +1799,18 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 	// treat the exchange as closed by agreement.
 	if asker := s.Agents[m.From]; asker.Gone() {
 		res["delivered"] = false
-		res["note"] = "recorded, but " + m.From + " closed its agent before this arrived. " +
-			"nobody will read this answer, and no follow-up is coming"
+		// Two ways to have no reader, and they are not the same news. A closed
+		// agent chose to leave; a purged one was swept after its retention
+		// window, and its address was retired with it precisely so this answer
+		// could not be handed to whoever registered that name next.
+		if IsRetiredSender(m.From) {
+			res["note"] = "recorded, but the agent that asked this was purged after its " +
+				"retention window. Nobody will read this answer, and the name is free " +
+				"again: an agent using it now is a different one"
+		} else {
+			res["note"] = "recorded, but " + m.From + " closed its agent before this arrived. " +
+				"nobody will read this answer, and no follow-up is coming"
+		}
 	}
 	evs := []Event{{Type: "message." + st, Agent: l.ID, To: m.From, Data: map[string]any{
 		"msg_serial": m.Serial,
@@ -1738,16 +1830,15 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 	}
 	if adopted != nil {
 		into := s.Agents[m.From]
-		moved := 0
-		for _, msg := range s.Messages {
-			if msg.To == adopted.ID {
-				msg.To, moved = into.ID, moved+1
-			}
-		}
+		// Through the same helper as the direct path, and for the reason the
+		// helper exists: this loop ignored the source's TruncatedBefore, so an
+		// APPROVED adoption disclosed the predecessor mail the source had
+		// already been told was not its own. Two implementations of one rule is
+		// how only one of them got fixed the last three times.
+		moved := s.readdressMail(adopted, into)
 		res["adopted"], res["messages"] = adopted.ID, moved
 		evs[0].Data["adopted"] = adopted.ID
-		res["adopt_note"] = "the source agent keeps its history; only where its mail is " +
-			"delivered has changed"
+		res["adopt_note"] = adoptNote(moved)
 		evs = append(evs, Event{
 			Type: "agent.updated", Agent: into.ID,
 			Data: map[string]any{
@@ -1893,79 +1984,4 @@ func (s *State) boardAtNextSerial() map[string]any {
 	b := s.Board()
 	b["serial"] = s.Serial + 1
 	return b
-}
-
-// applyAdoptAgent moves an abandoned agent's mail onto a live one.
-//
-// "Abandoned" is a state, not an opinion: the source must not be active. An
-// active agent is reading its own mail, and moving it would be theft dressed as
-// recovery. Everything else about the source is left alone, including its
-// record and its history, because the ledger refers to it and a board that
-// erased the origin of six messages would be lying about where they came from.
-//
-// The role is NOT transferred. A role is a decision the operator made about an
-// identity, and quietly carrying "coordinator" across on the strength of a
-// mailbox recovery would grant a power nobody granted: `dibs admin coordinator`
-// exists and is one command.
-func (s *State) applyAdoptAgent(op *Op, l *Agent, now time.Time) (Result, []Event, error) {
-	if !op.AdoptAuthorised {
-		return nil, nil, errf("E_NOT_PERMITTED",
-			"adopting another agent's mailbox is the human's call: unlock as yourself with "+
-				"human_unlock, or ask them to promote you with `dibs admin coordinator <you>`",
-			"adopt_agent requires the human at this machine, or a coordinator or admin")
-	}
-	from := s.Agents[op.To]
-	if from == nil {
-		return nil, nil, errf("E_NO_AGENT", "check the id on the board", "no agent %q", op.To)
-	}
-	into := l
-	if op.Space != "" { // adopting on somebody else's behalf
-		if into = s.Agents[op.Space]; into == nil {
-			return nil, nil, errf("E_NO_AGENT", "check the id on the board", "no agent %q", op.Space)
-		}
-	}
-	if from.ID == into.ID {
-		return nil, nil, errf("E_BAD_TARGET", "name the abandoned agent, not the one adopting it",
-			"an agent cannot adopt itself")
-	}
-	if from.Status == StatusActive {
-		return nil, nil, errf("E_AGENT_ACTIVE",
-			"an active agent is reading its own mail; there is nothing abandoned to recover",
-			"agent %q is still active", from.ID)
-	}
-	if into.Status == StatusClosed || into.Status == StatusArchived {
-		return nil, nil, errf("E_AGENT_CLOSED",
-			"adopt into an agent that can still read: a retired one receives nothing",
-			"agent %q is retired", into.ID)
-	}
-	var moved int
-	for _, m := range s.Messages {
-		if m.To != from.ID {
-			continue
-		}
-		m.To = into.ID
-		moved++
-	}
-	// The actor's durable checkpoint, which the common path sets and this one
-	// returns before reaching.
-	//
-	// Adoption returns straight out of the dispatcher, so it misses
-	// `l.LastCoordination = now` along with everything else after that point.
-	// The engine's derived `seen` map hides it while the daemon runs, and that
-	// map is deliberately not replayable: restart, and the adopter is judged
-	// against whatever checkpoint it had BEFORE performing a ledgered
-	// operation, so an active agent that has just done something can be swept
-	// stale immediately. Found by a pre-release review.
-	l.LastCoordination = now
-	evs := []Event{{
-		Type: "agent.updated", Agent: into.ID,
-		Data: map[string]any{"adopted_from": from.ID, "messages": moved},
-	}}
-	serial := s.finish(&evs, now)
-	return Result{
-		"ok": true, "from": from.ID, "into": into.ID, "messages": moved,
-		"note": "read them with inbox. The source agent still exists and keeps its history: " +
-			"only where its mail is delivered has changed",
-		"serial": serial,
-	}, evs, nil
 }

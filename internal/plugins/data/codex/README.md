@@ -94,7 +94,7 @@ the flag resolved `true` via `codex features list`:
 Codex marks it "under development": it gates unfinished work, not a protocol
 switch. Do not assume 2026 support from the flag's presence.
 
-## Waking an agent: not yet, but it is being built, and we should wait for it
+## Waking a STOPPED agent: the operator's command, not the plugin
 
 **This section has flipped twice on the strength of reading a type, so this
 time it is dated, and the evidence is runtime behaviour.**
@@ -149,12 +149,16 @@ before any of this worked, and reading it is what produced two wrong conclusions
 in this file, in opposite directions. Ask a session, not the source:
 
 ```
-codex --version                 # 2026-08-18 or later has the executor
+codex --version                 # 2026-08-18 or later has the mcp_tool executor
 ```
 
-and then, from a live thread, `spawned_agents`: if this session is listed, a
-Stop hook reached the daemon and delivery is live. If it is not, the build
-predates the executor or the Dibs server was not connected when the hook ran.
+and then `spawned_agents`, read by a SECOND agent while this thread is between
+turns: `state` reading `finished` for the session is what a delivered Stop
+leaves behind. Being listed proves nothing on its own, because SessionStart
+creates the listing too, and you cannot check it yourself: a tool call needs a
+turn, and your next turn opens with SessionStart, which puts `state` back to
+`running` before you can look. If no peer sees `finished`, the build predates
+the executor or the Dibs server was not connected when the hook ran.
 
 **On an older build Codex is pull-only.** `check_in` at the start of every
 activation, `await_events` before blocking, which is what `dibs://skills`

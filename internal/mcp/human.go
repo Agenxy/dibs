@@ -58,6 +58,29 @@ func (s *Server) humanUnlock(ctx context.Context, a *toolArgs) (core.Result, err
 	// of it. It is still recorded below, because what the caller SAYS it wants
 	// is worth having in the answer; it is simply not allowed to be the
 	// question.
+	// AUTHENTICATED FIRST, because the sentence on the sheet is the whole
+	// control and it can only say something true about a caller we know.
+	//
+	// CallerName ANSWERS for an unknown token, with "an unidentified caller",
+	// which is right in a log line and wrong here: this raised a system sheet on
+	// the operator's screen attributed to that phrase, so anything holding the
+	// coordination secret could make the machine ask its human to approve
+	// something, and the one field that tells them who is asking said nobody.
+	// SECURITY.md claims the requester is resolved "from the authenticated
+	// token"; nothing authenticated it. Found by the pre-release review.
+	//
+	// Physical approval was still required, so this was never a biometric
+	// bypass. It is the attribution that was false, and the attribution is what
+	// the human decides on.
+	if !s.eng.CallerIsKnown(ctx, a.Token) {
+		return core.Result{
+			"ok": false,
+			"why": "human_unlock needs your agent token: the sheet this raises names " +
+				"who is asking, and an unidentified caller is exactly what a person " +
+				"should not be asked to approve",
+			"hint": "register first, then call this with the token register gave you",
+		}, nil
+	}
 	who := s.eng.CallerName(ctx, a.Token)
 	reason := unlockReason(who)
 

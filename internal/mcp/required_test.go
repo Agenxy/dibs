@@ -110,12 +110,21 @@ func TestRequiredIsDerivedFromTheSchemasThemselves(t *testing.T) {
 // from "quietly wrong" to "hard error at every edit". So the two artifacts get
 // checked against each other here.
 func TestShippedHooksSatisfyTheSchemasTheyCall(t *testing.T) {
-	// EVERY shipped plugin, not one hardcoded path. Codex loads hooks from the
-	// same `hooks/hooks.json` layout as Claude Code: deliberately, its own
-	// feature flag calls them "Claude-style", so Dibs will ship more than one
-	// of these, and a second plugin referencing a tool that does not exist would
-	// have sailed past a test that only ever opened the first.
-	files, _ := filepath.Glob("../../plugins/*/hooks/hooks.json")
+	// BOTH LAYOUTS. This globbed `plugins/*/hooks/hooks.json` and said in a
+	// comment that Codex uses it, and Codex does not: it reads a hooks.json at
+	// the ROOT of its config directory, which is how the plugin ships it. So the
+	// one plugin whose hooks carry required parameters was outside the test that
+	// checks required parameters, and removing `session_id` from every Codex
+	// hook would have left this green. hookschema_test.go sees both layouts and
+	// checks only the keys that are present, so neither noticed.
+	var files []string
+	for _, pat := range []string{
+		"../../plugins/*/hooks/hooks.json", // Claude Code
+		"../../plugins/*/hooks.json",       // Codex
+	} {
+		found, _ := filepath.Glob(pat)
+		files = append(files, found...)
+	}
 	if len(files) == 0 {
 		t.Skip("no shipped hook definitions to check")
 	}

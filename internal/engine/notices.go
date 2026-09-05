@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/agenxy/dibs/internal/core"
 )
@@ -44,6 +45,21 @@ type notice struct {
 	// the wake path repeated it every turn.
 	Msg  uint64
 	Text string
+	// At is when the thing being reported HAPPENED, not when this notice was
+	// queued, and the difference is the whole reason it is a parameter rather
+	// than a time.Now() in pushNoticeAs.
+	//
+	// The notice cache is derived and is rebuilt from the event stream on
+	// restart. Stamped at push time, every notice an agent had been ignoring
+	// for three hours would come back reading as brand new, and the nudge
+	// built on this would confidently report the wrong age: worse than the
+	// no-age line it replaced, because that one at least did not claim a fact.
+	// So it comes from the event's own TS wherever there is an event, and only
+	// an observation made here and now (a stalled child) is stamped here.
+	//
+	// Zero is allowed and means "no time known": waitedFor renders it as no
+	// age at all rather than as a very old one.
+	At time.Time
 	// Blocking marks a notice somebody is WAITING on, as opposed to one that
 	// merely keeps them current.
 	//
@@ -182,7 +198,7 @@ func (e *Engine) noteEvent(ev core.Event) {
 	// The message this notice points at, when it points at one. ev.Serial is
 	// the event; msg_serial is what the agent is told to read.
 	msg, _ := ev.Data["msg_serial"].(uint64)
-	e.pushNoticeAs(who, text, ev.Serial, msg, blocking)
+	e.pushNoticeAs(who, text, ev.Serial, msg, blocking, ev.TS)
 }
 
 // pushNotice queues one thing an agent must be told, for the wake path.
@@ -192,17 +208,17 @@ func (e *Engine) noteEvent(ev core.Event) {
 // machine, made by the supervision loop, with no op behind it and no serial of
 // its own, but it is exactly what a notice is FOR: something that happened to
 // you which you could not have inferred.
-func (e *Engine) pushNotice(who, text string, serial uint64) {
-	e.pushNoticeFor(who, text, serial, 0)
+func (e *Engine) pushNotice(who, text string, serial uint64, at time.Time) {
+	e.pushNoticeFor(who, text, serial, 0, at)
 }
 
 // pushNoticeFor is pushNotice plus the message the notice refers to.
-func (e *Engine) pushNoticeFor(who, text string, serial, msg uint64) {
-	e.pushNoticeAs(who, text, serial, msg, false)
+func (e *Engine) pushNoticeFor(who, text string, serial, msg uint64, at time.Time) {
+	e.pushNoticeAs(who, text, serial, msg, false, at)
 }
 
 // pushNoticeAs is pushNoticeFor plus whether somebody is waiting on it.
-func (e *Engine) pushNoticeAs(who, text string, serial, msg uint64, blocking bool) {
+func (e *Engine) pushNoticeAs(who, text string, serial, msg uint64, blocking bool, at time.Time) {
 	if who == "" || text == "" {
 		return
 	}
@@ -213,7 +229,7 @@ func (e *Engine) pushNoticeAs(who, text string, serial, msg uint64, blocking boo
 	// newest matter most: being told you were admitted an hour ago and then
 	// evicted is worse than being told only the eviction.
 	e.notices[who] = append(e.notices[who],
-		notice{Serial: serial, Msg: msg, Text: text, Blocking: blocking})
+		notice{Serial: serial, Msg: msg, Text: text, Blocking: blocking, At: at})
 	if n := len(e.notices[who]); n > maxNotices {
 		// BLOCKING ONES SURVIVE THE TRIM.
 		//
@@ -273,6 +289,25 @@ func (e *Engine) pendingNotices(agent string) []string {
 		out = append(out, n.Text)
 	}
 	return out
+}
+
+// oldestNotice is when the earliest outstanding notice for this agent actually
+// happened, or the zero time if none of them knows.
+//
+// Separate from pendingNotices because that one renders text for the model and
+// this one is a fact about the queue. Notices with no time are skipped rather
+// than treated as ancient: an unknown age must not become the loudest one.
+func (e *Engine) oldestNotice(agent string) time.Time {
+	var oldest time.Time
+	for _, n := range e.notices[agent] {
+		if n.At.IsZero() {
+			continue
+		}
+		if oldest.IsZero() || n.At.Before(oldest) {
+			oldest = n.At
+		}
+	}
+	return oldest
 }
 
 // clearNoticesFor drops the notices that pointed at one message, leaving the
@@ -355,6 +390,132 @@ func answeredNotice(ev core.Event) string {
 	}
 }
 
+// rebuildBlockingNotices restores the notices a verdict creates, from state.
+//
+// Notices are engine-ephemeral by design, and the architecture's rule is that
+// such a view must be REBUILDABLE. Nothing rebuilt this one: an approval became
+// a blocking notice only in live publish processing, so a daemon restart
+// between the approval and the asker's next turn boundary lost it outright. The
+// effect stayed ledgered and correct, and the agent that asked was never told:
+// hook_poll, [wake.exec] and check_in all saw nothing, and it waited
+// indefinitely for news that had already happened. That is the precise failure
+// the blocking notice was added to prevent, arriving through the one event
+// nobody replays.
+//
+// FROM STATE, not from the event ring. state == fold(ledger), so a terminal
+// message its asker has not consumed is exactly the set still owed, and it
+// cannot drift from whatever the ring happens to still hold after eviction.
+// THE ASKER'S OWN WATERMARK, not Message.Consumed. Consumed was the obvious
+// field and it is about the wrong party: the RECIPIENT consumes a message when
+// they answer it, so every verdict is consumed the instant it exists and the
+// first version of this rebuilt nothing at all. The unit test set the field by
+// hand and passed. An end-to-end run against a real daemon restart is what
+// showed it, which is the whole reason for running one.
+//
+// AckedSerial is the awareness-gate watermark, it is replayable state, and it
+// answers the actual question: the asker has caught up to everything at or
+// below it, so a verdict that landed after it is news it has not had.
+//
+// Called once, before the loop starts, so the maps are not shared yet.
+func (e *Engine) rebuildBlockingNotices() {
+	if e.state == nil {
+		return
+	}
+	owed := make([]*core.Message, 0, 8)
+	for _, m := range e.state.Messages {
+		if e.stillOwed(m) {
+			owed = append(owed, m)
+		}
+	}
+	// BY WHEN THE VERDICT HAPPENED, which is RespondedAt and not the serial of
+	// the request. Map order is random and the notice list keeps the newest
+	// sixteen, so the order here decides what survives a rebuild; sorting by the
+	// request serial inserted a very old question answered a moment ago FIRST,
+	// where the trim discards it, and kept older verdicts for newer requests.
+	// That is the opposite of the "newest win" the trim promises, and the
+	// difference only shows once more than sixteen are owed at once.
+	sort.Slice(owed, func(i, j int) bool {
+		if owed[i].RespondedAt != owed[j].RespondedAt {
+			return owed[i].RespondedAt < owed[j].RespondedAt
+		}
+		return owed[i].Serial < owed[j].Serial
+	})
+	for _, m := range owed {
+		ev := core.Event{
+			Type: verdictEvent(m.State), Agent: m.To, To: m.From,
+			Serial: m.RespondedAt,
+			// TS, because the notice takes its age from the event, and a
+			// rebuilt event with no TS gives a notice no age at all.
+			//
+			// TerminalAt is when the verdict actually happened, which is set on
+			// the same line as RespondedAt. Left unset, every notice restored
+			// after a restart came back ageless, so a notice-only nudge went
+			// back to printing identical bytes forever: exactly the habituation
+			// the age was added to remove, reappearing on every restart. The
+			// comment three lines down already asks for more than that, and it
+			// is right: an agent must not be able to tell that its board
+			// restarted from the wording of its own mail, and an age that
+			// vanishes tells it.
+			TS:   m.TerminalAt,
+			Data: map[string]any{"msg_serial": m.Serial},
+		}
+		// The same extras publish puts on the live event, so the rebuilt line
+		// reads identically: an agent must not be able to tell that its board
+		// restarted from the wording of its own mail.
+		if m.Grant != "" && m.State == core.MsgStateApproved {
+			ev.Data["granted"] = m.Grant
+		}
+		if m.Adopt != "" && m.State == core.MsgStateApproved {
+			ev.Data["adopted"] = m.Adopt
+		}
+		e.pushNoticeAs(m.From, answeredNotice(ev), m.RespondedAt, m.Serial, true, ev.TS)
+	}
+}
+
+// stillOwed reports whether this message's verdict is news its asker has not
+// had. Split out to keep the rebuild under the complexity limit, which is worth
+// keeping here: this decides what an agent is told after a restart.
+func (e *Engine) stillOwed(m *core.Message) bool {
+	if m == nil || m.From == "" || verdictEvent(m.State) == "" {
+		return false
+	}
+	asker := e.state.Agents[m.From]
+	if asker == nil || asker.Gone() {
+		return false // nobody left to tell
+	}
+	// AckedSerial is the awareness watermark: at or below it, the agent has
+	// caught up and telling it again is a duplicate.
+	return m.RespondedAt == 0 || m.RespondedAt > asker.AckedSerial
+}
+
+// verdictEvent names the event a terminal state was published as, or "" when
+// the state is not a verdict. Expiries and displacement are not answers and
+// carry no notice.
+func verdictEvent(state string) string {
+	switch state {
+	case core.MsgStateApproved:
+		return "message.approved"
+	case core.MsgStateDenied:
+		return "message.denied"
+	case core.MsgStateAnswered:
+		return "message.answered"
+	case core.MsgStateDeclined:
+		return "message.declined"
+	}
+	return ""
+}
+
+// WHAT A RESTART STILL LOSES, said here because the paragraph above used to
+// imply it lost nothing that mattered.
+//
+// Only verdicts are rebuilt. A notice about something that HAPPENED TO an agent
+// (joined, admitted, absorbed, requeued, evicted, told to stop exclusive work)
+// is created during live processing and is gone. Some of the resulting board
+// state can be inferred by looking, and the causal half cannot: who did it, why,
+// and above all the imperative ones, where an agent that was told to stop can
+// carry on because the instruction evaporated. That is a real gap and issue #75
+// is where it is being worked, not a cost worth waving through in a comment.
+
 // noteNewMember tells the existing members that somebody joined.
 //
 // Not the joiner, who already knows and gets joinedNotice, and not a member
@@ -384,7 +545,8 @@ func (e *Engine) noteNewMember(ev core.Event) {
 			continue
 		}
 		e.pushNotice(member,
-			fmt.Sprintf("%s %s the space %q you are in", joiner, how, spaceID), ev.Serial)
+			fmt.Sprintf("%s %s the space %q you are in", joiner, how, spaceID),
+			ev.Serial, ev.TS)
 	}
 }
 

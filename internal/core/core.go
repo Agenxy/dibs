@@ -150,8 +150,23 @@ type Limits struct {
 // DefaultLimits are the SPEC §11 defaults.
 func DefaultLimits() Limits {
 	return Limits{
-		MaxAgents:           64,
-		MaxPersistentAgents: 16,
+		MaxAgents: 64,
+		// EQUAL TO MaxAgents, because persistent is no longer the exception.
+		//
+		// 16 was sized for a board where persistent meant "standing role" and
+		// everything else was ephemeral. Since v0.0.7 an agent that states no
+		// kind is persistent, so this ceiling counts every agent that has
+		// registered inside DormancyMax, which is thirty days: a fleet of any
+		// size hits it in an afternoon and is then told it may not register at
+		// all. The operator of this project's own board had already raised it to
+		// 48 by hand for exactly that reason, before the default flipped.
+		//
+		// Kept as a separate field rather than deleted, because an operator who
+		// wants a tighter bound on durable mailboxes than on agents in total
+		// should still be able to say so. It is the DEFAULT that was wrong.
+		// Runaway growth is still bounded, by MaxAgents above and by the sweep
+		// archiving anything dormant past DormancyMax.
+		MaxPersistentAgents: 64,
 		MaxSlotsPerAgent:    32,
 		MaxClaimsPerAgent:   32,
 		MaxClaimsGlobal:     256,
@@ -355,6 +370,17 @@ type Agent struct {
 	// woken. Neither id is a credential; the connection is already
 	// authenticated, and these are only ever added by the daemon's own join.
 	SessionAliases []string `json:"session_aliases,omitempty"`
+	// GuessedSessions are the session ids on this agent that the daemon
+	// INFERRED by directory rather than the caller stating them. A guess yields
+	// to a first-hand claim; a stated binding does not. See Op.SessionGuessed.
+	//
+	// A SET, NOT A BOOLEAN, and the difference is a hole rather than a detail.
+	// One flag per agent was overwritten by whichever binding happened last, so
+	// adding a single guessed ALIAS to an agent made its STATED primary
+	// claimable by anyone, and adding a later stated alias made an earlier guess
+	// permanently non-yielding. Authorisation asks about one specific id, so the
+	// provenance has to be recorded against that id.
+	GuessedSessions []string `json:"guessed_sessions,omitempty"`
 	// Agent is who is behind this agent: harness, version, model, surface. In a
 	// large fleet "reviewer" is not enough; the human needs to know that it is
 	// Codex 0.145 rather than Opus 5 in Claude Desktop. Purely descriptive: it
@@ -435,6 +461,20 @@ type Agent struct {
 
 	Token string `json:"-"`
 	Nonce string `json:"-"`
+	// NonceMinted says this agent did not bring its own nonce: the daemon made
+	// one and handed it back at registration.
+	//
+	// It decides whether `session_id` may still reattach this agent. That path
+	// refuses an agent holding a nonce, on the grounds that a client-chosen
+	// secret beats a guessable id, and that was right while a nonce meant the
+	// agent had deliberately created one. Since v0.0.7 every registration gets
+	// one whether it asked or not, so without this the refusal covers everybody
+	// and "re-registering after context loss is always safe" quietly stops being
+	// true: the returning agent forks a sibling that cannot read its own mail.
+	//
+	// False for every agent in every existing ledger, which is exactly today's
+	// behaviour, so this needs no replay gate of its own.
+	NonceMinted bool `json:"-"`
 }
 
 // burnChildNonce reports whether n is a secret this agent issued, consuming it.
@@ -655,14 +695,42 @@ func (s *State) AgentByToken(tok string) *Agent {
 // oldest first (SPEC §8).
 func (s *State) Inbox(agent string) []*Message {
 	var out []*Message
+	// THE WATERMARK FILTERS, and until now it only reported.
+	//
+	// TruncatedBefore says "mail below this is not mine". It was set by the
+	// retention sweep and returned to callers as truncated_before_serial, and
+	// nothing ever consulted it, which went unnoticed because the sweep that
+	// sets it has already DELETED the messages it covers: there was nothing left
+	// to filter, so an inert watermark and a working one looked identical.
+	//
+	// They stop looking identical when mail outlives the row it was addressed
+	// to. An id is derived from the name, so a name that comes back reuses the
+	// id, and a sweep written before v0.0.7 removes the row while keeping the
+	// messages. Those are expired with a reason the SENDER reads, so they are
+	// deliberately kept, and the next agent to take that name was handed them,
+	// bodies included. Measured. Found by the pre-release review.
+	floor := s.mailFloor(agent)
 	for _, m := range s.Messages {
-		if m.To == agent && (!m.Terminal() || !m.Consumed) {
+		if m.Serial < floor {
+			continue
+		}
+		if m.To == agent && m.readable() {
 			out = append(out, m)
 		}
 	}
 	sortMessages(out)
 	return out
 }
+
+// readable reports whether this message would appear in its addressee's inbox:
+// still live, or finished and not yet collected (SPEC §8).
+//
+// One definition, because adoption had a second one. It readdressed and COUNTED
+// every record above the watermark, consumed ones included, and told the heir
+// to "read them with inbox": a mailbox with one unread message and one
+// acknowledged one reported two and showed one. A count handed to a person
+// approving the request has to be the number they would see.
+func (m *Message) readable() bool { return !m.Terminal() || !m.Consumed }
 
 func sortMessages(ms []*Message) {
 	for i := 1; i < len(ms); i++ {
@@ -672,11 +740,37 @@ func sortMessages(ms []*Message) {
 	}
 }
 
+// mailFloor is the serial below which mail addressed to this agent is not the
+// agent's own. See Agent.TruncatedBefore.
+//
+// One function because "is this message mine" is asked in more than one place
+// and was answered differently in each. Inbox filtered on the watermark; the
+// capacity metric and the delivery marker did not, and both of those decide
+// something a SENDER is told.
+func (s *State) mailFloor(agent string) uint64 {
+	if l := s.Agents[agent]; l != nil {
+		return l.TruncatedBefore
+	}
+	return 0
+}
+
 // nonTerminalCount is the mailbox-capacity metric (SPEC §8).
+//
+// It honours the watermark, which it did not. Mail below it belongs to a
+// previous occupant of this name: the current agent cannot see it, so it cannot
+// read, answer, ack or consume it, and nothing it does will ever retire it.
+// Counting it against capacity meant a send could be refused with
+// E_MAILBOX_FULL against an agent whose inbox reads as empty, with no
+// corrective action available to either party: the recipient cannot clear what
+// it cannot see, and the sender is simply refused. Rule 6 says an error names
+// the corrective call, and this one had none to name. Reproduced before fixing:
+// two pending notifies to a swept name, the name returns, and a question to it
+// is refused forever.
 func nonTerminalCount(s *State, agent string) int {
 	n := 0
+	floor := s.mailFloor(agent)
 	for _, m := range s.Messages {
-		if m.To == agent && !m.Terminal() {
+		if m.To == agent && m.Serial >= floor && !m.Terminal() {
 			n++
 		}
 	}

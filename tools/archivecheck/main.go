@@ -19,12 +19,16 @@ package main
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
+	"debug/macho"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -59,26 +63,49 @@ func run() error {
 	want = append(want, "dibd", "dibs")
 	sort.Strings(want)
 
-	archives, err := filepath.Glob(filepath.Join(root, "dist", "*_darwin_arm64.tar.gz"))
+	// EVERY darwin archive, however many that is.
+	//
+	// One today, because the Mac Intel target was dropped. Written as a glob
+	// rather than a name so that adding a target adds a check instead of
+	// silently leaving one unexamined, which is the shape of the defect that
+	// prompted the architecture check below: the bundled notifier was built once
+	// on the release host and copied into both archives, so it was arm64-only
+	// inside darwin_amd64 and this program, reading only the arm64 tarball, was
+	// green over it.
+	archives, err := filepath.Glob(filepath.Join(root, "dist", "*_darwin_*.tar.gz"))
 	if err != nil {
 		return err
 	}
-	if len(archives) != 1 {
-		return fmt.Errorf("expected exactly one darwin_arm64 archive under dist/, found %d %v.\n"+
-			"Build one first: goreleaser release --snapshot --clean", len(archives), archives)
+	if len(archives) == 0 {
+		return fmt.Errorf("found no darwin archive under dist/.\n" +
+			"Build one first: goreleaser release --snapshot --clean")
 	}
+	sort.Strings(archives)
 
-	have, err := entries(archives[0])
+	for _, a := range archives {
+		if err := carries(a, want); err != nil {
+			return err
+		}
+	}
+	fmt.Printf("archivecheck: %d darwin archive(s) carry all %d runtime paths, each "+
+		"runnable on the Mac it is for\n", len(archives), len(want))
+	return nil
+}
+
+// carries proves one archive holds every runtime path, and that the executables
+// among them run on the machine this archive is for.
+func carries(path string, want []string) error {
+	have, err := entries(path)
 	if err != nil {
-		return fmt.Errorf("%s: %w", archives[0], err)
+		return fmt.Errorf("%s: %w", path, err)
 	}
 	if len(have) == 0 {
-		return fmt.Errorf("%s contains no files, so this check verified nothing", archives[0])
+		return fmt.Errorf("%s contains no files, so this check verified nothing", path)
 	}
 
 	var missing []string
 	for _, w := range want {
-		if !have[w] {
+		if _, ok := have[w]; !ok {
 			missing = append(missing, w)
 		}
 	}
@@ -94,13 +121,94 @@ func run() error {
 			"catch: the file is in the archive, every guard that reads .goreleaser.yml is "+
 			"green, and the product reports the component missing to the person who "+
 			"downloaded it",
-			filepath.Base(archives[0]), len(missing),
+			filepath.Base(path), len(missing),
 			strings.Join(missing, "\n  "), strings.Join(listed, "\n  "))
 	}
 
-	fmt.Printf("archivecheck: %s carries all %d runtime paths\n",
-		filepath.Base(archives[0]), len(want))
+	// AND THE ARCHITECTURE, because a file at the right path that cannot execute
+	// is not a working installation. The notifier returns its exec error rather
+	// than falling back, so on the wrong Mac it fails silently to a person who
+	// was supposed to be notified.
+	arch := archArchitecture(path)
+	if arch == "" {
+		return fmt.Errorf("%s: cannot tell which architecture this archive is for "+
+			"from its name, so the executables in it are unchecked", filepath.Base(path))
+	}
+	for _, w := range want {
+		body := have[w]
+		if !isMachO(body) {
+			continue // documentation, an icon, a plist
+		}
+		archs, aerr := machoArchs(body)
+		if aerr != nil {
+			return fmt.Errorf("%s: %s: %w", filepath.Base(path), w, aerr)
+		}
+		if !slices.Contains(archs, arch) {
+			return fmt.Errorf("%s is the %s archive and its %s is built for %v.\n\n"+
+				"It cannot run on the Mac this archive is for. A helper built once on "+
+				"the release host and copied into every archive looks correct in the "+
+				"file listing and is inert on half the machines that download it",
+				filepath.Base(path), arch, w, archs)
+		}
+	}
 	return nil
+}
+
+// archArchitecture reads the target out of a GoReleaser archive name.
+func archArchitecture(path string) string {
+	switch name := filepath.Base(path); {
+	case strings.Contains(name, "_darwin_arm64"):
+		return "arm64"
+	case strings.Contains(name, "_darwin_amd64"):
+		return "amd64"
+	}
+	return ""
+}
+
+// isMachO reports whether these bytes are a Mach-O image, thin or fat.
+func isMachO(b []byte) bool {
+	if len(b) < 4 {
+		return false
+	}
+	switch binary.BigEndian.Uint32(b[:4]) {
+	case 0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe, // thin, both endians
+		macho.MagicFat, 0xbebafeca: // fat, both endians
+		return true
+	}
+	return false
+}
+
+// machoArchs names the architectures an image contains, in Go's spelling so it
+// can be compared with an archive's own suffix.
+func machoArchs(b []byte) ([]string, error) {
+	r := bytes.NewReader(b)
+	if fat, err := macho.NewFatFile(r); err == nil {
+		var out []string
+		for _, a := range fat.Arches {
+			out = append(out, goArch(a.Cpu))
+		}
+		return out, nil
+	}
+	f, err := macho.NewFile(r)
+	if err != nil {
+		return nil, fmt.Errorf("not a readable Mach-O image: %w", err)
+	}
+	return []string{goArch(f.Cpu)}, nil
+}
+
+func goArch(c macho.Cpu) string {
+	switch c {
+	case macho.CpuAmd64:
+		return "amd64"
+	case macho.CpuArm64:
+		return "arm64"
+	// The release targets darwin/arm64 and nothing else on a Mac. A helper built
+	// for any of these is wrong wherever it turns up, and naming them keeps the
+	// mismatch readable in the error rather than as a number.
+	case macho.Cpu386, macho.CpuArm, macho.CpuPpc, macho.CpuPpc64:
+		return c.String()
+	}
+	return c.String()
 }
 
 // expectedPaths reads each runtime helper's declared location from its package.
@@ -139,7 +247,9 @@ func expectedPaths(root string) ([]string, error) {
 	return out, nil
 }
 
-func entries(path string) (map[string]bool, error) {
+// entries reads the archive into path → contents. The bytes are needed because
+// the check is not only that a file is present but that it can run.
+func entries(path string) (map[string][]byte, error) {
 	f, err := os.Open(path) // #nosec G304 -- a path this program globbed under dist/
 	if err != nil {
 		return nil, err
@@ -151,7 +261,7 @@ func entries(path string) (map[string]bool, error) {
 	}
 	defer func() { _ = gz.Close() }()
 
-	out := map[string]bool{}
+	out := map[string][]byte{}
 	tr := tar.NewReader(gz)
 	for {
 		h, err := tr.Next()
@@ -164,7 +274,14 @@ func entries(path string) (map[string]bool, error) {
 		if h.Typeflag == tar.TypeDir {
 			continue
 		}
-		out[filepath.Clean(h.Name)] = true
+		// The header only, for anything too big to be a helper: this reads a
+		// release archive, and holding all of it would be pointless.
+		lim := io.LimitReader(tr, 64<<20)
+		body, rerr := io.ReadAll(lim)
+		if rerr != nil {
+			return nil, fmt.Errorf("%s: %w", h.Name, rerr)
+		}
+		out[filepath.Clean(h.Name)] = body
 	}
 }
 

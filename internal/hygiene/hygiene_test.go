@@ -339,7 +339,26 @@ func walk(t *testing.T, root string, visit func(rel, abs string)) {
 		t.Skip("not a git work tree (a release tarball, most likely): repository " +
 			"hygiene is only meaningful in a checkout")
 	}
-	out, err := exec.Command(git, "-C", root, "ls-files", "-z").Output() // #nosec G204
+	// TRACKED AND UNTRACKED BOTH, and the untracked half is the point.
+	//
+	// This was `ls-files -z`, which lists tracked files only, so every hygiene
+	// guard built on this walk silently skipped a file that had not been `git
+	// add`ed yet. That is exactly backwards: a brand new file is the one most
+	// likely to break a convention, because nothing about it has ever been
+	// reviewed.
+	//
+	// The way it goes wrong is quiet and complete. Write a new file, run the
+	// gate, watch it pass having read none of it, commit, and the guard first
+	// fires on the NEXT run, against code that has already shipped. Caught by
+	// doing precisely that: a new test file with two em dashes in its doc
+	// comment went through a green `task ci` and was reported by the following
+	// one. Same shape as everything else in this repository's list of things
+	// that report success while doing nothing.
+	//
+	// --exclude-standard keeps .gitignore honoured, so build output and vendor
+	// trees stay out.
+	out, err := exec.Command(git, "-C", root, // #nosec G204
+		"ls-files", "-z", "--cached", "--others", "--exclude-standard").Output()
 	if err != nil {
 		t.Fatalf("listing tracked files: %v", err)
 	}
@@ -351,6 +370,25 @@ func walk(t *testing.T, root string, visit func(rel, abs string)) {
 		abs := filepath.Join(root, rel)
 		if st, err := os.Stat(abs); err != nil || st.IsDir() {
 			continue // deleted but still staged, or a submodule
+		}
+		// READ IT HERE, so "visited" means the content was available.
+		//
+		// This counted callbacks INVOKED and called that "what was actually
+		// opened". Most callbacks return silently when ReadFile fails, so an
+		// unreadable file was counted toward the floor while none of its content
+		// was checked: the walk reports coverage it does not have, which is the
+		// same failure as the version that counted `ls-files` output. Found by
+		// the pre-release review, one round after the untracked-files fix.
+		//
+		// Failing rather than skipping, because a file this repository tracks and
+		// cannot read is a real problem: it is the state a bad merge or a broken
+		// symlink leaves, and quietly not checking it is how a convention breaks
+		// without anybody being told.
+		if _, err := os.ReadFile(abs); err != nil { // #nosec G304 -- this repo's own tracked files
+			t.Errorf("%s is tracked and could not be read (%v), so no check in this "+
+				"package examined it. A file that cannot be opened is not a file that "+
+				"passed", rel, err)
+			continue
 		}
 		visit(rel, abs)
 		visited++
@@ -794,29 +832,61 @@ func TestThePresenceHelperIsTheOneThatGetsBuilt(t *testing.T) {
 		}
 	}
 
-	// AND IT MUST RUN ON BOTH MACS.
+	// AND IT MUST NAME ITS TARGET.
 	//
-	// GoReleaser builds darwin/amd64 and darwin/arm64 and copies ONE helper into
-	// both archives. Built without a target it is whatever the release runner
-	// was, so one of the two releases carried a presence binary that machine
-	// cannot execute, and the failure is silent: no usable helper means the
-	// password path, and Touch ID disappears from a release that advertises it.
-	// The name checks below could not see this, which is the point of adding it
-	// here: they verify the word, not the artifact.
+	// The Swift helpers are compiled on the release runner and copied into the
+	// archive, so with no -target the artifact is a property of whatever machine
+	// ran the job rather than of this repository. That is how the notifier
+	// shipped arm64-only into the Intel tarball, silently: no usable helper
+	// means the password path, and Touch ID disappears from a release that
+	// advertises it. The name checks below cannot see that, which is the point
+	// of this one: they verify the word, not the artifact.
+	//
+	// AND THE MAC INTEL TARGET STAYS GONE. Apple is ending Intel support, so
+	// Dibs does not ship that build: carrying it costs a second Swift slice for
+	// each helper, lipo for both, and an archive nobody installs. This is
+	// checked rather than remembered because `goarch: [amd64, arm64]` reads as
+	// an obvious pair and the `ignore` line under it is easy to drop in a tidy-
+	// up, which would restore the target and every cost with it, quietly.
 	relRaw, err := os.ReadFile(filepath.Join(root, ".goreleaser.yml"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(relRaw), "lipo -create") {
-		t.Error("the presence helper is not built as a universal binary: one of the " +
-			"two macOS archives will carry a helper for the wrong architecture, and " +
-			"Touch ID will silently fall back to the password there")
-	}
-	for _, target := range []string{"arm64-apple-macos", "x86_64-apple-macos"} {
-		if !strings.Contains(string(relRaw), target) {
-			t.Errorf("no swiftc -target for %s: lipo cannot join a slice that was "+
-				"never compiled", target)
+	// BOTH Swift artifacts, and in the RELEASE rather than in the tool.
+	//
+	// The notifier's target was briefly hardcoded in tools/appbundle, which
+	// fixed the release and broke building from source on an Intel Mac: the
+	// documented escape hatch for the platform the release just dropped. A local
+	// build is for the machine doing the building; only the release is for
+	// somewhere else, so only the release states a target, and this checks the
+	// place that has to.
+	for _, what := range []string{
+		"-target arm64-apple-macos", // the presence helper's own swiftc line
+		"appbundle",                 // and the notifier, via the bundler
+	} {
+		if !strings.Contains(string(relRaw), what) {
+			t.Errorf("the release does not build %s at all", what)
 		}
+	}
+	for _, line := range strings.Split(string(relRaw), "\n") {
+		if strings.Contains(line, "tools/appbundle") && !strings.Contains(line, "-target ") {
+			t.Error("the release builds Dibs.app without -target, so the notifier is " +
+				"whatever architecture the runner happened to be. It shipped arm64-only " +
+				"into the Intel archive exactly that way, and the failure is silent: " +
+				"the runtime finds an executable at the expected path and runs it " +
+				"rather than falling back")
+		}
+	}
+	if !strings.Contains(string(relRaw), "{goos: darwin, goarch: amd64}") {
+		t.Error("the release no longer ignores darwin/amd64, so it builds a Mac Intel " +
+			"archive again. Both Swift helpers are single-slice and would be wrong " +
+			"in it. Either restore the ignore, or bring back the lipo builds and the " +
+			"second slice of each helper deliberately")
+	}
+	if strings.Contains(string(relRaw), "x86_64-apple-macos") {
+		t.Error("a Swift helper is compiled for Mac Intel while the release ignores " +
+			"that target: one of the two is wrong, and the build is paying for a " +
+			"slice nothing ships")
 	}
 
 	// AND THE RELEASE, which is what almost everybody installs.
@@ -834,13 +904,22 @@ func TestThePresenceHelperIsTheOneThatGetsBuilt(t *testing.T) {
 	}
 	// It has to be BUILT and it has to be PACKAGED: the before hook produces it
 	// and the archive carries it. Either one alone ships nothing usable.
-	// The needle for the before hook was `-o dibs-presence`, which is a PREFIX
-	// of `-o dibs-presence-arm64`: deleting the lipo output left the per-slice
-	// compiles matching it and every assertion here green, while the archive had
-	// no universal helper to carry. A guard that a partial build satisfies is
-	// not watching the thing it names, so this looks for lipo's own output flag.
+	//
+	// AN EXACT OUTPUT NAME, not a prefix. `-o dibs-presence` is a prefix of `-o
+	// dibs-presence-arm64`, and while the release built per-architecture slices
+	// and joined them, deleting the join left those compiles matching a
+	// substring needle and every assertion here green with no helper to carry.
+	// The join is gone now (one Mac target, one slice), so the needle is the
+	// output name bounded at both ends, which is true of either arrangement and
+	// false of a half-finished one.
+	if !regexp.MustCompile(`-o(?:utput)?\s+` + regexp.QuoteMeta(want) + `(\s|$)`).
+		Match(rel) {
+		t.Errorf("the release does not build %q: no swiftc or lipo line produces that "+
+			"exact name, so an installed Dibs finds no helper beside its executable "+
+			"and falls back to the admin password, while the docs describe Touch ID "+
+			"as the default", want)
+	}
 	for _, place := range []struct{ what, needle string }{
-		{"joined into a universal binary", "-output " + want},
 		{"carried in the archive", "src: " + want},
 		{"linked by the Homebrew cask", "- " + want},
 	} {
@@ -1012,6 +1091,112 @@ func TestBothBinariesShipAManualThatRenders(t *testing.T) {
 // anything at all, and forbidding it would forbid workflows. What is refused is
 // shell LOGIC: multiple statements, conditionals, pipelines, redirections,
 // substitutions, and parameter expansion.
+// shellTokens are the constructs that make a YAML command a PROGRAM rather
+// than an invocation. One definition, shared by the workflow and Taskfile
+// guards: two copies of a rule is two rules, and the second one rots.
+var shellTokens = []struct {
+	token, why string
+}{
+	{"${", "parameter expansion (${VAR#prefix} and friends) is shell string surgery"},
+	{"$(", "command substitution runs a second program to build the first one's arguments"},
+	{"`", "backtick substitution is command substitution wearing older syntax"},
+	{"&&", "a conditional sequence is control flow"},
+	{"||", "a fallback is control flow, and the silent kind"},
+	{"|", "a pipeline hides the exit status of everything but the last stage"},
+	{";", "two statements on one line is a script"},
+	{">", "a redirection is the script deciding where output goes"},
+	{"<", "a redirection is the script deciding where input comes from"},
+	{"if ", "a conditional is control flow"},
+	{"for ", "a loop is control flow"},
+	{"while ", "a loop is control flow"},
+	{"case ", "a conditional is control flow"},
+	{"set -e", "needing this is the admission that shell continues past failures"},
+}
+
+// shellBody is a block with the things that LOOK like shell operators but are
+// not, removed before matching.
+//
+// An arrow is not a redirection. The Taskfile carries prose telling an operator
+// to open "Keychain Access -> Certificate Assistant", and a bare `>` search
+// called that a script. A guard with false positives gets weakened or deleted,
+// so it has to be right about the ordinary case to be trusted about the real
+// one. Comparison operators go for the same reason.
+func shellBody(body string) string {
+	// TEMPLATE ACTIONS ARE NOT SHELL. `{{if eq .SIGNER "-"}}` is rendered by the
+	// task runner before anything is executed, so its `if` is not control flow
+	// in a script: matching it called a one-line `echo` a program. Removed
+	// first, so what remains is only what a shell would actually see.
+	body = templateAction.ReplaceAllString(body, " ")
+	// QUOTED TEXT IS AN ARGUMENT, NOT LOGIC. `echo "asked for Desktop access"`
+	// is one command, and searching its prose for shell tokens found `for` and
+	// called it a loop. The Taskfile's help strings are full of English that
+	// contains `if`, `for` and `>`, so a guard that reads inside quotes reports
+	// a script every time somebody writes a sentence. What matters is what the
+	// shell would EXECUTE, which is what is left once arguments are removed.
+	body = quoted.ReplaceAllString(body, " ")
+	r := strings.NewReplacer("->", " ", "=>", " ", "<-", " ", ">=", " ", "<=", " ")
+	return r.Replace(body)
+}
+
+// templateAction matches a `{{ ... }}` directive, which the runner evaluates.
+var templateAction = regexp.MustCompile(`\{\{[^}]*\}\}`)
+
+// quoted matches a double- or single-quoted argument, across lines.
+var quoted = regexp.MustCompile(`(?s)"[^"]*"|'[^']*'`)
+
+// countStatements counts the real commands in a block: blank lines and
+// comments are neither.
+func countStatements(body string) int {
+	n := 0
+	for _, l := range strings.Split(body, "\n") {
+		if t := strings.TrimSpace(l); t != "" && !strings.HasPrefix(t, "#") {
+			n++
+		}
+	}
+	return n
+}
+
+// The Taskfile must not embed shell programs either.
+//
+// The no-shell rule is about what shell IS, not where the bytes live, and this
+// repository's own guard read `run:` blocks in .github/workflows and nothing
+// else. A Taskfile `cmd: |` with conditionals, command substitution and
+// redirection is the same object: unbuildable, unvettable, untestable, and
+// invisible to every check. review:release was exactly that, for its whole
+// life, while CHANGELOG claimed the YAML-shell class was removed and guarded.
+// Found by the pre-release review, about the task that runs it.
+func TestTheTaskfileDoesNotEmbedShellScripts(t *testing.T) {
+	root := repoRoot(t)
+	raw, err := os.ReadFile(filepath.Join(root, "Taskfile.yml")) // #nosec G304 -- this repo's own
+	if err != nil {
+		t.Fatalf("reading Taskfile.yml: %v", err)
+	}
+	// The file has to have been READ, which is a different claim from "it has
+	// cmd: blocks". Zero blocks is a legitimate state, and it is the one this
+	// repository is in now that review:release is a Go program; asserting
+	// otherwise would make the guard fail for having nothing to complain about.
+	if !strings.Contains(string(raw), "cmds:") {
+		t.Fatal("Taskfile.yml has no cmds: at all, so this guard read the wrong " +
+			"file or the format has changed: re-point it rather than leaving it green")
+	}
+	blocks := yamlBlocks(string(raw), "cmd:")
+	for _, b := range blocks {
+		for _, bad := range shellTokens {
+			if strings.Contains(shellBody(b.body), bad.token) {
+				t.Errorf("Taskfile.yml:%d embeds a shell program: %s\n  %s\n"+
+					"  Write it as a Go program under tools/ and call that. Shell in "+
+					"YAML is still shell: it cannot be built, vetted or run on its own.",
+					b.line, bad.why, firstLine(b.body))
+				break
+			}
+		}
+		if !b.folded && countStatements(b.body) > 1 {
+			t.Errorf("Taskfile.yml:%d is several commands in one block, which is a "+
+				"script:\n  %s", b.line, firstLine(b.body))
+		}
+	}
+}
+
 func TestWorkflowsDoNotEmbedShellScripts(t *testing.T) {
 	root := repoRoot(t)
 	dir := filepath.Join(root, ".github", "workflows")
@@ -1020,17 +1205,18 @@ func TestWorkflowsDoNotEmbedShellScripts(t *testing.T) {
 		t.Fatalf("reading %s: %v", dir, err)
 	}
 	// Shell constructs that make a `run:` a program rather than an invocation.
-	constructs := []struct{ token, why string }{
-		{"${", "parameter expansion (${VAR#prefix} and friends) is shell string surgery"},
-		{"$(", "command substitution runs a second program to build the first one's arguments"},
-		{"&&", "a conditional sequence is control flow"},
-		{"||", "a fallback is control flow, and the silent kind"},
-		{" | ", "a pipeline hides the exit status of everything but the last stage"},
-		{">>", "a redirection is the script deciding where output goes"},
-		{"if ", "a conditional is control flow"},
-		{"for ", "a loop is control flow"},
-		{"set -e", "needing this is the admission that shell continues past failures"},
-	}
+	//
+	// THE LIST WAS SHORTER THAN THE RULE IT CLAIMED. The prose above says
+	// multiple statements, pipelines, redirections, substitutions and control
+	// flow are all forbidden, and this checked nine substrings: `cmd1; cmd2`
+	// passed, so did an unspaced `a|b`, a single `>`, a backtick, a `while`
+	// loop, and a block of two ordinary commands on separate lines. A guard that
+	// states a property and enforces a subset of it is the kind this repository
+	// keeps finding, and it found this one in itself.
+	// see shellTokens
+	// AND MORE THAN ONE COMMAND, which no substring can see. A folded block of
+	// two ordinary lines is a script by the definition at the top of this test,
+	// and every token above would miss it.
 	checked := 0
 	for _, e := range entries {
 		if e.IsDir() || (filepath.Ext(e.Name()) != ".yml" && filepath.Ext(e.Name()) != ".yaml") {
@@ -1042,8 +1228,16 @@ func TestWorkflowsDoNotEmbedShellScripts(t *testing.T) {
 		}
 		checked++
 		for _, block := range runBlocks(string(raw)) {
-			for _, c := range constructs {
-				if !strings.Contains(block.body, c.token) {
+			if n := countStatements(block.body); n > 1 && !block.folded {
+				t.Errorf("%s line %d: this `run:` holds %d commands, which is a script "+
+					"whatever it contains. Write it as a Go program under tools/ and "+
+					"invoke that, or split it into one step per command so a failure "+
+					"names itself.\n  %s",
+					e.Name(), block.line, n, strings.TrimSpace(firstLine(block.body)))
+				continue
+			}
+			for _, c := range shellTokens {
+				if !strings.Contains(shellBody(block.body), c.token) {
 					continue
 				}
 				t.Errorf("%s line %d: this `run:` is a shell script, not a command: %s\n"+
@@ -1064,23 +1258,44 @@ func TestWorkflowsDoNotEmbedShellScripts(t *testing.T) {
 type runBlock struct {
 	line int
 	body string
+	// folded is a `>` block, whose lines join into ONE command. A `|` block
+	// keeps them separate, and that is the difference between an invocation
+	// spread over four readable lines and a four-line script.
+	folded bool
 }
 
 // runBlocks returns every `run:` value in a workflow, folded blocks included.
-func runBlocks(s string) []runBlock {
+func runBlocks(s string) []runBlock { return yamlBlocks(s, "run:") }
+
+// yamlBlocks returns every value of one YAML key, folded blocks included.
+//
+// Generalised from runBlocks over the KEY, because the shell it was written to
+// catch is not only in workflows. A Taskfile `cmd:` is the same thing: a
+// multiline program with conditionals and redirection, indented under YAML,
+// which cannot be built, vetted or run on its own. The guard scanned
+// .github/workflows and nothing else, so the task that runs the pre-release
+// review was itself a shell script for as long as it existed, while the
+// changelog said the class had been removed and guarded. Found by that review.
+func yamlBlocks(s, key string) []runBlock {
 	var out []runBlock
 	lines := strings.Split(s, "\n")
 	for i := 0; i < len(lines); i++ {
 		trimmed := strings.TrimSpace(lines[i])
-		if !strings.HasPrefix(trimmed, "run:") {
+		// A list item carries its own dash: `- cmd: |` is the same key.
+		trimmed = strings.TrimPrefix(trimmed, "- ")
+		if !strings.HasPrefix(trimmed, key) {
 			continue
 		}
-		rest := strings.TrimSpace(strings.TrimPrefix(trimmed, "run:"))
+		rest := strings.TrimSpace(strings.TrimPrefix(trimmed, key))
 		// A single-line command.
 		if rest != "" && rest != "|" && rest != ">" && rest != ">-" && rest != "|-" {
-			out = append(out, runBlock{i + 1, rest})
+			out = append(out, runBlock{i + 1, rest, false})
 			continue
 		}
+		// FOLDED (`>`) joins its lines into ONE command; literal (`|`) keeps
+		// them as separate ones. The difference decides whether several lines
+		// are several commands, so it has to travel with the body.
+		folded := strings.HasPrefix(rest, ">")
 		// A block scalar: everything indented under it.
 		indent := len(lines[i]) - len(strings.TrimLeft(lines[i], " "))
 		var body []string
@@ -1094,7 +1309,7 @@ func runBlocks(s string) []runBlock {
 			}
 			body = append(body, strings.TrimSpace(lines[j]))
 		}
-		out = append(out, runBlock{i + 1, strings.Join(body, "\n")})
+		out = append(out, runBlock{i + 1, strings.Join(body, "\n"), folded})
 	}
 	return out
 }
@@ -1358,4 +1573,133 @@ func TestEveryReleaseHookOutputIsIgnored(t *testing.T) {
 				"line:\n\n    /%s\n", name, name)
 		}
 	}
+}
+
+// No shipped document calls the admin password a prerequisite.
+//
+// It is not one. `dibs web` raises the daemon-owned Touch ID sheet first and
+// asks for a password only where there is no sensor to ask, which is the whole
+// point of the presence work in this release. Four documents still said the
+// password had to be set first, including the primary README and the Homebrew
+// caveat that every macOS installer reads, so the release announced that it had
+// removed a weaker credential while its own onboarding sent operators to create
+// one.
+//
+// The check is CONDITIONALITY, not wording. Anywhere the command appears, the
+// text around it has to say when it applies; a document is free to phrase that
+// however it likes. Pinning one sentence would find the claim only where
+// somebody already wrote it that way, which is how the same defect survived in
+// four spellings and in two more places than the reviewer reached: the embedded
+// plugin copy, which is the one that actually ships, and the tutorial.
+//
+// The changelog is exempt. It is a historical record, and an entry describing
+// what an older version required is correct precisely because it is dated.
+func TestNoDocumentMakesTheAdminPasswordAPrerequisite(t *testing.T) {
+	const window = 10
+	root := repoRoot(t)
+	// Any of these near the command means the condition is stated.
+	conditions := []string{"touch id", "sensor", "presence", "biometric", "fingerprint"}
+
+	seen := 0
+	walk(t, root, func(rel, abs string) {
+		switch strings.ToLower(filepath.Ext(rel)) {
+		case ".md", ".yml", ".yaml":
+		default:
+			return
+		}
+		if strings.EqualFold(filepath.Base(rel), "CHANGELOG.md") {
+			return
+		}
+		body, err := os.ReadFile(abs) // #nosec G304 -- walking this repository
+		if err != nil {
+			return
+		}
+		lines := strings.Split(string(body), "\n")
+		for i, line := range lines {
+			if !strings.Contains(line, "set-password") {
+				continue
+			}
+			seen++
+			lo, hi := max(0, i-window), min(len(lines), i+window+1)
+			near := strings.ToLower(strings.Join(lines[lo:hi], "\n"))
+			stated := false
+			for _, c := range conditions {
+				if strings.Contains(near, c) {
+					stated = true
+					break
+				}
+			}
+			if !stated {
+				t.Errorf("%s:%d introduces `admin set-password` without saying when it "+
+					"applies. `dibs web` uses the Touch ID sheet first and falls back to a "+
+					"password only where there is no sensor, so a document that presents "+
+					"the password as the way in sends macOS operators to create the weaker "+
+					"credential this release exists to stop needing.\n  %s",
+					rel, i+1, strings.TrimSpace(line))
+			}
+		}
+	})
+	if seen == 0 {
+		t.Fatal("no document mentions `admin set-password`, so this check verified nothing")
+	}
+}
+
+// No comment block says the same thing twice.
+//
+// Inserting a function between an existing doc comment and the function it
+// documents orphans the comment, and revive catches that: "should have comment
+// or be unexported". Fixing it by pasting the comment back above its function
+// while leaving the original where it fell does NOT get caught, because two
+// comment blocks separated by nothing are one comment block as far as go/ast is
+// concerned, and it is still attached to the right function. The file compiles,
+// lints clean, and carries the same paragraph twice.
+//
+// This happened in this repository, to CallerName, in the same session that had
+// already tripped the orphan check four times. The orphan is loud and the
+// duplicate is silent, which is the wrong way round: the orphan costs a lint
+// re-run, and the duplicate ships.
+func TestNoCommentBlockRepeatsALine(t *testing.T) {
+	root := repoRoot(t)
+	walk(t, root, func(rel, abs string) {
+		if !strings.HasSuffix(rel, ".go") {
+			return
+		}
+		b, err := os.ReadFile(abs) // #nosec G304
+		if err != nil {
+			return
+		}
+		var block []int
+		seen := map[string]int{}
+		lines := strings.Split(string(b), "\n")
+		flush := func() {
+			for text, first := range seen {
+				for _, n := range block {
+					if n > first && strings.TrimSpace(lines[n-1]) == text {
+						t.Errorf("%s:%d repeats a comment line already at line %d:\n\t%s\n"+
+							"A doc comment pasted above its function without deleting the copy "+
+							"that was left behind still lints clean. Delete one.", rel, n, first, text)
+						break
+					}
+				}
+			}
+			block, seen = nil, map[string]int{}
+		}
+		for i, line := range lines {
+			text := strings.TrimSpace(line)
+			if !strings.HasPrefix(text, "//") {
+				flush()
+				continue
+			}
+			// Short lines repeat legitimately: bare "//" separators, a "// ok"
+			// beside two cases, the rules of an ASCII diagram. A repeated full
+			// sentence is what this is looking for.
+			if len(text) > 20 {
+				if _, ok := seen[text]; !ok {
+					seen[text] = i + 1
+				}
+				block = append(block, i+1)
+			}
+		}
+		flush()
+	})
 }

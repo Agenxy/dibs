@@ -79,6 +79,27 @@ function start(bin: string, addr: string, mock: string): Node {
   return node
 }
 
+/**
+ * Stop a daemon and bring another one up on the same data directory.
+ *
+ * The board a restart produces is state == fold(ledger), so this is the only
+ * way to ask what actually survives one. A unit test builds the second engine
+ * by hand from a fixture it wrote itself, which means it can only ever confirm
+ * the assumption in the fixture: the notice rebuild passed such a test while
+ * rebuilding nothing at all, because the field it keyed on turned out to mean
+ * something else. Replay is what settles it.
+ */
+async function restart(n: Node, bin: string): Promise<void> {
+  n.proc.kill()
+  await n.proc.exited
+  n.proc = Bun.spawn({
+    cmd: [bin, "-dir", n.dir, "-addr", n.addr],
+    env: { ...process.env, DIBS_PRESENCE_MOCK: "verified", DIBS_ALLOW_PARALLEL: "1" },
+    stdout: "ignore", stderr: "ignore",
+  })
+  await waitUp(n)
+}
+
 function cleanup() {
   for (const n of nodes) {
     try { n.proc.kill() } catch {}
@@ -305,6 +326,42 @@ try {
   check("and its body is NOT in the shared event stream, because mail is private",
     !stream.includes("Are you blocked?"),
     "a private message body is readable from the agent event stream")
+
+  // ── an answer survives the board restarting ──────────────────────────────
+  // A blocking notice is what reaches an agent that asked something and then
+  // stopped waiting, and it lived only in memory: a daemon restarting between
+  // the answer and that agent's next activation lost it outright. The answer
+  // stayed ledgered and correct, and check_in, hook_poll and the wake path all
+  // saw nothing, so the agent waited for news that had already happened.
+  //
+  // THE ASKER NEVER CHECKS IN between the answer and the restart. That is the
+  // whole scenario, and getting it wrong is how the first version of this probe
+  // reported a working fix as broken: a check_in there delivers the notice and
+  // moves the watermark past it, so the restart then correctly owes nothing.
+  const curious = textOf(await tool(dev, "register",
+    { name: "curious", description: "asks and leaves", nonce: "n-curious-e2e" }))
+  const oracle = textOf(await tool(dev, "register",
+    { name: "oracle", description: "answers", nonce: "n-oracle-e2e" }))
+  await tool(dev, "check_in", { token: curious.token })
+  const asked = textOf(await tool(dev, "send", {
+    token: curious.token, to: "oracle", type: "question",
+    body: "which branch should this land on", deadline_s: 600,
+  }))
+  await tool(dev, "respond", {
+    token: oracle.token, msg_serial: asked.serial ?? asked.msg_serial,
+    disposition: "answer", body: "main",
+  })
+
+  await restart(dev, devBin)
+
+  const back = textOf(await tool(dev, "check_in", { token: curious.token }))
+  const updates = JSON.stringify(back.agent_updates ?? [])
+  check("an answer survives the board restarting before the asker hears it",
+    (back.agent_updates ?? []).length > 0,
+    `agent_updates=${updates}: the answer is in the ledger and nothing will ` +
+    `tell the agent that asked`)
+  check("and the rebuilt notice still says who answered and how to read it",
+    updates.includes("oracle") && updates.includes("read_mail"), updates.slice(0, 240))
 } catch (e) {
   failures++
   console.log(`\n  \x1b[31m✗ suite threw\x1b[0m. ${e}`)

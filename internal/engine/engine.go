@@ -84,6 +84,12 @@ type Engine struct {
 	// the same way. Ephemeral for the same reason: it is delivery bookkeeping,
 	// and the decision it feeds is recorded in the sweep op.
 	announceTries map[string]int
+	// hinted records the sessions that have already been offered a reattach
+	// pointer, so each is offered it exactly once. Keyed by the harness's
+	// session id, which is the only identifier an unresolved session has: it
+	// is not in state, by definition, because being in state is what "resolved"
+	// means. See reattachHint for why once is the whole budget.
+	hinted map[string]time.Time
 
 	// Work-overlap scoring (SPEC-CHANNELS.md). Guarded by its own mutex rather
 	// than the loop: Predict runs OFF the writer goroutine, because a model that
@@ -119,6 +125,7 @@ type Engine struct {
 	// wakers is how the board REACHES an agent that is not running. Distinct
 	// from `wake` above, which is only the policy for extending a turn.
 	wakers wakers
+	peers  peerCache
 
 	// matchStatus is why matching did or did not do anything, so a declaration
 	// never comes back silently ambiguous. See matchstatus.go.
@@ -189,7 +196,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 	if len(history) > 0 {
 		ring = history[0]
 	}
-	return &Engine{
+	e := &Engine{
 		ring: ring,
 		ops:  make(chan request), subs: make(chan subReq), unsubs: make(chan chan core.Event),
 		state: st, led: led, prober: prober,
@@ -198,14 +205,37 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 		streams:  map[chan core.Event]bool{}, seen: map[string]time.Time{},
 		turnEnded:    map[string]time.Time{},
 		announceSent: map[string]time.Time{}, announceTries: map[string]int{},
-		wokeFor: map[string]time.Time{},
+		wokeFor: map[string]time.Time{}, hinted: map[string]time.Time{},
 	}
+	// HERE, not in the daemon, so nobody has to remember.
+	//
+	// Blocking notices are engine-ephemeral and were created only by live event
+	// processing, so a restart between an approval and the asker's next turn
+	// boundary lost it: the effect stayed ledgered and the agent was never told.
+	// A derived view is allowed to be ephemeral only if something rebuilds it,
+	// and putting that in the one constructor means an embedder or a test cannot
+	// get an engine that has skipped it.
+	e.rebuildBlockingNotices()
+	return e
 }
 
 // Run drives the loop until ctx is done. Call in exactly one goroutine.
 func (e *Engine) Run(ctx context.Context) {
 	e.boot(time.Now())
 	e.reconcileBlobs() // startup reconcile: drop crash orphans (A4.1)
+	// SYNCHRONOUS, and before the loop serves anything.
+	//
+	// The wake gate reads a cache and refuses when it is cold, because finding
+	// the sockets a harness publishes costs a directory read and a bounded `ps`
+	// per candidate, which must never happen on the writer loop. Priming in a
+	// goroutine left a window where an event could arrive first, be refused
+	// before any cooldown or deferral state existed, and never be reconsidered:
+	// the first socket wake of a daemon's life, lost outright. Found by the
+	// pre-release review.
+	//
+	// Affordable because every probe behind it is bounded, so this is a startup
+	// pause measured in milliseconds rather than an unbounded wait on `ps`.
+	e.primePeerSessions()
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	reconcileTick := time.NewTicker(30 * time.Second)
@@ -215,7 +245,8 @@ func (e *Engine) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-reconcileTick.C:
-			e.reconcileBlobs() // delete evicted/orphan blob files off-thread
+			e.reconcileBlobs()       // delete evicted/orphan blob files off-thread
+			go e.primePeerSessions() // sessions come and go; keep the cache warm
 		case req := <-e.ops:
 			if req.fn != nil {
 				res := req.fn()
@@ -263,7 +294,7 @@ func (e *Engine) Run(ctx context.Context) {
 // durable coordination checkpoint is within one TTL; the rest transition now,
 // ledgered, healed later by wake if the agent lives.
 func (e *Engine) boot(now time.Time) {
-	op := &core.Op{Kind: core.OpSweep}
+	op := &core.Op{Kind: core.OpSweep, PurgeMail: true}
 	for id, l := range e.state.Agents {
 		if l.Status != core.StatusActive {
 			continue
@@ -286,6 +317,14 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// caller's to assert. Checked below, after the actor is known.
 	op.ClaimVerified = false
 	op.AdoptAuthorised = false
+
+	// Registrations minted by THIS version restore a recovered agent's nonce;
+	// ops already on disk do not, and must not start to. Set at ingress and
+	// carried into the ledger, so replay applies the decision that was made
+	// rather than the one this binary would make today. See Op.RestoreNonce.
+	if op.Kind == core.OpRegister {
+		op.RestoreNonce = true
+	}
 
 	// Ingress-only validation. Deliberately NOT inside Apply: Apply is also the
 	// fold that replays the ledger, so a rule added there binds history
@@ -345,8 +384,21 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		if !e.mayClaimSession(claimed, op.Token) {
 			op.SessionAlias = ""
 		}
+		// STATED: the caller named this session itself. Recorded so a later
+		// claim cannot take it away. See Op.SessionGuessed.
+		op.SessionGuessed = false
 	}
 	if op.SessionAlias == "" {
+		// ANYTHING SET BELOW IS A GUESS, AND THIS LINE IS THE WHOLE REPAIR.
+		//
+		// It was missing. The reclaim rule, its test and a changelog entry all
+		// shipped while nothing ever set this, so every inferred binding was
+		// recorded as STATED and the rightful session was refused its own id
+		// exactly as before. The test constructed the flag by hand and so tested
+		// the decision while bypassing the wiring that feeds it. Found by the
+		// pre-release review, which is the only thing that looked at the two
+		// together.
+		op.SessionGuessed = true
 		switch op.Kind {
 		case core.OpRegister, core.OpUpdate:
 			if op.Agent != nil {
@@ -427,6 +479,10 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	}
 
 	var actor *core.Agent
+	// Set when this register had no nonce and one was made for it, so the
+	// response can hand it over. An agent that is never told its own recovery
+	// credential is an agent nobody can ever reattach to.
+	mintedNonce := false
 	if !system {
 		switch op.Kind {
 		case core.OpRegister:
@@ -435,6 +491,11 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 				return nil, err
 			}
 			op.NewToken = tok
+			minted, err := defaultToPersistent(op)
+			if err != nil {
+				return nil, err
+			}
+			mintedNonce = minted
 			// The fleet knows which trees it works in, so matching can index
 			// them without anybody configuring a path.
 			if op.Agent != nil {
@@ -484,7 +545,20 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		return nil, err
 	}
 
+	// EVERY op this build writes says which semantics it was written under.
+	//
+	// Stamped at ingress and carried into the ledger, so replay applies a
+	// v0.0.7 repair to v0.0.7 ops and leaves older ones exactly as they were
+	// folded when they were written. See Op.V7Semantics: two fixes this cycle
+	// changed what an EXISTING op does, which rewrites history and is the one
+	// hazard this repository has paid for repeatedly.
+	op.V7Semantics = true
+
 	if err := e.refuseClaimWhenCoordinatorExists(op); err != nil {
+		return nil, err
+	}
+
+	if err := e.refuseStealingAnotherThreadsSession(op); err != nil {
 		return nil, err
 	}
 
@@ -564,6 +638,24 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	// HAND OVER A MINTED NONCE, or it protects nothing and strands the agent.
+	//
+	// The nonce is the only credential that survives a restart: it is what
+	// reattaches an agent to its own mailbox, and without it a persistent row is
+	// one nobody can ever become again. Minting one and keeping it secret would
+	// manufacture that orphan on every registration.
+	//
+	// Only when it was minted. Echoing back a nonce the caller chose tells them
+	// nothing and puts a secret they already hold into one more transcript.
+	// Only when the fold actually USED it, which it reports by returning it: a
+	// registration that reattached or resumed already had a credential, and the
+	// minted one was discarded.
+	if mintedNonce && res != nil && res["nonce"] != nil {
+		res["nonce_hint"] = "KEEP THIS. You did not send a nonce, so one was made for " +
+			"you: it is the only credential that survives your process. Register again " +
+			"with the same name and this nonce to come back as yourself, with your " +
+			"mailbox and claims. Without it a new session is a stranger to this row."
+	}
 	// After the apply, never before it. Holding the secret is not sufficient:
 	// core still refuses an ephemeral or closed claimant, and a single-use claim
 	// spent on a refusal leaves the board with no coordinator and no way to
@@ -637,7 +729,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// only push that reaches an agent whose harness has no hooks, and the one
 	// that still works when the hooks are there and cannot resolve it.
 	if actor != nil && res != nil && op.Kind != core.OpAckBoard {
-		if w := e.waiting(actor.ID); w != "" {
+		if w := e.waiting(actor.ID, now); w != "" {
 			res["waiting"] = w
 		}
 	}
@@ -762,7 +854,10 @@ func (e *Engine) touchDurable(l *core.Agent, now time.Time) {
 func (e *Engine) sweep(now time.Time) {
 	// Anything found before the board had anybody on it. See flushFaults.
 	e.flushFaults()
-	op := &core.Op{Kind: core.OpSweep, GiveUpAnnounce: e.exhaustedAnnouncements()}
+	op := &core.Op{
+		Kind: core.OpSweep, PurgeMail: true,
+		GiveUpAnnounce: e.exhaustedAnnouncements(),
+	}
 	for id, l := range e.state.Agents {
 		if l.Status != core.StatusActive {
 			continue
@@ -1069,6 +1164,120 @@ func matchingHint(st MatchStatus) string {
 	return lead + st.Hint
 }
 
+// refuseStealingAnotherThreadsSession stops an agent claiming a session id that
+// is already somebody else's THREAD.
+//
+// `register` and `bind_session` both take a caller-supplied session_id, and the
+// fold wrote it down unconditionally. Downstream, wakeFor turns a UUID-shaped
+// session id into the thread argument of the operator's `[wake.exec]` command.
+// So an agent that knew another Codex thread's UUID could assert it, and the
+// board would then resume THAT thread on the victim's behalf, and hook
+// resolution for the victim became ambiguous into the bargain. Found by the
+// pre-release review, which reproduced it against a clean HEAD.
+//
+// THREAD-SHAPED IDS ONLY, and that narrowness is the whole design rather than
+// timidity. Session ids are deliberately SHARED in the common case: the stdio
+// bridge derives `host-<ppid>` from the harness process, so every agent
+// registering through one bridge presents the same id, on purpose, and
+// mcpstdio_session.go argues for that at length. A uniqueness rule would have
+// refused the second agent in every ordinary harness. What must not be shared
+// is the narrower thing that becomes authority: looksLikeThreadID is exactly
+// the test wakeFor applies before treating an id as a thread to resume, so it
+// is the test applied here. One resolver, one answer, which is the lesson the
+// coordinator guard above records.
+//
+// AT INGRESS, never in the fold, for the same reason as that guard: Apply
+// replays the ledger, so refusing here refuses new callers and leaves boards
+// that already recorded such a binding able to boot.
+//
+// Rebinding your own id is fine, and so is taking one from an agent that is
+// closed or archived: AgentBySession already skips those, because a retired
+// agent has no thread left to resume.
+func (e *Engine) refuseStealingAnotherThreadsSession(op *core.Op) error {
+	if op.Kind != core.OpRegister && op.Kind != core.OpBindSession {
+		return nil
+	}
+	if !looksLikeThreadID(op.SessionID) {
+		return nil
+	}
+	holder := e.state.AgentBySession(op.SessionID)
+	if holder == nil {
+		return nil
+	}
+	// The caller, when it has one. A register that reattaches by nonce resolves
+	// to the same agent, and re-asserting your own thread is not theft.
+	if self := e.state.AgentByToken(op.Token); self != nil && self.ID == holder.ID {
+		return nil
+	}
+	if op.Kind == core.OpRegister && e.registerLandsOn(op, holder) {
+		return nil // genuinely reattaching to that row, not minting a sibling
+	}
+	// A HOLDER THAT HAS STOPPED ANSWERING IS NOT THE LIVE THREAD.
+	//
+	// Closed and archived rows were already skipped, by AgentBySession, because
+	// a retired agent has no thread left to resume. Dormant and stale were not,
+	// so one row that went quiet held its session id against the session that
+	// actually owns it, permanently: the rightful caller was refused and handed
+	// a hint naming register-with-your-nonce, which is a call only the OTHER
+	// agent can make. There was no way out that the refused party could take.
+	//
+	// Measured on this project's own board: 29 lifecycle hooks from working
+	// sessions, none resolving to any agent, the claim guard allowing every edit
+	// and no mail ever injected, because the one session that could have
+	// registered was refused its own id by a row dormant for days.
+	//
+	// Nothing about mail moves. The old row keeps its mailbox, its history and
+	// its claims; only where a WAKE is delivered changes, and a dormant agent
+	// was not receiving those anyway. An ACTIVE holder still wins: two live
+	// agents claiming one thread is a genuine conflict, not stale state.
+	if holder.Status != core.StatusActive {
+		op.SessionTakenFrom = holder.ID
+		return nil
+	}
+	return &core.Error{
+		Code: "E_SESSION_TAKEN",
+		Msg:  "session id " + op.SessionID + " is already held by agent " + holder.ID,
+		Hint: "that agent is ACTIVE and answering, so this id is in use. Register " +
+			"without a session_id and Dibs will bind yours when your harness " +
+			"reports it; if that agent is you returning, register with the same " +
+			"name and your nonce, which reattaches you to it. If it is stale, it " +
+			"can call update(release_session: true), or a human can prune it",
+	}
+}
+
+// registerLandsOn reports whether this register will resolve TO the holder
+// rather than mint a sibling beside it.
+//
+// This used to ask only whether the names matched, and a name is public. So the
+// bypass was: send the victim's NAME, the victim's thread id, and a fresh nonce
+// of your own. The name matched, the guard stood aside, and then the fold took
+// neither reattachment branch, because the nonce was not the victim's, and
+// created a sibling holding the victim's thread. Two live agents on one thread:
+// hook lookup ambiguous, and waking the sibling resumes the victim. The guard
+// let through exactly the thing it exists to stop, and my own regression test
+// missed it because its attacker used a DIFFERENT name.
+//
+// The hint that guard prints has always said "the same name and your nonce".
+// The nonce is the credential; this now checks it.
+//
+// The question is deliberately "will the fold land on this row", not "is this
+// caller entitled", because the harm is the SIBLING. A register that resolves
+// to the holder binds no new thread and steals nothing.
+func (e *Engine) registerLandsOn(op *core.Op, holder *core.Agent) bool {
+	if op.Nonce != "" {
+		// Reattachment by credential: the nonce index is what the fold uses.
+		return e.state.Nonces[op.Nonce] == holder.ID
+	}
+	// And the fold's session-only reattach, which needs no nonce and applies
+	// only to a row that HAS no nonce. SECURITY.md already describes such an
+	// agent as reclaimable by anyone who learns its session id, deliberately,
+	// because the alternative is that an agent which lost its context can never
+	// recover. Refusing it here would break that recovery without closing
+	// anything: that path lands on the holder, so no second binding appears.
+	return holder.Nonce == "" && holder.Name == op.Name &&
+		(holder.Status == core.StatusActive || holder.Status == core.StatusStale)
+}
+
 // refuseClaimWhenCoordinatorExists closes a claim the board has outgrown.
 //
 // The claim file is minted at startup when no coordinator exists, and nothing
@@ -1105,4 +1314,54 @@ func (e *Engine) refuseClaimWhenCoordinatorExists(op *core.Op) error {
 		}
 	}
 	return nil
+}
+
+// defaultToPersistent settles an unstated agent kind, and mints the credential
+// that kind needs.
+//
+// AT INGRESS, NEVER IN THE FOLD. `Apply` defaults an empty kind to ephemeral and
+// has to go on doing so forever: this ledger contains registrations written when
+// that was the rule, and moving the default into Apply would replay every one of
+// them as persistent. The op records what was decided, so replay never re-decides
+// it. Same discipline as V7Semantics, arrived at from the other direction: this
+// one needs no flag precisely because the decision travels in a field that was
+// already there.
+//
+// WHY THE DEFAULT FLIPPED. Ephemeral means: swept to `stale` when the session
+// ends rather than `dormant`, no durable mailbox, and no nonce, which is the
+// only credential that recovers an identity. So an agent that took the default
+// could not park and come back, could not be woken, and its mail died with its
+// process. That is the entire product, opted out of silently, by every agent
+// that did not know to say otherwise.
+//
+// It was invisible from every angle at once. Registration succeeded identically,
+// the board looked right, and the evidence was self-erasing: counting the kinds
+// of the agents still ON the board says nobody uses ephemeral, because ephemeral
+// agents are precisely the ones that are no longer there. Found when a test
+// agent registered twice in one afternoon and had evaporated both times, and
+// then a wake resolved to the thread it had been running in and reached an
+// identity with an empty mailbox, which truthfully reported "no mail".
+//
+// A MINTED NONCE BEATS NO NONCE. Persistent requires one, and an agent that
+// brought none would otherwise be refused. Minting it here and returning it is
+// the same trust as the token this function just made: same channel, same
+// caller, one more secret to keep. The alternative is an agent nobody can ever
+// reattach to, which this board has had, and which `adopt_agent` exists to clean
+// up after.
+func defaultToPersistent(op *core.Op) (minted bool, err error) {
+	if op.AgentKind == "" {
+		op.AgentKind = core.KindPersistent
+	}
+	if op.AgentKind != core.KindPersistent || op.Nonce != "" {
+		return false, nil
+	}
+	nonce, err := newSecret()
+	if err != nil {
+		return false, err
+	}
+	// THE CANDIDATE FIELD. Writing this into op.Nonce tells the fold the caller
+	// is presenting a credential, which disqualifies the session_id reattach
+	// path and turns every returning agent into a sibling.
+	op.MintedNonce = nonce
+	return true, nil
 }

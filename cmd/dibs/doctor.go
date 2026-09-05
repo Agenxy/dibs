@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/humanauth"
 	"github.com/agenxy/dibs/internal/liveness"
 	"github.com/agenxy/dibs/internal/notify"
@@ -223,6 +224,7 @@ func (d *diagnosis) run(verbose bool) error {
 	checkHarnessConfigs(sec, addr(), ok, warn, bad)
 	checkPanelBuild(client, sec, ok, warn, d.prose)
 	checkMatching(client, sec, ok, warn)
+	checkWakeRoutes(dir, boardOrNil(), ok, warn)
 	checkHooks(client, sec, ok, bad, warn)
 	checkLedgerAndBoard(dir, ok, bad, warn)
 	checkGit(verbose, ok, bad)
@@ -280,10 +282,35 @@ func earlyDoctorResult(problems, warnings int) error {
 	return nil
 }
 
-// secretPattern matches a Dibs local secret as it appears in a harness config:
-// 64 hex characters. Used to tell "this config embeds a secret" from "this
-// config uses the stdio bridge", which embeds none.
-var secretPattern = regexp.MustCompile(`\b[0-9a-f]{64}\b`)
+// secretPattern matches a Dibs local secret WHERE DIBS PUTS ONE: as the value
+// of the X-Dibs-Local header, or as a bearer token. Used to tell "this config
+// embeds a secret" from "this config uses the stdio bridge", which embeds none.
+//
+// SCOPED TO THE HEADER, not to any 64 hex characters in the file. A harness
+// config holds every MCP server that harness has, and other people's servers
+// carry their own credentials and hashes. This matched a bare 64-hex run
+// anywhere in the file, so the SHA-256 in an unrelated server's
+// NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S was read as Dibs's secret, found not
+// to be the current one, and reported as: "codex config has a STALE secret,
+// that harness sees ZERO Dibs tools", against a codex install that was
+// correctly configured on the stdio bridge and working.
+//
+// Two things make that worse than a wrong line. The advice is "run
+// `dibs mcp-config` and re-copy the block", which would replace a working stdio
+// configuration; and the comment on the branch below already records this
+// exact class being fixed once, because a diagnostic that cries wolf is one
+// people learn to ignore. Found in live use, against a real config.
+var secretPattern = regexp.MustCompile(
+	`(?i)(?:x-dibs-local["']?\s*[:=]\s*["']?|authorization["']?\s*[:=]\s*["']?bearer\s+)([0-9a-f]{64})`)
+
+// embeddedSecrets returns the Dibs secrets a config carries, if any.
+func embeddedSecrets(body string) []string {
+	var out []string
+	for _, m := range secretPattern.FindAllStringSubmatch(body, -1) {
+		out = append(out, m[1])
+	}
+	return out
+}
 
 // mcpURL matches the endpoint a harness config points a Dibs server at, so a
 // config written for ANOTHER daemon can be told apart from a stale one.
@@ -394,7 +421,7 @@ func checkHarnessConfigs(sec, addr string, ok reportFn, warn, bad fixFn) {
 		// false positive fired on the first real run of this tool, against a
 		// perfectly healthy Claude Desktop config, and a diagnostic that cries
 		// wolf is one people learn to ignore.
-		found := secretPattern.FindAllString(string(body), -1)
+		found := embeddedSecrets(string(body))
 		switch {
 		case len(found) == 0:
 			ok(c.name + " config uses the stdio bridge (no embedded secret to go stale)")
@@ -418,6 +445,50 @@ func checkHarnessConfigs(sec, addr string, ok reportFn, warn, bad fixFn) {
 					"Run `dibs mcp-config` and re-copy the block")
 		}
 	}
+}
+
+// checkWakeRoutes says which way this board can actually reach a stopped agent.
+//
+// There are two, and they are not equals. `[wake.exec]` starts a process and
+// the daemon sees its exit status, so a wake either happened or it did not.
+// The session socket needs no configuration and is BEST EFFORT: the receiving
+// harness decides whether to accept a peer message and sends no receipt, so a
+// notice that is held looks exactly like one that was read.
+//
+// This check exists because the difference was invisible. Measured on the
+// machine this is developed on: notices delivered to an idle live session,
+// every write succeeding, and nothing arriving, because a Claude Code session
+// in bypassPermissions mode holds peer messages for its human. The board
+// reported healthy throughout. An operator running an unattended fleet is
+// running exactly that mode, and should be told that the only route they have
+// is the one that cannot be confirmed.
+func checkWakeRoutes(dir string, b *boardView, ok reportFn, warn fixFn) {
+	cfg, err := boardconfig.Load(dir)
+	if err != nil {
+		warn("cannot read the board configuration, so wake coverage is unknown",
+			"fix "+filepath.Join(dir, "dibs.toml")+" and run this again: "+err.Error())
+		return
+	}
+	if n := len(cfg.Wake.Exec); n > 0 {
+		// COVERAGE, NOT COUNT.
+		//
+		// This used to stop at "1 wake command(s) configured" and report it as
+		// a tick. On the board it was written against, that one command covered
+		// three of thirty-one agents: twelve Claude Code agents had no
+		// `[wake.exec]` entry of their own and could not be woken at all, and
+		// nothing anywhere said so. A health check that confirms you wrote some
+		// configuration, without asking what it covers, is the same failure as
+		// a wake that reports success and reaches nobody.
+		reportWakeCoverage(cfg.Wake.Exec, b, dir, ok, warn)
+		return
+	}
+	warn("no wake command is configured, so the only route is best effort",
+		"the harness session socket needs no setup and is tried first, but the "+
+			"receiving session decides whether to accept a peer message and sends "+
+			"no receipt: a Claude Code session in bypassPermissions mode HOLDS it "+
+			"for its human, which is what an unattended fleet runs in. Nothing "+
+			"will report a wake that was held. Add a [wake.exec.<harness>] block "+
+			"to "+filepath.Join(dir, "dibs.toml")+" for a route this daemon can confirm")
 }
 
 func checkMatching(client *http.Client, sec string, ok reportFn, warn fixFn) {
@@ -646,13 +717,32 @@ func checkLedgerAndBoard(dir string, ok reportFn, bad, warn fixFn) {
 // wantServer is the id a Claude Code plugin hook must address: plugin:<plugin>:<server>.
 const wantServer = "plugin:dibs:dibs"
 
+// codexServer is what a Codex hook names: the server directly, no plugin
+// prefix, which is the convention of the harness that reads it.
+const codexServer = "dibs"
+
+// serverIDFor is the id a hook in THIS file has to address.
+//
+// The two shipped layouts are two harnesses: Claude Code reads
+// `<plugin>/hooks/hooks.json` and addresses `plugin:<plugin>:<server>`; Codex
+// reads a `hooks.json` at the root of its config directory and addresses the
+// server directly. Comparing both against one spelling is how doctor came to
+// report the correct Codex hook as broken.
+func serverIDFor(file string) string {
+	if filepath.Base(filepath.Dir(file)) == "hooks" {
+		return wantServer
+	}
+	return codexServer
+}
+
 func checkPluginsMatchDaemon(c *http.Client, secret string, served map[string]bool, ok reportFn, warn fixFn) {
 	wanted, misaddressed := scanShippedHooks()
 	for id, file := range misaddressed {
 		warn("a shipped hook is addressed to a server that does not exist",
-			file+" names "+id+", but this plugin publishes "+wantServer+". A hook pointed "+
-				"at an unknown server never runs and reports nothing: mail is not injected "+
-				"and the claim guard does not fire. Reinstall the plugin to pick up the fix")
+			file+" names "+id+", but that plugin publishes "+serverIDFor(file)+". A hook "+
+				"pointed at an unknown server never runs and reports nothing: mail is not "+
+				"injected and the claim guard does not fire. Reinstall the plugin to pick "+
+				"up the fix")
 	}
 	if len(wanted) == 0 {
 		return // not running from a checkout; nothing to compare
@@ -664,8 +754,14 @@ func checkPluginsMatchDaemon(c *http.Client, secret string, served map[string]bo
 		}
 		missing = append(missing, tool)
 	}
-	if len(missing) == 0 && len(misaddressed) == 0 {
-		ok("shipped hooks name tools this daemon serves, on the server it publishes")
+	if len(missing) == 0 {
+		if len(misaddressed) == 0 {
+			ok("shipped hooks name tools this daemon serves, on the server it publishes")
+		}
+		// A misaddressed hook has already been reported above, with its own
+		// remedy. Falling through here printed a second warning listing the
+		// tools this daemon does not serve, with the list empty, which reads as
+		// a fault with no content and sends the reader looking for one.
 		return
 	}
 	sort.Strings(missing)
@@ -1123,7 +1219,18 @@ func scanShippedHooks() (wanted, misaddressed map[string]string) {
 	tool := regexp.MustCompile(`"tool"\s*:\s*"([a-z_]+)"`)
 	server := regexp.MustCompile(`"server"\s*:\s*"([^"]+)"`)
 	for _, root := range roots {
-		matches, _ := filepath.Glob(filepath.Join(root, "*", "hooks", "hooks.json"))
+		// BOTH LAYOUTS, for the reason internal/mcp/required_test.go carries at
+		// length: Codex reads a hooks.json at the root of its config directory,
+		// not the nested Claude Code path, so scanning only the nested one left
+		// the Codex plugin's hooks unexamined while doctor printed the all-clear.
+		var matches []string
+		for _, pat := range [][]string{
+			{root, "*", "hooks", "hooks.json"},
+			{root, "*", "hooks.json"},
+		} {
+			found, _ := filepath.Glob(filepath.Join(pat...))
+			matches = append(matches, found...)
+		}
 		for _, f := range matches {
 			raw, err := os.ReadFile(f) // #nosec G304 -- a repo path from a glob
 			if err != nil {
@@ -1140,8 +1247,17 @@ func scanShippedHooks() (wanted, misaddressed map[string]string) {
 			// never runs, so mail injection and the claim guard were off with a
 			// tick beside them. Found when a coordinator holding two unread
 			// messages, one a request with a deadline, was never woken.
+			// THE EXPECTED ID DEPENDS ON THE LAYOUT, because the two harnesses
+			// address servers differently. A Claude Code plugin hook names
+			// `plugin:<plugin>:<server>`; Codex names the server directly. When
+			// this scanner learned to read both layouts it kept comparing every
+			// file against the Claude Code spelling, so `dibs doctor` reported
+			// the correct shipped Codex hook as addressed to a server that does
+			// not exist, and told the operator to reinstall the plugin, which
+			// cannot fix a file that is already right.
+			want := serverIDFor(f)
 			for _, m := range server.FindAllStringSubmatch(string(raw), -1) {
-				if m[1] != wantServer {
+				if m[1] != want {
 					misaddressed[m[1]] = f
 				}
 			}
@@ -1187,4 +1303,167 @@ func isJoinedBoard(dir string) bool {
 		}
 	}
 	return true
+}
+
+// suggestedWake is the command that resumes a thread, per harness we know.
+//
+// SUGGESTION ONLY. Dibs does not run any of these unless the operator puts one
+// in their own `dibs.toml`: rule 5 is that the argv comes from the operator's
+// config, and a coordination service that starts paid agent turns nobody asked
+// for would be helping itself to somebody's money. What was missing is not
+// consent, it is the twenty minutes of reading needed to find out what to
+// write, and that part costs nothing to give away.
+//
+// Both were measured on this machine before being printed: `claude --resume`
+// keeps full thread context and resolves a session by UUID from any directory,
+// and `codex exec resume` needs to be run inside the agent's own directory,
+// which the daemon now does.
+var suggestedWake = map[string]string{
+	"claude code": `[wake.exec."claude code"]` + "\n" +
+		`argv = ["claude", "--resume", "{thread}", "-p", "{message}"]`,
+	"codex": `[wake.exec.codex]` + "\n" +
+		`argv = ["codex", "exec", "resume", "{thread}", "{message}"]`,
+}
+
+// reportWakeCoverage says how many agents on THIS board the configured wake
+// commands can actually reach.
+//
+// Persistent agents only. An ephemeral agent ends with its session and is not
+// something anybody expects to wake; counting it as uncovered would report a
+// fault on every correctly configured board, and a check that cries wolf is
+// one people stop reading.
+func reportWakeCoverage(exec map[string]boardconfig.WakeExec, b *boardView, dir string, ok reportFn, warn fixFn) {
+	have := map[string]bool{}
+	for h := range exec {
+		have[strings.ToLower(h)] = true
+	}
+	if b == nil {
+		// Say what is true and no more: the commands exist, and whether they
+		// cover this board could not be established. Passed in rather than
+		// fetched here, so the decision can be tested without a daemon: the
+		// first version called the network from inside the check and the unit
+		// test silently measured the developer's own live board.
+		ok(fmt.Sprintf("%d wake command(s) configured (board unreachable, so "+
+			"coverage is unknown)", len(exec)))
+		return
+	}
+	covered, missing := wakeCoverage(b, have)
+	total := covered
+	for _, n := range missing {
+		total += n
+	}
+	if len(missing) == 0 {
+		ok(fmt.Sprintf("%d wake command(s) covering all %d persistent agent(s): "+
+			"a wake either runs or reports why", len(exec), total))
+		return
+	}
+	names := make([]string, 0, len(missing))
+	for h := range missing {
+		names = append(names, fmt.Sprintf("%s (%d)", h, missing[h]))
+	}
+	sort.Strings(names)
+	uncovered := total - covered
+	fix := "these agents can only be reached while their session is still " +
+		"running, which is the case a wake exists for. Add to " +
+		filepath.Join(dir, "dibs.toml") + ":"
+	suggested := 0
+	for _, h := range sortedKeys(missing) {
+		if sug, known := suggestedWake[h]; known && !have[h] {
+			fix += "\n\n" + sug
+			suggested++
+		}
+	}
+	if suggested == 0 {
+		// Nothing to paste: every harness here already HAS a command, and what
+		// these agents lack is a thread it could name. Saying "add this block"
+		// under a block they already have is the kind of advice that makes an
+		// operator distrust the rest of the report.
+		fix = "these agents have a wake command for their harness but no thread " +
+			"id for it to resume, so the command cannot name them. An agent gets " +
+			"one by registering through its harness's Dibs plugin rather than by " +
+			"hand: see plugins/ for the one it runs in"
+	}
+	warn(fmt.Sprintf("%d of %d persistent agent(s) have no wake route: %s",
+		uncovered, total, strings.Join(names, ", ")), fix)
+}
+
+// sortedKeys is the map order this file needs twice: stable, so a health report
+// does not reorder itself between runs.
+func sortedKeys(m map[string]int) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// wakeable reports whether this row is something a wake command could ever
+// resume, so coverage is measured against agents and not against Dibs itself.
+//
+// The person is not a thread, and neither is the daemon's own row or the web
+// board's. Left in, they showed as two harnesses with "no wake route" on a
+// correctly configured board, which is the shape of finding that teaches an
+// operator to skim past this check. A guard that reports a defect which is not
+// there is worse than no guard.
+func wakeable(a boardAgent) bool {
+	if a.Human {
+		return false
+	}
+	if a.Agent == nil {
+		return true // no metadata at all is a real gap, not one of ours
+	}
+	switch strings.ToLower(a.Agent.Surface) {
+	case "daemon", "web":
+		return false
+	}
+	return true
+}
+
+// boardOrNil is the board if this daemon will give us one, and nil otherwise.
+//
+// doctor's checks each take what they need as a value, so that a check is a
+// decision over data rather than a thing that talks to the network.
+func boardOrNil() *boardView {
+	b, err := boardSnapshot()
+	if err != nil {
+		return nil
+	}
+	return b
+}
+
+// wakeCoverage counts, per harness, the agents on this board that a configured
+// wake command could actually start, and the ones it could not.
+//
+// Split from the reporting because the counting is the part with the rules in
+// it, and a function that both decides and renders is one nobody can test
+// either half of.
+func wakeCoverage(b *boardView, have map[string]bool) (covered int, missing map[string]int) {
+	missing = map[string]int{}
+	for _, a := range b.Agents {
+		if a.Kind != "persistent" || !wakeable(a) {
+			continue
+		}
+		h := ""
+		if a.Agent != nil {
+			h = strings.ToLower(a.Agent.Harness)
+		}
+		// BOTH HALVES. A command exists for this harness AND there is a thread
+		// for it to name. Either alone is not a route: `wakeRoute` refuses the
+		// exec path without a UUID-shaped thread id, so an agent counted
+		// covered on harness alone can still be unreachable, which is the
+		// optimism this whole check was rewritten to remove.
+		if have[h] && a.Resumable {
+			covered++
+			continue
+		}
+		switch {
+		case h == "":
+			h = "(no harness recorded)"
+		case have[h]:
+			h += " (no resumable thread)"
+		}
+		missing[h]++
+	}
+	return covered, missing
 }

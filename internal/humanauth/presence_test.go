@@ -66,22 +66,36 @@ func TestTheHelperIsNotTakenFromPATH(t *testing.T) {
 // The distinction is the caller's context versus our own 90s deadline: the
 // timeout IS a decline (nobody answered a prompt that really appeared), the
 // cancellation is not.
+// IT USED TO SKIP, in both gate modes, which is why this is the decision rather
+// than Check. Check refuses before reaching the branch when no helper is
+// installed beside the test binary, and neither the ordinary run nor `-tags
+// dibdev` arranges one: reverting Abandoned to Declined left every gate green.
+// A skipped test is not a weaker test, it is an absent one, and this was the
+// only thing protecting the distinction.
 func TestACancelledCallerIsAbandonedNotDeclined(t *testing.T) {
-	if !Available() {
-		t.Skip("no presence helper installed beside the test binary")
+	failed := errors.New("the helper process died")
+	cancelled := context.Canceled
+	expired := context.DeadlineExceeded
+
+	if v, _ := verdictFor(failed, cancelled, nil); v != Abandoned {
+		t.Errorf("a cancelled caller is reported as %v, want Abandoned. Nobody was "+
+			"asked, so nothing can be said about what they wanted", v)
 	}
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	verdict, _ := Check(ctx, "probe")
-	if verdict == Verified {
-		t.Fatal("a cancelled check reported a verified human")
+	// The caller's cancellation outranks our own deadline: both are set when a
+	// cancelled call also runs out the clock, and only one of them is a decision
+	// about a person.
+	if v, _ := verdictFor(failed, cancelled, expired); v != Abandoned {
+		t.Errorf("a cancelled caller whose deadline also passed is reported as %v, "+
+			"want Abandoned", v)
 	}
-	if verdict == Declined {
-		t.Error("a cancelled caller was reported as a human decline: nobody was asked, " +
-			"so nothing can be said about what they wanted")
+	// Our deadline alone IS a decline: a prompt really appeared and nobody
+	// answered it.
+	if v, _ := verdictFor(failed, nil, expired); v != Declined {
+		t.Errorf("an unanswered prompt is reported as %v, want Declined", v)
 	}
-	if verdict != Abandoned {
-		t.Errorf("verdict = %v, want Abandoned", verdict)
+	// And a clean run is still a person.
+	if v, _ := verdictFor(nil, nil, nil); v != Verified {
+		t.Errorf("a successful check is reported as %v, want Verified", v)
 	}
 }
 

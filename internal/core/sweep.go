@@ -228,7 +228,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 		}})
 	}
 
-	gcEvents, pruned := s.gc(now)
+	gcEvents, pruned := s.gc(now, op.PurgeMail)
 	evs = append(evs, gcEvents...)
 	evs = append(evs, s.gcBlobs(now, 0)...) // TTL/cap blob eviction (A5)
 
@@ -255,7 +255,10 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 // terminal messages; unconsumed terminal beyond per-agent retention (advancing
 // the recipient's loss watermark); archived agents past retention (with their
 // nonces and dedup records); dedup records past the lesser-of bound.
-func (s *State) gc(now time.Time) ([]Event, bool) {
+// purgeMail is the sweep op's own decision, threaded in rather than assumed:
+// see Op.PurgeMail. A sweep from before that field existed keeps the semantics
+// it was written under, because replay runs today's fold over yesterday's ops.
+func (s *State) gc(now time.Time, purgeMail bool) ([]Event, bool) {
 	var evs []Event
 	// pruned records mutation that emits no event. See applySweep: a deletion the
 	// ledger never hears about is a deletion replay will not repeat.
@@ -287,6 +290,22 @@ func (s *State) gc(now time.Time) ([]Event, bool) {
 		l := s.Agents[agent]
 		for _, m := range evict {
 			delete(s.Messages, m.Serial)
+			// A DELETION IS A CHANGE EVEN WHEN NOBODY IS LEFT TO TELL.
+			//
+			// This relied on the event below, which is only emitted when the
+			// recipient row still exists. Mail can outlive its recipient: a
+			// historical `purge_mail:false` sweep removes the row and leaves the
+			// mail, deliberately, so retention later evicts messages with l ==
+			// nil. Those deletions emitted no event and set nothing, so the
+			// sweep returned changed:false, the engine did not ledger it, and
+			// the next restart replayed a board where the messages were still
+			// there. Deleted from memory, alive on disk, back after a bounce.
+			//
+			// `pruned` exists for exactly this: mutation that emits no event.
+			// The two other sites that delete already set it; this one did not.
+			// Found by the pre-release review, reproduced with two orphaned
+			// terminal messages and a retention of one.
+			pruned = true
 			if l != nil && m.Serial >= l.TruncatedBefore {
 				l.TruncatedBefore = m.Serial + 1
 			}
@@ -333,16 +352,54 @@ func (s *State) gc(now time.Time) ([]Event, bool) {
 		// Only mail TO the purged agent. What it SENT belongs to whoever
 		// received it, and deleting that would take a live agent's inbox with
 		// somebody else's retirement.
-		mail := 0
+		//
+		// WHAT IT SENT IS RETIRED WITH IT, because the address is what gets
+		// reused. Keeping those envelopes pointing at a released id meant the
+		// next agent to take the name appeared to have written them, and a
+		// response routes by m.From: answering the purged agent's question
+		// delivered the answer to a stranger, and told the responder it was
+		// delivered. The apology below for "the asker closed its agent" reads
+		// s.Agents[m.From], which a live replacement makes non-nil, so the one
+		// path that would have caught it was the path being defeated.
+		//
+		// A suffix outside slug's alphabet, so no name can ever be turned into
+		// it: agentID only ever emits [a-z0-9-]. The provenance survives and
+		// says what happened to the sender, and s.Agents lookup returns nil,
+		// which Gone() reports as gone.
+		//
+		// AND ONLY WHEN THE OP SAYS SO, which is what keeps this out of the past.
+		//
+		// This is a change to an EXISTING fold. Replay applies today's Apply to
+		// yesterday's ops, so a sweep recorded by v0.0.6, which purged the row
+		// and left the mail, was replayed here and deleted it: a later ack that
+		// v0.0.6 accepted and ledgered then referred to nothing, returned
+		// E_NO_MESSAGE, and the daemon refused its own ledger on upgrade.
+		// Reproduced before this line existed.
+		//
+		// AGENTS.md states the rule for a new RULE in Apply and it is the same
+		// hazard for changed BEHAVIOUR: record the decision in the Op. A sweep
+		// written by this version carries the flag; one written by any earlier
+		// version does not, and keeps exactly the semantics it had. Nothing can
+		// be done about mail that was already inherited on those boards, and
+		// pretending otherwise costs the board its ability to start.
+		if !purgeMail {
+			evs = append(evs, Event{Type: "agent.purged", Agent: id})
+			continue
+		}
+		mail, retired := 0, 0
 		for serial, m := range s.Messages {
-			if m.To == id {
+			switch {
+			case m.To == id:
 				delete(s.Messages, serial)
 				mail++
+			case m.From == id:
+				m.From = RetiredSender(id)
+				retired++
 			}
 		}
 		evs = append(evs, Event{
 			Type: "agent.purged", Agent: id,
-			Data: map[string]any{"messages_dropped": mail},
+			Data: map[string]any{"messages_dropped": mail, "messages_retired": retired},
 		})
 	}
 
@@ -463,10 +520,15 @@ func (s *State) Board() map[string]any {
 // to agents that had joined none of them: the same defect as the agent.post
 // event, on a wider surface, and reachable without even asking for it.
 //
-// Nothing consumed the body. The board renderer shows counts (unacked,
-// abandoned, blocked); no template, script or Go caller read `said[].body`. It
-// was cost with no reader, and the text still belongs to the agent: members and
-// subscribers get it from read_space, which checks who is asking.
+// The board renderer DOES consume the body, which this used to deny, and the
+// denial is how it went unnoticed that removing the field left the operator's
+// transcript rendering a sender and an acknowledgement state above an empty
+// span: a conversation with the conversation taken out, under a comment below
+// promising bodies rather than a count. The text still belongs to the agents:
+// members and subscribers get it from read_space, which checks who is asking,
+// and the OPERATOR gets it from /api/messages, which needs the page key, where
+// the same argument already put decrypted mail. The page joins the two by
+// serial. Found by the pre-release review.
 func (s *State) spaceSaid(id string) []map[string]any {
 	var all []*Announcement
 	for _, a := range s.Announcements {
@@ -678,6 +740,19 @@ func sortedKeys[K cmp.Ordered, V any](m map[K]V) []K {
 // their names had been discarded. The original survives in Agent.Name; the
 // registration result now says when the id owes nothing to it, and the board
 // shows the name so a human can still tell who they are looking at.
+// retiredSuffix marks a sender whose agent has been purged.
+//
+// `~` is deliberately outside slug's alphabet: agentID emits only [a-z0-9-],
+// so this address can never be handed to a registering agent, which is the
+// whole point of it.
+const retiredSuffix = "~purged"
+
+// RetiredSender is the address a purged agent's outbound mail is left under.
+func RetiredSender(id string) string { return id + retiredSuffix }
+
+// IsRetiredSender reports whether this address belonged to a purged agent.
+func IsRetiredSender(id string) bool { return strings.HasSuffix(id, retiredSuffix) }
+
 func agentID(s *State, name string) string {
 	base := slug(name)
 	if base == "" {

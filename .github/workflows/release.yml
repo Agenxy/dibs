@@ -22,6 +22,16 @@ permissions:
 # readable version; the SHA is what is enforced.
 
 jobs:
+  # THE REGISTRY ENTRY, AFTER THE RELEASE AND ONLY IF IT SUCCEEDED.
+  #
+  # It used to listen for the same tag push this workflow does, which orders
+  # nothing: it could publish to the official MCP Registry while the gate below
+  # was still running, or after it had failed and produced no release at all.
+  # `needs:` is the only thing that makes "after" true, and a called workflow is
+  # how that happens without a second copy of the publish steps.
+  #
+  # Declared here rather than at the bottom because job order in this file is
+  # not execution order; `needs` is.
   release:
     # macOS, matching the CI gate. The binaries are CGO_ENABLED=0 and
     # cross-compiled, so the host only decides where the build ran, but it is
@@ -87,3 +97,18 @@ jobs:
       - name: say what the cask still needs
         if: success()
         run: go run ./tools/casknote
+
+  registry:
+    needs: release
+    uses: ./.github/workflows/publish-mcp.yml
+    # A called workflow gets only what the caller grants. id-token proves the
+    # io.github.agenxy namespace is ours; nothing here writes to the repository.
+    permissions:
+      id-token: write
+      contents: read
+    with:
+      # The tag itself; tools/stampserver strips the leading v. The release
+      # that just succeeded is the one being announced, and taking the version
+      # from anywhere else is how the registry ends up naming one nobody
+      # released.
+      version: ${{ github.ref_name }}

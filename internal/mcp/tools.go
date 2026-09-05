@@ -71,10 +71,11 @@ var toolDefs = func() []map[string]any {
 					"reads as nonsense, and work goes in declare. update() changes it later"),
 				"description": str("one line on your standing purpose, e.g. 'reviewing PRs for the release'"),
 				"pid":         num("your process id, for crash detection (optional)"),
-				"kind": map[string]any{"type": "string", "enum": []string{"ephemeral", "persistent"}, "description": "ephemeral " +
-					"(default): session-scoped; persistent: standing role with a durable mailbox"},
-				"nonce": str("random id >=128-bit that YOU generate: a secret, and KEEP IT. Required " +
-					"for persistent agents, advised for all"),
+				"kind": map[string]any{"type": "string", "enum": []string{"persistent", "ephemeral"}, "description": "persistent " +
+					"(default): a mailbox that outlives your process, so you can be woken. " +
+					"ephemeral: dies with the session"},
+				"nonce": str("random id >=128-bit that YOU generate: a secret, and KEEP IT. The only " +
+					"credential that survives your process; omitted, one is minted"),
 				"session_id": str("your harness session id: lets lifecycle hooks find your " +
 					"mailbox, so mail is pushed to you rather than polled for. Filled in for " +
 					"you when omitted; it names the harness process, so it dies with it"),
@@ -157,6 +158,11 @@ var toolDefs = func() []map[string]any {
 				"provider":    str("who serves that model"),
 				"effort":      str("reasoning effort, if your harness exposes it"),
 				"surface":     str("where you run: cli, claude-desktop, ide"),
+				"cwd": str("the directory you work in, if it was wrong at register or you " +
+					"have moved: your project and repository are re-derived from it"),
+				"release_session": map[string]any{"type": "boolean", "description": "give up " +
+					"EVERY session bound to you: the primary, its aliases, and any the " +
+					"daemon inferred. Use it when the board wakes the wrong agent"},
 			}, "token"),
 		},
 		{

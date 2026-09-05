@@ -429,9 +429,19 @@ func unitPinning(dir string) string {
 		if err != nil {
 			continue
 		}
-		if strings.Contains(string(body), dir) {
+		// EXACT TOKENS, not a substring. `strings.Contains` accepted a unit for
+		// `~/.dibs-old` as the unit for `~/.dibs`, and `dibs upgrade` rewrites
+		// and reloads whatever this returns: another board's service, edited and
+		// restarted under it. `--adopt-dir` makes `-old` a natural neighbour, so
+		// the two most likely to collide are the two most likely to be present.
+		//
+		// unitNames is the same question asked properly, a few hundred lines
+		// away in this package, with the reasoning and the tests that prove a
+		// substring is wrong. It was written for this and not wired here.
+		if unitNames(path, dir) {
 			return path
 		}
+		_ = body // read above only to skip a unit that cannot be opened
 	}
 	return ""
 }

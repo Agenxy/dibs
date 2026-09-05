@@ -856,18 +856,19 @@ type toolArgs struct {
 	AgentRef string `json:"agent"`
 	// Into is the agent RECEIVING something, distinct from AgentRef, which is
 	// the one being acted on.
-	Into        string   `json:"into"`
-	Limit       int      `json:"limit"`
-	Topic       string   `json:"topic"`
-	Exclusive   bool     `json:"exclusive"`
-	Score       float64  `json:"score"`
-	Threshold   float64  `json:"threshold"`
-	ScorerID    string   `json:"scorer_id"`
-	ScorerVer   string   `json:"scorer_version"`
-	Evidence    []string `json:"evidence"`
-	Auto        bool     `json:"auto"`
-	Parent      string   `json:"parent"`
-	ParentNonce string   `json:"parent_nonce"`
+	Into           string   `json:"into"`
+	Limit          int      `json:"limit"`
+	Topic          string   `json:"topic"`
+	Exclusive      bool     `json:"exclusive"`
+	ReleaseSession bool     `json:"release_session"`
+	Score          float64  `json:"score"`
+	Threshold      float64  `json:"threshold"`
+	ScorerID       string   `json:"scorer_id"`
+	ScorerVer      string   `json:"scorer_version"`
+	Evidence       []string `json:"evidence"`
+	Auto           bool     `json:"auto"`
+	Parent         string   `json:"parent"`
+	ParentNonce    string   `json:"parent_nonce"`
 }
 
 // argErr turns a json decode failure into something an agent can act on.
@@ -1061,6 +1062,27 @@ func blobContent(res core.Result) []map[string]any {
 	}
 }
 
+// noteIfNobodyCanWake adds the pull-only warning when core said nothing.
+//
+// Only when core said nothing: a dormant recipient already gets a better
+// sentence from sleepingNote, and two warnings about one delivery is how an
+// agent learns to skim the one that mattered.
+//
+// Out of line because run() is the busiest function in this file and sits on a
+// complexity ceiling, which this tipped over when it was three inline branches.
+func (s *Server) noteIfNobodyCanWake(ctx context.Context, to string, res core.Result) core.Result {
+	if res == nil {
+		return res
+	}
+	if _, said := res["note"]; said {
+		return res
+	}
+	if n := s.eng.PullOnlyNoteFor(ctx, to); n != "" {
+		res["note"] = n
+	}
+	return res
+}
+
 func (s *Server) run(
 	ctx context.Context, name string, a *toolArgs,
 	params json.RawMessage, sessionClient *clientInfoJSON,
@@ -1079,6 +1101,32 @@ func (s *Server) run(
 	// the session this agent is running in, alongside the `host-<ppid>` the
 	// bridge derives. The engine decides whether it may be bound.
 	op.SessionAlias = clientThreadID(params)
+	// AND THE BRIDGE'S OWN ANSWER, when the harness volunteered no thread.
+	//
+	// The engine falls back to INFERRING a session by directory when no alias
+	// arrives (announcedSession). That inference is a guess: it takes an id
+	// announced from this cwd recently and assumes the agent registering now is
+	// that session. It skips ids an agent already holds, which is not the same
+	// thing as ids that are still in USE. So when an agent is swept while its
+	// session keeps running, the id it held becomes unheld but stays live, and
+	// the next agent to register in that directory inherits a LIVE session's id
+	// and starts receiving its wake notifications.
+	//
+	// Measured on this project's own board: an ephemeral row was swept, the
+	// session behind it was still announcing, and the next agent in that
+	// directory ended up resolving that session's hooks to itself. One agent's
+	// unread list was rendered into another agent's context for hours, and three
+	// agents spent a night deriving why.
+	//
+	// There is no need to guess. The stdio bridge already sends the session it
+	// is running inside on EVERY call, and a caller's own id needs no inference.
+	// So this is preferred over the directory guess and the guess is left for
+	// callers that send neither. Still vetted, not trusted: the engine puts this
+	// through mayClaimSession like any other claim, so naming somebody else's
+	// session is refused rather than believed.
+	if op.SessionAlias == "" {
+		op.SessionAlias = metaSession(params)
+	}
 	switch name {
 	case "register":
 		if strings.TrimSpace(a.Name) == "" {
@@ -1095,6 +1143,26 @@ func (s *Server) run(
 	case "update":
 		op.Kind, op.Name, op.Description = core.OpUpdate, a.Name, a.Description
 		op.Agent = selfReported(a)
+		op.ReleaseSession = a.ReleaseSession
+		// A CORRECTED cwd, which had no way in at all.
+		//
+		// register short-circuits a same-nonce retry inside one TTL and returns
+		// the original result without applying anything: right for a retried
+		// registration, and silently a no-op for a correction spelled the same
+		// way. PID got an escape hatch here (no_process) and cwd did not, so the
+		// one field the matching hint BLAMES when a path is unreadable was the
+		// one field an agent could not fix without abandoning its identity.
+		// Reported from a live board by an agent that tried.
+		//
+		// Resolved at ingress like register's, so the derived repo fields cannot
+		// drift away from the cwd they describe, and so the fold never calls
+		// Git. Only when one is actually supplied: this is the impure step.
+		if strings.TrimSpace(a.CWD) != "" {
+			if op.Agent == nil {
+				op.Agent = &core.AgentInfo{}
+			}
+			resolveLocation(op.Agent, a.CWD)
+		}
 		// Omitting `description` means "leave it alone", not "erase it".
 		//
 		// The tool invites branch-only and title-only updates, and decoding into
@@ -1234,8 +1302,14 @@ func (s *Server) run(
 		return nil, fmt.Errorf("unknown tool %q", name)
 	}
 	res, err := s.eng.Do(ctx, op)
-	if err != nil || name != "register" {
+	if err != nil {
 		return res, err
+	}
+	if name == "send" {
+		return s.noteIfNobodyCanWake(ctx, a.To, res), nil
+	}
+	if name != "register" {
+		return res, nil
 	}
 	// A first registration is the one moment an agent has just told us what
 	// harness it is running, and the only moment the answer is news. Reattaching

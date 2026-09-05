@@ -725,6 +725,48 @@ try {
   check("a notify offers Acknowledge", (await actionsFor(mail.n.msg_serial)) === "Acknowledge",
     await actionsFor(mail.n.msg_serial))
 
+  // WHAT THE MESSAGES SAY, not only that they are there.
+  //
+  // The panel fetches privately with its own token precisely so the human can
+  // read bodies the model never sees, and it rendered the REDACTED copy: every
+  // card kept its type, its actions and its Approve button and showed no body.
+  // All 88 checks here passed against that, because they counted messages and
+  // read action labels and never looked at the text. A request card with an
+  // Approve button and no reason is the worst version of this surface: it asks
+  // somebody to decide with the deciding part removed.
+  //
+  // BOTH CARRIERS, which is what a private fetch actually delivers: `_meta`
+  // holds the redacted, normalised copy that travels past the model, and the
+  // content beside it holds the readable answer. The board result above is
+  // deliberately NOT detail:true, so it has no bodies to render and cannot show
+  // this either way.
+  await page.evaluate(() => (window as any).__deliver({
+    _meta: { "com.dibs/panel": { view: "mail", inbox: { messages: [
+      { serial: 501, type: "request", from: "peer", to: "reviewer",
+        body: "", grant: "coordinator", state: "open" },
+      { serial: 502, type: "question", from: "peer", to: "reviewer",
+        body: "", state: "open" },
+    ] } } },
+    content: [{ type: "text", text: JSON.stringify({ inbox: { messages: [
+      { serial: 501, type: "request", from: "peer", to: "reviewer",
+        body: "Approve the redesign?", grant: "coordinator", state: "open" },
+      { serial: 502, type: "question", from: "peer", to: "reviewer",
+        body: "Does the panel render this?", choices: ["yes", "no"], state: "open" },
+    ] } }) }],
+  }))
+  await panel.locator('.msg[data-serial="501"]').waitFor({ timeout: 5000 }).catch(() => {})
+  const readable = (await panel.locator(".msg").allInnerTexts()).join(" | ")
+  check("a request's reason is readable, which is what Approve is deciding about",
+    readable.includes("Approve the redesign?"), readable.slice(0, 300))
+  check("a question's body is readable in the panel",
+    readable.includes("Does the panel render this?"), readable.slice(0, 300))
+
+  // Put the seeded mail back, so everything after this sees the fixture it
+  // expects rather than the two crafted cards above.
+  await page.evaluate((r) => (window as any).__deliver(r), boardResult)
+  await panel.locator(`.msg[data-serial="${mail.q.msg_serial}"]`).waitFor({ timeout: 5000 })
+
+
   // ── actions, through the SDK, to the ledger ──────────────────────────────
   await panel.locator(`.act[data-serial="${mail.q.msg_serial}"]`, { hasText: "Answer" }).click()
   const box = panel.locator(`#reply-${mail.q.msg_serial}`)

@@ -64,6 +64,9 @@ func Admit(op *Op, lim Limits) error {
 	if err := checkGrantRequest(op); err != nil {
 		return err
 	}
+	if err := checkGrantRole(op); err != nil {
+		return err
+	}
 	// Choices only mean something on a QUESTION.
 	//
 	// Admit bounded them and never asked what they were attached to, and Apply

@@ -100,7 +100,14 @@ func announcedSession(children map[string]Child, st *core.State, cwd string, now
 		// Already somebody's. Adopting it would move another agent's mail
 		// delivery onto this one, which is the disclosure this whole path is
 		// careful about.
-		if st != nil && st.AgentBySession(sid) != nil {
+		//
+		// SessionSpokenFor, not AgentBySession: that one skips archived and
+		// closed rows, correctly, because mail must not be delivered to an
+		// agent that is gone. Asked here it meant a swept row left a still-live
+		// session's id looking free, and the next agent to register in that
+		// directory inherited it along with the hooks and mail behind it. An id
+		// that has ever had an owner is not free, however that owner ended.
+		if st != nil && st.SessionSpokenFor(sid) {
 			continue
 		}
 		if found != "" {
@@ -153,5 +160,46 @@ func (e *Engine) mayClaimSession(sid, token string) bool {
 		return true // unclaimed
 	}
 	// Already ours is fine and idempotent; already somebody else's is not.
-	return e.state.AgentByToken(token) == holder
+	if e.state.AgentByToken(token) == holder {
+		return true
+	}
+	// A HOLDER THAT HAS STOPPED ANSWERING IS NOT THE LIVE THREAD.
+	//
+	// THE SAME RULE AS refuseStealingAnotherThreadsSession, which grew it first
+	// and alone. Two implementations of one rule is this repository's most
+	// expensive recurring bug and it happened again here: that guard learned
+	// that a dormant row cannot be occupying the session it holds, and this one,
+	// four hundred lines away and reached by a different call, went on refusing.
+	// The fix is written twice because the two paths answer different questions
+	// (may this op proceed / may this id be bound); what they must agree about
+	// is who counts as the live thread.
+	//
+	// Measured on this project's own board: `codex-root-2`, dormant since a date
+	// three weeks past, still held the thread a live agent was running in. Both
+	// ends broke at once. A wake for the dormant row started the thread and
+	// reached whoever was in it now, who read their own empty mailbox and
+	// truthfully reported no mail; and the live occupant, refused its own id,
+	// held no thread at all and so could never be woken by anything.
+	//
+	// Nothing about mail moves. The old row keeps its mailbox, its history and
+	// its claims; only where a wake is delivered changes, and a dormant agent
+	// was not receiving those anyway. An ACTIVE holder still wins: two live
+	// agents claiming one thread is a real conflict, not stale state.
+	if holder.Status != core.StatusActive {
+		return true
+	}
+	// UNLESS THE HOLDER ONLY GUESSED IT.
+	//
+	// A binding the daemon inferred by directory is an assumption, not a claim,
+	// and it is wrong in exactly one situation: two sessions share a directory
+	// and the agent holding the id was swept while its session kept running. The
+	// agent that actually IS this session states the id on every call it makes;
+	// the one that inherited it never said anything about it.
+	//
+	// So a stated claim takes an inferred binding back, and takes nothing from
+	// an agent that stated its own. Without this the mis-binding is permanent:
+	// the rightful session is refused its own id and the holder has no reason to
+	// notice it is holding one. That was the state of this project's own board
+	// for hours, with one agent's mail announced into another's context.
+	return holder.GuessedSession(sid)
 }

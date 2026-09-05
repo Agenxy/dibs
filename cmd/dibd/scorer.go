@@ -566,7 +566,7 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 		root, err := repoRootOf(ctx, cwd)
 		if err != nil {
 			slog.Info("work-overlap matching skipped a tree it cannot read",
-				"cwd", cwd, "err", err, "likely", tccHint(cwd))
+				"cwd", cwd, "err", err, "likely", tccHint(cwd, err))
 			// That AGENT's tree, not the board's feature.
 			//
 			// This set the global phase to Off, so one agent starting in a
@@ -576,7 +576,7 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 			// here correctly.
 			eng.NoteUnreadableTree(cwd,
 				"an agent registered from "+cwd+" but the daemon cannot read it ("+
-					err.Error()+"). "+tccHint(cwd))
+					err.Error()+"). "+tccHint(cwd, err))
 			return
 		}
 
@@ -679,10 +679,23 @@ const gitDeadline = 4 * time.Minute
 // A launchd agent does not inherit the Full Disk Access granted to the app that
 // installed it, so a daemon started at login is refused ~/Desktop, ~/Documents
 // and ~/Downloads while the same binary run from a terminal reads them fine.
-// Every git call against such a path fails, which empties the project label and
-// leaves matching with nothing to index, and none of that names the cause.
-func tccHint(cwd string) string {
-	if runtime.GOOS != "darwin" || !protectedOnMacOS(cwd) {
+// Every git call against such a path blocks, which empties the project label
+// and leaves matching with nothing to index, and none of that names the cause.
+//
+// IT ALSO HAS TO MATCH THE FAILURE, not just the location. This chose the
+// advice by path alone, so a directory under ~/Desktop that simply has no .git
+// was told to move the checkout or grant the daemon Full Disk Access, with the
+// real answer, "not a git repository", sitting in the error text underneath.
+// Both remedies are heavier than the fix and one of them moves a working tree
+// for nothing. Reported by an agent that followed it.
+//
+// The distinguishing symptom is in the comment above: TCC makes git BLOCK, so
+// the failure is a deadline, not a fast refusal. A clean answer from git means
+// git ran, which means this is not the permission case.
+func tccHint(cwd string, err error) string {
+	blocked := errors.Is(err, context.DeadlineExceeded) ||
+		(err != nil && strings.Contains(err.Error(), "signal: killed"))
+	if runtime.GOOS != "darwin" || !protectedOnMacOS(cwd) || !blocked {
 		return "check the path exists and is a git checkout"
 	}
 	return "this is inside a macOS protected folder (Desktop, Documents, Downloads). " +

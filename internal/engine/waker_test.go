@@ -53,33 +53,33 @@ func TestMailForAnAgentThatIsNotRunningStartsTheOperatorsCommand(t *testing.T) {
 			"body": secretBody, "text": secretBody, "preview": secretBody,
 		},
 	}
-	argv, ok := e.wakeFor(l, core.MsgQuestion, ev)
+	plan, ok := e.wakeFor(l, core.MsgQuestion, ev)
 	if !ok {
 		t.Fatal("no wake for a dormant agent with a configured harness: the board " +
 			"cannot reach it, which is the defect this exists to fix")
 	}
-	if argv[0] != "codex" || argv[3] != "019ffe52-0eaf-7f60-81cc-6ab1298d76ec" {
+	if plan.argv[0] != "codex" || plan.argv[3] != "019ffe52-0eaf-7f60-81cc-6ab1298d76ec" {
 		t.Errorf("argv = %v: the wake must carry the HARNESS THREAD id. The bridge's "+
 			"host-<ppid> resolves to no thread, so a resume against it starts a "+
-			"process that finds nothing and the mail stays unread", argv)
+			"process that finds nothing and the mail stays unread", plan.argv)
 	}
 	// The BODY never goes on a command line. A wake says mail exists; the agent
 	// reads it over the authenticated channel with its own token, and mail is
 	// encrypted at rest for the same reason an argv is the wrong place for it:
 	// a command line is visible to every process on the machine.
-	joined := strings.Join(argv, " ")
+	joined := strings.Join(plan.argv, " ")
 	for _, leak := range []string{secretBody, "hunter2", "incident"} {
 		if strings.Contains(joined, leak) {
 			t.Errorf("argv = %v: it carries message content (%q). Every process on "+
 				"this machine can read a command line, and the operator's wake "+
-				"command is arbitrary code that may log its arguments", argv, leak)
+				"command is arbitrary code that may log its arguments", plan.argv, leak)
 		}
 	}
 	// And {message} was substituted with SOMETHING, or the check above passes
 	// for a wake that carries no message placeholder at all.
 	if !strings.Contains(strings.ToLower(joined), "board") {
 		t.Errorf("argv = %v: {message} carried nothing recognisable, so the "+
-			"body check above had nothing to be a check of", argv)
+			"body check above had nothing to be a check of", plan.argv)
 	}
 }
 
@@ -116,12 +116,12 @@ func TestAMessageCannotInfluenceWhatTheWakeCommandRuns(t *testing.T) {
 		Type: "message.sent", To: nasty,
 		Data: map[string]any{"msg_type": core.MsgRequest, "from": nasty},
 	}
-	argv, ok := e.wakeFor(l, core.MsgRequest, ev)
+	plan, ok := e.wakeFor(l, core.MsgRequest, ev)
 	if !ok {
 		t.Fatal("setup: no wake, so this proves nothing about what it would run")
 	}
-	if argv[0] != "codex" {
-		t.Errorf("the executable changed to %q: only the operator names that", argv[0])
+	if plan.argv[0] != "codex" {
+		t.Errorf("the executable changed to %q: only the operator names that", plan.argv[0])
 	}
 	// The hostile string may appear ONLY where a placeholder invited it, and
 	// only as one whole element: exec takes it as a single argument, and there
@@ -134,14 +134,14 @@ func TestAMessageCannotInfluenceWhatTheWakeCommandRuns(t *testing.T) {
 		invited[i] = strings.HasPrefix(a, "{")
 	}
 	seen := 0
-	for i, a := range argv {
+	for i, a := range plan.argv {
 		if strings.Contains(a, nasty) {
 			if !invited[i] {
-				t.Errorf("argv[%d] = %q took hostile input at a position the operator "+
-					"wrote literally: %v", i, a, argv)
+				t.Errorf("plan.argv[%d] = %q took hostile input at a position the operator "+
+					"wrote literally: %v", i, a, plan.argv)
 			}
 			if a != nasty {
-				t.Errorf("argv[%d] = %q: a substituted value must replace a WHOLE "+
+				t.Errorf("plan.argv[%d] = %q: a substituted value must replace a WHOLE "+
 					"element. Pasting it into a larger string is where quoting bugs "+
 					"live, and there is no shell here to blame for them", i, a)
 			}
@@ -149,12 +149,12 @@ func TestAMessageCannotInfluenceWhatTheWakeCommandRuns(t *testing.T) {
 		}
 	}
 	if seen == 0 {
-		t.Fatal("the hostile agent id reached no argv element at all, so this test " +
+		t.Fatal("the hostile agent id reached no plan.argv element at all, so this test " +
 			"inspected nothing. The command must contain the agent-derived " +
 			"placeholders for the check below to mean anything")
 	}
-	if len(argv) != 12 {
-		t.Errorf("argv = %v: substitution changed the shape of the command", argv)
+	if len(plan.argv) != 12 {
+		t.Errorf("argv = %v: substitution changed the shape of the command", plan.argv)
 	}
 }
 
@@ -206,7 +206,7 @@ func TestTheBoardDoesNotStartAnythingItDoesNotNeedTo(t *testing.T) {
 			Type: "message.sent", To: "live",
 			Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
 		})
-		if _, seen := en.wakers.last["live"]; seen {
+		if en.wakeSpent("live") {
 			t.Error("an agent that called the board a moment ago was woken: it will " +
 				"see this on its own next call, and starting a second activation " +
 				"for it is paying twice and interleaving two processes in one thread")
@@ -220,7 +220,7 @@ func TestTheBoardDoesNotStartAnythingItDoesNotNeedTo(t *testing.T) {
 			Type: "message.sent", To: "gone",
 			Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
 		})
-		if _, seen := en.wakers.last["gone"]; !seen {
+		if !en.wakeSpent("gone") {
 			t.Fatal("no agent in this engine can be woken at all, so the check above " +
 				"proves nothing about recency")
 		}
@@ -242,7 +242,7 @@ func TestTheBoardDoesNotStartAnythingItDoesNotNeedTo(t *testing.T) {
 			Type: "message.sent", To: "sleeper2",
 			Data: map[string]any{"msg_type": core.MsgNotify, "from": "someone"},
 		})
-		if _, woken := e.wakers.last["sleeper2"]; woken {
+		if e.wakeSpent("sleeper2") {
 			t.Error("a notify started the operator's wake command. Nobody is " +
 				"blocked on an FYI: it arrives at the agent's next activation " +
 				"and costs nothing, and spawning a process for one is what " +
@@ -255,7 +255,7 @@ func TestTheBoardDoesNotStartAnythingItDoesNotNeedTo(t *testing.T) {
 			Type: "message.sent", To: "sleeper2",
 			Data: map[string]any{"msg_type": core.MsgQuestion, "from": "someone"},
 		})
-		if _, woken := e.wakers.last["sleeper2"]; !woken {
+		if !e.wakeSpent("sleeper2") {
 			t.Fatal("a question did not wake the same agent either, so the check " +
 				"above proved nothing about the TYPE filter")
 		}
@@ -299,12 +299,12 @@ func TestTheWakeTargetsTheThreadTheHarnessCanActuallyResume(t *testing.T) {
 
 	t.Run("the alias is used when the primary is synthetic", func(t *testing.T) {
 		l := bridgeAgent("b", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
-		argv, ok := e.wakeFor(l, core.MsgQuestion, ev)
+		plan, ok := e.wakeFor(l, core.MsgQuestion, ev)
 		if !ok {
 			t.Fatal("no wake although the harness thread id is on the agent")
 		}
-		if argv[3] != "019ffe52-0eaf-7f60-81cc-6ab1298d76ec" {
-			t.Errorf("argv = %v: took the synthetic id over the real thread", argv)
+		if plan.argv[3] != "019ffe52-0eaf-7f60-81cc-6ab1298d76ec" {
+			t.Errorf("argv = %v: took the synthetic id over the real thread", plan.argv)
 		}
 	})
 }
@@ -331,7 +331,7 @@ func TestAnApprovalReachesTheSubprocessWake(t *testing.T) {
 			st.Agents = map[string]*core.Agent{"asker": l}
 
 			e.maybeWake(core.Event{Type: evType, To: "asker", Data: map[string]any{}})
-			if _, spent := e.wakers.last["asker"]; !spent {
+			if !e.wakeSpent("asker") {
 				t.Errorf("%s did not reach the wake path: the agent asked, stopped, "+
 					"and has no other way to learn the answer", evType)
 			}
@@ -361,7 +361,7 @@ func TestALeaseThatHasNotLapsedIsNotProofTheAgentIsRunning(t *testing.T) {
 		Type: "message.sent", To: "justStopped",
 		Data: map[string]any{"msg_type": core.MsgQuestion},
 	})
-	if _, spent := e.wakers.last["justStopped"]; !spent {
+	if !e.wakeSpent("justStopped") {
 		t.Error("an agent whose turn ended half an hour ago was treated as running " +
 			"because its lease had not lapsed: the message waits for a human")
 	}
@@ -380,7 +380,7 @@ func TestALeaseThatHasNotLapsedIsNotProofTheAgentIsRunning(t *testing.T) {
 		Type: "message.sent", To: "live",
 		Data: map[string]any{"msg_type": core.MsgQuestion},
 	})
-	if _, spent := e2.wakers.last["live"]; spent {
+	if e2.wakeSpent("live") {
 		t.Error("started a process for an agent that called Dibs a moment ago")
 	}
 }
@@ -412,11 +412,11 @@ func TestTheWakeResumesTheAgentsCurrentThreadAndNotAnOldOne(t *testing.T) {
 	// The order bindHarnessSession produces: appended, oldest first.
 	l.SessionAliases = []string{yesterday, earlier, now}
 
-	argv, ok := e.wakeFor(l, core.MsgQuestion, core.Event{})
+	plan, ok := e.wakeFor(l, core.MsgQuestion, core.Event{})
 	if !ok {
 		t.Fatal("no wake for a dormant agent with three known threads")
 	}
-	got := argv[len(argv)-1]
+	got := plan.argv[len(plan.argv)-1]
 	if got == yesterday || got == earlier {
 		t.Fatalf("the wake resumes %s, which this agent left. Aliases are appended, "+
 			"so the CURRENT activation is the last one (%s): resuming an older thread "+
@@ -464,7 +464,7 @@ func TestAnAgentThatJustCalledInIsNotWokenOnTopOfItself(t *testing.T) {
 		Type: "message.sent", To: "working",
 		Data: map[string]any{"msg_type": core.MsgRequest, "from": "asker"},
 	})
-	if _, spent := e.wakers.last["working"]; spent {
+	if e.wakeSpent("working") {
 		t.Error("started a wake for an agent that called in two seconds ago. " +
 			"LastCoordination is a coalesced checkpoint and is stale on every " +
 			"healthy agent; e.seen is the authoritative one. Resuming a thread " +
@@ -480,7 +480,7 @@ func TestAnAgentThatJustCalledInIsNotWokenOnTopOfItself(t *testing.T) {
 		Type: "message.sent", To: "beforeBoot",
 		Data: map[string]any{"msg_type": core.MsgRequest, "from": "asker"},
 	})
-	if _, spent := e.wakers.last["beforeBoot"]; !spent {
+	if !e.wakeSpent("beforeBoot") {
 		t.Error("an agent with no e.seen entry and a two-hour-old checkpoint was " +
 			"treated as running: preferring e.seen must not mean ignoring the " +
 			"durable timestamp when there is nothing else")
@@ -550,7 +550,7 @@ func TestATurnThatEndedIsNotMistakenForARunningAgent(t *testing.T) {
 		Type: "message.sent", To: "stopped",
 		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
 	})
-	if _, spent := e.wakers.last["stopped"]; !spent {
+	if !e.wakeSpent("stopped") {
 		t.Error("no wake for an agent whose turn ended after its last call. " +
 			"Recent contact is a stand-in for \"is it running\", and Stop answers " +
 			"that question outright: treating the cooldown as proof of life " +
@@ -587,7 +587,7 @@ func TestATurnThatEndedIsNotMistakenForARunningAgent(t *testing.T) {
 				Type: "message.sent", To: "restarted",
 				Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
 			})
-			if _, spent := en.wakers.last["restarted"]; spent {
+			if en.wakeSpent("restarted") {
 				t.Errorf("%s did not retract the earlier Stop, so the board resumed a "+
 					"thread that is running right now. The model has not called Dibs "+
 					"in this turn yet, and it does not have to: the harness already "+
@@ -613,7 +613,7 @@ func TestATurnThatEndedIsNotMistakenForARunningAgent(t *testing.T) {
 		Type: "message.sent", To: "resumed",
 		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
 	})
-	if _, spent := e2.wakers.last["resumed"]; spent {
+	if e2.wakeSpent("resumed") {
 		t.Error("woke an agent that called in after its last stop: a finished turn " +
 			"is not a permanent verdict, and starting a second activation on top " +
 			"of a live one is what the recency check exists to prevent")
@@ -631,6 +631,21 @@ func TestATurnThatEndedIsNotMistakenForARunningAgent(t *testing.T) {
 //
 // The fix is not to remember; it is to have a way of building one that works.
 // Every wake test that goes through maybeWake uses this.
+// wakeSpent reports whether a wake has been recorded for this agent, under the
+// lock that guards it.
+//
+// maybeWake starts a GOROUTINE that writes these maps, so reading them bare
+// from the test goroutine is a data race between the test and the wake it just
+// caused. Every local run passed and CI went red once, which is how a race
+// behaves and why it took a release gate on somebody else's machine to show it.
+// The product locks correctly on both sides; the tests did not.
+func (e *Engine) wakeSpent(agent string) bool {
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	_, ok := e.wakers.last[agent]
+	return ok
+}
+
 func wakeEngine(t *testing.T, cmd WakeCommand) (*Engine, *core.State) {
 	t.Helper()
 	e := &Engine{}
@@ -680,7 +695,7 @@ func TestMaybeWakeOnAnEngineWithNoStateDoesNothingAtAll(t *testing.T) {
 		Type: "message.sent", To: "sleeper",
 		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
 	})
-	if _, spent := e.wakers.last["sleeper"]; !spent {
+	if !e.wakeSpent("sleeper") {
 		t.Error("wakeEngine does not produce an engine that can wake anybody, so " +
 			"every test built on it is as vacuous as the ones it replaced")
 	}
@@ -713,7 +728,7 @@ func TestAnAgentThatSignedOffIsNotResumed(t *testing.T) {
 				Type: "message.approved", Agent: "lael", To: "retired",
 				Data: map[string]any{"msg_serial": uint64(7)},
 			})
-			if _, spent := e.wakers.last["retired"]; spent {
+			if e.wakeSpent("retired") {
 				t.Errorf("the board resumed a %s agent. The answer it is being woken "+
 					"for was recorded as delivered:false because nobody will read it, "+
 					"and resuming a closed persistent identity walks it back to active: "+
@@ -730,7 +745,7 @@ func TestAnAgentThatSignedOffIsNotResumed(t *testing.T) {
 		Type: "message.approved", Agent: "lael", To: "here",
 		Data: map[string]any{"msg_serial": uint64(7)},
 	})
-	if _, spent := e.wakers.last["here"]; !spent {
+	if !e.wakeSpent("here") {
 		t.Fatal("no agent is woken by an approval at all, so the checks above say " +
 			"nothing about having signed off")
 	}
@@ -763,11 +778,11 @@ func TestAVerdictWakeCarriesWhoAnsweredAndWhatTheyDid(t *testing.T) {
 				Type: c.event, Agent: "lael", To: "asker",
 				Data: map[string]any{"msg_serial": uint64(7)},
 			}
-			argv, ok := e.wakeFor(l, "", ev)
+			plan, ok := e.wakeFor(l, "", ev)
 			if !ok {
 				t.Fatal("no wake for a verdict, so this proves nothing about its fields")
 			}
-			from, kind := argv[4], argv[6]
+			from, kind := plan.argv[4], plan.argv[6]
 			if from != "lael" {
 				t.Errorf("{from} = %q, want \"lael\": the responder is Event.Agent on a "+
 					"verdict, and reading only Data hands the operator's command an "+
@@ -904,7 +919,7 @@ func TestAWakeReturnsEvenWhenADescendantHoldsItsOutput(t *testing.T) {
 		// Short bounds: the property is that it comes back, not how long it
 		// waits before giving up.
 		done <- runWakeFor([]string{self, "-test.run=TestAWakeReturnsEvenWhenADescendantHoldsItsOutput"},
-			"holder", 500*time.Millisecond, 500*time.Millisecond)
+			"holder", "", 500*time.Millisecond, 500*time.Millisecond)
 	}()
 
 	select {
@@ -1029,7 +1044,7 @@ func TestTheDeferredRecheckWakesNobodyWhoNoLongerNeedsIt(t *testing.T) {
 		t.Fatal("setup: something is already blocking, so this proves nothing")
 	}
 	e.retryWakeDecision("quiet")
-	if _, spent := e.wakers.last["quiet"]; spent {
+	if e.wakeSpent("quiet") {
 		t.Error("the re-check started a wake for an agent nobody is waiting on")
 	}
 
@@ -1038,7 +1053,513 @@ func TestTheDeferredRecheckWakesNobodyWhoNoLongerNeedsIt(t *testing.T) {
 	gone.Status = core.StatusClosed
 	st.Agents["retired"] = gone
 	e.retryWakeDecision("retired")
-	if _, spent := e.wakers.last["retired"]; spent {
+	if e.wakeSpent("retired") {
 		t.Error("the re-check resumed an agent that has signed off")
+	}
+}
+
+// Mail arriving during a running wake is re-asked when that wake exits.
+//
+// The running branch excludes a second command, which is right: both are `codex
+// exec resume` against one thread. But it used to DISCARD the event, on the
+// reading that the command is this agent's activation and will read the mail.
+// It reads its inbox near the start of a turn the release bounds at two hours,
+// so anything arriving after that read was stranded until an unrelated event
+// happened to wake the agent again. A question could sit unanswered for a day
+// with the board reporting it delivered.
+//
+// Not a timer, which is the version that shipped and was wrong twice: firing
+// during the command starts a second one beside it, and on a command that never
+// reads mail it is a retry loop with a ninety-second fuse. The exit is the one
+// moment that has neither problem.
+//
+// The one-command-at-a-time test above cannot see any of this. It calls
+// wakeFinished by hand and then calls wakeFor again itself, so it never asks
+// what happened to the event that arrived while the command was running.
+func TestMailArrivingDuringAWakeIsReAskedWhenItExits(t *testing.T) {
+	e, st := wakeEngine(t, WakeCommand{
+		Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute,
+	})
+	l := bridgeAgent("busy", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	st.Agents["busy"] = l
+	ev := core.Event{
+		Type: "message.sent", To: "busy",
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	}
+
+	if _, ok := e.wakeFor(l, core.MsgQuestion, ev); !ok {
+		t.Fatal("no first wake, so there is no running command for a later message " +
+			"to arrive during: this test is not exercising what it names")
+	}
+	// A second question, while the first command is still going.
+	if _, ok := e.wakeFor(l, core.MsgQuestion, ev); ok {
+		t.Fatal("a second command started beside the first")
+	}
+
+	if owed := e.wakeFinished("busy"); !owed {
+		t.Fatal("the exit reports nothing owed, so mail that arrived during the " +
+			"command is discarded and the recipient stays asleep with somebody " +
+			"blocked on it, until an unrelated event happens to arrive")
+	}
+	// And it is owed ONCE: a burst is one re-check, not one per message.
+	if owed := e.wakeFinished("busy"); owed {
+		t.Error("the exit still reports mail owed after clearing it, which is a " +
+			"re-check per exit forever rather than per burst")
+	}
+}
+
+// And an exit with nothing new owes nothing.
+//
+// Without this, the check above passes against a wakeFinished that always
+// reports true, which would wake the agent again after every single command:
+// the retry loop the timer version was rejected for, moved to the exit.
+func TestAWakeThatExitsWithNoNewMailOwesNothing(t *testing.T) {
+	e, st := wakeEngine(t, WakeCommand{
+		Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute,
+	})
+	l := bridgeAgent("quiet", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	st.Agents["quiet"] = l
+	ev := core.Event{
+		Type: "message.sent", To: "quiet",
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	}
+	if _, ok := e.wakeFor(l, core.MsgQuestion, ev); !ok {
+		t.Fatal("no wake started")
+	}
+	if owed := e.wakeFinished("quiet"); owed {
+		t.Error("an exit with no message during the run still asks for another wake")
+	}
+}
+
+// The whole path: reading the inbox must not cancel the exit re-check.
+//
+// This is the ordering the re-check exists for, and the version that shipped
+// could not reach it. A wake starts; the woken agent calls Dibs to read its
+// inbox, which updates e.seen and makes it "recently in touch"; more blocking
+// mail arrives during the rest of a turn bounded at two hours. maybeWake
+// returned at the recency check, before anything recorded the arrival, so no
+// re-check was ever armed and the message waited for an unrelated event.
+//
+// THROUGH maybeWake, deliberately. The unit tests above call wakeFor directly
+// for both events, which skips the recency short-circuit entirely: they pass
+// against this defect, and did.
+func TestReadingTheInboxDoesNotCancelTheExitRecheck(t *testing.T) {
+	e, st := wakeEngine(t, WakeCommand{
+		Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute,
+	})
+	l := bridgeAgent("busy", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	st.Agents["busy"] = l
+	ev := core.Event{
+		Type: "message.sent", To: "busy",
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	}
+
+	// The first question starts a command, which is what makes this agent
+	// "running" for everything below.
+	if _, ok := e.wakeFor(l, core.MsgQuestion, ev); !ok {
+		t.Fatal("no first wake, so there is no running command: this test is not " +
+			"exercising the ordering it names")
+	}
+
+	// The woken agent reads its inbox. That is an authenticated call, so the
+	// board records it and the agent is now recently in touch.
+	e.seen["busy"] = time.Now()
+	if !e.recentlyInTouch(l) {
+		t.Fatal("setup: the agent is not recently in touch after calling Dibs, so " +
+			"the short-circuit this test is about would not fire anyway")
+	}
+
+	// A second question, later in the same turn: after the inbox read.
+	e.maybeWake(ev)
+
+	if owed := e.wakeFinished("busy"); !owed {
+		t.Fatal("the exit owes nothing, so mail that arrived after the running " +
+			"activation read its inbox is discarded. It waits for an unrelated event " +
+			"that may never come, while the board reports it delivered: exactly the " +
+			"case the exit re-check was added for")
+	}
+
+	// AND THE RE-CHECK ITSELF MUST GET PAST THE SAME SHORT-CIRCUIT.
+	//
+	// Stopping at "the exit owes a re-check" is where the first version of this
+	// test stopped, and it was green while production still lost the retry one
+	// hop later: retryWakeDecision asked recentlyInTouch before hasBlockingMail,
+	// and the agent is recently in touch precisely BECAUSE the wake it just
+	// finished called Dibs. The end-to-end recorder cannot see it either, since
+	// it never reads an inbox.
+	//
+	// So drive the decision, and assert the property rather than a side effect.
+	//
+	// NOT "a command started": the cooldown legitimately suppresses one here and
+	// defers it, so that assertion passes whatever this branch does, which is
+	// how the first version of this addition could not fail. What has to be true
+	// is that the agent stops counting as in touch, because the contact was its
+	// own finished turn. Everything downstream, including the deferred re-check
+	// that fires when the cooldown lapses, depends on that single answer.
+	e.state.Messages[1] = &core.Message{
+		Serial: 1, From: "asker", To: "busy",
+		Type: core.MsgQuestion, State: core.MsgStatePending,
+	}
+	// The two halves of what wakeExited does on the writer loop. Not wakeExited
+	// itself: it goes through query(), which sends on e.ops, nil on an engine
+	// with no running loop, so calling it here would block forever rather than
+	// fail. That trap is why the decisions are split from the plumbing.
+	e.noteWakeEnded("busy")
+	e.retryWakeDecision("busy")
+	if e.recentlyInTouch(l) {
+		t.Error("after its wake command exited, the agent still reads as recently in " +
+			"touch, on the strength of the inbox read of the turn that has just " +
+			"ended. Every later re-check returns at that test, so the mail waits for " +
+			"an unrelated event: the exit re-check exists for exactly this and cannot " +
+			"reach past it")
+	}
+}
+
+// And an agent that is genuinely working, with no wake running, is still left
+// alone.
+//
+// Without this the check above passes against a version that marks every
+// arrival regardless, which would re-check at the exit of a command that is not
+// running and, worse, remove the reason the recency short-circuit exists: an
+// agent at its own keyboard sees this message at its next turn boundary and
+// does not need a process started for it.
+func TestAWorkingAgentWithNoWakeRunningIsStillLeftAlone(t *testing.T) {
+	e, st := wakeEngine(t, WakeCommand{
+		Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute,
+	})
+	l := bridgeAgent("awake", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	st.Agents["awake"] = l
+	e.seen["awake"] = time.Now()
+
+	e.maybeWake(core.Event{
+		Type: "message.sent", To: "awake",
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	})
+
+	e.wakers.mu.Lock()
+	marked := e.wakers.arrived["awake"]
+	e.wakers.mu.Unlock()
+	if marked {
+		t.Error("an arrival was recorded for an agent with no wake running, so an " +
+			"exit that never happens owes a re-check, and a live agent working at " +
+			"its own keyboard is queued for a process it does not need")
+	}
+}
+
+// A failed wake with mail arriving during it does not leave a live timer.
+//
+// Two re-checks can be owed at once and they are armed by different code. A
+// failed command arms one for when its cooldown expires; mail that turned up
+// while it was running arms one for its exit. The exit runs first, and it
+// deleted the cooldown entry from the map WITHOUT stopping the timer, so the
+// orphan fired later and started a third command: against the promise, written
+// two lines from it, that a command which fails twice fails rather than looping.
+//
+// Existing tests isolate "mail arrived during a command" from "the command
+// failed". Neither can see this, because it only exists where they overlap.
+func TestAFailedWakeAndMailDuringItDoNotLeaveAnOrphanTimer(t *testing.T) {
+	e, st := wakeEngine(t, WakeCommand{
+		Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute,
+	})
+	l := bridgeAgent("busy", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	st.Agents["busy"] = l
+
+	// The failed command's cooldown re-check.
+	e.deferWakeLocked("busy", time.Hour)
+	e.wakers.mu.Lock()
+	armed := e.wakers.deferred["busy"]
+	e.wakers.mu.Unlock()
+	if armed == nil {
+		t.Fatal("setup: no cooldown re-check was armed, so there is no timer for the " +
+			"exit to orphan and this test is not exercising the overlap it names")
+	}
+
+	// The exit re-check, which supersedes it.
+	e.retryWakeDecision("busy")
+
+	e.wakers.mu.Lock()
+	_, stillMapped := e.wakers.deferred["busy"]
+	e.wakers.mu.Unlock()
+	if stillMapped {
+		t.Fatal("the exit re-check left its entry in the map")
+	}
+	// Stop reports false for a timer that has already fired or been stopped. It
+	// was armed for an hour and has not fired, so a true here means it was still
+	// live and would have started a third command.
+	if armed.Stop() {
+		t.Error("the superseded cooldown timer is still running. It fires after the " +
+			"cooldown and starts another command, so a wake command that is simply " +
+			"wrong costs three attempts and more on every round, which is the retry " +
+			"loop the deferral was carefully written to avoid")
+	}
+}
+
+// Mail arriving AFTER a wake has exited is not refused as "still working".
+//
+// The mirror of the case above, and the commoner one. A wake runs, the woken
+// agent reads its inbox (a call to Dibs, so it is recently in touch), the
+// command exits with nothing having arrived during it, and THEN a question
+// lands. maybeWake finds no running wake, finds the agent recently in touch on
+// the strength of a turn that has already ended, and returns without even
+// arming a deferred re-check. The message is stored, `send` reports it
+// delivered, and the recipient waits for a human.
+//
+// The fix is not another branch: the exit records that the turn ended, which is
+// simply true, and every later question about recency then answers correctly
+// whether or not mail happened to arrive while the command was running. Marking
+// only the arrived case is what left this ordering broken.
+func TestMailArrivingAfterAWakeExitsIsNotRefusedAsStillWorking(t *testing.T) {
+	e, st := wakeEngine(t, WakeCommand{
+		Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute,
+	})
+	l := bridgeAgent("done", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	st.Agents["done"] = l
+	ev := core.Event{
+		Type: "message.sent", To: "done",
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	}
+
+	if _, ok := e.wakeFor(l, core.MsgQuestion, ev); !ok {
+		t.Fatal("no first wake, so nothing below is about an exited command")
+	}
+	// The woken agent reads its inbox, then the command exits with nothing
+	// having arrived meanwhile.
+	e.seen["done"] = time.Now()
+	if owed := e.wakeFinished("done"); owed {
+		t.Fatal("setup: the exit owes a re-check, so this is the arrived-during case " +
+			"and not the one this test names")
+	}
+	e.noteWakeEnded("done")
+
+	// New mail, after all that.
+	if e.recentlyInTouch(l) {
+		t.Fatal("the agent still reads as recently in touch after its wake exited, so " +
+			"maybeWake returns before it can even arm a deferred re-check and the " +
+			"message waits for an unrelated event while the board reports it delivered")
+	}
+}
+
+// A retried wake names the work it is actually for.
+//
+// The retry passed a hard-coded question and a bare event, so `{type}` came out
+// as "question" and `{from}` as empty however the agent was actually blocked: a
+// request, a handoff, an approval. Both are documented operator configuration,
+// and this release made retries the common path rather than a corner, so a
+// command built on those placeholders was handed wrong arguments precisely
+// where the new behaviour lives.
+//
+// The verdict fix solved this for the immediate wake and stopped there; the
+// test for it never drives a retry, and the cooldown test uses only {thread}.
+func TestARetriedWakeNamesTheWorkItIsFor(t *testing.T) {
+	e, st := wakeEngine(t, WakeCommand{
+		Argv:     []string{"echo", "{type}", "{from}"},
+		Cooldown: time.Millisecond,
+	})
+	l := bridgeAgent("stuck", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	st.Agents["stuck"] = l
+
+	// A handoff, which is neither a question nor from the agent that would have
+	// been guessed.
+	st.Messages[9] = &core.Message{
+		Serial: 9, From: "dispatcher", To: "stuck",
+		Type: core.MsgHandoff, State: core.MsgStateDelivered,
+	}
+
+	kind, from := e.oldestBlocking("stuck")
+	if kind != core.MsgHandoff || from != "dispatcher" {
+		t.Fatalf("the outstanding work reads as (%q, %q), want (handoff, dispatcher): "+
+			"every retry substitutes these into the operator's command", kind, from)
+	}
+
+	// And the substitution actually carries them.
+	plan, ok := e.wakeFor(l, kind, core.Event{
+		Type: "wake.retry", To: "stuck", Agent: from,
+		Data: map[string]any{"msg_type": kind, "from": from},
+	})
+	if !ok {
+		t.Fatal("no command for the retry")
+	}
+	joined := strings.Join(plan.argv, " ")
+	if !strings.Contains(joined, "handoff") || !strings.Contains(joined, "dispatcher") {
+		t.Errorf("the retried command runs %q. {type} and {from} are documented "+
+			"placeholders, and a command told `question` from nobody acts on the "+
+			"wrong thing", joined)
+	}
+
+	// A blocking notice is not mail and must not borrow a message's vocabulary.
+	delete(st.Messages, 9)
+	if kind, from := e.oldestBlocking("stuck"); kind != "notice" || from != "" {
+		t.Errorf("with no blocking mail the retry names (%q, %q); a notice has no "+
+			"sender and is not one of the four message types", kind, from)
+	}
+}
+
+// The wake exit produces its two facts together, or not at all.
+//
+// The exit tells maybeWake two things, read by different branches: the agent is
+// no longer running, and its turn has ended. They were produced in different
+// places, one off the writer loop and one in a closure queued onto it, so a
+// message arriving between them saw the agent as neither running nor finished
+// and was dropped without even a deferred re-check. Both are produced by
+// wakeExitedDecision now, which runs as one closure on the loop that maybeWake
+// also runs on, so the intermediate state cannot be observed.
+//
+// A TIMING TEST FOR THIS WAS WRITTEN AND DELETED. It raced maybeWake against
+// wakeExited fifty times and passed against the defect: the natural window is
+// too narrow to hit, and the only run that caught it had a two-millisecond
+// sleep I had inserted into the production path to widen it. A review pointed
+// out that the test, applied to the commit before the fix, passed a hundred
+// times out of a hundred. That is a decoration, and a decoration in the place
+// where regression evidence is supposed to be is worse than an empty space.
+//
+// What is left is deterministic and smaller: the decision produces both facts.
+// The claim it cannot make on its own is that nothing observes them apart, and
+// that rests on the two lines being in one closure, which is why they are
+// written where they are and why this comment is here.
+func TestTheWakeExitProducesBothOfItsFactsTogether(t *testing.T) {
+	e, st := wakeEngine(t, WakeCommand{
+		Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute,
+	})
+	l := bridgeAgent("done", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	st.Agents[l.ID] = l
+	ev := core.Event{
+		Type: "message.sent", To: l.ID,
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	}
+	if _, ok := e.wakeFor(l, core.MsgQuestion, ev); !ok {
+		t.Fatal("setup: no wake to exit from")
+	}
+	e.seen[l.ID] = time.Now()
+
+	e.wakeExitedDecision(l.ID)
+
+	e.wakers.mu.Lock()
+	running := e.wakers.running[l.ID]
+	e.wakers.mu.Unlock()
+	if running {
+		t.Error("the exit left the agent marked as still running, so every later " +
+			"message is refused as a duplicate wake")
+	}
+	if e.recentlyInTouch(l) {
+		t.Error("the exit did not record that the turn ended, so the next message is " +
+			"refused on the strength of the inbox read of a turn that is over")
+	}
+}
+
+// A wake POINTS. It does not tell the agent what to do next.
+//
+// PHILOSOPHY rule 5 draws the line here: the board may wake an agent and may
+// not steer one. The notice used to read "Dibs: check the board. Call check_in,
+// then inbox, and act on anything there", which names two tools in order and
+// directs what to do with what they return. The only test on it required the
+// word "board", so it passed that sentence without noticing. Found by the
+// pre-release review.
+//
+// Asserted on what must NOT be there, because the failure is additive: the way
+// this goes wrong is somebody appending one more helpful clause to a sentence
+// that already works.
+func TestTheWakeNoticePointsRatherThanInstructs(t *testing.T) {
+	notice := wakeNotice
+	for _, banned := range []string{
+		"check_in", "inbox", "read_mail", "respond", "ack", // named tools
+		"act on", "then ", "and then", "you should", "make sure",
+	} {
+		if strings.Contains(strings.ToLower(notice), banned) {
+			t.Errorf("the wake notice contains %q:\n  %q\n"+
+				"A wake says there is something for you and stops. Naming tools in "+
+				"order, or saying what to do with what they return, is deciding what "+
+				"the agent does next, which is the one thing rule 5 forbids.",
+				banned, notice)
+		}
+	}
+	if !strings.Contains(strings.ToLower(notice), "board") {
+		t.Errorf("the notice does not point anywhere: %q", notice)
+	}
+}
+
+// A wake runs in the AGENT'S directory, not the daemon's.
+//
+// This is the whole reason the wake path has never once worked in production on
+// the machine it was written on. `wakePlan` has carried a `cwd` field, set from
+// the agent's own record and documented as "where the agent says it works",
+// since the path shipped. Nothing ever read it. The command therefore ran in
+// the daemon's working directory, which under launchd is `/`.
+//
+// Measured, not reasoned: the configured `codex exec resume <uuid> <msg>` exits
+// 1 from `/` with "Not inside a trusted directory and --skip-git-repo-check was
+// not specified", and exits 0 with the same argv from the session's own
+// directory. Three failures in this repository's daemon log match that exit
+// code exactly. It was diagnosed twice as launchd keychain isolation, which a
+// LaunchAgent probe in the identical domain and ProcessType later disproved:
+// it read the login keychain and ran a full `claude --resume` turn, exit 0.
+//
+// A dead field is worse than a missing one. The plan looked complete, the
+// comment said what the value was for, and the effect silently did not happen,
+// which is this repository's most expensive recurring bug class.
+//
+// Asserted with a RELATIVE path, because that is the only thing that can tell
+// the two directories apart from outside: `touch marker` lands in the agent's
+// directory when cmd.Dir is set, and nowhere it can be found when it is not.
+func TestAWakeRunsInTheAgentsDirectory(t *testing.T) {
+	if _, err := os.Stat("/usr/bin/touch"); err != nil {
+		t.Skip("no /usr/bin/touch on this platform")
+	}
+	dir := t.TempDir()
+	ok := runWakeFor([]string{"/usr/bin/touch", "marker"}, "somebody", dir,
+		10*time.Second, time.Second)
+	if !ok {
+		t.Fatal("the wake command did not run at all, so this proves nothing " +
+			"about where it ran: check the probe before the product")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "marker")); err != nil {
+		t.Errorf("the wake did not run in the agent's directory %s: %v.\n"+
+			"It ran in the daemon's instead, which under launchd is \"/\". "+
+			"`codex exec resume` refuses to start there, which is why no wake "+
+			"has ever reached an agent on this machine", dir, err)
+	}
+}
+
+// The plan for a COMMAND carries the agent's directory.
+//
+// The companion to TestAWakeRunsInTheAgentsDirectory, and the half that
+// actually shipped broken. `wakeFor` has two returns: the socket route, which
+// needs no directory and has always carried one, and the command route, which
+// is the only thing that runs a process and carried none. So `cwd` was
+// assigned, and read as used, on the branch that cannot use it.
+//
+// The first test of this called runWakeFor directly with a directory of its
+// own. It passed while every real wake still ran in "/", because it exercised
+// the executor and never the decision that feeds it. Testing one layer below
+// the bug is how a green suite sat on top of a feature that had never once
+// worked in production.
+func TestTheCommandPlanCarriesTheAgentsDirectory(t *testing.T) {
+	e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
+	e.SetWakeCommands(map[string]WakeCommand{
+		"codex": {Argv: []string{"/bin/echo", "{message}"}},
+	})
+	l := &core.Agent{
+		ID: "worker", Name: "worker", Status: core.StatusDormant,
+		SessionID: "0199a0b1-c2d3-4e5f-8a9b-0c1d2e3f4a5b",
+		Agent:     &core.AgentInfo{Harness: "Codex", CWD: "/work/api"},
+		Slots:     map[string]core.Slot{},
+	}
+	e.state.Agents["worker"] = l
+
+	plan, ok := e.wakeFor(l, core.MsgQuestion, core.Event{
+		Type: "message.sent", Agent: "asker", To: "worker",
+		Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
+	})
+	if !ok {
+		t.Fatal("no wake was planned at all, so this proves nothing about the " +
+			"directory: check the probe before the product")
+	}
+	if len(plan.argv) == 0 {
+		t.Fatal("the plan took the socket route, not the command route this test is about")
+	}
+	if plan.cwd != "/work/api" {
+		t.Errorf("the command plan carries cwd %q, not the agent's %q.\n"+
+			"The command then runs wherever the daemon happens to be, which under "+
+			"launchd is \"/\", and `codex exec resume` refuses to start there",
+			plan.cwd, "/work/api")
 	}
 }

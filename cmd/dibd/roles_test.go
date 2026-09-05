@@ -4,8 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/BurntSushi/toml"
 
 	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
@@ -648,5 +651,244 @@ func TestACorruptPinFileExplainsItself(t *testing.T) {
 	if !strings.Contains(strings.ToLower(err.Error()), "json") &&
 		!strings.Contains(err.Error(), "invalid character") {
 		t.Errorf("the refusal does not name the parse failure:\n  %s", err)
+	}
+}
+
+// The one instruction this feature has must be valid TOML.
+//
+// A standing role needs the agent's fingerprint in `[roles.identity]`, and the
+// operator cannot look that up anywhere else, so the daemon prints the line to
+// paste. It interpolated the name as a bare key, and a bare TOML key holds only
+// letters, digits, underscores and dashes: for `Fleet Lead`, which is exactly
+// the kind of name the reconciler had just learned to resolve, the printed
+// snippet does not parse. Following the daemon's own advice therefore produced
+// a dibs.toml it then refuses to load, with the role still ungranted and a new
+// fault on top.
+//
+// PARSED, not pattern-matched. A check that the key "looks quoted" would pass
+// against a quoting scheme TOML does not accept; this hands the snippet to the
+// same decoder the daemon uses and reads the value back out.
+func TestThePrintedIdentityPinIsValidTOML(t *testing.T) {
+	const fp = "0f9c1c2b3a4d5e6f70819293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7"
+	for _, name := range []string{
+		"fleet-lead",   // already a bare key
+		"Fleet Lead",   // the documented display-name form
+		"ops/west",     // a slash, which register slugs to a dash
+		"lead_2",       // underscores are bare-legal and must not be quoted away
+		`say "hello"`,  // quotes in the name must not escape the key
+		"agent\\north", // a backslash, which TOML treats as an escape
+	} {
+		snippet := "[roles.identity]\n" + tomlKey(name) + " = " + strconv.Quote(fp) + "\n"
+		var got struct {
+			Roles struct {
+				Identity map[string]string `toml:"identity"`
+			} `toml:"roles"`
+		}
+		if _, err := toml.Decode(snippet, &got); err != nil {
+			t.Errorf("the daemon tells an operator to paste this and it does not "+
+				"parse:\n%s\n%v\n\nThe role stays ungranted and dibs.toml now fails to "+
+				"load, which is worse than the state it was meant to fix", snippet, err)
+			continue
+		}
+		if got.Roles.Identity[name] != fp {
+			t.Errorf("the snippet parses but pins %q rather than %q:\n%s",
+				keysOf(got.Roles.Identity), name, snippet)
+		}
+	}
+
+	// And a name that needs no quoting does not get any: an operator copies
+	// what they are shown, and a needless quote is a pattern they will repeat
+	// where it is wrong.
+	if got := tomlKey("fleet-lead"); got != "fleet-lead" {
+		t.Errorf("a bare-legal name was rendered as %s", got)
+	}
+}
+
+func keysOf(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
+// A pin records who took a role. It is not permission to keep it.
+//
+// The established-pin branch returned success the moment the stored pin matched
+// the live agent, without looking at what the operator currently authorises. So
+// both revocations did nothing: deleting an agent from `[roles.identity]` left
+// it holding the role, and pointing that entry at a successor left the old
+// credential accepted beside it. On the next restart the reconciler passed the
+// new configuration in, was told yes, and re-granted the old identity. For
+// admin that is every decrypted mailbox on the board, restored against the
+// operator's written instruction.
+//
+// SECURITY.md says `[roles.identity]` names the agent allowed to hold the role.
+// That has to be true at every grant, not only at the first one.
+//
+// The existing tests cover an unpinned mismatch and a DIFFERENT live agent under
+// an old pin. Neither covers the case where the pin still matches the agent and
+// the configuration no longer does, which is what revocation looks like.
+func TestAnEstablishedPinDoesNotOutrankTheCurrentConfiguration(t *testing.T) {
+	const (
+		held      = "1111111111111111111111111111111111111111111111111111111111111111"
+		successor = "2222222222222222222222222222222222222222222222222222222222222222"
+	)
+	// A legitimately established pin: config and agent agreed at the time.
+	fresh := func(t *testing.T) *rolePins {
+		t.Helper()
+		p := loadRolePins(t.TempDir())
+		if err := p.check(core.RoleAdmin, "fleet-lead", held, held); err != nil {
+			t.Fatalf("setup: the first grant was refused (%v), so nothing below is "+
+				"about an established pin", err)
+		}
+		return p
+	}
+
+	t.Run("the operator withdraws the authorisation", func(t *testing.T) {
+		p := fresh(t)
+		// [roles.identity] no longer names this agent.
+		if err := p.check(core.RoleAdmin, "fleet-lead", held, ""); err == nil {
+			t.Error("admin was re-granted to an agent the operator has removed from " +
+				"[roles.identity]. Deleting the entry is the obvious way to revoke a " +
+				"standing role, and it did nothing: on the next restart the same " +
+				"credential is handed the god view again")
+		}
+	})
+
+	t.Run("the operator names a successor", func(t *testing.T) {
+		p := fresh(t)
+		// [roles.identity] points at somebody else; the predecessor is still
+		// the agent registered under that name.
+		if err := p.check(core.RoleAdmin, "fleet-lead", held, successor); err == nil {
+			t.Error("admin was re-granted to the predecessor while [roles.identity] " +
+				"names a successor's fingerprint. The handover the operator wrote down " +
+				"has not happened, and the old credential keeps every mailbox")
+		}
+	})
+
+	t.Run("and the ordinary case still works", func(t *testing.T) {
+		p := fresh(t)
+		if err := p.check(core.RoleAdmin, "fleet-lead", held, held); err != nil {
+			t.Errorf("the agent the operator names, holding the pin it was granted "+
+				"under, was refused: %v. Every reconciliation tick runs this, so a "+
+				"board would lose its admin fifteen seconds after start", err)
+		}
+	})
+}
+
+// One agent gets one role, however many ways the config spells its name.
+//
+// boardconfig refuses the same STRING in both role lists, and a name and an id
+// are two strings for one agent: an agent named `Fleet Lead` registers as
+// `fleet-lead`, so `coordinator = ["fleet-lead"]` beside `admin = ["Fleet
+// Lead"]` passes validation and resolves to one identity. Every reconciliation
+// pass then granted coordinator and then admin: two ledger entries every
+// fifteen seconds, and a window in between where admin-only calls fail. That is
+// the oscillation the validator's own error message says it prevents, reachable
+// by spelling the agent two ways.
+//
+// Admin wins. It already includes coordinator authority, so the operator loses
+// nothing, and the board stops flapping.
+func TestAnAgentSpelledTwoWaysGetsOneRole(t *testing.T) {
+	eng, ctx := testEngine(t)
+	res, err := eng.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "Fleet Lead", Nonce: "n-fleet-lead-1",
+	})
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	id, _ := res["agent_id"].(string)
+	if id == "" || id == "Fleet Lead" {
+		t.Fatalf("setup: registered as %q; this test needs a name that slugs to a "+
+			"different id, which is the whole aliasing route", id)
+	}
+
+	fp, err := eng.AgentIdentity(ctx, id)
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	c := RolesConfig{
+		Coordinator: []string{id},           // the id
+		Admin:       []string{"Fleet Lead"}, // the display name: the same agent
+		Identity:    map[string]string{id: fp, "Fleet Lead": fp},
+	}
+	// THE NUMBER OF GRANTS, not the role at the end.
+	//
+	// Granting coordinator and then admin leaves the agent on admin, so reading
+	// the role afterwards passes whether or not the defect is present: the
+	// first version of this test did exactly that and could not fail. What is
+	// wrong is that it happens TWICE, every pass, for ever. A grant that
+	// changes the role advances the serial, so counting the advance counts the
+	// grants.
+	before, err := eng.EventsSince(ctx, "", 0, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	applyDeclaredRoles(ctx, eng, c, loadRolePins(t.TempDir()))
+	after, err := eng.EventsSince(ctx, "", 0, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved := after["serial"].(uint64) - before["serial"].(uint64)
+	if moved != 1 {
+		t.Errorf("one reconciliation pass advanced the serial by %d, want 1. Both "+
+			"spellings name one agent, so the pass grants coordinator and then admin: "+
+			"two ledger entries every fifteen seconds for ever, and a window in "+
+			"between where admin-only calls fail", moved)
+	}
+
+	role, err := eng.AgentRole(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if role != core.RoleAdmin {
+		t.Errorf("the agent holds %q, want admin: admin includes what coordinator can "+
+			"do, so it is the one to keep", role)
+	}
+}
+
+// An unauthorised admin alias must not take the coordinator grant with it.
+//
+// The first version of the one-agent-one-role rule collected every admin alias
+// that RESOLVED and skipped a coordinator naming the same agent. Resolving is
+// not being authorised: with the admin spelling missing from
+// `[roles.identity]`, the valid coordinator grant was skipped in favour of an
+// admin grant that was then refused, so nothing was granted at all. The launch
+// claim stays suppressed either way, because the config does name a
+// coordinator, so a fresh board came up with no coordinator and no way to get
+// one: the exact state the claim exists to prevent, produced by the fix for a
+// different defect.
+func TestAnUnauthorisedAdminAliasDoesNotCostTheCoordinatorGrant(t *testing.T) {
+	eng, ctx := testEngine(t)
+	res, err := eng.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "Fleet Lead", Nonce: "n-fleet-lead-2",
+	})
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	id, _ := res["agent_id"].(string)
+	fp, err := eng.AgentIdentity(ctx, id)
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+
+	// The coordinator spelling is pinned; the admin spelling is not.
+	c := RolesConfig{
+		Coordinator: []string{id},
+		Admin:       []string{"Fleet Lead"},
+		Identity:    map[string]string{id: fp},
+	}
+	applyDeclaredRoles(ctx, eng, c, loadRolePins(t.TempDir()))
+
+	role, err := eng.AgentRole(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if role != core.RoleCoordinator {
+		t.Errorf("the agent holds %q, want coordinator. Its coordinator declaration is "+
+			"pinned and valid; the admin one is not authorised and was refused, and "+
+			"taking the coordinator grant down with it leaves this board with no "+
+			"coordinator at all, and no claim either", role)
 	}
 }

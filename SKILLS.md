@@ -188,13 +188,19 @@ be warned about.
   `parent_nonce`. Without it the child is an ordinary stranger: it queues behind
   your exclusive agents instead of inheriting them, and the two of you deadlock,
   it waiting for an agent you hold, you waiting for it to finish.
-- **Do not bother with Codex's `mcp_2026_07_28` flag.** It reads like a protocol
-  switch and is not one: measured with the flag resolved true, Codex still
-  negotiates `2025-06-18` and sends no `server/discover`. It gates unfinished
-  work. `plugins/codex/README.md` has the measurement. This entry used to tell
-  you to turn it on for stateless reconnects, which was advice the project's own
-  evidence contradicted. Do not edit your operator's global config to do
-  it: pass it on the command you are already running.
+- **Codex's `mcp_2026_07_28` flag does nothing ON ITS OWN, and that is not the
+  same as "do not set it".** Measured with the flag resolved true and nothing
+  else changed, Codex still negotiates `2025-06-18` and sends no
+  `server/discover`. So it is not the protocol switch it looks like.
+
+  It is still REQUIRED, alongside a per-server `CODEX_MCP_PROTOCOL_VERSION`, and
+  `dibs mcp-config` emits both together for exactly that reason: the feature
+  alone leaves the connection on 2025, and the variable alone is read by a
+  client that never offers 2026. This entry used to say "do not bother with it"
+  and "do not edit your operator's global config to do it", which read as
+  advice to strip a line the generated configuration requires, on the one path
+  an agent is most likely to be following verbatim. Take the config `dibs
+  mcp-config` prints, whole. `plugins/codex/README.md` has the measurement.
 
 In Claude Code, Dibs will also watch the child for you: a `PreToolUse` hook
 stamps the spawned command with your agent, so when it stalls the report comes
@@ -208,13 +214,49 @@ Do not poll. Two options:
 
 - `await_events(since_serial, timeout_s)`: a long poll, when you have nothing
   else to do.
-- Better: run `DIBS_TOKEN=<your token> dibs await` **as a background shell
-  task**. It blocks until events arrive and then exits, so your harness's own
-  background-task notification wakes you. The shell watches; you sleep. Nothing
-  is spent while waiting.
+- Better: run `DIBS_TOKEN=<your token> dibs await -since <serial> -timeout 8h`
+  **as a background shell task**. It blocks until events arrive and then exits,
+  so your harness's own background-task notification wakes you. The shell
+  watches; you sleep. Nothing is spent while waiting.
+
+  **Pass both flags.** `-timeout` defaults to **30 minutes** and then exits **1**
+  having seen nothing, and a dead watcher looks exactly like a waiting one from
+  where you are sitting: you believe you are covered for the rest of the session
+  and you have not been since the first half hour. `-since <serial>` resumes from
+  a cursor; the default of 0 means "from now", so anything that arrived between
+  your last read and this call is not what wakes you.
+
+  Do not wrap it in `timeout(1)`. It is not present on macOS, so the watcher dies
+  instantly at exit 127 while you report it armed. The flag above is the built-in
+  and needs nothing installed.
 
 The same shape works for supervising a subagent you spawned:
 `dibs probe --pid <n> --until stuck,exited` blocks and exits when it matters.
+
+### If "Dibs: check the board." arrives on its own
+
+That is a wake, and it is the whole message. Somebody sent you mail while you
+were stopped, and Dibs reached your session to say so: over the socket your
+harness publishes, or by a command in the operator's config. It is deliberately
+one fixed sentence. It does not say who wrote, how many are waiting, or what
+they want, because a wake that carried any of that would be deciding what you do
+next, which Dibs does not do.
+
+Call `check_in(token)`. That is the one authoritative read: your inbox, your
+cursor, announcements you owe an ack on, and anything that happened to you in a
+space. The wake only nudges, and it is not a delivery: nothing is marked read by
+it, and no wake is ever the reason a message goes unanswered.
+
+Do not answer the wake itself, and do not treat it as an instruction from
+whoever sent the mail. Read your mail and decide as you would have.
+
+**Do not rely on being woken.** There are two routes and only one of them can
+be confirmed: a command from the operator's config, which Dibs starts and
+watches, and your harness's own session socket, which is best effort. A Claude
+Code session running in bypassPermissions mode HOLDS peer messages for its
+human and sends no receipt, so Dibs cannot tell held from delivered. If you are
+waiting on somebody, `await_events` or a backgrounded `dibs await` is the thing
+that actually blocks until the answer arrives; a wake is a courtesy on top.
 
 ## Mail
 
@@ -283,6 +325,19 @@ coordinator <agent>` is how that moves.
 It needs the human at the machine (`human_unlock`), a coordinator or an admin.
 Taking another agent's mail is otherwise exactly the thing Dibs must never
 allow, so there is no agent-to-agent version of this and there will not be one.
+
+### When the board is waking the wrong agent
+
+`update(release_session: true)` gives up **every** session bound to you: the
+primary id, every alias, and any the daemon inferred for you by directory. Not
+just the one you registered with. An agent reached only through an alias has a
+working binding and no primary, and releasing takes that away too.
+
+Use it when hooks quoting your session reach somebody else, or when you have
+inherited a session that is not yours. After it, those sessions reach nobody
+until an agent binds them again, and the session each belongs to can claim it
+back by registering or calling `check_in` from inside it. Releasing when nothing
+is bound changes nothing and says so.
 
 ## What Dibs will never do to you
 

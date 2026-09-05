@@ -107,8 +107,10 @@ over plain HTTP (no stdio bridge in the way):
 | Pi | latest | **no MCP at all** | none | none |
 
 **Nobody sends `subscriptions/listen`, `resources/subscribe`, or `resources/read`.**
-Codex never even calls `resources/list`, so Dibs' resources are invisible there; only
-tools reach it.
+Codex did not call `resources/list` either when this table was measured, which is
+corrected immediately below and was contradicted by it for a while: on 2026-07-28 it
+does, and Dibs' resources are visible there. The table is a measurement with a date on
+it, and the paragraph under it is what is true now.
 
 **"Nobody speaks MCP 2026" was true when measured and is now false. Amended 2026-08-17.**
 Codex runs entirely on 2026-07-28 against Dibs today. That took a fix here, and the
@@ -262,19 +264,82 @@ model) per `codex-rs/rmcp-client/src/logging_client_handler.rs`.
   `_meta["com.dibs/token"]`) and `dibs://board`. Verified end-to-end. Unused by clients
   today; ready for the 07-28 wave.
 - **`resources.subscribe` advertised on BOTH handshakes**: including legacy
-  `initialize`, since that's the path 100% of clients take. Advertising only on
-  `server/discover` made the capability invisible.
+  `initialize`. That was every client when it was written, and it is not now:
+  Codex runs entirely on 2026-07-28 against Dibs. Advertising on both is still
+  right, because the legacy path is the transitional courtesy PHILOSOPHY.md rule
+  9 describes, and "100% of clients" is the sentence that went stale.
 
-**Not built (the next bet):** legacy `resources/subscribe` / `unsubscribe` + a GET SSE
-space to deliver `notifications/resources/updated` on 2025-11-25. This is what pays off
-first, because it's what shipping clients speak.
+**Built, and this line said "not built" for a while:** legacy
+`resources/subscribe` / `unsubscribe` and a GET SSE space delivering
+`notifications/resources/updated` on 2025-11-25. Dispatch, the SSE space, the
+legacy capability advertisement and the split transport are all in
+`internal/mcp`. It was written as the next bet, it was taken, and the sentence
+was not updated: a document that describes shipped work as unbuilt sends an
+integrator looking for an alternative that is already here.
+
+## 5b. The harness's own session socket (SHIPPED)
+
+Claude Code publishes, per session, a unix socket and an authentication key,
+both on disk, and accepts newline-delimited JSON on it. Dibs uses it.
+
+**Why this is not the `turn/steer` the table below rejects.** That rejection is
+about OWNING a thread: driving it, deciding what it does next. This sends one
+sentence, the same one `[wake.exec]` carries, and then closes the connection.
+It cannot read the thread, cannot steer it, and cannot see what happens next.
+Delivery is mediated by the recipient's own harness, which labels the message
+as coming from a peer, tells the model it is not user input, and gates it on
+that human's permission mode.
+
+**Why it is better than a command.** A command has to be told which thread to
+resume, so Dibs has to work out which id the agent answers to, and every wake
+defect this project has had is downstream of getting that wrong. A socket is
+the address. It needs no operator configuration, spawns no process, and needs
+no thread id, which was the single largest class of unwakeable agent.
+
+**Measured, not inferred**, because §3 of this document exists. Three defects
+were caught by that probe and by nothing else: `os.TempDir()` is the wrong base
+on macOS, the liveness stamp is UTC while `ps` answers local, and the wire test
+was flaky. Any one of them would have shipped a feature that silently never
+fired.
+
+**AND THEN THE SAME DISCIPLINE FOUND THAT DELIVERY IS NOT OURS TO PROMISE.**
+This section used to say a message was "watched arrive". That was measured
+against a socket, not against a session. Delivered to an IDLE live session and
+then watching its transcript, nothing arrived at all.
+
+The reason is in the receiving client, not in what Dibs writes. Inbound peer
+messages pass a `crossSessionInbound` policy: accept, hold, or refuse. With no
+explicit setting, a receiver whose permission mode is **bypassPermissions**
+holds any peer message whose sender asserts no mode of its own, and the branch
+that would read an asserted mode sits behind a feature flag that is off by
+default. So for a session running in bypass, which is what an unattended fleet
+runs in, the notice is HELD pending a human, and no message a sender can
+construct changes that.
+
+**There is no receipt.** The connection carries a `peer_message_status` control
+frame (held / denied / expired / delivered) addressed back to a `uds:` reply
+socket, and Dibs has none to give: it is a daemon, not a session. So the write
+succeeds, nothing comes back, and Dibs cannot tell delivered from held. The log
+line says so in those words rather than claiming a wake happened.
+
+**So the two routes are not equals, and the documentation used to imply they
+were.** `[wake.exec]` is the route an operator can rely on: it spawns a process
+and Dibs sees the exit status. The socket is best-effort and free, worth trying
+because it costs nothing and needs no configuration, and worth nobody's trust
+as the only route. `dibs doctor` says which of the two a board actually has.
+
+**What is unchanged.** One gate for both routes: the cooldown, the
+still-running flag and the deferral are shared, because each was paid for by a
+bug. No command and no socket is still no wake. No process is ever spawned for
+a thread that cannot be resumed. The notice is one fixed sentence: no counts,
+no senders, no body.
 
 ## 6. Rejected approaches, and why
 
 | Approach | Verdict |
 |---|---|
 | Shell hooks (`dibs codex-hook`, plugin `monitor`) | **Deleted.** A CLI reformatting mail into the harness's continuation protocol is us driving the agent, a wrapper, not a service. |
-| Codex app-server `turn/steer` (true mid-turn inject) | Rejected: requires *owning* the thread over a Unix socket = orchestration. |
+| Codex app-server `turn/steer` (true mid-turn inject) | Rejected: requires *owning* the thread over a Unix socket = orchestration. Note §5b: delivering one notice over a socket the harness itself publishes is a different thing, and ships. |
 | `@openai/codex-sdk` supervisor | Rejected: TS-only (no Go SDK), and it means managing sessions. |
 | Claude **Spaces** (`notifications/claude/space`) | Genuinely elegant (zero agent steps) but **CLI-only** (platforms matrix), so unavailable in the Desktop app; research-preview + allowlist. |
 | `Monitor(ws)` tool | Works in Claude Desktop (one agentic tool call, WebSocket push, no shell) but is Claude-specific. |
@@ -282,8 +347,18 @@ first, because it's what shipping clients speak.
 
 ## 7. Honest limits
 
-- "Interrupt me mid-work the instant mail arrives" is **not** achievable natively today
-  without a shellout or thread ownership. We don't fake it.
+- "Interrupt me mid-work the instant mail arrives" IS achievable on Claude Code,
+  and Dibs now does it: see §5b. This bullet used to say it was not achievable
+  "without a shellout or thread ownership", which was accurate about the
+  alternatives available when it was written and became false when the harness
+  began publishing a per-session socket. Peer messages on that socket arrive
+  mid-turn in a live session, with no shellout. Measured on this machine by
+  three agents independently.
+
+  What remains true is the shape of the limit rather than its severity: this
+  works where a harness publishes such an endpoint, which today means Claude
+  Code. For everything else the bullets below still hold, and Dibs will not
+  fake it by driving a harness that has not offered a way in.
 - MCP 2026 is deliberately moving *away* from unsolicited push (SEP-2260); even the Tasks
   extension is pull-then-stream and presupposes the agent called a tool first.
 - So: the agent receives mail when it **chooses to listen** (`await_events`) or at a

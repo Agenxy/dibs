@@ -119,8 +119,19 @@
 // localStorage IS scoped by port. Fetching this page with a stolen cookie
 // returns HTML with no key in it.
 const KEY_STORE = "dibs_board_key"
+// A FALLBACK IN MEMORY, because the fragment is erased either way.
+//
+// The key was written to localStorage inside a try/catch that swallowed the
+// failure, and the fragment was then cleared unconditionally. Where storage is
+// unavailable and cookies still work (a private window, a hardened profile,
+// storage disabled for the origin) the document and /events loaded and every
+// keyed request went without the header: an unlocked board whose mail is empty
+// and whose buttons do nothing, with nothing on screen saying why. The tab
+// holds it now, which is enough for the session it was minted for.
+let memKey = ""
 if (location.hash.startsWith("#k=")) {
-  try { localStorage.setItem(KEY_STORE, location.hash.slice(3)) } catch {}
+  memKey = location.hash.slice(3)
+  try { localStorage.setItem(KEY_STORE, memKey) } catch {}
   // Out of the address bar, so it is not shoulder-read, bookmarked or pasted
   // into a bug report. replaceState leaves no history entry to go back to.
   history.replaceState(null, "", location.pathname + location.search)
@@ -129,8 +140,8 @@ if (location.hash.startsWith("#k=")) {
 // which is why /events and this document are the only two routes the cookie
 // still opens by itself, and why neither of them carries mail.
 const boardFetch = (url, opts = {}) => {
-  let key = ""
-  try { key = localStorage.getItem(KEY_STORE) || "" } catch {}
+  let key = memKey
+  try { key = localStorage.getItem(KEY_STORE) || key } catch {}
   const headers = new Headers(opts.headers || {})
   if (key) headers.set("X-Dibs-Board-Key", key)
   return fetch(url, { ...opts, headers })
@@ -250,7 +261,7 @@ function flash(msg, bad) {
 // EventSource cannot send a header, and cookies are host-scoped so any local
 // service the operator visits is handed one. Mail comes from /api/messages,
 // which requires the page key.
-let state = { board: {{.BoardJSON}}, messages: [], events: {{.EventsJSON}},
+let state = { board: {{.BoardJSON}}, messages: [], announcements: [], events: {{.EventsJSON}},
   // Which agents the reader opened. Held here because the roster is rebuilt
   // from scratch on every board change and a `details` does not survive that.
   expanded: new Set() }
@@ -398,7 +409,20 @@ function drawPanes() {
 
   // Spaces of work. selfId stays null for the same reason the roster's does:
   // on an operator view no agent is "you", and marking one would be a lie.
-  const chans = b?.spaces || []
+  // The transcript's TEXT is merged in here, not served with the board.
+  //
+  // Board() is what check_in returns to every agent, so it carries the
+  // announcement metadata and deliberately not the bodies. The renderer still
+  // draws a body for each line, which meant every row showed a sender and an
+  // acknowledgement state above an empty span: a transcript of a conversation
+  // with the conversation removed. board.js is data-in, HTML-out and holds no
+  // state, so the join belongs here, where the page-key-gated mail already is.
+  // Found by the pre-release review.
+  const saidBody = new Map((state.announcements || []).map((a) => [a.serial, a.body]))
+  const chans = (b?.spaces || []).map((c) => !c.said ? c : ({
+    ...c,
+    said: c.said.map((a) => saidBody.has(a.serial) ? { ...a, body: saidBody.get(a.serial) } : a),
+  }))
   const chEl = document.getElementById("pane-agents")
   chEl.innerHTML = (chans.length
     ? chans.map((c) => {
@@ -701,6 +725,7 @@ async function refreshMail() {
     const res = await boardFetch("/api/messages")
     if (!res.ok) return
     const d = await res.json()
+    if (Array.isArray(d.announcements)) state.announcements = d.announcements
     if (Array.isArray(d.messages)) { state.messages = d.messages; draw() }
   } catch (_) { /* keep the last good view rather than blanking it */ }
   finally {

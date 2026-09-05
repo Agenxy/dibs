@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -111,6 +113,88 @@ func RolePinFingerprint(nonce string) string {
 	}
 	sum := sha256.Sum256([]byte("dibs-role-pin\x00" + nonce))
 	return hex.EncodeToString(sum[:])
+}
+
+// ResolveConfiguredAgent turns what an operator wrote in `[roles]` into an
+// agent id.
+//
+// THE CONFIG TAKES A NAME; THE STATE IS KEYED BY ID. `docs/CONFIGURATION.md`
+// documents these values as agent names, register slugs a name into an id, and
+// the reconciler passed the string straight through to a map lookup: the
+// documented `admin = ["Fleet Lead"]` waited forever for an agent whose id was
+// literally `Fleet Lead`, while the agent that registered under that name was
+// sitting there as `fleet-lead`. Validation accepted it and the daemon logged,
+// every fifteen seconds, that the agent had not registered. Anything with a
+// capital, a space, an underscore or a slash in it was affected, which is most
+// of how a person writes a name.
+//
+// AMBIGUITY IS REFUSED, not guessed. Two agents may share a display name, since
+// the id collision is resolved with a suffix, and picking one of them would
+// hand a standing role to whichever the map happened to yield. This is an
+// authorisation path; a name that names two agents names none.
+//
+// It grants nothing on its own. The fingerprint in `[roles.identity]` still has
+// to match, so resolving a name only decides WHOSE fingerprint is checked.
+func (e *Engine) ResolveConfiguredAgent(ctx context.Context, nameOrID string) (string, error) {
+	res, err := e.query(ctx, func() core.Result {
+		return e.resolveConfiguredAgentDecision(nameOrID)
+	})
+	if err != nil {
+		return "", err
+	}
+	if amb, _ := res["ambiguous"].([]string); len(amb) > 0 {
+		return "", fmt.Errorf("%q names %d agents (%s): a standing role cannot be "+
+			"granted to a name that does not identify one. Use the agent id, which "+
+			"the board shows", nameOrID, len(amb), strings.Join(amb, ", "))
+	}
+	id, _ := res["id"].(string)
+	if id == "" {
+		return "", &core.Error{
+			Code: "E_NO_AGENT",
+			Msg:  nameOrID + " has not registered",
+			Hint: "nothing to do: the reconciler retries every tick, and this is the " +
+				"ordinary state of a board whose agents have not started yet",
+		}
+	}
+	return id, nil
+}
+
+// resolveConfiguredAgentDecision is the decision, split from the loop plumbing:
+// query() sends on e.ops, which is nil on an engine whose loop is not running,
+// so a test calling the wrapper would block forever rather than fail.
+//
+// Callers run on the writer loop.
+func (e *Engine) resolveConfiguredAgentDecision(nameOrID string) core.Result {
+	if e.state == nil || nameOrID == "" {
+		return core.Result{}
+	}
+	// An exact id wins outright. An operator who wrote the id meant the id, and
+	// it cannot be ambiguous.
+	//
+	// A GONE ONE DOES NOT. The by-name branch below already refuses closed and
+	// archived agents and this did not, and a name IS the first agent's id: a
+	// retired `fleet-lead` therefore shadowed the live `fleet-lead-2` that had
+	// taken the name over, so the documented handover resolved the predecessor
+	// forever and the successor was never considered. It fails closed, at the
+	// pin, which is the right direction and still leaves the board without the
+	// coordinator its config names.
+	if l, ok := e.state.Agents[nameOrID]; ok && !l.Gone() {
+		return core.Result{"id": nameOrID}
+	}
+	var byName []string
+	for id, l := range e.state.Agents {
+		if l != nil && l.Name == nameOrID && !l.Gone() {
+			byName = append(byName, id)
+		}
+	}
+	sort.Strings(byName)
+	switch len(byName) {
+	case 0:
+		return core.Result{}
+	case 1:
+		return core.Result{"id": byName[0]}
+	}
+	return core.Result{"ambiguous": byName}
 }
 
 // AgentIdentity is an opaque, stable fingerprint of the agent's own credential,

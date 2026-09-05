@@ -364,14 +364,19 @@ func editDistance(a, b string) int {
 	return prev[len(b)]
 }
 
-func get(path string, v any) error {
+func get(path string, v any) error { return getAt(origin(), path, v) }
+
+// getAt is get against a stated origin, for a caller that has DISCOVERED which
+// daemon it means and must not have that answer overridden by this CLI's own
+// configuration. See originFor.
+func getAt(from, path string, v any) error {
 	// Before the secret goes anywhere: a dibs.toml that does not parse means
 	// the daemon this was meant for is not running, and the request would carry
 	// this directory's local secret to whatever else answers.
 	if err := checkConfigReadable(); err != nil {
 		return err
 	}
-	req, err := http.NewRequest(http.MethodGet, origin()+path, nil)
+	req, err := http.NewRequest(http.MethodGet, from+path, nil)
 	if err != nil {
 		return err
 	}
@@ -926,6 +931,27 @@ type (
 		// description string.
 		Human bool        `json:"human,omitempty"`
 		Slots []boardSlot `json:"slots"`
+		// Kind and Harness, so a check can ask whether the agents actually on
+		// this board can be reached. Decoded from a view the daemon already
+		// published and nobody read: `doctor` counted the operator's CONFIGURED
+		// wake commands and called that coverage, which reported a healthy tick
+		// on a board where twenty-eight of thirty-one agents had no route at
+		// all. Counting what you configured is not measuring what it covers.
+		Kind string `json:"kind,omitempty"`
+		// Resumable is whether a wake COMMAND could name this agent's thread.
+		// The id is deliberately not published; whether one exists is what a
+		// coverage check has to know, because a harness with a configured
+		// command still cannot resume an agent that has no thread to name.
+		Resumable bool `json:"resumable,omitempty"`
+		Agent     *struct {
+			Harness string `json:"harness,omitempty"`
+			CWD     string `json:"cwd,omitempty"`
+			// Surface separates a HARNESS from one of Dibs's own front doors.
+			// The daemon and the web board register agents too, and neither is
+			// a thread anything can resume, so counting them as unreachable
+			// reports a defect that is not there.
+			Surface string `json:"surface,omitempty"`
+		} `json:"agent,omitempty"`
 	}
 	boardClaim struct {
 		Agent   string    `json:"agent"`

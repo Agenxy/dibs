@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -24,6 +25,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/agenxy/dibs/internal/boardconfig"
 
 	"github.com/agenxy/dibs/internal/blobstore"
 	"github.com/agenxy/dibs/internal/build"
@@ -367,6 +370,19 @@ func run() error {
 				"exist, are readable, and are a matching pair; removing both makes "+
 				"dibd generate its own", *dir, cerr)
 		}
+		// AND THAT IT NAMES THIS ADDRESS.
+		//
+		// Loading proves the key belongs to the certificate. boardconfig checks
+		// the hostname too, but only against `addr` in dibs.toml, and `-addr`
+		// and DIBS_ADDR both outrank that file: a board with an explicit pair
+		// and no configured address passed every check, served TLS here, and was
+		// refused by every client on hostname verification. This is the first
+		// point where the address is settled, so it is the only place the
+		// question can actually be answered.
+		if err := certificateNamesListener(cert, listenAddr); err != nil {
+			_ = ln.Close()
+			return fmt.Errorf("%s: %w", *dir, err)
+		}
 		tlsPair = []tls.Certificate{cert}
 	}
 	// Roles are the one part of the config that grants standing privilege, and
@@ -647,6 +663,37 @@ func retiredVocabulary(ledgerPath string) string {
 // net.Listen work and left the transport to be re-inferred from the bare
 // address, which is how a daemon told to serve http:// on a LAN address served
 // TLS while its clients spoke plaintext.
+// certificateNamesListener reports whether an explicit pair is valid for the
+// address this daemon is about to serve on.
+//
+// SPLIT FROM run(), which is the whole daemon and cannot be called from a test.
+// The decision is the part worth testing: which addresses are checkable, and
+// what happens to a certificate that names none of them.
+//
+// boardconfig performs the same check against `addr` in dibs.toml, and that is
+// not enough, because `-addr` and DIBS_ADDR both outrank the file. A board with
+// an explicit pair and no configured address therefore passed every check,
+// served TLS, and was refused by every client on hostname verification: the
+// silent, total, all-at-once failure the managed path renews to avoid. Here the
+// address is settled, so the question can finally be answered.
+func certificateNamesListener(cert tls.Certificate, listenAddr string) error {
+	host := boardconfig.HostToVerify(listenAddr)
+	if host == "" || len(cert.Certificate) == 0 {
+		return nil // a wildcard bind serves whatever was dialled; nothing to verify
+	}
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		return fmt.Errorf("the TLS certificate cannot be parsed (%w)", err)
+	}
+	if err := leaf.VerifyHostname(host); err != nil {
+		return fmt.Errorf("the TLS certificate does not name %s (%w), so this daemon "+
+			"would serve it and every client dialling that address would refuse the "+
+			"connection. Reissue it for the address this daemon listens on, or remove "+
+			"tls_cert and tls_key and let Dibs manage one", host, err)
+	}
+	return nil
+}
+
 func resolveListenAddr(flagAddr string, cfg Config) (listenAddr, askedScheme string, err error) {
 	listenAddr = firstNonEmpty(flagAddr, os.Getenv("DIBS_ADDR"), cfg.Addr, "127.0.0.1:4777")
 	if scheme, rest, found := strings.Cut(listenAddr, "://"); found {
@@ -789,6 +836,21 @@ func checkReplay(dir string, cfg Config, flagAddr string) error {
 	}
 	if err := checkTransportUsable(dir, listenAddr, askedScheme, cfg); err != nil {
 		return err
+	}
+	// AND THE CERTIFICATE NAMES THIS LISTENER. Same question startup asks, at
+	// the same point: after the address is resolved. boardconfig cannot ask it,
+	// because `-addr` and DIBS_ADDR outrank the file it reads, and `dibs
+	// upgrade` reads this command's exit status as licence to stop a live
+	// daemon.
+	if cfg.TLSCert != "" {
+		pair, perr := tls.LoadX509KeyPair(cfg.TLSCert, cfg.TLSKey)
+		if perr != nil {
+			return fmt.Errorf("the TLS certificate and key in %s cannot be used "+
+				"together: %w", dir, perr)
+		}
+		if err := certificateNamesListener(pair, listenAddr); err != nil {
+			return fmt.Errorf("%s: %w", dir, err)
+		}
 	}
 	if _, err := os.Stat(filepath.Join(dir, "ledger.jsonl")); err != nil {
 		return fmt.Errorf("no board at %s: there is nothing to check", dir)

@@ -234,13 +234,26 @@ var catalog = []struct {
 		// the session, and spawned_agents does not say which event did it, so
 		// "am I listed" was satisfied by startup delivery alone: a thread whose
 		// every Stop was broken could run this check and be told the wake is
-		// live. Comparing before and after a turn boundary is the difference.
-		verify: "call spawned_agents at the START of an activation and again after a " +
-			"turn ends, and compare: SessionStart records the session too, so merely " +
-			"being listed proves only that startup reached the daemon. What proves " +
-			"Stop delivery is the entry CHANGING across the boundary. If it does not, " +
-			"the build is older than 2026-08-18 or the server was not connected when " +
-			"the hook ran, and mail is pull-only until you fix that",
+		// live.
+		//
+		// AND IT HAS TO NAME THE FIELD. "the entry CHANGING across the boundary"
+		// was no better: spawned_agents computes since_seconds and seen_seconds
+		// from time.Since on every read, so the entry changes because time
+		// passed. An operator with a completely broken Stop could follow the
+		// published procedure exactly and be told it works, which is a
+		// verification step that verifies nothing. `state` is the field a
+		// lifecycle event actually moves, and Stop is what moves it to
+		// `finished`.
+		verify: "have a SECOND agent call spawned_agents while this one is between " +
+			"turns, and read the `state` field for this session: `finished` is what a " +
+			"delivered Stop leaves behind. You cannot check this yourself, and that is " +
+			"the whole difficulty: a tool call requires a turn, and your next one " +
+			"begins with SessionStart, which sets `state` back to `running` before you " +
+			"can look. Merely being listed proves nothing either, because SessionStart " +
+			"creates the listing, and since_seconds/seen_seconds are elapsed times that " +
+			"move on their own. If no peer can see `finished`, the build is older than " +
+			"2026-08-18 or the server was not connected when the hook ran, and mail is " +
+			"pull-only until you fix that",
 		delivers: false,
 	},
 }

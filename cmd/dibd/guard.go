@@ -45,9 +45,19 @@ func loadOrCreateSecret(path string) (string, error) {
 	return s, nil
 }
 
+// randHex returns n random bytes as hex, or "" when the OS RNG failed.
+//
+// FAIL CLOSED. The error was discarded and the buffer returned regardless, so a
+// failing RNG produced a zero or half-filled bootstrap token, session token and
+// page key, and authentication continued with them: predictable credentials for
+// the board's front door, minted silently. Every other secret in this tree
+// propagates an entropy failure. Both callers refuse now, and a refused mint is
+// a link that does not work, which is the correct outcome and a loud one.
 func randHex(n int) string {
 	b := make([]byte, n)
-	_, _ = rand.Read(b)
+	if _, err := rand.Read(b); err != nil {
+		return ""
+	}
 	return hex.EncodeToString(b)
 }
 
@@ -126,6 +136,9 @@ func (g *authGate) adminHash() string {
 
 func (g *authGate) mintBootstrap() string {
 	t := randHex(32)
+	if t == "" {
+		return "" // no entropy: no token, rather than a guessable one
+	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.gcLocked()
@@ -145,6 +158,9 @@ func (g *authGate) redeemBootstrap(t string) (string, bool) {
 		return "", false
 	}
 	sess, page := randHex(32), randHex(32)
+	if sess == "" || page == "" {
+		return "", false // no entropy: no session, rather than a guessable one
+	}
 	g.sessions[sess] = boardSession{exp: time.Now().Add(sessionTTL), page: page}
 	return sess, true
 }
@@ -494,9 +510,23 @@ func (g *authGate) presenceBootstrap(w http.ResponseWriter, r *http.Request) {
 	}
 	switch verdict {
 	case humanauth.Verified:
+		// A REFUSED MINT IS NOT A SUCCESS. mintBootstrap returns "" when the OS
+		// random source failed, and this reported 200 with an empty token: the
+		// operator's fingerprint was spent on an answer that grants nothing, and
+		// the API said it worked. The CLI happens to reject the empty token, so
+		// nothing was ever handed out; a handler whose success depends on its
+		// caller noticing is not a handler that refuses.
+		bt := g.mintBootstrap()
+		if bt == "" {
+			http.Error(w, "could not mint a board token: the system random source "+
+				"failed. Nothing was granted; try again, and if it persists this "+
+				"machine cannot generate credentials safely",
+				http.StatusInternalServerError)
+			return
+		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json")
-		out := map[string]string{"bt": g.mintBootstrap(), "proof": "presence"}
+		out := map[string]string{"bt": bt, "proof": "presence"}
 		// A dev build answering from a script says so, in the response, every
 		// time: the same rule internal/mcp/human.go holds. A mocked unlock that
 		// looked identical to a real one would be evidence of nothing, in exactly
@@ -596,9 +626,19 @@ func (g *authGate) wrap(next http.Handler) http.Handler {
 			g.mu.Lock()
 			g.adminFails, g.adminLockTill = 0, time.Time{}
 			g.mu.Unlock()
+			// Same as the presence path above: an empty token is a refusal, and
+			// it has to be reported as one.
+			bt := g.mintBootstrap()
+			if bt == "" {
+				http.Error(w, "could not mint a board token: the system random source "+
+					"failed. Nothing was granted; try again, and if it persists this "+
+					"machine cannot generate credentials safely",
+					http.StatusInternalServerError)
+				return
+			}
 			w.Header().Set("Cache-Control", "no-store")
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]string{"bt": g.mintBootstrap()})
+			_ = json.NewEncoder(w).Encode(map[string]string{"bt": bt})
 			return
 		}
 
@@ -704,8 +744,15 @@ func (g *authGate) unauthorized(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(unauthorizedHTML))
 		return
 	}
+	// NOT "admin password". This is an onboarding surface, and `dibs web` raises
+	// the Touch ID sheet first: telling a Mac user the way in is a password
+	// sends them to create the weaker credential this release exists to stop
+	// needing. The README and the Homebrew caveat said the same thing and were
+	// corrected a round earlier; this one is the sentence somebody reads at the
+	// exact moment they are locked out, which makes it the worst place for it.
 	_, _ = w.Write([]byte("unauthorized: coordination needs the local secret (X-Dibs-Local); the board needs a " +
-		"session from `dibs web` (admin password)\n"))
+		"session from `dibs web`, which unlocks with Touch ID where there is a sensor " +
+		"and an admin password where there is not\n"))
 }
 
 const unauthorizedHTML = `<!doctype html><meta charset=utf-8>
@@ -724,7 +771,8 @@ border-radius:7px;padding:9px 14px;display:inline-block;margin-top:6px;color:#e6
 <div class=card>
 <div class=mark>▤</div>
 <h1>This board shows private mail: it's locked</h1>
-<p>Opening it takes your admin password (something an agent on this machine can't read). In your terminal:</p>
+<p>Opening it takes something an agent on this machine can't produce: your fingerprint,
+or an admin password where there's no sensor. In your terminal:</p>
 <code>dibs web</code>
 <p>then open the link it prints. Single-use, expires in two minutes.</p>
 </div>`

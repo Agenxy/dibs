@@ -46,6 +46,29 @@ func (l *Agent) IsCoordinator() bool { return l.Role == RoleCoordinator || l.Rol
 // other agents' mail. Only a human grants this.
 func (l *Agent) IsAdmin() bool { return l.Role == RoleAdmin }
 
+// checkGrantRole rejects a role nobody has ever defined.
+//
+// Called from Admit, NOT from Apply, for the reason spelled out at
+// checkGrantRequest: this is payload vocabulary, and Apply is the fold that
+// replays a ledger written by older code. A vocabulary rule enforced there is
+// retroactive, so the day the accepted set changes is the day the daemon
+// refuses to boot on its own history. It sat in Apply here while the typed
+// request path beside it did this correctly and carried the paragraph
+// explaining why. Found by the pre-release review, which is now the fifth time
+// this mistake has been caught in this repository.
+func checkGrantRole(op *Op) error {
+	if op.Kind != OpGrantRole {
+		return nil
+	}
+	switch op.Mode {
+	case RoleMember, RoleCoordinator, RoleAdmin:
+		return nil
+	}
+	return errf("E_BAD_ROLE",
+		"use member (default) | coordinator (broadcast + force_release) | admin (everything, including reading all mail)",
+		"unknown role %q", op.Mode)
+}
+
 // applyGrantRole sets an agent's role. The engine admits this op only on the
 // admin path (local secret + admin password), so an agent can never promote
 // itself or another; the core just applies the recorded decision.
@@ -54,12 +77,8 @@ func (s *State) applyGrantRole(op *Op, now time.Time) (Result, []Event, error) {
 	if !ok {
 		return nil, nil, errf("E_NO_AGENT", "check the board for live agents", "no agent %q", op.To)
 	}
+	// The vocabulary check is in Admit, not here. See checkGrantRole.
 	role := op.Mode
-	if role != RoleMember && role != RoleCoordinator && role != RoleAdmin {
-		return nil, nil, errf("E_BAD_ROLE",
-			"use member (default) | coordinator (broadcast + force_release) | admin (everything, including reading all mail)",
-			"unknown role %q", role)
-	}
 	if l.Role == role || (l.Role == "" && role == RoleMember) {
 		return Result{"ok": true, "agent": l.ID, "role": role, "changed": false}, nil, nil
 	}
@@ -120,23 +139,98 @@ func (s *State) AgentBySession(sid string) *Agent {
 	if sid == "" {
 		return nil
 	}
+	// A STATED holder beats a GUESSED one, and beats map order.
+	//
+	// Two agents can hold one id: the daemon inferred it for one by directory,
+	// and the session it actually belongs to later stated it. Returning
+	// whichever Go's map iteration reached first made the answer random per
+	// call, so the same hook could resolve to a different agent on consecutive
+	// turns. Preferring the agent that STATED the id resolves that in favour of
+	// the one that can prove it is the session, and it removes the
+	// nondeterminism whether or not a reclaim ever happens.
+	//
+	// Done by preference rather than by deleting the loser's binding, because a
+	// delete belongs in the fold and would be retroactive: replaying a ledger
+	// written before this existed would start stripping bindings that were legal
+	// when they were made.
+	var guessed *Agent
 	for _, l := range s.Agents {
 		if l.Status == StatusArchived || l.Status == StatusClosed {
 			continue
 		}
-		if l.SessionID == sid {
+		if !l.holdsSession(sid) {
+			continue
+		}
+		if !l.GuessedSession(sid) {
 			return l
 		}
-		// Also the names the harness's OTHER half uses for this same session:
-		// the bridge says `host-<ppid>`, a configured hook says whatever the
-		// harness calls its session. See Agent.SessionAliases.
-		for _, alias := range l.SessionAliases {
-			if alias == sid {
-				return l
-			}
+		// Sorted by id so two guessed holders do not swap between calls either.
+		if guessed == nil || l.ID < guessed.ID {
+			guessed = l
 		}
 	}
-	return nil
+	// Only a guess holds it: still an answer, and a stable one.
+	return guessed
+}
+
+// SessionSpokenFor reports whether ANY agent row has ever answered to this
+// session id, archived and closed rows included.
+//
+// A different question from AgentBySession, and the difference is the whole
+// point. That one answers "who should this hook's mail go to", so it skips
+// archived and closed rows: mail must not be delivered to an agent that is
+// gone. Asked instead as "is this id free for somebody else to be given", that
+// skip is a hole. An ephemeral row swept while its session kept running leaves
+// a LIVE session's id looking unheld, and the directory inference then handed
+// it to the next agent registering in that directory. Measured on this
+// project's own board: one agent's unread list was rendered into another's
+// context for hours.
+//
+// Archived is not free. The row is kept for ArchiveRetention, which is seven
+// days against a one-hour join window, so an id whose agent was swept recently
+// enough for the inference to consider it always still has a row here.
+func (s *State) SessionSpokenFor(sid string) bool {
+	if sid == "" {
+		return false
+	}
+	for _, l := range s.Agents {
+		if l.holdsSession(sid) {
+			return true
+		}
+	}
+	return false
+}
+
+// dropSession removes one session id from this agent, primary or alias, so
+// exactly one row answers to a thread after it changes hands.
+//
+// Leaving it on both is worse than either outcome on its own: AgentBySession
+// then has two stated holders to choose between and resolves by id order, so
+// which agent a hook reaches stops depending on anything a reader can see.
+func (a *Agent) dropSession(sid string) {
+	if sid == "" {
+		return
+	}
+	if a.SessionID == sid {
+		a.SessionID = ""
+	}
+	a.SessionAliases = withoutString(a.SessionAliases, sid)
+	a.GuessedSessions = withoutString(a.GuessedSessions, sid)
+}
+
+// holdsSession reports whether this agent answers to that session id, as its
+// primary or as one of the OTHER names the same session goes by. See
+// Agent.SessionAliases.
+func (a *Agent) holdsSession(sid string) bool {
+	if a.SessionID == sid {
+		return true
+	}
+	for _, alias := range a.SessionAliases {
+		if alias == sid {
+			return true
+		}
+	}
+	return false
 }
 
 // AgentForHook resolves the agent a lifecycle hook is speaking for.
@@ -306,6 +400,66 @@ const maxSessionAliases = 8
 // fixes are already registered. An agent registered before the join existed has
 // no reason to ever register again; without this it stays unreachable by its
 // own harness's hooks forever, while every call it makes reports success.
+// bindHarnessSessionAs is bindHarnessSession plus whether the id was a GUESS.
+//
+// Recorded on the agent so a later first-hand claim can take an inferred
+// binding back without being able to take a stated one. See Op.SessionGuessed.
+func (a *Agent) bindHarnessSessionAs(sid string, guessed bool) string {
+	bound := a.bindHarnessSession(sid)
+	// AN ALREADY-HELD ID STILL CARRIES PROVENANCE, and this returned early on
+	// one.
+	//
+	// bindHarnessSession reports "" when there is nothing NEW to bind, which is
+	// the case when the caller names an id this agent already holds. That is
+	// precisely the moment a session confirms an id first-hand, so returning
+	// here left it marked as a guess: an agent that explicitly stated its own
+	// session went on being reclaimable by anyone. The binding is unchanged; the
+	// claim about where it came from is not. Found by the pre-release review.
+	if bound == "" && sid != "" && a.holdsSession(sid) {
+		bound = sid
+	}
+	if bound == "" {
+		return ""
+	}
+	// Against THIS id, not against the agent. A stated re-assert of an id that
+	// was previously a guess upgrades it, which is what makes an agent that
+	// later names its own session stop being reclaimable.
+	a.GuessedSessions = withoutString(a.GuessedSessions, bound)
+	if guessed {
+		a.GuessedSessions = append(a.GuessedSessions, bound)
+	}
+	return bound
+}
+
+// HoldsSessionForTest reports whether this agent answers to that id. Exported
+// for engine tests that assert on a binding the ingress made.
+func (a *Agent) HoldsSessionForTest(sid string) bool { return a.holdsSession(sid) }
+
+// GuessedSession reports whether THIS id was inferred for this agent rather
+// than stated by it.
+//
+// Exported because the authorisation decision lives in the engine, at ingress,
+// where a rejecting rule belongs: putting it in the fold would make replay
+// depend on today's answer. See mayClaimSession.
+func (a *Agent) GuessedSession(sid string) bool {
+	for _, g := range a.GuessedSessions {
+		if g == sid {
+			return true
+		}
+	}
+	return false
+}
+
+func withoutString(xs []string, drop string) []string {
+	out := xs[:0]
+	for _, x := range xs {
+		if x != drop {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
 func (a *Agent) bindHarnessSession(sid string) string {
 	if sid == "" || sid == a.SessionID {
 		return ""

@@ -98,6 +98,44 @@ type plan struct {
 	running            daemonState
 	before             fleet
 	serving            bool
+
+	// THE THREE EFFECTS CUTOVER HAS ON A LIVE FLEET, behind fields so a test
+	// can drive them.
+	//
+	// The guarantee here is an ORDERING: the restart is not believed until the
+	// board answers, so the recovery still fires when a start reported success
+	// and produced nothing. That was pinned by a test that read this file for
+	// the positions of two string literals, which cannot tell a live path from
+	// an unreachable branch and cannot see a recovery that starts the wrong
+	// directory: two such defects lived inside this function while that test
+	// was green, and a review round said so in those words.
+	//
+	// Nil means the real thing. Set in planUpgrade, so a plan built anywhere
+	// else behaves identically and nothing has to remember to wire them.
+	stop    func(dir string) error
+	start   func(installed, dir, unit string, was daemonState) error
+	confirm func(newDir string) error
+}
+
+func (p *plan) doStop(dir string) error {
+	if p.stop != nil {
+		return p.stop(dir)
+	}
+	return stopDaemon(dir)
+}
+
+func (p *plan) doStart(dir string) error {
+	if p.start != nil {
+		return p.start(p.installed, dir, p.unit, p.running)
+	}
+	return startDaemon(p.installed, dir, p.unit, p.running)
+}
+
+func (p *plan) doConfirm(newDir string) error {
+	if p.confirm != nil {
+		return p.confirm(newDir)
+	}
+	return p.verify(newDir)
 }
 
 func say(format string, a ...any) { fmt.Printf(format+"\n", a...) }
@@ -143,11 +181,18 @@ func planUpgrade(o upgradeOpts) (*plan, error) {
 	// What is serving right now, so the end of this can prove the board came
 	// back rather than assert it.
 	var serveErr error
-	p.before, serveErr = fleetSnapshot()
+	p.before, serveErr = fleetSnapshotAt(p.running.addr)
 	p.serving = serveErr == nil
-	if p.serving {
+	switch {
+	case p.serving:
 		say("%s serial %d, %d agent(s)", ui.Dim("running  "), p.before.Serial, p.before.Agents)
-	} else {
+	case p.running.addr != "":
+		// The registry says one is there and it did not answer. Saying only
+		// "nothing is answering" invites the reader to believe the board is
+		// already down, which is the assumption that made the stop skippable.
+		say("%s registered on %s and not answering (%v): it will still be stopped",
+			ui.Dim("running  "), p.running.addr, serveErr)
+	default:
 		say("%s nothing is answering on %s", ui.Dim("running  "), origin())
 	}
 
@@ -248,6 +293,38 @@ func (p *plan) preflight() error {
 			return fmt.Errorf("the service unit cannot be rewritten, so nothing has been "+
 				"stopped: %w", err)
 		}
+		// AND THE REFUSALS THE WRITE ITSELF APPLIES, not only the file mode.
+		//
+		// unitIsWritable answers "can this file be opened for writing", and
+		// writeServiceUnit refuses for a second reason that has nothing to do
+		// with permissions: a unit under one of the legacy labels is still
+		// installed, and writing the current one beside it would leave two jobs
+		// on one data directory. `replaceUnits` waives the "refusing to
+		// overwrite a unit you may have tuned" check and deliberately does not
+		// waive that one.
+		//
+		// So an operator on a legacy-labelled unit passed preflight, had the
+		// daemon stopped, and only then met a refusal that was knowable before
+		// anything moved. Recovery restarted through that same legacy unit,
+		// whose ExecStart still pins the OLD binary, and printed "This is the
+		// NEW build, not a rollback": an upgrade that did not upgrade, saying it
+		// did. That is the failure class this command has already shipped once.
+		// Migrating exactly such an installation is ordinary use, which
+		// reconcile's own comment says.
+		//
+		// Asked with replaceUnits set, because the question is what the REAL
+		// write will do, and the real write sets it. Asking without it would
+		// refuse on the existing current unit, which is the file upgrade exists
+		// to rewrite.
+		conflict := func() error {
+			replaceUnits = true
+			defer func() { replaceUnits = false }()
+			return refuseIfUnitConflicts()
+		}()
+		if conflict != nil {
+			return fmt.Errorf("the service unit cannot be rewritten, so nothing has been "+
+				"stopped: %w", conflict)
+		}
 	}
 	if p.moveDir {
 		if _, err := os.Stat(adoptedName(p.inherited)); err == nil {
@@ -263,9 +340,27 @@ func (p *plan) preflight() error {
 // daemon being up again however it ends.
 func (p *plan) cutover() error {
 	stopped := false
-	if p.serving {
+	// EITHER SIGNAL IS ENOUGH TO MEAN "SOMETHING IS RUNNING".
+	//
+	// p.serving is one request to the board, and p.running comes from the
+	// registry the daemon writes: two independent pieces of evidence, and this
+	// consulted only the first. Any transient failure of that request, a
+	// timeout, a certificate hiccup, an address that resolved differently, made
+	// serving false and skipped the stop entirely. The replacement then started,
+	// exited at once on the directory lock the original still holds, and the
+	// original went on answering: verification found a board, found no
+	// pre-upgrade serial to compare it against, and printed `upgraded:` for the
+	// process this command was supposed to replace. With --adopt-dir the data
+	// directory is renamed under that live writer as well.
+	//
+	// A registered daemon is stopped whether or not it answered a moment ago.
+	// UNKNOWN COUNTS AS RUNNING. Stopping a daemon that was not there costs a
+	// no-op; skipping the stop because the registry was unreadable leaves the
+	// old one serving while this command reports the new one. The asymmetry
+	// decides it, and it is the same asymmetry as everywhere else in this file.
+	if p.serving || p.running.addr != "" || p.running.unknown {
 		step("stopping the daemon")
-		if err := stopDaemon(p.dir); err != nil {
+		if err := p.doStop(p.dir); err != nil {
 			return fmt.Errorf("could not stop the daemon, so nothing else was changed: %w", err)
 		}
 		stopped = true
@@ -287,7 +382,7 @@ func (p *plan) cutover() error {
 		if !stopped || restored {
 			return
 		}
-		if err := startDaemon(p.installed, recoverDir, p.unit, p.running); err != nil {
+		if err := p.doStart(recoverDir); err != nil {
 			fmt.Fprintf(os.Stderr, "\n%s could not restart the daemon after the failure "+
 				"above: start it with `%s -dir %s`: %v\n",
 				ui.Bold("AND:"), p.installed, recoverDir, err)
@@ -328,7 +423,7 @@ func (p *plan) cutover() error {
 	}
 
 	step("starting " + filepath.Base(p.installed))
-	if err := startDaemon(p.installed, newDir, p.unit, p.running); err != nil {
+	if err := p.doStart(newDir); err != nil {
 		return err
 	}
 	// NOT here, and this is the whole guarantee.
@@ -339,7 +434,7 @@ func (p *plan) cutover() error {
 	// exited. A start that returned no error is not a daemon that is serving:
 	// `launchctl kickstart` exits 0 having merely SCHEDULED a spawn, and the
 	// program it schedules can be missing. Only the board answering proves it.
-	if err := p.verify(newDir); err != nil {
+	if err := p.doConfirm(newDir); err != nil {
 		return err
 	}
 	restored = true
@@ -402,7 +497,7 @@ func (p *plan) reconcile() (newDir string, err error) {
 // the requirement (R12). So: subtract.
 func (p *plan) verify(newDir string) error {
 	step("waiting for the board")
-	after, err := waitForBoard(90 * time.Second)
+	after, err := waitForBoard(p.running.addr, 90*time.Second)
 	if err != nil {
 		return fmt.Errorf("the daemon did not start serving: %w\n\n"+
 			"  The ledger is untouched and the board is still in it. Start the daemon\n"+
@@ -601,9 +696,22 @@ type fleet struct {
 // Through the same `get` every other verb uses, so it authenticates and pins
 // the certificate the same way, and a remote board is read the same as a local
 // one rather than through a second half-built client.
-func fleetSnapshot() (fleet, error) {
+func fleetSnapshot() (fleet, error) { return fleetSnapshotAt("") }
+
+// fleetSnapshotAt reads the board of the daemon at a DISCOVERED address.
+//
+// The address matters because upgrade already goes to the trouble of finding
+// it: the registry records what each live daemon bound, so a board serving on a
+// LAN address is not restarted on loopback. Both the before-snapshot and the
+// verification then called the address-free form, which asks this CLI's own
+// environment and config, so the proof that "the board came back" was collected
+// from whichever daemon that named. With two boards up it stopped one and read
+// the other, then reported success. With one board bound to an address the CLI
+// does not know, it restarts correctly and reports a failure that did not
+// happen. Found by the pre-release review, with a reproduction.
+func fleetSnapshotAt(addr string) (fleet, error) {
 	var b boardView
-	if err := get("/api/board", &b); err != nil {
+	if err := getAt(originFor(addr), "/api/board", &b); err != nil {
 		return fleet{}, err
 	}
 	return fleet{Serial: b.Serial, Agents: len(b.Agents)}, nil
@@ -615,18 +723,18 @@ func fleetSnapshot() (fleet, error) {
 // act on rather than a hang, and it waits on the BOARD rather than on /livez:
 // liveness answers before replay finishes, and an upgrade that reported success
 // while the board was still rebuilding would be reporting the wrong thing.
-func waitForBoard(limit time.Duration) (fleet, error) {
+func waitForBoard(addr string, limit time.Duration) (fleet, error) {
 	deadline := time.Now().Add(limit)
 	var last error
 	for {
-		f, err := fleetSnapshot()
+		f, err := fleetSnapshotAt(addr)
 		if err == nil {
 			return f, nil
 		}
 		last = err
 		if time.Now().After(deadline) {
 			return f, fmt.Errorf("nothing served the board on %s within %s: %w",
-				origin(), limit, last)
+				originFor(addr), limit, last)
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
@@ -649,6 +757,18 @@ func tooOldForCheck(out []byte) bool {
 type daemonState struct {
 	addr     string
 	parallel bool
+	// unknown means the registry could not be READ, which is not the same as
+	// nothing running.
+	//
+	// LiveDaemons says so in its own comment: "conflating the two is how a
+	// guard fails open". This returned a zero daemonState on a read error, so
+	// an unreadable registry read as "no daemon here", the stop was skipped,
+	// the replacement exited at once on the directory lock the original still
+	// holds, and the original went on answering. Verification then found a
+	// board, had no pre-upgrade serial to compare against, and printed
+	// `upgraded:` for the process this command exists to replace. Found by the
+	// pre-release review, which noted the adjacent comment already forbids it.
+	unknown bool
 }
 
 // runningDaemon reads the registry for the daemon serving dir, and notes
@@ -661,13 +781,61 @@ type daemonState struct {
 func runningDaemon(dir string) daemonState {
 	live, err := paths.LiveDaemons()
 	if err != nil {
-		return daemonState{}
+		return daemonState{unknown: true}
 	}
 	mine, others, err := selectDaemon(live, dir)
 	if err != nil || mine == nil {
 		return daemonState{parallel: others > 0}
 	}
 	return daemonState{addr: mine.Addr, parallel: others > 0}
+}
+
+// systemdTokens splits a unit the way systemd does, and reverses what
+// systemdArg escaped.
+//
+// The inverse of systemdArg, and it has to stay that way: double quotes group,
+// a backslash escapes the next character, and `%%` and `$$` are systemd's own
+// doubling for a literal percent and dollar. Reading the file with a plain
+// field split is what made a board with a space in its path invisible to the
+// command that upgrades it.
+func systemdTokens(body string) []string {
+	var out []string
+	for _, line := range strings.Split(body, "\n") {
+		rs := []rune(strings.TrimSpace(line))
+		var cur strings.Builder
+		inQuote, started := false, false
+		flush := func() {
+			if started {
+				out = append(out, undouble(cur.String()))
+				cur.Reset()
+				started = false
+			}
+		}
+		for i := 0; i < len(rs); i++ {
+			switch r := rs[i]; {
+			case r == '\\' && i+1 < len(rs):
+				i++
+				cur.WriteRune(rs[i])
+				started = true
+			case r == '"':
+				inQuote = !inQuote
+				started = true // `""` is an empty argument, not nothing
+			case !inQuote && (r == ' ' || r == '\t'):
+				flush()
+			default:
+				cur.WriteRune(r)
+				started = true
+			}
+		}
+		flush()
+	}
+	return out
+}
+
+// undouble reverses systemd's own escaping for a literal percent and dollar.
+func undouble(s string) string {
+	s = strings.ReplaceAll(s, "%%", "%")
+	return strings.ReplaceAll(s, "$$", "$")
 }
 
 // unitIsWritable answers, before anything is stopped, whether the unit rewrite
@@ -737,6 +905,26 @@ func replacementAddr(dir, addr string) string {
 	// So the scheme is added only when the config is talking about the same
 	// address the daemon actually bound. Otherwise the bare form goes through
 	// and the replacement resolves it exactly as the original did.
+	// DIBS_ADDR FIRST, BECAUSE THE DAEMON READS IT FIRST.
+	//
+	// resolveListenAddr takes -addr, then DIBS_ADDR, then the config. This
+	// command passes -addr, which OUTRANKS the variable still set in the
+	// environment the replacement inherits: a board launched with
+	// DIBS_ADDR=http://10.0.0.9:4777 whose dibs.toml does not repeat that
+	// address was handed a bare `10.0.0.9:4777`, and the replacement re-inferred
+	// TLS for a non-loopback host while every client went on speaking plaintext.
+	// The reverse turns an explicitly plaintext loopback board into one.
+	//
+	// Same rule as the config below: state the scheme only where the source is
+	// talking about the listener the daemon actually bound.
+	if env := os.Getenv("DIBS_ADDR"); sameHostPort(env, addr) {
+		if scheme, _, found := strings.Cut(env, "://"); found {
+			switch strings.ToLower(scheme) {
+			case "http", "https":
+				return strings.ToLower(scheme) + "://" + addr
+			}
+		}
+	}
 	configured, cerr := readConfiguredAddr(paths.DataDir())
 	if cerr != nil || !sameHostPort(configured, addr) {
 		return addr
@@ -783,7 +971,11 @@ func bare(a string) string {
 // So the file is split into candidate values, unescaped, and compared as whole
 // paths.
 func unitNames(unit, dir string) bool {
-	b, err := os.ReadFile(unit) // #nosec G304 -- the operator's own unit path
+	// #nosec G304,G703 -- `unit` is a service-unit path this project builds from
+	// the process's own HOME (or XDG_CONFIG_HOME) plus a fixed filename, or one
+	// the operator passed for their own machine. It is read and compared, never
+	// written, and unitPinning is the caller that made the taint visible.
+	b, err := os.ReadFile(unit)
 	if err != nil {
 		return true
 	}
@@ -814,12 +1006,16 @@ func unitTokens(body string) []string {
 	for _, m := range plistString.FindAllStringSubmatch(body, -1) {
 		out = append(out, html.UnescapeString(m[1]))
 	}
-	// And a systemd ExecStart is whitespace-separated, where a path containing
-	// a space is quoted. Splitting on both covers it; the comparison afterwards
-	// is exact, so a stray token costs nothing.
-	for _, chunk := range strings.FieldsFunc(body, func(r rune) bool {
-		return r == '"' || r == '\'' || r == '\n' || r == '\r' || r == '\t' || r == ' '
-	}) {
+	// And a systemd unit is parsed the way systemd parses it, because this
+	// project WRITES it with systemdArg and could not read its own output.
+	// Splitting on quotes as if they were separators turned `-dir "/tmp/Fleet
+	// Review"` into `/tmp/Fleet` and `Review`, neither of which matches the
+	// board, so the unit describing this very daemon read as another board's:
+	// upgrade then started a detached process instead of the service, and
+	// systemd stopped supervising it across logout and reboot. It printed a
+	// warning and accepted that. Same for any path holding `%`, `$` or a
+	// backslash, which systemdArg doubles and this never undid.
+	for _, chunk := range systemdTokens(body) {
 		if chunk != "" {
 			out = append(out, html.UnescapeString(chunk))
 		}

@@ -12,7 +12,19 @@
 One place your agents look to see what the rest of the fleet is doing, and the
 means to do something about it: typed messages with deadlines and receipts, file
 transfer, advisory claims on shared resources, and topic spaces they can join.
-Dibs reports; it never acts.
+Dibs reports, and it never decides what an agent should do next. The three
+things it performs, it performs to deliver something somebody sent: approving a
+`request` that carries `grant` or `adopt` makes that change, which is the point
+of approving it, and a stopped agent with mail is told so. It is told in one of
+two ways, both carrying the same fixed sentence and nothing else: by
+`[wake.exec]` running a command from your own config, which is the one Dibs can
+confirm happened, or over the session socket its own harness publishes, which
+needs no configuration and is best effort. That second one is the receiver's
+decision: a Claude Code session in bypassPermissions mode holds peer messages
+for its human, and sends no receipt, so Dibs cannot tell held from delivered and
+does not claim to. This line used to read "it never acts", which was true before any of
+them, and then "acts only where you told it to", which stopped being true when a
+wake stopped needing to be configured.
 
 You have three agents open. One is refactoring the session store. Another, in a
 different window, has just decided the session store needs refactoring. Neither
@@ -160,10 +172,17 @@ only part that changes. `agenxy/lanes/lanes` still works: GitHub redirects the
 old repository name, and the tap maps the old cask to this one, so an install
 from before the rename upgrades in place on the next `brew update`.
 
-Installs both binaries. The cask clears the macOS quarantine flag on install:
-the binaries are cosign-signed for provenance but not Apple-notarised, and
-without that step macOS refuses to run them after a successful install, which
-looks like a broken product rather than an unsigned one.
+Installs both binaries. The cask TRIES to clear the macOS quarantine flag on
+install: the binaries are cosign-signed for provenance but not Apple-notarised,
+and without that step macOS refuses to run them after a successful install,
+which looks like a broken product rather than an unsigned one.
+
+It is not treated as fatal, because `xattr` exits non-zero in ordinary cases
+and failing the install over that would be worse than the warning it prevents.
+So if macOS still says the developer cannot be verified, it did not work, and
+`xattr -dr com.apple.quarantine "$(brew --prefix)/bin/dibd"` finishes the job.
+Saying it always works would leave you meeting a dialog the documentation calls
+impossible.
 
 ### Go
 
@@ -177,6 +196,15 @@ account to create. Any tagged, public repository is installable by path, and
 [pkg.go.dev](https://pkg.go.dev/github.com/agenxy/dibs) indexes it
 automatically. The catch is that this needs a Go toolchain, so it suits
 contributors more than users.
+
+**On macOS this gives you two of the four artifacts.** `go install` builds Go
+programs, and the Touch ID helper is Swift and the notifier is an app bundle:
+without them `dibs web` falls back to asking for an admin password and
+notifications are posted by `osascript` under Script Editor's name, with no
+buttons. Neither failure says "you installed it wrong", which is why it is said
+here. `dibs doctor` reports both. Use Homebrew or the release archive if you
+want the whole thing, or build the other two from a checkout as
+[From source](#from-source) describes.
 
 ### From source
 
@@ -261,7 +289,7 @@ Then:
 ```sh
 dibd &                  # daemon on 127.0.0.1:4777, data in ~/.dibs
 dibs mcp-config          # print the MCP host config (add to e.g. .mcp.json)
-dibs admin set-password  # once: the board is yours, not the agents'
+dibs admin set-password  # only where Touch ID is unavailable: see below
 dibs web                 # print the live board URL
 dibs board               # the same board, in the terminal
 dibs doctor              # what is quietly broken, and how to fix it
@@ -439,11 +467,18 @@ The identity names the workflow AND the tag, so it has to match the release you
 downloaded. `Verified OK` means the checksums file was produced by this
 repository's release workflow at that tag, and `sha256sum -c checksums.txt` then covers the archives.
 
-`admin set-password` is a prerequisite for `dibs web`, not optional hardening.
 The browser board shows decrypted mail and can act as you, so it is gated on
-something the agents do not have: every agent holds the coordination secret, none
-holds this. `dibs board` in the terminal needs no password: it shows only what
-the board shows.
+something the agents do not have: every agent holds the coordination secret, and
+none of them is you. **On a Mac with Touch ID that gate is the sensor**, and
+`dibs web` uses it first: there is nothing to set up and no password to store.
+
+`admin set-password` is what you set when there is no sensor to ask, which means
+Linux, a Mac without Touch ID, or a session that is not at the keyboard.
+Setting one anyway is a way in that does not depend on the hardware; it is not
+required, and it is a weaker credential than the one it stands in for. `dibs
+doctor` says which of the two applies on this machine.
+
+`dibs board` in the terminal needs neither: it shows only what the board shows.
 
 Agents then coordinate through MCP tools: `register` → `check_in` →
 `declare` / `claim` / `send` / `await_events`. The server's instructions
@@ -911,7 +946,7 @@ each project's latest commit:
 
 | harness | speaks | why |
 |---|---|---|
-| Codex | 2025-11-25 (negotiates **2025-06-18**) | flag `mcp_2026_07_28` exists but is stage `UnderDevelopment`, default off. Its SDK supports 2025-11-25; what it actually sends in `initialize` is 2025-06-18, measured, see [plugins/codex](plugins/codex/) |
+| Codex | 2025-11-25 by default, **2026-07-28 when configured** | The flag `mcp_2026_07_28` is stage `UnderDevelopment` and off by default, so an unconfigured Codex sends 2025-06-18, measured. With the flag AND `CODEX_MCP_PROTOCOL_VERSION` on that server's entry, which is what `dibs mcp-config` prints, it runs entirely on 2026-07-28 against Dibs: this row said legacy-only for a while, and the paragraph under the table is what is current. See [plugins/codex](plugins/codex/) |
 | opencode | 2025-11-25 | bound by the TypeScript SDK (1.29.0) |
 | pi-mono | 2025-11-25 | bound by the TypeScript SDK (^1.25.2) |
 | Gemini CLI | 2025-06-18 | not stated |
@@ -925,8 +960,9 @@ The reason is one level below the harnesses, and it is the useful part:
   beta space: still declares `LATEST_PROTOCOL_VERSION = '2025-11-25'`.
 
 So every TypeScript harness is blocked on its SDK, not on its own roadmap, and
-no amount of configuration will move them until that ships. Codex is the only one
-that exposes the flag at all, and as measured above, the flag ALONE does not
+no amount of configuration will move them until that ships. **Codex is not among
+them**: it is the only one that exposes the flag at all, and it does reach 2026
+once configured. The flag ALONE does not
 change what goes on the wire: it moves only when `CODEX_MCP_PROTOCOL_VERSION` is
 set on that server's own entry as well, which is what `dibs mcp-config` prints.
 The rest of this list has no switch to set:
@@ -975,6 +1011,11 @@ Verified against a running daemon, not assumed:
 
 **macOS is what this is verified on.** Every test, every end-to-end suite and the
 CI gate run there, and that is the honest extent of the claim for v0.
+
+**Apple silicon only on the Mac.** Apple is ending Intel support, so the
+released Mac archive and the Homebrew cask are arm64: an Intel Mac has to build
+from source, which works, and `go install` covers the two Go binaries. Linux
+ships both amd64 and arm64.
 
 It compiles for Linux and arm64 on every push: the cross-compile matrix is part
 of CI, and most of Dibs is ordinary portable Go with no reason to care. The

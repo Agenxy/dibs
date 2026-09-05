@@ -82,8 +82,60 @@ was not running it returned `Queued message …` and nothing woke: the message
 waits for somebody to open that conversation. Useful when you know the app is
 up and you want the existing window to act; not a wake on its own.
 
+**Claude Code.** Measured on 2026-08-26, the same way.
+
+```toml
+[wake.exec."claude code"]
+argv = ["claude", "--resume", "{thread}", "-p", "{message}"]
+cooldown = "90s"
+```
+
+`claude --resume <session-id> -p "<text>"` continues that session in a new
+headless process. Watched end to end: a seeded session's transcript went from 15
+lines to 56, the notice arrived as a turn, and the agent's first action was to
+call `register` to go and look at the board, which is exactly what a wake is for
+and the whole of what it should cause.
+
+One caveat worth knowing before you rely on it. A headless `-p` process does not
+have the permissions an interactive session does, so an agent woken this way can
+find its own Dibs calls refused, which is what happened on the measured run
+after it decided to look. It still beats not being told: the session is running
+and its own hooks fire from there. If your agents need tool access on a wake,
+give that process the permissions it needs rather than assuming it inherits
+them.
+
+**A wake runs in the agent's own directory.** It has to, and for a long time it
+did not. `codex exec resume` refuses to start outside a trusted directory, and a
+daemon started by launchd has `/` as its working directory, so every wake it
+attempted exited 1 without reaching anyone.
+
+This was diagnosed twice as launchd putting the daemon in a different security
+session with no login keychain. **That was wrong**, and the wrong explanation is
+recorded here because it cost two investigations: a probe LaunchAgent in the
+identical domain and `ProcessType` as `dibd` read the login keychain without
+trouble and ran a complete `claude --resume` turn, exit 0. The security session
+was never involved. The working directory was the whole difference.
+
+The daemon now runs each wake in the directory the agent registered from, and
+names that directory when a command fails. It still will not print the command's
+output, because a wake command runs a whole agent turn and that output is
+somebody's decrypted mail; it prints the argv instead, so you can run it
+yourself and see what is being withheld.
+
+**Why you want one of these even though the socket route needs no setup.** The
+socket is best effort: the receiving session decides whether to accept a peer
+message and sends no receipt, and a Claude Code session running in
+`bypassPermissions` mode HOLDS peer messages for its human. That is the mode an
+unattended fleet runs in, so for those agents the socket route delivers nothing
+and nothing reports it. A command is the route the daemon can confirm, because
+it sees the exit status. `dibs doctor` tells you which of the two a board has.
+
 The key under `exec` is the harness as agents report it, lowercased: `codex`,
-`claude code`. Each takes `argv` and an optional `cooldown`.
+`claude code`. Each takes `argv` and an optional `cooldown`. Check what your
+agents actually report before trusting a key to match: the board shows values
+like `Codex`, `Claude Code` and `codex-quarters`, and only an exact lowercased
+match is a match, so a harness that reports a variant gets no wake and nothing
+says so.
 
 **`argv`, never a shell string.** There is no shell anywhere in this path.
 `{thread}`, `{agent}`, `{from}`, `{type}` and `{message}` each replace one
@@ -109,9 +161,24 @@ never put on a command line**: the agent reads it over its authenticated
 connection with its own token, which is the same reason the bodies are
 encrypted at rest.
 
-Only a question, a request or a handoff wakes anything, and only for an agent
-that is not already active. A notice does not justify starting a process, and
-an agent that is running was going to see the message anyway.
+Only work somebody is blocked on starts a process: a question, a request, a
+handoff, or a **verdict**, which is the answer to something this agent asked and
+then stopped for. A notice does not justify starting a process on the operator's
+machine.
+
+The other half of the test is whether the agent is *reachable already*, and it
+is not `active`. `active` means the idle lease has not lapsed, which is
+forty-five minutes by default, so an agent whose turn ended seconds ago is still
+`active` and is still not running: treating that as "no wake needed" discards
+the one attempt the message gets. What is asked instead is whether the agent has
+called Dibs within the wake cooldown, which is real evidence of a live process
+rather than an unexpired lease.
+
+### `extend_turn_for`: which news may extend a turn already running
+
+Everything above is about a stopped process. This is the separate question of
+what an agent that IS running is told at its next turn boundary, and it has no
+power to start anything.
 
 
 `all` means anything unread wakes its recipient, once, when it arrives. A fleet
@@ -131,19 +198,28 @@ not to act is not asked again. Work somebody is blocked on comes back on the
 announcement retry. See [WAKE-MECHANISMS.md](../WAKE-MECHANISMS.md).
 
 `notices_wake` covers the other half: a **notice** is something that happened
-TO an agent and that it could not infer, such as being evicted, having a request
-approved, or another agent joining a space it is working in.
+TO an agent and that it could not infer, such as being evicted or another agent
+joining a space it is working in.
+
+**A verdict is not one of them.** An answer, an approval, a denial or a decline
+is the reply to something this agent asked and then stopped for, so it is
+BLOCKING: it is counted separately, it reaches `urgent` delivery, and
+`notices_wake = false` does not suppress it. This section named an approved
+request as an example of what the setting governs, which is the opposite of what
+the code does, and an operator turning it off to save tokens would have expected
+to stop hearing the one thing they cannot afford to miss.
 
 On by default, because "an agent is told what happened to it" is a guarantee
 Dibs already makes, and a guarantee that holds only for operators who found a
 config file is not one.
 
-Turn it **off** to buy the tokens back. Extending a turn revives a thread that
-may be long and whose prompt cache is cold, and on a fleet of idle sessions that
-is a real bill to pay for "somebody joined your space". Nothing is lost when you
-do: notices queue, ride along on any wake that happens for another reason, and
-arrive in full at the agent's own `check_in`, which it makes once per activation
-anyway. What you give up is latency, not delivery.
+Turn it **off** to buy the tokens back on the situational half. Extending a turn
+revives a thread that may be long and whose prompt cache is cold, and on a fleet
+of idle sessions that is a real bill to pay for "somebody joined your space".
+Nothing is lost when you do: those notices queue, ride along on any wake that
+happens for another reason, and arrive in full at the agent's own `check_in`,
+which it makes once per activation anyway. What you give up is latency, not
+delivery, and verdicts are unaffected either way.
 
 Mail is unaffected either way, because somebody is blocked on an unanswered
 question and nobody is blocked on knowing who joined a space.
@@ -299,13 +375,27 @@ agent and take its token, its mailbox and its role. The daemon now detects and
 refuses that value, so following the old advice bought the exposure and not
 even the grant.
 
-If you genuinely mean to hand the role to a different agent, put the new
-agent's fingerprint here and delete that name from `roles.pinned`.
+If you genuinely mean to hand the role to a different agent, it is **three
+steps and all of them matter**, in this order:
+
+1. `dibs admin member <the old agent>`. Editing config decides what is
+   GRANTED, and a role already held is replayable state that nothing in the
+   reconciler takes away: skip this and the predecessor keeps reading every
+   mailbox while you believe the role moved. This paragraph used to name only
+   the two steps below, which is the wrong direction for a security document
+   to be wrong in. See `SECURITY.md`, and issue #73 for making the config
+   sufficient on its own.
+2. Put the new agent's fingerprint here, and delete the old name from
+   `roles.pinned`.
+3. Restart `dibd`. Both files are read at startup, so editing either one under
+   a running daemon changes nothing.
 
 **One agent, one role.** Naming the same agent under both `coordinator` and
-`admin` is refused: an agent holds a single role, so the reconciler would grant
-one and then the other every fifteen seconds for the whole startup window.
-`admin` already includes everything `coordinator` can do.
+`admin` is refused when you spell it the same way in both lists, and validation
+compares strings: a name and an id are two strings for one agent, so
+`coordinator = ["fleet-lead"]` beside `admin = ["Fleet Lead"]` gets past it.
+The reconciler settles that after resolving, where the aliases are visible, and
+`admin` wins because it already includes everything `coordinator` can do.
 
 The grant window closes about two minutes after start. A name that never
 appears is reported once and then left alone, rather than standing open for

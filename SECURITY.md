@@ -22,7 +22,17 @@ it, but a malicious agent in your own fleet is not an attacker Dibs can lock
 out, because you gave it the key.
 
 **If you run agents you do not trust, do not point them at the same daemon.**
-Run a second `dibd` with its own data directory; they share nothing.
+Run a second `dibd` with its own data directory (`-allow-parallel`); they share
+no coordination state: separate ledgers, separate mailboxes, separate boards.
+
+They do share the SCREEN, and that is not a quibble, because the screen is where
+the presence check happens. This said "they share nothing", which is true of
+everything Dibs stores and false of the one channel that asks a human to
+authorise something. Two daemons each serialise their own presence prompts and
+neither knows about the other's, so the guarantee below holds per daemon and
+not across them: see "Only one prompt waits at a time per daemon". If you are
+running parallel daemons for this reason, the four-letter code is the control
+you are relying on, not the serialisation.
 
 ## What holds inside that boundary
 
@@ -30,12 +40,13 @@ These are enforced, not advisory:
 
 | Surface | Rule |
 |---|---|
-| God view (`/api/messages`, `/`, `/events`, `/api/admin/*`) | Needs the admin password, never the secret alone. `/api/admin/` is gated by prefix, so a route added later is closed by default rather than open until somebody remembers |
+| Mail and acting (`/api/messages`, `/api/admin/*`, `/api/act/*`, `/api/me`) | Either a board session **and** the page key, or, for the CLI, the local secret **and** the admin password in headers. Never the local secret alone, which is what every agent holds: both combinations require something an agent cannot produce. This row named only the first for a while, which understated nothing but described the boundary incompletely, and a security document that lists one of two accepted credentials is telling you less than it appears to. `/api/admin/` is gated by prefix, so a route added later is closed by default rather than open until somebody remembers |
+| Board document and stream (`/`, `/events`) | The session cookie alone, because `EventSource` cannot send a header. **These two carry board state and no mail**, which is the entire reason they are separated from the row above. This table used to put them under "needs the admin password", which was wrong twice over: a cookie is sufficient here, and the session behind it is minted by Touch ID on a Mac where no admin password exists |
 | Acting as the human (`/api/act/*`, `/api/me`) | Same, an agent with the secret cannot post, announce or send as the operator |
 | Agent tokens | Rotated, and the previous one revoked, on register, reattach and resume. Compared in constant time, never on the board. An agent woken from `stale` or `dormant` by its own token keeps that token: it re-arms the awareness gate, not the credential |
 | Blob access | Owner or recipient of a live message only; a stranger cannot learn a blob exists |
-| Admin role | Granted only on the human's admin path. A role declared in `[roles]` names a string, so the grant is pinned to the credential of the agent it first lands on and refused later under a different identity: a name is free to take once its holder is gone |
-| Coordinator role | The admin path, and two others, both deliberate. A human may approve a `request` carrying `grant: "coordinator"`, which is the human deciding through the ordinary response path rather than a bypass of it. And on a board with NO coordinator, an agent that can read `coordinator.claim` in the data directory may take the role once: that is how a fleet with nobody at the keyboard gets one at all. The claim is single-use, is not minted when `[roles] coordinator` already names somebody, and is refused once any coordinator exists. This row used to say "only on the human's admin path", which was false in a security document, and the direction of the error was the wrong one |
+| Admin role | Granted only on the human's admin path. A role declared in `[roles]` names a string, and a name is free to take, so the declaration alone grants nothing: `[roles.identity]` must carry that agent's fingerprint, and without one the grant is refused forever rather than handed to whoever registers first. **Withdrawing it is two steps**: the config decides what is GRANTED, and a role already held is replayable state that only `dibs admin member <agent>` takes away. This row used to describe the superseded model, where the first registrant was pinned; that let an agent which had read `dibs.toml`, or guessed a likely line, win a two-minute race for the god view |
+| Coordinator role | The admin path, and two others, both deliberate. A human may approve a `request` carrying `grant: "coordinator"`, which is the human deciding through the ordinary response path rather than a bypass of it. And on a board with NO coordinator, an agent that can read `coordinator.claim` in the data directory may take the role once: that is how a fleet with nobody at the keyboard gets one at all. The claim is single-use, is refused once any coordinator exists, and is not minted when the config has actually DECIDED who coordinates, which means a declared name with a matching `[roles.identity]` fingerprint. A bare name decides nothing, because it can never be granted, and suppressing the claim on one left a board with no coordinator and no way to get one. This row used to say "only on the human's admin path", which was false in a security document, and the direction of the error was the wrong one |
 | Lineage (`parent`) | Grants nothing unless the parent vouched with a one-time nonce |
 | Acting as the human from the panel (`human_unlock`) | Needs a fingerprint. The panel renders in the human's UI but speaks over the agent's connection with the agent's credential, so the transport cannot tell "the human clicked Broadcast" from "an agent called the tool". The proof has to come from outside the transport, and an agent confined to that transport cannot produce a fingerprint, see the bound below |
 
@@ -61,10 +72,21 @@ not start. That makes an unexpected prompt refusable, which is a real property
 and a weaker one than binding. **If a prompt appears that you did not cause,
 decline it, and treat it as a report worth making.**
 
-**Only one prompt waits at a time, and the sheet names a code.** A refusable
-prompt is no defence while two are outstanding, so `/bootstrap` serialises: a
-second presence check while one is waiting is refused with 409 rather than
-queued.
+**Only one prompt waits at a time per daemon, and the sheet names a code.** A
+refusable prompt is no defence while two are outstanding, so `/bootstrap`
+serialises: a second presence check while one is waiting is refused with 409
+rather than queued.
+
+**Per daemon, and this used to say it without the qualifier.** The lock is a
+mutex inside one `dibd`, and `dibd -allow-parallel` is a supported way to run
+several on one Mac, each with its own. So two boards can have a presence check
+outstanding at the same time, and the serialisation above does not reach
+between them. Whether both sheets can actually be on screen at once depends on
+how macOS schedules LocalAuthentication from two signed helpers, which has not
+been measured here; the honest statement is that Dibs does not provide the
+machine-wide guarantee, not that the operating system fails to. Anyone running
+parallel daemons should read the next paragraph as the control that applies to
+them, because it is the one that still does.
 
 Serialising alone is not enough, and an earlier version of this section claimed
 otherwise. First-request-wins is itself a confusion primitive: an agent leaves a
@@ -130,9 +152,12 @@ evidence that the real path works.
 
 **The board session cookie reaches the board and its stream, and nothing else.**
 Cookies are scoped to a *host* and never to a port, and `SameSite` does not
-separate ports either, so every service you visit on `127.0.0.1` is handed
-`dibs_session` by your own browser. Nothing the daemon can set on that cookie
-changes this.
+separate ports either, so every service you visit on `127.0.0.1` is handed this
+board's session cookie by your own browser. Nothing the daemon can set on that
+cookie changes this. The NAME carries the port (`dibs_session_4777`), which
+stops two boards on one host overwriting each other's session and does nothing
+whatever for this: a different name is still the same jar, sent to the same
+host, by the same browser.
 
 So the cookie is not the credential. Redeeming the magic link also hands the
 browser a **page key**, in the redirect's *fragment*: browsers never send a

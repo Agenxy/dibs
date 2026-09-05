@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -67,26 +68,27 @@ func TestTheAdoptedDirectoryIsASiblingNotAChild(t *testing.T) {
 // undo: the daemon is not considered restored until the BOARD answers, so the
 // recovery still fires when the start reported success and produced nothing.
 //
-// WHAT THIS DOES NOT PROVE, said plainly because a reader who skims it will
-// otherwise assume more. It reads the SOURCE for an ordering. It never runs a
-// failed cutover, never starts a daemon, and never shows the recovery putting a
-// board back. A pre-release review made exactly that criticism and it is
-// correct: two defects lived inside the recovery this test sits next to, a
-// directory that had been renamed out from under it and a message claiming a
-// rollback that never happens, and neither is the kind of thing an ordering
-// check can see. Proving those needs cutover's start, stop and verify to be
-// injectable, which is a refactor rather than a test.
+// WHAT THIS DOES NOT PROVE. It reads the SOURCE for an ordering: it never runs
+// a cutover and never shows the recovery putting a board back. Two review rounds
+// made that criticism, the second one after the first had only been answered
+// with the paragraph admitting it, and they were right both times: two defects
+// lived inside the recovery this test sits next to, a directory renamed out
+// from under it and a message claiming a rollback that never happens, and
+// neither is the kind of thing an ordering check can see.
 //
-// It is kept because the ordering is genuinely load-bearing and a structural
-// check catches a genuine regression class. It is not a behavioural guarantee
-// and must not be quoted as one.
+// So the behavioural half now exists, below, in
+// TestTheRecoveryFiresOnlyWhenTheBoardDidNotComeBack: cutover's stop, start and
+// board check are fields on the plan, and that test drives a silent board and
+// asserts the recovery fires. This one is kept because it is free and catches
+// the regression a second earlier, but it is not the guarantee and must not be
+// quoted as one.
 func TestARestartIsNotBelievedUntilTheBoardAnswers(t *testing.T) {
 	src, err := os.ReadFile("upgrade.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 	body := string(src)
-	verify := strings.Index(body, "if err := p.verify(newDir); err != nil {")
+	verify := strings.Index(body, "if err := p.doConfirm(newDir); err != nil {")
 	restored := strings.Index(body, "\trestored = true\n")
 	if verify < 0 || restored < 0 {
 		t.Fatal("cutover no longer verifies the board or no longer marks the restart " +
@@ -245,5 +247,275 @@ func TestAUnitThatNamesAnotherBoardIsNotUsedForRecovery(t *testing.T) {
 	if !unitNames(ampUnit, amp) {
 		t.Errorf("a unit naming %s, XML-escaped as a plist requires, was not "+
 			"recognised as naming it", amp)
+	}
+}
+
+// The recovery fires when the board does not answer, and not when it does.
+//
+// This is the behavioural half of the ordering above, and the half that was
+// missing. `launchctl kickstart` exits 0 having merely SCHEDULED a spawn, and
+// launchd reads a plist at LOAD time, so the program it schedules can be one
+// that no longer exists: measured on a live board, which stayed down while the
+// command reported success. A start returning nil is therefore not a daemon
+// that is serving, and the recovery has to survive that exact case.
+//
+// The old test read this file for the positions of two string literals. It
+// could not tell a live path from an unreachable branch, and two real defects
+// lived inside the recovery while it was green: a directory renamed out from
+// under the restart, and a message claiming a rollback that never happens.
+//
+// Both directions, because a recovery that always fires proves nothing either:
+// it would restart a daemon that is already up, on every successful upgrade.
+func TestTheRecoveryFiresOnlyWhenTheBoardDidNotComeBack(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		boardBack error
+		wantStart int // the recovery start, beyond cutover's own
+	}{
+		{"board answers", nil, 0},
+		{"board silent", errors.New("no board answered in 90s"), 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			var starts []string
+			stopped := 0
+			p := &plan{
+				dir:       dir,
+				installed: filepath.Join(dir, "dibd"),
+				serving:   true, // there is a daemon to lose
+				stop:      func(string) error { stopped++; return nil },
+				start: func(_, d, _ string, _ daemonState) error {
+					starts = append(starts, d)
+					return nil
+				},
+				confirm: func(string) error { return tc.boardBack },
+			}
+
+			err := p.cutover()
+			if (err != nil) != (tc.boardBack != nil) {
+				t.Fatalf("cutover error = %v, want error: %v", err, tc.boardBack != nil)
+			}
+			if stopped != 1 {
+				t.Fatalf("the daemon was stopped %d times, want 1: this test is not "+
+					"exercising the path it names", stopped)
+			}
+			// One start is cutover's own. Any second is the recovery.
+			if got := len(starts) - 1; got != tc.wantStart {
+				t.Errorf("the recovery started the daemon %d times, want %d.\n"+
+					"A start that reported success and served nothing must still leave "+
+					"the recovery armed, because the fleet has no board and this command "+
+					"is the one that stopped it", got, tc.wantStart)
+			}
+			// And it must start against a directory that exists.
+			for i, d := range starts {
+				if _, serr := os.Stat(d); serr != nil {
+					t.Errorf("start %d used %q, which does not exist: a daemon pointed at "+
+						"a path that was moved out from under it is the failure this "+
+						"recovery had once and reported as unchanged", i, d)
+				}
+			}
+		})
+	}
+}
+
+// DIBS_ADDR's scheme survives the restart, because the daemon reads it.
+//
+// resolveListenAddr takes -addr, then DIBS_ADDR, then dibs.toml. `dibs upgrade`
+// passes -addr, which OUTRANKS the variable that is still set in the
+// environment the replacement inherits, so an operator who launched the board
+// with an explicit scheme and did not repeat it in the config had it silently
+// dropped: the replacement re-inferred TLS for a non-loopback address while
+// every client went on speaking plaintext, and the reverse turns an explicitly
+// plaintext loopback board into a TLS one.
+//
+// The test above covers only a scheme stored in dibs.toml, and deliberately
+// expects a bare address when the file does not describe the listener, so it
+// passes against exactly this case.
+func TestAnExplicitSchemeInTheEnvironmentSurvivesTheUpgrade(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DIBS_DIR", dir)
+	const listener = "10.0.0.9:4777"
+
+	// No dibs.toml naming the address: the whole point is that the environment
+	// is the only place the scheme was ever stated.
+	t.Setenv("DIBS_ADDR", "http://"+listener)
+	if got := replacementAddr(dir, listener); got != "http://"+listener {
+		t.Errorf("the replacement is started on %q; DIBS_ADDR says http://%s.\n"+
+			"A bare address is re-inferred, and 10.0.0.9 is not loopback, so the "+
+			"board comes back on TLS while its clients speak plaintext", got, listener)
+	}
+
+	// And the other direction, which loses a board just as completely.
+	t.Setenv("DIBS_ADDR", "https://127.0.0.1:4777")
+	if got := replacementAddr(dir, "127.0.0.1:4777"); got != "https://127.0.0.1:4777" {
+		t.Errorf("the replacement is started on %q; DIBS_ADDR says https://. Loopback "+
+			"re-infers to plaintext, so a board every client reaches over TLS comes "+
+			"back speaking neither", got)
+	}
+
+	// A variable about some OTHER listener states nothing, exactly as the
+	// config does not: asserting a scheme we cannot know is worse than a bare
+	// address, which the daemon still resolves correctly.
+	t.Setenv("DIBS_ADDR", "https://192.168.1.50:4777")
+	if got := replacementAddr(dir, listener); got != listener {
+		t.Errorf("replacementAddr returned %q from a DIBS_ADDR naming a different "+
+			"listener: a guessed transport cannot be recovered from, and a bare "+
+			"address can", got)
+	}
+}
+
+// The unit reader is the inverse of the unit writer, on the paths that need one.
+//
+// `dibs configure --service` writes ExecStart through systemdArg, which quotes
+// the value and doubles a backslash, a quote, a `%` and a `$`. The reader split
+// on quotes and whitespace and reversed none of it, so `-dir "/tmp/Fleet
+// Review"` came back as `/tmp/Fleet` and `Review`: neither matches the board,
+// the unit describing this very daemon read as another board's, and upgrade
+// started a detached process instead of the service. It prints a warning and
+// accepts that, so the board comes back and systemd is no longer supervising it
+// across logout or reboot.
+//
+// ROUND-TRIPPED THROUGH THE REAL WRITER. Hand-writing the expected unit text
+// would pin my idea of what systemdArg emits, and the defect was precisely that
+// the two disagreed. systemdArg goes in one end and unitNames comes out the
+// other.
+func TestUpgradeCanReadTheUnitsDibsWrites(t *testing.T) {
+	for _, dir := range []string{
+		"/tmp/plain",
+		"/tmp/Fleet Review",      // a space, which systemdArg quotes
+		"/tmp/100% fleet",        // a percent, which it doubles
+		"/tmp/$HOME-ish",         // a dollar, which systemd would expand
+		`/tmp/back\slash`,        // a backslash, which it escapes
+		`/tmp/say "hello" board`, // quotes inside the value
+	} {
+		t.Run(dir, func(t *testing.T) {
+			unit := filepath.Join(t.TempDir(), "dibd.service")
+			body := "[Service]\nExecStart=/usr/local/bin/dibd -dir " +
+				systemdArg(dir) + " -addr 127.0.0.1:4777\n"
+			if err := os.WriteFile(unit, []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if !unitNames(unit, dir) {
+				t.Errorf("the unit this project writes for %q does not read as naming "+
+					"it.\n  unit: %s\n  tokens: %q\n\nUpgrade treats that as another "+
+					"board's unit and starts a detached process instead, so the board "+
+					"comes back unsupervised and does not survive a logout",
+					dir, strings.TrimSpace(body), systemdTokens(body))
+			}
+			// And it must not match a DIFFERENT board, or the fix would be a
+			// reader that says yes to everything.
+			if unitNames(unit, dir+"-other") {
+				t.Errorf("the unit for %q also reads as naming %q", dir, dir+"-other")
+			}
+		})
+	}
+}
+
+// A daemon the registry knows about is stopped even if it did not answer.
+//
+// There are two independent signals that something is running: a request to the
+// board, and the registry the daemon writes for itself. Cutover consulted only
+// the first, so any transient failure of that one request, a timeout, a
+// certificate hiccup, an address resolving differently, skipped the stop
+// entirely. The replacement then started, exited at once on the directory lock
+// the original still holds, and the original kept answering: verification found
+// a board, had no pre-upgrade serial to compare it against, and printed
+// `upgraded:` for the process this command exists to replace. With --adopt-dir
+// the data directory is renamed under that live writer too.
+func TestARegisteredDaemonIsStoppedEvenIfItDidNotAnswer(t *testing.T) {
+	dir := t.TempDir()
+	stopped := 0
+	p := &plan{
+		dir:       dir,
+		installed: filepath.Join(dir, "dibd"),
+		// The snapshot failed, and the registry says one is live.
+		serving: false,
+		running: daemonState{addr: "127.0.0.1:4777"},
+		stop:    func(string) error { stopped++; return nil },
+		start:   func(_, _, _ string, _ daemonState) error { return nil },
+		confirm: func(string) error { return nil },
+	}
+	if err := p.cutover(); err != nil {
+		t.Fatalf("cutover: %v", err)
+	}
+	if stopped != 1 {
+		t.Errorf("the daemon was stopped %d times, want 1. The registry names one for "+
+			"this directory; the board simply did not answer this instant. Skipping "+
+			"the stop leaves the original running, the replacement dying on its lock, "+
+			"and the command reporting an upgrade that did not happen", stopped)
+	}
+
+	// And a board that is genuinely absent is not stopped, or the fix would be
+	// a cutover that always signals something.
+	stopped = 0
+	p2 := &plan{
+		dir: dir, installed: filepath.Join(dir, "dibd"),
+		serving: false, running: daemonState{},
+		stop:    func(string) error { stopped++; return nil },
+		start:   func(_, _, _ string, _ daemonState) error { return nil },
+		confirm: func(string) error { return nil },
+	}
+	if err := p2.cutover(); err != nil {
+		t.Fatalf("cutover on an absent board: %v", err)
+	}
+	if stopped != 0 {
+		t.Errorf("a board with nothing registered and nothing answering was stopped "+
+			"%d times", stopped)
+	}
+}
+
+// An unreadable registry must not read as "no daemon".
+//
+// LiveDaemons says it in its own comment: an error means the registry could not
+// be READ, which is not the same as nothing running, and "conflating the two is
+// how a guard fails open". runningDaemon returned a zero daemonState on that
+// error, so the stop was skipped, the replacement exited at once on the
+// directory lock the original still holds, the original went on answering, and
+// verification printed `upgraded:` for the process this command exists to
+// replace. Found by the pre-release review.
+//
+// Asserted on the DECISION rather than on a whole upgrade run, because the
+// decision is the defect: stopping a daemon that was not there costs a no-op,
+// and skipping the stop costs the operator a silent non-upgrade.
+func TestAnUnreadableRegistryStillStopsTheDaemon(t *testing.T) {
+	for name, tc := range map[string]struct {
+		p        plan
+		wantStop bool
+	}{
+		"registry unreadable": {plan{running: daemonState{unknown: true}}, true},
+		"registered daemon":   {plan{running: daemonState{addr: "127.0.0.1:4777"}}, true},
+		"answering now":       {plan{serving: true}, true},
+		"genuinely nothing":   {plan{}, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := tc.p.serving || tc.p.running.addr != "" || tc.p.running.unknown
+			if got != tc.wantStop {
+				t.Errorf("stop decision = %v, want %v. An unreadable registry that "+
+					"reads as absence leaves the old daemon serving while this command "+
+					"reports the new one", got, tc.wantStop)
+			}
+		})
+	}
+}
+
+// And the read failure must actually produce that state, or the decision above
+// is asserting about a value nothing sets.
+func TestRunningDaemonReportsUnknownOnAReadFailure(t *testing.T) {
+	// A registry path that cannot be a directory listing: HOME points at a file.
+	f := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", f)
+	t.Setenv("XDG_STATE_HOME", f)
+
+	got := runningDaemon(t.TempDir())
+	if !got.unknown && got.addr == "" {
+		t.Skip("the registry was still readable in this environment, so this case " +
+			"could not be produced; the decision test above still covers the rule")
+	}
+	if got.addr == "" && !got.unknown {
+		t.Error("a registry that could not be read reported no daemon rather than " +
+			"an unknown one")
 	}
 }

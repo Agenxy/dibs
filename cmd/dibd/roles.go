@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -113,46 +114,69 @@ const rolesReapplyEvery = 15 * time.Second
 
 // applyDeclaredRoles grants each declared role once.
 func applyDeclaredRoles(ctx context.Context, eng *engine.Engine, c RolesConfig, pins *rolePins) {
-	for _, spec := range []struct {
-		role   string
-		agents []string
-	}{
-		{core.RoleCoordinator, c.Coordinator},
-		{core.RoleAdmin, c.Admin},
-	} {
-		for _, agent := range spec.agents {
-			if agent == "" {
-				continue
-			}
-			if !mayHoldDeclaredRole(ctx, eng, pins, c, spec.role, agent) {
-				continue
-			}
-			res, err := eng.GrantRole(ctx, agent, spec.role)
-			if err != nil {
-				// An agent that has not registered yet is the NORMAL case on a
-				// fresh board, not a misconfiguration, so it is logged at debug
-				// and retried on the next tick. Anything else is worth seeing.
-				var cerr *core.Error
-				if errors.As(err, &cerr) && cerr.Code == "E_NO_AGENT" {
-					slog.Debug("declared role is waiting for its agent to register",
-						"agent", agent, "role", spec.role)
-					continue
-				}
-				// Never fatal: a daemon that refuses to start over one wrong name
-				// in a config file leaves the fleet with nowhere to coordinate
-				// and the operator unable to read the complaint.
-				slog.Warn("could not grant a role declared in dibs.toml",
-					"agent", agent, "role", spec.role, "err", err)
-				continue
-			}
-			// Only announce a real change, or the log fills with the same line
-			// every fifteen seconds forever.
-			if changed, _ := res["changed"].(bool); changed {
-				slog.Info("granted a role declared in dibs.toml",
-					"agent", agent, "role", spec.role)
-			}
+	// ADMIN FIRST, AND ONLY WHAT WAS ACTUALLY GRANTED SUPPRESSES A COORDINATOR.
+	//
+	// One agent holds one role, and a name and an id are two strings for one
+	// agent: `coordinator = ["fleet-lead"]` beside `admin = ["Fleet Lead"]`
+	// passes validation, which compares strings, and resolves to one identity.
+	// Granting both meant coordinator and then admin on every pass: two ledger
+	// entries every fifteen seconds and a window in between where admin-only
+	// calls fail.
+	//
+	// The first fix for that collected every admin alias that RESOLVED and
+	// skipped a coordinator naming the same agent. Resolving is not being
+	// authorised: with the admin alias missing from `[roles.identity]`, the
+	// coordinator grant was skipped for an admin grant that was then refused,
+	// so nothing was granted at all, and the launch claim stays suppressed
+	// because the config did name a coordinator. A fresh board came up with no
+	// coordinator and no way to get one, which is the state the claim exists to
+	// prevent.
+	//
+	// So admin runs first and reports what it actually did. Only an agent
+	// HOLDING admin suppresses its own coordinator declaration, and admin
+	// already includes coordinator authority, so nothing is lost either way.
+	held := map[string]bool{}
+	for _, agent := range c.Admin {
+		if id := grantOne(ctx, eng, c, pins, core.RoleAdmin, agent); id != "" {
+			held[id] = true
 		}
 	}
+	for _, agent := range c.Coordinator {
+		id := resolveDeclared(ctx, eng, core.RoleCoordinator, agent)
+		if id == "" {
+			continue
+		}
+		if held[id] {
+			slog.Info("an agent is declared as both coordinator and admin under "+
+				"different spellings; it holds admin, which includes what coordinator "+
+				"can do", "agent", agent, "id", id)
+			continue
+		}
+		if !mayHoldDeclaredRole(ctx, eng, pins, c, core.RoleCoordinator, agent, id) {
+			continue
+		}
+		grantDeclared(ctx, eng, core.RoleCoordinator, agent, id)
+	}
+}
+
+// grantOne resolves a declared name, grants the role if it may, and reports the
+// agent id when the role is now held. "" means nothing was granted, for any
+// reason: not registered, not authorised, or refused by the pin.
+func grantOne(ctx context.Context, eng *engine.Engine, c RolesConfig, pins *rolePins,
+	role, agent string,
+) string {
+	if agent == "" {
+		return ""
+	}
+	id := resolveDeclared(ctx, eng, role, agent)
+	if id == "" {
+		return ""
+	}
+	if !mayHoldDeclaredRole(ctx, eng, pins, c, role, agent, id) {
+		return ""
+	}
+	grantDeclared(ctx, eng, role, agent, id)
+	return id
 }
 
 // describeDeclaredRoles renders the roles for the startup banner, so an operator
@@ -171,10 +195,98 @@ func describeDeclaredRoles(c RolesConfig) string {
 // the role is what makes a standing role follow an identity, and refusing an
 // agent with no nonce is what stops it being pinned to something that cannot
 // prove itself tomorrow.
+// grantDeclared performs one declared grant and says what happened.
+//
+// Split out for the same reason resolveDeclared is: this loop hands out
+// standing privilege, and a reader has to be able to hold all of it at once.
+func grantDeclared(ctx context.Context, eng *engine.Engine, role, agent, id string) {
+	res, err := eng.GrantRole(ctx, id, role)
+	if err != nil {
+		// An agent that has not registered yet is the NORMAL case on a fresh
+		// board, not a misconfiguration, so it is logged at debug and retried on
+		// the next tick. Anything else is worth seeing.
+		var cerr *core.Error
+		if errors.As(err, &cerr) && cerr.Code == "E_NO_AGENT" {
+			slog.Debug("declared role is waiting for its agent to register",
+				"agent", agent, "role", role)
+			return
+		}
+		// Never fatal: a daemon that refuses to start over one wrong name in a
+		// config file leaves the fleet with nowhere to coordinate and the
+		// operator unable to read the complaint.
+		slog.Warn("could not grant a role declared in dibs.toml",
+			"agent", agent, "role", role, "err", err)
+		return
+	}
+	// Only announce a real change, or the log fills with the same line every
+	// fifteen seconds forever.
+	if changed, _ := res["changed"].(bool); changed {
+		slog.Info("granted a role declared in dibs.toml", "agent", agent, "role", role)
+	}
+}
+
+// tomlKey renders a key the way the operator has to type it.
+//
+// THE ONE INSTRUCTION THIS FEATURE HAS, and it emitted invalid TOML for exactly
+// the names the reconciler had just learned to accept. A bare key may hold only
+// letters, digits, underscores and dashes, so `Fleet Lead = "..."` does not
+// parse: an operator following the daemon's own advice got a dibs.toml the
+// daemon then refuses to load, and the role they were trying to grant stayed
+// ungranted with a new fault on top. Quoted whenever it has to be, and left
+// bare when it does not, because an unnecessary quote invites the reader to
+// copy it into places where it is wrong.
+func tomlKey(s string) string {
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9',
+			r == '_', r == '-':
+		default:
+			return strconv.Quote(s)
+		}
+	}
+	if s == "" {
+		return `""`
+	}
+	return s
+}
+
+// resolveDeclared turns what the operator wrote in `[roles]` into an agent id,
+// or "" when there is nothing to do this tick.
+//
+// THE CONFIG NAMES AN AGENT; THE ENGINE IS KEYED BY ID. The configured string
+// used to go straight through, so the documented `admin = ["Fleet Lead"]`
+// waited forever for an agent whose id was literally that, while the agent that
+// registered under the name sat there as `fleet-lead`.
+//
+// Split out because applyDeclaredRoles is already at the complexity limit, and
+// the reason it is worth keeping under one is that this loop grants standing
+// privilege: a reader has to be able to hold all of it at once.
+func resolveDeclared(ctx context.Context, eng *engine.Engine, role, agent string) string {
+	id, err := eng.ResolveConfiguredAgent(ctx, agent)
+	if err == nil {
+		return id
+	}
+	// Not registered yet is the NORMAL case on a fresh board: the daemon comes
+	// up before its agents do, and the reconciler runs on a ticker. Anything
+	// else means the config names something that cannot be resolved, which a
+	// person has to fix and should therefore be able to see.
+	var cerr *core.Error
+	if errors.As(err, &cerr) && cerr.Code == "E_NO_AGENT" {
+		slog.Debug("declared role is waiting for its agent to register",
+			"agent", agent, "role", role)
+	} else {
+		slog.Warn("declared role names no single agent",
+			"agent", agent, "role", role, "err", err)
+	}
+	return ""
+}
+
+// agent is what the operator wrote, and keys the pin file and [roles.identity];
+// id is the agent it resolved to, and is what the engine is asked about.
 func mayHoldDeclaredRole(ctx context.Context, eng *engine.Engine, pins *rolePins,
-	c RolesConfig, role, agent string,
+	c RolesConfig, role, agent, id string,
 ) bool {
-	fp, err := eng.AgentIdentity(ctx, agent)
+	fp, err := eng.AgentIdentity(ctx, id)
 	if err != nil {
 		// Not registered yet is the ordinary case while the window is open.
 		slog.Debug("declared role is waiting for its agent to register",
@@ -195,7 +307,7 @@ func mayHoldDeclaredRole(ctx context.Context, eng *engine.Engine, pins *rolePins
 		if c.Identity[agent] == "" {
 			slog.Warn("to grant it, pin this agent's identity in dibs.toml",
 				"agent", agent, "role", role,
-				"add", fmt.Sprintf("[roles.identity]\n%s = %q", agent, fp))
+				"add", fmt.Sprintf("[roles.identity]\n%s = %q", tomlKey(agent), fp))
 		}
 		return false
 	}

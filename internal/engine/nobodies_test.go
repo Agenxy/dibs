@@ -58,7 +58,7 @@ func TestNoWakeSurfaceLeaksAMessageBody(t *testing.T) {
 		t.Fatal("setup:", err)
 	}
 
-	mail := e.pendingMail("receiver")
+	mail := e.pendingMail("receiver", time.Now())
 	if len(mail) == 0 {
 		t.Fatal("setup: no pending mail, so this test would pass vacuously")
 	}
@@ -66,7 +66,7 @@ func TestNoWakeSurfaceLeaksAMessageBody(t *testing.T) {
 	surfaces := map[string]string{
 		"the wake digest (hook additionalContext)":    hookDigest("receiver", mail, nil, nil),
 		"the human notice (hook systemMessage)":       humanNotice("receiver", mail, nil, nil),
-		"the waiting line (every tool result)":        e.waiting("receiver"),
+		"the waiting line (every tool result)":        e.waiting("receiver", time.Now()),
 		"pendingMail (the lines both are built from)": strings.Join(mail, "\n"),
 	}
 	for name, text := range surfaces {
@@ -166,5 +166,126 @@ func TestALiveAgentIsNotOfferedForReattachment(t *testing.T) {
 	}
 	if got := st.ReattachableIn("/work/api"); len(got) != 0 {
 		t.Errorf("a live agent was offered for reattachment: %v", got)
+	}
+}
+
+// The reattach hint is said ONCE to a session, and never again.
+//
+// The function that composes it already carried the reason in its own comment:
+// "a hook that speaks on every turn is one people disable." It then spoke on
+// every turn. `reattachHint` was a pure function of (session, cwd) and state,
+// and the Claude Code plugin installs hook_poll on SessionStart,
+// UserPromptSubmit, Stop and SubagentStop, so an unregistered session in a
+// directory that has idle agents was told to reattach before every prompt it
+// answered, for the life of the session.
+//
+// Reported by an operator whose agent worked out, correctly, that it could not
+// turn this off: unregistering makes it fire MORE, because "not registered" is
+// the trigger, and the only switch is the plugin's global one, which would take
+// Dibs away from every other session on the machine. That is the definition of
+// coercive, and rule 4 says this service is advisory.
+//
+// Once is the whole budget. The hint is a POINTER, and a pointer that did not
+// land the first time does not land the tenth; an agent that read it and chose
+// not to reattach has decided, and re-asking is nagging a decision. Repeating
+// it buys nothing and costs the operator their attention on every turn.
+func TestTheReattachHintIsSaidOnce(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "returner", AgentKind: core.KindPersistent,
+		Nonce: "kept-nonce", SessionID: "yesterdays-session",
+		Agent: &core.AgentInfo{CWD: "/work/api"},
+	}); err != nil {
+		t.Fatal("setup:", err)
+	}
+	st.Agents["returner"].Status = core.StatusDormant
+
+	// The events the shipped plugin really installs, in the order a session
+	// meets them.
+	events := []string{
+		"SessionStart", "UserPromptSubmit", "Stop",
+		"UserPromptSubmit", "Stop", "SubagentStop", "UserPromptSubmit",
+	}
+	var spoke []string
+	for _, ev := range events {
+		res, err := e.HookPoll(ctx, "todays-session", ev, "/work/api", false, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, _ := res["hookSpecificOutput"].(map[string]any)
+		if txt, _ := out["additionalContext"].(string); txt != "" {
+			spoke = append(spoke, ev)
+		}
+	}
+	if len(spoke) == 0 {
+		t.Fatal("the hint was never delivered, so a returning agent is never told " +
+			"it can reattach: that is the bug this hint exists to fix")
+	}
+	if len(spoke) > 1 {
+		t.Errorf("the hint was delivered %d times to one session (on %v). It is a "+
+			"pointer, not a reminder: repeating it before every prompt is what gets "+
+			"the plugin switched off machine-wide, which takes Dibs away from the "+
+			"sessions that DO use it", len(spoke), spoke)
+	}
+	if spoke[0] != "SessionStart" {
+		t.Errorf("the one delivery landed on %q rather than SessionStart", spoke[0])
+	}
+
+	// A DIFFERENT session in the same directory is still told: the budget is per
+	// session, not per directory, or the second agent to arrive hears nothing.
+	res, err := e.HookPoll(ctx, "another-session", "SessionStart", "/work/api", false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, _ := res["hookSpecificOutput"].(map[string]any)
+	if txt, _ := out["additionalContext"].(string); txt == "" {
+		t.Error("a second, different session was told nothing. The hint is spent per " +
+			"SESSION; spending it per directory means only the first session of the " +
+			"day can ever learn it has an identity waiting")
+	}
+}
+
+// The hint is prose a PERSON reads over their agent's shoulder, so it has to
+// agree with itself in number.
+//
+// Not pedantry, and not free: the first draft of the plural fix rendered "If
+// none of any of them is you" and "If none of it is you", because the singular
+// and plural halves were assembled from three independent variables. A list of
+// three that "is idle now" is how the original read, and it is the tell that
+// nobody looked at the output.
+func TestTheReattachHintAgreesInNumber(t *testing.T) {
+	mk := func(names ...string) string {
+		st := core.NewState("test", core.DefaultLimits())
+		for _, n := range names {
+			st.Agents[n] = &core.Agent{
+				ID: n, Name: n, Status: core.StatusDormant, Nonce: "x",
+				Agent: &core.AgentInfo{CWD: "/work/api"}, Slots: map[string]core.Slot{},
+			}
+		}
+		return New(st, &memLedger{}, deadProber{}).reattachHint("s", "/work/api", time.Now())
+	}
+
+	one, many := mk("dibs-dev"), mk("a-one", "b-two", "c-three")
+	for _, c := range []struct {
+		text string
+		bad  []string
+	}{
+		{one, []string{"are idle", "one of those", "none of them", "none of it", "none of any"}},
+		{many, []string{"is idle", "If that is you", "If it is not", "none of any"}},
+	} {
+		if c.text == "" {
+			t.Fatal("no hint was composed at all")
+		}
+		for _, b := range c.bad {
+			if strings.Contains(c.text, b) {
+				t.Errorf("hint reads %q, which does not agree with how many agents it "+
+					"names:\n%s", b, c.text)
+			}
+		}
 	}
 }
