@@ -482,6 +482,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now". Prose a person reads over their agent's shoulder, and the tell that
   nobody had looked at the output.
 
+- **Every agent paid ~18,000 tokens per activation to be told who else was on
+  the board.** `Board()` is what both `register` and `check_in` return, and
+  `dibs://skills` tells every agent to check in at the start of every
+  activation. Measured on a live 32-agent board: 77,770 chars, of which `slots`
+  were 51,803 and one field, `predicted`, was 38,070.
+
+  `Slot.Predicted` is the work-overlap scorer's own intermediate, a per-path
+  weight vector the daemon derives to decide whether two agents are near each
+  other's work. Matching reads it from state. No view has ever read it from a
+  board: not the human panel, not `board.js`, not `dibs board`, not the e2e
+  suites. It is gone from the copy handed out, and the state keeps it, which the
+  test asserts alongside the coordination content that must survive.
+
+  Roughly half the payload, on the busiest call in the protocol. For scale, this
+  project guards `tools/list` with a hard test at 8,700 tokens and was shipping
+  twice that per activation with nothing measuring it at all.
+
 - **`send` promised a wake that could not happen.** A message to a sleeping
   recipient returned "it will see this when it next wakes". True when something
   can wake it, and a lie otherwise, in the one sentence the sender acts on.

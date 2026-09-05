@@ -450,6 +450,25 @@ func (s *State) Board() map[string]any {
 		}
 		slots := make([]Slot, 0, len(l.Slots))
 		for _, sl := range l.Slots {
+			// WITHOUT THE PREDICTED FOOTPRINT, which nothing that reads a board
+			// has ever used and which was half of it.
+			//
+			// `Predicted` is the work-overlap scorer's own intermediate: a
+			// per-path weight vector the daemon derives to decide whether two
+			// agents are near each other's work. Matching reads it from state,
+			// not from here, and no view does: not the human panel, not
+			// board.js, not `dibs board`, not the e2e suites.
+			//
+			// Measured on a live 32-agent board: 77,770 chars, of which slots
+			// were 51,803 and `predicted` alone was 38,070. Board() is what
+			// register AND check_in return, and dibs://skills tells every agent
+			// to check in at the start of every activation, so each one paid
+			// about 18,000 tokens to be told who else was here. For scale, this
+			// project guards tools/list with a hard test at 8,700.
+			//
+			// Zeroed on the COPY. The slot in state keeps its footprint, because
+			// that is where matching reads it.
+			sl.Predicted = nil
 			slots = append(slots, sl)
 		}
 		slices.SortFunc(slots, func(a, b Slot) int { return strings.Compare(a.ID, b.ID) })
