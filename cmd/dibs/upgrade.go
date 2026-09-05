@@ -360,10 +360,24 @@ func (p *plan) cutover() error {
 	// decides it, and it is the same asymmetry as everywhere else in this file.
 	if p.serving || p.running.addr != "" || p.running.unknown {
 		step("stopping the daemon")
-		if err := p.doStop(p.dir); err != nil {
-			return fmt.Errorf("could not stop the daemon, so nothing else was changed: %w", err)
-		}
+		stopErr := p.doStop(p.dir)
+		// A STOP THAT TIMED OUT IS STILL A STOP.
+		//
+		// doStop sends SIGTERM and then waits. Returning early on the wait meant
+		// treating a delivered signal as though nothing had happened: this
+		// printed "could not stop the daemon, so nothing else was changed", the
+		// daemon exited a few seconds later, launchd left it down because a
+		// clean exit is not a crash, and the operator's board was gone. Measured
+		// here, on this machine, with a 32-agent fleet.
+		//
+		// So the flag is set either way, which arms the recovery below and makes
+		// this command responsible for putting a daemon back, exactly as the
+		// comment under it says it must be.
 		stopped = true
+		if stopErr != nil {
+			return fmt.Errorf("the daemon did not stop cleanly; the board will be "+
+				"restarted rather than left down: %w", stopErr)
+		}
 	}
 	// A daemon this command stopped is a daemon it is responsible for starting,
 	// including on the paths where something below goes wrong. Leaving a fleet

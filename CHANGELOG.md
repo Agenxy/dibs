@@ -482,6 +482,25 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now". Prose a person reads over their agent's shoulder, and the tell that
   nobody had looked at the output.
 
+- **`dibs upgrade` could take the board down and report that it had not.**
+  `stop` sends SIGTERM and waits ten seconds for the process to go. On timeout
+  it returned an error saying the daemon "is still holding" the data directory,
+  and `upgrade` turned that into "could not stop the daemon, so nothing else was
+  changed". Both are false in the way that matters: a SIGTERM HAS been
+  delivered. The daemon exited a few seconds later, launchd left it down because
+  a clean exit is not a crash, and a 32-agent board disappeared while its
+  operator was reading that nothing had happened. Measured here, by doing it.
+
+  Three changes. The wait is 60s, because a daemon closing a ledger it has just
+  replayed can reasonably take longer than ten and waiting costs nothing. The
+  error says the signal landed and that the daemon should be treated as
+  STOPPING, names what will not restart it and why, and gives the command that
+  will. And `upgrade` now marks the daemon stopped on that path too, which arms
+  the recovery it already had: the file's own comment says "a daemon this
+  command stopped is a daemon it is responsible for starting... leaving a fleet
+  with no board and an error message is the worst outcome available here", and
+  the one path that produced exactly that outcome was the one that skipped it.
+
 - **Every agent paid ~18,000 tokens per activation to be told who else was on
   the board.** `Board()` is what both `register` and `check_in` return, and
   `dibs://skills` tells every agent to check in at the start of every
