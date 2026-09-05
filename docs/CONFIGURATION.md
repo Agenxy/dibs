@@ -104,6 +104,20 @@ and its own hooks fire from there. If your agents need tool access on a wake,
 give that process the permissions it needs rather than assuming it inherits
 them.
 
+**A harness may refuse to resume a thread it already has open.** `codex exec
+resume` fails with `thread-store conflict: thread <id> already has an active
+writer` when that thread is open in the Codex desktop app, and no configuration
+changes it: the app holds the writer for as long as the thread is open. So a
+`[wake.exec]` route reaches a codex agent whose thread is CLOSED, and cannot
+reach one the operator is currently looking at. Measured on this machine, by
+running the daemon's own printed argv by hand.
+
+That is not a failure worth working around. An agent whose thread is open in
+front of a person is the one case where a wake buys least: the human is there.
+What matters is that the daemon says exit 1 and prints the command, so an
+operator can find this out in a minute instead of assuming the wake path is
+broken.
+
 **A wake runs in the agent's own directory.** It has to, and for a long time it
 did not. `codex exec resume` refuses to start outside a trusted directory, and a
 daemon started by launchd has `/` as its working directory, so every wake it

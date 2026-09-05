@@ -1144,12 +1144,27 @@ func runWakeFor(argv []string, agent, dir string, timeout, grace time.Duration) 
 		// the honest note names the directory the command really ran in and
 		// leaves the diagnosis to whoever reads it.
 		fields = append(fields, "ran_in", runDir(dir))
+		// NO THEORY ABOUT WHY. Three have been wrong here.
+		//
+		// This line has carried a guess at the cause since it was written, and
+		// the guess has misled every operator who read it, including the ones
+		// who wrote it. First it blamed launchd's security session and the login
+		// keychain, which a probe in the identical domain disproved. Then it
+		// blamed the login shell's environment, and the real cause was a
+		// thread-store conflict: the thread was open in the harness's desktop
+		// app, which refuses a second writer, and no environment anywhere would
+		// have changed that.
+		//
+		// The facts are useful and the theory is not. An operator has the argv
+		// and the directory, which is enough to run it and see the real error in
+		// under a minute; that is how the third wrong guess was caught. What
+		// stays withheld is the command's OUTPUT, because a wake runs a whole
+		// agent turn and that output is somebody's decrypted mail.
 		if os.Getppid() == 1 {
 			fields = append(fields,
-				"note", "this daemon runs as a service, so it starts with the system's "+
-					"environment and not the shell you configured it from: a wake that "+
-					"needs something only your login shell sets will fail here and work "+
-					"from a terminal")
+				"note", "run the command above yourself to see what it said: its output "+
+					"is withheld here because a wake runs a whole agent turn, and that "+
+					"is somebody's decrypted mail")
 		}
 		slog.Warn("wake command failed; the next message somebody is blocked on "+
 			"will try again", fields...)
