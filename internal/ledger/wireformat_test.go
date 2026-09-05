@@ -96,6 +96,14 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 	wantOp := map[string]bool{
 		"kind": true, "agent": true, "name": true, "pid": true, "token": true,
 		"nonce": true, "agent_kind": true, "session_id": true, "agent_id": true,
+		// A nonce the DAEMON generated for a caller that sent none, used only
+		// if the registration creates an agent. Added in v0.0.7 when persistent became the default
+		// and every agent started getting a nonce whether it asked or not: it is
+		// what still lets `session_id` reattach an agent that never chose a
+		// credential of its own. Renaming it would read as false on replay, and
+		// every such agent would silently lose context-loss recovery and fork a
+		// sibling that cannot read its own mail.
+		"minted_nonce": true,
 		// The OTHER name one harness session goes by, joined by the daemon at
 		// ingress. Frozen from the day it shipped, like every tag here: it
 		// records which agent a lifecycle hook resolves to, so renaming it later
@@ -272,7 +280,7 @@ const (
 	// `session_taken_from`: one new tag each time, no rename. If you are here
 	// because a sweep moved this value, the sweep is the bug, and the tag it
 	// renamed is the data loss.
-	frozenOpFingerprint       = "sha256:c41a7216dd7479f7"
+	frozenOpFingerprint       = "sha256:19b2a3df30fad33b"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

@@ -810,8 +810,22 @@ try {
     const ghostChip = agent.locator(".member", { hasText: "ghost" })
     check("an agent marks the member that is not working",
       (await ghostChip.locator(".member-tag.gone").count()) === 1, await agent.innerText())
+    // EITHER WORDING, because the kind decides which one is true.
+    //
+    // A member whose process died is `stale` if it was ephemeral ("process
+    // gone": nothing is coming back) and `dormant` if it was persistent ("its
+    // process exited", and it can be woken or reattached). Since v0.0.7 an
+    // agent that states no kind is persistent, so this fixture moved from the
+    // first wording to the second and this check failed on a rendering that was
+    // more correct than the one it was written against.
+    //
+    // What must not change is that the chip says WHAT HAPPENED rather than just
+    // marking the member as not working, which is the line above. Both spellings
+    // name the process, so both are accepted and silence still fails.
+    const ghostSaid = (await ghostChip.innerText()).toLowerCase()
     check("and says what happened to it",
-      (await ghostChip.innerText()).toLowerCase().includes("process gone"), await ghostChip.innerText())
+      ghostSaid.includes("process gone") || ghostSaid.includes("process exited"),
+      await ghostChip.innerText())
 
     // WHAT WAS SAID, not that something was.
     //

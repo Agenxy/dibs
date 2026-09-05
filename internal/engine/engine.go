@@ -479,6 +479,10 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	}
 
 	var actor *core.Agent
+	// Set when this register had no nonce and one was made for it, so the
+	// response can hand it over. An agent that is never told its own recovery
+	// credential is an agent nobody can ever reattach to.
+	mintedNonce := false
 	if !system {
 		switch op.Kind {
 		case core.OpRegister:
@@ -487,6 +491,11 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 				return nil, err
 			}
 			op.NewToken = tok
+			minted, err := defaultToPersistent(op)
+			if err != nil {
+				return nil, err
+			}
+			mintedNonce = minted
 			// The fleet knows which trees it works in, so matching can index
 			// them without anybody configuring a path.
 			if op.Agent != nil {
@@ -628,6 +637,24 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	res, err := e.applyAndLedger(op, now)
 	if err != nil {
 		return nil, err
+	}
+	// HAND OVER A MINTED NONCE, or it protects nothing and strands the agent.
+	//
+	// The nonce is the only credential that survives a restart: it is what
+	// reattaches an agent to its own mailbox, and without it a persistent row is
+	// one nobody can ever become again. Minting one and keeping it secret would
+	// manufacture that orphan on every registration.
+	//
+	// Only when it was minted. Echoing back a nonce the caller chose tells them
+	// nothing and puts a secret they already hold into one more transcript.
+	// Only when the fold actually USED it, which it reports by returning it: a
+	// registration that reattached or resumed already had a credential, and the
+	// minted one was discarded.
+	if mintedNonce && res != nil && res["nonce"] != nil {
+		res["nonce_hint"] = "KEEP THIS. You did not send a nonce, so one was made for " +
+			"you: it is the only credential that survives your process. Register again " +
+			"with the same name and this nonce to come back as yourself, with your " +
+			"mailbox and claims. Without it a new session is a stranger to this row."
 	}
 	// After the apply, never before it. Holding the secret is not sufficient:
 	// core still refuses an ephemeral or closed claimant, and a single-use claim
@@ -1287,4 +1314,54 @@ func (e *Engine) refuseClaimWhenCoordinatorExists(op *core.Op) error {
 		}
 	}
 	return nil
+}
+
+// defaultToPersistent settles an unstated agent kind, and mints the credential
+// that kind needs.
+//
+// AT INGRESS, NEVER IN THE FOLD. `Apply` defaults an empty kind to ephemeral and
+// has to go on doing so forever: this ledger contains registrations written when
+// that was the rule, and moving the default into Apply would replay every one of
+// them as persistent. The op records what was decided, so replay never re-decides
+// it. Same discipline as V7Semantics, arrived at from the other direction: this
+// one needs no flag precisely because the decision travels in a field that was
+// already there.
+//
+// WHY THE DEFAULT FLIPPED. Ephemeral means: swept to `stale` when the session
+// ends rather than `dormant`, no durable mailbox, and no nonce, which is the
+// only credential that recovers an identity. So an agent that took the default
+// could not park and come back, could not be woken, and its mail died with its
+// process. That is the entire product, opted out of silently, by every agent
+// that did not know to say otherwise.
+//
+// It was invisible from every angle at once. Registration succeeded identically,
+// the board looked right, and the evidence was self-erasing: counting the kinds
+// of the agents still ON the board says nobody uses ephemeral, because ephemeral
+// agents are precisely the ones that are no longer there. Found when a test
+// agent registered twice in one afternoon and had evaporated both times, and
+// then a wake resolved to the thread it had been running in and reached an
+// identity with an empty mailbox, which truthfully reported "no mail".
+//
+// A MINTED NONCE BEATS NO NONCE. Persistent requires one, and an agent that
+// brought none would otherwise be refused. Minting it here and returning it is
+// the same trust as the token this function just made: same channel, same
+// caller, one more secret to keep. The alternative is an agent nobody can ever
+// reattach to, which this board has had, and which `adopt_agent` exists to clean
+// up after.
+func defaultToPersistent(op *core.Op) (minted bool, err error) {
+	if op.AgentKind == "" {
+		op.AgentKind = core.KindPersistent
+	}
+	if op.AgentKind != core.KindPersistent || op.Nonce != "" {
+		return false, nil
+	}
+	nonce, err := newSecret()
+	if err != nil {
+		return false, err
+	}
+	// THE CANDIDATE FIELD. Writing this into op.Nonce tells the fold the caller
+	// is presenting a credential, which disqualifies the session_id reattach
+	// path and turns every returning agent into a sibling.
+	op.MintedNonce = nonce
+	return true, nil
 }

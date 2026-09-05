@@ -354,7 +354,9 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	if kind != KindEphemeral && kind != KindPersistent {
 		return nil, nil, errf("E_BAD_KIND", "use ephemeral|persistent", "unknown agent kind %q", kind)
 	}
-	if kind == KindPersistent && op.Nonce == "" {
+	// Either the caller's own nonce or one minted for it. Old ops carry no
+	// MintedNonce, so this refuses exactly what it always refused.
+	if kind == KindPersistent && op.Nonce == "" && op.MintedNonce == "" {
 		return nil, nil, errf("E_BAD_NONCE", "persistent agents require a client-generated nonce (≥128-bit random); it "+
 			"doubles as the resume recovery credential: treat it as a secret", "nonce required for persistent agents")
 	}
@@ -497,36 +499,8 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	//
 	// What this does NOT fix: every agent shares one coordination secret, so
 	// agent-to-agent isolation is a bar to raise, not a wall. See SECURITY.md.
-	if op.SessionID != "" && op.Nonce == "" {
-		for _, l := range s.Agents {
-			if l.Nonce != "" {
-				continue // it has a real credential; a guessable one will not do
-			}
-			if l.SessionID == op.SessionID && l.Name == op.Name &&
-				(l.Status == StatusActive || l.Status == StatusStale) {
-				l.Token = op.NewToken
-				l.LastCoordination = now
-				l.Status, l.StaleReason = StatusActive, ""
-				l.AckedSerial = 0 // re-arm the awareness gate: this is a new activation
-				if op.Agent != nil {
-					l.Agent = op.Agent
-				}
-				if op.PID != 0 {
-					l.PID, l.ProcStart = op.PID, op.ProcStart
-				}
-				l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
-				// Ledgered for the same reason as the nonce branch above.
-				evs := []Event{{Type: "agent.reattached", Agent: l.ID, Data: map[string]any{
-					"via": "session_id",
-				}}}
-				serial := s.finish(&evs, now)
-				return Result{
-					"agent_id": l.ID, "token": l.Token, "serial": serial,
-					"reattached": true, "via": "session_id", "board": s.Board(),
-					"session_id": l.SessionID,
-				}, evs, nil
-			}
-		}
+	if res, evs := s.reattachBySessionID(op, now); res != nil {
+		return res, evs, nil
 	}
 
 	live, persistent := 0, 0
@@ -586,13 +560,24 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 			prev.dropSession(op.SessionID)
 		}
 	}
+	// THE MINTED NONCE IS USED HERE AND NOWHERE ELSE.
+	//
+	// Only a registration that CREATES an agent takes it. Every path above this
+	// point reattaches or resumes an agent that already has a credential, and
+	// the minted one is dropped: the daemon does not hand a returning agent a
+	// new secret and it does not tell it about one.
+	nonce, nonceMinted := op.Nonce, false
+	if nonce == "" && op.MintedNonce != "" {
+		nonce, nonceMinted = op.MintedNonce, true
+	}
 	l := &Agent{
 		ID: id, Kind: kind, Name: op.Name, Description: op.Description, Agent: op.Agent,
 		PID: op.PID, ProcStart: op.ProcStart, Status: StatusActive, SessionID: op.SessionID,
 		Parent:           op.Parent,
 		ParentProven:     parentProven,
-		LastCoordination: now, Token: op.NewToken, Nonce: op.Nonce,
-		Slots: map[string]Slot{},
+		LastCoordination: now, Token: op.NewToken, Nonce: nonce,
+		NonceMinted: nonceMinted,
+		Slots:       map[string]Slot{},
 	}
 	// A NEW AGENT DOES NOT INHERIT THE LAST ONE'S MAIL.
 	//
@@ -623,8 +608,8 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	}
 	s.Agents[id] = l
 	l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed) // the name its hooks use, if different
-	if op.Nonce != "" {
-		s.Nonces[op.Nonce] = id
+	if nonce != "" {
+		s.Nonces[nonce] = id
 	}
 	evs := []Event{{Type: "agent.registered", Agent: id, Data: map[string]any{
 		"name": op.Name, "kind": kind, "description": op.Description,
@@ -634,6 +619,17 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	res := Result{
 		"agent_id": id, "token": op.NewToken, "serial": serial, "board": s.Board(),
 		"gate": "call check_in to acknowledge the board before declare or claim",
+	}
+	// A MINTED NONCE IS HANDED BACK, or it protects nothing.
+	//
+	// The nonce is the only credential that outlives the process, so an agent
+	// that is never told the one made for it is an agent nobody can ever become
+	// again: a durable mailbox with no way back into it, which is exactly the
+	// orphan `adopt_agent` exists to clean up after. Returned here, on the one
+	// path that actually minted one, so a reattach or a resume cannot echo a
+	// secret the caller already holds.
+	if nonceMinted {
+		res["nonce"] = nonce
 	}
 	// Hand back the session_id the agent was actually filed under.
 	//

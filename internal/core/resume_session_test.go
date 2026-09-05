@@ -118,3 +118,36 @@ func TestAPreV7ResumeDoesNotBindOnReplay(t *testing.T) {
 			"diverges from what that ledger records", len(evs), before, s.Serial)
 	}
 }
+
+// The FOLD still defaults an unstated kind to ephemeral, and must forever.
+//
+// v0.0.7 flipped the default a registering agent gets: an unstated kind now
+// becomes persistent, because ephemeral silently removed the durable mailbox,
+// the nonce and the ability to be woken, which is the whole product. That
+// decision is made at INGRESS and written into the op.
+//
+// It must never move into Apply. This ledger is full of registrations written
+// when the default was ephemeral and which say nothing about their kind;
+// changing the default here replays every one of them as persistent, inventing
+// durable mailboxes for agents that never had them and pushing the board past
+// its own persistent ceiling on the way. That is the retroactivity hazard
+// AGENTS.md names, in the one place the repository has been bitten by it most.
+//
+// So this test asserts the OLD behaviour on purpose, and it is not a leftover:
+// it is the guard that stops a future tidy-up "fixing" the inconsistency
+// between the two defaults by making them agree.
+func TestTheFoldStillDefaultsToEphemeral(t *testing.T) {
+	s := NewState("test", DefaultLimits())
+	if _, _, err := s.Apply(&Op{
+		Kind: OpRegister, Name: "from-an-old-ledger", NewToken: "tok",
+	}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Agents["from-an-old-ledger"].Kind; got != KindEphemeral {
+		t.Errorf("the fold defaulted an unstated kind to %q. Every register op "+
+			"already on disk that stated no kind now replays as that instead of "+
+			"ephemeral: the board reconstructs with mailboxes and ceilings it "+
+			"never had. The default belongs at ingress, where it is written into "+
+			"the op and replay never has to re-decide it", got)
+	}
+}

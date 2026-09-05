@@ -83,8 +83,23 @@ type Op struct {
 	ProcStart int64  `json:"proc_start,omitempty"`
 	NewToken  string `json:"token,omitempty"` // engine-generated; encrypted at rest
 	Nonce     string `json:"nonce,omitempty"` // encrypted at rest
-	ResumeID  string `json:"resume_id,omitempty"`
-	SessionID string `json:"session_id,omitempty"` // harness session, for hook lookup
+	// MintedNonce is a nonce the daemon generated for a caller that sent none,
+	// to be used ONLY if this registration creates a new agent.
+	//
+	// SEPARATE FROM Nonce, and that separation is the whole point. `Nonce` means
+	// "I am presenting this credential", and the fold reads it as a claim: a
+	// non-empty one selects the nonce reattach path and, just as importantly,
+	// disqualifies the `session_id` one. Writing a freshly minted secret into
+	// that field made every registration look like an agent presenting a
+	// credential nobody had ever seen, so context-loss recovery stopped
+	// reattaching and forked a sibling instead. Caught by the space e2e, which
+	// asks the question directly, after three unit tests of mine that did not.
+	//
+	// Carried in the op rather than generated in the fold because core is pure:
+	// replay has to reach the same nonce, not a fresh random one.
+	MintedNonce string `json:"minted_nonce,omitempty"`
+	ResumeID    string `json:"resume_id,omitempty"`
+	SessionID   string `json:"session_id,omitempty"` // harness session, for hook lookup
 	// SessionAlias is another name this same harness session goes by, joined by
 	// the daemon at ingress. See Agent.SessionAliases.
 	//

@@ -150,8 +150,23 @@ type Limits struct {
 // DefaultLimits are the SPEC §11 defaults.
 func DefaultLimits() Limits {
 	return Limits{
-		MaxAgents:           64,
-		MaxPersistentAgents: 16,
+		MaxAgents: 64,
+		// EQUAL TO MaxAgents, because persistent is no longer the exception.
+		//
+		// 16 was sized for a board where persistent meant "standing role" and
+		// everything else was ephemeral. Since v0.0.7 an agent that states no
+		// kind is persistent, so this ceiling counts every agent that has
+		// registered inside DormancyMax, which is thirty days: a fleet of any
+		// size hits it in an afternoon and is then told it may not register at
+		// all. The operator of this project's own board had already raised it to
+		// 48 by hand for exactly that reason, before the default flipped.
+		//
+		// Kept as a separate field rather than deleted, because an operator who
+		// wants a tighter bound on durable mailboxes than on agents in total
+		// should still be able to say so. It is the DEFAULT that was wrong.
+		// Runaway growth is still bounded, by MaxAgents above and by the sweep
+		// archiving anything dormant past DormancyMax.
+		MaxPersistentAgents: 64,
 		MaxSlotsPerAgent:    32,
 		MaxClaimsPerAgent:   32,
 		MaxClaimsGlobal:     256,
@@ -446,6 +461,20 @@ type Agent struct {
 
 	Token string `json:"-"`
 	Nonce string `json:"-"`
+	// NonceMinted says this agent did not bring its own nonce: the daemon made
+	// one and handed it back at registration.
+	//
+	// It decides whether `session_id` may still reattach this agent. That path
+	// refuses an agent holding a nonce, on the grounds that a client-chosen
+	// secret beats a guessable id, and that was right while a nonce meant the
+	// agent had deliberately created one. Since v0.0.7 every registration gets
+	// one whether it asked or not, so without this the refusal covers everybody
+	// and "re-registering after context loss is always safe" quietly stops being
+	// true: the returning agent forks a sibling that cannot read its own mail.
+	//
+	// False for every agent in every existing ledger, which is exactly today's
+	// behaviour, so this needs no replay gate of its own.
+	NonceMinted bool `json:"-"`
 }
 
 // burnChildNonce reports whether n is a secret this agent issued, consuming it.

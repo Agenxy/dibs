@@ -482,6 +482,44 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   now". Prose a person reads over their agent's shoulder, and the tell that
   nobody had looked at the output.
 
+- **An agent that stated no kind got one that could not park, be woken, or hold
+  mail.** `ephemeral` was the default. It means swept to `stale` rather than
+  `dormant` when the session ends, no durable mailbox, and no nonce, which is
+  the only credential that recovers an identity. So the default opted an agent
+  out of every guarantee this product exists to make, silently, at the one call
+  where nobody is thinking about it. An agent that took it could not go idle and
+  come back, which is the whole point of a coordination board.
+
+  The evidence was self-erasing, which is why it lasted. Counting the kinds of
+  the agents still ON a board says almost nobody uses ephemeral, because
+  ephemeral agents are exactly the ones no longer there; that reasoning was
+  offered here, in this changelog's own draft, and it was survivorship bias.
+  What actually surfaced it was a test agent that registered twice in one
+  afternoon and had evaporated both times, and then a wake that resolved to the
+  thread it had been running in, reached an identity with an empty mailbox, and
+  truthfully reported "no mail".
+
+  An unstated kind is now `persistent`, decided at INGRESS and written into the
+  op, never in the fold: `Apply` still defaults to ephemeral and must forever,
+  or every registration already on disk that stated no kind replays as something
+  it never was. That has its own test, which asserts the old behaviour on
+  purpose so a future tidy-up cannot "fix" the inconsistency by making the two
+  agree. `ephemeral` remains available to anything that asks for it by name.
+
+  A persistent agent needs a nonce, so one is minted for a caller that brings
+  none and handed back with instructions to keep it: a durable mailbox whose
+  credential nobody holds is the orphan `adopt_agent` exists to clean up after.
+  The minted value travels in its own op field rather than in `nonce`, because
+  that field is a CLAIM: a non-empty one selects the nonce reattach path and
+  disqualifies the `session_id` one, so the first version of this broke
+  context-loss recovery for every agent and forked siblings instead. Three unit
+  tests passed against that; the space e2e caught it in one run, by asking
+  whether the old agent could still come back.
+
+  `max_persistent_agents` moves from 16 to 64, matching `MaxAgents`. Sixteen was
+  sized for a board where persistent meant "standing role"; it now counts every
+  agent registered inside `dormancy_max`, which is thirty days.
+
 - **A resuming agent's thread id was dropped, so it could not be woken
   afterwards.** The `resumed` branch of `register` was written as a
   response-loss retry: the same nonce twice inside one TTL means the client
