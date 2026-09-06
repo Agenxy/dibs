@@ -439,13 +439,14 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		// mayClaimSession: two stated holders of one id is a coin flip on every
 		// hook. Only on ops that carry a takeover of their own; register writes
 		// this field for its own reason and must keep it.
-		if ok && takenFrom != "" && op.SessionTakenFrom == "" {
-			op.SessionTakenFrom = takenFrom
-		}
-		// AND IN ITS OWN FIELD, so a register that takes a primary from one
-		// row and an alias from another records both: the fold drops each
-		// binding on the authority written for it, on replay as live. See
-		// Op.SessionAliasTakenFrom.
+		// IN ITS OWN FIELD, AND ONLY THERE. The alias's holder used to be
+		// written into SessionTakenFrom as well, which the fold reads as
+		// authority over BOTH ids: a newcomer stating an active owner's
+		// synthetic primary and its guessed thread alias reclaimed the guess,
+		// which is right, and took the stated primary with it, which sent the
+		// owner's hooks to the newcomer. The primary's field is the primary
+		// guard's to write; the alias's holder goes here. Found by the
+		// pre-release review, rounds forty-nine and fifty-five.
 		if ok && takenFrom != "" {
 			op.SessionAliasTakenFrom = takenFrom
 		}

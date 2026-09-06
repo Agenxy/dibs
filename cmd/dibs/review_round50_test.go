@@ -17,6 +17,8 @@ func TestAnUpToDateInstallIsNothingToDo(t *testing.T) {
 		{"the daemon serves the installed build", "0.0.7-0.20260906-abc", "0.0.7-0.20260906-abc", true},
 		{"the daemon serves an older build", "0.0.6", "0.0.7-0.20260906-abc", false},
 		{"two development builds are not known to be the same code", "devel", "devel", false},
+		{"two dirty builds of one revision are not the same binary", "devel+abc123.dirty", "devel+abc123.dirty", false},
+		{"a dirty build against a release", "0.0.7-0.20260906-abc", "0.0.7-0.20260906-abc.dirty", false},
 		{"a daemon that reports no version", "", "0.0.7", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

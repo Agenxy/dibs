@@ -208,7 +208,7 @@ func (s *State) ReattachBySessionIDForTest(op *Op) (Result, []Event) {
 // the id; an active row's stated binding that nobody vetted stays. Found by
 // the pre-release review, round twenty-two.
 func (s *State) dropTakenSession(op *Op, l *Agent) {
-	if op.SessionTakenFrom == "" {
+	if op.SessionTakenFrom == "" && op.SessionAliasTakenFrom == "" {
 		return
 	}
 	for _, id := range sortedKeys(s.Agents) {
@@ -231,11 +231,29 @@ func (s *State) dropTakenSession(op *Op, l *Agent) {
 			// RECORDED, NOT INFERRED. The first cut read the caller's token
 			// here, which is not ledgered, so replay could not repeat the
 			// drop. The ingress records the alias's holder in its own field.
-			named := prev.ID == op.SessionTakenFrom ||
-				(sid == op.SessionAlias && op.SessionAliasTakenFrom != "" && prev.ID == op.SessionAliasTakenFrom)
-			if named || prev.Status != StatusActive || prev.GuessedSession(sid) {
+			if op.namesHolderOf(sid, prev.ID) || prev.Status != StatusActive || prev.GuessedSession(sid) {
 				prev.dropSession(sid)
 			}
 		}
+	}
+}
+
+// namesHolderOf reports whether the op's recorded takes name holder as the
+// row sid was taken from.
+//
+// EACH FIELD OVER ITS OWN ID. SessionTakenFrom is the primary's authority;
+// the alias answers to SessionAliasTakenFrom, and to SessionTakenFrom only on
+// an op written before that field existed, which recorded alias takes there.
+// One field over both ids let a newcomer that reclaimed a guessed alias take
+// the owner's stated primary with it. Found by the pre-release review, round
+// fifty-five.
+func (op *Op) namesHolderOf(sid, holder string) bool {
+	switch {
+	case sid == op.SessionID && sid != op.SessionAlias:
+		return holder == op.SessionTakenFrom
+	case sid == op.SessionAlias && op.SessionAliasTakenFrom != "":
+		return holder == op.SessionAliasTakenFrom
+	default:
+		return holder == op.SessionTakenFrom
 	}
 }

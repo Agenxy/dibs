@@ -260,10 +260,20 @@ func (p *plan) nothingToDo(info buildInfo) bool {
 // daemon reports for itself. A development build reports no version worth
 // comparing, and two of those are not known to be the same code.
 func alreadyOn(info buildInfo, installed string) bool {
-	if installed == "" || installed == "devel" || info.Version == "" {
+	if installed == "" || info.Version == "" || !releasedBuild(installed) || !releasedBuild(info.Version) {
 		return false
 	}
 	return info.Version == installed
+}
+
+// releasedBuild reports whether a version string names one build. A local
+// build reports `devel`, or `devel+<revision>.dirty`, and two dirty builds
+// of one revision are different binaries with the same string: comparing
+// them told an operator who had just rebuilt that there was nothing to do
+// while the old daemon went on serving. Found by the pre-release review,
+// round fifty-five.
+func releasedBuild(v string) bool {
+	return v != "" && !strings.HasPrefix(v, "devel") && !strings.Contains(v, ".dirty")
 }
 
 // checkedVersion reads the version out of a `dibd -check` report, which

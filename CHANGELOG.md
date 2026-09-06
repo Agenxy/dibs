@@ -554,6 +554,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Reclaiming a guessed alias took the owner's stated primary with it.**
+  An active owner held a stated synthetic primary and a thread alias the
+  daemon had inferred for it; a newcomer stating both reclaimed the guess,
+  which is right, and the alias's holder had been recorded as authority over
+  both ids, so the owner lost its stated primary and its hooks went to the
+  newcomer. The alias's holder is recorded in its own field only, and the
+  fold drops each id on the field written for it.
+
+- **`dibs upgrade` compared dirty development builds as equal.** A local
+  build reports `devel+<revision>.dirty`, and two builds of one revision with
+  different uncommitted edits carry the same string: rebuilding and
+  installing was told nothing to do while the old daemon went on serving.
+  A version that is not a released build never compares equal.
+
 - **Registering a second agent through a bridge retired the first one's
   self-wake.** The bridge's inbox watcher held one token and replaced it on
   every registration, so with two agents sharing one bridge only the last
