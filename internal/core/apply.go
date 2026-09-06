@@ -1530,10 +1530,19 @@ func (s *State) finishSend(
 	return res, evs, nil
 }
 
+// oldestDisplaceableNotify picks the notify a full mailbox gives up for a new
+// one. ONLY FROM THE MAIL THAT COUNTS: capacity excludes a previous occupant's
+// mail below the watermark, and this picked from all of it, so a notify to a
+// full mailbox displaced an invisible predecessor notify, freed no counted
+// slot, and landed anyway. With capacity two the replacement held three, and
+// every further predecessor notify allowed one more. Found by the pre-release
+// review, round twenty-six.
 func (s *State) oldestDisplaceableNotify(agent string) *Message {
 	var oldest *Message
+	floor := s.mailFloor(agent)
 	for _, m := range s.Messages {
 		if m.To == agent && m.Type == MsgNotify &&
+			(m.Serial >= floor || s.adoptedFor(m, agent)) &&
 			(m.State == MsgStatePending || m.State == MsgStateDelivered) {
 			if oldest == nil || m.Serial < oldest.Serial {
 				oldest = m

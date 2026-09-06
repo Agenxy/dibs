@@ -537,6 +537,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A notify could overfill a mailbox by displacing a predecessor's
+  invisible one.** Capacity excludes a previous occupant's mail below the
+  watermark; displacement did not, so a notify to a full mailbox evicted a
+  fenced predecessor notify, freed no counted slot, and landed anyway, one
+  over the cap for every such notify left behind. Displacement picks only
+  from the mail that counts.
+
 - **A private panel fetch still lost message bodies and choices.** The
   merge that fills a redacted card from the readable copy beside it read the
   nested `inbox.messages` shape from both carriers, and the panel carrier
