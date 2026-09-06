@@ -112,8 +112,14 @@ func (a *Agent) takeActivation(op *Op) {
 	if op.PID != 0 {
 		a.PID, a.ProcStart = op.PID, op.ProcStart
 	}
+	// AND A RETURN TO A THREAD BOUND EARLIER. Threads A, B, A: the third is
+	// a return, the row still holds A, and "not yet held" read it as the
+	// same activation as B, so B's process stayed on the row and A's stated
+	// location was discarded. The activation is the CURRENT session; a
+	// thread that is not it is a move, whether or not the row has seen it
+	// before. Found by the pre-release review, round forty-seven.
 	movedSession := op.SessionID != "" && op.SessionID != a.SessionID
-	movedThread := op.SessionAlias != "" && !a.holdsSession(op.SessionAlias)
+	movedThread := LooksLikeThreadID(op.SessionAlias) && op.SessionAlias != a.CurrentSession
 	if !movedSession && !movedThread {
 		return
 	}

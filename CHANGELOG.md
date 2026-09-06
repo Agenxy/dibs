@@ -552,6 +552,26 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Approving an old adoption request could still take a successor's
+  mailbox.** The purge written by this version expires a pending request
+  naming the purged agent; a sweep written before v0.0.7 leaves it standing,
+  and replay must not change that, so a request sent shortly before such a
+  purge survives an upgrade and its `adopt` name resolves at approval against
+  the roster of the day. Approval now refuses a target registered after the
+  request was sent: it is not the agent the request concerned.
+
+- **Returning to a thread bound earlier kept the wrong process.** Threads A,
+  B, A: the return was a session the row still held, so it was read as the
+  same activation as B, B's process stayed on the row and A's stated location
+  was discarded. A thread that is not the current session is a move, whether
+  or not the row has seen it before.
+
+- **A purge's expiry events replayed in map order.** The purge walks the
+  messages and now emits an event per adoption request it expires; two
+  requests naming the purged mailbox took their sub indices from Go's
+  iteration order, so the same ledger rebuilt the same state under a
+  different audit stream. The walk is in serial order.
+
 - **The role handover error left the predecessor's role standing.** When a
   pinned role's name is held by a different agent, the error named the three
   steps that let the successor in and called them all of them; none takes

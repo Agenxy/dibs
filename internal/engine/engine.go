@@ -633,6 +633,10 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		return nil, err
 	}
 
+	if err := e.refuseAdoptingASuccessor(op); err != nil {
+		return nil, err
+	}
+
 	// An omitted description keeps the one the agent already has.
 	//
 	// Resolved at ingress and written INTO the op, so the ledger records the
@@ -1335,6 +1339,41 @@ func matchingHint(st MatchStatus) string {
 // Rebinding your own id is fine, and so is taking one from an agent that is
 // closed or archived: AgentBySession already skips those, because a retired
 // agent has no thread left to resume.
+// refuseAdoptingASuccessor refuses to approve an adoption request whose
+// target is a different agent from the one the request named.
+//
+// A request's adopt field is a NAME, resolved against the roster of the day
+// the approval lands, and an id is derived from its name: a request sent
+// shortly before its target was purged by a sweep written before v0.0.7,
+// which replay must leave standing, survives an upgrade; a stranger then
+// registers the released name, receives mail, goes dormant, and approving
+// the old request moves the stranger's mailbox into the requester's. The
+// purge written by this version expires such requests; the historical one
+// cannot be changed, so the check sits here: a target registered after the
+// request was sent is not the agent the request concerned. At ingress, so an
+// approval already on disk replays as it was accepted. Found by the
+// pre-release review, round forty-seven.
+func (e *Engine) refuseAdoptingASuccessor(op *core.Op) error {
+	if op.Kind != core.OpRespond || op.Disposition != "approve" {
+		return nil
+	}
+	m := e.state.Messages[op.MsgSerial]
+	if m == nil || m.Adopt == "" {
+		return nil
+	}
+	from := e.state.Agents[m.Adopt]
+	if from == nil || from.CreatedSerial == 0 || from.CreatedSerial <= m.Serial {
+		return nil
+	}
+	return &core.Error{
+		Code: "E_BAD_TARGET",
+		Msg: "the agent this request asked to adopt, " + m.Adopt + ", was registered after the " +
+			"request was sent: it is not the agent the request concerned, and its mail is its own",
+		Hint: "the mailbox the request named is gone; decline this request, and have the " +
+			"requester send a new one if the agent holding that name now is abandoned",
+	}
+}
+
 // refuseActingOnInheritedMail applies the mailbox fence to the calls that
 // CHANGE a message's state, not only to the ones that read it.
 //

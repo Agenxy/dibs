@@ -429,7 +429,14 @@ func (s *State) gc(now time.Time, purgeMail, clampWatermark bool) ([]Event, bool
 			continue
 		}
 		mail, retired := 0, 0
-		for serial, m := range s.Messages {
+		// IN SERIAL ORDER. This walked the map, and the walk now emits an
+		// event per adoption request it expires: two requests naming the
+		// purged mailbox took their sub indices from Go's iteration order,
+		// and a replay of the same ledger rebuilt the same state under a
+		// different audit stream. Found by the pre-release review, round
+		// forty-seven.
+		for _, serial := range sortedKeys(s.Messages) {
+			m := s.Messages[serial]
 			switch {
 			case m.To == id:
 				delete(s.Messages, serial)

@@ -49,6 +49,21 @@ func TestARecoveryFromANewSessionDropsTheOldProcess(t *testing.T) {
 		t.Fatalf("resumed on a new thread with no pid stated, the row keeps pid %d and location %+v: "+
 			"the process that is gone, where it used to be", got.PID, got.Agent)
 	}
+	// A RETURN to a thread bound earlier is a move too: A, B, A leaves B's
+	// process behind and takes A's stated location.
+	const (
+		threadA = "01a00042-2222-7f60-81cc-6ab1298d76ec" // bound above
+		threadB = "01a00042-4444-7f60-81cc-6ab1298d76ec"
+	)
+	mustApply(t, s, &Op{Kind: OpRegister, Name: "r", NewToken: "tok-4d", Nonce: "n-r-0123456789abcdef", AgentKind: KindPersistent, SessionAlias: threadB, PID: 777, Agent: &AgentInfo{CWD: "/b"}, V7Semantics: true}, now.Add(3*time.Minute+3*time.Second))
+	if got := s.Agents["r"]; got.PID != 777 || got.Agent.CWD != "/b" {
+		t.Fatalf("setup: thread B did not take its process and location: %d %+v", got.PID, got.Agent)
+	}
+	mustApply(t, s, &Op{Kind: OpRegister, Name: "r", NewToken: "tok-4e", Nonce: "n-r-0123456789abcdef", AgentKind: KindPersistent, SessionAlias: threadA, Agent: &AgentInfo{CWD: "/a-again"}, V7Semantics: true}, now.Add(3*time.Minute+4*time.Second))
+	if got := s.Agents["r"]; got.PID != 0 || got.Agent == nil || got.Agent.CWD != "/a-again" {
+		t.Fatalf("returned to thread A with no pid stated, the row keeps pid %d and location %+v: B's process, "+
+			"where B was", got.PID, got.Agent)
+	}
 	// The same rule on the other recovery path: a row that went dormant,
 	// recovered by nonce from yet another session with no pid stated. The
 	// pid is set again first, or this asserts a zero the step above left.
