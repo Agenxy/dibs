@@ -285,10 +285,17 @@ type Op struct {
 	// rest of its run and declines the startup reconciler's regrant, on the
 	// same loop that applies both, so no interleaving between the decision
 	// and the record exists. See Engine.GrantRoleByHuman.
-	RoleByHuman bool     `json:"-"`
-	DeadAgents  []string `json:"dead_agents,omitempty"`
-	StaleAgents []string `json:"stale_agents,omitempty"`
-	AlivePIDs   []int    `json:"alive_pids,omitempty"`
+	RoleByHuman bool `json:"-"`
+	// BindIfUnbound makes a bind_session a no-op when the row already has a
+	// session. The ambient repair used to ask "unbound?" in one trip through
+	// the loop and bind in another, and a check_in between them bound the
+	// real session, which the repair then overwrote and ledgered. The fold
+	// decides both at once. Found by the pre-release review, round
+	// twenty-one.
+	BindIfUnbound bool     `json:"bind_if_unbound,omitempty"`
+	DeadAgents    []string `json:"dead_agents,omitempty"`
+	StaleAgents   []string `json:"stale_agents,omitempty"`
+	AlivePIDs     []int    `json:"alive_pids,omitempty"`
 
 	// mark_delivered: ledgered pending→delivered receipts
 	MsgSerials []uint64 `json:"msg_serials,omitempty"`

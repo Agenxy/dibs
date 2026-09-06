@@ -528,6 +528,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A register carrying the holder's token could mint a second live holder
+  of its thread.** The session-theft guard let the holder through by its
+  token before asking whether the registration landed on that row; a
+  register with a fresh name and nonce, the token, and the thread minted a
+  sibling that shared it. Two live holders, a coin flip on every hook, and
+  two mailboxes waking one session. The thread moves to the row the caller
+  is minting, on the stated id and the alias alike.
+
+- **An ambient session repair could overwrite a binding made meanwhile.**
+  The repair asked "unbound?" in one trip through the writer loop and bound
+  in another; a `check_in` between them bound the real session, which the
+  repair then overwrote and ledgered, so the wrong binding survived replay.
+  The bind carries `bind_if_unbound` (a frozen tag) and the fold decides
+  both at once.
+
+- **A re-registration advanced the self-wake cursor past unseen mail.**
+  The watcher took the serial of every register or resume reply as its
+  cursor; with a cursor at 10, an unseen question at 11 and a registration
+  at 12, the next subscription skipped the question. A reply's serial seeds
+  a watcher with no cursor and never advances one.
+
 - **A setting the bridge did not know made the transport a guess.** The
   shared acceptance lets an older bridge read a newer daemon's `dibs.toml`
   past a setting it does not know; the transport resolver rejected the same

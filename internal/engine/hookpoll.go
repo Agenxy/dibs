@@ -372,20 +372,15 @@ func (e *Engine) AdoptSession(ctx context.Context, token, sessionID string) (boo
 	// since the second caller's check then sees the first caller's bind.
 	e.adoptMu.Lock()
 	defer e.adoptMu.Unlock()
-	res, err := e.query(ctx, func() core.Result {
-		l := e.state.AgentByToken(token)
-		return core.Result{"needs": l != nil && l.SessionID == ""}
-	})
+	// ONE TRIP. "Is it unbound?" and "bind it" were two trips through the
+	// loop, and a check_in between them bound the real session, which this
+	// then overwrote and ledgered. The fold answers both together.
+	res, err := e.Do(ctx, &core.Op{Kind: core.OpBindSession, Token: token, SessionID: sessionID, BindIfUnbound: true})
 	if err != nil {
 		return false, err
 	}
-	if needs, _ := res["needs"].(bool); !needs {
-		return false, nil
-	}
-	if _, err := e.BindSession(ctx, token, sessionID); err != nil {
-		return false, err
-	}
-	return true, nil
+	bound, _ := res["bound"].(bool)
+	return bound, nil
 }
 
 // BindSession attaches a harness session id to the caller's agent, so lifecycle

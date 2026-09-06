@@ -230,13 +230,18 @@ func watchOnRegister(
 			return
 		}
 		if tok := agentTokenIn(reply); tok != "" {
+			// A SEED, NOT AN ADVANCE. The reply's serial says where a watcher
+			// with no cursor may start; an established watcher's cursor names
+			// the last notification it saw, and a re-registration is no
+			// evidence the events between were seen. Found by the pre-release
+			// review, round twenty-one.
 			if serial := agentSerialIn(reply); serial > 0 {
 				w.mu.Lock()
-				if serial > w.since {
+				if w.since == 0 {
 					w.since = serial
+					recordWakeCursor(serial)
 				}
 				w.mu.Unlock()
-				recordWakeCursor(serial)
 			}
 			w.start(ctx, client, url, secret, tok)
 		}

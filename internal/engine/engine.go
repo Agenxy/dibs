@@ -410,6 +410,13 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		if !ok {
 			op.SessionAlias = ""
 		}
+		// The same for the alias: "self by token" on a register that mints a
+		// sibling is a take from the row the token belongs to.
+		if ok && takenFrom == "" && op.Kind == core.OpRegister {
+			if holder := e.state.AgentBySession(claimed); holder != nil && !e.registerLandsOn(op, holder) {
+				takenFrom = holder.ID
+			}
+		}
 		// RECORDED, so the fold removes it from the row that lost it. See
 		// mayClaimSession: two stated holders of one id is a coin flip on every
 		// hook. Only on ops that carry a takeover of their own; register writes
@@ -1294,6 +1301,15 @@ func (e *Engine) refuseStealingAnotherThreadsSession(op *core.Op) error {
 	// The caller, when it has one. A register that reattaches by nonce resolves
 	// to the same agent, and re-asserting your own thread is not theft.
 	if self := e.state.AgentByToken(op.Token); self != nil && self.ID == holder.ID {
+		// The holder itself, by its token. Binding to its own row is its own
+		// business; a REGISTER with a fresh name and nonce mints a sibling,
+		// and a sibling that shares the thread is two live holders and a coin
+		// flip on every hook. The caller holds the token, so the thread moves
+		// to the row it is minting. Found by the pre-release review, round
+		// twenty-one.
+		if op.Kind == core.OpRegister && !e.registerLandsOn(op, holder) {
+			op.SessionTakenFrom = holder.ID
+		}
 		return nil
 	}
 	if op.Kind == core.OpRegister && e.registerLandsOn(op, holder) {

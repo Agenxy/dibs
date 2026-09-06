@@ -160,6 +160,7 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		// bindings. The repair for a binding that is already wrong, and only ever
 		// the caller's own, so it can strand nothing but itself.
 		"release_session": true,
+		"bind_if_unbound": true,
 		// v7_semantics: which version's fold semantics this op was written
 		// under. Two v0.0.7 repairs changed what an existing op does, so
 		// replaying an older ledger through them would reconstruct a different
@@ -298,7 +299,7 @@ const (
 	// `session_taken_from`: one new tag each time, no rename. If you are here
 	// because a sweep moved this value, the sweep is the bug, and the tag it
 	// renamed is the data loss.
-	frozenOpFingerprint       = "sha256:19b2a3df30fad33b"
+	frozenOpFingerprint       = "sha256:d50e6ffaf640be90"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

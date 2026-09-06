@@ -164,6 +164,12 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 	case OpUpdate:
 		res, evs, err = s.applyUpdate(l, op)
 	case OpBindSession:
+		if op.BindIfUnbound && l.hasSessionBinding() {
+			return Result{
+				"ok": true, "agent": l.ID, "bound": false, "session_id": l.SessionID,
+				"note": "already bound: an ambient repair binds only a row with no session",
+			}, nil, nil
+		}
 		// A LEDGERED write, because it is a write.
 		//
 		// This lived on the engine's read path: BindSession mutated l.SessionID
@@ -198,7 +204,7 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		// Found by the pre-release review, round seven.
 		l.GuessedSessions = withoutString(l.GuessedSessions, op.SessionID)
 		l.CurrentSession = op.SessionID // reported as bound, so it is the one to wake
-		res = Result{"ok": true, "agent": l.ID, "session_id": l.SessionID}
+		res = Result{"ok": true, "agent": l.ID, "session_id": l.SessionID, "bound": true}
 		evs = []Event{{Type: "agent.updated", Agent: l.ID}}
 	case OpClaimCoordinator:
 		return s.applyClaimCoordinator(op, l, now)
