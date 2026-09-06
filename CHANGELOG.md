@@ -554,6 +554,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A pending mailbox adoption could be captured before approval, like a
+  pending grant.** Round sixty-one closed the grant case but read only the
+  grant field, so a request that moves a whole mailbox onto the requester on
+  approval was still open: another caller could take the requester's row by
+  its public name and session id, and the operator's yes moved the mailbox
+  onto the taker. A row with any pending request that performs something on
+  approval, a role grant or an adoption, is now recovered by its nonce alone.
+
+- **An upgrade whose stop failed could restart the old binary and call it
+  the new build.** Recovery preferred the service unit and checked only that
+  it named the right data directory, not the right executable, so a unit
+  still pinning the previous binary (a legacy-labelled one a failed stop
+  never let the rewrite reach) brought the old daemon back while the report
+  said "This is the NEW build". Recovery now starts directly with the
+  installed binary when the unit pins a different one.
+
 - **A pending role grant could be captured before the human approved it.**
   The guard that keeps session-only recovery away from a row bearing power
   covered rows that already held a role, not a default registrant with a

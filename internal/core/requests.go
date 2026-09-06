@@ -21,18 +21,24 @@ package core
 // one needs. core does not know that humans exist, and that ignorance is what
 // keeps it a pure state machine.
 
-// HasPendingGrantRequest reports whether this agent has an outstanding
-// request that PERFORMS a grant on approval: a non-terminal request it sent
-// carrying a role. Such a row is not privileged yet, so the role guard did
-// not cover it, but approving its request lands the role on whatever token
-// the row now holds. A session-only reattach in the window between the
-// request and the human's yes therefore captured the grant: the attacker
-// re-registered with the requester's public name and session id, took the
-// row's token, and the operator's approval promoted the taker. Found by the
-// pre-release review, round sixty-one.
-func (s *State) HasPendingGrantRequest(agentID string) bool {
+// HasPendingEffectRequest reports whether this agent has an outstanding
+// request that PERFORMS something on approval: a non-terminal request it
+// sent carrying a role grant or a mailbox adoption. Such a row is not
+// privileged yet, so the role guard did not cover it, but approving its
+// request lands the effect on whatever token the row now holds. A
+// session-only reattach in the window between the request and the human's
+// yes therefore captured it: the attacker re-registered with the requester's
+// public name and session id, took the row's token, and the operator's
+// approval promoted the taker (a grant) or moved a whole mailbox onto it (an
+// adoption). Found by the pre-release review, round sixty-one for the grant
+// and round sixty-two for the adoption, which the first cut left out because
+// it read only the grant field.
+func (s *State) HasPendingEffectRequest(agentID string) bool {
 	for _, m := range s.Messages {
-		if m.From == agentID && m.Grant != "" && !m.Terminal() {
+		if m.From != agentID || m.Terminal() {
+			continue
+		}
+		if m.Grant != "" || m.Adopt != "" {
 			return true
 		}
 	}

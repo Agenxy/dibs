@@ -1559,22 +1559,24 @@ func (e *Engine) refuseRecoveringAPrivilegedRowWithoutItsNonce(op *core.Op) erro
 	// renamed for display keeps the id the table names. Found by the
 	// pre-release review, round ten.
 	holdsRole := target.Role != "" || e.privilegedName(target.Name) || e.privilegedName(target.ID)
-	// AND A ROW ONE YES AWAY FROM A ROLE. A pending grant request lands its
-	// role on whatever token the row holds when the human approves, so a
-	// session-only reattach that takes the token in that window captures the
-	// grant without ever presenting the requester's nonce. The row is not
-	// privileged yet, so the role check above passed it. Guarded the same
-	// way: it is recovered by its nonce, which v0.0.7 mints for every
-	// registration, so the requester itself can still return. Found by the
-	// pre-release review, round sixty-one.
-	pendingGrant := e.state.HasPendingGrantRequest(target.ID)
-	if !holdsRole && !pendingGrant {
+	// AND A ROW ONE YES AWAY FROM POWER. A pending request that performs
+	// something on approval (a role grant, or a mailbox adoption that moves a
+	// whole mailbox onto this row) lands its effect on whatever token the row
+	// holds when the human approves, so a session-only reattach that takes the
+	// token in that window captures it without ever presenting the requester's
+	// nonce. The row is not privileged yet, so the role check above passed it.
+	// Guarded the same way: it is recovered by its nonce, which v0.0.7 mints
+	// for every registration, so the requester itself can still return. Found
+	// by the pre-release review, rounds sixty-one (grant) and sixty-two
+	// (adoption, which the first cut left out by reading only the grant field).
+	pendingEffect := e.state.HasPendingEffectRequest(target.ID)
+	if !holdsRole && !pendingEffect {
 		return nil
 	}
 	because := "holds a role, and a role is recovered by its nonce only"
 	if !holdsRole {
-		because = "has a role grant awaiting approval, and until that is decided it is " +
-			"recovered by its nonce only"
+		because = "has a request awaiting approval that would grant it a role or move a " +
+			"mailbox onto it, and until that is decided it is recovered by its nonce only"
 	}
 	return &core.Error{
 		Code: "E_NEEDS_NONCE",

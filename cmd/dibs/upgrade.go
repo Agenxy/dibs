@@ -664,6 +664,50 @@ func adoptedName(inherited string) string {
 	return filepath.Join(filepath.Dir(inherited), ".dibs")
 }
 
+// unitUnfitToRestart reports why a service unit must not be used to bring the
+// daemon back, or "" when it is fit. Two ways it is unfit, each of which
+// turned a recovery into a quiet lie once:
+//
+//   - it names the wrong DATA DIRECTORY: --adopt-dir renamed the directory and
+//     the unit rewrite failed, so restarting the unit ran against a path moved
+//     out from under it.
+//   - it pins the wrong BINARY: recovery starts the build just installed and
+//     the report says "This is the NEW build", but a unit whose ExecStart still
+//     names the old binary (a legacy-labelled unit a failed stop never let
+//     reconcile rewrite) brings the OLD daemon back and is called the new one.
+//
+// The directory check has been here since round ten; the binary check since
+// round sixty-two, both found by the pre-release review. "" for a binary it
+// cannot read out of the unit, matching unitNames: a doubt does not justify
+// abandoning a supervised service.
+func unitUnfitToRestart(unit, dir, installed string) string {
+	if !unitNames(unit, dir) {
+		return unit + " does not name " + dir
+	}
+	if bin := unitBinary(unit); bin != "" && !sameBinary(bin, installed) {
+		return unit + " pins " + bin + ", not the " + installed + " just installed"
+	}
+	return ""
+}
+
+// unitBinary is the dibd path a service unit pins, or "" when the unit
+// cannot be read or names none. "" means "cannot tell", and the caller then
+// leaves the unit in place rather than force a direct start over a doubt.
+func unitBinary(unit string) string {
+	// #nosec G304,G703 -- unit is a service-unit path this project built from
+	// the process's own HOME (or XDG_CONFIG_HOME) plus a fixed filename, or one
+	// the operator passed for their own machine; read and matched, never
+	// written, exactly as unitNames does above.
+	b, err := os.ReadFile(unit)
+	if err != nil {
+		return ""
+	}
+	if m := unitDaemonPin.FindSubmatch(b); m != nil {
+		return string(m[1])
+	}
+	return ""
+}
+
 // startDaemon brings the daemon back, through the service manager when there is
 // a unit and directly when there is not.
 //
@@ -682,12 +726,14 @@ func startDaemon(installed, dir, unit string, was daemonState) error {
 	//
 	// Preferring the unit is right when it describes this board and wrong when
 	// it does not, and the file says which.
-	if unit != "" && !unitNames(unit, dir) {
-		fmt.Fprintf(os.Stderr, "%s %s does not name %s, so the daemon is being "+
-			"started directly rather than through it. Fix the unit before the next "+
-			"logout, or the board will not come back on its own.\n",
-			ui.Bold("note:"), unit, dir)
-		unit = ""
+	if unit != "" {
+		if reason := unitUnfitToRestart(unit, dir, installed); reason != "" {
+			fmt.Fprintf(os.Stderr, "%s %s, so the daemon is being started directly with the "+
+				"installed binary rather than through it. Fix the unit before the next logout, "+
+				"or the board will not come back as the new build on its own.\n",
+				ui.Bold("note:"), reason)
+			unit = ""
+		}
 	}
 	if unit != "" {
 		err := restartUnit(unit)

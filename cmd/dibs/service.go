@@ -470,15 +470,17 @@ func unitPinningLegacy() []string {
 // service keeps starting the old build forever, with nothing anywhere saying
 // so. daemonPath's own comment calls that out as the failure it exists to
 // avoid, and it avoids it only at the moment the unit is written.
+// unitDaemonPin matches any absolute path ending in the daemon's name, which
+// covers the plist's <string> element and systemd's ExecStart= alike.
+var unitDaemonPin = regexp.MustCompile(`(/[^\s<>"']+/dibd)\b`)
+
 func unitDaemon() (unit, daemon string) {
 	candidates := []string{
 		filepath.Join(os.Getenv("HOME"), "Library", "LaunchAgents", "org.agenxy.dibs.plist"),
 		filepath.Join(configHome(), "systemd", "user", "dibs.service"),
 	}
 	candidates = append(candidates, unitPinningLegacy()...)
-	// Any absolute path ending in the daemon's name, which covers the plist's
-	// <string> element and systemd's ExecStart= alike.
-	pin := regexp.MustCompile(`(/[^\s<>"']+/dibd)\b`)
+	pin := unitDaemonPin
 	for _, path := range candidates {
 		// #nosec G304,G703 -- every candidate is built here from this process's
 		// own HOME (or XDG_CONFIG_HOME) plus a fixed filename; no caller-supplied
