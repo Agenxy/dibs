@@ -1165,7 +1165,18 @@ func shellBody(body string) string {
 	// contains `if`, `for` and `>`, so a guard that reads inside quotes reports
 	// a script every time somebody writes a sentence. What matters is what the
 	// shell would EXECUTE, which is what is left once arguments are removed.
-	body = quoted.ReplaceAllString(body, " ")
+	body = quoted.ReplaceAllStringFunc(body, func(q string) string {
+		// UNLESS THE SHELL WOULD EXPAND IT. `"$(printf x)"` is an argument
+		// the shell builds by running a program, and removing the quotes
+		// removed the substitution from what the guard read: a Taskfile
+		// command could run a second program inside its arguments as long
+		// as it put quotes around it. Double quotes expand; single quotes
+		// do not. Found by the pre-release review, round twenty-nine.
+		if q[0] == '"' && (strings.Contains(q, "$(") || strings.Contains(q, "`") || strings.Contains(q, "${")) {
+			return q
+		}
+		return " "
+	})
 	r := strings.NewReplacer("->", " ", "=>", " ", "<-", " ", ">=", " ", "<=", " ")
 	return r.Replace(body)
 }

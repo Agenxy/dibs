@@ -547,6 +547,29 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A bridge upgrade wake could resume the thread an agent had left.** A
+  persistent agent recovered by nonce from a new `host-<ppid>` activation
+  still held the uuid of the activation it left; the wake's newest-alias scan
+  found it and `codex exec resume` ran against a real thread, the wrong one,
+  while the activation waiting for its mail stayed asleep. When the session
+  the harness reported last is not a thread, no thread is known for the
+  current activation and the exec route stands down until one is bound.
+
+- **The no-shell guard did not read inside quotes.** It removes quoted
+  arguments before matching, because prose in a help string is not control
+  flow, and a double-quoted argument that carries a command substitution is
+  still executed: `go run ./tools/x "$(printf y)"` passed. A double-quoted
+  argument that expands is read; a single-quoted one is not, because the
+  shell expands nothing there.
+
+- **A refusal from the daemon's gate corrupted the bridge's stdio.** The gate
+  answers a request it will not read with a status and a line of text, and
+  the bridge wrote that line to stdout as if it were JSON-RPC: the harness
+  got `unauthorized`, no reply carrying its request id, and a call that never
+  returned. Shipped in v0.0.6. A body that is not JSON-RPC is delivered as a
+  JSON-RPC error with the status, the text and a hint, and a refused
+  notification produces nothing, as JSON-RPC says.
+
 - **Adopting a mailbox told the heir nothing.** Both adoption paths emitted
   `agent.updated`, which names no recipient, so a coordinator recovering
   pending questions into a dormant agent got success and neither wake route

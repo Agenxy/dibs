@@ -1083,6 +1083,16 @@ func threadIDOf(l *core.Agent) string {
 	if looksLikeThreadID(l.CurrentSession) {
 		return l.CurrentSession
 	}
+	if l.CurrentSession != "" {
+		// AND NOT THE THREAD BEFORE IT. The current activation is known and
+		// is not a thread, so no thread is known for it: a persistent agent
+		// recovered by nonce from a new `host-<ppid>` still held the uuid of
+		// the activation it left, the scan below found it, and the wake
+		// resumed the thread the agent had moved away from while the one
+		// waiting stayed asleep. Found by the pre-release review, round
+		// twenty-nine.
+		return ""
+	}
 	for i := len(l.SessionAliases) - 1; i >= 0; i-- {
 		if looksLikeThreadID(l.SessionAliases[i]) {
 			return l.SessionAliases[i]

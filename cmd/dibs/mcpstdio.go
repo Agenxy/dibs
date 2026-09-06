@@ -219,12 +219,50 @@ func forward(client *http.Client, req *http.Request, line []byte, out *syncWrite
 	}
 	body, _ := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
-	if body = bytes.TrimSpace(body); len(body) > 0 {
+	body = bytes.TrimSpace(body)
+	if len(body) > 0 && body[0] != '{' {
+		// A REFUSAL IS NOT A REPLY. The daemon's gate answers a request it
+		// will not read with a status and a line of text, and that line went
+		// to stdout as if it were JSON-RPC: the harness got `unauthorized`,
+		// no reply carrying its request id, and a call that never returned.
+		// Shipped in v0.0.6; found by the pre-release review, round
+		// twenty-nine.
+		if reply := refusedReply(line, resp.StatusCode, body); reply != nil {
+			out.line(reply)
+		}
+		return
+	}
+	if len(body) > 0 {
 		out.line(body) // empty means a notification / 202: no response line
 		if saw != nil {
 			saw(line, body)
 		}
 	}
+}
+
+// refusedReply turns an HTTP refusal into the JSON-RPC error the harness can
+// deliver to its caller, or nil for a notification, which has no reply.
+func refusedReply(line []byte, status int, body []byte) []byte {
+	id := idOf(line)
+	if string(id) == "null" {
+		return nil
+	}
+	text := string(body)
+	if len(text) > 200 {
+		text = text[:200]
+	}
+	hint := "the daemon refused the request before reading it: `dibs doctor` says whether this " +
+		"machine's local secret and the daemon agree, and `dibs upgrade` reinstalls the bridge"
+	msg, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"error": map[string]any{
+			"code":    -32000,
+			"message": fmt.Sprintf("the Dibs daemon refused the request: HTTP %d %s", status, text),
+			"data":    map[string]any{"hint": hint, "status": status},
+		},
+	})
+	return msg
 }
 
 // toolNameOf reports which tool a tools/call names, or "".

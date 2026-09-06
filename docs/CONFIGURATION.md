@@ -189,10 +189,15 @@ is arbitrary code running as you.
 **`{thread}` is the harness's thread, and it is the one the harness reported
 last.** Dibs fills it with the agent's current session (`current_session` on
 the board: the id its harness most recently reported, by alias or by a stated
-`session_id`) when that has the shape a resume command accepts; failing that,
-the newest thread-shaped alias; failing that, a thread-shaped `session_id`. A
-bridge-derived `session_id` such as `host-92368` names the harness process,
-dies with it, and is never resumed. A persistent agent that has reattached
+`session_id`) when that has the shape a resume command accepts. When the
+harness's last report is not a thread, no thread is known for the current
+activation and the exec route stands down until one is bound: the threads
+the agent held before are the activations it left, and resuming one of those
+wakes the wrong session. Only a row with no current session recorded falls
+back to its newest thread-shaped alias, and failing that to a thread-shaped
+`session_id`. A bridge-derived `session_id` such as `host-92368` names the
+harness process, dies with it, and is never resumed. A persistent agent that
+has reattached
 holds several threads, and a return to an earlier one makes it current: the
 activation it is in, not the one it bound last. Resuming any other starts a
 real session that is not the one holding the mail, and the board logs a
