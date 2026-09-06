@@ -543,7 +543,7 @@ func TestATurnThatEndedIsNotMistakenForARunningAgent(t *testing.T) {
 	// It called the board five seconds ago: well inside the cooldown.
 	e.seen["stopped"] = time.Now().Add(-5 * time.Second)
 	// And then its turn ended, which is what the harness tells us on Stop.
-	e.noteTurnState(l, "Stop")
+	e.noteTurnState(l, "", "Stop")
 
 	// Blocking mail arrives while the old rule still called it "in touch".
 	e.maybeWake(core.Event{
@@ -581,8 +581,8 @@ func TestATurnThatEndedIsNotMistakenForARunningAgent(t *testing.T) {
 			st.Agents = map[string]*core.Agent{"restarted": a}
 
 			en.seen["restarted"] = time.Now().Add(-5 * time.Second)
-			en.noteTurnState(a, "Stop") // the turn ended
-			en.noteTurnState(a, start)  // and a new one began
+			en.noteTurnState(a, "", "Stop") // the turn ended
+			en.noteTurnState(a, "", start)  // and a new one began
 			en.maybeWake(core.Event{
 				Type: "message.sent", To: "restarted",
 				Data: map[string]any{"msg_type": core.MsgQuestion, "from": "asker"},
@@ -607,7 +607,7 @@ func TestATurnThatEndedIsNotMistakenForARunningAgent(t *testing.T) {
 	})
 	back := bridgeAgent("resumed", "Codex", "019fff00-1111-7f60-81cc-6ab1298d76ec")
 	st2.Agents = map[string]*core.Agent{"resumed": back}
-	e2.noteTurnState(back, "Stop")
+	e2.noteTurnState(back, "", "Stop")
 	e2.seen["resumed"] = time.Now() // a new turn, after the stop
 	e2.maybeWake(core.Event{
 		Type: "message.sent", To: "resumed",

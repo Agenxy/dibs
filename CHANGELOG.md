@@ -554,6 +554,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A turn starting after a long idle could still be woken twice.** The
+  starting hook retracted the previous turn's stop but recorded no liveness,
+  so if the agent's last authenticated call predated the wake cooldown, a
+  question arriving before its first call this turn launched the wake command
+  against the thread that had just started. A starting hook is now recorded as
+  contact, the same standing an authenticated call has.
+
+- **A late hook from a thread the agent left could mark the current one
+  finished.** Turn state was recorded against whatever row a lifecycle hook
+  resolved to, and the row keeps every thread it was bound to, so a Stop or
+  SessionEnd arriving from thread A after the agent moved to thread B
+  overwrote B's liveness verdict and let the next blocking message launch a
+  second activation on B. A hook now records turn state only when it fired for
+  the agent's current session, the same rule the subscription and routing
+  paths use.
+
 - **The operator's own identity could be recovered without opening the
   board.** The human's row is registered with a fixed, known nonce and so is
   skipped by session-only recovery, but a v0.0.6 archive-and-recovery blanked

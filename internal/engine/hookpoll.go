@@ -133,8 +133,17 @@ func hookWakeTerms(unreadWakes, announced, notices, waiting int, someoneWaiting 
 // is the duplicate activation the recency guard exists to prevent, reintroduced
 // by the fix for the opposite bug. A running event is newer information and
 // replaces the older one rather than sitting beside it.
-func (e *Engine) noteTurnState(l *core.Agent, event string) {
-	if l == nil {
+//
+// FROM THE CURRENT THREAD ONLY. A hook carries the session it fired for, and
+// the row retains every thread it was ever bound to, so a late Stop or
+// SessionEnd from a thread the agent has LEFT resolved to the same row and
+// overwrote the liveness verdict of the thread it moved to: the recency guard
+// then read the running thread as finished and let the next blocking message
+// launch a second activation on it. The subscription and routing paths already
+// measure a thread against the current session; this one did not. Found by the
+// pre-release review, round sixty-four.
+func (e *Engine) noteTurnState(l *core.Agent, sessionID, event string) {
+	if l == nil || !l.SessionIsCurrent(sessionID) {
 		return
 	}
 	switch StateForEvent(event) {
@@ -144,10 +153,20 @@ func (e *Engine) noteTurnState(l *core.Agent, event string) {
 		}
 		e.turnEnded[l.ID] = time.Now()
 	case "running":
-		// Deleted rather than stamped: the question recentlyInTouch asks is
-		// "has it stopped since we last heard from it", and the answer is now
-		// no. A timestamp here would have to race the contact clock to say so.
+		// The stop is retracted, and liveness recorded.
+		//
+		// Deleting the stop is not enough on its own: recentlyInTouch reads
+		// the agent as running only while its last contact is inside the
+		// cooldown, and a turn that starts after a longer idle has no such
+		// contact, so a question arriving before the model's first Dibs call
+		// launched a wake against the thread that had just started. A starting
+		// hook IS contact, on the connection the model already holds, so it
+		// stands in for liveness exactly as an authenticated call does. Found
+		// by the pre-release review, round sixty-four. (The turnEnded map is
+		// still only deleted from, never stamped: that clock races the contact
+		// clock, and this stamps the contact clock itself.)
 		delete(e.turnEnded, l.ID)
+		e.seen[l.ID] = time.Now()
 	}
 }
 
@@ -170,7 +189,7 @@ func (e *Engine) HookPoll(
 		e.announceHookSession(sessionID, cwd, event)
 		l := e.state.AgentForHook(sessionID, cwd)
 		e.noteHook("poll", l != nil)
-		e.noteTurnState(l, event)
+		e.noteTurnState(l, sessionID, event)
 		e.logHookResolution(sessionID, cwd, event, l)
 		if l == nil {
 			// A session that resolves to nobody may still BE somebody, returning.

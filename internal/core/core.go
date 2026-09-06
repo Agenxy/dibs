@@ -744,6 +744,26 @@ func (s *State) StreamStanding(token, session string) (live, held bool) {
 	return true, l.holdsSession(session)
 }
 
+// SessionIsCurrent reports whether a hook or stream speaking for sid is
+// speaking for this agent's CURRENT activation, not a thread it has since
+// moved on from. The row retains every thread it was ever bound to (see
+// SessionAliases), so holding a thread is not the same as being in it. This
+// is the held half of StreamStanding, named for the other caller: the hook
+// path, which recorded a turn's state against whatever thread resolved and so
+// let a late Stop from a thread the agent had left overwrite the liveness of
+// the thread it moved to. A stated non-thread id (the bridge's host id) is
+// current where the row holds it; an absent id names no thread and is the
+// agent itself.
+func (a *Agent) SessionIsCurrent(sid string) bool {
+	if sid == "" {
+		return true
+	}
+	if LooksLikeThreadID(sid) && a.CurrentSession != "" {
+		return sid == a.CurrentSession
+	}
+	return a.holdsSession(sid)
+}
+
 // Inbox returns the agent's non-terminal plus unconsumed-terminal messages,
 // oldest first (SPEC §8).
 func (s *State) Inbox(agent string) []*Message {
