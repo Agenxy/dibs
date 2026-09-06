@@ -21,6 +21,24 @@ package core
 // one needs. core does not know that humans exist, and that ignorance is what
 // keeps it a pure state machine.
 
+// HoldsAdoptedMail reports whether this agent holds mail that an approved
+// adoption moved ONTO it: another agent's mailbox, handed over on a human's
+// or coordinator's yes. The pending-request guard covers the window before
+// that yes; this covers after it. An approved adoption is terminal, so
+// HasPendingEffectRequest stops matching the instant the mailbox lands, and a
+// session-only recovery could then take the row by its public name and
+// session id and read the adopted mail. A row that has been handed another
+// agent's mailbox is recovered by its nonce, which v0.0.7 mints for every
+// registration. Found by the pre-release review, round sixty-five.
+func (s *State) HoldsAdoptedMail(agentID string) bool {
+	for _, m := range s.Messages {
+		if m.To == agentID && m.AdoptedFrom != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // HasPendingEffectRequest reports whether this agent has an outstanding
 // request that PERFORMS something on approval: a non-terminal request it
 // sent carrying a role grant or a mailbox adoption. Such a row is not

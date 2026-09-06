@@ -211,8 +211,13 @@ the nonce on the row while keeping the index, and the blanked row was then
 reachable by name and session id like any nonce-less agent. Both are public
 (the human's session id IS the known nonce), so this handed out the human's
 token and, with it, approval of the caller's own grant, with no Touch ID and
-no password. The human is recovered only by opening the board. Found by the
-pre-release review, rounds nine, sixty-one, sixty-two, and sixty-three.
+no password. The human is recovered only by opening the board. And a row that
+has ALREADY been handed a mailbox: an approved adoption moves another agent's
+mail onto the requester, and the pending-request guard stops the instant that
+yes lands, so a session-only recovery could then take the row and read the
+adopted mail. A row holding adopted mail is recovered by its nonce too. Found
+by the pre-release review, rounds nine, sixty-one, sixty-two, sixty-three,
+and sixty-five.
 
 **The wake path is a nudge, and it is deliberately free to call.** Because
 `hook_poll` is token-less, a caller naming somebody else's session receives that

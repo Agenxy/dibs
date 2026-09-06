@@ -151,3 +151,75 @@ func TestTheHumanRowCannotBeRecoveredByNameAndSession(t *testing.T) {
 			"holds the operator's token and can approve its own grant", res, err)
 	}
 }
+
+// After an approved adoption, the destination row holds another agent's
+// mailbox. The pending-request guard stops matching once the request is
+// terminal, so a session-only recovery could take the row and read the
+// adopted mail with nothing but a public name and session id. A row that has
+// been handed a mailbox is recovered by its nonce.
+func TestARowThatHasAdoptedAMailboxCannotBeRecoveredWithoutItsNonce(t *testing.T) {
+	const sid = "019ffe52-0eaf-7f60-81cc-6ab1298d76ec"
+	st := core.NewState("t", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	// A coordinator who can approve an adoption.
+	boss, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "boss", NewToken: "b-1", AgentKind: core.KindPersistent, Nonce: "n-boss"})
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	bossTok, _ := boss["token"].(string)
+	st.Agents["boss"].Role = core.RoleCoordinator
+
+	// A source with unread private mail, gone dormant so its mailbox is adoptable.
+	src, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "source", NewToken: "s-1", AgentKind: core.KindPersistent, Nonce: "n-src"})
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	srcID, _ := src["agent_id"].(string)
+	srcTok, _ := src["token"].(string)
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: bossTok, To: srcID,
+		MsgType: core.MsgNotify, Body: "SECRET: the staging password is hunter2",
+	}); err != nil {
+		t.Fatal("setup:", err)
+	}
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpSignOff, Token: srcTok}); err != nil {
+		t.Fatal("setup:", err)
+	}
+
+	// The requester adopts that mailbox, approved by the coordinator.
+	reg, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "asker", NewToken: "tok-1", SessionID: sid})
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	askerTok, _ := reg["token"].(string)
+	minted, _ := reg["nonce"].(string)
+	sent, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: askerTok, To: "boss",
+		MsgType: core.MsgRequest, Body: "that mailbox is mine", Adopt: srcID,
+	})
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	serial, _ := sent["msg_serial"].(uint64)
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpRespond, Token: bossTok, MsgSerial: serial, Disposition: "approve"}); err != nil {
+		t.Fatal("setup: approve the adoption:", err)
+	}
+
+	// The row now holds the source's mail. A session-only recovery must be refused.
+	res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "asker", NewToken: "tok-2", SessionID: sid})
+	var ce *core.Error
+	if err == nil || !errors.As(err, &ce) || ce.Code != "E_NEEDS_NONCE" {
+		t.Fatalf("a session-only reattach of a row holding an adopted mailbox got %v %v: "+
+			"the caller reads another agent's private mail with a public name and session id", res, err)
+	}
+	// The requester itself still recovers, with its own minted nonce.
+	if res, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "asker", NewToken: "tok-3", Nonce: minted, SessionID: sid,
+	}); err != nil || res["agent_id"] != "asker" {
+		t.Errorf("the requester could not recover with its own nonce after adopting: %v %v", res, err)
+	}
+}

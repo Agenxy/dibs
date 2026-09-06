@@ -554,6 +554,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An adopted mailbox could be read by taking over the row that adopted it.**
+  The session-only recovery guard refuses a row with a pending grant or
+  adoption request, but an approved adoption is terminal, so the guard stopped
+  matching the instant the mailbox landed on the requester. A caller with the
+  requester's public name and session id could then take its token and read
+  the adopted mail. A row that has been handed a mailbox is now recovered by
+  its nonce, which v0.0.7 mints for every registration.
+
 - **A turn starting after a long idle could still be woken twice.** The
   starting hook retracted the previous turn's stop but recorded no liveness,
   so if the agent's last authenticated call predated the wake cooldown, a

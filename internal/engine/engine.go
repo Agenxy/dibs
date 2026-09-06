@@ -1581,7 +1581,16 @@ func (e *Engine) refuseRecoveringAPrivilegedRowWithoutItsNonce(op *core.Op) erro
 	// by the pre-release review, rounds sixty-one (grant) and sixty-two
 	// (adoption, which the first cut left out by reading only the grant field).
 	pendingEffect := e.state.HasPendingEffectRequest(target.ID)
-	if !holdsRole && !pendingEffect && !isHuman {
+	// AND A ROW THAT HAS ALREADY BEEN HANDED A MAILBOX. The pending-request
+	// guard above covers the window before the human's yes; an APPROVED
+	// adoption is terminal, so that guard stops matching the instant the
+	// mailbox lands, and a session-only recovery could then take the row and
+	// read another agent's mail with nothing but a public name and session id.
+	// The adoption was a human's authorisation to move that mail onto THIS
+	// agent, not onto whoever can guess its session. Found by the pre-release
+	// review, round sixty-five.
+	holdsAdopted := e.state.HoldsAdoptedMail(target.ID)
+	if !holdsRole && !pendingEffect && !isHuman && !holdsAdopted {
 		return nil
 	}
 	if isHuman {
@@ -1594,7 +1603,12 @@ func (e *Engine) refuseRecoveringAPrivilegedRowWithoutItsNonce(op *core.Op) erro
 		}
 	}
 	because := "holds a role, and a role is recovered by its nonce only"
-	if !holdsRole {
+	switch {
+	case holdsRole:
+	case holdsAdopted:
+		because = "holds a mailbox adopted onto it by an approved request, which is another " +
+			"agent's mail, and is recovered by its nonce only"
+	default:
 		because = "has a request awaiting approval that would grant it a role or move a " +
 			"mailbox onto it, and until that is decided it is recovered by its nonce only"
 	}
