@@ -411,6 +411,20 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// correlation. Vetted, not trusted: see mayClaimSession.
 	if claimed := op.SessionAlias; claimed != "" {
 		ok, takenFrom := e.mayClaimSession(claimed, op.Token, op.Nonce)
+		if !ok && op.Kind == core.OpRegister {
+			// ITS OWN THREAD, RE-ASSERTED. A register carrying neither token
+			// nor nonce was refused the alias an active row already held, and
+			// then reattached to that very row by name and session id: the
+			// fold took the synthetic host id as current, the thread it still
+			// held was no longer the one to wake, and the configured route
+			// stood down until an authenticated call bound it again. The
+			// same exemption refuseStealingAnotherThreadsSession makes for a
+			// stated session id. Found by the pre-release review, round
+			// thirty-six.
+			if holder := e.state.AgentBySession(claimed); holder != nil && e.registerLandsOn(op, holder) {
+				ok = true
+			}
+		}
 		if !ok {
 			op.SessionAlias = ""
 		}

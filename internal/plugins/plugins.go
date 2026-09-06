@@ -120,9 +120,10 @@ var catalog = []struct {
 		buys: "mail is USUALLY delivered rather than polled: lifecycle hooks call " +
 			"the wake path at turn boundaries, so a question addressed to your agent " +
 			"often reaches you without your asking. Not a guarantee, and worth " +
-			"knowing which: mid-turn is not a boundary, a plain notify never " +
-			"extends a turn, and `wake = none` or a repeated wake suppresses it " +
-			"too. check_in each activation is what makes delivery certain; the " +
+			"knowing which: mid-turn is not a boundary, a plain notify extends a " +
+			"turn only under the default `extend_turn_for = all` (under `urgent` it " +
+			"waits for a boundary you reach on your own), and `none` or a repeated " +
+			"wake suppresses it too. check_in each activation is what makes delivery certain; the " +
 			"hooks make it convenient. Also installs the dibs skill, so the " +
 			"protocol is in context when it is relevant and absent when it is not.",
 		install: "claude plugin marketplace add agenxy/dibs && claude plugin install dibs@dibs",
@@ -166,8 +167,9 @@ var catalog = []struct {
 				// correctly installed plugin. Raised by the pre-release review.
 				Check: "it reaches you without your calling inbox, at a turn boundary " +
 					"rather than the moment it is sent. If it does not, that is not " +
-					"proof the plugin is broken: a notify never extends a turn, and " +
-					"nothing is delivered mid-turn. check_in is what always shows it",
+					"proof the plugin is broken: a notify extends a turn only under the " +
+					"default `extend_turn_for = all`, and nothing is delivered mid-turn. " +
+					"check_in is what always shows it",
 				IfNot: "the wake hooks are not reaching the daemon. Check that the " +
 					"`server` field in hooks.json names the same MCP server you are " +
 					"connected through, and that the daemon is the one on this machine",
@@ -188,12 +190,15 @@ var catalog = []struct {
 			"depends on a version, and an agent told mail will arrive that then does " +
 			"not arrive stops checking and loses it. Codex gained " +
 			"a real hooks MCP executor on 2026-08-18 (openai/codex#39296), so an " +
-			"`mcp_tool` hook now runs against the session's own MCP runtime: no " +
+			"`mcp_tool` hook can run against the session's own MCP runtime: no " +
 			"subprocess, and nothing that drives your harness. Dibs ships hooks.json " +
 			"for SessionStart, Stop and SubagentStop. Older builds parse the file and " +
 			"drop every entry, which is why this said for months that there was no " +
 			"wake path here: that was true until it was not, and the note outlived " +
-			"the fact. Two limits worth knowing. A hook fires only if the Dibs server " +
+			"the fact. Measured again on 2026-09-05 against codex 0.153.4, CLI and " +
+			"desktop app: none of the three fired, so on that build the hooks deliver " +
+			"nothing and check_in is the floor (plugins/codex/README.md records it). " +
+			"Two limits worth knowing. A hook fires only if the Dibs server " +
 			"is ALREADY connected; Codex refuses an unconnected server rather than " +
 			"starting one, and connections are established asynchronously, so " +
 			"SessionStart can lose that race while Stop is later and likelier. And a " +

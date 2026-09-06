@@ -444,12 +444,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   records why the earlier shell-hook version was deleted and why this one is not
   the same thing.
 
-- **The Codex plugin binds `hook_poll` to the thread lifecycle.**
-  `plugins/codex/hooks.json` registers `mcp_tool` handlers on
-  SessionStart, Stop and SubagentStop, so a Codex thread that is running
-  collects its mail at each of them without polling. Measured against a live
-  daemon: three hooks, three deliveries. This covers a thread that is alive;
-  `[wake.exec]` above is what covers one that is not.
+- **The Codex plugin binds `hook_poll` to the thread lifecycle, on the
+  builds that run it.** `plugins/codex/hooks.json` registers `mcp_tool`
+  handlers on SessionStart, Stop and SubagentStop, so a Codex thread that is
+  running collects its mail at each of them without polling. Measured against
+  a live daemon on the build of the day: three hooks, three deliveries.
+  Measured again on 2026-09-05 against codex 0.153.4, CLI and desktop app:
+  none of the three fired, which `plugins/codex/README.md` records with the
+  date. The file ships; whether it fires depends on the build, which is why
+  `dibs://plugin` reports Codex as pull-only and `check_in` remains the floor.
+  `[wake.exec]` above is what reaches a thread that is not running, and is
+  what was measured working on that same day.
 
 - **The multi-machine board is documented and has a command.** Everything needed
   for a real-time fleet board already shipped; the operator who runs Dibs for
@@ -546,6 +551,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing an agent wrote, and it cannot read the session or steer it.
 
 ### Fixed
+
+- **Recovering a row by name and session id lost its wake route.** A
+  register carrying neither token nor nonce was refused the thread alias an
+  active row already held, then reattached to that very row: the fold took
+  the synthetic host id as current, the thread the row still held was no
+  longer the one to wake, and the configured route stood down until an
+  authenticated call bound it again. A register that lands on the row holding
+  the alias is re-asserting its own thread, and keeps it.
+
+- **The Claude Code plugin said a notify never extends a turn.** Under the
+  default `extend_turn_for = all` a fresh notify at Stop does, which is what
+  the wake-urgency test asserts; only `urgent` holds it for a boundary the
+  agent reaches on its own. Both places the plugin said it are corrected.
 
 - **Correcting a location without moving discarded the re-resolved
   repository.** `update(cwd)` applied the location group only when the cwd
