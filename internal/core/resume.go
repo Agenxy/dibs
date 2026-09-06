@@ -44,13 +44,17 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 	// A return to a thread bound earlier is a change: nothing in the sets
 	// moves, and the activation to wake does. Found by the pre-release review,
 	// round eight.
-	changed := alias != "" && (!l.holdsSession(alias) || l.GuessedSession(alias) || l.CurrentSession != alias)
-	// A STATED session_id IS A CHANGE TOO. This read only the alias the
-	// daemon joins, so a same-nonce register inside the TTL that stated
-	// session_id B with no alias returned resumed and kept thread A: the
-	// ingress had accepted the request and this branch discarded the one
-	// thing it asked for. Found by the pre-release review, round thirteen.
-	changed = changed || (op.SessionID != "" && (l.SessionID != op.SessionID || l.CurrentSession != op.SessionID))
+	held := op.SessionID != "" && l.holdsSession(op.SessionID)
+	changed := alias != "" && (!l.holdsSession(alias) || l.GuessedSession(alias))
+	// A STATED session_id IS A CHANGE TOO (round thirteen), and so is any op
+	// that would leave a different session current (round eight). Asked of
+	// the fold's own rule rather than field by field: an identical retry
+	// stating a synthetic primary beside a thread alias read as a change on
+	// every call, because the primary is never the current session while
+	// the thread is, and was ledgered every time. Found by the pre-release
+	// review, round fifty-seven.
+	changed = changed || (op.SessionID != "" && l.SessionID != op.SessionID)
+	changed = changed || l.currentAfter(op, held) != l.CurrentSession
 	// A GUESS CONFIRMED IS A CHANGE. A stated session_id that the row already
 	// held as an inference left the guess standing, so another agent's
 	// metadata could still take the active session. Found by the pre-release
@@ -63,9 +67,15 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 	// retired with its claims released. Found by the pre-release review,
 	// round forty-three.
 	changed = changed || (op.PID != 0 && op.PID != l.PID)
-	held := op.SessionID != "" && l.holdsSession(op.SessionID)
 	if op.V7Semantics && changed {
-		l.takeActivation(op)
+		if l.takeActivation(op) {
+			// A NEW ACTIVATION RE-ARMS THE AWARENESS GATE, as the other two
+			// recovery paths do: a same-nonce register inside the TTL that
+			// moved the row to a new session kept the previous activation's
+			// acknowledgement, and the new one could claim without a
+			// check_in. Found by the pre-release review, round fifty-seven.
+			l.AckedSerial = 0
+		}
 		s.dropTakenSession(op, l)
 		if op.SessionID != "" {
 			l.SessionID = op.SessionID                                         // the new session owns it now
@@ -108,7 +118,8 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 // returned early on an empty session id: the thread moved, the row reported
 // resumed, and the old process and location stayed. Found by the pre-release
 // review, round forty-five.
-func (a *Agent) takeActivation(op *Op) {
+// It reports whether the op moved the row to a new activation.
+func (a *Agent) takeActivation(op *Op) bool {
 	if op.PID != 0 {
 		a.PID, a.ProcStart = op.PID, op.ProcStart
 	}
@@ -128,7 +139,7 @@ func (a *Agent) takeActivation(op *Op) {
 		(LooksLikeThreadID(stated) && a.CurrentSession != "" && stated != a.CurrentSession))
 	movedThread := LooksLikeThreadID(op.SessionAlias) && op.SessionAlias != a.CurrentSession
 	if !movedSession && !movedThread {
-		return
+		return false
 	}
 	if op.PID == 0 {
 		a.PID, a.ProcStart = 0, 0
@@ -136,4 +147,5 @@ func (a *Agent) takeActivation(op *Op) {
 	if op.Agent != nil {
 		a.Agent = op.Agent
 	}
+	return true
 }

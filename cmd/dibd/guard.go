@@ -795,6 +795,21 @@ or an admin password where there's no sensor. In your terminal:</p>
 // origin and is refused, which is what the browser's own model already says.
 //
 // Found by a pre-release review.
+// effectivePort is the port an origin means: the one written, or the
+// scheme's default when the browser left it out.
+func effectivePort(scheme, port string) string {
+	if port != "" {
+		return port
+	}
+	switch strings.ToLower(scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	}
+	return ""
+}
+
 func (g *authGate) localOrigin(origin, reqHost string) bool {
 	u, err := url.Parse(origin)
 	if err != nil {
@@ -814,7 +829,13 @@ func (g *authGate) localOrigin(origin, reqHost string) bool {
 	if g.port == "" {
 		return isLoopback(u.Hostname()) // address unknown: the older, weaker rule
 	}
-	if u.Port() != g.port {
+	// A DEFAULT PORT IS NOT WRITTEN. Browsers serialise an origin without
+	// the scheme's default port, so a board served on 80 or 443 saw
+	// `http://127.0.0.1` and compared an empty port with its own: navigation
+	// loaded the page and every authenticated action got 403. Both sides
+	// are read with the default filled in. Found by the pre-release review,
+	// round fifty-seven.
+	if effectivePort(u.Scheme, u.Port()) != effectivePort(u.Scheme, g.port) {
 		return false
 	}
 	switch g.host {

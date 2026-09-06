@@ -554,6 +554,25 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Moving a live identity to a new session kept the old activation's
+  acknowledgement.** A same-nonce register inside the TTL that moved the row
+  to a new session left the awareness gate armed by the previous activation,
+  so the new one could claim without a `check_in`. A move re-arms the gate,
+  as the other two recovery paths already did.
+
+- **An identical retry that stated a primary beside a thread alias was
+  ledgered every time.** The resume path decided whether an op changed
+  anything by comparing fields one at a time, and a synthetic primary is
+  never the current session while a thread alias is, so the shape the bridge
+  sends read as a change on every call. The decision now asks the fold's
+  own rule what the op would leave current.
+
+- **The board's own origin was refused on a default port.** Browsers
+  serialise an origin without the scheme's default port, so a board served
+  on 80 or 443 compared an empty port with its own: navigation loaded the
+  page and every authenticated action got 403. Both sides are read with the
+  default filled in.
+
 - **A plain `check_in` could replace a stated thread with a directory
   guess.** The ingress inferred a session by directory whenever the op
   itself carried no session fields, without asking whether the row already

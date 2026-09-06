@@ -459,35 +459,52 @@ func (a *Agent) currentFrom(op *Op, held bool) {
 	if op.SessionID == "" || !a.holdsSession(op.SessionID) {
 		return
 	}
-	// THE SAME ACTIVATION NAMING ITSELF AGAIN. The rule below reads an op
-	// whose session id and alias are both the bridge's own id as a new
-	// activation, which is right for a bridge that restarted and was wrong
-	// for the same bridge registering again inside its TTL: the thread its
-	// hooks had bound stopped being the one to wake. An id this row already
-	// held is the activation it is in, and a synthetic one does not
-	// displace its thread. Found by the pre-release review, round
-	// forty-four.
-	if held && !LooksLikeThreadID(op.SessionID) && LooksLikeThreadID(a.CurrentSession) {
-		return
+	a.CurrentSession = a.currentAfter(op, held)
+}
+
+// currentAfter is the session that applying op would leave current, without
+// applying it: the rules of bindHarnessSession and currentFrom, asked
+// together, so a path that must decide whether an op CHANGES anything asks
+// the same question the fold will answer. Comparing fields one at a time
+// read an identical retry that stated a synthetic primary beside a thread
+// alias as a change on every call, and ledgered it every time. Found by the
+// pre-release review, round fifty-seven.
+//
+// held says whether the stated session id was this row's before the path
+// that calls this moved anything (see currentFrom).
+func (a *Agent) currentAfter(op *Op, held bool) string {
+	cur := a.CurrentSession
+	if alias := op.SessionAlias; alias != "" {
+		// bindHarnessSession: the alias becomes current, unless it is a
+		// synthetic id already held re-asserted over a thread.
+		keep := a.holdsSession(alias) && !LooksLikeThreadID(alias) && LooksLikeThreadID(cur)
+		if !keep {
+			cur = alias
+		}
+	}
+	if op.SessionID == "" {
+		return cur
+	}
+	// THE SAME ACTIVATION NAMING ITSELF AGAIN. An op whose session id and
+	// alias are both the bridge's own id is a new activation when the bridge
+	// restarted and the same one when it registered again inside its TTL:
+	// an id this row already held is the activation it is in, and a
+	// synthetic one does not displace its thread. Found by the pre-release
+	// review, round forty-four.
+	if held && !LooksLikeThreadID(op.SessionID) && LooksLikeThreadID(cur) {
+		return cur
 	}
 	// A THREAD BEATS A SYNTHETIC ID. The alias, when there is one, is what
 	// the harness reported and was the current session over anything stated,
 	// which is right when it is the thread and wrong when it is the bridge's
-	// own `host-<ppid>`: a register that STATED its thread and carried the
-	// bridge id as its alias was current on the bridge id, and the configured
-	// wake had no thread to resume. Found by the pre-release review, round
-	// thirty-seven.
-	//
-	// And the bridge naming its own NEW activation, as session and alias
-	// both, is a new activation: nonce recovery installs that id as the
-	// primary before the alias is bound, so by the time the binding looks it
-	// is already held, and the rule above would keep the thread the agent
-	// had left. The op says it twice; that is the signal.
+	// own `host-<ppid>` (round thirty-seven). And the bridge naming its own
+	// NEW activation, as session and alias both, is a new activation: the op
+	// says it twice; that is the signal.
 	statedThread := LooksLikeThreadID(op.SessionID) && !LooksLikeThreadID(op.SessionAlias)
 	if op.SessionAlias != "" && !statedThread && op.SessionAlias != op.SessionID {
-		return
+		return cur
 	}
-	a.CurrentSession = op.SessionID
+	return op.SessionID
 }
 
 // yieldSessionsHeldElsewhere drops from a revived row every session id that
