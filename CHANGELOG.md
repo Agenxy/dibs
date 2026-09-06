@@ -518,6 +518,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   project guards `tools/list` with a hard test at 8,700 tokens and was shipping
   twice that per activation with nothing measuring it at all.
 
+- **A codex thread open in the desktop app can be woken.** This is the case
+  that was reported as unreachable for weeks. `codex exec resume`, the only
+  command anyone had configured, refuses a thread the desktop app has open:
+  "thread-store conflict: already has an active writer", exit 1, and no
+  environment or directory changes that, which is why two earlier diagnoses of
+  the failure were wrong. The command that reaches an open thread is
+  `codex queue --thread <id> --message <text>`: the app's own app-server drains
+  the queue and injects it as a user message. It is the exact inverse of
+  `exec resume`, which starts a CLOSED thread that `queue` would park a message
+  on forever, exit 0, with nothing reading it.
+
+  So `[wake.exec.<harness>]` gains `fallback`, a second argv run only when the
+  first exits non-zero, under every rule the first obeys and through the same
+  validator. The log records which command delivered. `dibs doctor` suggests
+  both for codex.
+
+  Measured end to end on this machine. A thread open in the desktop app refused
+  the primary, took the fallback, and its own transcript then showed "Dibs:
+  check the board." followed by the agent reattaching, checking in, and
+  answering two questions it had been sent: `AWAKE, 2026-09-05 16:57:14 PDT`.
+
 - **Mail arriving while an agent was "recently in touch" was thrown away.**
   `maybeWake` short-circuits when the recipient called Dibs inside the wake
   cooldown, reasoning that it "is genuinely working and will see this at its own

@@ -104,19 +104,37 @@ and its own hooks fire from there. If your agents need tool access on a wake,
 give that process the permissions it needs rather than assuming it inherits
 them.
 
-**A harness may refuse to resume a thread it already has open.** `codex exec
-resume` fails with `thread-store conflict: thread <id> already has an active
-writer` when that thread is open in the Codex desktop app, and no configuration
-changes it: the app holds the writer for as long as the thread is open. So a
-`[wake.exec]` route reaches a codex agent whose thread is CLOSED, and cannot
-reach one the operator is currently looking at. Measured on this machine, by
-running the daemon's own printed argv by hand.
+**A harness may refuse to resume a thread it already has open, so give it a
+second command.** `codex exec resume` starts a CLOSED thread and fails on one
+that is open in the Codex desktop app: `thread-store conflict: thread <id>
+already has an active writer`, exit 1, and no configuration changes that. The
+app holds the writer for as long as the thread is open. `codex queue` is the
+other half: it delivers straight into an OPEN thread, where the app's own
+app-server drains it and injects it as a user message, and to a closed thread
+it exits 0 and parks the message where nothing reads it until somebody opens
+that thread by hand. The two are exact inverses.
 
-That is not a failure worth working around. An agent whose thread is open in
-front of a person is the one case where a wake buys least: the human is there.
-What matters is that the daemon says exit 1 and prints the command, so an
-operator can find this out in a minute instead of assuming the wake path is
-broken.
+So a codex entry names both, and the daemon tries them in order. The primary
+is the one that can be confirmed for a closed thread; the fallback runs only
+when the primary exits non-zero, and is the one that can be confirmed for an
+open one:
+
+```toml
+[wake.exec.codex]
+argv     = ["codex", "exec", "resume", "{thread}", "{message}"]
+fallback = ["codex", "queue", "--thread", "{thread}", "--message", "{message}"]
+```
+
+Measured on this machine, both directions. A thread open in the desktop app
+refused `exec resume`, took `queue`, and its own transcript then carried
+"Dibs: check the board." followed by the agent checking in and answering the
+two questions it had been sent. That case had been reported as unreachable for
+weeks, because only the first command was ever configured. The reverse, a
+closed CLI thread, resumed on the primary and parked on the fallback, which is
+why the order is not arbitrary.
+
+`fallback` obeys every rule `argv` does: whole-element substitution, no shell,
+argv[0] named in this file and never a placeholder.
 
 **A wake runs in the agent's own directory.** It has to, and for a long time it
 did not. `codex exec resume` refuses to start outside a trusted directory, and a

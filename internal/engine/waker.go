@@ -43,6 +43,7 @@ const wakeCooldown = 90 * time.Second
 // wakeCommand is one harness's way in, already validated.
 type wakeCommand struct {
 	argv     []string
+	fallback []string
 	cooldown time.Duration
 }
 
@@ -97,7 +98,9 @@ func (e *Engine) SetWakeCommands(cmds map[string]WakeCommand) {
 		if cool <= 0 {
 			cool = wakeCooldown
 		}
-		e.wakers.byHarness[strings.ToLower(harness)] = wakeCommand{argv: c.Argv, cooldown: cool}
+		e.wakers.byHarness[strings.ToLower(harness)] = wakeCommand{
+			argv: c.Argv, fallback: c.Fallback, cooldown: cool,
+		}
 	}
 }
 
@@ -108,7 +111,12 @@ func (e *Engine) SetWakeCommands(cmds map[string]WakeCommand) {
 // harness set to ten minutes silently throttled every other harness to ten
 // minutes: settings that parsed, reported success, and did nothing they said.
 type WakeCommand struct {
-	Argv     []string
+	Argv []string
+	// Fallback runs only when Argv exits non-zero. See boardconfig.WakeExec
+	// for why a harness can need two: codex resumes a closed thread with one
+	// command and reaches an open one with another, and each fails or parks
+	// silently on the other's case.
+	Fallback []string
 	Cooldown time.Duration
 }
 
@@ -662,11 +670,17 @@ func (e *Engine) recentlyInTouch(l *core.Agent) bool {
 // argvFor is the operator's command for this agent's harness. Caller holds
 // e.wakers.mu, and wakeRoute has already established that one exists.
 func (e *Engine) argvFor(l *core.Agent) []string {
+	return e.commandFor(l).argv
+}
+
+// commandFor is the operator's whole entry for this agent's harness, primary
+// and fallback together. Caller holds e.wakers.mu.
+func (e *Engine) commandFor(l *core.Agent) wakeCommand {
 	harness := ""
 	if l.Agent != nil {
 		harness = l.Agent.Harness
 	}
-	return e.wakers.byHarness[strings.ToLower(harness)].argv
+	return e.wakers.byHarness[strings.ToLower(harness)]
 }
 
 // wakeRoute decides HOW this agent would be reached, before asking whether it
@@ -863,7 +877,11 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 	// Setting cmd.Dir was only half the fix and the half that tests cleanly.
 	// The first version of that test called runWakeFor directly, so it passed
 	// against a plan that never carried a directory at all.
-	return wakePlan{argv: f.apply(e.argvFor(l)), cwd: cwdOf(l), cooldown: cooldown}, true
+	cmd := e.commandFor(l)
+	return wakePlan{
+		argv: f.apply(cmd.argv), fallback: f.apply(cmd.fallback),
+		cwd: cwdOf(l), cooldown: cooldown,
+	}, true
 }
 
 // wakePlan is how one wake will be delivered: the operator's command, or the
@@ -875,10 +893,13 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 // rules were each paid for by a bug, and a second delivery path that skipped
 // them would re-buy every one.
 type wakePlan struct {
-	argv   []string // the operator's command
-	agent  string   // whose wake this is, for the socket path
-	notice string   // what to say; never a message body
-	cwd    string   // where the agent says it works, for the mismatch warning
+	argv []string // the operator's command
+	// fallback is the operator's second command, substituted like the first
+	// and run only if the first exits non-zero. Empty when none is configured.
+	fallback []string
+	agent    string // whose wake this is, for the socket path
+	notice   string // what to say; never a message body
+	cwd      string // where the agent says it works, for the mismatch warning
 	// cooldown is the rate limit THIS route carries.
 	//
 	// Carried rather than re-read, because re-reading it looked up the
@@ -1053,9 +1074,36 @@ const wakeGrace = 10 * time.Second
 // one lock in wakeFor.
 func (e *Engine) runWake(plan wakePlan, agent string) bool {
 	if len(plan.argv) > 0 {
-		return runWakeFor(plan.argv, agent, plan.cwd, wakeTimeout, wakeGrace)
+		return runWakeCommands(plan.argv, plan.fallback, agent, plan.cwd, wakeTimeout, wakeGrace)
 	}
 	return e.wakeOverSocket(plan, agent)
+}
+
+// runWakeCommands runs the operator's command, and the fallback only if the
+// first one fails.
+//
+// The primary's failure is still logged in full by runWakeFor, argv and
+// directory included, because an operator whose primary is failing on every
+// wake wants to know that even while the fallback is carrying the load. What
+// follows says whether anything was tried next, so the two lines read as one
+// story rather than a failure and an unexplained success.
+//
+// Measured, both halves, on the board this was written for: `codex exec
+// resume` exit 1 with "already has an active writer" on a thread open in the
+// desktop app, then `codex queue` exit 0, then the thread's own transcript
+// carrying "Dibs: check the board." and the agent answering two questions it
+// had been sent. The reverse case, a closed thread, is the one the primary
+// already handled.
+func runWakeCommands(argv, fallback []string, agent, dir string, timeout, grace time.Duration) bool {
+	if runWakeFor(argv, agent, dir, timeout, grace) {
+		return true
+	}
+	if len(fallback) == 0 {
+		return false
+	}
+	slog.Info("the wake command failed; trying the fallback",
+		"agent", agent, "cmd", argv[0], "fallback", fallback[0])
+	return runWakeFor(fallback, agent, dir, timeout, grace)
 }
 
 // runWakeFor is runWake with its bounds as arguments, so a test can assert that

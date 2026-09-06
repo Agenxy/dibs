@@ -256,7 +256,7 @@ func run() error {
 			if len(x.Argv) == 0 {
 				continue
 			}
-			cmds[harness] = engine.WakeCommand{Argv: x.Argv, Cooldown: x.Cooldown}
+			cmds[harness] = engine.WakeCommand{Argv: x.Argv, Fallback: x.Fallback, Cooldown: x.Cooldown}
 		}
 		eng.SetWakeCommands(cmds)
 		slog.Info("the board can start an agent that is not running",

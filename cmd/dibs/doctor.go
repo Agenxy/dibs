@@ -1322,7 +1322,8 @@ var suggestedWake = map[string]string{
 	"claude code": `[wake.exec."claude code"]` + "\n" +
 		`argv = ["claude", "--resume", "{thread}", "-p", "{message}"]`,
 	"codex": `[wake.exec.codex]` + "\n" +
-		`argv = ["codex", "exec", "resume", "{thread}", "{message}"]`,
+		`argv     = ["codex", "exec", "resume", "{thread}", "{message}"]` + "\n" +
+		`fallback = ["codex", "queue", "--thread", "{thread}", "--message", "{message}"]`,
 }
 
 // reportWakeCoverage says how many agents on THIS board the configured wake

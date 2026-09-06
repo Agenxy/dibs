@@ -234,14 +234,27 @@ type MatchConfig struct {
 // which is the one failure that would be worse than not delivering at all.
 //
 //	[wake.exec.codex]
-//	argv = ["codex", "queue", "--thread", "{thread}", "--message", "{message}"]
+//	argv     = ["codex", "exec", "resume", "{thread}", "{message}"]
+//	fallback = ["codex", "queue", "--thread", "{thread}", "--message", "{message}"]
 //
 // Placeholders, each replaced as a COMPLETE element: {thread}, {agent},
 // {from}, {type}, {message}. Anything else is left alone.
+//
+// TWO COMMANDS, because one harness has two states and a command for each.
+// `codex exec resume` starts a CLOSED thread and refuses one that is open in
+// the desktop app ("already has an active writer"). `codex queue` delivers
+// into an OPEN thread, and to a closed one it exits 0 and parks the message
+// where nothing will read it until somebody opens that thread by hand. They
+// are exact inverses, and neither alone reaches every agent. Measured on the
+// machine this was written on, both ways, after weeks of the desktop-app case
+// being reported as unreachable.
 type WakeExec struct {
 	// Argv is the command and its arguments. Empty means this harness has no
 	// wake command, which is the default and is not an error.
 	Argv []string `toml:"argv"`
+	// Fallback is tried only when Argv exits non-zero. Same rules, same
+	// substitutions, same confirmation by exit status. Optional.
+	Fallback []string `toml:"fallback"`
 	// Cooldown is the shortest gap between two wakes of the same agent. Zero
 	// takes the default; a fleet that wakes on every message is a fork bomb
 	// with better manners.
@@ -927,11 +940,34 @@ func validateWakeEntry(harness string, x WakeExec, all map[string]WakeExec) erro
 	// configured, and every wake then failed inside exec before starting
 	// anything. Configuration approved, capability announced, nobody ever
 	// woken: this list's own subject, in the section it was added for.
-	if strings.TrimSpace(x.Argv[0]) == "" {
-		return fmt.Errorf("[wake.exec.%s] argv starts with an empty string, so "+
+	if err := validateWakeArgv(harness, "argv", x.Argv); err != nil {
+		return err
+	}
+	// The fallback is a second command with the same power, so it gets the
+	// same checks through the same function. Two copies of one rule is how this
+	// repository's most expensive class of bug arrives.
+	if len(x.Fallback) > 0 {
+		if err := validateWakeArgv(harness, "fallback", x.Fallback); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateWakeArgv is the rule every wake command obeys, whichever key it is
+// under. Called on a non-empty argv.
+func validateWakeArgv(harness, key string, argv []string) error {
+	// TRIMMED, because " " is a perfectly good TOML string and a perfectly
+	// useless program name. It passed `dibd -check`, startup logged "the
+	// board can start an agent that is not running" with one harness
+	// configured, and every wake then failed inside exec before starting
+	// anything. Configuration approved, capability announced, nobody ever
+	// woken: this list's own subject, in the section it was added for.
+	if strings.TrimSpace(argv[0]) == "" {
+		return fmt.Errorf("[wake.exec.%s] %s starts with an empty string, so "+
 			"there is no program to run. The first element is the executable, "+
 			"and the rest are its arguments: there is no shell in this path "+
-			"to work out what was meant", harness)
+			"to work out what was meant", harness, key)
 	}
 	// NOTHING AN AGENT SAID MAY CHOOSE THE PROGRAM.
 	//
@@ -942,11 +978,11 @@ func validateWakeEntry(harness string, x WakeExec, all map[string]WakeExec) erro
 	// peer's chosen name select the executable, which is a different rule
 	// from quoting and the one this project actually states: the wake command
 	// comes from the operator's file and nothing an agent said reaches it.
-	if len(x.Argv) > 0 && strings.HasPrefix(x.Argv[0], "{") {
-		return fmt.Errorf("[wake.exec.%s] argv[0] is %q: the program to run must "+
+	if strings.HasPrefix(argv[0], "{") {
+		return fmt.Errorf("[wake.exec.%s] %s[0] is %q: the program to run must "+
 			"be named in this file and cannot be a placeholder. Substituted "+
 			"values come from agents, and the one thing an agent must never "+
-			"choose is which executable the board starts", harness, x.Argv[0])
+			"choose is which executable the board starts", harness, key, argv[0])
 	}
 	return nil
 }
