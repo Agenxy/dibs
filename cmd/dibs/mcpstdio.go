@@ -133,7 +133,10 @@ func runBridge(_ []string) error {
 	// because the fd does; bytes in a userspace buffer do not. Scanner cannot
 	// answer how much it is holding, so it cannot be made safe here.
 	var watcher inboxWatcher
-	onRegistered := watchOnRegister(ctx, &watcher, streamClient, url, secret)
+	onRegistered := func([]byte, []byte) {} // [wake] sockets = false: no self-wake
+	if socketWakesOn() {
+		onRegistered = watchOnRegister(ctx, &watcher, streamClient, url, secret)
+	}
 	in := bufio.NewReaderSize(os.Stdin, 1<<20)
 	self, haveSelf := currentSelf()
 	// Anything a previous image was holding, re-established before the first

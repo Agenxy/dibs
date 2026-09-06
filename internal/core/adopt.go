@@ -67,6 +67,7 @@ func (s *State) applyAdoptAgent(op *Op, l *Agent, now time.Time) (Result, []Even
 		Type: "agent.updated", Agent: into.ID,
 		Data: map[string]any{"adopted_from": from.ID, "messages": moved},
 	}}
+	evs = append(evs, s.adoptedMailEvents(into, from)...)
 	serial := s.finish(&evs, now)
 	return Result{
 		"ok": true, "from": from.ID, "into": into.ID, "messages": moved,
@@ -168,4 +169,31 @@ func (s *State) readdressMail(from, into *Agent, v7 bool) int {
 		moved++
 	}
 	return moved
+}
+
+// adoptedMailEvents is one event per blocking message an adoption moved into
+// the heir, addressed TO the heir, so the wake dispatcher and the inbox
+// subscription treat recovered mail as arrived mail. Adoption emitted only
+// agent.updated, which names nobody as a recipient, so a coordinator recovering
+// pending questions into a dormant agent got success and neither wake route
+// told that agent anything was waiting. Found by the pre-release review, round
+// twenty-seven.
+func (s *State) adoptedMailEvents(into, from *Agent) []Event {
+	var evs []Event
+	for _, serial := range sortedKeys(s.Messages) {
+		m := s.Messages[serial]
+		if m.To != into.ID || m.AdoptedFrom != from.ID || m.Terminal() {
+			continue
+		}
+		switch m.Type {
+		case MsgQuestion, MsgRequest, MsgHandoff:
+		default:
+			continue
+		}
+		evs = append(evs, Event{
+			Type: "message.adopted", Agent: from.ID, To: into.ID,
+			Data: map[string]any{"msg_serial": m.Serial, "msg_type": m.Type, "from": m.From},
+		})
+	}
+	return evs
 }

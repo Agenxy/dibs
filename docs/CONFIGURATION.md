@@ -45,6 +45,7 @@ addr = "100.72.14.3:4777"    # a tailnet address: agents on four machines, one b
 |---|---|---|
 | `extend_turn_for` | `all` | Which news may extend an agent's turn: `all`, `urgent`, `none`. |
 | `notices_wake` | `true` | Whether situational awareness alone may extend a turn. |
+| `sockets` | `true` | Whether the session-socket routes run at all: the daemon's peer-socket wake and the bridge's self-wake. |
 | `exec.<harness>.argv` | *(none)* | The command that reaches that harness when an agent is **not running**. |
 | `exec.<harness>.cooldown` | `90s` | The shortest gap between two wakes of the same agent. |
 
@@ -237,9 +238,10 @@ Choose it if you would rather an FYI never cost a turn.
 human's notification and the `waiting` line on every result are what an agent
 sees of its mail until it reads it. It governs turn extension only. The wake
 routes are separate settings: `[wake.exec]` runs whatever the operator wrote
-there, and the harness session socket is tried where one is published,
-whatever this says. An operator who wants no unsolicited activations at all
-configures no `[wake.exec]` entries as well.
+there, and the harness session socket is tried where one is published and
+`sockets` is on, whatever this says. An operator who wants no unsolicited
+activations at all sets `sockets = false` and configures no `[wake.exec]`
+entries; there is no third route.
 
 Each message wakes once either way, so an agent that read something and chose
 not to act is not asked again. Work somebody is blocked on comes back on the

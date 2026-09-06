@@ -1661,6 +1661,7 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 		moved := s.readdressMail(adopted, into, op.V7Semantics)
 		res["adopted"], res["messages"] = adopted.ID, moved
 		evs[0].Data["adopted"] = adopted.ID
+		evs = append(evs, s.adoptedMailEvents(into, adopted)...)
 		res["adopt_note"] = adoptNote(moved)
 		evs = append(evs, Event{
 			Type: "agent.updated", Agent: into.ID,

@@ -71,6 +71,18 @@ func (iw *inboxWatcher) listenBody(token string) []byte {
 	return body
 }
 
+// alreadySeen reports whether a notification's serial is at or behind the
+// cursor: a notice for it has landed, or its event moved nothing worth one.
+func (iw *inboxWatcher) alreadySeen(meta map[string]any) bool {
+	v, ok := meta[mcp.SerialMetaKey].(float64)
+	if !ok || v <= 0 {
+		return false
+	}
+	iw.mu.Lock()
+	defer iw.mu.Unlock()
+	return uint64(v) <= iw.since
+}
+
 func (iw *inboxWatcher) noteSerial(meta map[string]any) {
 	v, ok := meta[mcp.SerialMetaKey].(float64)
 	if !ok || v <= 0 {
@@ -178,6 +190,15 @@ func (iw *inboxWatcher) stream(
 			continue
 		}
 		if msg.Method != "notifications/resources/updated" {
+			continue
+		}
+		// ONCE PER SERIAL. A resumed subscription is handed the gap twice, by
+		// the daemon's filtered replay and by the channel it subscribes on
+		// from the same cursor, and the second copy of a notice already
+		// delivered queued another wake at the cooldown, whether or not the
+		// agent had read the mail by then. Found by the pre-release review,
+		// round twenty-seven.
+		if iw.alreadySeen(msg.Params.Meta) {
 			continue
 		}
 		if !worthAWake(msg.Params.Meta) {

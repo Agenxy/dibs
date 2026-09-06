@@ -159,7 +159,7 @@ func (e *Engine) peerSessionFor(ids []string) (peerwake.Session, bool) {
 // started its background work behaving exactly as it did before any of this
 // existed, which is what the guards written for that behaviour assert.
 func (e *Engine) mightReachOverSocket(l *core.Agent) bool {
-	if l == nil {
+	if l == nil || !e.socketWakesOn() {
 		return false
 	}
 	// THE SNAPSHOT, NEVER THE REFRESH, and the first version of this got it
@@ -199,6 +199,9 @@ func (e *Engine) primePeerSessions() { _ = e.peerSessions() }
 func (e *Engine) wakeOverSocket(plan wakePlan, agent string) bool {
 	// NO e.state HERE. This runs in a goroutine and the board is single-writer;
 	// the plan carries the ids, copied while the loop held still.
+	if !e.socketWakesOn() {
+		return false // [wake] sockets = false: the operator asked for no such activation
+	}
 	s, ok := e.peerSessionFor(plan.sessions)
 	if !ok {
 		// Not a failure of delivery: there is nobody listening under any name

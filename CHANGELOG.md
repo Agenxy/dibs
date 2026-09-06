@@ -380,6 +380,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`[wake] sockets = false`** switches the session-socket routes off: the
+  daemon's peer-socket wake and the bridge's self-wake. The guide had promised
+  an operator a configuration with no unsolicited activations and named only
+  turn extension and the absence of `[wake.exec]` entries, while both socket
+  routes stayed on with no switch at all. Now there is one, on by default.
+
 - **An agent that is not running can be woken: `[wake.exec]`.** Mail arrived for
   agents that were not executing, and sat there. Dibs would deliver it at their
   next activation, which for a dormant agent is whenever a human next happens to
@@ -536,6 +542,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing an agent wrote, and it cannot read the session or steer it.
 
 ### Fixed
+
+- **Adopting a mailbox told the heir nothing.** Both adoption paths emitted
+  `agent.updated`, which names no recipient, so a coordinator recovering
+  pending questions into a dormant agent got success and neither wake route
+  nor the inbox subscription told that agent its recovered mail was waiting.
+  Adoption emits one `message.adopted` event per recovered blocking message,
+  addressed to the heir, and the wake rule treats it as arrived mail.
+
+- **A resumed subscription could wake twice for one message.** The daemon
+  replays the gap filtered and then subscribes from the same cursor, so a
+  notice already delivered arrived again and the bridge queued a second wake
+  at the cooldown whether or not the agent had read the mail. The bridge
+  wakes once per serial.
 
 - **A notify could overfill a mailbox by displacing a predecessor's
   invisible one.** Capacity excludes a previous occupant's mail below the

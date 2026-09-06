@@ -831,6 +831,20 @@ func (e *Engine) SetNoticesWake(on bool) {
 	e.wake.noticesOff = !on
 }
 
+// SetSocketWakes is [wake] sockets: off, and the daemon's peer-socket route
+// neither counts as reachability nor runs.
+func (e *Engine) SetSocketWakes(on bool) {
+	e.wake.mu.Lock()
+	defer e.wake.mu.Unlock()
+	e.wake.socketsOff = !on
+}
+
+func (e *Engine) socketWakesOn() bool {
+	e.wake.mu.Lock()
+	defer e.wake.mu.Unlock()
+	return !e.wake.socketsOff
+}
+
 // noticesWake reports the setting.
 func (e *Engine) noticesWake() bool {
 	e.wake.mu.Lock()
@@ -873,6 +887,8 @@ type wakeState struct {
 	// silently quieter than the specification says, which is exactly the trap
 	// this field is shaped to avoid.
 	noticesOff bool
+	// socketsOff inverts [wake] sockets the same way.
+	socketsOff bool
 }
 
 // freshForWake reports whether this agent has unread mail it has not already

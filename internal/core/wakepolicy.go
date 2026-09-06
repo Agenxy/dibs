@@ -18,7 +18,9 @@ func WakeWorthy(evType, msgType string) bool {
 	switch evType {
 	case "message.approved", "message.denied", "message.answered", "message.declined":
 		return true
-	case "message.sent":
+	case "message.sent", "message.adopted":
+		// Recovered mail is arrived mail: an adoption that moved a pending
+		// question into an agent wakes that agent as a send would.
 		switch msgType {
 		case MsgQuestion, MsgRequest, MsgHandoff:
 			return true

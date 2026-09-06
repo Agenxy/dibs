@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -75,5 +77,56 @@ func TestAFailedDeliverysRetryIsOwedInTheHandoff(t *testing.T) {
 	if !currentWakePending() {
 		t.Fatal("a failed delivery armed a retry and the handoff says nothing is owed: an " +
 			"upgrade before the retry fires loses the notice with the timer")
+	}
+}
+
+// A notice delivered once is not queued again when the daemon replays the
+// same serial on a resumed subscription.
+func TestADuplicateNotificationDoesNotQueueASecondWake(t *testing.T) {
+	sock := sockPath(t)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
+	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
+	t.Cleanup(func() { recordWakePending(false) })
+	lines := listenLines(t, sock)
+	hold := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		fl, _ := w.(http.Flusher)
+		q := `data: {"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":"dibs://inbox","_meta":{"com.dibs/event":"message.sent","com.dibs/msg_type":"question","com.dibs/serial":7}}}` + "\n\n"
+		_, _ = fmt.Fprint(w, q, q)
+		_, _ = fmt.Fprint(w, `data: {"jsonrpc":"2.0","method":"notifications/resources/updated","params":{"uri":"dibs://inbox","_meta":{"com.dibs/event":"message.sent","com.dibs/msg_type":"notify","com.dibs/serial":8}}}`+"\n\n")
+		fl.Flush()
+		<-hold // the fake daemon holds its stream open until the test is done
+	}))
+	defer srv.Close()
+	defer close(hold)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var iw inboxWatcher
+	iw.start(ctx, srv.Client(), srv.URL, "local-secret", "agent-token")
+	if got := collect(lines, 2, 2*time.Second); len(got) != 2 {
+		t.Fatalf("setup: %d line(s) from the first notice, want 2", len(got))
+	}
+	// The stream is processed in order: once serial 8 is the cursor, the
+	// duplicate 7 has been seen and decided.
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
+	deadline := time.After(3 * time.Second)
+	for {
+		iw.mu.Lock()
+		since := iw.since
+		iw.mu.Unlock()
+		if since >= 8 {
+			break
+		}
+		select {
+		case <-tick.C:
+		case <-deadline:
+			t.Fatal("the watcher never reached serial 8")
+		}
+	}
+	if currentWakePending() {
+		t.Fatal("the replayed copy of a notice already delivered queued a second wake at the cooldown")
 	}
 }

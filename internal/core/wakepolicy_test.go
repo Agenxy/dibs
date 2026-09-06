@@ -15,6 +15,8 @@ func TestOnlyBlockingMailIsWorthAWake(t *testing.T) {
 		{"message.approved", "", true},
 		{"message.denied", "", true},
 		{"message.declined", "", true},
+		{"message.adopted", MsgQuestion, true},
+		{"message.adopted", MsgNotify, false},
 		{"message.acked", MsgQuestion, false},
 		{"agent.registered", "", false},
 	}

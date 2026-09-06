@@ -97,6 +97,14 @@ type WakeConfig struct {
 	// recipient, because somebody is blocked on that and nobody is blocked on
 	// knowing who joined a space.
 	NoticesWake *bool `toml:"notices_wake"`
+	// Sockets decides whether the session-socket routes run at all: the
+	// daemon's peer-socket wake and the bridge's self-wake. On by default.
+	// The guide promised an operator a configuration with no unsolicited
+	// activations and named only the turn-extension setting and the absence
+	// of [wake.exec] entries, while both socket routes stayed on. A pointer,
+	// so absent reads as true. Found by the pre-release review, round
+	// twenty-seven.
+	Sockets *bool `toml:"sockets"`
 
 	// Exec is how to REACH an agent that is not running, per harness. See
 	// WakeExec. Absent means the board cannot start anything, which is the

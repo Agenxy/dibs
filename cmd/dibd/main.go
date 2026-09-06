@@ -244,6 +244,7 @@ func run() error {
 	// "unset" and "explicitly false" are distinguishable, which is the whole
 	// reason a bool setting with a true default needs one.
 	eng.SetNoticesWake(cfg.Wake.NoticesWake == nil || *cfg.Wake.NoticesWake)
+	eng.SetSocketWakes(cfg.Wake.Sockets == nil || *cfg.Wake.Sockets)
 	// How to REACH an agent that is not running. Operator's config only: there
 	// is no tool, op or admin route that can set this, because it is arbitrary
 	// code on this machine and only the person at it may name it.
