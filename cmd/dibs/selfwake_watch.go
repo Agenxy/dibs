@@ -40,6 +40,47 @@ type inboxWatcher struct {
 	mu     sync.Mutex
 	token  string
 	cancel context.CancelFunc
+	since  uint64 // the serial of the last notification seen: a reconnect resumes from it
+	// reconnect is the pause between a stream ending and the next attempt;
+	// zero means reconnectAfter. A field, set before start, so a test can
+	// shorten it without writing a global under a running goroutine.
+	reconnect time.Duration
+}
+
+// reconnectAfter is the pause between a stream ending and the next attempt.
+const reconnectAfter = 2 * time.Second
+
+// listenBody is the subscription request, carrying the serial last seen so a
+// reconnect is handed what arrived while the stream was down. The first
+// version reconnected blind and every message in the gap woke nobody. Found
+// by the pre-release review, round twelve.
+func (iw *inboxWatcher) listenBody(token string) []byte {
+	meta := map[string]any{"com.dibs/token": token}
+	iw.mu.Lock()
+	if iw.since > 0 {
+		meta[mcp.SinceMetaKey] = iw.since
+	}
+	iw.mu.Unlock()
+	body, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": "dibs-selfwake", "method": "subscriptions/listen",
+		"params": map[string]any{
+			"_meta":         meta,
+			"notifications": map[string]any{"resourceSubscriptions": []string{"dibs://inbox"}},
+		},
+	})
+	return body
+}
+
+func (iw *inboxWatcher) noteSerial(meta map[string]any) {
+	v, ok := meta[mcp.SerialMetaKey].(float64)
+	if !ok || v <= 0 {
+		return
+	}
+	iw.mu.Lock()
+	if uint64(v) > iw.since {
+		iw.since = uint64(v)
+	}
+	iw.mu.Unlock()
 }
 
 func (iw *inboxWatcher) start(ctx context.Context, client *http.Client, url, secret, token string) {
@@ -71,25 +112,22 @@ func (iw *inboxWatcher) start(ctx context.Context, client *http.Client, url, sec
 func (iw *inboxWatcher) run(
 	ctx context.Context, client *http.Client, url, secret, token string, waker *selfWaker,
 ) {
-	body, _ := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": "dibs-selfwake", "method": "subscriptions/listen",
-		"params": map[string]any{
-			"_meta":         map[string]any{"com.dibs/token": token},
-			"notifications": map[string]any{"resourceSubscriptions": []string{"dibs://inbox"}},
-		},
-	})
+	pause := iw.reconnect
+	if pause == 0 {
+		pause = reconnectAfter
+	}
 	for {
 		if ctx.Err() != nil {
 			return
 		}
-		iw.stream(ctx, client, url, secret, body, waker)
+		iw.stream(ctx, client, url, secret, iw.listenBody(token), waker)
 		// The daemon closes this stream when it goes away. Reconnecting is the
 		// whole point of a wake path: an agent whose subscription died quietly
 		// is an agent that stops being reachable and never learns it did.
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(2 * time.Second):
+		case <-time.After(pause):
 		}
 	}
 }
@@ -131,7 +169,11 @@ func (iw *inboxWatcher) stream(
 		// The acknowledgement is not mail. Only an actual resource update means
 		// something arrived for this agent, and only some of that is worth a
 		// notice.
-		if msg.Method != "notifications/resources/updated" || !worthAWake(msg.Params.Meta) {
+		if msg.Method != "notifications/resources/updated" {
+			continue
+		}
+		iw.noteSerial(msg.Params.Meta)
+		if !worthAWake(msg.Params.Meta) {
 			continue
 		}
 		if err := waker.wake(selfWakeNotice); err != nil {

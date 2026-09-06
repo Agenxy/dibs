@@ -495,6 +495,31 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A returning agent was refused its own thread.** The ingress vets the
+  alias a call carries against the caller's token, and a returning agent
+  registers with its nonce and no token: it read as a stranger, the alias
+  was cleared, and a return from thread B to an earlier thread A left B
+  current and the wake on it. The caller is the holder by its nonce as well.
+
+- **A self-wake subscription that reconnected lost the gap.** The stream
+  reconnects two seconds after it drops and the daemon started every
+  subscription at the current serial, so a message that arrived in between
+  woke nobody until the next one came. The inbox notification now carries
+  the serial of the event that changed it (`com.dibs/serial`), the bridge
+  reconnects with the last one it saw (`com.dibs/since` on the listen
+  request), and the daemon replays the gap from its ring.
+
+- **The frozen-tag guard only read one way.** It checked that every
+  declared tag was on the frozen list and not that every frozen tag was
+  still declared, so a field retired to `json:"-"` left the list and its
+  fingerprint untouched while every ledger holding it replayed with that
+  decision zero. Both lists are checked both ways, ops and messages.
+
+- **The README described a CA replacement the daemon refuses.** It said
+  deleting `tls-ca.pem` changes the signing identity; with `tls-ca-key.pem`
+  left behind the daemon refuses to start rather than mint half an identity.
+  The README says to delete the pair together, and why.
+
 - **Recovering by session id left the wake on the thread the agent had
   left.** Session-based recovery (a name and a session id, for a row whose
   nonce was minted) reattached and bound only the alias the daemon joins at

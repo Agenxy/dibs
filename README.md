@@ -387,8 +387,10 @@ itself a short-lived certificate under that identity and replaces it when it
 nears expiry, while running, with no restart; a certificate that stops naming
 the address clients dial is replaced at the next start. A machine that has
 already trusted the board keeps working through every one of those. The identity
-changes only if you delete `tls-ca.pem` from the board's directory, which is the
-one case where the ceremony is owed again.
+changes only if you delete `tls-ca.pem` AND `tls-ca-key.pem` together from the
+board's directory, which is the one case where the ceremony is owed again. With
+one of the pair left behind the daemon refuses to start rather than mint half an
+identity, because that is the state a half-finished restore leaves.
 
 Use the bridge (`mcp-stdio`), not the url form. On a second machine that
 matters more rather than less: a url client holds no nonce, so every reconnect

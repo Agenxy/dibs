@@ -397,7 +397,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// the id `codex resume` takes, so this is the identity rather than a
 	// correlation. Vetted, not trusted: see mayClaimSession.
 	if claimed := op.SessionAlias; claimed != "" {
-		ok, takenFrom := e.mayClaimSession(claimed, op.Token)
+		ok, takenFrom := e.mayClaimSession(claimed, op.Token, op.Nonce)
 		if !ok {
 			op.SessionAlias = ""
 		}

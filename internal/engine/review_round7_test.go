@@ -56,14 +56,14 @@ func TestAStatedSessionCannotBeClaimedFromAnActiveHolder(t *testing.T) {
 			t.Fatal("setup:", err)
 		}
 	}
-	if ok, _ := e.mayClaimSession(thread, "tok-b"); !ok {
+	if ok, _ := e.mayClaimSession(thread, "tok-b", ""); !ok {
 		t.Fatal("setup: a guessed binding on an active holder was not claimable, so the " +
 			"refusal below proves nothing")
 	}
 	if _, _, err := st.Apply(&core.Op{Kind: core.OpBindSession, Token: "tok-a", SessionID: thread, V7Semantics: true}, t0Engine()); err != nil {
 		t.Fatal(err)
 	}
-	if ok, from := e.mayClaimSession(thread, "tok-b"); ok {
+	if ok, from := e.mayClaimSession(thread, "tok-b", ""); ok {
 		t.Errorf("b may still claim the id a bound explicitly (taken from %q): the explicit "+
 			"bind gave a no protection", from)
 	}

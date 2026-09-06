@@ -14,7 +14,7 @@ func TestTheInboxNotificationSaysWhatArrived(t *testing.T) {
 	})
 	params, _ := n["params"].(map[string]any)
 	meta, _ := params["_meta"].(map[string]any)
-	if meta[EventMetaKey] != "message.sent" || meta[MsgTypeMetaKey] != core.MsgNotify {
+	if meta[EventMetaKey] != "message.sent" || meta[MsgTypeMetaKey] != core.MsgNotify || meta[SerialMetaKey] == nil {
 		t.Fatalf("an inbox notification carries _meta %v: a subscriber cannot tell a notify "+
 			"from a question and wakes a session for either", meta)
 	}

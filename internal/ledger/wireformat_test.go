@@ -187,6 +187,24 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		}
 	}
 
+	// AND THE OTHER WAY. Declared tags must be frozen, and frozen tags must
+	// still be declared: a field retired to json:"-" leaves the frozen list
+	// and its fingerprint untouched, the fixture never wrote it, and the op
+	// applies with that field zero while replay reports success, which is
+	// the exact loss this guard exists to stop. The seven-field check below
+	// is the fixture's own coverage; this is the whole list. Found by the
+	// pre-release review, round twelve.
+	declaredOp := map[string]bool{}
+	for _, tag := range declaredOpTags() {
+		declaredOp[tag] = true
+	}
+	for tag := range wantOp {
+		if !declaredOp[tag] {
+			t.Errorf("frozen op tag %q is no longer declared on core.Op: a retired field "+
+				"stops nothing, every ledger holding it replays with that decision zero, "+
+				"and the fold reports success", tag)
+		}
+	}
 	seenEnvelope := map[string]bool{}
 	seenOp := map[string]bool{}
 	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
@@ -462,9 +480,15 @@ func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
 
 	// The other half of the same loss: a field REMOVED is a field that stops
 	// being written, and every reader of an older ledger keeps expecting it.
-	if len(declared) != len(frozen) {
-		t.Errorf("core.Message declares %d tags and %d are frozen: a field was "+
-			"removed or renamed", len(declared), len(frozen))
+	declaredMsg := map[string]bool{}
+	for _, tag := range declared {
+		declaredMsg[tag] = true
+	}
+	for tag := range frozen {
+		if !declaredMsg[tag] {
+			t.Errorf("frozen message tag %q is no longer declared on core.Message: the fold "+
+				"replays every message with that field zero and reports success", tag)
+		}
 	}
 }
 

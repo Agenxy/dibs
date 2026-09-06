@@ -99,6 +99,11 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *
 		writeRPC(w, http.StatusOK, req.ID, nil, rpcErrFrom(err))
 		return
 	}
+	// A reconnecting subscriber says where it left off, and the gap is
+	// replayed from the ring rather than lost.
+	if v, ok := p.Meta[SinceMetaKey].(float64); ok && v >= 0 && uint64(v) < since {
+		since = uint64(v)
+	}
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -234,13 +239,21 @@ func notification(method string, params map[string]any, subID json.RawMessage) m
 const (
 	EventMetaKey   = "com.dibs/event"
 	MsgTypeMetaKey = "com.dibs/msg_type"
+	// SerialMetaKey is the serial of the event that changed the inbox, so a
+	// subscriber that reconnects can say where it left off (SinceMetaKey on
+	// the listen request) and have the gap replayed from the ring. A
+	// reconnect used to start at the current serial, and every message that
+	// arrived in the gap produced no notification. Found by the pre-release
+	// review, round twelve.
+	SerialMetaKey = "com.dibs/serial"
+	SinceMetaKey  = "com.dibs/since"
 )
 
 func resourceUpdated(uri string, subID json.RawMessage, ev core.Event) map[string]any {
 	params := map[string]any{"uri": uri}
 	if uri == "dibs://inbox" {
 		msgType, _ := ev.Data["msg_type"].(string)
-		params["_meta"] = map[string]any{EventMetaKey: ev.Type, MsgTypeMetaKey: msgType}
+		params["_meta"] = map[string]any{EventMetaKey: ev.Type, MsgTypeMetaKey: msgType, SerialMetaKey: ev.Serial}
 	}
 	return notification("notifications/resources/updated", params, subID)
 }

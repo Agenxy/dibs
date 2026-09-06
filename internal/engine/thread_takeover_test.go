@@ -210,6 +210,6 @@ func TestOneSessionIDAlwaysRecoversTheSameRow(t *testing.T) {
 
 // mayClaim is the verdict alone, for tests written when that was all it gave.
 func mayClaim(e *Engine, sid, tok string) bool {
-	ok, _ := e.mayClaimSession(sid, tok)
+	ok, _ := e.mayClaimSession(sid, tok, "")
 	return ok
 }

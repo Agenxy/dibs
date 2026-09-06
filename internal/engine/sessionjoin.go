@@ -155,7 +155,13 @@ func cleanDir(p string) string {
 // hooks could resolve to the abandoned mailbox. The register path already
 // records this in Op.SessionTakenFrom; this is the same fact for every other
 // op that binds an alias. Found by the pre-release review.
-func (e *Engine) mayClaimSession(sid, token string) (ok bool, takenFrom string) {
+// mayClaimSession decides whether the caller may bind sid. The caller is the
+// holder itself by its token OR by its nonce: a returning agent registers
+// with its nonce and no token, and the first version saw a stranger, refused
+// the claim and cleared the alias, so a return from thread B to an earlier
+// thread A left B current and the wake on it. Found by the pre-release
+// review, round twelve.
+func (e *Engine) mayClaimSession(sid, token, nonce string) (ok bool, takenFrom string) {
 	if sid == "" {
 		return false, ""
 	}
@@ -168,6 +174,9 @@ func (e *Engine) mayClaimSession(sid, token string) (ok bool, takenFrom string) 
 	}
 	// Already ours is fine and idempotent; already somebody else's is not.
 	if e.state.AgentByToken(token) == holder {
+		return true, ""
+	}
+	if nonce != "" && e.state.Nonces[nonce] == holder.ID {
 		return true, ""
 	}
 	// A HOLDER THAT HAS STOPPED ANSWERING IS NOT THE LIVE THREAD.
