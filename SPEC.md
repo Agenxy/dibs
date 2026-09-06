@@ -576,8 +576,10 @@ Read-only work needs no claim.
 - **A live subscription that dropped an event refills from the ring.** The
   channel behind a stream is bounded and the loop drops rather than stalls
   when it is full; the drop is recorded, and the stream replays from the ring
-  everything after the last serial it delivered before continuing. Repeats
-  coalesce at the subscriber, which dedupes by serial.
+  everything after the last EVENT it delivered before continuing: one op emits
+  several events at one serial, so the position is (serial, sub) and the
+  position's own serial is re-read. Repeats coalesce at the subscriber, which
+  dedupes by serial.
 - Polling is a **product choice**: MCP 2026-07-28 offers `subscriptions/listen`;
   adopting it is a v1.x option that changes no semantics (the cursor model stays).
 

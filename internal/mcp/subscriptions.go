@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -191,7 +192,11 @@ func (s *Server) pump(r *http.Request, stream sseStream, sub *engine.Subscriptio
 	keepalive := time.NewTicker(25 * time.Second)
 	defer keepalive.Stop()
 	ctx := r.Context()
-	p := &pumpState{s: s, ctx: ctx, stream: stream, sub: sub, last: last, subID: subID, wants: wants}
+	// The position starts at the end of `last`: everything at that serial
+	// was covered by the caller, so a refill must not repeat it.
+	p := &pumpState{
+		s: s, ctx: ctx, stream: stream, sub: sub, last: last, lastSub: math.MaxInt, subID: subID, wants: wants,
+	}
 	if !p.refill() { // the replay may have run long enough to overflow already
 		return
 	}
@@ -214,15 +219,29 @@ func (s *Server) pump(r *http.Request, stream sseStream, sub *engine.Subscriptio
 	}
 }
 
-// pumpState is one stream's position: the serial it is complete up to.
+// pumpState is one stream's position: the event it is complete up to.
+//
+// A POSITION, NOT A SERIAL. One op emits several events at one serial,
+// numbered by Sub, and the channel drops one event at a time: the first
+// event of a prune was delivered, the position moved to its serial, the
+// three after it at the same serial were dropped, and the refill asked for
+// strictly later serials and recovered none of them. The position is
+// (serial, sub), and a refill re-reads the position's serial and skips what
+// it already delivered. Found by the pre-release review, round thirty-eight.
 type pumpState struct {
-	s      *Server
-	ctx    context.Context
-	stream sseStream
-	sub    *engine.Subscription
-	last   uint64
-	subID  json.RawMessage
-	wants  wantsFunc
+	s       *Server
+	ctx     context.Context
+	stream  sseStream
+	sub     *engine.Subscription
+	last    uint64
+	lastSub int
+	subID   json.RawMessage
+	wants   wantsFunc
+}
+
+// seen reports whether ev is at or before the position.
+func (p *pumpState) seen(ev core.Event) bool {
+	return ev.Serial < p.last || (ev.Serial == p.last && ev.Sub <= p.lastSub)
 }
 
 // deliver forwards one event the stream follows and advances the position.
@@ -233,8 +252,8 @@ func (p *pumpState) deliver(ev core.Event) bool {
 			return false
 		}
 	}
-	if ev.Serial > p.last {
-		p.last = ev.Serial
+	if ev.Serial > p.last || (ev.Serial == p.last && ev.Sub > p.lastSub) {
+		p.last, p.lastSub = ev.Serial, ev.Sub
 	}
 	return true
 }
@@ -245,7 +264,16 @@ func (p *pumpState) refill() bool {
 	if !p.sub.Lost() {
 		return true
 	}
-	for _, ev := range p.s.eventsAfter(p.ctx, p.last, p.wants) {
+	// From the position's own serial, because the rest of it may be what
+	// was dropped; what was delivered is skipped by position.
+	from := p.last
+	if from > 0 {
+		from--
+	}
+	for _, ev := range p.s.eventsAfter(p.ctx, from, p.wants) {
+		if p.seen(ev) {
+			continue
+		}
 		if !p.deliver(ev) {
 			return false
 		}

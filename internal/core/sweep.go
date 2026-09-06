@@ -439,6 +439,16 @@ func (s *State) gc(now time.Time, purgeMail, clampWatermark bool) ([]Event, bool
 				retired++
 			}
 		}
+		// AND ITS ATTACHMENTS. Blob ownership is by agent id and is an
+		// authorisation on its own (blobAccessible): the row was purged, its
+		// mail dropped and its outgoing mail retired, and every blob it had
+		// put still named the id as an owner, so a stranger registering the
+		// purged name inherited the predecessor's attachments for as long as
+		// a peer's message kept the blob alive. Under the same flag, for the
+		// same reason. Found by the pre-release review, round thirty-eight.
+		for _, b := range s.Blobs {
+			delete(b.Owners, id)
+		}
 		evs = append(evs, Event{
 			Type: "agent.purged", Agent: id,
 			Data: map[string]any{"messages_dropped": mail, "messages_retired": retired},

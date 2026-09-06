@@ -552,6 +552,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A purged name's replacement inherited its attachments.** The purge drops
+  the row's mail and retires its outgoing mail, and left every blob the agent
+  had put naming its id as an owner; ownership is an authorisation on its
+  own, so a stranger registering the purged name could fetch the
+  predecessor's attachments for as long as a peer's message kept a blob
+  alive. The purge strips the id from every blob it owned, under the same
+  flag. An older exposure the purge hardening had left open, not a new one.
+
+- **A stream's overflow refill could skip the rest of a serial.** One op
+  emits several events at one serial and the channel drops one event at a
+  time: the first event of a check_in was delivered and moved the position
+  to its serial, the message.delivered events after it at the same serial
+  were dropped, and the refill asked for strictly later serials and
+  recovered none. The position is the event, not the serial, and a refill
+  re-reads the position's serial and skips only what it delivered.
+
 - **The bridge's own session id displaced a stated thread.** The bridge
   sends its `host-<ppid>` as an alias on every call. A register that stated
   its thread was made current on that alias instead, and even once the thread

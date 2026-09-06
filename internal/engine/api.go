@@ -594,6 +594,11 @@ type Subscription struct {
 // ring (EventsSince) rather than trusting the channel to have been complete.
 func (s *Subscription) Lost() bool { return s.lost.Swap(false) }
 
+// MarkLost records a drop as the loop would. A test knob, like SetRingCap:
+// the loop drops only when the channel is full, and a test of what a reader
+// does about a loss should not have to fill 256 slots to say one happened.
+func (s *Subscription) MarkLost() { s.lost.Store(true) }
+
 // SubscribeTracked is Subscribe with the drop mark exposed. The channel holds
 // 256 events and the loop drops rather than blocks when it is full (see the
 // subscribe case in Run); a reader that writes slowly, a resumed subscription

@@ -430,11 +430,17 @@ cooldown = "6s"
     stdout: "ignore", stderr: "ignore",
   })
   try {
+    // The LISTENER, not local.secret: the daemon writes the secret before it
+    // listens, and under a loaded machine the gap between the two is long
+    // enough that this suite read the secret, dialled, and was refused. The
+    // other two daemons here already wait this way (see ready.ts).
     let sec = ""
-    for (let i = 0; i < 60 && !sec; i++) {
-      try { sec = (await Bun.file(`${d}/local.secret`).text()).trim() } catch { await Bun.sleep(100) }
+    try {
+      sec = await daemonReady(d, `http://${a}`, { proc: dae, label: "third-wake" })
+    } catch (err) {
+      check(name, false, `the third daemon never came up: ${(err as Error).message}`)
+      return
     }
-    if (!sec) { check(name, false, "the third daemon never came up"); return }
     const c = async (tool: string, args: Record<string, unknown>) => {
       const r = await fetch(`http://${a}/mcp`, {
         method: "POST",
