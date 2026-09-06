@@ -1012,11 +1012,28 @@ func (a *Agent) mergeIdentity(in *AgentInfo) []string {
 	// where it used to be. Only-when-cwd because that derivation is what keeps
 	// the rule above true: an agent asserts where it is working, and the server
 	// says what repository that is. Nothing reads these off the wire.
-	if in.CWD != "" && in.CWD != a.Agent.CWD {
-		a.Agent.CWD = in.CWD
-		a.Agent.Project, a.Agent.RepoDir = in.Project, in.RepoDir
-		a.Agent.RepoRemote, a.Agent.RepoRoots = in.RepoRemote, in.RepoRoots
-		changed = append(changed, "cwd")
+	//
+	// AND WHEN ONLY THE DERIVED HALF MOVED. This applied the group when the
+	// cwd differed and nothing else: an agent that registered in a directory
+	// before `git init`, or whose repository changed its remote, corrected
+	// with the same cwd, the ingress resolved the new repository, and the
+	// fold discarded it and reported success with the old identity. The
+	// group applies when any of its fields differ. Found by the pre-release
+	// review, round thirty-five.
+	if in.CWD != "" {
+		moved := in.CWD != a.Agent.CWD
+		rederived := in.Project != a.Agent.Project || in.RepoDir != a.Agent.RepoDir ||
+			in.RepoRemote != a.Agent.RepoRemote || in.RepoRoots != a.Agent.RepoRoots
+		if moved || rederived {
+			a.Agent.CWD = in.CWD
+			a.Agent.Project, a.Agent.RepoDir = in.Project, in.RepoDir
+			a.Agent.RepoRemote, a.Agent.RepoRoots = in.RepoRemote, in.RepoRoots
+			if moved {
+				changed = append(changed, "cwd")
+			} else {
+				changed = append(changed, "repo")
+			}
+		}
 	}
 	return changed
 }

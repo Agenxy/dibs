@@ -703,10 +703,10 @@ func printRemoteRecipe(servesTLS bool, joiner string) {
 #        dibs mcp-config --board %s
 #
 # stdio there, NOT the url form, and on another machine it matters more rather
-# than less: that session is the long-lived unattended one, and a url client
-# holds no nonce, so every reconnect forks an identity that cannot read its
-# predecessor's mail. The bridge is a process with a filesystem, which is what
-# the credential needs.
+# than less: that session is the long-lived unattended one. register hands
+# back a nonce on every transport, and the bridge is a process with a
+# filesystem, which is what keeping it needs; a url client that drops its
+# nonce registers again as a sibling that cannot read its predecessor's mail.
 `, filepath.Join(paths.DataDir(), "local.secret"), joiner, shellArg(joiner))
 
 	// Both facts, from the address, as `--board` reads them.
@@ -733,8 +733,20 @@ func printRemoteRecipe(servesTLS bool, joiner string) {
 		// the bridge only ever talks to an address, and nothing said so. It is
 		// also the better default: the daemon never leaves loopback, and the
 		// tunnel authenticates the machine before Dibs sees a byte.
+		// THE TRANSPORT THIS DAEMON SERVES, in the recipe's own words. This
+		// paragraph described every loopback daemon as plaintext and told the
+		// joiner to put a bare 127.0.0.1:<local-port> in DIBS_ADDR, while the
+		// block above it had already handed over an https:// address for a
+		// loopback daemon with a certificate pair. A bare address makes the
+		// bridge infer plaintext, and the trust step that follows cannot
+		// change the transport it infers. Found by the pre-release review,
+		// round thirty-five.
+		transport := "plaintext"
+		if servesTLS {
+			transport = "HTTPS"
+		}
 		fmt.Printf(`
-# This daemon is plaintext on loopback, so it is unreachable from another
+# This daemon is %s on loopback, so it is unreachable from another
 # host directly. Forward a port to it instead, which is supported and is the
 # more private shape: nothing about this daemon is exposed to the network.
 #
@@ -742,7 +754,7 @@ func printRemoteRecipe(servesTLS bool, joiner string) {
 #     ssh -N -L <local-port>:%s %s@%s
 #
 #   <local-port> is that machine's end and is its choice: it only has to be
-#   free THERE, and it is what goes in DIBS_ADDR as 127.0.0.1:<local-port>.
+#   free THERE, and it is what goes in DIBS_ADDR as %s.
 #   Using %s for it is tidy and wrong if that machine already runs a board of
 #   its own on it.
 #
@@ -750,7 +762,7 @@ func printRemoteRecipe(servesTLS bool, joiner string) {
 # whether the fleet has a board at all. A laptop is the tempting choice and
 # the wrong one, because it sleeps, changes networks and gets rebooted
 # mid-task. An always-on headless host reached by a forward is the answer.
-`, hostPort(rawAddr()), os.Getenv("USER"), hostName(), port(rawAddr()))
+`, transport, hostPort(rawAddr()), os.Getenv("USER"), hostName(), joiner, port(rawAddr()))
 	}
 	if !trust {
 		return

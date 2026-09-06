@@ -547,6 +547,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Correcting a location without moving discarded the re-resolved
+  repository.** `update(cwd)` applied the location group only when the cwd
+  differed, so an agent that registered before `git init`, or whose
+  repository changed its remote, corrected with the same directory, the
+  ingress resolved the new repository, and the fold discarded it and reported
+  success with the old identity. The group applies when any of its fields
+  differ, and `changed` says `repo` when only the derived half moved.
+
+- **The tunnel recipe told a TLS loopback daemon's joiner to use plaintext.**
+  The paragraph described every loopback daemon as plaintext and put a bare
+  `127.0.0.1:<local-port>` in DIBS_ADDR, after the block above it had handed
+  over an https:// address for a daemon with a certificate pair; a bare
+  address makes the bridge infer plaintext, and the trust step cannot change
+  what it inferred. The paragraph names the transport the daemon serves and
+  the same address the block above gives. The same output carried a third
+  copy of the url-client claim corrected last round; it is corrected too.
+
 - **A resumed subscription's replay was charged to the agent's rate budget.**
   Opening the stream spends one token, and the gap replay read the ring as the
   agent, spending another: when the listen took the last one the replay got
