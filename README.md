@@ -393,9 +393,12 @@ one of the pair left behind the daemon refuses to start rather than mint half an
 identity, because that is the state a half-finished restore leaves.
 
 Use the bridge (`mcp-stdio`), not the url form. On a second machine that
-matters more rather than less: a url client holds no nonce, so every reconnect
-forks an identity that cannot read its predecessor's mail, and the remote
-sessions are the long-lived unattended ones.
+matters more rather than less. Identity is the same on both transports:
+`register` hands back a minted nonce, and a url client that keeps it reattaches
+with the same call. What the bridge adds is keeping it FOR the session, across
+restarts and in-place upgrades, and following a daemon restart by itself; a url
+client that drops its nonce registers again as a sibling that cannot read its
+predecessor's mail, and the remote sessions are the long-lived unattended ones.
 
 Pick the hub deliberately. Whichever machine runs the daemon decides whether
 the fleet has a board at all, and a laptop is the tempting choice and the wrong

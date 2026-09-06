@@ -73,6 +73,11 @@ type Server struct {
 	// that created them: that revision subscribes on a POST and delivers on a
 	// separately-opened GET, so the interest has to be remembered in between.
 	legacy *legacySubs
+	// duringReplay, when set, runs inside a resumed subscription's gap replay
+	// after the gap was read and before it is written: the window an arrival
+	// used to fall into. A test seam, nil in production; the regression test
+	// for that window has to put its arrival there rather than hope to.
+	duringReplay func()
 }
 
 // New returns an MCP server over eng.

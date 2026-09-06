@@ -1045,10 +1045,19 @@ func sessionsOf(l *core.Agent) []string {
 	if l == nil {
 		return nil
 	}
-	out := make([]string, 0, len(l.SessionAliases)+2)
 	if l.CurrentSession != "" {
-		out = append(out, l.CurrentSession) // first: the activation to reach
+		// THE ACTIVATION TO REACH, AND ONLY THAT. The rest of the list was
+		// appended after it as a fallback, and the socket route takes the
+		// first address it finds: an agent that moved from A to B, with B
+		// publishing no socket and A's still open, was woken at A, and a
+		// delivery ends the attempt, so B stayed asleep on its mail. The
+		// exec route stood down on the same case one round earlier; this one
+		// does too. The scan below is for rows bound before the current
+		// session was recorded. Found by the pre-release review, round
+		// thirty-two.
+		return []string{l.CurrentSession}
 	}
+	out := make([]string, 0, len(l.SessionAliases)+1)
 	if l.SessionID != "" {
 		out = append(out, l.SessionID)
 	}

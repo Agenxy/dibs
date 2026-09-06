@@ -15,7 +15,7 @@ import (
 	"github.com/agenxy/dibs/internal/ledger"
 )
 
-func newServerWithEngine(t *testing.T) (*httptest.Server, *engine.Engine) {
+func newServerWithEngine(t *testing.T) (*httptest.Server, *engine.Engine, *Server) {
 	t.Helper()
 	dir := t.TempDir()
 	box, err := ledger.LoadOrCreateKey(filepath.Join(dir, "key"))
@@ -33,9 +33,10 @@ func newServerWithEngine(t *testing.T) (*httptest.Server, *engine.Engine) {
 	eng := engine.New(st, led, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	go eng.Run(ctx)
-	srv := httptest.NewServer(New(eng))
+	s := New(eng)
+	srv := httptest.NewServer(s)
 	t.Cleanup(func() { srv.Close(); cancel(); _ = led.Close() })
-	return srv, eng
+	return srv, eng, s
 }
 
 // awaitInboxSerial reads the stream until an inbox notice carrying serial
@@ -79,8 +80,14 @@ func awaitInboxSerial(lines <-chan string, serial float64, within time.Duration)
 // question sent while the replay was being written landed past the buffer,
 // in neither the replay nor the stream. The channel opens first, from the
 // present, and buffers what arrives while the replay runs.
+//
+// The arrival is PUT in the window, through the server's replay seam, rather
+// than sent after the listen opened and hoped to land there: the first
+// version of this test did the latter, and against the old order it passed
+// whenever the replay finished first. Found by the pre-release review, round
+// thirty-two.
 func TestAQuestionSentDuringAReplayReachesTheStream(t *testing.T) {
-	srv, eng := newServerWithEngine(t)
+	srv, eng, s := newServerWithEngine(t)
 	ctx := context.Background()
 	busy := toolCall(t, srv, "register", map[string]any{"name": "busy", "cwd": t.TempDir()})
 	cursor, _ := busy["serial"].(float64)
@@ -112,13 +119,28 @@ func TestAQuestionSentDuringAReplayReachesTheStream(t *testing.T) {
 	if gap := now - uint64(cursor); gap <= 256 {
 		t.Fatalf("setup: the gap holds %d event(s), not past the 256 buffer", gap)
 	}
+	// The question lands after the gap was read and before it is written.
+	landed := make(chan uint64, 1)
+	s.duringReplay = func() {
+		sent, err := eng.Do(ctx, &core.Op{Kind: core.OpSendMessage, Token: asker["token"].(string), To: "busy", MsgType: core.MsgQuestion, Body: "sent during the replay", DeadlineSec: 600})
+		if err != nil {
+			t.Error("setup:", err)
+			close(landed)
+			return
+		}
+		serial, _ := sent["msg_serial"].(uint64)
+		landed <- serial
+	}
 	lines := openListen(t, srv, busy["token"].(string), cursor)
-	sent := toolCall(t, srv, "send", map[string]any{
-		"token": asker["token"], "to": "busy", "type": "question", "body": "sent during the replay",
-	})
-	serial, _ := sent["msg_serial"].(float64)
-	if serial == 0 {
-		t.Fatalf("setup: the send reported no serial: %v", sent)
+	var serial float64
+	select {
+	case n, ok := <-landed:
+		if !ok || n == 0 {
+			t.Fatal("setup: the question was not sent inside the replay")
+		}
+		serial = float64(n)
+	case <-time.After(5 * time.Second):
+		t.Fatal("setup: the replay seam never ran, so nothing was sent inside the window")
 	}
 	if !awaitInboxSerial(lines, serial, 5*time.Second) {
 		t.Fatal("a question sent while the reconnect's gap was being replayed never reached the " +

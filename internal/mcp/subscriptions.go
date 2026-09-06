@@ -307,6 +307,9 @@ func (s *Server) replayGap(ctx context.Context, stream sseStream, subID json.Raw
 		// have carried. Found by the pre-release review, round thirty.
 		missed, _ = s.eng.ResyncFor(ctx, token, cursor)
 	}
+	if s.duringReplay != nil {
+		s.duringReplay()
+	}
 	for _, ev := range missed {
 		if uri := matchedURI(ev, agentID, true, false); uri != "" {
 			if !stream.send(resourceUpdated(uri, subID, ev)) {

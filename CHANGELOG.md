@@ -547,6 +547,26 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The socket route could wake the activation an agent had left.** It took
+  the first address it found among every session the agent had ever answered
+  to, so an agent that moved from A to B, with B publishing no socket and A's
+  still open, was woken at A; a delivery ends the attempt, and B stayed
+  asleep on its mail. When the current activation is known it is the only
+  address tried, as the exec route already does.
+
+- **The replay-window regression test did not put its arrival in the
+  window.** It sent the question after the listen opened and hoped the replay
+  was still running; against the old order it passed whenever the replay
+  finished first. The server has a replay seam for tests, and the test sends
+  inside it.
+
+- **The remote guide said a url client cannot keep its identity.** It claimed
+  a url client holds no nonce, so every reconnect forks an identity;
+  `register` hands back a minted nonce on every transport, and a url client
+  that keeps it reattaches with the same call. The guide says what the bridge
+  adds instead: keeping the nonce for the session across restarts and
+  upgrades, and following a daemon restart by itself.
+
 - **The resync past the ring rebuilt only incoming mail.** Two other things
   are owed in the same gap: the verdict on a question or request the agent
   itself sent, which belongs to the sender's side and carries the question's
