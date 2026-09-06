@@ -128,8 +128,12 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *
 	// subscriber that drops before its first notification reconnects with a
 	// cursor rather than blind. Found by the pre-release review, round
 	// thirteen.
+	// THE CURSOR, NOT THE PRESENT. A resuming subscriber's acknowledgment
+	// carried the current serial before the gap was replayed; a drop between
+	// the two made the next reconnect skip the gap for good. Found by the
+	// pre-release review, round sixteen.
 	stream.send(notification("notifications/subscriptions/acknowledged", map[string]any{
-		"notifications": honored, "_meta": map[string]any{SerialMetaKey: since},
+		"notifications": honored, "_meta": map[string]any{SerialMetaKey: cursor},
 	}, req.ID))
 
 	// THE GAP, FILTERED FIRST. Subscribe replays the gap through a bounded

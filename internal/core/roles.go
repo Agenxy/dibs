@@ -427,6 +427,13 @@ const maxSessionAliases = 8
 // C with C current, recovered by session_id B with no alias, was still woken
 // on C. Found by the pre-release review, round eleven.
 func (a *Agent) currentFrom(op *Op) {
+	if op.SessionID != "" && a.holdsSession(op.SessionID) {
+		// STATED, so no longer a guess. Nonce recovery restored a row whose
+		// session had been inferred, kept the guess, and a stranger's
+		// metadata could take the session through ordinary ingress. Found by
+		// the pre-release review, round sixteen.
+		a.GuessedSessions = withoutString(a.GuessedSessions, op.SessionID)
+	}
 	if op.SessionAlias != "" || op.SessionID == "" || !a.holdsSession(op.SessionID) {
 		return
 	}

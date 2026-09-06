@@ -495,6 +495,25 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Nonce recovery left a confirmed session stealable.** Recovering a
+  dormant row with `register(name, nonce, session_id)` restored it and kept
+  the session it had held as an inference recorded as a guess, so a
+  stranger's metadata could take it through ordinary ingress and hooks and
+  wakes resolved to the stranger. A stated session id is not a guess, on
+  every path that reattaches.
+
+- **A resuming subscription's acknowledgment named the present, not the
+  cursor.** The bridge saves the serial the acknowledgment names; sent
+  before the gap was replayed, it made a drop between the two skip the gap
+  on the next reconnect for good. The acknowledgment names the cursor the
+  replay starts from.
+
+- **A second socket miss abandoned outstanding mail.** The retry armed for a
+  stale socket cache gave up when it missed again, while the question stayed
+  pending; a socket that appeared later was refreshed into the cache and
+  the mail never reconsidered. The retry keeps deciding at the refresh
+  cadence for as long as blocking mail is outstanding.
+
 - **A reconnect catch-up could still lose the notification that mattered.**
   The subscription replayed the gap through a bounded channel and dropped
   what did not fit before anything was filtered, so a backlog of unrelated

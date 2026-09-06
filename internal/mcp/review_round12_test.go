@@ -114,6 +114,47 @@ func TestAReconnectingSubscriberIsHandedTheGapThroughABacklog(t *testing.T) {
 	}
 }
 
+func ackSerial(t *testing.T, lines <-chan string) float64 {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case line := <-lines:
+			data, found := strings.CutPrefix(line, "data: ")
+			if !found {
+				continue
+			}
+			var frame struct {
+				Method string `json:"method"`
+				Params struct {
+					Meta map[string]any `json:"_meta"`
+				} `json:"params"`
+			}
+			if json.Unmarshal([]byte(data), &frame) != nil || frame.Method != "notifications/subscriptions/acknowledged" {
+				continue
+			}
+			v, _ := frame.Params.Meta[SerialMetaKey].(float64)
+			return v
+		case <-deadline:
+			t.Fatal("no acknowledgment arrived")
+		}
+	}
+}
+
+// A resuming subscriber's acknowledgment names the cursor the replay starts
+// from, not the present: saved before the gap arrives, the present would make
+// the next reconnect skip the gap for good.
+func TestAResumingAcknowledgmentNamesTheCursor(t *testing.T) {
+	srv, _ := newServer(t)
+	agent := toolCall(t, srv, "register", map[string]any{"name": "idle", "cwd": t.TempDir()})
+	serial, _ := agent["serial"].(float64)
+	toolCall(t, srv, "register", map[string]any{"name": "later", "cwd": t.TempDir()})
+	if got := ackSerial(t, openListen(t, srv, agent["token"].(string), serial)); got != serial {
+		t.Fatalf("resuming from %v, the acknowledgment says %v: a drop before the replay "+
+			"lands makes the next reconnect skip it", serial, got)
+	}
+}
+
 // The acknowledgment names the serial the subscription starts from.
 func TestTheAcknowledgmentCarriesTheCursor(t *testing.T) {
 	srv, _ := newServer(t)

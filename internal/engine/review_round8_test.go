@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/peerwake"
 )
 
 // R8-1: blocking mail outstanding at boot gets its wake decision again. A
@@ -87,5 +88,37 @@ func TestReturningToAnEarlierThreadWakesThatThread(t *testing.T) {
 	if got := threadIDOf(l); got != a {
 		t.Errorf("the wake would resume %s; the harness last reported %s. A real session "+
 			"starts that is not the one holding the mail, and the wake logs as a success", got, a)
+	}
+}
+
+// R16-3: a second socket miss with blocking mail still outstanding keeps the
+// retry armed; the first version gave up after one.
+func TestASecondSocketMissKeepsOutstandingMailArmed(t *testing.T) {
+	const sid = "ab2bdbe2-3bc9-4f7b-8a1f-a638093a6256"
+	st := core.NewState("test", core.DefaultLimits())
+	st.Agents["cc"] = &core.Agent{
+		ID: "cc", Name: "cc", Status: core.StatusActive, SessionID: sid,
+		Agent: &core.AgentInfo{Harness: "Claude Code", CWD: "/work"},
+		Slots: map[string]core.Slot{},
+	}
+	st.Messages[5] = &core.Message{
+		Serial: 5, From: "asker", To: "cc", Type: core.MsgQuestion, State: core.MsgStatePending,
+	}
+	e := New(st, &memLedger{}, deadProber{})
+	e.peers.mu.Lock()
+	e.peers.at = time.Now()
+	e.peers.live = map[string]peerwake.Session{}
+	e.peers.mu.Unlock()
+	e.retryWakeDecision("cc") // the retry itself misses again
+	e.wakers.mu.Lock()
+	armed := e.wakers.deferred["cc"] != nil
+	if armed {
+		e.wakers.deferred["cc"].Stop()
+	}
+	e.wakers.mu.Unlock()
+	if !armed {
+		t.Fatal("a retry that found no socket armed no further retry while a question was " +
+			"pending: a socket that appears later is refreshed into the cache and the mail " +
+			"is never reconsidered")
 	}
 }

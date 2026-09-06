@@ -348,6 +348,11 @@ func (e *Engine) retryWake(agent string) {
 }
 
 // deferWakeLocked is deferWake for callers that do not already hold the lock.
+// peerRecheckEvery is how often outstanding blocking mail is reconsidered for
+// an agent whose harness speaks the socket while no socket for it is found:
+// the cache's own refresh cadence.
+const peerRecheckEvery = 30 * time.Second
+
 // bootRetryDelay is how long after boot the outstanding-mail retries run:
 // long enough for the loop to be serving, since a retry is posted to it.
 var bootRetryDelay = time.Second
@@ -462,6 +467,16 @@ func (e *Engine) retryWakeDecision(agent string) {
 		Data: map[string]any{"msg_type": kind, "from": from},
 	})
 	if !ok {
+		// STILL NO SOCKET, STILL OWED. The first retry was armed for the
+		// cache's staleness and a second miss returned without another,
+		// while the question stayed pending: a socket that appeared later was
+		// refreshed into the cache and the mail was never reconsidered. Keep
+		// deciding at the refresh cadence for as long as blocking mail is
+		// outstanding; nothing arms when there is none. Found by the
+		// pre-release review, round sixteen.
+		if e.socketMayHaveAppeared(l) {
+			e.deferWakeLocked(agent, peerRecheckEvery)
+		}
 		return
 	}
 	stamp := e.wakeStamp(agent)
