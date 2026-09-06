@@ -582,10 +582,14 @@ Read-only work needs no claim.
   dedupes by serial.
 - **A subscription follows its agent only where its agent is.** A
   `subscriptions/listen` may name the harness session it serves
-  (`_meta["com.dibs/session"]`, which the stdio bridge attaches); while the
-  agent holds that session the inbox is delivered, and while the agent is in
+  (`_meta["com.dibs/session"]`, which the stdio bridge attaches: the thread
+  the harness named, else the bridge's own session id); while the agent
+  holds that session the inbox is delivered, and while the agent is in
   another one it is withheld, so a bridge left behind by an identity that
-  moved cannot wake the session the agent left. Board notifications are
+  moved cannot wake the session the agent left. A thread is held only while
+  it is the agent's current session, because the row retains every thread
+  it has been bound to. A stream that names no session, or follows the
+  board alone, is not measured. Board notifications are
   unaffected, and the inbox returns with the agent. A stream ends with the
   token it was opened with: once that token is rotated away, whoever holds
   the new one subscribes afresh.

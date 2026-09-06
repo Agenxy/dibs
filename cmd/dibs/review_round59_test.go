@@ -127,3 +127,42 @@ func TestTheListenRequestNamesTheSessionItServes(t *testing.T) {
 		t.Fatalf("the listen request carries session %v, want this bridge's own %q", req.Params.Meta["com.dibs/session"], want)
 	}
 }
+
+// The self-wake stream says it serves the thread the harness named on its
+// tool calls, in preference to the process-derived session id, and an
+// in-place upgrade carries that name across.
+func TestTheListenRequestNamesTheThreadTheHarnessNamed(t *testing.T) {
+	t.Cleanup(func() { noteThread("") })
+	noteThread("")
+	line := []byte(`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"check_in",` +
+		`"arguments":{},"_meta":{"threadId":"019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b"}}}`)
+	enrichRegister(line)
+	var iw inboxWatcher
+	var req struct {
+		Params struct {
+			Meta map[string]any `json:"_meta"`
+		} `json:"params"`
+	}
+	if err := json.Unmarshal(iw.listenBody(&inboxStream{token: "tok"}), &req); err != nil {
+		t.Fatal(err)
+	}
+	if got := req.Params.Meta["com.dibs/session"]; got != "019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b" {
+		t.Fatalf("the listen request says it serves %v, want the thread the harness named", got)
+	}
+	// Across an upgrade.
+	st := handoffState()
+	if st.Thread != "019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b" {
+		t.Fatalf("the handoff carries thread %q", st.Thread)
+	}
+	noteThread("")
+	blob, _ := json.Marshal(st)
+	t.Setenv(bridgeStateEnv, string(blob))
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var streams sync.WaitGroup
+	out := &syncWriter{w: bufio.NewWriter(io.Discard)}
+	restoreCarried(ctx, &http.Client{}, "http://127.0.0.1:1/mcp", "secret", out, &streams, &iw, false)
+	if threadServed() != "019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b" {
+		t.Fatalf("after the upgrade the bridge serves thread %q: the restored streams say the wrong session", threadServed())
+	}
+}

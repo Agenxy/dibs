@@ -131,7 +131,7 @@ func (iw *inboxWatcher) listenBody(st *inboxStream) []byte {
 	// while the agent is in another one: a bridge left behind by an
 	// identity that moved to a second session kept waking the first.
 	// Found by the pre-release review, round fifty-nine.
-	if sid := sessionID(); sid != "" {
+	if sid := streamSession(); sid != "" {
 		meta[mcp.SessionMetaKey] = sid
 	}
 	iw.mu.Lock()

@@ -120,6 +120,9 @@ func enrichRegister(line []byte) []byte {
 			if sid := sessionID(); sid != "" {
 				meta["com.dibs/session"] = sid
 			}
+			if tid, _ := meta["threadId"].(string); strings.TrimSpace(tid) != "" {
+				noteThread(strings.TrimSpace(tid))
+			}
 			if out, err := json.Marshal(msg); err == nil {
 				line = out
 			}
@@ -304,4 +307,37 @@ func sessionID() string {
 		sessionOnce.id = bridgeSessionID()
 	})
 	return sessionOnce.id
+}
+
+// servedThread is the harness thread this bridge is running inside, as the
+// harness names it on every tool call (`_meta.threadId`, which Codex sends
+// unconditionally). It is what the self-wake stream says it serves, in
+// preference to the process-derived session id: the daemon measures a
+// thread against the agent's current session, and a bridge left behind by
+// an identity the hooks moved to another thread must not go on waking the
+// thread it serves. Found by the pre-release review, round sixty.
+var servedThread struct {
+	mu sync.Mutex
+	id string
+}
+
+func noteThread(id string) {
+	servedThread.mu.Lock()
+	defer servedThread.mu.Unlock()
+	servedThread.id = id
+}
+
+func threadServed() string {
+	servedThread.mu.Lock()
+	defer servedThread.mu.Unlock()
+	return servedThread.id
+}
+
+// streamSession is the session a self-wake stream says it serves: the
+// thread the harness named, else the bridge's own session id.
+func streamSession() string {
+	if tid := threadServed(); tid != "" {
+		return tid
+	}
+	return sessionID()
 }

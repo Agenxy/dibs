@@ -80,6 +80,11 @@ type bridgeState struct {
 	// through it, and the single WakeToken above carried one. Found by the
 	// pre-release review, round fifty-four.
 	WakeStreams []wakeHandoff `json:"wake_streams,omitempty"`
+	// Thread is the harness thread this bridge serves, as the harness named
+	// it on its tool calls; the restored self-wake streams say they serve
+	// it before the next call names it again. Found by the pre-release
+	// review, round sixty.
+	Thread string `json:"thread,omitempty"`
 }
 
 // wakeHandoff is one watched agent in the handoff.
@@ -177,6 +182,27 @@ func (a selfIdentity) differs(b selfIdentity) bool {
 	return a.path != b.path || a.size != b.size || !a.mod.Equal(b.mod)
 }
 
+// deliverOwedNotice puts into the session the notice the old image owed
+// and died before its cooldown timer fired; the cursor has passed the
+// event. THROUGH THE WATCHER'S WAKER: a waker of its own here stood beside
+// the one the restored streams write through, and a notification arriving
+// during the restore put two interruptions into the session at once. Found
+// by the pre-release review, round fifty-nine.
+func deliverOwedNotice(w *inboxWatcher) {
+	var wk *selfWaker
+	if w != nil {
+		wk = w.sharedWaker()
+	} else {
+		wk = newSelfWaker()
+	}
+	if wk == nil {
+		return
+	}
+	if err := wk.wake(selfWakeNotice); err != nil {
+		slog.Debug("could not deliver the notice the old image owed", "err", err)
+	}
+}
+
 // carriedState is what a previous image handed us, if this process is a re-exec.
 func carriedState() (bridgeState, bool) {
 	raw := os.Getenv(bridgeStateEnv)
@@ -261,6 +287,9 @@ func restoreCarried(ctx context.Context, client *http.Client, url, secret string
 		return
 	}
 	lastClientInfo, lastWantsUI = s.ClientInfo, s.WantsUI
+	if s.Thread != "" {
+		noteThread(s.Thread)
+	}
 	if !sockets {
 		if s.WakeToken != "" || len(s.WakeStreams) > 0 || s.WakePending {
 			slog.Debug("[wake] sockets = false: the self-wake the old image held is not restored",
@@ -280,23 +309,7 @@ func restoreCarried(ctx context.Context, client *http.Client, url, secret string
 		}
 	}
 	if s.WakePending {
-		// The old image owed the session a notice and died before its
-		// cooldown timer fired; the cursor has passed the event. THROUGH THE
-		// WATCHER'S WAKER: a waker of its own here stood beside the one the
-		// restored streams write through, and a notification arriving during
-		// the restore put two interruptions into the session at once. Found
-		// by the pre-release review, round fifty-nine.
-		var wk *selfWaker
-		if w != nil {
-			wk = w.sharedWaker()
-		} else {
-			wk = newSelfWaker()
-		}
-		if wk != nil {
-			if err := wk.wake(selfWakeNotice); err != nil {
-				slog.Debug("could not deliver the notice the old image owed", "err", err)
-			}
-		}
+		deliverOwedNotice(w)
 	}
 	for _, listen := range s.Listens {
 		line := []byte(listen)

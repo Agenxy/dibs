@@ -424,6 +424,7 @@ func handoffState() bridgeState {
 		Listens:     openListens(),
 		WakeStreams: streams,
 		WakePending: currentWakePending(),
+		Thread:      threadServed(),
 	}
 	// The single fields too, for an image older than WakeStreams: it
 	// restores one stream, which is what it could hold.

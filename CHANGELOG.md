@@ -560,9 +560,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   to a second session kept waking the first, which the daemon's own wake
   routes never do; and a stream opened with a token later rotated away went
   on delivering the new holder's mail. The bridge's listen now names the
-  session it serves (`_meta["com.dibs/session"]`), the daemon withholds the
-  inbox from a stream whose agent is in another session and feeds it again
-  when the agent returns, and a stream ends with its credential.
+  session it serves (`_meta["com.dibs/session"]`: the thread the harness
+  named on its tool calls, else the bridge's own session id), the daemon
+  withholds the inbox from a stream whose agent is in another session and
+  feeds it again when the agent returns, and a stream ends with its
+  credential. A stated thread counts as held only while it is the agent's
+  current session, since the row retains every thread it has been bound to;
+  a stream following the board alone answers to no credential and is not
+  measured against one.
 
 - **A restored pending wake bypassed the session's cooldown.** The in-place
   upgrade delivered the notice the old image owed through a waker of its

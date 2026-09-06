@@ -721,12 +721,27 @@ func (s *State) AgentByToken(tok string) *Agent {
 // left, which the daemon's own wake routes never do; and a stream opened
 // with a token later rotated away went on delivering the new holder's
 // mail. Found by the pre-release review, round fifty-nine.
+//
+// A THREAD IS HELD ONLY WHILE IT IS THE CURRENT SESSION. The row retains
+// every thread it has been bound to, so "holds" alone let a stream serving
+// thread A go on delivering after the hooks had moved the agent to thread
+// B, which is the case this exists for. The daemon's own wake routes go to
+// the current session alone (sessionsOf); a stream serving a thread is
+// measured the same way. A stated non-thread id (the bridge's `host-<ppid>`,
+// a Claude session id) cannot be compared with a thread, and is held where
+// the row holds it. Found by the pre-release review, round sixty.
 func (s *State) StreamStanding(token, session string) (live, held bool) {
 	l := s.AgentByToken(token)
 	if l == nil {
 		return false, false
 	}
-	return true, session == "" || l.holdsSession(session)
+	if session == "" {
+		return true, true
+	}
+	if LooksLikeThreadID(session) && l.CurrentSession != "" {
+		return true, session == l.CurrentSession
+	}
+	return true, l.holdsSession(session)
 }
 
 // Inbox returns the agent's non-terminal plus unconsumed-terminal messages,

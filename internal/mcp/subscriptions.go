@@ -165,6 +165,13 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *
 	// about to go out. See core.StreamStanding.
 	session, _ := p.Meta[SessionMetaKey].(string)
 	standing := func() (bool, bool) {
+		if token == "" {
+			// A stream following the board alone answers to no credential.
+			// The check applied to it looked the empty token up, found no
+			// agent, and closed the stream on its first notification. Found
+			// by the pre-release review, round sixty.
+			return true, true
+		}
 		return s.eng.StreamStanding(r.Context(), token, session)
 	}
 	// The gap too: a left-behind bridge that reconnected after a daemon
