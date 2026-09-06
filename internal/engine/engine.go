@@ -459,7 +459,14 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// guess became current, and the configured wake resumed the guessed
 	// thread instead of the stated one. Found by the pre-release review,
 	// round seventeen.
-	if op.SessionAlias == "" && !looksLikeThreadID(op.SessionID) {
+	// AND NOT OVER A STATED THREAD THE ROW ALREADY HOLDS. This asked only
+	// the op: a plain check_in carries no session fields, so an agent that
+	// had registered stating thread A, in a directory another session had
+	// announced from, was handed that session as a guess on its next
+	// check_in; the guess became current, the wake resumed the wrong thread
+	// and the other session's hooks resolved to A's mailbox. Found by the
+	// pre-release review, round fifty-six.
+	if op.SessionAlias == "" && !looksLikeThreadID(op.SessionID) && !e.callerHoldsAStatedThread(op) {
 		// ANYTHING SET BELOW IS A GUESS, AND THIS LINE IS THE WHOLE REPAIR.
 		//
 		// It was missing. The reclaim rule, its test and a changelog entry all
@@ -1410,6 +1417,30 @@ func (e *Engine) refuseActingOnInheritedMail(op *core.Op, actor *core.Agent) err
 		return core.ErrNoMessage(m.Serial, actor.TruncatedBefore)
 	}
 	return nil
+}
+
+// callerHoldsAStatedThread reports whether the row this op acts on already
+// holds a thread-shaped session it stated itself, in which case the
+// directory guess has nothing to add and would only displace it.
+func (e *Engine) callerHoldsAStatedThread(op *core.Op) bool {
+	var l *core.Agent
+	switch op.Kind {
+	case core.OpAckBoard, core.OpUpdate:
+		l = e.state.AgentByToken(op.Token)
+	case core.OpRegister:
+		if op.Nonce != "" {
+			l = e.state.Agents[e.state.Nonces[op.Nonce]]
+		}
+	}
+	if l == nil {
+		return false
+	}
+	for _, sid := range sessionsOf(l) {
+		if looksLikeThreadID(sid) && !l.GuessedSession(sid) {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Engine) refuseStealingAnotherThreadsSession(op *core.Op) error {

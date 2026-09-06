@@ -554,6 +554,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A plain `check_in` could replace a stated thread with a directory
+  guess.** The ingress inferred a session by directory whenever the op
+  itself carried no session fields, without asking whether the row already
+  held a stated thread: an agent that registered stating thread A, in a
+  directory another session had announced from, was bound to that session
+  on its next `check_in`, the wake resumed the wrong thread and that
+  session's hooks resolved to A's mailbox. No guess is made over a stated
+  thread the row holds, which is what the earlier entry already promised.
+
+- **The session-ordering test never went through ingress.** It tested the
+  announcement and the claim rule separately, so removing the guard that
+  prefers a supplied session over the directory guess left it passing. A
+  case submits the call through ingress and checks which id the row holds.
+
 - **Reclaiming a guessed alias took the owner's stated primary with it.**
   An active owner held a stated synthetic primary and a thread alias the
   daemon had inferred for it; a newcomer stating both reclaimed the guess,
