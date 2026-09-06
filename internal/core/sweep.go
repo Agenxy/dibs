@@ -327,12 +327,27 @@ func (s *State) gc(now time.Time, purgeMail, clampWatermark bool) ([]Event, bool
 		// still owed, and invisible to inbox, check_in and every hook. The
 		// field's own definition says mail below it MAY have been evicted; the
 		// readers treat it as a boundary, so it has to be a true one. Clamped
-		// to the lowest serial still addressed to this agent. Gated on the
-		// sweep's recorded semantics, as every other v0.0.7 repair to the fold
-		// is, so a v0.0.6 sweep replays to the watermark it really set.
-		if l != nil && clampWatermark {
+		// to the lowest serial still addressed to this agent, for EVERY sweep
+		// in the fold.
+		//
+		// The first version gated the clamp on the sweep's recorded semantics,
+		// as the other v0.0.7 repairs to the fold are, so that a v0.0.6 sweep
+		// would replay to the watermark it really set. That was the wrong
+		// thing to preserve. Under v0.0.6 the watermark was inert, a number in
+		// a result: a sweep that raised it past a pending question hid
+		// nothing. The readers that honour it arrived this cycle, and left to
+		// stand, a v0.0.6 raise hid on replay a question the original never
+		// hid, and check_in stopped delivering it. What IS v0.0.7's is the
+		// fence: registration under v0.0.6 set none, so a v0.0.6 sweep has
+		// nothing below it to protect and clamps to the floor. Found by the
+		// pre-release review, rounds three and four.
+		if l != nil {
+			floor := uint64(0)
+			if clampWatermark {
+				floor = fence
+			}
 			for _, m := range s.Messages {
-				if m.To == agent && m.Serial < l.TruncatedBefore && m.Serial >= fence {
+				if m.To == agent && m.Serial < l.TruncatedBefore && m.Serial >= floor {
 					l.TruncatedBefore = m.Serial
 				}
 			}

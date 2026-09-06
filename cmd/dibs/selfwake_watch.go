@@ -9,6 +9,9 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/mcp"
 )
 
 // selfWakeNotice is the one sentence every wake route carries.
@@ -117,13 +120,17 @@ func (iw *inboxWatcher) stream(
 		}
 		var msg struct {
 			Method string `json:"method"`
+			Params struct {
+				Meta map[string]any `json:"_meta"`
+			} `json:"params"`
 		}
 		if json.Unmarshal(bytes.TrimSpace(data), &msg) != nil {
 			continue
 		}
 		// The acknowledgement is not mail. Only an actual resource update means
-		// something arrived for this agent.
-		if msg.Method != "notifications/resources/updated" {
+		// something arrived for this agent, and only some of that is worth a
+		// notice.
+		if msg.Method != "notifications/resources/updated" || !worthAWake(msg.Params.Meta) {
 			continue
 		}
 		if err := waker.wake(selfWakeNotice); err != nil {
@@ -138,11 +145,30 @@ func (iw *inboxWatcher) stream(
 // lets this bridge subscribe to its own agent's mail. Split out of the read loop
 // rather than written inline there: that loop is already at the complexity the
 // linter allows, and a wake path is not the thing to spend the last of it on.
+// worthAWake applies the daemon's own rule to the event the notification
+// names. Every inbox change used to put a notice into the session, a notify
+// included, which the daemon's waker never does for its own routes. A
+// notification that names no event comes from a daemon older than the field,
+// and wakes as before. Found by the pre-release review, round four.
+func worthAWake(meta map[string]any) bool {
+	evType, ok := meta[mcp.EventMetaKey].(string)
+	if !ok {
+		return true
+	}
+	msgType, _ := meta[mcp.MsgTypeMetaKey].(string)
+	return core.WakeWorthy(evType, msgType)
+}
+
 func watchOnRegister(
 	ctx context.Context, w *inboxWatcher, client *http.Client, url, secret string,
 ) func(sent, reply []byte) {
 	return func(sent, reply []byte) {
-		if toolNameOf(sent) != "register" {
+		// register AND resume: both mint the credential the watcher subscribes
+		// with. Handling only the first left a bridge that began with resume
+		// never watching, and one that resumed later subscribing with a token
+		// the resume had just revoked. Found by the pre-release review, round
+		// four.
+		if n := toolNameOf(sent); n != "register" && n != "resume" {
 			return
 		}
 		if tok := agentTokenIn(reply); tok != "" {

@@ -261,8 +261,11 @@ model) per `codex-rs/rmcp-client/src/logging_client_handler.rs`.
 - **`subscriptions/listen`** (SEP-2575): held-open SSE, acks with
   `notifications/subscriptions/acknowledged`, then pushes
   `notifications/resources/updated` for `dibs://inbox` (token-scoped via
-  `_meta["com.dibs/token"]`) and `dibs://board`. Verified end-to-end. Unused by clients
-  today; ready for the 07-28 wave.
+  `_meta["com.dibs/token"]`) and `dibs://board`. Verified end-to-end. The inbox
+  notification's `_meta` names what changed it (`com.dibs/event`,
+  `com.dibs/msg_type`) so a subscriber can apply the daemon's own wake rule,
+  `core.WakeWorthy`, without a round trip. The bridge's self-wake (§5b) is its
+  first client; ready for the 07-28 wave.
 - **`resources.subscribe` advertised on BOTH handshakes**: including legacy
   `initialize`. That was every client when it was written, and it is not now:
   Codex runs entirely on 2026-07-28 against Dibs. Advertising on both is still

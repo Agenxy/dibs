@@ -65,7 +65,7 @@ func TestAReplacementSenderCannotReadThroughAnAdoption(t *testing.T) {
 	st.Messages[7] = &core.Message{
 		Serial: 7, From: "s", To: "h", Type: core.MsgQuestion,
 		State: core.MsgStateAnswered, Body: "old sender's private question", Response: "and its answer",
-		AdoptedFrom: "r",
+		AdoptedFrom: "r", AdoptedAt: 65, // given to h (created at 60), not to s2
 	}
 	e := New(st, &memLedger{}, deadProber{})
 	ctx, cancel := context.WithCancel(context.Background())

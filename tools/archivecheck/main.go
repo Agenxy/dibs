@@ -135,11 +135,26 @@ func carries(path string, want []string) error {
 			"from its name, so the executables in it are unchecked", filepath.Base(path))
 	}
 	for _, w := range want {
-		body := have[w]
-		if !isMachO(body) {
-			continue // documentation, an icon, a plist
+		e := have[w]
+		// Every path on this list is one the runtime EXECUTES: the two
+		// binaries and the helpers resolved beside them. So a required path
+		// that is not a Mach-O image is not documentation, it is a script or a
+		// stub under the binary's name, and one carried without its execute
+		// bit is present in the listing and refused by exec. Both used to pass
+		// here as "not a binary, nothing to check". Found by the pre-release
+		// review, round four.
+		if !isMachO(e.body) {
+			return fmt.Errorf("%s: %s is required as an executable and is not a Mach-O "+
+				"image (it begins %q). A script or a placeholder under the binary's "+
+				"name is in the file listing and fails the moment the runtime runs it",
+				filepath.Base(path), w, head(e.body))
 		}
-		archs, aerr := machoArchs(body)
+		if e.mode&0o111 == 0 {
+			return fmt.Errorf("%s: %s is carried with mode %04o and no execute bit. It is "+
+				"in the file listing, and exec refuses it with EACCES on every machine",
+				filepath.Base(path), w, e.mode&0o7777)
+		}
+		archs, aerr := machoArchs(e.body)
 		if aerr != nil {
 			return fmt.Errorf("%s: %s: %w", filepath.Base(path), w, aerr)
 		}
@@ -249,7 +264,23 @@ func expectedPaths(root string) ([]string, error) {
 
 // entries reads the archive into path → contents. The bytes are needed because
 // the check is not only that a file is present but that it can run.
-func entries(path string) (map[string][]byte, error) {
+// entry is one file from an archive: its bytes, and the mode it will have on
+// disk, which decides whether exec accepts it.
+type entry struct {
+	body []byte
+	mode int64
+}
+
+// head is the start of a body, for an error that says what a file is instead
+// of only what it is not.
+func head(b []byte) string {
+	if len(b) > 16 {
+		b = b[:16]
+	}
+	return string(b)
+}
+
+func entries(path string) (map[string]entry, error) {
 	f, err := os.Open(path) // #nosec G304 -- a path this program globbed under dist/
 	if err != nil {
 		return nil, err
@@ -261,7 +292,7 @@ func entries(path string) (map[string][]byte, error) {
 	}
 	defer func() { _ = gz.Close() }()
 
-	out := map[string][]byte{}
+	out := map[string]entry{}
 	tr := tar.NewReader(gz)
 	for {
 		h, err := tr.Next()
@@ -281,7 +312,7 @@ func entries(path string) (map[string][]byte, error) {
 		if rerr != nil {
 			return nil, fmt.Errorf("%s: %w", h.Name, rerr)
 		}
-		out[filepath.Clean(h.Name)] = body
+		out[filepath.Clean(h.Name)] = entry{body: body, mode: h.Mode}
 	}
 }
 

@@ -557,7 +557,14 @@ type Message struct {
 	// authorised adoption moved it. Set by the fold on the move, so read_mail
 	// can tell mail an heir was GIVEN from mail a reused id merely inherited:
 	// both are older than the reader's own creation, and only one is theirs.
-	AdoptedFrom string    `json:"adopted_from,omitempty"`
+	AdoptedFrom string `json:"adopted_from,omitempty"`
+	// AdoptedAt is the serial of the adoption that moved it. The mark alone
+	// says an adoption happened; this says to WHICH incarnation of the name,
+	// because a replacement registered under the same id after a purge is
+	// younger than the adoption and must not inherit through it. Compared
+	// against the reader's CreatedSerial. Found by the pre-release review,
+	// round four.
+	AdoptedAt   uint64    `json:"adopted_serial,omitempty"`
 	Deadline    time.Time `json:"deadline,omitzero"`
 	Response    string    `json:"response,omitempty"`
 	DeliveredAt uint64    `json:"delivered_serial,omitempty"`
@@ -720,7 +727,7 @@ func (s *State) Inbox(agent string) []*Message {
 		// when that heir is a reused name: adoption reported it moved and the
 		// inbox hid it. The watermark fences a predecessor's mail, which carries
 		// no adoption mark. Found by the pre-release review, round two.
-		if m.Serial < floor && m.AdoptedFrom == "" {
+		if m.Serial < floor && !s.adoptedFor(m, agent) {
 			continue
 		}
 		if m.To == agent && m.readable() {
@@ -781,7 +788,7 @@ func nonTerminalCount(s *State, agent string) int {
 	for _, m := range s.Messages {
 		// The same exemption as Inbox, so what the agent can see is what counts
 		// against its capacity.
-		if m.To == agent && (m.Serial >= floor || m.AdoptedFrom != "") && !m.Terminal() {
+		if m.To == agent && (m.Serial >= floor || s.adoptedFor(m, agent)) && !m.Terminal() {
 			n++
 		}
 	}
@@ -807,3 +814,28 @@ func constEq(a, b string) bool {
 // carries three buttons plus the implicit dismiss, so a question that fits here
 // is answerable in one gesture wherever it lands.
 const MaxChoices = 4
+
+// adoptedFor reports whether this message was adopted INTO the agent now
+// holding that id, as opposed to an earlier occupant of the same name.
+//
+// The exemption from the mailbox watermark is the heir's, and a name that is
+// purged and re-registered gets the same id: the mark on a message adopted by
+// the predecessor would otherwise carry through to the replacement. The
+// adoption's serial against the reader's creation settles it; a reader with no
+// recorded creation (registered before that field existed) keeps the old
+// behaviour, and a message with no recorded adoption serial (marked by a replay
+// of an op older than the field) reads as the predecessor's. ONE rule, called
+// by every reader of the mark.
+func (s *State) adoptedFor(m *Message, agent string) bool {
+	if m.AdoptedFrom == "" {
+		return false
+	}
+	l := s.Agents[agent]
+	if l == nil || l.CreatedSerial == 0 {
+		return true
+	}
+	return m.AdoptedAt >= l.CreatedSerial
+}
+
+// AdoptedFor is adoptedFor for the engine, which reads mailboxes on the loop.
+func (s *State) AdoptedFor(m *Message, agent string) bool { return s.adoptedFor(m, agent) }

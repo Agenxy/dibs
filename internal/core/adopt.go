@@ -143,7 +143,7 @@ func (s *State) readdressMail(from, into *Agent, v7 bool) int {
 			if m.To != from.ID {
 				continue
 			}
-			m.AdoptedFrom = from.ID
+			m.AdoptedFrom, m.AdoptedAt = from.ID, s.Serial+1
 			m.To = into.ID
 			moved++
 			continue
@@ -157,11 +157,13 @@ func (s *State) readdressMail(from, into *Agent, v7 bool) int {
 		// below its watermark by construction and is its to pass on. Without
 		// this a second adoption passed the emptiness check, which reads Inbox,
 		// and moved nothing. Found by the pre-release review, round three.
-		fenced := m.Serial < from.TruncatedBefore && m.AdoptedFrom == ""
+		fenced := m.Serial < from.TruncatedBefore && !s.adoptedFor(m, from.ID)
 		if m.To != from.ID || fenced || !m.readable() {
 			continue
 		}
-		m.AdoptedFrom = from.ID
+		// s.Serial+1 is the serial finish will give this op: the fold's own
+		// clock, so replay records the same one.
+		m.AdoptedFrom, m.AdoptedAt = from.ID, s.Serial+1
 		m.To = into.ID
 		moved++
 	}

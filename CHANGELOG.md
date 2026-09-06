@@ -7,6 +7,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- **An adoption marked mail as recoverable, and the mark outlived the name it
+  was for.** The round-three fix for adopted mail below the heir's watermark
+  marked each moved message `adopted_from`, and every reader exempted marked
+  mail from the watermark. The mark said an adoption happened. It did not say
+  to whom: a name is purged and comes back as the same id, registration raises
+  the watermark to keep the previous occupant's mail from the replacement, and
+  the mark walked straight through it. The replacement could read, by inbox
+  and by serial, the mail the predecessor had been given.
+
+  Each adoption now records its serial as well (`adopted_serial`, a frozen
+  tag), and the exemption belongs to the incarnation whose creation precedes
+  it. One rule, `adoptedFor`, for every reader of the mark; the engine's
+  `read_mail` and delivery marking call the same one.
+
 - **Adopting a mailbox handed over mail the mailbox had been told was not its
   own.** `TruncatedBefore` is the watermark that stops a name coming back from
   reading the previous occupant's mail: an id is derived from the name, so a
@@ -436,6 +450,56 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing an agent wrote, and it cannot read the session or steer it.
 
 ### Fixed
+
+- **Two checkpoint repairs rewrote history on replay.** The round-three fixes
+  that stamp `LastCoordination` on `claim_coordinator` and `prune` did so for
+  every op in the fold, historical ones included. A v0.0.6 agent that claimed
+  with a stale checkpoint and then re-registered with its nonce got a fresh
+  token and a serial; replayed under the new stamp, the claim had refreshed
+  the checkpoint, the register took the "still active" shortcut, kept the old
+  token and allocated nothing, and every serial after it disagreed with the
+  ledger. Both are now gated on the op's recorded semantics, as every other
+  v0.0.7 repair to the fold is.
+
+- **A v0.0.6 retention sweep hid, on replay, a question it never hid.** Under
+  v0.0.6 the mailbox watermark was inert, a number in a result, and a sweep
+  raised it past whatever terminal mail it evicted, pending questions below
+  that included. The readers that honour the watermark arrived this cycle,
+  and the round-three clamp that keeps it from passing mail still present was
+  gated to v0.0.7 sweeps so a v0.0.6 sweep would "replay to the watermark it
+  set". It replayed to a watermark that now hid a question, and `check_in`
+  stopped delivering it. The clamp applies to every sweep; only the fence
+  (which v0.0.6 registration never set) is v0.0.7's to protect.
+
+- **Reading adopted mail left it pending.** `inbox` handed over the body of an
+  adopted message below the heir's watermark and never marked it delivered,
+  because the delivery pass applied the watermark without the exemption the
+  listing had. The sender saw no receipt for mail that had been read. Both
+  apply the same exemption now.
+
+- **`resume` never started the bridge's wake subscription, and rotated the
+  token under it.** The bridge watches its own inbox with the token a
+  `register` reply carries. `resume` also mints one, and the hook ignored it:
+  a session that began with `resume` was never watched, and one that resumed
+  later kept subscribing with the credential the resume had just revoked. The
+  hook handles both.
+
+- **The bridge woke its session for a `notify`.** Every inbox change put a
+  "check the board" notice into the running session, a notify included, while
+  the daemon's own waker (for `[wake.exec]` and the session socket) has always
+  refused to start anything for news nobody is blocked on. The inbox
+  notification now names the event that changed it (`com.dibs/event`,
+  `com.dibs/msg_type` in its `_meta`), and the bridge applies the daemon's
+  rule, `core.WakeWorthy`, which is now the one place that rule lives. A
+  notification from a daemon too old to say what arrived still wakes.
+
+- **The archive gate accepted a script under a binary's name.** Every path it
+  requires is one the runtime executes, and a required entry that was not a
+  Mach-O image was skipped as "documentation": an empty file, a shell script
+  or an ELF binary under `dibd` passed, and so did a correct binary carried
+  without its execute bit, because entry modes were discarded. Each required
+  path must now be a Mach-O for the archive's architecture with the execute
+  bit set.
 
 - **`doctor` reported a healthy wake configuration on a board where 28 of 31
   agents could not be woken.** It counted the operator's `[wake.exec]` blocks and

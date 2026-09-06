@@ -61,7 +61,7 @@ func TestASecondAdoptionMovesAdoptedMail(t *testing.T) {
 	// Adopted INTO heir1 earlier: below its watermark, marked, still pending.
 	s.Messages[7] = &Message{
 		Serial: 7, From: "asker", To: "heir1", Type: MsgQuestion,
-		State: MsgStatePending, AdoptedFrom: "lost",
+		State: MsgStatePending, AdoptedFrom: "lost", AdoptedAt: 90,
 	}
 	if n := s.readdressMail(s.Agents["heir1"], s.Agents["heir2"], true); n != 1 {
 		t.Fatalf("the second adoption moved %d message(s); the inbox it was judged by shows 1", n)

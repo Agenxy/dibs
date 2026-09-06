@@ -50,7 +50,7 @@ func TestAdoptedMailIsVisibleBelowTheHeirsWatermark(t *testing.T) {
 	}
 	s.Messages[5] = &Message{
 		Serial: 5, From: "asker", To: "heir", Type: MsgQuestion,
-		State: MsgStatePending, AdoptedFrom: "lost",
+		State: MsgStatePending, AdoptedFrom: "lost", AdoptedAt: 90,
 	}
 	s.Messages[6] = &Message{
 		Serial: 6, From: "asker", To: "heir", Type: MsgQuestion,

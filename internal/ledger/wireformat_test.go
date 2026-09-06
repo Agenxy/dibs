@@ -287,7 +287,7 @@ const (
 	// renames the adjacent `"grant": true` with it and this test goes on
 	// passing: the exact co-edited-guard failure AGENTS.md describes, in the
 	// guard written to stop it. Found by a pre-release review.
-	frozenMessageFingerprint = "sha256:8be3c3f96380b35d"
+	frozenMessageFingerprint = "sha256:a9f4dd16b7cebc20"
 )
 
 func fingerprint(set map[string]bool) string {
@@ -415,7 +415,10 @@ func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
 		// inherited. Added in v0.0.7 with the pre-release review's finding that
 		// an heir could not read the mail it had just adopted.
 		"adopted_from": true,
-		"serial":       true, "from": true, "to": true, "type": true, "body": true,
+		// The serial of the adoption, so only the incarnation of a reused name
+		// that was actually given the mail can read it through the mark.
+		"adopted_serial": true,
+		"serial":         true, "from": true, "to": true, "type": true, "body": true,
 		"state": true, "consumed": true, "deadline": true, "response": true,
 		"delivered_serial": true, "sent_at": true, "delivered_at": true,
 		"responded_serial": true, "acked_serial": true, "terminal_at": true,

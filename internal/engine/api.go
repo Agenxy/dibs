@@ -310,7 +310,7 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 		// segfaulted the daemon. The test for the exemption read only messages
 		// that existed and never ran this branch; the space e2e reads a missing
 		// serial and found it in one run.
-		adopted := ok && m.AdoptedFrom != "" && m.To == l.ID
+		adopted := ok && m.To == l.ID && e.state.AdoptedFor(m, l.ID)
 		inherited := ok && l.CreatedSerial > 0 && serial < l.CreatedSerial && !adopted
 		if !ok || inherited || (m.From != l.ID && m.To != l.ID) {
 			// An ANNOUNCEMENT serial is the overwhelmingly likely mistake here,
@@ -372,7 +372,10 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 func pendingFor(st *core.State, l *core.Agent) []uint64 {
 	var serials []uint64
 	for _, m := range st.Messages {
-		if m.To == l.ID && m.Serial >= l.TruncatedBefore && m.State == core.MsgStatePending {
+		// The same exemption Inbox applies, or inbox hands over a body whose
+		// state stays pending and the sender never gets its receipt. Found by
+		// the pre-release review, round four.
+		if m.To == l.ID && (m.Serial >= l.TruncatedBefore || st.AdoptedFor(m, l.ID)) && m.State == core.MsgStatePending {
 			serials = append(serials, m.Serial)
 		}
 	}

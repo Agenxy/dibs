@@ -160,7 +160,7 @@ func (s *Server) pump(r *http.Request, stream sseStream, ch <-chan core.Event,
 			}
 			agentID, wantInbox, wantBoard := wants()
 			if uri := matchedURI(ev, agentID, wantInbox, wantBoard); uri != "" {
-				if !stream.send(resourceUpdated(uri, subID)) {
+				if !stream.send(resourceUpdated(uri, subID, ev)) {
 					return
 				}
 			}
@@ -225,6 +225,22 @@ func notification(method string, params map[string]any, subID json.RawMessage) m
 	return map[string]any{"jsonrpc": "2.0", "method": method, "params": params}
 }
 
-func resourceUpdated(uri string, subID json.RawMessage) map[string]any {
-	return notification("notifications/resources/updated", map[string]any{"uri": uri}, subID)
+// EventMetaKey and MsgTypeMetaKey name, in an inbox notification's _meta, the
+// event that changed the inbox and the type of mail it carried. A subscriber
+// can then apply core.WakeWorthy without a round trip. The bridge's self-wake
+// had no way to tell a notify from a question and interrupted a session for
+// either, which the daemon's own waker never does. Found by the pre-release
+// review, round four.
+const (
+	EventMetaKey   = "com.dibs/event"
+	MsgTypeMetaKey = "com.dibs/msg_type"
+)
+
+func resourceUpdated(uri string, subID json.RawMessage, ev core.Event) map[string]any {
+	params := map[string]any{"uri": uri}
+	if uri == "dibs://inbox" {
+		msgType, _ := ev.Data["msg_type"].(string)
+		params["_meta"] = map[string]any{EventMetaKey: ev.Type, MsgTypeMetaKey: msgType}
+	}
+	return notification("notifications/resources/updated", params, subID)
 }

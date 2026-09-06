@@ -169,10 +169,10 @@ func (e *Engine) maybeWake(ev core.Event) {
 	// asked and then stopped is the single clearest case for starting it again.
 	// Leaving them out recreated, on the new mechanism, the exact defect the
 	// notice work had just fixed on the old one.
-	switch ev.Type {
-	case "message.sent", "message.approved", "message.denied",
-		"message.answered", "message.declined":
-	default:
+	// Only news somebody is blocked on. The rule is core.WakeWorthy, shared
+	// with the bridge's self-wake so both routes wake for the same mail.
+	msgType, _ := ev.Data["msg_type"].(string)
+	if !core.WakeWorthy(ev.Type, msgType) {
 		return
 	}
 	if ev.To == "" {
@@ -215,22 +215,6 @@ func (e *Engine) maybeWake(ev core.Event) {
 	// never retries the mail. A message arriving just after a turn ended waited
 	// for a human. Found by the pre-release review, which also pointed out my
 	// test could not see it: nil engine state returned before this branch.
-	//
-	// Only news somebody is blocked on. An FYI does not justify starting a
-	// process on the operator's machine.
-	//
-	// A VERDICT is always blocking and carries no msg_type: it is an answer to
-	// something this agent asked and then stopped for. Filtering verdicts by a
-	// field they do not have dropped every one of them, which is how the first
-	// version excluded exactly the case with the strongest claim on a wake.
-	msgType, _ := ev.Data["msg_type"].(string)
-	if ev.Type == "message.sent" {
-		switch msgType {
-		case core.MsgQuestion, core.MsgRequest, core.MsgHandoff:
-		default:
-			return
-		}
-	}
 	// BEFORE THE RECENCY SHORT-CIRCUIT, because the wake IS what is in touch.
 	//
 	// The exit re-check was added so mail arriving after a running command has
