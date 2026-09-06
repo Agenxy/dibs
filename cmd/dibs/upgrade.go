@@ -115,6 +115,8 @@ type plan struct {
 	stop    func(dir string) error
 	start   func(installed, dir, unit string, was daemonState) error
 	confirm func(newDir string) error
+	// retryPause is the wait after a start that failed at once; see recover.
+	retryPause time.Duration
 }
 
 // recoveryStarts bounds how many times a recovery starts the daemon while
@@ -128,19 +130,25 @@ const startExitWatch = 750 * time.Millisecond
 // recover starts the daemon again after a cutover that stopped it and could
 // not finish, and stays until the board answers or the attempts run out.
 func (p *plan) recover(dir string) {
-	if err := p.doStart(dir); err != nil {
-		fmt.Fprintf(os.Stderr, "\n%s could not restart the daemon after the failure "+
-			"above: start it with `%s -dir %s`: %v\n",
-			ui.Bold("AND:"), p.installed, dir, err)
-		return
-	}
-	// A START IS A PROCESS, NOT A BOARD. A replacement started while the
-	// old daemon still holds the directory lock exits on that lock at
-	// once, and the first version of this recovery reported "started" and
-	// went home, leaving the board down after a stop that timed out.
-	// Confirm the board answers, and start again while the old process
-	// drains. Found by the pre-release review, round ten.
+	// A START THAT FAILS AT ONCE IS AN ATTEMPT. After a stop that timed out
+	// the old daemon may still hold the directory lock, the replacement
+	// exits on it, and startDaemon reports that as the error it is. The
+	// first version of this returned on that error before its own retry
+	// loop, so the case the loop exists for never reached it. Found by the
+	// pre-release review, round twenty-four.
 	for attempt := 1; ; attempt++ {
+		if err := p.doStart(dir); err != nil {
+			if attempt >= recoveryStarts {
+				fmt.Fprintf(os.Stderr, "\n%s could not start the daemon in %d attempts: start it "+
+					"with `%s -dir %s` once the old process has exited: %v\n",
+					ui.Bold("AND:"), attempt, p.installed, dir, err)
+				return
+			}
+			fmt.Fprintf(os.Stderr, "the daemon did not start (%v); starting again (%d of %d)\n",
+				err, attempt+1, recoveryStarts)
+			p.pause()
+			continue
+		}
 		if err := p.doConfirm(dir); err == nil {
 			fmt.Fprintf(os.Stderr, "\n%s the daemon is serving again from %s on %s. "+
 				"This is the NEW build, not a rollback: the previous binary is not "+
@@ -158,11 +166,15 @@ func (p *plan) recover(dir string) {
 		}
 		fmt.Fprintf(os.Stderr, "the board did not answer; starting again (%d of %d)\n",
 			attempt+1, recoveryStarts)
-		if err := p.doStart(dir); err != nil {
-			fmt.Fprintf(os.Stderr, "\n%s could not start the daemon again: start it with "+
-				"`%s -dir %s`: %v\n", ui.Bold("AND:"), p.installed, dir, err)
-			return
-		}
+	}
+}
+
+// pause is the wait between a start that failed at once and the next: the
+// old process is still going, and the confirm's own wait paces the other
+// path. A test sets none.
+func (p *plan) pause() {
+	if p.retryPause > 0 {
+		<-time.After(p.retryPause)
 	}
 }
 
@@ -207,7 +219,7 @@ func upgrade(o upgradeOpts) error {
 // planUpgrade resolves what is out of line, and proves the replacement can
 // rebuild the board. Nothing here changes anything.
 func planUpgrade(o upgradeOpts) (*plan, error) {
-	p := &plan{opts: o}
+	p := &plan{opts: o, retryPause: 10 * time.Second}
 	p.dir, p.inherited = paths.Resolve()
 
 	var err error

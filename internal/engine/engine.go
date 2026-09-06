@@ -693,7 +693,11 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	if op.Kind == core.OpGrantRole {
 		switch {
 		case op.RoleByHuman:
-			e.humanRoles[op.To] = true
+			// Recorded below, once it applied: a grant that failed
+			// (E_NO_AGENT for a name not yet registered) used to leave the
+			// record standing, and the configured grant the agent was owed
+			// when it registered was skipped as "a person set this". Found by
+			// the pre-release review, round twenty-four.
 		case e.humanRoles[op.To]:
 			return core.Result{
 				"ok": true, "agent": op.To, "role": op.Mode, "changed": false,
@@ -717,6 +721,9 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		if id, _ := res["to"].(string); id != "" {
 			e.humanRoles[id] = true
 		}
+	}
+	if op.Kind == core.OpGrantRole && op.RoleByHuman {
+		e.humanRoles[op.To] = true
 	}
 	// HAND OVER A MINTED NONCE, or it protects nothing and strands the agent.
 	//

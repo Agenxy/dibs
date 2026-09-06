@@ -72,3 +72,26 @@ func TestAnApprovedGrantStandsAgainstARegrant(t *testing.T) {
 		t.Fatalf("a regrant after a person approved the demotion went through (%v, role %q)", res, st.Agents["lead"].Role)
 	}
 }
+
+// R24-2: a human grant that failed records nothing; the configured grant the
+// agent is owed when it registers still applies.
+func TestAFailedHumanGrantDoesNotSuppressTheConfiguredOne(t *testing.T) {
+	st := core.NewState("t", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+	if _, err := e.GrantRoleByHuman(ctx, "fleet-lead", core.RoleCoordinator); err == nil {
+		t.Fatal("setup: a grant to a name nobody has registered succeeded")
+	}
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "fleet-lead", AgentKind: core.KindPersistent, Nonce: "n-fl-0123456789abcdef"}); err != nil {
+		t.Fatal("setup:", err)
+	}
+	res, err := e.GrantRole(ctx, "fleet-lead", core.RoleCoordinator) // the reconciler's grant
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res["stands"] != nil || st.Agents["fleet-lead"].Role != core.RoleCoordinator {
+		t.Fatalf("the configured grant was skipped after a human grant that never applied (%v, role %q)", res, st.Agents["fleet-lead"].Role)
+	}
+}

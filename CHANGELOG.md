@@ -537,6 +537,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Upgrade recovery gave up on the case its retry loop exists for.** After a
+  stop that timed out the old daemon may still hold the directory lock, the
+  replacement exits on it at once, and the start now reports that as an
+  error; recovery returned on that error before reaching the loop that starts
+  again while the old process drains. A start that fails at once is an
+  attempt, paced, and counted against the same bound.
+
+- **A failed human role grant suppressed the configured one.** The record
+  that a person set an agent's role was written before the grant applied, so
+  a grant to a name not yet registered failed and left the record standing;
+  when the agent registered inside the startup window, the reconciler skipped
+  its configured grant as already decided. The record is written when the
+  grant applied.
+
 - **A deferred first wake that failed got no retry.** The retry path treated
   every execution as the already-retried one, and a first attempt arriving
   there deferred (a recency window, a boot rearm) that failed left no timer:
