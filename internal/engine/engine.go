@@ -294,7 +294,12 @@ func (e *Engine) Run(ctx context.Context) {
 // durable coordination checkpoint is within one TTL; the rest transition now,
 // ledgered, healed later by wake if the agent lives.
 func (e *Engine) boot(now time.Time) {
-	op := &core.Op{Kind: core.OpSweep, PurgeMail: true}
+	// STAMPED HERE, because this op never passes exec, where every other op
+	// gets its V7Semantics. The retention watermark repair is gated on that
+	// flag, so a sweep built without it ran the old rule on every production
+	// sweep and boot, and the test that covered the repair called gc directly
+	// and never noticed. Found by the pre-release review, round two.
+	op := &core.Op{Kind: core.OpSweep, PurgeMail: true, V7Semantics: true}
 	for id, l := range e.state.Agents {
 		if l.Status != core.StatusActive {
 			continue
@@ -865,6 +870,7 @@ func (e *Engine) sweep(now time.Time) {
 	op := &core.Op{
 		Kind: core.OpSweep, PurgeMail: true,
 		GiveUpAnnounce: e.exhaustedAnnouncements(),
+		V7Semantics:    true, // see boot: this op never passes exec
 	}
 	for id, l := range e.state.Agents {
 		if l.Status != core.StatusActive {

@@ -51,7 +51,7 @@ func (s *State) applyAdoptAgent(op *Op, l *Agent, now time.Time) (Result, []Even
 			"adopt into an agent that can still read: a retired one receives nothing",
 			"agent %q is retired", into.ID)
 	}
-	moved := s.readdressMail(from, into)
+	moved := s.readdressMail(from, into, op.V7Semantics)
 	// The actor's durable checkpoint, which the common path sets and this one
 	// returns before reaching.
 	//
@@ -129,9 +129,25 @@ func adoptNote(moved int) string {
 // ledger written before this release contains, and the retention sweep, which
 // DELETES the messages it covers. So on any older ledger this filters nothing,
 // because there is nothing below the watermark left to filter.
-func (s *State) readdressMail(from, into *Agent) int {
+func (s *State) readdressMail(from, into *Agent, v7 bool) int {
 	moved := 0
 	for _, m := range s.Messages {
+		// THE HISTORICAL RULE FOR HISTORICAL OPS. v0.0.6 moved every message
+		// addressed to the source, watermark and readability notwithstanding;
+		// an heir in such a ledger then answered one of them, and that answer
+		// is on disk. Filtering here for a v0.0.6 op skips the move, and the
+		// recorded answer replays to E_NO_MESSAGE: the daemon refuses its own
+		// history. The filter is right and stays, for ops that were written
+		// under it. Found by the pre-release review, round two.
+		if !v7 {
+			if m.To != from.ID {
+				continue
+			}
+			m.AdoptedFrom = from.ID
+			m.To = into.ID
+			moved++
+			continue
+		}
 		// readable(), so what moves is what the heir can actually open. This
 		// counted consumed records too and the note beside the count says "read
 		// them with inbox", so a mailbox holding one unread message and one

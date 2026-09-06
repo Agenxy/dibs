@@ -716,7 +716,11 @@ func (s *State) Inbox(agent string) []*Message {
 	// bodies included. Measured. Found by the pre-release review.
 	floor := s.mailFloor(agent)
 	for _, m := range s.Messages {
-		if m.Serial < floor {
+		// An ADOPTED message sits below the heir's own watermark by construction
+		// when that heir is a reused name: adoption reported it moved and the
+		// inbox hid it. The watermark fences a predecessor's mail, which carries
+		// no adoption mark. Found by the pre-release review, round two.
+		if m.Serial < floor && m.AdoptedFrom == "" {
 			continue
 		}
 		if m.To == agent && m.readable() {
@@ -775,7 +779,9 @@ func nonTerminalCount(s *State, agent string) int {
 	n := 0
 	floor := s.mailFloor(agent)
 	for _, m := range s.Messages {
-		if m.To == agent && m.Serial >= floor && !m.Terminal() {
+		// The same exemption as Inbox, so what the agent can see is what counts
+		// against its capacity.
+		if m.To == agent && (m.Serial >= floor || m.AdoptedFrom != "") && !m.Terminal() {
 			n++
 		}
 	}

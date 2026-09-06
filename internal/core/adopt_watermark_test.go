@@ -32,7 +32,7 @@ func TestAdoptionDoesNotExposeMailBelowTheSourceWatermark(t *testing.T) {
 		{"direct", func(t *testing.T, s *State, now time.Time) {
 			t.Helper()
 			mustApply(t, s, &Op{
-				Kind: OpAdoptAgent, Token: "tok-a", To: "target", AdoptAuthorised: true,
+				Kind: OpAdoptAgent, Token: "tok-a", To: "target", AdoptAuthorised: true, V7Semantics: true,
 			}, now)
 		}},
 		// The same rule, written out a second time in the approval path. Both
@@ -46,7 +46,7 @@ func TestAdoptionDoesNotExposeMailBelowTheSourceWatermark(t *testing.T) {
 			}, now)
 			mustApply(t, s, &Op{
 				Kind: OpRespond, Token: "tok-s", MsgSerial: req["msg_serial"].(uint64),
-				Disposition: "approve", AdoptAuthorised: true,
+				Disposition: "approve", AdoptAuthorised: true, V7Semantics: true,
 			}, now)
 		}},
 	} {
@@ -138,7 +138,7 @@ func TestAdoptionCountsOnlyWhatTheHeirCanRead(t *testing.T) {
 
 	mustApply(t, s, &Op{Kind: OpSignOff, Token: "tok-l"}, now.Add(3*time.Minute))
 	res := mustApply(t, s, &Op{
-		Kind: OpAdoptAgent, Token: "tok-h", To: "lost", AdoptAuthorised: true,
+		Kind: OpAdoptAgent, Token: "tok-h", To: "lost", AdoptAuthorised: true, V7Semantics: true,
 	}, now.Add(4*time.Minute))
 
 	inbox := s.Inbox("heir")

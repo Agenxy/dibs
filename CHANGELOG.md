@@ -534,6 +534,29 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   proceeds on them and still refuses a file that does not parse, with its
   reasons intact, because there the address really is a guess.
 
+- **Round two of the review: six more, all confirmed, three of them consequences
+  of round one.** The retention clamp was gated on the sweep's recorded
+  semantics and the daemon builds its own sweep ops without passing the path
+  that stamps them, so no production sweep ever ran it; its test called `gc`
+  directly and proved nothing about the wiring. Both construction sites stamp
+  the flag now and the test drives the real sweep. The `read_mail` exemption for
+  adopted mail applied to anyone named on the message, which let a replacement
+  registered under the old sender's name read the old body and answer by
+  serial; it is the heir's alone. The adoption filter on the source watermark,
+  itself a v0.0.7 security fix, had no replay gate, so a v0.0.6 adoption would
+  replay moving less than it moved and the heir's recorded answer would refuse;
+  gated. Adopted mail below a reused heir's own watermark was reported moved
+  and hidden; the floor exempts what adoption marked. `bind_session` recorded
+  whom it took a session from and never dropped it there. And a returning agent
+  that stated an alias the daemon had guessed left it marked guessed, still
+  reclaimable by anyone; stating it now confirms it.
+
+  One of those fixes introduced a crash on the way through, caught by the space
+  e2e before it was committed: the adoption exemption dereferenced the message
+  before the check that guards it, so `read_mail` on a serial that did not
+  exist segfaulted the daemon. Guarded, with a regression that reads a missing
+  serial, which no unit test had ever done.
+
 - **Six findings from the different-model pre-release review, all confirmed
   and fixed.** Widening the session reattach to aliases and dormant rows had
   been done in the fold without a replay gate, so a v0.0.6 ledger whose op
@@ -542,7 +565,7 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   historical rule kept for historical ops. Retention raised the mailbox
   watermark past a pending question older than the evicted answers, hiding mail
   it never removed; the watermark is clamped to the oldest message still
-  addressed to the agent. The upgrade's recovery `defer` was registered after
+  addressed to the agent (and, as round two found, only wired into the daemon's own sweeps a round later). The upgrade's recovery `defer` was registered after
   the stop it covers, so a stop that timed out returned before it existed and
   the promised restart never ran; the earlier guard compared string order in
   the source and passed, and is replaced by one that runs the cutover with a

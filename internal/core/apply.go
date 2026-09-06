@@ -186,6 +186,16 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		// The same mistake the announcement bound made, in the same shape, which
 		// is why TestApplyFoldsWhateverAdmitRejects exists; its list did not
 		// know about this op. It does now. Found by the pre-release review.
+		// TAKEN, NOT SHARED. The ingress recorded whom this id was taken from;
+		// without this the old holder kept it, and when it returned both rows
+		// were active stated holders and a hook resolved by id order. Same
+		// repair register already had, on the op that exists to bind. Found by
+		// the pre-release review, round two.
+		if op.SessionTakenFrom != "" {
+			if prev := s.Agents[op.SessionTakenFrom]; prev != nil && prev.ID != l.ID {
+				prev.dropSession(op.SessionID)
+			}
+		}
 		l.SessionID = op.SessionID
 		res = Result{"ok": true, "agent": l.ID, "session_id": l.SessionID}
 		evs = []Event{{Type: "agent.updated", Agent: l.ID}}
@@ -1838,7 +1848,7 @@ func (s *State) applyRespond(l *Agent, op *Op, now time.Time) (Result, []Event, 
 		// APPROVED adoption disclosed the predecessor mail the source had
 		// already been told was not its own. Two implementations of one rule is
 		// how only one of them got fixed the last three times.
-		moved := s.readdressMail(adopted, into)
+		moved := s.readdressMail(adopted, into, op.V7Semantics)
 		res["adopted"], res["messages"] = adopted.ID, moved
 		evs[0].Data["adopted"] = adopted.ID
 		res["adopt_note"] = adoptNote(moved)

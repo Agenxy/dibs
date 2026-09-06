@@ -298,7 +298,20 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 		// that recorded the source on each one; inbox showed them and the wake
 		// nudge pointed here, and this refused every one with E_NO_MESSAGE.
 		// Found by the pre-release review.
-		inherited := ok && l.CreatedSerial > 0 && serial < l.CreatedSerial && m.AdoptedFrom == ""
+		// AND ONLY FOR THE HEIR. The adoption authorised the recipient's
+		// recovery; a replacement registered under the old SENDER's name
+		// matches m.From and is younger than the message, and the first
+		// version of this exemption let it read the old body and answer by
+		// serial. Found by the pre-release review, round two.
+		//
+		// GUARDED ON ok FIRST. This hoisted m.AdoptedFrom out of the short-circuit
+		// below and dereferenced a message that was not there: read_mail on a
+		// serial that does not exist, the most ordinary call in the protocol,
+		// segfaulted the daemon. The test for the exemption read only messages
+		// that existed and never ran this branch; the space e2e reads a missing
+		// serial and found it in one run.
+		adopted := ok && m.AdoptedFrom != "" && m.To == l.ID
+		inherited := ok && l.CreatedSerial > 0 && serial < l.CreatedSerial && !adopted
 		if !ok || inherited || (m.From != l.ID && m.To != l.ID) {
 			// An ANNOUNCEMENT serial is the overwhelmingly likely mistake here,
 			// because the wake nudge hands the agent a serial and says to go

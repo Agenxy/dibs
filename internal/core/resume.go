@@ -35,7 +35,14 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 	// advance the serial where the original fold did not, and every serial after
 	// it would disagree with what the ledger records. Same hazard, same gate, as
 	// the two repairs V7Semantics already covers.
-	if op.V7Semantics && op.SessionAlias != "" && !l.holdsSession(op.SessionAlias) {
+	// NEW, OR NO LONGER A GUESS. Binding only a new alias left one the daemon
+	// had inferred marked as guessed after its owner named it outright, so a
+	// stranger could still reclaim it. bindHarnessSessionAs upgrades the
+	// provenance; the gate has to let it run for that case too. Found by the
+	// pre-release review, round two.
+	alias := op.SessionAlias
+	changed := alias != "" && (!l.holdsSession(alias) || l.GuessedSession(alias))
+	if op.V7Semantics && changed {
 		s.dropTakenAlias(op, l)
 		l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
 		evs := []Event{{Type: "agent.resumed", Agent: l.ID, Data: map[string]any{
