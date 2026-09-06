@@ -95,9 +95,13 @@ type plan struct {
 	installed          string
 	unit, pinned       string
 	unitWrong, moveDir bool
-	running            daemonState
-	before             fleet
-	serving            bool
+	// checked is the version the installed daemon reported for itself when
+	// the preflight asked it to rebuild the board: the replacement's own
+	// build, which is not this CLI's. See nothingToDo.
+	checked string
+	running daemonState
+	before  fleet
+	serving bool
 
 	// THE THREE EFFECTS CUTOVER HAS ON A LIVE FLEET, behind fields so a test
 	// can drive them.
@@ -210,34 +214,54 @@ func upgrade(o upgradeOpts) error {
 	if o.dryRun {
 		return p.report()
 	}
+	if err := p.preflight(); err != nil {
+		return err
+	}
 	// NOTHING TO DO IS NOTHING DONE. The help said a bare run on an
 	// up-to-date install correctly does nothing, and the command then
 	// stopped a serving daemon and restarted it onto the build it was
 	// already on: a fleet restart for no change. When the daemon reports the
-	// build this CLI was installed with, and nothing about the unit needs
-	// repair, it says so and stops. Found by the pre-release review, round
-	// fifty.
-	if p.serving && !p.unitWrong && !p.moveDir {
-		if info, ierr := daemonBuild(); ierr == nil && alreadyOn(info, version) {
-			fmt.Printf("already on %s: the daemon is serving the build you installed, nothing to do\n", info.Version)
-			return nil
-		}
-	}
-	if err := p.preflight(); err != nil {
-		return err
+	// build the installed daemon reports for itself, and nothing about the
+	// unit needs repair, it says so and stops. Found by the pre-release
+	// review, round fifty; compared against the CLI's own version in its
+	// first cut, which is not the replacement's, round fifty-one.
+	if info, ierr := daemonBuild(); ierr == nil && p.nothingToDo(info) {
+		fmt.Printf("already on %s: the daemon is serving the build you installed, nothing to do\n", info.Version)
+		return nil
 	}
 	return p.cutover()
 }
 
-// alreadyOn reports whether the serving daemon is on the build this CLI was
-// installed with. Both binaries come from one install, so the CLI's version
-// is the installed daemon's. A development build reports no version worth
+// nothingToDo reports whether the cutover would change nothing: the daemon
+// serves the build the installed binary reported for itself, and the
+// service unit and data directory need no repair.
+func (p *plan) nothingToDo(info buildInfo) bool {
+	return p.serving && !p.unitWrong && !p.moveDir && alreadyOn(info, p.checked)
+}
+
+// alreadyOn reports whether the serving daemon is on the build the installed
+// daemon reports for itself. A development build reports no version worth
 // comparing, and two of those are not known to be the same code.
 func alreadyOn(info buildInfo, installed string) bool {
 	if installed == "" || installed == "devel" || info.Version == "" {
 		return false
 	}
 	return info.Version == installed
+}
+
+// checkedVersion reads the version out of a `dibd -check` report, which
+// begins `ok: <version> replays ...`, or "" when the line is not that.
+func checkedVersion(out []byte) string {
+	for _, line := range strings.Split(string(out), "\n") {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(line), "ok: ")
+		if !ok {
+			continue
+		}
+		if v, _, found := strings.Cut(rest, " replays "); found {
+			return v
+		}
+	}
+	return ""
 }
 
 // planUpgrade resolves what is out of line, and proves the replacement can
@@ -329,6 +353,7 @@ func (p *plan) proveReplacement() error {
 			p.installed, p.dir, strings.TrimSpace(string(out)))
 	}
 	say("  %s", strings.TrimSpace(string(out)))
+	p.checked = checkedVersion(out)
 	return nil
 }
 

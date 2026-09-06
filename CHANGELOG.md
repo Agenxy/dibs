@@ -552,6 +552,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The upgrade's "nothing to do" compared the wrong binary.** The check
+  that stops an upgrade when the daemon already serves the installed build
+  compared the daemon's version with the CLI's, and the replacement daemon
+  is a binary of its own: a CLI and daemon on one build with a newer `dibd`
+  installed beside them was told nothing to do, and the new daemon never
+  ran. The check reads the version the installed daemon reports for itself
+  when the preflight asks it to rebuild the board.
+
 - **A second adoption announced the first one's mail again.** The event
   filter matched the source and the heir and never asked when the move
   happened, so adopting a source a second time emitted `message.adopted` for
