@@ -495,6 +495,25 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A live resume discarded a stated `session_id`.** A same-nonce register
+  inside the TTL decided whether anything changed from the alias the daemon
+  joins alone, so one that stated `session_id: B` with no alias returned
+  `resumed: true` and kept thread A: the ingress had accepted the request
+  and the fold dropped the one thing it asked for. A stated session id is a
+  change, is taken, and is the one to wake.
+
+- **A self-wake stream that dropped before any mail reconnected blind.**
+  The cursor came from the first inbox notification, and the acknowledgment
+  carried none, so a subscription opened on an empty inbox that dropped
+  before a question arrived reconnected at the current serial and the
+  question woke nobody. The acknowledgment names the serial the
+  subscription starts from, and the bridge reconnects with it.
+
+- **The specification said ephemeral by default and sixteen persistent
+  agents.** Both changed this cycle; the changelog said so and SPEC.md did
+  not. It says persistent by default with a minted nonce, and a persistent
+  ceiling that matches `max_agents`.
+
 - **A returning agent was refused its own thread.** The ingress vets the
   alias a call carries against the caller's token, and a returning agent
   registers with its nonce and no token: it read as a stranger, the alias

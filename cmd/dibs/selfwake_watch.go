@@ -169,6 +169,13 @@ func (iw *inboxWatcher) stream(
 		// The acknowledgement is not mail. Only an actual resource update means
 		// something arrived for this agent, and only some of that is worth a
 		// notice.
+		if msg.Method == "notifications/subscriptions/acknowledged" {
+			// The cursor to reconnect with, before any mail has moved: a
+			// stream that dropped on an empty inbox used to reconnect blind
+			// and the question that arrived in between woke nobody.
+			iw.noteSerial(msg.Params.Meta)
+			continue
+		}
 		if msg.Method != "notifications/resources/updated" {
 			continue
 		}

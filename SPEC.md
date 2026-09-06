@@ -343,10 +343,13 @@ an abandoned agent looking active.
 
 **Kinds:**
 
-- `ephemeral` (default), session-scoped. Status: `active | stale | closed | archived`
-  (+ `unreachable` reserved for v2).
-- `persistent`, a **standing role** (reviewer, nightly maintainer) whose agent idles
-  between activations. Status: `active | dormant | closed | archived`. Dormant is
+- `persistent` (**the default** since v0.0.7: a register that names no kind is
+  persistent, and one that sends no nonce is given one and returns it as `nonce`,
+  the credential that reattaches it after anything), a **standing role** (reviewer,
+  nightly maintainer) whose agent idles between activations.
+- `ephemeral`, session-scoped, on request (`kind: ephemeral`). Status:
+  `active | stale | closed | archived` (+ `unreachable` reserved for v2).
+- A persistent agent's Status: `active | dormant | closed | archived`. Dormant is
   deliberately not "stale": it is *expected* sleep. The agent, description, slots, and
   **mailbox stay live through dormancy**: mail queues while the agent sleeps; the
   serial cursor + §10 checkpoint give retention-bounded catch-up on wake (§8: within
@@ -565,7 +568,7 @@ Read-only work needs no claim.
 | Resource | Default | On exceed |
 |---|---|---|
 | ops per agent | 10/s, burst 30 | `E_RATE_LIMITED` (no wake, no ledger) |
-| live agents / persistent agents | 64 / 16 | `E_AGENT_LIMIT` |
+| live agents / persistent agents | 64 / 64 (the persistent ceiling follows `max_agents` when only that is set lower) | `E_AGENT_LIMIT` |
 | slots per agent | 32 | `E_SLOT_LIMIT` |
 | claims per agent / global | 32 / 256 | `E_CLAIM_LIMIT` |
 | mailbox depth (non-terminal) | 256 | §8 backpressure |

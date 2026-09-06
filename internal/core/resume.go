@@ -45,8 +45,17 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 	// moves, and the activation to wake does. Found by the pre-release review,
 	// round eight.
 	changed := alias != "" && (!l.holdsSession(alias) || l.GuessedSession(alias) || l.CurrentSession != alias)
+	// A STATED session_id IS A CHANGE TOO. This read only the alias the
+	// daemon joins, so a same-nonce register inside the TTL that stated
+	// session_id B with no alias returned resumed and kept thread A: the
+	// ingress had accepted the request and this branch discarded the one
+	// thing it asked for. Found by the pre-release review, round thirteen.
+	changed = changed || (op.SessionID != "" && (l.SessionID != op.SessionID || l.CurrentSession != op.SessionID))
 	if op.V7Semantics && changed {
 		s.dropTakenSession(op, l)
+		if op.SessionID != "" {
+			l.SessionID = op.SessionID // the new session owns it now
+		}
 		l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
 		l.currentFrom(op)
 		// A LEDGERED activation is durable evidence of life. Without this the

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -75,4 +76,37 @@ func TestAReconnectingSubscriberIsHandedTheGap(t *testing.T) {
 			"arrived in the gap: an idle session sleeps on blocking mail until something else comes")
 	}
 	_ = time.Second
+}
+
+// The acknowledgment names the serial the subscription starts from.
+func TestTheAcknowledgmentCarriesTheCursor(t *testing.T) {
+	srv, _ := newServer(t)
+	agent := toolCall(t, srv, "register", map[string]any{"name": "idle", "cwd": t.TempDir()})
+	lines := openListen(t, srv, agent["token"].(string), nil)
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case line := <-lines:
+			data, found := strings.CutPrefix(line, "data: ")
+			if !found {
+				continue
+			}
+			var frame struct {
+				Method string `json:"method"`
+				Params struct {
+					Meta map[string]any `json:"_meta"`
+				} `json:"params"`
+			}
+			if json.Unmarshal([]byte(data), &frame) != nil || frame.Method != "notifications/subscriptions/acknowledged" {
+				continue
+			}
+			if v, _ := frame.Params.Meta[SerialMetaKey].(float64); v <= 0 {
+				t.Fatalf("the acknowledgment carries no cursor (%v): a subscriber that drops before "+
+					"its first notification reconnects blind", frame.Params.Meta)
+			}
+			return
+		case <-deadline:
+			t.Fatal("no acknowledgment arrived")
+		}
+	}
 }

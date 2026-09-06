@@ -122,7 +122,13 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *
 	if subs := honoredURIs(wantBoard, wantInbox); len(subs) > 0 {
 		honored["resourceSubscriptions"] = subs
 	}
-	stream.send(notification("notifications/subscriptions/acknowledged", map[string]any{"notifications": honored}, req.ID))
+	// The acknowledgment names the serial the subscription starts from, so a
+	// subscriber that drops before its first notification reconnects with a
+	// cursor rather than blind. Found by the pre-release review, round
+	// thirteen.
+	stream.send(notification("notifications/subscriptions/acknowledged", map[string]any{
+		"notifications": honored, "_meta": map[string]any{SerialMetaKey: since},
+	}, req.ID))
 
 	ch, cancel := s.eng.Subscribe(since)
 	defer cancel()
