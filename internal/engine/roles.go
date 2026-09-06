@@ -19,6 +19,12 @@ func (e *Engine) GrantRole(ctx context.Context, agent, role string) (core.Result
 	return e.Do(ctx, &core.Op{Kind: core.OpGrantRole, To: agent, Mode: role})
 }
 
+// GrantRoleByHuman is GrantRole for a decision a person made: it stands
+// against the startup reconciler for the rest of this run.
+func (e *Engine) GrantRoleByHuman(ctx context.Context, agent, role string) (core.Result, error) {
+	return e.Do(ctx, &core.Op{Kind: core.OpGrantRole, To: agent, Mode: role, RoleByHuman: true})
+}
+
 // Broadcast sends one message to every other live agent. Coordinator-only.
 //
 // It is deliberately N ordinary sends rather than one clever op: each message

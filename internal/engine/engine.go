@@ -91,6 +91,14 @@ type Engine struct {
 	// is not in state, by definition, because being in state is what "resolved"
 	// means. See reattachHint for why once is the whole budget.
 	hinted map[string]time.Time
+	// humanRoles is the set of agents whose role a person set through the
+	// admin API during this run. The startup reconciler reapplies the file
+	// for two minutes, and its regrant of an agent in this set is declined,
+	// decided here on the loop with the grant itself. The first version kept
+	// this set in the daemon beside the loop, and a tick between the person's
+	// demotion applying and the daemon recording it put the role back.
+	// Found by the pre-release review, rounds eighteen and nineteen.
+	humanRoles map[string]bool
 
 	// Work-overlap scoring (SPEC-CHANNELS.md). Guarded by its own mutex rather
 	// than the loop: Predict runs OFF the writer goroutine, because a model that
@@ -214,6 +222,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 		turnEnded:    map[string]time.Time{},
 		announceSent: map[string]time.Time{}, announceTries: map[string]int{},
 		wokeFor: map[string]time.Time{}, hinted: map[string]time.Time{},
+		humanRoles: map[string]bool{},
 	}
 	// HERE, not in the daemon, so nobody has to remember.
 	//
@@ -674,6 +683,18 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		}
 	}
 
+	if op.Kind == core.OpGrantRole {
+		switch {
+		case op.RoleByHuman:
+			e.humanRoles[op.To] = true
+		case e.humanRoles[op.To]:
+			return core.Result{
+				"ok": true, "agent": op.To, "role": op.Mode, "changed": false,
+				"stands": "a person set this agent's role during this run; dibs.toml is " +
+					"read again at the next start",
+			}, nil
+		}
+	}
 	res, err := e.applyAndLedger(op, now)
 	if err != nil {
 		return nil, err

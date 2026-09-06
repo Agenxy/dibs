@@ -263,6 +263,30 @@ func agentTokenIn(reply []byte) string {
 	return res.Token
 }
 
+// agentSerialIn is the serial a register or resume reply carries: the
+// watcher's first cursor, so a question that arrives between registering and
+// the first successful subscription is replayed rather than skipped. Found by
+// the pre-release review, round nineteen.
+func agentSerialIn(reply []byte) uint64 {
+	var env struct {
+		Result struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if json.Unmarshal(reply, &env) != nil || len(env.Result.Content) == 0 {
+		return 0
+	}
+	var res struct {
+		Serial uint64 `json:"serial"`
+	}
+	if json.Unmarshal([]byte(env.Result.Content[0].Text), &res) != nil {
+		return 0
+	}
+	return res.Serial
+}
+
 // readLine reads one newline-delimited message, or nil at EOF.
 //
 // Bounded at the same 16 MiB the Scanner it replaced allowed. A local harness

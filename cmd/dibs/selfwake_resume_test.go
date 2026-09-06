@@ -15,11 +15,15 @@ func TestAResumeReplyStartsTheWatcherWithItsToken(t *testing.T) {
 	var iw inboxWatcher
 	hook := watchOnRegister(ctx, &iw, &http.Client{}, "http://127.0.0.1:1/mcp", "secret")
 	sent := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"resume","arguments":{"nonce":"n"}}}`)
-	reply := []byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"agent_id\":\"a\",\"token\":\"rotated-token\"}"}]}}`)
+	reply := []byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"agent_id\":\"a\",\"token\":\"rotated-token\",\"serial\":42}"}]}}`)
 	hook(sent, reply)
 	iw.mu.Lock()
-	got := iw.token
+	got, since := iw.token, iw.since
 	iw.mu.Unlock()
+	if since != 42 {
+		t.Errorf("the watcher starts with cursor %d, want the reply's serial 42: a question that "+
+			"arrives before the first subscription succeeds is skipped for good", since)
+	}
 	if got != "rotated-token" {
 		t.Fatalf("after a resume reply the watcher holds token %q: a bridge that begins with "+
 			"resume never watches, and one that resumes later subscribes with a revoked token", got)

@@ -7,6 +7,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- **A minted recovery nonce was written to the ledger in the clear.** The
+  ledger seals the nonce a caller states; the one the daemon mints for a
+  caller that sends none, this cycle's default, went into `ledger.jsonl` as
+  plaintext. A copied ledger gave up every default registration's recovery
+  credential without the key. It is sealed and opened like the stated one.
+
+- **The reconciler could still undo a person's demotion.** Round eighteen
+  recorded the person's decision beside the loop, after the demotion had
+  applied; a reconciler tick between the two re-granted. The decision is now
+  made on the engine's loop with the grant itself: a role set by a person
+  through the admin API stands against a plain regrant for the rest of the
+  run, with no interleaving to lose.
+
 - **The documented handover could leave the predecessor with admin.** The
   startup reconciler reapplies `dibs.toml` every fifteen seconds for two
   minutes, and the handover says to demote first, then edit, then restart: a
@@ -508,6 +521,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing an agent wrote, and it cannot read the session or steer it.
 
 ### Fixed
+
+- **Self-wake lost mail that arrived before its first subscription.** The
+  watcher read the registration reply's token and not its serial, so it
+  subscribed with no cursor and the daemon started it at the present: a
+  question that arrived between registering and the first successful
+  subscription woke nobody. The watcher starts from the reply's serial.
 
 - **A failed self-wake consumed its notification.** The bridge advanced its
   reconnect cursor before putting the notice into the session, so a notice

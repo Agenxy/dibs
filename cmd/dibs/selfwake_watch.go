@@ -230,6 +230,14 @@ func watchOnRegister(
 			return
 		}
 		if tok := agentTokenIn(reply); tok != "" {
+			if serial := agentSerialIn(reply); serial > 0 {
+				w.mu.Lock()
+				if serial > w.since {
+					w.since = serial
+				}
+				w.mu.Unlock()
+				recordWakeCursor(serial)
+			}
 			w.start(ctx, client, url, secret, tok)
 		}
 	}

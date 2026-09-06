@@ -913,11 +913,9 @@ func TestAHumanDemotionOutranksTheReapplyWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal("setup:", err)
 	}
-	if _, err := eng.GrantRole(ctx, id, core.RoleMember); err != nil {
+	if _, err := eng.GrantRoleByHuman(ctx, id, core.RoleMember); err != nil {
 		t.Fatal("setup:", err)
 	}
-	noteHumanRoleChange(id)
-	t.Cleanup(func() { humanRoles.mu.Lock(); delete(humanRoles.ids, id); humanRoles.mu.Unlock() })
 	applyDeclaredRoles(ctx, eng, cfg, pins) // the next tick, before the restart
 	if holdsRole(t, eng, "fleet-lead", core.RoleAdmin) {
 		t.Fatal("the reapply tick re-granted a role a person had just removed: the " +

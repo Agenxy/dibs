@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -200,41 +199,14 @@ func describeDeclaredRoles(c RolesConfig) string {
 //
 // Split out for the same reason resolveDeclared is: this loop hands out
 // standing privilege, and a reader has to be able to hold all of it at once.
-// humanRoles records the agents whose role a person set through the admin
-// API during this run. The startup reconciler reapplies dibs.toml every
-// fifteen seconds for two minutes, and a demotion made in that window was
-// undone by the next tick and ledgered: the documented handover (demote, edit,
-// restart) could leave the predecessor with admin. A person's decision
-// outranks the file for the rest of the run; the restart reads the file the
-// person edited. Found by the pre-release review, round eighteen.
-var humanRoles struct {
-	mu  sync.Mutex
-	ids map[string]bool
-}
-
-func noteHumanRoleChange(id string) {
-	humanRoles.mu.Lock()
-	defer humanRoles.mu.Unlock()
-	if humanRoles.ids == nil {
-		humanRoles.ids = map[string]bool{}
-	}
-	humanRoles.ids[id] = true
-}
-
-func humanChangedRole(id string) bool {
-	humanRoles.mu.Lock()
-	defer humanRoles.mu.Unlock()
-	return humanRoles.ids[id]
-}
-
 func grantDeclared(ctx context.Context, eng *engine.Engine, role, agent, id string) {
-	if humanChangedRole(id) {
-		slog.Info("declared role not reapplied: a person changed this agent's role during "+
-			"this run, and that decision stands until the next start reads the file",
-			"agent", agent, "role", role)
+	res, err := eng.GrantRole(ctx, id, role)
+	if err == nil && res["stands"] != nil {
+		// The engine declined: a person changed this agent's role during
+		// this run, on the same loop that would have applied the regrant.
+		slog.Info("declared role not reapplied", "agent", agent, "role", role, "why", res["stands"])
 		return
 	}
-	res, err := eng.GrantRole(ctx, id, role)
 	if err != nil {
 		// An agent that has not registered yet is the NORMAL case on a fresh
 		// board, not a misconfiguration, so it is logged at debug and retried on

@@ -38,17 +38,13 @@ func registerAdminAPI(mux *http.ServeMux, eng *engine.Engine) {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
-		res, err := eng.GrantRole(r.Context(), body.Agent, body.Role)
+		res, err := eng.GrantRoleByHuman(r.Context(), body.Agent, body.Role)
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
 			return
-		}
-		// A person decided this; the startup reconciler must not undo it.
-		if id, rerr := eng.ResolveConfiguredAgent(r.Context(), body.Agent); rerr == nil {
-			noteHumanRoleChange(id)
 		}
 		_ = json.NewEncoder(w).Encode(res)
 	})

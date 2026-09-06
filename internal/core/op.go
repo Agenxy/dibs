@@ -279,7 +279,13 @@ type Op struct {
 	// history. One flag rather than two because both repairs arrived in the same
 	// version and a build either has them or does not; splitting it would freeze
 	// two names for one fact. Found by the pre-release review, twice.
-	V7Semantics bool     `json:"v7_semantics,omitempty"`
+	V7Semantics bool `json:"v7_semantics,omitempty"`
+	// RoleByHuman marks a grant_role a person made through the admin API.
+	// Transient, never on the wire: the engine remembers the agent for the
+	// rest of its run and declines the startup reconciler's regrant, on the
+	// same loop that applies both, so no interleaving between the decision
+	// and the record exists. See Engine.GrantRoleByHuman.
+	RoleByHuman bool     `json:"-"`
 	DeadAgents  []string `json:"dead_agents,omitempty"`
 	StaleAgents []string `json:"stale_agents,omitempty"`
 	AlivePIDs   []int    `json:"alive_pids,omitempty"`

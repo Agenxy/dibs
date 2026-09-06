@@ -128,14 +128,15 @@ func (b *Box) EncryptOp(op *core.Op) error {
 			return err
 		}
 	}
-	if op.NewToken != "" {
-		if op.NewToken, err = b.seal(op.NewToken); err != nil {
-			return err
+	// The credentials. The nonce the daemon minted for a caller that sent
+	// none is that caller's recovery credential exactly as a stated one is,
+	// and it was written in the clear. Found by the pre-release review, round
+	// nineteen.
+	for _, secret := range []*string{&op.NewToken, &op.Nonce, &op.MintedNonce} {
+		if *secret == "" {
+			continue
 		}
-	}
-	// The nonce is a recovery credential (SPEC §5): sealed like a token.
-	if op.Nonce != "" {
-		if op.Nonce, err = b.seal(op.Nonce); err != nil {
+		if *secret, err = b.seal(*secret); err != nil {
 			return err
 		}
 	}
@@ -183,6 +184,9 @@ func (b *Box) DecryptOp(op *core.Op) error {
 		return err
 	}
 	if op.NewToken, err = b.open(op.NewToken); err != nil {
+		return err
+	}
+	if op.MintedNonce, err = b.open(op.MintedNonce); err != nil {
 		return err
 	}
 	if op.Nonce, err = b.open(op.Nonce); err != nil {
