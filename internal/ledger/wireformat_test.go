@@ -156,6 +156,10 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		// at ingress and recorded here so replay strips the same row rather than
 		// re-deciding what "dormant" means today.
 		"session_taken_from": true,
+		// session_alias_taken_from: the row a register's ALIAS was taken from,
+		// beside the primary's, so a take of two bindings replays as it ran.
+		// Round forty-nine of the v0.0.7 review.
+		"session_alias_taken_from": true,
 		// release_session: whether THIS update gives up the caller's own session
 		// bindings. The repair for a binding that is already wrong, and only ever
 		// the caller's own, so it can strand nothing but itself.
@@ -295,11 +299,12 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 const (
 	// Updated deliberately when `session_alias` was added, again for
 	// `purge_mail`, again for `restore_nonce`, again for `session_guessed`
-	// `release_session` and `v7_semantics`, and again for
-	// `session_taken_from`: one new tag each time, no rename. If you are here
+	// `release_session` and `v7_semantics`, again for `session_taken_from`,
+	// and again for `session_alias_taken_from`: one new tag each time, no
+	// rename. If you are here
 	// because a sweep moved this value, the sweep is the bug, and the tag it
 	// renamed is the data loss.
-	frozenOpFingerprint       = "sha256:d50e6ffaf640be90"
+	frozenOpFingerprint       = "sha256:4ae6aa5b8fdda8ac"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

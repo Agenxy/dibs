@@ -241,6 +241,16 @@ type Op struct {
 	// are delivered changes. An ACTIVE holder still wins, because two live
 	// agents claiming one thread is a real conflict rather than stale state.
 	SessionTakenFrom string `json:"session_taken_from,omitempty"`
+	// SessionAliasTakenFrom is the row the ALIAS was taken from, when a
+	// register takes two bindings at once. SessionTakenFrom carried both,
+	// and one field holds one row: a register minting a sibling with an
+	// active agent's token, stating a primary held by a dormant row, recorded
+	// the dormant row and left the active one's alias standing on replay,
+	// while the live fold had dropped it on a token that is not ledgered
+	// (json:"-"). Two active holders of one thread after a restart, and a
+	// state that was not the fold of its ledger. Found by the pre-release
+	// review, round forty-nine.
+	SessionAliasTakenFrom string `json:"session_alias_taken_from,omitempty"`
 
 	// ReleaseSession drops the CALLER's own session bindings, primary and
 	// aliases, so the session they belong to can claim them back.

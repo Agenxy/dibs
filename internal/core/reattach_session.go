@@ -42,8 +42,16 @@ func (s *State) reattachBySessionID(op *Op, now time.Time) (Result, []Event) {
 	// retained session id after the row had moved on to another thread put
 	// the current session back and kept the other thread's process: when
 	// that process exited the sweep retired the recovered agent. Found by
-	// the pre-release review, round forty-eight.
-	l.takeActivation(op)
+	// the pre-release review, round forty-eight. GATED, like the other two:
+	// a v0.0.6 reattach with a new alias and no pid kept the recorded
+	// process, and replaying it under the new rule rebuilt a different one.
+	// Found by the pre-release review, round forty-nine.
+	switch {
+	case op.V7Semantics:
+		l.takeActivation(op)
+	case op.PID != 0:
+		l.PID, l.ProcStart = op.PID, op.ProcStart
+	}
 	s.dropTakenSession(op, l)
 	l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
 	l.currentFrom(op, held)
@@ -220,8 +228,12 @@ func (s *State) dropTakenSession(op *Op, l *Agent) {
 			// with hooks resolving to either. The caller's token names its
 			// row as surely as the ingress does. Found by the pre-release
 			// review, round forty-eight.
-			own := op.Token != "" && prev.Token == op.Token
-			if prev.ID == op.SessionTakenFrom || own || prev.Status != StatusActive || prev.GuessedSession(sid) {
+			// RECORDED, NOT INFERRED. The first cut read the caller's token
+			// here, which is not ledgered, so replay could not repeat the
+			// drop. The ingress records the alias's holder in its own field.
+			named := prev.ID == op.SessionTakenFrom ||
+				(sid == op.SessionAlias && op.SessionAliasTakenFrom != "" && prev.ID == op.SessionAliasTakenFrom)
+			if named || prev.Status != StatusActive || prev.GuessedSession(sid) {
 				prev.dropSession(sid)
 			}
 		}

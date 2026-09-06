@@ -552,6 +552,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The reattach path's activation rule applied to historical ops.** A
+  v0.0.6 reattach with a new thread alias and no pid kept the recorded
+  process; replayed under the new rule it rebuilt a different one, losing
+  crash detection for that agent after an upgrade. The rule is gated on the
+  recorded semantics, as it already was on the other two recovery paths.
+
 - **Reattaching by session id kept the other thread's process.** A
   persistent agent that had moved from thread A to B, recovered by name and
   its retained session id A with no pid stated, was put back on A with B's
@@ -565,8 +571,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   alias; when the same register stated a primary held by a dormant row, the
   ingress recorded only the dormant row as the one the take came from, so the
   alias stayed on the active row too: two active holders of one thread. The
-  caller's token names its own row, and the fold drops on that authority as
-  well.
+  first fix dropped it on the caller's token, which the ledger does not
+  carry, so a restart rebuilt the two holders and a state that was not the
+  fold of its ledger. The ingress records the alias's holder in a field of
+  its own (`session_alias_taken_from`, added to the frozen list), and the
+  fold drops on that, on replay as live.
 
 - **A minted nonce did not close the guessable recovery path, and nothing
   said so.** SECURITY.md said an agent registered with a nonce requires it;

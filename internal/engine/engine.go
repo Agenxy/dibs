@@ -442,6 +442,13 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		if ok && takenFrom != "" && op.SessionTakenFrom == "" {
 			op.SessionTakenFrom = takenFrom
 		}
+		// AND IN ITS OWN FIELD, so a register that takes a primary from one
+		// row and an alias from another records both: the fold drops each
+		// binding on the authority written for it, on replay as live. See
+		// Op.SessionAliasTakenFrom.
+		if ok && takenFrom != "" {
+			op.SessionAliasTakenFrom = takenFrom
+		}
 		// STATED: the caller named this session itself. Recorded so a later
 		// claim cannot take it away. See Op.SessionGuessed.
 		op.SessionGuessed = false
