@@ -148,20 +148,27 @@ func cleanDir(p string) string {
 // buys is that hooks and rings find this agent instead of nobody. An attacker
 // who can make authenticated calls as an agent can already read that agent's
 // mail directly.
-func (e *Engine) mayClaimSession(sid, token string) bool {
+//
+// Returns, with the verdict, the holder the id is being TAKEN from when that
+// is what the verdict means. A takeover that only added the new holder left
+// two stated holders of one id, and AgentForHook then answered from map order:
+// hooks could resolve to the abandoned mailbox. The register path already
+// records this in Op.SessionTakenFrom; this is the same fact for every other
+// op that binds an alias. Found by the pre-release review.
+func (e *Engine) mayClaimSession(sid, token string) (ok bool, takenFrom string) {
 	if sid == "" {
-		return false
+		return false, ""
 	}
 	if len(sid) > maxSessionIDBytes {
-		return false
+		return false, ""
 	}
 	holder := e.state.AgentBySession(sid)
 	if holder == nil {
-		return true // unclaimed
+		return true, "" // unclaimed
 	}
 	// Already ours is fine and idempotent; already somebody else's is not.
 	if e.state.AgentByToken(token) == holder {
-		return true
+		return true, ""
 	}
 	// A HOLDER THAT HAS STOPPED ANSWERING IS NOT THE LIVE THREAD.
 	//
@@ -186,7 +193,7 @@ func (e *Engine) mayClaimSession(sid, token string) bool {
 	// was not receiving those anyway. An ACTIVE holder still wins: two live
 	// agents claiming one thread is a real conflict, not stale state.
 	if holder.Status != core.StatusActive {
-		return true
+		return true, holder.ID
 	}
 	// UNLESS THE HOLDER ONLY GUESSED IT.
 	//
@@ -201,5 +208,8 @@ func (e *Engine) mayClaimSession(sid, token string) bool {
 	// the rightful session is refused its own id and the holder has no reason to
 	// notice it is holding one. That was the state of this project's own board
 	// for hours, with one agent's mail announced into another's context.
-	return holder.GuessedSession(sid)
+	if holder.GuessedSession(sid) {
+		return true, holder.ID
+	}
+	return false, ""
 }

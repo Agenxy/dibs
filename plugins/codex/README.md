@@ -312,3 +312,18 @@ because the note outlived the fact it was written about. A file that reaches
 agents through `dibs://plugin` is documentation with a reader who cannot check
 it, so it says what is true today and when that was measured.
 
+
+## Measured on 2026-09-05: the hooks in this directory do not fire on codex 0.153.4
+
+`hooks.json` here parses cleanly on the current codex CLI and desktop app, and
+neither delivers a single lifecycle hook to the daemon: not `SessionStart`, not
+`Stop`, with or without `--enable hooks`, from a CLI `codex exec` or from a
+thread open in the desktop app. Codex 0.144.3 rejects the file outright
+(`unknown variant mcp_tool`). So a codex agent does NOT get mail injected at its
+turn boundaries by these hooks, whatever the rest of this page implies.
+
+What reaches a codex agent is the wake path: `[wake.exec.codex]` with
+`codex exec resume` as the primary and `codex queue` as the fallback, which
+delivers into a thread the desktop app has open. See `docs/CONFIGURATION.md`.
+This note stays until somebody measures a codex build that fires these hooks,
+and says which.

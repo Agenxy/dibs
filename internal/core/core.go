@@ -546,13 +546,18 @@ func (l *Agent) CanHoldExclusive() bool {
 // Message is one mailbox item. Body/Response plaintext in memory; ciphertext
 // at rest.
 type Message struct {
-	Serial      uint64    `json:"serial"`
-	From        string    `json:"from"`
-	To          string    `json:"to"`
-	Type        string    `json:"type"`
-	Body        string    `json:"body"`
-	State       string    `json:"state"`
-	Consumed    bool      `json:"consumed"`
+	Serial   uint64 `json:"serial"`
+	From     string `json:"from"`
+	To       string `json:"to"`
+	Type     string `json:"type"`
+	Body     string `json:"body"`
+	State    string `json:"state"`
+	Consumed bool   `json:"consumed"`
+	// AdoptedFrom is the agent this message was addressed to before an
+	// authorised adoption moved it. Set by the fold on the move, so read_mail
+	// can tell mail an heir was GIVEN from mail a reused id merely inherited:
+	// both are older than the reader's own creation, and only one is theirs.
+	AdoptedFrom string    `json:"adopted_from,omitempty"`
 	Deadline    time.Time `json:"deadline,omitzero"`
 	Response    string    `json:"response,omitempty"`
 	DeliveredAt uint64    `json:"delivered_serial,omitempty"`

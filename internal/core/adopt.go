@@ -140,6 +140,7 @@ func (s *State) readdressMail(from, into *Agent) int {
 		if m.To != from.ID || m.Serial < from.TruncatedBefore || !m.readable() {
 			continue
 		}
+		m.AdoptedFrom = from.ID
 		m.To = into.ID
 		moved++
 	}

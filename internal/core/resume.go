@@ -36,6 +36,7 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 	// it would disagree with what the ledger records. Same hazard, same gate, as
 	// the two repairs V7Semantics already covers.
 	if op.V7Semantics && op.SessionAlias != "" && !l.holdsSession(op.SessionAlias) {
+		s.dropTakenAlias(op, l)
 		l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
 		evs := []Event{{Type: "agent.resumed", Agent: l.ID, Data: map[string]any{
 			"via": "nonce", "session_bound": true,

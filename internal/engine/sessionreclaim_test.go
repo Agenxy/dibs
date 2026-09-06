@@ -64,7 +64,7 @@ func TestAnInferredBindingIsRecordedAsAGuessByTheEngine(t *testing.T) {
 		t.Fatal("setup:", err)
 	}
 	tok, _ := other["token"].(string)
-	if !e.mayClaimSession(announced, tok) {
+	if !mayClaim(e, announced, tok) {
 		t.Error("the session that states this id cannot reclaim it from an agent " +
 			"that only inherited it")
 	}
@@ -106,11 +106,11 @@ func TestGuessProvenanceIsPerBindingNotPerAgent(t *testing.T) {
 		t.Fatal("setup:", err)
 	}
 
-	if !e.mayClaimSession(guessed, "tok-stranger") {
+	if !mayClaim(e, guessed, "tok-stranger") {
 		t.Error("the inferred alias is not reclaimable, so a mis-binding on an " +
 			"agent that also holds a stated id can never be repaired")
 	}
-	if e.mayClaimSession(stated, "tok-stranger") {
+	if mayClaim(e, stated, "tok-stranger") {
 		t.Error("the agent's STATED primary became claimable because it later " +
 			"acquired a guessed alias. One flag per agent means the last binding " +
 			"decides the answer for all of them, and this is that hole")
@@ -135,7 +135,7 @@ func TestAHistoricalBindingIsTreatedAsStated(t *testing.T) {
 	}, now); err != nil {
 		t.Fatal("setup:", err)
 	}
-	if e.mayClaimSession(sid, "tok-new") {
+	if mayClaim(e, sid, "tok-new") {
 		t.Error("a binding written before this field existed was treated as a guess " +
 			"and taken away. Every agent on an upgraded board would be reclaimable " +
 			"by whoever states its id first")

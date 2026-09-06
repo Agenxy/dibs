@@ -40,6 +40,7 @@ func (s *State) reattachBySessionID(op *Op, now time.Time) (Result, []Event) {
 	if op.PID != 0 {
 		l.PID, l.ProcStart = op.PID, op.ProcStart
 	}
+	s.dropTakenAlias(op, l)
 	l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
 	// LEDGERED, like every other transition. A branch that rotates a token and
 	// returns no events never advances the serial, so the engine never writes it
@@ -94,6 +95,19 @@ func (s *State) pickReattachTarget(op *Op) *Agent {
 	rank := map[AgentStatus]int{StatusActive: 0, StatusStale: 1, StatusDormant: 2}
 	var out []*Agent
 	for _, l := range s.Agents {
+		// THE HISTORICAL RULE FOR HISTORICAL OPS. Matching an alias or a
+		// dormant row is v0.0.7 behaviour, and this is the fold: an op written
+		// under v0.0.6 that found no primary-id match created a sibling, and
+		// every later op in that ledger names the sibling. Replaying it with
+		// the wider match reattaches the original instead, the sibling never
+		// exists, and the next op that authenticates as it fails: the daemon
+		// refuses its own history. Found by the pre-release review, which is
+		// the third time this repository has been caught widening Apply.
+		if !op.V7Semantics {
+			if l.SessionID != op.SessionID || l.Status == StatusDormant {
+				continue
+			}
+		}
 		// A CREDENTIAL THE AGENT CHOSE, not merely one it holds. Since v0.0.7
 		// every registration gets a nonce whether it asked or not, so reading
 		// this as "holds a nonce" refused everybody and turned every returning
@@ -125,9 +139,44 @@ func (s *State) pickReattachTarget(op *Op) *Agent {
 	return out[0]
 }
 
+// ReattachTarget is the row a session-id register would recover, or nil.
+//
+// Exported for the ingress guard, which used to carry its OWN copy of this rule
+// and fell behind it: the fold began recovering rows with minted nonces and
+// dormant rows, the guard still required an empty nonce and an active row, and
+// an agent that had lost its context was refused with E_SESSION_TAKEN before
+// the recovery it was entitled to could run. One rule, one implementation;
+// found by the pre-release review. Selection only, nothing mutates.
+func (s *State) ReattachTarget(op *Op) *Agent {
+	if op.SessionID == "" || op.Nonce != "" {
+		return nil
+	}
+	return s.pickReattachTarget(op)
+}
+
 // ReattachBySessionIDForTest exposes the decision to engine tests, which own the
 // fixtures for who may recover whom. Exported for that and nothing else: the
 // live path reaches it through applyRegister.
 func (s *State) ReattachBySessionIDForTest(op *Op) (Result, []Event) {
 	return s.reattachBySessionID(op, time.Now())
+}
+
+// dropTakenAlias removes an alias from the row the ingress recorded as losing
+// it, before this agent binds it.
+//
+// ONE PLACE, called before every bind. The first version of this repair was
+// written inline at one of six sites that bind an alias, and check_in, the
+// call every agent keeps making, binds at a different one; the test written
+// for it failed on exactly that. Two stated holders of one id is a coin flip
+// on every hook, so every path that can take an id has to drop it from the row
+// that lost it. Read from the op and never re-decided: the ingress saw that
+// the holder was not active and wrote its name down; ops written before that
+// field existed on these kinds carry nothing here and replay unchanged.
+func (s *State) dropTakenAlias(op *Op, l *Agent) {
+	if op.SessionTakenFrom == "" || op.SessionAlias == "" {
+		return
+	}
+	if prev := s.Agents[op.SessionTakenFrom]; prev != nil && prev.ID != l.ID {
+		prev.dropSession(op.SessionAlias)
+	}
 }

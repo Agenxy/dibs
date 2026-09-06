@@ -153,7 +153,11 @@ func (s *State) AgentBySession(sid string) *Agent {
 	// delete belongs in the fold and would be retroactive: replaying a ledger
 	// written before this existed would start stripping bindings that were legal
 	// when they were made.
-	var guessed *Agent
+	// AND AMONG STATED HOLDERS, the live one, then the lowest id. Two stated
+	// holders is a state the takeover repair now prevents, but the lookup must
+	// not be a coin flip while any ledger still holds one: the active row is
+	// the one a hook is speaking for.
+	var guessed, stated *Agent
 	for _, l := range s.Agents {
 		if l.Status == StatusArchived || l.Status == StatusClosed {
 			continue
@@ -162,7 +166,12 @@ func (s *State) AgentBySession(sid string) *Agent {
 			continue
 		}
 		if !l.GuessedSession(sid) {
-			return l
+			if stated == nil ||
+				(l.Status == StatusActive && stated.Status != StatusActive) ||
+				(l.Status == StatusActive) == (stated.Status == StatusActive) && l.ID < stated.ID {
+				stated = l
+			}
+			continue
 		}
 		// Sorted by id so two guessed holders do not swap between calls either.
 		if guessed == nil || l.ID < guessed.ID {
@@ -170,6 +179,9 @@ func (s *State) AgentBySession(sid string) *Agent {
 		}
 	}
 	// Only a guess holds it: still an answer, and a stable one.
+	if stated != nil {
+		return stated
+	}
 	return guessed
 }
 

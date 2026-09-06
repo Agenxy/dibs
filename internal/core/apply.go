@@ -437,6 +437,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				if op.RestoreNonce && l.Nonce == "" && op.Nonce != "" {
 					l.Nonce = op.Nonce
 				}
+				s.dropTakenAlias(op, l)
 				l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
 				// LEDGERED, like every other transition.
 				//
@@ -890,6 +891,7 @@ func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
 	if op.Agent != nil {
 		res["identity"] = l.mergeIdentity(op.Agent)
 	}
+	s.dropTakenAlias(op, l)
 	if sid := l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed); sid != "" {
 		res["session_id"] = sid
 	}
@@ -1077,6 +1079,7 @@ func (s *State) applyAckBoard(l *Agent, op *Op) (Result, []Event) {
 	evs := []Event{{Type: "board.acked", Agent: l.ID}}
 	// check_in is how an agent ALREADY on the board gets the name its hooks
 	// use: it is the one call they all keep making. See bindHarnessSession.
+	s.dropTakenAlias(op, l)
 	bound := l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
 	for _, m := range s.Inbox(l.ID) {
 		if m.State == MsgStatePending {

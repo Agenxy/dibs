@@ -107,7 +107,7 @@ func TestAnAliasThatArrivedWithTheCallBeatsTheDirectoryGuess(t *testing.T) {
 
 	// mayClaimSession is what the ingress uses to vet a supplied alias. An id
 	// nobody holds is claimable; that is how every agent binds its own.
-	if !e.mayClaimSession(mine, "any-token") {
+	if !mayClaim(e, mine, "any-token") {
 		t.Fatal("an agent cannot claim its own unheld session id, which would stop " +
 			"the supplied-id path working at all")
 	}
@@ -124,7 +124,7 @@ func TestAnAliasThatArrivedWithTheCallBeatsTheDirectoryGuess(t *testing.T) {
 	}, now); err != nil {
 		t.Fatal("setup:", err)
 	}
-	if e.mayClaimSession(somebodyElse, "tok-other") {
+	if mayClaim(e, somebodyElse, "tok-other") {
 		t.Error("a supplied alias naming another agent's session was accepted. " +
 			"Preferring the caller's id must not become a way to assert somebody " +
 			"else's")

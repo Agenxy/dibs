@@ -293,7 +293,12 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 		// no filtering and preserves exactly what those boards did. A reattach
 		// keeps its original CreatedSerial, so an agent coming back still reads
 		// its own history.
-		inherited := ok && l.CreatedSerial > 0 && serial < l.CreatedSerial
+		// ADOPTED IS NOT INHERITED. An heir that took an abandoned mailbox
+		// received messages older than itself on purpose, by an authorised op
+		// that recorded the source on each one; inbox showed them and the wake
+		// nudge pointed here, and this refused every one with E_NO_MESSAGE.
+		// Found by the pre-release review.
+		inherited := ok && l.CreatedSerial > 0 && serial < l.CreatedSerial && m.AdoptedFrom == ""
 		if !ok || inherited || (m.From != l.ID && m.To != l.ID) {
 			// An ANNOUNCEMENT serial is the overwhelmingly likely mistake here,
 			// because the wake nudge hands the agent a serial and says to go

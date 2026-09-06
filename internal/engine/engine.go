@@ -381,8 +381,16 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// the id `codex resume` takes, so this is the identity rather than a
 	// correlation. Vetted, not trusted: see mayClaimSession.
 	if claimed := op.SessionAlias; claimed != "" {
-		if !e.mayClaimSession(claimed, op.Token) {
+		ok, takenFrom := e.mayClaimSession(claimed, op.Token)
+		if !ok {
 			op.SessionAlias = ""
+		}
+		// RECORDED, so the fold removes it from the row that lost it. See
+		// mayClaimSession: two stated holders of one id is a coin flip on every
+		// hook. Only on ops that carry a takeover of their own; register writes
+		// this field for its own reason and must keep it.
+		if ok && takenFrom != "" && op.SessionTakenFrom == "" {
+			op.SessionTakenFrom = takenFrom
 		}
 		// STATED: the caller named this session itself. Recorded so a later
 		// claim cannot take it away. See Op.SessionGuessed.
@@ -1274,8 +1282,14 @@ func (e *Engine) registerLandsOn(op *core.Op, holder *core.Agent) bool {
 	// because the alternative is that an agent which lost its context can never
 	// recover. Refusing it here would break that recovery without closing
 	// anything: that path lands on the holder, so no second binding appears.
-	return holder.Nonce == "" && holder.Name == op.Name &&
-		(holder.Status == core.StatusActive || holder.Status == core.StatusStale)
+	// THE FOLD'S RULE, asked of the fold. This carried its own copy, which
+	// required an empty nonce and an active or stale row, and the fold moved
+	// on without it: rows with a minted nonce and dormant rows are recoverable
+	// now. An agent that had lost its context, re-registering by name and
+	// session as it is told to, was refused here as a thief before the fold
+	// could recover it. Found by the pre-release review.
+	target := e.state.ReattachTarget(op)
+	return target != nil && target.ID == holder.ID
 }
 
 // refuseClaimWhenCoordinatorExists closes a claim the board has outgrown.

@@ -42,18 +42,18 @@ func TestASessionIdHeldByAnotherAgentCannotBeClaimed(t *testing.T) {
 	mk("owner", "tok-owner", sid)
 	mk("stranger", "tok-stranger", "")
 
-	if !e.mayClaimSession(sid, "tok-owner") {
+	if !mayClaim(e, sid, "tok-owner") {
 		t.Error("the agent that already holds this session id may not re-assert it. " +
 			"Every check_in re-sends it, so this would stop the owner binding on " +
 			"the call it makes most")
 	}
-	if e.mayClaimSession(sid, "tok-stranger") {
+	if mayClaim(e, sid, "tok-stranger") {
 		t.Error("a DIFFERENT agent claimed a session id that is already held. That " +
 			"redirects the holder's wake notifications into the claimant's session " +
 			"and silently stops the holder being woken: last writer wins, and " +
 			"nothing tells the loser")
 	}
-	if !e.mayClaimSession("nobody-holds-this-one", "tok-stranger") {
+	if !mayClaim(e, "nobody-holds-this-one", "tok-stranger") {
 		t.Error("an unclaimed session id was refused, which would stop an ordinary " +
 			"agent ever binding its own")
 	}

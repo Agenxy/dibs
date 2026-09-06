@@ -228,7 +228,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 		}})
 	}
 
-	gcEvents, pruned := s.gc(now, op.PurgeMail)
+	gcEvents, pruned := s.gc(now, op.PurgeMail, op.V7Semantics)
 	evs = append(evs, gcEvents...)
 	evs = append(evs, s.gcBlobs(now, 0)...) // TTL/cap blob eviction (A5)
 
@@ -258,7 +258,7 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 // purgeMail is the sweep op's own decision, threaded in rather than assumed:
 // see Op.PurgeMail. A sweep from before that field existed keeps the semantics
 // it was written under, because replay runs today's fold over yesterday's ops.
-func (s *State) gc(now time.Time, purgeMail bool) ([]Event, bool) {
+func (s *State) gc(now time.Time, purgeMail, clampWatermark bool) ([]Event, bool) {
 	var evs []Event
 	// pruned records mutation that emits no event. See applySweep: a deletion the
 	// ledger never hears about is a deletion replay will not repeat.
@@ -308,6 +308,24 @@ func (s *State) gc(now time.Time, purgeMail bool) ([]Event, bool) {
 			pruned = true
 			if l != nil && m.Serial >= l.TruncatedBefore {
 				l.TruncatedBefore = m.Serial + 1
+			}
+		}
+		// THE WATERMARK MAY NOT PASS MAIL THAT IS STILL HERE.
+		//
+		// It was raised to one past each evicted TERMINAL message, and terminal
+		// is not oldest: with retention at one, a pending question older than
+		// two acknowledged answers sat below the new watermark, still present,
+		// still owed, and invisible to inbox, check_in and every hook. The
+		// field's own definition says mail below it MAY have been evicted; the
+		// readers treat it as a boundary, so it has to be a true one. Clamped
+		// to the lowest serial still addressed to this agent. Gated on the
+		// sweep's recorded semantics, as every other v0.0.7 repair to the fold
+		// is, so a v0.0.6 sweep replays to the watermark it really set.
+		if l != nil && clampWatermark {
+			for _, m := range s.Messages {
+				if m.To == agent && m.Serial < l.TruncatedBefore {
+					l.TruncatedBefore = m.Serial
+				}
 			}
 		}
 		if l != nil {

@@ -499,7 +499,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the recovery it already had: the file's own comment says "a daemon this
   command stopped is a daemon it is responsible for starting... leaving a fleet
   with no board and an error message is the worst outcome available here", and
-  the one path that produced exactly that outcome was the one that skipped it.
+  the one path that produced exactly that outcome was the one that skipped it. (That alone was not enough: the recovery
+  was registered below the stop, so the flag was set on a path that returned
+  before the `defer` existed. See the review findings below.)
 
 - **Every agent paid ~18,000 tokens per activation to be told who else was on
   the board.** `Board()` is what both `register` and `check_in` return, and
@@ -531,6 +533,32 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   config. The daemon still refuses them, loudly, naming the key. The bridge
   proceeds on them and still refuses a file that does not parse, with its
   reasons intact, because there the address really is a guess.
+
+- **Six findings from the different-model pre-release review, all confirmed
+  and fixed.** Widening the session reattach to aliases and dormant rows had
+  been done in the fold without a replay gate, so a v0.0.6 ledger whose op
+  created a sibling would replay to the original instead and then refuse the
+  sibling's next op; it is gated on the recorded semantics now, with the
+  historical rule kept for historical ops. Retention raised the mailbox
+  watermark past a pending question older than the evicted answers, hiding mail
+  it never removed; the watermark is clamped to the oldest message still
+  addressed to the agent. The upgrade's recovery `defer` was registered after
+  the stop it covers, so a stop that timed out returned before it existed and
+  the promised restart never ran; the earlier guard compared string order in
+  the source and passed, and is replaced by one that runs the cutover with a
+  failing stop. Taking a thread from a dormant holder added it to the new agent
+  and never removed it from the old, leaving hooks to resolve by map order; the
+  takeover is recorded on every binding op and the lookup prefers the live
+  holder. The ingress guard kept its own copy of the fold's reattach rule and
+  fell behind it, refusing a default-registered agent that had lost its context
+  as a thief; it asks the fold now. And an heir could not read the mail it had
+  just adopted, because everything older than its own creation read as
+  inherited; adoption marks what it moves.
+
+- **`review:release` says which reviewer it found, before spending a token.**
+  Two codex binaries live on this machine and the older one, first on PATH,
+  cannot run the configured model; the failure read as a model error. The path
+  and version are printed, and `DIBS_REVIEWER` names one explicitly.
 
 - **A codex thread open in the desktop app can be woken.** This is the case
   that was reported as unreachable for weeks. `codex exec resume`, the only

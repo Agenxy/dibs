@@ -353,32 +353,12 @@ func (p *plan) cutover() error {
 	// process this command was supposed to replace. With --adopt-dir the data
 	// directory is renamed under that live writer as well.
 	//
-	// A registered daemon is stopped whether or not it answered a moment ago.
-	// UNKNOWN COUNTS AS RUNNING. Stopping a daemon that was not there costs a
-	// no-op; skipping the stop because the registry was unreadable leaves the
-	// old one serving while this command reports the new one. The asymmetry
-	// decides it, and it is the same asymmetry as everywhere else in this file.
-	if p.serving || p.running.addr != "" || p.running.unknown {
-		step("stopping the daemon")
-		stopErr := p.doStop(p.dir)
-		// A STOP THAT TIMED OUT IS STILL A STOP.
-		//
-		// doStop sends SIGTERM and then waits. Returning early on the wait meant
-		// treating a delivered signal as though nothing had happened: this
-		// printed "could not stop the daemon, so nothing else was changed", the
-		// daemon exited a few seconds later, launchd left it down because a
-		// clean exit is not a crash, and the operator's board was gone. Measured
-		// here, on this machine, with a 32-agent fleet.
-		//
-		// So the flag is set either way, which arms the recovery below and makes
-		// this command responsible for putting a daemon back, exactly as the
-		// comment under it says it must be.
-		stopped = true
-		if stopErr != nil {
-			return fmt.Errorf("the daemon did not stop cleanly; the board will be "+
-				"restarted rather than left down: %w", stopErr)
-		}
-	}
+	// REGISTERED BEFORE THE STOP IT COVERS. This block sat below the stop, so
+	// the stop's own failure path returned before the defer existed: a SIGTERM
+	// that landed but outran the wait left the daemon exiting with nothing
+	// armed to restart it, while the error promised a restart. The test that
+	// guarded it checked the order of two strings in the source and passed.
+	// Found by the pre-release review, which ran that test to prove it.
 	// A daemon this command stopped is a daemon it is responsible for starting,
 	// including on the paths where something below goes wrong. Leaving a fleet
 	// with no board and an error message is the worst outcome available here,
@@ -424,6 +404,32 @@ func (p *plan) cutover() error {
 			"itself, install the previous one before relying on it.\n",
 			ui.Bold("recovered:"), recoverDir, filepath.Base(p.installed))
 	}()
+	// A registered daemon is stopped whether or not it answered a moment ago.
+	// UNKNOWN COUNTS AS RUNNING. Stopping a daemon that was not there costs a
+	// no-op; skipping the stop because the registry was unreadable leaves the
+	// old one serving while this command reports the new one. The asymmetry
+	// decides it, and it is the same asymmetry as everywhere else in this file.
+	if p.serving || p.running.addr != "" || p.running.unknown {
+		step("stopping the daemon")
+		stopErr := p.doStop(p.dir)
+		// A STOP THAT TIMED OUT IS STILL A STOP.
+		//
+		// doStop sends SIGTERM and then waits. Returning early on the wait meant
+		// treating a delivered signal as though nothing had happened: this
+		// printed "could not stop the daemon, so nothing else was changed", the
+		// daemon exited a few seconds later, launchd left it down because a
+		// clean exit is not a crash, and the operator's board was gone. Measured
+		// here, on this machine, with a 32-agent fleet.
+		//
+		// So the flag is set either way, which arms the recovery below and makes
+		// this command responsible for putting a daemon back, exactly as the
+		// comment under it says it must be.
+		stopped = true
+		if stopErr != nil {
+			return fmt.Errorf("the daemon did not stop cleanly; the board will be "+
+				"restarted rather than left down: %w", stopErr)
+		}
+	}
 
 	// The directory FIRST, then the error. reconcile reports where the data
 	// directory is now whether or not it finished, because the recovery below

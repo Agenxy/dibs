@@ -43,7 +43,7 @@ func TestALiveAgentTakesAThreadFromADormantHolder(t *testing.T) {
 
 	t.Run("a dormant holder yields", func(t *testing.T) {
 		e := newBoard(t, core.StatusDormant)
-		if !e.mayClaimSession(thread, "tok-live") {
+		if !mayClaim(e, thread, "tok-live") {
 			t.Error("a live agent was refused the thread it is running in, by a row " +
 				"that went dormant. It now holds no thread at all, so nothing can " +
 				"wake it, and wakes for the dormant row reach the wrong mailbox")
@@ -52,7 +52,7 @@ func TestALiveAgentTakesAThreadFromADormantHolder(t *testing.T) {
 
 	t.Run("an active holder keeps it", func(t *testing.T) {
 		e := newBoard(t, core.StatusActive)
-		if e.mayClaimSession(thread, "tok-live") {
+		if mayClaim(e, thread, "tok-live") {
 			t.Error("a thread was taken from an ACTIVE holder. Two live agents " +
 				"claiming one session is a real conflict, and moving the binding " +
 				"would redirect a working agent's wake delivery onto another")
@@ -119,7 +119,7 @@ func TestAnAgentIsRecoveredByAnyIDItAnswersTo(t *testing.T) {
 		t.Run(c.name+" recovers by its thread id", func(t *testing.T) {
 			st := mk(t, c.status, true)
 			res, _ := st.ReattachBySessionIDForTest(&core.Op{
-				Kind: core.OpRegister, Name: "worker", SessionID: thread,
+				Kind: core.OpRegister, Name: "worker", SessionID: thread, V7Semantics: true,
 				NewToken: "tok-new",
 			})
 			if res == nil {
@@ -137,7 +137,7 @@ func TestAnAgentIsRecoveredByAnyIDItAnswersTo(t *testing.T) {
 	t.Run("an agent that chose its own nonce is not", func(t *testing.T) {
 		st := mk(t, core.StatusDormant, false)
 		if res, _ := st.ReattachBySessionIDForTest(&core.Op{
-			Kind: core.OpRegister, Name: "worker", SessionID: thread, NewToken: "tok-new",
+			Kind: core.OpRegister, Name: "worker", SessionID: thread, V7Semantics: true, NewToken: "tok-new",
 		}); res != nil {
 			t.Error("an agent holding a nonce IT chose was reattached by a session id. " +
 				"A real secret must beat a guessable identifier, which is the whole " +
@@ -187,7 +187,7 @@ func TestOneSessionIDAlwaysRecoversTheSameRow(t *testing.T) {
 	seen := map[string]int{}
 	for range 50 {
 		res, _ := board().ReattachBySessionIDForTest(&core.Op{
-			Kind: core.OpRegister, Name: "worker", SessionID: thread, NewToken: "tok",
+			Kind: core.OpRegister, Name: "worker", SessionID: thread, V7Semantics: true, NewToken: "tok",
 		})
 		if res == nil {
 			t.Fatal("no row was recovered at all, so this proves nothing about which")
@@ -206,4 +206,10 @@ func TestOneSessionIDAlwaysRecoversTheSameRow(t *testing.T) {
 		t.Errorf("recovered %v. The row whose PRIMARY session id this is has the "+
 			"stronger claim than one holding it as an alias", seen)
 	}
+}
+
+// mayClaim is the verdict alone, for tests written when that was all it gave.
+func mayClaim(e *Engine, sid, tok string) bool {
+	ok, _ := e.mayClaimSession(sid, tok)
+	return ok
 }

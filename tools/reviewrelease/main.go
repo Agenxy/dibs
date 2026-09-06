@@ -27,7 +27,17 @@ func main() {
 }
 
 func run() error {
-	reviewer, err := exec.LookPath("codex")
+	// WHICH codex, said out loud. Two live on this machine: a mise shim at
+	// 0.144.3 first on PATH and the 0.153.4 inside ChatGPT.app, and the older
+	// one cannot run the configured model. The failure read as a model error
+	// and cost a round trip before anyone asked which binary had been found.
+	// DIBS_REVIEWER names one explicitly; otherwise PATH decides, and either
+	// way the choice and its version are printed before a token is spent.
+	reviewer := os.Getenv("DIBS_REVIEWER")
+	var err error
+	if reviewer == "" {
+		reviewer, err = exec.LookPath("codex")
+	}
 	if err != nil {
 		return errors.New("no reviewer found: install codex, or run docs/REVIEW.md's " +
 			"brief through whichever model you have; the point is that it is not the " +
@@ -44,7 +54,15 @@ func run() error {
 	prompt := string(brief) + "\n\nThe diff under review is: git diff " + tag +
 		"..HEAD\nRead it with git, in pieces if you need to. Work read-only."
 
-	cmd := exec.Command(reviewer, "exec", prompt) // #nosec G204 -- resolved by LookPath
+	// #nosec G204 G702 -- the reviewer is named by the operator, through PATH or
+	// DIBS_REVIEWER in their own shell, which is the same trust as any program
+	// they run by hand. Nothing an agent or a message says reaches it.
+	if v, verr := exec.Command(reviewer, "--version").Output(); verr == nil {
+		fmt.Fprintf(os.Stderr, "reviewer: %s (%s)\n", reviewer, strings.TrimSpace(string(v)))
+	} else {
+		fmt.Fprintf(os.Stderr, "reviewer: %s (version unknown: %v)\n", reviewer, verr)
+	}
+	cmd := exec.Command(reviewer, "exec", prompt) // #nosec G204 G702 -- see above: the operator's own reviewer
 	// STDIN CLOSED, and this is the reason the task existed as a script.
 	//
 	// `codex exec` waits on stdin when it is not a terminal, so run from a
