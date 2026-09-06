@@ -573,6 +573,11 @@ Read-only work needs no claim.
   still waiting that arrived after the cursor, a `message.adopted` for blocking
   mail moved in after it, and the verdict (`message.answered` and the rest) on
   each question or request this agent sent that was answered after the cursor.
+- **A live subscription that dropped an event refills from the ring.** The
+  channel behind a stream is bounded and the loop drops rather than stalls
+  when it is full; the drop is recorded, and the stream replays from the ring
+  everything after the last serial it delivered before continuing. Repeats
+  coalesce at the subscriber, which dedupes by serial.
 - Polling is a **product choice**: MCP 2026-07-28 offers `subscriptions/listen`;
   adopting it is a v1.x option that changes no semantics (the cursor model stays).
 

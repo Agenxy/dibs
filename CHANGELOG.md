@@ -547,6 +547,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A burst during a resumed subscription's replay could drop a question
+  silently.** The live channel holds 256 events and the loop drops rather
+  than stalls when it is full; a resumed subscription writes its replay before
+  it drains the channel, so fleet events during a slow replay filled it and a
+  question that arrived after them was in neither the replay nor the stream.
+  The channel now says when it dropped, and the stream refills from the ring
+  everything after the last serial it delivered; a repeat coalesces where a
+  loss did not.
+
+- **A restart could wake an agent to read mail the boot sweep had just
+  deleted.** Blocking notices are rebuilt at construction, before the boot
+  sweep, and the sweep deletes consumed terminal mail past its retention: an
+  answered request older than that produced a notice and lost its message a
+  moment later, so the agent was woken, told to `read_mail(N)`, and answered
+  E_NO_MESSAGE on every restart. Notices pointing at mail the state no longer
+  holds are dropped after every sweep.
+
 - **The socket route could wake the activation an agent had left.** It took
   the first address it found among every session the agent had ever answered
   to, so an agent that moved from A to B, with B publishing no socket and A's

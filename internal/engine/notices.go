@@ -417,6 +417,33 @@ func answeredNotice(ev core.Event) string {
 // below it, so a verdict that landed after it is news it has not had.
 //
 // Called once, before the loop starts, so the maps are not shared yet.
+// dropNoticesWithoutMail forgets every notice that points at a message the
+// state no longer holds.
+//
+// The rebuild at construction runs before the boot sweep, and the sweep
+// deletes consumed terminal mail past its retention: an answered request
+// older than that produced a blocking notice at boot and lost its message a
+// moment later, so the agent was woken, told to read_mail(N), and answered
+// E_NO_MESSAGE, on every restart. The same can happen to a live notice at
+// any periodic sweep. Called after each. Found by the pre-release review,
+// round thirty-three.
+func (e *Engine) dropNoticesWithoutMail() {
+	for agent, list := range e.notices {
+		kept := list[:0]
+		for _, n := range list {
+			if n.Msg != 0 && e.state.Messages[n.Msg] == nil {
+				continue
+			}
+			kept = append(kept, n)
+		}
+		if len(kept) == 0 {
+			delete(e.notices, agent)
+			continue
+		}
+		e.notices[agent] = kept
+	}
+}
+
 func (e *Engine) rebuildBlockingNotices() {
 	if e.state == nil {
 		return

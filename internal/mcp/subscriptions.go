@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/engine"
 )
 
 // rpcErrFrom maps a core error to a JSON-RPC error, preserving the code/hint.
@@ -153,14 +154,14 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *
 	// point is buffered while the replay runs; the replay covers the gap up
 	// to it, and a repeat coalesces where a loss does not. Found by the
 	// pre-release review, round thirty-one.
-	ch, cancel := s.eng.Subscribe(since)
+	sub, cancel := s.eng.SubscribeTracked(since)
 	defer cancel()
 	if resuming && wantInbox && !s.replayGap(r.Context(), stream, req.ID, token, agentID, cursor) {
 		return
 	}
 	// Fixed for the lifetime of the stream: 2026-07-28 carries the whole
 	// subscription in the listen call, so there is nothing to re-read.
-	s.pump(r, stream, ch, req.ID, func() (string, bool, bool) {
+	s.pump(r, stream, sub, since, token, req.ID, func() (string, bool, bool) {
 		return agentID, wantInbox, wantBoard
 	})
 }
@@ -177,32 +178,99 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *
 // just asked for.
 type wantsFunc func() (agentID string, inbox, board bool)
 
-func (s *Server) pump(r *http.Request, stream sseStream, ch <-chan core.Event,
-	subID json.RawMessage, wants wantsFunc,
+// last is the serial the stream is complete up to when the pump starts: the
+// point the subscription's channel began at. The channel drops when its
+// buffer is full rather than stall the writer loop, and says so (Lost); the
+// pump then refills from the ring everything after the last serial it
+// delivered, so a burst during a slow replay costs repeats, which coalesce,
+// and not a question, which did not. Found by the pre-release review, round
+// thirty-three.
+func (s *Server) pump(r *http.Request, stream sseStream, sub *engine.Subscription, last uint64,
+	token string, subID json.RawMessage, wants wantsFunc,
 ) {
 	keepalive := time.NewTicker(25 * time.Second)
 	defer keepalive.Stop()
 	ctx := r.Context()
+	p := &pumpState{s: s, ctx: ctx, stream: stream, sub: sub, last: last, token: token, subID: subID, wants: wants}
+	if !p.refill() { // the replay may have run long enough to overflow already
+		return
+	}
 	for {
 		select {
 		case <-ctx.Done(): // client closed the stream = cancellation (SEP-2575)
 			return
 		case <-keepalive.C:
-			if !stream.comment() {
+			if !stream.comment() || !p.refill() {
 				return
 			}
-		case ev, open := <-ch:
+		case ev, open := <-sub.C:
 			if !open {
 				return
 			}
-			agentID, wantInbox, wantBoard := wants()
-			if uri := matchedURI(ev, agentID, wantInbox, wantBoard); uri != "" {
-				if !stream.send(resourceUpdated(uri, subID, ev)) {
-					return
-				}
+			if !p.refill() || !p.deliver(ev) {
+				return
 			}
 		}
 	}
+}
+
+// pumpState is one stream's position: the serial it is complete up to.
+type pumpState struct {
+	s      *Server
+	ctx    context.Context
+	stream sseStream
+	sub    *engine.Subscription
+	last   uint64
+	token  string
+	subID  json.RawMessage
+	wants  wantsFunc
+}
+
+// deliver forwards one event the stream follows and advances the position.
+func (p *pumpState) deliver(ev core.Event) bool {
+	agentID, wantInbox, wantBoard := p.wants()
+	if uri := matchedURI(ev, agentID, wantInbox, wantBoard); uri != "" {
+		if !p.stream.send(resourceUpdated(uri, p.subID, ev)) {
+			return false
+		}
+	}
+	if ev.Serial > p.last {
+		p.last = ev.Serial
+	}
+	return true
+}
+
+// refill replays from the ring everything after the position when the
+// channel reports it dropped something; otherwise it does nothing.
+func (p *pumpState) refill() bool {
+	if !p.sub.Lost() {
+		return true
+	}
+	for _, ev := range p.s.eventsAfter(p.ctx, p.last, p.token, p.wants) {
+		if !p.deliver(ev) {
+			return false
+		}
+	}
+	return true
+}
+
+// eventsAfter is every event after last, from the ring; past the ring, what
+// the inbox still owes (ResyncFor), for a stream that follows one.
+func (s *Server) eventsAfter(ctx context.Context, last uint64, token string, wants wantsFunc) []core.Event {
+	res, err := s.eng.EventsSince(ctx, "", last, true)
+	var ce *core.Error
+	if errors.As(err, &ce) && ce.Code == "E_CURSOR_TOO_OLD" {
+		if _, wantInbox, _ := wants(); !wantInbox || token == "" {
+			return nil
+		}
+		evs, _ := s.eng.ResyncFor(ctx, token, last)
+		return evs
+	}
+	if err != nil || res["error"] != nil {
+		return nil
+	}
+	evs, _ := res["events"].([]core.Event)
+	return evs
 }
 
 // matchedURI returns the subscribed resource URI an event changed, or "".

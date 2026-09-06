@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"sort"
+	"sync/atomic"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -562,9 +563,31 @@ func (e *Engine) AllMessages(ctx context.Context) (core.Result, error) {
 
 // Subscribe attaches an SSE stream fed from serial onward.
 func (e *Engine) Subscribe(since uint64) (<-chan core.Event, func()) {
+	sub, cancel := e.SubscribeTracked(since)
+	return sub.C, cancel
+}
+
+// Subscription is a live event channel that knows when it dropped something.
+type Subscription struct {
+	C    <-chan core.Event
+	lost *atomic.Bool
+}
+
+// Lost reports whether an event for this subscription was dropped since the
+// last call, and clears the mark: the reader that sees true refills from the
+// ring (EventsSince) rather than trusting the channel to have been complete.
+func (s *Subscription) Lost() bool { return s.lost.Swap(false) }
+
+// SubscribeTracked is Subscribe with the drop mark exposed. The channel holds
+// 256 events and the loop drops rather than blocks when it is full (see the
+// subscribe case in Run); a reader that writes slowly, a resumed subscription
+// replaying its gap before it drains, cannot tell a quiet fleet from a full
+// buffer without this.
+func (e *Engine) SubscribeTracked(since uint64) (*Subscription, func()) {
 	ch := make(chan core.Event, 256)
-	e.subs <- subReq{ch: ch, since: since}
-	return ch, func() { e.unsubs <- ch }
+	lost := new(atomic.Bool)
+	e.subs <- subReq{ch: ch, since: since, lost: lost}
+	return &Subscription{C: ch, lost: lost}, func() { e.unsubs <- ch }
 }
 
 func maxSerial(evs []core.Event, fallback uint64) uint64 {

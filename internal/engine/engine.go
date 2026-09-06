@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -38,7 +39,7 @@ type Engine struct {
 	buckets  map[string]*bucket
 	resumeAt map[string]time.Time // per-agent resume rate limit (1/10s)
 	watch    []waiter
-	streams  map[chan core.Event]bool
+	streams  map[chan core.Event]*atomic.Bool
 	// seen: ephemeral lease freshness (reads/heartbeats). Never replayed;
 	// folded into recorded sweep decisions (SPEC §2 tier 2).
 	seen map[string]time.Time
@@ -193,6 +194,7 @@ type waiter struct {
 type subReq struct {
 	ch    chan core.Event
 	since uint64
+	lost  *atomic.Bool // set when an event for ch was dropped; the reader refills
 }
 
 type bucket struct {
@@ -218,7 +220,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 		state: st, led: led, prober: prober,
 		ringCap: 65536, buckets: map[string]*bucket{},
 		resumeAt: map[string]time.Time{},
-		streams:  map[chan core.Event]bool{}, seen: map[string]time.Time{},
+		streams:  map[chan core.Event]*atomic.Bool{}, seen: map[string]time.Time{},
 		turnEnded:    map[string]time.Time{},
 		announceSent: map[string]time.Time{}, announceTries: map[string]int{},
 		wokeFor: map[string]time.Time{}, hinted: map[string]time.Time{},
@@ -283,7 +285,7 @@ func (e *Engine) Run(ctx context.Context) {
 			e.sweep(now)
 			e.expireWaiters(now)
 		case s := <-e.subs:
-			e.streams[s.ch] = true
+			e.streams[s.ch] = s.lost
 			// Catch-up replay, deliberately best-effort: the `default` drops
 			// events once the subscriber's buffer is full rather than blocking.
 			//
@@ -301,6 +303,7 @@ func (e *Engine) Run(ctx context.Context) {
 				select {
 				case s.ch <- ev:
 				default:
+					s.lost.Store(true)
 				}
 			}
 		case ch := <-e.unsubs:
@@ -333,6 +336,7 @@ func (e *Engine) boot(now time.Time) {
 	if len(op.StaleAgents) > 0 {
 		_, _ = e.applyAndLedger(op, now)
 	}
+	e.dropNoticesWithoutMail()
 }
 
 // exec runs the request phases for a mutating op.
@@ -1034,6 +1038,7 @@ func (e *Engine) sweep(now time.Time) {
 		}
 	}
 	_, _ = e.applyAndLedger(op, now)
+	e.dropNoticesWithoutMail()
 }
 
 func (e *Engine) publish(evs []core.Event) {
@@ -1081,11 +1086,20 @@ func (e *Engine) publish(evs []core.Event) {
 		}
 	}
 	e.watch = keep
-	for ch := range e.streams {
+	for ch, lost := range e.streams {
 		for _, ev := range evs {
 			select {
 			case ch <- ev:
 			default:
+				// DROPPED, AND SAID SO. The drop stays, for the reason above;
+				// what changed is that the reader is told. A resumed
+				// subscription writes its replay before it drains this
+				// channel, so a burst of fleet events during a slow replay
+				// filled the buffer and a question that arrived after it
+				// was in neither the replay nor the stream, silently. The
+				// reader refills from the ring when the flag is set. Found
+				// by the pre-release review, round thirty-three.
+				lost.Store(true)
 			}
 		}
 	}
