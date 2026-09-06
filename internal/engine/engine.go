@@ -611,6 +611,10 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		return nil, err
 	}
 
+	if err := e.refuseActingOnInheritedMail(op, actor); err != nil {
+		return nil, err
+	}
+
 	// An omitted description keeps the one the agent already has.
 	//
 	// Resolved at ingress and written INTO the op, so the ledger records the
@@ -1147,6 +1151,15 @@ func (e *Engine) eventsSince(serial uint64, agent string, all bool) []core.Event
 	return filterEvents(e.ring[i:], agent, all)
 }
 
+// SetRingCap bounds the event ring. The default is SPEC §10's 65,536; a test
+// that needs the floor to rise sets a small one rather than generating that
+// many events.
+func (e *Engine) SetRingCap(n int) {
+	if n > 0 {
+		e.ringCap = n
+	}
+}
+
 // ringFloor is the oldest serial still served from the ring (0 = ring empty).
 func (e *Engine) ringFloor() uint64 {
 	if len(e.ring) == 0 {
@@ -1294,6 +1307,36 @@ func matchingHint(st MatchStatus) string {
 // Rebinding your own id is fine, and so is taking one from an agent that is
 // closed or archived: AgentBySession already skips those, because a retired
 // agent has no thread left to resume.
+// refuseActingOnInheritedMail applies the mailbox fence to the calls that
+// CHANGE a message's state, not only to the ones that read it.
+//
+// An id is derived from the name, so a name that comes back reuses the id,
+// and mail can outlive the row it was addressed to. Inbox hides it from the
+// replacement and read_mail refuses the body, and ack and respond authorised
+// on the reused id alone: the replacement could acknowledge a predecessor's
+// notify or answer its question by serial, which sends the sender a receipt
+// from an agent that never saw the message and consumes mail nobody could
+// read. The rule is read_mail's: a message older than this agent's own
+// creation was never its mail, unless an adoption moved it here.
+//
+// AT INGRESS, not in the fold. An acknowledgement already on disk was
+// accepted by the code of its day and replays as it did; a rule added to
+// Apply would refuse the ledger. Found by the pre-release review, round
+// thirty.
+func (e *Engine) refuseActingOnInheritedMail(op *core.Op, actor *core.Agent) error {
+	if actor == nil || (op.Kind != core.OpAckMessage && op.Kind != core.OpRespond) {
+		return nil
+	}
+	m, ok := e.state.Messages[op.MsgSerial]
+	if !ok || m.To != actor.ID {
+		return nil // the fold answers E_NO_MESSAGE as it always has
+	}
+	if actor.CreatedSerial > 0 && m.Serial < actor.CreatedSerial && !e.state.AdoptedFor(m, actor.ID) {
+		return core.ErrNoMessage(m.Serial, actor.TruncatedBefore)
+	}
+	return nil
+}
+
 func (e *Engine) refuseStealingAnotherThreadsSession(op *core.Op) error {
 	if op.Kind != core.OpRegister && op.Kind != core.OpBindSession {
 		return nil

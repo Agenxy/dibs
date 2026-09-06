@@ -547,6 +547,28 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A subscription that resumed past the ring lost its wakes.** A cursor older
+  than the ring got an empty replay after the acknowledgment, so a question
+  that arrived while the subscriber was away and whose event had since left
+  the ring sat in the inbox with no notice and no signal that one was missed.
+  The inbox says what is still owed: each waiting message after the cursor is
+  replayed as the notice the ring would have carried.
+
+- **A replacement could acknowledge or answer its predecessor's mail.** The
+  mailbox fence hides a previous occupant's mail from a name that comes back
+  and read_mail refuses the body, and ack and respond authorised on the
+  reused id alone: the replacement could ack a notify it never saw, sending
+  its sender a receipt, or answer a question by serial. Both are refused at
+  ingress, so the acknowledgements already on disk replay as they were
+  accepted.
+
+- **The message-type guidance did not know about the wake routes.** It told
+  a sender that a question, request or handoff reaches the recipient at a
+  turn boundary or its next Dibs call, which is what an agent uses to choose
+  a type and a deadline; with `[wake.exec]` configured or a session socket
+  published, an idle recipient is started or nudged for those three. The
+  guidance says so, and is shorter than it was.
+
 - **A bridge upgrade wake could resume the thread an agent had left.** A
   persistent agent recovered by nonce from a new `host-<ppid>` activation
   still held the uuid of the activation it left; the wake's newest-alias scan

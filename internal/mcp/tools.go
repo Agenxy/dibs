@@ -44,13 +44,11 @@ var toolDefs = func() []map[string]any {
 	// agent pays on every cold connection.
 	msgType := map[string]any{
 		"type": "string", "enum": []string{"notify", "question", "request", "handoff"},
-		"description": "what the message DOES, so pick for the effect. notify: no reply " +
-			"needed, costs them nothing. question / request / handoff: reach them at their " +
-			"NEXT ACTIVATION, not the instant you send: a turn boundary with wake hooks, " +
-			"their next Dibs call without. A shorter deadline expires while they still " +
-			"work. To the " +
-			"HUMAN a request raises a notification with Approve on it, and " +
-			"the press returns as an ordinary response",
+		"description": "what the message DOES. notify: no reply, costs nothing, never wakes. " +
+			"question / request / handoff: arrive at their NEXT ACTIVATION: a turn boundary, " +
+			"their next Dibs call, or a best-effort wake if [wake.exec] is configured or their " +
+			"harness publishes a socket. A short deadline expires while they work. To the HUMAN " +
+			"a request raises a notification with Approve; the press returns as a response",
 	}
 
 	return []map[string]any{

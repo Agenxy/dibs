@@ -143,14 +143,8 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *
 	// are replayed here from the ring, filtered, in full; the channel replay
 	// below may repeat some, and a repeat coalesces where a loss does not.
 	// Found by the pre-release review, round fifteen.
-	if resuming && wantInbox {
-		for _, ev := range s.missedFor(r.Context(), token, cursor) {
-			if uri := matchedURI(ev, agentID, wantInbox, false); uri != "" {
-				if !stream.send(resourceUpdated(uri, req.ID, ev)) {
-					return
-				}
-			}
-		}
+	if resuming && wantInbox && !s.replayGap(r.Context(), stream, req.ID, token, agentID, cursor) {
+		return
 	}
 	ch, cancel := s.eng.Subscribe(cursor)
 	defer cancel()
@@ -286,13 +280,45 @@ func resourceUpdated(uri string, subID json.RawMessage, ev core.Event) map[strin
 	return notification("notifications/resources/updated", params, subID)
 }
 
-// missedFor is every event the ring holds for this agent after the cursor,
-// or nothing when the cursor is older than the ring.
-func (s *Server) missedFor(ctx context.Context, token string, cursor uint64) []core.Event {
-	res, err := s.eng.EventsSince(ctx, token, cursor, false)
-	if err != nil || res["error"] != nil {
-		return nil
+// replayGap hands a resuming subscriber the inbox events it missed, from the
+// ring or, past the ring, from the inbox itself. Reports whether the stream
+// is still writable.
+func (s *Server) replayGap(ctx context.Context, stream sseStream, subID json.RawMessage,
+	token, agentID string, cursor uint64,
+) bool {
+	missed, tooOld := s.missedFor(ctx, token, cursor)
+	if tooOld {
+		// THE RING IS NOT THE ONLY RECORD. A cursor older than the ring got
+		// an empty replay after the acknowledgment, so a question that
+		// arrived while the subscriber was away and whose event had since
+		// left the ring sat in the inbox with no notice and no signal that
+		// one was missed. The inbox says what is still owed; each waiting
+		// message after the cursor is replayed as the notice the ring would
+		// have carried. Found by the pre-release review, round thirty.
+		missed, _ = s.eng.ResyncFor(ctx, token, cursor)
 	}
-	evs, _ := res["events"].([]core.Event)
-	return evs
+	for _, ev := range missed {
+		if uri := matchedURI(ev, agentID, true, false); uri != "" {
+			if !stream.send(resourceUpdated(uri, subID, ev)) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// missedFor is every event the ring holds for this agent after the cursor.
+// tooOld reports a cursor older than the ring, which the ring cannot answer
+// and the inbox can (ResyncFor).
+func (s *Server) missedFor(ctx context.Context, token string, cursor uint64) (evs []core.Event, tooOld bool) {
+	res, err := s.eng.EventsSince(ctx, token, cursor, false)
+	var ce *core.Error
+	if errors.As(err, &ce) && ce.Code == "E_CURSOR_TOO_OLD" {
+		return nil, true
+	}
+	if err != nil || res["error"] != nil {
+		return nil, false
+	}
+	evs, _ = res["events"].([]core.Event)
+	return evs, false
 }

@@ -104,6 +104,41 @@ func (e *Engine) EventsSince(ctx context.Context, token string, serial uint64, a
 	})
 }
 
+// ResyncFor is what a subscriber missed when its cursor is older than the
+// ring: one message.sent event, shaped as the ring would have held it, for
+// each message still waiting in the agent's inbox that arrived after the
+// cursor. The ring is the record of what happened; the inbox is the record of
+// what is still owed, and when the first is gone the second is enough to
+// wake an agent that has mail. Terminal mail is not replayed: nothing is
+// owed on it.
+func (e *Engine) ResyncFor(ctx context.Context, token string, cursor uint64) ([]core.Event, error) {
+	res, err := e.query(ctx, func() core.Result {
+		l, errRes := e.authRead(token, time.Now())
+		if errRes != nil {
+			return errRes
+		}
+		var evs []core.Event
+		for _, m := range e.state.Inbox(l.ID) {
+			if m.Serial <= cursor || m.Terminal() {
+				continue
+			}
+			evs = append(evs, core.Event{
+				Serial: m.Serial, TS: m.SentAt, Type: "message.sent", Agent: m.From, To: l.ID,
+				Data: map[string]any{"msg_serial": m.Serial, "msg_type": m.Type, "resynced": true},
+			})
+		}
+		return core.Result{"events": evs}
+	})
+	if err != nil {
+		return nil, err
+	}
+	if e, ok := res["error"].(error); ok {
+		return nil, e
+	}
+	evs, _ := res["events"].([]core.Event)
+	return evs, nil
+}
+
 // AwaitEvents long-polls until an event after serial matches, or timeout.
 func (e *Engine) AwaitEvents(
 	ctx context.Context, token string, serial uint64, timeout time.Duration, all bool,
