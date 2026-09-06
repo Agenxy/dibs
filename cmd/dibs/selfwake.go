@@ -47,6 +47,7 @@ type selfWaker struct {
 	last     time.Time // when a notice was last DELIVERED; an attempt spends nothing
 	pending  bool      // a deferred notice is armed for when the cooldown ends
 	timer    *time.Timer
+	retry    bool // the armed timer is a retry of a delivery that FAILED
 }
 
 // selfWakeCooldown is the shortest gap between two notices in one session.
@@ -123,9 +124,10 @@ func (w *selfWaker) wake(notice string) error {
 			// with the timer. Found by the pre-release review, round
 			// twenty-five.
 			recordWakePending(true)
+			w.retry = true
 			w.timer = time.AfterFunc(w.cooldown, func() {
 				w.mu.Lock()
-				w.pending = false
+				w.pending, w.retry = false, false
 				w.mu.Unlock()
 				recordWakePending(false)
 				if rerr := w.wake(notice); rerr != nil {
@@ -144,22 +146,31 @@ func (w *selfWaker) wake(notice string) error {
 		w.mu.Unlock()
 		return err
 	}
-	// DELIVERED, SO NOTHING IS OWED. A retry armed by a failure, or a
-	// notice deferred to the cooldown, stayed armed past a delivery that
-	// succeeded in the meantime: the socket came back, the arrival was
-	// delivered, and the timer put a second notice into the session with no
-	// further mail behind it. The delivery is the notice the timer would
-	// have given. Found by the pre-release review, round thirty-nine.
-	w.mu.Lock()
-	if w.pending {
-		if w.timer != nil {
-			w.timer.Stop()
-		}
-		w.pending = false
-		recordWakePending(false)
-	}
-	w.mu.Unlock()
+	w.delivered()
 	return nil
+}
+
+// delivered settles what a successful delivery covers.
+//
+// A RETRY, AND ONLY A RETRY. A retry armed by a failure stayed armed past a
+// delivery that succeeded in the meantime, and put a second notice into the
+// session with no mail behind it; this delivery IS that notice, so the retry
+// is disarmed. Found by the pre-release review, round thirty-nine. The first
+// cut disarmed a DEFERRED notice too, and that one is different: it stands
+// for an arrival that came in while this delivery was on the wire, which
+// the session has not been told about, and cancelling it lost that mail's
+// notice. Found by the pre-release review, round forty-three.
+func (w *selfWaker) delivered() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.pending || !w.retry {
+		return
+	}
+	if w.timer != nil {
+		w.timer.Stop()
+	}
+	w.pending, w.retry = false, false
+	recordWakePending(false)
 }
 
 // deliver writes the auth line and one notice to the session socket.

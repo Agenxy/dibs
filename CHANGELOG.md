@@ -552,6 +552,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A recovery from a new session kept the old process.** A same-name
+  register with its nonce from a new session moved the row to that session
+  and kept the pid and working directory of the activation that had ended;
+  the next liveness sweep found that process dead and retired the agent
+  that had just come back, and the board placed it where it used to be. On
+  both recovery paths, a live row resumed and a dormant row recovered, a new
+  activation takes the pid and location the op states, and a pid it does
+  not state is unknown rather than inherited.
+
 - **Doctor diagnosed a remote board's wake routes from the local file.** A
   joining machine runs it against the hub with a data directory of its own,
   and the wake check read that directory's dibs.toml as the hub's
@@ -610,8 +619,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   by a failed delivery, or a notice deferred to the cooldown, stayed armed
   past a delivery that succeeded in the meantime: the socket came back, the
   next arrival was delivered, and the timer put a second notice into the
-  session with no mail behind it. A successful delivery disarms whatever
-  was pending; it is the notice the timer would have given.
+  session with no mail behind it. A successful delivery disarms the retry;
+  it is the notice the timer would have given. Only the retry: a notice
+  deferred to the cooldown stands for an arrival that came in while the
+  earlier notice was on the wire, and the first cut of this disarmed that
+  too, losing the newer mail's notice.
 
 - **The tool schema promised that a notify never wakes or costs anything.**
   Under the default `extend_turn_for = all` a fresh notify at Stop extends

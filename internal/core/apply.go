@@ -431,6 +431,15 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 					l.PID, l.ProcStart = 0, 0
 				case op.PID != 0:
 					l.PID, l.ProcStart = op.PID, op.ProcStart
+				case op.V7Semantics && op.SessionID != "" && op.SessionID != l.SessionID:
+					// A NEW ACTIVATION DOES NOT KEEP THE OLD PROCESS. A recovery
+					// from a different session that stated no pid kept the one
+					// the row had, which belonged to the process that is gone:
+					// the next liveness sweep found it dead and retired the
+					// agent that had just come back. Unknown is honest; a pid
+					// the caller states is taken above. Found by the
+					// pre-release review, round forty-three.
+					l.PID, l.ProcStart = 0, 0
 				}
 				// Yield BEFORE taking what this op states: the ids it carries
 				// were vetted by the ingress and are this row's to hold; the

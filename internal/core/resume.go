@@ -56,7 +56,15 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 	// metadata could still take the active session. Found by the pre-release
 	// review, round fourteen.
 	changed = changed || (op.SessionID != "" && l.GuessedSession(op.SessionID))
+	// A STATED PROCESS IS A CHANGE. A bridge that restarted inside the TTL
+	// under the same session id stated its new pid, and this path never
+	// applied one: the row kept the dead bridge's pid, the next liveness
+	// sweep found it dead, and the agent that had just registered was
+	// retired with its claims released. Found by the pre-release review,
+	// round forty-three.
+	changed = changed || (op.PID != 0 && op.PID != l.PID)
 	if op.V7Semantics && changed {
+		l.takeActivation(op)
 		s.dropTakenSession(op, l)
 		if op.SessionID != "" {
 			l.SessionID = op.SessionID                                         // the new session owns it now
@@ -82,4 +90,28 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 		"agent_id": l.ID, "token": l.Token, "serial": s.Serial,
 		"resumed": true, "board": s.Board(),
 	}, nil
+}
+
+// takeActivation records the process and location a resume states.
+//
+// A NEW ACTIVATION IS A NEW PROCESS. The resume moved the row to the new
+// session and kept the pid and working directory of the activation that had
+// ended: the next liveness sweep found that process dead and retired the
+// agent that had just come back, and the board placed it where it used to
+// be. What the op states is taken; a pid it does not state is unknown when
+// the session moved, and kept when it did not, because the same session is
+// the same process. Found by the pre-release review, round forty-three.
+func (a *Agent) takeActivation(op *Op) {
+	if op.PID != 0 {
+		a.PID, a.ProcStart = op.PID, op.ProcStart
+	}
+	if op.SessionID == "" || op.SessionID == a.SessionID {
+		return
+	}
+	if op.PID == 0 {
+		a.PID, a.ProcStart = 0, 0
+	}
+	if op.Agent != nil {
+		a.Agent = op.Agent
+	}
 }
