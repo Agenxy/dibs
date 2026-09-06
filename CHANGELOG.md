@@ -7,6 +7,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- **One registration could take two session ids from two rows and free only
+  one.** The ingress vets the session id a caller states and the alias the
+  daemon joins into one "taken from" record; when the primary came from a
+  dormant A and the alias from a dormant B, the record named one of them and
+  the other kept its id alongside the registrant. Two stated holders the
+  moment it checked in, and a coin flip on every hook. Every other row now
+  loses both ids: the record says the ingress found every holder claimable,
+  and who held what is the replayed state's to say.
+
+- **An explicit `bind_session` left the id reclaimable.** An id inferred for
+  an agent is recorded as a guess, and a live claim may take a guess even
+  from an active holder, which is right for a guess. Binding that id
+  explicitly assigned it and left the guess standing, so the confirmation
+  protected nothing. An explicit bind is stated now.
+
 - **A nonce recovery that stated a session id left the old holder holding it
   too.** The ingress vets a session id a caller states and the alias the
   daemon joins into one "taken from" record, and the fold dropped only the
@@ -459,6 +474,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing an agent wrote, and it cannot read the session or steer it.
 
 ### Fixed
+
+- **A session that appeared after the socket cache was scanned missed its
+  wake for good.** The socket route decides from a cache the writer loop never
+  refreshes, and a refusal from it was final: blocking mail sent to a Claude
+  session that started after the last scan got its one wake attempt against a
+  snapshot that did not have it, and the thirty-second refresh revisits no
+  mail. A refusal that could be the cache's staleness arms one retry, and a
+  deferred retry refreshes the cache, off the loop, before it decides.
+
+- **`register` now returns the fingerprint every role-pinning instruction
+  said it did.** The README, the configuration guide and the daemon's own
+  refusal all directed the operator to paste the fingerprint `register`
+  returns under `[roles.identity]`, and `register` returned no such thing: the
+  value existed for the startup log and internal callers only. It is in the
+  registration result as `fingerprint`.
+
+- **The tracked-file hygiene walk treated every stat error as a deleted
+  file.** A tracked file beneath a directory that cannot be entered, or a
+  symlink to nothing, never reached the read that fails for an unreadable
+  file, and with enough other files visited the guard passed having examined
+  neither. Only a path that is not there at all is skipped now.
 
 - **`[limits] max_agents = 32` alone stopped the daemon starting.** The
   persistent default rose to 64 this cycle, and the startup check compared it

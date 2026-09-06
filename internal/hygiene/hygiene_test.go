@@ -10,6 +10,8 @@ package hygiene
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -368,7 +370,13 @@ func walk(t *testing.T, root string, visit func(rel, abs string)) {
 			continue
 		}
 		abs := filepath.Join(root, rel)
-		if st, err := os.Stat(abs); err != nil || st.IsDir() {
+		skip, problem := classifyTracked(abs)
+		if problem != nil {
+			t.Errorf("%s is tracked and cannot be examined (%v), so no check in this "+
+				"package looked at it", rel, problem)
+			continue
+		}
+		if skip {
 			continue // deleted but still staged, or a submodule
 		}
 		// READ IT HERE, so "visited" means the content was available.
@@ -401,6 +409,30 @@ func walk(t *testing.T, root string, visit func(rel, abs string)) {
 	if visited < minimumTrackedFiles {
 		t.Fatalf("only %d tracked files were examined, which cannot be right for this "+
 			"repository: the check would pass by looking at nothing", visited)
+	}
+}
+
+// classifyTracked says whether a tracked path is to be skipped (gone from the
+// tree, or a directory such as a submodule) or is present and broken.
+//
+// Every stat error used to read as "deleted but still staged", so a tracked
+// file beneath a directory that cannot be entered, or a symlink to nothing,
+// never reached the read that fails for an unreadable file: with enough other
+// files visited, the floor was met and the guard passed having examined
+// neither. Only a path that is not there at all is skipped. Found by the
+// pre-release review, round seven.
+func classifyTracked(abs string) (skip bool, problem error) {
+	st, err := os.Stat(abs)
+	switch {
+	case err == nil:
+		return st.IsDir(), nil
+	case errors.Is(err, fs.ErrNotExist):
+		if _, lerr := os.Lstat(abs); lerr == nil {
+			return false, fmt.Errorf("a symlink to nothing")
+		}
+		return true, nil
+	default:
+		return false, err
 	}
 }
 

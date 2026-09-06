@@ -192,6 +192,11 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		// the pre-release review, round two.
 		s.dropTakenSession(op, l)
 		l.SessionID = op.SessionID
+		// STATED NOW. The id may have been inferred for this agent earlier and
+		// recorded as a guess, which a live claim may take even from an active
+		// holder; an explicit bind that left it a guess confirmed nothing.
+		// Found by the pre-release review, round seven.
+		l.GuessedSessions = withoutString(l.GuessedSessions, op.SessionID)
 		res = Result{"ok": true, "agent": l.ID, "session_id": l.SessionID}
 		evs = []Event{{Type: "agent.updated", Agent: l.ID}}
 	case OpClaimCoordinator:

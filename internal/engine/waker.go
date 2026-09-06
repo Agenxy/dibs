@@ -264,6 +264,15 @@ func (e *Engine) maybeWake(ev core.Event) {
 	}
 	cmd, ok := e.wakeFor(l, msgType, ev)
 	if !ok {
+		// A SNAPSHOT MISS IS NOT A VERDICT. The socket route decides from a
+		// cache the loop never refreshes, so a session started after the last
+		// scan was invisible to the one wake attempt its mail would ever get:
+		// the refusal was final and the thirty-second refresh revisits no mail.
+		// The retry below refreshes the cache before it decides. Found by the
+		// pre-release review, round seven.
+		if e.socketMayHaveAppeared(l) {
+			e.deferWakeLocked(l.ID, peerCacheTTL)
+		}
 		return
 	}
 	agent, stamp := l.ID, e.wakeStamp(l.ID)
@@ -317,6 +326,10 @@ func (e *Engine) deferWake(agent string, in time.Duration) {
 	// A small margin, so the timer does not land a microsecond early and find
 	// the cooldown still nominally unexpired.
 	e.wakers.deferred[agent] = time.AfterFunc(in+50*time.Millisecond, func() {
+		// Off the loop, before the decision: the socket route reads the cache
+		// without refreshing it, and a retry that decided from the same stale
+		// snapshot would refuse for the same wrong reason.
+		_ = e.peerSessions()
 		e.retryWake(agent)
 	})
 }
@@ -335,6 +348,13 @@ func (e *Engine) retryWake(agent string) {
 }
 
 // deferWakeLocked is deferWake for callers that do not already hold the lock.
+// socketMayHaveAppeared reports whether a refusal could be the cache's
+// staleness rather than the agent's state: a harness that speaks the socket,
+// an agent with a session id, and no session for it in the snapshot.
+func (e *Engine) socketMayHaveAppeared(l *core.Agent) bool {
+	return harnessSpeaksSocket(l) && len(sessionsOf(l)) > 0 && !e.mightReachOverSocket(l)
+}
+
 func (e *Engine) deferWakeLocked(agent string, in time.Duration) {
 	e.wakers.mu.Lock()
 	defer e.wakers.mu.Unlock()

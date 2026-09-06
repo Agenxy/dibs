@@ -173,22 +173,28 @@ func (s *State) ReattachBySessionIDForTest(op *Op) (Result, []Event) {
 // the holder was not active and wrote its name down; ops written before that
 // field existed on these kinds carry nothing here and replay unchanged.
 //
-// BOTH FIELDS. An op carries a session id in two places, the primary
-// session_id a caller states and the alias the daemon joins at ingress, and
-// the ingress vets both into the one SessionTakenFrom. The second version of
-// this dropped only the alias, so a nonce recovery that stated a session_id
-// took it and left the old holder holding it too: the coin flip this exists
-// to end, on the path every reattaching agent takes. Dropping an id a row
-// does not hold is nothing, so both are always dropped. Found by the
-// pre-release review, round six.
+// BOTH FIELDS, FROM EVERY HOLDER. An op carries a session id in two places,
+// the primary session_id a caller states and the alias the daemon joins at
+// ingress, and the ingress vets both into the one SessionTakenFrom. The
+// second version of this dropped only the alias, so a nonce recovery that
+// stated a session_id took it and left the old holder holding it too. The
+// third dropped both, from the one row the record named, and the two ids can
+// come from two rows: the primary from a dormant A and the alias from a
+// dormant B, and whichever admission wrote last named one of them. The record
+// says the ingress ran and found every holder claimable; WHO held what is the
+// state's to say, and the state is replayed. So every other row loses both.
+// Dropping an id a row does not hold is nothing. Found by the pre-release
+// review, rounds six and seven.
 func (s *State) dropTakenSession(op *Op, l *Agent) {
 	if op.SessionTakenFrom == "" {
 		return
 	}
-	prev := s.Agents[op.SessionTakenFrom]
-	if prev == nil || (l != nil && prev.ID == l.ID) {
-		return
+	for _, id := range sortedKeys(s.Agents) {
+		prev := s.Agents[id]
+		if l != nil && prev.ID == l.ID {
+			continue
+		}
+		prev.dropSession(op.SessionID)
+		prev.dropSession(op.SessionAlias)
 	}
-	prev.dropSession(op.SessionID)
-	prev.dropSession(op.SessionAlias)
 }

@@ -379,8 +379,9 @@ anything holding it can reattach *as* that agent, rotate its token and take its
 mailbox. Putting one in `dibs.toml` would hand the admin identity to every
 process running as you, which is worse than the race it closes.
 
-To get the fingerprint, start the agent. The daemon cannot grant the role yet,
-and logs the line to paste:
+To get the fingerprint, start the agent: `register` returns it as
+`fingerprint`, and the daemon, which cannot grant the role yet, logs the line
+to paste:
 
 ```
 to grant it, pin this agent's identity in dibs.toml

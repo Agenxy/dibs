@@ -163,7 +163,7 @@ func (p *rolePins) check(role, name, fingerprint, want string) error {
 			return fmt.Errorf("%q has no identity in [roles.identity], so the first "+
 				"agent to register under that name would be granted %s on trust "+
 				"alone. Add its FINGERPRINT under [roles.identity] in dibs.toml, "+
-				"which %q prints at startup and `register` returns: never the nonce "+
+				"which %q prints at startup and `register` returns as `fingerprint`: never the nonce "+
 				"itself, which is that agent's whole recovery credential and would "+
 				"let anything that can read the file become it", name, role, name)
 		}

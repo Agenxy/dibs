@@ -663,6 +663,19 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// Only when the fold actually USED it, which it reports by returning it: a
 	// registration that reattached or resumed already had a credential, and the
 	// minted one was discarded.
+	if op.Kind == core.OpRegister && res != nil {
+		// The role-pinning instructions, in the README, the configuration guide
+		// and the daemon's own refusal, say `register` returns the fingerprint
+		// to paste under [roles.identity]. It did not: the value existed for
+		// internal callers and the startup log only, so the advertised recovery
+		// step could not be followed. Found by the pre-release review, round
+		// seven.
+		if id, _ := res["agent_id"].(string); id != "" {
+			if l := e.state.Agents[id]; l != nil && l.Nonce != "" {
+				res["fingerprint"] = RolePinFingerprint(l.Nonce)
+			}
+		}
+	}
 	if mintedNonce && res != nil && res["nonce"] != nil {
 		res["nonce_hint"] = "KEEP THIS. You did not send a nonce, so one was made for " +
 			"you: it is the only credential that survives your process. Register again " +

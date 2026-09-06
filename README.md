@@ -855,7 +855,7 @@ admin       = ["fleet-lead"]     # all of that, plus reading every agent's mail
 # REQUIRED, and this is the half that makes the block above safe. A name
 # authenticates nobody: any agent may register as "fleet-lead". Each entry is
 # the FINGERPRINT of the agent allowed to hold that name, which `register`
-# returns and the daemon prints at startup for you to paste. Never the nonce
+# returns as `fingerprint` and the daemon prints at startup for you to paste. Never the nonce
 # itself, which is that agent's whole recovery credential.
 orchestrator = "…64 hex characters, from the startup log…"
 fleet-lead   = "…64 hex characters…"
