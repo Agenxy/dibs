@@ -34,7 +34,9 @@ const selfWakeNotice = "Dibs: check the board."
 // Started once per agent token, and only when this harness published a socket
 // to write to.
 type inboxWatcher struct {
-	once sync.Once
+	mu     sync.Mutex
+	token  string
+	cancel context.CancelFunc
 }
 
 func (iw *inboxWatcher) start(ctx context.Context, client *http.Client, url, secret, token string) {
@@ -42,9 +44,24 @@ func (iw *inboxWatcher) start(ctx context.Context, client *http.Client, url, sec
 	if waker == nil || token == "" {
 		return // this harness publishes no session socket: nothing local to do
 	}
-	iw.once.Do(func() {
-		go iw.run(ctx, client, url, secret, token, waker)
-	})
+	// ONE WATCHER PER CREDENTIAL, not one per bridge. sync.Once started the
+	// first subscription and kept it for the life of the process, with the
+	// first token baked into its body. A reattach ROTATES the token, so after
+	// the next stream reconnect every subscription failed authentication with
+	// a revoked credential, quietly, forever: mail stayed fetchable and the
+	// wake it exists for stopped. A new token retires the old stream and
+	// starts its own. Found by the pre-release review, round three.
+	iw.mu.Lock()
+	defer iw.mu.Unlock()
+	if iw.token == token {
+		return
+	}
+	if iw.cancel != nil {
+		iw.cancel()
+	}
+	sub, cancel := context.WithCancel(ctx)
+	iw.token, iw.cancel = token, cancel
+	go iw.run(sub, client, url, secret, token, waker)
 }
 
 func (iw *inboxWatcher) run(

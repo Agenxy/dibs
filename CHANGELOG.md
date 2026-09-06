@@ -534,6 +534,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   proceeds on them and still refuses a file that does not parse, with its
   reasons intact, because there the address really is a guess.
 
+- **Round three of the review: five more, one of them a leak round two
+  introduced.** The retention clamp lowered the watermark to any remaining
+  message addressed to a reused id, predecessor mail included, undoing the fence
+  registration sets to hide a previous occupant's mailbox; it may now undo only
+  the raise the same sweep made. Adoption skipped mail that an earlier adoption
+  had brought into the source, so a second adoption passed the emptiness check
+  and moved nothing; it honours the mark as the inbox does. The bridge's
+  self-wake subscription was started once per process with the first token
+  baked in, so a reattach's rotated token left it failing authentication
+  forever after the next reconnect, silently; a new token retires the old
+  stream. A resume that binds a new alias is ledgered but never touched the
+  durable checkpoint, so a restart just past the old TTL booted the agent stale;
+  it does now. And `send`'s note said nothing could wake an agent the daemon
+  was about to nudge over its session socket; it now says a best-effort notice
+  will be tried and that nothing can confirm it.
+
 - **Round two of the review: six more, all confirmed, three of them consequences
   of round one.** The retention clamp was gated on the sweep's recorded
   semantics and the daemon builds its own sweep ops without passing the path

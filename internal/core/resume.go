@@ -45,6 +45,11 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 	if op.V7Semantics && changed {
 		s.dropTakenAlias(op, l)
 		l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
+		// A LEDGERED activation is durable evidence of life. Without this the
+		// engine touched only its transient seen map, and a restart just past
+		// the old TTL booted the agent stale despite a registration on disk
+		// seconds old. Found by the pre-release review, round three.
+		l.LastCoordination = now
 		evs := []Event{{Type: "agent.resumed", Agent: l.ID, Data: map[string]any{
 			"via": "nonce", "session_bound": true,
 		}}}

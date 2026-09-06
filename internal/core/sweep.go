@@ -288,6 +288,15 @@ func (s *State) gc(now time.Time, purgeMail, clampWatermark bool) ([]Event, bool
 		sortMessages(ms)
 		evict := ms[:len(ms)-s.Limits.TerminalRetention]
 		l := s.Agents[agent]
+		// THE FENCE THIS SWEEP FOUND, which the clamp below may not go under.
+		// Registration raises the watermark to hide a previous occupant's
+		// mail; the first clamp lowered it to any remaining message addressed
+		// to the reused id, predecessor mail included, and exposed it. Found by
+		// the pre-release review, round three.
+		fence := uint64(0)
+		if l != nil {
+			fence = l.TruncatedBefore
+		}
 		for _, m := range evict {
 			delete(s.Messages, m.Serial)
 			// A DELETION IS A CHANGE EVEN WHEN NOBODY IS LEFT TO TELL.
@@ -323,7 +332,7 @@ func (s *State) gc(now time.Time, purgeMail, clampWatermark bool) ([]Event, bool
 		// is, so a v0.0.6 sweep replays to the watermark it really set.
 		if l != nil && clampWatermark {
 			for _, m := range s.Messages {
-				if m.To == agent && m.Serial < l.TruncatedBefore {
+				if m.To == agent && m.Serial < l.TruncatedBefore && m.Serial >= fence {
 					l.TruncatedBefore = m.Serial
 				}
 			}

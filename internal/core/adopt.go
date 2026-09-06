@@ -153,7 +153,12 @@ func (s *State) readdressMail(from, into *Agent, v7 bool) int {
 		// them with inbox", so a mailbox holding one unread message and one
 		// acknowledged one reported two and showed one. The source keeps its
 		// finished history, which is what the note already promises.
-		if m.To != from.ID || m.Serial < from.TruncatedBefore || !m.readable() {
+		// The same exemption Inbox applies: mail adopted INTO the source sits
+		// below its watermark by construction and is its to pass on. Without
+		// this a second adoption passed the emptiness check, which reads Inbox,
+		// and moved nothing. Found by the pre-release review, round three.
+		fenced := m.Serial < from.TruncatedBefore && m.AdoptedFrom == ""
+		if m.To != from.ID || fenced || !m.readable() {
 			continue
 		}
 		m.AdoptedFrom = from.ID

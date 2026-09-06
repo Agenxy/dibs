@@ -1334,6 +1334,20 @@ func (e *Engine) PullOnlyNote(l *core.Agent) string {
 	if named == "" {
 		named = "its harness"
 	}
+	// THE SOCKET ROUTE EXISTS, AND THIS NOTE SAID IT DID NOT. wakeRoute tries
+	// a session socket when no command can run, and the bridge's own
+	// subscription wakes a live Claude Code session; this told the sender
+	// "nothing on this board can wake" an agent the daemon was about to nudge.
+	// Best effort is still best effort, so the wording promises an attempt
+	// and not an arrival. Found by the pre-release review, round three.
+	socket := e.mightReachOverSocket(l)
+	bestEffort := func(state, why string) string {
+		return "delivered to " + l.ID + ", which is " + state + ". " + why + ", but a session " +
+			"socket for it is open, so a best-effort notice will be tried. Nothing can confirm " +
+			"it arrived: a session in bypassPermissions mode holds peer messages for its human. " +
+			"If it is held, this is pull-only and arrives when that agent next calls inbox or " +
+			"check_in."
+	}
 	// A SLEEPING AGENT NOTHING CAN REACH. Said plainly, because the alternative
 	// is the sender believing a wake is coming.
 	//
@@ -1346,11 +1360,27 @@ func (e *Engine) PullOnlyNote(l *core.Agent) string {
 			why = named + " has a wake command, but " + l.ID + " has never supplied " +
 				"a harness thread id for it to resume"
 		}
+		if socket {
+			// The command-side reason, worded as what is MISSING rather than as
+			// "nothing can wake it", since the next clause says something will try.
+			reason := "No wake command is configured for " + named
+			if configured {
+				reason = named + " has a wake command but this agent has never supplied a thread id for it"
+			}
+			return bestEffort(string(l.Status), reason)
+		}
 		return "delivered to " + l.ID + ", which is " + string(l.Status) + ", and " +
 			why + ". Nothing will start it: this is NOT a message that will be seen " +
 			"when it next wakes, because nothing is going to wake it. It waits until " +
 			"a person starts that agent again. The message is not lost, and any " +
 			"deadline on it will expire unread."
+	}
+	if socket {
+		why := "No wake command is configured for " + named
+		if configured {
+			why = named + " has a wake command but this agent has never supplied a thread id for it"
+		}
+		return bestEffort("active", why)
 	}
 	if configured {
 		return "delivered to " + l.ID + ", which is active, and " + named + " HAS a wake " +
