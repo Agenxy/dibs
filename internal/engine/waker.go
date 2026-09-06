@@ -1238,6 +1238,19 @@ func (t *tailBuffer) Bytes() []byte {
 	return append([]byte(nil), t.buf...)
 }
 
+// isTheHuman reports whether an id is the human's own mailbox. Wake routes
+// are for agents; a person is reached by the desktop notification the send
+// path raises. The pull-only warning written for agents was attached to every
+// send, and told a sender that nothing could wake "dibs web" and delivery
+// waited on inbox or check_in, which misled the one decision that note exists
+// to inform: whether to wait for a human's approval. Found by the pre-release
+// review, round six.
+func (e *Engine) isTheHuman(id string) bool {
+	e.human.mu.Lock()
+	defer e.human.mu.Unlock()
+	return e.human.agent != "" && e.human.agent == id
+}
+
 // PullOnlyNoteFor is PullOnlyNote by agent id, read inside the loop.
 func (e *Engine) PullOnlyNoteFor(ctx context.Context, agentID string) string {
 	res, err := e.query(ctx, func() core.Result {
@@ -1292,7 +1305,7 @@ func (e *Engine) PullOnlyNoteFor(ctx context.Context, agentID string) string {
 // changes without an op. So the engine's note wins wherever it has one, because
 // it is the participant that knows.
 func (e *Engine) PullOnlyNote(l *core.Agent) string {
-	if l == nil || l.Gone() {
+	if l == nil || l.Gone() || e.isTheHuman(l.ID) {
 		return ""
 	}
 	harness := wakeHarness(l)

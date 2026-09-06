@@ -62,11 +62,26 @@ func applyLimits(c LimitsConfig, base core.Limits) (core.Limits, error) {
 	// duration: it reads as configured and the lower bound silently wins, so an
 	// operator who raised the wrong one waits for a change that cannot happen.
 	if base.MaxPersistentAgents > base.MaxAgents {
-		return base, fmt.Errorf(
-			"[limits] max_persistent_agents = %d exceeds max_agents = %d, so the "+
-				"lower ceiling is the one that binds and this setting would do nothing: "+
-				"raise max_agents too, or lower this",
-			base.MaxPersistentAgents, base.MaxAgents)
+		if c.MaxPersistentAgents == 0 {
+			// A DEFAULT MAY NOT MAKE A CONFIGURATION INVALID. `[limits]
+			// max_agents = 32` alone was accepted by every release to v0.0.6
+			// and refused at startup once the persistent default rose to 64:
+			// the operator set nothing about persistence and was told their
+			// persistent setting exceeded the total. The shared loader
+			// compares the raw setting and accepted it, so `dibs mcp-config`
+			// printed a configuration the daemon would not start on. An
+			// unset persistent ceiling follows the total down; only a stated
+			// one that exceeds the total is refused, because that one would
+			// read as applied and do nothing. Found by the pre-release
+			// review, round six.
+			base.MaxPersistentAgents = base.MaxAgents
+		} else {
+			return base, fmt.Errorf(
+				"[limits] max_persistent_agents = %d exceeds max_agents = %d, so the "+
+					"lower ceiling is the one that binds and this setting would do nothing: "+
+					"raise max_agents too, or lower this",
+				base.MaxPersistentAgents, base.MaxAgents)
+		}
 	}
 	return base, applyBlobCap(c, &base)
 }

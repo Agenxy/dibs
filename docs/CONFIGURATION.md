@@ -270,16 +270,18 @@ notices_wake = false         # ...and do not spend a turn on situational awarene
 |---|---|---|
 | `agent_ttl` | `5m` | How long an agent **that registered a PID** may be silent before its lease lapses. Shorter is faster crash detection; longer suits agents that run long silent steps. |
 | `idle_ttl` | `45m` | The same for agents with **no PID**, where silence is the only evidence. This governs the config `dibs mcp-config` prints, so an operator who tunes `agent_ttl` and sees nothing change is hitting this one. |
-| `max_persistent_agents` | `16` | How many STANDING identities the board may hold. |
+| `max_persistent_agents` | `64` | How many STANDING identities the board may hold. Unset, it follows `max_agents` when that is set lower. |
 | `max_agents` | `64` | How many live agents of any kind. |
 | `blob_store_bytes` | *(built-in)* | A hard cap on the attachment store. Over it, eviction drops referenced content rather than exceed the bound, so a recipient can hold a message naming a blob that is gone. |
 
 **`max_persistent_agents` is reached by accumulation, not by concurrency.** A
 persistent agent holds its slot while dormant, which is the point of one: its
 mailbox and memberships survive the harness restarting. So the ceiling fills up
-over days rather than at peak, and a fleet of sixteen standing roles meets the
-default of sixteen while the board holds sixteen agents of a possible
-sixty-four.
+over days rather than at peak: a fleet of standing roles meets it while the
+board holds far fewer live agents than `max_agents` allows. The default is the
+same as `max_agents`, and when only `max_agents` is set, the persistent
+ceiling follows it down, because a default may not make a configuration
+invalid.
 
 Before raising it, read the number as a signal. That ceiling is usually reached
 because siblings accumulated: an agent that could not prove it was itself and

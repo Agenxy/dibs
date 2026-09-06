@@ -40,7 +40,7 @@ func (s *State) reattachBySessionID(op *Op, now time.Time) (Result, []Event) {
 	if op.PID != 0 {
 		l.PID, l.ProcStart = op.PID, op.ProcStart
 	}
-	s.dropTakenAlias(op, l)
+	s.dropTakenSession(op, l)
 	l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
 	// LEDGERED, like every other transition. A branch that rotates a token and
 	// returns no events never advances the serial, so the engine never writes it
@@ -161,8 +161,8 @@ func (s *State) ReattachBySessionIDForTest(op *Op) (Result, []Event) {
 	return s.reattachBySessionID(op, time.Now())
 }
 
-// dropTakenAlias removes an alias from the row the ingress recorded as losing
-// it, before this agent binds it.
+// dropTakenSession removes a session id from the row the ingress recorded as
+// losing it, before this agent takes it.
 //
 // ONE PLACE, called before every bind. The first version of this repair was
 // written inline at one of six sites that bind an alias, and check_in, the
@@ -172,11 +172,23 @@ func (s *State) ReattachBySessionIDForTest(op *Op) (Result, []Event) {
 // that lost it. Read from the op and never re-decided: the ingress saw that
 // the holder was not active and wrote its name down; ops written before that
 // field existed on these kinds carry nothing here and replay unchanged.
-func (s *State) dropTakenAlias(op *Op, l *Agent) {
-	if op.SessionTakenFrom == "" || op.SessionAlias == "" {
+//
+// BOTH FIELDS. An op carries a session id in two places, the primary
+// session_id a caller states and the alias the daemon joins at ingress, and
+// the ingress vets both into the one SessionTakenFrom. The second version of
+// this dropped only the alias, so a nonce recovery that stated a session_id
+// took it and left the old holder holding it too: the coin flip this exists
+// to end, on the path every reattaching agent takes. Dropping an id a row
+// does not hold is nothing, so both are always dropped. Found by the
+// pre-release review, round six.
+func (s *State) dropTakenSession(op *Op, l *Agent) {
+	if op.SessionTakenFrom == "" {
 		return
 	}
-	if prev := s.Agents[op.SessionTakenFrom]; prev != nil && prev.ID != l.ID {
-		prev.dropSession(op.SessionAlias)
+	prev := s.Agents[op.SessionTakenFrom]
+	if prev == nil || (l != nil && prev.ID == l.ID) {
+		return
 	}
+	prev.dropSession(op.SessionID)
+	prev.dropSession(op.SessionAlias)
 }

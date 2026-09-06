@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net"
 	"os"
 	"sync"
@@ -39,10 +40,12 @@ import (
 // rule is unchanged and this route does not widen it: the board may WAKE an
 // agent and may not tell it what to do.
 type selfWaker struct {
-	mu     sync.Mutex
-	socket string
-	token  string
-	last   time.Time
+	mu       sync.Mutex
+	socket   string
+	token    string
+	cooldown time.Duration
+	last     time.Time // when a notice was last DELIVERED; an attempt spends nothing
+	pending  bool      // a deferred notice is armed for when the cooldown ends
 }
 
 // selfWakeCooldown is the shortest gap between two notices in one session.
@@ -62,7 +65,7 @@ func newSelfWaker() *selfWaker {
 	if sock == "" || tok == "" {
 		return nil
 	}
-	return &selfWaker{socket: sock, token: tok}
+	return &selfWaker{socket: sock, token: tok, cooldown: selfWakeCooldown}
 }
 
 // wake puts one notice into this session's own queue.
@@ -75,13 +78,49 @@ func (w *selfWaker) wake(notice string) error {
 		return errors.New("no session socket: this harness publishes none")
 	}
 	w.mu.Lock()
-	if time.Since(w.last) < selfWakeCooldown {
+	now := time.Now()
+	if wait := w.cooldown - now.Sub(w.last); wait > 0 {
+		// Coalesced, deliberately (see selfWakeCooldown), and NOT DROPPED. A
+		// second arrival inside the cooldown used to return success and be
+		// forgotten: an agent that had read its inbox after the first notice
+		// and finished never heard of the second message until something
+		// else arrived for it. One deferred notice is armed for the moment
+		// the cooldown ends, and every further arrival folds into that one.
+		// Found by the pre-release review, round six.
+		if !w.pending {
+			w.pending = true
+			time.AfterFunc(wait, func() {
+				w.mu.Lock()
+				w.pending = false
+				w.mu.Unlock()
+				if err := w.wake(notice); err != nil {
+					slog.Debug("could not put the deferred notice into this session", "err", err)
+				}
+			})
+		}
 		w.mu.Unlock()
-		return nil // coalesced, deliberately: see selfWakeCooldown
+		return nil
 	}
-	w.last = time.Now()
+	prev := w.last
+	w.last = now // claimed, and given back below if nothing was delivered
 	w.mu.Unlock()
 
+	if err := w.deliver(notice); err != nil {
+		// A FAILED ATTEMPT SPENDS NOTHING. The socket was absent or busy and
+		// no notice went anywhere, so the next arrival must try again rather
+		// than sit out a cooldown that coalesced nothing.
+		w.mu.Lock()
+		if w.last.Equal(now) {
+			w.last = prev
+		}
+		w.mu.Unlock()
+		return err
+	}
+	return nil
+}
+
+// deliver writes the auth line and one notice to the session socket.
+func (w *selfWaker) deliver(notice string) error {
 	conn, err := net.DialTimeout("unix", w.socket, 2*time.Second)
 	if err != nil {
 		return err

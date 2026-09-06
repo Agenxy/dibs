@@ -7,6 +7,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- **A nonce recovery that stated a session id left the old holder holding it
+  too.** The ingress vets a session id a caller states and the alias the
+  daemon joins into one "taken from" record, and the fold dropped only the
+  alias from the row that lost it. So an agent reattaching with its nonce and
+  its `session_id` took a thread from a holder that had stopped answering and
+  left that holder holding it: two stated holders, and on the old one's next
+  `check_in` a coin flip on every hook, including which agent's mail a hook
+  lists. Both fields are dropped now, at the one place every bind calls.
+
 - **An adoption marked mail as recoverable, and the mark outlived the name it
   was for.** The round-three fix for adopted mail below the heir's watermark
   marked each moved message `adopted_from`, and every reader exempted marked
@@ -450,6 +459,34 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing an agent wrote, and it cannot read the session or steer it.
 
 ### Fixed
+
+- **`[limits] max_agents = 32` alone stopped the daemon starting.** The
+  persistent default rose to 64 this cycle, and the startup check compared it
+  against an explicit total after applying it: an operator who had set
+  nothing about persistence was told their persistent setting exceeded the
+  total, on a configuration every release to v0.0.6 accepted. The shared
+  loader compared the raw setting and accepted it, so `dibs mcp-config`
+  printed a configuration the daemon would not boot on. An unset persistent
+  ceiling now follows the total down; a stated one above it is still refused.
+  The configuration guide, which still listed the old default of sixteen and
+  reasoned from it, says what ships.
+
+- **The bridge dropped a second inbox notice inside its cooldown.** Two
+  arrivals within fifteen seconds read as one interruption, which is right,
+  and the second was returned as success and forgotten, which is not: an
+  agent that had read its inbox after the first notice and finished never
+  heard about the second message until something else arrived for it. A
+  failed delivery also spent the cooldown, so a busy socket at the first
+  arrival silenced the session for fifteen seconds. One deferred notice is
+  armed for when the cooldown ends and every further arrival folds into it,
+  and only a delivered notice starts the cooldown.
+
+- **Sending to the human warned that nothing could wake "dibs web".** The
+  pull-only note written for agents was attached to every `send`, the human's
+  mailbox included, and told the sender delivery waited on `inbox` or
+  `check_in` while the desktop notification the send path raises was already
+  on its way. That misled the one decision the note exists to inform, whether
+  to wait for a person's approval. The human's mailbox carries no wake note.
 
 - **Two checkpoint repairs rewrote history on replay.** The round-three fixes
   that stamp `LastCoordination` on `claim_coordinator` and `prune` did so for

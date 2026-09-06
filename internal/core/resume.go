@@ -43,7 +43,7 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 	alias := op.SessionAlias
 	changed := alias != "" && (!l.holdsSession(alias) || l.GuessedSession(alias))
 	if op.V7Semantics && changed {
-		s.dropTakenAlias(op, l)
+		s.dropTakenSession(op, l)
 		l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
 		// A LEDGERED activation is durable evidence of life. Without this the
 		// engine touched only its transient seen map, and a restart just past

@@ -190,11 +190,7 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		// were active stated holders and a hook resolved by id order. Same
 		// repair register already had, on the op that exists to bind. Found by
 		// the pre-release review, round two.
-		if op.SessionTakenFrom != "" {
-			if prev := s.Agents[op.SessionTakenFrom]; prev != nil && prev.ID != l.ID {
-				prev.dropSession(op.SessionID)
-			}
-		}
+		s.dropTakenSession(op, l)
 		l.SessionID = op.SessionID
 		res = Result{"ok": true, "agent": l.ID, "session_id": l.SessionID}
 		evs = []Event{{Type: "agent.updated", Agent: l.ID}}
@@ -446,7 +442,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				if op.RestoreNonce && l.Nonce == "" && op.Nonce != "" {
 					l.Nonce = op.Nonce
 				}
-				s.dropTakenAlias(op, l)
+				s.dropTakenSession(op, l)
 				l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
 				// LEDGERED, like every other transition.
 				//
@@ -565,11 +561,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	// The previous occupant of this thread loses it, from the field the ingress
 	// check recorded. Read from the op rather than re-decided here, so replay
 	// strips the same row without asking what "dormant" means today.
-	if op.SessionTakenFrom != "" {
-		if prev := s.Agents[op.SessionTakenFrom]; prev != nil {
-			prev.dropSession(op.SessionID)
-		}
-	}
+	s.dropTakenSession(op, nil) // the row is minted below; nothing to spare
 	// THE MINTED NONCE IS USED HERE AND NOWHERE ELSE.
 	//
 	// Only a registration that CREATES an agent takes it. Every path above this
@@ -900,7 +892,7 @@ func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
 	if op.Agent != nil {
 		res["identity"] = l.mergeIdentity(op.Agent)
 	}
-	s.dropTakenAlias(op, l)
+	s.dropTakenSession(op, l)
 	if sid := l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed); sid != "" {
 		res["session_id"] = sid
 	}
@@ -1088,7 +1080,7 @@ func (s *State) applyAckBoard(l *Agent, op *Op) (Result, []Event) {
 	evs := []Event{{Type: "board.acked", Agent: l.ID}}
 	// check_in is how an agent ALREADY on the board gets the name its hooks
 	// use: it is the one call they all keep making. See bindHarnessSession.
-	s.dropTakenAlias(op, l)
+	s.dropTakenSession(op, l)
 	bound := l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
 	for _, m := range s.Inbox(l.ID) {
 		if m.State == MsgStatePending {
