@@ -61,16 +61,21 @@ blocked on arrives for one of its agents that has stopped:
 
 ```toml
 [wake.exec.codex]
-argv = ["/Applications/ChatGPT.app/Contents/Resources/codex",
-        "exec", "resume", "{thread}", "{message}"]
+argv     = ["/Applications/ChatGPT.app/Contents/Resources/codex",
+            "exec", "resume", "{thread}", "{message}"]
+fallback = ["/Applications/ChatGPT.app/Contents/Resources/codex",
+            "queue", "--thread", "{thread}", "--message", "{message}"]
 cooldown = "90s"
 ```
 
-**Which Codex command, and why this one.** Both were measured on 2026-08-22.
+**Which Codex command, and why this one.** Both were measured on 2026-08-22,
+and the `fallback` on 2026-09-05.
 
 `codex exec resume <uuid> "<text>"` continues that thread's history in a new
-headless process, which registers, reads its mail and acts. It works whether or
-not anything has the thread open, which is what a wake has to do. On builds from
+headless process, which registers, reads its mail and acts. It works for a
+thread nothing has open; a thread the desktop app holds open refuses it, which
+is what the `fallback` line is for (see below), so an entry without one leaves
+open desktop threads unreachable. On builds from
 2026-08-18 it takes a per-thread writer lock, so it refuses rather than colliding
 with a session that is already running; on older builds two of them interleave
 into one transcript, which is a good reason to keep the cooldown.

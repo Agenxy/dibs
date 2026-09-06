@@ -600,6 +600,13 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	if op.Kind == core.OpUpdate && op.KeepDescription && actor != nil {
 		op.Description = actor.Description
 	}
+	if op.Kind == core.OpUpdate && op.Agent != nil {
+		// A corrected location is a repository to discover, as a registered
+		// one is: the correction used to update the row and leave matching
+		// unavailable for the repository it named. Found by the pre-release
+		// review, round fifteen.
+		e.noteRepoOf(op.Agent.CWD)
+	}
 
 	// Who may take over an abandoned mailbox. Decided here, where the human's
 	// identity is known, and RECORDED, so replay does not have to re-decide it

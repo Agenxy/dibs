@@ -5,11 +5,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/agenxy/dibs/internal/core"
 )
 
 func openListen(t *testing.T, srv *httptest.Server, token string, since any) <-chan string {
@@ -76,6 +79,39 @@ func TestAReconnectingSubscriberIsHandedTheGap(t *testing.T) {
 			"arrived in the gap: an idle session sleeps on blocking mail until something else comes")
 	}
 	_ = time.Second
+}
+
+// A backlog of unrelated events between the cursor and the question does not
+// crowd the question's notification out of the replay.
+func TestAReconnectingSubscriberIsHandedTheGapThroughABacklog(t *testing.T) {
+	srv, _ := newServer(t)
+	eng := srv.Config.Handler.(*Server).eng
+	asker := toolCall(t, srv, "register", map[string]any{"name": "asker", "cwd": t.TempDir()})
+	busy := toolCall(t, srv, "register", map[string]any{"name": "busy", "cwd": t.TempDir()})
+	cursor, _ := busy["serial"].(float64)
+	if cursor == 0 {
+		t.Fatalf("setup: no serial on the registration: %v", busy)
+	}
+	// Three hundred events nobody subscribed for, then the one that matters.
+	// Spread over twelve agents so no bucket exceeds its burst.
+	for n := 0; n < 12; n++ {
+		noise, err := eng.Do(context.Background(), &core.Op{Kind: core.OpRegister, Name: fmt.Sprintf("noise-%d", n), AgentKind: core.KindEphemeral})
+		if err != nil {
+			t.Fatal("setup:", err)
+		}
+		for i := 0; i < 25; i++ {
+			if _, err := eng.Do(context.Background(), &core.Op{Kind: core.OpUpdate, Token: noise["token"].(string), Description: fmt.Sprintf("noise %d", i)}); err != nil {
+				t.Fatal("setup:", err)
+			}
+		}
+	}
+	toolCall(t, srv, "send", map[string]any{
+		"token": asker["token"], "to": "busy", "type": "question", "body": "buried",
+	})
+	if !awaitUpdate(openListen(t, srv, busy["token"].(string), cursor), "dibs://inbox") {
+		t.Fatal("the question behind three hundred unrelated events was not replayed: the " +
+			"shared buffer dropped it before anything filtered, and the agent sleeps on it")
+	}
 }
 
 // The acknowledgment names the serial the subscription starts from.

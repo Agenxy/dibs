@@ -495,6 +495,24 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A reconnect catch-up could still lose the notification that mattered.**
+  The subscription replayed the gap through a bounded channel and dropped
+  what did not fit before anything was filtered, so a backlog of unrelated
+  board events crowded out the one inbox notification that would have woken
+  the agent, on a connection that looked healthy. The events addressed to the
+  agent are replayed from the ring first, filtered, in full.
+
+- **Correcting an agent's location started no discovery of it.** `update(cwd)`
+  updated the row and left the corrected repository unindexed, so semantic
+  matching stayed unavailable for the place the agent actually works. A
+  correction is discovered as a registration is.
+
+- **The configuration guide's first Codex recipe left open desktop threads
+  unreachable.** It showed `codex exec resume` alone and said it works whether
+  or not the thread is open; the guide's own later section explains that an
+  open desktop thread refuses it and needs the `queue` fallback. The first
+  recipe carries the fallback and says why.
+
 - **Confirming an inferred session by registering left it a guess.** A
   same-nonce register that stated the session id the row already held as an
   inference read as no change, so the guess stood and another agent's

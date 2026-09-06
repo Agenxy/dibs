@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -101,8 +102,9 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *
 	}
 	// A reconnecting subscriber says where it left off, and the gap is
 	// replayed from the ring rather than lost.
+	cursor, resuming := since, false
 	if v, ok := p.Meta[SinceMetaKey].(float64); ok && v >= 0 && uint64(v) < since {
-		since = uint64(v)
+		cursor, resuming = uint64(v), true
 	}
 
 	flusher, ok := w.(http.Flusher)
@@ -130,7 +132,23 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *
 		"notifications": honored, "_meta": map[string]any{SerialMetaKey: since},
 	}, req.ID))
 
-	ch, cancel := s.eng.Subscribe(since)
+	// THE GAP, FILTERED FIRST. Subscribe replays the gap through a bounded
+	// channel and drops what does not fit, before anything is filtered, so a
+	// backlog of unrelated board events crowded out the one notification
+	// that would have woken the agent. The events addressed to this agent
+	// are replayed here from the ring, filtered, in full; the channel replay
+	// below may repeat some, and a repeat coalesces where a loss does not.
+	// Found by the pre-release review, round fifteen.
+	if resuming && wantInbox {
+		for _, ev := range s.missedFor(r.Context(), token, cursor) {
+			if uri := matchedURI(ev, agentID, wantInbox, false); uri != "" {
+				if !stream.send(resourceUpdated(uri, req.ID, ev)) {
+					return
+				}
+			}
+		}
+	}
+	ch, cancel := s.eng.Subscribe(cursor)
 	defer cancel()
 	// Fixed for the lifetime of the stream: 2026-07-28 carries the whole
 	// subscription in the listen call, so there is nothing to re-read.
@@ -262,4 +280,15 @@ func resourceUpdated(uri string, subID json.RawMessage, ev core.Event) map[strin
 		params["_meta"] = map[string]any{EventMetaKey: ev.Type, MsgTypeMetaKey: msgType, SerialMetaKey: ev.Serial}
 	}
 	return notification("notifications/resources/updated", params, subID)
+}
+
+// missedFor is every event the ring holds for this agent after the cursor,
+// or nothing when the cursor is older than the ring.
+func (s *Server) missedFor(ctx context.Context, token string, cursor uint64) []core.Event {
+	res, err := s.eng.EventsSince(ctx, token, cursor, false)
+	if err != nil || res["error"] != nil {
+		return nil
+	}
+	evs, _ := res["events"].([]core.Event)
+	return evs
 }
