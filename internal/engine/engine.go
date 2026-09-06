@@ -412,7 +412,12 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		// claim cannot take it away. See Op.SessionGuessed.
 		op.SessionGuessed = false
 	}
-	if op.SessionAlias == "" {
+	// NOT OVER A STATED THREAD. A register that names its thread by
+	// session_id was still given the directory's guess as an alias, the
+	// guess became current, and the configured wake resumed the guessed
+	// thread instead of the stated one. Found by the pre-release review,
+	// round seventeen.
+	if op.SessionAlias == "" && !looksLikeThreadID(op.SessionID) {
 		// ANYTHING SET BELOW IS A GUESS, AND THIS LINE IS THE WHOLE REPAIR.
 		//
 		// It was missing. The reclaim rule, its test and a changelog entry all
@@ -1279,7 +1284,11 @@ func (e *Engine) refuseStealingAnotherThreadsSession(op *core.Op) error {
 	// its claims; only where a WAKE is delivered changes, and a dormant agent
 	// was not receiving those anyway. An ACTIVE holder still wins: two live
 	// agents claiming one thread is a genuine conflict, not stale state.
-	if holder.Status != core.StatusActive {
+	// A holder that merely GUESSED the id yields, as it does to a claim by
+	// alias: the rightful agent registering with the session_id it states was
+	// refused with E_SESSION_TAKEN by this guard while mayClaimSession would
+	// have let it through. Found by the pre-release review, round seventeen.
+	if holder.Status != core.StatusActive || holder.GuessedSession(op.SessionID) {
 		op.SessionTakenFrom = holder.ID
 		return nil
 	}

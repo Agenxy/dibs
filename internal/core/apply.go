@@ -426,6 +426,12 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				case op.PID != 0:
 					l.PID, l.ProcStart = op.PID, op.ProcStart
 				}
+				// Yield BEFORE taking what this op states: the ids it carries
+				// were vetted by the ingress and are this row's to hold; the
+				// ones it held from before its retirement are not.
+				if op.V7Semantics {
+					s.yieldSessionsHeldElsewhere(l)
+				}
 				if op.SessionID != "" {
 					l.SessionID = op.SessionID // the new session owns it now
 				}

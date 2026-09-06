@@ -7,6 +7,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- **A retired holder could recover and reclaim another agent's live
+  session.** A signed-off row keeps its session bindings; the ingress counts
+  a retired row as no holder, so another agent took the thread; nonce
+  recovery then revived the old row with its bindings intact. Two active
+  holders, and hooks resolved to the old one. A revived row yields every
+  session another live row holds.
+
 - **The nonce-only rule for privileged rows read the name and not the id.**
   The `[roles]` table resolves an agent by id as well as by name, and a row
   renamed for display keeps the id the table names, so a declared identity
@@ -494,6 +501,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing an agent wrote, and it cannot read the session or steer it.
 
 ### Fixed
+
+- **A directory guess overrode a stated wake target.** A register that
+  named its thread by `session_id` was still given the directory's inferred
+  session as an alias, the alias became current, and the configured wake
+  resumed the guessed thread. No guess is made over a stated thread.
+
+- **The explicit-session guard refused recovery from a guessed binding.**
+  A holder that had only inferred an id kept it against an agent registering
+  with that id stated, with `E_SESSION_TAKEN`, while the same claim by alias
+  went through. A guessed holder yields to a stated claim on both paths.
 
 - **Nonce recovery left a confirmed session stealable.** Recovering a
   dormant row with `register(name, nonce, session_id)` restored it and kept

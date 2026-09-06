@@ -440,6 +440,30 @@ func (a *Agent) currentFrom(op *Op) {
 	a.CurrentSession = op.SessionID
 }
 
+// yieldSessionsHeldElsewhere drops from a revived row every session id that
+// another live row holds. A retired holder keeps its bindings on its row,
+// the ingress counts a retired row as no holder, so another agent takes the
+// id while it is gone; nonce recovery then revived the old row with its
+// bindings intact: two active holders, and hooks resolving to the old one.
+// The id was taken while this row was away, so the live holder keeps it.
+// Every other row is consulted, not a lookup that picks one of two holders
+// by map order. Found by the pre-release review, round seventeen.
+func (s *State) yieldSessionsHeldElsewhere(l *Agent) {
+	ids := append([]string{l.SessionID}, l.SessionAliases...)
+	ids = append(ids, l.GuessedSessions...)
+	for _, sid := range ids {
+		if sid == "" {
+			continue
+		}
+		for _, o := range s.Agents {
+			if o.ID != l.ID && !o.Gone() && o.holdsSession(sid) {
+				l.dropSession(sid)
+				break
+			}
+		}
+	}
+}
+
 func (a *Agent) bindHarnessSessionAs(sid string, guessed bool) string {
 	bound := a.bindHarnessSession(sid)
 	// AN ALREADY-HELD ID STILL CARRIES PROVENANCE, and this returned early on
