@@ -198,9 +198,12 @@ var catalog = []struct {
 			"starting one, and connections are established asynchronously, so " +
 			"SessionStart can lose that race while Stop is later and likelier. And a " +
 			"hook is a callback on YOUR lifecycle: it delivers when your turn ends, " +
-			"and nothing outside can make an idle thread wake. For that Codex has its " +
-			"own durable queue, which is a harness control surface and not something " +
-			"Dibs will reach into.",
+			"and the hook alone cannot make an idle thread wake. For that the operator " +
+			"configures [wake.exec.codex] in dibs.toml: `codex exec resume {thread}` for " +
+			"a closed thread, with `codex queue` as the fallback for a thread the desktop " +
+			"app holds open, which is Codex's own durable queue used the way Codex " +
+			"documents it. Measured working on 2026-09-05; the recipe is in " +
+			"docs/CONFIGURATION.md.",
 		root: "~/.codex",
 		setup: []Step{
 			{

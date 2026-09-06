@@ -117,6 +117,55 @@ type plan struct {
 	confirm func(newDir string) error
 }
 
+// recoveryStarts bounds how many times a recovery starts the daemon while
+// waiting for the board to answer; each wait is the confirm's own limit.
+const recoveryStarts = 3
+
+// startExitWatch is how long startDaemon watches a fresh process for an
+// immediate exit before calling the start done.
+const startExitWatch = 750 * time.Millisecond
+
+// recover starts the daemon again after a cutover that stopped it and could
+// not finish, and stays until the board answers or the attempts run out.
+func (p *plan) recover(dir string) {
+	if err := p.doStart(dir); err != nil {
+		fmt.Fprintf(os.Stderr, "\n%s could not restart the daemon after the failure "+
+			"above: start it with `%s -dir %s`: %v\n",
+			ui.Bold("AND:"), p.installed, dir, err)
+		return
+	}
+	// A START IS A PROCESS, NOT A BOARD. A replacement started while the
+	// old daemon still holds the directory lock exits on that lock at
+	// once, and the first version of this recovery reported "started" and
+	// went home, leaving the board down after a stop that timed out.
+	// Confirm the board answers, and start again while the old process
+	// drains. Found by the pre-release review, round ten.
+	for attempt := 1; ; attempt++ {
+		if err := p.doConfirm(dir); err == nil {
+			fmt.Fprintf(os.Stderr, "\n%s the daemon is serving again from %s on %s. "+
+				"This is the NEW build, not a rollback: the previous binary is not "+
+				"retained. If the failure above was the new build itself, install "+
+				"the previous one before relying on it.\n",
+				ui.Bold("recovered:"), dir, filepath.Base(p.installed))
+			return
+		}
+		if attempt >= recoveryStarts {
+			fmt.Fprintf(os.Stderr, "\n%s the daemon was started %d times from %s and the "+
+				"board did not answer. Run `dibs doctor`, or start it with `%s -dir %s` "+
+				"once the old process has exited.\n",
+				ui.Bold("AND:"), attempt, dir, p.installed, dir)
+			return
+		}
+		fmt.Fprintf(os.Stderr, "the board did not answer; starting again (%d of %d)\n",
+			attempt+1, recoveryStarts)
+		if err := p.doStart(dir); err != nil {
+			fmt.Fprintf(os.Stderr, "\n%s could not start the daemon again: start it with "+
+				"`%s -dir %s`: %v\n", ui.Bold("AND:"), p.installed, dir, err)
+			return
+		}
+	}
+}
+
 func (p *plan) doStop(dir string) error {
 	if p.stop != nil {
 		return p.stop(dir)
@@ -376,33 +425,7 @@ func (p *plan) cutover() error {
 		if !stopped || restored {
 			return
 		}
-		if err := p.doStart(recoverDir); err != nil {
-			fmt.Fprintf(os.Stderr, "\n%s could not restart the daemon after the failure "+
-				"above: start it with `%s -dir %s`: %v\n",
-				ui.Bold("AND:"), p.installed, recoverDir, err)
-			return
-		}
-		// SAY WHICH BUILD. This read "restarted on the build it was already
-		// running", which was never something this code could deliver: the
-		// upgrade replaces the binary in place and keeps no copy of the old one,
-		// so p.installed is the REPLACEMENT, and on the failure where the
-		// replacement is what is wrong this restarted the thing that had just
-		// failed and reported a rollback. An operator reading that goes looking
-		// for a different cause.
-		//
-		// Getting a board back up is still the right move, and it is what this
-		// does; the sentence now matches it. A recovery that puts the previous
-		// build back needs one to put back, which means keeping a copy across
-		// the replacement, and that is a change to how upgrade installs rather
-		// than a wording fix.
-		// "started", not "serving". startDaemon schedules or launches a process
-		// and verifies no board, so claiming the board is back is a claim this
-		// code cannot make. `dibs doctor` is what answers it.
-		fmt.Fprintf(os.Stderr, "\n%s the daemon was started again from %s on %s. This "+
-			"is the NEW build, not a rollback, and a start is not a serving board: "+
-			"run `dibs doctor` to confirm. If the failure above was the new build "+
-			"itself, install the previous one before relying on it.\n",
-			ui.Bold("recovered:"), recoverDir, filepath.Base(p.installed))
+		p.recover(recoverDir)
 	}()
 	// A registered daemon is stopped whether or not it answered a moment ago.
 	// UNKNOWN COUNTS AS RUNNING. Stopping a daemon that was not there costs a
@@ -612,10 +635,21 @@ func startDaemon(installed, dir, unit string, was daemonState) error {
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("could not start %s: %w", installed, err)
 	}
-	// Nothing waits on this process, so release it rather than leaving a zombie
-	// for as long as this CLI lives.
-	go func() { _ = cmd.Wait() }()
-	return nil
+	// An exit within the first moment is a start that failed, and the usual
+	// one is the directory lock a daemon that has not finished stopping still
+	// holds. This used to reap the process in the background and report the
+	// start as done. Found by the pre-release review, round ten.
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
+	select {
+	case err := <-exited:
+		if err != nil {
+			return fmt.Errorf("%s exited at once: %w", filepath.Base(installed), err)
+		}
+		return nil
+	case <-time.After(startExitWatch):
+		return nil
+	}
 }
 
 var errNoServiceManager = errors.New("no service manager knows this unit")

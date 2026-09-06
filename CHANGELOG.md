@@ -7,6 +7,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- **The nonce-only rule for privileged rows read the name and not the id.**
+  The `[roles]` table resolves an agent by id as well as by name, and a row
+  renamed for display keeps the id the table names, so a declared identity
+  awaiting its first grant could still be recovered by its display name and
+  a session id. The guard reads both.
+
 - **A role could be recovered without its credential.** An agent that
   registers without a nonce is given one, and until it is lost, a name plus a
   session id, neither of them secret, reattaches that row: the
@@ -488,6 +494,38 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing an agent wrote, and it cannot read the session or steer it.
 
 ### Fixed
+
+- **An upgrade whose stop timed out could leave the board down while
+  reporting a restart.** Recovery started the replacement and went home. A
+  replacement started while the old daemon still held the directory lock
+  exited on it at once, the start reported success because nothing watched
+  the process past its launch, and nothing tried again once the old one had
+  gone. Recovery now waits for the board to answer and starts the daemon
+  again while the old process drains, up to three times, and says which of
+  those happened; a start whose process exits at once is reported as the
+  failure it is.
+
+- **The board's own certificate is renewed while the daemon runs.** The
+  README promised that the daemon replaces its short-lived certificate as it
+  nears expiry, and the daemon issued one at startup and installed it for
+  good: an uninterrupted year, and every client's next connection would have
+  failed on an expired leaf they had been told would be replaced. The leaf is
+  now served through a handshake-time check that re-issues it under the
+  board CA inside the renewal window, rate-limited to one attempt an hour. An
+  operator's own certificate is served as it is. A certificate that stops
+  naming the address clients dial is still replaced at the next start, and
+  the README now says so.
+
+- **The README promised a rollback the upgrade cannot perform.** It said a
+  failure between the stop and the start restarts the build that was
+  running; recovery restarts the build just installed, and the previous
+  binary is not retained. The README says what happens.
+
+- **The Codex plugin note denied the wake route this release ships.** It
+  said nothing outside the harness can wake an idle thread and that Dibs
+  would not reach into Codex's durable queue, while the configuration guide
+  documents `codex queue` as the daemon's fallback for a thread the desktop
+  app holds open. The note names the route and where the recipe is.
 
 - **`release_session` and `bind_session` left the wake on the old
   session.** Recording the current session in round eight added a field the

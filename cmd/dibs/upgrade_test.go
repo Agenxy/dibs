@@ -273,7 +273,9 @@ func TestTheRecoveryFiresOnlyWhenTheBoardDidNotComeBack(t *testing.T) {
 		wantStart int // the recovery start, beyond cutover's own
 	}{
 		{"board answers", nil, 0},
-		{"board silent", errors.New("no board answered in 90s"), 1},
+		// A silent board is started again while the old process drains,
+		// bounded: recoveryStarts in all, each followed by its own wait.
+		{"board silent", errors.New("no board answered in 90s"), recoveryStarts},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()

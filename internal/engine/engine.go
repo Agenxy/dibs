@@ -1322,7 +1322,10 @@ func (e *Engine) refuseRecoveringAPrivilegedRowWithoutItsNonce(op *core.Op) erro
 		return nil
 	}
 	target := e.state.ReattachTarget(op)
-	if target == nil || (target.Role == "" && !e.privilegedName(target.Name)) {
+	// By id as well as by name: the [roles] table resolves either, and a row
+	// renamed for display keeps the id the table names. Found by the
+	// pre-release review, round ten.
+	if target == nil || (target.Role == "" && !e.privilegedName(target.Name) && !e.privilegedName(target.ID)) {
 		return nil
 	}
 	return &core.Error{

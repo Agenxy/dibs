@@ -383,8 +383,9 @@ two steps the address calls for.
 
 **Once, not once a year.** What gets recorded is the board's own signing
 identity, not the certificate it happens to be serving today. The daemon issues
-itself a short-lived certificate under that identity and replaces it whenever it
-nears expiry or stops naming an address clients dial, and a machine that has
+itself a short-lived certificate under that identity and replaces it when it
+nears expiry, while running, with no restart; a certificate that stops naming
+the address clients dial is replaced at the next start. A machine that has
 already trusted the board keeps working through every one of those. The identity
 changes only if you delete `tls-ca.pem` from the board's directory, which is the
 one case where the ceremony is owed again.
@@ -426,7 +427,10 @@ service unit that pins the wrong daemon, restarts through the service manager
 where there is one and directly where there is not, restores the address the
 daemon was bound to, and waits for the board to answer before reporting the
 serial and the agent count it came back with. Anything that fails between the
-stop and the start restarts the daemon on the build it was already running.
+stop and the start starts the daemon again on the build just installed, waits
+for the board to answer (starting again while the old process drains if it
+does not), and says so. That is not a rollback: the previous binary is not
+retained, so if the new build itself is the failure, install the previous one.
 
 Nothing about this asks agents to re-register: `state == fold(ledger)`, so a
 restarted daemon rebuilds the board rather than losing it, and the stdio bridge

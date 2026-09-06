@@ -164,6 +164,7 @@ func loadConfig(dir string) (Config, error) { return boardconfig.Load(dir) }
 type transport struct {
 	certFile, keyFile string // empty ⇒ plaintext
 	why               string // one line, logged so the choice is never a mystery
+	selfIssued        bool   // the daemon's own leaf under the board CA: renewed live
 }
 
 // resolveTransport picks the secure option for the address WITHOUT asking the
@@ -180,8 +181,10 @@ func resolveTransport(dir, addr, scheme string, c Config) (transport, error) {
 	// has to reach the same answer in order to print a client configuration
 	// that works, and it reached a different one three times. Only the
 	// certificate GENERATION is the daemon's, and it stays here.
+	self := false
 	choice, err := xport.Resolve(c.TLSCert, c.TLSKey, addr, scheme, c.InsecurePlaintext,
 		func() (string, string, error) {
+			self = true
 			cert, key, cerr := ensureSelfSignedCert(dir, addr)
 			if cerr != nil {
 				return "", "", fmt.Errorf("could not prepare TLS for %s: %w", addr, cerr)
@@ -191,7 +194,7 @@ func resolveTransport(dir, addr, scheme string, c Config) (transport, error) {
 	if err != nil {
 		return transport{}, err
 	}
-	return transport{choice.CertFile, choice.KeyFile, choice.Why}, nil
+	return transport{certFile: choice.CertFile, keyFile: choice.KeyFile, why: choice.Why, selfIssued: self}, nil
 }
 
 // ensureSelfSignedCert returns a cert/key for addr, generating them into the
@@ -247,7 +250,7 @@ func ensureSelfSignedCert(dir, addr string) (string, string, error) {
 		SerialNumber: serial,
 		Subject:      pkix.Name{CommonName: "dibs"},
 		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().Add(certLifetime),
+		NotAfter:     time.Now().Add(leafLifetime),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 	}

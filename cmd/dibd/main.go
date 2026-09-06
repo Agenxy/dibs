@@ -406,7 +406,7 @@ func run() error {
 	if len(tlsPair) > 0 {
 		// The pair already loaded above, so nothing is read from disk here and
 		// there is no second chance for it to fail after the log line.
-		srv.TLSConfig = &tls.Config{Certificates: tlsPair, MinVersion: tls.VersionTLS12}
+		srv.TLSConfig = tlsConfigFor(tr, *dir, listenAddr, tlsPair[0])
 		serve = func() error { return srv.ServeTLS(ln, "", "") }
 	}
 	if err := serve(); err != nil && !errors.Is(err, http.ErrServerClosed) {
