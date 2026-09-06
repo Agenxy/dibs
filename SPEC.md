@@ -363,9 +363,14 @@ transition and on `resume` (§2). Pre-ack writes fail `E_MUST_ACK_BOARD` (hint
 names the fix). An agent that slept for a month cannot mutate the board on month-old
 awareness.
 
-**v1 is store-and-catch-up, not wake-on-mail**: mail to a dormant agent waits for the
-agent's next activation (its harness, a schedule, or a human). `dibs watch --exec`
-(v1.1) supplies the supervisor glue that turns queued mail into launched agents.
+**Store-and-catch-up, and since v0.0.7 a wake.** Mail to a dormant agent waits for
+the agent's next activation, and the board may bring that activation about: an
+operator's `[wake.exec.<harness>]` command (argv from `dibs.toml`, one fixed
+sentence, rate limited, confirmable by exit status) runs when mail somebody is
+blocked on arrives for an agent that has stopped, and a harness session socket,
+where the harness publishes one, is tried best-effort. Both carry "you have mail"
+and nothing else: the board wakes an agent and does not steer one. See
+`WAKE-MECHANISMS.md` §5 and §5b.
 
 ## 7. Liveness: three signals, honestly labeled
 
@@ -745,9 +750,9 @@ restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (44 to
 local access secret + Origin validation; CLI (board/messages/log/verify/mcp-config);
 SSE web board; static binaries (`dibd` + `dibs`, no cgo, no runtime deps).
 
-**v1.1**: rotation + snapshots; kqueue/pidfd exit notification; `dibs watch --exec`
-(wake-on-mail supervisor glue); `dibs limits`; `dibs audit`; fuzz + crash
-harnesses; `subscriptions/listen`. **v2**: federation; A2A gateway (separate
+**v1.1**: rotation + snapshots; kqueue/pidfd exit notification; `dibs limits`;
+`dibs audit`; fuzz + crash harnesses. (Wake-on-mail shipped in v0.0.7 as
+`[wake.exec]` and the session-socket route, and `subscriptions/listen` is served.) **v2**: federation; A2A gateway (separate
 listener); Ed25519 signatures; hub mode.
 
 Anything not listed is out of scope for v1; additions require a spec revision first.

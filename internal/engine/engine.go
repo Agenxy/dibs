@@ -699,6 +699,18 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A GRANT APPROVED BY A PERSON is that person's decision as much as one
+	// made through the admin API: only the human may approve a grant request
+	// (see refuseGrantWithoutTheHuman), and the role it sets stands against
+	// the startup reconciler for the rest of the run. The first version
+	// protected the admin API's path alone, and a tick after an approved
+	// `grant: member` put the configured role back. Found by the pre-release
+	// review, round twenty.
+	if op.Kind == core.OpRespond && res != nil && res["granted"] != nil {
+		if id, _ := res["to"].(string); id != "" {
+			e.humanRoles[id] = true
+		}
+	}
 	// HAND OVER A MINTED NONCE, or it protects nothing and strands the agent.
 	//
 	// The nonce is the only credential that survives a restart: it is what

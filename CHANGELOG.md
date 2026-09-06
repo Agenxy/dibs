@@ -7,6 +7,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- **An approved `grant: member` could be undone by the reconciler.** The
+  protection for a person's role decision covered the admin API's grant and
+  not the other way a person changes a role: approving a grant request. A
+  tick in the startup window after an approved demotion put the configured
+  role back. A grant a person approves stands like one they make directly.
+
 - **A minted recovery nonce was written to the ledger in the clear.** The
   ledger seals the nonce a caller states; the one the daemon mints for a
   caller that sends none, this cycle's default, went into `ledger.jsonl` as
@@ -521,6 +527,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing an agent wrote, and it cannot read the session or steer it.
 
 ### Fixed
+
+- **A setting the bridge did not know made the transport a guess.** The
+  shared acceptance lets an older bridge read a newer daemon's `dibs.toml`
+  past a setting it does not know; the transport resolver rejected the same
+  error and fell back to guessing, so `insecure_plaintext` and the TLS
+  settings it had parsed were dropped and the CLI dialled https at a
+  plaintext board. The resolver reads what it parsed.
+
+- **SPEC.md still said wake-on-mail was future work.** It described mail to a
+  dormant agent as waiting for its next activation and listed the supervisor
+  glue as v1.1; `[wake.exec]` and the session-socket route shipped this
+  cycle. The specification describes the capability boundary that exists.
 
 - **Self-wake lost mail that arrived before its first subscription.** The
   watcher read the registration reply's token and not its serial, so it

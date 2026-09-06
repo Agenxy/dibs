@@ -136,7 +136,8 @@ func origin() string {
 	// test calls the shared resolver directly and so could not see that this
 	// function never did.
 	scheme, _, err := resolveTransport(paths.DataDir())
-	if err == nil && scheme != "" {
+	var unknown *boardconfig.UnknownSettingsError
+	if scheme != "" && (err == nil || errors.As(err, &unknown)) {
 		return scheme + "://" + addr()
 	}
 	// Absent config: back to the inference, which is right for the default
