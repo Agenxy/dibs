@@ -7,6 +7,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- **The documented handover could leave the predecessor with admin.** The
+  startup reconciler reapplies `dibs.toml` every fifteen seconds for two
+  minutes, and the handover says to demote first, then edit, then restart: a
+  tick between the demotion and the restart put the role back and ledgered
+  it. A role a person changes through the admin API during a run stands for
+  the rest of that run; the restart reads the file the person edited.
+
 - **A retired holder could recover and reclaim another agent's live
   session.** A signed-off row keeps its session bindings; the ingress counts
   a retired row as no holder, so another agent took the thread; nonce
@@ -501,6 +508,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing an agent wrote, and it cannot read the session or steer it.
 
 ### Fixed
+
+- **A failed self-wake consumed its notification.** The bridge advanced its
+  reconnect cursor before putting the notice into the session, so a notice
+  the socket refused was gone: the reconnect excluded the event and nothing
+  retried, and a socket that came back found the agent asleep on stored
+  mail. The cursor moves when the notice lands, and a failed notice is
+  retried at the cooldown.
+
+- **The configuration guide described the superseded thread rule.** It said
+  `{thread}` is the newest alias and can never come from `session_id`; the
+  wake prefers the session the harness reported last, accepts a
+  thread-shaped `session_id`, and a return to an earlier thread makes that
+  one current. The guide says so.
 
 - **A directory guess overrode a stated wake target.** A register that
   named its thread by `session_id` was still given the directory's inferred

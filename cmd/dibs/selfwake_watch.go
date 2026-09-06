@@ -180,13 +180,20 @@ func (iw *inboxWatcher) stream(
 		if msg.Method != "notifications/resources/updated" {
 			continue
 		}
-		iw.noteSerial(msg.Params.Meta)
 		if !worthAWake(msg.Params.Meta) {
+			iw.noteSerial(msg.Params.Meta)
 			continue
 		}
+		// THE CURSOR MOVES WHEN THE NOTICE LANDS. Advancing it first consumed
+		// the notification of a wake that failed: the reconnect excluded the
+		// event and nothing retried, so a socket that came back found an
+		// agent asleep on stored mail. Found by the pre-release review, round
+		// eighteen.
 		if err := waker.wake(selfWakeNotice); err != nil {
-			slog.Debug("could not put a notice into this session", "err", err)
+			slog.Debug("could not put a notice into this session; keeping its cursor", "err", err)
+			continue
 		}
+		iw.noteSerial(msg.Params.Meta)
 	}
 }
 

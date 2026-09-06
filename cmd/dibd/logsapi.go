@@ -46,6 +46,10 @@ func registerAdminAPI(mux *http.ServeMux, eng *engine.Engine) {
 			_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
 			return
 		}
+		// A person decided this; the startup reconciler must not undo it.
+		if id, rerr := eng.ResolveConfiguredAgent(r.Context(), body.Agent); rerr == nil {
+			noteHumanRoleChange(id)
+		}
 		_ = json.NewEncoder(w).Encode(res)
 	})
 

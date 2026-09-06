@@ -892,3 +892,35 @@ func TestAnUnauthorisedAdminAliasDoesNotCostTheCoordinatorGrant(t *testing.T) {
 			"coordinator at all, and no claim either", role)
 	}
 }
+
+// A role a person changed through the admin API during this run is not put
+// back by the reconciler's reapply ticks: the documented handover demotes
+// first, and a tick in the two-minute window used to re-grant and ledger it.
+func TestAHumanDemotionOutranksTheReapplyWindow(t *testing.T) {
+	eng, ctx := testEngine(t)
+	registerAgent(t, eng, "fleet-lead")
+	cfg := RolesConfig{
+		Admin:    []string{"fleet-lead"},
+		Identity: map[string]string{"fleet-lead": engine.RolePinFingerprint("nonce-fleet-lead")},
+	}
+	pins := loadRolePins(t.TempDir())
+	applyDeclaredRoles(ctx, eng, cfg, pins)
+	if !holdsRole(t, eng, "fleet-lead", core.RoleAdmin) {
+		t.Fatal("setup: the declared admin was not granted")
+	}
+	// The person demotes, as step one of the handover says to.
+	id, err := eng.ResolveConfiguredAgent(ctx, "fleet-lead")
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	if _, err := eng.GrantRole(ctx, id, core.RoleMember); err != nil {
+		t.Fatal("setup:", err)
+	}
+	noteHumanRoleChange(id)
+	t.Cleanup(func() { humanRoles.mu.Lock(); delete(humanRoles.ids, id); humanRoles.mu.Unlock() })
+	applyDeclaredRoles(ctx, eng, cfg, pins) // the next tick, before the restart
+	if holdsRole(t, eng, "fleet-lead", core.RoleAdmin) {
+		t.Fatal("the reapply tick re-granted a role a person had just removed: the " +
+			"predecessor keeps admin through the handover the documentation describes")
+	}
+}

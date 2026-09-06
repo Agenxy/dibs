@@ -182,14 +182,17 @@ sends reaches this: the command comes from this file and there is no tool, op
 or admin route that can change it. That is deliberate, because a wake command
 is arbitrary code running as you.
 
-**`{thread}` is the harness's thread, not the agent's `session_id`.** They are
-different identifiers and only one of them can be resumed: a `session_id` names
-the harness process (`host-92368`), and dies with it. Dibs fills `{thread}` from
-the agent's session aliases, taking the NEWEST with the shape a resume command
-accepts. Newest, not first: aliases are appended, so a persistent agent that has
-reattached holds several and only the last one is the activation it is in.
-Resuming an older one starts a real session that is not the one holding the
-mail, and the board logs a successful wake for an agent that hears nothing. An
+**`{thread}` is the harness's thread, and it is the one the harness reported
+last.** Dibs fills it with the agent's current session (`current_session` on
+the board: the id its harness most recently reported, by alias or by a stated
+`session_id`) when that has the shape a resume command accepts; failing that,
+the newest thread-shaped alias; failing that, a thread-shaped `session_id`. A
+bridge-derived `session_id` such as `host-92368` names the harness process,
+dies with it, and is never resumed. A persistent agent that has reattached
+holds several threads, and a return to an earlier one makes it current: the
+activation it is in, not the one it bound last. Resuming any other starts a
+real session that is not the one holding the mail, and the board logs a
+successful wake for an agent that hears nothing. An
 agent that has published no such identifier is never woken, because there would
 be nothing to hand the command.
 
@@ -431,6 +434,9 @@ steps and all of them matter**, in this order:
    the two steps below, which is the wrong direction for a security document
    to be wrong in. See `SECURITY.md`, and issue #73 for making the config
    sufficient on its own.
+   A demotion made while the daemon runs is honoured by the startup
+   reconciler for the rest of its run: its reapply ticks in the first two
+   minutes no longer put the role back before you get to step 3.
 2. Put the new agent's fingerprint here, and delete the old name from
    `roles.pinned`.
 3. Restart `dibd`. Both files are read at startup, so editing either one under

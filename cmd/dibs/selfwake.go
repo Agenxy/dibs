@@ -106,6 +106,23 @@ func (w *selfWaker) wake(notice string) error {
 	w.mu.Unlock()
 
 	if err := w.deliver(notice); err != nil {
+		// AND TRY AGAIN. The socket was absent or busy; the notice is owed
+		// and nothing else will send it until the next arrival. One retry is
+		// armed at the cooldown, and folds into any deferred notice already
+		// armed. Found by the pre-release review, round eighteen.
+		w.mu.Lock()
+		if !w.pending {
+			w.pending = true
+			time.AfterFunc(w.cooldown, func() {
+				w.mu.Lock()
+				w.pending = false
+				w.mu.Unlock()
+				if rerr := w.wake(notice); rerr != nil {
+					slog.Debug("the retried notice did not land either", "err", rerr)
+				}
+			})
+		}
+		w.mu.Unlock()
 		// A FAILED ATTEMPT SPENDS NOTHING. The socket was absent or busy and
 		// no notice went anywhere, so the next arrival must try again rather
 		// than sit out a cooldown that coalesced nothing.
