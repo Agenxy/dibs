@@ -554,6 +554,24 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Registering a second agent through a bridge retired the first one's
+  self-wake.** The bridge's inbox watcher held one token and replaced it on
+  every registration, so with two agents sharing one bridge only the last
+  registered mailbox kept its self-wake. The watcher keeps one stream per
+  agent, keyed by the agent the reply names; a rotated token replaces only
+  its own agent's stream and keeps its cursor; the in-place upgrade handoff
+  carries every stream, and still writes the single fields for an image that
+  predates them.
+
+- **The Codex plugin's verification checked bookkeeping, not delivery.**
+  It told readers to verify the hooks by a peer seeing `state == finished`
+  in `spawned_agents`; that state is recorded when the hook call arrives,
+  before anything is delivered, so the check passes when the hook reaches
+  Dibs and its output never reaches the model, which is the silent failure
+  it was meant to catch. The check says what it proves, and adds the one
+  that proves delivery: a question sent between turns whose digest is in
+  the next turn's context before any call is made.
+
 - **A newcomer sharing a bridge session took over its hooks.** Every agent
   registering through one bridge states the same `host-<ppid>`, on purpose,
   and among several active stated holders the hook lookup preferred the

@@ -114,9 +114,7 @@ func TestADuplicateNotificationDoesNotQueueASecondWake(t *testing.T) {
 	defer tick.Stop()
 	deadline := time.After(3 * time.Second)
 	for {
-		iw.mu.Lock()
-		since := iw.since
-		iw.mu.Unlock()
+		since := iw.sinceOf("agent-token")
 		if since >= 8 {
 			break
 		}

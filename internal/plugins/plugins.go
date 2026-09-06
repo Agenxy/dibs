@@ -261,7 +261,13 @@ var catalog = []struct {
 			"creates the listing, and since_seconds/seen_seconds are elapsed times that " +
 			"move on their own. If no peer can see `finished`, the build is older than " +
 			"2026-08-18 or the server was not connected when the hook ran, and mail is " +
-			"pull-only until you fix that",
+			"pull-only until you fix that. THAT PROVES THE HOOK REACHES DIBS, NOT THAT " +
+			"ITS OUTPUT REACHES YOU: `state` is recorded when the hook call arrives, " +
+			"before anything is delivered. For delivery, have the peer send you a " +
+			"question while you are between turns, then start a turn without calling " +
+			"anything: the digest naming that question must already be in your " +
+			"context. If it is not, the hook fires and its output is dropped, and " +
+			"check_in is the floor",
 		delivers: false,
 	},
 }

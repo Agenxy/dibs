@@ -305,6 +305,27 @@ func agentTokenIn(reply []byte) string {
 	return res.Token
 }
 
+// agentIDIn is the agent id a register or resume reply names, or "".
+func agentIDIn(reply []byte) string {
+	var env struct {
+		Result struct {
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
+		} `json:"result"`
+	}
+	if json.Unmarshal(reply, &env) != nil || len(env.Result.Content) == 0 {
+		return ""
+	}
+	var res struct {
+		AgentID string `json:"agent_id"`
+	}
+	if json.Unmarshal([]byte(env.Result.Content[0].Text), &res) != nil {
+		return ""
+	}
+	return res.AgentID
+}
+
 // agentSerialIn is the serial a register or resume reply carries: the
 // watcher's first cursor, so a question that arrives between registering and
 // the first successful subscription is replayed rather than skipped. Found by
@@ -368,15 +389,20 @@ func readLine(in *bufio.Reader) ([]byte, error) {
 // handoffState is everything the next image needs that an exec would
 // discard: the handshake, the caller's subscriptions, and the self-wake token.
 func handoffState() bridgeState {
-	tok, since := currentWake()
-	return bridgeState{
+	streams := currentWakeStreams()
+	st := bridgeState{
 		ClientInfo:  lastClientInfo,
 		WantsUI:     lastWantsUI,
 		Listens:     openListens(),
-		WakeToken:   tok,
-		WakeSince:   since,
+		WakeStreams: streams,
 		WakePending: currentWakePending(),
 	}
+	// The single fields too, for an image older than WakeStreams: it
+	// restores one stream, which is what it could hold.
+	if len(streams) > 0 {
+		st.WakeToken, st.WakeSince = streams[0].Token, streams[0].Since
+	}
+	return st
 }
 
 func upgradeBridge(now selfIdentity) error {

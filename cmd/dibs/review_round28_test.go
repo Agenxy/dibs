@@ -39,9 +39,10 @@ func TestSocketsOffHoldsAcrossAnInPlaceUpgrade(t *testing.T) {
 	if got := collect(lines, 2, 2*time.Second); len(got) != 2 {
 		t.Fatalf("setup: %d line(s) with sockets on, want 2", len(got))
 	}
-	on.mu.Lock()
-	onTok := on.token
-	on.mu.Unlock()
+	onTok := ""
+	if ts := on.tokens(); len(ts) > 0 {
+		onTok = ts[0]
+	}
 	if onTok != "carried-token" {
 		t.Fatalf("setup: with sockets on the watcher holds %q", onTok)
 	}
@@ -57,9 +58,10 @@ func TestSocketsOffHoldsAcrossAnInPlaceUpgrade(t *testing.T) {
 		t.Fatalf("with [wake] sockets = false the upgraded bridge put %d line(s) into its session: "+
 			"the owed notice was delivered past the switch", len(got))
 	}
-	off.mu.Lock()
-	offTok := off.token
-	off.mu.Unlock()
+	offTok := ""
+	if ts := off.tokens(); len(ts) > 0 {
+		offTok = ts[0]
+	}
 	if offTok != "" {
 		t.Fatalf("with [wake] sockets = false the upgraded bridge restored the watcher under %q: "+
 			"it will keep waking its session on every notice", offTok)

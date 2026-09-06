@@ -75,14 +75,25 @@ type bridgeState struct {
 	// unnoticed for as long as nothing else arrived. The next image delivers
 	// the owed notice. Found by the pre-release review, round twenty-two.
 	WakePending bool `json:"wake_pending,omitempty"`
+	// WakeStreams is every agent this bridge watches for, with its
+	// credential and cursor: a bridge serves every agent that registers
+	// through it, and the single WakeToken above carried one. Found by the
+	// pre-release review, round fifty-four.
+	WakeStreams []wakeHandoff `json:"wake_streams,omitempty"`
+}
+
+// wakeHandoff is one watched agent in the handoff.
+type wakeHandoff struct {
+	Key   string `json:"key"`
+	Token string `json:"token"`
+	Since uint64 `json:"since,omitempty"`
 }
 
 // liveWake is the token the self-wake watcher currently holds, for the
 // handoff; the watcher itself is local to the serving loop.
 var liveWake struct {
 	mu      sync.Mutex
-	token   string
-	since   uint64
+	streams map[string]*wakeHandoff // by key: see inboxWatcher.streams
 	pending bool
 }
 
@@ -98,29 +109,42 @@ func currentWakePending() bool {
 	return liveWake.pending
 }
 
-func recordWakeToken(token string) {
+// recordWakeStream records the credential and cursor the watcher holds for
+// one agent, replacing what it held for that key.
+func recordWakeStream(key, token string, since uint64) {
 	liveWake.mu.Lock()
 	defer liveWake.mu.Unlock()
-	liveWake.token = token
+	if liveWake.streams == nil {
+		liveWake.streams = map[string]*wakeHandoff{}
+	}
+	liveWake.streams[key] = &wakeHandoff{Key: key, Token: token, Since: since}
 }
 
-func recordWakeCursor(since uint64) {
+func recordWakeCursor(key string, since uint64) {
 	liveWake.mu.Lock()
 	defer liveWake.mu.Unlock()
-	if since > liveWake.since {
-		liveWake.since = since
+	if st := liveWake.streams[key]; st != nil && since > st.Since {
+		st.Since = since
 	}
 }
 
-func currentWake() (token string, since uint64) {
+// currentWakeStreams is every watched agent, in key order.
+func currentWakeStreams() []wakeHandoff {
 	liveWake.mu.Lock()
 	defer liveWake.mu.Unlock()
-	return liveWake.token, liveWake.since
+	out := make([]wakeHandoff, 0, len(liveWake.streams))
+	for _, st := range liveWake.streams {
+		out = append(out, *st)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	return out
 }
 
-func currentWakeToken() string {
-	tok, _ := currentWake()
-	return tok
+// resetWakeStreams forgets every watched agent (tests).
+func resetWakeStreams() {
+	liveWake.mu.Lock()
+	defer liveWake.mu.Unlock()
+	liveWake.streams = nil
 }
 
 // selfIdentity is how this process recognises that its own binary changed.
@@ -238,18 +262,22 @@ func restoreCarried(ctx context.Context, client *http.Client, url, secret string
 	}
 	lastClientInfo, lastWantsUI = s.ClientInfo, s.WantsUI
 	if !sockets {
-		if s.WakeToken != "" || s.WakePending {
+		if s.WakeToken != "" || len(s.WakeStreams) > 0 || s.WakePending {
 			slog.Debug("[wake] sockets = false: the self-wake the old image held is not restored",
 				"owed", s.WakePending)
 		}
-		s.WakeToken, s.WakePending = "", false
+		s.WakeToken, s.WakeStreams, s.WakePending = "", nil, false
 	}
-	if s.WakeToken != "" && w != nil {
-		w.mu.Lock()
-		w.since = s.WakeSince
-		w.mu.Unlock()
-		recordWakeCursor(s.WakeSince)
-		w.start(ctx, client, url, secret, s.WakeToken)
+	// Every stream the old image held, or the one its single field carried
+	// when it predates WakeStreams.
+	watched := s.WakeStreams
+	if len(watched) == 0 && s.WakeToken != "" {
+		watched = []wakeHandoff{{Token: s.WakeToken, Since: s.WakeSince}}
+	}
+	if w != nil {
+		for _, st := range watched {
+			w.startFor(ctx, client, url, secret, st.Key, st.Token, st.Since)
+		}
 	}
 	if s.WakePending {
 		// The old image owed the session a notice and died before its

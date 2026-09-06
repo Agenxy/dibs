@@ -16,7 +16,7 @@ import (
 func TestAnUpgradedBridgeKeepsItsSelfWake(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", "/nonexistent/but/present.sock")
 	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
-	t.Cleanup(func() { recordWakeToken("") })
+	t.Cleanup(func() { resetWakeStreams() })
 	// The watcher records the token it subscribes with, and the handoff
 	// carries whatever it recorded.
 	ctx0, cancel0 := context.WithCancel(context.Background())
@@ -27,7 +27,7 @@ func TestAnUpgradedBridgeKeepsItsSelfWake(t *testing.T) {
 		t.Fatalf("the handoff carries %q, not the token the watcher subscribes with", handoffState().WakeToken)
 	}
 	// And the cursor: the replacement must not subscribe from the present.
-	started.noteSerial(map[string]any{"com.dibs/serial": float64(9)})
+	started.noteSerial(started.streamOf("carried-token"), map[string]any{"com.dibs/serial": float64(9)})
 	if handoffState().WakeSince != 9 {
 		t.Fatalf("the handoff carries cursor %d, want 9: mail arriving during the upgrade wakes nobody", handoffState().WakeSince)
 	}
@@ -52,9 +52,11 @@ func TestAnUpgradedBridgeKeepsItsSelfWake(t *testing.T) {
 	var streams sync.WaitGroup
 	out := &syncWriter{w: bufio.NewWriter(io.Discard)}
 	restoreCarried(ctx, &http.Client{}, "http://127.0.0.1:1/mcp", "secret", out, &streams, &iw, true)
-	iw.mu.Lock()
-	got, since := iw.token, iw.since
-	iw.mu.Unlock()
+	got := ""
+	if ts := iw.tokens(); len(ts) > 0 {
+		got = ts[0]
+	}
+	since := iw.sinceOf("carried-token")
 	if since != 9 {
 		t.Errorf("the restored watcher holds cursor %d, want 9", since)
 	}

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 
@@ -37,14 +38,62 @@ const selfWakeNotice = "Dibs: check the board."
 // Started once per agent token, and only when this harness published a socket
 // to write to.
 type inboxWatcher struct {
-	mu     sync.Mutex
-	token  string
-	cancel context.CancelFunc
-	since  uint64 // the serial of the last notification seen: a reconnect resumes from it
+	mu sync.Mutex
+	// streams is one subscription per AGENT this bridge registered, keyed by
+	// the agent id the register reply named (or "" when it named none). A
+	// bridge serves every agent that registers through it, and the first
+	// version held one token: registering a second agent retired the first
+	// one's subscription, so only the last registered mailbox kept its
+	// self-wake. Found by the pre-release review, round fifty-four.
+	streams map[string]*inboxStream
 	// reconnect is the pause between a stream ending and the next attempt;
 	// zero means reconnectAfter. A field, set before start, so a test can
 	// shorten it without writing a global under a running goroutine.
 	reconnect time.Duration
+}
+
+// inboxStream is one agent's subscription: its credential and its cursor.
+type inboxStream struct {
+	key    string
+	token  string
+	cancel context.CancelFunc
+	since  uint64 // the serial of the last notification seen: a reconnect resumes from it
+}
+
+// tokens lists the credentials the watcher currently subscribes with.
+func (iw *inboxWatcher) tokens() []string {
+	iw.mu.Lock()
+	defer iw.mu.Unlock()
+	var out []string
+	for _, st := range iw.streams {
+		out = append(out, st.token)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// sinceOf is the cursor of the stream subscribing with token, or 0.
+func (iw *inboxWatcher) sinceOf(token string) uint64 {
+	iw.mu.Lock()
+	defer iw.mu.Unlock()
+	for _, st := range iw.streams {
+		if st.token == token {
+			return st.since
+		}
+	}
+	return 0
+}
+
+// streamOf is the stream subscribing with token, or nil.
+func (iw *inboxWatcher) streamOf(token string) *inboxStream {
+	iw.mu.Lock()
+	defer iw.mu.Unlock()
+	for _, st := range iw.streams {
+		if st.token == token {
+			return st
+		}
+	}
+	return nil
 }
 
 // reconnectAfter is the pause between a stream ending and the next attempt.
@@ -54,11 +103,11 @@ const reconnectAfter = 2 * time.Second
 // reconnect is handed what arrived while the stream was down. The first
 // version reconnected blind and every message in the gap woke nobody. Found
 // by the pre-release review, round twelve.
-func (iw *inboxWatcher) listenBody(token string) []byte {
-	meta := map[string]any{"com.dibs/token": token}
+func (iw *inboxWatcher) listenBody(st *inboxStream) []byte {
+	meta := map[string]any{"com.dibs/token": st.token}
 	iw.mu.Lock()
-	if iw.since > 0 {
-		meta[mcp.SinceMetaKey] = iw.since
+	if st.since > 0 {
+		meta[mcp.SinceMetaKey] = st.since
 	}
 	iw.mu.Unlock()
 	body, _ := json.Marshal(map[string]any{
@@ -72,58 +121,82 @@ func (iw *inboxWatcher) listenBody(token string) []byte {
 }
 
 // alreadySeen reports whether a notification's serial is at or behind the
-// cursor: a notice for it has landed, or its event moved nothing worth one.
-func (iw *inboxWatcher) alreadySeen(meta map[string]any) bool {
+// stream's cursor: a notice for it has landed, or its event moved nothing
+// worth one.
+func (iw *inboxWatcher) alreadySeen(st *inboxStream, meta map[string]any) bool {
 	v, ok := meta[mcp.SerialMetaKey].(float64)
 	if !ok || v <= 0 {
 		return false
 	}
 	iw.mu.Lock()
 	defer iw.mu.Unlock()
-	return uint64(v) <= iw.since
+	return uint64(v) <= st.since
 }
 
-func (iw *inboxWatcher) noteSerial(meta map[string]any) {
+func (iw *inboxWatcher) noteSerial(st *inboxStream, meta map[string]any) {
 	v, ok := meta[mcp.SerialMetaKey].(float64)
 	if !ok || v <= 0 {
 		return
 	}
 	iw.mu.Lock()
-	if uint64(v) > iw.since {
-		iw.since = uint64(v)
+	if uint64(v) > st.since {
+		st.since = uint64(v)
 	}
 	iw.mu.Unlock()
-	recordWakeCursor(uint64(v)) // for the in-place upgrade's handoff
+	recordWakeCursor(st.key, uint64(v)) // for the in-place upgrade's handoff
 }
 
+// start subscribes for one credential under the unnamed key: the one-agent
+// bridge, and the tests written for it. See startFor.
 func (iw *inboxWatcher) start(ctx context.Context, client *http.Client, url, secret, token string) {
+	iw.startFor(ctx, client, url, secret, "", token, 0)
+}
+
+// startFor subscribes for the agent under key with token, seeding a cursor
+// when the stream is new and seed is not zero.
+//
+// ONE STREAM PER AGENT, ONE CREDENTIAL PER STREAM. A reattach ROTATES the
+// token, so after the next reconnect a stream holding the old one failed
+// authentication with a revoked credential, quietly, forever (round three):
+// a new token for the same key retires that key's stream and keeps its
+// cursor. A new KEY is another agent registering through this bridge, and
+// its stream stands beside the others rather than replacing them (round
+// fifty-four).
+func (iw *inboxWatcher) startFor(
+	ctx context.Context, client *http.Client, url, secret, key, token string, seed uint64,
+) {
 	waker := newSelfWaker()
 	if waker == nil || token == "" {
 		return // this harness publishes no session socket: nothing local to do
 	}
-	// ONE WATCHER PER CREDENTIAL, not one per bridge. sync.Once started the
-	// first subscription and kept it for the life of the process, with the
-	// first token baked into its body. A reattach ROTATES the token, so after
-	// the next stream reconnect every subscription failed authentication with
-	// a revoked credential, quietly, forever: mail stayed fetchable and the
-	// wake it exists for stopped. A new token retires the old stream and
-	// starts its own. Found by the pre-release review, round three.
 	iw.mu.Lock()
 	defer iw.mu.Unlock()
-	if iw.token == token {
+	if iw.streams == nil {
+		iw.streams = map[string]*inboxStream{}
+	}
+	prev := iw.streams[key]
+	if prev != nil && prev.token == token {
 		return
 	}
-	if iw.cancel != nil {
-		iw.cancel()
+	since := seed
+	if prev != nil {
+		// A SEED, NOT AN ADVANCE: an established cursor names the last
+		// notification seen, and a re-registration is no evidence the events
+		// between were seen. Found by the pre-release review, round twenty-one.
+		if prev.since > 0 {
+			since = prev.since
+		}
+		prev.cancel()
 	}
 	sub, cancel := context.WithCancel(ctx)
-	iw.token, iw.cancel = token, cancel
-	recordWakeToken(token) // for the in-place upgrade's handoff
-	go iw.run(sub, client, url, secret, token, waker)
+	st := &inboxStream{key: key, token: token, cancel: cancel, since: since}
+	iw.streams[key] = st
+	recordWakeStream(key, token, since) // for the in-place upgrade's handoff
+	go iw.run(sub, client, url, secret, st, waker)
 }
 
 func (iw *inboxWatcher) run(
-	ctx context.Context, client *http.Client, url, secret, token string, waker *selfWaker,
+	ctx context.Context, client *http.Client, url, secret string, st *inboxStream, waker *selfWaker,
 ) {
 	pause := iw.reconnect
 	if pause == 0 {
@@ -133,7 +206,7 @@ func (iw *inboxWatcher) run(
 		if ctx.Err() != nil {
 			return
 		}
-		iw.stream(ctx, client, url, secret, iw.listenBody(token), waker)
+		iw.stream(ctx, client, url, secret, st, waker)
 		// The daemon closes this stream when it goes away. Reconnecting is the
 		// whole point of a wake path: an agent whose subscription died quietly
 		// is an agent that stops being reachable and never learns it did.
@@ -146,9 +219,9 @@ func (iw *inboxWatcher) run(
 }
 
 func (iw *inboxWatcher) stream(
-	ctx context.Context, client *http.Client, url, secret string, body []byte, waker *selfWaker,
+	ctx context.Context, client *http.Client, url, secret string, st *inboxStream, waker *selfWaker,
 ) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(iw.listenBody(st)))
 	if err != nil {
 		return
 	}
@@ -186,7 +259,7 @@ func (iw *inboxWatcher) stream(
 			// The cursor to reconnect with, before any mail has moved: a
 			// stream that dropped on an empty inbox used to reconnect blind
 			// and the question that arrived in between woke nobody.
-			iw.noteSerial(msg.Params.Meta)
+			iw.noteSerial(st, msg.Params.Meta)
 			continue
 		}
 		if msg.Method != "notifications/resources/updated" {
@@ -198,11 +271,11 @@ func (iw *inboxWatcher) stream(
 		// delivered queued another wake at the cooldown, whether or not the
 		// agent had read the mail by then. Found by the pre-release review,
 		// round twenty-seven.
-		if iw.alreadySeen(msg.Params.Meta) {
+		if iw.alreadySeen(st, msg.Params.Meta) {
 			continue
 		}
 		if !worthAWake(msg.Params.Meta) {
-			iw.noteSerial(msg.Params.Meta)
+			iw.noteSerial(st, msg.Params.Meta)
 			continue
 		}
 		// THE CURSOR MOVES WHEN THE NOTICE LANDS. Advancing it first consumed
@@ -214,7 +287,7 @@ func (iw *inboxWatcher) stream(
 			slog.Debug("could not put a notice into this session; keeping its cursor", "err", err)
 			continue
 		}
-		iw.noteSerial(msg.Params.Meta)
+		iw.noteSerial(st, msg.Params.Meta)
 	}
 }
 
@@ -251,20 +324,12 @@ func watchOnRegister(
 			return
 		}
 		if tok := agentTokenIn(reply); tok != "" {
-			// A SEED, NOT AN ADVANCE. The reply's serial says where a watcher
-			// with no cursor may start; an established watcher's cursor names
-			// the last notification it saw, and a re-registration is no
-			// evidence the events between were seen. Found by the pre-release
-			// review, round twenty-one.
-			if serial := agentSerialIn(reply); serial > 0 {
-				w.mu.Lock()
-				if w.since == 0 {
-					w.since = serial
-					recordWakeCursor(serial)
-				}
-				w.mu.Unlock()
-			}
-			w.start(ctx, client, url, secret, tok)
+			// KEYED BY THE AGENT the reply names, so a second agent
+			// registering through this bridge gets a stream beside the first
+			// one's rather than in its place, and a rotation replaces only its
+			// own. The reply's serial seeds a NEW stream's cursor; an
+			// established one keeps its own (round twenty-one).
+			w.startFor(ctx, client, url, secret, agentIDIn(reply), tok, agentSerialIn(reply))
 		}
 	}
 }
