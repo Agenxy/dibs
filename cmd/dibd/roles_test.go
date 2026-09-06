@@ -526,7 +526,10 @@ func TestTheRolePinErrorsNameTheCorrectiveThatWorks(t *testing.T) {
 				"no mismatch error to check")
 		}
 		got := strings.ToLower(err.Error())
-		for _, want := range []string{"roles.identity", "restart"} {
+		// AND THE REVOKE: the steps that let the successor in do not take the
+		// role from the predecessor, which may still be registered under
+		// another name. Found by the pre-release review, round forty-six.
+		for _, want := range []string{"roles.identity", "restart", "dibs admin member"} {
 			if !strings.Contains(got, want) {
 				t.Errorf("the handover repair does not mention %q:\n  %s\n"+
 					"Removing the pin alone cannot work: both files are read once at "+

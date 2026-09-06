@@ -246,14 +246,24 @@ func (p *rolePins) check(role, name, fingerprint, want string) error {
 		// the old [roles.identity] fingerprint on the next boot. An error that
 		// names a corrective action which does not correct anything is worse
 		// than one that names none.
+		// AND THE PREDECESSOR'S ROLE. This named the three steps that let the
+		// successor in and called them all of them, and none of the three
+		// takes the role away from the predecessor, which may still be
+		// registered under whatever name it has now and holds its grant in
+		// the ledger: following the procedure authorised the successor
+		// without withdrawing the predecessor. The sibling branches name the
+		// revoke; this one did not. Found by the pre-release review, round
+		// forty-six.
 		return fmt.Errorf("the agent now called %q is not the one this board granted "+
 			"%s to. A standing role follows an identity, not a name, and a name is "+
 			"free for anyone to take once its holder is gone. If this is a deliberate "+
-			"handover it takes three steps, all of them: put the NEW agent's "+
-			"fingerprint under [roles.identity] in dibs.toml, remove %q from %s, and "+
-			"restart dibd. Both files are read at startup, so editing either one "+
-			"under a running daemon changes nothing",
-			name, role, name, p.path)
+			"handover it takes four steps, all of them: `dibs admin member <the old "+
+			"agent>`, so the predecessor, still registered under whatever name it "+
+			"has now, loses the %s it holds; put the NEW agent's fingerprint under "+
+			"[roles.identity] in dibs.toml; remove %q from %s; and restart dibd. Both "+
+			"files are read at startup, so editing either one under a running daemon "+
+			"changes nothing",
+			name, role, role, name, p.path)
 	}
 }
 

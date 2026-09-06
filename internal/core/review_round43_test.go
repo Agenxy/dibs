@@ -50,7 +50,9 @@ func TestARecoveryFromANewSessionDropsTheOldProcess(t *testing.T) {
 			"the process that is gone, where it used to be", got.PID, got.Agent)
 	}
 	// The same rule on the other recovery path: a row that went dormant,
-	// recovered by nonce from yet another session with no pid stated.
+	// recovered by nonce from yet another session with no pid stated. The
+	// pid is set again first, or this asserts a zero the step above left.
+	s.Agents["r"].PID, s.Agents["r"].ProcStart = 444, 9
 	s.Agents["r"].Status = StatusDormant
 	res = mustApply(t, s, &Op{Kind: OpRegister, Name: "r", NewToken: "tok-5", Nonce: "n-r-0123456789abcdef", AgentKind: KindPersistent, SessionID: "host-444", V7Semantics: true}, now.Add(4*time.Minute))
 	if res["via"] != "nonce" {
@@ -58,5 +60,16 @@ func TestARecoveryFromANewSessionDropsTheOldProcess(t *testing.T) {
 	}
 	if got := s.Agents["r"].PID; got != 0 {
 		t.Fatalf("a dormant row recovered from a new session with no pid stated still names pid %d", got)
+	}
+	// And a dormant row recovered on a new THREAD with no session id and no
+	// pid, which is how the bridge reports a Codex thread.
+	s.Agents["r"].PID, s.Agents["r"].ProcStart = 555, 9
+	s.Agents["r"].Status = StatusDormant
+	res = mustApply(t, s, &Op{Kind: OpRegister, Name: "r", NewToken: "tok-6", Nonce: "n-r-0123456789abcdef", AgentKind: KindPersistent, SessionAlias: "01a00042-3333-7f60-81cc-6ab1298d76ec", V7Semantics: true}, now.Add(5*time.Minute))
+	if res["via"] != "nonce" {
+		t.Fatalf("setup: the dormant row was not recovered by nonce: %v", res)
+	}
+	if got := s.Agents["r"].PID; got != 0 {
+		t.Fatalf("a dormant row recovered on a new thread with no pid stated still names pid %d", got)
 	}
 }

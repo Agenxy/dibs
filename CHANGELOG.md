@@ -552,6 +552,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The role handover error left the predecessor's role standing.** When a
+  pinned role's name is held by a different agent, the error named the three
+  steps that let the successor in and called them all of them; none takes
+  the role away from the predecessor, which may still be registered under
+  another name with its grant in the ledger. The error names the revoke
+  first, as the guide and the neighbouring branches already did.
+
 - **A pending adoption request outlived the mailbox it named.** The purge
   retired a purged agent's outgoing mail and dropped its incoming mail, and
   left standing any request whose `adopt` named the purged id; approval
