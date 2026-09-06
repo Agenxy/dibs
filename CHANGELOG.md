@@ -571,7 +571,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A refused or failed mail fetch returned silently under a live mark, so a
   valid session with no page key saw an empty, live-looking mailbox while
   `/api/messages` answered 401. The pane says the mailbox could not be read
-  and why, keeps the last good view, and says what to do.
+  and why, keeps the last good view, and says what to do. The first cut said
+  so only over an empty mailbox: once one fetch had succeeded, a later
+  refusal kept the cached mail and hid the warning, under a stream still
+  labelled live. The warning sits above whatever is cached.
 
 - **`dibs upgrade` restarted a fleet that was already on the build.** The
   help said a bare run on an up-to-date install does nothing, and the command

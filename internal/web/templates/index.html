@@ -470,7 +470,13 @@ function drawPanes() {
       </select>
       <input type="text" id="msg-body" placeholder="message…" aria-label="message body">
       <button class="act send">send</button>
-    </div>` + (state.messages.length
+    </div>` + (state.mailError
+    // ABOVE WHATEVER IS CACHED. The first cut said the mailbox could not be
+    // read only in place of an empty list, so once one fetch had succeeded a
+    // later refusal kept the cached mail and hid the warning, under a stream
+    // still labelled live. Round fifty-two of the pre-release review.
+    ? `<p class="pill warn mail-warn" role="alert">Mail unavailable: the mailbox could not be read (${Board.esc(state.mailError)}). What is shown may be stale; reload the board, and open it again from dibs web if this persists.</p>`
+    : "") + (state.messages.length
     ? state.messages.map((m) => {
         const forMe = me && m.to === me && !Board.TERMINAL.has(m.state)
         // A REQUEST is approved or denied, never answered.
@@ -496,8 +502,7 @@ function drawPanes() {
           </div>`) : "")
       }).join("")
     : state.mailError
-      ? Board.emptyHTML("Mail unavailable", "The mailbox could not be read (" + Board.esc(state.mailError) +
-        "). What is shown may be stale; reload the board, and open it again from `dibs web` if this persists.")
+      ? ""
       : Board.emptyHTML("No mail", "Messages between agents appear here as they are sent."))
 
   const actEl = document.getElementById("pane-activity")

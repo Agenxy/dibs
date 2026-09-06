@@ -873,6 +873,36 @@ try {
   await page.locator('.views button[data-view="mail"]').click()
   await page.locator(".msg").first().waitFor({ timeout: 5000 })
   check("mail renders with the shared component", (await page.locator(".msg").count()) >= 1)
+  // A REFUSAL AFTER A GOOD FETCH IS STILL SAID. The first cut of the mail
+  // warning stood in for an empty list only, so once a fetch had succeeded a
+  // later 401 kept the cached mail and hid the warning under a stream still
+  // labelled live. Round fifty-two of the pre-release review.
+  {
+    const cached = await page.locator(".msg").count()
+    await page.route("**/api/messages", (route) => route.fulfill({ status: 401, body: "unauthorized" }))
+    await page.evaluate(() => (window as any).refreshMail())
+    let pane = ""
+    for (let i = 0; i < 40 && !/HTTP 401/.test(pane); i++) {
+      pane = (await page.locator("#pane-mail").textContent()) ?? ""
+      await Bun.sleep(100)
+    }
+    check("a refusal after cached mail is still reported", /Mail unavailable/.test(pane) && /HTTP 401/.test(pane), pane.slice(0, 160))
+    check("and the cached mail is kept beneath it", (await page.locator(".msg").count()) === cached,
+      `${await page.locator(".msg").count()} of ${cached}`)
+    await page.unroute("**/api/messages")
+    await page.evaluate(() => (window as any).refreshMail())
+    for (let i = 0; i < 40 && /Mail unavailable/.test(pane); i++) {
+      pane = (await page.locator("#pane-mail").textContent()) ?? ""
+      await Bun.sleep(100)
+    }
+    check("and a fetch that succeeds again clears it", !/Mail unavailable/.test(pane), pane.slice(0, 160))
+    // The 401 above was injected by this case, and Chrome logs it as a
+    // console error, which is Chrome being correct: it is named and removed
+    // here rather than the page-error sweep being loosened for every 401.
+    for (let i = pageErrors.length - 1; i >= 0; i--) {
+      if (/status of 401/.test(pageErrors[i])) pageErrors.splice(i, 1)
+    }
+  }
   {
     const att = page.locator(".msg .att").first()
     await att.waitFor({ timeout: 5000 })
