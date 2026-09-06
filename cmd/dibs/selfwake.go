@@ -115,10 +115,18 @@ func (w *selfWaker) wake(notice string) error {
 		w.mu.Lock()
 		if !w.pending {
 			w.pending = true
+			// THE HANDOFF FOLLOWS THE TIMER. The deferred callback clears the
+			// pending mark before it tries, and a delivery that failed there
+			// armed this retry without setting it again: an in-place upgrade
+			// in that window carried "nothing owed" and the notice was gone
+			// with the timer. Found by the pre-release review, round
+			// twenty-five.
+			recordWakePending(true)
 			time.AfterFunc(w.cooldown, func() {
 				w.mu.Lock()
 				w.pending = false
 				w.mu.Unlock()
+				recordWakePending(false)
 				if rerr := w.wake(notice); rerr != nil {
 					slog.Debug("the retried notice did not land either", "err", rerr)
 				}

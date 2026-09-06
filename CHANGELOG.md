@@ -537,6 +537,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A private panel fetch still lost message bodies and choices.** The
+  merge that fills a redacted card from the readable copy beside it read the
+  nested `inbox.messages` shape from both carriers, and the panel carrier
+  sends `inbox` as a bare array, so on the production shape the merge handed
+  the redacted copy back untouched: a request with its Approve button and no
+  reason, a question with no choices. The merge reads either shape and
+  returns the one it was given; the browser test now uses the production
+  shape.
+
+- **A deferred self-wake whose delivery failed could be lost across an
+  upgrade.** The deferred callback cleared the handoff's "a notice is owed"
+  mark before it tried, and a delivery that failed there armed a retry
+  without setting it again: an in-place upgrade in that window carried
+  nothing owed, the timer died with the old image, and the cursor had passed
+  the event. The mark follows the timer.
+
 - **Upgrade recovery gave up on the case its retry loop exists for.** After a
   stop that timed out the old daemon may still hold the directory lock, the
   replacement exits on it at once, and the start now reports that as an

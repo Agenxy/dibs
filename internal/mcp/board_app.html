@@ -1196,27 +1196,34 @@ function toolFailure(result) {
 function mergePanel(redacted, full) {
   if (!full || typeof full !== "object") return redacted || null
   if (!redacted || typeof redacted !== "object") return full
-  const fullMsgs = (full.inbox && full.inbox.messages) || full.messages
-  const shown = redacted.inbox && redacted.inbox.messages
+  // EITHER SHAPE. The panel carrier sends `inbox` as a bare array; the
+  // content beside it nests it as `inbox.messages`, which is check_in's
+  // shape. The first version read the nested shape from both, so on the
+  // production shape the merge returned the redacted copy untouched: a
+  // request card kept its Approve button and lost its reason, and a question
+  // lost its choices, on every private fetch. Found by the pre-release
+  // review, round twenty-five.
+  const listOf = (p) => (Array.isArray(p.inbox) ? p.inbox : (p.inbox && p.inbox.messages) || p.messages)
+  const fullMsgs = listOf(full)
+  const shown = listOf(redacted)
   if (!Array.isArray(fullMsgs) || !Array.isArray(shown)) return redacted
   const bySerial = new Map(fullMsgs.map((m) => [m && m.serial, m]))
-  return {
-    ...redacted,
-    inbox: {
-      ...redacted.inbox,
-      messages: shown.map((m) => {
-        const f = bySerial.get(m && m.serial)
-        if (!f) return m
-        // Only the fields redaction empties. Everything else is the panel's
-        // own normalisation and must survive.
-        const out = { ...m }
-        for (const k of ["body", "response", "choices"]) {
-          if (f[k] !== undefined && (out[k] === undefined || out[k] === "")) out[k] = f[k]
-        }
-        return out
-      }),
-    },
-  }
+  const merged = shown.map((m) => {
+    const f = bySerial.get(m && m.serial)
+    if (!f) return m
+    // Only the fields redaction empties. Everything else is the panel's
+    // own normalisation and must survive.
+    const out = { ...m }
+    for (const k of ["body", "response", "choices"]) {
+      if (f[k] !== undefined && (out[k] === undefined || out[k] === "")) out[k] = f[k]
+    }
+    return out
+  })
+  // Handed back in the shape it arrived in, so the normalisation that follows
+  // sees what the carrier really sends.
+  return Array.isArray(redacted.inbox)
+    ? { ...redacted, inbox: merged }
+    : { ...redacted, inbox: { ...redacted.inbox, messages: merged } }
 }
 
 function toolJSON(result) {

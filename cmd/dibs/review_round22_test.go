@@ -62,3 +62,18 @@ func TestADeferredNoticeSurvivesAnInPlaceUpgrade(t *testing.T) {
 			"gone with its timer, and the cursor has passed the event", len(got))
 	}
 }
+
+// A delivery that failed arms a retry, and the handoff says so for as long
+// as that retry is armed: an upgrade in that window must deliver the notice.
+func TestAFailedDeliverysRetryIsOwedInTheHandoff(t *testing.T) {
+	t.Cleanup(func() { recordWakePending(false) })
+	sock := sockPath(t)
+	w := &selfWaker{socket: sock, token: "tok", cooldown: time.Hour}
+	if err := w.wake(selfWakeNotice); err == nil {
+		t.Fatal("setup: a wake with nobody listening reported success")
+	}
+	if !currentWakePending() {
+		t.Fatal("a failed delivery armed a retry and the handoff says nothing is owed: an " +
+			"upgrade before the retry fires loses the notice with the timer")
+	}
+}

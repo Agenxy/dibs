@@ -740,13 +740,16 @@ try {
   // content beside it holds the readable answer. The board result above is
   // deliberately NOT detail:true, so it has no bodies to render and cannot show
   // this either way.
+  // The panel carrier's `inbox` is a BARE ARRAY, as panel.go sends it; a
+  // fixture that nested it passed while the production shape was merged
+  // into nothing.
   await page.evaluate(() => (window as any).__deliver({
-    _meta: { "com.dibs/panel": { view: "mail", inbox: { messages: [
+    _meta: { "com.dibs/panel": { view: "mail", inbox: [
       { serial: 501, type: "request", from: "peer", to: "reviewer",
         body: "", grant: "coordinator", state: "open" },
       { serial: 502, type: "question", from: "peer", to: "reviewer",
         body: "", state: "open" },
-    ] } } },
+    ] } },
     content: [{ type: "text", text: JSON.stringify({ inbox: { messages: [
       { serial: 501, type: "request", from: "peer", to: "reviewer",
         body: "Approve the redesign?", grant: "coordinator", state: "open" },
