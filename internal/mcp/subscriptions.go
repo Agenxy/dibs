@@ -175,9 +175,10 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *
 		return s.eng.StreamStanding(r.Context(), token, session)
 	}
 	// The gap too: a left-behind bridge that reconnected after a daemon
-	// restart was handed the mail it had missed, and woke on it.
+	// restart was handed the mail it had missed, and woke on it. The standing
+	// is re-read as the replay writes, because the agent can move mid-replay.
 	if _, held := standing(); resuming && wantInbox && held &&
-		!s.replayGap(r.Context(), stream, req.ID, agentID, cursor) {
+		!s.replayGap(r.Context(), stream, req.ID, agentID, cursor, standing) {
 		return
 	}
 	s.pump(r, stream, sub, since, req.ID, func() (string, bool, bool) {
@@ -449,7 +450,7 @@ func resourceUpdated(uri string, subID json.RawMessage, ev core.Event) map[strin
 // ring or, past the ring, from the inbox itself. Reports whether the stream
 // is still writable.
 func (s *Server) replayGap(ctx context.Context, stream sseStream, subID json.RawMessage,
-	agentID string, cursor uint64,
+	agentID string, cursor uint64, standing standingFunc,
 ) bool {
 	missed, tooOld := s.missedFor(ctx, cursor)
 	if tooOld {
@@ -466,10 +467,27 @@ func (s *Server) replayGap(ctx context.Context, stream sseStream, subID json.Raw
 		s.duringReplay()
 	}
 	for _, ev := range missed {
-		if uri := matchedURI(ev, agentID, true, false); uri != "" {
-			if !stream.send(resourceUpdated(uri, subID, ev)) {
+		uri := matchedURI(ev, agentID, true, false)
+		if uri == "" {
+			continue
+		}
+		// RE-READ BEFORE EACH SEND. The pre-replay check is one instant, and
+		// the replay is a loop with I/O in it; an agent that moves to another
+		// session, or whose token rotates, part way through catch-up must not
+		// be handed the rest as inbox wakes for the session it left. The live
+		// pump makes the same check per notification. Found by the pre-release
+		// review, round sixty-three.
+		if standing != nil {
+			live, held := standing()
+			if !live {
 				return false
 			}
+			if !held {
+				return true // moved away: the rest of the gap is the new session's to hear
+			}
+		}
+		if !stream.send(resourceUpdated(uri, subID, ev)) {
+			return false
 		}
 	}
 	return true

@@ -1559,6 +1559,17 @@ func (e *Engine) refuseRecoveringAPrivilegedRowWithoutItsNonce(op *core.Op) erro
 	// renamed for display keeps the id the table names. Found by the
 	// pre-release review, round ten.
 	holdsRole := target.Role != "" || e.privilegedName(target.Name) || e.privilegedName(target.ID)
+	// AND THE OPERATOR'S OWN ROW, above every role. The human is registered
+	// with a fixed, known nonce, so pickReattachTarget skips it while that
+	// nonce is on the row; but a v0.0.6 archive-and-recovery blanks Agent.Nonce
+	// while keeping the nonce INDEX, and the blanked row is then reachable by
+	// (name, session_id) exactly as a nonce-less agent is. Its name and its
+	// session id are both public (the session id IS the known nonce), so this
+	// handed out the human's token, and with it approval of the caller's own
+	// grant, without Touch ID or a password. The human recovers by opening the
+	// board, never by name and session. Found by the pre-release review, round
+	// sixty-three.
+	isHuman := target.ID != "" && target.ID == e.humanRowLocked()
 	// AND A ROW ONE YES AWAY FROM POWER. A pending request that performs
 	// something on approval (a role grant, or a mailbox adoption that moves a
 	// whole mailbox onto this row) lands its effect on whatever token the row
@@ -1570,8 +1581,17 @@ func (e *Engine) refuseRecoveringAPrivilegedRowWithoutItsNonce(op *core.Op) erro
 	// by the pre-release review, rounds sixty-one (grant) and sixty-two
 	// (adoption, which the first cut left out by reading only the grant field).
 	pendingEffect := e.state.HasPendingEffectRequest(target.ID)
-	if !holdsRole && !pendingEffect {
+	if !holdsRole && !pendingEffect && !isHuman {
 		return nil
+	}
+	if isHuman {
+		return &core.Error{
+			Code: "E_NEEDS_NONCE",
+			Msg:  "agent " + target.ID + " is the operator's own row, recovered only by opening the board",
+			Hint: "the human's identity is not reachable by name and session id; open the " +
+				"board (Touch ID or the admin password) to act as the human. A name and a " +
+				"session id are both public and prove nothing",
+		}
 	}
 	because := "holds a role, and a role is recovered by its nonce only"
 	if !holdsRole {

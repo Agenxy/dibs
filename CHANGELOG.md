@@ -554,6 +554,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The operator's own identity could be recovered without opening the
+  board.** The human's row is registered with a fixed, known nonce and so is
+  skipped by session-only recovery, but a v0.0.6 archive-and-recovery blanked
+  the nonce on the row while keeping the index, and the blanked row was then
+  reachable by name and session id, both public (the human's session id is the
+  known nonce). That handed out the human's token and approval of the caller's
+  own grant with no Touch ID and no password. The human is now recovered only
+  by opening the board.
+
+- **A subscription's catch-up kept waking a session the agent left.** The live
+  delivery path re-checks the stream's standing before each notification, but
+  the gap replay sent its events on a single check made before replay began, so
+  an agent that moved sessions or rotated its token mid-replay still received
+  the rest of the gap as inbox wakes for the session it left. The replay now
+  re-reads the standing before each event.
+
 - **A pending mailbox adoption could be captured before approval, like a
   pending grant.** Round sixty-one closed the grant case but read only the
   grant field, so a request that moves a whole mailbox onto the requester on

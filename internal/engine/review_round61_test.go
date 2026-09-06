@@ -114,3 +114,40 @@ func TestARowWithAPendingAdoptionCannotBeRecoveredWithoutItsNonce(t *testing.T) 
 		t.Errorf("the requester could not recover with its own nonce during the pending adoption: %v %v", res, err)
 	}
 }
+
+// The operator's own row is recovered only by opening the board, never by
+// name and session id. A v0.0.6 archive-and-recovery blanks the human row's
+// nonce while keeping the nonce index, so the blanked row became reachable
+// by (name, session_id) like any nonce-less agent; both are public (the
+// session id is the known human nonce), so this handed out the human's token
+// and approval of the caller's own grant without Touch ID.
+func TestTheHumanRowCannotBeRecoveredByNameAndSession(t *testing.T) {
+	st := core.NewState("t", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	humanID, _, err := e.HumanAgent(ctx)
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	// The historical state: the archive blanked Agent.Nonce, the nonce index
+	// still points at the row, and it has since been recovered to active.
+	st.Agents[humanID].Nonce = ""
+	if st.Nonces[humanNonce()] != humanID {
+		t.Fatalf("setup: the nonce index does not resolve the human row: %q", st.Nonces[humanNonce()])
+	}
+
+	// The public name and the public session id (which is the known nonce),
+	// no nonce presented.
+	res, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: humanName(), NewToken: "stolen",
+		SessionID: humanNonce(),
+	})
+	var ce *core.Error
+	if err == nil || !errors.As(err, &ce) || ce.Code != "E_NEEDS_NONCE" {
+		t.Fatalf("a name-and-session register landed on the human row: got %v %v: the caller "+
+			"holds the operator's token and can approve its own grant", res, err)
+	}
+}

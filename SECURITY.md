@@ -200,6 +200,20 @@ reclaimable by name and session id, deliberately, because the alternative is an
 agent that lost its context and can never recover, and its registration result
 says so. Choose the nonce yourself for anything you care about.
 
+**Two kinds of row are held out of that convenience entirely, and recovered
+by their nonce alone.** A row that holds a role, or bears a name the operator
+declared for one, or has a request awaiting approval that would grant it a
+role or move a mailbox onto it: taking such a row by name and session id
+would take the power the human is about to hand it. And the operator's OWN
+row, above every role: it is registered with a fixed, known nonce, so it is
+skipped while that nonce is on it, but a v0.0.6 archive-and-recovery blanked
+the nonce on the row while keeping the index, and the blanked row was then
+reachable by name and session id like any nonce-less agent. Both are public
+(the human's session id IS the known nonce), so this handed out the human's
+token and, with it, approval of the caller's own grant, with no Touch ID and
+no password. The human is recovered only by opening the board. Found by the
+pre-release review, rounds nine, sixty-one, sixty-two, and sixty-three.
+
 **The wake path is a nudge, and it is deliberately free to call.** Because
 `hook_poll` is token-less, a caller naming somebody else's session receives that
 agent's wake summary, and nothing on that path can tell the two callers apart.
