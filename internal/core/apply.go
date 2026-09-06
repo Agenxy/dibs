@@ -450,6 +450,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				}
 				s.dropTakenSession(op, l)
 				l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
+				l.currentFrom(op)
 				// LEDGERED, like every other transition.
 				//
 				// This branch rotates the token, wakes the agent, re-arms the
@@ -616,6 +617,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	}
 	s.Agents[id] = l
 	l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed) // the name its hooks use, if different
+	l.currentFrom(op)
 	if nonce != "" {
 		s.Nonces[nonce] = id
 	}

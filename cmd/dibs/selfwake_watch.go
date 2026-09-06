@@ -64,6 +64,7 @@ func (iw *inboxWatcher) start(ctx context.Context, client *http.Client, url, sec
 	}
 	sub, cancel := context.WithCancel(ctx)
 	iw.token, iw.cancel = token, cancel
+	recordWakeToken(token) // for the in-place upgrade's handoff
 	go iw.run(sub, client, url, secret, token, waker)
 }
 

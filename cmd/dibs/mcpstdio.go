@@ -139,7 +139,7 @@ func runBridge(_ []string) error {
 	// Anything a previous image was holding, re-established before the first
 	// line is read, so the handshake identity and any subscription are in place
 	// by the time they matter.
-	restoreCarried(ctx, streamClient, url, secret, out, &streams)
+	restoreCarried(ctx, streamClient, url, secret, out, &streams, &watcher)
 
 	for {
 		if ctx.Err() != nil {
@@ -299,14 +299,21 @@ func readLine(in *bufio.Reader) ([]byte, error) {
 // (stdout is), so it cannot disturb the harness, and it lands in the harness's
 // debug log, where "why is this session on a different build than it started
 // with" is otherwise unanswerable.
-func upgradeBridge(now selfIdentity) error {
-	fmt.Fprintf(os.Stderr, "dibs: bridge upgrading in place to %s (pid %d keeps its pipes)\n",
-		now.path, os.Getpid())
-	env, err := carryEnv(bridgeState{
+// handoffState is everything the next image needs that an exec would
+// discard: the handshake, the caller's subscriptions, and the self-wake token.
+func handoffState() bridgeState {
+	return bridgeState{
 		ClientInfo: lastClientInfo,
 		WantsUI:    lastWantsUI,
 		Listens:    openListens(),
-	})
+		WakeToken:  currentWakeToken(),
+	}
+}
+
+func upgradeBridge(now selfIdentity) error {
+	fmt.Fprintf(os.Stderr, "dibs: bridge upgrading in place to %s (pid %d keeps its pipes)\n",
+		now.path, os.Getpid())
+	env, err := carryEnv(handoffState())
 	if err != nil {
 		return err
 	}

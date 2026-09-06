@@ -1211,7 +1211,15 @@ func TestTheTaskfileDoesNotEmbedShellScripts(t *testing.T) {
 		t.Fatal("Taskfile.yml has no cmds: at all, so this guard read the wrong " +
 			"file or the format has changed: re-point it rather than leaving it green")
 	}
-	blocks := yamlBlocks(string(raw), "cmd:")
+	blocks := taskfileCommands(string(raw))
+	// A floor, as the tracked-file walk has one: the guard read `cmd:`
+	// mappings only, of which the Taskfile has a handful, while sixty-odd
+	// commands were scalars and `- |` blocks it never saw. A scanner that
+	// finds fewer than this is reading the wrong thing.
+	if len(blocks) < 30 {
+		t.Fatalf("only %d commands found in Taskfile.yml, which cannot be right: the guard "+
+			"would pass by reading almost nothing", len(blocks))
+	}
 	for _, b := range blocks {
 		for _, bad := range shellTokens {
 			if strings.Contains(shellBody(b.body), bad.token) {
@@ -1342,6 +1350,60 @@ func yamlBlocks(s, key string) []runBlock {
 			body = append(body, strings.TrimSpace(lines[j]))
 		}
 		out = append(out, runBlock{i + 1, strings.Join(body, "\n"), folded})
+	}
+	return out
+}
+
+// taskfileCommands returns every command in a Taskfile's `cmds:` lists, in
+// each form Task accepts: a scalar, a quoted scalar, a `- |` or `- >` block,
+// a `cmd:` mapping and a `defer:`. A `task:` item calls another task and is
+// not a command. yamlBlocks reads `cmd:` mappings alone, which is the form the
+// Taskfile uses least; a shell conditional with redirection sat in a `- |`
+// block for as long as the guard existed, and nine `cd x && y` scalars beside
+// it. Found by the pre-release review, round eleven.
+func taskfileCommands(s string) []runBlock {
+	var out []runBlock
+	lines := strings.Split(s, "\n")
+	inCmds, cmdsIndent := false, 0
+	for i := 0; i < len(lines); i++ {
+		trimmed := strings.TrimSpace(lines[i])
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		indent := len(lines[i]) - len(strings.TrimLeft(lines[i], " "))
+		if trimmed == "cmds:" {
+			inCmds, cmdsIndent = true, indent
+			continue
+		}
+		if inCmds && indent <= cmdsIndent {
+			inCmds = false
+		}
+		if !inCmds || !strings.HasPrefix(trimmed, "- ") {
+			continue
+		}
+		item := strings.TrimSpace(strings.TrimPrefix(trimmed, "- "))
+		switch {
+		case strings.HasPrefix(item, "task:"):
+			continue // a call to another task, checked where that task is
+		case strings.HasPrefix(item, "cmd:"), strings.HasPrefix(item, "defer:"):
+			item = strings.TrimSpace(item[strings.Index(item, ":")+1:])
+		}
+		if item == "|" || item == ">" || item == "|-" || item == ">-" {
+			var body []string
+			for j := i + 1; j < len(lines); j++ {
+				if strings.TrimSpace(lines[j]) == "" {
+					body = append(body, "")
+					continue
+				}
+				if len(lines[j])-len(strings.TrimLeft(lines[j], " ")) <= indent {
+					break
+				}
+				body = append(body, strings.TrimSpace(lines[j]))
+			}
+			out = append(out, runBlock{i + 1, strings.Join(body, "\n"), strings.HasPrefix(item, ">")})
+			continue
+		}
+		out = append(out, runBlock{i + 1, strings.Trim(item, "'\""), false})
 	}
 	return out
 }

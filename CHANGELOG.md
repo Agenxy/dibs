@@ -495,6 +495,30 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Recovering by session id left the wake on the thread the agent had
+  left.** Session-based recovery (a name and a session id, for a row whose
+  nonce was minted) reattached and bound only the alias the daemon joins at
+  ingress; a register that stated `session_id: B` with no alias reattached
+  an agent holding B and C and left C current, so the next wake resumed C.
+  The id a caller recovers by is the activation it is on, unless the harness
+  reported one.
+
+- **An in-place bridge upgrade switched off self-wake until the next
+  register.** The handoff to the new image carried the handshake and the
+  caller's subscriptions and not the self-wake watcher's token, so an
+  upgraded bridge answered every call and never put another notice into its
+  session until the agent happened to register or resume. The token is
+  carried and the watcher restarts with it.
+
+- **The no-shell guard read a fraction of the Taskfile.** It scanned `cmd:`
+  mappings, the form the Taskfile uses least, and skipped scalar commands and
+  `- |` blocks: a curl conditional with redirection, nine `cd x && y`
+  scalars and a `| tail` pipeline sat beside it, and the changelog said the
+  class was guarded. The guard reads every command form now, with a floor on
+  how many it must find; the conditional is a Go tool (`tools/embedprobe`),
+  the `cd` is a task with its own `dir:`, and the pipeline was redundant with
+  what the coverage gate prints.
+
 - **An upgrade whose stop timed out could leave the board down while
   reporting a restart.** Recovery started the replacement and went home. A
   replacement started while the old daemon still held the directory lock
@@ -2873,7 +2897,8 @@ machines for real work. Their priority order, not ours.
   `.github/workflows` and nothing else, so `review:release` was a multiline
   shell program with conditionals and redirection for its whole life, while the
   changelog claimed the class was removed and guarded. It is a Go program under
-  `tools/`, and the guard reads `cmd:` blocks too. The predicate is shared
+  `tools/`, and the guard reads every command form (from round eleven; until
+  then it read `cmd:` mappings alone). The predicate is shared
   rather than copied, and it ignores template actions and quoted arguments,
   because a guard that calls `echo "asked for Desktop access"` a loop is one
   that gets deleted.

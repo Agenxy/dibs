@@ -42,6 +42,7 @@ func (s *State) reattachBySessionID(op *Op, now time.Time) (Result, []Event) {
 	}
 	s.dropTakenSession(op, l)
 	l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
+	l.currentFrom(op)
 	// LEDGERED, like every other transition. A branch that rotates a token and
 	// returns no events never advances the serial, so the engine never writes it
 	// down and replay does not reattach: after a restart the agent is stale

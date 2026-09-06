@@ -419,6 +419,20 @@ const maxSessionAliases = 8
 //
 // Recorded on the agent so a later first-hand claim can take an inferred
 // binding back without being able to take a stated one. See Op.SessionGuessed.
+// currentFrom records which of the ids an op carries is the activation the
+// caller is on. The alias the daemon joins at ingress wins when there is one,
+// because bindHarnessSessionAs made it current; otherwise the session id the
+// caller stated is the one it is speaking from. Session-based recovery used
+// to leave the current session where it was: an agent holding threads B and
+// C with C current, recovered by session_id B with no alias, was still woken
+// on C. Found by the pre-release review, round eleven.
+func (a *Agent) currentFrom(op *Op) {
+	if op.SessionAlias != "" || op.SessionID == "" || !a.holdsSession(op.SessionID) {
+		return
+	}
+	a.CurrentSession = op.SessionID
+}
+
 func (a *Agent) bindHarnessSessionAs(sid string, guessed bool) string {
 	bound := a.bindHarnessSession(sid)
 	// AN ALREADY-HELD ID STILL CARRIES PROVENANCE, and this returned early on

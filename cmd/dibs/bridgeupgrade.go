@@ -56,6 +56,31 @@ type bridgeState struct {
 	ClientInfo map[string]any `json:"client_info,omitempty"`
 	WantsUI    bool           `json:"wants_ui,omitempty"`
 	Listens    []string       `json:"listens,omitempty"`
+	// WakeToken is the agent token the self-wake watcher subscribes with.
+	// The handoff carried the caller's subscriptions and not this one, so an
+	// upgraded bridge answered every call and never woke its session again
+	// until the agent happened to register or resume. Found by the
+	// pre-release review, round eleven.
+	WakeToken string `json:"wake_token,omitempty"`
+}
+
+// liveWake is the token the self-wake watcher currently holds, for the
+// handoff; the watcher itself is local to the serving loop.
+var liveWake struct {
+	mu    sync.Mutex
+	token string
+}
+
+func recordWakeToken(token string) {
+	liveWake.mu.Lock()
+	defer liveWake.mu.Unlock()
+	liveWake.token = token
+}
+
+func currentWakeToken() string {
+	liveWake.mu.Lock()
+	defer liveWake.mu.Unlock()
+	return liveWake.token
 }
 
 // selfIdentity is how this process recognises that its own binary changed.
@@ -158,13 +183,16 @@ func openListens() []string {
 // Subscriptions are re-issued as the caller's own request, never reconstructed
 // (R12), which is the same thing followStream does across a daemon restart.
 func restoreCarried(ctx context.Context, client *http.Client, url, secret string,
-	out *syncWriter, streams *sync.WaitGroup,
+	out *syncWriter, streams *sync.WaitGroup, w *inboxWatcher,
 ) {
 	s, ok := carriedState()
 	if !ok {
 		return
 	}
 	lastClientInfo, lastWantsUI = s.ClientInfo, s.WantsUI
+	if s.WakeToken != "" && w != nil {
+		w.start(ctx, client, url, secret, s.WakeToken)
+	}
 	for _, listen := range s.Listens {
 		line := []byte(listen)
 		noteListen(line)

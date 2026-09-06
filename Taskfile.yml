@@ -97,10 +97,9 @@ tasks:
       - task: install:sign
         vars: { DEST: '{{.DEST}}' }
       - '{{.DEST}}/dibs version'
-      - |
-        echo "installed to {{.DEST}}"
-        echo "a running dibd keeps the old code until you restart it:"
-        echo "  dibs upgrade"
+      - echo "installed to {{.DEST}}"
+      - echo "a running dibd keeps the old code until you restart it:"
+      - echo "  dibs upgrade"
 
   install:sign:
     # Sign with a STABLE identity when one is configured, because macOS keys a
@@ -251,7 +250,7 @@ tasks:
       # globs for a binary. It is the only dibd on this machine that will
       # answer a presence check from an environment variable.
       - go build -tags dibdev -o bin/dibd-dev ./cmd/dibd
-      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - task: e2e:install
       - bun internal/mcp/e2e/human_e2e.ts
 
   test:panel:
@@ -266,7 +265,7 @@ tasks:
     desc: "Board panel end-to-end: real Chrome, real AppBridge, real daemon"
     deps: [build]
     cmds:
-      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - task: e2e:install
       - DIBD=$PWD/bin/dibd bun internal/mcp/e2e/panel_e2e.ts
 
   panel:inspect:
@@ -278,7 +277,7 @@ tasks:
       re-reads, which needs a daemon built with -tags dibdev unless you want a
       real fingerprint prompt (see CONTRIBUTING.md).
     cmds:
-      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - task: e2e:install
       - bun internal/mcp/e2e/panel_inspect.ts {{.CLI_ARGS}}
 
   test:web:
@@ -293,7 +292,7 @@ tasks:
     desc: Web board end-to-end, including the admin gate
     deps: [build]
     cmds:
-      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - task: e2e:install
       - DIBD=$PWD/bin/dibd DIBS=$PWD/bin/dibs bun internal/mcp/e2e/web_e2e.ts
 
   test:guard:
@@ -308,7 +307,7 @@ tasks:
     desc: "Claim guard end-to-end: the real stdio bridge and the real opencode plugin"
     deps: [build]
     cmds:
-      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - task: e2e:install
       - DIBD=$PWD/bin/dibd DIBS=$PWD/bin/dibs bun internal/mcp/e2e/guard_e2e.ts
 
   test:space:
@@ -323,7 +322,7 @@ tasks:
     desc: "Spaces end-to-end: auto-join, exclusivity, announcements, over real HTTP"
     deps: [build]
     cmds:
-      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - task: e2e:install
       - DIBD=$PWD/bin/dibd DIBS=$PWD/bin/dibs MATCH_REPO=$PWD bun internal/mcp/e2e/channel_e2e.ts
 
   e2e:deps:
@@ -332,9 +331,16 @@ tasks:
     # chain written out twice. Task running is what the runner is for, and a
     # workflow's embedded shell is a shell script that happens to live in YAML:
     # untyped, untestable, and duplicated in this case.
+    dir: internal/mcp/e2e
     cmds:
-      - cd internal/mcp/e2e && bun install --frozen-lockfile
-      - cd internal/mcp/e2e && bunx playwright install --with-deps chromium
+      - bun install --frozen-lockfile
+      - bunx playwright install --with-deps chromium
+
+  e2e:install:
+    desc: "The e2e suites' bun packages, in their own directory (no cd in a command)"
+    dir: internal/mcp/e2e
+    cmds:
+      - bun install --frozen-lockfile
 
   release:check:
     desc: "Validate .goreleaser.yml against the pinned GoReleaser"
@@ -376,7 +382,7 @@ tasks:
     desc: "[wake.exec] end-to-end: a real dibs.toml, a real hook, a real subprocess"
     deps: [build]
     cmds:
-      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - task: e2e:install
       - DIBD=$PWD/bin/dibd bun internal/mcp/e2e/wake_e2e.ts
 
   test:sidecar:
@@ -412,14 +418,7 @@ tasks:
       N: '{{.N | default "40"}}'
     cmds:
       - task: build
-      - |
-        if ! curl -sf -m 3 {{.EMBED_URL}}/v1/embeddings -H 'content-type: application/json' \
-             -d '{"model":"{{.EMBED_MODEL}}","input":["probe"]}' >/dev/null 2>&1; then
-          echo "no embeddings service at {{.EMBED_URL}}"
-          echo "  ollama:  brew install ollama && ollama serve && ollama pull {{.EMBED_MODEL}}"
-          echo "  or set EMBED_URL/EMBED_MODEL to any OpenAI-compatible endpoint"
-          exit 1
-        fi
+      - go run ./tools/embedprobe -url {{.EMBED_URL}} -model {{.EMBED_MODEL}}
       - echo "═══ tier 0 ═══"
       - ./bin/dibs calibrate -n {{.N}}
       - echo "═══ tier 2. {{.EMBED_MODEL}} ═══"
@@ -435,7 +434,6 @@ tasks:
     desc: Coverage on core + ledger. SPEC §17 floor of 85%, enforced
     cmds:
       - go test -race -covermode=atomic -coverprofile=coverage.out ./internal/core/ ./internal/ledger/
-      - go tool cover -func=coverage.out | tail -3
       # Enforced, not printed. This step exited 0 whatever the number said, so
       # the §17 floor was a sentence in a document while coverage sat six tenths
       # of a point above it.

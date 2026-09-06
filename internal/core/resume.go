@@ -48,6 +48,7 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 	if op.V7Semantics && changed {
 		s.dropTakenSession(op, l)
 		l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
+		l.currentFrom(op)
 		// A LEDGERED activation is durable evidence of life. Without this the
 		// engine touched only its transient seen map, and a restart just past
 		// the old TTL booted the agent stale despite a registration on disk
