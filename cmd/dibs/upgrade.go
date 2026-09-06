@@ -210,10 +210,34 @@ func upgrade(o upgradeOpts) error {
 	if o.dryRun {
 		return p.report()
 	}
+	// NOTHING TO DO IS NOTHING DONE. The help said a bare run on an
+	// up-to-date install correctly does nothing, and the command then
+	// stopped a serving daemon and restarted it onto the build it was
+	// already on: a fleet restart for no change. When the daemon reports the
+	// build this CLI was installed with, and nothing about the unit needs
+	// repair, it says so and stops. Found by the pre-release review, round
+	// fifty.
+	if p.serving && !p.unitWrong && !p.moveDir {
+		if info, ierr := daemonBuild(); ierr == nil && alreadyOn(info, version) {
+			fmt.Printf("already on %s: the daemon is serving the build you installed, nothing to do\n", info.Version)
+			return nil
+		}
+	}
 	if err := p.preflight(); err != nil {
 		return err
 	}
 	return p.cutover()
+}
+
+// alreadyOn reports whether the serving daemon is on the build this CLI was
+// installed with. Both binaries come from one install, so the CLI's version
+// is the installed daemon's. A development build reports no version worth
+// comparing, and two of those are not known to be the same code.
+func alreadyOn(info buildInfo, installed string) bool {
+	if installed == "" || installed == "devel" || info.Version == "" {
+		return false
+	}
+	return info.Version == installed
 }
 
 // planUpgrade resolves what is out of line, and proves the replacement can

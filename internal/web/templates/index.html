@@ -261,7 +261,7 @@ function flash(msg, bad) {
 // EventSource cannot send a header, and cookies are host-scoped so any local
 // service the operator visits is handed one. Mail comes from /api/messages,
 // which requires the page key.
-let state = { board: {{.BoardJSON}}, messages: [], announcements: [], events: {{.EventsJSON}},
+let state = { board: {{.BoardJSON}}, messages: [], announcements: [], mailError: "", events: {{.EventsJSON}},
   // Which agents the reader opened. Held here because the roster is rebuilt
   // from scratch on every board change and a `details` does not survive that.
   expanded: new Set() }
@@ -495,7 +495,10 @@ function drawPanes() {
             <button class="act ackmsg" data-why="acknowledge without answering">ack<span class="sr-only">: acknowledge without answering</span></button>
           </div>`) : "")
       }).join("")
-    : Board.emptyHTML("No mail", "Messages between agents appear here as they are sent."))
+    : state.mailError
+      ? Board.emptyHTML("Mail unavailable", "The mailbox could not be read (" + Board.esc(state.mailError) +
+        "). What is shown may be stale; reload the board, and open it again from `dibs web` if this persists.")
+      : Board.emptyHTML("No mail", "Messages between agents appear here as they are sent."))
 
   const actEl = document.getElementById("pane-activity")
   actEl.innerHTML = state.events.length
@@ -723,11 +726,17 @@ async function refreshMail() {
   mailPending = true
   try {
     const res = await boardFetch("/api/messages")
-    if (!res.ok) return
+    // SAID, NOT SWALLOWED. A refusal here painted "No mail" under a live
+    // mark: a valid session with no page key got 401 from this route while
+    // the document and the stream loaded fine, and an operator could not
+    // tell an inaccessible mailbox from an empty one. The last good view is
+    // kept, and the pane says the mailbox could not be read and why.
+    if (!res.ok) { state.mailError = "HTTP " + res.status; draw(); return }
     const d = await res.json()
+    state.mailError = ""
     if (Array.isArray(d.announcements)) state.announcements = d.announcements
     if (Array.isArray(d.messages)) { state.messages = d.messages; draw() }
-  } catch (_) { /* keep the last good view rather than blanking it */ }
+  } catch (_) { state.mailError = "unreachable"; draw() }
   finally {
     mailPending = false
     // Exactly one more, however many arrived while that was in flight: the

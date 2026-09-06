@@ -375,6 +375,28 @@ try {
   check("the board renders agents in a real browser",
     rendered.includes("builder") && rendered.includes("checker"), rendered.join(","))
   check("it uses the shared roster grouping", (await page.locator(".band").count()) >= 1)
+  // A MAILBOX THAT CANNOT BE READ SAYS SO. A valid session with no page key
+  // (a reload after localStorage was unavailable) gets 401 from the mail
+  // route while the document and the stream load fine, and the pane painted
+  // "No mail" under a live mark: an operator could not tell an inaccessible
+  // mailbox from an empty one. Round fifty of the pre-release review.
+  {
+    const bare = await browser.newContext()
+    await bare.addCookies([{ name, value, domain: "127.0.0.1", path: "/" }])
+    const nokey = await bare.newPage()
+    await nokey.goto(`http://${ADDR}/`, { waitUntil: "load" })
+    await nokey.locator(".entry").first().waitFor({ timeout: 10000 })
+    await nokey.locator("#tab-mail").click()
+    let pane = ""
+    for (let i = 0; i < 40 && !/Mail unavailable/.test(pane); i++) {
+      pane = (await nokey.locator("#pane-mail").textContent()) ?? ""
+      await Bun.sleep(100)
+    }
+    check("a mailbox the page cannot read is not shown as empty",
+      /Mail unavailable/.test(pane) && !/No mail/.test(pane), pane.slice(0, 160))
+    check("and the refusal is named", /HTTP 401/.test(pane), pane.slice(0, 160))
+    await bare.close()
+  }
   // The design system is applied: in WHICHEVER theme the system asked for.
   //
   // This pinned the dark background, which made it a theme test wearing a

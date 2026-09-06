@@ -552,6 +552,25 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A second adoption announced the first one's mail again.** The event
+  filter matched the source and the heir and never asked when the move
+  happened, so adopting a source a second time emitted `message.adopted` for
+  every message an earlier adoption had moved, presenting old mail as a new
+  blocking arrival to the subscription and the wake. Only what this
+  adoption moved is announced.
+
+- **The board page showed "No mail" when the mailbox could not be read.**
+  A refused or failed mail fetch returned silently under a live mark, so a
+  valid session with no page key saw an empty, live-looking mailbox while
+  `/api/messages` answered 401. The pane says the mailbox could not be read
+  and why, keeps the last good view, and says what to do.
+
+- **`dibs upgrade` restarted a fleet that was already on the build.** The
+  help said a bare run on an up-to-date install does nothing, and the command
+  stopped the serving daemon and restarted it onto the build it was on. When
+  the daemon reports the build this CLI was installed with, and nothing about
+  the service unit needs repair, it says so and stops.
+
 - **The reattach path's activation rule applied to historical ops.** A
   v0.0.6 reattach with a new thread alias and no pid kept the recorded
   process; replayed under the new rule it rebuilt a different one, losing

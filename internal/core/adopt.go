@@ -185,6 +185,15 @@ func (s *State) adoptedMailEvents(into, from *Agent) []Event {
 		if m.To != into.ID || m.AdoptedFrom != from.ID || m.Terminal() {
 			continue
 		}
+		// MOVED BY THIS OP. The filter matched the source and the heir and
+		// never asked when the move happened, so a second adoption from the
+		// same source announced every earlier one's mail again as a new
+		// blocking arrival, to the subscription and to the wake. The move
+		// stamps the serial this op will finish at. Found by the pre-release
+		// review, round fifty.
+		if m.AdoptedAt != s.Serial+1 {
+			continue
+		}
 		switch m.Type {
 		case MsgQuestion, MsgRequest, MsgHandoff:
 		default:
