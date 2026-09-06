@@ -518,6 +518,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   project guards `tools/list` with a hard test at 8,700 tokens and was shipping
   twice that per activation with nothing measuring it at all.
 
+- **The bridge refused a config key it did not know, and said the daemon would
+  too.** `dibs mcp-stdio` reads `dibs.toml` to find the daemon, and refused the
+  whole file on any key its own build could not place, printing "the daemon
+  will not start on it either". The bridge is the binary a session started
+  with, so between every `task install` and that session's restart it is older
+  than the daemon; it blocked a live delivery on this machine over a `fallback`
+  key the daemon had accepted and was serving on. A program that is not the
+  file's authority does not get to speak for the one that is.
+
+  `Load` now reports unknown keys as a typed error alongside the decoded
+  config. The daemon still refuses them, loudly, naming the key. The bridge
+  proceeds on them and still refuses a file that does not parse, with its
+  reasons intact, because there the address really is a guess.
+
 - **A codex thread open in the desktop app can be woken.** This is the case
   that was reported as unreachable for weeks. `codex exec resume`, the only
   command anyone had configured, refuses a thread the desktop app has open:

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -133,6 +134,15 @@ func configuredAddr(dir string) string {
 // success. Both now call internal/boardconfig, so there is one answer.
 func readBoardConfig(dir string) (boardconfig.Config, error) {
 	c, err := boardconfig.Load(dir)
+	var unknown *boardconfig.UnknownSettingsError
+	if errors.As(err, &unknown) {
+		// Decoded, with keys THIS build does not know. Not "dibd refuses this
+		// file": the daemon may be newer than this binary and running on it
+		// right now, which is exactly the state every session is in between a
+		// `task install` and its own restart. Passed up typed, so the caller
+		// decides what its own job needs from the file.
+		return c, fmt.Errorf("%s: %w", filepath.Join(dir, "dibs.toml"), err)
+	}
 	if err != nil {
 		return c, fmt.Errorf("%s: %w\n\nAny configuration printed from it would be a "+
 			"guess: dibd refuses this file, so fix it (or run `dibd -check`) first",

@@ -342,12 +342,14 @@ func Load(dir string) (Config, error) {
 		for _, k := range un {
 			keys = append(keys, k.String())
 		}
-		return c, fmt.Errorf(
-			"unknown setting(s) in dibs.toml: %s: check the spelling and the table "+
-				"they are under ([match], [limits]); nothing here took effect",
-			strings.Join(keys, ", "),
-		)
+		// TYPED, because two readers of this file need opposite answers.
+		// The daemon must refuse: an operator who misspelled a key has to be
+		// told nothing took effect. A client that only needs the address out
+		// of the file must not, because a key this build does not know may be
+		// one a newer daemon does; see UnknownSettingsError.
+		return c, &UnknownSettingsError{Keys: keys}
 	}
+
 	// WHICH KEYS WERE ACTUALLY WRITTEN, carried into validation.
 	//
 	// An unset duration and an explicit `every = "0s"` are the same zero in the
@@ -985,4 +987,25 @@ func validateWakeArgv(harness, key string, argv []string) error {
 			"choose is which executable the board starts", harness, key, argv[0])
 	}
 	return nil
+}
+
+// UnknownSettingsError is Load's report of keys it could not place. The config
+// decoded; these keys did nothing.
+//
+// A type rather than a string because the same file is read by two programs
+// with different authority over it. `dibd` owns the file and must refuse it,
+// loudly, naming the keys: `[limit]` for `[limits]` parses cleanly and changes
+// nothing, and an operator left to debug the behaviour they thought they had
+// configured is the worst outcome available. The `dibs` bridge only needs the
+// address out of the file, and it is often OLDER than the daemon: every
+// `task install` leaves a running session's bridge on the previous build until
+// that session restarts. A bridge that refused on a key it did not know, while
+// claiming the daemon would refuse it too, blocked a live delivery on this
+// machine on a key the daemon had already accepted and started on.
+type UnknownSettingsError struct{ Keys []string }
+
+func (e *UnknownSettingsError) Error() string {
+	return fmt.Sprintf("unknown setting(s) in dibs.toml: %s: check the spelling and the "+
+		"table they are under ([match], [limits]); nothing here took effect",
+		strings.Join(e.Keys, ", "))
 }

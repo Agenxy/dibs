@@ -10,10 +10,12 @@ package main
 // rather than deciding anything on their own.
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strings"
 
+	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/paths"
 )
 
@@ -178,7 +180,31 @@ func isLoopbackHostPort(hostPort string) bool {
 // data race. A check that depends on another function's side effects is not a
 // check; it is a coincidence.
 func checkConfigReadable() error {
-	if _, err := readConfiguredAddr(paths.DataDir()); err != nil {
+	return configReadable(paths.DataDir())
+}
+
+// configReadable is the decision, on a directory, so a test can hand it one.
+//
+// UNKNOWN KEYS ARE NOT UNREADABLE. The file decoded and the address came out
+// of it; what this build could not place, a newer daemon may well own. That is
+// the ordinary state of every running session between a `task install` and
+// its own restart, because the bridge is the binary the session started with.
+// This refused a `fallback` key the daemon had accepted and started on, and
+// said "the daemon will not start on it either" while it was serving. A
+// program that is not the file's authority does not get to speak for the one
+// that is. The daemon still refuses unknown keys itself, loudly; if it has, the
+// connection below fails and says so.
+//
+// A file that does not PARSE is a different matter: nothing decoded, the
+// address is a guess, and the daemon really cannot start on it. That refusal
+// stays, with its reasons.
+func configReadable(dir string) error {
+	_, err := readConfiguredAddr(dir)
+	var unknown *boardconfig.UnknownSettingsError
+	if errors.As(err, &unknown) {
+		return nil
+	}
+	if err != nil {
 		return fmt.Errorf("this board's dibs.toml cannot be read (%w). The daemon "+
 			"will not start on it either, so anything reachable now is not the board "+
 			"you configured, and requests would carry this directory's local secret "+
