@@ -554,6 +554,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The self-wake cooldown was per mailbox, not per session.** Each
+  watched agent's stream had a waker of its own, so two mailboxes receiving
+  questions put two interruptions into the same session socket microseconds
+  apart, against the fifteen-second cooldown the session is promised. Every
+  stream writes through one waker; a second arrival inside the cooldown is
+  deferred to its end, not dropped.
+
 - **Moving a live identity to a new session kept the old activation's
   acknowledgement.** A same-nonce register inside the TTL that moved the row
   to a new session left the awareness gate armed by the previous activation,

@@ -50,6 +50,14 @@ type inboxWatcher struct {
 	// zero means reconnectAfter. A field, set before start, so a test can
 	// shorten it without writing a global under a running goroutine.
 	reconnect time.Duration
+	// waker is the ONE route to this session's socket, shared by every
+	// stream: the cooldown is a promise about the session, not about a
+	// mailbox, and a waker per stream gave two mailboxes two interruptions
+	// microseconds apart. Found by the pre-release review, round fifty-eight.
+	waker *selfWaker
+	// cooldown overrides the shared waker's cooldown when set before the
+	// first start; a test knob, like reconnect.
+	cooldown time.Duration
 }
 
 // inboxStream is one agent's subscription: its credential and its cursor.
@@ -165,12 +173,21 @@ func (iw *inboxWatcher) start(ctx context.Context, client *http.Client, url, sec
 func (iw *inboxWatcher) startFor(
 	ctx context.Context, client *http.Client, url, secret, key, token string, seed uint64,
 ) {
-	waker := newSelfWaker()
-	if waker == nil || token == "" {
-		return // this harness publishes no session socket: nothing local to do
+	if token == "" {
+		return
 	}
 	iw.mu.Lock()
 	defer iw.mu.Unlock()
+	if iw.waker == nil {
+		iw.waker = newSelfWaker()
+		if iw.waker != nil && iw.cooldown > 0 {
+			iw.waker.cooldown = iw.cooldown
+		}
+	}
+	waker := iw.waker
+	if waker == nil {
+		return // this harness publishes no session socket: nothing local to do
+	}
 	if iw.streams == nil {
 		iw.streams = map[string]*inboxStream{}
 	}
