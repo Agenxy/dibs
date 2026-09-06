@@ -1415,6 +1415,15 @@ func (e *Engine) refuseStealingAnotherThreadsSession(op *core.Op) error {
 	if op.Kind != core.OpRegister && op.Kind != core.OpBindSession {
 		return nil
 	}
+	// THREADS ONLY, DELIBERATELY. The bridge derives `host-<ppid>` from the
+	// harness process, so every agent registering through one bridge states
+	// the same id on purpose (TestAgentsSharingOneBridgeSessionAreStillAllowed
+	// and mcpstdio_session.go). A register stating an active agent's
+	// synthetic id under a new name is that sharing, not theft; what must
+	// not happen is the newcomer taking over the hooks, which AgentBySession
+	// settles by preferring the holder that had the id first. Round
+	// fifty-three of the pre-release review proposed vetting every id here
+	// and this test is why not.
 	if !looksLikeThreadID(op.SessionID) {
 		return nil
 	}

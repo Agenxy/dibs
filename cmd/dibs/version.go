@@ -84,11 +84,14 @@ type buildInfo struct {
 // answers. No token: this is the same information it gives every client on
 // connect, and requiring an agent token to ask "what version are you" would make
 // the diagnostic unavailable in exactly the confused state it exists for.
-func daemonBuild() (buildInfo, error) {
+func daemonBuild() (buildInfo, error) { return daemonBuildAt(origin()) }
+
+// daemonBuildAt asks the daemon at base (scheme://host:port) what it is.
+func daemonBuildAt(base string) (buildInfo, error) {
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "server/discover", "params": map[string]any{},
 	})
-	req, err := http.NewRequest(http.MethodPost, origin()+"/mcp", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, base+"/mcp", bytes.NewReader(body))
 	if err != nil {
 		return buildInfo{}, err
 	}

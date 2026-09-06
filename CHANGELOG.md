@@ -72,9 +72,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   daemon joins into one "taken from" record; when the primary came from a
   dormant A and the alias from a dormant B, the record named one of them and
   the other kept its id alongside the registrant. Two stated holders the
-  moment it checked in, and a coin flip on every hook. Every other row now
-  loses both ids: the record says the ingress found every holder claimable,
-  and who held what is the replayed state's to say.
+  moment it checked in, and a coin flip on every hook. The fold drops each
+  id from the row the record names for it, from a row that is not active,
+  and from one that only guessed it; an active row that stated an id the
+  record does not name keeps it, because the ingress did not find it
+  claimable (see the first Security entry).
 
 - **An explicit `bind_session` left the id reclaimable.** An id inferred for
   an agent is recorded as a guess, and a live claim may take a guess even
@@ -551,6 +553,29 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing an agent wrote, and it cannot read the session or steer it.
 
 ### Fixed
+
+- **A newcomer sharing a bridge session took over its hooks.** Every agent
+  registering through one bridge states the same `host-<ppid>`, on purpose,
+  and among several active stated holders the hook lookup preferred the
+  lowest id: an agent registered later under a name that sorted first
+  redirected the hooks of the agent that had the session first, which kept
+  its binding and lost its routing. Among active stated holders the one that
+  held the id first wins; the lowest id decides only between rows created at
+  once.
+
+- **The upgrade's "nothing to do" asked the wrong daemon.** It queried the
+  daemon at DIBS_ADDR, and the daemon the plan replaces is the registry's:
+  with the target on an older build and another configured board on the new
+  one, it concluded nothing to do and left the target alone. The plan asks
+  the daemon it recorded, at the address and scheme it recorded; a query
+  that fails proceeds to the cutover.
+
+- **A board-only subscriber past the ring was never told the board
+  changed.** The overflow refill returned nothing when the position had
+  fallen outside the ring and the subscriber followed only `dibs://board`,
+  with its loss mark already cleared, so it stayed on a stale board until the
+  next change happened to reach it. The refill sends one board notice; the
+  board resource is a snapshot, so that is all such a subscriber needs.
 
 - **The upgrade's "nothing to do" compared the wrong binary.** The check
   that stops an upgrade when the daemon already serves the installed build

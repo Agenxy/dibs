@@ -287,11 +287,22 @@ func (s *Server) eventsAfter(ctx context.Context, last uint64, wants wantsFunc) 
 	res, err := s.eng.EventsSince(ctx, "", last, true)
 	var ce *core.Error
 	if errors.As(err, &ce) && ce.Code == "E_CURSOR_TOO_OLD" {
-		agentID, wantInbox, _ := wants()
-		if !wantInbox || agentID == "" {
-			return nil
+		agentID, wantInbox, wantBoard := wants()
+		var evs []core.Event
+		if wantInbox && agentID != "" {
+			evs, _ = s.eng.ResyncFor(ctx, agentID, last)
 		}
-		evs, _ := s.eng.ResyncFor(ctx, agentID, last)
+		// THE BOARD HAS CHANGED, WHATEVER IT CHANGED TO. A board-only
+		// subscriber past the ring got nothing here, with its loss mark
+		// already cleared, and stayed on a stale board until the next change
+		// happened to reach it. One board notice says "look again"; the
+		// board resource is a snapshot, so that is all a board subscriber
+		// ever needs. Found by the pre-release review, round fifty-three.
+		if wantBoard {
+			if _, now, ierr := s.eng.SubscribeInfo(ctx, ""); ierr == nil {
+				evs = append(evs, core.Event{Serial: now, Type: "board.resynced", Data: map[string]any{"resynced": true}})
+			}
+		}
 		return evs
 	}
 	if err != nil || res["error"] != nil {

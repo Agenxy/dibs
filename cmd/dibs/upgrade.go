@@ -225,11 +225,28 @@ func upgrade(o upgradeOpts) error {
 	// unit needs repair, it says so and stops. Found by the pre-release
 	// review, round fifty; compared against the CLI's own version in its
 	// first cut, which is not the replacement's, round fifty-one.
-	if info, ierr := daemonBuild(); ierr == nil && p.nothingToDo(info) {
+	// THE DAEMON THIS COMMAND IS ABOUT TO REPLACE, not the one DIBS_ADDR
+	// names: with the registry's target on an older build and another board
+	// configured on the new one, asking the configured origin concluded
+	// nothing to do and left the target unchanged. A query that fails
+	// proceeds to the cutover, which is the safe direction. Found by the
+	// pre-release review, round fifty-three.
+	if info, ierr := daemonBuildAt(runningOrigin(p)); ierr == nil && p.nothingToDo(info) {
 		fmt.Printf("already on %s: the daemon is serving the build you installed, nothing to do\n", info.Version)
 		return nil
 	}
 	return p.cutover()
+}
+
+// runningOrigin is where the daemon the plan will replace answers, from the
+// registry's record of it: the address it bound, with the scheme it was
+// asked for when it recorded one, and plaintext otherwise.
+func runningOrigin(p *plan) string {
+	a := replacementAddr(p.dir, p.running.addr)
+	if _, _, found := strings.Cut(a, "://"); found {
+		return a
+	}
+	return "http://" + a
 }
 
 // nothingToDo reports whether the cutover would change nothing: the daemon

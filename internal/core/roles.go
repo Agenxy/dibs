@@ -166,9 +166,16 @@ func (s *State) AgentBySession(sid string) *Agent {
 			continue
 		}
 		if !l.GuessedSession(sid) {
+			// AND THE ONE THAT HELD IT FIRST. Every agent registering through
+			// one bridge states the same `host-<ppid>`, on purpose, and "the
+			// lowest id" let an agent registered later under a name that
+			// sorted first take over the hooks of the one that had the
+			// session first: it kept its binding and lost its routing. The
+			// earliest row wins; the id decides only between rows created at
+			// once. Found by the pre-release review, round fifty-three.
 			if stated == nil ||
 				(l.Status == StatusActive && stated.Status != StatusActive) ||
-				(l.Status == StatusActive) == (stated.Status == StatusActive) && l.ID < stated.ID {
+				(l.Status == StatusActive) == (stated.Status == StatusActive) && heldFirst(l, stated) {
 				stated = l
 			}
 			continue
@@ -183,6 +190,15 @@ func (s *State) AgentBySession(sid string) *Agent {
 		return stated
 	}
 	return guessed
+}
+
+// heldFirst reports whether a came before b: created earlier, or the lower
+// id when they were created at once (or before creation serials existed).
+func heldFirst(a, b *Agent) bool {
+	if a.CreatedSerial != b.CreatedSerial {
+		return a.CreatedSerial < b.CreatedSerial
+	}
+	return a.ID < b.ID
 }
 
 // SessionSpokenFor reports whether ANY agent row has ever answered to this
