@@ -56,6 +56,13 @@ type wakers struct {
 	// deferred: a re-check armed for when an agent's cooldown expires, because
 	// maybeWake fires once per event and nothing else retries.
 	deferred map[string]*time.Timer
+	// attempts counts executions per agent for the mail currently owed, so
+	// a failure is retried once whichever path ran the first attempt. The
+	// retry path treated every execution as the already-retried one, and a
+	// first attempt that arrived there deferred (recency, boot) failed with no
+	// timer left. Cleared on success and when nothing is owed. Found by the
+	// pre-release review, round twenty-three.
+	attempts map[string]int
 	// running: agents whose wake command has not exited yet.
 	//
 	// The cooldown alone was the whole exclusion, and it is a START-time rule:
@@ -280,7 +287,9 @@ func (e *Engine) maybeWake(ev core.Event) {
 	cool := cmd.cooldown
 	go func() {
 		defer e.wakeExited(agent)
+		e.noteWakeAttempt(agent)
 		if e.runWake(cmd, agent) {
+			e.clearWakeAttempts(agent)
 			return
 		}
 		// A FAILED wake read nothing, so whatever arrived during it is still
@@ -437,6 +446,7 @@ func (e *Engine) retryWakeDecision(agent string) {
 		return
 	}
 	if !e.hasBlockingMail(agent) {
+		e.clearWakeAttempts(agent) // nothing owed: the next mail starts its own count
 		return
 	}
 	// A wake that is STILL running is already this agent's activation; the
@@ -480,14 +490,37 @@ func (e *Engine) retryWakeDecision(agent string) {
 		return
 	}
 	stamp := e.wakeStamp(agent)
+	cool := cmd.cooldown
 	go func() {
 		defer e.wakeExited(agent)
-		if !e.runWake(cmd, agent) {
-			// Released so the next EVENT may try, but no timer armed: this is
-			// already the retry, and a command that fails twice fails.
-			e.releaseWake(agent, stamp)
+		n := e.noteWakeAttempt(agent)
+		if e.runWake(cmd, agent) {
+			e.clearWakeAttempts(agent)
+			return
+		}
+		e.releaseWake(agent, stamp)
+		if n < 2 {
+			// The first execution for this mail, arrived here deferred; it
+			// gets the one retry every first attempt is promised.
+			e.deferWakeLocked(agent, cool)
 		}
 	}()
+}
+
+func (e *Engine) noteWakeAttempt(agent string) int {
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	if e.wakers.attempts == nil {
+		e.wakers.attempts = map[string]int{}
+	}
+	e.wakers.attempts[agent]++
+	return e.wakers.attempts[agent]
+}
+
+func (e *Engine) clearWakeAttempts(agent string) {
+	e.wakers.mu.Lock()
+	defer e.wakers.mu.Unlock()
+	delete(e.wakers.attempts, agent)
 }
 
 // oldestBlocking names the work a re-check is being run for: the type and
@@ -1150,22 +1183,51 @@ func (e *Engine) runWake(plan wakePlan, agent string) bool {
 // had been sent. The reverse case, a closed thread, is the one the primary
 // already handled.
 func runWakeCommands(argv, fallback []string, agent, dir string, timeout, grace time.Duration) bool {
-	if runWakeFor(argv, agent, dir, timeout, grace) {
+	ok, out := runWakeForOut(argv, agent, dir, timeout, grace)
+	if ok {
 		return true
 	}
 	if len(fallback) == 0 {
 		return false
 	}
-	slog.Info("the wake command failed; trying the fallback",
+	// ONLY WHEN THE THREAD IS OPEN. The fallback exists for one failure: the
+	// harness refusing to resume a thread its desktop app holds open. Run
+	// after ANY failure, `codex queue` exited 0 on a closed thread whose
+	// resume had failed for some other reason, parking the message where
+	// nothing reads it, and that counted as a wake and suppressed the retry.
+	// The primary's own words decide. Found by the pre-release review, round
+	// twenty-three.
+	if !openThreadFailure(out) {
+		slog.Info("the wake command failed for a reason that is not an open thread; "+
+			"the fallback would park the message, so it does not run",
+			"agent", agent, "cmd", argv[0], "run_it_yourself", strings.Join(argv, " "))
+		return false
+	}
+	slog.Info("the wake command found the thread open; trying the fallback",
 		"agent", agent, "cmd", argv[0], "fallback", fallback[0])
 	return runWakeFor(fallback, agent, dir, timeout, grace)
+}
+
+// openThreadMarkers are what the measured harness prints when it refuses to
+// resume a thread something else holds open (codex 0.153: "thread-store
+// conflict: thread <id> already has an active writer").
+var openThreadMarkers = []string{"active writer", "thread-store conflict"}
+
+func openThreadFailure(out []byte) bool {
+	text := strings.ToLower(string(out))
+	for _, m := range openThreadMarkers {
+		if strings.Contains(text, m) {
+			return true
+		}
+	}
+	return false
 }
 
 // runWakeFor is runWake with its bounds as arguments, so a test can assert that
 // this RETURNS rather than assert that a constant is large. The old test
 // checked only that wakeTimeout was at least two hours, which stays true while
 // Wait blocks past it.
-func runWakeFor(argv []string, agent, dir string, timeout, grace time.Duration) bool {
+func runWakeForOut(argv []string, agent, dir string, timeout, grace time.Duration) (bool, []byte) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	// #nosec G204 -- argv comes from the operator's own config file and nowhere
@@ -1271,10 +1333,16 @@ func runWakeFor(argv []string, agent, dir string, timeout, grace time.Duration) 
 		}
 		slog.Warn("wake command failed; the next message somebody is blocked on "+
 			"will try again", fields...)
-		return false
+		return false, out
 	}
 	slog.Info("woke an agent that was not running", "agent", agent, "cmd", argv[0])
-	return true
+	return true, out
+}
+
+// runWakeFor is runWakeForOut for callers that need the verdict alone.
+func runWakeFor(argv []string, agent, dir string, timeout, grace time.Duration) bool {
+	ok, _ := runWakeForOut(argv, agent, dir, timeout, grace)
+	return ok
 }
 
 // tailBuffer keeps the last `limit` bytes written to it and discards the rest.

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -24,10 +25,15 @@ func TestTheFallbackRunsOnlyWhenThePrimaryFails(t *testing.T) {
 	if _, err := os.Stat("/usr/bin/touch"); err != nil {
 		t.Skip("no /usr/bin/touch on this platform")
 	}
-	t.Run("primary fails, fallback delivers", func(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Run("primary finds the thread open, fallback delivers", func(t *testing.T) {
 		dir := t.TempDir()
-		ok := runWakeCommands([]string{"/usr/bin/false"}, []string{"/usr/bin/touch", "fallback-ran"},
-			"somebody", dir, 10*time.Second, time.Second)
+		t.Setenv("DIBS_TEST_OPEN_THREAD", "1")
+		ok := runWakeCommands([]string{self, "-test.run=TestHelperPrimaryFindsTheThreadOpen"},
+			[]string{"/usr/bin/touch", "fallback-ran"}, "somebody", dir, 10*time.Second, time.Second)
 		if !ok {
 			t.Fatal("the wake was reported as failed although the fallback exited 0: " +
 				"an agent whose thread is open in its desktop app is reachable by " +
@@ -47,6 +53,18 @@ func TestTheFallbackRunsOnlyWhenThePrimaryFails(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dir, "fallback-ran")); err == nil {
 			t.Error("the fallback ran after the primary had already delivered: for " +
 				"codex that is a second message into a thread that just got one")
+		}
+	})
+	t.Run("primary fails for another reason, fallback is not run", func(t *testing.T) {
+		dir := t.TempDir()
+		ok := runWakeCommands([]string{"/usr/bin/false"}, []string{"/usr/bin/touch", "fallback-ran"},
+			"somebody", dir, 10*time.Second, time.Second)
+		if ok {
+			t.Fatal("a primary that failed for a reason that is not an open thread was reported " +
+				"as a wake through the fallback: for codex that parks the message and cancels the retry")
+		}
+		if _, err := os.Stat(filepath.Join(dir, "fallback-ran")); err == nil {
+			t.Error("the fallback ran although the primary said nothing about an open thread")
 		}
 	})
 	t.Run("no fallback configured is the old behaviour", func(t *testing.T) {
@@ -89,4 +107,15 @@ func TestThePlanCarriesTheSubstitutedFallback(t *testing.T) {
 			"substituted, so the command that reaches an open desktop-app thread "+
 			"would run with literal placeholders", plan.fallback)
 	}
+}
+
+// TestHelperPrimaryFindsTheThreadOpen is the primary wake command for the test
+// above when run as a child: it says what codex says of a thread the desktop
+// app holds open, and exits 1. In the parent it does nothing.
+func TestHelperPrimaryFindsTheThreadOpen(t *testing.T) {
+	if os.Getenv("DIBS_TEST_OPEN_THREAD") != "1" {
+		return
+	}
+	fmt.Fprintln(os.Stderr, "thread-store conflict: thread 019ffe52 already has an active writer")
+	os.Exit(1)
 }

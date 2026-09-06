@@ -121,8 +121,11 @@ that thread by hand. The two are exact inverses.
 
 So a codex entry names both, and the daemon tries them in order. The primary
 is the one that can be confirmed for a closed thread; the fallback runs only
-when the primary exits non-zero, and is the one that can be confirmed for an
-open one:
+when the primary exits non-zero AND its output says the thread is open
+(`active writer`, `thread-store conflict`), and is the one that can be
+confirmed for an open one. A primary that fails for any other reason is a
+failed wake and gets the retry every failure gets: `codex queue` exits 0 for a
+closed thread too, parking the message, and that must not count as a wake.
 
 ```toml
 [wake.exec.codex]

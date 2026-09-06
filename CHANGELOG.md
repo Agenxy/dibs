@@ -537,6 +537,25 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A deferred first wake that failed got no retry.** The retry path treated
+  every execution as the already-retried one, and a first attempt arriving
+  there deferred (a recency window, a boot rearm) that failed left no timer:
+  one execution instead of the promised two, and pending mail waited for
+  another event or a restart. Executions are counted per owed mail, and the
+  first gets its retry whichever path ran it.
+
+- **A `dibs.toml` that was a symlink to nothing read as no configuration.**
+  The defaults quietly replaced the configured address, the CLI's own
+  readability guard passed, and the directory's secret went to whatever
+  answered at the default. A dangling link is refused by name.
+
+- **The Codex fallback could report a wake that parked the message.** The
+  fallback ran after any primary failure, and `codex queue` exits 0 on a
+  closed thread while parking the message where nothing reads it, so a
+  resume that failed for some other reason counted as a wake and cancelled
+  the retry. The fallback runs only when the primary's output says the
+  thread is open; the guide says so.
+
 - **An in-place bridge upgrade could lose a deferred self-wake.** A second
   arrival inside the cooldown defers its notice to a timer and reports
   success, so the reconnect cursor moves past the event; an upgrade before

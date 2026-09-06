@@ -319,8 +319,20 @@ func Load(dir string) (Config, error) {
 	// #nosec G304 -- a path inside the daemon's own data directory, or one the
 	// operator pointed the CLI at. Same-user access only; refusing it would mean
 	// refusing to run.
-	b, err := os.ReadFile(filepath.Join(dir, "dibs.toml"))
+	path := filepath.Join(dir, "dibs.toml")
+	b, err := os.ReadFile(path) // #nosec G304 -- the board's own data directory
 	if os.IsNotExist(err) {
+		// ABSENT MEANS ABSENT. ReadFile follows a symlink, so a dibs.toml
+		// that is a link to nothing read as no configuration at all, the
+		// defaults replaced the configured address, and the CLI's own
+		// readability guard passed: this directory's secret went to whatever
+		// answered at the default. Found by the pre-release review, round
+		// twenty-three.
+		if _, lerr := os.Lstat(path); lerr == nil {
+			return c, fmt.Errorf("%s is a symlink to nothing: fix or remove the link "+
+				"rather than run on defaults that are not what this board was configured "+
+				"with", path)
+		}
 		return c, nil
 	}
 	if err != nil {
