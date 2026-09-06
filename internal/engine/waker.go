@@ -1115,27 +1115,8 @@ func threadIDOf(l *core.Agent) string {
 	return ""
 }
 
-// looksLikeThreadID reports whether s has the shape of a UUID: 8-4-4-4-12 hex
-// with hyphens.
-func looksLikeThreadID(s string) bool {
-	if len(s) != 36 {
-		return false
-	}
-	for i, r := range s {
-		switch i {
-		case 8, 13, 18, 23:
-			if r != '-' {
-				return false
-			}
-		default:
-			isHex := (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
-			if !isHex {
-				return false
-			}
-		}
-	}
-	return true
-}
+// looksLikeThreadID is core.LooksLikeThreadID: one definition of the shape.
+func looksLikeThreadID(s string) bool { return core.LooksLikeThreadID(s) }
 
 // wakeTimeout is the longest a wake command may run before it is killed.
 //

@@ -189,7 +189,10 @@ is arbitrary code running as you.
 **`{thread}` is the harness's thread, and it is the one the harness reported
 last.** Dibs fills it with the agent's current session (`current_session` on
 the board: the id its harness most recently reported, by alias or by a stated
-`session_id`) when that has the shape a resume command accepts. When the
+`session_id`) when that has the shape a resume command accepts. A thread
+beats the bridge's own `host-<ppid>`: a call that states its thread and
+carries the bridge id as an alias is current on the thread, and the bridge id
+re-sent on every later call does not displace it. When the
 harness's last report is not a thread, no thread is known for the current
 activation and the exec route stands down until one is bound: the threads
 the agent held before are the activations it left, and resuming one of those

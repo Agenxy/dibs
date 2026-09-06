@@ -434,7 +434,24 @@ func (a *Agent) currentFrom(op *Op) {
 		// the pre-release review, round sixteen.
 		a.GuessedSessions = withoutString(a.GuessedSessions, op.SessionID)
 	}
-	if op.SessionAlias != "" || op.SessionID == "" || !a.holdsSession(op.SessionID) {
+	if op.SessionID == "" || !a.holdsSession(op.SessionID) {
+		return
+	}
+	// A THREAD BEATS A SYNTHETIC ID. The alias, when there is one, is what
+	// the harness reported and was the current session over anything stated,
+	// which is right when it is the thread and wrong when it is the bridge's
+	// own `host-<ppid>`: a register that STATED its thread and carried the
+	// bridge id as its alias was current on the bridge id, and the configured
+	// wake had no thread to resume. Found by the pre-release review, round
+	// thirty-seven.
+	//
+	// And the bridge naming its own NEW activation, as session and alias
+	// both, is a new activation: nonce recovery installs that id as the
+	// primary before the alias is bound, so by the time the binding looks it
+	// is already held, and the rule above would keep the thread the agent
+	// had left. The op says it twice; that is the signal.
+	statedThread := LooksLikeThreadID(op.SessionID) && !LooksLikeThreadID(op.SessionAlias)
+	if op.SessionAlias != "" && !statedThread && op.SessionAlias != op.SessionID {
 		return
 	}
 	a.CurrentSession = op.SessionID
@@ -527,7 +544,19 @@ func (a *Agent) bindHarnessSession(sid string) string {
 	// Every path below leaves the id bound, so it is the current one whether
 	// or not the binding itself is new: a return to a thread bound earlier
 	// changes nothing in the sets and everything about which one to wake.
-	a.CurrentSession = sid
+	//
+	// EXCEPT A SYNTHETIC ID RE-ASSERTED OVER A THREAD. The bridge sends its
+	// own `host-<ppid>` on every call, and each check_in bound it and made it
+	// current over the thread this activation had stated or its hooks had
+	// bound, so the configured wake lost its thread one call after gaining
+	// it. An id already held is the same activation saying the same thing;
+	// when it is not a thread and the current session is, the thread stays
+	// current. A NEW non-thread id is a new activation and still takes over.
+	// Found by the pre-release review, round thirty-seven.
+	keepThread := a.holdsSession(sid) && !LooksLikeThreadID(sid) && LooksLikeThreadID(a.CurrentSession)
+	if !keepThread {
+		a.CurrentSession = sid
+	}
 	if sid == a.SessionID {
 		return ""
 	}
@@ -545,4 +574,31 @@ func (a *Agent) bindHarnessSession(sid string) string {
 		a.SessionAliases = a.SessionAliases[n-maxSessionAliases:]
 	}
 	return sid
+}
+
+// LooksLikeThreadID reports whether s has the shape of a UUID: 8-4-4-4-12
+// hex with hyphens. A harness thread id is one; the bridge's synthetic
+// `host-<ppid>` is not, and neither is a name a person typed. Shape is a weak
+// discriminator in general and an exact one here, which is why the fold and
+// the waker both use it rather than a recorded provenance: the alternative
+// was a new replayable field, and a json tag added to core is a thing this
+// repository has already lost data to.
+func LooksLikeThreadID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, r := range s {
+		switch i {
+		case 8, 13, 18, 23:
+			if r != '-' {
+				return false
+			}
+		default:
+			isHex := (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+			if !isHex {
+				return false
+			}
+		}
+	}
+	return true
 }

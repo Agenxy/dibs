@@ -552,6 +552,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The bridge's own session id displaced a stated thread.** The bridge
+  sends its `host-<ppid>` as an alias on every call. A register that stated
+  its thread was made current on that alias instead, and even once the thread
+  was current, the next check_in re-bound the alias and made it current
+  again, so the configured wake had no thread to resume one call after
+  gaining one. A thread beats a synthetic id: a stated thread is current over
+  a non-thread alias, and a synthetic id already held does not displace a
+  thread. A NEW synthetic id is a new activation and still takes over.
+
 - **Recovering a row by name and session id lost its wake route.** A
   register carrying neither token nor nonce was refused the thread alias an
   active row already held, then reattached to that very row: the fold took
