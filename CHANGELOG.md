@@ -552,6 +552,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Doctor diagnosed a remote board's wake routes from the local file.** A
+  joining machine runs it against the hub with a data directory of its own,
+  and the wake check read that directory's dibs.toml as the hub's
+  configuration: "no wake command is configured" against a hub that had
+  several, with a repair that edits a file the hub never reads. When the
+  board's node id is not this directory's, the check says whose board it is
+  and sends the operator to the machine that runs it.
+
+- **Doctor said the socket route is tried first while it was switched
+  off.** With `[wake] sockets = false` and no `[wake.exec]` command, neither
+  route runs, which is the configuration the guide describes for no
+  unsolicited activations; the check called that unconfirmed delivery. It
+  says no route at all, and what that configuration asks for.
+
 - **Hidden predecessor mail still authorised its attachments.** A blob is
   fetchable by the recipient of a message referencing it, and that route did
   not ask whose mail the message was: below the watermark it was addressed

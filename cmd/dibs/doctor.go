@@ -463,10 +463,35 @@ func checkHarnessConfigs(sec, addr string, ok reportFn, warn, bad fixFn) {
 // running exactly that mode, and should be told that the only route they have
 // is the one that cannot be confirmed.
 func checkWakeRoutes(dir string, b *boardView, ok reportFn, warn fixFn) {
+	// THE HUB'S CONFIGURATION IS ON THE HUB. A joining machine runs this
+	// against a remote board with its own data directory, and this read that
+	// directory's dibs.toml as the board's wake configuration: "no wake
+	// command is configured" against a hub that had three, with a repair
+	// that edits a file the hub never reads. The node id says whose board
+	// this is. Found by the pre-release review, round forty-two.
+	if b != nil && b.Node != "" && !servedFromHere(dir, b.Node) {
+		warn(fmt.Sprintf("this board is served by another daemon (node %s), whose wake "+
+			"configuration lives in that machine's dibs.toml", b.Node),
+			"run `dibs doctor` on the machine that runs the daemon for wake coverage; "+
+				"nothing in "+filepath.Join(dir, "dibs.toml")+" configures it")
+		return
+	}
 	cfg, err := boardconfig.Load(dir)
 	if err != nil {
 		warn("cannot read the board configuration, so wake coverage is unknown",
 			"fix "+filepath.Join(dir, "dibs.toml")+" and run this again: "+err.Error())
+		return
+	}
+	if cfg.Wake.Sockets != nil && !*cfg.Wake.Sockets && len(cfg.Wake.Exec) == 0 {
+		// NEITHER ROUTE. The operator switched the sockets off and configured
+		// no command, which the guide describes as the configuration with no
+		// unsolicited activations; this said the socket "is tried first" and
+		// called delivery unconfirmed when it was off. Found by the
+		// pre-release review, round forty-two.
+		warn("no wake route at all: [wake] sockets = false and no [wake.exec] command",
+			"mail reaches an idle agent only at its next activation, which is what "+
+				"that configuration asks for. For a route, add a [wake.exec.<harness>] "+
+				"block to "+filepath.Join(dir, "dibs.toml")+", or set sockets = true")
 		return
 	}
 	if n := len(cfg.Wake.Exec); n > 0 {
@@ -489,6 +514,16 @@ func checkWakeRoutes(dir string, b *boardView, ok reportFn, warn fixFn) {
 			"for its human, which is what an unattended fleet runs in. Nothing "+
 			"will report a wake that was held. Add a [wake.exec.<harness>] block "+
 			"to "+filepath.Join(dir, "dibs.toml")+" for a route this daemon can confirm")
+}
+
+// servedFromHere reports whether the board with node id node is the one the
+// daemon on this data directory serves: the directory's node_id says.
+func servedFromHere(dir, node string) bool {
+	raw, err := os.ReadFile(filepath.Join(dir, "node_id")) // #nosec G304 -- the operator's own data directory
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(raw)) == node
 }
 
 func checkMatching(client *http.Client, sec string, ok reportFn, warn fixFn) {
