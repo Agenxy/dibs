@@ -552,6 +552,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A name purged by a pre-v0.0.7 sweep still handed its attachments to
+  the next registrant.** Replay preserves that sweep as it was, ownership
+  included, and no later sweep can repair it because the row is gone. A
+  registration fences the predecessor's mail already; it now also strips the
+  id from every blob, because a fresh row has put nothing and any ownership
+  under its id is a predecessor's. The previous entry covered new purges
+  only.
+
+- **A daemon bound to an IP refused a certificate issued for its name.** The
+  startup check verified the configured certificate against the listening
+  address, so a daemon bound to `10.0.0.9:4777` whose clients dial
+  `https://hub.example:4777` was refused at start and at `-check` for a
+  certificate that is correct for every client. A certificate that names no
+  address but names a DNS host is accepted on an IP listener; one that names
+  only other addresses is still refused.
+
 - **An upgrade dropped the transport a daemon was launched with.** A daemon
   started with `-addr https://127.0.0.1:4777` registered the bare listener,
   and the upgrade, which rebuilds the replacement's argv from the registry,

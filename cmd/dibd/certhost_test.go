@@ -57,6 +57,18 @@ func TestAConfiguredCertificateMustNameTheAddressBeingServed(t *testing.T) {
 			"a hostname listener, and the certificate names it",
 			"hub.example:4777", named, false,
 		},
+		// The interface address is what the daemon binds; the name is what
+		// clients dial, and a certificate for the name is the correct one.
+		// Refusing it at start and at -check was the review's round-forty
+		// finding.
+		{
+			"a LAN address the flag chose, and the certificate names the host clients dial",
+			"10.0.0.9:4777", named, false,
+		},
+		{
+			"a hostname listener, and the certificate names a different host",
+			"hub.example:4777", certFor(t, nil, "other.example"), true,
+		},
 		// A wildcard serves whatever was dialled, so no certificate can name it
 		// in advance and refusing one would be a guess.
 		{

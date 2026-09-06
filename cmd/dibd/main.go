@@ -690,6 +690,17 @@ func certificateNamesListener(cert tls.Certificate, listenAddr string) error {
 		return fmt.Errorf("the TLS certificate cannot be parsed (%w)", err)
 	}
 	if err := leaf.VerifyHostname(host); err != nil {
+		// A NAME IS WHAT CLIENTS DIAL. A daemon bound to an interface address
+		// whose clients reach it as https://hub.example needs a certificate
+		// for hub.example, and the interface IP need not be in it; this
+		// refused that deployment at start and at -check. A certificate that
+		// names no address but names a host is accepted on an IP listener,
+		// because verifying the IP would refuse every correct one; a
+		// certificate that names only OTHER addresses is still refused.
+		// Found by the pre-release review, round forty.
+		if net.ParseIP(host) != nil && len(leaf.DNSNames) > 0 {
+			return nil
+		}
 		return fmt.Errorf("the TLS certificate does not name %s (%w), so this daemon "+
 			"would serve it and every client dialling that address would refuse the "+
 			"connection. Reissue it for the address this daemon listens on, or remove "+

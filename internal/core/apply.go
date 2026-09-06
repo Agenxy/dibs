@@ -626,6 +626,16 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				l.TruncatedBefore = m.Serial + 1
 			}
 		}
+		// NOR ITS ATTACHMENTS. A sweep written before v0.0.7 purged the row
+		// and kept its blob ownership, deliberately and unchangeably, so the
+		// next agent to take the name held every blob the previous occupant
+		// had put, and ownership is an authorisation on its own. A fresh row
+		// has put nothing: any ownership under this id is a predecessor's,
+		// and no later sweep can repair it because the row it belonged to is
+		// already gone. Found by the pre-release review, round forty.
+		for _, b := range s.Blobs {
+			delete(b.Owners, id)
+		}
 	}
 	s.Agents[id] = l
 	l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed) // the name its hooks use, if different
