@@ -303,12 +303,12 @@ func (p *pumpState) refill() bool {
 		return true
 	}
 	// From the position's own serial, because the rest of it may be what
-	// was dropped; what was delivered is skipped by position.
-	from := p.last
-	if from > 0 {
-		from--
-	}
-	for _, ev := range p.s.eventsAfter(p.ctx, from, p.wants) {
+	// was dropped; what was delivered is skipped by position. The position
+	// is passed as-is: eventsAfter reads inclusively and detects a position
+	// the ring has passed, where the old decrement-then-EventsSince turned a
+	// position of one into the "whole ring" sentinel. Found by the
+	// pre-release review, round sixty-one.
+	for _, ev := range p.s.eventsAfter(p.ctx, p.last, p.wants) {
 		if p.seen(ev) {
 			continue
 		}
@@ -321,14 +321,20 @@ func (p *pumpState) refill() bool {
 
 // eventsAfter is every event after last, from the ring; past the ring, what
 // the inbox still owes (ResyncFor), for a stream that follows one.
-func (s *Server) eventsAfter(ctx context.Context, last uint64, wants wantsFunc) []core.Event {
-	res, err := s.eng.EventsSince(ctx, "", last, true)
+func (s *Server) eventsAfter(ctx context.Context, pos uint64, wants wantsFunc) []core.Event {
+	res, err := s.eng.EventsFrom(ctx, pos)
 	var ce *core.Error
 	if errors.As(err, &ce) && ce.Code == "E_CURSOR_TOO_OLD" {
 		agentID, wantInbox, wantBoard := wants()
 		var evs []core.Event
 		if wantInbox && agentID != "" {
-			evs, _ = s.eng.ResyncFor(ctx, agentID, last)
+			// ResyncFor is exclusive (mail after the cursor), and the position
+			// itself may hold dropped mail, so it reads from one before.
+			cursor := pos
+			if cursor > 0 {
+				cursor--
+			}
+			evs, _ = s.eng.ResyncFor(ctx, agentID, cursor)
 		}
 		// THE BOARD HAS CHANGED, WHATEVER IT CHANGED TO. A board-only
 		// subscriber past the ring got nothing here, with its loss mark

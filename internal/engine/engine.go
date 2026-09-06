@@ -1552,15 +1552,33 @@ func (e *Engine) refuseRecoveringAPrivilegedRowWithoutItsNonce(op *core.Op) erro
 		return nil
 	}
 	target := e.state.ReattachTarget(op)
+	if target == nil {
+		return nil
+	}
 	// By id as well as by name: the [roles] table resolves either, and a row
 	// renamed for display keeps the id the table names. Found by the
 	// pre-release review, round ten.
-	if target == nil || (target.Role == "" && !e.privilegedName(target.Name) && !e.privilegedName(target.ID)) {
+	holdsRole := target.Role != "" || e.privilegedName(target.Name) || e.privilegedName(target.ID)
+	// AND A ROW ONE YES AWAY FROM A ROLE. A pending grant request lands its
+	// role on whatever token the row holds when the human approves, so a
+	// session-only reattach that takes the token in that window captures the
+	// grant without ever presenting the requester's nonce. The row is not
+	// privileged yet, so the role check above passed it. Guarded the same
+	// way: it is recovered by its nonce, which v0.0.7 mints for every
+	// registration, so the requester itself can still return. Found by the
+	// pre-release review, round sixty-one.
+	pendingGrant := e.state.HasPendingGrantRequest(target.ID)
+	if !holdsRole && !pendingGrant {
 		return nil
+	}
+	because := "holds a role, and a role is recovered by its nonce only"
+	if !holdsRole {
+		because = "has a role grant awaiting approval, and until that is decided it is " +
+			"recovered by its nonce only"
 	}
 	return &core.Error{
 		Code: "E_NEEDS_NONCE",
-		Msg:  "agent " + target.ID + " holds a role, and a role is recovered by its nonce only",
+		Msg:  "agent " + target.ID + " " + because,
 		Hint: "register with the same name and the nonce this agent was given; a session " +
 			"id is not a secret and does not prove you are it. If the nonce is lost, a " +
 			"human can prune this row and grant the role again to the agent that " +

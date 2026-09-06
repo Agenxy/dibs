@@ -554,6 +554,24 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A pending role grant could be captured before the human approved it.**
+  The guard that keeps session-only recovery away from a row bearing power
+  covered rows that already held a role, not a default registrant with a
+  grant request still awaiting the human's yes. Another caller could
+  re-register with the requester's public name and session id, take the
+  row's token, and receive the role the operator then approved. A row with
+  a pending grant is now recovered by its nonce alone, which v0.0.7 mints
+  for every registration, so the requester itself still returns.
+
+- **A subscription that dropped its first serial lost the mail on it.** The
+  overflow refill re-read its position by decrementing it and asking the
+  engine for events after that serial; a position of one decremented to
+  zero, which the engine reads as "give me the whole ring", so a first
+  serial that had left the ring took its unread mail with it and the resync
+  that would have recovered it never ran. The refill now reads from its
+  genuine position, and a position the ring has passed resyncs from the
+  mail.
+
 - **A bridge's self-wake followed its agent into another session.** A
   subscription captured its agent when it opened and delivered for as long
   as the socket stayed up, so a bridge left behind by an identity that moved

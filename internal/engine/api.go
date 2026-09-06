@@ -638,6 +638,35 @@ func maxSerial(evs []core.Event, fallback uint64) uint64 {
 	return m
 }
 
+// EventsFrom is the refill's read: every event from serial cursor onward,
+// cursor's own serial INCLUDED, board and inbox both, uncharged. A stream
+// that dropped part of a serial re-reads that serial, so the position is
+// inclusive, unlike EventsSince's "seen up to".
+//
+// It does NOT treat a cursor as the "0 means the whole ring" convenience
+// EventsSince offers a blind first caller: the refill holds a genuine
+// position, and a position the ring has already passed is E_CURSOR_TOO_OLD,
+// so the caller resyncs from the mail. The old refill reached this by
+// decrementing its position and calling EventsSince, which turned a lost
+// cursor of 1 into a 0 the clamp read as "give me the whole ring": the
+// too-old signal was suppressed and a first serial that left the ring took
+// its unread mail with it silently. Found by the pre-release review, round
+// sixty-one.
+func (e *Engine) EventsFrom(ctx context.Context, cursor uint64) (core.Result, error) {
+	return e.query(ctx, func() core.Result {
+		if floor := e.ringFloor(); cursor < floor {
+			return core.Result{"error": errCursorTooOld(floor)}
+		}
+		// eventsSince returns serial strictly greater than its argument, so a
+		// cursor of X reads from X-1 to include X itself.
+		from := uint64(0)
+		if cursor > 0 {
+			from = cursor - 1
+		}
+		return core.Result{"events": e.eventsSince(from, "", true), "serial": e.state.Serial}
+	})
+}
+
 // clampCursor treats 0 as "from wherever the ring starts".
 //
 // 0 is the only cursor an agent can pick without having seen the board first,
