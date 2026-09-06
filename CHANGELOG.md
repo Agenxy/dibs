@@ -7,6 +7,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- **A register vetted for one peer's thread could strip another active
+  peer's session id.** The fold dropped both ids a register carried from every
+  other row once the ingress had named one holder, and the ingress vets only
+  thread-shaped primary ids: a register carrying a dormant peer's thread as its
+  alias and an active peer's synthetic `host-` id as its `session_id` took
+  both, and the active peer's hooks resolved to the newcomer. Each binding is
+  dropped on its own authority: the row the ingress named, a row that is not
+  active, or one that only guessed the id.
+
 - **An approved `grant: member` could be undone by the reconciler.** The
   protection for a person's role decision covered the admin API's grant and
   not the other way a person changes a role: approving a grant request. A
@@ -527,6 +536,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing an agent wrote, and it cannot read the session or steer it.
 
 ### Fixed
+
+- **An in-place bridge upgrade could lose a deferred self-wake.** A second
+  arrival inside the cooldown defers its notice to a timer and reports
+  success, so the reconnect cursor moves past the event; an upgrade before
+  the timer fired carried the cursor and not the debt, and the new image put
+  nothing into the session. The handoff says a notice is owed and the next
+  image delivers it.
+
+- **`extend_turn_for = "none"` claimed more than it governs.** The guide said
+  Dibs becomes strictly pull-shaped; the `[wake.exec]` and session-socket
+  routes are separate settings and run whatever it says. The guide says what
+  the setting governs and what to leave unconfigured for no activations at
+  all.
 
 - **A register carrying the holder's token could mint a second live holder
   of its thread.** The session-theft guard let the holder through by its

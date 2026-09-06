@@ -230,8 +230,13 @@ the keyboard is the failure Dibs exists to prevent.
 handoffs, unacknowledged announcements, changes to the agent's own standing.
 Choose it if you would rather an FYI never cost a turn.
 
-`none` never extends a turn. Dibs becomes strictly pull-shaped, with the
-human's notification and the `waiting` line on every result as the only signals.
+`none` never extends a turn: at a turn boundary, Dibs injects nothing, and the
+human's notification and the `waiting` line on every result are what an agent
+sees of its mail until it reads it. It governs turn extension only. The wake
+routes are separate settings: `[wake.exec]` runs whatever the operator wrote
+there, and the harness session socket is tried where one is published,
+whatever this says. An operator who wants no unsolicited activations at all
+configures no `[wake.exec]` entries as well.
 
 Each message wakes once either way, so an agent that read something and chose
 not to act is not asked again. Work somebody is blocked on comes back on the

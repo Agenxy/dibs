@@ -186,6 +186,15 @@ func (s *State) ReattachBySessionIDForTest(op *Op) (Result, []Event) {
 // state's to say, and the state is replayed. So every other row loses both.
 // Dropping an id a row does not hold is nothing. Found by the pre-release
 // review, rounds six and seven.
+//
+// EACH BINDING ON ITS OWN AUTHORITY. The ingress vets a thread-shaped
+// session_id and the alias; a synthetic session_id (`host-1234`) is not
+// vetted, and "every other row loses both" let a register that carried a
+// dormant peer's thread as its alias strip an ACTIVE peer's synthetic id
+// as well, so that peer's hooks resolved to the newcomer. A row loses an id
+// when the ingress named it, when it is not active, or when it only guessed
+// the id; an active row's stated binding that nobody vetted stays. Found by
+// the pre-release review, round twenty-two.
 func (s *State) dropTakenSession(op *Op, l *Agent) {
 	if op.SessionTakenFrom == "" {
 		return
@@ -195,7 +204,13 @@ func (s *State) dropTakenSession(op *Op, l *Agent) {
 		if l != nil && prev.ID == l.ID {
 			continue
 		}
-		prev.dropSession(op.SessionID)
-		prev.dropSession(op.SessionAlias)
+		for _, sid := range []string{op.SessionID, op.SessionAlias} {
+			if sid == "" || !prev.holdsSession(sid) {
+				continue
+			}
+			if prev.ID == op.SessionTakenFrom || prev.Status != StatusActive || prev.GuessedSession(sid) {
+				prev.dropSession(sid)
+			}
+		}
 	}
 }

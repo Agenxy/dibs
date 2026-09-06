@@ -328,11 +328,12 @@ func readLine(in *bufio.Reader) ([]byte, error) {
 func handoffState() bridgeState {
 	tok, since := currentWake()
 	return bridgeState{
-		ClientInfo: lastClientInfo,
-		WantsUI:    lastWantsUI,
-		Listens:    openListens(),
-		WakeToken:  tok,
-		WakeSince:  since,
+		ClientInfo:  lastClientInfo,
+		WantsUI:     lastWantsUI,
+		Listens:     openListens(),
+		WakeToken:   tok,
+		WakeSince:   since,
+		WakePending: currentWakePending(),
 	}
 }
 

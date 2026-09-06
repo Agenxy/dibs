@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"sort"
@@ -67,14 +68,34 @@ type bridgeState struct {
 	// and mail that arrived in the gap woke nobody. Found by the pre-release
 	// review, round fourteen.
 	WakeSince uint64 `json:"wake_since,omitempty"`
+	// WakePending says a notice was owed and deferred to the cooldown when
+	// the image was replaced. The timer dies with the old process and the
+	// cursor had already passed the event, so the next image put nothing
+	// into the session and the reconnect replayed nothing: outstanding mail
+	// unnoticed for as long as nothing else arrived. The next image delivers
+	// the owed notice. Found by the pre-release review, round twenty-two.
+	WakePending bool `json:"wake_pending,omitempty"`
 }
 
 // liveWake is the token the self-wake watcher currently holds, for the
 // handoff; the watcher itself is local to the serving loop.
 var liveWake struct {
-	mu    sync.Mutex
-	token string
-	since uint64
+	mu      sync.Mutex
+	token   string
+	since   uint64
+	pending bool
+}
+
+func recordWakePending(pending bool) {
+	liveWake.mu.Lock()
+	defer liveWake.mu.Unlock()
+	liveWake.pending = pending
+}
+
+func currentWakePending() bool {
+	liveWake.mu.Lock()
+	defer liveWake.mu.Unlock()
+	return liveWake.pending
 }
 
 func recordWakeToken(token string) {
@@ -215,6 +236,15 @@ func restoreCarried(ctx context.Context, client *http.Client, url, secret string
 		w.mu.Unlock()
 		recordWakeCursor(s.WakeSince)
 		w.start(ctx, client, url, secret, s.WakeToken)
+	}
+	if s.WakePending {
+		// The old image owed the session a notice and died before its
+		// cooldown timer fired; the cursor has passed the event.
+		if wk := newSelfWaker(); wk != nil {
+			if err := wk.wake(selfWakeNotice); err != nil {
+				slog.Debug("could not deliver the notice the old image owed", "err", err)
+			}
+		}
 	}
 	for _, listen := range s.Listens {
 		line := []byte(listen)

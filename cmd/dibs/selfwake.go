@@ -89,10 +89,12 @@ func (w *selfWaker) wake(notice string) error {
 		// Found by the pre-release review, round six.
 		if !w.pending {
 			w.pending = true
+			recordWakePending(true) // for the in-place upgrade's handoff
 			time.AfterFunc(wait, func() {
 				w.mu.Lock()
 				w.pending = false
 				w.mu.Unlock()
+				recordWakePending(false)
 				if err := w.wake(notice); err != nil {
 					slog.Debug("could not put the deferred notice into this session", "err", err)
 				}
