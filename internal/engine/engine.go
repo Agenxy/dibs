@@ -151,6 +151,13 @@ type Engine struct {
 	// human is the operator's own agent, so a person can join agents and speak in
 	// them through the same tools an agent uses. See human.go.
 	human humanState
+	// privileged is the set of names the operator's [roles] table declares:
+	// rows bearing one are recovered by nonce only. See
+	// refuseRecoveringAPrivilegedRowWithoutItsNonce.
+	privileged struct {
+		mu    sync.Mutex
+		names map[string]bool
+	}
 	// What Dibs has already told the coordinator about itself, so a fault that
 	// recurs every sweep does not become a message every sweep.
 	faults faultState
@@ -576,6 +583,10 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	}
 
 	if err := e.refuseStealingAnotherThreadsSession(op); err != nil {
+		return nil, err
+	}
+
+	if err := e.refuseRecoveringAPrivilegedRowWithoutItsNonce(op); err != nil {
 		return nil, err
 	}
 
@@ -1294,6 +1305,53 @@ func (e *Engine) refuseStealingAnotherThreadsSession(op *core.Op) error {
 // The question is deliberately "will the fold land on this row", not "is this
 // caller entitled", because the harm is the SIBLING. A register that resolves
 // to the holder binds no new thread and steals nothing.
+// refuseRecoveringAPrivilegedRowWithoutItsNonce keeps session-based recovery
+// away from rows that carry power.
+//
+// A name plus a session id, neither of them secret, recovers a row whose
+// nonce the daemon minted. That is the persistent-by-default convenience for
+// an agent that lost the nonce it was told to keep, and for a row that holds
+// a role, or bears a name the operator declared for one, it is an admin token
+// for anyone who can read a session id off a hook: the role and the pinned
+// fingerprint stay with the row, so the reconciler grants to whoever holds
+// it. Those rows are recovered by their nonce and nothing else. Decided at
+// ingress, because a rule in the fold is retroactive. Found by the
+// pre-release review, round nine.
+func (e *Engine) refuseRecoveringAPrivilegedRowWithoutItsNonce(op *core.Op) error {
+	if op.Kind != core.OpRegister || op.Nonce != "" || op.SessionID == "" {
+		return nil
+	}
+	target := e.state.ReattachTarget(op)
+	if target == nil || (target.Role == "" && !e.privilegedName(target.Name)) {
+		return nil
+	}
+	return &core.Error{
+		Code: "E_NEEDS_NONCE",
+		Msg:  "agent " + target.ID + " holds a role, and a role is recovered by its nonce only",
+		Hint: "register with the same name and the nonce this agent was given; a session " +
+			"id is not a secret and does not prove you are it. If the nonce is lost, a " +
+			"human can prune this row and grant the role again to the agent that " +
+			"replaces it",
+	}
+}
+
+// SetPrivilegedNames records the names the operator's [roles] table declares,
+// so a row bearing one is guarded before its first grant as well as after.
+func (e *Engine) SetPrivilegedNames(names []string) {
+	e.privileged.mu.Lock()
+	defer e.privileged.mu.Unlock()
+	e.privileged.names = map[string]bool{}
+	for _, n := range names {
+		e.privileged.names[n] = true
+	}
+}
+
+func (e *Engine) privilegedName(name string) bool {
+	e.privileged.mu.Lock()
+	defer e.privileged.mu.Unlock()
+	return e.privileged.names[name]
+}
+
 func (e *Engine) registerLandsOn(op *core.Op, holder *core.Agent) bool {
 	if op.Nonce != "" {
 		// Reattachment by credential: the nonce index is what the fold uses.

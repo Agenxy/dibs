@@ -392,6 +392,12 @@ to grant it, pin this agent's identity in dibs.toml
 
 Paste it in and restart. Nothing secret is typed, stored or sent.
 
+A row that holds a role, or bears a name declared under `[roles]`, is
+recovered by its nonce only. A name plus a session id, neither of them
+secret, reattaches an ordinary agent that lost the nonce it was given; for a
+privileged one that would be a fresh admin token for anyone who can read a
+session id off a hook, so `register` refuses it with `E_NEEDS_NONCE`.
+
 Without `[roles.identity]` the role is **not granted**, and the daemon says so.
 That is deliberate. Pinning whoever registered first held every later impostor
 to the first one's identity and asked the first one nothing, so an agent that

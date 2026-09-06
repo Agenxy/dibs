@@ -273,6 +273,9 @@ func run() error {
 	// an agent that took the name got the role, which is self-promotion by any
 	// other word. The grant now pins the credential of the agent it lands on and
 	// closes its window shortly after start. See rolepin.go.
+	// The declared names are guarded at ingress before their first grant as
+	// well as after: recovery of one of these rows needs its nonce.
+	eng.SetPrivilegedNames(append(append([]string{}, cfg.Roles.Coordinator...), cfg.Roles.Admin...))
 	keepDeclaredRolesApplied(ctx, *dir, eng, cfg.Roles)
 	// Clears a pid an older build recorded against the operator's own row, which
 	// made every restart report them as a dead process. One op, once, and only

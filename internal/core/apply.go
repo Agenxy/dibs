@@ -197,6 +197,7 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		// holder; an explicit bind that left it a guess confirmed nothing.
 		// Found by the pre-release review, round seven.
 		l.GuessedSessions = withoutString(l.GuessedSessions, op.SessionID)
+		l.CurrentSession = op.SessionID // reported as bound, so it is the one to wake
 		res = Result{"ok": true, "agent": l.ID, "session_id": l.SessionID}
 		evs = []Event{{Type: "agent.updated", Agent: l.ID}}
 	case OpClaimCoordinator:
@@ -735,14 +736,19 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	// anyone who learns that id, and the bridge derives it from a process id
 	// that any same-user program can enumerate. Say so, rather than letting the
 	// word "credential" imply a secret.
-	if op.Nonce == "" && op.SessionID != "" {
+	// The EFFECTIVE nonce: a persistent agent that sent none was given one
+	// above and returned it, and telling it in the same reply that it cannot
+	// be reclaimed and should re-register with a fresh nonce is how the
+	// sibling mailbox this release exists to prevent gets made. Found by the
+	// pre-release review, round nine.
+	if nonce == "" && op.SessionID != "" {
 		res["recovery"] = "this agent can be reclaimed by presenting its name and the session_id above, " +
 			"neither of which is secret. AND that session_id will not survive your harness " +
 			"restarting, because it names the harness process. To be able to recover after a " +
 			"restart, re-register now with a nonce (a random id >=128-bit that you keep): same " +
 			"name + same nonce reattaches you to this agent and its mail, after anything."
 	}
-	if op.Nonce == "" && op.SessionID == "" {
+	if nonce == "" && op.SessionID == "" {
 		// With neither recovery credential this agent cannot be reclaimed: lose the
 		// token and every message addressed to it becomes unreachable: the agent
 		// re-registers, gets a sibling, and cannot answer the mail that woke it.
@@ -919,7 +925,7 @@ func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
 		had := l.SessionID
 		aliases := len(l.SessionAliases) + len(l.GuessedSessions)
 		bound := l.hasSessionBinding()
-		l.SessionID, l.SessionAliases, l.GuessedSessions = "", nil, nil
+		l.SessionID, l.SessionAliases, l.GuessedSessions, l.CurrentSession = "", nil, nil, ""
 		// Honest even when this op DID change something else, which is the case
 		// the early return above deliberately does not cover.
 		res["session_released"] = bound

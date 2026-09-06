@@ -7,6 +7,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- **A role could be recovered without its credential.** An agent that
+  registers without a nonce is given one, and until it is lost, a name plus a
+  session id, neither of them secret, reattaches that row: the
+  persistent-by-default convenience. The role and the pinned fingerprint stay
+  with the row, so for a row holding admin or coordinator, or bearing a name
+  the operator declared for one, that convenience was a fresh privileged
+  token for anyone who could read a session id off a hook, and the reconciler
+  would grant the role to whoever recovered a declared name before its first
+  grant. Those rows are recovered by their nonce and nothing else, refused at
+  ingress with `E_NEEDS_NONCE`; the daemon hands the engine the declared
+  names at startup.
+
 - **One registration could take two session ids from two rows and free only
   one.** The ingress vets the session id a caller states and the alias the
   daemon joins into one "taken from" record; when the primary came from a
@@ -476,6 +488,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing an agent wrote, and it cannot read the session or steer it.
 
 ### Fixed
+
+- **`release_session` and `bind_session` left the wake on the old
+  session.** Recording the current session in round eight added a field the
+  release did not clear and the explicit bind did not set: after
+  `update(release_session: true)` reported the release, mail still woke the
+  session the caller had given up, and after `bind_session(B)` reported B the
+  wake resumed A. Both follow the current session now.
+
+- **A default registration was told it could not be recovered while being
+  handed the nonce that recovers it.** The recovery advice tested the nonce
+  the caller sent, and a persistent agent that sent none had just been given
+  one in the same reply: the reply said "no recovery credential, re-register
+  with a fresh nonce", and following that makes the sibling mailbox this
+  release exists to prevent. The advice reads the nonce the agent actually
+  has.
 
 - **A restart lost every deferred wake.** A wake held back for a recipient's
   recency window or cooldown was a timer, and the daemon restarting before it
