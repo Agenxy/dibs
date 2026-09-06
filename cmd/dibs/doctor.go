@@ -1367,14 +1367,29 @@ func reportWakeCoverage(exec map[string]boardconfig.WakeExec, b *boardView, dir 
 	fix := "these agents can only be reached while their session is still " +
 		"running, which is the case a wake exists for. Add to " +
 		filepath.Join(dir, "dibs.toml") + ":"
-	suggested := 0
+	// WHICH HALF IS MISSING, PER HARNESS. wakeCoverage keys a harness that
+	// has a command but no thread with a suffix, so a bare key is a harness
+	// with NO command. This counted only the harnesses it had a block to
+	// paste for, and read "nothing to paste" as "every harness has a command":
+	// with a Codex block configured and an OpenCode agent holding a resumable
+	// thread, it said OpenCode lacked a thread and told the operator to
+	// register through its plugin, which cannot supply configuration. Found
+	// by the pre-release review, round forty-one.
+	noCommand := 0
 	for _, h := range sortedKeys(missing) {
-		if sug, known := suggestedWake[h]; known && !have[h] {
-			fix += "\n\n" + sug
-			suggested++
+		if have[h] || strings.HasSuffix(h, "(no resumable thread)") || h == "(no harness recorded)" {
+			continue
 		}
+		noCommand++
+		if sug, known := suggestedWake[h]; known {
+			fix += "\n\n" + sug
+			continue
+		}
+		fix += fmt.Sprintf("\n\n[wake.exec.%q]\n# no built-in command for this harness: the argv that resumes one "+
+			"of its threads, with {thread} and {message}; see docs/CONFIGURATION.md\n"+
+			"argv = [\"<command>\", \"{thread}\", \"{message}\"]", h)
 	}
-	if suggested == 0 {
+	if noCommand == 0 {
 		// Nothing to paste: every harness here already HAS a command, and what
 		// these agents lack is a thread it could name. Saying "add this block"
 		// under a block they already have is the kind of advice that makes an

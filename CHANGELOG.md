@@ -552,6 +552,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Hidden predecessor mail still authorised its attachments.** A blob is
+  fetchable by the recipient of a message referencing it, and that route did
+  not ask whose mail the message was: below the watermark it was addressed
+  to a previous occupant of the id, the replacement could not see it, and
+  could still fetch its attachment by blob id. The route applies the mail
+  fence Inbox applies, adopted mail included. The third door after the two
+  closed in the previous rounds.
+
+- **Doctor told an unconfigured harness to re-register.** With a wake
+  command configured for one harness and an agent of another holding a
+  resumable thread, the report assumed that having no built-in suggestion
+  for that harness meant it already had a command, and advised registering
+  through its plugin, which cannot supply configuration. It now says which
+  harnesses have no command, pastes a block for the ones it knows and a
+  template for the ones it does not, and reserves the no-thread advice for
+  harnesses that do have one.
+
 - **A name purged by a pre-v0.0.7 sweep still handed its attachments to
   the next registrant.** Replay preserves that sweep as it was, ownership
   included, and no later sweep can repair it because the row is gone. A
