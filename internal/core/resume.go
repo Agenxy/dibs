@@ -63,6 +63,7 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 	// retired with its claims released. Found by the pre-release review,
 	// round forty-three.
 	changed = changed || (op.PID != 0 && op.PID != l.PID)
+	held := op.SessionID != "" && l.holdsSession(op.SessionID)
 	if op.V7Semantics && changed {
 		l.takeActivation(op)
 		s.dropTakenSession(op, l)
@@ -71,7 +72,7 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 			l.GuessedSessions = withoutString(l.GuessedSessions, op.SessionID) // stated now
 		}
 		l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
-		l.currentFrom(op)
+		l.currentFrom(op, held)
 		// A LEDGERED activation is durable evidence of life. Without this the
 		// engine touched only its transient seen map, and a restart just past
 		// the old TTL booted the agent stale despite a registration on disk

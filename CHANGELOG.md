@@ -552,6 +552,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Re-registering through the same bridge dropped the bound thread.** A
+  register whose session id and alias are both the bridge's own id was read
+  as a new activation, which is right for a bridge that restarted and wrong
+  for the same bridge registering again inside its TTL: the thread its hooks
+  had bound stopped being the one to wake until something rebound it. Each
+  recovery path now says whether the op's session was already held before
+  it ran, and the same activation naming its own id does not displace a
+  thread.
+
 - **A recovery from a new session kept the old process.** A same-name
   register with its nonce from a new session moved the row to that session
   and kept the pid and working directory of the activation that had ended;

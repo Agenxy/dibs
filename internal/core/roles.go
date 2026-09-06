@@ -426,7 +426,13 @@ const maxSessionAliases = 8
 // to leave the current session where it was: an agent holding threads B and
 // C with C current, recovered by session_id B with no alias, was still woken
 // on C. Found by the pre-release review, round eleven.
-func (a *Agent) currentFrom(op *Op) {
+//
+// held says whether the op's session id was this row's BEFORE the path that
+// calls this moved anything: the recovery paths install the stated id as the
+// primary first, so by the time this looks it is always held, and the one
+// question that matters, same activation or a new one, has to be asked
+// earlier and carried in.
+func (a *Agent) currentFrom(op *Op, held bool) {
 	if op.SessionID != "" && a.holdsSession(op.SessionID) {
 		// STATED, so no longer a guess. Nonce recovery restored a row whose
 		// session had been inferred, kept the guess, and a stranger's
@@ -435,6 +441,17 @@ func (a *Agent) currentFrom(op *Op) {
 		a.GuessedSessions = withoutString(a.GuessedSessions, op.SessionID)
 	}
 	if op.SessionID == "" || !a.holdsSession(op.SessionID) {
+		return
+	}
+	// THE SAME ACTIVATION NAMING ITSELF AGAIN. The rule below reads an op
+	// whose session id and alias are both the bridge's own id as a new
+	// activation, which is right for a bridge that restarted and was wrong
+	// for the same bridge registering again inside its TTL: the thread its
+	// hooks had bound stopped being the one to wake. An id this row already
+	// held is the activation it is in, and a synthetic one does not
+	// displace its thread. Found by the pre-release review, round
+	// forty-four.
+	if held && !LooksLikeThreadID(op.SessionID) && LooksLikeThreadID(a.CurrentSession) {
 		return
 	}
 	// A THREAD BEATS A SYNTHETIC ID. The alias, when there is one, is what

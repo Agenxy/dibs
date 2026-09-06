@@ -444,6 +444,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				// Yield BEFORE taking what this op states: the ids it carries
 				// were vetted by the ingress and are this row's to hold; the
 				// ones it held from before its retirement are not.
+				held := op.SessionID != "" && l.holdsSession(op.SessionID)
 				if op.V7Semantics {
 					s.yieldSessionsHeldElsewhere(l)
 				}
@@ -471,7 +472,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 				}
 				s.dropTakenSession(op, l)
 				l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
-				l.currentFrom(op)
+				l.currentFrom(op, held)
 				// LEDGERED, like every other transition.
 				//
 				// This branch rotates the token, wakes the agent, re-arms the
@@ -648,7 +649,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 	}
 	s.Agents[id] = l
 	l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed) // the name its hooks use, if different
-	l.currentFrom(op)
+	l.currentFrom(op, false)                                   // a fresh row held nothing
 	if nonce != "" {
 		s.Nonces[nonce] = id
 	}
