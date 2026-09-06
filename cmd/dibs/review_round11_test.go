@@ -51,7 +51,7 @@ func TestAnUpgradedBridgeKeepsItsSelfWake(t *testing.T) {
 	var iw inboxWatcher
 	var streams sync.WaitGroup
 	out := &syncWriter{w: bufio.NewWriter(io.Discard)}
-	restoreCarried(ctx, &http.Client{}, "http://127.0.0.1:1/mcp", "secret", out, &streams, &iw)
+	restoreCarried(ctx, &http.Client{}, "http://127.0.0.1:1/mcp", "secret", out, &streams, &iw, true)
 	iw.mu.Lock()
 	got, since := iw.token, iw.since
 	iw.mu.Unlock()

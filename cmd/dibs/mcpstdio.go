@@ -133,8 +133,9 @@ func runBridge(_ []string) error {
 	// because the fd does; bytes in a userspace buffer do not. Scanner cannot
 	// answer how much it is holding, so it cannot be made safe here.
 	var watcher inboxWatcher
+	sockets := socketWakesOn()
 	onRegistered := func([]byte, []byte) {} // [wake] sockets = false: no self-wake
-	if socketWakesOn() {
+	if sockets {
 		onRegistered = watchOnRegister(ctx, &watcher, streamClient, url, secret)
 	}
 	in := bufio.NewReaderSize(os.Stdin, 1<<20)
@@ -142,7 +143,7 @@ func runBridge(_ []string) error {
 	// Anything a previous image was holding, re-established before the first
 	// line is read, so the handshake identity and any subscription are in place
 	// by the time they matter.
-	restoreCarried(ctx, streamClient, url, secret, out, &streams, &watcher)
+	restoreCarried(ctx, streamClient, url, secret, out, &streams, &watcher, sockets)
 
 	for {
 		if ctx.Err() != nil {

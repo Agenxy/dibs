@@ -241,7 +241,10 @@ routes are separate settings: `[wake.exec]` runs whatever the operator wrote
 there, and the harness session socket is tried where one is published and
 `sockets` is on, whatever this says. An operator who wants no unsolicited
 activations at all sets `sockets = false` and configures no `[wake.exec]`
-entries; there is no third route.
+entries; there is no third route. The daemon reads `sockets` at start and the
+bridge at its own start, which includes the in-place upgrade a running bridge
+performs when its binary changes: a self-wake carried across that upgrade is
+restored only while the switch is on.
 
 Each message wakes once either way, so an agent that read something and chose
 not to act is not asked again. Work somebody is blocked on comes back on the

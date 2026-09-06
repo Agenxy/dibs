@@ -222,14 +222,28 @@ func openListens() []string {
 //
 // Subscriptions are re-issued as the caller's own request, never reconstructed
 // (R12), which is the same thing followStream does across a daemon restart.
+//
+// sockets is [wake] sockets as THIS image read it. The self-wake watcher and
+// the notice the old image owed are the bridge's half of that switch, and the
+// restore used to re-arm both with no look at it: an operator who turned the
+// route off and then upgraded a running bridge got a replacement that kept
+// waking its session. The setting is read at start, and an in-place upgrade
+// is a start. Found by the pre-release review, round twenty-eight.
 func restoreCarried(ctx context.Context, client *http.Client, url, secret string,
-	out *syncWriter, streams *sync.WaitGroup, w *inboxWatcher,
+	out *syncWriter, streams *sync.WaitGroup, w *inboxWatcher, sockets bool,
 ) {
 	s, ok := carriedState()
 	if !ok {
 		return
 	}
 	lastClientInfo, lastWantsUI = s.ClientInfo, s.WantsUI
+	if !sockets {
+		if s.WakeToken != "" || s.WakePending {
+			slog.Debug("[wake] sockets = false: the self-wake the old image held is not restored",
+				"owed", s.WakePending)
+		}
+		s.WakeToken, s.WakePending = "", false
+	}
 	if s.WakeToken != "" && w != nil {
 		w.mu.Lock()
 		w.since = s.WakeSince

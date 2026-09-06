@@ -385,6 +385,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   an operator a configuration with no unsolicited activations and named only
   turn extension and the absence of `[wake.exec]` entries, while both socket
   routes stayed on with no switch at all. Now there is one, on by default.
+  The bridge reads it at start, and an in-place upgrade is a start: the first
+  cut restored the self-wake a previous image was holding, and the notice it
+  owed, with no look at the switch, so a bridge that was running when the
+  operator turned the route off kept waking its session after it upgraded.
 
 - **An agent that is not running can be woken: `[wake.exec]`.** Mail arrived for
   agents that were not executing, and sat there. Dibs would deliver it at their
