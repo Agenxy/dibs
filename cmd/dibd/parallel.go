@@ -72,7 +72,7 @@ func refusalText(others []paths.Daemon) error {
 // Extracted from run() rather than suppressed: the complexity ceiling caught it
 // growing, and a startup sequence is exactly the place where "one more check
 // inline" accumulates until nobody can see the order things happen in.
-func claimHostSlot(addr, dir string, allowed bool) (func(), error) {
+func claimHostSlot(addr, scheme, dir string, allowed bool) (func(), error) {
 	// 1. This data directory. flock held for the process lifetime; two daemons
 	//    sharing a directory would interleave writes into one ledger.
 	lockPath := filepath.Join(dir, "lock")
@@ -93,7 +93,7 @@ func claimHostSlot(addr, dir string, allowed bool) (func(), error) {
 	// 2. This machine. Reading the registry and claiming a slot happen under one
 	//    host-wide lock, so two daemons starting together cannot both conclude
 	//    they are alone, which a check-then-register pair allowed.
-	unregister, err := paths.Claim(paths.Daemon{PID: os.Getpid(), Addr: addr, Dir: dir}, allowed)
+	unregister, err := paths.Claim(paths.Daemon{PID: os.Getpid(), Addr: addr, Dir: dir, Scheme: scheme}, allowed)
 	if err != nil {
 		closeLock()
 		// The policy is a plain bool, so nothing of ours runs while the registry

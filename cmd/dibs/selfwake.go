@@ -46,6 +46,7 @@ type selfWaker struct {
 	cooldown time.Duration
 	last     time.Time // when a notice was last DELIVERED; an attempt spends nothing
 	pending  bool      // a deferred notice is armed for when the cooldown ends
+	timer    *time.Timer
 }
 
 // selfWakeCooldown is the shortest gap between two notices in one session.
@@ -90,7 +91,7 @@ func (w *selfWaker) wake(notice string) error {
 		if !w.pending {
 			w.pending = true
 			recordWakePending(true) // for the in-place upgrade's handoff
-			time.AfterFunc(wait, func() {
+			w.timer = time.AfterFunc(wait, func() {
 				w.mu.Lock()
 				w.pending = false
 				w.mu.Unlock()
@@ -122,7 +123,7 @@ func (w *selfWaker) wake(notice string) error {
 			// with the timer. Found by the pre-release review, round
 			// twenty-five.
 			recordWakePending(true)
-			time.AfterFunc(w.cooldown, func() {
+			w.timer = time.AfterFunc(w.cooldown, func() {
 				w.mu.Lock()
 				w.pending = false
 				w.mu.Unlock()
@@ -143,6 +144,21 @@ func (w *selfWaker) wake(notice string) error {
 		w.mu.Unlock()
 		return err
 	}
+	// DELIVERED, SO NOTHING IS OWED. A retry armed by a failure, or a
+	// notice deferred to the cooldown, stayed armed past a delivery that
+	// succeeded in the meantime: the socket came back, the arrival was
+	// delivered, and the timer put a second notice into the session with no
+	// further mail behind it. The delivery is the notice the timer would
+	// have given. Found by the pre-release review, round thirty-nine.
+	w.mu.Lock()
+	if w.pending {
+		if w.timer != nil {
+			w.timer.Stop()
+		}
+		w.pending = false
+		recordWakePending(false)
+	}
+	w.mu.Unlock()
 	return nil
 }
 

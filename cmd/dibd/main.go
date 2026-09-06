@@ -135,7 +135,7 @@ func run() error {
 	scorer.applyConfig(cfg.Match)
 
 	// Exclusivity, both kinds: this data directory, and this machine.
-	release, err := claimHostSlot(listenAddr, *dir, parallelAllowed(*allowParallel))
+	release, err := claimHostSlot(listenAddr, askedScheme, *dir, parallelAllowed(*allowParallel))
 	if err != nil {
 		return err
 	}

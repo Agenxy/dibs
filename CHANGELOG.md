@@ -552,6 +552,26 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An upgrade dropped the transport a daemon was launched with.** A daemon
+  started with `-addr https://127.0.0.1:4777` registered the bare listener,
+  and the upgrade, which rebuilds the replacement's argv from the registry,
+  restarted it with a bare address the replacement re-inferred: an https
+  loopback board came back plaintext and every client lost it. The registry
+  carries the scheme the daemon was asked for, and the upgrade hands it back.
+
+- **A self-wake retry fired after a delivery had succeeded.** A retry armed
+  by a failed delivery, or a notice deferred to the cooldown, stayed armed
+  past a delivery that succeeded in the meantime: the socket came back, the
+  next arrival was delivered, and the timer put a second notice into the
+  session with no mail behind it. A successful delivery disarms whatever
+  was pending; it is the notice the timer would have given.
+
+- **The tool schema promised that a notify never wakes or costs anything.**
+  Under the default `extend_turn_for = all` a fresh notify at Stop extends
+  the recipient's turn, which the wake-urgency test asserts and the changelog
+  already says. The schema says a notify may extend a turn and never starts
+  an idle agent, within the listing's budget.
+
 - **A purged name's replacement inherited its attachments.** The purge drops
   the row's mail and retires its outgoing mail, and left every blob the agent
   had put naming its id as an owner; ownership is an authorisation on its

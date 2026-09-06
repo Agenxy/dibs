@@ -853,7 +853,17 @@ func runningDaemon(dir string) daemonState {
 	if err != nil || mine == nil {
 		return daemonState{parallel: others > 0}
 	}
-	return daemonState{addr: mine.Addr, parallel: others > 0}
+	// WITH THE SCHEME IT WAS ASKED FOR. The registry records the bare
+	// listener and, when the daemon was told a transport on its flag or in
+	// DIBS_ADDR, that transport; handed back together, replacementAddr
+	// passes the stated form through untouched, and the replacement is the
+	// daemon that was running. Found by the pre-release review, round
+	// thirty-nine.
+	addr := mine.Addr
+	if mine.Scheme != "" && addr != "" {
+		addr = mine.Scheme + "://" + addr
+	}
+	return daemonState{addr: addr, parallel: others > 0}
 }
 
 // systemdTokens splits a unit the way systemd does, and reverses what

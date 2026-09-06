@@ -54,6 +54,14 @@ type Daemon struct {
 	PID  int    `json:"pid"`
 	Addr string `json:"addr"`
 	Dir  string `json:"dir"`
+	// Scheme is the transport the daemon was explicitly ASKED for, by
+	// `-addr https://…` or DIBS_ADDR, and empty when it inferred one. Addr
+	// is what net.Listen was given, bare, so a daemon launched with a
+	// scheme on its flag registered without it and `dibs upgrade`, which
+	// rebuilds the argv from this entry, restarted it with a bare address
+	// the replacement re-inferred: an https loopback board came back
+	// plaintext. Found by the pre-release review, round thirty-nine.
+	Scheme string `json:"scheme,omitempty"`
 	// Unknown marks an entry whose lock is held but whose contents could not be
 	// decoded. Somebody is running something; we just cannot say what. It is a
 	// field rather than an omission because omitting it was fail-open: a
