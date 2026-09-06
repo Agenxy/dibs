@@ -118,7 +118,14 @@ func (a *Agent) takeActivation(op *Op) {
 	// location was discarded. The activation is the CURRENT session; a
 	// thread that is not it is a move, whether or not the row has seen it
 	// before. Found by the pre-release review, round forty-seven.
-	movedSession := op.SessionID != "" && op.SessionID != a.SessionID
+	// A stated id the row did not have is a move. A stated THREAD that is
+	// not the current session is a move too, even when the row holds it as
+	// its primary: recovered through a retained thread A after the hooks
+	// had moved the row to B is a return to A. The bridge's own non-thread
+	// id, equal to the primary, is the activation the row is in.
+	stated := op.SessionID
+	movedSession := stated != "" && (stated != a.SessionID ||
+		(LooksLikeThreadID(stated) && a.CurrentSession != "" && stated != a.CurrentSession))
 	movedThread := LooksLikeThreadID(op.SessionAlias) && op.SessionAlias != a.CurrentSession
 	if !movedSession && !movedThread {
 		return

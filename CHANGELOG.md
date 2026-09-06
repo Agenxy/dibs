@@ -552,6 +552,30 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Reattaching by session id kept the other thread's process.** A
+  persistent agent that had moved from thread A to B, recovered by name and
+  its retained session id A with no pid stated, was put back on A with B's
+  process still on the row; when B exited the sweep retired it. The reattach
+  path applies the activation rule the other two recovery paths apply: a
+  stated thread that is not the current session is a move even when the row
+  holds it as its primary, and the bridge's own non-thread id is not.
+
+- **A sibling taking two bindings left an active holder behind.** A register
+  minting a sibling with an active agent's token takes that agent's thread
+  alias; when the same register stated a primary held by a dormant row, the
+  ingress recorded only the dormant row as the one the take came from, so the
+  alias stayed on the active row too: two active holders of one thread. The
+  caller's token names its own row, and the fold drops on that authority as
+  well.
+
+- **A minted nonce did not close the guessable recovery path, and nothing
+  said so.** SECURITY.md said an agent registered with a nonce requires it;
+  every persistent registration is now handed one, and a nonce Dibs minted
+  leaves the row reclaimable by name and session id, deliberately. The
+  document says which nonces protect, and the registration result tells a
+  minted-nonce agent it stays reclaimable, without advising a re-register
+  that would fork a sibling.
+
 - **Approving an old adoption request could still take a successor's
   mailbox.** The purge written by this version expires a pending request
   naming the purged agent; a sweep written before v0.0.7 leaves it standing,

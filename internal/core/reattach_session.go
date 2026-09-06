@@ -38,9 +38,12 @@ func (s *State) reattachBySessionID(op *Op, now time.Time) (Result, []Event) {
 	if op.Agent != nil {
 		l.Agent = op.Agent
 	}
-	if op.PID != 0 {
-		l.PID, l.ProcStart = op.PID, op.ProcStart
-	}
+	// THE SAME ACTIVATION RULE AS THE OTHER TWO PATHS. Recovering through a
+	// retained session id after the row had moved on to another thread put
+	// the current session back and kept the other thread's process: when
+	// that process exited the sweep retired the recovered agent. Found by
+	// the pre-release review, round forty-eight.
+	l.takeActivation(op)
 	s.dropTakenSession(op, l)
 	l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
 	l.currentFrom(op, held)
@@ -209,7 +212,16 @@ func (s *State) dropTakenSession(op *Op, l *Agent) {
 			if sid == "" || !prev.holdsSession(sid) {
 				continue
 			}
-			if prev.ID == op.SessionTakenFrom || prev.Status != StatusActive || prev.GuessedSession(sid) {
+			// BY TOKEN AS WELL AS BY NAME. The ingress records ONE row a take
+			// came from, and a register that states a primary held by a
+			// dormant row and carries an alias held by the caller's own row
+			// takes both: the dormant row was named, the caller's was not,
+			// and the alias stayed on both, two active holders of one thread
+			// with hooks resolving to either. The caller's token names its
+			// row as surely as the ingress does. Found by the pre-release
+			// review, round forty-eight.
+			own := op.Token != "" && prev.Token == op.Token
+			if prev.ID == op.SessionTakenFrom || own || prev.Status != StatusActive || prev.GuessedSession(sid) {
 				prev.dropSession(sid)
 			}
 		}

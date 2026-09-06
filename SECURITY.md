@@ -193,9 +193,12 @@ requires a token.
 **Reattach by session id is guessable.** Losing your context must not lose your
 mailbox, so a registration presenting the same name and session id reclaims the
 agent. Neither is secret: the bridge derives the session id from the host
-process id. An agent registered **with a nonce** requires that nonce instead;
-an agent without one is told, in its registration result, that it is reclaimable.
-Pass a nonce for anything you care about.
+process id. An agent registered **with a nonce it chose** requires that nonce
+instead. Every persistent registration is handed a nonce, and one Dibs minted
+for an agent that sent none does not close this path: that agent is still
+reclaimable by name and session id, deliberately, because the alternative is an
+agent that lost its context and can never recover, and its registration result
+says so. Choose the nonce yourself for anything you care about.
 
 **The wake path is a nudge, and it is deliberately free to call.** Because
 `hook_poll` is token-less, a caller naming somebody else's session receives that

@@ -783,6 +783,20 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 			"restart, re-register now with a nonce (a random id >=128-bit that you keep): same " +
 			"name + same nonce reattaches you to this agent and its mail, after anything."
 	}
+	// A MINTED NONCE DOES NOT CLOSE THE GUESSABLE PATH, and the reply said
+	// nothing: the warning above required an empty nonce, every persistent
+	// registration now has one, so an agent that let Dibs mint it was told
+	// nothing about being reclaimable by name and session id, which it is,
+	// deliberately (see reattachBySessionID). Said here, without advice to
+	// re-register, which is how a sibling mailbox gets made. Found by the
+	// pre-release review, round forty-eight.
+	if nonceMinted && op.SessionID != "" {
+		res["recovery"] = "the nonce above was minted for you and reattaches you after a restart. " +
+			"Because you did not choose it, this agent can ALSO be reclaimed by presenting its " +
+			"name and the session_id above, neither of which is secret. An agent registered " +
+			"with a nonce it chose is reclaimable only by that nonce; keep this one, and choose " +
+			"your own next time for anything you care about."
+	}
 	if nonce == "" && op.SessionID == "" {
 		// With neither recovery credential this agent cannot be reclaimed: lose the
 		// token and every message addressed to it becomes unreachable: the agent
