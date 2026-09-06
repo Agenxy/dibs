@@ -102,11 +102,19 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 // be. What the op states is taken; a pid it does not state is unknown when
 // the session moved, and kept when it did not, because the same session is
 // the same process. Found by the pre-release review, round forty-three.
+//
+// A NEW THREAD IS A NEW ACTIVATION TOO. The bridge fills the alias from the
+// harness's thread metadata and may state no session id at all, and this
+// returned early on an empty session id: the thread moved, the row reported
+// resumed, and the old process and location stayed. Found by the pre-release
+// review, round forty-five.
 func (a *Agent) takeActivation(op *Op) {
 	if op.PID != 0 {
 		a.PID, a.ProcStart = op.PID, op.ProcStart
 	}
-	if op.SessionID == "" || op.SessionID == a.SessionID {
+	movedSession := op.SessionID != "" && op.SessionID != a.SessionID
+	movedThread := op.SessionAlias != "" && !a.holdsSession(op.SessionAlias)
+	if !movedSession && !movedThread {
 		return
 	}
 	if op.PID == 0 {

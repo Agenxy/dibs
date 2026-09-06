@@ -552,6 +552,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A pending adoption request outlived the mailbox it named.** The purge
+  retired a purged agent's outgoing mail and dropped its incoming mail, and
+  left standing any request whose `adopt` named the purged id; approval
+  resolves that name against the current roster, so approving it after a
+  stranger had registered the released name moved the stranger's mail. The
+  purge expires such requests, with a reason that says so.
+
 - **Re-registering through the same bridge dropped the bound thread.** A
   register whose session id and alias are both the bridge's own id was read
   as a new activation, which is right for a bridge that restarted and wrong
@@ -568,7 +575,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that had just come back, and the board placed it where it used to be. On
   both recovery paths, a live row resumed and a dormant row recovered, a new
   activation takes the pid and location the op states, and a pid it does
-  not state is unknown rather than inherited.
+  not state is unknown rather than inherited. A new activation is a new
+  session id or a new thread alias, because the bridge reports a Codex
+  thread as the alias and may state no session id at all.
 
 - **Doctor diagnosed a remote board's wake routes from the local file.** A
   joining machine runs it against the hub with a data directory of its own,

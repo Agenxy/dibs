@@ -39,6 +39,16 @@ func TestARecoveryFromANewSessionDropsTheOldProcess(t *testing.T) {
 		t.Fatalf("a resume under the same session stating a new pid kept pid %d (%v): the next "+
 			"liveness sweep finds the old process dead", s.Agents["r"].PID, res)
 	}
+	// A new THREAD with no session id stated, which is how the bridge
+	// reports a Codex thread, is a new activation as much as a new session.
+	res = mustApply(t, s, &Op{Kind: OpRegister, Name: "r", NewToken: "tok-4c", Nonce: "n-r-0123456789abcdef", AgentKind: KindPersistent, SessionAlias: "01a00042-2222-7f60-81cc-6ab1298d76ec", Agent: &AgentInfo{CWD: "/new"}, V7Semantics: true}, now.Add(3*time.Minute+2*time.Second))
+	if res["resumed"] != true {
+		t.Fatalf("setup: the new thread did not resume: %v", res)
+	}
+	if got := s.Agents["r"]; got.PID != 0 || got.Agent == nil || got.Agent.CWD != "/new" {
+		t.Fatalf("resumed on a new thread with no pid stated, the row keeps pid %d and location %+v: "+
+			"the process that is gone, where it used to be", got.PID, got.Agent)
+	}
 	// The same rule on the other recovery path: a row that went dormant,
 	// recovered by nonce from yet another session with no pid stated.
 	s.Agents["r"].Status = StatusDormant

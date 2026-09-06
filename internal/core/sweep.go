@@ -437,6 +437,23 @@ func (s *State) gc(now time.Time, purgeMail, clampWatermark bool) ([]Event, bool
 			case m.From == id:
 				m.From = RetiredSender(id)
 				retired++
+			case m.Adopt == id && !m.Terminal():
+				// A REQUEST TO ADOPT THIS MAILBOX DIES WITH IT. Approval
+				// resolves the adopt name against the roster of the day, so a
+				// request left standing past the purge, approved after a
+				// stranger had registered the released name, moved the
+				// stranger's mail, and every authorisation check agreed: the
+				// approval was no longer acting on the identity the request
+				// concerned. Found by the pre-release review, round
+				// forty-five.
+				m.State = MsgStateExpiredDead
+				m.ExpireDetail = "the agent this request asked to adopt, " + id + ", was purged: " +
+					"its mailbox is gone, and approving now would take whoever holds that name next"
+				m.TerminalAt = now
+				evs = append(evs, Event{
+					Type: "message." + m.State, Agent: m.To, To: m.From,
+					Data: map[string]any{"msg_serial": m.Serial},
+				})
 			}
 		}
 		// AND ITS ATTACHMENTS. Blob ownership is by agent id and is an
