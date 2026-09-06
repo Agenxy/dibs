@@ -210,7 +210,16 @@ func (s *Server) serveLegacyStream(w http.ResponseWriter, r *http.Request) {
 	// subID nil: a legacy notifications/resources/updated carries only the uri.
 	// There is no subscription id in 2025-11-25: that is a 2026 concept, and
 	// inventing one here would put a field in the payload no client expects.
-	s.pump(r, sseStream{w: w, fl: flusher}, sub2, since, nil, s.legacyWants(r, session, agentID, sub.token))
+	s.pump(r, sseStream{w: w, fl: flusher}, sub2, since, nil, s.legacyWants(r, session, agentID, sub.token),
+		func() (bool, bool) {
+			// The legacy stream re-reads its token from the session store; a
+			// stream following the board alone answers to no credential.
+			tok := s.legacy.get(session).token
+			if tok == "" {
+				return true, true
+			}
+			return s.eng.StreamStanding(r.Context(), tok, "")
+		})
 }
 
 // legacyWants reads this session's subscription state fresh on every event.

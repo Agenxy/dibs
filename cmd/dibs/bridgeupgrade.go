@@ -281,8 +281,18 @@ func restoreCarried(ctx context.Context, client *http.Client, url, secret string
 	}
 	if s.WakePending {
 		// The old image owed the session a notice and died before its
-		// cooldown timer fired; the cursor has passed the event.
-		if wk := newSelfWaker(); wk != nil {
+		// cooldown timer fired; the cursor has passed the event. THROUGH THE
+		// WATCHER'S WAKER: a waker of its own here stood beside the one the
+		// restored streams write through, and a notification arriving during
+		// the restore put two interruptions into the session at once. Found
+		// by the pre-release review, round fifty-nine.
+		var wk *selfWaker
+		if w != nil {
+			wk = w.sharedWaker()
+		} else {
+			wk = newSelfWaker()
+		}
+		if wk != nil {
 			if err := wk.wake(selfWakeNotice); err != nil {
 				slog.Debug("could not deliver the notice the old image owed", "err", err)
 			}

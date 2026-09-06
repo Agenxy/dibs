@@ -183,6 +183,23 @@ func resyncEvents(st *core.State, l *core.Agent, cursor uint64) []core.Event {
 	return evs
 }
 
+// StreamStanding is core.StreamStanding asked of the live state: whether a
+// stream's token still names an agent, and whether that agent still holds
+// the session the stream serves. Uncharged and unlogged, because it is
+// asked on a stream's behalf, not the agent's.
+func (e *Engine) StreamStanding(ctx context.Context, token, session string) (live, held bool) {
+	res, err := e.query(ctx, func() core.Result {
+		live, held := e.state.StreamStanding(token, session)
+		return core.Result{"live": live, "held": held}
+	})
+	if err != nil {
+		return false, false
+	}
+	live, _ = res["live"].(bool)
+	held, _ = res["held"].(bool)
+	return live, held
+}
+
 // SetRateTokens sets an agent's remaining rate budget. A test knob, like
 // SetRingCap: the bucket refills at rateOpsPerSec, so a test that needs "one
 // call left" cannot get there by making calls and staying there.

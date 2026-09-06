@@ -710,6 +710,25 @@ func (s *State) AgentByToken(tok string) *Agent {
 	return nil
 }
 
+// StreamStanding is what a subscription opened with token, on behalf of
+// session, may still do: live says the token still names an agent, held
+// says that agent still answers to the session. A stream that stated no
+// session is held wherever its agent is.
+//
+// A subscription used to capture its agent when it opened and deliver for
+// as long as the socket stayed up, so a bridge left behind by an identity
+// that moved to another session kept waking the session the agent had
+// left, which the daemon's own wake routes never do; and a stream opened
+// with a token later rotated away went on delivering the new holder's
+// mail. Found by the pre-release review, round fifty-nine.
+func (s *State) StreamStanding(token, session string) (live, held bool) {
+	l := s.AgentByToken(token)
+	if l == nil {
+		return false, false
+	}
+	return true, session == "" || l.holdsSession(session)
+}
+
 // Inbox returns the agent's non-terminal plus unconsumed-terminal messages,
 // oldest first (SPEC §8).
 func (s *State) Inbox(agent string) []*Message {

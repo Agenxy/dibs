@@ -217,17 +217,17 @@ func forward(client *http.Client, req *http.Request, line []byte, out *syncWrite
 		}
 		return
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, rerr := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	body = bytes.TrimSpace(body)
-	if len(body) > 0 && body[0] != '{' {
-		// A REFUSAL IS NOT A REPLY. The daemon's gate answers a request it
-		// will not read with a status and a line of text, and that line went
-		// to stdout as if it were JSON-RPC: the harness got `unauthorized`,
-		// no reply carrying its request id, and a call that never returned.
-		// Shipped in v0.0.6; found by the pre-release review, round
-		// twenty-nine.
-		if reply := refusedReply(line, resp.StatusCode, body); reply != nil {
+	if rerr != nil {
+		if reply := unreachableReply(line, rerr); reply != nil {
+			out.line(reply)
+		}
+		return
+	}
+	if reply, refused := notAReply(line, resp.StatusCode, body); refused {
+		if reply != nil {
 			out.line(reply)
 		}
 		return
@@ -238,6 +238,34 @@ func forward(client *http.Client, req *http.Request, line []byte, out *syncWrite
 			saw(line, body)
 		}
 	}
+}
+
+// notAReply recognises a body that is not the JSON-RPC response the harness
+// is waiting for, and answers it with one that is: refused says the body
+// must not be forwarded, reply is what to write instead (nil for a
+// notification, which has no reply).
+//
+// A REFUSAL IS NOT A REPLY. The daemon's gate answers a request it will not
+// read with a status and a line of text, and that line went to stdout as if
+// it were JSON-RPC: the harness got `unauthorized`, no reply carrying its
+// request id, and a call that never returned. Shipped in v0.0.6; found by
+// the pre-release review, round twenty-nine.
+//
+// AND ITS OTHER SHAPES. A refusal with an EMPTY body (a proxy's 502, a
+// daemon mid-restart's 503) produced no line at all, and a body cut short
+// mid-JSON was forwarded as malformed JSON. Neither is a response the
+// harness can match to its request, and both leave the call hanging. Found
+// by the pre-release review, round fifty-nine.
+func notAReply(line []byte, status int, body []byte) (reply []byte, refused bool) {
+	switch {
+	case len(body) == 0 && status >= 400:
+		return refusedReply(line, status, []byte("(empty body)")), true
+	case len(body) > 0 && body[0] != '{':
+		return refusedReply(line, status, body), true
+	case len(body) > 0 && !json.Valid(body):
+		return refusedReply(line, status, []byte("(reply cut short mid-JSON)")), true
+	}
+	return nil, false
 }
 
 // refusedReply turns an HTTP refusal into the JSON-RPC error the harness can

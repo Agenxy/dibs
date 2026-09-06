@@ -554,6 +554,29 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A bridge's self-wake followed its agent into another session.** A
+  subscription captured its agent when it opened and delivered for as long
+  as the socket stayed up, so a bridge left behind by an identity that moved
+  to a second session kept waking the first, which the daemon's own wake
+  routes never do; and a stream opened with a token later rotated away went
+  on delivering the new holder's mail. The bridge's listen now names the
+  session it serves (`_meta["com.dibs/session"]`), the daemon withholds the
+  inbox from a stream whose agent is in another session and feeds it again
+  when the agent returns, and a stream ends with its credential.
+
+- **A restored pending wake bypassed the session's cooldown.** The in-place
+  upgrade delivered the notice the old image owed through a waker of its
+  own, beside the one the restored streams write through, so a notification
+  arriving during the restore put two interruptions into the session at
+  once. The owed notice goes through the watcher's waker.
+
+- **An empty or truncated daemon reply left a bridge call hanging.** A
+  refusal with an empty body, a proxy's 502 or a daemon mid-restart's 503,
+  produced no line at all, and a body cut short mid-JSON was forwarded as
+  malformed JSON; neither is a response the harness can match to its
+  request. Both become a JSON-RPC error carrying the request id, and a read
+  that fails is answered as an unreachable daemon is.
+
 - **The self-wake cooldown was per mailbox, not per session.** Each
   watched agent's stream had a waker of its own, so two mailboxes receiving
   questions put two interruptions into the same session socket microseconds

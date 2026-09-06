@@ -41,6 +41,12 @@ func openListen(t *testing.T, srv *httptest.Server, token string, since any) <-c
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("listen did not open: %s", resp.Status)
 	}
+	return scanLines(ctx, resp)
+}
+
+// scanLines feeds a stream's lines to a channel that closes when the stream
+// ends, so a test can tell an ended stream from a quiet one.
+func scanLines(ctx context.Context, resp *http.Response) <-chan string {
 	lines := make(chan string, 64)
 	go func() {
 		defer close(lines)

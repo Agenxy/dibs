@@ -157,15 +157,33 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *
 	// pre-release review, round thirty-one.
 	sub, cancel := s.eng.SubscribeTracked(since)
 	defer cancel()
-	if resuming && wantInbox && !s.replayGap(r.Context(), stream, req.ID, agentID, cursor) {
-		return
-	}
 	// Fixed for the lifetime of the stream: 2026-07-28 carries the whole
 	// subscription in the listen call, so there is nothing to re-read.
+	// THE STANDING IS NOT. The session the stream serves is the one the
+	// bridge attaches to every call; whether the agent is still there, and
+	// whether the token still names it, is asked as each notification is
+	// about to go out. See core.StreamStanding.
+	session, _ := p.Meta[SessionMetaKey].(string)
+	standing := func() (bool, bool) {
+		return s.eng.StreamStanding(r.Context(), token, session)
+	}
+	// The gap too: a left-behind bridge that reconnected after a daemon
+	// restart was handed the mail it had missed, and woke on it.
+	if _, held := standing(); resuming && wantInbox && held &&
+		!s.replayGap(r.Context(), stream, req.ID, agentID, cursor) {
+		return
+	}
 	s.pump(r, stream, sub, since, req.ID, func() (string, bool, bool) {
 		return agentID, wantInbox, wantBoard
-	})
+	}, standing)
 }
+
+// standingFunc reports, as a notification is about to go out, whether the
+// stream's credential is still live and whether its agent still holds the
+// session it serves. A stream whose token is gone ends; one whose agent has
+// moved to another session keeps its board notifications and withholds the
+// inbox, which is the daemon's own rule for where a wake may go.
+type standingFunc func() (live, held bool)
 
 // pump forwards resource-change notifications until the client disconnects.
 // wantsFunc reports what a stream should deliver RIGHT NOW: the agent whose
@@ -187,7 +205,7 @@ type wantsFunc func() (agentID string, inbox, board bool)
 // and not a question, which did not. Found by the pre-release review, round
 // thirty-three.
 func (s *Server) pump(r *http.Request, stream sseStream, sub *engine.Subscription, last uint64,
-	subID json.RawMessage, wants wantsFunc,
+	subID json.RawMessage, wants wantsFunc, standing standingFunc,
 ) {
 	keepalive := time.NewTicker(25 * time.Second)
 	defer keepalive.Stop()
@@ -195,7 +213,8 @@ func (s *Server) pump(r *http.Request, stream sseStream, sub *engine.Subscriptio
 	// The position starts at the end of `last`: everything at that serial
 	// was covered by the caller, so a refill must not repeat it.
 	p := &pumpState{
-		s: s, ctx: ctx, stream: stream, sub: sub, last: last, lastSub: math.MaxInt, subID: subID, wants: wants,
+		s: s, ctx: ctx, stream: stream, sub: sub, last: last, lastSub: math.MaxInt, subID: subID,
+		wants: wants, standing: standing,
 	}
 	if !p.refill() { // the replay may have run long enough to overflow already
 		return
@@ -237,6 +256,9 @@ type pumpState struct {
 	lastSub int
 	subID   json.RawMessage
 	wants   wantsFunc
+	// standing is asked before each notification goes out; nil for a
+	// stream that answers to no credential.
+	standing standingFunc
 }
 
 // seen reports whether ev is at or before the position.
@@ -248,7 +270,16 @@ func (p *pumpState) seen(ev core.Event) bool {
 func (p *pumpState) deliver(ev core.Event) bool {
 	agentID, wantInbox, wantBoard := p.wants()
 	if uri := matchedURI(ev, agentID, wantInbox, wantBoard); uri != "" {
-		if !p.stream.send(resourceUpdated(uri, p.subID, ev)) {
+		if p.standing != nil {
+			live, held := p.standing()
+			if !live {
+				return false // rotated away or retired: whoever holds the new token subscribes afresh
+			}
+			if !held && uri == "dibs://inbox" {
+				uri = "" // the agent is in another session; its mail wakes that one
+			}
+		}
+		if uri != "" && !p.stream.send(resourceUpdated(uri, p.subID, ev)) {
 			return false
 		}
 	}
@@ -386,6 +417,10 @@ const (
 	// review, round twelve.
 	SerialMetaKey = "com.dibs/serial"
 	SinceMetaKey  = "com.dibs/since"
+	// SessionMetaKey is the harness session the caller is running inside,
+	// attached by the stdio bridge to every call. On a listen request it
+	// names the session the stream serves: see standingFunc.
+	SessionMetaKey = "com.dibs/session"
 )
 
 func resourceUpdated(uri string, subID json.RawMessage, ev core.Event) map[string]any {

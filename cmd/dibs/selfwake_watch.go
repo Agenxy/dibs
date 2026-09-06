@@ -68,6 +68,20 @@ type inboxStream struct {
 	since  uint64 // the serial of the last notification seen: a reconnect resumes from it
 }
 
+// sharedWaker is the one route to this session's socket, made on first
+// use; nil when this harness publishes none.
+func (iw *inboxWatcher) sharedWaker() *selfWaker {
+	iw.mu.Lock()
+	defer iw.mu.Unlock()
+	if iw.waker == nil {
+		iw.waker = newSelfWaker()
+		if iw.waker != nil && iw.cooldown > 0 {
+			iw.waker.cooldown = iw.cooldown
+		}
+	}
+	return iw.waker
+}
+
 // tokens lists the credentials the watcher currently subscribes with.
 func (iw *inboxWatcher) tokens() []string {
 	iw.mu.Lock()
@@ -113,6 +127,13 @@ const reconnectAfter = 2 * time.Second
 // by the pre-release review, round twelve.
 func (iw *inboxWatcher) listenBody(st *inboxStream) []byte {
 	meta := map[string]any{"com.dibs/token": st.token}
+	// The session this stream serves, so the daemon withholds the inbox
+	// while the agent is in another one: a bridge left behind by an
+	// identity that moved to a second session kept waking the first.
+	// Found by the pre-release review, round fifty-nine.
+	if sid := sessionID(); sid != "" {
+		meta[mcp.SessionMetaKey] = sid
+	}
 	iw.mu.Lock()
 	if st.since > 0 {
 		meta[mcp.SinceMetaKey] = st.since
@@ -176,18 +197,12 @@ func (iw *inboxWatcher) startFor(
 	if token == "" {
 		return
 	}
-	iw.mu.Lock()
-	defer iw.mu.Unlock()
-	if iw.waker == nil {
-		iw.waker = newSelfWaker()
-		if iw.waker != nil && iw.cooldown > 0 {
-			iw.waker.cooldown = iw.cooldown
-		}
-	}
-	waker := iw.waker
+	waker := iw.sharedWaker()
 	if waker == nil {
 		return // this harness publishes no session socket: nothing local to do
 	}
+	iw.mu.Lock()
+	defer iw.mu.Unlock()
 	if iw.streams == nil {
 		iw.streams = map[string]*inboxStream{}
 	}

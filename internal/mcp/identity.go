@@ -217,7 +217,7 @@ func metaSession(params json.RawMessage) string {
 	if json.Unmarshal(params, &p) != nil {
 		return ""
 	}
-	v, _ := p.Meta["com.dibs/session"].(string)
+	v, _ := p.Meta[SessionMetaKey].(string)
 	return v
 }
 
