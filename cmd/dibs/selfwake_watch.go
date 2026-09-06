@@ -81,6 +81,7 @@ func (iw *inboxWatcher) noteSerial(meta map[string]any) {
 		iw.since = uint64(v)
 	}
 	iw.mu.Unlock()
+	recordWakeCursor(uint64(v)) // for the in-place upgrade's handoff
 }
 
 func (iw *inboxWatcher) start(ctx context.Context, client *http.Client, url, secret, token string) {

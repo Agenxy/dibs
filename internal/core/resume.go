@@ -51,10 +51,16 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 	// ingress had accepted the request and this branch discarded the one
 	// thing it asked for. Found by the pre-release review, round thirteen.
 	changed = changed || (op.SessionID != "" && (l.SessionID != op.SessionID || l.CurrentSession != op.SessionID))
+	// A GUESS CONFIRMED IS A CHANGE. A stated session_id that the row already
+	// held as an inference left the guess standing, so another agent's
+	// metadata could still take the active session. Found by the pre-release
+	// review, round fourteen.
+	changed = changed || (op.SessionID != "" && l.GuessedSession(op.SessionID))
 	if op.V7Semantics && changed {
 		s.dropTakenSession(op, l)
 		if op.SessionID != "" {
-			l.SessionID = op.SessionID // the new session owns it now
+			l.SessionID = op.SessionID                                         // the new session owns it now
+			l.GuessedSessions = withoutString(l.GuessedSessions, op.SessionID) // stated now
 		}
 		l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
 		l.currentFrom(op)

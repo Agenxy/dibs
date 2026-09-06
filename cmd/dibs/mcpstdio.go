@@ -302,11 +302,13 @@ func readLine(in *bufio.Reader) ([]byte, error) {
 // handoffState is everything the next image needs that an exec would
 // discard: the handshake, the caller's subscriptions, and the self-wake token.
 func handoffState() bridgeState {
+	tok, since := currentWake()
 	return bridgeState{
 		ClientInfo: lastClientInfo,
 		WantsUI:    lastWantsUI,
 		Listens:    openListens(),
-		WakeToken:  currentWakeToken(),
+		WakeToken:  tok,
+		WakeSince:  since,
 	}
 }
 

@@ -1312,7 +1312,12 @@ func (s *Server) run(
 		return res, err
 	}
 	if name == "send" {
-		return s.noteIfNobodyCanWake(ctx, a.To, res), nil
+		// op.To, not a.To: the engine resolves a role address such as
+		// "coordinator" into the holder's id at ingress, and the literal
+		// looked up no agent, so a send to the coordinator carried no
+		// pull-only warning however unwakeable the holder. Found by the
+		// pre-release review, round fourteen.
+		return s.noteIfNobodyCanWake(ctx, op.To, res), nil
 	}
 	if name != "register" {
 		return res, nil

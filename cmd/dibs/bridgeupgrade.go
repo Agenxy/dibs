@@ -62,6 +62,11 @@ type bridgeState struct {
 	// until the agent happened to register or resume. Found by the
 	// pre-release review, round eleven.
 	WakeToken string `json:"wake_token,omitempty"`
+	// WakeSince is the serial the watcher last saw, so the replacement
+	// subscribes with a cursor: an upgrade used to start it at the present
+	// and mail that arrived in the gap woke nobody. Found by the pre-release
+	// review, round fourteen.
+	WakeSince uint64 `json:"wake_since,omitempty"`
 }
 
 // liveWake is the token the self-wake watcher currently holds, for the
@@ -69,6 +74,7 @@ type bridgeState struct {
 var liveWake struct {
 	mu    sync.Mutex
 	token string
+	since uint64
 }
 
 func recordWakeToken(token string) {
@@ -77,10 +83,23 @@ func recordWakeToken(token string) {
 	liveWake.token = token
 }
 
-func currentWakeToken() string {
+func recordWakeCursor(since uint64) {
 	liveWake.mu.Lock()
 	defer liveWake.mu.Unlock()
-	return liveWake.token
+	if since > liveWake.since {
+		liveWake.since = since
+	}
+}
+
+func currentWake() (token string, since uint64) {
+	liveWake.mu.Lock()
+	defer liveWake.mu.Unlock()
+	return liveWake.token, liveWake.since
+}
+
+func currentWakeToken() string {
+	tok, _ := currentWake()
+	return tok
 }
 
 // selfIdentity is how this process recognises that its own binary changed.
@@ -191,6 +210,10 @@ func restoreCarried(ctx context.Context, client *http.Client, url, secret string
 	}
 	lastClientInfo, lastWantsUI = s.ClientInfo, s.WantsUI
 	if s.WakeToken != "" && w != nil {
+		w.mu.Lock()
+		w.since = s.WakeSince
+		w.mu.Unlock()
+		recordWakeCursor(s.WakeSince)
 		w.start(ctx, client, url, secret, s.WakeToken)
 	}
 	for _, listen := range s.Listens {

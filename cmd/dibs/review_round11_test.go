@@ -26,6 +26,11 @@ func TestAnUpgradedBridgeKeepsItsSelfWake(t *testing.T) {
 	if handoffState().WakeToken != "carried-token" {
 		t.Fatalf("the handoff carries %q, not the token the watcher subscribes with", handoffState().WakeToken)
 	}
+	// And the cursor: the replacement must not subscribe from the present.
+	started.noteSerial(map[string]any{"com.dibs/serial": float64(9)})
+	if handoffState().WakeSince != 9 {
+		t.Fatalf("the handoff carries cursor %d, want 9: mail arriving during the upgrade wakes nobody", handoffState().WakeSince)
+	}
 	env, err := carryEnv(handoffState())
 	if err != nil {
 		t.Fatal(err)
@@ -48,8 +53,11 @@ func TestAnUpgradedBridgeKeepsItsSelfWake(t *testing.T) {
 	out := &syncWriter{w: bufio.NewWriter(io.Discard)}
 	restoreCarried(ctx, &http.Client{}, "http://127.0.0.1:1/mcp", "secret", out, &streams, &iw)
 	iw.mu.Lock()
-	got := iw.token
+	got, since := iw.token, iw.since
 	iw.mu.Unlock()
+	if since != 9 {
+		t.Errorf("the restored watcher holds cursor %d, want 9", since)
+	}
 	if got != "carried-token" {
 		t.Fatalf("after the handoff the watcher holds %q: self-wake stays off until the agent "+
 			"happens to register or resume again", got)

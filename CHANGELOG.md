@@ -495,6 +495,28 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Confirming an inferred session by registering left it a guess.** A
+  same-nonce register that stated the session id the row already held as an
+  inference read as no change, so the guess stood and another agent's
+  metadata could still take the active session, hooks and wakes with it. A
+  guess confirmed is a change, and a confirmed session is stated.
+
+- **An in-place bridge upgrade dropped the self-wake cursor.** The handoff
+  carried the watcher's token and not the serial it had last seen, so the
+  replacement subscribed from the present and mail arriving during the
+  upgrade woke nobody. The cursor travels with the token.
+
+- **A send to `coordinator` carried no pull-only warning.** The engine
+  resolves the role address into the holder's id, and the warning looked up
+  the literal, which named no agent: a question to an unwakeable coordinator
+  returned ok and a deadline with no word that nothing would wake it. The
+  warning reads the recipient the engine resolved.
+
+- **The inferred-session guard skipped itself when inference broke.** Its
+  setup check called `t.Skip` when the inference had not bound the session,
+  so disabling inference turned the test off and the suite exited zero. It
+  fails.
+
 - **A live resume discarded a stated `session_id`.** A same-nonce register
   inside the TTL decided whether anything changed from the alias the daemon
   joins alone, so one that stated `session_id: B` with no alias returned

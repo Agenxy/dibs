@@ -45,8 +45,12 @@ func TestAnInferredBindingIsRecordedAsAGuessByTheEngine(t *testing.T) {
 	// Setup must hold: the inference has to have fired, or there is no binding
 	// whose provenance could be wrong.
 	if !l.HoldsSessionForTest(announced) {
-		t.Skipf("the directory inference did not bind %s (join window or path "+
-			"cleaning changed); this case needs rewriting rather than passing", announced)
+		// A FAILURE, NOT A SKIP. Skipping here let a disabled inference turn
+		// this guard off and exit zero. Found by the pre-release review,
+		// round fourteen.
+		t.Fatalf("the directory inference did not bind %s: either the inference is "+
+			"broken, which is what this test guards, or the join window or path "+
+			"cleaning changed and this case needs rewriting", announced)
 	}
 
 	if !l.GuessedSession(announced) {
