@@ -370,6 +370,13 @@ type Agent struct {
 	// woken. Neither id is a credential; the connection is already
 	// authenticated, and these are only ever added by the daemon's own join.
 	SessionAliases []string `json:"session_aliases,omitempty"`
+	// CurrentSession is the id the harness most recently reported for this
+	// agent: the activation a wake should resume. Inferred until now from
+	// append order, which a return to an earlier thread never changed: an
+	// identity on thread A, then B, then A again was woken on B, a real session
+	// that was not the one holding the mail, and the daemon logged a
+	// successful wake. Found by the pre-release review, round eight.
+	CurrentSession string `json:"current_session,omitempty"`
 	// GuessedSessions are the session ids on this agent that the daemon
 	// INFERRED by directory rather than the caller stating them. A guess yields
 	// to a first-hand claim; a stated binding does not. See Op.SessionGuessed.

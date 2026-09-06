@@ -349,9 +349,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   NOT the agent's `session_id`: that names the harness process (`host-92368`)
   and dies with it, so an agent whose only identifier is one of those is not
   woken, because there would be nothing to hand the command. Where an agent has
-  reattached and holds several, it is the CURRENT one: aliases are appended, so
-  the newest is last, and resuming an older thread would start a real session
-  that is not the one holding the mail.
+  reattached and holds several, it is the CURRENT one, the thread its harness
+  reported most recently, which is recorded as such: resuming an older thread
+  would start a real session that is not the one holding the mail. (Until
+  round eight this was inferred from append order, and a return to an earlier
+  thread left the wake on the later one.)
 
   Wakes are rate-limited per agent (90s by default, `cooldown =`), so a burst
   never becomes one process per message, and an agent that has made an
@@ -474,6 +476,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   nothing an agent wrote, and it cannot read the session or steer it.
 
 ### Fixed
+
+- **A restart lost every deferred wake.** A wake held back for a recipient's
+  recency window or cooldown was a timer, and the daemon restarting before it
+  fired forgot it: the question stayed in the ledger, boot rebuilt the
+  blocking notices and primed the socket cache, the sweeps retried no
+  delivery, and the recipient slept until something else arrived for it or a
+  person noticed. Boot now arms one retry for every agent holding blocking
+  mail, and the retry makes the decision a fresh arrival would.
+
+- **Returning to an earlier thread woke the wrong one.** The wake resumed the
+  last thread id in the agent's alias list, and a return to a thread bound
+  earlier changed nothing in that list: an identity on thread A, then B, then
+  A again was woken on B, a real session that was not the one holding the
+  mail, and the wake logged as a success. The harness's most recently
+  reported session is recorded as the current one now (`current_session` on
+  the board), the wake and the socket route prefer it, and a resume that
+  returns to a known thread counts as the change it is.
 
 - **A session that appeared after the socket cache was scanned missed its
   wake for good.** The socket route decides from a cache the writer loop never

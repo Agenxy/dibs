@@ -348,6 +348,33 @@ func (e *Engine) retryWake(agent string) {
 }
 
 // deferWakeLocked is deferWake for callers that do not already hold the lock.
+// bootRetryDelay is how long after boot the outstanding-mail retries run:
+// long enough for the loop to be serving, since a retry is posted to it.
+var bootRetryDelay = time.Second
+
+// rearmDeferredWakes arms one retry for every agent holding blocking mail at
+// boot, and reports how many. A deferred wake is a timer, and a restart lost
+// it: a question sent inside the recipient's recency window, then a restart
+// before the timer fired, left mail in the ledger that nothing would ever
+// wake anybody for, since boot rebuilt notices and primed the socket cache and
+// the sweeps retry no delivery. The retry makes the decision a fresh arrival
+// would, cooldowns and recency included. Found by the pre-release review,
+// round eight.
+func (e *Engine) rearmDeferredWakes() int {
+	if e.state == nil {
+		return 0
+	}
+	n := 0
+	for id, l := range e.state.Agents {
+		if l.Gone() || !e.hasBlockingMail(id) {
+			continue
+		}
+		e.deferWakeLocked(id, bootRetryDelay)
+		n++
+	}
+	return n
+}
+
 // socketMayHaveAppeared reports whether a refusal could be the cache's
 // staleness rather than the agent's state: a harness that speaks the socket,
 // an agent with a session id, and no session for it in the snapshot.
@@ -970,7 +997,10 @@ func sessionsOf(l *core.Agent) []string {
 	if l == nil {
 		return nil
 	}
-	out := make([]string, 0, len(l.SessionAliases)+1)
+	out := make([]string, 0, len(l.SessionAliases)+2)
+	if l.CurrentSession != "" {
+		out = append(out, l.CurrentSession) // first: the activation to reach
+	}
 	if l.SessionID != "" {
 		out = append(out, l.SessionID)
 	}
@@ -999,6 +1029,12 @@ func sessionsOf(l *core.Agent) []string {
 // wake test built exactly one alias, which is the one arrangement that cannot
 // tell the two orders apart.
 func threadIDOf(l *core.Agent) string {
+	// The one the harness reported most recently, when it is a thread. The
+	// scan below is the older inference from append order, kept for rows
+	// bound before the current one was recorded.
+	if looksLikeThreadID(l.CurrentSession) {
+		return l.CurrentSession
+	}
 	for i := len(l.SessionAliases) - 1; i >= 0; i-- {
 		if looksLikeThreadID(l.SessionAliases[i]) {
 			return l.SessionAliases[i]

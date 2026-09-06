@@ -41,7 +41,10 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 	// provenance; the gate has to let it run for that case too. Found by the
 	// pre-release review, round two.
 	alias := op.SessionAlias
-	changed := alias != "" && (!l.holdsSession(alias) || l.GuessedSession(alias))
+	// A return to a thread bound earlier is a change: nothing in the sets
+	// moves, and the activation to wake does. Found by the pre-release review,
+	// round eight.
+	changed := alias != "" && (!l.holdsSession(alias) || l.GuessedSession(alias) || l.CurrentSession != alias)
 	if op.V7Semantics && changed {
 		s.dropTakenSession(op, l)
 		l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)

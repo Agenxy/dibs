@@ -11,6 +11,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"os"
 	"sort"
 	"strconv"
@@ -236,6 +237,9 @@ func (e *Engine) Run(ctx context.Context) {
 	// Affordable because every probe behind it is bounded, so this is a startup
 	// pause measured in milliseconds rather than an unbounded wait on `ps`.
 	e.primePeerSessions()
+	if n := e.rearmDeferredWakes(); n > 0 {
+		slog.Info("wake: blocking mail outstanding at boot; deciding again shortly", "agents", n)
+	}
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	reconcileTick := time.NewTicker(30 * time.Second)

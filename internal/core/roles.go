@@ -226,6 +226,9 @@ func (a *Agent) dropSession(sid string) {
 	if a.SessionID == sid {
 		a.SessionID = ""
 	}
+	if a.CurrentSession == sid {
+		a.CurrentSession = ""
+	}
 	a.SessionAliases = withoutString(a.SessionAliases, sid)
 	a.GuessedSessions = withoutString(a.GuessedSessions, sid)
 }
@@ -473,7 +476,14 @@ func withoutString(xs []string, drop string) []string {
 }
 
 func (a *Agent) bindHarnessSession(sid string) string {
-	if sid == "" || sid == a.SessionID {
+	if sid == "" {
+		return ""
+	}
+	// Every path below leaves the id bound, so it is the current one whether
+	// or not the binding itself is new: a return to a thread bound earlier
+	// changes nothing in the sets and everything about which one to wake.
+	a.CurrentSession = sid
+	if sid == a.SessionID {
 		return ""
 	}
 	if a.SessionID == "" {
