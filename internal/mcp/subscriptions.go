@@ -143,11 +143,21 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *
 	// are replayed here from the ring, filtered, in full; the channel replay
 	// below may repeat some, and a repeat coalesces where a loss does not.
 	// Found by the pre-release review, round fifteen.
+	// SUBSCRIBED FIRST, FROM THE PRESENT. The live channel used to be opened
+	// after the gap was replayed, and from the cursor: its catch-up pushed
+	// the whole gap into a 256-event buffer that drops when full, so a long
+	// gap filled it with history already replayed above and a question sent
+	// while the replay was being written landed past the buffer, in neither
+	// the replay nor the stream. The channel opens before the replay and
+	// starts where SubscribeInfo read the serial, so anything after that
+	// point is buffered while the replay runs; the replay covers the gap up
+	// to it, and a repeat coalesces where a loss does not. Found by the
+	// pre-release review, round thirty-one.
+	ch, cancel := s.eng.Subscribe(since)
+	defer cancel()
 	if resuming && wantInbox && !s.replayGap(r.Context(), stream, req.ID, token, agentID, cursor) {
 		return
 	}
-	ch, cancel := s.eng.Subscribe(cursor)
-	defer cancel()
 	// Fixed for the lifetime of the stream: 2026-07-28 carries the whole
 	// subscription in the listen call, so there is nothing to re-read.
 	s.pump(r, stream, ch, req.ID, func() (string, bool, bool) {

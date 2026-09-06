@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -105,29 +106,28 @@ func (e *Engine) EventsSince(ctx context.Context, token string, serial uint64, a
 }
 
 // ResyncFor is what a subscriber missed when its cursor is older than the
-// ring: one message.sent event, shaped as the ring would have held it, for
-// each message still waiting in the agent's inbox that arrived after the
-// cursor. The ring is the record of what happened; the inbox is the record of
-// what is still owed, and when the first is gone the second is enough to
-// wake an agent that has mail. Terminal mail is not replayed: nothing is
-// owed on it.
+// ring: the events the ring would have held, rebuilt from the mail itself.
+// The ring is the record of what happened; the mail is the record of what is
+// still owed, and when the first is gone the second is enough to wake an
+// agent that has something waiting. Three things are owed:
+//
+//   - a message.sent for mail that arrived after the cursor and is not yet
+//     terminal;
+//   - a message.adopted for blocking mail moved in after the cursor, whose
+//     own serial is older than the move and may be older than the cursor;
+//   - the verdict on a question or request THIS agent sent, given after the
+//     cursor: the sender's side of the same gap, which the first cut of this
+//     left out. Responding marks the message consumed (SPEC §8), so the
+//     cursor is the only record of whether the sender's subscriber saw it,
+//     and a repeat coalesces on the bridge where a loss does not. Found by
+//     the pre-release review, round thirty-one.
 func (e *Engine) ResyncFor(ctx context.Context, token string, cursor uint64) ([]core.Event, error) {
 	res, err := e.query(ctx, func() core.Result {
 		l, errRes := e.authRead(token, time.Now())
 		if errRes != nil {
 			return errRes
 		}
-		var evs []core.Event
-		for _, m := range e.state.Inbox(l.ID) {
-			if m.Serial <= cursor || m.Terminal() {
-				continue
-			}
-			evs = append(evs, core.Event{
-				Serial: m.Serial, TS: m.SentAt, Type: "message.sent", Agent: m.From, To: l.ID,
-				Data: map[string]any{"msg_serial": m.Serial, "msg_type": m.Type, "resynced": true},
-			})
-		}
-		return core.Result{"events": evs}
+		return core.Result{"events": resyncEvents(e.state, l, cursor)}
 	})
 	if err != nil {
 		return nil, err
@@ -137,6 +137,44 @@ func (e *Engine) ResyncFor(ctx context.Context, token string, cursor uint64) ([]
 	}
 	evs, _ := res["events"].([]core.Event)
 	return evs, nil
+}
+
+// resyncEvents is the decision behind ResyncFor, split from the query so it
+// can be tested without an engine loop (see AGENTS.md on zero-value engines).
+func resyncEvents(st *core.State, l *core.Agent, cursor uint64) []core.Event {
+	var evs []core.Event
+	for _, m := range st.Inbox(l.ID) {
+		if m.Terminal() {
+			continue
+		}
+		switch {
+		case m.AdoptedAt > cursor && st.AdoptedFor(m, l.ID) && core.WakeWorthy("message.adopted", m.Type):
+			evs = append(evs, core.Event{
+				Serial: m.AdoptedAt, TS: m.SentAt, Type: "message.adopted", Agent: m.AdoptedFrom, To: l.ID,
+				Data: map[string]any{"msg_serial": m.Serial, "msg_type": m.Type, "from": m.From, "resynced": true},
+			})
+		case m.Serial > cursor:
+			evs = append(evs, core.Event{
+				Serial: m.Serial, TS: m.SentAt, Type: "message.sent", Agent: m.From, To: l.ID,
+				Data: map[string]any{"msg_serial": m.Serial, "msg_type": m.Type, "resynced": true},
+			})
+		}
+	}
+	for _, m := range st.Messages {
+		inherited := l.CreatedSerial > 0 && m.Serial < l.CreatedSerial
+		if m.From != l.ID || inherited || m.RespondedAt <= cursor {
+			continue
+		}
+		switch m.State {
+		case core.MsgStateAnswered, core.MsgStateApproved, core.MsgStateDenied, core.MsgStateDeclined:
+			evs = append(evs, core.Event{
+				Serial: m.RespondedAt, TS: m.SentAt, Type: "message." + m.State, Agent: m.To, To: l.ID,
+				Data: map[string]any{"msg_serial": m.Serial, "resynced": true},
+			})
+		}
+	}
+	sort.Slice(evs, func(i, j int) bool { return evs[i].Serial < evs[j].Serial })
+	return evs
 }
 
 // AwaitEvents long-polls until an event after serial matches, or timeout.

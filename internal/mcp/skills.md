@@ -333,11 +333,16 @@ primary id, every alias, and any the daemon inferred for you by directory. Not
 just the one you registered with. An agent reached only through an alias has a
 working binding and no primary, and releasing takes that away too.
 
-Use it when hooks quoting your session reach somebody else, or when you have
-inherited a session that is not yours. After it, those sessions reach nobody
-until an agent binds them again, and the session each belongs to can claim it
-back by registering or calling `check_in` from inside it. Releasing when nothing
-is bound changes nothing and says so.
+Use it when you have inherited a session that is not yours. It clears only
+YOUR bindings, so it repairs nothing when the wrong binding is somebody else's:
+when hooks quoting your session reach another agent, that agent is the holder,
+and releasing your own sessions leaves its binding standing. Claim the session
+back from inside it, by registering or calling `check_in` with its id: a holder
+that is not active, or that only guessed the id, yields it. An active holder
+that stated the id wins (`E_SESSION_TAKEN`), and only it can release; send it a
+notify asking for `update(release_session: true)`, or have your human evict it.
+After a release, those sessions reach nobody until an agent binds them again.
+Releasing when nothing is bound changes nothing and says so.
 
 ## What Dibs will never do to you
 

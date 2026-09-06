@@ -547,6 +547,28 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The resync past the ring rebuilt only incoming mail.** Two other things
+  are owed in the same gap: the verdict on a question or request the agent
+  itself sent, which belongs to the sender's side and carries the question's
+  older serial, and blocking mail an adoption moved in, whose own serial
+  predates the move. Both are rebuilt, from the mail, as the events the ring
+  would have carried.
+
+- **A question sent while a reconnect's gap was being replayed could reach
+  neither the replay nor the stream.** The live channel opened after the
+  replay and from the cursor, so its catch-up pushed the whole gap into a
+  buffer that drops when full; a long gap filled it with history already
+  replayed, and an arrival during the replay landed past it. The channel
+  opens first, from the present, and buffers what arrives while the replay
+  runs.
+
+- **The skills guide told the wrong agent to release a session.** It
+  recommended `update(release_session: true)` when hooks quoting your session
+  reach somebody else; that clears only the caller's own bindings and leaves
+  the other agent's standing, so the repair repaired nothing. The guide says
+  who holds it, how to claim it back from a holder that is not active or only
+  guessed the id, and that an active holder that stated it must release.
+
 - **A subscription that resumed past the ring lost its wakes.** A cursor older
   than the ring got an empty replay after the acknowledgment, so a question
   that arrived while the subscriber was away and whose event had since left

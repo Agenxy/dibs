@@ -568,9 +568,11 @@ Read-only work needs no claim.
 - **A subscription that resumes past the ring is resynced from the inbox.** A
   `subscriptions/listen` carrying `com.dibs/since` older than the ring floor
   cannot have its gap replayed from the ring, and an empty replay would leave a
-  question that arrived in the gap waking nobody. Each message still waiting in
-  the inbox after the cursor is replayed as the `message.sent` notice the ring
-  would have carried; terminal mail is not, because nothing is owed on it.
+  question that arrived in the gap waking nobody. The notices the ring would
+  have carried are rebuilt from the mail: a `message.sent` for each message
+  still waiting that arrived after the cursor, a `message.adopted` for blocking
+  mail moved in after it, and the verdict (`message.answered` and the rest) on
+  each question or request this agent sent that was answered after the cursor.
 - Polling is a **product choice**: MCP 2026-07-28 offers `subscriptions/listen`;
   adopting it is a v1.x option that changes no semantics (the cursor model stays).
 
