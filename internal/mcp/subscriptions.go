@@ -156,12 +156,12 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *
 	// pre-release review, round thirty-one.
 	sub, cancel := s.eng.SubscribeTracked(since)
 	defer cancel()
-	if resuming && wantInbox && !s.replayGap(r.Context(), stream, req.ID, token, agentID, cursor) {
+	if resuming && wantInbox && !s.replayGap(r.Context(), stream, req.ID, agentID, cursor) {
 		return
 	}
 	// Fixed for the lifetime of the stream: 2026-07-28 carries the whole
 	// subscription in the listen call, so there is nothing to re-read.
-	s.pump(r, stream, sub, since, token, req.ID, func() (string, bool, bool) {
+	s.pump(r, stream, sub, since, req.ID, func() (string, bool, bool) {
 		return agentID, wantInbox, wantBoard
 	})
 }
@@ -186,12 +186,12 @@ type wantsFunc func() (agentID string, inbox, board bool)
 // and not a question, which did not. Found by the pre-release review, round
 // thirty-three.
 func (s *Server) pump(r *http.Request, stream sseStream, sub *engine.Subscription, last uint64,
-	token string, subID json.RawMessage, wants wantsFunc,
+	subID json.RawMessage, wants wantsFunc,
 ) {
 	keepalive := time.NewTicker(25 * time.Second)
 	defer keepalive.Stop()
 	ctx := r.Context()
-	p := &pumpState{s: s, ctx: ctx, stream: stream, sub: sub, last: last, token: token, subID: subID, wants: wants}
+	p := &pumpState{s: s, ctx: ctx, stream: stream, sub: sub, last: last, subID: subID, wants: wants}
 	if !p.refill() { // the replay may have run long enough to overflow already
 		return
 	}
@@ -221,7 +221,6 @@ type pumpState struct {
 	stream sseStream
 	sub    *engine.Subscription
 	last   uint64
-	token  string
 	subID  json.RawMessage
 	wants  wantsFunc
 }
@@ -246,7 +245,7 @@ func (p *pumpState) refill() bool {
 	if !p.sub.Lost() {
 		return true
 	}
-	for _, ev := range p.s.eventsAfter(p.ctx, p.last, p.token, p.wants) {
+	for _, ev := range p.s.eventsAfter(p.ctx, p.last, p.wants) {
 		if !p.deliver(ev) {
 			return false
 		}
@@ -256,14 +255,15 @@ func (p *pumpState) refill() bool {
 
 // eventsAfter is every event after last, from the ring; past the ring, what
 // the inbox still owes (ResyncFor), for a stream that follows one.
-func (s *Server) eventsAfter(ctx context.Context, last uint64, token string, wants wantsFunc) []core.Event {
+func (s *Server) eventsAfter(ctx context.Context, last uint64, wants wantsFunc) []core.Event {
 	res, err := s.eng.EventsSince(ctx, "", last, true)
 	var ce *core.Error
 	if errors.As(err, &ce) && ce.Code == "E_CURSOR_TOO_OLD" {
-		if _, wantInbox, _ := wants(); !wantInbox || token == "" {
+		agentID, wantInbox, _ := wants()
+		if !wantInbox || agentID == "" {
 			return nil
 		}
-		evs, _ := s.eng.ResyncFor(ctx, token, last)
+		evs, _ := s.eng.ResyncFor(ctx, agentID, last)
 		return evs
 	}
 	if err != nil || res["error"] != nil {
@@ -362,9 +362,9 @@ func resourceUpdated(uri string, subID json.RawMessage, ev core.Event) map[strin
 // ring or, past the ring, from the inbox itself. Reports whether the stream
 // is still writable.
 func (s *Server) replayGap(ctx context.Context, stream sseStream, subID json.RawMessage,
-	token, agentID string, cursor uint64,
+	agentID string, cursor uint64,
 ) bool {
-	missed, tooOld := s.missedFor(ctx, token, cursor)
+	missed, tooOld := s.missedFor(ctx, cursor)
 	if tooOld {
 		// THE RING IS NOT THE ONLY RECORD. A cursor older than the ring got
 		// an empty replay after the acknowledgment, so a question that
@@ -373,7 +373,7 @@ func (s *Server) replayGap(ctx context.Context, stream sseStream, subID json.Raw
 		// one was missed. The inbox says what is still owed; each waiting
 		// message after the cursor is replayed as the notice the ring would
 		// have carried. Found by the pre-release review, round thirty.
-		missed, _ = s.eng.ResyncFor(ctx, token, cursor)
+		missed, _ = s.eng.ResyncFor(ctx, agentID, cursor)
 	}
 	if s.duringReplay != nil {
 		s.duringReplay()
@@ -388,11 +388,19 @@ func (s *Server) replayGap(ctx context.Context, stream sseStream, subID json.Raw
 	return true
 }
 
-// missedFor is every event the ring holds for this agent after the cursor.
-// tooOld reports a cursor older than the ring, which the ring cannot answer
-// and the inbox can (ResyncFor).
-func (s *Server) missedFor(ctx context.Context, token string, cursor uint64) (evs []core.Event, tooOld bool) {
-	res, err := s.eng.EventsSince(ctx, token, cursor, false)
+// missedFor is every event the ring holds after the cursor, for the caller
+// to filter. tooOld reports a cursor older than the ring, which the ring
+// cannot answer and the inbox can (ResyncFor).
+//
+// UNCHARGED. This read the ring as the agent, and a read as the agent spends
+// its rate budget: the listen that opened the stream had spent the last
+// token, the replay got E_RATE_LIMITED, and an error here was an empty gap,
+// so the stream proceeded from the present past a pending question. The
+// replay is the daemon's own work for a subscriber it already authenticated,
+// so it reads the ring the way the daemon does. Found by the pre-release
+// review, round thirty-four.
+func (s *Server) missedFor(ctx context.Context, cursor uint64) (evs []core.Event, tooOld bool) {
+	res, err := s.eng.EventsSince(ctx, "", cursor, true)
 	var ce *core.Error
 	if errors.As(err, &ce) && ce.Code == "E_CURSOR_TOO_OLD" {
 		return nil, true

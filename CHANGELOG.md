@@ -547,6 +547,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A resumed subscription's replay was charged to the agent's rate budget.**
+  Opening the stream spends one token, and the gap replay read the ring as the
+  agent, spending another: when the listen took the last one the replay got
+  E_RATE_LIMITED, an error was an empty gap, and the acknowledged stream
+  proceeded from the present past a pending question. The replay and the
+  inbox resync are the daemon's own work for a subscriber it already
+  authenticated, and read the ring the way the daemon does.
+
+- **The generated client configuration repeated the url-client claim.** Both
+  `dibs join` and the url-form output said a url client holds no nonce, so
+  every reconnect forks an identity, after the README had been corrected. They
+  say what the README says: `register` hands back a nonce on every transport,
+  the bridge keeps it for the session, and a url client that drops it forks a
+  sibling.
+
 - **A burst during a resumed subscription's replay could drop a question
   silently.** The live channel holds 256 events and the loop drops rather
   than stalls when it is full; a resumed subscription writes its replay before

@@ -144,10 +144,11 @@ args = ["mcp-stdio"]
 env = { DIBS_ADDR = %q, DIBS_DIR = %q, CODEX_MCP_PROTOCOL_VERSION = "2026-07-28" }
 
 # stdio, not the url form, and from another machine that matters MORE rather
-# than less: this session is the long-lived unattended one, and a url client
-# holds no nonce, so every reconnect forks an identity that cannot read its
-# predecessor's mail. The bridge keeps the nonce in DIBS_DIR above, which is
-# what makes a returning session the same agent.
+# than less: this session is the long-lived unattended one. register hands
+# back a nonce on every transport, and a client that keeps it reattaches as
+# the same agent; the bridge keeps it FOR the session, in DIBS_DIR above,
+# across restarts and upgrades. A url client that drops its nonce registers
+# again as a sibling that cannot read its predecessor's mail.
 #
 # Check it: dibs doctor, with the same two variables set.
 `, string(out), self(), remote, dir)

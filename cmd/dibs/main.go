@@ -558,9 +558,10 @@ func mcpConfig(args []string) error {
 	}
 	out, _ := json.MarshalIndent(cfg, "", "  ")
 	fmt.Println("# Only where a client cannot run a process at all. NOT the answer for another")
-	fmt.Println("# machine: run the bridge there instead (see the end of this output). A url")
-	fmt.Println("# client holds no nonce, so each session forks an identity that cannot read")
-	fmt.Println("# its predecessor's mail, and on an unattended remote session that costs most.")
+	fmt.Println("# machine: run the bridge there instead (see the end of this output). register")
+	fmt.Println("# hands back a nonce on every transport; the bridge keeps it for the session,")
+	fmt.Println("# and a url client that drops it registers again as a sibling that cannot read")
+	fmt.Println("# its predecessor's mail, which on an unattended remote session costs most.")
 	fmt.Println(string(out))
 	// The Bearer line shows a prefix so a reader can see it is the same secret
 	// as the header above. Unguarded, that slice panicked on any secret shorter

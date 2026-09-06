@@ -122,11 +122,16 @@ func (e *Engine) EventsSince(ctx context.Context, token string, serial uint64, a
 //     cursor is the only record of whether the sender's subscriber saw it,
 //     and a repeat coalesces on the bridge where a loss does not. Found by
 //     the pre-release review, round thirty-one.
-func (e *Engine) ResyncFor(ctx context.Context, token string, cursor uint64) ([]core.Event, error) {
+//
+// BY AGENT ID, NOT BY TOKEN, and off the rate budget: this is the daemon's
+// own work on behalf of a subscriber it has already authenticated, and
+// charging it as a call meant the listen that spent the agent's last token
+// got an empty resync. Found by the pre-release review, round thirty-four.
+func (e *Engine) ResyncFor(ctx context.Context, agentID string, cursor uint64) ([]core.Event, error) {
 	res, err := e.query(ctx, func() core.Result {
-		l, errRes := e.authRead(token, time.Now())
-		if errRes != nil {
-			return errRes
+		l := e.state.Agents[agentID]
+		if l == nil {
+			return core.Result{"error": core.ErrBadToken}
 		}
 		return core.Result{"events": resyncEvents(e.state, l, cursor)}
 	})
@@ -176,6 +181,17 @@ func resyncEvents(st *core.State, l *core.Agent, cursor uint64) []core.Event {
 	}
 	sort.Slice(evs, func(i, j int) bool { return evs[i].Serial < evs[j].Serial })
 	return evs
+}
+
+// SetRateTokens sets an agent's remaining rate budget. A test knob, like
+// SetRingCap: the bucket refills at rateOpsPerSec, so a test that needs "one
+// call left" cannot get there by making calls and staying there.
+func (e *Engine) SetRateTokens(ctx context.Context, agentID string, n float64) error {
+	_, err := e.query(ctx, func() core.Result {
+		e.buckets[agentID] = &bucket{tokens: n, last: time.Now()}
+		return core.Result{}
+	})
+	return err
 }
 
 // AwaitEvents long-polls until an event after serial matches, or timeout.
