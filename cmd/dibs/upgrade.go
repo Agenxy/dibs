@@ -702,30 +702,36 @@ func unitBinary(unit string) string {
 	if err != nil {
 		return ""
 	}
-	// THROUGH unitTokens, never a whitespace-excluding pattern. The regex read
-	// `/Users/Example User/bin/dibd` as `/bin/dibd`, so a unit naming the
-	// installed binary looked like one pinning a different build: recovery
-	// abandoned a correct service unit and started an unsupervised process
-	// instead, on exactly the machines whose home directory has a space in it.
-	// unitTokens already parses both unit shapes the way each format defines
-	// them, spaces included, which is why the DIRECTORY check beside this one
-	// never had the bug. Found by the pre-release review, round sixty-seven.
-	for _, tok := range unitTokens(string(b)) {
-		// A SYSTEMD DIRECTIVE IS ONE TOKEN. `ExecStart=/path/to/dibd` has no
-		// space between the key and its value, so the token is not a path and
-		// the first cut of this returned nothing for every systemd unit: the
-		// gate caught it, the targeted test did not, because the launchd case
-		// passed. The DIRECTORY check beside this one never needed the same
-		// care, since `-dir /path` makes the path its own token, which is
-		// exactly why assuming one reader covered both was wrong. Found by the
-		// release gate, round sixty-eight.
-		if !filepath.IsAbs(tok) {
-			if _, after, found := strings.Cut(tok, "="); found {
-				tok = after
-			}
+	body := string(b)
+	// BY DIRECTIVE, NOT BY SHAPE, and this is the third round it took.
+	//
+	// Round sixty-seven matched the daemon's name with a regex, which cut a
+	// path containing a space in half. Round sixty-eight took the first token
+	// that looked like an absolute path ending in `dibd`, which reads a
+	// unit's OTHER directives too: `WorkingDirectory=/srv/dibd` above an
+	// ExecStart naming `/opt/dibs/bin/dibd` answered with the working
+	// directory. Then findDrift calls a correct unit wrong and reconcile
+	// rewrites it, discarding whatever the operator had tuned there. Both
+	// cuts were pattern matching over a file with a grammar. This reads the
+	// key that actually names the executable, in each of the two formats this
+	// project writes. Found by the pre-release review, round seventy-eight.
+	if i := strings.Index(body, "ProgramArguments"); i >= 0 {
+		// launchd: the first <string> of the array that follows the key is the
+		// program; the rest are its arguments.
+		if m := plistString.FindStringSubmatch(body[i:]); m != nil {
+			return html.UnescapeString(m[1])
 		}
-		if filepath.IsAbs(tok) && filepath.Base(tok) == "dibd" {
-			return tok
+		return ""
+	}
+	for _, line := range strings.Split(body, "\n") {
+		v, ok := strings.CutPrefix(strings.TrimSpace(line), "ExecStart=")
+		if !ok {
+			continue
+		}
+		// systemd allows prefix characters on the command (`-` to ignore a
+		// failure, `@`, `+`, `!`); none of them are part of the path.
+		if toks := systemdTokens(strings.TrimLeft(v, "-@+!:")); len(toks) > 0 {
+			return toks[0]
 		}
 	}
 	return ""

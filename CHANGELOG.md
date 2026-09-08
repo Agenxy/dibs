@@ -656,11 +656,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   correctly, and only the recovery decision did: planning still used the
   whitespace-excluding parser, so a correct unit was judged drifted and
   reconciliation would rewrite it, discarding operator customisations. Both
-  questions now use the one space-aware reader, and the pattern that could not
-  answer them has been removed rather than left for the next caller. A systemd
-  unit needed one thing more: its directive arrives as a single
-  `ExecStart=/path/to/dibd` token, so the key is stripped before the value is
-  read as a path.
+  questions now use the one space-aware reader. That reader identifies the
+  executable from the key that names it, `ExecStart` for systemd and the first
+  entry of `ProgramArguments` for launchd, rather than by looking for a path
+  shaped like the daemon's: a unit setting `WorkingDirectory` to a directory
+  ending in the daemon's name answered with that instead, and the drift check
+  then called a correct unit wrong.
 
 - **An upgrade misread a service unit whose binary path contains a space.**
   The executable was matched with a whitespace-excluding pattern, so
