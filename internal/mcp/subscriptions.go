@@ -520,8 +520,20 @@ func (s *Server) replayGap(ctx context.Context, stream sseStream, subID json.Raw
 // replay is the daemon's own work for a subscriber it already authenticated,
 // so it reads the ring the way the daemon does. Found by the pre-release
 // review, round thirty-four.
+// THROUGH EventsFrom, WHICH DOES NOT CLAMP. EventsSince treats a cursor of
+// zero as "from wherever the ring starts", a convenience for a caller that has
+// never seen the board. A RESUMING subscriber stating zero means the opposite:
+// it has a position, at the beginning, and a ring floor above it means the
+// beginning is gone. Read through the clamp, that read succeeded, returned
+// whatever the ring still held, and reported no gap, so a question whose event
+// had already left the ring was never resynced and the stream carried on from
+// the present with nothing to announce it. Asking from cursor+1 gives the same
+// exclusive window this always had, and the too-old answer the clamp was
+// swallowing. Round sixty-one fixed this in the refill path and reasoned that
+// the resume path's zero was the blind caller's; it is not. Found by the
+// pre-release review, round seventy-seven.
 func (s *Server) missedFor(ctx context.Context, cursor uint64) (evs []core.Event, tooOld bool) {
-	res, err := s.eng.EventsSince(ctx, "", cursor, true)
+	res, err := s.eng.EventsFrom(ctx, cursor+1)
 	var ce *core.Error
 	if errors.As(err, &ce) && ce.Code == "E_CURSOR_TOO_OLD" {
 		return nil, true

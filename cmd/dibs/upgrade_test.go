@@ -511,13 +511,24 @@ func TestRunningDaemonReportsUnknownOnAReadFailure(t *testing.T) {
 	t.Setenv("HOME", f)
 	t.Setenv("XDG_STATE_HOME", f)
 
-	got := runningDaemon(t.TempDir())
-	if !got.unknown && got.addr == "" {
-		t.Skip("the registry was still readable in this environment, so this case " +
-			"could not be produced; the decision test above still covers the rule")
+	// THE PRECONDITION, ASSERTED. This used to skip on `!got.unknown &&
+	// got.addr == ""` and then fail on the same expression, so the skip always
+	// won and the assertion was unreachable: reverting the behaviour it guards
+	// made the test SKIP rather than fail. A test that cannot report its own
+	// failure is worse than no test, because it reads as coverage. Found by
+	// the pre-release review, round seventy-seven.
+	//
+	// The environment is checked directly instead: HOME and XDG_STATE_HOME
+	// both point at a regular file, so any registry path beneath them must
+	// fail to read. If that is somehow untrue here, the setup says so.
+	if _, err := os.ReadDir(filepath.Join(f, "dibs")); err == nil {
+		t.Fatal("setup: a directory under a regular file was readable, so this " +
+			"environment cannot produce the failure this test is about")
 	}
-	if got.addr == "" && !got.unknown {
-		t.Error("a registry that could not be read reported no daemon rather than " +
-			"an unknown one")
+	got := runningDaemon(t.TempDir())
+	if !got.unknown {
+		t.Errorf("a registry that could not be read reported %+v rather than an unknown "+
+			"daemon: the upgrade then skips the stop it cannot prove is unnecessary and "+
+			"leaves the old daemon serving while reporting the new one", got)
 	}
 }

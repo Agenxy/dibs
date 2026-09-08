@@ -554,6 +554,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A reconnect from the beginning could miss mail the ring had dropped.** A
+  subscriber resuming with a cursor of zero has a position, at the start, and a
+  ring that has moved past it cannot answer. The read treated zero as "from
+  wherever the ring begins", which is the right convenience for a caller that
+  has never seen the board and the wrong answer for one that is resuming: it
+  succeeded, returned what the ring still held, and reported no gap, so a
+  question whose event had already been evicted was never rebuilt from the mail
+  and the stream carried on from the present with nothing to announce it.
+
 - **`[wake] sockets = false` is documented as the per-machine setting it is.**
   Each side reads it from its own data directory, so setting it on a hub
   governs the daemon's peer-socket route and leaves a bridge that joined from
