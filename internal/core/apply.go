@@ -1101,6 +1101,32 @@ func (s *State) applyResume(op *Op, now time.Time) (Result, []Event, error) {
 		}
 		return Result{"agent_id": id, "superseded": true, "activation": rec.Activation}, nil, nil
 	}
+	// A RESUME IS AN ACTIVATION IN A NEW SESSION, and this bound none of it.
+	//
+	// The op named `resume` was the one path that rotated the token, bumped the
+	// activation and left every session binding pointing at the session the
+	// agent had just LEFT. Register in A, resume from B, and the bridge in B
+	// opens its subscription successfully while the daemon withholds the inbox
+	// from it, correctly, because the row still belongs to A; the daemon's own
+	// wake routes still name A too. So the agent is awake, subscribed, and
+	// unreachable until some later call happens to rebind it. Every other
+	// recovery path takes the activation, and this one is the one an agent is
+	// told to use.
+	//
+	// held is read BEFORE anything moves, which is what currentFrom needs
+	// (round forty-four). GATED, like the rest of this cycle's fold changes:
+	// v0.0.6 resume ops bound nothing, and rebinding them on replay would move
+	// sessions that history never moved.
+	if op.V7Semantics {
+		held := op.SessionID != "" && l.holdsSession(op.SessionID)
+		s.dropTakenSession(op, l)
+		if op.SessionID != "" {
+			l.SessionID = op.SessionID
+			l.GuessedSessions = withoutString(l.GuessedSessions, op.SessionID)
+		}
+		l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
+		l.currentFrom(op, held)
+	}
 	l.Token = op.NewToken
 	l.Activation++
 	l.PID, l.ProcStart = op.PID, op.ProcStart

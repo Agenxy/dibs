@@ -554,6 +554,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A resumed agent was awake, subscribed, and unreachable.** `resume` rotated
+  the token and bumped the activation while leaving every session binding
+  pointing at the session the agent had just left. An agent that registered in
+  one session and resumed from another opened a subscription there that the
+  daemon correctly withheld mail from, because the row still belonged
+  elsewhere, and the daemon's own wake routes still named the old session. It
+  stayed that way until some later call happened to rebind it. Resume now takes
+  the session it arrives from, as every other recovery path already did, and
+  only for ops that recorded the decision, so a v0.0.6 ledger rebinds nothing.
+
 - **A recovered agent that kept working never got its durable identity back.**
   Archival blanks an agent's nonce while keeping the index that finds it, and
   the repair that puts it back reached only the dormant recovery path. An agent
