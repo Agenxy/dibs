@@ -57,10 +57,14 @@ func TestHumanAgentDoesNotReadStateOffTheLoop(t *testing.T) {
 			}
 		}()
 	}
+	// EXPLICITLY EPHEMERAL. These four hundred rows are load for the race, not
+	// agents anybody will ever write to. Since v0.0.7 an unstated kind is
+	// persistent, so leaving it unstated made this stress test exhaust the
+	// persistent ceiling and fail on the thing it is not testing.
 	for i := range 400 {
 		if _, err := e.Do(ctx, &core.Op{
 			Kind: core.OpRegister, Name: fmt.Sprintf("writer-%d", i),
-			NewToken: fmt.Sprintf("tok-%d", i),
+			NewToken: fmt.Sprintf("tok-%d", i), AgentKind: core.KindEphemeral,
 		}); err != nil {
 			t.Fatalf("register %d: %v", i, err)
 		}

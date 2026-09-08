@@ -1,11 +1,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"path/filepath"
 	"strings"
 
+	"github.com/agenxy/dibs/internal/boardconfig"
 	xport "github.com/agenxy/dibs/internal/transport"
 )
 
@@ -25,9 +27,17 @@ import (
 // neither, because the file outlives the configuration that made it.
 func resolveTransport(dir string) (scheme, certPath string, err error) {
 	cfg, err := readBoardConfig(dir)
-	if err != nil {
+	// A setting this bridge does not know is not a reason to guess the
+	// transport: configReadable accepts that error so an older bridge can use
+	// a newer daemon's file, and this rejected it, so the parsed
+	// `insecure_plaintext` and TLS settings were dropped and the CLI dialled
+	// https at a plaintext board. Found by the pre-release review, round
+	// twenty.
+	var unknown *boardconfig.UnknownSettingsError
+	if err != nil && !errors.As(err, &unknown) {
 		return "", "", err
 	}
+	forward := err // nil, or the typed unknown-settings error, passed up WITH the answer
 	// The daemon's own rule, from the package they share. Answering it here
 	// separately is what produced three rounds of the CLI describing a
 	// transport the daemon does not serve.
@@ -63,7 +73,11 @@ func resolveTransport(dir string) (scheme, certPath string, err error) {
 			certPath = ""
 		}
 	}
-	return scheme, certPath, nil
+	// The scheme is what the file says even when the file also says
+	// something this build does not know; the caller decides whether that
+	// is a refusal (`mcp-config`, which prints for the daemon) or not
+	// (`origin`, which dials the daemon that is running on it).
+	return scheme, certPath, forward
 }
 
 // clientHost turns a listen address into one a client can dial.

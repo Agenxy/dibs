@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"sort"
@@ -56,6 +57,99 @@ type bridgeState struct {
 	ClientInfo map[string]any `json:"client_info,omitempty"`
 	WantsUI    bool           `json:"wants_ui,omitempty"`
 	Listens    []string       `json:"listens,omitempty"`
+	// WakeToken is the agent token the self-wake watcher subscribes with.
+	// The handoff carried the caller's subscriptions and not this one, so an
+	// upgraded bridge answered every call and never woke its session again
+	// until the agent happened to register or resume. Found by the
+	// pre-release review, round eleven.
+	WakeToken string `json:"wake_token,omitempty"`
+	// WakeSince is the serial the watcher last saw, so the replacement
+	// subscribes with a cursor: an upgrade used to start it at the present
+	// and mail that arrived in the gap woke nobody. Found by the pre-release
+	// review, round fourteen.
+	WakeSince uint64 `json:"wake_since,omitempty"`
+	// WakePending says a notice was owed and deferred to the cooldown when
+	// the image was replaced. The timer dies with the old process and the
+	// cursor had already passed the event, so the next image put nothing
+	// into the session and the reconnect replayed nothing: outstanding mail
+	// unnoticed for as long as nothing else arrived. The next image delivers
+	// the owed notice. Found by the pre-release review, round twenty-two.
+	WakePending bool `json:"wake_pending,omitempty"`
+	// WakeStreams is every agent this bridge watches for, with its
+	// credential and cursor: a bridge serves every agent that registers
+	// through it, and the single WakeToken above carried one. Found by the
+	// pre-release review, round fifty-four.
+	WakeStreams []wakeHandoff `json:"wake_streams,omitempty"`
+	// Thread is the harness thread this bridge serves, as the harness named
+	// it on its tool calls; the restored self-wake streams say they serve
+	// it before the next call names it again. Found by the pre-release
+	// review, round sixty.
+	Thread string `json:"thread,omitempty"`
+}
+
+// wakeHandoff is one watched agent in the handoff.
+type wakeHandoff struct {
+	Key   string `json:"key"`
+	Token string `json:"token"`
+	Since uint64 `json:"since,omitempty"`
+}
+
+// liveWake is the token the self-wake watcher currently holds, for the
+// handoff; the watcher itself is local to the serving loop.
+var liveWake struct {
+	mu      sync.Mutex
+	streams map[string]*wakeHandoff // by key: see inboxWatcher.streams
+	pending bool
+}
+
+func recordWakePending(pending bool) {
+	liveWake.mu.Lock()
+	defer liveWake.mu.Unlock()
+	liveWake.pending = pending
+}
+
+func currentWakePending() bool {
+	liveWake.mu.Lock()
+	defer liveWake.mu.Unlock()
+	return liveWake.pending
+}
+
+// recordWakeStream records the credential and cursor the watcher holds for
+// one agent, replacing what it held for that key.
+func recordWakeStream(key, token string, since uint64) {
+	liveWake.mu.Lock()
+	defer liveWake.mu.Unlock()
+	if liveWake.streams == nil {
+		liveWake.streams = map[string]*wakeHandoff{}
+	}
+	liveWake.streams[key] = &wakeHandoff{Key: key, Token: token, Since: since}
+}
+
+func recordWakeCursor(key string, since uint64) {
+	liveWake.mu.Lock()
+	defer liveWake.mu.Unlock()
+	if st := liveWake.streams[key]; st != nil && since > st.Since {
+		st.Since = since
+	}
+}
+
+// currentWakeStreams is every watched agent, in key order.
+func currentWakeStreams() []wakeHandoff {
+	liveWake.mu.Lock()
+	defer liveWake.mu.Unlock()
+	out := make([]wakeHandoff, 0, len(liveWake.streams))
+	for _, st := range liveWake.streams {
+		out = append(out, *st)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	return out
+}
+
+// resetWakeStreams forgets every watched agent (tests).
+func resetWakeStreams() {
+	liveWake.mu.Lock()
+	defer liveWake.mu.Unlock()
+	liveWake.streams = nil
 }
 
 // selfIdentity is how this process recognises that its own binary changed.
@@ -86,6 +180,27 @@ func currentSelf() (selfIdentity, bool) {
 
 func (a selfIdentity) differs(b selfIdentity) bool {
 	return a.path != b.path || a.size != b.size || !a.mod.Equal(b.mod)
+}
+
+// deliverOwedNotice puts into the session the notice the old image owed
+// and died before its cooldown timer fired; the cursor has passed the
+// event. THROUGH THE WATCHER'S WAKER: a waker of its own here stood beside
+// the one the restored streams write through, and a notification arriving
+// during the restore put two interruptions into the session at once. Found
+// by the pre-release review, round fifty-nine.
+func deliverOwedNotice(w *inboxWatcher) {
+	var wk *selfWaker
+	if w != nil {
+		wk = w.sharedWaker()
+	} else {
+		wk = newSelfWaker()
+	}
+	if wk == nil {
+		return
+	}
+	if err := wk.wake(selfWakeNotice); err != nil {
+		slog.Debug("could not deliver the notice the old image owed", "err", err)
+	}
 }
 
 // carriedState is what a previous image handed us, if this process is a re-exec.
@@ -157,14 +272,45 @@ func openListens() []string {
 //
 // Subscriptions are re-issued as the caller's own request, never reconstructed
 // (R12), which is the same thing followStream does across a daemon restart.
+//
+// sockets is [wake] sockets as THIS image read it. The self-wake watcher and
+// the notice the old image owed are the bridge's half of that switch, and the
+// restore used to re-arm both with no look at it: an operator who turned the
+// route off and then upgraded a running bridge got a replacement that kept
+// waking its session. The setting is read at start, and an in-place upgrade
+// is a start. Found by the pre-release review, round twenty-eight.
 func restoreCarried(ctx context.Context, client *http.Client, url, secret string,
-	out *syncWriter, streams *sync.WaitGroup,
+	out *syncWriter, streams *sync.WaitGroup, w *inboxWatcher, sockets bool,
 ) {
 	s, ok := carriedState()
 	if !ok {
 		return
 	}
 	lastClientInfo, lastWantsUI = s.ClientInfo, s.WantsUI
+	if s.Thread != "" {
+		noteThread(s.Thread)
+	}
+	if !sockets {
+		if s.WakeToken != "" || len(s.WakeStreams) > 0 || s.WakePending {
+			slog.Debug("[wake] sockets = false: the self-wake the old image held is not restored",
+				"owed", s.WakePending)
+		}
+		s.WakeToken, s.WakeStreams, s.WakePending = "", nil, false
+	}
+	// Every stream the old image held, or the one its single field carried
+	// when it predates WakeStreams.
+	watched := s.WakeStreams
+	if len(watched) == 0 && s.WakeToken != "" {
+		watched = []wakeHandoff{{Token: s.WakeToken, Since: s.WakeSince}}
+	}
+	if w != nil {
+		for _, st := range watched {
+			w.startFor(ctx, client, url, secret, st.Key, st.Token, st.Since)
+		}
+	}
+	if s.WakePending {
+		deliverOwedNotice(w)
+	}
 	for _, listen := range s.Listens {
 		line := []byte(listen)
 		noteListen(line)

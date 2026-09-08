@@ -10,10 +10,12 @@ package main
 // rather than deciding anything on their own.
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strings"
 
+	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/paths"
 )
 
@@ -66,6 +68,46 @@ const (
 	schemeTLS   = "https://"
 )
 
+// originFor is origin() for an address this process was TOLD, rather than the
+// one it would choose for itself.
+//
+// `dibs upgrade` discovers the address the target daemon actually bound, from
+// the registry each live daemon writes, precisely because assuming it is how a
+// LAN board gets restarted on loopback. It then verified through origin(),
+// which asks the CLI's own environment and config, so the check ran against
+// whichever board that named. Reproduced by the pre-release review with two
+// boards: upgrade stopped board A, read board B, printed "upgraded" and
+// returned success while A was serving nothing. Discovering an address and not
+// using it is worse than never discovering it, because the report is confident.
+func originFor(hostPort string) string {
+	if hostPort == "" {
+		return origin() // nothing discovered: the CLI's own target is the only answer
+	}
+	if scheme, rest, found := strings.Cut(hostPort, "://"); found {
+		return strings.ToLower(scheme) + "://" + rest
+	}
+	// ONLY WHEN THE CONFIG DESCRIBES THIS ADDRESS, which is the guard
+	// replacementAddr already carries a paragraph about.
+	//
+	// resolveTransport answers for the address the CONFIG names, consulting
+	// rawAddr() itself, so borrowing its scheme for a DIFFERENT address asserts
+	// the configured board's transport about somebody else's: a TLS target
+	// beside a plaintext config is then contacted over HTTP, and a loopback
+	// target beside a TLS config over HTTPS. Both fail at the transport, which
+	// upgrade reads as "the board did not come back". Found by the pre-release
+	// review, in the fix for the round before it.
+	if sameHostPort(hostPort, addr()) {
+		return origin()
+	}
+	// A different daemon, so the address is all there is to go on: this is the
+	// daemon's own default rule, and it is what that daemon resolved from a
+	// bare address unless its config says otherwise.
+	if isLoopbackHostPort(hostPort) {
+		return schemePlain + hostPort
+	}
+	return schemeTLS + hostPort
+}
+
 func origin() string {
 	if a := rawAddr(); a != "" {
 		if scheme, _, found := strings.Cut(a, "://"); found {
@@ -94,7 +136,8 @@ func origin() string {
 	// test calls the shared resolver directly and so could not see that this
 	// function never did.
 	scheme, _, err := resolveTransport(paths.DataDir())
-	if err == nil && scheme != "" {
+	var unknown *boardconfig.UnknownSettingsError
+	if scheme != "" && (err == nil || errors.As(err, &unknown)) {
 		return scheme + "://" + addr()
 	}
 	// Absent config: back to the inference, which is right for the default
@@ -138,7 +181,31 @@ func isLoopbackHostPort(hostPort string) bool {
 // data race. A check that depends on another function's side effects is not a
 // check; it is a coincidence.
 func checkConfigReadable() error {
-	if _, err := readConfiguredAddr(paths.DataDir()); err != nil {
+	return configReadable(paths.DataDir())
+}
+
+// configReadable is the decision, on a directory, so a test can hand it one.
+//
+// UNKNOWN KEYS ARE NOT UNREADABLE. The file decoded and the address came out
+// of it; what this build could not place, a newer daemon may well own. That is
+// the ordinary state of every running session between a `task install` and
+// its own restart, because the bridge is the binary the session started with.
+// This refused a `fallback` key the daemon had accepted and started on, and
+// said "the daemon will not start on it either" while it was serving. A
+// program that is not the file's authority does not get to speak for the one
+// that is. The daemon still refuses unknown keys itself, loudly; if it has, the
+// connection below fails and says so.
+//
+// A file that does not PARSE is a different matter: nothing decoded, the
+// address is a guess, and the daemon really cannot start on it. That refusal
+// stays, with its reasons.
+func configReadable(dir string) error {
+	_, err := readConfiguredAddr(dir)
+	var unknown *boardconfig.UnknownSettingsError
+	if errors.As(err, &unknown) {
+		return nil
+	}
+	if err != nil {
 		return fmt.Errorf("this board's dibs.toml cannot be read (%w). The daemon "+
 			"will not start on it either, so anything reachable now is not the board "+
 			"you configured, and requests would carry this directory's local secret "+

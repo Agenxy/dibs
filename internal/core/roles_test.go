@@ -20,8 +20,22 @@ func TestCoordinatorIsGrantedNotClaimed(t *testing.T) {
 	if !s.Agents["worker"].IsCoordinator() {
 		t.Fatal("admin grant should promote the agent")
 	}
-	if _, _, err := s.Apply(&Op{Kind: OpGrantRole, To: "worker", Mode: "superuser"}, t0); err == nil {
-		t.Fatal("unknown roles must be rejected")
+	// ADMIT rejects an unknown role, not Apply, and asserting it here is the
+	// point rather than a detail. This asked State.Apply to reject "superuser",
+	// which passed while the check sat in the fold: it froze the wrong
+	// placement, so the test written to guard the rule was pinning the bug that
+	// broke it. Apply replays ops accepted by older code, so a vocabulary rule
+	// there is retroactive and the day the accepted set changes is the day the
+	// daemon refuses its own ledger.
+	if err := Admit(&Op{Kind: OpGrantRole, To: "worker", Mode: "superuser"}, DefaultLimits()); err == nil {
+		t.Error("Admit must reject an unknown role: nothing else may, because " +
+			"Apply is the fold")
+	}
+	// And the fold takes what it is given, because by then the decision was made
+	// by a build that may no longer exist.
+	if _, _, err := s.Apply(&Op{Kind: OpGrantRole, To: "worker", Mode: "superuser"}, t0); err != nil {
+		t.Errorf("Apply refused a recorded op (%v): a ledger written when that "+
+			"role was legal would stop this daemon booting", err)
 	}
 }
 

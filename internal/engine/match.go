@@ -960,11 +960,16 @@ func annotateMatching(res core.Result, sug []Suggestion, outcome matchOutcome, s
 		return
 	}
 	switch {
-	case st.Hint != "":
-		res["matching_hint"] = st.Hint
-	case outcome == matchedAlreadyIn:
-		res["matching_hint"] = "the work closest to this is in an agent you are already in. " +
-			"read it with read_space; you are not working alone"
+	// A FAILED SPACE OUTRANKS THE STATUS HINT.
+	//
+	// The status hint comes first because it explains why matching answered
+	// weakly, and it exists for every non-ready phase, including the
+	// suggest-only phase that a zero join threshold produces: which is the
+	// DEFAULT. So on an ordinary board, an agent whose fallback space could not
+	// be created was told "no join threshold is set" and nothing else. That
+	// sentence is true and it is not the news: the news is that there is
+	// nowhere for the next agent to find them, and it was reachable only on a
+	// board configured in a way most are not.
 	case outcome == matchedNoSpace:
 		res["matching_hint"] = "nothing matched this work, and the space Dibs would " +
 			"have opened for it could not be created: a limit, or a name it could " +
@@ -972,6 +977,11 @@ func annotateMatching(res core.Result, sug []Suggestion, outcome matchOutcome, s
 			"in, and this is NOT a finding that you are working alone. Open one " +
 			"yourself with open_space, or check `dibs doctor` for a limit you have " +
 			"reached"
+	case st.Hint != "":
+		res["matching_hint"] = st.Hint
+	case outcome == matchedAlreadyIn:
+		res["matching_hint"] = "the work closest to this is in an agent you are already in. " +
+			"read it with read_space; you are not working alone"
 	case outcome == matchedNoOpinion:
 		res["matching"] = "no-opinion"
 		res["matching_hint"] = "Dibs could not tell what this work touches, so it has " +

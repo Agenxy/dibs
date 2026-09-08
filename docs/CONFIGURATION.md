@@ -45,6 +45,7 @@ addr = "100.72.14.3:4777"    # a tailnet address: agents on four machines, one b
 |---|---|---|
 | `extend_turn_for` | `all` | Which news may extend an agent's turn: `all`, `urgent`, `none`. |
 | `notices_wake` | `true` | Whether situational awareness alone may extend a turn. |
+| `sockets` | `true` | Whether the session-socket routes run at all: the daemon's peer-socket wake and the bridge's self-wake. |
 | `exec.<harness>.argv` | *(none)* | The command that reaches that harness when an agent is **not running**. |
 | `exec.<harness>.cooldown` | `90s` | The shortest gap between two wakes of the same agent. |
 
@@ -61,16 +62,21 @@ blocked on arrives for one of its agents that has stopped:
 
 ```toml
 [wake.exec.codex]
-argv = ["/Applications/ChatGPT.app/Contents/Resources/codex",
-        "exec", "resume", "{thread}", "{message}"]
+argv     = ["/Applications/ChatGPT.app/Contents/Resources/codex",
+            "exec", "resume", "{thread}", "{message}"]
+fallback = ["/Applications/ChatGPT.app/Contents/Resources/codex",
+            "queue", "--thread", "{thread}", "--message", "{message}"]
 cooldown = "90s"
 ```
 
-**Which Codex command, and why this one.** Both were measured on 2026-08-22.
+**Which Codex command, and why this one.** Both were measured on 2026-08-22,
+and the `fallback` on 2026-09-05.
 
 `codex exec resume <uuid> "<text>"` continues that thread's history in a new
-headless process, which registers, reads its mail and acts. It works whether or
-not anything has the thread open, which is what a wake has to do. On builds from
+headless process, which registers, reads its mail and acts. It works for a
+thread nothing has open; a thread the desktop app holds open refuses it, which
+is what the `fallback` line is for (see below), so an entry without one leaves
+open desktop threads unreachable. On builds from
 2026-08-18 it takes a per-thread writer lock, so it refuses rather than colliding
 with a session that is already running; on older builds two of them interleave
 into one transcript, which is a good reason to keep the cooldown.
@@ -82,8 +88,95 @@ was not running it returned `Queued message …` and nothing woke: the message
 waits for somebody to open that conversation. Useful when you know the app is
 up and you want the existing window to act; not a wake on its own.
 
+**Claude Code.** Measured on 2026-08-26, the same way.
+
+```toml
+[wake.exec."claude code"]
+argv = ["claude", "--resume", "{thread}", "-p", "{message}"]
+cooldown = "90s"
+```
+
+`claude --resume <session-id> -p "<text>"` continues that session in a new
+headless process. Watched end to end: a seeded session's transcript went from 15
+lines to 56, the notice arrived as a turn, and the agent's first action was to
+call `register` to go and look at the board, which is exactly what a wake is for
+and the whole of what it should cause.
+
+One caveat worth knowing before you rely on it. A headless `-p` process does not
+have the permissions an interactive session does, so an agent woken this way can
+find its own Dibs calls refused, which is what happened on the measured run
+after it decided to look. It still beats not being told: the session is running
+and its own hooks fire from there. If your agents need tool access on a wake,
+give that process the permissions it needs rather than assuming it inherits
+them.
+
+**A harness may refuse to resume a thread it already has open, so give it a
+second command.** `codex exec resume` starts a CLOSED thread and fails on one
+that is open in the Codex desktop app: `thread-store conflict: thread <id>
+already has an active writer`, exit 1, and no configuration changes that. The
+app holds the writer for as long as the thread is open. `codex queue` is the
+other half: it delivers straight into an OPEN thread, where the app's own
+app-server drains it and injects it as a user message, and to a closed thread
+it exits 0 and parks the message where nothing reads it until somebody opens
+that thread by hand. The two are exact inverses.
+
+So a codex entry names both, and the daemon tries them in order. The primary
+is the one that can be confirmed for a closed thread; the fallback runs only
+when the primary exits non-zero AND its output says the thread is open
+(`active writer`, `thread-store conflict`), and is the one that can be
+confirmed for an open one. A primary that fails for any other reason is a
+failed wake and gets the retry every failure gets: `codex queue` exits 0 for a
+closed thread too, parking the message, and that must not count as a wake.
+
+```toml
+[wake.exec.codex]
+argv     = ["codex", "exec", "resume", "{thread}", "{message}"]
+fallback = ["codex", "queue", "--thread", "{thread}", "--message", "{message}"]
+```
+
+Measured on this machine, both directions. A thread open in the desktop app
+refused `exec resume`, took `queue`, and its own transcript then carried
+"Dibs: check the board." followed by the agent checking in and answering the
+two questions it had been sent. That case had been reported as unreachable for
+weeks, because only the first command was ever configured. The reverse, a
+closed CLI thread, resumed on the primary and parked on the fallback, which is
+why the order is not arbitrary.
+
+`fallback` obeys every rule `argv` does: whole-element substitution, no shell,
+argv[0] named in this file and never a placeholder.
+
+**A wake runs in the agent's own directory.** It has to, and for a long time it
+did not. `codex exec resume` refuses to start outside a trusted directory, and a
+daemon started by launchd has `/` as its working directory, so every wake it
+attempted exited 1 without reaching anyone.
+
+This was diagnosed twice as launchd putting the daemon in a different security
+session with no login keychain. **That was wrong**, and the wrong explanation is
+recorded here because it cost two investigations: a probe LaunchAgent in the
+identical domain and `ProcessType` as `dibd` read the login keychain without
+trouble and ran a complete `claude --resume` turn, exit 0. The security session
+was never involved. The working directory was the whole difference.
+
+The daemon now runs each wake in the directory the agent registered from, and
+names that directory when a command fails. It still will not print the command's
+output, because a wake command runs a whole agent turn and that output is
+somebody's decrypted mail; it prints the argv instead, so you can run it
+yourself and see what is being withheld.
+
+**Why you want one of these even though the socket route needs no setup.** The
+socket is best effort: the receiving session decides whether to accept a peer
+message and sends no receipt, and a Claude Code session running in
+`bypassPermissions` mode HOLDS peer messages for its human. That is the mode an
+unattended fleet runs in, so for those agents the socket route delivers nothing
+and nothing reports it. A command is the route the daemon can confirm, because
+it sees the exit status. `dibs doctor` tells you which of the two a board has.
+
 The key under `exec` is the harness as agents report it, lowercased: `codex`,
-`claude code`. Each takes `argv` and an optional `cooldown`.
+`claude code`. Each takes `argv` and an optional `cooldown`. Check what your
+agents actually report before trusting a key to match: the board shows values
+like `Codex`, `Claude Code` and `codex-quarters`, and only an exact lowercased
+match is a match, so a harness that reports a variant gets no wake and nothing
+says so.
 
 **`argv`, never a shell string.** There is no shell anywhere in this path.
 `{thread}`, `{agent}`, `{from}`, `{type}` and `{message}` each replace one
@@ -93,14 +186,25 @@ sends reaches this: the command comes from this file and there is no tool, op
 or admin route that can change it. That is deliberate, because a wake command
 is arbitrary code running as you.
 
-**`{thread}` is the harness's thread, not the agent's `session_id`.** They are
-different identifiers and only one of them can be resumed: a `session_id` names
-the harness process (`host-92368`), and dies with it. Dibs fills `{thread}` from
-the agent's session aliases, taking the NEWEST with the shape a resume command
-accepts. Newest, not first: aliases are appended, so a persistent agent that has
-reattached holds several and only the last one is the activation it is in.
-Resuming an older one starts a real session that is not the one holding the
-mail, and the board logs a successful wake for an agent that hears nothing. An
+**`{thread}` is the harness's thread, and it is the one the harness reported
+last.** Dibs fills it with the agent's current session (`current_session` on
+the board: the id its harness most recently reported, by alias or by a stated
+`session_id`) when that has the shape a resume command accepts. A thread
+beats the bridge's own `host-<ppid>`: a call that states its thread and
+carries the bridge id as an alias is current on the thread, and the bridge id
+re-sent on every later call does not displace it. When the
+harness's last report is not a thread, no thread is known for the current
+activation and the exec route stands down until one is bound: the threads
+the agent held before are the activations it left, and resuming one of those
+wakes the wrong session. Only a row with no current session recorded falls
+back to its newest thread-shaped alias, and failing that to a thread-shaped
+`session_id`. A bridge-derived `session_id` such as `host-92368` names the
+harness process, dies with it, and is never resumed. A persistent agent that
+has reattached
+holds several threads, and a return to an earlier one makes it current: the
+activation it is in, not the one it bound last. Resuming any other starts a
+real session that is not the one holding the mail, and the board logs a
+successful wake for an agent that hears nothing. An
 agent that has published no such identifier is never woken, because there would
 be nothing to hand the command.
 
@@ -109,9 +213,24 @@ never put on a command line**: the agent reads it over its authenticated
 connection with its own token, which is the same reason the bodies are
 encrypted at rest.
 
-Only a question, a request or a handoff wakes anything, and only for an agent
-that is not already active. A notice does not justify starting a process, and
-an agent that is running was going to see the message anyway.
+Only work somebody is blocked on starts a process: a question, a request, a
+handoff, or a **verdict**, which is the answer to something this agent asked and
+then stopped for. A notice does not justify starting a process on the operator's
+machine.
+
+The other half of the test is whether the agent is *reachable already*, and it
+is not `active`. `active` means the idle lease has not lapsed, which is
+forty-five minutes by default, so an agent whose turn ended seconds ago is still
+`active` and is still not running: treating that as "no wake needed" discards
+the one attempt the message gets. What is asked instead is whether the agent has
+called Dibs within the wake cooldown, which is real evidence of a live process
+rather than an unexpired lease.
+
+### `extend_turn_for`: which news may extend a turn already running
+
+Everything above is about a stopped process. This is the separate question of
+what an agent that IS running is told at its next turn boundary, and it has no
+power to start anything.
 
 
 `all` means anything unread wakes its recipient, once, when it arrives. A fleet
@@ -123,27 +242,55 @@ the keyboard is the failure Dibs exists to prevent.
 handoffs, unacknowledged announcements, changes to the agent's own standing.
 Choose it if you would rather an FYI never cost a turn.
 
-`none` never extends a turn. Dibs becomes strictly pull-shaped, with the
-human's notification and the `waiting` line on every result as the only signals.
+`none` never extends a turn: at a turn boundary, Dibs injects nothing, and the
+human's notification and the `waiting` line on every result are what an agent
+sees of its mail until it reads it. It governs turn extension only. The wake
+routes are separate settings: `[wake.exec]` runs whatever the operator wrote
+there, and the harness session socket is tried where one is published and
+`sockets` is on, whatever this says. An operator who wants no unsolicited
+activations at all sets `sockets = false` and configures no `[wake.exec]`
+entries; there is no third route. The daemon reads `sockets` at start and the
+bridge at its own start, which includes the in-place upgrade a running bridge
+performs when its binary changes: a self-wake carried across that upgrade is
+restored only while the switch is on.
+
+**It is a per-machine setting, and on a fleet that spans machines that matters.**
+Each side reads it from the data directory of the process reading it: the
+daemon from the board's, and a bridge from its own. A bridge that joined a
+remote hub has its own directory, holding the secret it was given and nothing
+else, so `sockets = false` set on the hub governs the daemon's peer-socket
+route and leaves every remote bridge waking its own session as before. Set it
+on each machine that runs a bridge. This used to be described as one switch
+covering both routes, which is true on one machine and was silently false
+across two.
 
 Each message wakes once either way, so an agent that read something and chose
 not to act is not asked again. Work somebody is blocked on comes back on the
 announcement retry. See [WAKE-MECHANISMS.md](../WAKE-MECHANISMS.md).
 
 `notices_wake` covers the other half: a **notice** is something that happened
-TO an agent and that it could not infer, such as being evicted, having a request
-approved, or another agent joining a space it is working in.
+TO an agent and that it could not infer, such as being evicted or another agent
+joining a space it is working in.
+
+**A verdict is not one of them.** An answer, an approval, a denial or a decline
+is the reply to something this agent asked and then stopped for, so it is
+BLOCKING: it is counted separately, it reaches `urgent` delivery, and
+`notices_wake = false` does not suppress it. This section named an approved
+request as an example of what the setting governs, which is the opposite of what
+the code does, and an operator turning it off to save tokens would have expected
+to stop hearing the one thing they cannot afford to miss.
 
 On by default, because "an agent is told what happened to it" is a guarantee
 Dibs already makes, and a guarantee that holds only for operators who found a
 config file is not one.
 
-Turn it **off** to buy the tokens back. Extending a turn revives a thread that
-may be long and whose prompt cache is cold, and on a fleet of idle sessions that
-is a real bill to pay for "somebody joined your space". Nothing is lost when you
-do: notices queue, ride along on any wake that happens for another reason, and
-arrive in full at the agent's own `check_in`, which it makes once per activation
-anyway. What you give up is latency, not delivery.
+Turn it **off** to buy the tokens back on the situational half. Extending a turn
+revives a thread that may be long and whose prompt cache is cold, and on a fleet
+of idle sessions that is a real bill to pay for "somebody joined your space".
+Nothing is lost when you do: those notices queue, ride along on any wake that
+happens for another reason, and arrive in full at the agent's own `check_in`,
+which it makes once per activation anyway. What you give up is latency, not
+delivery, and verdicts are unaffected either way.
 
 Mail is unaffected either way, because somebody is blocked on an unanswered
 question and nobody is blocked on knowing who joined a space.
@@ -162,16 +309,18 @@ notices_wake = false         # ...and do not spend a turn on situational awarene
 |---|---|---|
 | `agent_ttl` | `5m` | How long an agent **that registered a PID** may be silent before its lease lapses. Shorter is faster crash detection; longer suits agents that run long silent steps. |
 | `idle_ttl` | `45m` | The same for agents with **no PID**, where silence is the only evidence. This governs the config `dibs mcp-config` prints, so an operator who tunes `agent_ttl` and sees nothing change is hitting this one. |
-| `max_persistent_agents` | `16` | How many STANDING identities the board may hold. |
+| `max_persistent_agents` | `64` | How many STANDING identities the board may hold. Unset, it follows `max_agents` when that is set lower. |
 | `max_agents` | `64` | How many live agents of any kind. |
 | `blob_store_bytes` | *(built-in)* | A hard cap on the attachment store. Over it, eviction drops referenced content rather than exceed the bound, so a recipient can hold a message naming a blob that is gone. |
 
 **`max_persistent_agents` is reached by accumulation, not by concurrency.** A
 persistent agent holds its slot while dormant, which is the point of one: its
 mailbox and memberships survive the harness restarting. So the ceiling fills up
-over days rather than at peak, and a fleet of sixteen standing roles meets the
-default of sixteen while the board holds sixteen agents of a possible
-sixty-four.
+over days rather than at peak: a fleet of standing roles meets it while the
+board holds far fewer live agents than `max_agents` allows. The default is the
+same as `max_agents`, and when only `max_agents` is set, the persistent
+ceiling follows it down, because a default may not make a configuration
+invalid.
 
 Before raising it, read the number as a signal. That ceiling is usually reached
 because siblings accumulated: an agent that could not prove it was itself and
@@ -269,8 +418,9 @@ anything holding it can reattach *as* that agent, rotate its token and take its
 mailbox. Putting one in `dibs.toml` would hand the admin identity to every
 process running as you, which is worse than the race it closes.
 
-To get the fingerprint, start the agent. The daemon cannot grant the role yet,
-and logs the line to paste:
+To get the fingerprint, start the agent: `register` returns it as
+`fingerprint`, and the daemon, which cannot grant the role yet, logs the line
+to paste:
 
 ```
 to grant it, pin this agent's identity in dibs.toml
@@ -280,6 +430,12 @@ to grant it, pin this agent's identity in dibs.toml
 ```
 
 Paste it in and restart. Nothing secret is typed, stored or sent.
+
+A row that holds a role, or bears a name declared under `[roles]`, is
+recovered by its nonce only. A name plus a session id, neither of them
+secret, reattaches an ordinary agent that lost the nonce it was given; for a
+privileged one that would be a fresh admin token for anyone who can read a
+session id off a hook, so `register` refuses it with `E_NEEDS_NONCE`.
 
 Without `[roles.identity]` the role is **not granted**, and the daemon says so.
 That is deliberate. Pinning whoever registered first held every later impostor
@@ -299,13 +455,30 @@ agent and take its token, its mailbox and its role. The daemon now detects and
 refuses that value, so following the old advice bought the exposure and not
 even the grant.
 
-If you genuinely mean to hand the role to a different agent, put the new
-agent's fingerprint here and delete that name from `roles.pinned`.
+If you genuinely mean to hand the role to a different agent, it is **three
+steps and all of them matter**, in this order:
+
+1. `dibs admin member <the old agent>`. Editing config decides what is
+   GRANTED, and a role already held is replayable state that nothing in the
+   reconciler takes away: skip this and the predecessor keeps reading every
+   mailbox while you believe the role moved. This paragraph used to name only
+   the two steps below, which is the wrong direction for a security document
+   to be wrong in. See `SECURITY.md`, and issue #73 for making the config
+   sufficient on its own.
+   A demotion made while the daemon runs is honoured by the startup
+   reconciler for the rest of its run: its reapply ticks in the first two
+   minutes no longer put the role back before you get to step 3.
+2. Put the new agent's fingerprint here, and delete the old name from
+   `roles.pinned`.
+3. Restart `dibd`. Both files are read at startup, so editing either one under
+   a running daemon changes nothing.
 
 **One agent, one role.** Naming the same agent under both `coordinator` and
-`admin` is refused: an agent holds a single role, so the reconciler would grant
-one and then the other every fifteen seconds for the whole startup window.
-`admin` already includes everything `coordinator` can do.
+`admin` is refused when you spell it the same way in both lists, and validation
+compares strings: a name and an id are two strings for one agent, so
+`coordinator = ["fleet-lead"]` beside `admin = ["Fleet Lead"]` gets past it.
+The reconciler settles that after resolving, where the aliases are visible, and
+`admin` wins because it already includes everything `coordinator` can do.
 
 The grant window closes about two minutes after start. A name that never
 appears is reported once and then left alone, rather than standing open for

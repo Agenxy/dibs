@@ -133,7 +133,12 @@ func stopDaemon(dir string) error {
 	// Wait, so the caller can start a replacement immediately. Without this,
 	// `dibs stop && dibd &` races the outgoing process for the flock and the
 	// new daemon refuses to start, which reads as a broken command.
-	deadline := time.Now().Add(10 * time.Second)
+	// LONG ENOUGH FOR A REAL SHUTDOWN. Ten seconds was arbitrary and too short:
+	// the daemon closes its ledger on the way out, and one that has just replayed
+	// thousands of records can take longer than that. Waiting costs nothing and
+	// the alternative, below, is an operator told their board is fine while it
+	// disappears behind them.
+	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
 		// Signal 0 tests for existence. An error here means the process is GONE,
 		// which is the success we are waiting for: hence returning nil on a
@@ -147,7 +152,18 @@ func stopDaemon(dir string) error {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return fmt.Errorf("dibd (pid %d) did not exit within 10s of SIGTERM; "+
-		"it is still holding %s. Send SIGKILL yourself if you are sure: kill -9 %d",
-		d.PID, dir, d.PID)
+	// AND SAY THAT THE SIGNAL LANDED, because it did.
+	//
+	// This used to read "it is still holding <dir>", which the caller turned
+	// into "nothing else was changed". Both are false in the way that matters: a
+	// SIGTERM HAS been delivered and the daemon is on its way out. It exited a
+	// few seconds after this fired, and because a clean exit is not a crash,
+	// launchd's KeepAlive did not bring it back. The board went down and the
+	// operator was told it had not.
+	return fmt.Errorf("dibd (pid %d) has been sent SIGTERM and has not exited after "+
+		"60s. It is shutting down, not ignoring you, so treat it as STOPPING rather "+
+		"than running: it will release %s shortly, and nothing will restart it, "+
+		"because a clean exit is not a crash. Start it again with `dibd -dir %s`, or "+
+		"if it is genuinely wedged: kill -9 %d",
+		d.PID, dir, dir, d.PID)
 }

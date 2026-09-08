@@ -5,7 +5,152 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-09-08
+
 ### Security
+
+- **Recovering into a new session left the previous session's token working.**
+  The branch that recognises a real move re-armed the awareness gate, took the
+  process and repointed every session binding, while handing back the row's
+  existing credential. The session the agent had just left could therefore
+  still read the mailbox, still act in whatever role the row carries, and move
+  the wake routing back to itself on its next call. `SECURITY.md` promises the
+  previous token is revoked on register, reattach and resume, and on this path
+  it was not. A response-loss retry still keeps its token, because an identical
+  registration arriving twice is one call whose answer was lost and rotating
+  there would revoke the credential the caller is already using.
+
+- **A register vetted for one peer's thread could strip another active
+  peer's session id.** The fold dropped both ids a register carried from every
+  other row once the ingress had named one holder, and the ingress vets only
+  thread-shaped primary ids: a register carrying a dormant peer's thread as its
+  alias and an active peer's synthetic `host-` id as its `session_id` took
+  both, and the active peer's hooks resolved to the newcomer. Each binding is
+  dropped on its own authority: the row the ingress named, a row that is not
+  active, or one that only guessed the id.
+
+- **An approved `grant: member` could be undone by the reconciler.** The
+  protection for a person's role decision covered the admin API's grant and
+  not the other way a person changes a role: approving a grant request. A
+  tick in the startup window after an approved demotion put the configured
+  role back. A grant a person approves stands like one they make directly.
+
+- **A minted recovery nonce was written to the ledger in the clear.** The
+  ledger seals the nonce a caller states; the one the daemon mints for a
+  caller that sends none, this cycle's default, went into `ledger.jsonl` as
+  plaintext. A copied ledger gave up every default registration's recovery
+  credential without the key. It is sealed and opened like the stated one.
+
+- **The reconciler could still undo a person's demotion.** Round eighteen
+  recorded the person's decision beside the loop, after the demotion had
+  applied; a reconciler tick between the two re-granted. The decision is now
+  made on the engine's loop with the grant itself: a role set by a person
+  through the admin API stands against a plain regrant for the rest of the
+  run, with no interleaving to lose.
+
+- **The documented handover could leave the predecessor with admin.** The
+  startup reconciler reapplies `dibs.toml` every fifteen seconds for two
+  minutes, and the handover says to demote first, then edit, then restart: a
+  tick between the demotion and the restart put the role back and ledgered
+  it. A role a person changes through the admin API during a run stands for
+  the rest of that run; the restart reads the file the person edited.
+
+- **A retired holder could recover and reclaim another agent's live
+  session.** A signed-off row keeps its session bindings; the ingress counts
+  a retired row as no holder, so another agent took the thread; nonce
+  recovery then revived the old row with its bindings intact. Two active
+  holders, and hooks resolved to the old one. A revived row yields every
+  session another live row holds.
+
+- **The nonce-only rule for privileged rows read the name and not the id.**
+  The `[roles]` table resolves an agent by id as well as by name, and a row
+  renamed for display keeps the id the table names, so a declared identity
+  awaiting its first grant could still be recovered by its display name and
+  a session id. The guard reads both.
+
+- **A role could be recovered without its credential.** An agent that
+  registers without a nonce is given one, and until it is lost, a name plus a
+  session id, neither of them secret, reattaches that row: the
+  persistent-by-default convenience. The role and the pinned fingerprint stay
+  with the row, so for a row holding admin or coordinator, or bearing a name
+  the operator declared for one, that convenience was a fresh privileged
+  token for anyone who could read a session id off a hook, and the reconciler
+  would grant the role to whoever recovered a declared name before its first
+  grant. Those rows are recovered by their nonce and nothing else, refused at
+  ingress with `E_NEEDS_NONCE`; the daemon hands the engine the declared
+  names at startup.
+
+- **One registration could take two session ids from two rows and free only
+  one.** The ingress vets the session id a caller states and the alias the
+  daemon joins into one "taken from" record; when the primary came from a
+  dormant A and the alias from a dormant B, the record named one of them and
+  the other kept its id alongside the registrant. Two stated holders the
+  moment it checked in, and a coin flip on every hook. The fold drops each
+  id from the row the record names for it, from a row that is not active,
+  and from one that only guessed it; an active row that stated an id the
+  record does not name keeps it, because the ingress did not find it
+  claimable (see the first Security entry).
+
+- **An explicit `bind_session` left the id reclaimable.** An id inferred for
+  an agent is recorded as a guess, and a live claim may take a guess even
+  from an active holder, which is right for a guess. Binding that id
+  explicitly assigned it and left the guess standing, so the confirmation
+  protected nothing. An explicit bind is stated now.
+
+- **A nonce recovery that stated a session id left the old holder holding it
+  too.** The ingress vets a session id a caller states and the alias the
+  daemon joins into one "taken from" record, and the fold dropped only the
+  alias from the row that lost it. So an agent reattaching with its nonce and
+  its `session_id` took a thread from a holder that had stopped answering and
+  left that holder holding it: two stated holders, and on the old one's next
+  `check_in` a coin flip on every hook, including which agent's mail a hook
+  lists. Both fields are dropped now, at the one place every bind calls.
+
+- **An adoption marked mail as recoverable, and the mark outlived the name it
+  was for.** The round-three fix for adopted mail below the heir's watermark
+  marked each moved message `adopted_from`, and every reader exempted marked
+  mail from the watermark. The mark said an adoption happened. It did not say
+  to whom: a name is purged and comes back as the same id, registration raises
+  the watermark to keep the previous occupant's mail from the replacement, and
+  the mark walked straight through it. The replacement could read, by inbox
+  and by serial, the mail the predecessor had been given.
+
+  Each adoption now records its serial as well (`adopted_serial`, a frozen
+  tag), and the exemption belongs to the incarnation whose creation precedes
+  it. One rule, `adoptedFor`, for every reader of the mark; the engine's
+  `read_mail` and delivery marking call the same one.
+
+- **Adopting a mailbox handed over mail the mailbox had been told was not its
+  own.** `TruncatedBefore` is the watermark that stops a name coming back from
+  reading the previous occupant's mail: an id is derived from the name, so a
+  returning name reuses the id, and a sweep written before v0.0.7 removes the
+  agent row while keeping the messages. `Inbox` filters on it. Both adoption
+  paths, direct and approved-request, read every message matching the id and
+  readdressed it, so the one route that exists to RECOVER an abandoned mailbox
+  was also the route that disclosed the mail that mailbox had been excluded
+  from.
+
+  Worse than an ordinary leak because of who authorises it: the approver is
+  shown a count. Nothing in the request says some of those messages were
+  addressed to somebody else entirely, so the human granting it cannot see what
+  they are granting. Authorising the recovery of an identity is not authorising
+  the disclosure of its predecessor's mail. Both paths go through one helper
+  now, since two copies of one rule is how only one of them got fixed the last
+  three times. Found by the pre-release review, with a reproduction.
+
+- **`human_unlock` raised a system sheet on the operator's screen for a caller
+  it had not authenticated.** The sentence on that sheet is the entire control:
+  a person is asked to approve something, and the one field telling them who is
+  asking came from `CallerName`, which ANSWERS for a token it does not know,
+  with "an unidentified caller". Right in a log line, wrong here. So anything
+  holding the coordination secret could make the machine ask its human to
+  approve a request attributed to nobody, while `SECURITY.md` claimed the
+  requester was resolved "from the authenticated token". Nothing authenticated
+  it. The call now refuses an unknown token before the sheet is raised.
+
+  Physical approval was still required, so this was never a biometric bypass.
+  The attribution was false, and the attribution is what the human decides on.
+  Found by the pre-release review.
 
 - **A stolen board session could read every mailbox and grant a role.** Cookies
   are host-scoped and never port-scoped, and `SameSite` does not separate ports
@@ -128,13 +273,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   called the right thing before the intended agent was. Present in v0.0.5 and
   v0.0.6, and reproduced against a live daemon before it was changed.
 
-  A grant is now pinned to the credential of the agent it first lands on,
-  recorded in `<data-dir>/roles.pinned`, and the same name is refused later
-  under a different identity. The agent must have registered with a nonce,
-  since without one it cannot prove it is itself after a restart, which is the
-  whole of what a standing role needs. The grant window also closes about two
-  minutes after start, so an unclaimed name stops being a standing invitation
-  to whoever registers under it later; it is reported once and left alone.
+  A declared role now requires the operator to name that agent's **fingerprint**
+  under `[roles.identity]`, and without one nothing is granted: see the Security
+  entry above, which is the shipping behaviour. The first version of this fix
+  pinned the credential of the agent the grant first landed on and welcomed that
+  first agent without a question, which is first-registrant-wins wearing a pin;
+  the two-minute window made it a race rather than a standing offer, which is
+  not the same as making it safe. The pin file survives as a record of which
+  identity took the role, and it is checked ALONGSIDE the current configuration
+  rather than instead of it, so an agent the operator has stopped naming is not
+  granted the role again. **That is not the same as taking it away**: a role is
+  replayable state, so an agent that already holds one keeps it across a restart
+  until something demotes it, and `dibs admin member <agent>` is what does.
+  Editing the config stops the grant recurring; the demotion is a second step
+  and there is an issue open for making the config sufficient on its own. The
+  agent must also have registered with a nonce, since
+  without one it cannot prove it is itself after a restart, which is the whole
+  of what a standing role needs.
 
   Preconditions were narrow: the attacker had to be on the board already, and
   `[roles]` had to be configured at all, which is not the default. That is why
@@ -240,6 +395,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`[wake] sockets = false`** switches the session-socket routes off: the
+  daemon's peer-socket wake and the bridge's self-wake. The guide had promised
+  an operator a configuration with no unsolicited activations and named only
+  turn extension and the absence of `[wake.exec]` entries, while both socket
+  routes stayed on with no switch at all. Now there is one, on by default.
+  The bridge reads it at start, and an in-place upgrade is a start: the first
+  cut restored the self-wake a previous image was holding, and the notice it
+  owed, with no look at the switch, so a bridge that was running when the
+  operator turned the route off kept waking its session after it upgraded.
+
 - **An agent that is not running can be woken: `[wake.exec]`.** Mail arrived for
   agents that were not executing, and sat there. Dibs would deliver it at their
   next activation, which for a dormant agent is whenever a human next happens to
@@ -269,14 +434,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   NOT the agent's `session_id`: that names the harness process (`host-92368`)
   and dies with it, so an agent whose only identifier is one of those is not
   woken, because there would be nothing to hand the command. Where an agent has
-  reattached and holds several, it is the CURRENT one: aliases are appended, so
-  the newest is last, and resuming an older thread would start a real session
-  that is not the one holding the mail.
+  reattached and holds several, it is the CURRENT one, the thread its harness
+  reported most recently, which is recorded as such: resuming an older thread
+  would start a real session that is not the one holding the mail. (Until
+  round eight this was inferred from append order, and a return to an earlier
+  thread left the wake on the later one.)
 
-  Wakes are rate-limited per agent (90s by default, `cooldown =`), so a burst of
-  three messages is one wake and not three, and an agent that has made an
+  Wakes are rate-limited per agent (90s by default, `cooldown =`), so a burst
+  never becomes one process per message, and an agent that has made an
   authenticated call inside that window is left alone because it is plainly
-  running. The command itself is bounded at two hours, not at anything shorter:
+  running. Mail that arrives while a command is running is re-asked once when
+  that command exits, so a burst is one wake and at most one re-ask: the exit
+  asks whether anybody is still waiting, and an agent that answered its mail
+  produces nothing. The command itself is bounded at two hours, not at anything shorter:
   `codex exec resume` runs the agent's whole turn in that process, so a short
   bound is a cap on the work rather than on starting it.
 
@@ -289,12 +459,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   records why the earlier shell-hook version was deleted and why this one is not
   the same thing.
 
-- **The Codex plugin binds `hook_poll` to the thread lifecycle.**
-  `plugins/codex/hooks.json` registers `mcp_tool` handlers on
-  SessionStart, Stop and SubagentStop, so a Codex thread that is running
-  collects its mail at each of them without polling. Measured against a live
-  daemon: three hooks, three deliveries. This covers a thread that is alive;
-  `[wake.exec]` above is what covers one that is not.
+- **The Codex plugin binds `hook_poll` to the thread lifecycle, on the
+  builds that run it.** `plugins/codex/hooks.json` registers `mcp_tool`
+  handlers on SessionStart, Stop and SubagentStop, so a Codex thread that is
+  running collects its mail at each of them without polling. Measured against
+  a live daemon on the build of the day: three hooks, three deliveries.
+  Measured again on 2026-09-05 against codex 0.153.4, CLI and desktop app:
+  none of the three fired, which `plugins/codex/README.md` records with the
+  date. The file ships; whether it fires depends on the build, which is why
+  `dibs://plugin` reports Codex as pull-only and `check_in` remains the floor.
+  `[wake.exec]` above is what reaches a thread that is not running, and is
+  what was measured working on that same day.
 
 - **The multi-machine board is documented and has a command.** Everything needed
   for a real-time fleet board already shipped; the operator who runs Dibs for
@@ -317,6 +492,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
 ### Changed
+
+- **No Mac Intel build.** Apple is ending Intel support, so the released macOS
+  archive and the Homebrew cask are `arm64` only. Carrying the target costs a
+  second Swift slice for each of the two helpers, `lipo` for both, and the
+  checking that goes with them, which is where the last two release-artifact
+  defects were; paying that every release for a platform on its way out is not
+  worth it. **Breaking for anyone installing on an Intel Mac**: build from
+  source, which works and is documented, or use `go install` for the two Go
+  binaries without the Touch ID and notifier helpers. Linux keeps both `amd64`
+  and `arm64`, which is not going anywhere.
 
 - **`dibs.toml` has one type and one loader.** The daemon decoded the file into
   its own struct and refused any key it did not recognise; `dibs mcp-config`,
@@ -360,7 +545,1797 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   request is closed by answering, and telling an agent to `ack` there would
   teach it to silence somebody who is waiting.
 
+### Added
+
+- **A wake that reaches an idle Claude Code session, with nothing configured.**
+  The bridge is a direct child of the session it serves, and the harness hands
+  its children `CLAUDE_CODE_MESSAGING_SOCKET` and `CLAUDE_CODE_MESSAGING_TOKEN`
+  for exactly this. A message from a session's own descendants is `selfSent`,
+  which the inbound policy ACCEPTS rather than holds, so it lands where the
+  daemon's peer-socket route could never reach: a session in bypassPermissions
+  mode, which is what an unattended fleet runs in.
+
+  The bridge subscribes to its own agent's inbox over the connection it already
+  has (SEP-2575, which Dibs already serves), and on an update puts the same one
+  fixed sentence into its own session. No operator configuration, no key file to
+  find, no process spawned, no cross-session gate. Verified live: mail sent to
+  an agent, and the notice arriving in that session moments later, in bypass
+  mode.
+
+  Nothing about the rule changes. It carries no counts, no senders, no body and
+  nothing an agent wrote, and it cannot read the session or steer it.
+
 ### Fixed
+
+- **A reconnect from the beginning could miss mail the ring had dropped.** A
+  subscriber resuming with a cursor of zero has a position, at the start, and a
+  ring that has moved past it cannot answer. The read treated zero as "from
+  wherever the ring begins", which is the right convenience for a caller that
+  has never seen the board and the wrong answer for one that is resuming: it
+  succeeded, returned what the ring still held, and reported no gap, so a
+  question whose event had already been evicted was never rebuilt from the mail
+  and the stream carried on from the present with nothing to announce it.
+
+- **`[wake] sockets = false` is documented as the per-machine setting it is.**
+  Each side reads it from its own data directory, so setting it on a hub
+  governs the daemon's peer-socket route and leaves a bridge that joined from
+  another machine waking its own session as before. The guide described one
+  switch covering both routes, which is true on one machine and was silently
+  false across two, and `dibs doctor` now says so where it reports that
+  configuration.
+
+- **The daemon's own reporting identity could be recovered by name and session
+  id.** `dibs` is the row the daemon reports its own faults under, and an agent
+  reading "Dibs found a fault" has no way to check who wrote it. That identity
+  was reserved against a caller presenting its nonce, but a v0.0.6
+  archive-and-recovery blanks the nonce on the row while keeping the index, and
+  both the name and the session id are constants in this repository. It is now
+  reserved on the same terms as the operator's own row, which no caller
+  recovers.
+
+- **Recovering an agent could redirect its wakes to a thread it had left.**
+  The guard that decides whether a registration may claim a harness thread asks
+  whether the fold will land that registration on the row holding it, and that
+  question is answered by one rule for ops this version writes and another for
+  older ones. The flag saying which was stamped after the guard ran, so the
+  guard judged by the old rule and discarded the thread the harness was
+  actually in, while the fold went on to reattach the row by the new one. The
+  agent came back reattached with every wake aimed at the previous thread. The
+  flag is now stamped before any guard reads it.
+
+- **An agent's guessed-session list grew without bound.** Session aliases are
+  capped at eight and the oldest are evicted, but the record of which ones were
+  guesses was never evicted with them. A hundred guessed bindings left eight
+  aliases and a hundred provenances, most naming ids the agent no longer holds.
+  That is replayable state, so it accumulated in the ledger and in every replay
+  of it. Eviction now takes the provenance with the alias, for registrations
+  that recorded the decision, so a v0.0.6 ledger still replays to the board it
+  built.
+
+- **A deferred wake is always delivered.** A notice held back by the cooldown
+  was, for several revisions, re-checked locally before delivery and dropped if
+  the subscription that armed it looked retired. That check asked a question
+  the bridge cannot answer: validity turns on token rotation, a session move, a
+  sign-off, a recovery through another bridge and a refusal at the daemon, and
+  the check stood on a pointer in a local map that none of those move. Two of
+  the revisions dropped notices that were owed, which loses the message
+  outright, because the call reports success and the subscription's cursor
+  advances past the event. The check is gone. The daemon decides who is woken
+  when it sends the notification, and delivering that decision a few seconds
+  later is not a fresh claim to re-examine. The cost is that an agent which
+  changes session inside one cooldown may see one rate-limited notice in the
+  session it just left.
+
+- **A resumed agent was awake, subscribed, and unreachable.** `resume` rotated
+  the token and bumped the activation while leaving every session binding
+  pointing at the session the agent had just left. An agent that registered in
+  one session and resumed from another opened a subscription there that the
+  daemon correctly withheld mail from, because the row still belonged
+  elsewhere, and the daemon's own wake routes still named the old session. It
+  stayed that way until some later call happened to rebind it. Resume now takes
+  the session it arrives from, as every other recovery path already did, and
+  only for ops that recorded the decision, so a v0.0.6 ledger rebinds nothing.
+
+- **A recovered agent that kept working never got its durable identity back.**
+  Archival blanks an agent's nonce while keeping the index that finds it, and
+  the repair that puts it back reached only the dormant recovery path. An agent
+  that comes back and stays busy is active, so a later registration with the
+  same nonce took the live-resume path instead and restored nothing. Its
+  fingerprint stayed empty and a role declared in `dibs.toml` could never
+  reconcile onto it, for as long as it kept working. Both paths now restore it,
+  still only for registrations that recorded the decision, so a v0.0.6 ledger
+  replays exactly as before.
+
+- **A rebuilt inbox notice could be dropped as already delivered.** When a
+  subscription's cursor falls past the ring, the notices it missed are rebuilt
+  from the mail itself. Those carry no sub-serial, so they all land on zero,
+  and a stream whose position was already at that serial skipped one as seen.
+  An adoption is the case that reaches it: it emits an agent update first and
+  the mail event after, so delivering the first and losing the second left the
+  rebuilt notice looking delivered while the mail sat in the inbox announcing
+  nothing. A rebuilt notice describes what is still owed, so a position can no
+  longer prove it was delivered.
+
+- **Moving an agent between threads could silently disable its self-wake.** A
+  same-nonce registration can move a live agent to another thread without
+  rotating its token, and the bridge replaced a subscription only when the
+  token changed. The stream went on telling the daemon it served the thread the
+  agent had left, the daemon correctly withheld the inbox from a stream whose
+  agent is elsewhere, and the connection stayed open waking nobody. A stream is
+  now replaced when either its credential or the session it serves changes.
+
+- **The drift check still misread a service unit whose binary path contains a
+  space.** The previous release note claimed upgrade read these paths
+  correctly, and only the recovery decision did: planning still used the
+  whitespace-excluding parser, so a correct unit was judged drifted and
+  reconciliation would rewrite it, discarding operator customisations. Both
+  questions now use the one space-aware reader. That reader identifies the
+  executable from the key that names it, `ExecStart` for systemd and the first
+  entry of `ProgramArguments` for launchd, rather than by looking for a path
+  shaped like the daemon's: a unit setting `WorkingDirectory` to a directory
+  ending in the daemon's name answered with that instead, and the drift check
+  then called a correct unit wrong.
+
+- **An upgrade misread a service unit whose binary path contains a space.**
+  The executable was matched with a whitespace-excluding pattern, so
+  `/Users/Example User/bin/dibd` read as `/bin/dibd` and a unit naming the
+  installed binary looked like one pinning a different build. Recovery then
+  abandoned a correct service unit and started an unsupervised process. The
+  executable is now read the same way the data directory always has been,
+  through the parser that knows both unit formats.
+
+- **A damaged reply told the caller its request had been refused.** A reply the
+  daemon began and could not finish, a body cut short mid-JSON or an empty
+  5xx, was answered with the refusal wording, which says the request was
+  rejected before it was read. The operation may already be ledgered, so that
+  advice invited a retry that could duplicate a send. A damaged reply now
+  carries the same uncertain-outcome hint an unreachable daemon does: it may or
+  may not have been applied, check the board or retry with `op_id`. That covers
+  a server error carrying a body too, an HTML or plain-text 502 or 504 from a
+  proxy, which can arrive after the daemon has committed. Only a 4xx, which is
+  decided before the request is read, still promises that nothing was applied.
+
+### Changed
+
+- **The spec no longer requires a client-generated nonce to register a
+  persistent agent.** It has minted one on omission since v0.0.7's identity
+  work, and section 4 and the tool table said otherwise, so a client
+  implementing the stated contract got conflicting requirements. Both now say a
+  nonce is expected, minted when omitted, and weaker than one the client chose.
+
+- **An old wake's exit could mark the current thread finished.** A wake
+  command runs the agent's whole turn, so it can outlive the thread it woke:
+  one started on thread A, the agent moved to thread B and called in, then A
+  exited and its completion recorded the turn as ended, marking B idle. The
+  recency guard then let the next blocking message launch a second activation
+  on a thread that was running. A wake's exit now ends the turn only when the
+  thread it ran on is still the agent's current session.
+
+- **A stale thread's hook could consume the current thread's wake.** A
+  lifecycle hook resolves through retained session aliases, so a late Stop
+  from a thread the agent had left was handed the mailbox digest and spent a
+  pending notify's one-shot wake, and the current thread never heard of it. A
+  hook now delivers, and marks a notify woken, only when it fired for the
+  agent's current session, the mail otherwise staying for that session to
+  receive.
+
+- **An adopted mailbox could be read by taking over the row that adopted it.**
+  The session-only recovery guard refuses a row with a pending grant or
+  adoption request, but an approved adoption is terminal, so the guard stopped
+  matching the instant the mailbox landed on the requester. A caller with the
+  requester's public name and session id could then take its token and read
+  the adopted mail. A row that has been handed a mailbox is now recovered by
+  its nonce, which v0.0.7 mints for every registration.
+
+- **A turn starting after a long idle could still be woken twice.** The
+  starting hook retracted the previous turn's stop but recorded no liveness,
+  so if the agent's last authenticated call predated the wake cooldown, a
+  question arriving before its first call this turn launched the wake command
+  against the thread that had just started. A starting hook is now recorded as
+  contact, the same standing an authenticated call has.
+
+- **A late hook from a thread the agent left could mark the current one
+  finished.** Turn state was recorded against whatever row a lifecycle hook
+  resolved to, and the row keeps every thread it was bound to, so a Stop or
+  SessionEnd arriving from thread A after the agent moved to thread B
+  overwrote B's liveness verdict and let the next blocking message launch a
+  second activation on B. A hook now records turn state only when it fired for
+  the agent's current session, the same rule the subscription and routing
+  paths use.
+
+- **The operator's own identity could be recovered without opening the
+  board.** The human's row is registered with a fixed, known nonce and so is
+  skipped by session-only recovery, but a v0.0.6 archive-and-recovery blanked
+  the nonce on the row while keeping the index, and the blanked row was then
+  reachable by name and session id, both public (the human's session id is the
+  known nonce). That handed out the human's token and approval of the caller's
+  own grant with no Touch ID and no password. The human is now recovered only
+  by opening the board.
+
+- **A subscription's catch-up kept waking a session the agent left.** The live
+  delivery path re-checks the stream's standing before each notification, but
+  the gap replay sent its events on a single check made before replay began, so
+  an agent that moved sessions or rotated its token mid-replay still received
+  the rest of the gap as inbox wakes for the session it left. The replay now
+  re-reads the standing before each event.
+
+- **A pending mailbox adoption could be captured before approval, like a
+  pending grant.** Round sixty-one closed the grant case but read only the
+  grant field, so a request that moves a whole mailbox onto the requester on
+  approval was still open: another caller could take the requester's row by
+  its public name and session id, and the operator's yes moved the mailbox
+  onto the taker. A row with any pending request that performs something on
+  approval, a role grant or an adoption, is now recovered by its nonce alone.
+
+- **An upgrade whose stop failed could restart the old binary and call it
+  the new build.** Recovery preferred the service unit and checked only that
+  it named the right data directory, not the right executable, so a unit
+  still pinning the previous binary (a legacy-labelled one a failed stop
+  never let the rewrite reach) brought the old daemon back while the report
+  said "This is the NEW build". Recovery now starts directly with the
+  installed binary when the unit pins a different one.
+
+- **A pending role grant could be captured before the human approved it.**
+  The guard that keeps session-only recovery away from a row bearing power
+  covered rows that already held a role, not a default registrant with a
+  grant request still awaiting the human's yes. Another caller could
+  re-register with the requester's public name and session id, take the
+  row's token, and receive the role the operator then approved. A row with
+  a pending grant is now recovered by its nonce alone, which v0.0.7 mints
+  for every registration, so the requester itself still returns.
+
+- **A subscription that dropped its first serial lost the mail on it.** The
+  overflow refill re-read its position by decrementing it and asking the
+  engine for events after that serial; a position of one decremented to
+  zero, which the engine reads as "give me the whole ring", so a first
+  serial that had left the ring took its unread mail with it and the resync
+  that would have recovered it never ran. The refill now reads from its
+  genuine position, and a position the ring has passed resyncs from the
+  mail.
+
+- **A bridge's self-wake followed its agent into another session.** A
+  subscription captured its agent when it opened and delivered for as long
+  as the socket stayed up, so a bridge left behind by an identity that moved
+  to a second session kept waking the first, which the daemon's own wake
+  routes never do; and a stream opened with a token later rotated away went
+  on delivering the new holder's mail. The bridge's listen now names the
+  session it serves (`_meta["com.dibs/session"]`: the thread the harness
+  named on its tool calls, else the bridge's own session id), the daemon
+  withholds the inbox from a stream whose agent is in another session and
+  feeds it again when the agent returns, and a stream ends with its
+  credential. A stated thread counts as held only while it is the agent's
+  current session, since the row retains every thread it has been bound to;
+  a stream following the board alone answers to no credential and is not
+  measured against one.
+
+- **A restored pending wake bypassed the session's cooldown.** The in-place
+  upgrade delivered the notice the old image owed through a waker of its
+  own, beside the one the restored streams write through, so a notification
+  arriving during the restore put two interruptions into the session at
+  once. The owed notice goes through the watcher's waker.
+
+- **An empty or truncated daemon reply left a bridge call hanging.** A
+  refusal with an empty body, a proxy's 502 or a daemon mid-restart's 503,
+  produced no line at all, and a body cut short mid-JSON was forwarded as
+  malformed JSON; neither is a response the harness can match to its
+  request. Both become a JSON-RPC error carrying the request id, and a read
+  that fails is answered as an unreachable daemon is.
+
+- **The self-wake cooldown was per mailbox, not per session.** Each
+  watched agent's stream had a waker of its own, so two mailboxes receiving
+  questions put two interruptions into the same session socket microseconds
+  apart, against the fifteen-second cooldown the session is promised. Every
+  stream writes through one waker; a second arrival inside the cooldown is
+  deferred to its end, not dropped.
+
+- **Moving a live identity to a new session kept the old activation's
+  acknowledgement.** A same-nonce register inside the TTL that moved the row
+  to a new session left the awareness gate armed by the previous activation,
+  so the new one could claim without a `check_in`. A move re-arms the gate,
+  as the other two recovery paths already did.
+
+- **An identical retry that stated a primary beside a thread alias was
+  ledgered every time.** The resume path decided whether an op changed
+  anything by comparing fields one at a time, and a synthetic primary is
+  never the current session while a thread alias is, so the shape the bridge
+  sends read as a change on every call. The decision now asks the fold's
+  own rule what the op would leave current.
+
+- **The board's own origin was refused on a default port.** Browsers
+  serialise an origin without the scheme's default port, so a board served
+  on 80 or 443 compared an empty port with its own: navigation loaded the
+  page and every authenticated action got 403. Both sides are read with the
+  default filled in.
+
+- **A plain `check_in` could replace a stated thread with a directory
+  guess.** The ingress inferred a session by directory whenever the op
+  itself carried no session fields, without asking whether the row already
+  held a stated thread: an agent that registered stating thread A, in a
+  directory another session had announced from, was bound to that session
+  on its next `check_in`, the wake resumed the wrong thread and that
+  session's hooks resolved to A's mailbox. No guess is made over a stated
+  thread the row holds, which is what the earlier entry already promised.
+
+- **The session-ordering test never went through ingress.** It tested the
+  announcement and the claim rule separately, so removing the guard that
+  prefers a supplied session over the directory guess left it passing. A
+  case submits the call through ingress and checks which id the row holds.
+
+- **Reclaiming a guessed alias took the owner's stated primary with it.**
+  An active owner held a stated synthetic primary and a thread alias the
+  daemon had inferred for it; a newcomer stating both reclaimed the guess,
+  which is right, and the alias's holder had been recorded as authority over
+  both ids, so the owner lost its stated primary and its hooks went to the
+  newcomer. The alias's holder is recorded in its own field only, and the
+  fold drops each id on the field written for it.
+
+- **`dibs upgrade` compared dirty development builds as equal.** A local
+  build reports `devel+<revision>.dirty`, and two builds of one revision with
+  different uncommitted edits carry the same string: rebuilding and
+  installing was told nothing to do while the old daemon went on serving.
+  A version that is not a released build never compares equal.
+
+- **Registering a second agent through a bridge retired the first one's
+  self-wake.** The bridge's inbox watcher held one token and replaced it on
+  every registration, so with two agents sharing one bridge only the last
+  registered mailbox kept its self-wake. The watcher keeps one stream per
+  agent, keyed by the agent the reply names; a rotated token replaces only
+  its own agent's stream and keeps its cursor; the in-place upgrade handoff
+  carries every stream, and still writes the single fields for an image that
+  predates them.
+
+- **The Codex plugin's verification checked bookkeeping, not delivery.**
+  It told readers to verify the hooks by a peer seeing `state == finished`
+  in `spawned_agents`; that state is recorded when the hook call arrives,
+  before anything is delivered, so the check passes when the hook reaches
+  Dibs and its output never reaches the model, which is the silent failure
+  it was meant to catch. The check says what it proves, and adds the one
+  that proves delivery: a question sent between turns whose digest is in
+  the next turn's context before any call is made.
+
+- **A newcomer sharing a bridge session took over its hooks.** Every agent
+  registering through one bridge states the same `host-<ppid>`, on purpose,
+  and among several active stated holders the hook lookup preferred the
+  lowest id: an agent registered later under a name that sorted first
+  redirected the hooks of the agent that had the session first, which kept
+  its binding and lost its routing. Among active stated holders the one that
+  held the id first wins; the lowest id decides only between rows created at
+  once.
+
+- **The upgrade's "nothing to do" asked the wrong daemon.** It queried the
+  daemon at DIBS_ADDR, and the daemon the plan replaces is the registry's:
+  with the target on an older build and another configured board on the new
+  one, it concluded nothing to do and left the target alone. The plan asks
+  the daemon it recorded, at the address and scheme it recorded; a query
+  that fails proceeds to the cutover.
+
+- **A board-only subscriber past the ring was never told the board
+  changed.** The overflow refill returned nothing when the position had
+  fallen outside the ring and the subscriber followed only `dibs://board`,
+  with its loss mark already cleared, so it stayed on a stale board until the
+  next change happened to reach it. The refill sends one board notice; the
+  board resource is a snapshot, so that is all such a subscriber needs.
+
+- **The upgrade's "nothing to do" compared the wrong binary.** The check
+  that stops an upgrade when the daemon already serves the installed build
+  compared the daemon's version with the CLI's, and the replacement daemon
+  is a binary of its own: a CLI and daemon on one build with a newer `dibd`
+  installed beside them was told nothing to do, and the new daemon never
+  ran. The check reads the version the installed daemon reports for itself
+  when the preflight asks it to rebuild the board.
+
+- **A second adoption announced the first one's mail again.** The event
+  filter matched the source and the heir and never asked when the move
+  happened, so adopting a source a second time emitted `message.adopted` for
+  every message an earlier adoption had moved, presenting old mail as a new
+  blocking arrival to the subscription and the wake. Only what this
+  adoption moved is announced.
+
+- **The board page showed "No mail" when the mailbox could not be read.**
+  A refused or failed mail fetch returned silently under a live mark, so a
+  valid session with no page key saw an empty, live-looking mailbox while
+  `/api/messages` answered 401. The pane says the mailbox could not be read
+  and why, keeps the last good view, and says what to do. The first cut said
+  so only over an empty mailbox: once one fetch had succeeded, a later
+  refusal kept the cached mail and hid the warning, under a stream still
+  labelled live. The warning sits above whatever is cached.
+
+- **`dibs upgrade` restarted a fleet that was already on the build.** The
+  help said a bare run on an up-to-date install does nothing, and the command
+  stopped the serving daemon and restarted it onto the build it was on. When
+  the daemon reports the build this CLI was installed with, and nothing about
+  the service unit needs repair, it says so and stops.
+
+- **The reattach path's activation rule applied to historical ops.** A
+  v0.0.6 reattach with a new thread alias and no pid kept the recorded
+  process; replayed under the new rule it rebuilt a different one, losing
+  crash detection for that agent after an upgrade. The rule is gated on the
+  recorded semantics, as it already was on the other two recovery paths.
+
+- **Reattaching by session id kept the other thread's process.** A
+  persistent agent that had moved from thread A to B, recovered by name and
+  its retained session id A with no pid stated, was put back on A with B's
+  process still on the row; when B exited the sweep retired it. The reattach
+  path applies the activation rule the other two recovery paths apply: a
+  stated thread that is not the current session is a move even when the row
+  holds it as its primary, and the bridge's own non-thread id is not.
+
+- **A sibling taking two bindings left an active holder behind.** A register
+  minting a sibling with an active agent's token takes that agent's thread
+  alias; when the same register stated a primary held by a dormant row, the
+  ingress recorded only the dormant row as the one the take came from, so the
+  alias stayed on the active row too: two active holders of one thread. The
+  first fix dropped it on the caller's token, which the ledger does not
+  carry, so a restart rebuilt the two holders and a state that was not the
+  fold of its ledger. The ingress records the alias's holder in a field of
+  its own (`session_alias_taken_from`, added to the frozen list), and the
+  fold drops on that, on replay as live.
+
+- **A minted nonce did not close the guessable recovery path, and nothing
+  said so.** SECURITY.md said an agent registered with a nonce requires it;
+  every persistent registration is now handed one, and a nonce Dibs minted
+  leaves the row reclaimable by name and session id, deliberately. The
+  document says which nonces protect, and the registration result tells a
+  minted-nonce agent it stays reclaimable, without advising a re-register
+  that would fork a sibling.
+
+- **Approving an old adoption request could still take a successor's
+  mailbox.** The purge written by this version expires a pending request
+  naming the purged agent; a sweep written before v0.0.7 leaves it standing,
+  and replay must not change that, so a request sent shortly before such a
+  purge survives an upgrade and its `adopt` name resolves at approval against
+  the roster of the day. Approval now refuses a target registered after the
+  request was sent: it is not the agent the request concerned.
+
+- **Returning to a thread bound earlier kept the wrong process.** Threads A,
+  B, A: the return was a session the row still held, so it was read as the
+  same activation as B, B's process stayed on the row and A's stated location
+  was discarded. A thread that is not the current session is a move, whether
+  or not the row has seen it before.
+
+- **A purge's expiry events replayed in map order.** The purge walks the
+  messages and now emits an event per adoption request it expires; two
+  requests naming the purged mailbox took their sub indices from Go's
+  iteration order, so the same ledger rebuilt the same state under a
+  different audit stream. The walk is in serial order.
+
+- **The role handover error left the predecessor's role standing.** When a
+  pinned role's name is held by a different agent, the error named the three
+  steps that let the successor in and called them all of them; none takes
+  the role away from the predecessor, which may still be registered under
+  another name with its grant in the ledger. The error names the revoke
+  first, as the guide and the neighbouring branches already did.
+
+- **A pending adoption request outlived the mailbox it named.** The purge
+  retired a purged agent's outgoing mail and dropped its incoming mail, and
+  left standing any request whose `adopt` named the purged id; approval
+  resolves that name against the current roster, so approving it after a
+  stranger had registered the released name moved the stranger's mail. The
+  purge expires such requests, with a reason that says so.
+
+- **Re-registering through the same bridge dropped the bound thread.** A
+  register whose session id and alias are both the bridge's own id was read
+  as a new activation, which is right for a bridge that restarted and wrong
+  for the same bridge registering again inside its TTL: the thread its hooks
+  had bound stopped being the one to wake until something rebound it. Each
+  recovery path now says whether the op's session was already held before
+  it ran, and the same activation naming its own id does not displace a
+  thread.
+
+- **A recovery from a new session kept the old process.** A same-name
+  register with its nonce from a new session moved the row to that session
+  and kept the pid and working directory of the activation that had ended;
+  the next liveness sweep found that process dead and retired the agent
+  that had just come back, and the board placed it where it used to be. On
+  both recovery paths, a live row resumed and a dormant row recovered, a new
+  activation takes the pid and location the op states, and a pid it does
+  not state is unknown rather than inherited. A new activation is a new
+  session id or a new thread alias, because the bridge reports a Codex
+  thread as the alias and may state no session id at all.
+
+- **Doctor diagnosed a remote board's wake routes from the local file.** A
+  joining machine runs it against the hub with a data directory of its own,
+  and the wake check read that directory's dibs.toml as the hub's
+  configuration: "no wake command is configured" against a hub that had
+  several, with a repair that edits a file the hub never reads. When the
+  board's node id is not this directory's, the check says whose board it is
+  and sends the operator to the machine that runs it.
+
+- **Doctor said the socket route is tried first while it was switched
+  off.** With `[wake] sockets = false` and no `[wake.exec]` command, neither
+  route runs, which is the configuration the guide describes for no
+  unsolicited activations; the check called that unconfirmed delivery. It
+  says no route at all, and what that configuration asks for.
+
+- **Hidden predecessor mail still authorised its attachments.** A blob is
+  fetchable by the recipient of a message referencing it, and that route did
+  not ask whose mail the message was: below the watermark it was addressed
+  to a previous occupant of the id, the replacement could not see it, and
+  could still fetch its attachment by blob id. The route applies the mail
+  fence Inbox applies, adopted mail included. The third door after the two
+  closed in the previous rounds.
+
+- **Doctor told an unconfigured harness to re-register.** With a wake
+  command configured for one harness and an agent of another holding a
+  resumable thread, the report assumed that having no built-in suggestion
+  for that harness meant it already had a command, and advised registering
+  through its plugin, which cannot supply configuration. It now says which
+  harnesses have no command, pastes a block for the ones it knows and a
+  template for the ones it does not, and reserves the no-thread advice for
+  harnesses that do have one.
+
+- **A name purged by a pre-v0.0.7 sweep still handed its attachments to
+  the next registrant.** Replay preserves that sweep as it was, ownership
+  included, and no later sweep can repair it because the row is gone. A
+  registration fences the predecessor's mail already; it now also strips the
+  id from every blob, because a fresh row has put nothing and any ownership
+  under its id is a predecessor's. The previous entry covered new purges
+  only.
+
+- **A daemon bound to an IP refused a certificate issued for its name.** The
+  startup check verified the configured certificate against the listening
+  address, so a daemon bound to `10.0.0.9:4777` whose clients dial
+  `https://hub.example:4777` was refused at start and at `-check` for a
+  certificate that is correct for every client. A certificate that names no
+  address but names a DNS host is accepted on an IP listener; one that names
+  only other addresses is still refused.
+
+- **An upgrade dropped the transport a daemon was launched with.** A daemon
+  started with `-addr https://127.0.0.1:4777` registered the bare listener,
+  and the upgrade, which rebuilds the replacement's argv from the registry,
+  restarted it with a bare address the replacement re-inferred: an https
+  loopback board came back plaintext and every client lost it. The registry
+  carries the scheme the daemon was asked for, and the upgrade hands it back.
+
+- **A self-wake retry fired after a delivery had succeeded.** A retry armed
+  by a failed delivery, or a notice deferred to the cooldown, stayed armed
+  past a delivery that succeeded in the meantime: the socket came back, the
+  next arrival was delivered, and the timer put a second notice into the
+  session with no mail behind it. A successful delivery disarms the retry;
+  it is the notice the timer would have given. Only the retry: a notice
+  deferred to the cooldown stands for an arrival that came in while the
+  earlier notice was on the wire, and the first cut of this disarmed that
+  too, losing the newer mail's notice.
+
+- **The tool schema promised that a notify never wakes or costs anything.**
+  Under the default `extend_turn_for = all` a fresh notify at Stop extends
+  the recipient's turn, which the wake-urgency test asserts and the changelog
+  already says. The schema says a notify may extend a turn and never starts
+  an idle agent, within the listing's budget.
+
+- **A purged name's replacement inherited its attachments.** The purge drops
+  the row's mail and retires its outgoing mail, and left every blob the agent
+  had put naming its id as an owner; ownership is an authorisation on its
+  own, so a stranger registering the purged name could fetch the
+  predecessor's attachments for as long as a peer's message kept a blob
+  alive. The purge strips the id from every blob it owned, under the same
+  flag. An older exposure the purge hardening had left open, not a new one.
+
+- **A stream's overflow refill could skip the rest of a serial.** One op
+  emits several events at one serial and the channel drops one event at a
+  time: the first event of a check_in was delivered and moved the position
+  to its serial, the message.delivered events after it at the same serial
+  were dropped, and the refill asked for strictly later serials and
+  recovered none. The position is the event, not the serial, and a refill
+  re-reads the position's serial and skips only what it delivered.
+
+- **The bridge's own session id displaced a stated thread.** The bridge
+  sends its `host-<ppid>` as an alias on every call. A register that stated
+  its thread was made current on that alias instead, and even once the thread
+  was current, the next check_in re-bound the alias and made it current
+  again, so the configured wake had no thread to resume one call after
+  gaining one. A thread beats a synthetic id: a stated thread is current over
+  a non-thread alias, and a synthetic id already held does not displace a
+  thread. A NEW synthetic id is a new activation and still takes over.
+
+- **Recovering a row by name and session id lost its wake route.** A
+  register carrying neither token nor nonce was refused the thread alias an
+  active row already held, then reattached to that very row: the fold took
+  the synthetic host id as current, the thread the row still held was no
+  longer the one to wake, and the configured route stood down until an
+  authenticated call bound it again. A register that lands on the row holding
+  the alias is re-asserting its own thread, and keeps it.
+
+- **The Claude Code plugin said a notify never extends a turn.** Under the
+  default `extend_turn_for = all` a fresh notify at Stop does, which is what
+  the wake-urgency test asserts; only `urgent` holds it for a boundary the
+  agent reaches on its own. Both places the plugin said it are corrected.
+
+- **Correcting a location without moving discarded the re-resolved
+  repository.** `update(cwd)` applied the location group only when the cwd
+  differed, so an agent that registered before `git init`, or whose
+  repository changed its remote, corrected with the same directory, the
+  ingress resolved the new repository, and the fold discarded it and reported
+  success with the old identity. The group applies when any of its fields
+  differ, and `changed` says `repo` when only the derived half moved.
+
+- **The tunnel recipe told a TLS loopback daemon's joiner to use plaintext.**
+  The paragraph described every loopback daemon as plaintext and put a bare
+  `127.0.0.1:<local-port>` in DIBS_ADDR, after the block above it had handed
+  over an https:// address for a daemon with a certificate pair; a bare
+  address makes the bridge infer plaintext, and the trust step cannot change
+  what it inferred. The paragraph names the transport the daemon serves and
+  the same address the block above gives. The same output carried a third
+  copy of the url-client claim corrected last round; it is corrected too.
+
+- **A resumed subscription's replay was charged to the agent's rate budget.**
+  Opening the stream spends one token, and the gap replay read the ring as the
+  agent, spending another: when the listen took the last one the replay got
+  E_RATE_LIMITED, an error was an empty gap, and the acknowledged stream
+  proceeded from the present past a pending question. The replay and the
+  inbox resync are the daemon's own work for a subscriber it already
+  authenticated, and read the ring the way the daemon does.
+
+- **The generated client configuration repeated the url-client claim.** Both
+  `dibs join` and the url-form output said a url client holds no nonce, so
+  every reconnect forks an identity, after the README had been corrected. They
+  say what the README says: `register` hands back a nonce on every transport,
+  the bridge keeps it for the session, and a url client that drops it forks a
+  sibling.
+
+- **A burst during a resumed subscription's replay could drop a question
+  silently.** The live channel holds 256 events and the loop drops rather
+  than stalls when it is full; a resumed subscription writes its replay before
+  it drains the channel, so fleet events during a slow replay filled it and a
+  question that arrived after them was in neither the replay nor the stream.
+  The channel now says when it dropped, and the stream refills from the ring
+  everything after the last serial it delivered; a repeat coalesces where a
+  loss did not.
+
+- **A restart could wake an agent to read mail the boot sweep had just
+  deleted.** Blocking notices are rebuilt at construction, before the boot
+  sweep, and the sweep deletes consumed terminal mail past its retention: an
+  answered request older than that produced a notice and lost its message a
+  moment later, so the agent was woken, told to `read_mail(N)`, and answered
+  E_NO_MESSAGE on every restart. Notices pointing at mail the state no longer
+  holds are dropped after every sweep.
+
+- **The socket route could wake the activation an agent had left.** It took
+  the first address it found among every session the agent had ever answered
+  to, so an agent that moved from A to B, with B publishing no socket and A's
+  still open, was woken at A; a delivery ends the attempt, and B stayed
+  asleep on its mail. When the current activation is known it is the only
+  address tried, as the exec route already does.
+
+- **The replay-window regression test did not put its arrival in the
+  window.** It sent the question after the listen opened and hoped the replay
+  was still running; against the old order it passed whenever the replay
+  finished first. The server has a replay seam for tests, and the test sends
+  inside it.
+
+- **The remote guide said a url client cannot keep its identity.** It claimed
+  a url client holds no nonce, so every reconnect forks an identity;
+  `register` hands back a minted nonce on every transport, and a url client
+  that keeps it reattaches with the same call. The guide says what the bridge
+  adds instead: keeping the nonce for the session across restarts and
+  upgrades, and following a daemon restart by itself.
+
+- **The resync past the ring rebuilt only incoming mail.** Two other things
+  are owed in the same gap: the verdict on a question or request the agent
+  itself sent, which belongs to the sender's side and carries the question's
+  older serial, and blocking mail an adoption moved in, whose own serial
+  predates the move. Both are rebuilt, from the mail, as the events the ring
+  would have carried.
+
+- **A question sent while a reconnect's gap was being replayed could reach
+  neither the replay nor the stream.** The live channel opened after the
+  replay and from the cursor, so its catch-up pushed the whole gap into a
+  buffer that drops when full; a long gap filled it with history already
+  replayed, and an arrival during the replay landed past it. The channel
+  opens first, from the present, and buffers what arrives while the replay
+  runs.
+
+- **The skills guide told the wrong agent to release a session.** It
+  recommended `update(release_session: true)` when hooks quoting your session
+  reach somebody else; that clears only the caller's own bindings and leaves
+  the other agent's standing, so the repair repaired nothing. The guide says
+  who holds it, how to claim it back from a holder that is not active or only
+  guessed the id, and that an active holder that stated it must release.
+
+- **A subscription that resumed past the ring lost its wakes.** A cursor older
+  than the ring got an empty replay after the acknowledgment, so a question
+  that arrived while the subscriber was away and whose event had since left
+  the ring sat in the inbox with no notice and no signal that one was missed.
+  The inbox says what is still owed: each waiting message after the cursor is
+  replayed as the notice the ring would have carried.
+
+- **A replacement could acknowledge or answer its predecessor's mail.** The
+  mailbox fence hides a previous occupant's mail from a name that comes back
+  and read_mail refuses the body, and ack and respond authorised on the
+  reused id alone: the replacement could ack a notify it never saw, sending
+  its sender a receipt, or answer a question by serial. Both are refused at
+  ingress, so the acknowledgements already on disk replay as they were
+  accepted.
+
+- **The message-type guidance did not know about the wake routes.** It told
+  a sender that a question, request or handoff reaches the recipient at a
+  turn boundary or its next Dibs call, which is what an agent uses to choose
+  a type and a deadline; with `[wake.exec]` configured or a session socket
+  published, an idle recipient is started or nudged for those three. The
+  guidance says so, and is shorter than it was.
+
+- **A bridge upgrade wake could resume the thread an agent had left.** A
+  persistent agent recovered by nonce from a new `host-<ppid>` activation
+  still held the uuid of the activation it left; the wake's newest-alias scan
+  found it and `codex exec resume` ran against a real thread, the wrong one,
+  while the activation waiting for its mail stayed asleep. When the session
+  the harness reported last is not a thread, no thread is known for the
+  current activation and the exec route stands down until one is bound.
+
+- **The no-shell guard did not read inside quotes.** It removes quoted
+  arguments before matching, because prose in a help string is not control
+  flow, and a double-quoted argument that carries a command substitution is
+  still executed: `go run ./tools/x "$(printf y)"` passed. A double-quoted
+  argument that expands is read; a single-quoted one is not, because the
+  shell expands nothing there.
+
+- **A refusal from the daemon's gate corrupted the bridge's stdio.** The gate
+  answers a request it will not read with a status and a line of text, and
+  the bridge wrote that line to stdout as if it were JSON-RPC: the harness
+  got `unauthorized`, no reply carrying its request id, and a call that never
+  returned. Shipped in v0.0.6. A body that is not JSON-RPC is delivered as a
+  JSON-RPC error with the status, the text and a hint, and a refused
+  notification produces nothing, as JSON-RPC says.
+
+- **Adopting a mailbox told the heir nothing.** Both adoption paths emitted
+  `agent.updated`, which names no recipient, so a coordinator recovering
+  pending questions into a dormant agent got success and neither wake route
+  nor the inbox subscription told that agent its recovered mail was waiting.
+  Adoption emits one `message.adopted` event per recovered blocking message,
+  addressed to the heir, and the wake rule treats it as arrived mail.
+
+- **A resumed subscription could wake twice for one message.** The daemon
+  replays the gap filtered and then subscribes from the same cursor, so a
+  notice already delivered arrived again and the bridge queued a second wake
+  at the cooldown whether or not the agent had read the mail. The bridge
+  wakes once per serial.
+
+- **A notify could overfill a mailbox by displacing a predecessor's
+  invisible one.** Capacity excludes a previous occupant's mail below the
+  watermark; displacement did not, so a notify to a full mailbox evicted a
+  fenced predecessor notify, freed no counted slot, and landed anyway, one
+  over the cap for every such notify left behind. Displacement picks only
+  from the mail that counts.
+
+- **A private panel fetch still lost message bodies and choices.** The
+  merge that fills a redacted card from the readable copy beside it read the
+  nested `inbox.messages` shape from both carriers, and the panel carrier
+  sends `inbox` as a bare array, so on the production shape the merge handed
+  the redacted copy back untouched: a request with its Approve button and no
+  reason, a question with no choices. The merge reads either shape and
+  returns the one it was given; the browser test now uses the production
+  shape.
+
+- **A deferred self-wake whose delivery failed could be lost across an
+  upgrade.** The deferred callback cleared the handoff's "a notice is owed"
+  mark before it tried, and a delivery that failed there armed a retry
+  without setting it again: an in-place upgrade in that window carried
+  nothing owed, the timer died with the old image, and the cursor had passed
+  the event. The mark follows the timer.
+
+- **Upgrade recovery gave up on the case its retry loop exists for.** After a
+  stop that timed out the old daemon may still hold the directory lock, the
+  replacement exits on it at once, and the start now reports that as an
+  error; recovery returned on that error before reaching the loop that starts
+  again while the old process drains. A start that fails at once is an
+  attempt, paced, and counted against the same bound.
+
+- **A failed human role grant suppressed the configured one.** The record
+  that a person set an agent's role was written before the grant applied, so
+  a grant to a name not yet registered failed and left the record standing;
+  when the agent registered inside the startup window, the reconciler skipped
+  its configured grant as already decided. The record is written when the
+  grant applied.
+
+- **A deferred first wake that failed got no retry.** The retry path treated
+  every execution as the already-retried one, and a first attempt arriving
+  there deferred (a recency window, a boot rearm) that failed left no timer:
+  one execution instead of the promised two, and pending mail waited for
+  another event or a restart. Executions are counted per owed mail, and the
+  first gets its retry whichever path ran it.
+
+- **A `dibs.toml` that was a symlink to nothing read as no configuration.**
+  The defaults quietly replaced the configured address, the CLI's own
+  readability guard passed, and the directory's secret went to whatever
+  answered at the default. A dangling link is refused by name.
+
+- **The Codex fallback could report a wake that parked the message.** The
+  fallback ran after any primary failure, and `codex queue` exits 0 on a
+  closed thread while parking the message where nothing reads it, so a
+  resume that failed for some other reason counted as a wake and cancelled
+  the retry. The fallback runs only when the primary's output says the
+  thread is open; the guide says so.
+
+- **An in-place bridge upgrade could lose a deferred self-wake.** A second
+  arrival inside the cooldown defers its notice to a timer and reports
+  success, so the reconnect cursor moves past the event; an upgrade before
+  the timer fired carried the cursor and not the debt, and the new image put
+  nothing into the session. The handoff says a notice is owed and the next
+  image delivers it.
+
+- **`extend_turn_for = "none"` claimed more than it governs.** The guide said
+  Dibs becomes strictly pull-shaped; the `[wake.exec]` and session-socket
+  routes are separate settings and run whatever it says. The guide says what
+  the setting governs and what to leave unconfigured for no activations at
+  all.
+
+- **A register carrying the holder's token could mint a second live holder
+  of its thread.** The session-theft guard let the holder through by its
+  token before asking whether the registration landed on that row; a
+  register with a fresh name and nonce, the token, and the thread minted a
+  sibling that shared it. Two live holders, a coin flip on every hook, and
+  two mailboxes waking one session. The thread moves to the row the caller
+  is minting, on the stated id and the alias alike.
+
+- **An ambient session repair could overwrite a binding made meanwhile.**
+  The repair asked "unbound?" in one trip through the writer loop and bound
+  in another; a `check_in` between them bound the real session, which the
+  repair then overwrote and ledgered, so the wrong binding survived replay.
+  The bind carries `bind_if_unbound` (a frozen tag) and the fold decides
+  both at once.
+
+- **A re-registration advanced the self-wake cursor past unseen mail.**
+  The watcher took the serial of every register or resume reply as its
+  cursor; with a cursor at 10, an unseen question at 11 and a registration
+  at 12, the next subscription skipped the question. A reply's serial seeds
+  a watcher with no cursor and never advances one.
+
+- **A setting the bridge did not know made the transport a guess.** The
+  shared acceptance lets an older bridge read a newer daemon's `dibs.toml`
+  past a setting it does not know; the transport resolver rejected the same
+  error and fell back to guessing, so `insecure_plaintext` and the TLS
+  settings it had parsed were dropped and the CLI dialled https at a
+  plaintext board. The resolver reads what it parsed.
+
+- **SPEC.md still said wake-on-mail was future work.** It described mail to a
+  dormant agent as waiting for its next activation and listed the supervisor
+  glue as v1.1; `[wake.exec]` and the session-socket route shipped this
+  cycle. The specification describes the capability boundary that exists.
+
+- **Self-wake lost mail that arrived before its first subscription.** The
+  watcher read the registration reply's token and not its serial, so it
+  subscribed with no cursor and the daemon started it at the present: a
+  question that arrived between registering and the first successful
+  subscription woke nobody. The watcher starts from the reply's serial.
+
+- **A failed self-wake consumed its notification.** The bridge advanced its
+  reconnect cursor before putting the notice into the session, so a notice
+  the socket refused was gone: the reconnect excluded the event and nothing
+  retried, and a socket that came back found the agent asleep on stored
+  mail. The cursor moves when the notice lands, and a failed notice is
+  retried at the cooldown.
+
+- **The configuration guide described the superseded thread rule.** It said
+  `{thread}` is the newest alias and can never come from `session_id`; the
+  wake prefers the session the harness reported last, accepts a
+  thread-shaped `session_id`, and a return to an earlier thread makes that
+  one current. The guide says so.
+
+- **A directory guess overrode a stated wake target.** A register that
+  named its thread by `session_id` was still given the directory's inferred
+  session as an alias, the alias became current, and the configured wake
+  resumed the guessed thread. No guess is made over a stated thread.
+
+- **The explicit-session guard refused recovery from a guessed binding.**
+  A holder that had only inferred an id kept it against an agent registering
+  with that id stated, with `E_SESSION_TAKEN`, while the same claim by alias
+  went through. A guessed holder yields to a stated claim on both paths.
+
+- **Nonce recovery left a confirmed session stealable.** Recovering a
+  dormant row with `register(name, nonce, session_id)` restored it and kept
+  the session it had held as an inference recorded as a guess, so a
+  stranger's metadata could take it through ordinary ingress and hooks and
+  wakes resolved to the stranger. A stated session id is not a guess, on
+  every path that reattaches.
+
+- **A resuming subscription's acknowledgment named the present, not the
+  cursor.** The bridge saves the serial the acknowledgment names; sent
+  before the gap was replayed, it made a drop between the two skip the gap
+  on the next reconnect for good. The acknowledgment names the cursor the
+  replay starts from.
+
+- **A second socket miss abandoned outstanding mail.** The retry armed for a
+  stale socket cache gave up when it missed again, while the question stayed
+  pending; a socket that appeared later was refreshed into the cache and
+  the mail never reconsidered. The retry keeps deciding at the refresh
+  cadence for as long as blocking mail is outstanding.
+
+- **A reconnect catch-up could still lose the notification that mattered.**
+  The subscription replayed the gap through a bounded channel and dropped
+  what did not fit before anything was filtered, so a backlog of unrelated
+  board events crowded out the one inbox notification that would have woken
+  the agent, on a connection that looked healthy. The events addressed to the
+  agent are replayed from the ring first, filtered, in full.
+
+- **Correcting an agent's location started no discovery of it.** `update(cwd)`
+  updated the row and left the corrected repository unindexed, so semantic
+  matching stayed unavailable for the place the agent actually works. A
+  correction is discovered as a registration is.
+
+- **The configuration guide's first Codex recipe left open desktop threads
+  unreachable.** It showed `codex exec resume` alone and said it works whether
+  or not the thread is open; the guide's own later section explains that an
+  open desktop thread refuses it and needs the `queue` fallback. The first
+  recipe carries the fallback and says why.
+
+- **Confirming an inferred session by registering left it a guess.** A
+  same-nonce register that stated the session id the row already held as an
+  inference read as no change, so the guess stood and another agent's
+  metadata could still take the active session, hooks and wakes with it. A
+  guess confirmed is a change, and a confirmed session is stated.
+
+- **An in-place bridge upgrade dropped the self-wake cursor.** The handoff
+  carried the watcher's token and not the serial it had last seen, so the
+  replacement subscribed from the present and mail arriving during the
+  upgrade woke nobody. The cursor travels with the token.
+
+- **A send to `coordinator` carried no pull-only warning.** The engine
+  resolves the role address into the holder's id, and the warning looked up
+  the literal, which named no agent: a question to an unwakeable coordinator
+  returned ok and a deadline with no word that nothing would wake it. The
+  warning reads the recipient the engine resolved.
+
+- **The inferred-session guard skipped itself when inference broke.** Its
+  setup check called `t.Skip` when the inference had not bound the session,
+  so disabling inference turned the test off and the suite exited zero. It
+  fails.
+
+- **A live resume discarded a stated `session_id`.** A same-nonce register
+  inside the TTL decided whether anything changed from the alias the daemon
+  joins alone, so one that stated `session_id: B` with no alias returned
+  `resumed: true` and kept thread A: the ingress had accepted the request
+  and the fold dropped the one thing it asked for. A stated session id is a
+  change, is taken, and is the one to wake.
+
+- **A self-wake stream that dropped before any mail reconnected blind.**
+  The cursor came from the first inbox notification, and the acknowledgment
+  carried none, so a subscription opened on an empty inbox that dropped
+  before a question arrived reconnected at the current serial and the
+  question woke nobody. The acknowledgment names the serial the
+  subscription starts from, and the bridge reconnects with it.
+
+- **The specification said ephemeral by default and sixteen persistent
+  agents.** Both changed this cycle; the changelog said so and SPEC.md did
+  not. It says persistent by default with a minted nonce, and a persistent
+  ceiling that matches `max_agents`.
+
+- **A returning agent was refused its own thread.** The ingress vets the
+  alias a call carries against the caller's token, and a returning agent
+  registers with its nonce and no token: it read as a stranger, the alias
+  was cleared, and a return from thread B to an earlier thread A left B
+  current and the wake on it. The caller is the holder by its nonce as well.
+
+- **A self-wake subscription that reconnected lost the gap.** The stream
+  reconnects two seconds after it drops and the daemon started every
+  subscription at the current serial, so a message that arrived in between
+  woke nobody until the next one came. The inbox notification now carries
+  the serial of the event that changed it (`com.dibs/serial`), the bridge
+  reconnects with the last one it saw (`com.dibs/since` on the listen
+  request), and the daemon replays the gap from its ring.
+
+- **The frozen-tag guard only read one way.** It checked that every
+  declared tag was on the frozen list and not that every frozen tag was
+  still declared, so a field retired to `json:"-"` left the list and its
+  fingerprint untouched while every ledger holding it replayed with that
+  decision zero. Both lists are checked both ways, ops and messages.
+
+- **The README described a CA replacement the daemon refuses.** It said
+  deleting `tls-ca.pem` changes the signing identity; with `tls-ca-key.pem`
+  left behind the daemon refuses to start rather than mint half an identity.
+  The README says to delete the pair together, and why.
+
+- **Recovering by session id left the wake on the thread the agent had
+  left.** Session-based recovery (a name and a session id, for a row whose
+  nonce was minted) reattached and bound only the alias the daemon joins at
+  ingress; a register that stated `session_id: B` with no alias reattached
+  an agent holding B and C and left C current, so the next wake resumed C.
+  The id a caller recovers by is the activation it is on, unless the harness
+  reported one.
+
+- **An in-place bridge upgrade switched off self-wake until the next
+  register.** The handoff to the new image carried the handshake and the
+  caller's subscriptions and not the self-wake watcher's token, so an
+  upgraded bridge answered every call and never put another notice into its
+  session until the agent happened to register or resume. The token is
+  carried and the watcher restarts with it.
+
+- **The no-shell guard read a fraction of the Taskfile.** It scanned `cmd:`
+  mappings, the form the Taskfile uses least, and skipped scalar commands and
+  `- |` blocks: a curl conditional with redirection, nine `cd x && y`
+  scalars and a `| tail` pipeline sat beside it, and the changelog said the
+  class was guarded. The guard reads every command form now, with a floor on
+  how many it must find; the conditional is a Go tool (`tools/embedprobe`),
+  the `cd` is a task with its own `dir:`, and the pipeline was redundant with
+  what the coverage gate prints.
+
+- **An upgrade whose stop timed out could leave the board down while
+  reporting a restart.** Recovery started the replacement and went home. A
+  replacement started while the old daemon still held the directory lock
+  exited on it at once, the start reported success because nothing watched
+  the process past its launch, and nothing tried again once the old one had
+  gone. Recovery now waits for the board to answer and starts the daemon
+  again while the old process drains, up to three times, and says which of
+  those happened; a start whose process exits at once is reported as the
+  failure it is.
+
+- **The board's own certificate is renewed while the daemon runs.** The
+  README promised that the daemon replaces its short-lived certificate as it
+  nears expiry, and the daemon issued one at startup and installed it for
+  good: an uninterrupted year, and every client's next connection would have
+  failed on an expired leaf they had been told would be replaced. The leaf is
+  now served through a handshake-time check that re-issues it under the
+  board CA inside the renewal window, rate-limited to one attempt an hour. An
+  operator's own certificate is served as it is. A certificate that stops
+  naming the address clients dial is still replaced at the next start, and
+  the README now says so.
+
+- **The README promised a rollback the upgrade cannot perform.** It said a
+  failure between the stop and the start restarts the build that was
+  running; recovery restarts the build just installed, and the previous
+  binary is not retained. The README says what happens.
+
+- **The Codex plugin note denied the wake route this release ships.** It
+  said nothing outside the harness can wake an idle thread and that Dibs
+  would not reach into Codex's durable queue, while the configuration guide
+  documents `codex queue` as the daemon's fallback for a thread the desktop
+  app holds open. The note names the route and where the recipe is.
+
+- **`release_session` and `bind_session` left the wake on the old
+  session.** Recording the current session in round eight added a field the
+  release did not clear and the explicit bind did not set: after
+  `update(release_session: true)` reported the release, mail still woke the
+  session the caller had given up, and after `bind_session(B)` reported B the
+  wake resumed A. Both follow the current session now.
+
+- **A default registration was told it could not be recovered while being
+  handed the nonce that recovers it.** The recovery advice tested the nonce
+  the caller sent, and a persistent agent that sent none had just been given
+  one in the same reply: the reply said "no recovery credential, re-register
+  with a fresh nonce", and following that makes the sibling mailbox this
+  release exists to prevent. The advice reads the nonce the agent actually
+  has.
+
+- **A restart lost every deferred wake.** A wake held back for a recipient's
+  recency window or cooldown was a timer, and the daemon restarting before it
+  fired forgot it: the question stayed in the ledger, boot rebuilt the
+  blocking notices and primed the socket cache, the sweeps retried no
+  delivery, and the recipient slept until something else arrived for it or a
+  person noticed. Boot now arms one retry for every agent holding blocking
+  mail, and the retry makes the decision a fresh arrival would.
+
+- **Returning to an earlier thread woke the wrong one.** The wake resumed the
+  last thread id in the agent's alias list, and a return to a thread bound
+  earlier changed nothing in that list: an identity on thread A, then B, then
+  A again was woken on B, a real session that was not the one holding the
+  mail, and the wake logged as a success. The harness's most recently
+  reported session is recorded as the current one now (`current_session` on
+  the board), the wake and the socket route prefer it, and a resume that
+  returns to a known thread counts as the change it is.
+
+- **A session that appeared after the socket cache was scanned missed its
+  wake for good.** The socket route decides from a cache the writer loop never
+  refreshes, and a refusal from it was final: blocking mail sent to a Claude
+  session that started after the last scan got its one wake attempt against a
+  snapshot that did not have it, and the thirty-second refresh revisits no
+  mail. A refusal that could be the cache's staleness arms one retry, and a
+  deferred retry refreshes the cache, off the loop, before it decides.
+
+- **`register` now returns the fingerprint every role-pinning instruction
+  said it did.** The README, the configuration guide and the daemon's own
+  refusal all directed the operator to paste the fingerprint `register`
+  returns under `[roles.identity]`, and `register` returned no such thing: the
+  value existed for the startup log and internal callers only. It is in the
+  registration result as `fingerprint`.
+
+- **The tracked-file hygiene walk treated every stat error as a deleted
+  file.** A tracked file beneath a directory that cannot be entered, or a
+  symlink to nothing, never reached the read that fails for an unreadable
+  file, and with enough other files visited the guard passed having examined
+  neither. Only a path that is not there at all is skipped now.
+
+- **`[limits] max_agents = 32` alone stopped the daemon starting.** The
+  persistent default rose to 64 this cycle, and the startup check compared it
+  against an explicit total after applying it: an operator who had set
+  nothing about persistence was told their persistent setting exceeded the
+  total, on a configuration every release to v0.0.6 accepted. The shared
+  loader compared the raw setting and accepted it, so `dibs mcp-config`
+  printed a configuration the daemon would not boot on. An unset persistent
+  ceiling now follows the total down; a stated one above it is still refused.
+  The configuration guide, which still listed the old default of sixteen and
+  reasoned from it, says what ships.
+
+- **The bridge dropped a second inbox notice inside its cooldown.** Two
+  arrivals within fifteen seconds read as one interruption, which is right,
+  and the second was returned as success and forgotten, which is not: an
+  agent that had read its inbox after the first notice and finished never
+  heard about the second message until something else arrived for it. A
+  failed delivery also spent the cooldown, so a busy socket at the first
+  arrival silenced the session for fifteen seconds. One deferred notice is
+  armed for when the cooldown ends and every further arrival folds into it,
+  and only a delivered notice starts the cooldown.
+
+- **Sending to the human warned that nothing could wake "dibs web".** The
+  pull-only note written for agents was attached to every `send`, the human's
+  mailbox included, and told the sender delivery waited on `inbox` or
+  `check_in` while the desktop notification the send path raises was already
+  on its way. That misled the one decision the note exists to inform, whether
+  to wait for a person's approval. The human's mailbox carries no wake note.
+
+- **Two checkpoint repairs rewrote history on replay.** The round-three fixes
+  that stamp `LastCoordination` on `claim_coordinator` and `prune` did so for
+  every op in the fold, historical ones included. A v0.0.6 agent that claimed
+  with a stale checkpoint and then re-registered with its nonce got a fresh
+  token and a serial; replayed under the new stamp, the claim had refreshed
+  the checkpoint, the register took the "still active" shortcut, kept the old
+  token and allocated nothing, and every serial after it disagreed with the
+  ledger. Both are now gated on the op's recorded semantics, as every other
+  v0.0.7 repair to the fold is.
+
+- **A v0.0.6 retention sweep hid, on replay, a question it never hid.** Under
+  v0.0.6 the mailbox watermark was inert, a number in a result, and a sweep
+  raised it past whatever terminal mail it evicted, pending questions below
+  that included. The readers that honour the watermark arrived this cycle,
+  and the round-three clamp that keeps it from passing mail still present was
+  gated to v0.0.7 sweeps so a v0.0.6 sweep would "replay to the watermark it
+  set". It replayed to a watermark that now hid a question, and `check_in`
+  stopped delivering it. The clamp applies to every sweep; only the fence
+  (which v0.0.6 registration never set) is v0.0.7's to protect.
+
+- **Reading adopted mail left it pending.** `inbox` handed over the body of an
+  adopted message below the heir's watermark and never marked it delivered,
+  because the delivery pass applied the watermark without the exemption the
+  listing had. The sender saw no receipt for mail that had been read. Both
+  apply the same exemption now.
+
+- **`resume` never started the bridge's wake subscription, and rotated the
+  token under it.** The bridge watches its own inbox with the token a
+  `register` reply carries. `resume` also mints one, and the hook ignored it:
+  a session that began with `resume` was never watched, and one that resumed
+  later kept subscribing with the credential the resume had just revoked. The
+  hook handles both.
+
+- **The bridge woke its session for a `notify`.** Every inbox change put a
+  "check the board" notice into the running session, a notify included, while
+  the daemon's own waker (for `[wake.exec]` and the session socket) has always
+  refused to start anything for news nobody is blocked on. The inbox
+  notification now names the event that changed it (`com.dibs/event`,
+  `com.dibs/msg_type` in its `_meta`), and the bridge applies the daemon's
+  rule, `core.WakeWorthy`, which is now the one place that rule lives. A
+  notification from a daemon too old to say what arrived still wakes.
+
+- **The archive gate accepted a script under a binary's name.** Every path it
+  requires is one the runtime executes, and a required entry that was not a
+  Mach-O image was skipped as "documentation": an empty file, a shell script
+  or an ELF binary under `dibd` passed, and so did a correct binary carried
+  without its execute bit, because entry modes were discarded. Each required
+  path must now be a Mach-O for the archive's architecture with the execute
+  bit set.
+
+- **`doctor` reported a healthy wake configuration on a board where 28 of 31
+  agents could not be woken.** It counted the operator's `[wake.exec]` blocks and
+  called that coverage. One command was configured, it covered one harness, and
+  twelve Claude Code agents had no route at all: the check said
+  "1 wake command(s) configured" and moved on. Counting what you configured is
+  not measuring what it covers, which is the same error as a wake that reports
+  success and reaches nobody.
+
+  It now compares the configured harnesses against the persistent agents
+  actually on the board, names the harnesses with no route and how many agents
+  each leaves stranded, and prints the exact `dibs.toml` block to paste for the
+  harnesses whose resume command has been measured. Dibs still runs nothing the
+  operator did not configure (rule 5); what was missing was never consent, it
+  was knowing what to write.
+
+  Rows that are not threads are excluded: the human, the daemon's own agent and
+  the web board are not things a command can resume, and reporting them as
+  unreachable is the kind of false alarm that teaches people to skim a health
+  check.
+
+- **The reattach hint was repeated before every prompt, forever.** An
+  unregistered session in a directory holding idle agents was told it could
+  reattach on SessionStart, and then again on every UserPromptSubmit, Stop and
+  SubagentStop for the life of the session. The function that composes it
+  carried the reason in its own comment, "a hook that speaks on every turn is
+  one people disable", and then did exactly that, because it was a pure
+  function of session and directory with no memory of having spoken.
+
+  Reported by an operator whose agent had already worked out the trap and said
+  so: it could not turn this off. Unregistering makes it fire MORE, since "not
+  registered" is the trigger condition, and the only switch is the plugin's
+  global one, which would take Dibs away from every other session on the
+  machine. A hint you cannot decline, repeated on every turn, is coercive
+  whatever it says, and rule 4 is that this service is advisory.
+
+  Said once per session now, and the hint says so. It is a pointer, and a
+  pointer that did not land the first time does not land the tenth; an agent
+  that read it and chose not to reattach has decided. The same class of bug was
+  fixed once already for the install nudge, which is the argument for the test
+  that now watches this one.
+
+- **The hint did not agree with itself in number**, so three agents "is idle
+  now". Prose a person reads over their agent's shoulder, and the tell that
+  nobody had looked at the output.
+
+- **`dibs upgrade` could take the board down and report that it had not.**
+  `stop` sends SIGTERM and waits ten seconds for the process to go. On timeout
+  it returned an error saying the daemon "is still holding" the data directory,
+  and `upgrade` turned that into "could not stop the daemon, so nothing else was
+  changed". Both are false in the way that matters: a SIGTERM HAS been
+  delivered. The daemon exited a few seconds later, launchd left it down because
+  a clean exit is not a crash, and a 32-agent board disappeared while its
+  operator was reading that nothing had happened. Measured here, by doing it.
+
+  Three changes. The wait is 60s, because a daemon closing a ledger it has just
+  replayed can reasonably take longer than ten and waiting costs nothing. The
+  error says the signal landed and that the daemon should be treated as
+  STOPPING, names what will not restart it and why, and gives the command that
+  will. And `upgrade` now marks the daemon stopped on that path too, which arms
+  the recovery it already had: the file's own comment says "a daemon this
+  command stopped is a daemon it is responsible for starting... leaving a fleet
+  with no board and an error message is the worst outcome available here", and
+  the one path that produced exactly that outcome was the one that skipped it. (That alone was not enough: the recovery
+  was registered below the stop, so the flag was set on a path that returned
+  before the `defer` existed. See the review findings below.)
+
+- **Every agent paid ~18,000 tokens per activation to be told who else was on
+  the board.** `Board()` is what both `register` and `check_in` return, and
+  `dibs://skills` tells every agent to check in at the start of every
+  activation. Measured on a live 32-agent board: 77,770 chars, of which `slots`
+  were 51,803 and one field, `predicted`, was 38,070.
+
+  `Slot.Predicted` is the work-overlap scorer's own intermediate, a per-path
+  weight vector the daemon derives to decide whether two agents are near each
+  other's work. Matching reads it from state. No view has ever read it from a
+  board: not the human panel, not `board.js`, not `dibs board`, not the e2e
+  suites. It is gone from the copy handed out, and the state keeps it, which the
+  test asserts alongside the coordination content that must survive.
+
+  Roughly half the payload, on the busiest call in the protocol. For scale, this
+  project guards `tools/list` with a hard test at 8,700 tokens and was shipping
+  twice that per activation with nothing measuring it at all.
+
+- **The bridge refused a config key it did not know, and said the daemon would
+  too.** `dibs mcp-stdio` reads `dibs.toml` to find the daemon, and refused the
+  whole file on any key its own build could not place, printing "the daemon
+  will not start on it either". The bridge is the binary a session started
+  with, so between every `task install` and that session's restart it is older
+  than the daemon; it blocked a live delivery on this machine over a `fallback`
+  key the daemon had accepted and was serving on. A program that is not the
+  file's authority does not get to speak for the one that is.
+
+  `Load` now reports unknown keys as a typed error alongside the decoded
+  config. The daemon still refuses them, loudly, naming the key. The bridge
+  proceeds on them and still refuses a file that does not parse, with its
+  reasons intact, because there the address really is a guess.
+
+- **Round three of the review: five more, one of them a leak round two
+  introduced.** The retention clamp lowered the watermark to any remaining
+  message addressed to a reused id, predecessor mail included, undoing the fence
+  registration sets to hide a previous occupant's mailbox; it may now undo only
+  the raise the same sweep made. Adoption skipped mail that an earlier adoption
+  had brought into the source, so a second adoption passed the emptiness check
+  and moved nothing; it honours the mark as the inbox does. The bridge's
+  self-wake subscription was started once per process with the first token
+  baked in, so a reattach's rotated token left it failing authentication
+  forever after the next reconnect, silently; a new token retires the old
+  stream. A resume that binds a new alias is ledgered but never touched the
+  durable checkpoint, so a restart just past the old TTL booted the agent stale;
+  it does now. And `send`'s note said nothing could wake an agent the daemon
+  was about to nudge over its session socket; it now says a best-effort notice
+  will be tried and that nothing can confirm it.
+
+- **Round two of the review: six more, all confirmed, three of them consequences
+  of round one.** The retention clamp was gated on the sweep's recorded
+  semantics and the daemon builds its own sweep ops without passing the path
+  that stamps them, so no production sweep ever ran it; its test called `gc`
+  directly and proved nothing about the wiring. Both construction sites stamp
+  the flag now and the test drives the real sweep. The `read_mail` exemption for
+  adopted mail applied to anyone named on the message, which let a replacement
+  registered under the old sender's name read the old body and answer by
+  serial; it is the heir's alone. The adoption filter on the source watermark,
+  itself a v0.0.7 security fix, had no replay gate, so a v0.0.6 adoption would
+  replay moving less than it moved and the heir's recorded answer would refuse;
+  gated. Adopted mail below a reused heir's own watermark was reported moved
+  and hidden; the floor exempts what adoption marked. `bind_session` recorded
+  whom it took a session from and never dropped it there. And a returning agent
+  that stated an alias the daemon had guessed left it marked guessed, still
+  reclaimable by anyone; stating it now confirms it.
+
+  One of those fixes introduced a crash on the way through, caught by the space
+  e2e before it was committed: the adoption exemption dereferenced the message
+  before the check that guards it, so `read_mail` on a serial that did not
+  exist segfaulted the daemon. Guarded, with a regression that reads a missing
+  serial, which no unit test had ever done.
+
+- **Six findings from the different-model pre-release review, all confirmed
+  and fixed.** Widening the session reattach to aliases and dormant rows had
+  been done in the fold without a replay gate, so a v0.0.6 ledger whose op
+  created a sibling would replay to the original instead and then refuse the
+  sibling's next op; it is gated on the recorded semantics now, with the
+  historical rule kept for historical ops. Retention raised the mailbox
+  watermark past a pending question older than the evicted answers, hiding mail
+  it never removed; the watermark is clamped to the oldest message still
+  addressed to the agent (and, as round two found, only wired into the daemon's own sweeps a round later). The upgrade's recovery `defer` was registered after
+  the stop it covers, so a stop that timed out returned before it existed and
+  the promised restart never ran; the earlier guard compared string order in
+  the source and passed, and is replaced by one that runs the cutover with a
+  failing stop. Taking a thread from a dormant holder added it to the new agent
+  and never removed it from the old, leaving hooks to resolve by map order; the
+  takeover is recorded on every binding op and the lookup prefers the live
+  holder. The ingress guard kept its own copy of the fold's reattach rule and
+  fell behind it, refusing a default-registered agent that had lost its context
+  as a thief; it asks the fold now. And an heir could not read the mail it had
+  just adopted, because everything older than its own creation read as
+  inherited; adoption marks what it moves.
+
+- **`review:release` says which reviewer it found, before spending a token.**
+  Two codex binaries live on this machine and the older one, first on PATH,
+  cannot run the configured model; the failure read as a model error. The path
+  and version are printed, and `DIBS_REVIEWER` names one explicitly.
+
+- **A codex thread open in the desktop app can be woken.** This is the case
+  that was reported as unreachable for weeks. `codex exec resume`, the only
+  command anyone had configured, refuses a thread the desktop app has open:
+  "thread-store conflict: already has an active writer", exit 1, and no
+  environment or directory changes that, which is why two earlier diagnoses of
+  the failure were wrong. The command that reaches an open thread is
+  `codex queue --thread <id> --message <text>`: the app's own app-server drains
+  the queue and injects it as a user message. It is the exact inverse of
+  `exec resume`, which starts a CLOSED thread that `queue` would park a message
+  on forever, exit 0, with nothing reading it.
+
+  So `[wake.exec.<harness>]` gains `fallback`, a second argv run only when the
+  first exits non-zero, under every rule the first obeys and through the same
+  validator. The log records which command delivered. `dibs doctor` suggests
+  both for codex.
+
+  Measured end to end on this machine. A thread open in the desktop app refused
+  the primary, took the fallback, and its own transcript then showed "Dibs:
+  check the board." followed by the agent reattaching, checking in, and
+  answering two questions it had been sent: `AWAKE, 2026-09-05 16:57:14 PDT`.
+
+- **Mail arriving while an agent was "recently in touch" was thrown away.**
+  `maybeWake` short-circuits when the recipient called Dibs inside the wake
+  cooldown, reasoning that it "is genuinely working and will see this at its own
+  turn boundary". That holds only where a turn boundary REACHES Dibs. An agent
+  whose harness sends no lifecycle hooks has none, so nothing ever marks its turn
+  ended, recency decays into silence, and because `maybeWake` fires once per
+  event with nothing retrying, the message's only delivery attempt was spent on
+  the assumption.
+
+  Measured, when the operator asked for a specific agent to be contacted: a
+  question sent to an active codex agent 40 seconds after its last call, inside
+  the 90-second window. No wake then, none after, and the daemon's log showed
+  that harness had never delivered a single lifecycle hook, because it runs under
+  the desktop app, which does not read the CLI's hooks file. Every Codex desktop
+  agent on that board was in the same position.
+
+  The window is a deferral now rather than a verdict, and the re-check re-arms
+  while the mail is still blocking somebody: deferring once only moves the loss
+  one window later, since an agent that calls again consumes the retry.
+  `hasBlockingMail` ends the loop when the message is read, answered or expires.
+
+- **`send` promised a wake that could not happen.** A message to a sleeping
+  recipient returned "it will see this when it next wakes". True when something
+  can wake it, and a lie otherwise, in the one sentence the sender acts on.
+  Measured: a question to an idle codex agent holding no thread id. Accepted,
+  that promise returned, no wake attempted anywhere in the daemon log, unread an
+  hour later.
+
+  The identical shape the fold already fixed one branch over, for a message to
+  an agent superseded by a live sibling, where the comment records that Dibs
+  "told the senders it would be seen when it next wakes. Nobody was coming."
+  This is that failure reached from the other direction: not a retired identity,
+  but a live one with no route to it.
+
+  The fold cannot decide this and must not try, because whether a wake is
+  possible depends on the operator's `[wake.exec]` configuration, which is
+  impure and not replayable. So the engine's note now wins wherever it has one.
+  There is still exactly one sentence, and it is the half that knows. The test
+  that pinned the old behaviour asserted the right concern, two warnings about
+  one delivery, through the wrong mechanism, and now asserts the property
+  directly.
+
+- **Which row a session id recovered was a coin flip.** The reattach loop ranged
+  over the agent map and took the first match, and Go randomises map iteration.
+  Two rows can match one reattach: a name that comes back is suffixed in the ID
+  and keeps the NAME, so `bridgekind` and `bridgekind-3` are both named
+  "bridgekind", and both can hold one thread, the first as an alias and the
+  second as the id it registered under.
+
+  A coin flip inside the fold breaks `state == fold(ledger)`: one ledger replays
+  to different boards on different runs, and nothing reports it because each run
+  is internally consistent. Observed on this board within a minute of widening
+  the match to aliases and dormant rows, which is what turned a collision from
+  exotic into ordinary.
+
+  Selection is now ordered: a primary session id beats an alias, then the
+  liveliest status, then the lowest id for stability. Its test runs the same
+  case fifty times per pass, because map order is randomised per iteration and a
+  single run is exactly the shape of check that passes against the bug it was
+  written for. Against the unordered version it splits 45/5.
+
+- **An agent could not be recovered by the only id its harness gives it.**
+  Reattach matched an agent's PRIMARY session id. An agent answers to several:
+  the bridge derives one, and a harness that names its own thread contributes
+  another as an alias. Codex sends `threadId` in `_meta` on every call, so for a
+  codex agent the identifier that identifies it is almost always the alias, and
+  it was the one that would not work: re-registering forked a sibling that could
+  not read its predecessor's mail.
+
+  The status test was wrong in the same way. It admitted `active` and `stale`,
+  where `stale` is the EPHEMERAL lapse and `dormant`, its persistent equivalent,
+  was simply absent. Harmless while persistent agents were rare and held nonces
+  their operators chose; not harmless once persistent became the default, since
+  the common case is now an agent that parked, holds a nonce it was given rather
+  than chose, and can present nothing but its thread. The credential rule is
+  unchanged: an agent that brought its own nonce is still not reachable by an id
+  somebody could guess.
+
+  Found while trying to retire a leftover test row by the only id it had, which
+  created two more.
+
+- **A dormant agent held a live thread hostage, and both ends of the wake path
+  broke.** `mayClaimSession` refused to bind a session id already held by
+  another agent, on the grounds that moving it would redirect that agent's wake
+  delivery. Right for a live holder, and wrong for one that has stopped
+  answering: a dormant agent's session ended with its process, so it cannot be
+  occupying the thread it still owns.
+
+  While it did, both directions failed at once and each looked like success. A
+  wake for the dormant row started the thread and reached whoever was running in
+  it now, who checked their own mailbox, found it empty and truthfully reported
+  no mail; and the agent that actually WAS that session, refused its own id,
+  held no thread at all and could never be woken by anything. Measured with
+  `codex-root-2` dormant for three weeks and a live agent in the thread it
+  owned.
+
+  THE SAME RULE AS `refuseStealingAnotherThreadsSession`, which learned it first
+  and alone. Two implementations of one rule is this repository's most expensive
+  recurring bug and it happened again, four hundred lines away, reached by a
+  different call. Both are now exercised by one fixture in one test, so the next
+  person to change either finds the other.
+
+- **An agent that stated no kind got one that could not park, be woken, or hold
+  mail.** `ephemeral` was the default. It means swept to `stale` rather than
+  `dormant` when the session ends, no durable mailbox, and no nonce, which is
+  the only credential that recovers an identity. So the default opted an agent
+  out of every guarantee this product exists to make, silently, at the one call
+  where nobody is thinking about it. An agent that took it could not go idle and
+  come back, which is the whole point of a coordination board.
+
+  The evidence was self-erasing, which is why it lasted. Counting the kinds of
+  the agents still ON a board says almost nobody uses ephemeral, because
+  ephemeral agents are exactly the ones no longer there; that reasoning was
+  offered here, in this changelog's own draft, and it was survivorship bias.
+  What actually surfaced it was a test agent that registered twice in one
+  afternoon and had evaporated both times, and then a wake that resolved to the
+  thread it had been running in, reached an identity with an empty mailbox, and
+  truthfully reported "no mail".
+
+  An unstated kind is now `persistent`, decided at INGRESS and written into the
+  op, never in the fold: `Apply` still defaults to ephemeral and must forever,
+  or every registration already on disk that stated no kind replays as something
+  it never was. That has its own test, which asserts the old behaviour on
+  purpose so a future tidy-up cannot "fix" the inconsistency by making the two
+  agree. `ephemeral` remains available to anything that asks for it by name.
+
+  A persistent agent needs a nonce, so one is minted for a caller that brings
+  none and handed back with instructions to keep it: a durable mailbox whose
+  credential nobody holds is the orphan `adopt_agent` exists to clean up after.
+  The minted value travels in its own op field rather than in `nonce`, because
+  that field is a CLAIM: a non-empty one selects the nonce reattach path and
+  disqualifies the `session_id` one, so the first version of this broke
+  context-loss recovery for every agent and forked siblings instead. Three unit
+  tests passed against that; the space e2e caught it in one run, by asking
+  whether the old agent could still come back.
+
+  `max_persistent_agents` moves from 16 to 64, matching `MaxAgents`. Sixteen was
+  sized for a board where persistent meant "standing role"; it now counts every
+  agent registered inside `dormancy_max`, which is thirty days.
+
+- **A resuming agent's thread id was dropped, so it could not be woken
+  afterwards.** The `resumed` branch of `register` was written as a
+  response-loss retry: the same nonce twice inside one TTL means the client
+  never saw the first answer, so return it again and change nothing. Right for
+  a retry, and not the only traffic that lands there. An active agent
+  re-registering at the start of an activation, which is what `dibs://skills`
+  instructs, also comes back `resumed`, and it may be doing so from a session
+  the board has never seen. Codex sends `threadId` in `_meta` on every call and
+  that id is exactly what `codex exec resume` takes, so this was the moment a
+  returning agent handed over the one thing that makes it reachable, and it went
+  in the bin. The agent stayed wakeable only for as long as it kept making other
+  calls: register, then stop, and nothing could start it again.
+
+  Measured before the fix: 15 of 29 persistent agents on this board had a wake
+  command for their harness and no thread for it to name, one of which had
+  registered that morning.
+
+  Gated on `V7Semantics` and on the alias being NEW. Binding is replayable state
+  so it has to advance the serial and be ledgered, and doing that ungated would
+  make replay of a v0.0.6 ledger advance the serial where the original fold did
+  not, leaving every serial after it disagreeing with what the ledger records.
+  A genuine retry still writes nothing, which has its own test.
+
+- **The wake ran in the daemon's working directory, so it never reached anybody.**
+  `wakePlan` has carried a `cwd` field since the path shipped, set from the
+  agent's own record and commented as "where the agent says it works". Nothing
+  ever read it. The command therefore inherited the DAEMON'S directory, which
+  under launchd is `/`, and `codex exec resume` refuses to start there: "Not
+  inside a trusted directory". Exit 1, which is exactly the failure this
+  repository's own daemon log recorded three times.
+
+  A field that is declared, populated, documented and never read is worse than a
+  missing one, because the mechanism looks finished. That is this project's most
+  expensive recurring bug class and it was sitting in the middle of the feature
+  whose entire purpose is reaching an agent nobody else can.
+
+  It was in fact two bugs stacked, and the first fix only found one. `wakeFor`
+  has two returns: the socket route, which needs no directory and had carried
+  one since the field existed, and the command route, which runs the process and
+  carried none. So the field WAS assigned, on the branch that cannot use it,
+  which is exactly why it read as used. Setting `cmd.Dir` alone changed nothing
+  in production, and the test that covered it passed anyway because it called
+  the executor directly and never the decision that feeds it. Both layers are
+  tested now, and both tests were watched failing.
+
+  Verified end to end on both harnesses, against real stopped threads rather
+  than fixtures: `claude --resume` and `codex exec resume` each resumed their
+  own thread and delivered the one fixed sentence, with the daemon logging
+  "woke an agent that was not running" for each.
+
+  **The previous entry here blamed launchd's security session and the login
+  keychain, and that was wrong.** It is left described rather than deleted
+  because the wrong explanation cost two investigations and shaped a paragraph
+  of `docs/CONFIGURATION.md`: a probe LaunchAgent in the identical domain and
+  `ProcessType` as `dibd` read the login keychain and ran a complete
+  `claude --resume` turn, exit 0. A confident diagnosis that names the wrong
+  cause is more expensive than no diagnosis, because it stops anyone looking.
+
+  A failing wake now names the directory it really ran in. Its output stays
+  withheld, because a wake command runs a whole agent turn and that output is
+  somebody's decrypted mail; the argv is printed instead.
+
+- **Codex hands a child MCP server nothing**, which is why the local wake above
+  is Claude Code only. Measured by having a probe MCP server dump its own
+  environment under Codex: no session id, no socket, no token. Codex sends its
+  thread id in `_meta` on every call, so an agent binds correctly and mail
+  arrives at its turn boundaries through the shipped hooks; reaching one that
+  has STOPPED still needs `[wake.exec]`, and that is now the documented
+  difference rather than an omission.
+
+- **The socket wake could not deliver to the sessions a fleet actually runs in,
+  and every document said it worked out of the box.** Measured, not reasoned:
+  a notice was delivered to an IDLE live Claude Code session, the write
+  succeeded, and that session's transcript never grew. The reason is in the
+  receiving client. Inbound peer messages pass a `crossSessionInbound` policy,
+  and with no explicit setting a receiver in **bypassPermissions** mode HOLDS
+  any peer message whose sender asserts no mode of its own; the branch that
+  would read an asserted mode sits behind a feature flag that is off by
+  default. So no message a sender can construct is delivered to a session in
+  bypass, which is what an unattended fleet runs in.
+
+  There is also no receipt. The protocol carries a `peer_message_status` frame
+  (held / denied / expired / delivered) addressed back to a `uds:` reply socket,
+  and a daemon has none to give, so Dibs writes the bytes and learns nothing.
+
+  Nothing about the code was wrong; the claims around it were. `WAKE-MECHANISMS.md`
+  §5b said a message had been "watched arrive", which had been measured against a
+  socket rather than a session. The README and AGENTS.md rule 5 presented the two
+  routes as equals. They are not: `[wake.exec]` spawns a process and the daemon
+  sees its exit status, and the socket is best effort. All three now say so, the
+  wake e2e's check names say "reaches the socket" rather than "reaches it"
+  (its receiver is the test, which accepts anything a real client would gate),
+  and `SKILLS.md` tells agents not to rely on being woken.
+
+  `dibs doctor` reports wake coverage now, because the difference was invisible:
+  a board with no `[wake.exec]` is told, in those words, that its only route
+  cannot be confirmed.
+
+- **`dibs doctor` called a correctly configured harness broken.** It matched any
+  64-hex run anywhere in a config file, so the SHA-256 in an unrelated MCP
+  server's `NODE_REPL_TRUSTED_BROWSER_CLIENT_SHA256S` was read as a stale Dibs
+  secret and reported as "codex config has a STALE secret: that harness sees
+  ZERO Dibs tools". The codex install it said that about was on the stdio bridge
+  and working, and the advice, to re-copy the block from `dibs mcp-config`,
+  would have replaced it with an HTTP one. A harness config holds every server
+  that harness has, and other people's servers carry their own credentials; a
+  Dibs secret is only ever the value of `X-Dibs-Local` or a bearer token, and
+  that is what is matched now. Found in live use.
+
+- **A dormant agent held a live session's id forever, and that is what stopped
+  Dibs working.** A session id names a harness thread, and a thread has one
+  occupant. Register refused any id another agent held unless that agent was
+  closed or archived, so a DORMANT row blocked the session behind it
+  permanently: the rightful caller was told "already held by <agent>" and
+  pointed at register-with-your-nonce, which is a call only the other agent can
+  make. The documented remedy, `update(release_session: true)`, needs that
+  agent's own token. There was no remedy the refused party could take.
+
+  Measured on this project's own board, which is where this was found: 29
+  lifecycle hooks arriving from working sessions, **not one** resolving to an
+  agent, the claim guard allowing every edit and no mail ever injected, because
+  the session that could have registered was refused its own id by a row that
+  had been dormant for days. The daemon said so plainly the whole time
+  (`dibs doctor`, `/api/hook-health`: "not one call has resolved to a registered
+  agent"), and nobody had looked.
+
+  A holder that has stopped answering now loses the id to the session
+  presenting it, and the losing row is recorded on the op so replay strips the
+  same one rather than re-deciding what dormant means today. **Nothing about
+  mail moves**: the old row keeps its mailbox, its history, its claims and its
+  recovery credential, and only where a WAKE is delivered changes. An ACTIVE
+  holder still wins, because two live agents claiming one thread is a real
+  conflict rather than stale state, and taking it would redirect a working
+  agent's wakes. The refusal that remains names calls the refused party can
+  actually make.
+
+- **`release_session` reported and recorded a release of nothing.** It cleared
+  the primary id, the aliases and the provenance and then said
+  `session_released: true` whatever it had found, so calling it against an agent
+  with nothing bound advanced the serial, appended an op that changed no
+  replayable state, and told the caller a binding had been taken away. "An op is
+  ledgered iff it changed replayable state" is the rule this repository states
+  about itself. Its test only ever exercised a populated binding.
+
+  The agent-facing schema also understated what it destroys: it said "the
+  harness session id" and reported only the primary, so an agent reached through
+  an alias was told it released nothing while the alias it was actually reached
+  by had just been taken away. Both found by the pre-release review.
+
+- **`claim_coordinator` and `prune_own` skipped the durable coordination
+  checkpoint.** Both return straight out of the dispatcher, before the line
+  under the comment saying every ledgered actor op refreshes it. The daemon's
+  derived `seen` map hides that while it runs and is deliberately not
+  replayable, so after a restart an agent is judged against the checkpoint it
+  held BEFORE the op: one that had just claimed coordinator could be swept stale
+  immediately. Adoption already carried the identical repair, which is what made
+  it findable. Found by the pre-release review.
+
+- **Pruning an already-closed record said it pruned it.** The repair that
+  stopped the no-op reaching the ledger stopped there: nothing was emitted and
+  the serial did not move, and the answer was still `{"ok":true,"pruned":<id>}`.
+  The sibling admin path truthfully returns an empty list and `count: 0`. Its
+  regression test discarded the result, so the false success was never in view.
+  Found by the pre-release review.
+
+- **`dibs upgrade` verified a different daemon than the one it restarted.** The
+  plan discovers the target's real address from the registry each live daemon
+  writes, and it does that on purpose: assuming the address is how a board
+  serving on a LAN address gets restarted on loopback, taking every remote agent
+  off it while every local check still passes. Having found the address, both
+  the before-snapshot and the verification then called the address-free helper,
+  which resolves through the CLI's own environment and config, so the proof that
+  the board came back was collected from whichever daemon THAT named.
+
+  Reproduced with two boards: upgrade stopped one, read the other, printed
+  `upgraded: serial 0, 0 agent(s)` and returned success while its target was
+  serving nothing. With a single board on an address the CLI does not know, the
+  restart works and a failure is reported that did not happen. An earlier
+  release fixed *whether* upgrade stops the right daemon; this is the half that
+  decides which one it then looks at, and the shipped help has been claiming it
+  "verifies the fleet came back" throughout. Found by the pre-release review,
+  with a reproduction.
+
+  The first version of that fix then borrowed the CONFIGURED board's transport
+  for the discovered address, because the resolver answers for the address the
+  config names: a TLS target beside a plaintext config was contacted over HTTP,
+  and a loopback target beside a TLS config over HTTPS, both failing inside the
+  transport and reading as "the board did not come back". The restart half of
+  this command already carried that argument and a `sameHostPort` guard; the
+  reading half now does too. Caught by the next review round, whose regression
+  test the first one could not have failed: it used two plain-HTTP servers.
+
+- **A role was checked for spelling inside the replay fold.** `applyGrantRole`
+  rejected an unknown role in `Apply`, which is the fold that replays ops
+  accepted by older code, so removing or renaming a role would make the new
+  build refuse a `grant_role` already in its own ledger and stop the daemon
+  booting. The typed request path immediately beside it does this in `Admit` and
+  carries the paragraph explaining why. The test meant to guard the rule asked
+  `State.Apply` to reject `"superuser"`, so it froze the wrong placement: the
+  test written to protect the rule was pinning the bug that broke it. It asserts
+  both halves now, and `grant_role` is enumerated in the guard that walks this
+  class. Fifth time this mistake has been caught here. Found by the pre-release
+  review.
+
+- **Adoption reported records the heir could not read as rescued mail.**
+  `Inbox` excludes a finished message once its addressee has collected it. The
+  handover moved and counted every record above the watermark, consumed ones
+  included, beside a note that says "read them with inbox", so a mailbox holding
+  one unread message and one already acknowledged reported two and showed one,
+  to a coordinator deciding whether the rescue was worth authorising. One
+  definition of "would this appear in an inbox" now serves both. Found by the
+  pre-release review.
+
+- **Mail the recipient could not see filled its mailbox and was reported
+  delivered.** Two more readings of the ownership watermark that asked only
+  whether a message was addressed to an id, found by sweeping for the class the
+  previous round turned up.
+
+  The capacity metric counted a previous occupant's mail, so a send could be
+  refused with `E_MAILBOX_FULL` against an agent whose inbox reads as empty, and
+  nothing could clear it: the recipient cannot see the mail, so it cannot read,
+  answer, ack or consume it, and the sender is simply refused. Only a notify may
+  displace, so a question to that agent was refused permanently. Rule 6 says an
+  error names the corrective call; this one had none to name.
+
+  The delivery marker had the same gap, and that one is a claim made to the
+  SENDER. Mail below the watermark is not in the inbox the agent just read, so
+  marking it delivered told its sender it had reached somebody who had not seen
+  it and never would. Worse than a message that fails to arrive, because an
+  undelivered message still reads as undelivered and this removes the one signal
+  that would have prompted them to ask.
+
+- **The operator's space transcript rendered every announcement with no text.**
+  The board payload carried announcement bodies until it turned out `Board()` is
+  what `check_in` returns to every agent on every activation, so every
+  announcement in every space was going to agents that had joined none of them.
+  Stripping it there was right. What it left was a transcript rendering the
+  sender and the acknowledgement state above an empty span, under a comment
+  promising "bodies, not a count, because the whole reason a human joins a space
+  is to see what the agents are saying", and another asserting that nothing read
+  the field, which the board renderer had been doing all along. The test guarding
+  the confidentiality half passed throughout, because it asserts the metadata
+  survives and nothing asserted the operator could still read anything.
+
+  The text comes from `/api/messages` now, joined to the transcript by serial:
+  the route that already solves this for decrypted mail, behind the page key,
+  which is port-scoped and so is not handed to every local service the operator
+  visits. The coordination secret does not open it, which is now asserted rather
+  than assumed, because a route that started carrying more had better be the
+  narrow one. Found by the pre-release review.
+
+- **Restarting the daemon disconnected every agent on the machine, for the rest
+  of its session.** The bridge returned on a request it could not deliver, which
+  ends the process, and no harness restarts a stdio MCP server. The agent saw
+  one "server disconnected" line: not which server, not that its board was gone,
+  not that the mail it was waiting on would never arrive. It kept working with
+  no coordination at all. The ten-second grace covers an upgrade, which is
+  drain-swap-start and takes milliseconds; it was never going to cover an
+  operator rebuilding the daemon they are working on, and that is what a person
+  actually does. Measured here after one restart: six live sessions, zero bridge
+  processes.
+
+  The bridge now answers the call and keeps serving. The reply says whether the
+  request could have been applied, because a refused dial proves it was not read
+  and any other failure leaves the question open, and the next call dials again,
+  so a session reattaches by itself the moment the daemon is back.
+
+- **The bridge's ordinary shutdown ran the emergency exit.**
+  `signal.NotifyContext`'s stop function cancels the context it returned, and a
+  deferred stop runs before the deferred cancel above it, so every clean exit
+  cancelled the signal context first. The watcher could not tell that from a
+  real SIGTERM and called `os.Exit(0)`, skipping the bounded wait that is the
+  only guarantee no stream goroutine outlives the process. Both paths ended at
+  status 0, which is why nothing surfaced it. Found while writing the test for
+  the entry above, which could not run at all: a test binary does not survive
+  `os.Exit`.
+
+- **A refused `subscriptions/listen` retried forever and told the harness
+  nothing.** A listen answers with a stream, so the bridge stopped reading the
+  response as a reply and pumped it for SSE frames. A refusal is not a stream:
+  the daemon writes an ordinary JSON-RPC error when `dibs://inbox` arrives
+  without a token, when the token is one it does not know, or when the writer
+  cannot flush. `pumpSSE` drops every line lacking a `data: ` prefix, so the
+  error was discarded whole, the instant end-of-body read as a daemon that had
+  gone away, and the bridge re-POSTed the same doomed request every 150ms for
+  the life of the session. The harness had asked to be told about mail and
+  would have waited forever. A response that is not `text/event-stream` is now
+  an answer: it goes back as the reply to the harness's own call, paired by id,
+  and the loop stops. A body that is not JSON-RPC at all (a proxy's error page)
+  becomes one, because stdout is a JSON-RPC channel, with a hint naming
+  `await_events` as the corrective call.
+
+- **Six end-to-end suites raced the daemon they had just started.** Each polled
+  for `local.secret` and treated the file appearing as "the daemon is up". The
+  daemon writes that secret most of a startup before it binds its listener, so
+  the first request after the poll raced the bind and lost often enough to fail
+  a CI run on a working daemon: `ConnectionRefused`, from a suite whose subject
+  was fine. Several sites did not even check the secret was found, and would
+  have gone on to send an empty one. They now wait for a socket that answers a
+  request. A daemon that dies during startup reports its exit status instead of
+  presenting as a timeout, because "dibd exited with status 1" is the finding
+  and "waited ten seconds" sends the reader to look at timing.
 
 - **A board's certificate could not both expire and stay trusted.** `dibs trust`
   pins what a daemon presents, ssh-style, so a single self-signed certificate
@@ -880,7 +2855,8 @@ machines for real work. Their priority order, not ours.
 - **`E_MSG_FINAL` carried no hint**, in breach of the rule that every error
   names the corrective call, and it is the error an agent hits exactly when it
   has come back late to something it missed. It now names the corrective call:
-  send a new message, and if that agent is gone, the human's row outlives them.
+  `send` a new message to that agent, and if they are gone, `check_in` for who
+  is on the board now.
 
 - **README: building without mise or task.** On a network that allows the Go
   module proxy but not the object store it redirects to, neither tool installs
@@ -890,6 +2866,559 @@ machines for real work. Their priority order, not ours.
   install rules that are not obvious from them: remove before copying, because
   macOS caches a signature verdict against the inode, and set the codesign
   identifiers, which the Go toolchain leaves as `a.out`.
+
+- **An approval was lost if the board restarted before the asker heard it.** A
+  blocking notice is what reaches an agent that asked for something and then
+  stopped waiting, and it existed only in memory, created by live event
+  processing. A daemon restarting between the approval and that agent's next
+  turn boundary therefore lost it outright: the grant stayed ledgered and
+  correct, `hook_poll`, `[wake.exec]` and `check_in` all saw nothing, and the
+  agent waited indefinitely for news that had already happened. Notices are
+  ephemeral by design and the architecture's rule is that such a view must be
+  rebuildable; nothing rebuilt this one. It is rebuilt from state rather than
+  from the event ring, because a terminal message its asker has not consumed is
+  exactly the set still owed and cannot drift from what the ring happens to
+  still hold.
+
+  **It does not re-arm `[wake.exec]`.** The notice is waiting when the agent
+  next calls in, and nothing starts a process to bring it back: wake evaluation
+  happens when an event is published, and a rebuild publishes none. Issue #75
+  is where that half is being worked.
+
+  The first version keyed on `Message.Consumed`, which is about the other
+  party: the RECIPIENT consumes a message when they answer it, so every verdict
+  is consumed the instant it exists and nothing was rebuilt at all. Its unit
+  test set that field by hand and passed. What found it was running a real
+  daemon, from the built archive, and restarting it: `task test:human` does that
+  now, because a fixture a test wrote itself can only confirm the assumption in
+  the fixture.
+
+- **The published Stop-hook verification could not fail.** The Codex plugin
+  tells an operator to call `spawned_agents` before and after a turn and
+  compare, and it said to look for "the entry changing": `since_seconds` and
+  `seen_seconds` are computed with `time.Since` on every read, so the entry
+  changes because time passed. Somebody whose Stop hook never reached the daemon
+  could follow the procedure exactly and be told delivery works, which is the
+  worst possible outcome for a step people run when they already suspect a
+  problem. It names `state`, which is the field a lifecycle event actually
+  moves, and the value to look for.
+
+- **A long space name opened no space, and said it had.** The generated id was
+  truncated to the limit and then retried at the same length, so all four
+  attempts collided with the same existing space: the declaration succeeded
+  while the space it promised was never opened. The retry suffix is preserved
+  now.
+
+- **The board panel's human control said "act as yourself".** It reads the
+  board and it does not act, and the two are separate capabilities: the panel
+  renders in the human's UI but speaks over the agent's connection, so reading
+  it is not authority to do anything. The control says "confirm it's you", and
+  the panel explains the distinction rather than leaving it to be inferred from
+  a button.
+
+- **An established role pin outranked the operator's current configuration.**
+  The pin records which identity a standing role was granted to, so that the
+  same NAME cannot later be taken by a different agent. Once it existed, the
+  check returned success on the pin alone and never looked at
+  `[roles.identity]` again, so neither way of withdrawing an authorisation had
+  any effect on the next grant: deleting the entry re-granted the agent anyway,
+  and pointing it at a successor re-granted the predecessor beside them. Each
+  restart passed the new configuration in, was told yes, and re-granted the old
+  identity, which for admin is every decrypted mailbox on the board restored
+  against the operator's written instruction. The pin is a floor now, not a
+  grant: both the pin and the current configuration have to name the agent.
+
+  **A refused grant is not a demotion.** A role is replayable state, so an agent
+  that already holds one keeps it until something takes it away, and nothing in
+  the reconciler does: it only ever grants. So the sequence is two steps, and
+  saying so is the point of this paragraph: edit the config, then `dibs admin
+  member <agent>`. Making the config sufficient on its own means the reconciler
+  demoting agents it did not grant this run, which is a change to how standing
+  privilege is withdrawn rather than a wording fix: issue #73 has the edges that
+  make it worth doing deliberately rather than in the hour before a tag.
+
+- **The wake path's long-turn ordering is exercised end to end.** Every
+  recorder in the wake suite exited at once, so what happens *during* a turn was
+  answered only by unit tests calling the pieces in the order the author
+  expected, and three defects lived in that gap: mail arriving after the woken
+  agent read its inbox was discarded, then it was recorded and the re-check
+  could not get past the same test, then the two facts the exit produces were
+  published separately and a message landing between them saw neither. The
+  suite now runs a recorder that checks in like a real agent, keeps running,
+  checks in again, and exits. Verified by disabling each fix in turn and
+  watching it fail: the first attempt disabled one of the two places the
+  arrival is recorded and passed, which is the same redundancy the burst check
+  has.
+
+- **A verdict now reaches an agent whatever `notices_wake` says.** An answer, an
+  approval, a denial or a decline is the reply to something that agent asked and
+  then stopped for, so it is treated as blocking: counted separately, delivered
+  at `urgent`, and not suppressed by `notices_wake = false`. That is an
+  operator-visible change to what a configuration switch does and it was never
+  announced; `docs/CONFIGURATION.md` still named an approved request as an
+  example of what the setting governs, so somebody turning it off to save tokens
+  would have expected to stop hearing the one thing they cannot afford to miss.
+
+- **`dibs fingerprint` could fingerprint the wrong certificate.** It always read
+  the managed `tls-cert.pem`, and a board with `tls_cert` configured serves
+  something else: the command either reported no certificate or fingerprinted a
+  stale auto-generated chain. On the one command whose entire purpose is
+  comparing what is served against what another machine pinned, and whose
+  mismatch message says something other than your daemon is answering.
+
+- **A wildcard bind was published as a client's destination.** `DIBS_ADDR` was
+  copied verbatim into every generated configuration, because the scheme it may
+  carry cannot be inferred, so a daemon started with `:4777` or `0.0.0.0:4777`
+  told its clients to dial the address it LISTENS on. `:4777` has no host in it
+  at all. It goes through the same resolver the configuration branch beside it
+  has always used, which keeps the scheme.
+
+- **Two guards enforced less than they claimed.** The workflow shell check
+  described multiple statements, pipelines, redirections, substitutions and
+  control flow as forbidden and tested nine substrings: `cmd1; cmd2` passed, so
+  did an unspaced pipeline, a single `>`, a backtick, a `while` loop, and a
+  block of two ordinary commands. And the e2e suite count counted TASKS, so a
+  task running two suites counted as one and the documented number could stay
+  green while the gate ran an extra. Both now check the property they state, and
+  the shell one distinguishes a folded block, whose lines are one command, from
+  a literal one, whose lines are several.
+
+- **The README's opening line said Dibs never acts.** Two things in this release
+  act, both because somebody asked: approving a `request` carrying `grant` or
+  `adopt` performs that change, which is the point of approving it, and
+  `[wake.exec]` runs a command from the operator's own config. It still never
+  decides what an agent does next, which is the part that mattered, and saying
+  the broader thing made the narrower one unbelievable.
+
+- **A permission hint was chosen by folder rather than by failure.** Anything
+  under `~/Desktop`, `~/Documents` or `~/Downloads` that matching could not read
+  was told it was a macOS protected-folder problem, and advised to move the
+  checkout or grant the daemon Full Disk Access. A directory that simply has no
+  `.git` got the same advice, with the real answer sitting in the error text
+  beside it. Both remedies are heavier than the fix and one of them moves a
+  working tree for nothing. The distinguishing symptom was already written in
+  that function's own comment and not used: the protected-folder case makes git
+  BLOCK, so it presents as a deadline, and a clean fast answer from git means
+  git ran. Reported by an agent that followed the advice.
+
+- **`dibs upgrade` could leave the old daemon running and call it upgraded.**
+  Two independent signals say something is running: a request to the board, and
+  the registry the daemon writes for itself. Cutover consulted only the first,
+  so any transient failure of that one request skipped the stop entirely: the
+  replacement started, exited at once on the directory lock the original still
+  holds, and the original went on answering. Verification then found a board,
+  had no pre-upgrade serial to compare it against, and printed `upgraded:` for
+  the process the command exists to replace. With `--adopt-dir` the data
+  directory is renamed under that live writer as well. A registered daemon is
+  stopped whether or not it answered a moment ago.
+
+- **`dibs upgrade` could rewrite another board's service unit.** The function
+  that decides which unit belongs to this board asked `strings.Contains`, so a
+  unit for `~/.dibs-old` was accepted as the unit for `~/.dibs` and then
+  rewritten and reloaded. `--adopt-dir` renames a directory to exactly that
+  shape, which makes the two most likely to collide the two most likely to be
+  present. The exact-token matcher was already in the same package, written for
+  this question, with the tests that prove a substring is wrong; it simply was
+  not called here.
+
+- **The approval panel showed the Approve button and not the reason.** Two
+  carriers arrive for the same state: `_meta` holds a body-redacted copy,
+  because it travels through hosts that put tool results in front of the model,
+  and the content beside it holds the readable answer the panel asked for with
+  its own token. The panel preferred the redacted one in all three paths, so a
+  request card kept its grant, its adopt and its Approve button and showed no
+  body at all, and a question lost its declared choices. That is the worst
+  version of this surface: it asks somebody to decide with the deciding part
+  removed. The redacted copy still decides which messages there are, because it
+  is also the filtered one; the readable copy fills in what redaction emptied.
+  All 88 panel checks passed against the unreadable state, because they counted
+  messages and read action labels and never looked at the text.
+
+- **An unauthorised admin alias took a valid coordinator grant down with it.**
+  The one-agent-one-role rule collected every admin alias that RESOLVED and
+  skipped a coordinator naming the same agent, and resolving is not being
+  authorised: with the admin spelling absent from `[roles.identity]`, the valid
+  coordinator grant was skipped for an admin grant that was then refused, so
+  nothing was granted. The launch claim stays suppressed either way, because the
+  config does name a coordinator, so a fresh board came up with no coordinator
+  and no way to get one: the state the claim exists to prevent, produced by the
+  fix for a different defect. Admin runs first and reports what it actually did,
+  and only an agent holding admin suppresses its own coordinator declaration.
+
+- **The documented role handover left the predecessor holding the role.**
+  `docs/CONFIGURATION.md` said to install the successor's fingerprint and delete
+  the old pin, and omitted the demotion: a role already held is replayable state
+  that nothing in the reconciler takes away, so an operator following the guide
+  believed the role had moved while the predecessor went on reading every
+  mailbox. It is three steps now, with the demotion first, which is the wrong
+  thing for a security document to have been quiet about.
+
+- **The only test protecting the cancelled-Touch-ID verdict never ran.** It
+  skipped unless the presence helper happened to sit beside the Go test binary,
+  which neither the ordinary gate nor `-tags dibdev` arranges, so reverting
+  "cancelled means abandoned" to "cancelled means declined" left everything
+  green. That distinction is the whole point of the package: a decline is a
+  claim about a person, and nobody was asked. The decision is split from the
+  plumbing and tested directly, which is what this package already did once for
+  the same reason.
+
+- **`WAKE-MECHANISMS.md` called a shipped protocol path "not built".** Legacy
+  `resources/subscribe` and the GET SSE notification space were written up as
+  the next bet, the bet was taken, and the sentence stayed: an integrator
+  reading it goes looking for an alternative to something that is already here.
+
+- **The wake tests raced the wakes they caused.** `maybeWake` starts a
+  goroutine, and seventeen assertions read the maps that goroutine writes
+  without taking the lock that guards them. Every local run passed and CI went
+  red once, which is how a race behaves and why it took a gate on another
+  machine to show it. The production locking was correct on both sides; only
+  the tests were wrong, and a red release gate nobody can reproduce is its own
+  kind of defect.
+
+- **`dibs doctor` called the correct shipped Codex hook broken.** Teaching the
+  scanner to read both plugin layouts without teaching it that they address
+  servers differently made it judge every file against the Claude Code spelling:
+  a Codex hook correctly naming `dibs` was reported as pointed at a server that
+  does not exist, with "reinstall the plugin" as the remedy, which cannot fix a
+  file that is already right. A second warning then listed the tools the daemon
+  does not serve, with the list empty. Both fixed, and the guard runs the
+  scanner from the repository root, because the first version of it ran in the
+  package directory, scanned nothing, and passed.
+
+- **One agent could hold two roles by being spelled two ways.** The validator
+  refuses the same string in both role lists, and a name and an id are two
+  strings for one agent: `coordinator = ["fleet-lead"]` beside `admin = ["Fleet
+  Lead"]` passed and resolved to one identity, so every reconciliation granted
+  coordinator and then admin. Two ledger entries every fifteen seconds and a
+  window in between where admin-only calls fail, which is the oscillation the
+  validator's own message says it prevents. Decided after resolution now, where
+  aliases are visible, and admin wins because it already includes what
+  coordinator can do.
+
+- **A wake exit at the same instant as a check-in was ignored.** The turn end is
+  compared against the last contact with a strict `After`, and both come from
+  `time.Now()`: an agent that called in and exited within the same clock tick
+  looked like it was still running, so the next message was refused. It also
+  made a test fail once at the release gate and pass two thousand times after,
+  which is what a race nobody can reproduce looks like from the outside.
+
+- **Board credentials were minted even when the OS random source failed.** The
+  error from `crypto/rand` was discarded and the buffer returned regardless, so
+  a failing RNG produced a zero or half-filled bootstrap token, session token
+  and page key, and authentication continued with them. Both mints refuse now,
+  and both HTTP handlers report the refusal: returning 200 with an empty token
+  spends the operator's fingerprint on an answer that grants nothing and calls
+  it success, and a handler whose failure depends on the caller noticing is not
+  one that refuses.
+
+- **A strict hook's dropped keys were logged where the daemon does not look.**
+  The Codex strict schema cannot carry `agent` and `queued`, and the comment
+  said the distinction they encode is kept in the daemon log. It used `Debug`,
+  and the daemon starts at `Info`, so the record was dropped by the handler: a
+  strict hook returned `{}` with nothing anywhere to separate "news is queued
+  and this event could not carry it" from "there was nothing to say".
+
+- **The Codex documentation contradicted itself about what Codex can do.**
+  Several current-facing pages still described it as legacy-only, pull-only, on
+  HTTP, or unable to run `mcp_tool` hooks, in some cases a few lines from the
+  correction. The measured tables keep their dates and now point at what is
+  true; the claims that read as current say what current builds do.
+
+- **`dibs upgrade` could not read the service unit Dibs itself writes.**
+  `configure --service` emits `ExecStart` through a quoter that wraps the value
+  and doubles a backslash, a quote, a `%` and a `$`; the reader split on quotes
+  and whitespace and reversed none of it. So `-dir "/tmp/Fleet Review"` came
+  back as two tokens, neither matching the board, and the unit describing this
+  very daemon read as another board's: upgrade started a detached process
+  instead of the service, printed a warning, and accepted the result. The board
+  comes back and systemd is no longer supervising it across logout or reboot.
+  Any path holding a space, a `%`, a `$` or a backslash was affected. The reader
+  parses what the writer emits now, and its test round-trips through the real
+  writer rather than a hand-written unit, because the defect was exactly that
+  the two disagreed.
+
+- **A configured certificate was judged against an address that may not win.**
+  Moving the hostname check to startup was right and left the old one at config
+  load, where `-addr` and `DIBS_ADDR` are both invisible: a board whose
+  `dibs.toml` names one address and which is started on another refused to load
+  at all, holding a certificate that was correct for the address it was told to
+  serve. That is worse than the hole it closed, and this changelog said in as
+  many words that the check cannot live there. It is asked once, after the
+  address is resolved, for both startup and `dibd -check`.
+
+- **A failed fallback space was reported as "no join threshold is set".** The
+  matching-status hint took precedence, and one exists for every non-ready
+  phase, including the suggest-only phase a zero join threshold produces, which
+  is the default. So on an ordinary board the agent got a true but irrelevant
+  sentence and never the relevant one: nothing matched, no space was opened,
+  and there is nowhere for the next agent to find it. That is the misreading
+  the outcome was added to prevent, previously only reachable on a board
+  configured in a way most are not.
+
+- **Two parallel boards logged each other out.** The session cookie was named
+  `dibs_session` on every board, and cookies are scoped to a host and never to
+  a port, so each redemption silently overwrote the other's. `-allow-parallel`
+  exists so an operator can run separate boards for agents they do not trust
+  together, and their two web interfaces could not both stay signed in: the
+  older tab kept its own port-scoped page key and started sending the newer
+  board's session token, so its stream revalidation and every keyed request
+  failed with nothing on screen to explain it. The name carries the port now.
+  That fixes the collision and changes nothing about the exposure `SECURITY.md`
+  describes: a different name is the same jar, sent to the same host, by the
+  same browser.
+
+- **The Codex plugin's hooks were outside the test that checks hook arguments.**
+  `TestShippedHooksSatisfyTheSchemasTheyCall` globbed `plugins/*/hooks/hooks.json`
+  and said in a comment that Codex uses that layout. It does not: Codex reads a
+  `hooks.json` at the root of its config directory, which is how the plugin
+  ships it. So the one plugin whose hooks carry required parameters was the one
+  the required-parameter test could not see, and removing `session_id` from
+  every Codex hook would have left it green. `dibs doctor` scanned the same
+  single layout and printed the all-clear over the same blind spot. Both read
+  both layouts now.
+
+- **A retired agent shadowed its live successor in `[roles]`.** A name is the
+  first agent's id, so when `fleet-lead` retires and a replacement registers
+  under the same name it becomes `fleet-lead-2`. Resolution matched the exact id
+  first and did not ask whether that agent was gone, where the by-name branch
+  beside it always had: the documented handover therefore resolved the
+  predecessor forever, the pin refused it, and the board never got the
+  coordinator its config names. It fails closed, which is the right direction
+  and is still a board without its coordinator.
+
+- **The rebuilt verdict notices were ordered by the wrong serial.** The notice
+  carries the serial of the *verdict*, and the rebuild sorted by the serial of
+  the *request*, so a very old question answered a moment ago was inserted
+  first, where the sixteen-notice trim discards it, while older verdicts for
+  newer requests survived. That is the reverse of the "newest win" the trim
+  promises. Only visible with more than sixteen owed at once.
+
+- **The board could report itself unlocked while discarding its only
+  credential.** The page key arrives in the redirect's fragment, is written to
+  `localStorage`, and the fragment is then erased. The write was wrapped in a
+  `catch` that swallowed the failure, so where storage is unavailable and
+  cookies still work the document and `/events` loaded and every keyed request
+  went without the header: an unlocked board with an empty mailbox and buttons
+  that do nothing, and nothing on screen saying why. The tab keeps it in memory
+  as well, which is enough for the session it was minted for.
+
+- **The Codex Stop verification asked for something an agent cannot do.**
+  Correcting it to name the `state` field was right and not sufficient: a tool
+  call requires a turn, and an agent's next turn opens with `SessionStart`,
+  which puts `state` back to `running` before it can look. It has to be a
+  *second* agent that reads `spawned_agents` while the first is between turns.
+  The shipped plugin README was worse and said that being listed at all proves a
+  Stop arrived, which `SessionStart` alone also achieves.
+
+- **`AGENTS.md` prescribed a release command that refuses.** It named a literal
+  `task release VERSION=0.0.6`, and 0.0.6 is the version already tagged, so the
+  command declines rather than going backwards. It sits at the step where
+  somebody is following instructions exactly.
+
+- **Mail arriving after a wake exited was refused as "still working".** The
+  commoner ordering, and the last of this one: a wake runs, the woken agent
+  reads its inbox, which is a call to Dibs and makes it recently in touch, the
+  command exits with nothing having arrived meanwhile, and *then* a question
+  lands. Nothing was running, so nothing was owed, so no turn end was recorded,
+  and the recency test refused the wake on the strength of a turn that had
+  already finished, without even arming a deferred re-check. The message was
+  stored and reported delivered. The exit records the turn end unconditionally
+  now, which is simply true and makes both orderings answer correctly, rather
+  than adding a third branch for the third case.
+
+  And the two facts the exit produces arrive together. Clearing "running"
+  happened outside the writer loop while recording the turn end was queued onto
+  it, and different branches read each: a message landing in between saw the
+  agent as no longer running AND as recently in touch, so it was neither marked,
+  nor woken, nor deferred. Both happen in one turn of the loop, which makes the
+  intermediate state unobservable rather than merely unlikely. A window that
+  narrow is not worth closing with a narrower one.
+
+- **A retried wake said "question" from nobody.** The retry passed a hard-coded
+  message type and a bare event, so `{type}` and `{from}` were wrong on every
+  wake that went through a cooldown or an exit re-check, which this release
+  makes the ordinary path rather than a corner: a request, a handoff or an
+  approval all arrived at the operator's command as a question from an empty
+  sender. Both are documented configuration. The retry reads the longest-waiting
+  blocking message instead, and says `notice` when the reason is a blocking
+  notice rather than mail, because that is not one of the four message types and
+  should not borrow their vocabulary.
+
+- **The source build produced a notifier the building Mac could not run.**
+  Stating the release's target inside the bundler fixed the archive and broke
+  the escape hatch the Intel drop documents: `task build` on an Intel Mac
+  produced native Go binaries, a native presence helper, and an arm64-only
+  `dibs-notify` beside them, which the runtime finds at the expected path and
+  runs rather than falling back. The target is an input now. The release states
+  one because it is building for somewhere else; a local build states none
+  because it is building for the machine it is on.
+
+- **The locked board told a Touch ID user to make an admin password.** Both the
+  401 text and the page a browser gets said the way in is the password, at the
+  exact moment somebody is locked out and looking for instructions. The README
+  and the Homebrew caveat had the same error and were corrected a round earlier;
+  nothing was watching this one, which is the version a person actually reads.
+
+- **And the re-check could not get past the same test one hop later.**
+  Recording the arrival before the recency short-circuit fixed the branch that
+  decides whether a re-check is owed, and the re-check itself then asked
+  `recentlyInTouch` and returned: the agent is recently in touch precisely
+  because the wake it has just finished called Dibs. The wake command runs the
+  agent's whole turn in that process, so the process exiting IS the turn
+  finishing, which is what `turnEnded` already means and what a Stop hook would
+  report on any other path. It is recorded at the exit, and every later
+  re-check, including the deferred one, reads the right answer. The test stopped
+  at "the exit owes a re-check" and never drove the decision, which is where
+  production lost it.
+
+- **A failed wake plus mail during it left a live timer.** Two re-checks can be
+  owed at once, armed by different code: the failure arms one for its cooldown,
+  the arrival arms one for the exit. The exit runs first and dropped the
+  cooldown entry from the map without stopping the timer, so the orphan fired
+  later and started a third command, against the promise two lines from it that
+  a command failing twice fails rather than looping.
+
+- **The one instruction the role pin has was invalid TOML for the names this
+  release added.** The daemon prints the `[roles.identity]` line to paste,
+  because the operator cannot look a fingerprint up anywhere else, and it
+  interpolated the agent's name as a bare key. A bare TOML key holds only
+  letters, digits, underscores and dashes, so `Fleet Lead = "..."` does not
+  parse: following the daemon's own advice produced a `dibs.toml` it then
+  refuses to load, with the role still ungranted and a new fault on top. The
+  guard hands the printed snippet to the same decoder the daemon uses rather
+  than checking that it looks quoted.
+
+- **`task build` could not build on the Mac the release no longer covers.** The
+  app bundle's icon renderer is a build-time tool that the build then executes,
+  and it was compiled through the same helper as the shipped notifier, which now
+  states an arm64 target: on an Intel Mac Swift emitted a binary the next line
+  could not run. Building from source is the documented answer for anyone whose
+  Mac the release dropped, so that path has to work. A tool that runs during the
+  build and a file that ships in the archive have opposite requirements, and one
+  function serving both is how they were confused.
+
+- **Reading the inbox cancelled the re-check that exists for what comes after
+  it.** Mail arriving during a running wake is re-asked when that command exits,
+  and the woken agent's inbox read is itself a call to Dibs, so the agent became
+  "recently in touch" and the short-circuit fired before anything recorded the
+  arrival. The fix shipped one round earlier was therefore unreachable on
+  precisely the ordering it was written for, and the test could not see it
+  because it drove the decision directly and skipped that branch. The arrival is
+  recorded before the recency test, and only where a wake is known to be
+  running: an agent working at its own keyboard is still left alone.
+
+- **The Swift helpers are built for a stated target**, not for whatever the
+  release runner happened to be. `Dibs.app` is built once and copied into every
+  archive, and with no `-target` it took the host's default: `dibs-notify` was
+  arm64-only inside `darwin_amd64`, where the passive notification path returns
+  the exec error rather than falling back to `osascript`, so the release's whole
+  human-in-the-loop story was absent on a shipped target while every check was
+  green. The archive check reads Mach-O headers now, across every darwin
+  archive, because a file at the right path that cannot execute is not an
+  installation.
+
+- **A standing role declared by name was never granted.** `[roles]` is
+  documented to take agent names, `register` turns a name into an id, and the
+  reconciler passed the configured string straight to a lookup keyed by id: the
+  documented `admin = ["Fleet Lead"]` waited forever for an agent whose id was
+  literally that, while the agent that registered under the name sat there as
+  `fleet-lead`. Every existing test used an already-slugged name, so the
+  distinction never showed. Names resolve now, and a name held by two live
+  agents is refused rather than resolved to whichever came first.
+
+- **A configured certificate was checked against the config's address, and the
+  daemon may not be listening there.** `-addr` and `DIBS_ADDR` both outrank
+  `dibs.toml`, so a board with an explicit pair and no configured address passed
+  `dibd -check` and config loading, served TLS on the default loopback listener,
+  and was refused by every client on hostname verification. The check cannot
+  live where the config is loaded, because that code cannot see the flag and
+  assuming loopback there would refuse a certificate that is right for the
+  address the daemon was told to bind, which `dibs upgrade` always passes: the
+  refusal would land mid-cutover with the previous daemon already stopped. It is
+  asked at startup, where the address is finally settled.
+
+- **`dibs upgrade` could change the board's transport on a direct restart.**
+  The daemon resolves `-addr`, then `DIBS_ADDR`, then the config, and upgrade
+  passes `-addr`, which outranks the variable still set in the environment the
+  replacement inherits. A board launched with `DIBS_ADDR=http://10.0.0.9:4777`
+  whose `dibs.toml` does not repeat that address was therefore handed the bare
+  form, and the replacement re-inferred TLS for a non-loopback host while every
+  client went on speaking plaintext; the reverse turns an explicitly TLS
+  loopback board into one nobody can reach. The environment is consulted with
+  the same rule as the config, which is to state the scheme only where the
+  source names the listener the daemon actually bound.
+
+- **`SECURITY.md`'s summary table described an authorisation model two rounds
+  out of date.** It put `/` and `/events` under "needs the admin password, never
+  the secret alone", where a session cookie alone is sufficient by design
+  (`EventSource` cannot send a header) and that session is minted by Touch ID on
+  a Mac that has no admin password; the document's own detailed section had it
+  right. It also still described a standing role as pinned to the first agent it
+  landed on, which was replaced by the `[roles.identity]` fingerprint
+  requirement in this same release, and said the launch claim is suppressed
+  whenever `[roles] coordinator` names somebody, where a bare name decides
+  nothing precisely because it can never be granted. A security document that
+  contradicts the code is worse than none, and these were contract errors rather
+  than wording.
+
+- **Mail arriving during a wake was discarded.** A wake command is bounded at
+  two hours and reads its inbox near the start of that turn, and the branch that
+  refuses a second command while one is running threw the later event away on
+  the reading that the running activation would see it. Anything arriving after
+  that inbox read therefore waited for an unrelated event that might never come:
+  a question could sit unanswered for a day with the board reporting it
+  delivered. It is re-asked when the command exits, which is the one moment that
+  neither starts a process beside a live one nor loops, and the re-ask asks
+  whether anybody is still waiting, so an activation that answered its mail
+  produces nothing.
+
+- **The MCP Registry could publish a version the release gate refused.** The
+  registry workflow listened for the same tag push as the release and waited for
+  nothing, so it could authenticate and publish while the gate was still
+  running, or after it had failed and produced no release at all. The comment
+  claiming the two "cannot drift from each other" described a correlation as an
+  ordering. It is a reusable workflow called from the release behind `needs:`
+  now, so the ordering is GitHub's to enforce, and there is still one copy of
+  the publish steps.
+
+- **A purged agent's outbound mail became the next agent's.** The sweep
+  deliberately keeps what a purged agent SENT, because that inbox belongs to
+  whoever received it, and the id is derived from the name and goes straight
+  back into use. So the envelopes went on naming an address the next registrant
+  was handed: it appeared to have written mail it never sent, and because a
+  response routes by sender, answering the purged agent's question delivered the
+  answer to a stranger and told the responder it was delivered. The check that
+  reports an answer with nowhere to go was the path being defeated, because a
+  live replacement makes the sender look present. Those senders are retired to
+  an address outside the alphabet ids are minted from, so no name can ever be
+  turned into one.
+
+- **`go install` gives macOS two of the four artifacts**, and said nothing about
+  it. The Touch ID helper is Swift and the notifier is an app bundle, so neither
+  can come from `go install`: the board falls back to the admin password and
+  notifications lose their name and their buttons, with nothing to suggest the
+  installation was partial. The section says so, and points at the two paths
+  that carry everything.
+
+- **The onboarding sent macOS operators to create the credential this release
+  replaced.** `dibs web` raises the daemon-owned Touch ID sheet first and asks
+  for an admin password only where there is no sensor, and the README called the
+  password "a prerequisite for `dibs web`, not optional hardening". So did the
+  Homebrew caveat every macOS installer reads, and the Claude Code plugin's
+  prerequisites, in both the repository copy and the embedded one that actually
+  ships. The tutorial had it right, which is the wording the rest now follow.
+
+- **The wake documentation described two mechanisms as one.** Inside the
+  `[wake.exec]` section, one paragraph said only a question, request or handoff
+  wakes anything and only for an agent "not already active", and five lines
+  later the `all` and `urgent` values of `extend_turn_for` were explained as
+  though they were the same setting. They are not: `[wake.exec]` starts a
+  stopped process, `extend_turn_for` decides what a running one is told at its
+  next turn boundary and can start nothing. The wake test is also not `active`,
+  which means only that the forty-five minute idle lease has not lapsed: an
+  agent whose turn ended seconds ago is `active` and is not running, and waking
+  it is the case the code deliberately handles. Both halves say what the code
+  does, and `extend_turn_for` has its own heading.
 
 - **`dibd -check` answered a question it was not asked.** It says it reports
   whether this build could take over, and `dibs upgrade` reads a zero exit as
@@ -1073,6 +3602,595 @@ machines for real work. Their priority order, not ours.
   alias, where the implementation deliberately takes the newest, because the
   first is a thread the agent left: a document that would have argued a future
   reader back into a fixed bug.
+
+- **The nudge that tells an agent it has mail never changed, so it stopped
+  being read.** The `waiting` line rides on every authenticated write, which
+  makes it the most reliable delivery path here: no hook, no plugin, no session
+  id, and it cannot be misrouted. It fired correctly on roughly forty
+  consecutive tool calls of one session with a message unread throughout, and
+  was deferred every time; the operator found the mail. It said the same eleven
+  words on the fortieth call as on the first, so within a few turns there was
+  nothing in it for the eye to catch on. `pendingMail` had already diagnosed
+  exactly this in its own comment and left the line unchanged, which is how the
+  surface that reports the problem came to have it. Both that line and the hook
+  digest now carry the AGE of what is waiting: a fact worth triaging on, since
+  five minutes and five hours deserve different answers, and different text on
+  every call, so there is no fixed shape to learn. Silent under five minutes,
+  because spending the novelty on mail that arrived a moment ago is how it went
+  blind in the first place. Still counts and ages only: no bodies.
+
+- **`adopt_agent`'s result read as a standing redirect, and it is not one.** It
+  said "the source agent still exists and keeps its history: only where its mail
+  is delivered has changed", which is true of the messages it moved and reads as
+  a rule. A coordinator that adopted three mailboxes concluded it had become the
+  delivery address for that NAME and would hand the address back if the original
+  returned, and reported that to the operator. Adoption re-addresses the
+  messages that exist at that instant and creates no alias and no forwarding
+  entry; mail sent afterwards reaches whoever it is addressed to, including the
+  source the moment it comes back. The difference is the whole safety of the
+  operation, since a standing redirect would be a coordinator-approvable
+  interception of a live agent's mail. The note now says what it does, and a
+  test sends to the source after an adoption to keep it that way.
+
+- **`SKILLS.md` told agents to run `dibs await` and omitted the flag that
+  decides whether it works.** `-timeout` defaults to **30 minutes** and then
+  exits 1, so an agent following the example verbatim gets a watcher that gives
+  up half an hour in while the agent believes it is covered for the session, and
+  a dead watcher is indistinguishable from a waiting one. `-since` was missing
+  too, so the default of "from now" silently skipped anything that arrived
+  before the call. Both are in the example now, with what exit 1 means and a
+  note not to reach for `timeout(1)`, which does not exist on macOS and dies
+  instantly at 127 while reporting as armed. Reported by an agent that hit both.
+
+- **Every repository-hygiene guard was blind to files nobody had committed
+  yet.** The walk all of those checks are built on listed TRACKED files, so a
+  file that had not been `git add`ed was the one file none of them read. That is
+  exactly backwards: a brand new file is the one most likely to break a
+  convention, because nothing about it has ever been reviewed. The way it goes
+  wrong is quiet and it completes: write the file, run `task ci`, watch it pass
+  having opened none of it, commit, and the guard first fires on the NEXT run,
+  against code that has already shipped. Found by doing precisely that, two em
+  dashes in a new test file went through a green gate and were reported by the
+  following one, one commit too late to be prevention. The walk now passes
+  `--cached --others --exclude-standard`, so untracked files are read and
+  `.gitignore` still keeps build output out. The regression test is written
+  against the WALK rather than against em dashes, because the hole belonged to
+  every rule in the package equally and that one rule was only what happened to
+  notice it.
+
+- **`dibs upgrade` stopped the daemon for a rewrite it already knew would be
+  refused, then restarted the OLD binary and called it the new one.** The
+  rewrite is refused for two independent reasons: the file cannot be written,
+  which preflight checked, and a unit under one of the pre-`org.agenxy.dibs`
+  labels is still installed, which it did not. Preflight exists so that nothing
+  is stopped for a failure that was knowable in advance, and this one was
+  knowable the whole time. What followed is the worse half: recovery restarts
+  through the unit it could not rewrite, that unit still names this board so it
+  is preferred, its `ExecStart` still pins the previous build, and the operator
+  is told "the daemon was started again ... This is the NEW build, not a
+  rollback". So the upgrade did not happen, the old daemon is serving, and the
+  command said otherwise. Migrating exactly such an installation is ordinary
+  use. Preflight now asks the same question the real write asks, with the same
+  override set, so the refusal arrives while the board is still up.
+
+- **The waiting nudge aged the mail and nothing else.** The line reports unread
+  messages, unacknowledged announcements and updates to you, and the age added
+  above was taken from the inbox alone. With no unread mail it therefore went
+  back to printing identical bytes on every call, which is the habituation it
+  was changed to cure, still alive on two of the three things it reports: an
+  agent sitting on an announcement for six hours read the same sentence it read
+  six hours ago. The previous entry claimed both surfaces carry the age of what
+  is waiting, and the code carried the age of one source in three. It now takes
+  the oldest of whichever kinds are actually waiting. Announcements already
+  recorded when they were made; notices recorded no time at all and now carry
+  the time of the event that caused them, rather than the time they were
+  queued, so that rebuilding the cache after a restart does not report old news
+  as fresh.
+
+- **Approving a mailbox request still described a one-time move as a standing
+  redirect.** A mailbox moves by two routes, `adopt_agent` and approving a
+  `request` that carries `adopt`, and the fix above reached one of them. The
+  approval route is the one a stranded agent is actually pointed at, since the
+  hint on a taken name says to ask a coordinator, and it went on returning
+  "only where its mail is delivered has changed": the exact wording that led a
+  coordinator to announce itself as the delivery address for somebody else's
+  name. Both routes now return one shared sentence, because two hand-written
+  copies of a sentence are two chances to be wrong about it.
+
+- **`SECURITY.md` promised that only one presence prompt waits at a time, and
+  the lock behind that sentence is per process.** `promptBusy` is a mutex inside
+  one `dibd`, and `dibd -allow-parallel` is a supported way to run several on
+  one Mac, so two boards can each have a Touch ID check outstanding and the
+  serialisation does not reach between them. The comment on the lock argued the
+  right premise and drew the wrong conclusion from it, that a screen is package
+  level when a screen is machine level. The document now says "per daemon" and
+  names the gap, and the code comment says what the lock actually covers. The
+  control that does hold across daemons is the one the same section already
+  rests on: `dibs web` prints a four-letter code and a sheet showing a different
+  one is not yours. Whether two sheets can be on screen at once is a question
+  about macOS that has not been measured here, and saying Dibs provides the
+  machine-wide guarantee when it does not is the part that was wrong either way.
+  Found by the pre-release review.
+
+  And the sentence that recommends the affected deployment said the opposite.
+  "If you run agents you do not trust, do not point them at the same daemon. Run
+  a second `dibd` with its own data directory; **they share nothing**." They
+  share no coordination state, which is what that sentence was about, and they
+  share the screen, which is the one channel that asks a human to authorise
+  something. So the configuration `SECURITY.md` recommends for isolating agents
+  you do not trust is exactly the configuration in which its own
+  one-prompt-at-a-time guarantee stops holding, and the two sentences are eight
+  lines apart. Both now say so and point at each other.
+
+- **And the nudge that reports all of this walked the mailbox twice.** Splitting
+  the age out into its own helper left it calling `Inbox` a second time, which
+  scans every message on the board and sorts them. That line rides on every
+  authenticated write, which is the whole reason it is the most reliable
+  delivery path here, and it is therefore the last place to do the same
+  expensive walk twice to re-derive something the first one already had. One
+  pass now returns both the count and the oldest. Caught reviewing the fix that
+  introduced it, before it was ever tagged.
+
+### Security
+
+- **An agent could claim another agent's thread and have the board wake it.**
+  `register` and `bind_session` both take a caller-supplied `session_id`, and it
+  was written down without a question being asked about it. Downstream, the wake
+  path turns a UUID-shaped session id into the thread argument of the operator's
+  own `[wake.exec]` command. So an agent that knew a peer's thread id could
+  assert it, and the board would resume THAT thread on its behalf, while hook
+  resolution for the peer went ambiguous at the same time. No mail body was
+  exposed; what crossed the boundary was whose thread the operator's command
+  starts. Reported by the pre-release review, which reproduced it.
+
+  **Thread-shaped ids only, and the narrowness is the design.** Session ids are
+  deliberately shared in the ordinary case: the stdio bridge derives
+  `host-<ppid>` from the harness process, so every agent registering through one
+  bridge presents the same id on purpose. The obvious reading of this defect,
+  that session ids must be unique, would have refused the second agent in every
+  harness on the machine. The test applied is the same one the wake path applies
+  before treating an id as a thread to resume, so there is one answer to the
+  question rather than two. Rebinding your own id, reattaching with your own
+  NONCE, and taking an id from a closed or archived agent all still work.
+
+  The check is the nonce and not the name, and the first version got that
+  wrong. It stood aside whenever the supplied name matched the holder's, on the
+  theory that this was a row reattaching to itself before it had a token. A name
+  is public. So the victim's name plus a fresh nonce of your own walked through
+  the guard, the fold took neither reattachment branch, and it minted a SIBLING
+  holding the victim's thread: two live agents on one thread, which is the thing
+  the guard exists to prevent, let through by the guard. The regression test
+  missed it because its attacker used a different name. Caught by the next
+  review round.
+
+  Refused at the ingress and not in the fold, because `Ledger.Replay` calls
+  `Apply` directly: a refusal there would reject bindings that were legal when
+  they were written and the daemon would decline to start on its own history.
+  There is a test that folds exactly such a binding to keep it that way.
+
+### Added
+
+- **An agent could register under an id its own hooks never quote, so nothing
+  could wake it.** The stdio bridge fills `session_id` on registration from the
+  harness's own sidecar, and it read that sidecar only when the MCP handshake
+  had already identified the client as Claude Code. `clientIs` answers from the
+  `clientInfo` an `initialize` left behind, and the 2026 path need not send one
+  at all. When it had not been seen, the sidecar went unread and the agent
+  registered under the bridge's `host-<ppid>` instead: an id no lifecycle hook
+  ever quotes. `hook_poll` then resolved that agent to nobody, and no message
+  ever woke it.
+
+  It could not heal, which is what made it permanent rather than intermittent.
+  The ambient repair binds the correct id, which the bridge already sends in
+  `_meta` on every call, but only when the agent has NO session id. The primary
+  was already filled with the wrong one, so the repair was a no-op for the life
+  of the board. Measured on this project's own board: an agent registered as
+  `host-5360` while both its sidecar and its hooks named the same UUID, and for
+  hours its mail was announced into a different agent's session instead.
+
+  **The sidecar is now trusted when the harness is this bridge's own parent**,
+  handshake or not. `CLAUDE_PID` alone is not enough and dropping the gate
+  outright was tried and reverted: that variable is INHERITED by every process a
+  Claude Code session spawns, so an ungated read lets an unrelated nested bridge
+  adopt its parent's session and answer to its wake path. The guard end-to-end
+  suite caught that immediately, with test daemons registering under the
+  developer's own session. A harness spawns its bridge as a DIRECT child, which
+  is the same fact the `host-<ppid>` fallback already relies on, so
+  `CLAUDE_PID` matching this process's parent is positive evidence the session
+  is ours rather than one we inherited. Nested processes fail that test, and the
+  fallback is unchanged for harnesses that write no sidecar at all.
+
+- **`update` can give up a session binding that is not yours.** Recording
+  whether a binding was stated or guessed stops new ones going astray and can do
+  nothing for the ones already on disk, which decode as stated on purpose. So a
+  board that already has one was stuck: the wrong agent is woken, the mailbox's
+  owner is refused its own id with `E_SESSION_TAKEN`, the holder has no reason
+  to notice it is holding one, and a daemon restart replays it faithfully.
+  Measured here, across exactly that restart. `update` takes `release_session`
+  now, which drops the caller's own primary and aliases so the session they
+  belong to can claim them back. Only ever the caller's own, which is what makes
+  it safe with no role attached: an agent giving up its own bindings can strand
+  nothing but itself, and it is the one participant that can always tell whether
+  an id is really its session. That is the second tool-listing budget raise in
+  one night, argued for in the commit that made it, as that guard's own rule
+  asks.
+
+- **A mis-bound session id can now find its way home.** Preventing new bad
+  bindings did nothing for the ones already on disk, and the guard that refuses
+  a held id refused the rightful session too, so the state was permanent: the
+  agent that owns the mailbox never received a wake, the agent that inherited
+  the id had no reason to notice it was holding one, and restarting the daemon
+  replayed it faithfully. Bindings now record whether they were STATED by the
+  caller or GUESSED by the daemon from the working directory, and a stated claim
+  takes an id back from a guess while taking nothing from an agent that stated
+  its own. Historical ops carry no such field, decode as stated, and are
+  therefore left alone: the conservative direction on purpose, since treating
+  them as guesses would make every agent on an upgraded board reclaimable by
+  whoever states its id first.
+
+  Provenance is recorded against each BINDING rather than each agent, which is
+  the difference between a repair and a hole: an agent holds a primary and any
+  number of aliases, so one flag per agent meant whichever binding happened last
+  decided the answer for all of them, and a single guessed alias would have made
+  a STATED primary claimable by anyone.
+
+  Resolution prefers a stated holder too, which fixes a second thing. Two agents
+  could hold one id, and the lookup returned whichever Go's map iteration
+  reached first, so the same hook could resolve to a different agent on
+  consecutive turns. That is settled by preference rather than by deleting the
+  loser's binding, because a delete belongs in the fold and would be
+  retroactive.
+
+- **A sweep could delete mail without writing it down, so a restart brought it
+  back.** Mail outlives its recipient by design: a sweep written before v0.0.7
+  removes the agent row and leaves the messages. Retention evicts those later
+  with no row to attribute them to, and the eviction reported a change only
+  through an event it could not emit without one. So the sweep returned
+  `changed: false`, the engine ledgers exactly when the serial advanced and
+  therefore wrote nothing, and the next restart replayed a board where the
+  messages still existed: deleted in memory, alive on disk, back after a bounce.
+  `state == fold(ledger)` failing with nothing logged and nothing erroring. The
+  flag that records a mutation emitting no event already existed and the other
+  two deletion sites already set it; this one did not.
+
+- **`bind_session` checked a size limit inside the fold.** `Admit` already
+  rejects an oversized session id at ingress, and `Apply` repeated it, which
+  makes replay conditional on today's configuration: lower the limit in a later
+  release and the daemon refuses ops it accepted, fsynced and acknowledged under
+  the old one, and will not boot on its own ledger. The same shape as the
+  announcement bound that `TestApplyFoldsWhateverAdmitRejects` was written for;
+  its list simply did not know this op existed, which is the weakness that test's
+  own comment admits to. The op is in the list now.
+
+- **Two v0.0.7 repairs now say which version wrote them.** Both changed what an
+  EXISTING op does: a register began raising a new agent's watermark past mail
+  its vanished predecessor left, and a prune stopped re-closing an already-closed
+  agent or advancing the serial for a no-op. Right for ops written from here on,
+  and applied to an older ledger they reconstruct a board that never existed: a
+  different inbox, and an `agent.closed` the original fold really did emit
+  silently dropped, with the serial difference repaired by the path that exists
+  for corruption. Ops now record the semantics they were written under, the same
+  treatment `purge_mail` and `restore_nonce` already had.
+
+- **A wake into a session that reports a different working directory is now
+  refused rather than logged.** Delivering it interrupts a session that is not
+  the recipient, leaves the intended agent asleep, and reports success, which
+  spends the only attempt the retry machinery would have given it: three
+  failures at once, the third being the "success with no effect" defect this
+  release keeps finding. Both directories are canonicalised before comparing,
+  because the agent's is canonical at registration and the harness writes its
+  own raw, and on macOS that difference alone refused a correct delivery.
+
+- **A new agent no longer inherits the previous occupant's mail.** An id is
+  derived from the name, so a name that comes back reuses the id, and mail
+  outlives the row it was addressed to: a sweep written before v0.0.7 removes
+  the row and keeps the messages, which its op records and replay must preserve.
+  Those messages are expired with a reason the SENDER reads, so deleting them
+  would trade one silent loss for another. What was wrong is that they were
+  still delivered: measured, a new agent registering the same name was shown the
+  previous occupant's question verbatim, body included. It now starts with a
+  watermark past them, and `read_mail` refuses a serial older than the agent
+  itself.
+
+  **Not listing it was not protecting it.** The watermark was enforced only when
+  enumerating an inbox, so a replacement could not SEE that mail and could still
+  fetch the body by serial. And the watermark is built from mail addressed TO
+  the id, so it never covered what the predecessor SENT: `read_mail` matched on
+  the reused id and handed over the other half of somebody else's conversation.
+  The rule is "older than this agent" now, which covers both directions, reads
+  as no filtering for rows registered before the field existed, and leaves a
+  reattaching agent its own history, because a reattach is the same agent.
+
+  **That watermark had never filtered anything.** It was set by the retention
+  sweep and reported to callers, and nothing consulted it, which went unnoticed
+  because the sweep that sets it has already deleted the mail it covers: there
+  was nothing left to filter, so an inert watermark and a working one looked
+  identical. They stop looking identical the moment mail outlives its row.
+
+- **A prune no longer writes down that it did nothing.** An empty prune built no
+  targets and advanced the serial anyway, so the engine appended an op recording
+  that nothing happened, on demand, forever. And pruning an agent that was
+  already closed closed it again, emitting a second `agent.closed` for a
+  transition that happened once, on BOTH prune paths, the agent's own and the
+  administrator's: the audit stream is what `dibs log` and every
+  `events_since` consumer reads, and an invented transition is worse there than
+  a missing one because it is indistinguishable from a real one.
+
+- **The registry check accepted things that are not versions.** An explicit
+  value went positionally to `gh release view`, and anything starting with a
+  dash is not positional: `--help` was read as an option, exited zero, and the
+  release-existence check took that as proof the release was there. It is
+  checked against a semantic-version shape first now.
+
+- **The no-shell rule now covers the Taskfile.** The guard read `run:` blocks in
+  `.github/workflows` and nothing else, so `review:release` was a multiline
+  shell program with conditionals and redirection for its whole life, while the
+  changelog claimed the class was removed and guarded. It is a Go program under
+  `tools/`, and the guard reads every command form (from round eleven; until
+  then it read `cmd:` mappings alone). The predicate is shared
+  rather than copied, and it ignores template actions and quoted arguments,
+  because a guard that calls `echo "asked for Desktop access"` a loop is one
+  that gets deleted.
+
+- **The Homebrew cask no longer promises what it does not check.** It says it
+  clears the macOS quarantine flag, and ran `xattr` without treating failure as
+  fatal, so a real failure left the install green and the flag in place. Making
+  it fatal would be worse, since `xattr` exits non-zero in ordinary cases, so
+  the claim now matches the behaviour and both the cask and the README say what
+  to run if macOS still refuses.
+
+- **A wake that lands in a session working somewhere else now says so.** The
+  socket route delivers wherever the binding points, and a binding can be wrong:
+  a swept row frees a live session's id and the next agent registering in that
+  directory inherits it. Before this route existed that misdelivery was
+  invisible, because the wake simply failed; now it succeeds, into the wrong
+  session, which is more effective and no more correct. The harness records each
+  session's working directory, so a wake into an unrelated one is logged.
+  Reported, never refused: the daemon cannot tell which of the two is wrong, and
+  a heuristic refusal would ground legitimate wakes for agents that moved.
+
+- **An unreadable daemon registry no longer reads as "no daemon".** `upgrade`
+  turned every registry-read failure into an empty result, so an unreadable
+  registry meant "nothing is running": the stop was skipped, the replacement
+  exited at once on the directory lock the original still holds, the original
+  went on answering, and verification printed `upgraded:` for the process the
+  command exists to replace. `LiveDaemons` says so in its own comment, that an
+  error is not an absence and conflating them is how a guard fails open, and the
+  caller conflated them anyway. Unknown now counts as running: stopping a daemon
+  that was not there costs a no-op, and the other way costs a silent non-upgrade.
+
+- **The hygiene walk counted files it had not opened.** It counted every
+  callback it invoked and called that "what was actually opened", while most
+  checks return silently when the read fails: an unreadable file counted toward
+  the floor that proves the walk looked at something, with no check having
+  examined a byte of it. The walk reads each file itself now and fails on one it
+  cannot, which is the state a bad merge leaves and exactly what should not pass
+  quietly.
+
+- **A certificate that is not a CA could become the board's signing identity.**
+  The check asked only whether the certificate and key matched and whether it
+  had expired, which a restored or misnamed SERVER certificate satisfies: `dibd
+  -check` then called the board healthy, the daemon signed leaves with it, and
+  every client rejected the chain. The basic constraints, the certificate-signing
+  key usage and `NotBefore` are checked now, each with its own message, because
+  a wrong clock and a restored leaf need opposite responses.
+
+- **Twelve ledger op kinds were not frozen**, including `respond`, `ack`,
+  `bind_session`, `prune_own`, `claim_coordinator`, `vouch_child` and four space
+  operations. The table calls itself the authoritative list of ledger
+  vocabulary, so renaming any of them left the guard green while every ledger
+  containing that string stopped replaying: the check against silent data loss,
+  silently not checking. They are frozen, and a new test reads the SOURCE and
+  fails when a kind is declared without being frozen, because a list somebody
+  must remember is exactly as good as the memory, which this repository has now
+  said about itself three times.
+
+- **A dangling symlink could silently rotate the board's signing identity.**
+  `os.Stat` follows links, so a link whose target is gone reads as absent. With
+  one dangling half and one truly missing file, both looked absent, the daemon
+  found nothing to refuse and generated a NEW identity: every machine that ran
+  `dibs trust` locked out, by a daemon that then reported itself healthy. The
+  startup preflight already documents this hazard at length and calls `Lstat`;
+  the lesson had been applied in one of the two places that need it, and the
+  dangling-symlink test drives that one and never reaches this one, so it stayed
+  green while startup behaved differently.
+
+- **`dibs fingerprint` could describe a certificate no daemon can serve.** It
+  discarded the error from loading `dibs.toml`, so an unparseable config fell
+  back to the managed path and fingerprinted whatever stale certificate was
+  there, while `dibd` refuses to start on that same file. On the one command
+  whose purpose is comparing what is SERVED against what another machine pinned,
+  and it exited zero. An absent config is still fine; a broken one now says so.
+
+- **The registry could publish a version that was never released.** The manual
+  recovery dispatch passed an operator-supplied version straight through, so
+  `-version 9.9.9` stamped and published 9.9.9 for something never built, tagged
+  or released. The release job's `needs:` closes that on the normal path and
+  this walked around it, while the changelog claimed the hole was shut. An
+  explicit version is now checked against a real GitHub release. The registry is
+  public and permanent, so advertising an install nobody can complete is worse
+  than a failed job.
+
+- **Two guards had stopped guarding.** The tool-count gate skipped any document
+  it could not read, backed only by a global "did we check anything at all", so
+  one renamed file dropped out of coverage permanently and silently while the
+  test stayed green. It now names them and fails. And the busy-presence
+  regression test exercised only the status mapping, never the handler, so
+  changing the handler to answer 500 kept it passing; the handler's use of that
+  mapping is asserted now.
+
+- **The Homebrew description still called Dibs single-machine**, which this
+  release stopped being.
+
+- **Finding sockets no longer happens on the writer loop.** The wake gate read a
+  cache, and the lookup it used refreshed that cache when it expired: a
+  directory scan and a bounded `ps` per candidate, inline, while the single
+  writer was held, so every other agent's `declare`, `send` and `check_in`
+  waited behind it. With a five-second cache and a thirty-second background
+  refresh, most wake decisions did it. The gate now reads a snapshot and never
+  refreshes; only the wake goroutine, which is off the loop, may. The liveness
+  probe is bounded too, so a wedged filesystem costs a pause rather than a hang.
+
+- **The first socket wake after a restart could be lost outright.** Priming ran
+  in a goroutine while the daemon began serving, so an event arriving first was
+  refused before any cooldown or retry state existed, and a later prime only
+  fills the cache: nothing reconsiders mail that was already waiting. Priming is
+  synchronous now, before the loop serves anything, which is affordable because
+  every probe behind it is bounded.
+
+- **Confirming a session id you already hold now counts as stating it.** The
+  provenance update sat behind an early return taken when there is nothing NEW
+  to bind, which is exactly what happens when a session names an id it already
+  carries. So an agent that explicitly confirmed its own session stayed marked
+  as having merely inherited it, and remained reclaimable by any other
+  authenticated agent.
+
+- **An agent can be woken over the socket its own harness publishes, with no
+  configuration at all.** Claude Code publishes a unix socket and an
+  authentication key per session; Dibs reads both and delivers the same notice
+  `[wake.exec]` would have carried. A command has to be told which thread to
+  resume, so Dibs had to work out which id an agent answers to, and every wake
+  defect this cycle is downstream of getting that wrong. A socket is the
+  address. It needs no operator config, spawns no process, and needs no thread
+  id, which was the largest class of unwakeable agent on this machine. Verified
+  against a live session rather than inferred: a message was sent over the path
+  and watched arrive, and a wrong token produced nothing, which is how the auth
+  is known to be enforced.
+
+  Unchanged, deliberately: one gate in front of both routes, so the cooldown,
+  the still-running flag and the deferral are shared rather than re-bought; no
+  command and no socket is still no wake; and no process is ever spawned for a
+  thread that cannot be resumed.
+
+  **The notice is one sentence and points rather than instructs.** It said
+  "Dibs: check the board. Call check_in, then inbox, and act on anything there",
+  which names two tools in order and says what to do with what they return: that
+  is deciding what the agent does next, which is the one thing the wake path is
+  forbidden to do. It is "Dibs: check the board." now, on both routes, and the
+  test asserts what must NOT be in it, because the way this goes wrong is
+  somebody appending one more helpful clause. An earlier draft of this entry
+  said the notice carries counts and senders; it carries neither, and never
+  did.
+
+- **A caller that says which session it is running in is now believed, instead
+  of guessed at.** With no session alias on a call, the engine INFERS one by
+  directory: it takes an id announced from that cwd recently and assumes the
+  agent registering now is that session. It skips ids an agent already holds,
+  which is not the same as ids still in USE. So when an agent is swept while its
+  session keeps running, the id it held becomes unheld and stays live, and the
+  next agent to register in that directory inherits a live session's id along
+  with its wake stream. Measured on this project's own board: an ephemeral row
+  was swept, the session behind it kept announcing, and the next agent resolved
+  that session's hooks to itself, so one agent's unread list was rendered into
+  another's context for hours and three agents spent a night deriving why.
+
+  There was never a need to guess for anything behind the stdio bridge, which
+  already sends the session it is running inside on every call. That is
+  preferred now, and the directory inference is left for callers that send
+  neither it nor a harness thread id. Still vetted rather than trusted: it goes
+  through the same check as any other claim, so naming somebody else's session
+  is refused rather than believed.
+
+  The inference itself asked whether an AGENT holds an id, using the same lookup
+  that resolves a hook to a mailbox. That one skips archived and closed rows,
+  correctly, because mail must not be delivered to an agent that is gone; asked
+  as "is this id free for somebody else", the skip was the hole. It asks whether
+  the id has EVER had an owner now, archived rows included, which is what a
+  swept agent leaves behind: a sweep archives, and the row is only removed after
+  seven days against a one-hour join window, so a recently swept id always still
+  has one. An id nobody has ever held is still joined, which is what the
+  inference is for and what a companion test pins, because a refusal that
+  refuses everything is indistinguishable from deleting the feature.
+
+- **The daemon records which agent every lifecycle hook resolved to.** The wake
+  path fails silently by construction: `hook_poll` answers, the agent it
+  answered for is not the one asking, and nothing anywhere says so. The only
+  observable is an agent reporting that its mail never arrives, which is
+  indistinguishable from an agent that did not look. Three agents on this
+  project's own board spent a night on exactly that and produced five
+  successive, confident, mostly wrong accounts of the cause, while the daemon
+  knew the answer on every single call and wrote none of them down. It logs the
+  arriving session id beside the resolved agent now, at debug, and at INFO when
+  a hook resolves to NOBODY in a directory that HAS agents, which is the case
+  that is a fault rather than background noise. Operator-only, in the daemon's
+  own log, which already redacts tokens, nonces and bodies: counts and mail are
+  not in it. The arriving id is the point, because a Claude Code session carries
+  several and only a coincidence makes the one the hook sends match the one
+  register bound.
+
+- **The inbox says when a sender can no longer be answered.** Mail arrives from
+  agents that have since closed or been archived, and nothing said so: replying
+  returned `E_NO_AGENT` with a helpful suggestion of who to try instead, so the
+  board knew the answer and was computing it one call too late. `inbox` and
+  `check_in` now carry `unanswerable_senders` when, and only when, some sender
+  of the mail in front of you is gone, each with the same hint the send path
+  would have given. It matters most for exactly the mail adoption recovers:
+  inherited mail is old by definition, so its senders are the likeliest rows on
+  the board to have evaporated, and the feature that rescues stranded mail is
+  the one that most reliably hands you mail you cannot answer. Reported from a
+  live board, where the only correct reply was to tell the sender the desk had
+  changed hands. Nothing is stored: liveness is a fact about now, and
+  `core.Message`'s json tags are frozen. One predicate answers it for both the
+  send path and the inbox, so they cannot drift.
+
+- **`update` can correct the working directory.** Re-registering with a
+  corrected `cwd` reported `resumed: true` and kept the old value, because
+  register short-circuits a same-nonce retry inside one TTL and returns the
+  original result without applying anything: right for a retried registration,
+  and silently a no-op for a correction spelled the same way. `pid` already had
+  an escape hatch here and `cwd` had none, which made it the one field an agent
+  could not fix in-session, and the matching hint BLAMES the cwd when a path
+  cannot be read. So the field an agent was told was at fault was the field it
+  could only change by abandoning its identity and registering a sibling. The
+  project and repository travel with it, resolved by the server at ingress the
+  way register resolves them, so a corrected cwd cannot leave a repo identity
+  describing where the agent used to be, and an agent still cannot assert what
+  repository it lives in. Reported by an agent that hit it.
+
+- **`send` says when the recipient is active but nothing can wake it.** It
+  already warned about a DORMANT recipient, and said nothing about an active one
+  on a harness with no wake path, which is the more misleading of the two: an
+  active row plus a silent `ok` reads as "this will arrive shortly", when in
+  fact it arrives whenever a person next types into that session. Measured on a
+  live board, where a request carrying a ninety-minute deadline reached an agent
+  that had coordinated four minutes earlier and nothing stirred. Nothing is
+  broken when this fires: some harnesses are pull-only by design and Dibs will
+  not spawn a process to drive one that has not asked for it. The defect was the
+  silence. It goes quiet when the board can actually wake that agent, which
+  needs BOTH a `[wake.exec]` entry for the harness and a harness thread id for
+  the command to resume. The first version asked only whether a command was
+  CONFIGURED, so an agent with a command and no thread id got neither a wake nor
+  a warning: the same silent success, one condition further along, and the test
+  pinned it by using a fixture that could never have been woken. A dormant
+  recipient keeps the better sentence it already had rather than collecting two
+  warnings about one delivery.
+
+- **Restoring a recovered agent's nonce rewrote history.** Archival blanks
+  `Agent.Nonce` while keeping the nonce index, so an agent recovered from
+  archive had no durable identity: `AgentIdentity` returned `""` and a role
+  declared in `dibs.toml` could never reconcile onto it again. An admin dormant
+  for a month came back as itself, with its mail and its claims, and permanently
+  without its role. Putting the nonce back is correct, and doing it
+  unconditionally was not: `Apply` is the fold and the fold runs over ops
+  accepted by older code, so every `register` already on disk began meaning
+  something different depending on which binary read it. A later same-session
+  registration then skipped that row and minted a **sibling**, so one ledger
+  reconstructed two different boards and `state == fold(ledger)` stopped holding
+  across the upgrade. The decision is now recorded in the op (`restore_nonce`),
+  the way `purge_mail` and the omitted-description flag already are:
+  registrations written by this version restore, every historical one keeps the
+  semantics it was written under. Found by a pre-release review round.
+
+- **The icon shipped broken, in the copy that is compiled into the binary.** A
+  `--` sequence is illegal inside an XML comment, and both icon files carry a
+  design-rationale comment naming the `--accent` custom property, so neither was
+  well-formed XML. An SVG that does not parse does not degrade, it does not
+  render: the browser stops at the first error and draws nothing. It had never
+  rendered, and a person noticed rather than the gate. The fix then landed on
+  `docs/icon.svg` alone, leaving `internal/assets/icon.svg`, which `go:embed`
+  compiles in and the board serves, still broken while the repository looked
+  repaired: the same copy-drift shape as `SKILLS.md` and its embedded twin.
+  Both are fixed and every tracked `.svg` is now parsed by the gate.
 
 ## [0.0.6] - 2026-08-20
 

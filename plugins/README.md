@@ -40,7 +40,7 @@ the question.
 | [pi](pi/) | **extension** (no MCP client) | ✅ `before_agent_start` injected message | **yes**, agent quoted the mail unprompted |
 | [hermes](hermes/) | MCP via `hermes mcp add` | ❌ no hook system found | **yes**, every tool enumerated, real model |
 | [claude-desktop](claude-desktop/) | MCP (stdio) or `.mcpb` | ❌ no hook system exists | tools yes; panel renders in the ext-apps reference host |
-| [codex](codex/) | MCP over **stdio** | ❌ `mcp_tool` hooks land but do not run yet | **yes**: the only harness on MCP 2026-07-28 end to end |
+| [codex](codex/) | MCP over **stdio** | ✅ `mcp_tool` hooks run on builds from 2026-08-18 | **yes**: the only harness on MCP 2026-07-28 end to end |
 | [chatgpt-desktop](chatgpt-desktop/) | shares Codex config | ❌ inherits Codex | no |
 | openclaw | not yet assessed | not yet assessed | deferred |
 
@@ -93,10 +93,13 @@ and turned out to have the cleanest wake hook of the three.
 Everywhere else mail is **pull-only**: `await_events` / `inbox`, at the agent's
 choosing. That is the honest floor and it works on every surface.
 
-Codex is the near miss: its hooks support `additionalContext` injection, exactly
-the mechanism Dibs uses in Claude Code, but `HookHandlerConfig` offers only
-`command` (a subprocess), `prompt` and `agent`. One new handler variant would
-flip it. Re-check on upgrade.
+**Codex is no longer the near miss.** It was, while `HookHandlerConfig` offered
+only `command`, `prompt` and `agent`: the paragraph here used to say one new
+handler variant would flip it. Builds from 2026-08-18 have the `mcp_tool`
+executor, so the shipped hooks run and mail is injected. See
+[codex/README.md](codex/) for what to check on a given build, and note that a
+hook only ever reaches an agent that is RUNNING: reaching a stopped one is
+`[wake.exec]`, which is the operator's configuration and not a plugin.
 
 **Codex reaches Dibs; its model provider is what blocks execution.** Codex
 connects over streamable HTTP and enumerates every tool into an `mcp__dibs`

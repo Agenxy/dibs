@@ -34,11 +34,15 @@ change it when reality disagrees, and record why).
 4. **Advisory, not coercive.** Declaring work never fails. Don't add blocking semantics.
 5. **The board may WAKE an agent, and may not steer one.** Reaching an idle agent so it
    can read its own mail is the product: a message service whose recipient must already
-   be running is a polling API. The one way it does that is `[wake.exec]`, argv from the
-   operator's config, no shell, nothing an agent said, rate limited, logged. Everything
-   past "you have mail" is still forbidden: no prompt injection, no session management,
-   no deciding what an agent does next. See `WAKE-MECHANISMS.md`, which argued the other
-   way for months and now records why that was wrong.
+   be running is a polling API. There are two routes and no others: `[wake.exec]`, argv
+   from the operator's config, which spawns a process and is the one Dibs can confirm;
+   and the session socket the harness publishes, which needs no config and is BEST
+   EFFORT, because the receiver decides whether to accept a peer message and sends no
+   receipt. A session in bypassPermissions mode holds them. Both carry one fixed sentence,
+   no shell, nothing an agent said, rate limited, logged. Everything past "you have mail"
+   is still forbidden: no prompt injection, no session management, no deciding what an
+   agent does next. See `WAKE-MECHANISMS.md` §5 and §5b, which argued against both for
+   months and now records why that was wrong.
 6. **Honesty in errors.** Every error carries a `hint` that tells a drifted agent the
    corrective call.
 
@@ -56,7 +60,7 @@ Then:
 ```bash
 task ci                   # THE gate: vet, lint, -race, build, 6 e2e suites + the
                           # sidecar contract, and the SPEC §17 coverage floor.
-                          # Includes cross-compilation to all four release
+                          # Includes cross-compilation to all three release
                           # targets and govulncheck.
 go build ./...            # quick build
 go test -race ./internal/...
@@ -197,7 +201,12 @@ without advancing the serial, a renamed json tag, anything that reports success
 while doing nothing) and its newest authorisation paths. Fix what it finds, run
 `task ci`, and go round again until a pass turns up nothing worth fixing.
 
-**`task release VERSION=0.0.6` is the one step before the tag.** It claims the
+**`task release VERSION=<the next version>` is the one step before the tag.**
+This used to name a literal `0.0.6`, which is the version already tagged: the
+command as written refuses, because a release that goes backwards would leave
+every installer offering an older build than the one before it. An instruction
+that cannot be followed is worse than none, and this one sits at the step where
+somebody is following instructions exactly. It claims the
 changelog's `## [Unreleased]` section for that version and stamps every manifest that
 states one, then stops: tagging publishes, so it stays yours to do. Doing it by hand is
 how two manifests sat at `0.0.0` through five releases, and the tagged commit is now

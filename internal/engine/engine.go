@@ -11,11 +11,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -37,7 +39,7 @@ type Engine struct {
 	buckets  map[string]*bucket
 	resumeAt map[string]time.Time // per-agent resume rate limit (1/10s)
 	watch    []waiter
-	streams  map[chan core.Event]bool
+	streams  map[chan core.Event]*atomic.Bool
 	// seen: ephemeral lease freshness (reads/heartbeats). Never replayed;
 	// folded into recorded sweep decisions (SPEC §2 tier 2).
 	seen map[string]time.Time
@@ -84,6 +86,20 @@ type Engine struct {
 	// the same way. Ephemeral for the same reason: it is delivery bookkeeping,
 	// and the decision it feeds is recorded in the sweep op.
 	announceTries map[string]int
+	// hinted records the sessions that have already been offered a reattach
+	// pointer, so each is offered it exactly once. Keyed by the harness's
+	// session id, which is the only identifier an unresolved session has: it
+	// is not in state, by definition, because being in state is what "resolved"
+	// means. See reattachHint for why once is the whole budget.
+	hinted map[string]time.Time
+	// humanRoles is the set of agents whose role a person set through the
+	// admin API during this run. The startup reconciler reapplies the file
+	// for two minutes, and its regrant of an agent in this set is declined,
+	// decided here on the loop with the grant itself. The first version kept
+	// this set in the daemon beside the loop, and a tick between the person's
+	// demotion applying and the daemon recording it put the role back.
+	// Found by the pre-release review, rounds eighteen and nineteen.
+	humanRoles map[string]bool
 
 	// Work-overlap scoring (SPEC-CHANNELS.md). Guarded by its own mutex rather
 	// than the loop: Predict runs OFF the writer goroutine, because a model that
@@ -119,6 +135,7 @@ type Engine struct {
 	// wakers is how the board REACHES an agent that is not running. Distinct
 	// from `wake` above, which is only the policy for extending a turn.
 	wakers wakers
+	peers  peerCache
 
 	// matchStatus is why matching did or did not do anything, so a declaration
 	// never comes back silently ambiguous. See matchstatus.go.
@@ -143,6 +160,13 @@ type Engine struct {
 	// human is the operator's own agent, so a person can join agents and speak in
 	// them through the same tools an agent uses. See human.go.
 	human humanState
+	// privileged is the set of names the operator's [roles] table declares:
+	// rows bearing one are recovered by nonce only. See
+	// refuseRecoveringAPrivilegedRowWithoutItsNonce.
+	privileged struct {
+		mu    sync.Mutex
+		names map[string]bool
+	}
 	// What Dibs has already told the coordinator about itself, so a fault that
 	// recurs every sweep does not become a message every sweep.
 	faults faultState
@@ -170,6 +194,7 @@ type waiter struct {
 type subReq struct {
 	ch    chan core.Event
 	since uint64
+	lost  *atomic.Bool // set when an event for ch was dropped; the reader refills
 }
 
 type bucket struct {
@@ -189,23 +214,50 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 	if len(history) > 0 {
 		ring = history[0]
 	}
-	return &Engine{
+	e := &Engine{
 		ring: ring,
 		ops:  make(chan request), subs: make(chan subReq), unsubs: make(chan chan core.Event),
 		state: st, led: led, prober: prober,
 		ringCap: 65536, buckets: map[string]*bucket{},
 		resumeAt: map[string]time.Time{},
-		streams:  map[chan core.Event]bool{}, seen: map[string]time.Time{},
+		streams:  map[chan core.Event]*atomic.Bool{}, seen: map[string]time.Time{},
 		turnEnded:    map[string]time.Time{},
 		announceSent: map[string]time.Time{}, announceTries: map[string]int{},
-		wokeFor: map[string]time.Time{},
+		wokeFor: map[string]time.Time{}, hinted: map[string]time.Time{},
+		humanRoles: map[string]bool{},
 	}
+	// HERE, not in the daemon, so nobody has to remember.
+	//
+	// Blocking notices are engine-ephemeral and were created only by live event
+	// processing, so a restart between an approval and the asker's next turn
+	// boundary lost it: the effect stayed ledgered and the agent was never told.
+	// A derived view is allowed to be ephemeral only if something rebuilds it,
+	// and putting that in the one constructor means an embedder or a test cannot
+	// get an engine that has skipped it.
+	e.rebuildBlockingNotices()
+	return e
 }
 
 // Run drives the loop until ctx is done. Call in exactly one goroutine.
 func (e *Engine) Run(ctx context.Context) {
 	e.boot(time.Now())
 	e.reconcileBlobs() // startup reconcile: drop crash orphans (A4.1)
+	// SYNCHRONOUS, and before the loop serves anything.
+	//
+	// The wake gate reads a cache and refuses when it is cold, because finding
+	// the sockets a harness publishes costs a directory read and a bounded `ps`
+	// per candidate, which must never happen on the writer loop. Priming in a
+	// goroutine left a window where an event could arrive first, be refused
+	// before any cooldown or deferral state existed, and never be reconsidered:
+	// the first socket wake of a daemon's life, lost outright. Found by the
+	// pre-release review.
+	//
+	// Affordable because every probe behind it is bounded, so this is a startup
+	// pause measured in milliseconds rather than an unbounded wait on `ps`.
+	e.primePeerSessions()
+	if n := e.rearmDeferredWakes(); n > 0 {
+		slog.Info("wake: blocking mail outstanding at boot; deciding again shortly", "agents", n)
+	}
 	tick := time.NewTicker(time.Second)
 	defer tick.Stop()
 	reconcileTick := time.NewTicker(30 * time.Second)
@@ -215,7 +267,8 @@ func (e *Engine) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-reconcileTick.C:
-			e.reconcileBlobs() // delete evicted/orphan blob files off-thread
+			e.reconcileBlobs()       // delete evicted/orphan blob files off-thread
+			go e.primePeerSessions() // sessions come and go; keep the cache warm
 		case req := <-e.ops:
 			if req.fn != nil {
 				res := req.fn()
@@ -232,7 +285,7 @@ func (e *Engine) Run(ctx context.Context) {
 			e.sweep(now)
 			e.expireWaiters(now)
 		case s := <-e.subs:
-			e.streams[s.ch] = true
+			e.streams[s.ch] = s.lost
 			// Catch-up replay, deliberately best-effort: the `default` drops
 			// events once the subscriber's buffer is full rather than blocking.
 			//
@@ -250,6 +303,7 @@ func (e *Engine) Run(ctx context.Context) {
 				select {
 				case s.ch <- ev:
 				default:
+					s.lost.Store(true)
 				}
 			}
 		case ch := <-e.unsubs:
@@ -263,7 +317,12 @@ func (e *Engine) Run(ctx context.Context) {
 // durable coordination checkpoint is within one TTL; the rest transition now,
 // ledgered, healed later by wake if the agent lives.
 func (e *Engine) boot(now time.Time) {
-	op := &core.Op{Kind: core.OpSweep}
+	// STAMPED HERE, because this op never passes exec, where every other op
+	// gets its V7Semantics. The retention watermark repair is gated on that
+	// flag, so a sweep built without it ran the old rule on every production
+	// sweep and boot, and the test that covered the repair called gc directly
+	// and never noticed. Found by the pre-release review, round two.
+	op := &core.Op{Kind: core.OpSweep, PurgeMail: true, V7Semantics: true}
 	for id, l := range e.state.Agents {
 		if l.Status != core.StatusActive {
 			continue
@@ -277,6 +336,7 @@ func (e *Engine) boot(now time.Time) {
 	if len(op.StaleAgents) > 0 {
 		_, _ = e.applyAndLedger(op, now)
 	}
+	e.dropNoticesWithoutMail()
 }
 
 // exec runs the request phases for a mutating op.
@@ -286,6 +346,34 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// caller's to assert. Checked below, after the actor is known.
 	op.ClaimVerified = false
 	op.AdoptAuthorised = false
+
+	// EVERY op this build writes says which semantics it was written under.
+	//
+	// Stamped at ingress and carried into the ledger, so replay applies a
+	// v0.0.7 repair to v0.0.7 ops and leaves older ones exactly as they were
+	// folded when they were written. See Op.V7Semantics: two fixes this cycle
+	// changed what an EXISTING op does, which rewrites history and is the one
+	// hazard this repository has paid for repeatedly.
+	//
+	// FIRST, BEFORE ANY GUARD THAT READS IT, and it used to be stamped two
+	// hundred lines below. The alias guard asks registerLandsOn "will the fold
+	// land this register on that row", and that question reaches
+	// pickReattachTarget, which answers by the HISTORICAL rule when this flag
+	// is unset: alias matches excluded. So the guard judged by v0.0.6's rule,
+	// threw away a thread the fold then went on to accept by v0.0.7's, and the
+	// two disagreed about the same op. The row reattached and its wake target
+	// silently stayed on the older thread. A flag that says what an op IS has
+	// no business being set after the code that asks. Found by the pre-release
+	// review, round seventy-four.
+	op.V7Semantics = true
+
+	// Registrations minted by THIS version restore a recovered agent's nonce;
+	// ops already on disk do not, and must not start to. Set at ingress and
+	// carried into the ledger, so replay applies the decision that was made
+	// rather than the one this binary would make today. See Op.RestoreNonce.
+	if op.Kind == core.OpRegister {
+		op.RestoreNonce = true
+	}
 
 	// Ingress-only validation. Deliberately NOT inside Apply: Apply is also the
 	// fold that replays the ledger, so a rule added there binds history
@@ -342,11 +430,73 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// the id `codex resume` takes, so this is the identity rather than a
 	// correlation. Vetted, not trusted: see mayClaimSession.
 	if claimed := op.SessionAlias; claimed != "" {
-		if !e.mayClaimSession(claimed, op.Token) {
+		ok, takenFrom := e.mayClaimSession(claimed, op.Token, op.Nonce)
+		if !ok && op.Kind == core.OpRegister {
+			// ITS OWN THREAD, RE-ASSERTED. A register carrying neither token
+			// nor nonce was refused the alias an active row already held, and
+			// then reattached to that very row by name and session id: the
+			// fold took the synthetic host id as current, the thread it still
+			// held was no longer the one to wake, and the configured route
+			// stood down until an authenticated call bound it again. The
+			// same exemption refuseStealingAnotherThreadsSession makes for a
+			// stated session id. Found by the pre-release review, round
+			// thirty-six.
+			if holder := e.state.AgentBySession(claimed); holder != nil && e.registerLandsOn(op, holder) {
+				ok = true
+			}
+		}
+		if !ok {
 			op.SessionAlias = ""
 		}
+		// The same for the alias: "self by token" on a register that mints a
+		// sibling is a take from the row the token belongs to.
+		if ok && takenFrom == "" && op.Kind == core.OpRegister {
+			if holder := e.state.AgentBySession(claimed); holder != nil && !e.registerLandsOn(op, holder) {
+				takenFrom = holder.ID
+			}
+		}
+		// RECORDED, so the fold removes it from the row that lost it. See
+		// mayClaimSession: two stated holders of one id is a coin flip on every
+		// hook. Only on ops that carry a takeover of their own; register writes
+		// this field for its own reason and must keep it.
+		// IN ITS OWN FIELD, AND ONLY THERE. The alias's holder used to be
+		// written into SessionTakenFrom as well, which the fold reads as
+		// authority over BOTH ids: a newcomer stating an active owner's
+		// synthetic primary and its guessed thread alias reclaimed the guess,
+		// which is right, and took the stated primary with it, which sent the
+		// owner's hooks to the newcomer. The primary's field is the primary
+		// guard's to write; the alias's holder goes here. Found by the
+		// pre-release review, rounds forty-nine and fifty-five.
+		if ok && takenFrom != "" {
+			op.SessionAliasTakenFrom = takenFrom
+		}
+		// STATED: the caller named this session itself. Recorded so a later
+		// claim cannot take it away. See Op.SessionGuessed.
+		op.SessionGuessed = false
 	}
-	if op.SessionAlias == "" {
+	// NOT OVER A STATED THREAD. A register that names its thread by
+	// session_id was still given the directory's guess as an alias, the
+	// guess became current, and the configured wake resumed the guessed
+	// thread instead of the stated one. Found by the pre-release review,
+	// round seventeen.
+	// AND NOT OVER A STATED THREAD THE ROW ALREADY HOLDS. This asked only
+	// the op: a plain check_in carries no session fields, so an agent that
+	// had registered stating thread A, in a directory another session had
+	// announced from, was handed that session as a guess on its next
+	// check_in; the guess became current, the wake resumed the wrong thread
+	// and the other session's hooks resolved to A's mailbox. Found by the
+	// pre-release review, round fifty-six.
+	if op.SessionAlias == "" && !looksLikeThreadID(op.SessionID) && !e.callerHoldsAStatedThread(op) {
+		// ANYTHING SET BELOW IS A GUESS, AND THIS LINE IS THE WHOLE REPAIR.
+		//
+		// It was missing. The reclaim rule, its test and a changelog entry all
+		// shipped while nothing ever set this, so every inferred binding was
+		// recorded as STATED and the rightful session was refused its own id
+		// exactly as before. The test constructed the flag by hand and so tested
+		// the decision while bypassing the wiring that feeds it. Found by the
+		// pre-release review, which is the only thing that looked at the two
+		// together.
+		op.SessionGuessed = true
 		switch op.Kind {
 		case core.OpRegister, core.OpUpdate:
 			if op.Agent != nil {
@@ -427,6 +577,10 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	}
 
 	var actor *core.Agent
+	// Set when this register had no nonce and one was made for it, so the
+	// response can hand it over. An agent that is never told its own recovery
+	// credential is an agent nobody can ever reattach to.
+	mintedNonce := false
 	if !system {
 		switch op.Kind {
 		case core.OpRegister:
@@ -435,6 +589,11 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 				return nil, err
 			}
 			op.NewToken = tok
+			minted, err := defaultToPersistent(op)
+			if err != nil {
+				return nil, err
+			}
+			mintedNonce = minted
 			// The fleet knows which trees it works in, so matching can index
 			// them without anybody configuring a path.
 			if op.Agent != nil {
@@ -488,6 +647,22 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		return nil, err
 	}
 
+	if err := e.refuseStealingAnotherThreadsSession(op); err != nil {
+		return nil, err
+	}
+
+	if err := e.refuseRecoveringAPrivilegedRowWithoutItsNonce(op); err != nil {
+		return nil, err
+	}
+
+	if err := e.refuseActingOnInheritedMail(op, actor); err != nil {
+		return nil, err
+	}
+
+	if err := e.refuseAdoptingASuccessor(op); err != nil {
+		return nil, err
+	}
+
 	// An omitted description keeps the one the agent already has.
 	//
 	// Resolved at ingress and written INTO the op, so the ledger records the
@@ -497,6 +672,13 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// description meant to clear it.
 	if op.Kind == core.OpUpdate && op.KeepDescription && actor != nil {
 		op.Description = actor.Description
+	}
+	if op.Kind == core.OpUpdate && op.Agent != nil {
+		// A corrected location is a repository to discover, as a registered
+		// one is: the correction used to update the row and leave matching
+		// unavailable for the repository it named. Found by the pre-release
+		// review, round fifteen.
+		e.noteRepoOf(op.Agent.CWD)
 	}
 
 	// Who may take over an abandoned mailbox. Decided here, where the human's
@@ -560,9 +742,71 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		}
 	}
 
+	if op.Kind == core.OpGrantRole {
+		switch {
+		case op.RoleByHuman:
+			// Recorded below, once it applied: a grant that failed
+			// (E_NO_AGENT for a name not yet registered) used to leave the
+			// record standing, and the configured grant the agent was owed
+			// when it registered was skipped as "a person set this". Found by
+			// the pre-release review, round twenty-four.
+		case e.humanRoles[op.To]:
+			return core.Result{
+				"ok": true, "agent": op.To, "role": op.Mode, "changed": false,
+				"stands": "a person set this agent's role during this run; dibs.toml is " +
+					"read again at the next start",
+			}, nil
+		}
+	}
 	res, err := e.applyAndLedger(op, now)
 	if err != nil {
 		return nil, err
+	}
+	// A GRANT APPROVED BY A PERSON is that person's decision as much as one
+	// made through the admin API: only the human may approve a grant request
+	// (see refuseGrantWithoutTheHuman), and the role it sets stands against
+	// the startup reconciler for the rest of the run. The first version
+	// protected the admin API's path alone, and a tick after an approved
+	// `grant: member` put the configured role back. Found by the pre-release
+	// review, round twenty.
+	if op.Kind == core.OpRespond && res != nil && res["granted"] != nil {
+		if id, _ := res["to"].(string); id != "" {
+			e.humanRoles[id] = true
+		}
+	}
+	if op.Kind == core.OpGrantRole && op.RoleByHuman {
+		e.humanRoles[op.To] = true
+	}
+	// HAND OVER A MINTED NONCE, or it protects nothing and strands the agent.
+	//
+	// The nonce is the only credential that survives a restart: it is what
+	// reattaches an agent to its own mailbox, and without it a persistent row is
+	// one nobody can ever become again. Minting one and keeping it secret would
+	// manufacture that orphan on every registration.
+	//
+	// Only when it was minted. Echoing back a nonce the caller chose tells them
+	// nothing and puts a secret they already hold into one more transcript.
+	// Only when the fold actually USED it, which it reports by returning it: a
+	// registration that reattached or resumed already had a credential, and the
+	// minted one was discarded.
+	if op.Kind == core.OpRegister && res != nil {
+		// The role-pinning instructions, in the README, the configuration guide
+		// and the daemon's own refusal, say `register` returns the fingerprint
+		// to paste under [roles.identity]. It did not: the value existed for
+		// internal callers and the startup log only, so the advertised recovery
+		// step could not be followed. Found by the pre-release review, round
+		// seven.
+		if id, _ := res["agent_id"].(string); id != "" {
+			if l := e.state.Agents[id]; l != nil && l.Nonce != "" {
+				res["fingerprint"] = RolePinFingerprint(l.Nonce)
+			}
+		}
+	}
+	if mintedNonce && res != nil && res["nonce"] != nil {
+		res["nonce_hint"] = "KEEP THIS. You did not send a nonce, so one was made for " +
+			"you: it is the only credential that survives your process. Register again " +
+			"with the same name and this nonce to come back as yourself, with your " +
+			"mailbox and claims. Without it a new session is a stranger to this row."
 	}
 	// After the apply, never before it. Holding the secret is not sufficient:
 	// core still refuses an ephemeral or closed claimant, and a single-use claim
@@ -637,7 +881,7 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// only push that reaches an agent whose harness has no hooks, and the one
 	// that still works when the hooks are there and cannot resolve it.
 	if actor != nil && res != nil && op.Kind != core.OpAckBoard {
-		if w := e.waiting(actor.ID); w != "" {
+		if w := e.waiting(actor.ID, now); w != "" {
 			res["waiting"] = w
 		}
 	}
@@ -762,7 +1006,11 @@ func (e *Engine) touchDurable(l *core.Agent, now time.Time) {
 func (e *Engine) sweep(now time.Time) {
 	// Anything found before the board had anybody on it. See flushFaults.
 	e.flushFaults()
-	op := &core.Op{Kind: core.OpSweep, GiveUpAnnounce: e.exhaustedAnnouncements()}
+	op := &core.Op{
+		Kind: core.OpSweep, PurgeMail: true,
+		GiveUpAnnounce: e.exhaustedAnnouncements(),
+		V7Semantics:    true, // see boot: this op never passes exec
+	}
 	for id, l := range e.state.Agents {
 		if l.Status != core.StatusActive {
 			continue
@@ -834,6 +1082,7 @@ func (e *Engine) sweep(now time.Time) {
 		}
 	}
 	_, _ = e.applyAndLedger(op, now)
+	e.dropNoticesWithoutMail()
 }
 
 func (e *Engine) publish(evs []core.Event) {
@@ -881,11 +1130,20 @@ func (e *Engine) publish(evs []core.Event) {
 		}
 	}
 	e.watch = keep
-	for ch := range e.streams {
+	for ch, lost := range e.streams {
 		for _, ev := range evs {
 			select {
 			case ch <- ev:
 			default:
+				// DROPPED, AND SAID SO. The drop stays, for the reason above;
+				// what changed is that the reader is told. A resumed
+				// subscription writes its replay before it drains this
+				// channel, so a burst of fleet events during a slow replay
+				// filled the buffer and a question that arrived after it
+				// was in neither the replay nor the stream, silently. The
+				// reader refills from the ring when the flag is set. Found
+				// by the pre-release review, round thirty-three.
+				lost.Store(true)
 			}
 		}
 	}
@@ -949,6 +1207,15 @@ func (e *Engine) eventsSince(serial uint64, agent string, all bool) []core.Event
 		i++
 	}
 	return filterEvents(e.ring[i:], agent, all)
+}
+
+// SetRingCap bounds the event ring. The default is SPEC §10's 65,536; a test
+// that needs the floor to rise sets a small one rather than generating that
+// many events.
+func (e *Engine) SetRingCap(n int) {
+	if n > 0 {
+		e.ringCap = n
+	}
 }
 
 // ringFloor is the oldest serial still served from the ring (0 = ring empty).
@@ -1069,6 +1336,358 @@ func matchingHint(st MatchStatus) string {
 	return lead + st.Hint
 }
 
+// refuseStealingAnotherThreadsSession stops an agent claiming a session id that
+// is already somebody else's THREAD.
+//
+// `register` and `bind_session` both take a caller-supplied session_id, and the
+// fold wrote it down unconditionally. Downstream, wakeFor turns a UUID-shaped
+// session id into the thread argument of the operator's `[wake.exec]` command.
+// So an agent that knew another Codex thread's UUID could assert it, and the
+// board would then resume THAT thread on the victim's behalf, and hook
+// resolution for the victim became ambiguous into the bargain. Found by the
+// pre-release review, which reproduced it against a clean HEAD.
+//
+// THREAD-SHAPED IDS ONLY, and that narrowness is the whole design rather than
+// timidity. Session ids are deliberately SHARED in the common case: the stdio
+// bridge derives `host-<ppid>` from the harness process, so every agent
+// registering through one bridge presents the same id, on purpose, and
+// mcpstdio_session.go argues for that at length. A uniqueness rule would have
+// refused the second agent in every ordinary harness. What must not be shared
+// is the narrower thing that becomes authority: looksLikeThreadID is exactly
+// the test wakeFor applies before treating an id as a thread to resume, so it
+// is the test applied here. One resolver, one answer, which is the lesson the
+// coordinator guard above records.
+//
+// AT INGRESS, never in the fold, for the same reason as that guard: Apply
+// replays the ledger, so refusing here refuses new callers and leaves boards
+// that already recorded such a binding able to boot.
+//
+// Rebinding your own id is fine, and so is taking one from an agent that is
+// closed or archived: AgentBySession already skips those, because a retired
+// agent has no thread left to resume.
+// refuseAdoptingASuccessor refuses to approve an adoption request whose
+// target is a different agent from the one the request named.
+//
+// A request's adopt field is a NAME, resolved against the roster of the day
+// the approval lands, and an id is derived from its name: a request sent
+// shortly before its target was purged by a sweep written before v0.0.7,
+// which replay must leave standing, survives an upgrade; a stranger then
+// registers the released name, receives mail, goes dormant, and approving
+// the old request moves the stranger's mailbox into the requester's. The
+// purge written by this version expires such requests; the historical one
+// cannot be changed, so the check sits here: a target registered after the
+// request was sent is not the agent the request concerned. At ingress, so an
+// approval already on disk replays as it was accepted. Found by the
+// pre-release review, round forty-seven.
+func (e *Engine) refuseAdoptingASuccessor(op *core.Op) error {
+	if op.Kind != core.OpRespond || op.Disposition != "approve" {
+		return nil
+	}
+	m := e.state.Messages[op.MsgSerial]
+	if m == nil || m.Adopt == "" {
+		return nil
+	}
+	from := e.state.Agents[m.Adopt]
+	if from == nil || from.CreatedSerial == 0 || from.CreatedSerial <= m.Serial {
+		return nil
+	}
+	return &core.Error{
+		Code: "E_BAD_TARGET",
+		Msg: "the agent this request asked to adopt, " + m.Adopt + ", was registered after the " +
+			"request was sent: it is not the agent the request concerned, and its mail is its own",
+		Hint: "the mailbox the request named is gone; decline this request, and have the " +
+			"requester send a new one if the agent holding that name now is abandoned",
+	}
+}
+
+// refuseActingOnInheritedMail applies the mailbox fence to the calls that
+// CHANGE a message's state, not only to the ones that read it.
+//
+// An id is derived from the name, so a name that comes back reuses the id,
+// and mail can outlive the row it was addressed to. Inbox hides it from the
+// replacement and read_mail refuses the body, and ack and respond authorised
+// on the reused id alone: the replacement could acknowledge a predecessor's
+// notify or answer its question by serial, which sends the sender a receipt
+// from an agent that never saw the message and consumes mail nobody could
+// read. The rule is read_mail's: a message older than this agent's own
+// creation was never its mail, unless an adoption moved it here.
+//
+// AT INGRESS, not in the fold. An acknowledgement already on disk was
+// accepted by the code of its day and replays as it did; a rule added to
+// Apply would refuse the ledger. Found by the pre-release review, round
+// thirty.
+func (e *Engine) refuseActingOnInheritedMail(op *core.Op, actor *core.Agent) error {
+	if actor == nil || (op.Kind != core.OpAckMessage && op.Kind != core.OpRespond) {
+		return nil
+	}
+	m, ok := e.state.Messages[op.MsgSerial]
+	if !ok || m.To != actor.ID {
+		return nil // the fold answers E_NO_MESSAGE as it always has
+	}
+	if actor.CreatedSerial > 0 && m.Serial < actor.CreatedSerial && !e.state.AdoptedFor(m, actor.ID) {
+		return core.ErrNoMessage(m.Serial, actor.TruncatedBefore)
+	}
+	return nil
+}
+
+// callerHoldsAStatedThread reports whether the row this op acts on already
+// holds a thread-shaped session it stated itself, in which case the
+// directory guess has nothing to add and would only displace it.
+func (e *Engine) callerHoldsAStatedThread(op *core.Op) bool {
+	var l *core.Agent
+	switch op.Kind {
+	case core.OpAckBoard, core.OpUpdate:
+		l = e.state.AgentByToken(op.Token)
+	case core.OpRegister:
+		if op.Nonce != "" {
+			l = e.state.Agents[e.state.Nonces[op.Nonce]]
+		}
+	}
+	if l == nil {
+		return false
+	}
+	for _, sid := range sessionsOf(l) {
+		if looksLikeThreadID(sid) && !l.GuessedSession(sid) {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *Engine) refuseStealingAnotherThreadsSession(op *core.Op) error {
+	if op.Kind != core.OpRegister && op.Kind != core.OpBindSession {
+		return nil
+	}
+	// THREADS ONLY, DELIBERATELY. The bridge derives `host-<ppid>` from the
+	// harness process, so every agent registering through one bridge states
+	// the same id on purpose (TestAgentsSharingOneBridgeSessionAreStillAllowed
+	// and mcpstdio_session.go). A register stating an active agent's
+	// synthetic id under a new name is that sharing, not theft; what must
+	// not happen is the newcomer taking over the hooks, which AgentBySession
+	// settles by preferring the holder that had the id first. Round
+	// fifty-three of the pre-release review proposed vetting every id here
+	// and this test is why not.
+	if !looksLikeThreadID(op.SessionID) {
+		return nil
+	}
+	holder := e.state.AgentBySession(op.SessionID)
+	if holder == nil {
+		return nil
+	}
+	// The caller, when it has one. A register that reattaches by nonce resolves
+	// to the same agent, and re-asserting your own thread is not theft.
+	if self := e.state.AgentByToken(op.Token); self != nil && self.ID == holder.ID {
+		// The holder itself, by its token. Binding to its own row is its own
+		// business; a REGISTER with a fresh name and nonce mints a sibling,
+		// and a sibling that shares the thread is two live holders and a coin
+		// flip on every hook. The caller holds the token, so the thread moves
+		// to the row it is minting. Found by the pre-release review, round
+		// twenty-one.
+		if op.Kind == core.OpRegister && !e.registerLandsOn(op, holder) {
+			op.SessionTakenFrom = holder.ID
+		}
+		return nil
+	}
+	if op.Kind == core.OpRegister && e.registerLandsOn(op, holder) {
+		return nil // genuinely reattaching to that row, not minting a sibling
+	}
+	// A HOLDER THAT HAS STOPPED ANSWERING IS NOT THE LIVE THREAD.
+	//
+	// Closed and archived rows were already skipped, by AgentBySession, because
+	// a retired agent has no thread left to resume. Dormant and stale were not,
+	// so one row that went quiet held its session id against the session that
+	// actually owns it, permanently: the rightful caller was refused and handed
+	// a hint naming register-with-your-nonce, which is a call only the OTHER
+	// agent can make. There was no way out that the refused party could take.
+	//
+	// Measured on this project's own board: 29 lifecycle hooks from working
+	// sessions, none resolving to any agent, the claim guard allowing every edit
+	// and no mail ever injected, because the one session that could have
+	// registered was refused its own id by a row dormant for days.
+	//
+	// Nothing about mail moves. The old row keeps its mailbox, its history and
+	// its claims; only where a WAKE is delivered changes, and a dormant agent
+	// was not receiving those anyway. An ACTIVE holder still wins: two live
+	// agents claiming one thread is a genuine conflict, not stale state.
+	// A holder that merely GUESSED the id yields, as it does to a claim by
+	// alias: the rightful agent registering with the session_id it states was
+	// refused with E_SESSION_TAKEN by this guard while mayClaimSession would
+	// have let it through. Found by the pre-release review, round seventeen.
+	if holder.Status != core.StatusActive || holder.GuessedSession(op.SessionID) {
+		op.SessionTakenFrom = holder.ID
+		return nil
+	}
+	return &core.Error{
+		Code: "E_SESSION_TAKEN",
+		Msg:  "session id " + op.SessionID + " is already held by agent " + holder.ID,
+		Hint: "that agent is ACTIVE and answering, so this id is in use. Register " +
+			"without a session_id and Dibs will bind yours when your harness " +
+			"reports it; if that agent is you returning, register with the same " +
+			"name and your nonce, which reattaches you to it. If it is stale, it " +
+			"can call update(release_session: true), or a human can prune it",
+	}
+}
+
+// registerLandsOn reports whether this register will resolve TO the holder
+// rather than mint a sibling beside it.
+//
+// This used to ask only whether the names matched, and a name is public. So the
+// bypass was: send the victim's NAME, the victim's thread id, and a fresh nonce
+// of your own. The name matched, the guard stood aside, and then the fold took
+// neither reattachment branch, because the nonce was not the victim's, and
+// created a sibling holding the victim's thread. Two live agents on one thread:
+// hook lookup ambiguous, and waking the sibling resumes the victim. The guard
+// let through exactly the thing it exists to stop, and my own regression test
+// missed it because its attacker used a DIFFERENT name.
+//
+// The hint that guard prints has always said "the same name and your nonce".
+// The nonce is the credential; this now checks it.
+//
+// The question is deliberately "will the fold land on this row", not "is this
+// caller entitled", because the harm is the SIBLING. A register that resolves
+// to the holder binds no new thread and steals nothing.
+// refuseRecoveringAPrivilegedRowWithoutItsNonce keeps session-based recovery
+// away from rows that carry power.
+//
+// A name plus a session id, neither of them secret, recovers a row whose
+// nonce the daemon minted. That is the persistent-by-default convenience for
+// an agent that lost the nonce it was told to keep, and for a row that holds
+// a role, or bears a name the operator declared for one, it is an admin token
+// for anyone who can read a session id off a hook: the role and the pinned
+// fingerprint stay with the row, so the reconciler grants to whoever holds
+// it. Those rows are recovered by their nonce and nothing else. Decided at
+// ingress, because a rule in the fold is retroactive. Found by the
+// pre-release review, round nine.
+func (e *Engine) refuseRecoveringAPrivilegedRowWithoutItsNonce(op *core.Op) error {
+	if op.Kind != core.OpRegister || op.Nonce != "" || op.SessionID == "" {
+		return nil
+	}
+	target := e.state.ReattachTarget(op)
+	if target == nil {
+		return nil
+	}
+	// By id as well as by name: the [roles] table resolves either, and a row
+	// renamed for display keeps the id the table names. Found by the
+	// pre-release review, round ten.
+	holdsRole := target.Role != "" || e.privilegedName(target.Name) || e.privilegedName(target.ID)
+	// AND THE OPERATOR'S OWN ROW, above every role. The human is registered
+	// with a fixed, known nonce, so pickReattachTarget skips it while that
+	// nonce is on the row; but a v0.0.6 archive-and-recovery blanks Agent.Nonce
+	// while keeping the nonce INDEX, and the blanked row is then reachable by
+	// (name, session_id) exactly as a nonce-less agent is. Its name and its
+	// session id are both public (the session id IS the known nonce), so this
+	// handed out the human's token, and with it approval of the caller's own
+	// grant, without Touch ID or a password. The human recovers by opening the
+	// board, never by name and session. Found by the pre-release review, round
+	// sixty-three.
+	isHuman := target.ID != "" && target.ID == e.humanRowLocked()
+	// AND THE DAEMON'S OWN REPORTING ROW, on the same terms. `dibs` is what
+	// says "Dibs found a fault", to agents with no way to check who wrote it,
+	// so recovering it by a public name and a public session id hands an agent
+	// the one voice on the board that is supposed to be the machine's. The
+	// nonce guard already reserves it against a caller PRESENTING that nonce;
+	// this is the same identity reached with none at all. Found by the
+	// pre-release review, round seventy-five.
+	isDibs := target.ID != "" && target.ID == e.dibsRowLocked()
+	// AND A ROW ONE YES AWAY FROM POWER. A pending request that performs
+	// something on approval (a role grant, or a mailbox adoption that moves a
+	// whole mailbox onto this row) lands its effect on whatever token the row
+	// holds when the human approves, so a session-only reattach that takes the
+	// token in that window captures it without ever presenting the requester's
+	// nonce. The row is not privileged yet, so the role check above passed it.
+	// Guarded the same way: it is recovered by its nonce, which v0.0.7 mints
+	// for every registration, so the requester itself can still return. Found
+	// by the pre-release review, rounds sixty-one (grant) and sixty-two
+	// (adoption, which the first cut left out by reading only the grant field).
+	pendingEffect := e.state.HasPendingEffectRequest(target.ID)
+	// AND A ROW THAT HAS ALREADY BEEN HANDED A MAILBOX. The pending-request
+	// guard above covers the window before the human's yes; an APPROVED
+	// adoption is terminal, so that guard stops matching the instant the
+	// mailbox lands, and a session-only recovery could then take the row and
+	// read another agent's mail with nothing but a public name and session id.
+	// The adoption was a human's authorisation to move that mail onto THIS
+	// agent, not onto whoever can guess its session. Found by the pre-release
+	// review, round sixty-five.
+	holdsAdopted := e.state.HoldsAdoptedMail(target.ID)
+	if !holdsRole && !pendingEffect && !isHuman && !isDibs && !holdsAdopted {
+		return nil
+	}
+	if isHuman {
+		return &core.Error{
+			Code: "E_NEEDS_NONCE",
+			Msg:  "agent " + target.ID + " is the operator's own row, recovered only by opening the board",
+			Hint: "the human's identity is not reachable by name and session id; open the " +
+				"board (Touch ID or the admin password) to act as the human. A name and a " +
+				"session id are both public and prove nothing",
+		}
+	}
+	if isDibs {
+		return &core.Error{
+			Code: "E_NEEDS_NONCE",
+			Msg:  "agent " + target.ID + " is the daemon's own reporting identity, which no caller recovers",
+			Hint: "this row is how the daemon reports faults about itself, so speaking as it " +
+				"would be speaking as the machine. Register under your own name; a name and " +
+				"a session id are both public and prove nothing",
+		}
+	}
+	because := "holds a role, and a role is recovered by its nonce only"
+	switch {
+	case holdsRole:
+	case holdsAdopted:
+		because = "holds a mailbox adopted onto it by an approved request, which is another " +
+			"agent's mail, and is recovered by its nonce only"
+	default:
+		because = "has a request awaiting approval that would grant it a role or move a " +
+			"mailbox onto it, and until that is decided it is recovered by its nonce only"
+	}
+	return &core.Error{
+		Code: "E_NEEDS_NONCE",
+		Msg:  "agent " + target.ID + " " + because,
+		Hint: "register with the same name and the nonce this agent was given; a session " +
+			"id is not a secret and does not prove you are it. If the nonce is lost, a " +
+			"human can prune this row and grant the role again to the agent that " +
+			"replaces it",
+	}
+}
+
+// SetPrivilegedNames records the names the operator's [roles] table declares,
+// so a row bearing one is guarded before its first grant as well as after.
+func (e *Engine) SetPrivilegedNames(names []string) {
+	e.privileged.mu.Lock()
+	defer e.privileged.mu.Unlock()
+	e.privileged.names = map[string]bool{}
+	for _, n := range names {
+		e.privileged.names[n] = true
+	}
+}
+
+func (e *Engine) privilegedName(name string) bool {
+	e.privileged.mu.Lock()
+	defer e.privileged.mu.Unlock()
+	return e.privileged.names[name]
+}
+
+func (e *Engine) registerLandsOn(op *core.Op, holder *core.Agent) bool {
+	if op.Nonce != "" {
+		// Reattachment by credential: the nonce index is what the fold uses.
+		return e.state.Nonces[op.Nonce] == holder.ID
+	}
+	// And the fold's session-only reattach, which needs no nonce and applies
+	// only to a row that HAS no nonce. SECURITY.md already describes such an
+	// agent as reclaimable by anyone who learns its session id, deliberately,
+	// because the alternative is that an agent which lost its context can never
+	// recover. Refusing it here would break that recovery without closing
+	// anything: that path lands on the holder, so no second binding appears.
+	// THE FOLD'S RULE, asked of the fold. This carried its own copy, which
+	// required an empty nonce and an active or stale row, and the fold moved
+	// on without it: rows with a minted nonce and dormant rows are recoverable
+	// now. An agent that had lost its context, re-registering by name and
+	// session as it is told to, was refused here as a thief before the fold
+	// could recover it. Found by the pre-release review.
+	target := e.state.ReattachTarget(op)
+	return target != nil && target.ID == holder.ID
+}
+
 // refuseClaimWhenCoordinatorExists closes a claim the board has outgrown.
 //
 // The claim file is minted at startup when no coordinator exists, and nothing
@@ -1105,4 +1724,54 @@ func (e *Engine) refuseClaimWhenCoordinatorExists(op *core.Op) error {
 		}
 	}
 	return nil
+}
+
+// defaultToPersistent settles an unstated agent kind, and mints the credential
+// that kind needs.
+//
+// AT INGRESS, NEVER IN THE FOLD. `Apply` defaults an empty kind to ephemeral and
+// has to go on doing so forever: this ledger contains registrations written when
+// that was the rule, and moving the default into Apply would replay every one of
+// them as persistent. The op records what was decided, so replay never re-decides
+// it. Same discipline as V7Semantics, arrived at from the other direction: this
+// one needs no flag precisely because the decision travels in a field that was
+// already there.
+//
+// WHY THE DEFAULT FLIPPED. Ephemeral means: swept to `stale` when the session
+// ends rather than `dormant`, no durable mailbox, and no nonce, which is the
+// only credential that recovers an identity. So an agent that took the default
+// could not park and come back, could not be woken, and its mail died with its
+// process. That is the entire product, opted out of silently, by every agent
+// that did not know to say otherwise.
+//
+// It was invisible from every angle at once. Registration succeeded identically,
+// the board looked right, and the evidence was self-erasing: counting the kinds
+// of the agents still ON the board says nobody uses ephemeral, because ephemeral
+// agents are precisely the ones that are no longer there. Found when a test
+// agent registered twice in one afternoon and had evaporated both times, and
+// then a wake resolved to the thread it had been running in and reached an
+// identity with an empty mailbox, which truthfully reported "no mail".
+//
+// A MINTED NONCE BEATS NO NONCE. Persistent requires one, and an agent that
+// brought none would otherwise be refused. Minting it here and returning it is
+// the same trust as the token this function just made: same channel, same
+// caller, one more secret to keep. The alternative is an agent nobody can ever
+// reattach to, which this board has had, and which `adopt_agent` exists to clean
+// up after.
+func defaultToPersistent(op *core.Op) (minted bool, err error) {
+	if op.AgentKind == "" {
+		op.AgentKind = core.KindPersistent
+	}
+	if op.AgentKind != core.KindPersistent || op.Nonce != "" {
+		return false, nil
+	}
+	nonce, err := newSecret()
+	if err != nil {
+		return false, err
+	}
+	// THE CANDIDATE FIELD. Writing this into op.Nonce tells the fold the caller
+	// is presenting a credential, which disqualifies the session_id reattach
+	// path and turns every returning agent into a sibling.
+	op.MintedNonce = nonce
+	return true, nil
 }

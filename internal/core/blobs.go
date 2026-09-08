@@ -79,8 +79,16 @@ func (s *State) blobAccessible(id, agent string) bool {
 	if b.Owners[agent] {
 		return true
 	}
+	// THE MAIL THAT IS THIS AGENT'S, by the rule Inbox uses. A message below
+	// the watermark was addressed to a previous occupant of this id, the
+	// replacement cannot see it, and this route still let the replacement
+	// fetch its attachment by blob id: the mail fence and the ownership
+	// strip closed two doors and this was the third. Adopted mail is the
+	// heir's, as everywhere. Found by the pre-release review, round
+	// forty-one.
+	floor := s.mailFloor(agent)
 	for _, m := range s.Messages {
-		if m.To != agent {
+		if m.To != agent || (m.Serial < floor && !s.adoptedFor(m, agent)) {
 			continue
 		}
 		for _, a := range m.Attachments {

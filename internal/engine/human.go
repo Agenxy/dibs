@@ -124,10 +124,29 @@ func (e *Engine) humanIdentityLocked() string {
 // mailbox, and for the week the row survives retention, asking the authority
 // question about ownership let a coordinator adopt it.
 func (e *Engine) humanRowLocked() string {
+	return e.rowForNonce(humanNonce())
+}
+
+// dibsRowLocked is the daemon's OWN reporting row, whatever state it is in.
+//
+// Reserved on the same terms as the human's and for the same reason stated at
+// wouldTakeHumanIdentity: `dibs` is what says "Dibs found a fault", on a board
+// where an agent reading that has no way to check who wrote it. That guard
+// covers the row while a nonce is presented; this one covers it when none is,
+// which is the case a v0.0.6 archive-and-recovery creates by blanking the
+// nonce field while keeping the index. Found by the pre-release review, round
+// seventy-five.
+func (e *Engine) dibsRowLocked() string {
+	return e.rowForNonce(dibsNonce())
+}
+
+// rowForNonce resolves a minted identity through the nonce INDEX, which
+// survives the archival that blanks Agent.Nonce.
+func (e *Engine) rowForNonce(nonce string) string {
 	if e.state == nil {
 		return ""
 	}
-	if id, ok := e.state.Nonces[humanNonce()]; ok {
+	if id, ok := e.state.Nonces[nonce]; ok {
 		if l := e.state.Agents[id]; l != nil {
 			return id
 		}

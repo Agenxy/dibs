@@ -21,6 +21,48 @@ package core
 // one needs. core does not know that humans exist, and that ignorance is what
 // keeps it a pure state machine.
 
+// HoldsAdoptedMail reports whether this agent holds mail that an approved
+// adoption moved ONTO it: another agent's mailbox, handed over on a human's
+// or coordinator's yes. The pending-request guard covers the window before
+// that yes; this covers after it. An approved adoption is terminal, so
+// HasPendingEffectRequest stops matching the instant the mailbox lands, and a
+// session-only recovery could then take the row by its public name and
+// session id and read the adopted mail. A row that has been handed another
+// agent's mailbox is recovered by its nonce, which v0.0.7 mints for every
+// registration. Found by the pre-release review, round sixty-five.
+func (s *State) HoldsAdoptedMail(agentID string) bool {
+	for _, m := range s.Messages {
+		if m.To == agentID && m.AdoptedFrom != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// HasPendingEffectRequest reports whether this agent has an outstanding
+// request that PERFORMS something on approval: a non-terminal request it
+// sent carrying a role grant or a mailbox adoption. Such a row is not
+// privileged yet, so the role guard did not cover it, but approving its
+// request lands the effect on whatever token the row now holds. A
+// session-only reattach in the window between the request and the human's
+// yes therefore captured it: the attacker re-registered with the requester's
+// public name and session id, took the row's token, and the operator's
+// approval promoted the taker (a grant) or moved a whole mailbox onto it (an
+// adoption). Found by the pre-release review, round sixty-one for the grant
+// and round sixty-two for the adoption, which the first cut left out because
+// it read only the grant field.
+func (s *State) HasPendingEffectRequest(agentID string) bool {
+	for _, m := range s.Messages {
+		if m.From != agentID || m.Terminal() {
+			continue
+		}
+		if m.Grant != "" || m.Adopt != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // checkGrantRequest rejects a role request that must not be answerable by a
 // press.
 //

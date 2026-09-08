@@ -163,7 +163,7 @@ func (p *rolePins) check(role, name, fingerprint, want string) error {
 			return fmt.Errorf("%q has no identity in [roles.identity], so the first "+
 				"agent to register under that name would be granted %s on trust "+
 				"alone. Add its FINGERPRINT under [roles.identity] in dibs.toml, "+
-				"which %q prints at startup and `register` returns: never the nonce "+
+				"which %q prints at startup and `register` returns as `fingerprint`: never the nonce "+
 				"itself, which is that agent's whole recovery credential and would "+
 				"let anything that can read the file become it", name, role, name)
 		}
@@ -196,6 +196,47 @@ func (p *rolePins) check(role, name, fingerprint, want string) error {
 		}
 		return nil
 	case fingerprint:
+		// THE PIN IS A FLOOR, NOT A GRANT.
+		//
+		// This returned success the moment the stored pin matched the live
+		// agent, without ever looking at what the operator currently authorises.
+		// The pin exists to stop a NAME being taken by a new identity; it was
+		// never meant to be the authorisation itself, and treating it as one
+		// took the decision away from the person whose config file it is.
+		//
+		// Two revocations therefore did nothing. Deleting an agent from
+		// [roles.identity] left it holding the role, and pointing that entry at
+		// a successor's fingerprint left the old credential accepted beside it.
+		// On the next restart the reconciler passed the new configuration in
+		// here, was told yes, and re-granted the old identity: for admin, that
+		// is every decrypted mailbox on the board, restored against the
+		// operator's written instruction. SECURITY.md says [roles.identity]
+		// names the agent allowed to hold the role, and it has to be true at
+		// every grant rather than only at the first one.
+		//
+		// Both files still have to agree, which is what the `default` branch
+		// below is for: the pin refuses a different agent under the same name,
+		// and the config refuses an agent the operator no longer names.
+		if want == "" {
+			return fmt.Errorf("%q is pinned as the holder of %s, and [roles.identity] "+
+				"no longer names it, so it is not granted again. IT IS NOT DEMOTED "+
+				"EITHER: a role is replayable state and survives restarts until "+
+				"something takes it away, so run `dibs admin member %q` to actually "+
+				"withdraw it. To hand it over instead, put the successor's fingerprint "+
+				"under [roles.identity], remove %q from %s, and restart; both files are "+
+				"read at startup", name, role, name, name, p.path)
+		}
+		if want != fingerprint {
+			return fmt.Errorf("[roles.identity] names a different fingerprint for %q "+
+				"than the one this board pinned when it granted %s, and the agent "+
+				"holding that name now matches the PIN. So a successor has been named "+
+				"and the predecessor is still registered: granting on the pin alone "+
+				"would keep the old credential authorised against the current "+
+				"configuration. The predecessor KEEPS the role it already holds until "+
+				"`dibs admin member %q` takes it; then remove %q from %s and restart, "+
+				"once the successor is the agent registering under that name",
+				name, role, name, name, p.path)
+		}
 		return nil
 	default:
 		// The repair takes BOTH files and a restart, and saying only half of it
@@ -205,14 +246,24 @@ func (p *rolePins) check(role, name, fingerprint, want string) error {
 		// the old [roles.identity] fingerprint on the next boot. An error that
 		// names a corrective action which does not correct anything is worse
 		// than one that names none.
+		// AND THE PREDECESSOR'S ROLE. This named the three steps that let the
+		// successor in and called them all of them, and none of the three
+		// takes the role away from the predecessor, which may still be
+		// registered under whatever name it has now and holds its grant in
+		// the ledger: following the procedure authorised the successor
+		// without withdrawing the predecessor. The sibling branches name the
+		// revoke; this one did not. Found by the pre-release review, round
+		// forty-six.
 		return fmt.Errorf("the agent now called %q is not the one this board granted "+
 			"%s to. A standing role follows an identity, not a name, and a name is "+
 			"free for anyone to take once its holder is gone. If this is a deliberate "+
-			"handover it takes three steps, all of them: put the NEW agent's "+
-			"fingerprint under [roles.identity] in dibs.toml, remove %q from %s, and "+
-			"restart dibd. Both files are read at startup, so editing either one "+
-			"under a running daemon changes nothing",
-			name, role, name, p.path)
+			"handover it takes four steps, all of them: `dibs admin member <the old "+
+			"agent>`, so the predecessor, still registered under whatever name it "+
+			"has now, loses the %s it holds; put the NEW agent's fingerprint under "+
+			"[roles.identity] in dibs.toml; remove %q from %s; and restart dibd. Both "+
+			"files are read at startup, so editing either one under a running daemon "+
+			"changes nothing",
+			name, role, role, name, p.path)
 	}
 }
 

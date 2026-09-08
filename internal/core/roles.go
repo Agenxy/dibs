@@ -46,6 +46,29 @@ func (l *Agent) IsCoordinator() bool { return l.Role == RoleCoordinator || l.Rol
 // other agents' mail. Only a human grants this.
 func (l *Agent) IsAdmin() bool { return l.Role == RoleAdmin }
 
+// checkGrantRole rejects a role nobody has ever defined.
+//
+// Called from Admit, NOT from Apply, for the reason spelled out at
+// checkGrantRequest: this is payload vocabulary, and Apply is the fold that
+// replays a ledger written by older code. A vocabulary rule enforced there is
+// retroactive, so the day the accepted set changes is the day the daemon
+// refuses to boot on its own history. It sat in Apply here while the typed
+// request path beside it did this correctly and carried the paragraph
+// explaining why. Found by the pre-release review, which is now the fifth time
+// this mistake has been caught in this repository.
+func checkGrantRole(op *Op) error {
+	if op.Kind != OpGrantRole {
+		return nil
+	}
+	switch op.Mode {
+	case RoleMember, RoleCoordinator, RoleAdmin:
+		return nil
+	}
+	return errf("E_BAD_ROLE",
+		"use member (default) | coordinator (broadcast + force_release) | admin (everything, including reading all mail)",
+		"unknown role %q", op.Mode)
+}
+
 // applyGrantRole sets an agent's role. The engine admits this op only on the
 // admin path (local secret + admin password), so an agent can never promote
 // itself or another; the core just applies the recorded decision.
@@ -54,12 +77,8 @@ func (s *State) applyGrantRole(op *Op, now time.Time) (Result, []Event, error) {
 	if !ok {
 		return nil, nil, errf("E_NO_AGENT", "check the board for live agents", "no agent %q", op.To)
 	}
+	// The vocabulary check is in Admit, not here. See checkGrantRole.
 	role := op.Mode
-	if role != RoleMember && role != RoleCoordinator && role != RoleAdmin {
-		return nil, nil, errf("E_BAD_ROLE",
-			"use member (default) | coordinator (broadcast + force_release) | admin (everything, including reading all mail)",
-			"unknown role %q", role)
-	}
 	if l.Role == role || (l.Role == "" && role == RoleMember) {
 		return Result{"ok": true, "agent": l.ID, "role": role, "changed": false}, nil, nil
 	}
@@ -120,23 +139,129 @@ func (s *State) AgentBySession(sid string) *Agent {
 	if sid == "" {
 		return nil
 	}
+	// A STATED holder beats a GUESSED one, and beats map order.
+	//
+	// Two agents can hold one id: the daemon inferred it for one by directory,
+	// and the session it actually belongs to later stated it. Returning
+	// whichever Go's map iteration reached first made the answer random per
+	// call, so the same hook could resolve to a different agent on consecutive
+	// turns. Preferring the agent that STATED the id resolves that in favour of
+	// the one that can prove it is the session, and it removes the
+	// nondeterminism whether or not a reclaim ever happens.
+	//
+	// Done by preference rather than by deleting the loser's binding, because a
+	// delete belongs in the fold and would be retroactive: replaying a ledger
+	// written before this existed would start stripping bindings that were legal
+	// when they were made.
+	// AND AMONG STATED HOLDERS, the live one, then the lowest id. Two stated
+	// holders is a state the takeover repair now prevents, but the lookup must
+	// not be a coin flip while any ledger still holds one: the active row is
+	// the one a hook is speaking for.
+	var guessed, stated *Agent
 	for _, l := range s.Agents {
 		if l.Status == StatusArchived || l.Status == StatusClosed {
 			continue
 		}
-		if l.SessionID == sid {
-			return l
+		if !l.holdsSession(sid) {
+			continue
 		}
-		// Also the names the harness's OTHER half uses for this same session:
-		// the bridge says `host-<ppid>`, a configured hook says whatever the
-		// harness calls its session. See Agent.SessionAliases.
-		for _, alias := range l.SessionAliases {
-			if alias == sid {
-				return l
+		if !l.GuessedSession(sid) {
+			// AND THE ONE THAT HELD IT FIRST. Every agent registering through
+			// one bridge states the same `host-<ppid>`, on purpose, and "the
+			// lowest id" let an agent registered later under a name that
+			// sorted first take over the hooks of the one that had the
+			// session first: it kept its binding and lost its routing. The
+			// earliest row wins; the id decides only between rows created at
+			// once. Found by the pre-release review, round fifty-three.
+			if stated == nil ||
+				(l.Status == StatusActive && stated.Status != StatusActive) ||
+				(l.Status == StatusActive) == (stated.Status == StatusActive) && heldFirst(l, stated) {
+				stated = l
 			}
+			continue
+		}
+		// Sorted by id so two guessed holders do not swap between calls either.
+		if guessed == nil || l.ID < guessed.ID {
+			guessed = l
 		}
 	}
-	return nil
+	// Only a guess holds it: still an answer, and a stable one.
+	if stated != nil {
+		return stated
+	}
+	return guessed
+}
+
+// heldFirst reports whether a came before b: created earlier, or the lower
+// id when they were created at once (or before creation serials existed).
+func heldFirst(a, b *Agent) bool {
+	if a.CreatedSerial != b.CreatedSerial {
+		return a.CreatedSerial < b.CreatedSerial
+	}
+	return a.ID < b.ID
+}
+
+// SessionSpokenFor reports whether ANY agent row has ever answered to this
+// session id, archived and closed rows included.
+//
+// A different question from AgentBySession, and the difference is the whole
+// point. That one answers "who should this hook's mail go to", so it skips
+// archived and closed rows: mail must not be delivered to an agent that is
+// gone. Asked instead as "is this id free for somebody else to be given", that
+// skip is a hole. An ephemeral row swept while its session kept running leaves
+// a LIVE session's id looking unheld, and the directory inference then handed
+// it to the next agent registering in that directory. Measured on this
+// project's own board: one agent's unread list was rendered into another's
+// context for hours.
+//
+// Archived is not free. The row is kept for ArchiveRetention, which is seven
+// days against a one-hour join window, so an id whose agent was swept recently
+// enough for the inference to consider it always still has a row here.
+func (s *State) SessionSpokenFor(sid string) bool {
+	if sid == "" {
+		return false
+	}
+	for _, l := range s.Agents {
+		if l.holdsSession(sid) {
+			return true
+		}
+	}
+	return false
+}
+
+// dropSession removes one session id from this agent, primary or alias, so
+// exactly one row answers to a thread after it changes hands.
+//
+// Leaving it on both is worse than either outcome on its own: AgentBySession
+// then has two stated holders to choose between and resolves by id order, so
+// which agent a hook reaches stops depending on anything a reader can see.
+func (a *Agent) dropSession(sid string) {
+	if sid == "" {
+		return
+	}
+	if a.SessionID == sid {
+		a.SessionID = ""
+	}
+	if a.CurrentSession == sid {
+		a.CurrentSession = ""
+	}
+	a.SessionAliases = withoutString(a.SessionAliases, sid)
+	a.GuessedSessions = withoutString(a.GuessedSessions, sid)
+}
+
+// holdsSession reports whether this agent answers to that session id, as its
+// primary or as one of the OTHER names the same session goes by. See
+// Agent.SessionAliases.
+func (a *Agent) holdsSession(sid string) bool {
+	if a.SessionID == sid {
+		return true
+	}
+	for _, alias := range a.SessionAliases {
+		if alias == sid {
+			return true
+		}
+	}
+	return false
 }
 
 // AgentForHook resolves the agent a lifecycle hook is speaking for.
@@ -306,8 +431,183 @@ const maxSessionAliases = 8
 // fixes are already registered. An agent registered before the join existed has
 // no reason to ever register again; without this it stays unreachable by its
 // own harness's hooks forever, while every call it makes reports success.
-func (a *Agent) bindHarnessSession(sid string) string {
-	if sid == "" || sid == a.SessionID {
+// bindHarnessSessionAs is bindHarnessSession plus whether the id was a GUESS.
+//
+// Recorded on the agent so a later first-hand claim can take an inferred
+// binding back without being able to take a stated one. See Op.SessionGuessed.
+// currentFrom records which of the ids an op carries is the activation the
+// caller is on. The alias the daemon joins at ingress wins when there is one,
+// because bindHarnessSessionAs made it current; otherwise the session id the
+// caller stated is the one it is speaking from. Session-based recovery used
+// to leave the current session where it was: an agent holding threads B and
+// C with C current, recovered by session_id B with no alias, was still woken
+// on C. Found by the pre-release review, round eleven.
+//
+// held says whether the op's session id was this row's BEFORE the path that
+// calls this moved anything: the recovery paths install the stated id as the
+// primary first, so by the time this looks it is always held, and the one
+// question that matters, same activation or a new one, has to be asked
+// earlier and carried in.
+func (a *Agent) currentFrom(op *Op, held bool) {
+	if op.SessionID != "" && a.holdsSession(op.SessionID) {
+		// STATED, so no longer a guess. Nonce recovery restored a row whose
+		// session had been inferred, kept the guess, and a stranger's
+		// metadata could take the session through ordinary ingress. Found by
+		// the pre-release review, round sixteen.
+		a.GuessedSessions = withoutString(a.GuessedSessions, op.SessionID)
+	}
+	if op.SessionID == "" || !a.holdsSession(op.SessionID) {
+		return
+	}
+	a.CurrentSession = a.currentAfter(op, held)
+}
+
+// currentAfter is the session that applying op would leave current, without
+// applying it: the rules of bindHarnessSession and currentFrom, asked
+// together, so a path that must decide whether an op CHANGES anything asks
+// the same question the fold will answer. Comparing fields one at a time
+// read an identical retry that stated a synthetic primary beside a thread
+// alias as a change on every call, and ledgered it every time. Found by the
+// pre-release review, round fifty-seven.
+//
+// held says whether the stated session id was this row's before the path
+// that calls this moved anything (see currentFrom).
+func (a *Agent) currentAfter(op *Op, held bool) string {
+	cur := a.CurrentSession
+	if alias := op.SessionAlias; alias != "" {
+		// bindHarnessSession: the alias becomes current, unless it is a
+		// synthetic id already held re-asserted over a thread.
+		keep := a.holdsSession(alias) && !LooksLikeThreadID(alias) && LooksLikeThreadID(cur)
+		if !keep {
+			cur = alias
+		}
+	}
+	if op.SessionID == "" {
+		return cur
+	}
+	// THE SAME ACTIVATION NAMING ITSELF AGAIN. An op whose session id and
+	// alias are both the bridge's own id is a new activation when the bridge
+	// restarted and the same one when it registered again inside its TTL:
+	// an id this row already held is the activation it is in, and a
+	// synthetic one does not displace its thread. Found by the pre-release
+	// review, round forty-four.
+	if held && !LooksLikeThreadID(op.SessionID) && LooksLikeThreadID(cur) {
+		return cur
+	}
+	// A THREAD BEATS A SYNTHETIC ID. The alias, when there is one, is what
+	// the harness reported and was the current session over anything stated,
+	// which is right when it is the thread and wrong when it is the bridge's
+	// own `host-<ppid>` (round thirty-seven). And the bridge naming its own
+	// NEW activation, as session and alias both, is a new activation: the op
+	// says it twice; that is the signal.
+	statedThread := LooksLikeThreadID(op.SessionID) && !LooksLikeThreadID(op.SessionAlias)
+	if op.SessionAlias != "" && !statedThread && op.SessionAlias != op.SessionID {
+		return cur
+	}
+	return op.SessionID
+}
+
+// yieldSessionsHeldElsewhere drops from a revived row every session id that
+// another live row holds. A retired holder keeps its bindings on its row,
+// the ingress counts a retired row as no holder, so another agent takes the
+// id while it is gone; nonce recovery then revived the old row with its
+// bindings intact: two active holders, and hooks resolving to the old one.
+// The id was taken while this row was away, so the live holder keeps it.
+// Every other row is consulted, not a lookup that picks one of two holders
+// by map order. Found by the pre-release review, round seventeen.
+func (s *State) yieldSessionsHeldElsewhere(l *Agent) {
+	ids := append([]string{l.SessionID}, l.SessionAliases...)
+	ids = append(ids, l.GuessedSessions...)
+	for _, sid := range ids {
+		if sid == "" {
+			continue
+		}
+		for _, o := range s.Agents {
+			if o.ID != l.ID && !o.Gone() && o.holdsSession(sid) {
+				l.dropSession(sid)
+				break
+			}
+		}
+	}
+}
+
+func (a *Agent) bindHarnessSessionAs(sid string, guessed, v7 bool) string {
+	bound := a.bindHarnessSession(sid, v7)
+	// AN ALREADY-HELD ID STILL CARRIES PROVENANCE, and this returned early on
+	// one.
+	//
+	// bindHarnessSession reports "" when there is nothing NEW to bind, which is
+	// the case when the caller names an id this agent already holds. That is
+	// precisely the moment a session confirms an id first-hand, so returning
+	// here left it marked as a guess: an agent that explicitly stated its own
+	// session went on being reclaimable by anyone. The binding is unchanged; the
+	// claim about where it came from is not. Found by the pre-release review.
+	if bound == "" && sid != "" && a.holdsSession(sid) {
+		bound = sid
+	}
+	if bound == "" {
+		return ""
+	}
+	// Against THIS id, not against the agent. A stated re-assert of an id that
+	// was previously a guess upgrades it, which is what makes an agent that
+	// later names its own session stop being reclaimable.
+	a.GuessedSessions = withoutString(a.GuessedSessions, bound)
+	if guessed {
+		a.GuessedSessions = append(a.GuessedSessions, bound)
+	}
+	return bound
+}
+
+// HoldsSessionForTest reports whether this agent answers to that id. Exported
+// for engine tests that assert on a binding the ingress made.
+func (a *Agent) HoldsSessionForTest(sid string) bool { return a.holdsSession(sid) }
+
+// GuessedSession reports whether THIS id was inferred for this agent rather
+// than stated by it.
+//
+// Exported because the authorisation decision lives in the engine, at ingress,
+// where a rejecting rule belongs: putting it in the fold would make replay
+// depend on today's answer. See mayClaimSession.
+func (a *Agent) GuessedSession(sid string) bool {
+	for _, g := range a.GuessedSessions {
+		if g == sid {
+			return true
+		}
+	}
+	return false
+}
+
+func withoutString(xs []string, drop string) []string {
+	out := xs[:0]
+	for _, x := range xs {
+		if x != drop {
+			out = append(out, x)
+		}
+	}
+	return out
+}
+
+func (a *Agent) bindHarnessSession(sid string, v7 bool) string {
+	if sid == "" {
+		return ""
+	}
+	// Every path below leaves the id bound, so it is the current one whether
+	// or not the binding itself is new: a return to a thread bound earlier
+	// changes nothing in the sets and everything about which one to wake.
+	//
+	// EXCEPT A SYNTHETIC ID RE-ASSERTED OVER A THREAD. The bridge sends its
+	// own `host-<ppid>` on every call, and each check_in bound it and made it
+	// current over the thread this activation had stated or its hooks had
+	// bound, so the configured wake lost its thread one call after gaining
+	// it. An id already held is the same activation saying the same thing;
+	// when it is not a thread and the current session is, the thread stays
+	// current. A NEW non-thread id is a new activation and still takes over.
+	// Found by the pre-release review, round thirty-seven.
+	keepThread := a.holdsSession(sid) && !LooksLikeThreadID(sid) && LooksLikeThreadID(a.CurrentSession)
+	if !keepThread {
+		a.CurrentSession = sid
+	}
+	if sid == a.SessionID {
 		return ""
 	}
 	if a.SessionID == "" {
@@ -321,7 +621,53 @@ func (a *Agent) bindHarnessSession(sid string) string {
 	}
 	a.SessionAliases = append(a.SessionAliases, sid)
 	if n := len(a.SessionAliases); n > maxSessionAliases {
+		// THE PROVENANCE GOES WITH THE ALIAS. Eviction dropped the id and kept
+		// its entry in GuessedSessions, so that list grew without any bound at
+		// all while the aliases stayed at eight: a hundred guessed bindings
+		// left eight aliases and a hundred provenances, most of them naming ids
+		// the agent no longer holds. It is replayable state, so it grows in the
+		// ledger and in every replay of it, which is the shape of leak this
+		// product can least afford.
+		//
+		// GATED, because it is a fold change like the rest of this cycle's.
+		// GuessedSession() is read when deciding whether a resume CHANGED
+		// anything, so dropping these on replay of a v0.0.6 ledger could stop
+		// an op advancing the serial where the original fold advanced it, and
+		// every serial after would disagree. Found by the pre-release review,
+		// round seventy-two.
+		if v7 {
+			for _, gone := range a.SessionAliases[:n-maxSessionAliases] {
+				a.GuessedSessions = withoutString(a.GuessedSessions, gone)
+			}
+		}
 		a.SessionAliases = a.SessionAliases[n-maxSessionAliases:]
 	}
 	return sid
+}
+
+// LooksLikeThreadID reports whether s has the shape of a UUID: 8-4-4-4-12
+// hex with hyphens. A harness thread id is one; the bridge's synthetic
+// `host-<ppid>` is not, and neither is a name a person typed. Shape is a weak
+// discriminator in general and an exact one here, which is why the fold and
+// the waker both use it rather than a recorded provenance: the alternative
+// was a new replayable field, and a json tag added to core is a thing this
+// repository has already lost data to.
+func LooksLikeThreadID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, r := range s {
+		switch i {
+		case 8, 13, 18, 23:
+			if r != '-' {
+				return false
+			}
+		default:
+			isHex := (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+			if !isHex {
+				return false
+			}
+		}
+	}
+	return true
 }

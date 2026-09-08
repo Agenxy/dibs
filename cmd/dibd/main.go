@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -24,6 +25,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/agenxy/dibs/internal/boardconfig"
 
 	"github.com/agenxy/dibs/internal/blobstore"
 	"github.com/agenxy/dibs/internal/build"
@@ -132,7 +135,7 @@ func run() error {
 	scorer.applyConfig(cfg.Match)
 
 	// Exclusivity, both kinds: this data directory, and this machine.
-	release, err := claimHostSlot(listenAddr, *dir, parallelAllowed(*allowParallel))
+	release, err := claimHostSlot(listenAddr, askedScheme, *dir, parallelAllowed(*allowParallel))
 	if err != nil {
 		return err
 	}
@@ -241,6 +244,7 @@ func run() error {
 	// "unset" and "explicitly false" are distinguishable, which is the whole
 	// reason a bool setting with a true default needs one.
 	eng.SetNoticesWake(cfg.Wake.NoticesWake == nil || *cfg.Wake.NoticesWake)
+	eng.SetSocketWakes(cfg.Wake.Sockets == nil || *cfg.Wake.Sockets)
 	// How to REACH an agent that is not running. Operator's config only: there
 	// is no tool, op or admin route that can set this, because it is arbitrary
 	// code on this machine and only the person at it may name it.
@@ -253,7 +257,7 @@ func run() error {
 			if len(x.Argv) == 0 {
 				continue
 			}
-			cmds[harness] = engine.WakeCommand{Argv: x.Argv, Cooldown: x.Cooldown}
+			cmds[harness] = engine.WakeCommand{Argv: x.Argv, Fallback: x.Fallback, Cooldown: x.Cooldown}
 		}
 		eng.SetWakeCommands(cmds)
 		slog.Info("the board can start an agent that is not running",
@@ -270,6 +274,9 @@ func run() error {
 	// an agent that took the name got the role, which is self-promotion by any
 	// other word. The grant now pins the credential of the agent it lands on and
 	// closes its window shortly after start. See rolepin.go.
+	// The declared names are guarded at ingress before their first grant as
+	// well as after: recovery of one of these rows needs its nonce.
+	eng.SetPrivilegedNames(append(append([]string{}, cfg.Roles.Coordinator...), cfg.Roles.Admin...))
 	keepDeclaredRolesApplied(ctx, *dir, eng, cfg.Roles)
 	// Clears a pid an older build recorded against the operator's own row, which
 	// made every restart report them as a dead process. One op, once, and only
@@ -367,6 +374,19 @@ func run() error {
 				"exist, are readable, and are a matching pair; removing both makes "+
 				"dibd generate its own", *dir, cerr)
 		}
+		// AND THAT IT NAMES THIS ADDRESS.
+		//
+		// Loading proves the key belongs to the certificate. boardconfig checks
+		// the hostname too, but only against `addr` in dibs.toml, and `-addr`
+		// and DIBS_ADDR both outrank that file: a board with an explicit pair
+		// and no configured address passed every check, served TLS here, and was
+		// refused by every client on hostname verification. This is the first
+		// point where the address is settled, so it is the only place the
+		// question can actually be answered.
+		if err := certificateNamesListener(cert, listenAddr); err != nil {
+			_ = ln.Close()
+			return fmt.Errorf("%s: %w", *dir, err)
+		}
 		tlsPair = []tls.Certificate{cert}
 	}
 	// Roles are the one part of the config that grants standing privilege, and
@@ -387,7 +407,7 @@ func run() error {
 	if len(tlsPair) > 0 {
 		// The pair already loaded above, so nothing is read from disk here and
 		// there is no second chance for it to fail after the log line.
-		srv.TLSConfig = &tls.Config{Certificates: tlsPair, MinVersion: tls.VersionTLS12}
+		srv.TLSConfig = tlsConfigFor(tr, *dir, listenAddr, tlsPair[0])
 		serve = func() error { return srv.ServeTLS(ln, "", "") }
 	}
 	if err := serve(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -647,6 +667,48 @@ func retiredVocabulary(ledgerPath string) string {
 // net.Listen work and left the transport to be re-inferred from the bare
 // address, which is how a daemon told to serve http:// on a LAN address served
 // TLS while its clients spoke plaintext.
+// certificateNamesListener reports whether an explicit pair is valid for the
+// address this daemon is about to serve on.
+//
+// SPLIT FROM run(), which is the whole daemon and cannot be called from a test.
+// The decision is the part worth testing: which addresses are checkable, and
+// what happens to a certificate that names none of them.
+//
+// boardconfig performs the same check against `addr` in dibs.toml, and that is
+// not enough, because `-addr` and DIBS_ADDR both outrank the file. A board with
+// an explicit pair and no configured address therefore passed every check,
+// served TLS, and was refused by every client on hostname verification: the
+// silent, total, all-at-once failure the managed path renews to avoid. Here the
+// address is settled, so the question can finally be answered.
+func certificateNamesListener(cert tls.Certificate, listenAddr string) error {
+	host := boardconfig.HostToVerify(listenAddr)
+	if host == "" || len(cert.Certificate) == 0 {
+		return nil // a wildcard bind serves whatever was dialled; nothing to verify
+	}
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		return fmt.Errorf("the TLS certificate cannot be parsed (%w)", err)
+	}
+	if err := leaf.VerifyHostname(host); err != nil {
+		// A NAME IS WHAT CLIENTS DIAL. A daemon bound to an interface address
+		// whose clients reach it as https://hub.example needs a certificate
+		// for hub.example, and the interface IP need not be in it; this
+		// refused that deployment at start and at -check. A certificate that
+		// names no address but names a host is accepted on an IP listener,
+		// because verifying the IP would refuse every correct one; a
+		// certificate that names only OTHER addresses is still refused.
+		// Found by the pre-release review, round forty.
+		if net.ParseIP(host) != nil && len(leaf.DNSNames) > 0 {
+			return nil
+		}
+		return fmt.Errorf("the TLS certificate does not name %s (%w), so this daemon "+
+			"would serve it and every client dialling that address would refuse the "+
+			"connection. Reissue it for the address this daemon listens on, or remove "+
+			"tls_cert and tls_key and let Dibs manage one", host, err)
+	}
+	return nil
+}
+
 func resolveListenAddr(flagAddr string, cfg Config) (listenAddr, askedScheme string, err error) {
 	listenAddr = firstNonEmpty(flagAddr, os.Getenv("DIBS_ADDR"), cfg.Addr, "127.0.0.1:4777")
 	if scheme, rest, found := strings.Cut(listenAddr, "://"); found {
@@ -789,6 +851,21 @@ func checkReplay(dir string, cfg Config, flagAddr string) error {
 	}
 	if err := checkTransportUsable(dir, listenAddr, askedScheme, cfg); err != nil {
 		return err
+	}
+	// AND THE CERTIFICATE NAMES THIS LISTENER. Same question startup asks, at
+	// the same point: after the address is resolved. boardconfig cannot ask it,
+	// because `-addr` and DIBS_ADDR outrank the file it reads, and `dibs
+	// upgrade` reads this command's exit status as licence to stop a live
+	// daemon.
+	if cfg.TLSCert != "" {
+		pair, perr := tls.LoadX509KeyPair(cfg.TLSCert, cfg.TLSKey)
+		if perr != nil {
+			return fmt.Errorf("the TLS certificate and key in %s cannot be used "+
+				"together: %w", dir, perr)
+		}
+		if err := certificateNamesListener(pair, listenAddr); err != nil {
+			return fmt.Errorf("%s: %w", dir, err)
+		}
 	}
 	if _, err := os.Stat(filepath.Join(dir, "ledger.jsonl")); err != nil {
 		return fmt.Errorf("no board at %s: there is nothing to check", dir)

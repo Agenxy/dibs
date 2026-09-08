@@ -66,8 +66,35 @@ func TestToolListingStaysAffordable(t *testing.T) {
 	// It is still SMALLER than it was: 36208 chars before any of this. Density
 	// is the number that matters and it improved by a tenth, which an absolute
 	// ceiling cannot see, so both are checked.
+	//
+	// Raised again from 34500, by 200, per the same rule. `update` gained a
+	// `cwd` parameter. The board derives an agent's project and repository from
+	// its cwd, and the matching hint BLAMES the cwd when a path is unreadable,
+	// so it was the one field an agent was told was at fault and the one field
+	// it had no way to correct: register short-circuits a same-nonce retry and
+	// silently applies nothing, and update had no cwd. What the agent gets for
+	// the tokens is the ability to fix the thing the board keeps telling it is
+	// wrong, without abandoning its identity and registering a sibling.
+	//
+	// Worth noticing that the listing sat at 34499 against a 34500 budget, so
+	// the next parameter after this one will land here too. That is the guard
+	// working: growth is visible, and each step has to be argued for.
+	//
+	// Raised again from 34700, by 200, and this is the second raise in one
+	// night, which is worth saying rather than hiding. `update` gained
+	// `release_session`. What the agent gets for the tokens is the only exit
+	// from a state that was otherwise permanent: when a session id is bound to
+	// the wrong agent, the board wakes that agent instead of the mailbox's
+	// owner, the owner is refused its own id with E_SESSION_TAKEN, and nothing
+	// on the board could undo it. Measured here, across a daemon restart, which
+	// replayed the mis-binding faithfully. One parameter buys the fleet a way to
+	// repair itself without an operator.
+	//
+	// Two raises in a night is the guard doing its job, not failing: each one
+	// had to be argued for in the commit that made it, which is the whole point
+	// of a bound that is visible rather than absolute.
 	const (
-		budget  = 34500 // ~8.6k tokens
+		budget  = 34900 // ~8.7k tokens
 		perTool = 800   // the average that keeps a description worth reading
 	)
 	if len(b) > budget {
