@@ -98,10 +98,18 @@ func TestAStreamFollowsItsAgentOnlyWhileTheAgentIsInItsSession(t *testing.T) {
 	moved := toolCall(t, srv, "register", map[string]any{
 		"name": "busy", "nonce": nonce, "session_id": "host-b", "cwd": t.TempDir(),
 	})
-	if moved["agent_id"] != busy["agent_id"] || moved["token"] != token {
-		t.Fatalf("setup: the move did not keep the identity and its token: %v", moved)
+	// The move ROTATES the credential (round seventy-nine): the session being
+	// left must not keep a working one. The identity is what carries over, and
+	// the new token is what speaks for it.
+	if moved["agent_id"] != busy["agent_id"] {
+		t.Fatalf("setup: the move forked a sibling rather than keeping the identity: %v", moved)
 	}
-	inB := openListenFrom(t, srv, token, "host-b", nil)
+	movedTok, _ := moved["token"].(string)
+	if movedTok == "" || movedTok == token {
+		t.Fatalf("setup: the move did not rotate the token, so this no longer isolates the "+
+			"session rule from the credential rule: %v", moved)
+	}
+	inB := openListenFrom(t, srv, movedTok, "host-b", nil)
 	toolCall(t, srv, "send", map[string]any{"token": asker["token"], "to": "busy", "type": "question", "body": "while in B"})
 	if !awaitUpdate(inB, "dibs://inbox") {
 		t.Fatal("the stream served from the session the agent moved to heard nothing")
@@ -110,13 +118,22 @@ func TestAStreamFollowsItsAgentOnlyWhileTheAgentIsInItsSession(t *testing.T) {
 		t.Fatal("the stream served from the session the agent LEFT was handed the question: " +
 			"the bridge there wakes a session the agent is not in")
 	}
-	// A return to A is a move back: A's stream, still open, is fed again.
-	toolCall(t, srv, "register", map[string]any{
+	// A return to A is a move back, and session A is served again. The stream
+	// opened BEFORE the first move is not the one that carries it: that move
+	// rotated the credential out from under it, so it is dead for good and the
+	// bridge resubscribes. What the rule promises is that the session an agent
+	// returns to is fed once more, not that a revoked stream comes back.
+	back := toolCall(t, srv, "register", map[string]any{
 		"name": "busy", "nonce": nonce, "session_id": "host-a", "cwd": t.TempDir(),
 	})
+	backTok, _ := back["token"].(string)
+	if backTok == "" {
+		t.Fatalf("setup: the return issued no token: %v", back)
+	}
+	inAAgain := openListenFrom(t, srv, backTok, "host-a", nil)
 	toolCall(t, srv, "send", map[string]any{"token": asker["token"], "to": "busy", "type": "question", "body": "back in A"})
-	if !awaitUpdate(inA, "dibs://inbox") {
-		t.Fatal("the agent returned to A and A's stream was not fed again")
+	if !awaitUpdate(inAAgain, "dibs://inbox") {
+		t.Fatal("the agent returned to session A and a stream serving A was not fed")
 	}
 }
 
@@ -131,17 +148,25 @@ func TestAResumedStreamIsNotHandedTheGapWhileItsAgentIsElsewhere(t *testing.T) {
 	})
 	token := busy["token"].(string)
 	cursor := busy["serial"]
-	toolCall(t, srv, "register", map[string]any{
+	moved := toolCall(t, srv, "register", map[string]any{
 		"name": "busy", "nonce": nonce, "session_id": "host-b", "cwd": t.TempDir(),
 	})
+	// The move rotates the credential, so the reconnect below uses the current
+	// one: this test is about the SESSION rule, and a revoked token would
+	// prove the credential rule instead.
+	movedTok, _ := moved["token"].(string)
+	if movedTok == "" {
+		t.Fatalf("setup: the move issued no token: %v", moved)
+	}
+	_ = token
 	toolCall(t, srv, "send", map[string]any{"token": asker["token"], "to": "busy", "type": "question", "body": "while in B"})
-	// A's bridge reconnects from where it left off.
-	inA := openListenFrom(t, srv, token, "host-a", cursor)
+	// A's bridge reconnects from where it left off, naming the session it serves.
+	inA := openListenFrom(t, srv, movedTok, "host-a", cursor)
 	if awaitUpdate(inA, "dibs://inbox") {
 		t.Fatal("the stream served from the session the agent LEFT was handed the gap on reconnect")
 	}
 	// B's is.
-	inB := openListenFrom(t, srv, token, "host-b", cursor)
+	inB := openListenFrom(t, srv, movedTok, "host-b", cursor)
 	if !awaitUpdate(inB, "dibs://inbox") {
 		t.Fatal("the stream served from the session the agent is in was not handed the gap")
 	}

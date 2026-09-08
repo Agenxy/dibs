@@ -90,13 +90,27 @@ func TestAStreamServingAThreadIsWithheldOnceTheAgentMovesToAnother(t *testing.T)
 	if moved["agent_id"] != busy["agent_id"] {
 		t.Fatalf("setup: the move forked a sibling: %v", moved)
 	}
-	inB := openListenFrom(t, srv, token, threadB, nil)
+	// The move ROTATES the credential (round seventy-nine), so everything after
+	// it speaks with the new one. That is deliberate here: this test is about
+	// the SESSION rule, and using a revoked token would prove the credential
+	// rule instead and leave the session rule untested.
+	movedTok, _ := moved["token"].(string)
+	if movedTok == "" {
+		t.Fatalf("setup: the move issued no token: %v", moved)
+	}
+	inB := openListenFrom(t, srv, movedTok, threadB, nil)
 	toolCall(t, srv, "send", map[string]any{"token": asker["token"], "to": "busy", "type": "question", "body": "in B"})
 	if !awaitUpdate(inB, "dibs://inbox") {
 		t.Fatal("the stream serving the thread the agent moved to heard nothing")
 	}
-	if awaitUpdate(inA, "dibs://inbox") {
-		t.Fatal("the stream serving the thread the agent LEFT was handed the question: the row " +
-			"retains the thread, and retaining it is not being in it")
+	// A stream opened with the CURRENT credential, naming the thread the agent
+	// has left, is the isolated form of the rule: the token is unimpeachable
+	// and the session is not the one the agent is in.
+	staleA := openListenFrom(t, srv, movedTok, threadA, nil)
+	toolCall(t, srv, "send", map[string]any{"token": asker["token"], "to": "busy", "type": "question", "body": "still in B"})
+	if awaitUpdate(staleA, "dibs://inbox") {
+		t.Fatal("a stream naming the thread the agent LEFT, on a perfectly valid credential, " +
+			"was handed the question: the row retains the thread, and retaining it is not " +
+			"being in it")
 	}
 }
