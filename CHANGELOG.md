@@ -554,6 +554,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The daemon's own reporting identity could be recovered by name and session
+  id.** `dibs` is the row the daemon reports its own faults under, and an agent
+  reading "Dibs found a fault" has no way to check who wrote it. That identity
+  was reserved against a caller presenting its nonce, but a v0.0.6
+  archive-and-recovery blanks the nonce on the row while keeping the index, and
+  both the name and the session id are constants in this repository. It is now
+  reserved on the same terms as the operator's own row, which no caller
+  recovers.
+
 - **Recovering an agent could redirect its wakes to a thread it had left.**
   The guard that decides whether a registration may claim a harness thread asks
   whether the fold will land that registration on the row holding it, and that
@@ -581,8 +590,11 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   moment it would be delivered, whether the subscription that owed it still
   speaks for this session. That test reaches all three paths that hold a notice
   back: the deferral, the retry after a delivery that failed, and an arrival
-  that folds into a timer already armed. The last of those takes ownership as
-  well, so a live stream's notice is never dropped by a retired stream's test.
+  that folds into a timer already armed. One waker serves every mailbox on a
+  bridge, so a deferred notice records every mailbox that contributed to it and
+  is delivered while any of them is still current. Keeping only the newest
+  arrival's test, or only the first's, each dropped a notice another live
+  mailbox was still owed.
 
 - **A resumed agent was awake, subscribed, and unreachable.** `resume` rotated
   the token and bumped the activation while leaving every session binding

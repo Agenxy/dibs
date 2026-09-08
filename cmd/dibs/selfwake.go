@@ -47,9 +47,20 @@ type selfWaker struct {
 	last     time.Time // when a notice was last DELIVERED; an attempt spends nothing
 	pending  bool      // a deferred notice is armed for when the cooldown ends
 	timer    *time.Timer
-	// still is asked before a DEFERRED notice is delivered: the arrival that
-	// armed it may no longer be this session's to announce. nil means always.
-	still func() bool
+	// owed is every mailbox that contributed to the deferred notice, by the
+	// watcher's key, each with the test for whether its subscription still
+	// speaks for this session. The notice is delivered if ANY of them still
+	// does; it is dropped only when none is left.
+	//
+	// A MAP, NOT THE LATEST ONE. One waker serves every mailbox on this bridge
+	// (the cooldown is a promise about the session, not about a mailbox), so
+	// keeping only the newest arrival's test meant mailbox B's arrival could
+	// overwrite mailbox A's, and B retiring first then dropped a notice A was
+	// still owed. Keeping only the FIRST had the mirror flaw, which is what
+	// this replaced. Both calls return success and both cursors advance, so
+	// whatever is dropped here is announced by nothing afterwards. Found by
+	// the pre-release review, rounds seventy-three and seventy-five.
+	owed  map[string]func() bool
 	retry bool // the armed timer is a retry of a delivery that FAILED
 }
 
@@ -84,22 +95,33 @@ func newSelfWaker() *selfWaker {
 // Split out because wakeWhile carries three separate concerns already, and the
 // deferral is the one with a lifetime of its own: it outlives the call that
 // armed it, which is exactly how it came to outlive the subscription too.
-func (w *selfWaker) arm(wait time.Duration, notice string, still func() bool) {
+func (w *selfWaker) note(key string, still func() bool) {
+	if key == "" {
+		return // the bridge's own notice: nothing to test against
+	}
+	if w.owed == nil {
+		w.owed = map[string]func() bool{}
+	}
+	w.owed[key] = still
+}
+
+func (w *selfWaker) arm(wait time.Duration, notice, key string, still func() bool) {
 	w.pending = true
-	w.still = still
+	w.owed = nil
+	w.note(key, still)
 	recordWakePending(true) // for the in-place upgrade's handoff
 	w.timer = time.AfterFunc(wait, func() {
 		w.mu.Lock()
 		w.pending = false
-		keep := w.still
-		w.still = nil
+		keep := w.owed
+		w.owed = nil
 		w.mu.Unlock()
 		recordWakePending(false)
-		if keep != nil && !keep() {
-			slog.Debug("the subscription that owed this notice was retired; dropping it")
+		if !anyOwed(keep) {
+			slog.Debug("every subscription that owed this notice was retired; dropping it")
 			return
 		}
-		if err := w.wakeWhile(notice, keep); err != nil {
+		if err := w.deferredAgain(notice, keep); err != nil {
 			slog.Debug("could not put the deferred notice into this session", "err", err)
 		}
 	})
@@ -109,7 +131,46 @@ func (w *selfWaker) arm(wait time.Duration, notice string, still func() bool) {
 // notice this bridge owes on its own account, like the one a replaced image
 // left behind.
 func (w *selfWaker) wake(notice string) error {
-	return w.wakeWhile(notice, nil)
+	return w.wakeWhile(notice, "", nil)
+}
+
+// deferredAgain re-enters the wake with the contributors a timer collected,
+// so a notice that has to defer a second time keeps all of them rather than
+// collapsing to whichever one happened to be re-armed.
+func (w *selfWaker) deferredAgain(notice string, owed map[string]func() bool) error {
+	if len(owed) == 0 {
+		return w.wake(notice)
+	}
+	var err error
+	first := true
+	for key, still := range owed {
+		if first {
+			err = w.wakeWhile(notice, key, still)
+			first = false
+			continue
+		}
+		w.mu.Lock()
+		if w.pending {
+			w.note(key, still)
+		}
+		w.mu.Unlock()
+	}
+	return err
+}
+
+// anyOwed reports whether a subscription that contributed to the deferred
+// notice still speaks for this session. No contributors means the notice is
+// the bridge's own and is always delivered.
+func anyOwed(owed map[string]func() bool) bool {
+	if len(owed) == 0 {
+		return true
+	}
+	for _, still := range owed {
+		if still == nil || still() {
+			return true
+		}
+	}
+	return false
 }
 
 // wakeWhile is wake for a notice armed by a SUBSCRIPTION, with the test for
@@ -122,7 +183,7 @@ func (w *selfWaker) wake(notice string) error {
 // in. The test is asked at the moment of delivery, which is the only moment
 // its answer is worth anything. Found by the pre-release review, round
 // seventy-two.
-func (w *selfWaker) wakeWhile(notice string, still func() bool) error {
+func (w *selfWaker) wakeWhile(notice, key string, still func() bool) error {
 	if w == nil {
 		return errors.New("no session socket: this harness publishes none")
 	}
@@ -148,9 +209,9 @@ func (w *selfWaker) wakeWhile(notice string, still func() bool) error {
 			// spurious one it was added to stop. The arrival that just landed
 			// came from a stream that is live by construction. Found by the
 			// pre-release review, round seventy-three.
-			w.still = still
+			w.note(key, still)
 		} else {
-			w.arm(wait, notice, still)
+			w.arm(wait, notice, key, still)
 		}
 		w.mu.Unlock()
 		return nil
@@ -175,12 +236,13 @@ func (w *selfWaker) wakeWhile(notice string, still func() bool) error {
 			// twenty-five.
 			recordWakePending(true)
 			w.retry = true
-			w.still = still
+			w.owed = nil
+			w.note(key, still)
 			w.timer = time.AfterFunc(w.cooldown, func() {
 				w.mu.Lock()
 				w.pending, w.retry = false, false
-				keep := w.still
-				w.still = nil
+				keep := w.owed
+				w.owed = nil
 				w.mu.Unlock()
 				recordWakePending(false)
 				// THE RETRY CARRIES THE SAME TEST. It was armed through the
@@ -189,11 +251,11 @@ func (w *selfWaker) wakeWhile(notice string, still func() bool) error {
 				// interrupted the session the agent had left: the one path
 				// round seventy-two's guard did not reach. Found by the
 				// pre-release review, round seventy-three.
-				if keep != nil && !keep() {
-					slog.Debug("the subscription that owed this retry was retired; dropping it")
+				if !anyOwed(keep) {
+					slog.Debug("every subscription that owed this retry was retired; dropping it")
 					return
 				}
-				if rerr := w.wakeWhile(notice, keep); rerr != nil {
+				if rerr := w.deferredAgain(notice, keep); rerr != nil {
 					slog.Debug("the retried notice did not land either", "err", rerr)
 				}
 			})

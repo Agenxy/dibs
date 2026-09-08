@@ -344,7 +344,7 @@ func (iw *inboxWatcher) stream(
 		// event and nothing retried, so a socket that came back found an
 		// agent asleep on stored mail. Found by the pre-release review, round
 		// eighteen.
-		if err := waker.wakeWhile(selfWakeNotice, func() bool { return iw.streamIsCurrent(st) }); err != nil {
+		if err := waker.wakeWhile(selfWakeNotice, st.key, func() bool { return iw.streamIsCurrent(st) }); err != nil {
 			slog.Debug("could not put a notice into this session; keeping its cursor", "err", err)
 			continue
 		}

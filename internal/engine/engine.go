@@ -1581,6 +1581,14 @@ func (e *Engine) refuseRecoveringAPrivilegedRowWithoutItsNonce(op *core.Op) erro
 	// board, never by name and session. Found by the pre-release review, round
 	// sixty-three.
 	isHuman := target.ID != "" && target.ID == e.humanRowLocked()
+	// AND THE DAEMON'S OWN REPORTING ROW, on the same terms. `dibs` is what
+	// says "Dibs found a fault", to agents with no way to check who wrote it,
+	// so recovering it by a public name and a public session id hands an agent
+	// the one voice on the board that is supposed to be the machine's. The
+	// nonce guard already reserves it against a caller PRESENTING that nonce;
+	// this is the same identity reached with none at all. Found by the
+	// pre-release review, round seventy-five.
+	isDibs := target.ID != "" && target.ID == e.dibsRowLocked()
 	// AND A ROW ONE YES AWAY FROM POWER. A pending request that performs
 	// something on approval (a role grant, or a mailbox adoption that moves a
 	// whole mailbox onto this row) lands its effect on whatever token the row
@@ -1601,7 +1609,7 @@ func (e *Engine) refuseRecoveringAPrivilegedRowWithoutItsNonce(op *core.Op) erro
 	// agent, not onto whoever can guess its session. Found by the pre-release
 	// review, round sixty-five.
 	holdsAdopted := e.state.HoldsAdoptedMail(target.ID)
-	if !holdsRole && !pendingEffect && !isHuman && !holdsAdopted {
+	if !holdsRole && !pendingEffect && !isHuman && !isDibs && !holdsAdopted {
 		return nil
 	}
 	if isHuman {
@@ -1611,6 +1619,15 @@ func (e *Engine) refuseRecoveringAPrivilegedRowWithoutItsNonce(op *core.Op) erro
 			Hint: "the human's identity is not reachable by name and session id; open the " +
 				"board (Touch ID or the admin password) to act as the human. A name and a " +
 				"session id are both public and prove nothing",
+		}
+	}
+	if isDibs {
+		return &core.Error{
+			Code: "E_NEEDS_NONCE",
+			Msg:  "agent " + target.ID + " is the daemon's own reporting identity, which no caller recovers",
+			Hint: "this row is how the daemon reports faults about itself, so speaking as it " +
+				"would be speaking as the machine. Register under your own name; a name and " +
+				"a session id are both public and prove nothing",
 		}
 	}
 	because := "holds a role, and a role is recovered by its nonce only"

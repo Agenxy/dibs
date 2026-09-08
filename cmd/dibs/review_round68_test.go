@@ -169,14 +169,14 @@ func TestADeferredNoticeIsDroppedWhenItsSubscriptionIsRetired(t *testing.T) {
 	iw.mu.Unlock()
 
 	// The first notice lands and spends the cooldown.
-	if err := w.wakeWhile(selfWakeNotice, func() bool { return iw.streamIsCurrent(st) }); err != nil {
+	if err := w.wakeWhile(selfWakeNotice, st.key, func() bool { return iw.streamIsCurrent(st) }); err != nil {
 		t.Fatal("setup:", err)
 	}
 	if got := collect(lines, 2, 2*time.Second); len(got) != 2 {
 		t.Fatalf("setup: the first notice put %d line(s) into the session, want 2", len(got))
 	}
 	// A second arrival inside the cooldown is deferred.
-	if err := w.wakeWhile(selfWakeNotice, func() bool { return iw.streamIsCurrent(st) }); err != nil {
+	if err := w.wakeWhile(selfWakeNotice, st.key, func() bool { return iw.streamIsCurrent(st) }); err != nil {
 		t.Fatal("setup:", err)
 	}
 	// Before it fires, the stream is retired: the agent moved on.
