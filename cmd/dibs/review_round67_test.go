@@ -103,3 +103,57 @@ func TestADamagedReplyDoesNotClaimTheRequestWasRefused(t *testing.T) {
 		})
 	}
 }
+
+// A 5xx carrying a text body is not a gate refusal. A proxy's 502 or 504 can
+// arrive after the daemon committed the operation, so promising it was
+// refused before being read invites a retry that duplicates a send.
+func TestATextBodiedServerErrorDoesNotPromiseNothingWasApplied(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		status  int
+		body    string
+		wantUnk bool
+	}{
+		{"a 502 with an HTML body", http.StatusBadGateway, "<html><body>Bad Gateway</body></html>", true},
+		{"a 504 with plain text", http.StatusGatewayTimeout, "upstream timed out", true},
+		// A 4xx IS decided before the request is read, and must keep saying so.
+		{"a 401 from the gate", http.StatusUnauthorized, "unauthorized", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+			var buf bytes.Buffer
+			out := &syncWriter{w: bufio.NewWriter(&buf)}
+			line := []byte(`{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"send"}}`)
+			req, err := http.NewRequest(http.MethodPost, srv.URL, bytes.NewReader(line))
+			if err != nil {
+				t.Fatal(err)
+			}
+			forward(srv.Client(), req, line, out, nil)
+			var reply struct {
+				Error struct {
+					Data struct {
+						Hint string `json:"hint"`
+					} `json:"data"`
+				} `json:"error"`
+			}
+			got := strings.TrimSpace(buf.String())
+			if err := json.Unmarshal([]byte(got), &reply); err != nil {
+				t.Fatalf("the harness read %q, which is not JSON-RPC: %v", got, err)
+			}
+			unknown := strings.Contains(reply.Error.Data.Hint, "may or may not have been applied")
+			if tc.wantUnk && !unknown {
+				t.Errorf("a %d was reported as refused before the request was read, but a proxy "+
+					"can answer that after the daemon committed: a retry without op_id duplicates "+
+					"the send. hint=%q", tc.status, reply.Error.Data.Hint)
+			}
+			if !tc.wantUnk && unknown {
+				t.Errorf("a %d is decided before the request is read and must still say nothing "+
+					"was applied. hint=%q", tc.status, reply.Error.Data.Hint)
+			}
+		})
+	}
+}

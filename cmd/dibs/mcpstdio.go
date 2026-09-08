@@ -272,6 +272,15 @@ func notAReply(line []byte, status int, body []byte) (reply []byte, refused bool
 	case len(body) == 0 && status >= 400:
 		// A gate refusal: decided before the request was read.
 		return refusedReply(line, status, []byte("(empty body)")), true
+	case len(body) > 0 && body[0] != '{' && status >= 500:
+		// A 5xx CARRYING TEXT IS NOT A GATE REFUSAL. A proxy's 502 or 504 can
+		// arrive after the daemon committed the op, and its body is HTML or
+		// plain text rather than JSON, so this fell into the refusal branch and
+		// promised the request had been rejected before it was read. Retrying a
+		// send on that promise, without an op_id, duplicates it. Only a 4xx is
+		// a decision taken before the request was read. Found by the
+		// pre-release review, round sixty-nine.
+		return damagedReply(line, status, "the reply was "+excerptOf(body)), true
 	case len(body) > 0 && body[0] != '{':
 		// A refusal written as a line of text, which the gate does.
 		return refusedReply(line, status, body), true
@@ -305,6 +314,15 @@ func damagedReply(line []byte, status int, what string) []byte {
 		},
 	})
 	return msg
+}
+
+// excerptOf is a body trimmed to something a harness can show a person.
+func excerptOf(body []byte) string {
+	text := strings.TrimSpace(string(body))
+	if len(text) > 200 {
+		text = text[:200]
+	}
+	return text
 }
 
 // refusedReply turns an HTTP refusal into the JSON-RPC error the harness can

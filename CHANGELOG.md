@@ -554,6 +554,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A rebuilt inbox notice could be dropped as already delivered.** When a
+  subscription's cursor falls past the ring, the notices it missed are rebuilt
+  from the mail itself. Those carry no sub-serial, so they all land on zero,
+  and a stream whose position was already at that serial skipped one as seen.
+  An adoption is the case that reaches it: it emits an agent update first and
+  the mail event after, so delivering the first and losing the second left the
+  rebuilt notice looking delivered while the mail sat in the inbox announcing
+  nothing. A rebuilt notice describes what is still owed, so a position can no
+  longer prove it was delivered.
+
 - **Moving an agent between threads could silently disable its self-wake.** A
   same-nonce registration can move a live agent to another thread without
   rotating its token, and the bridge replaced a subscription only when the
@@ -587,7 +597,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rejected before it was read. The operation may already be ledgered, so that
   advice invited a retry that could duplicate a send. A damaged reply now
   carries the same uncertain-outcome hint an unreachable daemon does: it may or
-  may not have been applied, check the board or retry with `op_id`.
+  may not have been applied, check the board or retry with `op_id`. That covers
+  a server error carrying a body too, an HTML or plain-text 502 or 504 from a
+  proxy, which can arrive after the daemon has committed. Only a 4xx, which is
+  decided before the request is read, still promises that nothing was applied.
 
 ### Changed
 

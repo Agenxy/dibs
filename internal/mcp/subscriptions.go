@@ -271,6 +271,22 @@ type pumpState struct {
 
 // seen reports whether ev is at or before the position.
 func (p *pumpState) seen(ev core.Event) bool {
+	// A RESYNCED EVENT IS NOT A POSITION. Events rebuilt from the inbox carry
+	// no Sub, so every one of them lands on zero, and a stream whose position
+	// was already (serial, 0) skipped one as though it had been delivered: an
+	// adoption emits agent.updated at sub 0 and the mail event after it, so
+	// delivering the first and losing the second left the rebuilt notice
+	// looking seen. The mail then sat in the inbox with nothing to announce
+	// it, which is the exact loss the resync exists to repair.
+	//
+	// These describe what is STILL OWED, read from the mail rather than from
+	// the ring, so a position cannot prove one was delivered. A repeat
+	// coalesces at the subscriber where a loss does not, which is the trade
+	// this whole path is built on. Found by the pre-release review, round
+	// sixty-nine.
+	if resynced, _ := ev.Data["resynced"].(bool); resynced {
+		return false
+	}
 	return ev.Serial < p.last || (ev.Serial == p.last && ev.Sub <= p.lastSub)
 }
 
