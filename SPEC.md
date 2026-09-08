@@ -268,8 +268,13 @@ you can measure is never improved by asking.
   (normative; MCP hosts cannot vary headers per call). Constant-time comparison.
   Exposure to the owning agent's context is bounded-by-design: blast radius = its own
   agent.
-- **Registration nonce**: client-generated, ≥128-bit CSPRNG, **required for
-  `kind: persistent`**, optional for ephemeral. Constant-time comparison. Two roles:
+- **Registration nonce**: client-generated, ≥128-bit CSPRNG, **expected for
+  `kind: persistent`** and optional for ephemeral. A client that sends none is
+  not refused: the daemon MINTS one and returns it, because an agent told to
+  keep a credential it was never given can never recover, and every persistent
+  registration therefore has one (§6). A minted nonce is weaker than a chosen
+  one and the result says so: the row stays recoverable by name and session id,
+  which a chosen nonce closes. Constant-time comparison. Two roles:
   - *Response-loss retry*: `register` with a nonce it has seen, while the agent is
     active and was created within one agent TTL, returns the original result
     (`resumed: true`). Outside that window: `E_NONCE_IN_USE` with hint → `resume`.
@@ -662,7 +667,7 @@ counting a document; this line said 17 for two minor versions.
 
 | Tool | Purpose |
 |---|---|
-| `register(name, description?, pid?, nonce?, kind?)` | → `{agent_id, token, serial, board}`; nonce required for `kind: persistent` |
+| `register(name, description?, pid?, nonce?, kind?)` | → `{agent_id, token, serial, board, nonce?}`; a nonce is expected for `kind: persistent` and MINTED when omitted, never refused (§4) |
 | `resume(nonce, resume_id, pid?)` | reactivate a persistent agent: rotates token, bumps activation generation, rebinds PID, wakes, re-arms gate; idempotent per resume_id (§5) |
 | `check_in()` | pass the awareness gate (per activation); → atomic `{board, inbox, serial}` checkpoint (§10) |
 | `update(name?, description?, title?, branch?, model?, provider?, effort?, surface?)` | revise what the agent says about ITSELF. The id is immutable (it is the address every message, claim and membership keys on), so a rename moves the label only, and a name another live agent holds is refused (`E_NAME_TAKEN`) rather than suffixed. `harness`/`version` are not settable: the client states them at the handshake, which is the only part of an identity that is not self-reported. Empty `description` clears, because already-ledgered `update` ops did that; the fields added later merge when non-empty, so replay of old ops is unchanged |

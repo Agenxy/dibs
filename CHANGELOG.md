@@ -554,6 +554,30 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An upgrade misread a service unit whose binary path contains a space.**
+  The executable was matched with a whitespace-excluding pattern, so
+  `/Users/Example User/bin/dibd` read as `/bin/dibd` and a unit naming the
+  installed binary looked like one pinning a different build. Recovery then
+  abandoned a correct service unit and started an unsupervised process. The
+  executable is now read the same way the data directory always has been,
+  through the parser that knows both unit formats.
+
+- **A damaged reply told the caller its request had been refused.** A reply the
+  daemon began and could not finish, a body cut short mid-JSON or an empty
+  5xx, was answered with the refusal wording, which says the request was
+  rejected before it was read. The operation may already be ledgered, so that
+  advice invited a retry that could duplicate a send. A damaged reply now
+  carries the same uncertain-outcome hint an unreachable daemon does: it may or
+  may not have been applied, check the board or retry with `op_id`.
+
+### Changed
+
+- **The spec no longer requires a client-generated nonce to register a
+  persistent agent.** It has minted one on omission since v0.0.7's identity
+  work, and section 4 and the tool table said otherwise, so a client
+  implementing the stated contract got conflicting requirements. Both now say a
+  nonce is expected, minted when omitted, and weaker than one the client chose.
+
 - **An old wake's exit could mark the current thread finished.** A wake
   command runs the agent's whole turn, so it can outlive the thread it woke:
   one started on thread A, the agent moved to thread B and called in, then A

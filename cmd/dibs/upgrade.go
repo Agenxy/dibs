@@ -702,8 +702,18 @@ func unitBinary(unit string) string {
 	if err != nil {
 		return ""
 	}
-	if m := unitDaemonPin.FindSubmatch(b); m != nil {
-		return string(m[1])
+	// THROUGH unitTokens, never a whitespace-excluding pattern. The regex read
+	// `/Users/Example User/bin/dibd` as `/bin/dibd`, so a unit naming the
+	// installed binary looked like one pinning a different build: recovery
+	// abandoned a correct service unit and started an unsupervised process
+	// instead, on exactly the machines whose home directory has a space in it.
+	// unitTokens already parses both unit shapes the way each format defines
+	// them, spaces included, which is why the DIRECTORY check beside this one
+	// never had the bug. Found by the pre-release review, round sixty-seven.
+	for _, tok := range unitTokens(string(b)) {
+		if filepath.IsAbs(tok) && filepath.Base(tok) == "dibd" {
+			return tok
+		}
 	}
 	return ""
 }

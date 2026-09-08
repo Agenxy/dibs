@@ -256,16 +256,55 @@ func forward(client *http.Client, req *http.Request, line []byte, out *syncWrite
 // mid-JSON was forwarded as malformed JSON. Neither is a response the
 // harness can match to its request, and both leave the call hanging. Found
 // by the pre-release review, round fifty-nine.
+// WHICH OF THE TWO IT IS DECIDES THE ADVICE. A refusal is answered "nothing
+// was applied"; a reply the daemon started and could not finish is answered
+// "this may or may not have been applied", because the op may already be
+// ledgered. Routing a truncated body through the refusal wording told a caller
+// its send had been rejected before it was read, and a retry without an op_id
+// then duplicated the message. Found by the pre-release review, round
+// sixty-seven.
 func notAReply(line []byte, status int, body []byte) (reply []byte, refused bool) {
 	switch {
+	case len(body) == 0 && status >= 500:
+		// The daemon (or something in front of it) broke off without a body:
+		// it may have applied the op and lost the answer.
+		return damagedReply(line, status, "the daemon sent no reply at all"), true
 	case len(body) == 0 && status >= 400:
+		// A gate refusal: decided before the request was read.
 		return refusedReply(line, status, []byte("(empty body)")), true
 	case len(body) > 0 && body[0] != '{':
+		// A refusal written as a line of text, which the gate does.
 		return refusedReply(line, status, body), true
 	case len(body) > 0 && !json.Valid(body):
-		return refusedReply(line, status, []byte("(reply cut short mid-JSON)")), true
+		return damagedReply(line, status, "the reply was cut short mid-JSON"), true
 	}
 	return nil, false
+}
+
+// damagedReply answers a reply the daemon began and did not finish. Unlike a
+// refusal, the request was read, so the outcome is UNKNOWN and the hint says
+// so in the same words unreachableReply uses for the same uncertainty.
+func damagedReply(line []byte, status int, what string) []byte {
+	id := idOf(line)
+	if string(id) == "null" {
+		return nil
+	}
+	msg, _ := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"error": map[string]any{
+			"code": -32000,
+			"message": fmt.Sprintf(
+				"the Dibs daemon's reply did not arrive intact: HTTP %d, %s", status, what),
+			"data": map[string]any{
+				"hint": "the call may or may not have been applied, because the daemon was " +
+					"reached and the answer was not: check the board before repeating it, or " +
+					"use op_id to make the retry idempotent",
+				"status": status,
+			},
+		},
+	})
+	return msg
 }
 
 // refusedReply turns an HTTP refusal into the JSON-RPC error the harness can
