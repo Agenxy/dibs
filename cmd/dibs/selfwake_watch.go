@@ -62,10 +62,15 @@ type inboxWatcher struct {
 
 // inboxStream is one agent's subscription: its credential and its cursor.
 type inboxStream struct {
-	key    string
-	token  string
-	cancel context.CancelFunc
-	since  uint64 // the serial of the last notification seen: a reconnect resumes from it
+	key   string
+	token string
+	// session is the harness session this stream told the daemon it serves,
+	// captured when it opened. The daemon withholds the inbox from a stream
+	// whose agent has moved elsewhere, so a stream outliving its session is
+	// an open connection that can never wake anybody. See startFor.
+	session string
+	cancel  context.CancelFunc
+	since   uint64 // the serial of the last notification seen: a reconnect resumes from it
 }
 
 // sharedWaker is the one route to this session's socket, made on first
@@ -131,8 +136,12 @@ func (iw *inboxWatcher) listenBody(st *inboxStream) []byte {
 	// while the agent is in another one: a bridge left behind by an
 	// identity that moved to a second session kept waking the first.
 	// Found by the pre-release review, round fifty-nine.
-	if sid := streamSession(); sid != "" {
-		meta[mcp.SessionMetaKey] = sid
+	// THE ONE CAPTURED WHEN THE STREAM OPENED, so a reconnect re-states what
+	// this stream was created to serve. Re-reading it here would let a stream
+	// quietly change which session it claims without the watcher deciding to
+	// replace it.
+	if st.session != "" {
+		meta[mcp.SessionMetaKey] = st.session
 	}
 	iw.mu.Lock()
 	if st.since > 0 {
@@ -206,8 +215,17 @@ func (iw *inboxWatcher) startFor(
 	if iw.streams == nil {
 		iw.streams = map[string]*inboxStream{}
 	}
+	// AND THE SESSION IT SERVES, not the token alone. A same-nonce register
+	// can move a live agent to another thread WITHOUT rotating its token, and
+	// this kept the existing subscription on that match: the stream went on
+	// naming the thread the agent had left, the daemon rightly withheld its
+	// inbox from a stream whose agent is elsewhere, and the connection stayed
+	// open forever waking nobody. The bridge's own answer to "which session do
+	// I serve" is the thing that changed, so it is the thing to compare.
+	// Found by the pre-release review, round sixty-eight.
+	session := streamSession()
 	prev := iw.streams[key]
-	if prev != nil && prev.token == token {
+	if prev != nil && prev.token == token && prev.session == session {
 		return
 	}
 	since := seed
@@ -221,7 +239,7 @@ func (iw *inboxWatcher) startFor(
 		prev.cancel()
 	}
 	sub, cancel := context.WithCancel(ctx)
-	st := &inboxStream{key: key, token: token, cancel: cancel, since: since}
+	st := &inboxStream{key: key, token: token, session: session, cancel: cancel, since: since}
 	iw.streams[key] = st
 	recordWakeStream(key, token, since) // for the in-place upgrade's handoff
 	go iw.run(sub, client, url, secret, st, waker)

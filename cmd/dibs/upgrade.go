@@ -711,6 +711,19 @@ func unitBinary(unit string) string {
 	// them, spaces included, which is why the DIRECTORY check beside this one
 	// never had the bug. Found by the pre-release review, round sixty-seven.
 	for _, tok := range unitTokens(string(b)) {
+		// A SYSTEMD DIRECTIVE IS ONE TOKEN. `ExecStart=/path/to/dibd` has no
+		// space between the key and its value, so the token is not a path and
+		// the first cut of this returned nothing for every systemd unit: the
+		// gate caught it, the targeted test did not, because the launchd case
+		// passed. The DIRECTORY check beside this one never needed the same
+		// care, since `-dir /path` makes the path its own token, which is
+		// exactly why assuming one reader covered both was wrong. Found by the
+		// release gate, round sixty-eight.
+		if !filepath.IsAbs(tok) {
+			if _, after, found := strings.Cut(tok, "="); found {
+				tok = after
+			}
+		}
 		if filepath.IsAbs(tok) && filepath.Base(tok) == "dibd" {
 			return tok
 		}

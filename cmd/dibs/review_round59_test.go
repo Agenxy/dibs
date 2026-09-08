@@ -120,7 +120,10 @@ func TestTheListenRequestNamesTheSessionItServes(t *testing.T) {
 			Meta map[string]any `json:"_meta"`
 		} `json:"params"`
 	}
-	if err := json.Unmarshal(iw.listenBody(&inboxStream{token: "tok"}), &req); err != nil {
+	// Built the way startFor builds one: the stream carries the session it was
+	// created to serve, and re-states that on every reconnect.
+	st := &inboxStream{token: "tok", session: streamSession()}
+	if err := json.Unmarshal(iw.listenBody(st), &req); err != nil {
 		t.Fatal(err)
 	}
 	if want := sessionID(); want == "" || req.Params.Meta["com.dibs/session"] != want {
@@ -143,7 +146,7 @@ func TestTheListenRequestNamesTheThreadTheHarnessNamed(t *testing.T) {
 			Meta map[string]any `json:"_meta"`
 		} `json:"params"`
 	}
-	if err := json.Unmarshal(iw.listenBody(&inboxStream{token: "tok"}), &req); err != nil {
+	if err := json.Unmarshal(iw.listenBody(&inboxStream{token: "tok", session: streamSession()}), &req); err != nil {
 		t.Fatal(err)
 	}
 	if got := req.Params.Meta["com.dibs/session"]; got != "019a1b2c-3d4e-7f80-9a1b-2c3d4e5f6a7b" {

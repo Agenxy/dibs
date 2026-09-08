@@ -554,6 +554,25 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Moving an agent between threads could silently disable its self-wake.** A
+  same-nonce registration can move a live agent to another thread without
+  rotating its token, and the bridge replaced a subscription only when the
+  token changed. The stream went on telling the daemon it served the thread the
+  agent had left, the daemon correctly withheld the inbox from a stream whose
+  agent is elsewhere, and the connection stayed open waking nobody. A stream is
+  now replaced when either its credential or the session it serves changes.
+
+- **The drift check still misread a service unit whose binary path contains a
+  space.** The previous release note claimed upgrade read these paths
+  correctly, and only the recovery decision did: planning still used the
+  whitespace-excluding parser, so a correct unit was judged drifted and
+  reconciliation would rewrite it, discarding operator customisations. Both
+  questions now use the one space-aware reader, and the pattern that could not
+  answer them has been removed rather than left for the next caller. A systemd
+  unit needed one thing more: its directive arrives as a single
+  `ExecStart=/path/to/dibd` token, so the key is stripped before the value is
+  read as a path.
+
 - **An upgrade misread a service unit whose binary path contains a space.**
   The executable was matched with a whitespace-excluding pattern, so
   `/Users/Example User/bin/dibd` read as `/bin/dibd` and a unit naming the
