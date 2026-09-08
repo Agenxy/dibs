@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -133,6 +134,15 @@ func configuredAddr(dir string) string {
 // success. Both now call internal/boardconfig, so there is one answer.
 func readBoardConfig(dir string) (boardconfig.Config, error) {
 	c, err := boardconfig.Load(dir)
+	var unknown *boardconfig.UnknownSettingsError
+	if errors.As(err, &unknown) {
+		// Decoded, with keys THIS build does not know. Not "dibd refuses this
+		// file": the daemon may be newer than this binary and running on it
+		// right now, which is exactly the state every session is in between a
+		// `task install` and its own restart. Passed up typed, so the caller
+		// decides what its own job needs from the file.
+		return c, fmt.Errorf("%s: %w", filepath.Join(dir, "dibs.toml"), err)
+	}
 	if err != nil {
 		return c, fmt.Errorf("%s: %w\n\nAny configuration printed from it would be a "+
 			"guess: dibd refuses this file, so fix it (or run `dibd -check`) first",
@@ -158,7 +168,18 @@ func nonDefaultEnv(scheme string) map[string]string {
 	// bridge bare host:port makes it infer HTTPS and fail to connect. Whatever
 	// this process was told is what the bridge should be told.
 	if raw := os.Getenv("DIBS_ADDR"); raw != "" {
-		env["DIBS_ADDR"] = raw
+		// THROUGH dialableAddr, LIKE THE BRANCH BELOW. A wildcard is a bind
+		// address and not a destination: a daemon legitimately started with
+		// `DIBS_ADDR=:4777` or `0.0.0.0:4777` had that copied verbatim into
+		// every generated client config, and `:4777` has no host to dial at all.
+		// The config branch below has always resolved it; this one passed the
+		// raw value through because the scheme is the thing it exists to
+		// preserve, and resolving keeps the scheme too.
+		if a, aerr := dialableAddr(raw); aerr == nil {
+			env["DIBS_ADDR"] = a
+		} else {
+			env["DIBS_ADDR"] = raw
+		}
 	} else if a, aerr := dialableAddr(rawAddr()); aerr == nil &&
 		(a != "127.0.0.1:4777" || scheme != inferredScheme(a)) {
 		// The RESOLVED scheme, when the bridge would infer a different one.

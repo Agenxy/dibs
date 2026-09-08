@@ -116,8 +116,16 @@ func TestRecoveringAnArchivedAgentRestoresItsNonce(t *testing.T) {
 			"this row and the test is about a different path")
 	}
 
+	// RestoreNonce is what the engine stamps on every register it accepts, so
+	// this is the op as v0.0.7 writes it. It is deliberately NOT the default:
+	// the behaviour below is retroactive, and an op already on disk from
+	// v0.0.6 has to keep folding the way it did when it was written, or one
+	// ledger reconstructs two different boards. See Op.RestoreNonce and
+	// TestAPreV007RegisterReplaysWithoutRestoringTheNonce, which pins the
+	// other half of that.
 	if _, _, err := s.Apply(&Op{
 		Kind: OpRegister, Name: "fleet-lead", AgentKind: KindPersistent, Nonce: "the-secret",
+		RestoreNonce: true,
 	}, now); err != nil {
 		t.Fatal("recovering:", err)
 	}

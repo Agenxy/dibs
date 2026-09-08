@@ -582,3 +582,48 @@ func TestARefusedServiceInstallCreatesNothing(t *testing.T) {
 			"the board on disk is not a refusal", dir)
 	}
 }
+
+// A unit for a neighbouring directory is not this board's unit.
+//
+// unitPinning decides which service file `dibs upgrade` will rewrite and
+// reload, and it asked `strings.Contains`: a unit for `~/.dibs-old` was
+// accepted as the unit for `~/.dibs`, so upgrade could edit and restart another
+// board's service under it. `--adopt-dir` renames a directory to exactly that
+// shape, which makes the two most likely to collide the two most likely to be
+// present at once.
+//
+// The correct implementation was already in this package, written for the same
+// question with the tests that prove a substring is wrong, and this function
+// did not call it.
+func TestAUnitForANeighbouringDirectoryIsNotOurs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	unitDir := filepath.Join(home, ".config", "systemd", "user")
+	if err := os.MkdirAll(unitDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	ours := filepath.Join(home, ".dibs")
+	neighbour := ours + "-old"
+
+	// The unit belongs to the NEIGHBOUR.
+	body := "[Service]\nExecStart=/usr/local/bin/dibd -dir " + systemdArg(neighbour) + "\n"
+	if err := os.WriteFile(filepath.Join(unitDir, "dibs.service"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := unitPinning(ours); got != "" {
+		t.Errorf("a unit pinning %q was reported as the unit for %q (%s). `dibs "+
+			"upgrade` rewrites and reloads whatever this returns, so it edits and "+
+			"restarts another board's service", neighbour, ours, got)
+	}
+	// And the real one is still found, or the fix is a matcher that says no to
+	// everything.
+	body = "[Service]\nExecStart=/usr/local/bin/dibd -dir " + systemdArg(ours) + "\n"
+	if err := os.WriteFile(filepath.Join(unitDir, "dibs.service"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := unitPinning(ours); got == "" {
+		t.Errorf("the unit that does pin %q was not found", ours)
+	}
+}

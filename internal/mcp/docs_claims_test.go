@@ -83,13 +83,25 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 		"plugins/chatgpt-desktop/README.md",
 	}
 
+	// A DOCUMENT IN THIS LIST MUST EXIST, and skipping the ones that do not is
+	// how this gate stops guarding without saying so.
+	//
+	// Every path above is a file this repository owns, so a read error means the
+	// list is wrong, usually because a document was renamed and this was not
+	// updated. The old behaviour was to `continue`, backed only by a single
+	// GLOBAL "did we check anything at all" assertion: one renamed document
+	// dropped out of coverage permanently and silently, as long as any other
+	// still carried a count. Coverage shrinks, the test stays green, and the
+	// claim it protects goes unchecked.
+	//
+	// The same failure as the claim itself, which has gone stale three times in
+	// three spellings. Found by the pre-release review.
+	missing := []string{}
 	checked := 0
 	for _, doc := range docs {
 		body, err := os.ReadFile(root(doc))
 		if err != nil {
-			// A document that has been renamed or removed should not fail this
-			// test, but it must not silently reduce coverage to nothing either,
-			// which the count below catches.
+			missing = append(missing, doc)
 			continue
 		}
 		for _, m := range claim.FindAllStringSubmatch(string(body), -1) {
@@ -110,6 +122,12 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 					"  who trusts that number is being told something false.", doc, m[0], actual)
 			}
 		}
+	}
+	if len(missing) > 0 {
+		t.Errorf("these documents are listed here and could not be read: %v\n"+
+			"  Each is a place the tool count is claimed and is now unchecked. If "+
+			"they were renamed, update this list; if deleted, remove them from it. "+
+			"Skipping them silently is how this gate stops guarding.", missing)
 	}
 	if checked == 0 {
 		t.Errorf("no document states a tool count, so this check verified nothing; " +
@@ -134,7 +152,7 @@ func TestDocumentedToolCountMatchesReality(t *testing.T) {
 	for _, doc := range docs {
 		body, err := os.ReadFile(root(doc))
 		if err != nil {
-			continue
+			continue // already reported as missing by the pass above
 		}
 		for _, line := range strings.Split(string(body), "\n") {
 			if !strings.Contains(strings.ToLower(line), "tool") {

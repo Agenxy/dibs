@@ -150,8 +150,23 @@ type Limits struct {
 // DefaultLimits are the SPEC §11 defaults.
 func DefaultLimits() Limits {
 	return Limits{
-		MaxAgents:           64,
-		MaxPersistentAgents: 16,
+		MaxAgents: 64,
+		// EQUAL TO MaxAgents, because persistent is no longer the exception.
+		//
+		// 16 was sized for a board where persistent meant "standing role" and
+		// everything else was ephemeral. Since v0.0.7 an agent that states no
+		// kind is persistent, so this ceiling counts every agent that has
+		// registered inside DormancyMax, which is thirty days: a fleet of any
+		// size hits it in an afternoon and is then told it may not register at
+		// all. The operator of this project's own board had already raised it to
+		// 48 by hand for exactly that reason, before the default flipped.
+		//
+		// Kept as a separate field rather than deleted, because an operator who
+		// wants a tighter bound on durable mailboxes than on agents in total
+		// should still be able to say so. It is the DEFAULT that was wrong.
+		// Runaway growth is still bounded, by MaxAgents above and by the sweep
+		// archiving anything dormant past DormancyMax.
+		MaxPersistentAgents: 64,
 		MaxSlotsPerAgent:    32,
 		MaxClaimsPerAgent:   32,
 		MaxClaimsGlobal:     256,
@@ -355,6 +370,24 @@ type Agent struct {
 	// woken. Neither id is a credential; the connection is already
 	// authenticated, and these are only ever added by the daemon's own join.
 	SessionAliases []string `json:"session_aliases,omitempty"`
+	// CurrentSession is the id the harness most recently reported for this
+	// agent: the activation a wake should resume. Inferred until now from
+	// append order, which a return to an earlier thread never changed: an
+	// identity on thread A, then B, then A again was woken on B, a real session
+	// that was not the one holding the mail, and the daemon logged a
+	// successful wake. Found by the pre-release review, round eight.
+	CurrentSession string `json:"current_session,omitempty"`
+	// GuessedSessions are the session ids on this agent that the daemon
+	// INFERRED by directory rather than the caller stating them. A guess yields
+	// to a first-hand claim; a stated binding does not. See Op.SessionGuessed.
+	//
+	// A SET, NOT A BOOLEAN, and the difference is a hole rather than a detail.
+	// One flag per agent was overwritten by whichever binding happened last, so
+	// adding a single guessed ALIAS to an agent made its STATED primary
+	// claimable by anyone, and adding a later stated alias made an earlier guess
+	// permanently non-yielding. Authorisation asks about one specific id, so the
+	// provenance has to be recorded against that id.
+	GuessedSessions []string `json:"guessed_sessions,omitempty"`
 	// Agent is who is behind this agent: harness, version, model, surface. In a
 	// large fleet "reviewer" is not enough; the human needs to know that it is
 	// Codex 0.145 rather than Opus 5 in Claude Desktop. Purely descriptive: it
@@ -435,6 +468,20 @@ type Agent struct {
 
 	Token string `json:"-"`
 	Nonce string `json:"-"`
+	// NonceMinted says this agent did not bring its own nonce: the daemon made
+	// one and handed it back at registration.
+	//
+	// It decides whether `session_id` may still reattach this agent. That path
+	// refuses an agent holding a nonce, on the grounds that a client-chosen
+	// secret beats a guessable id, and that was right while a nonce meant the
+	// agent had deliberately created one. Since v0.0.7 every registration gets
+	// one whether it asked or not, so without this the refusal covers everybody
+	// and "re-registering after context loss is always safe" quietly stops being
+	// true: the returning agent forks a sibling that cannot read its own mail.
+	//
+	// False for every agent in every existing ledger, which is exactly today's
+	// behaviour, so this needs no replay gate of its own.
+	NonceMinted bool `json:"-"`
 }
 
 // burnChildNonce reports whether n is a secret this agent issued, consuming it.
@@ -506,13 +553,25 @@ func (l *Agent) CanHoldExclusive() bool {
 // Message is one mailbox item. Body/Response plaintext in memory; ciphertext
 // at rest.
 type Message struct {
-	Serial      uint64    `json:"serial"`
-	From        string    `json:"from"`
-	To          string    `json:"to"`
-	Type        string    `json:"type"`
-	Body        string    `json:"body"`
-	State       string    `json:"state"`
-	Consumed    bool      `json:"consumed"`
+	Serial   uint64 `json:"serial"`
+	From     string `json:"from"`
+	To       string `json:"to"`
+	Type     string `json:"type"`
+	Body     string `json:"body"`
+	State    string `json:"state"`
+	Consumed bool   `json:"consumed"`
+	// AdoptedFrom is the agent this message was addressed to before an
+	// authorised adoption moved it. Set by the fold on the move, so read_mail
+	// can tell mail an heir was GIVEN from mail a reused id merely inherited:
+	// both are older than the reader's own creation, and only one is theirs.
+	AdoptedFrom string `json:"adopted_from,omitempty"`
+	// AdoptedAt is the serial of the adoption that moved it. The mark alone
+	// says an adoption happened; this says to WHICH incarnation of the name,
+	// because a replacement registered under the same id after a purge is
+	// younger than the adoption and must not inherit through it. Compared
+	// against the reader's CreatedSerial. Found by the pre-release review,
+	// round four.
+	AdoptedAt   uint64    `json:"adopted_serial,omitempty"`
 	Deadline    time.Time `json:"deadline,omitzero"`
 	Response    string    `json:"response,omitempty"`
 	DeliveredAt uint64    `json:"delivered_serial,omitempty"`
@@ -651,18 +710,104 @@ func (s *State) AgentByToken(tok string) *Agent {
 	return nil
 }
 
+// StreamStanding is what a subscription opened with token, on behalf of
+// session, may still do: live says the token still names an agent, held
+// says that agent still answers to the session. A stream that stated no
+// session is held wherever its agent is.
+//
+// A subscription used to capture its agent when it opened and deliver for
+// as long as the socket stayed up, so a bridge left behind by an identity
+// that moved to another session kept waking the session the agent had
+// left, which the daemon's own wake routes never do; and a stream opened
+// with a token later rotated away went on delivering the new holder's
+// mail. Found by the pre-release review, round fifty-nine.
+//
+// A THREAD IS HELD ONLY WHILE IT IS THE CURRENT SESSION. The row retains
+// every thread it has been bound to, so "holds" alone let a stream serving
+// thread A go on delivering after the hooks had moved the agent to thread
+// B, which is the case this exists for. The daemon's own wake routes go to
+// the current session alone (sessionsOf); a stream serving a thread is
+// measured the same way. A stated non-thread id (the bridge's `host-<ppid>`,
+// a Claude session id) cannot be compared with a thread, and is held where
+// the row holds it. Found by the pre-release review, round sixty.
+func (s *State) StreamStanding(token, session string) (live, held bool) {
+	l := s.AgentByToken(token)
+	if l == nil {
+		return false, false
+	}
+	if session == "" {
+		return true, true
+	}
+	if LooksLikeThreadID(session) && l.CurrentSession != "" {
+		return true, session == l.CurrentSession
+	}
+	return true, l.holdsSession(session)
+}
+
+// SessionIsCurrent reports whether a hook or stream speaking for sid is
+// speaking for this agent's CURRENT activation, not a thread it has since
+// moved on from. The row retains every thread it was ever bound to (see
+// SessionAliases), so holding a thread is not the same as being in it. This
+// is the held half of StreamStanding, named for the other caller: the hook
+// path, which recorded a turn's state against whatever thread resolved and so
+// let a late Stop from a thread the agent had left overwrite the liveness of
+// the thread it moved to. A stated non-thread id (the bridge's host id) is
+// current where the row holds it; an absent id names no thread and is the
+// agent itself.
+func (a *Agent) SessionIsCurrent(sid string) bool {
+	if sid == "" {
+		return true
+	}
+	if LooksLikeThreadID(sid) && a.CurrentSession != "" {
+		return sid == a.CurrentSession
+	}
+	return a.holdsSession(sid)
+}
+
 // Inbox returns the agent's non-terminal plus unconsumed-terminal messages,
 // oldest first (SPEC §8).
 func (s *State) Inbox(agent string) []*Message {
 	var out []*Message
+	// THE WATERMARK FILTERS, and until now it only reported.
+	//
+	// TruncatedBefore says "mail below this is not mine". It was set by the
+	// retention sweep and returned to callers as truncated_before_serial, and
+	// nothing ever consulted it, which went unnoticed because the sweep that
+	// sets it has already DELETED the messages it covers: there was nothing left
+	// to filter, so an inert watermark and a working one looked identical.
+	//
+	// They stop looking identical when mail outlives the row it was addressed
+	// to. An id is derived from the name, so a name that comes back reuses the
+	// id, and a sweep written before v0.0.7 removes the row while keeping the
+	// messages. Those are expired with a reason the SENDER reads, so they are
+	// deliberately kept, and the next agent to take that name was handed them,
+	// bodies included. Measured. Found by the pre-release review.
+	floor := s.mailFloor(agent)
 	for _, m := range s.Messages {
-		if m.To == agent && (!m.Terminal() || !m.Consumed) {
+		// An ADOPTED message sits below the heir's own watermark by construction
+		// when that heir is a reused name: adoption reported it moved and the
+		// inbox hid it. The watermark fences a predecessor's mail, which carries
+		// no adoption mark. Found by the pre-release review, round two.
+		if m.Serial < floor && !s.adoptedFor(m, agent) {
+			continue
+		}
+		if m.To == agent && m.readable() {
 			out = append(out, m)
 		}
 	}
 	sortMessages(out)
 	return out
 }
+
+// readable reports whether this message would appear in its addressee's inbox:
+// still live, or finished and not yet collected (SPEC §8).
+//
+// One definition, because adoption had a second one. It readdressed and COUNTED
+// every record above the watermark, consumed ones included, and told the heir
+// to "read them with inbox": a mailbox with one unread message and one
+// acknowledged one reported two and showed one. A count handed to a person
+// approving the request has to be the number they would see.
+func (m *Message) readable() bool { return !m.Terminal() || !m.Consumed }
 
 func sortMessages(ms []*Message) {
 	for i := 1; i < len(ms); i++ {
@@ -672,11 +817,39 @@ func sortMessages(ms []*Message) {
 	}
 }
 
+// mailFloor is the serial below which mail addressed to this agent is not the
+// agent's own. See Agent.TruncatedBefore.
+//
+// One function because "is this message mine" is asked in more than one place
+// and was answered differently in each. Inbox filtered on the watermark; the
+// capacity metric and the delivery marker did not, and both of those decide
+// something a SENDER is told.
+func (s *State) mailFloor(agent string) uint64 {
+	if l := s.Agents[agent]; l != nil {
+		return l.TruncatedBefore
+	}
+	return 0
+}
+
 // nonTerminalCount is the mailbox-capacity metric (SPEC §8).
+//
+// It honours the watermark, which it did not. Mail below it belongs to a
+// previous occupant of this name: the current agent cannot see it, so it cannot
+// read, answer, ack or consume it, and nothing it does will ever retire it.
+// Counting it against capacity meant a send could be refused with
+// E_MAILBOX_FULL against an agent whose inbox reads as empty, with no
+// corrective action available to either party: the recipient cannot clear what
+// it cannot see, and the sender is simply refused. Rule 6 says an error names
+// the corrective call, and this one had none to name. Reproduced before fixing:
+// two pending notifies to a swept name, the name returns, and a question to it
+// is refused forever.
 func nonTerminalCount(s *State, agent string) int {
 	n := 0
+	floor := s.mailFloor(agent)
 	for _, m := range s.Messages {
-		if m.To == agent && !m.Terminal() {
+		// The same exemption as Inbox, so what the agent can see is what counts
+		// against its capacity.
+		if m.To == agent && (m.Serial >= floor || s.adoptedFor(m, agent)) && !m.Terminal() {
 			n++
 		}
 	}
@@ -702,3 +875,28 @@ func constEq(a, b string) bool {
 // carries three buttons plus the implicit dismiss, so a question that fits here
 // is answerable in one gesture wherever it lands.
 const MaxChoices = 4
+
+// adoptedFor reports whether this message was adopted INTO the agent now
+// holding that id, as opposed to an earlier occupant of the same name.
+//
+// The exemption from the mailbox watermark is the heir's, and a name that is
+// purged and re-registered gets the same id: the mark on a message adopted by
+// the predecessor would otherwise carry through to the replacement. The
+// adoption's serial against the reader's creation settles it; a reader with no
+// recorded creation (registered before that field existed) keeps the old
+// behaviour, and a message with no recorded adoption serial (marked by a replay
+// of an op older than the field) reads as the predecessor's. ONE rule, called
+// by every reader of the mark.
+func (s *State) adoptedFor(m *Message, agent string) bool {
+	if m.AdoptedFrom == "" {
+		return false
+	}
+	l := s.Agents[agent]
+	if l == nil || l.CreatedSerial == 0 {
+		return true
+	}
+	return m.AdoptedAt >= l.CreatedSerial
+}
+
+// AdoptedFor is adoptedFor for the engine, which reads mailboxes on the loop.
+func (s *State) AdoptedFor(m *Message, agent string) bool { return s.adoptedFor(m, agent) }

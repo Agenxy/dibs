@@ -7,8 +7,13 @@
 // part still done by hand. It drifted exactly as you would expect, twice.
 //
 // It stops short of committing and tagging on purpose. A tag is the moment a
-// release becomes real, it publishes signed artifacts, moves the Homebrew cask
-// and writes to the MCP registry, and that is the owner's to perform.
+// release becomes real: it publishes signed artifacts and writes to the MCP
+// registry, and that is the owner's to perform.
+//
+// It does not move the Homebrew cask, which this said for a while. GoReleaser
+// pushes the new cask to a `cask-<version>` branch of the tap and cannot open
+// the pull request, because the deploy key can push and cannot call the API, so
+// `brew upgrade` serves the previous build until a person merges it.
 package main
 
 import (
@@ -25,7 +30,11 @@ func main() {
 	set := flag.String("set", "", "the version to release, as MAJOR.MINOR.PATCH")
 	flag.Parse()
 	if *set == "" {
-		fmt.Fprintln(os.Stderr, "usage: go run ./tools/version -set 0.0.6   (or: task release VERSION=0.0.6)")
+		// A PLACEHOLDER THAT LOOKS LIKE ONE. This printed `0.0.6`, a version
+		// already tagged, so anybody copying the usage line got a refusal from
+		// the stamper: a release goes forward or not at all.
+		fmt.Fprintln(os.Stderr, "usage: go run ./tools/version -set <MAJOR.MINOR.PATCH>   "+
+			"(or: task release VERSION=<MAJOR.MINOR.PATCH>)")
 		os.Exit(2)
 	}
 	if err := run(strings.TrimPrefix(*set, "v")); err != nil {

@@ -40,8 +40,14 @@ func TestEveryMutatingOpAdvancesTheSerial(t *testing.T) {
 		{
 			name: "prune",
 			build: func(t *testing.T, s *State) *Op {
+				// DEBRIS, not an already-closed agent. This signed the agent off
+				// first, so it pruned something that was already closed: prune IS
+				// close, so that changed nothing and the case asserted that a
+				// no-op must advance the serial, which is the opposite of the
+				// rule this file exists to enforce. The all-agent branch has
+				// always skipped closed agents for the same reason.
 				a := reg(t, s, "gone", "tok-gone", t0)
-				mustApply(t, s, &Op{Kind: OpSignOff, Token: a.Token}, t0)
+				s.Agents[a.ID].Status = StatusStale
 				return &Op{Kind: OpPrune, To: a.ID}
 			},
 		},

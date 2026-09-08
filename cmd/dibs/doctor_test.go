@@ -462,3 +462,49 @@ func TestDoctorUsesTheAddressConfigureWrote(t *testing.T) {
 		t.Errorf("doctor never names the configured address %s:\n%s", hostPort, out)
 	}
 }
+
+// Every shipped hook file is judged against the id its own harness uses.
+//
+// The two layouts are two harnesses. Claude Code reads
+// `<plugin>/hooks/hooks.json` and a hook there addresses
+// `plugin:<plugin>:<server>`; Codex reads a `hooks.json` at the root of its
+// config directory and addresses the server directly. Teaching the scanner to
+// read both layouts without teaching it that they spell the address
+// differently made `dibs doctor` report the correct shipped Codex hook as
+// pointed at a server that does not exist, and prescribe reinstalling the
+// plugin, which cannot fix a file that is already right.
+//
+// AGAINST THE SHIPPED FILES, not a fixture: the defect was a disagreement
+// between the scanner and what this repository actually ships, and a fixture
+// would only record my idea of that.
+func TestEveryShippedHookIsJudgedByItsOwnHarnessConvention(t *testing.T) {
+	// FROM THE REPOSITORY ROOT, because scanShippedHooks reads a relative
+	// `plugins` directory and a package test runs in its own. Without this it
+	// scanned nothing, found nothing, and passed: the first version of this test
+	// could not fail, which is the defect it was written to catch, in the test.
+	t.Chdir("../..")
+	wanted, misaddressed := scanShippedHooks()
+	if len(wanted) == 0 {
+		t.Fatal("the scanner found no shipped hooks at all, so this check verified " +
+			"nothing. It reads a relative `plugins` directory; if that moved, this " +
+			"test has been passing over an empty scan")
+	}
+	if len(misaddressed) > 0 {
+		for id, file := range misaddressed {
+			t.Errorf("the scanner rejects %s, which names server %q. Either the shipped "+
+				"file is wrong or the scanner is, and `dibs doctor` tells the operator to "+
+				"reinstall a plugin over it either way", file, id)
+		}
+	}
+
+	// And the rule itself, both ways, so a scanner that simply accepted
+	// everything would not pass this.
+	for file, want := range map[string]string{
+		filepath.Join("plugins", "claude-code", "hooks", "hooks.json"): wantServer,
+		filepath.Join("plugins", "codex", "hooks.json"):                codexServer,
+	} {
+		if got := serverIDFor(file); got != want {
+			t.Errorf("a hook in %s is expected to address %q, want %q", file, got, want)
+		}
+	}
+}

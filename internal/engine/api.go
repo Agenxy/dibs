@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"sort"
+	"sync/atomic"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -104,6 +106,111 @@ func (e *Engine) EventsSince(ctx context.Context, token string, serial uint64, a
 	})
 }
 
+// ResyncFor is what a subscriber missed when its cursor is older than the
+// ring: the events the ring would have held, rebuilt from the mail itself.
+// The ring is the record of what happened; the mail is the record of what is
+// still owed, and when the first is gone the second is enough to wake an
+// agent that has something waiting. Three things are owed:
+//
+//   - a message.sent for mail that arrived after the cursor and is not yet
+//     terminal;
+//   - a message.adopted for blocking mail moved in after the cursor, whose
+//     own serial is older than the move and may be older than the cursor;
+//   - the verdict on a question or request THIS agent sent, given after the
+//     cursor: the sender's side of the same gap, which the first cut of this
+//     left out. Responding marks the message consumed (SPEC §8), so the
+//     cursor is the only record of whether the sender's subscriber saw it,
+//     and a repeat coalesces on the bridge where a loss does not. Found by
+//     the pre-release review, round thirty-one.
+//
+// BY AGENT ID, NOT BY TOKEN, and off the rate budget: this is the daemon's
+// own work on behalf of a subscriber it has already authenticated, and
+// charging it as a call meant the listen that spent the agent's last token
+// got an empty resync. Found by the pre-release review, round thirty-four.
+func (e *Engine) ResyncFor(ctx context.Context, agentID string, cursor uint64) ([]core.Event, error) {
+	res, err := e.query(ctx, func() core.Result {
+		l := e.state.Agents[agentID]
+		if l == nil {
+			return core.Result{"error": core.ErrBadToken}
+		}
+		return core.Result{"events": resyncEvents(e.state, l, cursor)}
+	})
+	if err != nil {
+		return nil, err
+	}
+	if e, ok := res["error"].(error); ok {
+		return nil, e
+	}
+	evs, _ := res["events"].([]core.Event)
+	return evs, nil
+}
+
+// resyncEvents is the decision behind ResyncFor, split from the query so it
+// can be tested without an engine loop (see AGENTS.md on zero-value engines).
+func resyncEvents(st *core.State, l *core.Agent, cursor uint64) []core.Event {
+	var evs []core.Event
+	for _, m := range st.Inbox(l.ID) {
+		if m.Terminal() {
+			continue
+		}
+		switch {
+		case m.AdoptedAt > cursor && st.AdoptedFor(m, l.ID) && core.WakeWorthy("message.adopted", m.Type):
+			evs = append(evs, core.Event{
+				Serial: m.AdoptedAt, TS: m.SentAt, Type: "message.adopted", Agent: m.AdoptedFrom, To: l.ID,
+				Data: map[string]any{"msg_serial": m.Serial, "msg_type": m.Type, "from": m.From, "resynced": true},
+			})
+		case m.Serial > cursor:
+			evs = append(evs, core.Event{
+				Serial: m.Serial, TS: m.SentAt, Type: "message.sent", Agent: m.From, To: l.ID,
+				Data: map[string]any{"msg_serial": m.Serial, "msg_type": m.Type, "resynced": true},
+			})
+		}
+	}
+	for _, m := range st.Messages {
+		inherited := l.CreatedSerial > 0 && m.Serial < l.CreatedSerial
+		if m.From != l.ID || inherited || m.RespondedAt <= cursor {
+			continue
+		}
+		switch m.State {
+		case core.MsgStateAnswered, core.MsgStateApproved, core.MsgStateDenied, core.MsgStateDeclined:
+			evs = append(evs, core.Event{
+				Serial: m.RespondedAt, TS: m.SentAt, Type: "message." + m.State, Agent: m.To, To: l.ID,
+				Data: map[string]any{"msg_serial": m.Serial, "resynced": true},
+			})
+		}
+	}
+	sort.Slice(evs, func(i, j int) bool { return evs[i].Serial < evs[j].Serial })
+	return evs
+}
+
+// StreamStanding is core.StreamStanding asked of the live state: whether a
+// stream's token still names an agent, and whether that agent still holds
+// the session the stream serves. Uncharged and unlogged, because it is
+// asked on a stream's behalf, not the agent's.
+func (e *Engine) StreamStanding(ctx context.Context, token, session string) (live, held bool) {
+	res, err := e.query(ctx, func() core.Result {
+		live, held := e.state.StreamStanding(token, session)
+		return core.Result{"live": live, "held": held}
+	})
+	if err != nil {
+		return false, false
+	}
+	live, _ = res["live"].(bool)
+	held, _ = res["held"].(bool)
+	return live, held
+}
+
+// SetRateTokens sets an agent's remaining rate budget. A test knob, like
+// SetRingCap: the bucket refills at rateOpsPerSec, so a test that needs "one
+// call left" cannot get there by making calls and staying there.
+func (e *Engine) SetRateTokens(ctx context.Context, agentID string, n float64) error {
+	_, err := e.query(ctx, func() core.Result {
+		e.buckets[agentID] = &bucket{tokens: n, last: time.Now()}
+		return core.Result{}
+	})
+	return err
+}
+
 // AwaitEvents long-polls until an event after serial matches, or timeout.
 func (e *Engine) AwaitEvents(
 	ctx context.Context, token string, serial uint64, timeout time.Duration, all bool,
@@ -176,6 +283,16 @@ func (e *Engine) Inbox(ctx context.Context, token string) (core.Result, error) {
 		// Aliased rather than renamed: `messages` is what the tool has always
 		// returned and something will be reading it.
 		res["inbox"] = mail
+		// BOTH READ PATHS, or this is a fix to one of two doors again.
+		//
+		// check_in carries the same key from the fold. An agent that recovers
+		// context with check_in and one that polls inbox must not disagree about
+		// whether the sender of a message can be answered: that is exactly the
+		// shape of the `messages` / `inbox` split three lines up, which cost a
+		// debugging cycle because each tool used the other's name.
+		if gone := e.state.UnanswerableSenders(mail); len(gone) > 0 {
+			res["unanswerable_senders"] = gone
+		}
 		// Surfaced here, but NOT cleared here. Exactly one call consumes a
 		// notice, check_in, the documented checkpoint, because two owners of
 		// a clear is how the first version of this went wrong twice over: it
@@ -256,7 +373,53 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 			return errRes
 		}
 		m, ok := e.state.Messages[serial]
-		if !ok || (m.From != l.ID && m.To != l.ID) {
+		// THE WATERMARK APPLIES HERE TOO, and enforcing it in one place was not
+		// enforcing it.
+		//
+		// An id is derived from the name, so a name that comes back reuses the
+		// id, and mail can outlive the row it was addressed to. A new agent is
+		// given a watermark past that mail, and Inbox honours it: this did not,
+		// authorising on the reused id alone. So the replacement could not SEE
+		// the previous occupant's mail and could still read its body by serial,
+		// which is the whole of what the watermark was protecting. Outbound mail
+		// the predecessor sent was readable the same way.
+		//
+		// A serial below the watermark belongs to whoever held this id before,
+		// and is refused for the same reason a stranger's is. Found by the
+		// pre-release review, one round after the enumeration half shipped with
+		// a changelog entry claiming the privacy.
+		//
+		// CREATED-BEFORE-ME, which covers both directions where the watermark
+		// covers one. TruncatedBefore is built from mail addressed TO the id, so
+		// it hides the predecessor's inbox and leaves what the predecessor SENT
+		// readable: `m.From == l.ID` matches on the reused id and hands over the
+		// other half of somebody else's conversation. A message older than this
+		// agent's own creation was never its mail, in either direction.
+		//
+		// Zero for agents registered before this field existed, which reads as
+		// no filtering and preserves exactly what those boards did. A reattach
+		// keeps its original CreatedSerial, so an agent coming back still reads
+		// its own history.
+		// ADOPTED IS NOT INHERITED. An heir that took an abandoned mailbox
+		// received messages older than itself on purpose, by an authorised op
+		// that recorded the source on each one; inbox showed them and the wake
+		// nudge pointed here, and this refused every one with E_NO_MESSAGE.
+		// Found by the pre-release review.
+		// AND ONLY FOR THE HEIR. The adoption authorised the recipient's
+		// recovery; a replacement registered under the old SENDER's name
+		// matches m.From and is younger than the message, and the first
+		// version of this exemption let it read the old body and answer by
+		// serial. Found by the pre-release review, round two.
+		//
+		// GUARDED ON ok FIRST. This hoisted m.AdoptedFrom out of the short-circuit
+		// below and dereferenced a message that was not there: read_mail on a
+		// serial that does not exist, the most ordinary call in the protocol,
+		// segfaulted the daemon. The test for the exemption read only messages
+		// that existed and never ran this branch; the space e2e reads a missing
+		// serial and found it in one run.
+		adopted := ok && m.To == l.ID && e.state.AdoptedFor(m, l.ID)
+		inherited := ok && l.CreatedSerial > 0 && serial < l.CreatedSerial && !adopted
+		if !ok || inherited || (m.From != l.ID && m.To != l.ID) {
 			// An ANNOUNCEMENT serial is the overwhelmingly likely mistake here,
 			// because the wake nudge hands the agent a serial and says to go
 			// read it, and a serial in hand makes read_mail the obvious call.
@@ -283,19 +446,52 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 		// message terminal and consumed. An instruction that does not clear when
 		// obeyed teaches an agent that the channel nags, and the notification
 		// channel is the one thing here that has to stay worth reading.
+		//
+		// LIVE ONLY, AND IT DOES NOT SURVIVE A RESTART. Notices are ephemeral
+		// and rebuilt from replayable state, and this clearing writes nothing
+		// replayable: the rebuild asks whether the asker's awareness watermark
+		// has passed the verdict, and read_mail does not move that watermark. So
+		// a daemon restarted after the agent read its mail hands the same notice
+		// back once. It is a duplicate rather than a loss, and closing it needs
+		// a replayable record that the SENDER read an outcome, which is a new
+		// field on a ledgered message: issue #76, not something to add in the
+		// hour before a tag.
 		e.clearNoticesFor(l.ID, serial)
 		return core.Result{"message": m, "serial": e.state.Serial}
 	})
 }
 
-// markDelivered ledgers pending→delivered for the agent's mailbox.
-func (e *Engine) markDelivered(l *core.Agent, now time.Time) {
+// pendingFor is the mail this agent has just been shown and not yet been
+// recorded as having received.
+//
+// It honours the agent's watermark, which the loop it replaces did not, and
+// this is the reading of the watermark that matters most: "delivered" is what
+// the SENDER is told. Mail below the watermark was addressed to a previous
+// occupant of this name, so it is not in the inbox this agent just read.
+// Marking it delivered told the sender their message had reached somebody who
+// had not seen it and never would, which is worse than not delivering it: it
+// removes the one signal that would have made them ask.
+//
+// Split from markDelivered so it can be tested. An exported wrapper on a
+// zero-value Engine sends on a nil channel and blocks forever rather than
+// failing, so a decision only reachable through one is effectively untested.
+// See AGENTS.md.
+func pendingFor(st *core.State, l *core.Agent) []uint64 {
 	var serials []uint64
-	for _, m := range e.state.Messages {
-		if m.To == l.ID && m.State == core.MsgStatePending {
+	for _, m := range st.Messages {
+		// The same exemption Inbox applies, or inbox hands over a body whose
+		// state stays pending and the sender never gets its receipt. Found by
+		// the pre-release review, round four.
+		if m.To == l.ID && (m.Serial >= l.TruncatedBefore || st.AdoptedFor(m, l.ID)) && m.State == core.MsgStatePending {
 			serials = append(serials, m.Serial)
 		}
 	}
+	return serials
+}
+
+// markDelivered ledgers pending→delivered for the agent's mailbox.
+func (e *Engine) markDelivered(l *core.Agent, now time.Time) {
+	serials := pendingFor(e.state, l)
 	if len(serials) > 0 {
 		_, _ = e.applyAndLedger(&core.Op{Kind: core.OpMarkDelivered, MsgSerials: serials}, now)
 	}
@@ -352,6 +548,16 @@ func (e *Engine) decoratedBoard() core.Result {
 		if l.PID != 0 && e.prober != nil && e.ownsHost(l) {
 			lm["proc_alive"] = e.prober.Alive(l.PID)
 		}
+		// WHETHER A COMMAND COULD RESUME THIS AGENT, without saying what to
+		// resume. The id itself stays off the board; this is the one bit a
+		// health check needs, and it needs it because harness alone is not
+		// enough: `wakeRoute` refuses the exec path when the agent holds no
+		// UUID-shaped thread, so an agent whose harness HAS a [wake.exec] entry
+		// can still be unreachable. Reporting it as covered would be the same
+		// optimism as counting configured commands and calling it coverage.
+		if threadIDOf(l) != "" {
+			lm["resumable"] = true
+		}
 	}
 	return core.Result(b)
 }
@@ -363,15 +569,63 @@ func (e *Engine) AllMessages(ctx context.Context) (core.Result, error) {
 		for _, m := range e.state.Messages {
 			out = append(out, m)
 		}
-		return core.Result{"messages": out}
+		// Announcement bodies ride WITH the mail, and for the same reason.
+		//
+		// The board payload used to carry them, until it turned out Board() is
+		// what check_in returns to every agent on every activation, so every
+		// announcement in every space was going to agents that had joined none
+		// of them. Stripping it there was right. What it left behind was an
+		// operator transcript that renders the sender and the acknowledgement
+		// state with an empty space where the text goes, above a comment
+		// promising "bodies, not a count", which is the whole reason a human
+		// joins a space. Found by the pre-release review.
+		//
+		// This route is the one that already solves this problem for mail: it
+		// needs the page key, which is kept in localStorage and is therefore
+		// port-scoped, so unlike the session cookie it is not handed to every
+		// local service the operator visits.
+		said := make([]core.Result, 0, len(e.state.Announcements))
+		for _, a := range e.state.Announcements {
+			said = append(said, core.Result{
+				"serial": a.Serial, "space": a.Space, "from": a.From, "body": a.Body,
+			})
+		}
+		return core.Result{"messages": out, "announcements": said}
 	})
 }
 
 // Subscribe attaches an SSE stream fed from serial onward.
 func (e *Engine) Subscribe(since uint64) (<-chan core.Event, func()) {
+	sub, cancel := e.SubscribeTracked(since)
+	return sub.C, cancel
+}
+
+// Subscription is a live event channel that knows when it dropped something.
+type Subscription struct {
+	C    <-chan core.Event
+	lost *atomic.Bool
+}
+
+// Lost reports whether an event for this subscription was dropped since the
+// last call, and clears the mark: the reader that sees true refills from the
+// ring (EventsSince) rather than trusting the channel to have been complete.
+func (s *Subscription) Lost() bool { return s.lost.Swap(false) }
+
+// MarkLost records a drop as the loop would. A test knob, like SetRingCap:
+// the loop drops only when the channel is full, and a test of what a reader
+// does about a loss should not have to fill 256 slots to say one happened.
+func (s *Subscription) MarkLost() { s.lost.Store(true) }
+
+// SubscribeTracked is Subscribe with the drop mark exposed. The channel holds
+// 256 events and the loop drops rather than blocks when it is full (see the
+// subscribe case in Run); a reader that writes slowly, a resumed subscription
+// replaying its gap before it drains, cannot tell a quiet fleet from a full
+// buffer without this.
+func (e *Engine) SubscribeTracked(since uint64) (*Subscription, func()) {
 	ch := make(chan core.Event, 256)
-	e.subs <- subReq{ch: ch, since: since}
-	return ch, func() { e.unsubs <- ch }
+	lost := new(atomic.Bool)
+	e.subs <- subReq{ch: ch, since: since, lost: lost}
+	return &Subscription{C: ch, lost: lost}, func() { e.unsubs <- ch }
 }
 
 func maxSerial(evs []core.Event, fallback uint64) uint64 {
@@ -382,6 +636,35 @@ func maxSerial(evs []core.Event, fallback uint64) uint64 {
 		}
 	}
 	return m
+}
+
+// EventsFrom is the refill's read: every event from serial cursor onward,
+// cursor's own serial INCLUDED, board and inbox both, uncharged. A stream
+// that dropped part of a serial re-reads that serial, so the position is
+// inclusive, unlike EventsSince's "seen up to".
+//
+// It does NOT treat a cursor as the "0 means the whole ring" convenience
+// EventsSince offers a blind first caller: the refill holds a genuine
+// position, and a position the ring has already passed is E_CURSOR_TOO_OLD,
+// so the caller resyncs from the mail. The old refill reached this by
+// decrementing its position and calling EventsSince, which turned a lost
+// cursor of 1 into a 0 the clamp read as "give me the whole ring": the
+// too-old signal was suppressed and a first serial that left the ring took
+// its unread mail with it silently. Found by the pre-release review, round
+// sixty-one.
+func (e *Engine) EventsFrom(ctx context.Context, cursor uint64) (core.Result, error) {
+	return e.query(ctx, func() core.Result {
+		if floor := e.ringFloor(); cursor < floor {
+			return core.Result{"error": errCursorTooOld(floor)}
+		}
+		// eventsSince returns serial strictly greater than its argument, so a
+		// cursor of X reads from X-1 to include X itself.
+		from := uint64(0)
+		if cursor > 0 {
+			from = cursor - 1
+		}
+		return core.Result{"events": e.eventsSince(from, "", true), "serial": e.state.Serial}
+	})
 }
 
 // clampCursor treats 0 as "from wherever the ring starts".
@@ -402,6 +685,25 @@ func clampCursor(serial, floor uint64) uint64 {
 
 func errCursorTooOld(floor uint64) error {
 	return core.ErrCursorTooOld(floor)
+}
+
+// CallerIsKnown reports whether this token resolves to an agent on the board.
+//
+// Separate from CallerName because that one ANSWERS for an unknown token, with
+// "an unidentified caller", which is right for a log line and wrong for an
+// authorisation decision. human_unlock used it and raised a system sheet
+// naming that phrase: SECURITY.md says the requester is resolved "from the
+// authenticated token", and nothing authenticated it. Found by the pre-release
+// review.
+func (e *Engine) CallerIsKnown(ctx context.Context, token string) bool {
+	res, err := e.query(ctx, func() core.Result {
+		return core.Result{"known": e.state.AgentByToken(token) != nil}
+	})
+	if err != nil {
+		return false
+	}
+	known, _ := res["known"].(bool)
+	return known
 }
 
 // CallerName is a display name for whoever holds this token, for a prompt that

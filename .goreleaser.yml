@@ -20,17 +20,16 @@ before:
     # documentation described a presence-first flow. A source install got it and
     # a released one did not, which is the worst way round. The release job runs
     # on macos-latest, so swiftc is there. Found by the pre-release review.
-    # UNIVERSAL, because one archive is built per architecture and this file is
-    # copied into both. A single-architecture helper meant one macOS release
-    # shipped a correctly built dibd beside a presence binary the machine cannot
-    # execute, and the failure is silent: humanauth finds no usable helper and
-    # falls back to the admin password, so Touch ID quietly stops existing on
-    # whichever architecture the release runner was not. Found by the
-    # pre-release review; the drift guard only checked that the NAME appeared in
-    # the build, the archive and the cask, never what was inside.
-    - swiftc -O -target arm64-apple-macos11 -o dibs-presence-arm64 internal/humanauth/presence_darwin.swift
-    - swiftc -O -target x86_64-apple-macos11 -o dibs-presence-amd64 internal/humanauth/presence_darwin.swift
-    - lipo -create -output dibs-presence dibs-presence-arm64 dibs-presence-amd64
+    # AN EXPLICIT TARGET, not the release runner's default.
+    #
+    # Built with no -target this is whatever the runner happened to be, which is
+    # how the notifier beside it shipped for the wrong architecture: the failure
+    # is silent, because humanauth finds no usable helper, falls back to the
+    # admin password, and Touch ID quietly stops existing. Stating the target
+    # makes the artifact a property of the file rather than of the machine.
+    #
+    # arm64 only: Dibs does not ship a Mac Intel build. See the `ignore` below.
+    - swiftc -O -target arm64-apple-macos11 -o dibs-presence internal/humanauth/presence_darwin.swift
     - lipo -info dibs-presence
     # AND THE NOTIFIER BUNDLE, for the same reason and found the same way.
     #
@@ -41,7 +40,15 @@ before:
     # archive and brew install did not: a release whose whole
     # human-in-the-loop story is a component nobody downloading it receives.
     # The Touch ID helper above had exactly this hole one review round earlier.
-    - go run ./tools/appbundle -o Dibs.app -version {{ .Version }}
+    #
+    # -target, because this bundle is for the archive rather than for the
+    # machine building it. Without one the notifier is whatever the release
+    # runner happened to be, which is how it shipped arm64-only into an Intel
+    # tarball. `task app` deliberately passes none: a local build is for the
+    # Mac doing the building, and forcing the release's answer there broke
+    # building from source on an Intel Mac, which is the documented escape
+    # hatch now that the release does not cover it.
+    - go run ./tools/appbundle -o Dibs.app -version {{ .Version }} -target arm64-apple-macos12
 
 builds:
   - id: dibd
@@ -52,6 +59,16 @@ builds:
     ldflags: ["-s -w -X github.com/agenxy/dibs/internal/build.Version={{.Version}}"]
     goos: [darwin, linux]
     goarch: [amd64, arm64]
+    # NO MAC INTEL BUILD. Apple is ending Intel support, and carrying the target
+    # means a second Swift slice for the presence helper, a second one for the
+    # notifier, lipo for both, and an archive nobody will install: cost paid
+    # every release for a platform on its way out. Linux keeps amd64, which is
+    # not going anywhere.
+    #
+    # Removing the target rather than shipping universal binaries is the whole
+    # point: a fat binary still has to be built, joined and checked on both
+    # sides, and the checking is where the last two defects were.
+    ignore: [{goos: darwin, goarch: amd64}]
   - id: dibs
     main: ./cmd/dibs
     binary: dibs
@@ -60,6 +77,16 @@ builds:
     ldflags: ["-s -w -X github.com/agenxy/dibs/internal/build.Version={{.Version}}"]
     goos: [darwin, linux]
     goarch: [amd64, arm64]
+    # NO MAC INTEL BUILD. Apple is ending Intel support, and carrying the target
+    # means a second Swift slice for the presence helper, a second one for the
+    # notifier, lipo for both, and an archive nobody will install: cost paid
+    # every release for a platform on its way out. Linux keeps amd64, which is
+    # not going anywhere.
+    #
+    # Removing the target rather than shipping universal binaries is the whole
+    # point: a fat binary still has to be built, joined and checked on both
+    # sides, and the checking is where the last two defects were.
+    ignore: [{goos: darwin, goarch: amd64}]
 
 archives:
   - formats: [tar.gz]
@@ -256,7 +283,7 @@ homebrew_casks:
       # cask step, after the tag was already pushed and spent.
     directory: Casks
     homepage: https://github.com/agenxy/dibs
-    description: "Coordination and situational-awareness board for AI agents on one machine"
+    description: "Coordination and situational-awareness board for fleets of AI agents"
     license: Apache-2.0
     # BOTH binaries. The default links only the project name, which generated a
     # cask installing `dibs` and not `dibd`: a CLI with no daemon, so
@@ -297,14 +324,31 @@ homebrew_casks:
         install: |
           system_command "/usr/bin/xattr",
                          args:         ["-dr", "com.apple.quarantine", staged_path.to_s],
+                         # NOT fatal, and the caveats say so rather than
+                         # claiming this always works. xattr exits non-zero in
+                         # ordinary cases, including having no such attribute to
+                         # remove, so failing the install over it would be worse
+                         # than the warning it prevents. What was wrong was the
+                         # caveat asserting the flag IS cleared while this could
+                         # silently not clear it: an operator then meets a
+                         # "developer cannot be verified" dialog that the
+                         # documentation says is impossible.
                          must_succeed: false
     caveats: |
       Start the daemon and point your agents at it:
 
         dibd &                  # 127.0.0.1:4777, data in ~/.dibs
         dibs mcp-config          # MCP config to add to your harness
-        dibs admin set-password  # once, before `dibs web`
+        dibs web                 # the board; Touch ID unlocks it on this Mac
         dibs doctor              # what is quietly broken, and how to fix it
 
       Signed for provenance with cosign, but not notarised by Apple, so this
-      cask clears the quarantine flag on install.
+      cask TRIES to clear the quarantine flag on install. It is not treated as
+      fatal: `xattr` exits non-zero in ordinary cases, including when there is
+      no such attribute to remove, and failing the install over that would be
+      worse than the warning it prevents.
+
+      So if macOS still says the developer cannot be verified, it did not work
+      and you can finish it by hand:
+
+        xattr -dr com.apple.quarantine "$(brew --prefix)/bin/dibd" "$(brew --prefix)/bin/dibs"

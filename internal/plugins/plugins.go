@@ -120,9 +120,10 @@ var catalog = []struct {
 		buys: "mail is USUALLY delivered rather than polled: lifecycle hooks call " +
 			"the wake path at turn boundaries, so a question addressed to your agent " +
 			"often reaches you without your asking. Not a guarantee, and worth " +
-			"knowing which: mid-turn is not a boundary, a plain notify never " +
-			"extends a turn, and `wake = none` or a repeated wake suppresses it " +
-			"too. check_in each activation is what makes delivery certain; the " +
+			"knowing which: mid-turn is not a boundary, a plain notify extends a " +
+			"turn only under the default `extend_turn_for = all` (under `urgent` it " +
+			"waits for a boundary you reach on your own), and `none` or a repeated " +
+			"wake suppresses it too. check_in each activation is what makes delivery certain; the " +
 			"hooks make it convenient. Also installs the dibs skill, so the " +
 			"protocol is in context when it is relevant and absent when it is not.",
 		install: "claude plugin marketplace add agenxy/dibs && claude plugin install dibs@dibs",
@@ -166,8 +167,9 @@ var catalog = []struct {
 				// correctly installed plugin. Raised by the pre-release review.
 				Check: "it reaches you without your calling inbox, at a turn boundary " +
 					"rather than the moment it is sent. If it does not, that is not " +
-					"proof the plugin is broken: a notify never extends a turn, and " +
-					"nothing is delivered mid-turn. check_in is what always shows it",
+					"proof the plugin is broken: a notify extends a turn only under the " +
+					"default `extend_turn_for = all`, and nothing is delivered mid-turn. " +
+					"check_in is what always shows it",
 				IfNot: "the wake hooks are not reaching the daemon. Check that the " +
 					"`server` field in hooks.json names the same MCP server you are " +
 					"connected through, and that the daemon is the one on this machine",
@@ -188,19 +190,25 @@ var catalog = []struct {
 			"depends on a version, and an agent told mail will arrive that then does " +
 			"not arrive stops checking and loses it. Codex gained " +
 			"a real hooks MCP executor on 2026-08-18 (openai/codex#39296), so an " +
-			"`mcp_tool` hook now runs against the session's own MCP runtime: no " +
+			"`mcp_tool` hook can run against the session's own MCP runtime: no " +
 			"subprocess, and nothing that drives your harness. Dibs ships hooks.json " +
 			"for SessionStart, Stop and SubagentStop. Older builds parse the file and " +
 			"drop every entry, which is why this said for months that there was no " +
 			"wake path here: that was true until it was not, and the note outlived " +
-			"the fact. Two limits worth knowing. A hook fires only if the Dibs server " +
+			"the fact. Measured again on 2026-09-05 against codex 0.153.4, CLI and " +
+			"desktop app: none of the three fired, so on that build the hooks deliver " +
+			"nothing and check_in is the floor (plugins/codex/README.md records it). " +
+			"Two limits worth knowing. A hook fires only if the Dibs server " +
 			"is ALREADY connected; Codex refuses an unconnected server rather than " +
 			"starting one, and connections are established asynchronously, so " +
 			"SessionStart can lose that race while Stop is later and likelier. And a " +
 			"hook is a callback on YOUR lifecycle: it delivers when your turn ends, " +
-			"and nothing outside can make an idle thread wake. For that Codex has its " +
-			"own durable queue, which is a harness control surface and not something " +
-			"Dibs will reach into.",
+			"and the hook alone cannot make an idle thread wake. For that the operator " +
+			"configures [wake.exec.codex] in dibs.toml: `codex exec resume {thread}` for " +
+			"a closed thread, with `codex queue` as the fallback for a thread the desktop " +
+			"app holds open, which is Codex's own durable queue used the way Codex " +
+			"documents it. Measured working on 2026-09-05; the recipe is in " +
+			"docs/CONFIGURATION.md.",
 		root: "~/.codex",
 		setup: []Step{
 			{
@@ -234,13 +242,32 @@ var catalog = []struct {
 		// the session, and spawned_agents does not say which event did it, so
 		// "am I listed" was satisfied by startup delivery alone: a thread whose
 		// every Stop was broken could run this check and be told the wake is
-		// live. Comparing before and after a turn boundary is the difference.
-		verify: "call spawned_agents at the START of an activation and again after a " +
-			"turn ends, and compare: SessionStart records the session too, so merely " +
-			"being listed proves only that startup reached the daemon. What proves " +
-			"Stop delivery is the entry CHANGING across the boundary. If it does not, " +
-			"the build is older than 2026-08-18 or the server was not connected when " +
-			"the hook ran, and mail is pull-only until you fix that",
+		// live.
+		//
+		// AND IT HAS TO NAME THE FIELD. "the entry CHANGING across the boundary"
+		// was no better: spawned_agents computes since_seconds and seen_seconds
+		// from time.Since on every read, so the entry changes because time
+		// passed. An operator with a completely broken Stop could follow the
+		// published procedure exactly and be told it works, which is a
+		// verification step that verifies nothing. `state` is the field a
+		// lifecycle event actually moves, and Stop is what moves it to
+		// `finished`.
+		verify: "have a SECOND agent call spawned_agents while this one is between " +
+			"turns, and read the `state` field for this session: `finished` is what a " +
+			"delivered Stop leaves behind. You cannot check this yourself, and that is " +
+			"the whole difficulty: a tool call requires a turn, and your next one " +
+			"begins with SessionStart, which sets `state` back to `running` before you " +
+			"can look. Merely being listed proves nothing either, because SessionStart " +
+			"creates the listing, and since_seconds/seen_seconds are elapsed times that " +
+			"move on their own. If no peer can see `finished`, the build is older than " +
+			"2026-08-18 or the server was not connected when the hook ran, and mail is " +
+			"pull-only until you fix that. THAT PROVES THE HOOK REACHES DIBS, NOT THAT " +
+			"ITS OUTPUT REACHES YOU: `state` is recorded when the hook call arrives, " +
+			"before anything is delivered. For delivery, have the peer send you a " +
+			"question while you are between turns, then start a turn without calling " +
+			"anything: the digest naming that question must already be in your " +
+			"context. If it is not, the hook fires and its output is dropped, and " +
+			"check_in is the floor",
 		delivers: false,
 	},
 }

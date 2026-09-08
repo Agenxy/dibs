@@ -156,6 +156,10 @@ try {
   await tool("open_space", { token: a.token, space: "web-render", topic: "drawing the operator board" })
   await tool("join_space", { token: b.token, space: "web-render", score: 0.71, threshold: 0.33,
     scorer_id: "lexical+cochange", evidence: ["internal/web/web.go"], auto: true })
+  // Something SAID in a space, because the operator's transcript is the reason
+  // a human joins one and nothing rendered its text for a release.
+  await tool("announce", { token: a.token, space: "web-render",
+    body: "the operator must be able to read this sentence" })
   await tool("open_space", { token: a.token, space: "web-locked", topic: "single-writer work", exclusive: true })
   await tool("join_space", { token: b.token, space: "web-locked", score: 0.42 })
   // A subagent and a coordinator, so the board has the two facts that change
@@ -227,6 +231,16 @@ try {
     // 401 or 403: which one is the gate's business, and either refuses. What
     // matters here is that it is not 200.
     check(`a replayed cookie cannot read ${path}`,
+      r.status === 401 || r.status === 403, String(r.status))
+  }
+  // And the COORDINATION secret does not open it either, which matters more
+  // since this route started carrying space announcement bodies as well as
+  // mail. Every agent's bridge holds that secret: if it reached here, moving
+  // the bodies off the board and onto this route would have been a wider leak
+  // than the one it fixed, not a narrower one.
+  {
+    const r = await fetch(`http://${ADDR}/api/messages`, { headers: { "X-Dibs-Local": secret } })
+    check("the coordination secret cannot read mail or space transcripts",
       r.status === 401 || r.status === 403, String(r.status))
   }
   const roleReplay = await fetch(`http://${ADDR}/api/admin/role`, {
@@ -361,6 +375,28 @@ try {
   check("the board renders agents in a real browser",
     rendered.includes("builder") && rendered.includes("checker"), rendered.join(","))
   check("it uses the shared roster grouping", (await page.locator(".band").count()) >= 1)
+  // A MAILBOX THAT CANNOT BE READ SAYS SO. A valid session with no page key
+  // (a reload after localStorage was unavailable) gets 401 from the mail
+  // route while the document and the stream load fine, and the pane painted
+  // "No mail" under a live mark: an operator could not tell an inaccessible
+  // mailbox from an empty one. Round fifty of the pre-release review.
+  {
+    const bare = await browser.newContext()
+    await bare.addCookies([{ name, value, domain: "127.0.0.1", path: "/" }])
+    const nokey = await bare.newPage()
+    await nokey.goto(`http://${ADDR}/`, { waitUntil: "load" })
+    await nokey.locator(".entry").first().waitFor({ timeout: 10000 })
+    await nokey.locator("#tab-mail").click()
+    let pane = ""
+    for (let i = 0; i < 40 && !/Mail unavailable/.test(pane); i++) {
+      pane = (await nokey.locator("#pane-mail").textContent()) ?? ""
+      await Bun.sleep(100)
+    }
+    check("a mailbox the page cannot read is not shown as empty",
+      /Mail unavailable/.test(pane) && !/No mail/.test(pane), pane.slice(0, 160))
+    check("and the refusal is named", /HTTP 401/.test(pane), pane.slice(0, 160))
+    await bare.close()
+  }
   // The design system is applied: in WHICHEVER theme the system asked for.
   //
   // This pinned the dark background, which made it a theme test wearing a
@@ -796,8 +832,39 @@ try {
     const ghostChip = agent.locator(".member", { hasText: "ghost" })
     check("an agent marks the member that is not working",
       (await ghostChip.locator(".member-tag.gone").count()) === 1, await agent.innerText())
+    // EITHER WORDING, because the kind decides which one is true.
+    //
+    // A member whose process died is `stale` if it was ephemeral ("process
+    // gone": nothing is coming back) and `dormant` if it was persistent ("its
+    // process exited", and it can be woken or reattached). Since v0.0.7 an
+    // agent that states no kind is persistent, so this fixture moved from the
+    // first wording to the second and this check failed on a rendering that was
+    // more correct than the one it was written against.
+    //
+    // What must not change is that the chip says WHAT HAPPENED rather than just
+    // marking the member as not working, which is the line above. Both spellings
+    // name the process, so both are accepted and silence still fails.
+    const ghostSaid = (await ghostChip.innerText()).toLowerCase()
     check("and says what happened to it",
-      (await ghostChip.innerText()).toLowerCase().includes("process gone"), await ghostChip.innerText())
+      ghostSaid.includes("process gone") || ghostSaid.includes("process exited"),
+      await ghostChip.innerText())
+
+    // WHAT WAS SAID, not that something was.
+    //
+    // The board payload carries announcement metadata and deliberately not the
+    // bodies, because Board() is what check_in returns to every agent and the
+    // text belongs to the space's members. The renderer still drew a body for
+    // each line, so every row showed a sender and an acknowledgement state
+    // above an empty span. The Go test guarding the confidentiality half passed
+    // throughout: it asserts the metadata survives, and nothing asserted the
+    // operator could still read anything. The text comes from /api/messages
+    // now, behind the page key, joined by serial.
+    const said = agent.locator(".space-said li").first()
+    await said.waitFor({ timeout: 5000 })
+    check("the transcript carries what was said, not just who said it",
+      (await said.locator(".said-body").innerText()).includes(
+        "the operator must be able to read this sentence"),
+      await said.innerText())
     check("while a live member is left unmarked",
       (await agent.locator(".member", { hasText: "checker" }).locator(".member-tag.gone").count()) === 0)
     await page.locator('.views button[data-view="board"]').click()
@@ -806,6 +873,36 @@ try {
   await page.locator('.views button[data-view="mail"]').click()
   await page.locator(".msg").first().waitFor({ timeout: 5000 })
   check("mail renders with the shared component", (await page.locator(".msg").count()) >= 1)
+  // A REFUSAL AFTER A GOOD FETCH IS STILL SAID. The first cut of the mail
+  // warning stood in for an empty list only, so once a fetch had succeeded a
+  // later 401 kept the cached mail and hid the warning under a stream still
+  // labelled live. Round fifty-two of the pre-release review.
+  {
+    const cached = await page.locator(".msg").count()
+    await page.route("**/api/messages", (route) => route.fulfill({ status: 401, body: "unauthorized" }))
+    await page.evaluate(() => (window as any).refreshMail())
+    let pane = ""
+    for (let i = 0; i < 40 && !/HTTP 401/.test(pane); i++) {
+      pane = (await page.locator("#pane-mail").textContent()) ?? ""
+      await Bun.sleep(100)
+    }
+    check("a refusal after cached mail is still reported", /Mail unavailable/.test(pane) && /HTTP 401/.test(pane), pane.slice(0, 160))
+    check("and the cached mail is kept beneath it", (await page.locator(".msg").count()) === cached,
+      `${await page.locator(".msg").count()} of ${cached}`)
+    await page.unroute("**/api/messages")
+    await page.evaluate(() => (window as any).refreshMail())
+    for (let i = 0; i < 40 && /Mail unavailable/.test(pane); i++) {
+      pane = (await page.locator("#pane-mail").textContent()) ?? ""
+      await Bun.sleep(100)
+    }
+    check("and a fetch that succeeds again clears it", !/Mail unavailable/.test(pane), pane.slice(0, 160))
+    // The 401 above was injected by this case, and Chrome logs it as a
+    // console error, which is Chrome being correct: it is named and removed
+    // here rather than the page-error sweep being loosened for every 401.
+    for (let i = pageErrors.length - 1; i >= 0; i--) {
+      if (/status of 401/.test(pageErrors[i])) pageErrors.splice(i, 1)
+    }
+  }
   {
     const att = page.locator(".msg .att").first()
     await att.waitFor({ timeout: 5000 })

@@ -335,7 +335,7 @@ func TestTheWakePathNamesWhatIsWaitingWithoutQuotingIt(t *testing.T) {
 	}
 
 	e := &Engine{state: st}
-	lines := e.pendingMail("victim")
+	lines := e.pendingMail("victim", time.Now())
 	if len(lines) != 1 {
 		t.Fatalf("one message is waiting, got %d", len(lines))
 	}
@@ -714,14 +714,16 @@ func TestABlockingNoticeSurvivesABurstOfOrdinaryOnes(t *testing.T) {
 	e.SetNoticesWake(true)
 
 	// The approval it is waiting on, FIRST, so eviction by age takes it.
-	e.pushNoticeAs("asker", "lael approved your request to be coordinator", 1, 7, true)
+	e.pushNoticeAs("asker", "lael approved your request to be coordinator", 1, 7, true,
+		time.Unix(1700000000, 0))
 	if e.blockingNotices("asker") != 1 {
 		t.Fatal("the approval produced no blocking notice, so this test has nothing " +
 			"to protect")
 	}
 
 	for i := 2; i < 2+maxNotices*2; i++ {
-		e.pushNotice("asker", "newcomer joined a space you are in", uint64(i))
+		e.pushNotice("asker", "newcomer joined a space you are in", uint64(i),
+			time.Unix(1700000000, 0))
 	}
 	if n := len(e.notices["asker"]); n != maxNotices {
 		t.Fatalf("the list holds %d notices, not the %d bound, so nothing was "+
@@ -775,7 +777,8 @@ func TestTheNoticeBoundHoldsForIdenticalNotices(t *testing.T) {
 	// And through the real push path, repeatedly, because the growth compounds.
 	e := &Engine{}
 	for i := 0; i < maxNotices*3; i++ {
-		e.pushNotice("agent", "still working on the same thing", 0)
+		e.pushNotice("agent", "still working on the same thing", 0,
+			time.Unix(1700000000, 0))
 	}
 	if n := len(e.notices["agent"]); n > maxNotices {
 		t.Errorf("after %d identical pushes the list holds %d, past the %d bound",
@@ -785,9 +788,11 @@ func TestTheNoticeBoundHoldsForIdenticalNotices(t *testing.T) {
 	// A blocking notice among duplicates still survives, or the fix above has
 	// traded one failure for the other.
 	e2 := &Engine{}
-	e2.pushNoticeAs("agent", "lael approved your request", 1, 7, true)
+	e2.pushNoticeAs("agent", "lael approved your request", 1, 7, true,
+		time.Unix(1700000000, 0))
 	for i := 0; i < maxNotices*2; i++ {
-		e2.pushNotice("agent", "still working on the same thing", 0)
+		e2.pushNotice("agent", "still working on the same thing", 0,
+			time.Unix(1700000000, 0))
 	}
 	if e2.blockingNotices("agent") == 0 {
 		t.Error("the approval was evicted by identical situational notices")
@@ -865,4 +870,80 @@ func deliveredSomething(res core.Result) bool {
 		}
 	}
 	return false
+}
+
+// An approval survives a restart of the board that granted it.
+//
+// A blocking notice is what reaches an agent that asked for something and then
+// stopped waiting, and it existed only in memory, created by live event
+// processing. So a daemon restarting between the approval and the asker's next
+// turn boundary lost it entirely: the grant stayed ledgered and correct, and
+// hook_poll, [wake.exec] and check_in all saw nothing. The agent waited
+// indefinitely for news that had already happened, which is the exact failure
+// the notice was added to prevent.
+//
+// A REBUILT ENGINE, not a re-injected event. The existing test for this injects
+// the approval with noteEvent and polls the same live engine, so it can only
+// ever prove that live processing works; nothing in it restarts. The state a
+// restart produces is state == fold(ledger), so this builds the second engine
+// over the same state, which is what the daemon does.
+func TestAnApprovalSurvivesARestart(t *testing.T) {
+	st := core.NewState("t", core.DefaultLimits())
+	st.Agents = map[string]*core.Agent{
+		"asker": {ID: "asker", Name: "asker", Status: core.StatusActive},
+		"human": {ID: "human", Name: "human", Status: core.StatusActive},
+	}
+	// A request the human approved, which the asker has not read yet.
+	st.Messages[42] = &core.Message{
+		Serial: 42, From: "asker", To: "human", Type: core.MsgRequest,
+		State: core.MsgStateApproved, Grant: core.RoleCoordinator,
+		RespondedAt: 43, Consumed: false,
+	}
+
+	// The daemon comes back up over the replayed state.
+	restarted := New(st, &memLedger{}, deadProber{})
+
+	if n := restarted.blockingNotices("asker"); n == 0 {
+		t.Fatal("the agent that asked has no blocking notice after the restart. Its " +
+			"request was approved, the grant is in the ledger, and check_in and " +
+			"hook_poll read this list to tell it, and it is empty. NOT the wake path: " +
+			"a rebuild publishes no event, so nothing here starts a process to bring " +
+			"a stopped agent back, and saying otherwise is how a test's own message " +
+			"comes to claim more than it checked (issue #75)")
+	}
+	// And the notice says what happened, not merely that something did.
+	var found string
+	for _, x := range restarted.notices["asker"] {
+		if x.Blocking {
+			found = x.Text
+		}
+	}
+	if !strings.Contains(found, "APPROVED") || !strings.Contains(found, "coordinator") {
+		t.Errorf("the rebuilt notice reads %q; it has to name the approval and the "+
+			"role, because an agent must not be able to tell that its board restarted "+
+			"from the wording of its own mail", found)
+	}
+
+	// AND AN AGENT THAT HAS CAUGHT UP IS NOT TOLD AGAIN.
+	//
+	// The boundary is the ASKER's awareness watermark, and the first version of
+	// this used Message.Consumed, which is about the other party entirely: the
+	// recipient consumes a message when they answer it, so every verdict is
+	// consumed the instant it exists and nothing was ever rebuilt. This test
+	// passed anyway, because it set that field by hand; the end-to-end run
+	// against a real daemon restart is what caught it.
+	st.Agents["asker"].AckedSerial = 43
+	if n := New(st, &memLedger{}, deadProber{}).blockingNotices("asker"); n != 0 {
+		t.Errorf("%d blocking notice(s) for an agent whose watermark is already past "+
+			"the verdict: every restart would hand it the same news again", n)
+	}
+	// And Consumed must NOT be what decides it, in either direction.
+	st.Agents["asker"].AckedSerial = 0
+	st.Messages[42].Consumed = true
+	if n := New(st, &memLedger{}, deadProber{}).blockingNotices("asker"); n == 0 {
+		t.Error("the rebuild skipped a verdict because the message is marked consumed. " +
+			"Consumed is set when the RECIPIENT answers, so it is true for every " +
+			"verdict that exists: keying on it rebuilds nothing, which is exactly " +
+			"what shipped and what the end-to-end restart caught")
+	}
 }

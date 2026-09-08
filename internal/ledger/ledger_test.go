@@ -138,18 +138,35 @@ func TestEncryptionAtRestIncludesNonce(t *testing.T) {
 		Kind: core.OpSendMessage, Token: "super-secret-token", To: "b",
 		MsgType: core.MsgNotify, Body: "the private body",
 	}, t0)
+	// A default registration: the daemon minted the nonce, and it is a
+	// recovery credential all the same.
+	apply(t, st, led, &core.Op{
+		Kind: core.OpRegister, Name: "w", NewToken: "tw", AgentKind: core.KindPersistent,
+		MintedNonce: "minted-secret-nonce", V7Semantics: true,
+	}, t0)
+	if st.Agents["w"].Nonce != "minted-secret-nonce" {
+		t.Fatal("setup: the minted nonce did not land on the row")
+	}
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, secret := range []string{"super-secret-token", "super-secret-nonce", "the private body"} {
+	for _, secret := range []string{"super-secret-token", "super-secret-nonce", "the private body", "minted-secret-nonce"} {
 		if strings.Contains(string(raw), secret) {
 			t.Fatalf("%q appears in plaintext in the ledger", secret)
 		}
 	}
 	if !strings.Contains(string(raw), "register") {
 		t.Fatal("public op kinds should be plaintext")
+	}
+	// And it opens again: a sealed field that does not replay is a lost credential.
+	st2 := core.NewState("test", core.DefaultLimits())
+	if _, err := led.Replay(st2); err != nil {
+		t.Fatal(err)
+	}
+	if st2.Agents["w"].Nonce != "minted-secret-nonce" {
+		t.Fatalf("after replay the minted nonce is %q: the seal has no matching open", st2.Agents["w"].Nonce)
 	}
 }
 

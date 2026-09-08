@@ -26,6 +26,7 @@ import json
 import os
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -84,6 +85,25 @@ class Daemon:
             except OSError:
                 pass
             time.sleep(0.5)
+        # local.secret is written well before the listener binds (see
+        # cmd/dibd/main.go:152 vs :349), so the file appearing is not the
+        # daemon being up. Waiting on the file and then connecting races the
+        # bind and loses often enough to fail a CI run on a working daemon.
+        # Wait for something that accepts a connection.
+        deadline = time.monotonic() + 30.0
+        while time.monotonic() < deadline:
+            if self.proc.poll() is not None:
+                raise RuntimeError(
+                    f"dibd on port {port} exited with status {self.proc.returncode} "
+                    f"during startup; see {self.log}")
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                    break
+            except OSError:
+                time.sleep(0.05)
+        else:
+            raise RuntimeError(
+                f"dibd never accepted a connection on port {port}; see {self.log}")
 
     def wait_for_matching(self, timeout: float = 60.0, step: float = 1.0) -> bool:
         """Block until the daemon says its index is built.

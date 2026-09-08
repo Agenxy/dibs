@@ -39,6 +39,7 @@ __pycache__/
 /dibs
 /dibd
 /dibs-presence
+/embedprobe
 
 # EVERY tools/<name>. `go build ./tools/<name>` drops the binary in the working
 # directory and `git add -A` sweeps it in: three shipped in one commit that way,
@@ -65,3 +66,4 @@ __pycache__/
 /smoke
 /stampserver
 /version
+/reviewrelease

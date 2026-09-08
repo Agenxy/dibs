@@ -680,6 +680,8 @@ func TestTheSharedLoaderRefusesEverythingTheDaemonRefuses(t *testing.T) {
 		{"a bad duration", "[limits]\nagent_ttl = \"soon\"\n"},
 		{"nothing at all", ""},
 		{"ordinary values", "[limits]\nmax_agents = 128\nmax_persistent_agents = 32\nagent_ttl = \"30m\"\n"},
+		// Nothing said about persistence: the default must follow, not refuse.
+		{"an explicit total below the default persistent ceiling", "[limits]\nmax_agents = 32\n"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

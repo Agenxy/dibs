@@ -97,6 +97,14 @@ type WakeConfig struct {
 	// recipient, because somebody is blocked on that and nobody is blocked on
 	// knowing who joined a space.
 	NoticesWake *bool `toml:"notices_wake"`
+	// Sockets decides whether the session-socket routes run at all: the
+	// daemon's peer-socket wake and the bridge's self-wake. On by default.
+	// The guide promised an operator a configuration with no unsolicited
+	// activations and named only the turn-extension setting and the absence
+	// of [wake.exec] entries, while both socket routes stayed on. A pointer,
+	// so absent reads as true. Found by the pre-release review, round
+	// twenty-seven.
+	Sockets *bool `toml:"sockets"`
 
 	// Exec is how to REACH an agent that is not running, per harness. See
 	// WakeExec. Absent means the board cannot start anything, which is the
@@ -234,14 +242,27 @@ type MatchConfig struct {
 // which is the one failure that would be worse than not delivering at all.
 //
 //	[wake.exec.codex]
-//	argv = ["codex", "queue", "--thread", "{thread}", "--message", "{message}"]
+//	argv     = ["codex", "exec", "resume", "{thread}", "{message}"]
+//	fallback = ["codex", "queue", "--thread", "{thread}", "--message", "{message}"]
 //
 // Placeholders, each replaced as a COMPLETE element: {thread}, {agent},
 // {from}, {type}, {message}. Anything else is left alone.
+//
+// TWO COMMANDS, because one harness has two states and a command for each.
+// `codex exec resume` starts a CLOSED thread and refuses one that is open in
+// the desktop app ("already has an active writer"). `codex queue` delivers
+// into an OPEN thread, and to a closed one it exits 0 and parks the message
+// where nothing will read it until somebody opens that thread by hand. They
+// are exact inverses, and neither alone reaches every agent. Measured on the
+// machine this was written on, both ways, after weeks of the desktop-app case
+// being reported as unreachable.
 type WakeExec struct {
 	// Argv is the command and its arguments. Empty means this harness has no
 	// wake command, which is the default and is not an error.
 	Argv []string `toml:"argv"`
+	// Fallback is tried only when Argv exits non-zero. Same rules, same
+	// substitutions, same confirmation by exit status. Optional.
+	Fallback []string `toml:"fallback"`
 	// Cooldown is the shortest gap between two wakes of the same agent. Zero
 	// takes the default; a fleet that wakes on every message is a fork bomb
 	// with better manners.
@@ -306,8 +327,20 @@ func Load(dir string) (Config, error) {
 	// #nosec G304 -- a path inside the daemon's own data directory, or one the
 	// operator pointed the CLI at. Same-user access only; refusing it would mean
 	// refusing to run.
-	b, err := os.ReadFile(filepath.Join(dir, "dibs.toml"))
+	path := filepath.Join(dir, "dibs.toml")
+	b, err := os.ReadFile(path) // #nosec G304 -- the board's own data directory
 	if os.IsNotExist(err) {
+		// ABSENT MEANS ABSENT. ReadFile follows a symlink, so a dibs.toml
+		// that is a link to nothing read as no configuration at all, the
+		// defaults replaced the configured address, and the CLI's own
+		// readability guard passed: this directory's secret went to whatever
+		// answered at the default. Found by the pre-release review, round
+		// twenty-three.
+		if _, lerr := os.Lstat(path); lerr == nil {
+			return c, fmt.Errorf("%s is a symlink to nothing: fix or remove the link "+
+				"rather than run on defaults that are not what this board was configured "+
+				"with", path)
+		}
 		return c, nil
 	}
 	if err != nil {
@@ -329,12 +362,14 @@ func Load(dir string) (Config, error) {
 		for _, k := range un {
 			keys = append(keys, k.String())
 		}
-		return c, fmt.Errorf(
-			"unknown setting(s) in dibs.toml: %s: check the spelling and the table "+
-				"they are under ([match], [limits]); nothing here took effect",
-			strings.Join(keys, ", "),
-		)
+		// TYPED, because two readers of this file need opposite answers.
+		// The daemon must refuse: an operator who misspelled a key has to be
+		// told nothing took effect. A client that only needs the address out
+		// of the file must not, because a key this build does not know may be
+		// one a newer daemon does; see UnknownSettingsError.
+		return c, &UnknownSettingsError{Keys: keys}
 	}
+
 	// WHICH KEYS WERE ACTUALLY WRITTEN, carried into validation.
 	//
 	// An unset duration and an explicit `every = "0s"` are the same zero in the
@@ -599,27 +634,36 @@ func (c Config) validateTLS() error {
 	// same silent, total, all-at-once failure the auto-managed path renews and
 	// re-issues to avoid, and the configured path accepted it.
 	//
-	// Only when the address is known and is a real host. A wildcard bind serves
-	// whatever the client dialled and no certificate can name that in advance,
-	// which is why the generated one enumerates interfaces instead.
-	if host := configuredHost(c.Addr); host != "" {
-		if err := leaf.VerifyHostname(host); err != nil {
-			return fmt.Errorf("tls_cert %q does not name %s (%w). It will serve, and "+
-				"every client dialling that address will refuse it. Reissue the "+
-				"certificate for the address this daemon listens on, or remove "+
-				"tls_cert and tls_key and let Dibs manage one", cert, host, err)
-		}
-	}
+	// THE HOSTNAME IS NOT ASKED HERE, and the reason is precedence.
+	//
+	// This layer sees `addr` in dibs.toml, and `-addr` and DIBS_ADDR both
+	// outrank it. Checking against the file therefore refused a certificate
+	// that is CORRECT for the address the daemon was told to bind: a board
+	// configured for one address and started on another failed to load at all,
+	// which is worse than the hole it was closing, and it happened at the layer
+	// that cannot see the answer. The check belongs where the address is
+	// settled, and cmd/dibd does it there for both startup and `-check`.
+	//
+	// What stays here is what this layer CAN answer: the pair loads, they match
+	// each other, and the certificate is inside its validity window.
 	return nil
 }
 
-// configuredHost is the host an explicit certificate has to name, or "".
+// HostToVerify is the host an explicit certificate has to name, or "".
 //
 // Empty for a wildcard bind: 0.0.0.0 and :: serve whatever the client dialled,
-// so nothing can be verified in advance. Empty when no address is configured,
-// because then the default is loopback and a configured certificate is being
-// asked for by some other means.
-func configuredHost(addr string) string {
+// so nothing can be verified in advance. Empty for an empty address, because
+// this package cannot see `-addr` or `DIBS_ADDR`, both of which outrank the
+// config: assuming loopback here would refuse an explicit certificate that is
+// correct for the address the daemon was actually told to bind, and `dibs
+// upgrade` always passes `-addr`, so that refusal would land mid-cutover with
+// the previous daemon already stopped.
+//
+// The daemon calls this again with its RESOLVED address, which is the one that
+// closes the gap: a board with an explicit pair, no `addr` in dibs.toml and a
+// certificate naming neither loopback nor anything else it serves used to reach
+// ServeTLS and be refused by every client. Exported for that caller.
+func HostToVerify(addr string) string {
 	if addr == "" {
 		return ""
 	}
@@ -918,11 +962,34 @@ func validateWakeEntry(harness string, x WakeExec, all map[string]WakeExec) erro
 	// configured, and every wake then failed inside exec before starting
 	// anything. Configuration approved, capability announced, nobody ever
 	// woken: this list's own subject, in the section it was added for.
-	if strings.TrimSpace(x.Argv[0]) == "" {
-		return fmt.Errorf("[wake.exec.%s] argv starts with an empty string, so "+
+	if err := validateWakeArgv(harness, "argv", x.Argv); err != nil {
+		return err
+	}
+	// The fallback is a second command with the same power, so it gets the
+	// same checks through the same function. Two copies of one rule is how this
+	// repository's most expensive class of bug arrives.
+	if len(x.Fallback) > 0 {
+		if err := validateWakeArgv(harness, "fallback", x.Fallback); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateWakeArgv is the rule every wake command obeys, whichever key it is
+// under. Called on a non-empty argv.
+func validateWakeArgv(harness, key string, argv []string) error {
+	// TRIMMED, because " " is a perfectly good TOML string and a perfectly
+	// useless program name. It passed `dibd -check`, startup logged "the
+	// board can start an agent that is not running" with one harness
+	// configured, and every wake then failed inside exec before starting
+	// anything. Configuration approved, capability announced, nobody ever
+	// woken: this list's own subject, in the section it was added for.
+	if strings.TrimSpace(argv[0]) == "" {
+		return fmt.Errorf("[wake.exec.%s] %s starts with an empty string, so "+
 			"there is no program to run. The first element is the executable, "+
 			"and the rest are its arguments: there is no shell in this path "+
-			"to work out what was meant", harness)
+			"to work out what was meant", harness, key)
 	}
 	// NOTHING AN AGENT SAID MAY CHOOSE THE PROGRAM.
 	//
@@ -933,11 +1000,32 @@ func validateWakeEntry(harness string, x WakeExec, all map[string]WakeExec) erro
 	// peer's chosen name select the executable, which is a different rule
 	// from quoting and the one this project actually states: the wake command
 	// comes from the operator's file and nothing an agent said reaches it.
-	if len(x.Argv) > 0 && strings.HasPrefix(x.Argv[0], "{") {
-		return fmt.Errorf("[wake.exec.%s] argv[0] is %q: the program to run must "+
+	if strings.HasPrefix(argv[0], "{") {
+		return fmt.Errorf("[wake.exec.%s] %s[0] is %q: the program to run must "+
 			"be named in this file and cannot be a placeholder. Substituted "+
 			"values come from agents, and the one thing an agent must never "+
-			"choose is which executable the board starts", harness, x.Argv[0])
+			"choose is which executable the board starts", harness, key, argv[0])
 	}
 	return nil
+}
+
+// UnknownSettingsError is Load's report of keys it could not place. The config
+// decoded; these keys did nothing.
+//
+// A type rather than a string because the same file is read by two programs
+// with different authority over it. `dibd` owns the file and must refuse it,
+// loudly, naming the keys: `[limit]` for `[limits]` parses cleanly and changes
+// nothing, and an operator left to debug the behaviour they thought they had
+// configured is the worst outcome available. The `dibs` bridge only needs the
+// address out of the file, and it is often OLDER than the daemon: every
+// `task install` leaves a running session's bridge on the previous build until
+// that session restarts. A bridge that refused on a key it did not know, while
+// claiming the daemon would refuse it too, blocked a live delivery on this
+// machine on a key the daemon had already accepted and started on.
+type UnknownSettingsError struct{ Keys []string }
+
+func (e *UnknownSettingsError) Error() string {
+	return fmt.Sprintf("unknown setting(s) in dibs.toml: %s: check the spelling and the "+
+		"table they are under ([match], [limits]); nothing here took effect",
+		strings.Join(e.Keys, ", "))
 }

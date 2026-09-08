@@ -49,7 +49,32 @@ func sessionContext(isClaude bool) map[string]string {
 	// session's real cwd even if the bridge were spawned somewhere else.
 	pid := os.Getenv("CLAUDE_PID")
 	home, _ := os.UserHomeDir()
-	if !isClaude || pid == "" || home == "" {
+	if pid == "" || home == "" {
+		return out
+	}
+	// OUR OWN PARENT, or the handshake said so. Either is proof; neither alone
+	// is enough, and getting this wrong breaks the wake path in one direction or
+	// the other.
+	//
+	// CLAUDE_PID is INHERITED by every process a Claude Code session spawns, so
+	// its presence does not mean this bridge belongs to that session: a nested
+	// bridge started anywhere beneath one would read its sidecar and adopt its
+	// session id, answering to its parent's wake path. Gating on the handshake
+	// alone stopped that, and cost the other half: clientIs reads the clientInfo
+	// an `initialize` left behind, so a 2026 caller that sends none, or any call
+	// that arrives before the handshake is seen, read no sidecar and registered
+	// under the bridge's `host-<ppid>`. That id is one no lifecycle hook ever
+	// quotes, so the agent was unreachable for the life of the board, and the
+	// ambient repair could not fix it because it only fills an EMPTY session id.
+	// Measured: an agent on this project's own board bound `host-5360` while its
+	// sidecar and its hooks both named the same UUID.
+	//
+	// A harness spawns its stdio bridge as a DIRECT child, which is the same
+	// fact bridgeSessionID relies on, so CLAUDE_PID matching our own parent is
+	// positive evidence that this session is ours rather than one we inherited.
+	// Nested processes fail that test, which is exactly what the guard e2e
+	// checks when it starts daemons of its own.
+	if !isClaude && pid != strconv.Itoa(os.Getppid()) {
 		return out
 	}
 	// A pid is digits. Checking that is not ceremony: the value becomes a path

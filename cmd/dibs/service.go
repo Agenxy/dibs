@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"unicode/utf8"
@@ -429,9 +428,19 @@ func unitPinning(dir string) string {
 		if err != nil {
 			continue
 		}
-		if strings.Contains(string(body), dir) {
+		// EXACT TOKENS, not a substring. `strings.Contains` accepted a unit for
+		// `~/.dibs-old` as the unit for `~/.dibs`, and `dibs upgrade` rewrites
+		// and reloads whatever this returns: another board's service, edited and
+		// restarted under it. `--adopt-dir` makes `-old` a natural neighbour, so
+		// the two most likely to collide are the two most likely to be present.
+		//
+		// unitNames is the same question asked properly, a few hundred lines
+		// away in this package, with the reasoning and the tests that prove a
+		// substring is wrong. It was written for this and not wired here.
+		if unitNames(path, dir) {
 			return path
 		}
+		_ = body // read above only to skip a unit that cannot be opened
 	}
 	return ""
 }
@@ -466,19 +475,15 @@ func unitDaemon() (unit, daemon string) {
 		filepath.Join(configHome(), "systemd", "user", "dibs.service"),
 	}
 	candidates = append(candidates, unitPinningLegacy()...)
-	// Any absolute path ending in the daemon's name, which covers the plist's
-	// <string> element and systemd's ExecStart= alike.
-	pin := regexp.MustCompile(`(/[^\s<>"']+/dibd)\b`)
+	// THROUGH THE SAME SPACE-AWARE PARSER RECOVERY USES. Round sixty-seven
+	// fixed the recovery decision and left this one on the whitespace-excluding
+	// pattern, so `/Users/Example User/bin/dibd` still read as `/bin/dibd`:
+	// upgrade's drift check then called a CORRECT unit wrong and reconcile
+	// rewrote it, discarding whatever the operator had tuned in it. One reader
+	// for one question. Found by the pre-release review, round sixty-eight.
 	for _, path := range candidates {
-		// #nosec G304,G703 -- every candidate is built here from this process's
-		// own HOME (or XDG_CONFIG_HOME) plus a fixed filename; no caller-supplied
-		// text reaches the path, exactly as in unitPinning above.
-		body, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		if m := pin.FindSubmatch(body); m != nil {
-			return path, string(m[1])
+		if d := unitBinary(path); d != "" {
+			return path, d
 		}
 	}
 	return "", ""

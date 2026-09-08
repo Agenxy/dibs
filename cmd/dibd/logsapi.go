@@ -38,7 +38,7 @@ func registerAdminAPI(mux *http.ServeMux, eng *engine.Engine) {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
-		res, err := eng.GrantRole(r.Context(), body.Agent, body.Role)
+		res, err := eng.GrantRoleByHuman(r.Context(), body.Agent, body.Role)
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Cache-Control", "no-store")
 		if err != nil {

@@ -144,11 +144,28 @@ func Check(ctx context.Context, reason string) (Verdict, error) {
 	// there is no shell here.
 	cmd := exec.CommandContext(ctx, helper, reason)
 	err = cmd.Run()
-	if err == nil {
+	return verdictFor(err, parent.Err(), ctx.Err())
+}
+
+// verdictFor turns what happened into what may be said about the person.
+//
+// SPLIT FROM Check so a test can reach it, which is the same reason helperIn
+// exists a few lines down and for the same failure: the only test protecting
+// the Abandoned branch called Check, Check refuses before it gets here when no
+// helper is installed beside the binary, and no gate arranges one. It skipped
+// in the ordinary run AND under -tags dibdev, so reverting this branch to
+// Declined left every gate green. That is the third time this package has
+// needed the split and the second time it was found by a review rather than by
+// a red test.
+//
+// runErr is what the helper's process returned; parentErr and deadlineErr are
+// the caller's context and our own timeout, in that order of precedence.
+func verdictFor(runErr, parentErr, deadlineErr error) (Verdict, error) {
+	if runErr == nil {
 		return Verified, nil
 	}
 	var ee *exec.ExitError
-	if errors.As(err, &ee) {
+	if errors.As(runErr, &ee) {
 		// The helper's exit codes ARE the API: 1 asked-and-refused, 2 cannot ask.
 		switch ee.ExitCode() {
 		case 1:
@@ -158,16 +175,21 @@ func Check(ctx context.Context, reason string) (Verdict, error) {
 		}
 	}
 	// The caller went away: not a decision, and not a broken machine.
-	if parent.Err() != nil {
-		return Abandoned, nil
+	//
+	// The VERDICT is the answer here, and the error return is reserved for "we
+	// could not decide at all": returning the process's failure alongside
+	// Abandoned would make every caller that checks err treat a known outcome as
+	// a fault. That is why the two branches below discard runErr deliberately.
+	if parentErr != nil {
+		return Abandoned, nil //nolint:nilerr // the verdict is the answer; see above
 	}
 	// Our own deadline expired: a human who never answered, which IS a decline:
 	// nothing was approved, and telling them their Mac cannot do this would be
 	// false.
-	if ctx.Err() != nil {
-		return Declined, nil
+	if deadlineErr != nil {
+		return Declined, nil //nolint:nilerr // the verdict is the answer; see above
 	}
-	return Unavailable, err
+	return Unavailable, runErr
 }
 
 // findHelper looks beside the running binary, and refuses a symlink.
@@ -251,9 +273,30 @@ func Available() bool {
 // caller is expected to say "try again" rather than to wait.
 var ErrPromptBusy = errors.New("a presence check is already waiting for an answer")
 
-// promptBusy guards the single on-screen prompt. Package level because the
-// SCREEN is package level: two authGates, or a gate and an MCP handler, are
-// still one person looking at one Mac.
+// promptBusy guards the single on-screen prompt WITHIN ONE DAEMON, which is
+// less than the screen it is reasoning about.
+//
+// This said "package level because the SCREEN is package level: two authGates,
+// or a gate and an MCP handler, are still one person looking at one Mac". The
+// premise is right and the conclusion does not follow from it: a screen is
+// MACHINE level, and a package-level mutex is per PROCESS. `dibd
+// -allow-parallel` is a supported deployment of exactly several processes on
+// one Mac, and each of them holds its own copy of this, so each can have a
+// presence check waiting at the same time. The one thing the refusal exists to
+// prevent, an approval satisfying a request it was not raised for, is
+// prevented inside a daemon and not between them.
+//
+// NOT YET CLOSED, and said here rather than left as a guarantee that is not
+// one. Whether it is reachable in practice depends on something this comment
+// cannot assert: whether macOS serialises the LocalAuthentication sheets from
+// two signed helpers, and whether a person can tell the two apart. That needs
+// two release daemons with separate data directories and concurrent
+// human_unlock calls, and until somebody runs it the honest statement is that
+// Dibs does not provide the machine-wide control, rather than that it does.
+//
+// If it is closed, the shape already exists: parallel.go claims its daemon slot
+// under a host-wide lock for the same reason, so that two daemons starting
+// together cannot both conclude they are alone.
 var promptBusy struct {
 	sync.Mutex
 	held bool

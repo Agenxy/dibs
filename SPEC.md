@@ -268,8 +268,13 @@ you can measure is never improved by asking.
   (normative; MCP hosts cannot vary headers per call). Constant-time comparison.
   Exposure to the owning agent's context is bounded-by-design: blast radius = its own
   agent.
-- **Registration nonce**: client-generated, ≥128-bit CSPRNG, **required for
-  `kind: persistent`**, optional for ephemeral. Constant-time comparison. Two roles:
+- **Registration nonce**: client-generated, ≥128-bit CSPRNG, **expected for
+  `kind: persistent`** and optional for ephemeral. A client that sends none is
+  not refused: the daemon MINTS one and returns it, because an agent told to
+  keep a credential it was never given can never recover, and every persistent
+  registration therefore has one (§6). A minted nonce is weaker than a chosen
+  one and the result says so: the row stays recoverable by name and session id,
+  which a chosen nonce closes. Constant-time comparison. Two roles:
   - *Response-loss retry*: `register` with a nonce it has seen, while the agent is
     active and was created within one agent TTL, returns the original result
     (`resumed: true`). Outside that window: `E_NONCE_IN_USE` with hint → `resume`.
@@ -343,10 +348,13 @@ an abandoned agent looking active.
 
 **Kinds:**
 
-- `ephemeral` (default), session-scoped. Status: `active | stale | closed | archived`
-  (+ `unreachable` reserved for v2).
-- `persistent`, a **standing role** (reviewer, nightly maintainer) whose agent idles
-  between activations. Status: `active | dormant | closed | archived`. Dormant is
+- `persistent` (**the default** since v0.0.7: a register that names no kind is
+  persistent, and one that sends no nonce is given one and returns it as `nonce`,
+  the credential that reattaches it after anything), a **standing role** (reviewer,
+  nightly maintainer) whose agent idles between activations.
+- `ephemeral`, session-scoped, on request (`kind: ephemeral`). Status:
+  `active | stale | closed | archived` (+ `unreachable` reserved for v2).
+- A persistent agent's Status: `active | dormant | closed | archived`. Dormant is
   deliberately not "stale": it is *expected* sleep. The agent, description, slots, and
   **mailbox stay live through dormancy**: mail queues while the agent sleeps; the
   serial cursor + §10 checkpoint give retention-bounded catch-up on wake (§8: within
@@ -360,9 +368,14 @@ transition and on `resume` (§2). Pre-ack writes fail `E_MUST_ACK_BOARD` (hint
 names the fix). An agent that slept for a month cannot mutate the board on month-old
 awareness.
 
-**v1 is store-and-catch-up, not wake-on-mail**: mail to a dormant agent waits for the
-agent's next activation (its harness, a schedule, or a human). `dibs watch --exec`
-(v1.1) supplies the supervisor glue that turns queued mail into launched agents.
+**Store-and-catch-up, and since v0.0.7 a wake.** Mail to a dormant agent waits for
+the agent's next activation, and the board may bring that activation about: an
+operator's `[wake.exec.<harness>]` command (argv from `dibs.toml`, one fixed
+sentence, rate limited, confirmable by exit status) runs when mail somebody is
+blocked on arrives for an agent that has stopped, and a harness session socket,
+where the harness publishes one, is tried best-effort. Both carry "you have mail"
+and nothing else: the board wakes an agent and does not steer one. See
+`WAKE-MECHANISMS.md` §5 and §5b.
 
 ## 7. Liveness: three signals, honestly labeled
 
@@ -557,6 +570,34 @@ Read-only work needs no claim.
 - **SSE (web UI)**: one frame per op: all of an op's events ship atomically in one
   SSE message with `id: <serial>`, so `Last-Event-ID` resume can never split an op.
   (This is Dibs' own UI stream, untouched by MCP 2026's removal of resumable SSE.)
+- **A subscription that resumes past the ring is resynced from the inbox.** A
+  `subscriptions/listen` carrying `com.dibs/since` older than the ring floor
+  cannot have its gap replayed from the ring, and an empty replay would leave a
+  question that arrived in the gap waking nobody. The notices the ring would
+  have carried are rebuilt from the mail: a `message.sent` for each message
+  still waiting that arrived after the cursor, a `message.adopted` for blocking
+  mail moved in after it, and the verdict (`message.answered` and the rest) on
+  each question or request this agent sent that was answered after the cursor.
+- **A live subscription that dropped an event refills from the ring.** The
+  channel behind a stream is bounded and the loop drops rather than stalls
+  when it is full; the drop is recorded, and the stream replays from the ring
+  everything after the last EVENT it delivered before continuing: one op emits
+  several events at one serial, so the position is (serial, sub) and the
+  position's own serial is re-read. Repeats coalesce at the subscriber, which
+  dedupes by serial.
+- **A subscription follows its agent only where its agent is.** A
+  `subscriptions/listen` may name the harness session it serves
+  (`_meta["com.dibs/session"]`, which the stdio bridge attaches: the thread
+  the harness named, else the bridge's own session id); while the agent
+  holds that session the inbox is delivered, and while the agent is in
+  another one it is withheld, so a bridge left behind by an identity that
+  moved cannot wake the session the agent left. A thread is held only while
+  it is the agent's current session, because the row retains every thread
+  it has been bound to. A stream that names no session, or follows the
+  board alone, is not measured. Board notifications are
+  unaffected, and the inbox returns with the agent. A stream ends with the
+  token it was opened with: once that token is rotated away, whoever holds
+  the new one subscribes afresh.
 - Polling is a **product choice**: MCP 2026-07-28 offers `subscriptions/listen`;
   adopting it is a v1.x option that changes no semantics (the cursor model stays).
 
@@ -565,7 +606,7 @@ Read-only work needs no claim.
 | Resource | Default | On exceed |
 |---|---|---|
 | ops per agent | 10/s, burst 30 | `E_RATE_LIMITED` (no wake, no ledger) |
-| live agents / persistent agents | 64 / 16 | `E_AGENT_LIMIT` |
+| live agents / persistent agents | 64 / 64 (the persistent ceiling follows `max_agents` when only that is set lower) | `E_AGENT_LIMIT` |
 | slots per agent | 32 | `E_SLOT_LIMIT` |
 | claims per agent / global | 32 / 256 | `E_CLAIM_LIMIT` |
 | mailbox depth (non-terminal) | 256 | §8 backpressure |
@@ -626,7 +667,7 @@ counting a document; this line said 17 for two minor versions.
 
 | Tool | Purpose |
 |---|---|
-| `register(name, description?, pid?, nonce?, kind?)` | → `{agent_id, token, serial, board}`; nonce required for `kind: persistent` |
+| `register(name, description?, pid?, nonce?, kind?)` | → `{agent_id, token, serial, board, nonce?}`; a nonce is expected for `kind: persistent` and MINTED when omitted, never refused (§4) |
 | `resume(nonce, resume_id, pid?)` | reactivate a persistent agent: rotates token, bumps activation generation, rebinds PID, wakes, re-arms gate; idempotent per resume_id (§5) |
 | `check_in()` | pass the awareness gate (per activation); → atomic `{board, inbox, serial}` checkpoint (§10) |
 | `update(name?, description?, title?, branch?, model?, provider?, effort?, surface?)` | revise what the agent says about ITSELF. The id is immutable (it is the address every message, claim and membership keys on), so a rename moves the label only, and a name another live agent holds is refused (`E_NAME_TAKEN`) rather than suffixed. `harness`/`version` are not settable: the client states them at the handshake, which is the only part of an identity that is not self-reported. Empty `description` clears, because already-ledgered `update` ops did that; the fields added later merge when non-empty, so replay of old ops is unchanged |
@@ -742,9 +783,9 @@ restart grace; limits incl. state GC; MCP 2026-07-28 dual-version surface (44 to
 local access secret + Origin validation; CLI (board/messages/log/verify/mcp-config);
 SSE web board; static binaries (`dibd` + `dibs`, no cgo, no runtime deps).
 
-**v1.1**: rotation + snapshots; kqueue/pidfd exit notification; `dibs watch --exec`
-(wake-on-mail supervisor glue); `dibs limits`; `dibs audit`; fuzz + crash
-harnesses; `subscriptions/listen`. **v2**: federation; A2A gateway (separate
+**v1.1**: rotation + snapshots; kqueue/pidfd exit notification; `dibs limits`;
+`dibs audit`; fuzz + crash harnesses. (Wake-on-mail shipped in v0.0.7 as
+`[wake.exec]` and the session-socket route, and `subscriptions/listen` is served.) **v2**: federation; A2A gateway (separate
 listener); Ed25519 signatures; hub mode.
 
 Anything not listed is out of scope for v1; additions require a spec revision first.

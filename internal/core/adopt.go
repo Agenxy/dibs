@@ -1,0 +1,208 @@
+package core
+
+import "time"
+
+// Adoption: moving an abandoned agent's mail onto a live one.
+//
+// Split out of apply.go because that file reached the 2000-line limit, and this
+// is the one operation in the fold that touches another agent's mailbox: it is
+// worth being able to read it whole.
+
+// applyAdoptAgent moves an abandoned agent's mail onto a live one.
+//
+// "Abandoned" is a state, not an opinion: the source must not be active. An
+// active agent is reading its own mail, and moving it would be theft dressed as
+// recovery. Everything else about the source is left alone, including its
+// record and its history, because the ledger refers to it and a board that
+// erased the origin of six messages would be lying about where they came from.
+//
+// The role is NOT transferred. A role is a decision the operator made about an
+// identity, and quietly carrying "coordinator" across on the strength of a
+// mailbox recovery would grant a power nobody granted: `dibs admin coordinator`
+// exists and is one command.
+func (s *State) applyAdoptAgent(op *Op, l *Agent, now time.Time) (Result, []Event, error) {
+	if !op.AdoptAuthorised {
+		return nil, nil, errf("E_NOT_PERMITTED",
+			"adopting another agent's mailbox is the human's call: unlock as yourself with "+
+				"human_unlock, or ask them to promote you with `dibs admin coordinator <you>`",
+			"adopt_agent requires the human at this machine, or a coordinator or admin")
+	}
+	from := s.Agents[op.To]
+	if from == nil {
+		return nil, nil, errf("E_NO_AGENT", "check the id on the board", "no agent %q", op.To)
+	}
+	into := l
+	if op.Space != "" { // adopting on somebody else's behalf
+		if into = s.Agents[op.Space]; into == nil {
+			return nil, nil, errf("E_NO_AGENT", "check the id on the board", "no agent %q", op.Space)
+		}
+	}
+	if from.ID == into.ID {
+		return nil, nil, errf("E_BAD_TARGET", "name the abandoned agent, not the one adopting it",
+			"an agent cannot adopt itself")
+	}
+	if from.Status == StatusActive {
+		return nil, nil, errf("E_AGENT_ACTIVE",
+			"an active agent is reading its own mail; there is nothing abandoned to recover",
+			"agent %q is still active", from.ID)
+	}
+	if into.Status == StatusClosed || into.Status == StatusArchived {
+		return nil, nil, errf("E_AGENT_CLOSED",
+			"adopt into an agent that can still read: a retired one receives nothing",
+			"agent %q is retired", into.ID)
+	}
+	moved := s.readdressMail(from, into, op.V7Semantics)
+	// The actor's durable checkpoint, which the common path sets and this one
+	// returns before reaching.
+	//
+	// Adoption returns straight out of the dispatcher, so it misses
+	// `l.LastCoordination = now` along with everything else after that point.
+	// The engine's derived `seen` map hides it while the daemon runs, and that
+	// map is deliberately not replayable: restart, and the adopter is judged
+	// against whatever checkpoint it had BEFORE performing a ledgered
+	// operation, so an active agent that has just done something can be swept
+	// stale immediately. Found by a pre-release review.
+	l.LastCoordination = now
+	evs := []Event{{
+		Type: "agent.updated", Agent: into.ID,
+		Data: map[string]any{"adopted_from": from.ID, "messages": moved},
+	}}
+	evs = append(evs, s.adoptedMailEvents(into, from)...)
+	serial := s.finish(&evs, now)
+	return Result{
+		"ok": true, "from": from.ID, "into": into.ID, "messages": moved,
+		// WHAT MOVED IS THE MAIL THAT EXISTED, and the wording has to say so.
+		//
+		// This read "only where its mail is delivered has changed", which a
+		// careful agent took to mean a standing redirect: it announced that it
+		// was now the delivery address for that NAME and would hand the address
+		// back if the original returned. Nothing here creates a rule. The loop
+		// above re-addresses the messages that exist at this instant, and mail
+		// sent afterwards goes to whoever it is addressed to, including the
+		// original the moment it comes back.
+		//
+		// The difference is the whole safety of the operation: a standing
+		// redirect would be a coordinator-approvable interception of a live
+		// agent's mail, and this is a one-time recovery of mail nobody could
+		// read. Saying it the ambiguous way invited the reader to believe the
+		// dangerous one.
+		"note":   adoptNote(moved),
+		"serial": serial,
+	}, evs, nil
+}
+
+// adoptNote is the wording BOTH adoption paths return, and it lives here so
+// there is one of it.
+//
+// There are two ways a mailbox moves: `adopt_agent` directly, above, and
+// approving a `request` that carries `adopt`, in apply.go. They are the same
+// operation with the same consequences, and they had two hand-written notes.
+// Round forty-five fixed the dangerous wording on this one and left the other
+// saying "only where its mail is delivered has changed", so an agent that got
+// there by the approval route was still being told the thing that made a
+// careful reader announce itself as the standing delivery address for a name.
+// A second copy of a sentence is a second chance to be wrong about it, which
+// is a lesson this repository has already paid for in its embedded skills file
+// and its plugin manifests.
+func adoptNote(moved int) string {
+	return "read them with inbox. This moved the " + itoa(moved) + " message(s) " +
+		"that existed just now, once: it is not a standing redirect. The source " +
+		"agent keeps its history, and anything sent to it from here on reaches " +
+		"IT, including after it comes back"
+}
+
+// readdressMail moves the abandoned agent's mailbox to the agent adopting it,
+// and returns how many messages moved.
+//
+// It honours the SOURCE's watermark, which the loop it replaces did not.
+// TruncatedBefore says "mail below this is not mine": it is what stops a name
+// that comes back from being handed the previous occupant's mail, since an id
+// is derived from the name and mail can outlive the row it was addressed to.
+// Adoption read every message matching the id and readdressed it, so the one
+// path that exists to recover an abandoned mailbox also disclosed the mail that
+// mailbox had already been told was not its own. Authorisation to recover an
+// identity is not authorisation to read its predecessor's mail, and the
+// approver is shown a count, so nothing about the request says that is what
+// they are granting. Found by the pre-release review, with a reproduction.
+//
+// Not retroactive, despite being a change inside the fold. TruncatedBefore is
+// raised in exactly two places: a register op carrying V7Semantics, which no
+// ledger written before this release contains, and the retention sweep, which
+// DELETES the messages it covers. So on any older ledger this filters nothing,
+// because there is nothing below the watermark left to filter.
+func (s *State) readdressMail(from, into *Agent, v7 bool) int {
+	moved := 0
+	for _, m := range s.Messages {
+		// THE HISTORICAL RULE FOR HISTORICAL OPS. v0.0.6 moved every message
+		// addressed to the source, watermark and readability notwithstanding;
+		// an heir in such a ledger then answered one of them, and that answer
+		// is on disk. Filtering here for a v0.0.6 op skips the move, and the
+		// recorded answer replays to E_NO_MESSAGE: the daemon refuses its own
+		// history. The filter is right and stays, for ops that were written
+		// under it. Found by the pre-release review, round two.
+		if !v7 {
+			if m.To != from.ID {
+				continue
+			}
+			m.AdoptedFrom, m.AdoptedAt = from.ID, s.Serial+1
+			m.To = into.ID
+			moved++
+			continue
+		}
+		// readable(), so what moves is what the heir can actually open. This
+		// counted consumed records too and the note beside the count says "read
+		// them with inbox", so a mailbox holding one unread message and one
+		// acknowledged one reported two and showed one. The source keeps its
+		// finished history, which is what the note already promises.
+		// The same exemption Inbox applies: mail adopted INTO the source sits
+		// below its watermark by construction and is its to pass on. Without
+		// this a second adoption passed the emptiness check, which reads Inbox,
+		// and moved nothing. Found by the pre-release review, round three.
+		fenced := m.Serial < from.TruncatedBefore && !s.adoptedFor(m, from.ID)
+		if m.To != from.ID || fenced || !m.readable() {
+			continue
+		}
+		// s.Serial+1 is the serial finish will give this op: the fold's own
+		// clock, so replay records the same one.
+		m.AdoptedFrom, m.AdoptedAt = from.ID, s.Serial+1
+		m.To = into.ID
+		moved++
+	}
+	return moved
+}
+
+// adoptedMailEvents is one event per blocking message an adoption moved into
+// the heir, addressed TO the heir, so the wake dispatcher and the inbox
+// subscription treat recovered mail as arrived mail. Adoption emitted only
+// agent.updated, which names nobody as a recipient, so a coordinator recovering
+// pending questions into a dormant agent got success and neither wake route
+// told that agent anything was waiting. Found by the pre-release review, round
+// twenty-seven.
+func (s *State) adoptedMailEvents(into, from *Agent) []Event {
+	var evs []Event
+	for _, serial := range sortedKeys(s.Messages) {
+		m := s.Messages[serial]
+		if m.To != into.ID || m.AdoptedFrom != from.ID || m.Terminal() {
+			continue
+		}
+		// MOVED BY THIS OP. The filter matched the source and the heir and
+		// never asked when the move happened, so a second adoption from the
+		// same source announced every earlier one's mail again as a new
+		// blocking arrival, to the subscription and to the wake. The move
+		// stamps the serial this op will finish at. Found by the pre-release
+		// review, round fifty.
+		if m.AdoptedAt != s.Serial+1 {
+			continue
+		}
+		switch m.Type {
+		case MsgQuestion, MsgRequest, MsgHandoff:
+		default:
+			continue
+		}
+		evs = append(evs, Event{
+			Type: "message.adopted", Agent: from.ID, To: into.ID,
+			Data: map[string]any{"msg_serial": m.Serial, "msg_type": m.Type, "from": m.From},
+		})
+	}
+	return evs
+}

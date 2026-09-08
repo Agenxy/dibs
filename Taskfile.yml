@@ -45,7 +45,7 @@ tasks:
   presence:
     desc: >-
       Compile the Touch ID presence helper (macOS only). Separate from `build`
-      because Dibs ships CGO_ENABLED=0 and cross-compiles to four targets,
+      because Dibs ships CGO_ENABLED=0 and cross-compiles to three targets,
       linking LocalAuthentication into the daemon would break every non-macOS
       build. The daemon execs this and degrades to the admin password when it is
       absent, so a platform without it loses one affordance, not the product.
@@ -97,10 +97,9 @@ tasks:
       - task: install:sign
         vars: { DEST: '{{.DEST}}' }
       - '{{.DEST}}/dibs version'
-      - |
-        echo "installed to {{.DEST}}"
-        echo "a running dibd keeps the old code until you restart it:"
-        echo "  dibs upgrade"
+      - echo "installed to {{.DEST}}"
+      - echo "a running dibd keeps the old code until you restart it:"
+      - echo "  dibs upgrade"
 
   install:sign:
     # Sign with a STABLE identity when one is configured, because macOS keys a
@@ -202,23 +201,7 @@ tasks:
     # reviewer that is NOT what wrote the code does the job. What it is pointed
     # at matters more than which one it is: docs/REVIEW.md holds the brief.
     cmds:
-      - cmd: |
-          if ! command -v codex >/dev/null 2>&1; then
-            echo "no reviewer found: install codex, or run docs/REVIEW.md's brief"
-            echo "through whichever model you have. The point is that it is not the"
-            echo "one that wrote the change."
-            exit 1
-          fi
-          # stdin closed, because the prompt is an argument and the reviewer
-          # needs nothing from it. Left open, `codex exec` waits on stdin when it
-          # is not a terminal: run from a script, or after anything that consumed
-          # stdin, this task printed "Reading additional input from stdin..." and
-          # sat there until it was killed. A release gate that hangs instead of
-          # reviewing is a release gate somebody stops running.
-          codex exec "$(cat docs/REVIEW.md)
-
-          The diff under review is: git diff $(git describe --tags --abbrev=0)..HEAD
-          Read it with git, in pieces if you need to. Work read-only." < /dev/null
+      - go run ./tools/reviewrelease
 
   test:dev:
     env:
@@ -267,7 +250,7 @@ tasks:
       # globs for a binary. It is the only dibd on this machine that will
       # answer a presence check from an environment variable.
       - go build -tags dibdev -o bin/dibd-dev ./cmd/dibd
-      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - task: e2e:install
       - bun internal/mcp/e2e/human_e2e.ts
 
   test:panel:
@@ -282,7 +265,7 @@ tasks:
     desc: "Board panel end-to-end: real Chrome, real AppBridge, real daemon"
     deps: [build]
     cmds:
-      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - task: e2e:install
       - DIBD=$PWD/bin/dibd bun internal/mcp/e2e/panel_e2e.ts
 
   panel:inspect:
@@ -294,7 +277,7 @@ tasks:
       re-reads, which needs a daemon built with -tags dibdev unless you want a
       real fingerprint prompt (see CONTRIBUTING.md).
     cmds:
-      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - task: e2e:install
       - bun internal/mcp/e2e/panel_inspect.ts {{.CLI_ARGS}}
 
   test:web:
@@ -309,7 +292,7 @@ tasks:
     desc: Web board end-to-end, including the admin gate
     deps: [build]
     cmds:
-      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - task: e2e:install
       - DIBD=$PWD/bin/dibd DIBS=$PWD/bin/dibs bun internal/mcp/e2e/web_e2e.ts
 
   test:guard:
@@ -324,7 +307,7 @@ tasks:
     desc: "Claim guard end-to-end: the real stdio bridge and the real opencode plugin"
     deps: [build]
     cmds:
-      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - task: e2e:install
       - DIBD=$PWD/bin/dibd DIBS=$PWD/bin/dibs bun internal/mcp/e2e/guard_e2e.ts
 
   test:space:
@@ -339,7 +322,7 @@ tasks:
     desc: "Spaces end-to-end: auto-join, exclusivity, announcements, over real HTTP"
     deps: [build]
     cmds:
-      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - task: e2e:install
       - DIBD=$PWD/bin/dibd DIBS=$PWD/bin/dibs MATCH_REPO=$PWD bun internal/mcp/e2e/channel_e2e.ts
 
   e2e:deps:
@@ -348,9 +331,16 @@ tasks:
     # chain written out twice. Task running is what the runner is for, and a
     # workflow's embedded shell is a shell script that happens to live in YAML:
     # untyped, untestable, and duplicated in this case.
+    dir: internal/mcp/e2e
     cmds:
-      - cd internal/mcp/e2e && bun install --frozen-lockfile
-      - cd internal/mcp/e2e && bunx playwright install --with-deps chromium
+      - bun install --frozen-lockfile
+      - bunx playwright install --with-deps chromium
+
+  e2e:install:
+    desc: "The e2e suites' bun packages, in their own directory (no cd in a command)"
+    dir: internal/mcp/e2e
+    cmds:
+      - bun install --frozen-lockfile
 
   release:check:
     desc: "Validate .goreleaser.yml against the pinned GoReleaser"
@@ -392,7 +382,7 @@ tasks:
     desc: "[wake.exec] end-to-end: a real dibs.toml, a real hook, a real subprocess"
     deps: [build]
     cmds:
-      - cd internal/mcp/e2e && bun install --frozen-lockfile
+      - task: e2e:install
       - DIBD=$PWD/bin/dibd bun internal/mcp/e2e/wake_e2e.ts
 
   test:sidecar:
@@ -428,14 +418,7 @@ tasks:
       N: '{{.N | default "40"}}'
     cmds:
       - task: build
-      - |
-        if ! curl -sf -m 3 {{.EMBED_URL}}/v1/embeddings -H 'content-type: application/json' \
-             -d '{"model":"{{.EMBED_MODEL}}","input":["probe"]}' >/dev/null 2>&1; then
-          echo "no embeddings service at {{.EMBED_URL}}"
-          echo "  ollama:  brew install ollama && ollama serve && ollama pull {{.EMBED_MODEL}}"
-          echo "  or set EMBED_URL/EMBED_MODEL to any OpenAI-compatible endpoint"
-          exit 1
-        fi
+      - go run ./tools/embedprobe -url {{.EMBED_URL}} -model {{.EMBED_MODEL}}
       - echo "═══ tier 0 ═══"
       - ./bin/dibs calibrate -n {{.N}}
       - echo "═══ tier 2. {{.EMBED_MODEL}} ═══"
@@ -451,7 +434,6 @@ tasks:
     desc: Coverage on core + ledger. SPEC §17 floor of 85%, enforced
     cmds:
       - go test -race -covermode=atomic -coverprofile=coverage.out ./internal/core/ ./internal/ledger/
-      - go tool cover -func=coverage.out | tail -3
       # Enforced, not printed. This step exited 0 whatever the number said, so
       # the §17 floor was a sentence in a document while coverage sat six tenths
       # of a point above it.
@@ -485,13 +467,12 @@ tasks:
   crosscompile:
     desc: Build every release target, so a portability break fails here not at tag time
     # In `ci` because CONTRIBUTING.md promises it is, and because the failure it
-    # catches is invisible on the host: Dibs ships CGO_ENABLED=0 to four targets,
+    # catches is invisible on the host: Dibs ships CGO_ENABLED=0 to three targets,
     # and a Linux-only build break stays hidden on a Mac until the release runs.
     cmds:
       - GOOS=linux  GOARCH=amd64 go build ./...
       - GOOS=linux  GOARCH=arm64 go build ./...
       - GOOS=darwin GOARCH=arm64 go build ./...
-      - GOOS=darwin GOARCH=amd64 go build ./...
 
   smoke:
     desc: Run the built binaries and read what they say about themselves
@@ -508,10 +489,21 @@ tasks:
     # five releases and the Claude Desktop one still did, both valid JSON,
     # both passing every validator, neither caught by anything.
     #
-    # Stamps and stops. Tagging publishes signed artifacts, moves the Homebrew
-    # cask and writes to the MCP registry, so it stays the owner's to perform;
-    # this prints the commands rather than running them.
-    desc: 'Stamp a release across the changelog and every manifest: task release VERSION=0.0.6'
+    # Stamps and stops. Tagging publishes signed artifacts and writes to the MCP
+    # registry, so it stays the owner's to perform; this prints the commands
+    # rather than running them.
+    #
+    # It does NOT move the Homebrew cask, which this line used to claim.
+    # GoReleaser pushes the updated cask to a `cask-<version>` branch of the tap
+    # and cannot open the pull request, because the deploy key it uses can push
+    # and cannot call the API. Until somebody merges that branch, the release is
+    # published and `brew upgrade` still serves the previous build.
+    #
+    # The example version is a placeholder and has to look like one: it said
+    # `VERSION=0.0.6`, which is a version already tagged, so the command as
+    # printed is refused by the stamper. An instruction that cannot be followed
+    # is worse than none, at the step where somebody is following instructions.
+    desc: 'Stamp a release across the changelog and every manifest: task release VERSION=<next>'
     requires:
       vars: [VERSION]
     cmds:

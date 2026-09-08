@@ -89,6 +89,9 @@ func run() error {
 	out := flagValue("-o", "bin/Dibs.app")
 	version := flagValue("-version", "0.0.0")
 	src := flagValue("-src", "internal/notify/app")
+	// Empty means this machine. The release states its target; `task app` does
+	// not, because a local build is for the Mac doing the building.
+	swiftTarget = flagValue("-target", "")
 
 	work, err := os.MkdirTemp("", "dibs-app")
 	if err != nil {
@@ -98,8 +101,16 @@ func run() error {
 
 	// The icon renderer is a build-time tool: it draws the mark and exits, and
 	// nothing ships it.
+	//
+	// SO IT IS BUILT FOR THIS MACHINE, not for the release target. Compiling it
+	// with the shipped helper's `-target` made it an arm64 binary that the very
+	// next line tries to execute, which an Intel Mac cannot do: `task build`
+	// then failed there, and building from source is the documented answer for
+	// anyone whose Mac the release no longer covers. A tool that runs during the
+	// build and a file that ships in the archive have opposite requirements, and
+	// one function serving both is how they got confused.
 	iconBin := filepath.Join(work, "dibs-icon")
-	if err := swiftc(iconBin, filepath.Join(src, "icon_darwin.swift")); err != nil {
+	if err := swiftcHost(iconBin, filepath.Join(src, "icon_darwin.swift")); err != nil {
 		return err
 	}
 	iconset := filepath.Join(work, "Dibs.iconset")
@@ -165,10 +176,53 @@ func identity() string {
 	return "-"
 }
 
+// swiftTarget is the triple the shipped notifier is compiled for, or "" for
+// this machine. Set by -target; the release passes one, a local build does not.
+var swiftTarget string
+
+// swiftc builds the notifier for the Mac this bundle is FOR.
+//
+// AN EXPLICIT TARGET, not the build host's default. Built without one this was
+// whatever the release runner happened to be, and the release copies a single
+// bundle into every archive: `dibs-notify` was arm64-only inside the Intel
+// tarball, where the passive path returns the exec error rather than falling
+// back to osascript, so the notifier was simply absent on that platform while
+// every check was green.
+//
+// The answer is not a fat binary. Dibs does not ship a Mac Intel build (see the
+// `ignore` in .goreleaser.yml), so the release has one target and states it.
+//
+// BUT THE TARGET IS AN INPUT, not a constant. Hardcoding the release's answer
+// broke the escape hatch the release drop documents: an Intel Mac told to build
+// from source got native Go binaries, a native presence helper, and an
+// arm64-only notifier beside them. The runtime finds an executable at the
+// expected path and runs it rather than falling back, so notifications failed
+// as an unexplained exec error on a machine where everything else worked. A
+// local build is for the machine doing the building; only the release is for a
+// target somewhere else.
+//
+// macos12 when a target is given, where the presence helper uses macos11: this
+// source calls interruptionLevel and timeSensitiveSetting unconditionally,
+// which are macOS 12 APIs, so 12 is what it already required at runtime.
 func swiftc(out, src string) error {
-	// #nosec G204 -- both paths are built from this tool's own flags and the
-	// fixed source directory.
-	// #nosec G204 -- see the comment above: build-tool paths, not input.
+	args := []string{"-O"}
+	if swiftTarget != "" {
+		args = append(args, "-target", swiftTarget)
+	}
+	args = append(args, "-o", out, src)
+	// #nosec G204 -- a target triple from this tool's own flag, and paths built
+	// from its flags and the fixed source directory.
+	if o, err := exec.Command("swiftc", args...).CombinedOutput(); err != nil {
+		return fmt.Errorf("swiftc %s: %w: %s", src, err, o)
+	}
+	return nil
+}
+
+// swiftcHost builds something this build is about to RUN, so it takes the
+// host's own default target. See the icon renderer above.
+func swiftcHost(out, src string) error {
+	// #nosec G204 -- paths built from this tool's own flags and the fixed source
+	// directory.
 	if o, err := exec.Command("swiftc", "-O", "-o", out, src).CombinedOutput(); err != nil {
 		return fmt.Errorf("swiftc %s: %w: %s", src, err, o)
 	}

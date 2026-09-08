@@ -3,6 +3,7 @@ package engine
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/agenxy/dibs/internal/core"
 )
@@ -90,7 +91,8 @@ func TestGetMessageClearsTheNotice(t *testing.T) {
 	// produces: the EVENT serial is its own, and the message it points at is
 	// carried separately. Getting that wrong is what made the first version of
 	// this fix clear nothing.
-	e.pushNoticeFor("reader", "sender answered your question", serial+9, serial)
+	e.pushNoticeFor("reader", "sender answered your question", serial+9, serial,
+		time.Unix(1700000000, 0))
 
 	if _, err := e.GetMessage(ctx, readerTok, serial); err != nil {
 		t.Fatal(err)

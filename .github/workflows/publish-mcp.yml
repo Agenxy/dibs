@@ -4,15 +4,34 @@
 # the name; the registry is where a harness or an agent looks up MCP servers it
 # has never heard of, which for this product is the audience that matters.
 #
-# Runs on the same trigger as the release, so the registry entry, the GitHub
-# release and the Homebrew cask all track a tag and cannot drift from each
-# other. The version is taken FROM THE TAG rather than read from server.json, so
-# a stamped file that somebody forgot to bump cannot publish a lie.
+# CALLED BY THE RELEASE, not triggered beside it.
+#
+# This listened for the same tag push the release does, and the comment here
+# said that meant the registry entry, the GitHub release and the Homebrew cask
+# "cannot drift from each other". Same trigger is correlation and nothing else:
+# the two workflows start together and neither waits for the other, so this one
+# could authenticate and publish while the release was still running its gate,
+# or after that gate had FAILED and no release or artifact existed. The official
+# registry would then name a version this repository had refused to ship, and
+# `mcp-publisher` cannot be un-published by rerunning anything.
+#
+# It is a reusable workflow now, called from release.yml behind `needs:`, so
+# ordering and success are GitHub's to enforce rather than something a comment
+# asserts. One definition, because two copies of these steps is the drift this
+# repository pays for most often.
+#
+# The version is taken FROM THE RELEASE rather than read from server.json, so a
+# stamped file that somebody forgot to bump cannot publish a lie.
 name: Publish to MCP Registry
 
 on:
-  push:
-    tags: ["v*"]
+  # Called by release.yml after the release job succeeds.
+  workflow_call:
+    inputs:
+      version:
+        description: "Version to publish, e.g. 0.0.5"
+        required: false
+        type: string
   # So an already-tagged version can be published without moving the tag, which
   # this project does not do. Also the recovery path when the registry is down
   # at release time: the artifacts are already out, only this step needs redoing.
@@ -21,6 +40,7 @@ on:
       version:
         description: "Version to publish, e.g. 0.0.5 (defaults to the latest release)"
         required: false
+        type: string
 
 permissions:
   contents: read
@@ -32,8 +52,8 @@ jobs:
       id-token: write # OIDC proves we own the io.github.agenxy namespace
       contents: read
     steps:
-      # Checks out whatever ref this ran from: the tag on a tag push, the branch
-      # on a manual dispatch. NOT the version being published, which was the
+      # Checks out whatever ref this ran from: the tag when release.yml calls
+      # it, the branch on a manual dispatch. NOT the version being published, which was the
       # first thing that broke here: dispatching v0.0.5 checked out a tag that
       # predated server.json, and jq failed on a file that did not exist yet.
       # The manifest describes the server; the version says which release it is.
