@@ -347,6 +347,26 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	op.ClaimVerified = false
 	op.AdoptAuthorised = false
 
+	// EVERY op this build writes says which semantics it was written under.
+	//
+	// Stamped at ingress and carried into the ledger, so replay applies a
+	// v0.0.7 repair to v0.0.7 ops and leaves older ones exactly as they were
+	// folded when they were written. See Op.V7Semantics: two fixes this cycle
+	// changed what an EXISTING op does, which rewrites history and is the one
+	// hazard this repository has paid for repeatedly.
+	//
+	// FIRST, BEFORE ANY GUARD THAT READS IT, and it used to be stamped two
+	// hundred lines below. The alias guard asks registerLandsOn "will the fold
+	// land this register on that row", and that question reaches
+	// pickReattachTarget, which answers by the HISTORICAL rule when this flag
+	// is unset: alias matches excluded. So the guard judged by v0.0.6's rule,
+	// threw away a thread the fold then went on to accept by v0.0.7's, and the
+	// two disagreed about the same op. The row reattached and its wake target
+	// silently stayed on the older thread. A flag that says what an op IS has
+	// no business being set after the code that asks. Found by the pre-release
+	// review, round seventy-four.
+	op.V7Semantics = true
+
 	// Registrations minted by THIS version restore a recovered agent's nonce;
 	// ops already on disk do not, and must not start to. Set at ingress and
 	// carried into the ledger, so replay applies the decision that was made
@@ -622,15 +642,6 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	if err := e.refuseNoOpRetitle(op); err != nil {
 		return nil, err
 	}
-
-	// EVERY op this build writes says which semantics it was written under.
-	//
-	// Stamped at ingress and carried into the ledger, so replay applies a
-	// v0.0.7 repair to v0.0.7 ops and leaves older ones exactly as they were
-	// folded when they were written. See Op.V7Semantics: two fixes this cycle
-	// changed what an EXISTING op does, which rewrites history and is the one
-	// hazard this repository has paid for repeatedly.
-	op.V7Semantics = true
 
 	if err := e.refuseClaimWhenCoordinatorExists(op); err != nil {
 		return nil, err

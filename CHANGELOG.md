@@ -554,6 +554,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Recovering an agent could redirect its wakes to a thread it had left.**
+  The guard that decides whether a registration may claim a harness thread asks
+  whether the fold will land that registration on the row holding it, and that
+  question is answered by one rule for ops this version writes and another for
+  older ones. The flag saying which was stamped after the guard ran, so the
+  guard judged by the old rule and discarded the thread the harness was
+  actually in, while the fold went on to reattach the row by the new one. The
+  agent came back reattached with every wake aimed at the previous thread. The
+  flag is now stamped before any guard reads it.
+
 - **An agent's guessed-session list grew without bound.** Session aliases are
   capped at eight and the oldest are evicted, but the record of which ones were
   guesses was never evicted with them. A hundred guessed bindings left eight
