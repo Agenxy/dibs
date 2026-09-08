@@ -2,6 +2,64 @@ package core
 
 import "time"
 
+// resumeWork is what a live resume would CHANGE, and whether it owes the row
+// its nonce back. Split from resumeLiveAgent because that function had grown
+// past what one reader can hold: this half is a list of independent reasons a
+// resume is not the response-loss retry it was originally written for, each
+// one paid for by its own defect, and it reads better as the list it is.
+//
+// held is computed here and returned, because currentFrom needs the answer as
+// it was BEFORE anything mutated (round forty-four).
+func (l *Agent) resumeWork(op *Op) (held, changed, restoreNonce bool) {
+	alias := op.SessionAlias
+	// A return to a thread bound earlier is a change: nothing in the sets
+	// moves, and the activation to wake does. Found by the pre-release review,
+	// round eight.
+	held = op.SessionID != "" && l.holdsSession(op.SessionID)
+	changed = alias != "" && (!l.holdsSession(alias) || l.GuessedSession(alias))
+	// A STATED session_id IS A CHANGE TOO (round thirteen), and so is any op
+	// that would leave a different session current (round eight). Asked of
+	// the fold's own rule rather than field by field: an identical retry
+	// stating a synthetic primary beside a thread alias read as a change on
+	// every call, because the primary is never the current session while
+	// the thread is, and was ledgered every time. Found by the pre-release
+	// review, round fifty-seven.
+	changed = changed || (op.SessionID != "" && l.SessionID != op.SessionID)
+	changed = changed || l.currentAfter(op, held) != l.CurrentSession
+	// A GUESS CONFIRMED IS A CHANGE. A stated session_id that the row already
+	// held as an inference left the guess standing, so another agent's
+	// metadata could still take the active session. Found by the pre-release
+	// review, round fourteen.
+	changed = changed || (op.SessionID != "" && l.GuessedSession(op.SessionID))
+	// A STATED PROCESS IS A CHANGE. A bridge that restarted inside the TTL
+	// under the same session id stated its new pid, and this path never
+	// applied one: the row kept the dead bridge's pid, the next liveness
+	// sweep found it dead, and the agent that had just registered was
+	// retired with its claims released. Found by the pre-release review,
+	// round forty-three.
+	changed = changed || (op.PID != 0 && op.PID != l.PID)
+	// A NONCE TO PUT BACK IS ITSELF A CHANGE. Archival blanks Agent.Nonce and
+	// keeps the nonce INDEX, so a v0.0.6 row recovered into an ACTIVE state
+	// reaches this path carrying no nonce, and the restoration lived only in
+	// the dormant branch of applyRegister. An agent that keeps working stays
+	// live and therefore stays on this path: AgentIdentity returns "" forever
+	// and the role dibs.toml grants it can never reconcile, which is the exact
+	// harm Op.RestoreNonce was added to repair, reachable by the one route it
+	// did not cover. Found by the pre-release review, round seventy.
+	//
+	// Folded into `changed` rather than done quietly, because it IS replayable
+	// state: an op that changes state without advancing the serial is the
+	// invariant this repository guards hardest, and the engine ledgers exactly
+	// when the serial moves.
+	//
+	// GATED on the recorded decision, like the other site. Historical ops carry
+	// no RestoreNonce, so this is false for every one of them and a v0.0.6
+	// ledger replays to precisely what it did before.
+	restoreNonce = op.RestoreNonce && l.Nonce == "" && op.Nonce != ""
+	changed = changed || restoreNonce
+	return held, changed, restoreNonce
+}
+
 // resumeLiveAgent answers a register whose nonce matched an agent that is still
 // active and was last heard from inside one TTL.
 //
@@ -40,34 +98,11 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 	// stranger could still reclaim it. bindHarnessSessionAs upgrades the
 	// provenance; the gate has to let it run for that case too. Found by the
 	// pre-release review, round two.
-	alias := op.SessionAlias
-	// A return to a thread bound earlier is a change: nothing in the sets
-	// moves, and the activation to wake does. Found by the pre-release review,
-	// round eight.
-	held := op.SessionID != "" && l.holdsSession(op.SessionID)
-	changed := alias != "" && (!l.holdsSession(alias) || l.GuessedSession(alias))
-	// A STATED session_id IS A CHANGE TOO (round thirteen), and so is any op
-	// that would leave a different session current (round eight). Asked of
-	// the fold's own rule rather than field by field: an identical retry
-	// stating a synthetic primary beside a thread alias read as a change on
-	// every call, because the primary is never the current session while
-	// the thread is, and was ledgered every time. Found by the pre-release
-	// review, round fifty-seven.
-	changed = changed || (op.SessionID != "" && l.SessionID != op.SessionID)
-	changed = changed || l.currentAfter(op, held) != l.CurrentSession
-	// A GUESS CONFIRMED IS A CHANGE. A stated session_id that the row already
-	// held as an inference left the guess standing, so another agent's
-	// metadata could still take the active session. Found by the pre-release
-	// review, round fourteen.
-	changed = changed || (op.SessionID != "" && l.GuessedSession(op.SessionID))
-	// A STATED PROCESS IS A CHANGE. A bridge that restarted inside the TTL
-	// under the same session id stated its new pid, and this path never
-	// applied one: the row kept the dead bridge's pid, the next liveness
-	// sweep found it dead, and the agent that had just registered was
-	// retired with its claims released. Found by the pre-release review,
-	// round forty-three.
-	changed = changed || (op.PID != 0 && op.PID != l.PID)
+	held, changed, restoreNonce := l.resumeWork(op)
 	if op.V7Semantics && changed {
+		if restoreNonce {
+			l.Nonce = op.Nonce
+		}
 		if l.takeActivation(op) {
 			// A NEW ACTIVATION RE-ARMS THE AWARENESS GATE, as the other two
 			// recovery paths do: a same-nonce register inside the TTL that

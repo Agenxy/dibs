@@ -554,6 +554,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A recovered agent that kept working never got its durable identity back.**
+  Archival blanks an agent's nonce while keeping the index that finds it, and
+  the repair that puts it back reached only the dormant recovery path. An agent
+  that comes back and stays busy is active, so a later registration with the
+  same nonce took the live-resume path instead and restored nothing. Its
+  fingerprint stayed empty and a role declared in `dibs.toml` could never
+  reconcile onto it, for as long as it kept working. Both paths now restore it,
+  still only for registrations that recorded the decision, so a v0.0.6 ledger
+  replays exactly as before.
+
 - **A rebuilt inbox notice could be dropped as already delivered.** When a
   subscription's cursor falls past the ring, the notices it missed are rebuilt
   from the mail itself. Those carry no sub-serial, so they all land on zero,
