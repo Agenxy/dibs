@@ -136,7 +136,20 @@ func (w *selfWaker) wakeWhile(notice string, still func() bool) error {
 		// else arrived for it. One deferred notice is armed for the moment
 		// the cooldown ends, and every further arrival folds into that one.
 		// Found by the pre-release review, round six.
-		if !w.pending {
+		if w.pending {
+			// AND THE NEWEST ARRIVAL OWNS IT. Folding in left the timer's
+			// ownership test as the FIRST arrival's, so a notice from a live
+			// stream could fold into one armed by a stream since retired, and
+			// then be dropped when that dead test failed. The watcher had
+			// already advanced the new stream's cursor on the success this
+			// returns, so the reconnect excluded the event too and the mail
+			// was announced by nothing at all: the round seventy-two guard
+			// turned into a way to LOSE a wake, which is worse than the
+			// spurious one it was added to stop. The arrival that just landed
+			// came from a stream that is live by construction. Found by the
+			// pre-release review, round seventy-three.
+			w.still = still
+		} else {
 			w.arm(wait, notice, still)
 		}
 		w.mu.Unlock()
@@ -162,12 +175,25 @@ func (w *selfWaker) wakeWhile(notice string, still func() bool) error {
 			// twenty-five.
 			recordWakePending(true)
 			w.retry = true
+			w.still = still
 			w.timer = time.AfterFunc(w.cooldown, func() {
 				w.mu.Lock()
 				w.pending, w.retry = false, false
+				keep := w.still
+				w.still = nil
 				w.mu.Unlock()
 				recordWakePending(false)
-				if rerr := w.wake(notice); rerr != nil {
+				// THE RETRY CARRIES THE SAME TEST. It was armed through the
+				// unconditional wake(), which discards it, so a delivery that
+				// failed and was retried after its subscription was retired
+				// interrupted the session the agent had left: the one path
+				// round seventy-two's guard did not reach. Found by the
+				// pre-release review, round seventy-three.
+				if keep != nil && !keep() {
+					slog.Debug("the subscription that owed this retry was retired; dropping it")
+					return
+				}
+				if rerr := w.wakeWhile(notice, keep); rerr != nil {
 					slog.Debug("the retried notice did not land either", "err", rerr)
 				}
 			})

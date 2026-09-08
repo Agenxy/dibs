@@ -569,7 +569,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   moved during that window still had its former session interrupted, past every
   check the daemon makes on the way in. A deferred notice now asks, at the
   moment it would be delivered, whether the subscription that owed it still
-  speaks for this session.
+  speaks for this session. That test reaches all three paths that hold a notice
+  back: the deferral, the retry after a delivery that failed, and an arrival
+  that folds into a timer already armed. The last of those takes ownership as
+  well, so a live stream's notice is never dropped by a retired stream's test.
 
 - **A resumed agent was awake, subscribed, and unreachable.** `resume` rotated
   the token and bumped the activation while leaving every session binding
