@@ -554,6 +554,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An agent's guessed-session list grew without bound.** Session aliases are
+  capped at eight and the oldest are evicted, but the record of which ones were
+  guesses was never evicted with them. A hundred guessed bindings left eight
+  aliases and a hundred provenances, most naming ids the agent no longer holds.
+  That is replayable state, so it accumulated in the ledger and in every replay
+  of it. Eviction now takes the provenance with the alias, for registrations
+  that recorded the decision, so a v0.0.6 ledger still replays to the board it
+  built.
+
+- **A deferred wake could interrupt a session the agent had left.** A notice
+  held back to the end of the cooldown carried nothing but its text, so
+  retiring the subscription that armed it left the timer running. An agent that
+  moved during that window still had its former session interrupted, past every
+  check the daemon makes on the way in. A deferred notice now asks, at the
+  moment it would be delivered, whether the subscription that owed it still
+  speaks for this session.
+
 - **A resumed agent was awake, subscribed, and unreachable.** `resume` rotated
   the token and bumped the activation while leaving every session binding
   pointing at the session the agent had just left. An agent that registered in

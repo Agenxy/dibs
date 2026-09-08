@@ -472,7 +472,7 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 					l.Nonce = op.Nonce
 				}
 				s.dropTakenSession(op, l)
-				l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
+				l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed, op.V7Semantics)
 				l.currentFrom(op, held)
 				// LEDGERED, like every other transition.
 				//
@@ -649,8 +649,8 @@ func (s *State) applyRegister(op *Op, now time.Time) (Result, []Event, error) {
 		}
 	}
 	s.Agents[id] = l
-	l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed) // the name its hooks use, if different
-	l.currentFrom(op, false)                                   // a fresh row held nothing
+	l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed, op.V7Semantics) // the name its hooks use, if different
+	l.currentFrom(op, false)                                                   // a fresh row held nothing
 	if nonce != "" {
 		s.Nonces[nonce] = id
 	}
@@ -953,7 +953,7 @@ func (s *State) applyUpdate(l *Agent, op *Op) (Result, []Event, error) {
 		res["identity"] = l.mergeIdentity(op.Agent)
 	}
 	s.dropTakenSession(op, l)
-	if sid := l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed); sid != "" {
+	if sid := l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed, op.V7Semantics); sid != "" {
 		res["session_id"] = sid
 	}
 	// A participant that HAS no process says so, which is the only way to clear
@@ -1124,7 +1124,7 @@ func (s *State) applyResume(op *Op, now time.Time) (Result, []Event, error) {
 			l.SessionID = op.SessionID
 			l.GuessedSessions = withoutString(l.GuessedSessions, op.SessionID)
 		}
-		l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
+		l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed, op.V7Semantics)
 		l.currentFrom(op, held)
 	}
 	l.Token = op.NewToken
@@ -1184,7 +1184,7 @@ func (s *State) applyAckBoard(l *Agent, op *Op) (Result, []Event) {
 	// check_in is how an agent ALREADY on the board gets the name its hooks
 	// use: it is the one call they all keep making. See bindHarnessSession.
 	s.dropTakenSession(op, l)
-	bound := l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
+	bound := l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed, op.V7Semantics)
 	for _, m := range s.Inbox(l.ID) {
 		if m.State == MsgStatePending {
 			m.State = MsgStateDelivered

@@ -145,3 +145,47 @@ func TestACorrectUnitWithASpacedBinaryPathIsNotCalledDrifted(t *testing.T) {
 			"it and discard whatever the operator tuned in it")
 	}
 }
+
+// A notice deferred to the end of the cooldown carried nothing but its text,
+// so retiring the stream that armed it left the timer running: an agent that
+// moved during the cooldown still had its former session interrupted, past
+// every standing check the daemon makes on the way in.
+func TestADeferredNoticeIsDroppedWhenItsSubscriptionIsRetired(t *testing.T) {
+	sock := sockPath(t)
+	t.Setenv("CLAUDE_CODE_MESSAGING_SOCKET", sock)
+	t.Setenv("CLAUDE_CODE_MESSAGING_TOKEN", "child-token")
+	t.Cleanup(func() { recordWakePending(false) })
+	lines := listenLines(t, sock)
+
+	var iw inboxWatcher
+	iw.cooldown = 400 * time.Millisecond
+	w := iw.sharedWaker()
+	if w == nil {
+		t.Fatal("setup: no waker")
+	}
+	st := &inboxStream{key: "busy", token: "tok", session: "host-1"}
+	iw.mu.Lock()
+	iw.streams = map[string]*inboxStream{"busy": st}
+	iw.mu.Unlock()
+
+	// The first notice lands and spends the cooldown.
+	if err := w.wakeWhile(selfWakeNotice, func() bool { return iw.streamIsCurrent(st) }); err != nil {
+		t.Fatal("setup:", err)
+	}
+	if got := collect(lines, 2, 2*time.Second); len(got) != 2 {
+		t.Fatalf("setup: the first notice put %d line(s) into the session, want 2", len(got))
+	}
+	// A second arrival inside the cooldown is deferred.
+	if err := w.wakeWhile(selfWakeNotice, func() bool { return iw.streamIsCurrent(st) }); err != nil {
+		t.Fatal("setup:", err)
+	}
+	// Before it fires, the stream is retired: the agent moved on.
+	iw.mu.Lock()
+	iw.streams["busy"] = &inboxStream{key: "busy", token: "tok", session: "host-2"}
+	iw.mu.Unlock()
+
+	if got := collect(lines, 2, 2*time.Second); len(got) != 0 {
+		t.Errorf("the deferred notice interrupted this session after its subscription was "+
+			"retired: %d line(s) arrived for a session the agent has left", len(got))
+	}
+}

@@ -53,7 +53,7 @@ func (s *State) reattachBySessionID(op *Op, now time.Time) (Result, []Event) {
 		l.PID, l.ProcStart = op.PID, op.ProcStart
 	}
 	s.dropTakenSession(op, l)
-	l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
+	l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed, op.V7Semantics)
 	l.currentFrom(op, held)
 	// LEDGERED, like every other transition. A branch that rotates a token and
 	// returns no events never advances the serial, so the engine never writes it

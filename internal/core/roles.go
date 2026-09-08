@@ -531,8 +531,8 @@ func (s *State) yieldSessionsHeldElsewhere(l *Agent) {
 	}
 }
 
-func (a *Agent) bindHarnessSessionAs(sid string, guessed bool) string {
-	bound := a.bindHarnessSession(sid)
+func (a *Agent) bindHarnessSessionAs(sid string, guessed, v7 bool) string {
+	bound := a.bindHarnessSession(sid, v7)
 	// AN ALREADY-HELD ID STILL CARRIES PROVENANCE, and this returned early on
 	// one.
 	//
@@ -587,7 +587,7 @@ func withoutString(xs []string, drop string) []string {
 	return out
 }
 
-func (a *Agent) bindHarnessSession(sid string) string {
+func (a *Agent) bindHarnessSession(sid string, v7 bool) string {
 	if sid == "" {
 		return ""
 	}
@@ -621,6 +621,25 @@ func (a *Agent) bindHarnessSession(sid string) string {
 	}
 	a.SessionAliases = append(a.SessionAliases, sid)
 	if n := len(a.SessionAliases); n > maxSessionAliases {
+		// THE PROVENANCE GOES WITH THE ALIAS. Eviction dropped the id and kept
+		// its entry in GuessedSessions, so that list grew without any bound at
+		// all while the aliases stayed at eight: a hundred guessed bindings
+		// left eight aliases and a hundred provenances, most of them naming ids
+		// the agent no longer holds. It is replayable state, so it grows in the
+		// ledger and in every replay of it, which is the shape of leak this
+		// product can least afford.
+		//
+		// GATED, because it is a fold change like the rest of this cycle's.
+		// GuessedSession() is read when deciding whether a resume CHANGED
+		// anything, so dropping these on replay of a v0.0.6 ledger could stop
+		// an op advancing the serial where the original fold advanced it, and
+		// every serial after would disagree. Found by the pre-release review,
+		// round seventy-two.
+		if v7 {
+			for _, gone := range a.SessionAliases[:n-maxSessionAliases] {
+				a.GuessedSessions = withoutString(a.GuessedSessions, gone)
+			}
+		}
 		a.SessionAliases = a.SessionAliases[n-maxSessionAliases:]
 	}
 	return sid

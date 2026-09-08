@@ -116,7 +116,7 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 			l.SessionID = op.SessionID                                         // the new session owns it now
 			l.GuessedSessions = withoutString(l.GuessedSessions, op.SessionID) // stated now
 		}
-		l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed)
+		l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed, op.V7Semantics)
 		l.currentFrom(op, held)
 		// A LEDGERED activation is durable evidence of life. Without this the
 		// engine touched only its transient seen map, and a restart just past

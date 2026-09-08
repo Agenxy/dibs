@@ -47,7 +47,10 @@ type selfWaker struct {
 	last     time.Time // when a notice was last DELIVERED; an attempt spends nothing
 	pending  bool      // a deferred notice is armed for when the cooldown ends
 	timer    *time.Timer
-	retry    bool // the armed timer is a retry of a delivery that FAILED
+	// still is asked before a DEFERRED notice is delivered: the arrival that
+	// armed it may no longer be this session's to announce. nil means always.
+	still func() bool
+	retry bool // the armed timer is a retry of a delivery that FAILED
 }
 
 // selfWakeCooldown is the shortest gap between two notices in one session.
@@ -75,7 +78,51 @@ func newSelfWaker() *selfWaker {
 // Returns an error only for a failure worth reporting. Like every other wake
 // route, a nil error means WRITTEN: this protocol answers nothing, so delivery
 // is still the receiver's to decide and nothing here should claim otherwise.
+// arm holds one notice back to the end of the cooldown. Caller holds w.mu and
+// has checked that nothing is armed already.
+//
+// Split out because wakeWhile carries three separate concerns already, and the
+// deferral is the one with a lifetime of its own: it outlives the call that
+// armed it, which is exactly how it came to outlive the subscription too.
+func (w *selfWaker) arm(wait time.Duration, notice string, still func() bool) {
+	w.pending = true
+	w.still = still
+	recordWakePending(true) // for the in-place upgrade's handoff
+	w.timer = time.AfterFunc(wait, func() {
+		w.mu.Lock()
+		w.pending = false
+		keep := w.still
+		w.still = nil
+		w.mu.Unlock()
+		recordWakePending(false)
+		if keep != nil && !keep() {
+			slog.Debug("the subscription that owed this notice was retired; dropping it")
+			return
+		}
+		if err := w.wakeWhile(notice, keep); err != nil {
+			slog.Debug("could not put the deferred notice into this session", "err", err)
+		}
+	})
+}
+
+// wake puts one notice into this session's own queue, unconditionally: for a
+// notice this bridge owes on its own account, like the one a replaced image
+// left behind.
 func (w *selfWaker) wake(notice string) error {
+	return w.wakeWhile(notice, nil)
+}
+
+// wakeWhile is wake for a notice armed by a SUBSCRIPTION, with the test for
+// whether that subscription still speaks for this session.
+//
+// A notice deferred to the end of the cooldown used to carry nothing but its
+// text, so retiring the stream that armed it left the timer running: an agent
+// that moved to another session during the cooldown still had its former
+// session interrupted, past every standing check the daemon makes on the way
+// in. The test is asked at the moment of delivery, which is the only moment
+// its answer is worth anything. Found by the pre-release review, round
+// seventy-two.
+func (w *selfWaker) wakeWhile(notice string, still func() bool) error {
 	if w == nil {
 		return errors.New("no session socket: this harness publishes none")
 	}
@@ -90,17 +137,7 @@ func (w *selfWaker) wake(notice string) error {
 		// the cooldown ends, and every further arrival folds into that one.
 		// Found by the pre-release review, round six.
 		if !w.pending {
-			w.pending = true
-			recordWakePending(true) // for the in-place upgrade's handoff
-			w.timer = time.AfterFunc(wait, func() {
-				w.mu.Lock()
-				w.pending = false
-				w.mu.Unlock()
-				recordWakePending(false)
-				if err := w.wake(notice); err != nil {
-					slog.Debug("could not put the deferred notice into this session", "err", err)
-				}
-			})
+			w.arm(wait, notice, still)
 		}
 		w.mu.Unlock()
 		return nil
