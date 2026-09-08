@@ -1204,7 +1204,7 @@ func TestReadingTheInboxDoesNotCancelTheExitRecheck(t *testing.T) {
 	// itself: it goes through query(), which sends on e.ops, nil on an engine
 	// with no running loop, so calling it here would block forever rather than
 	// fail. That trap is why the decisions are split from the plumbing.
-	e.noteWakeEnded("busy")
+	e.noteWakeEnded("busy", "")
 	e.retryWakeDecision("busy")
 	if e.recentlyInTouch(l) {
 		t.Error("after its wake command exited, the agent still reads as recently in " +
@@ -1329,7 +1329,7 @@ func TestMailArrivingAfterAWakeExitsIsNotRefusedAsStillWorking(t *testing.T) {
 		t.Fatal("setup: the exit owes a re-check, so this is the arrived-during case " +
 			"and not the one this test names")
 	}
-	e.noteWakeEnded("done")
+	e.noteWakeEnded("done", "")
 
 	// New mail, after all that.
 	if e.recentlyInTouch(l) {
@@ -1431,7 +1431,7 @@ func TestTheWakeExitProducesBothOfItsFactsTogether(t *testing.T) {
 	}
 	e.seen[l.ID] = time.Now()
 
-	e.wakeExitedDecision(l.ID)
+	e.wakeExitedDecision(l.ID, "")
 
 	e.wakers.mu.Lock()
 	running := e.wakers.running[l.ID]

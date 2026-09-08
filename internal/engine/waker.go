@@ -285,8 +285,9 @@ func (e *Engine) maybeWake(ev core.Event) {
 	agent, stamp := l.ID, e.wakeStamp(l.ID)
 	// THE PLAN'S COOLDOWN, not another lookup. See wakePlan.cooldown.
 	cool := cmd.cooldown
+	thread := cmd.thread
 	go func() {
-		defer e.wakeExited(agent)
+		defer e.wakeExited(agent, thread)
 		e.noteWakeAttempt(agent)
 		if e.runWake(cmd, agent) {
 			e.clearWakeAttempts(agent)
@@ -491,8 +492,9 @@ func (e *Engine) retryWakeDecision(agent string) {
 	}
 	stamp := e.wakeStamp(agent)
 	cool := cmd.cooldown
+	thread := cmd.thread
 	go func() {
-		defer e.wakeExited(agent)
+		defer e.wakeExited(agent, thread)
 		n := e.noteWakeAttempt(agent)
 		if e.runWake(cmd, agent) {
 			e.clearWakeAttempts(agent)
@@ -608,9 +610,9 @@ func (e *Engine) wakeFinished(agent string) bool {
 // on e.ops, which is nil on an engine with no running loop, so a test calling
 // this would block forever rather than fail. Tests take wakeFinished and its
 // answer; production takes this.
-func (e *Engine) wakeExited(agent string) {
+func (e *Engine) wakeExited(agent, thread string) {
 	_, _ = e.query(context.Background(), func() core.Result {
-		e.wakeExitedDecision(agent)
+		e.wakeExitedDecision(agent, thread)
 		return core.Result{"ok": true}
 	})
 }
@@ -620,7 +622,7 @@ func (e *Engine) wakeExited(agent string) {
 // test calling the wrapper would block forever rather than fail.
 //
 // Callers run on the writer loop.
-func (e *Engine) wakeExitedDecision(agent string) {
+func (e *Engine) wakeExitedDecision(agent, thread string) {
 	// CLEARED AND RECORDED IN ONE TURN OF THE LOOP.
 	//
 	// wakeFinished ran out here, before the closure was queued, and the two
@@ -650,7 +652,7 @@ func (e *Engine) wakeExitedDecision(agent string) {
 	// found the agent recently in touch on the strength of a turn that had
 	// already ended, and returned without even arming a deferred re-check.
 	// The message was stored, reported delivered, and waited for a human.
-	e.noteWakeEnded(agent)
+	e.noteWakeEnded(agent, thread)
 	if owed {
 		e.retryWakeDecision(agent)
 	}
@@ -658,7 +660,18 @@ func (e *Engine) wakeExitedDecision(agent string) {
 
 // noteWakeEnded records that a wake command has exited, which is the end of
 // that agent's turn. Callers run on the writer loop.
-func (e *Engine) noteWakeEnded(agent string) {
+func (e *Engine) noteWakeEnded(agent, thread string) {
+	// ONLY IF THE THREAD IT RAN ON IS STILL CURRENT. The command IS the
+	// activation, but a command that ran up to two hours can outlive the
+	// thread it woke: a wake started on thread A, the agent reattached to
+	// thread B and called in, then A exited. Stamping the turn end here
+	// against the agent marked B finished, and the recency guard then let
+	// blocking mail launch a second activation on a thread that is running.
+	// A thread of "" (a socket route, or no thread at all) cannot be compared
+	// and stamps as before. Found by the pre-release review, round sixty-six.
+	if l := e.state.Agents[agent]; l != nil && !l.SessionIsCurrent(thread) {
+		return
+	}
 	if e.turnEnded == nil {
 		e.turnEnded = map[string]time.Time{}
 	}
@@ -941,7 +954,7 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 		// One notice, one wording, whichever way it travels.
 		return wakePlan{
 			agent: l.ID, sessions: sessionsOf(l), notice: f.message,
-			cwd: cwdOf(l), cooldown: cooldown,
+			cwd: cwdOf(l), cooldown: cooldown, thread: f.thread,
 		}, true
 	}
 	// cwd ON THIS BRANCH TOO, and this is the branch that needs it.
@@ -959,7 +972,7 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 	cmd := e.commandFor(l)
 	return wakePlan{
 		argv: f.apply(cmd.argv), fallback: f.apply(cmd.fallback),
-		cwd: cwdOf(l), cooldown: cooldown,
+		cwd: cwdOf(l), cooldown: cooldown, thread: f.thread,
 	}, true
 }
 
@@ -973,6 +986,10 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 // them would re-buy every one.
 type wakePlan struct {
 	argv []string // the operator's command
+	// thread is the harness thread this wake targets, or "" for a socket
+	// route or an agent with none. Carried out so the exit can tell whether
+	// the turn it ends is still the agent's current one.
+	thread string
 	// fallback is the operator's second command, substituted like the first
 	// and run only if the first exits non-zero. Empty when none is configured.
 	fallback []string

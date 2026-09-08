@@ -633,9 +633,18 @@ try {
       // "coming back" case deliver a state the panel was already in: no change,
       // so no transition, so a real feature reported as broken. A check that
       // mutates shared state owes the next one its starting conditions.
+      //
+      // And LET THAT TRANSITION FINISH before the next block measures. This
+      // settle was 200ms while the transition it drives runs .62s, so two runs
+      // in five the "coming back" delivery landed while this one was still in
+      // flight; a view transition started over a running one is dropped, so the
+      // next check saw an empty list and a real feature read as broken. The
+      // generous settle is the same fix, and for the same reason, as the one
+      // above the "changing band" measurement. Found by the pre-release review's
+      // own gate flaking, round sixty-six.
       await page.evaluate((r) => (window as any).__deliver(r),
         withStatus(boardResult, target, "active"))
-      await Bun.sleep(200)
+      await Bun.sleep(900)
 
       // Waking up travels too. A treatment that only animated the way into
       // trouble would quietly teach that recovery is less worth seeing.

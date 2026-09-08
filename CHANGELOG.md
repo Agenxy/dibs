@@ -554,6 +554,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **An old wake's exit could mark the current thread finished.** A wake
+  command runs the agent's whole turn, so it can outlive the thread it woke:
+  one started on thread A, the agent moved to thread B and called in, then A
+  exited and its completion recorded the turn as ended, marking B idle. The
+  recency guard then let the next blocking message launch a second activation
+  on a thread that was running. A wake's exit now ends the turn only when the
+  thread it ran on is still the agent's current session.
+
+- **A stale thread's hook could consume the current thread's wake.** A
+  lifecycle hook resolves through retained session aliases, so a late Stop
+  from a thread the agent had left was handed the mailbox digest and spent a
+  pending notify's one-shot wake, and the current thread never heard of it. A
+  hook now delivers, and marks a notify woken, only when it fired for the
+  agent's current session, the mail otherwise staying for that session to
+  receive.
+
 - **An adopted mailbox could be read by taking over the row that adopted it.**
   The session-only recovery guard refuses a row with a pending grant or
   adoption request, but an approved adoption is terminal, so the guard stopped

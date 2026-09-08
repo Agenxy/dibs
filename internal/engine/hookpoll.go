@@ -221,6 +221,18 @@ func (e *Engine) HookPoll(
 			// than useless.
 			return unresolvedSession(e.reattachHint(sessionID, cwd, time.Now()), event)
 		}
+		// A HOOK FROM A THREAD THE AGENT HAS LEFT DELIVERS NOTHING. noteTurnState
+		// already refuses to record such a hook's turn state; delivering to it
+		// is the same error one step on. A late Stop from the old thread A,
+		// after the agent moved to B, resolves to the same row through a
+		// retained alias and would be handed the digest and spend a pending
+		// notify's one-shot wake, and B would never hear of it. The mail stays;
+		// it is the current activation's to receive. A hook that names no
+		// session, or names the current one, delivers as before. Found by the
+		// pre-release review, round sixty-six.
+		if !l.SessionIsCurrent(sessionID) {
+			return e.hookOutput(core.Result{"agent": l.ID}, strict)
+		}
 		mail := e.pendingMail(l.ID, time.Now())
 		announced, announceKeys := e.dueAnnouncements(l.ID, time.Now())
 		// Things done TO this agent that it cannot have inferred: admitted by a
