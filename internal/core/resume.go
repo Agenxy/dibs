@@ -111,6 +111,26 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 			// check_in. Found by the pre-release review, round fifty-seven.
 			l.AckedSerial = 0
 		}
+		// AND THE CREDENTIAL ROTATES WITH THE ACTIVATION.
+		//
+		// This branch is the one that recognises a real MOVE: it re-arms the
+		// awareness gate, takes the process, and repoints every session
+		// binding at the new activation. It returned the row's EXISTING token
+		// while doing all of that, so the session the agent had just left kept
+		// a working credential: the previous holder could still read the
+		// mailbox, still act in whatever role the row carries, and its next
+		// check_in moved the wake routing back to itself. SECURITY.md promises
+		// the previous token is revoked on register, reattach and resume, and
+		// on this path it was not.
+		//
+		// The retry above keeps its token deliberately, and must: an identical
+		// registration arriving twice is one call whose answer was lost, and
+		// handing back a new credential there would revoke the one the caller
+		// is already using. That case does not reach here, because nothing
+		// changed. Found by the pre-release review, round seventy-nine.
+		if op.NewToken != "" {
+			l.Token = op.NewToken
+		}
 		s.dropTakenSession(op, l)
 		if op.SessionID != "" {
 			l.SessionID = op.SessionID                                         // the new session owns it now

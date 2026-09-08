@@ -9,6 +9,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Security
 
+- **Recovering into a new session left the previous session's token working.**
+  The branch that recognises a real move re-armed the awareness gate, took the
+  process and repointed every session binding, while handing back the row's
+  existing credential. The session the agent had just left could therefore
+  still read the mailbox, still act in whatever role the row carries, and move
+  the wake routing back to itself on its next call. `SECURITY.md` promises the
+  previous token is revoked on register, reattach and resume, and on this path
+  it was not. A response-loss retry still keeps its token, because an identical
+  registration arriving twice is one call whose answer was lost and rotating
+  there would revoke the credential the caller is already using.
+
 - **A register vetted for one peer's thread could strip another active
   peer's session id.** The fold dropped both ids a register carried from every
   other row once the ingress had named one holder, and the ingress vets only
