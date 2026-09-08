@@ -254,6 +254,16 @@ bridge at its own start, which includes the in-place upgrade a running bridge
 performs when its binary changes: a self-wake carried across that upgrade is
 restored only while the switch is on.
 
+**It is a per-machine setting, and on a fleet that spans machines that matters.**
+Each side reads it from the data directory of the process reading it: the
+daemon from the board's, and a bridge from its own. A bridge that joined a
+remote hub has its own directory, holding the secret it was given and nothing
+else, so `sockets = false` set on the hub governs the daemon's peer-socket
+route and leaves every remote bridge waking its own session as before. Set it
+on each machine that runs a bridge. This used to be described as one switch
+covering both routes, which is true on one machine and was silently false
+across two.
+
 Each message wakes once either way, so an agent that read something and chose
 not to act is not asked again. Work somebody is blocked on comes back on the
 announcement retry. See [WAKE-MECHANISMS.md](../WAKE-MECHANISMS.md).

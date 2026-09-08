@@ -554,6 +554,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`[wake] sockets = false` is documented as the per-machine setting it is.**
+  Each side reads it from its own data directory, so setting it on a hub
+  governs the daemon's peer-socket route and leaves a bridge that joined from
+  another machine waking its own session as before. The guide described one
+  switch covering both routes, which is true on one machine and was silently
+  false across two, and `dibs doctor` now says so where it reports that
+  configuration.
+
 - **The daemon's own reporting identity could be recovered by name and session
   id.** `dibs` is the row the daemon reports its own faults under, and an agent
   reading "Dibs found a fault" has no way to check who wrote it. That identity
@@ -582,19 +590,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that recorded the decision, so a v0.0.6 ledger still replays to the board it
   built.
 
-- **A deferred wake could interrupt a session the agent had left.** A notice
-  held back to the end of the cooldown carried nothing but its text, so
-  retiring the subscription that armed it left the timer running. An agent that
-  moved during that window still had its former session interrupted, past every
-  check the daemon makes on the way in. A deferred notice now asks, at the
-  moment it would be delivered, whether the subscription that owed it still
-  speaks for this session. That test reaches all three paths that hold a notice
-  back: the deferral, the retry after a delivery that failed, and an arrival
-  that folds into a timer already armed. One waker serves every mailbox on a
-  bridge, so a deferred notice records every mailbox that contributed to it and
-  is delivered while any of them is still current. Keeping only the newest
-  arrival's test, or only the first's, each dropped a notice another live
-  mailbox was still owed.
+- **A deferred wake is always delivered.** A notice held back by the cooldown
+  was, for several revisions, re-checked locally before delivery and dropped if
+  the subscription that armed it looked retired. That check asked a question
+  the bridge cannot answer: validity turns on token rotation, a session move, a
+  sign-off, a recovery through another bridge and a refusal at the daemon, and
+  the check stood on a pointer in a local map that none of those move. Two of
+  the revisions dropped notices that were owed, which loses the message
+  outright, because the call reports success and the subscription's cursor
+  advances past the event. The check is gone. The daemon decides who is woken
+  when it sends the notification, and delivering that decision a few seconds
+  later is not a fresh claim to re-examine. The cost is that an agent which
+  changes session inside one cooldown may see one rate-limited notice in the
+  session it just left.
 
 - **A resumed agent was awake, subscribed, and unreachable.** `resume` rotated
   the token and bumped the activation while leaving every session binding

@@ -490,7 +490,9 @@ func checkWakeRoutes(dir string, b *boardView, ok reportFn, warn fixFn) {
 		// pre-release review, round forty-two.
 		warn("no wake route at all: [wake] sockets = false and no [wake.exec] command",
 			"mail reaches an idle agent only at its next activation, which is what "+
-				"that configuration asks for. For a route, add a [wake.exec.<harness>] "+
+				"that configuration asks for. It covers THIS machine: a bridge that "+
+				"joined a remote hub reads the switch from its own data directory, so "+
+				"set it there too. For a route, add a [wake.exec.<harness>] "+
 				"block to "+filepath.Join(dir, "dibs.toml")+", or set sockets = true")
 		return
 	}

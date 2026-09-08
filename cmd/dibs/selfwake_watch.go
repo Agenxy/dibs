@@ -73,17 +73,6 @@ type inboxStream struct {
 	since   uint64 // the serial of the last notification seen: a reconnect resumes from it
 }
 
-// streamIsCurrent reports whether st is still the stream this watcher holds
-// for its agent. A retired stream speaks for nobody: its credential was
-// rotated away, or the agent moved to a session this one no longer names, and
-// a notice it armed must not still interrupt this session at the end of a
-// cooldown.
-func (iw *inboxWatcher) streamIsCurrent(st *inboxStream) bool {
-	iw.mu.Lock()
-	defer iw.mu.Unlock()
-	return iw.streams[st.key] == st
-}
-
 // sharedWaker is the one route to this session's socket, made on first
 // use; nil when this harness publishes none.
 func (iw *inboxWatcher) sharedWaker() *selfWaker {
@@ -344,7 +333,7 @@ func (iw *inboxWatcher) stream(
 		// event and nothing retried, so a socket that came back found an
 		// agent asleep on stored mail. Found by the pre-release review, round
 		// eighteen.
-		if err := waker.wakeWhile(selfWakeNotice, st.key, func() bool { return iw.streamIsCurrent(st) }); err != nil {
+		if err := waker.wake(selfWakeNotice); err != nil {
 			slog.Debug("could not put a notice into this session; keeping its cursor", "err", err)
 			continue
 		}
