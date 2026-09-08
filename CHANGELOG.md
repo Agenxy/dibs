@@ -5,6 +5,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-09-08
+
 ### Security
 
 - **A register vetted for one peer's thread could strip another active
