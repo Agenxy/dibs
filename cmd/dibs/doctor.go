@@ -1414,7 +1414,9 @@ func reportWakeCoverage(exec map[string]boardconfig.WakeExec, b *boardView, dir 
 	// by the pre-release review, round forty-one.
 	noCommand := 0
 	for _, h := range sortedKeys(missing) {
-		if have[h] || strings.HasSuffix(h, "(no resumable thread)") || h == "(no harness recorded)" {
+		if have[h] || strings.HasSuffix(h, "(no resumable thread)") ||
+			strings.HasSuffix(h, "(working directory not on this machine)") ||
+			h == "(no harness recorded)" {
 			continue
 		}
 		noCommand++
@@ -1435,9 +1437,55 @@ func reportWakeCoverage(exec map[string]boardconfig.WakeExec, b *boardView, dir 
 			"id for it to resume, so the command cannot name them. An agent gets " +
 			"one by registering through its harness's Dibs plugin rather than by " +
 			"hand: see plugins/ for the one it runs in"
+		// AND WHEN IT IS THE DIRECTORY, SAY THAT INSTEAD. Advice about threads
+		// under a heading about directories is worse than no advice: it sends an
+		// operator to re-register agents that are registered correctly.
+		if dirs := missingDirs(b, have); len(dirs) > 0 {
+			fix = "a wake command runs on the machine the DAEMON is on, in the " +
+				"agent's own working directory, and these directories are not here: " +
+				strings.Join(dirs, ", ") + ". If a worktree was removed, the agent " +
+				"has nothing to be resumed into and the row is history. If the agent " +
+				"is on another computer, nothing in this file can reach it: a wake " +
+				"command would have to run over there, so run a bridge on that " +
+				"machine and configure [wake.exec] in ITS dibs.toml"
+		}
 	}
 	warn(fmt.Sprintf("%d of %d persistent agent(s) have no wake route: %s",
 		uncovered, total, strings.Join(names, ", ")), fix)
+}
+
+// wakeDirHere reports whether a wake for this agent could run where the agent
+// is working.
+//
+// An agent that recorded NO directory passes. The wake runs where the daemon
+// does, deliberately ("a wake that might work beats one that certainly does
+// not"), nothing is broken, and a warning that is always present is a warning
+// nobody reads.
+func wakeDirHere(a boardAgent) bool {
+	if a.Agent == nil || a.Agent.CWD == "" {
+		return true
+	}
+	st, err := os.Stat(a.Agent.CWD)
+	return err == nil && st.IsDir()
+}
+
+// missingDirs names the working directories that are not on this machine, so
+// the advice can point at the actual ones rather than describe the category.
+func missingDirs(b *boardView, have map[string]bool) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, a := range b.Agents {
+		if a.Kind != "persistent" || !wakeable(a) || !a.Resumable || wakeDirHere(a) {
+			continue
+		}
+		if a.Agent == nil || !have[strings.ToLower(a.Agent.Harness)] || seen[a.Agent.CWD] {
+			continue
+		}
+		seen[a.Agent.CWD] = true
+		out = append(out, a.Agent.CWD)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // sortedKeys is the map order this file needs twice: stable, so a health report
@@ -1501,20 +1549,37 @@ func wakeCoverage(b *boardView, have map[string]bool) (covered int, missing map[
 		if a.Agent != nil {
 			h = strings.ToLower(a.Agent.Harness)
 		}
-		// BOTH HALVES. A command exists for this harness AND there is a thread
-		// for it to name. Either alone is not a route: `wakeRoute` refuses the
-		// exec path without a UUID-shaped thread id, so an agent counted
-		// covered on harness alone can still be unreachable, which is the
-		// optimism this whole check was rewritten to remove.
-		if have[h] && a.Resumable {
+		// THREE HALVES, and the third is where the wake would actually RUN.
+		//
+		// A command exists for this harness AND there is a thread for it to
+		// name: `wakeRoute` refuses the exec path without a UUID-shaped thread
+		// id, so an agent counted covered on harness alone can still be
+		// unreachable, which is the optimism this whole check was rewritten to
+		// remove. AND the agent's own directory is on this machine, because
+		// runWakeForOut sets cmd.Dir to it and falls back to the daemon's when
+		// it is gone: `codex exec resume` refuses outside a trusted directory,
+		// exit 1, which is this repository's own daemon log three times over.
+		//
+		// A worktree that has been removed is the local way to reach that, and
+		// it is ordinary here. An agent on ANOTHER COMPUTER is the other, and
+		// there the hub can do nothing about it at all: see docs/NETWORK.md §5.
+		if have[h] && a.Resumable && wakeDirHere(a) {
 			covered++
 			continue
 		}
+		// A BARE KEY STILL MEANS "NO COMMAND FOR THIS HARNESS", which is what
+		// the block-paste loop below reads it as. The two suffixes are the
+		// cases where a command exists and something else is missing, and they
+		// are ordered: an agent missing both a thread and its directory is
+		// reported as missing the thread, so the count and the advice describe
+		// one thing.
 		switch {
 		case h == "":
 			h = "(no harness recorded)"
-		case have[h]:
+		case have[h] && !a.Resumable:
 			h += " (no resumable thread)"
+		case have[h]:
+			h += " (working directory not on this machine)"
 		}
 		missing[h]++
 	}

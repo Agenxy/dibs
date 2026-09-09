@@ -6,9 +6,11 @@ the FOLD, and this repository has paid for unplanned ones about six times in
 one release cycle. Issue #12 is where the position was first stated; this
 supersedes it with decisions.
 
-Status: §4's liveness split is built, and so is the portable half of §3,
-because both bite on one machine as hard as on ten. The host key and everything
-downstream of it are not. Where a thing is already true it says so.
+Status: built so far are §4's liveness split, the portable half of §3, and §5's
+locality rule and its doctor check. Each of those bites on one machine as hard
+as on ten, which is why they went first. The host key and the bridge
+generalisation are not built, and both wait on the transport work. Where a thing
+is already true it says so.
 
 ## 1. The position: one writer, many clients
 
@@ -210,8 +212,11 @@ cannot do and should not try to.
 **The decision.** The hub decides *that* an agent should be woken. The agent's
 own machine decides *how*.
 
-- The hub keeps `[wake.exec]` for agents local to it, and `dibs doctor` says
-  plainly that those entries cover local agents only.
+- The hub keeps `[wake.exec]` for agents local to it, and `dibs doctor` now
+  counts an agent whose working directory is not on this machine as having no
+  route here rather than as covered. **Built**, and it pays off locally too: a
+  removed worktree reaches the same state, which is ordinary in this repository.
+  `[wake] sockets` was already per-machine and already documented as such.
 - Every other machine runs the component that already exists for this: the
   bridge subscribes to the hub for its own agents and owns that host's routes.
   Generalising it from "this session" to "this host's agents" is the work.
@@ -268,8 +273,10 @@ because Supgang intends to.
    until a remote agent exists there is nothing for it to separate, and this
    section originally claimed it "needs no network to test" as though that meant
    it needs no network to MATTER.
-3. **Wake routes per host** (§5). Mostly documentation and doctor honesty, plus
-   generalising the bridge.
+3. **Wake routes per host** (§5). Doctor honesty and the locality rule are
+   **built** and written down (`WAKE-MECHANISMS.md` §5a, `docs/CONFIGURATION.md`).
+   Generalising the bridge from "this session" to "this host's agents" waits for
+   the transport work, like the host key.
 4. **Proved identity** (§6). Needs Supgang to pass its own acceptance first.
 
 ## What would change this document

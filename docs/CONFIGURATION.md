@@ -60,6 +60,21 @@ waits until somebody tells it out loud.
 Give a harness a command and the board will run it when work somebody is
 blocked on arrives for one of its agents that has stopped:
 
+**The command runs on the machine the DAEMON is on, in the agent's own working
+directory.** That is not a detail, it is the constraint the whole thing is
+shaped by: the daemon starts a process, so the process starts here. Both
+documented commands care where they start (`codex exec resume` refuses outside
+a trusted directory), so when the recorded directory is missing the wake runs
+where the daemon does and usually fails, with a warning saying so.
+
+Two ways for it to be missing. A removed worktree is the local one. An agent on
+ANOTHER COMPUTER is the other, and there nothing you write in this file can
+help: the command would have to run over there. Run a bridge on that machine and
+give it its own `[wake.exec]`. `dibs doctor` counts an agent whose directory is
+not on this machine as having no route, rather than as covered. See
+[NETWORK.md](NETWORK.md) for why the hub decides THAT an agent is woken and only
+its own machine can decide how.
+
 ```toml
 [wake.exec.codex]
 argv     = ["/Applications/ChatGPT.app/Contents/Resources/codex",

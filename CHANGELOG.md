@@ -7,6 +7,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`dibs doctor` counted an agent it cannot wake as covered.** A wake command
+  runs on the daemon's machine, in the agent's own working directory, and the
+  coverage check asked whether a command and a thread existed but never whether
+  that directory is here. It is not, for a removed worktree or for an agent on
+  another computer, and the wake then runs where the daemon does, where the
+  documented command refuses to start. Such an agent is now reported as having
+  no route, with advice about the directory rather than a configuration block
+  the operator already has. The locality rule itself is written down for the
+  first time, in `WAKE-MECHANISMS.md` §5a and `docs/CONFIGURATION.md`: it is the
+  constraint every fleet design runs into and neither route advertised it.
+
 - **Claims missed the collision between two linked worktrees of one
   repository.** A claim was an absolute path compared as a raw string, so
   `/a/wt1/pkg/x.go` and `/a/wt2/pkg/x.go` did not overlap: the same tracked
