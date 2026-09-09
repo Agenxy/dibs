@@ -5,6 +5,80 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`dibs doctor` counted an agent it cannot wake as covered.** A wake command
+  runs on the daemon's machine, in the agent's own working directory, and the
+  coverage check asked whether a command and a thread existed but never whether
+  that directory is here. It is not, for a removed worktree or for an agent on
+  another computer, and the wake then runs where the daemon does, where the
+  documented command refuses to start. Such an agent is now reported as having
+  no route, with advice about the directory rather than a configuration block
+  the operator already has. The locality rule itself is written down for the
+  first time, in `WAKE-MECHANISMS.md` §5a and `docs/CONFIGURATION.md`: it is the
+  constraint every fleet design runs into and neither route advertised it.
+
+- **Claims missed the collision between two linked worktrees of one
+  repository.** A claim was an absolute path compared as a raw string, so
+  `/a/wt1/pkg/x.go` and `/a/wt2/pkg/x.go` did not overlap: the same tracked
+  file, two agents, and both told they held it exclusively. The declare-time
+  signal had scoped by repository since it was written, so the weaker signal
+  knew about the collision and the stronger one did not, and the write guard
+  did not either, which is the half that costs work: the board reported a
+  conflict the enforcement path waved through. Claims now overlap under either
+  of two rules, and the refusal says which one fired. The second requires
+  POSITIVE evidence of one repository and a portable name on both sides;
+  anything less stays silent, because a conflict between strangers is an agent
+  stopping work nothing else is doing.
+
+- **An agent that went quiet for thirty-five minutes became permanently
+  unreachable.** Archiving is a timer, not a decision: an ephemeral agent
+  reaches it `agent_ttl` + `stale_grace` after its last call, five minutes plus
+  thirty on the defaults. Four separate paths asked `Gone()`, which is
+  `closed || archived`, and treated the two as one thing, so from that moment
+  mail addressed to the agent was refused with `E_NO_AGENT: no live agent`, no
+  wake would be attempted for the mail it already held, the boot retry skipped
+  it, and `resume` with its own nonce was refused with the advice to register a
+  new agent, which forks a sibling holding an empty mailbox beside the full one.
+  The board kept the row, the mailbox and the nonce index for seven days
+  precisely so the agent could come back, and for those seven days it was
+  recoverable and unreachable at once. `closed` is unchanged: a deliberate
+  `sign_off` is still final, and the reasoning written against resuming one
+  still stands, because that was always the only half of `Gone()` those
+  comments argued.
+
+- **Archiving destroyed the credential in one place and kept it in another.**
+  The sweep cleared the agent's `nonce` field while `s.Nonces`, the index
+  `register` and `resume` actually consult, was retained until
+  `archive_retention`. Three of the v0.0.7 cycle's defects came out of that
+  gap, all of them privileged rows the engine then declined to recover because
+  the row it was recovering had no nonce to check. Archiving now clears the
+  token, which is one activation's credential and is what makes the next call
+  return `E_BAD_TOKEN` with the way back, and leaves the nonce. Gated on the
+  sweep op, so a ledger written by any earlier version replays to the board
+  that version built.
+
+- **A sender addressing an archived agent was told nothing.** With the send
+  refused, no note existed for the case; now that it is accepted, `send`
+  reports that the recipient was archived, what it costs to reach it, and how
+  long the mailbox is kept, and the engine's own note still wins where it knows
+  that nothing on this board can wake it.
+
+### Added
+
+- The frozen-json-tag guard now covers `core.AgentInfo` as well as `core.Op`.
+  Those tags travel to disk inside `op.agent` and not one of them was frozen:
+  renaming `repo_dir`, `repo_remote` or `repo_roots` would have replayed as
+  "no evidence" on every historical op, and the fold would have quietly stopped
+  telling one repository from another while reporting success. That is the
+  `lane_kind` failure exactly, in the one struct the guard did not look inside.
+
+- `docs/NETWORK.md`: the design for a board whose agents are not all on one
+  computer. Host identity as a key rather than a hostname, claims keyed by host
+  with a portable repository form beside them, liveness split into presence and
+  identity, and why wake routes must belong to the machine the agent is on
+  rather than to the hub. Nothing in it is built beyond the liveness work above.
+
 ## [0.0.7] - 2026-09-08
 
 ### Security

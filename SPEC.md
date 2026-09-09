@@ -306,8 +306,12 @@ you can measure is never improved by asking.
 - **`resume(nonce, resume_id, pid?)`**: the explicit activation op for standing
   roles. `resume_id` (client-generated per attempt, ≥64-bit) makes it a **complete
   activation boundary**:
-  - Verifies the nonce (constant-time); fails on closed/archived
-    (`E_AGENT_CLOSED`/`E_NO_AGENT`) or unknown nonce (`E_BAD_NONCE`).
+  - Verifies the nonce (constant-time); fails on closed (`E_AGENT_CLOSED`) or
+    unknown nonce (`E_BAD_NONCE`). **An `archived` agent resumes**: retention keeps
+    its row, its mailbox and its nonce index entry for `archive_retention` so that
+    it can, and the alternative the refusal used to advise (register a new agent)
+    forks a sibling with an empty mailbox beside the one holding the mail. Only a
+    row that retention has actually purged is `E_NO_AGENT`.
   - **Rotates the token** and increments the agent's `activation` generation: the
     rotation takes effect atomically at the resume op's serial: ops carrying the old
     token that execute after it fail `E_BAD_TOKEN` (all validation happens inside
@@ -417,13 +421,22 @@ and nothing else: the board wakes an agent and does not steer one. See
   Grace is bounded by evidence, not by boot count.
 - **Lifecycles**:
   - ephemeral: `active → stale` (lease lapse or process death; claims released,
-    gate re-armed) `→ archived` after 30 min grace (token + nonce invalidated).
+    gate re-armed) `→ archived` after 30 min grace (**token invalidated; the nonce
+    is kept**, so the identity stays recoverable for `archive_retention`).
     `stale → active` only via ledgered `wake`.
   - persistent: `active → dormant` (lease lapse or process death: for a standing
     role, process exit is an expected end of activation; claims released, slots and
     mailbox retained, gate re-armed) `→ archived` after `dormancy_max` (30 days from
-    the ledgered `dormant_since` transition). `dormant → active` via ledgered
-    `wake` (any authenticated call) or `resume`.
+    the ledgered `dormant_since` transition; token invalidated, nonce kept).
+    `dormant → active` via ledgered `wake` (any authenticated call) or `resume`.
+  - **`archived` is idle, not retired.** For `archive_retention` the row, its
+    mailbox and its nonce remain, so mail may be SENT to it, a wake may be
+    attempted for it, and it returns to `active` by `resume` or by registering
+    again with the same name and nonce. Only `closed` (a deliberate `sign_off`)
+    and a purged row refuse those. This distinction is what makes the wake
+    promise hold: an ephemeral agent reaches `archived` in `agent_ttl` +
+    `stale_grace`, five minutes plus thirty on the defaults, which is a length of
+    quiet, not a decision.
 - **Deadline diagnosis cascade**: expiry records `expired_unanswered` (recipient
   active), `expired_recipient_dormant` (persistent recipient asleep: visible in its
   inbox on wake, past deadline, within §8 retention bounds), or
@@ -536,6 +549,25 @@ your own path renews (`claim.renewed`, ledgered).
 covers `/x/y/z`, never `/x/y2`); best-effort `EvalSymlinks` at ingress. Caveats
 documented, not solved: case-insensitive volumes, Unicode aliases.
 
+**Two claims overlap under either of two rules, and the result says which.**
+
+- `path`: their absolute paths overlap component-wise, as above.
+- `repo`: both agents are positively in ONE repository (shared Git common
+  directory, equal configured remote, or equal root commits: the ranking of
+  §9's `differentProjects`, read for sameness rather than difference) **and**
+  their paths overlap once each agent's own checkout root is subtracted.
+
+The second rule exists because one absolute path is not one file. Two linked
+worktrees of a repository hold `/a/wt1/x.go` and `/a/wt2/x.go` for the same
+tracked file, and the first rule alone reports nothing. The portable name is
+recorded on the claim when it is taken, from the checkout root the server
+resolved at registration; a path outside the agent's own checkout has none, and
+the repository rule does not apply to it. Both halves demand positive evidence:
+an overlap fired on an absence of evidence is a conflict between strangers, and
+that is worse than the collision it would catch. The same rule is what will
+carry claims between machines, where absolute paths stop meaning anything at
+all: see `docs/NETWORK.md`.
+
 **Lifecycle**: renewable 15-min lease, hard max 24 h. Claims end when their agent
 leaves `active`: on `stale`, `dormant`, `closed`, and `archived` alike.
 
@@ -611,7 +643,7 @@ Read-only work needs no claim.
 | claims per agent / global | 32 / 256 | `E_CLAIM_LIMIT` |
 | mailbox depth (non-terminal) | 256 | §8 backpressure |
 | terminal messages retained | 128 per agent, then GC'd (ledger keeps history) | pruned oldest-first |
-| archived agents retained in state | 7 days, then GC'd (with nonces + dedup records) | pruned |
+| archived agents retained in state | 7 days, then GC'd (with nonces + dedup records); addressable and wakeable throughout | pruned |
 | message/slot body | 32 KiB | `E_TOO_LARGE` |
 | name / description / note / path | 128 B / 1 KiB / 512 B / 1 KiB | `E_TOO_LARGE` |
 | dirs per slot | 16 | `E_TOO_LARGE` |

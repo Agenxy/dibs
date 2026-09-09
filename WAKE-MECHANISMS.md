@@ -280,6 +280,30 @@ legacy capability advertisement and the split transport are all in
 was not updated: a document that describes shipped work as unbuilt sends an
 integrator looking for an alternative that is already here.
 
+### 5a. Both routes are LOCAL to the machine they run from
+
+Worth stating plainly, because it is the constraint every fleet design runs
+into and neither route advertises it.
+
+`[wake.exec]` starts a process, and the daemon is what starts it, so the
+process starts on the daemon's machine, in the agent's own recorded working
+directory. For an agent on a DIFFERENT computer that directory is not here, and
+the command would have to run over there: a hub that could make it do so would
+be remote code execution with a friendly name, which is a great deal more than
+rule 5 permits when it will not even let the board say what an agent should do
+next.
+
+The session socket is local for a different reason: it is a file the harness
+publishes, and a socket on another machine is not on this filesystem.
+
+So the division is the only one available, and it is also the right one. **The
+hub decides THAT an agent should be woken; the agent's own machine decides
+how.** A machine joining a fleet runs its own bridge, reads `[wake] sockets`
+from its own data directory, and owns its own `[wake.exec]`. `dibs doctor`
+counts an agent whose directory is not on this machine as having no route here,
+rather than as covered, because a wake that starts in the wrong place and fails
+is not coverage. See `docs/NETWORK.md` §5.
+
 ## 5b. The harness's own session socket (SHIPPED)
 
 Claude Code publishes, per session, a unix socket and an authentication key,

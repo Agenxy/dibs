@@ -290,6 +290,30 @@ type Op struct {
 	// version and a build either has them or does not; splitting it would freeze
 	// two names for one fact. Found by the pre-release review, twice.
 	V7Semantics bool `json:"v7_semantics,omitempty"`
+	// KeepArchivedNonce says this sweep may leave an archived agent's nonce in
+	// place instead of blanking it alongside its token.
+	//
+	// THE SAME HAZARD AS PurgeMail, RestoreNonce AND V7Semantics, and a separate
+	// flag rather than a fifth use of the last one, because V7Semantics is
+	// already TRUE on every op this board has written since v0.0.7. Reusing it
+	// would apply a v0.0.8 decision to ops recorded months ago, which is the
+	// retroactive bug the flag exists to prevent, arrived at through the
+	// prevention. That mistake has already been made here once.
+	//
+	// WHY THE BLANKING WAS WRONG. Archiving clears Token and Nonce together, but
+	// they are not the same kind of thing. The token is one activation's
+	// credential and must not outlive it. The nonce is the DURABLE one: it is
+	// the thing an agent is told to keep because it is what survives a restart,
+	// and s.Nonces, the index resume and register actually look in, is kept
+	// until ArchiveRetention regardless. So the credential lived in one place
+	// and was destroyed in another, and only one of them was on the recovery
+	// path. Three P1s in the v0.0.7 cycle came out of that gap, all of them
+	// privileged rows that the engine then refused to recover because the row it
+	// was recovering had no nonce to check.
+	//
+	// Only the nonce. A sweep still clears the token, which is what makes the
+	// next call return E_BAD_TOKEN and say how to come back.
+	KeepArchivedNonce bool `json:"keep_archived_nonce,omitempty"`
 	// RoleByHuman marks a grant_role a person made through the admin API.
 	// Transient, never on the wire: the engine remembers the agent for the
 	// rest of its run and declines the startup reconciler's regrant, on the

@@ -338,9 +338,19 @@ type AgentInfo struct {
 	// removed looks exactly like a repository created locally, and one of those
 	// is the same project while the other is a stranger. Shared history is the
 	// only evidence that separates them.
+	//
+	// RepoRoot is this CHECKOUT's top level, which is the one of the four that is
+	// not about identity: it is the origin the fold measures a path FROM. A claim
+	// on /a/wt1/x.go and a claim on /a/wt2/x.go are the same file of the same
+	// repository seen through two linked worktrees, and comparing the absolute
+	// strings says they do not overlap. Subtracting each claim's own root leaves
+	// `x.go` on both sides, which is the comparison that was meant. Recorded for
+	// the same reason as the others: the fold cannot call Git, and subtracting a
+	// prefix from a recorded string is pure.
 	RepoDir    string `json:"repo_dir,omitempty"`
 	RepoRemote string `json:"repo_remote,omitempty"`
 	RepoRoots  string `json:"repo_roots,omitempty"`
+	RepoRoot   string `json:"repo_root,omitempty"`
 }
 
 // Agent is a participant on the board: an identity, a mailbox and a heartbeat.
@@ -542,6 +552,32 @@ func (l *Agent) Gone() bool {
 	return l == nil || l.Status == StatusClosed || l.Status == StatusArchived
 }
 
+// Retired reports whether an agent ended BY ITS OWN DECISION: it called
+// sign_off. A nil agent counts, for the same reason it counts in Gone: it was
+// pruned out from under us and there is nothing left to reach.
+//
+// Split out of Gone because Gone answers two questions and only one of them was
+// ever argued. "Is this identity finished with, so stop carrying it in queues
+// and memberships" is Gone, and archived belongs in it: retention has taken the
+// row and nobody should be waiting behind it.
+//
+// "Did this identity decide to stop, so do not start it again" is this one, and
+// archived does NOT belong in it. Archiving is a TIMER, and on the shipped
+// defaults an ephemeral agent reaches it AgentTTL + StaleGrace after its last
+// call: five minutes plus thirty. Its mail is still in the ledger and its nonce
+// index entry lives until ArchiveRetention, so it can come back exactly as
+// TestAnArchivedAgentComesBackWithItsNonceAndItsMail describes. Refusing to
+// wake it made that recovery unreachable: the credential worked and nothing
+// would ever tell the agent to use it.
+//
+// sign_off is different in the way that matters, and the wake path's own
+// comment says why: resuming a signed-off persistent identity brings it back
+// ACTIVE through the nonce path, which is the finality sign_off promises.
+// That reasoning is sound and applies to closed alone.
+func (l *Agent) Retired() bool {
+	return l == nil || l.Status == StatusClosed
+}
+
 // CanHoldExclusive reports whether an agent is in a state where handing it an
 // exclusive lock would actually coordinate anything. Only an ACTIVE agent is:
 // a sleeping one blocks everybody while it is not working, and a gone one
@@ -630,8 +666,18 @@ func (m *Message) Expecting() bool {
 
 // Claim is an advisory, TTL-leased declaration over a path prefix.
 type Claim struct {
-	Agent          string    `json:"agent"`
-	Path           string    `json:"path"`
+	Agent string `json:"agent"`
+	Path  string `json:"path"`
+	// RepoPath is Path with the claiming agent's checkout root subtracted: the
+	// same file named the way every clone and every linked worktree of that
+	// repository names it. Empty when the path is not inside the agent's own
+	// checkout, which is the honest answer rather than a guess, and which makes
+	// the repository rule simply not apply to that claim.
+	//
+	// Recorded at claim time, not derived at comparison time. Deriving it would
+	// re-answer the question with whatever repository the agent is in NOW, so an
+	// agent that moved would silently re-point every claim it still holds.
+	RepoPath       string    `json:"repo_path,omitempty"`
 	Mode           string    `json:"mode"`
 	Note           string    `json:"note,omitempty"`
 	AcquiredSerial uint64    `json:"acquired_serial"`

@@ -114,19 +114,11 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 			}
 		case StatusStale:
 			if now.Sub(l.StaleSince) > s.Limits.StaleGrace {
-				l.Status = StatusArchived
-				l.ArchivedAt = now
-				l.Token, l.Nonce = "", ""
-				evs = append(evs, Event{Type: "agent.archived", Agent: l.ID})
-				evs = append(evs, s.departAllChannels(l.ID)...)
+				evs = append(evs, s.archive(l, op, now)...)
 			}
 		case StatusDormant:
 			if now.Sub(l.DormantSince) > s.Limits.DormancyMax {
-				l.Status = StatusArchived
-				l.ArchivedAt = now
-				l.Token, l.Nonce = "", ""
-				evs = append(evs, Event{Type: "agent.archived", Agent: l.ID})
-				evs = append(evs, s.departAllChannels(l.ID)...)
+				evs = append(evs, s.archive(l, op, now)...)
 			}
 		}
 	}
@@ -249,6 +241,42 @@ func (s *State) applySweep(op *Op, now time.Time) (Result, []Event, error) {
 	}
 	s.finish(&evs, now)
 	return Result{"changed": true}, evs, nil
+}
+
+// archive retires a lapsed agent, from either lifecycle: stale past its grace
+// or dormant past dormancy_max.
+//
+// ONE PLACE, because there were two and they had to agree about the nonce. The
+// same six lines appeared under StatusStale and StatusDormant, and the decision
+// below is exactly the kind that gets applied to one of a pair and not the
+// other. The ephemeral path is the one that matters most and is the easier of
+// the two to forget: it is reached in AgentTTL + StaleGrace, five minutes plus
+// thirty on the defaults, where the persistent path takes thirty days.
+//
+// THE TOKEN GOES AND THE NONCE STAYS, when the op says so. They were cleared
+// together and they are not the same kind of credential: the token belongs to
+// one activation and must not outlive it, which is what makes the agent's next
+// call return E_BAD_TOKEN and name the way back. The nonce is the one an agent
+// is told to keep precisely because it survives everything, and s.Nonces, the
+// index register and resume actually consult, is retained until
+// ArchiveRetention either way. Blanking the field left the credential alive in
+// the index and dead on the row, and the engine's guard against recovering a
+// privileged row without its nonce then refused the recovery this retention
+// window exists to allow.
+//
+// Gated on the op, per AGENTS.md: replay applies today's fold to yesterday's
+// ops, and a sweep written before this flag existed archived agents with the
+// nonce cleared. It must keep doing so, or a v0.0.7 ledger replays to a board
+// its own daemon never built. See Op.KeepArchivedNonce.
+func (s *State) archive(l *Agent, op *Op, now time.Time) []Event {
+	l.Status = StatusArchived
+	l.ArchivedAt = now
+	l.Token = ""
+	if !op.KeepArchivedNonce {
+		l.Nonce = ""
+	}
+	evs := []Event{{Type: "agent.archived", Agent: l.ID}}
+	return append(evs, s.departAllChannels(l.ID)...)
 }
 
 // gc prunes replayable state deterministically (SPEC §4, §11): consumed

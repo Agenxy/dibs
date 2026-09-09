@@ -167,6 +167,7 @@ Things that have cost real time here, none of which are visible in the diff:
 | `SPEC.md` | The protocol and its guarantees (living) |
 | `REQUIREMENTS.md` | The measured real-world failure that defines the requirements |
 | `WAKE-MECHANISMS.md` | How agents learn about events; what was rejected and why |
+| `docs/NETWORK.md` | More than one machine: host identity, claims that cross hosts, liveness, and why the hub does not run remote wake routes |
 | `SPEC-ATTACHMENTS.md` | Blob/attachment design |
 | `docs/ARCHITECTURE.md` | Structure, request path, invariants, recurring bug classes |
 | `SKILLS.md` | Agent-facing: how to USE Dibs well (served as `dibs://skills`) |
