@@ -497,6 +497,24 @@ func (e *Engine) markDelivered(l *core.Agent, now time.Time) {
 	}
 }
 
+// NodeID is this daemon's stable identity, the one already published on the
+// board as `node`.
+//
+// Read WITHOUT the writer loop, deliberately. It is written once at NewState
+// and never again, so a query() round trip would be a queue hop for a constant,
+// on a path that runs at every registration. The board's own `node` field goes
+// through the loop only because everything around it does.
+//
+// The MCP surface uses it as the host id for any caller that reached this
+// daemon over loopback, which is evidence rather than a claim: nothing off this
+// machine can reach loopback. See core.AgentInfo.HostID.
+func (e *Engine) NodeID() string {
+	if e.state == nil {
+		return ""
+	}
+	return e.state.NodeID
+}
+
 // Board returns the public snapshot with presentation annotations (SPEC §2):
 // last_seen (ephemeral freshness) and proc_alive, computed at read time.
 func (e *Engine) Board(ctx context.Context) (core.Result, error) {

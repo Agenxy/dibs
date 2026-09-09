@@ -1,7 +1,9 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
+	"net"
 	"os"
 	"strings"
 
@@ -58,8 +60,15 @@ func resolveLocation(info *core.AgentInfo, cwd string) {
 	info.RepoRoot = id.WorktreeID
 }
 
-func agentInfo(params json.RawMessage, a *toolArgs, session *clientInfoJSON) *core.AgentInfo {
+func agentInfo(ctx context.Context, params json.RawMessage, a *toolArgs, session *clientInfoJSON) *core.AgentInfo {
 	info := &core.AgentInfo{
+		// DERIVED, never taken from toolArgs. An agent choosing its own machine
+		// id chooses which other agents its claims stop colliding with, and the
+		// host rule REMOVES collisions, so a wrong value here hides a real one.
+		// This is the same line mergeIdentity draws around the repository
+		// fields: the agent asserts where it is working, the server says what
+		// that means.
+		HostID:   resolveHostID(ctx, params),
 		Model:    a.Model,
 		Provider: a.Provider,
 		Surface:  a.Surface,
@@ -213,6 +222,66 @@ func clientWantsUI(params json.RawMessage) bool {
 	}
 	v, _ := p.Meta["com.dibs/ui"].(bool)
 	return v
+}
+
+// hostIDKey carries the machine identity the transport established for this
+// request. A context value rather than a parameter because it is a fact about
+// the CONNECTION, and the tool-call path deliberately knows nothing about HTTP:
+// the same reason clientInfo is read once at the edge and carried forward.
+type hostIDKey struct{}
+
+// withTransportHost stamps a request context with what the transport can prove
+// about where the caller is.
+//
+// local is true when the request arrived over loopback, which nothing off this
+// machine can reach, so the daemon's own node id is EVIDENCE for that caller
+// rather than a claim. A remote caller gets the empty string here and falls
+// back to what its own bridge asserts, which is weaker and is documented as
+// weaker.
+func withTransportHost(ctx context.Context, local bool, node string) context.Context {
+	if !local || node == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, hostIDKey{}, node)
+}
+
+// resolveHostID answers which computer this caller is on, preferring what the
+// transport established over what the caller says.
+//
+// The order is the whole of the rule. A loopback caller cannot be anywhere but
+// here, so nothing it sends can move it; a remote caller's bridge is the only
+// thing that knows, so its word is taken and marked as its word. Neither branch
+// invents a value: unknown stays empty, and empty behaves exactly as this board
+// did before the field existed.
+func resolveHostID(ctx context.Context, params json.RawMessage) string {
+	if v, ok := ctx.Value(hostIDKey{}).(string); ok && v != "" {
+		return v
+	}
+	return metaHost(params)
+}
+
+// isLoopback reports whether an address is one nothing off this machine can
+// reach. A malformed or absent address is NOT loopback: the conservative
+// reading, since the whole point of the answer is that it is evidence.
+func isLoopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
+}
+
+// metaHost reads the machine id a remote bridge attaches to its calls.
+func metaHost(params json.RawMessage) string {
+	var p struct {
+		Meta map[string]any `json:"_meta"`
+	}
+	if json.Unmarshal(params, &p) != nil {
+		return ""
+	}
+	v, _ := p.Meta[HostMetaKey].(string)
+	return strings.TrimSpace(v)
 }
 
 // metaSession reads the harness session id the stdio bridge attaches to every

@@ -234,6 +234,12 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		// removed. repo_root is the checkout's own top level, which is what a
 		// claim's portable name is measured from.
 		"repo_dir": true, "repo_remote": true, "repo_roots": true, "repo_root": true,
+		// host_id: WHICH COMPUTER, as a key rather than as the `host` label
+		// beside it. The fold suppresses an absolute-path claim collision between
+		// two agents whose host ids differ, so a rename would silently make every
+		// historical agent's machine unknown, and unknown means "collide as
+		// before": the safe direction, and still a decision nobody made.
+		"host_id": true,
 	}
 	declaredAgent := map[string]bool{}
 	for _, tag := range declaredAgentTags() {
