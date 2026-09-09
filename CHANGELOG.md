@@ -7,6 +7,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Claims missed the collision between two linked worktrees of one
+  repository.** A claim was an absolute path compared as a raw string, so
+  `/a/wt1/pkg/x.go` and `/a/wt2/pkg/x.go` did not overlap: the same tracked
+  file, two agents, and both told they held it exclusively. The declare-time
+  signal had scoped by repository since it was written, so the weaker signal
+  knew about the collision and the stronger one did not, and the write guard
+  did not either, which is the half that costs work: the board reported a
+  conflict the enforcement path waved through. Claims now overlap under either
+  of two rules, and the refusal says which one fired. The second requires
+  POSITIVE evidence of one repository and a portable name on both sides;
+  anything less stays silent, because a conflict between strangers is an agent
+  stopping work nothing else is doing.
+
 - **An agent that went quiet for thirty-five minutes became permanently
   unreachable.** Archiving is a timer, not a decision: an ephemeral agent
   reaches it `agent_ttl` + `stale_grace` after its last call, five minutes plus
@@ -41,6 +54,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that nothing on this board can wake it.
 
 ### Added
+
+- The frozen-json-tag guard now covers `core.AgentInfo` as well as `core.Op`.
+  Those tags travel to disk inside `op.agent` and not one of them was frozen:
+  renaming `repo_dir`, `repo_remote` or `repo_roots` would have replayed as
+  "no evidence" on every historical op, and the fold would have quietly stopped
+  telling one repository from another while reporting success. That is the
+  `lane_kind` failure exactly, in the one struct the guard did not look inside.
 
 - `docs/NETWORK.md`: the design for a board whose agents are not all on one
   computer. Host identity as a key rather than a hostname, claims keyed by host

@@ -549,6 +549,25 @@ your own path renews (`claim.renewed`, ledgered).
 covers `/x/y/z`, never `/x/y2`); best-effort `EvalSymlinks` at ingress. Caveats
 documented, not solved: case-insensitive volumes, Unicode aliases.
 
+**Two claims overlap under either of two rules, and the result says which.**
+
+- `path`: their absolute paths overlap component-wise, as above.
+- `repo`: both agents are positively in ONE repository (shared Git common
+  directory, equal configured remote, or equal root commits: the ranking of
+  §9's `differentProjects`, read for sameness rather than difference) **and**
+  their paths overlap once each agent's own checkout root is subtracted.
+
+The second rule exists because one absolute path is not one file. Two linked
+worktrees of a repository hold `/a/wt1/x.go` and `/a/wt2/x.go` for the same
+tracked file, and the first rule alone reports nothing. The portable name is
+recorded on the claim when it is taken, from the checkout root the server
+resolved at registration; a path outside the agent's own checkout has none, and
+the repository rule does not apply to it. Both halves demand positive evidence:
+an overlap fired on an absence of evidence is a conflict between strangers, and
+that is worse than the collision it would catch. The same rule is what will
+carry claims between machines, where absolute paths stop meaning anything at
+all: see `docs/NETWORK.md`.
+
 **Lifecycle**: renewable 15-min lease, hard max 24 h. Claims end when their agent
 leaves `active`: on `stale`, `dormant`, `closed`, and `archived` alike.
 

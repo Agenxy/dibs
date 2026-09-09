@@ -6,8 +6,9 @@ the FOLD, and this repository has paid for unplanned ones about six times in
 one release cycle. Issue #12 is where the position was first stated; this
 supersedes it with decisions.
 
-Status: §4's liveness split is built, because it bites on one machine as hard
-as on ten. The rest is not. Where a thing is already true it says so.
+Status: §4's liveness split is built, and so is the portable half of §3,
+because both bite on one machine as hard as on ten. The host key and everything
+downstream of it are not. Where a thing is already true it says so.
 
 ## 1. The position: one writer, many clients
 
@@ -86,11 +87,21 @@ repositories are the same and the relative paths overlap, whatever the hosts.
 This restores the real collision, which is the case the product exists for: two
 agents in clones of one project editing the same file.
 
-The portable half needs no new machinery. `paths.RepoID.Identity()` already
-records the primary remote and the parentless commit roots, both of which are
-machine-independent by construction, and `SameRepo` already returns a
-three-valued answer that keeps "no evidence" distinct from "different". The
-only new work is the repo-relative path and carrying it on the op.
+The portable half is **built**, and it turned out to pay for itself before any
+network existed. `paths.RepoID.Identity()` already recorded the primary remote
+and the parentless commit roots, both machine-independent by construction; the
+checkout's own root (`WorktreeID`) is now recorded beside them, a claim carries
+its path relative to that root, and `claimOverlap` unions the two rules. The
+case it fixes today is two linked worktrees of one repository, where the
+absolute strings differ and the file is the same. That is not an exotic
+arrangement here: it is how this project checks a regression test against the
+commit before its fix.
+
+The host half is not built, and the reason is worth recording rather than
+quietly leaving as a gap. It is unreachable until agents are genuinely on
+different machines, and building a fold rule with no reachable behaviour would
+be speculative complexity of the kind PHILOSOPHY.md exists to refuse. It goes in
+with the transport work that makes a remote agent real, not before it.
 
 Both halves are recorded at ingress and compared in the fold, which is the
 bargain every other impure input already makes.
@@ -252,8 +263,11 @@ because Supgang intends to.
    one item that is already costing users on a single machine, and the network
    only sharpens it. The gate and its replay test went in before anything else
    moved.
-2. **Host-scoped claims** (§2, §3). Self-contained, fixes a real correctness
-   bug, and needs no network to test.
+2. **Host-scoped claims** (§2, §3). Half done: the portable repository rule is
+   built and pays off today. The host key waits for the transport work, because
+   until a remote agent exists there is nothing for it to separate, and this
+   section originally claimed it "needs no network to test" as though that meant
+   it needs no network to MATTER.
 3. **Wake routes per host** (§5). Mostly documentation and doctor honesty, plus
    generalising the bridge.
 4. **Proved identity** (§6). Needs Supgang to pass its own acceptance first.

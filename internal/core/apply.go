@@ -1014,9 +1014,12 @@ func bareRelease(op *Op, l *Agent) bool {
 // MCP handshake: the CLIENT states those, which is the one part of an identity
 // that is not the model's word for itself, and letting the model overwrite them
 // would throw away the only trustworthy field on the board. Project, RepoDir,
-// RepoRemote and RepoRoots are resolved from the filesystem by the server and
-// compared by the fold; an agent asserting them could make its work look like
-// it lives in a repository it has never touched.
+// RepoRemote, RepoRoots and RepoRoot are resolved from the filesystem by the
+// server and compared by the fold; an agent asserting them could make its work
+// look like it lives in a repository it has never touched, and RepoRoot is the
+// sharpest of the five for that, because it is the prefix a claim's portable
+// name is measured from: an agent choosing its own root chooses what its claims
+// collide with.
 func (a *Agent) mergeIdentity(in *AgentInfo) []string {
 	if a.Agent == nil {
 		a.Agent = &AgentInfo{}
@@ -1058,11 +1061,13 @@ func (a *Agent) mergeIdentity(in *AgentInfo) []string {
 	if in.CWD != "" {
 		moved := in.CWD != a.Agent.CWD
 		rederived := in.Project != a.Agent.Project || in.RepoDir != a.Agent.RepoDir ||
-			in.RepoRemote != a.Agent.RepoRemote || in.RepoRoots != a.Agent.RepoRoots
+			in.RepoRemote != a.Agent.RepoRemote || in.RepoRoots != a.Agent.RepoRoots ||
+			in.RepoRoot != a.Agent.RepoRoot
 		if moved || rederived {
 			a.Agent.CWD = in.CWD
 			a.Agent.Project, a.Agent.RepoDir = in.Project, in.RepoDir
 			a.Agent.RepoRemote, a.Agent.RepoRoots = in.RepoRemote, in.RepoRoots
+			a.Agent.RepoRoot = in.RepoRoot
 			if moved {
 				changed = append(changed, "cwd")
 			} else {
@@ -1849,7 +1854,8 @@ func (s *State) applyClaim(l *Agent, op *Op, now time.Time) (Result, []Event, er
 		return nil, nil, errTooLarge("path/note", s.Limits.MaxPathBytes)
 	}
 	path := cleanPath(op.Path)
-	overlaps := s.overlapping(path, l.ID)
+	repoPath := repoPathOf(l, path)
+	overlaps := s.overlapping(l, path, repoPath, l.ID)
 	// SPEC §9 matrix: exclusive refused on ANY overlap; shared refused only
 	// under exclusive.
 	granted := true
@@ -1865,7 +1871,17 @@ func (s *State) applyClaim(l *Agent, op *Op, now time.Time) (Result, []Event, er
 	}
 	ov := make([]map[string]any, 0, len(overlaps))
 	for _, c := range overlaps {
-		ov = append(ov, map[string]any{"agent": c.Agent, "path": c.Path, "mode": c.Mode, "note": c.Note})
+		row := map[string]any{"agent": c.Agent, "path": c.Path, "mode": c.Mode, "note": c.Note}
+		// WHICH RULE FIRED, because the two send a reader somewhere different.
+		// An absolute overlap means "that path, on this filesystem"; a repository
+		// overlap means "the same tracked file, under another root", and a person
+		// told only the holder's path would go and look at a directory that has
+		// nothing to do with the one they asked about.
+		if rule, _ := s.claimOverlap(l, path, repoPath, c); rule == OverlapByRepo {
+			row["rule"] = OverlapByRepo
+			row["repo_path"] = c.RepoPath
+		}
+		ov = append(ov, row)
 	}
 	if !granted {
 		return Result{"granted": false, "overlaps": ov},
@@ -1873,7 +1889,10 @@ func (s *State) applyClaim(l *Agent, op *Op, now time.Time) (Result, []Event, er
 	}
 	for _, c := range s.Claims {
 		if c.Agent == l.ID && c.Path == path { // renewal (ledgered: drives expiry)
-			c.Renewed, c.Mode, c.Note = now, op.Mode, op.Note
+			// RepoPath with them: a renewal restates the claim, and an agent that
+			// moved between checkouts since acquiring it would otherwise keep a
+			// portable name derived from where it used to be.
+			c.Renewed, c.Mode, c.Note, c.RepoPath = now, op.Mode, op.Note, repoPath
 			return Result{"granted": true, "renewed": true, "overlaps": ov},
 				[]Event{{Type: "claim.renewed", Agent: l.ID, Data: map[string]any{"path": path, "mode": op.Mode}}}, nil
 		}
@@ -1888,7 +1907,10 @@ func (s *State) applyClaim(l *Agent, op *Op, now time.Time) (Result, []Event, er
 		return nil, nil, errf("E_CLAIM_LIMIT", "release claims you no longer need", "claim limit reached (%d/agent, %d "+
 			"global)", s.Limits.MaxClaimsPerAgent, s.Limits.MaxClaimsGlobal)
 	}
-	cl := &Claim{Agent: l.ID, Path: path, Mode: op.Mode, Note: op.Note, Acquired: now, Renewed: now}
+	cl := &Claim{
+		Agent: l.ID, Path: path, RepoPath: repoPath,
+		Mode: op.Mode, Note: op.Note, Acquired: now, Renewed: now,
+	}
 	s.Claims = append(s.Claims, cl)
 	cl.AcquiredSerial = s.Serial + 1
 	return Result{"granted": true, "overlaps": ov},

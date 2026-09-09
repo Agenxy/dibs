@@ -218,6 +218,40 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 				"and the fold reports success", tag)
 		}
 	}
+	// AND THE IDENTITY THE OP CARRIES. core.AgentInfo is serialised inside
+	// `op.agent`, so its tags are on disk exactly as the Op's own are, and none
+	// of them were frozen until this list existed. The repo trio is the one that
+	// matters most: the fold decides whether two agents are in one project from
+	// those three strings, and a rename would leave every historical op saying
+	// "no evidence" while replay reported success.
+	wantAgent := map[string]bool{
+		"harness": true, "version": true, "surface": true, "model": true,
+		"provider": true, "effort": true,
+		"title": true, "cwd": true, "project": true, "branch": true, "host": true,
+		// The repository identity, RECORDED because the fold cannot call Git.
+		// repo_dir and repo_remote decide whether two checkouts are one project;
+		// repo_roots settles the case neither can, a clone whose origin was
+		// removed. repo_root is the checkout's own top level, which is what a
+		// claim's portable name is measured from.
+		"repo_dir": true, "repo_remote": true, "repo_roots": true, "repo_root": true,
+	}
+	declaredAgent := map[string]bool{}
+	for _, tag := range declaredAgentTags() {
+		declaredAgent[tag] = true
+		if !wantAgent[tag] {
+			t.Errorf("core.AgentInfo declares json tag %q, which is not in this test's "+
+				"frozen list. It travels to disk inside op.agent, so it is part of the "+
+				"on-disk format: add it here deliberately", tag)
+		}
+	}
+	for tag := range wantAgent {
+		if !declaredAgent[tag] {
+			t.Errorf("frozen agent tag %q is no longer declared on core.AgentInfo: every "+
+				"ledger holding it replays with that field zero, and the fold reports "+
+				"success", tag)
+		}
+	}
+
 	seenEnvelope := map[string]bool{}
 	seenOp := map[string]bool{}
 	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
@@ -508,9 +542,21 @@ func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
 
 // declaredOpTags lists every json tag on core.Op, so the frozen list above is
 // checked against the type rather than against whatever the fixture exercised.
-func declaredOpTags() []string {
+func declaredOpTags() []string { return declaredTagsOf(reflect.TypeOf(core.Op{})) }
+
+// declaredAgentTags is the same for the identity an op CARRIES.
+//
+// core.AgentInfo reaches disk inside `op.agent`, so every one of its tags is
+// part of the on-disk format, and until this existed not one of them was
+// frozen. repo_dir, repo_remote and repo_roots are the load-bearing case:
+// renaming any of them would replay as false on every historical op, and the
+// fold would quietly stop being able to tell one repository from another. That
+// is the lane_kind failure exactly, in the one struct the guard did not look
+// inside.
+func declaredAgentTags() []string { return declaredTagsOf(reflect.TypeOf(core.AgentInfo{})) }
+
+func declaredTagsOf(t reflect.Type) []string {
 	var out []string
-	t := reflect.TypeOf(core.Op{})
 	for i := range t.NumField() {
 		tag := t.Field(i).Tag.Get("json")
 		if tag == "" || tag == "-" {
