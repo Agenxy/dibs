@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -29,12 +30,25 @@ import (
 // The board's whole promise is reaching an agent that is not running. A timer
 // that silently withdraws it is the promise expiring, not the agent.
 func TestAnAgentArchivedByRetentionIsStillWoken(t *testing.T) {
-	e := &Engine{}
+	// A LOOP-BACKED ENGINE, because this test really starts a process.
+	//
+	// maybeWake spawns a goroutine that runs the operator's command and then
+	// logs the result, and its deferred wakeExited goes through query(), which
+	// sends on e.ops. On a bare &Engine{} that channel is nil, so the goroutine
+	// parks there forever and the test returns with it still alive. It then logs
+	// into whatever global slog handler the NEXT test has installed, and
+	// hooklogging_test.go installs a bytes.Buffer of its own: a data race
+	// between two tests that never run at the same time.
+	//
+	// Every local run passed and CI went red, which is how a race behaves and
+	// is the second time this file's neighbours have recorded that sentence. A
+	// running loop serves the query, so wakeExited completes, wakers.running
+	// clears, and awaitWakeDone below has something real to wait on.
+	// EVERY SEED BEFORE THE LOOP STARTS. boot() reads the whole of state on the
+	// way up, so assigning st.Agents after `go e.Run` is the test racing its own
+	// engine. Caught here by -race on the first attempt at this fix, which is
+	// the argument for making the fix under -race rather than after it.
 	st := core.NewState("t", core.DefaultLimits())
-	e.state = st
-	e.SetWakeCommands(map[string]WakeCommand{
-		"codex": {Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute},
-	})
 	l := bridgeAgent("swept", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
 	// What the sweep leaves behind: archived, token gone, and the StaleReason
 	// that says it went dark rather than finishing.
@@ -45,6 +59,14 @@ func TestAnAgentArchivedByRetentionIsStillWoken(t *testing.T) {
 	l.LastCoordination = time.Now().Add(-2 * time.Hour)
 	st.Agents = map[string]*core.Agent{"swept": l}
 
+	e := New(st, &memLedger{}, deadProber{})
+	e.SetWakeCommands(map[string]WakeCommand{
+		"codex": {Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute},
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
 	e.maybeWake(core.Event{
 		Type: "message.sent", To: "swept",
 		Data: map[string]any{"msg_type": core.MsgQuestion},
@@ -53,6 +75,60 @@ func TestAnAgentArchivedByRetentionIsStillWoken(t *testing.T) {
 		t.Error("no wake for an agent the sweep archived: its mail and its nonce " +
 			"are both still there, so it can come back, and nothing will ever " +
 			"tell it to")
+	}
+	awaitWakeDone(t, e, "swept")
+}
+
+// awaitWakeDone waits for the goroutine maybeWake started to finish.
+//
+// Not tidiness: that goroutine logs, and a test which returns while it is still
+// running hands a live writer to whatever global slog handler the next test
+// installs. wakers.running is cleared by wakeExited, which runs AFTER the
+// command and after its log line, so this is the one signal that covers both.
+//
+// Requires an engine with a running loop; see the note in the caller.
+func awaitWakeDone(t *testing.T, e *Engine, agent string) {
+	t.Helper()
+	// SEEN RUNNING FIRST, because "not running" is equally true of a wake that
+	// never started, and a waiter that returns on its first poll waits for
+	// nothing while reading exactly like a waiter that works. wakeFor sets this
+	// SYNCHRONOUSLY, inside maybeWake and before the goroutine, so by the time
+	// the caller reaches here it is true or there was no wake at all: no race,
+	// no sleep, and a real assertion rather than a hopeful one.
+	//
+	// The first version of this checked wakers.attempts instead and hung, which
+	// is how the decoration was caught: a successful wake CLEARS its attempt
+	// count, so the condition could never hold. Five clean -race runs had
+	// already been collected with the version before that, which returned
+	// immediately and proved nothing.
+	e.wakers.mu.Lock()
+	started := e.wakers.running[agent]
+	e.wakers.mu.Unlock()
+	if !started {
+		t.Fatalf("no wake is running for %s, so there is nothing to wait for and "+
+			"this helper is measuring nothing", agent)
+	}
+	// A BOUNDED WAIT, not a sleep, because the exit has no channel to offer: it
+	// is a map entry cleared on the writer loop by wakeExited, which runs after
+	// the command AND after its log line, so it covers both. The deadline is the
+	// assertion; the tick is only how often the question is asked. Same shape as
+	// the socket-wake waits elsewhere in this package.
+	deadline := time.After(10 * time.Second)
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		e.wakers.mu.Lock()
+		running := e.wakers.running[agent]
+		e.wakers.mu.Unlock()
+		if !running {
+			return
+		}
+		select {
+		case <-tick.C:
+		case <-deadline:
+			t.Fatalf("the wake started for %s never finished, so this test would "+
+				"leak a goroutine that logs into the next test's handler", agent)
+		}
 	}
 }
 

@@ -6,11 +6,17 @@ the FOLD, and this repository has paid for unplanned ones about six times in
 one release cycle. Issue #12 is where the position was first stated; this
 supersedes it with decisions.
 
-Status: built so far are §4's liveness split, the portable half of §3, and §5's
-locality rule and its doctor check. Each of those bites on one machine as hard
-as on ten, which is why they went first. The host key and the bridge
-generalisation are not built, and both wait on the transport work. Where a thing
+Status: built so far are §4's liveness split, §3 in full (both the portable
+repository rule and the host key), and §5's locality rule and its doctor check.
+The bridge generalisation and §6's proved identity are not built. Where a thing
 is already true it says so.
+
+One correction, kept rather than quietly edited out, because the reasoning was
+the error and not the sentence. An earlier version of this document deferred the
+host key as "unreachable until agents are genuinely on different machines". That
+was wrong: SPEC §16 ships remote agents in v1, so binding `--addr` produces the
+false cross-machine collision today. Checking the spec before writing the
+sentence would have caught it.
 
 ## 1. The position: one writer, many clients
 
@@ -63,7 +69,13 @@ failed and the fix is unreleased; a board that only works when an unproven
 address plane is present would be a worse product than one that works over any
 reachable address. So:
 
-- Dibs defines `HostID` as its own value.
+- Dibs defines `HostID` as its own value. **Built.** The daemon DERIVES it
+  wherever it can: a caller arriving over loopback is on the daemon's machine
+  (nothing else can reach loopback), so it is stamped with the daemon's node id
+  and nothing the caller says moves it. A genuinely remote caller's bridge
+  asserts one, which its own `node_id` supplies when that machine runs a daemon
+  and a generated `host_id` otherwise. Absent means unknown, and unknown behaves
+  exactly as this board did before the field existed.
 - When Supgang is present, `HostID` **is** the Supgang node fingerprint, and
   the human label is Supgang's signed computer name. One identity, not two.
 - When it is not, Dibs generates a per-data-directory key on first run, which
@@ -80,8 +92,11 @@ when identity is proved (§6). Those are separable and should not be sold as one
 A claim gets two keys, and overlap is the union of two rules.
 
 **Host-scoped path.** `(HostID, cleaned absolute path)`. Two claims overlap
-when the hosts match and the paths overlap as they do today. This kills the
-false collision.
+when the paths overlap as they do today AND there is no positive evidence of two
+machines. Three-valued, like `SameRepo`, and for a sharper reason: this rule
+REMOVES collisions, so "no idea" has to mean "go on reporting". An agent that
+supplied no host id, which is every agent on every board written before the
+field, collides exactly as it always did. **Built.**
 
 **Portable repository path.** When the claimed path lies inside a checkout,
 also record `(repo identity, repo-relative path)`. Two claims overlap when the
@@ -268,11 +283,10 @@ because Supgang intends to.
    one item that is already costing users on a single machine, and the network
    only sharpens it. The gate and its replay test went in before anything else
    moved.
-2. **Host-scoped claims** (§2, §3). Half done: the portable repository rule is
-   built and pays off today. The host key waits for the transport work, because
-   until a remote agent exists there is nothing for it to separate, and this
-   section originally claimed it "needs no network to test" as though that meant
-   it needs no network to MATTER.
+2. ~~**Host-scoped claims** (§2, §3)~~. Done, both halves. The portable
+   repository rule pays off on one machine (linked worktrees); the host key
+   pays off the moment anybody binds `--addr`, which SPEC §16 has shipped all
+   along.
 3. **Wake routes per host** (§5). Doctor honesty and the locality rule are
    **built** and written down (`WAKE-MECHANISMS.md` §5a, `docs/CONFIGURATION.md`).
    Generalising the bridge from "this session" to "this host's agents" waits for

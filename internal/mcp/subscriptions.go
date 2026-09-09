@@ -451,6 +451,16 @@ const (
 	// attached by the stdio bridge to every call. On a listen request it
 	// names the session the stream serves: see standingFunc.
 	SessionMetaKey = "com.dibs/session"
+	// HostMetaKey is WHICH COMPUTER the caller is on, attached by a bridge that
+	// joined a daemon on another machine.
+	//
+	// Only read for a caller the daemon can see is remote. A loopback caller is
+	// stamped with the daemon's own node id whatever it sends, because loopback
+	// is proof and this is not: a bridge states it, exactly as it states the
+	// bearer secret that got it in. See core.AgentInfo.HostID and
+	// docs/NETWORK.md §2 for why that is a correctness boundary and not yet a
+	// security one.
+	HostMetaKey = "com.dibs/host"
 )
 
 func resourceUpdated(uri string, subID json.RawMessage, ev core.Event) map[string]any {

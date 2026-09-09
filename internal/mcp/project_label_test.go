@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -75,7 +76,7 @@ func TestTheBoardSaysWhichProjectAnAgentIsIn(t *testing.T) {
 // Guessing from the directory name is worse than a blank: a blank sends the
 // reader to the cwd, whereas "tmp" reads as a fact.
 func TestAnAgentOutsideARepositoryIsNotGivenAProject(t *testing.T) {
-	info := agentInfo(json.RawMessage(`{}`), &toolArgs{CWD: t.TempDir()}, nil)
+	info := agentInfo(context.Background(), json.RawMessage(`{}`), &toolArgs{CWD: t.TempDir()}, nil)
 	if info != nil && info.Project != "" {
 		t.Errorf("a non-repository directory produced project %q, want none", info.Project)
 	}

@@ -183,6 +183,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.logRequest(r, &req)
+	// WHERE THE CALLER IS, decided at the only place that can see it.
+	//
+	// Loopback is unreachable from anywhere but this machine, so a caller
+	// arriving on it is here, and the daemon's own node id is that caller's host
+	// id as a matter of evidence. Everything past this point is a tool call that
+	// knows nothing about HTTP and should not learn: the fact travels on the
+	// context, the way clientInfo travels from the handshake.
+	r = r.WithContext(withTransportHost(r.Context(), isLoopback(r.RemoteAddr), s.eng.NodeID()))
 
 	if req.ID == nil { // notification (e.g. legacy notifications/initialized)
 		w.WriteHeader(http.StatusAccepted)
@@ -1143,7 +1151,7 @@ func (s *Server) run(
 		if strings.TrimSpace(a.Name) == "" {
 			return nil, fmt.Errorf("name is required")
 		}
-		op.Agent = agentInfo(params, a, sessionClient)
+		op.Agent = agentInfo(ctx, params, a, sessionClient)
 		op.Kind, op.Name, op.Description, op.PID = core.OpRegister, a.Name, a.Description, a.PID
 		op.Nonce, op.AgentKind, op.SessionID = a.Nonce, core.AgentKind(a.Kind), a.SessionID
 		op.Parent, op.ParentNonce = a.Parent, a.ParentNonce
