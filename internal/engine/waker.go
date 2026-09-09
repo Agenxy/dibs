@@ -199,15 +199,31 @@ func (e *Engine) maybeWake(ev core.Event) {
 	}
 	// A RETIRED IDENTITY IS NOT WOKEN.
 	//
-	// Answering a closed or archived asker is allowed and returns
-	// delivered:false, saying plainly that nobody will read it. The event is
-	// still published, and every published event reaches this, so the board
-	// said "nobody will read this answer" and then started the thread anyway.
-	// Two costs: a subprocess spent on a mailbox that cannot be restored, and
-	// worse, a closed PERSISTENT identity resuming into the nonce-registration
-	// path and coming back ACTIVE, which is precisely the finality sign_off
-	// promises.
-	if l.Gone() {
+	// Answering a closed asker is allowed and returns delivered:false, saying
+	// plainly that nobody will read it. The event is still published, and every
+	// published event reaches this, so the board said "nobody will read this
+	// answer" and then started the thread anyway. Two costs: a subprocess spent
+	// on a mailbox that cannot be restored, and worse, a closed PERSISTENT
+	// identity resuming into the nonce-registration path and coming back ACTIVE,
+	// which is precisely the finality sign_off promises.
+	//
+	// RETIRED, NOT Gone(), and the difference is thirty-five minutes.
+	//
+	// This asked Gone(), which is Closed || Archived, while everything written
+	// above it argues the Closed half alone. Archived is not a decision: it is
+	// what the sweep does to an agent that went quiet, and for an EPHEMERAL
+	// agent that is AgentTTL + StaleGrace on the defaults. Both costs named
+	// above evaporate there. The mailbox CAN be restored: the nonce index
+	// outlives archiving by ArchiveRetention, and register-with-nonce is the
+	// documented recovery E_BAD_TOKEN already points at. And nothing was
+	// decided, so nothing is being defeated by starting it again.
+	//
+	// What the old test produced instead: an agent doing ordinary work between
+	// two coordination calls, archived thirty-five minutes later, holding mail,
+	// holding a working credential, and permanently unreachable. Recoverable and
+	// unwakeable is the one combination in which the recovery is worth nothing,
+	// because reaching an agent that is not running is the entire product.
+	if l.Retired() {
 		slog.Debug("no wake: this agent has signed off", "agent", l.ID)
 		return
 	}
@@ -381,7 +397,10 @@ func (e *Engine) rearmDeferredWakes() int {
 	}
 	n := 0
 	for id, l := range e.state.Agents {
-		if l.Gone() || !e.hasBlockingMail(id) {
+		// Retired, not Gone: see maybeWake. An agent swept to archived while
+		// nobody was looking is the likeliest one to be sitting on stranded
+		// mail, and Gone() skipped exactly those.
+		if l.Retired() || !e.hasBlockingMail(id) {
 			continue
 		}
 		e.deferWakeLocked(id, bootRetryDelay)
@@ -428,7 +447,7 @@ func (e *Engine) retryWakeDecision(agent string) {
 		return
 	}
 	l := e.state.Agents[agent]
-	if l == nil || l.Gone() {
+	if l.Retired() {
 		return
 	}
 	// The turn end is recorded by wakeExited, not here: the cooldown timer can
@@ -1461,7 +1480,11 @@ func (e *Engine) PullOnlyNoteFor(ctx context.Context, agentID string) string {
 // changes without an op. So the engine's note wins wherever it has one, because
 // it is the participant that knows.
 func (e *Engine) PullOnlyNote(l *core.Agent) string {
-	if l == nil || l.Gone() || e.isTheHuman(l.ID) {
+	// Retired, not Gone, for the reason maybeWake gives: an archived agent can
+	// now be sent mail and can now be woken, so it needs this note as much as a
+	// dormant one does. Leaving it out here would have made the newly-reachable
+	// case the one case the sender is told nothing about.
+	if l.Retired() || e.isTheHuman(l.ID) {
 		return ""
 	}
 	harness := wakeHarness(l)
@@ -1507,7 +1530,13 @@ func (e *Engine) PullOnlyNote(l *core.Agent) string {
 	// The socket route is not a rescue here the way it can be for an active
 	// agent: it lives in the harness session, and this agent's session has
 	// ended. Configured-and-nameable is the whole of what is left.
-	if l.Sleeping() {
+	//
+	// AND ARCHIVED COUNTS AS SLEEPING HERE. Sleeping() is stale-or-dormant, which
+	// is the fold's vocabulary and stays as it is; what this branch actually
+	// needs is "not running, and its harness session has ended", and an archived
+	// agent is the clearest instance of that. It is also the state whose sender
+	// most needs the warning, since recovering it costs a re-registration.
+	if l.Sleeping() || l.Status == core.StatusArchived {
 		why := "nothing on this board can wake " + named
 		if configured {
 			why = named + " has a wake command, but " + l.ID + " has never supplied " +

@@ -47,7 +47,16 @@ func TestTheInboxSaysWhenASenderCannotBeAnswered(t *testing.T) {
 	}, t0)
 
 	// The sender goes away, the way the reported one had.
-	s.Agents["ghost"].Status = StatusArchived
+	//
+	// CLOSED, and it used to be archived. Archived stopped being unanswerable
+	// when Answerable moved from Gone() to Retired(): the row survives for
+	// ArchiveRetention so the agent can come back with its nonce, and refusing
+	// mail to an identity the board is keeping in order to restore it was the
+	// defect, not the guarantee. So archived is no longer a fixture for
+	// "cannot be answered", and using it here would have quietly asserted the
+	// thing that changed. The guarantee under test is untouched: a reader is
+	// told, at read time, which of its senders it cannot reply to.
+	s.Agents["ghost"].Status = StatusClosed
 
 	// Setup must hold: the send path must really refuse a reply to the ghost,
 	// or the inbox has nothing to warn about and this test proves nothing.
@@ -55,7 +64,7 @@ func TestTheInboxSaysWhenASenderCannotBeAnswered(t *testing.T) {
 		Kind: OpSendMessage, Token: "tok-reader", To: "ghost",
 		MsgType: MsgNotify, Body: "you are welcome",
 	}, t0); err == nil {
-		t.Fatal("setup: a reply to the archived sender succeeded, so there is no " +
+		t.Fatal("setup: a reply to the closed sender succeeded, so there is no " +
 			"unanswerable sender here to report")
 	}
 
@@ -63,7 +72,7 @@ func TestTheInboxSaysWhenASenderCannotBeAnswered(t *testing.T) {
 	gone, _ := res["unanswerable_senders"].([]Result)
 	if len(gone) != 1 {
 		t.Fatalf("check_in reported %d unanswerable sender(s), wanted exactly the "+
-			"archived one: %v", len(gone), res["unanswerable_senders"])
+			"closed one: %v", len(gone), res["unanswerable_senders"])
 	}
 	if gone[0]["from"] != "ghost" {
 		t.Errorf("the wrong sender was named: %v", gone[0])

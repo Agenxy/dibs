@@ -170,6 +170,14 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		// replaying an older ledger through them would reconstruct a different
 		// board; ops that lack this decode false and keep what they had.
 		"v7_semantics": true,
+		// keep_archived_nonce: whether THIS sweep leaves an archived agent its
+		// nonce instead of clearing it with the token. Same shape as purge_mail
+		// and v7_semantics: it changes what an ALREADY LEDGERED op kind does, so
+		// a sweep recorded before it existed decodes false and archives exactly
+		// as it did. A separate flag rather than a fifth rider on v7_semantics,
+		// because that one is already true on every op written since v0.0.7 and
+		// reusing it would apply a v0.0.8 decision to months of recorded history.
+		"keep_archived_nonce": true,
 	}
 
 	// Every tag the Op DECLARES, not merely the ones this fixture happens to
@@ -304,7 +312,7 @@ const (
 	// rename. If you are here
 	// because a sweep moved this value, the sweep is the bug, and the tag it
 	// renamed is the data loss.
-	frozenOpFingerprint       = "sha256:4ae6aa5b8fdda8ac"
+	frozenOpFingerprint       = "sha256:cbdc8c1ffa83f2db"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

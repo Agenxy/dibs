@@ -1084,8 +1084,29 @@ func (s *State) applyResume(op *Op, now time.Time) (Result, []Event, error) {
 		return nil, nil, errf("E_BAD_NONCE", "check the nonce; if lost, register a new agent", "unknown nonce")
 	}
 	l := s.Agents[id]
-	if l == nil || l.Status == StatusArchived {
-		return nil, nil, errf("E_NO_AGENT", "the agent was archived; register a new one", "agent for nonce is gone")
+	// ARCHIVED RESUMES, and this used to refuse it with "register a new one".
+	//
+	// The advice was worse than the refusal. Registering a new agent forks a
+	// SIBLING: a second row under a name the board still holds, whose mailbox is
+	// empty while the original's sits full and unread, which SKILLS.md names as
+	// the way a standing role loses its mail. The correct recovery was already
+	// available, one call away, and this sent people past it.
+	//
+	// Nothing was missing. s.Nonces resolved the nonce to this row, so the row
+	// is here; retention keeps it and its mailbox for ArchiveRetention for the
+	// express purpose of letting it come back; and archiving is a TIMER, five
+	// minutes plus thirty for an ephemeral agent, not a decision anyone made.
+	// The only thing standing between the credential and the mailbox it opens
+	// was this branch.
+	//
+	// UNGATED, deliberately. Relaxing a refusal cannot rewrite history: an op
+	// that returns an error never advanced the serial and was never ledgered, so
+	// no ledger contains a resume of an archived agent for replay to reinterpret.
+	// That reasoning holds only for refusals, and anything changing what an
+	// ACCEPTED op did still needs a flag on the op.
+	if l == nil {
+		return nil, nil, errf("E_NO_AGENT", "the agent was purged after its retention "+
+			"window; register a new one", "agent for nonce is gone")
 	}
 	if l.Status == StatusClosed {
 		return nil, nil, errf("E_AGENT_CLOSED", "register a new agent", "agent %s is closed", id)
@@ -1126,6 +1147,25 @@ func (s *State) applyResume(op *Op, now time.Time) (Result, []Event, error) {
 		}
 		l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed, op.V7Semantics)
 		l.currentFrom(op, held)
+	}
+	// COMING BACK FROM ARCHIVED, which nothing used to do from here.
+	//
+	// The row keeps ArchivedAt, and retention counts from it, so leaving it set
+	// on a row that is about to be active is a timestamp saying the agent was
+	// retired at a moment it demonstrably was not. gc only looks at rows whose
+	// status is archived, so this is not live today; it is the shape of thing
+	// that becomes live the first time somebody writes a rule from the field.
+	//
+	// The nonce goes back on the row with it. s.Nonces resolved op.Nonce to this
+	// id a few lines up, so the credential is proven and the row is the only
+	// place it was missing: archiving before KeepArchivedNonce cleared the field
+	// and kept the index, and an active row with no nonce is what the engine's
+	// guard against recovering a privileged row without one refuses. Narrowed to
+	// the archived case on purpose, because that is the state no ledgered resume
+	// has ever been applied against, so nothing in any history changes meaning.
+	if l.Status == StatusArchived {
+		l.ArchivedAt = time.Time{}
+		l.Nonce = op.Nonce
 	}
 	l.Token = op.NewToken
 	l.Activation++
@@ -1384,8 +1424,26 @@ func (s *State) applyClearSlot(l *Agent, op *Op) (Result, []Event, error) {
 // and be refused. Two places asking "can this agent receive mail" is two places
 // to answer it differently, which is how the inbox came to be silent about the
 // one fact a reader needs.
+//
+// RETIRED, NOT Gone(), and archiving is the difference.
+//
+// Gone() answers "is this identity finished with, so stop carrying it in queues
+// and memberships", and archived belongs there. Whether mail can be DELIVERED
+// is a different question, and archived does not belong in that one. The row
+// survives archiving for ArchiveRetention, seven days, for the express purpose
+// of letting the agent come back with its nonce, mailbox intact. For those
+// seven days this predicate held an identity the board could restore and
+// refused to let anyone write to it: the mailbox was preserved and sealed.
+//
+// On the shipped defaults an EPHEMERAL agent reaches archived AgentTTL +
+// StaleGrace after its last call, five minutes plus thirty, so this was not a
+// rare terminal state. It was where an agent went for working quietly.
+//
+// Purged is still unanswerable: the row is nil, Retired() reports nil as
+// retired, and the id has been released for reuse, which is exactly what
+// IsRetiredSender exists to keep straight.
 func (s *State) Answerable(id string) bool {
-	return id != "" && !s.Agents[id].Gone()
+	return id != "" && !s.Agents[id].Retired()
 }
 
 // UnanswerableSenders names the senders of this mail that can no longer be

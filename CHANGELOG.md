@@ -5,6 +5,49 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **An agent that went quiet for thirty-five minutes became permanently
+  unreachable.** Archiving is a timer, not a decision: an ephemeral agent
+  reaches it `agent_ttl` + `stale_grace` after its last call, five minutes plus
+  thirty on the defaults. Four separate paths asked `Gone()`, which is
+  `closed || archived`, and treated the two as one thing, so from that moment
+  mail addressed to the agent was refused with `E_NO_AGENT: no live agent`, no
+  wake would be attempted for the mail it already held, the boot retry skipped
+  it, and `resume` with its own nonce was refused with the advice to register a
+  new agent, which forks a sibling holding an empty mailbox beside the full one.
+  The board kept the row, the mailbox and the nonce index for seven days
+  precisely so the agent could come back, and for those seven days it was
+  recoverable and unreachable at once. `closed` is unchanged: a deliberate
+  `sign_off` is still final, and the reasoning written against resuming one
+  still stands, because that was always the only half of `Gone()` those
+  comments argued.
+
+- **Archiving destroyed the credential in one place and kept it in another.**
+  The sweep cleared the agent's `nonce` field while `s.Nonces`, the index
+  `register` and `resume` actually consult, was retained until
+  `archive_retention`. Three of the v0.0.7 cycle's defects came out of that
+  gap, all of them privileged rows the engine then declined to recover because
+  the row it was recovering had no nonce to check. Archiving now clears the
+  token, which is one activation's credential and is what makes the next call
+  return `E_BAD_TOKEN` with the way back, and leaves the nonce. Gated on the
+  sweep op, so a ledger written by any earlier version replays to the board
+  that version built.
+
+- **A sender addressing an archived agent was told nothing.** With the send
+  refused, no note existed for the case; now that it is accepted, `send`
+  reports that the recipient was archived, what it costs to reach it, and how
+  long the mailbox is kept, and the engine's own note still wins where it knows
+  that nothing on this board can wake it.
+
+### Added
+
+- `docs/NETWORK.md`: the design for a board whose agents are not all on one
+  computer. Host identity as a key rather than a hostname, claims keyed by host
+  with a portable repository form beside them, liveness split into presence and
+  identity, and why wake routes must belong to the machine the agent is on
+  rather than to the hub. Nothing in it is built beyond the liveness work above.
+
 ## [0.0.7] - 2026-09-08
 
 ### Security

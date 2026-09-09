@@ -703,38 +703,45 @@ func TestMaybeWakeOnAnEngineWithNoStateDoesNothingAtAll(t *testing.T) {
 
 // An agent that has signed off is not started again.
 //
-// Answering a closed or archived asker is allowed: the response records
-// delivered:false and says outright that nobody will read it. The event is
-// published all the same, and every published event reaches maybeWake, so the
-// board told the responder "nobody will read this" and then launched the
-// operator's resume command against the retired thread. The wasted subprocess
-// is the small half. The large half is that a closed PERSISTENT identity
-// resuming goes through the nonce-registration path and comes back ACTIVE,
-// which is exactly the finality sign_off promises.
+// Answering a closed asker is allowed: the response records delivered:false and
+// says outright that nobody will read it. The event is published all the same,
+// and every published event reaches maybeWake, so the board told the responder
+// "nobody will read this" and then launched the operator's resume command
+// against the retired thread. The wasted subprocess is the small half. The
+// large half is that a closed PERSISTENT identity resuming goes through the
+// nonce-registration path and comes back ACTIVE, which is exactly the finality
+// sign_off promises.
+//
+// ARCHIVED USED TO BE A SUBTEST HERE AND WAS WRONG.
+//
+// It rode along on Gone(), which is Closed || Archived, and every sentence of
+// the reasoning above is about the closed half. Archiving is a timer, five
+// minutes plus thirty for an ephemeral agent, and nothing about it is a
+// decision to be respected. Its mailbox is not unreadable: the row and the
+// nonce index live for ArchiveRetention precisely so the agent can come back.
+// The subtest asserted that an agent which went quiet is unreachable forever,
+// worded as though it were protecting sign_off. Moved, inverted, to
+// TestAnAgentArchivedByRetentionIsStillWoken.
 func TestAnAgentThatSignedOffIsNotResumed(t *testing.T) {
-	for _, status := range []core.AgentStatus{core.StatusClosed, core.StatusArchived} {
-		t.Run(string(status), func(t *testing.T) {
-			e, st := wakeEngine(t, WakeCommand{
-				Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute,
-			})
-			l := bridgeAgent("retired", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
-			l.Status = status
-			st.Agents["retired"] = l
+	e0, st0 := wakeEngine(t, WakeCommand{
+		Argv: []string{"echo", "{thread}"}, Cooldown: time.Minute,
+	})
+	l := bridgeAgent("retired", "Codex", "019ffe52-0eaf-7f60-81cc-6ab1298d76ec")
+	l.Status = core.StatusClosed
+	st0.Agents["retired"] = l
 
-			// A verdict on something it asked before it went: the case that
-			// actually happens, and the one with the strongest claim on a wake
-			// if the agent were still here.
-			e.maybeWake(core.Event{
-				Type: "message.approved", Agent: "lael", To: "retired",
-				Data: map[string]any{"msg_serial": uint64(7)},
-			})
-			if e.wakeSpent("retired") {
-				t.Errorf("the board resumed a %s agent. The answer it is being woken "+
-					"for was recorded as delivered:false because nobody will read it, "+
-					"and resuming a closed persistent identity walks it back to active: "+
-					"sign_off is supposed to be final", status)
-			}
-		})
+	// A verdict on something it asked before it went: the case that actually
+	// happens, and the one with the strongest claim on a wake if the agent were
+	// still here.
+	e0.maybeWake(core.Event{
+		Type: "message.approved", Agent: "lael", To: "retired",
+		Data: map[string]any{"msg_serial": uint64(7)},
+	})
+	if e0.wakeSpent("retired") {
+		t.Error("the board resumed a closed agent. The answer it is being woken " +
+			"for was recorded as delivered:false because nobody will read it, " +
+			"and resuming a closed persistent identity walks it back to active: " +
+			"sign_off is supposed to be final")
 	}
 
 	// And a live agent in the same shape IS woken, so this cannot pass by

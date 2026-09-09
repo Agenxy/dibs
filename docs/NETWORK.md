@@ -6,7 +6,8 @@ the FOLD, and this repository has paid for unplanned ones about six times in
 one release cycle. Issue #12 is where the position was first stated; this
 supersedes it with decisions.
 
-Nothing here is built yet. Where a thing is already true it says so.
+Status: §4's liveness split is built, because it bites on one machine as hard
+as on ten. The rest is not. Where a thing is already true it says so.
 
 ## 1. The position: one writer, many clients
 
@@ -120,15 +121,15 @@ ephemeral agent is therefore unwakeable thirty-five minutes after its last
 heartbeat, because both paths blank `Token` and `Nonce`, and `Gone()` covers
 `Closed || Archived` so `maybeWake` returns before trying any route.
 
-That guard is not careless — it is commented, and its reasoning is sound for
+That guard is not careless: it is commented, and its reasoning is sound for
 `Closed`: waking a signed-off persistent identity would resume it through the
 nonce path and bring it back Active, defeating the finality `sign_off`
 promises. None of that reasoning applies to `Archived`, which nobody chose.
 The two were bundled and only one was argued.
 
 The nonce blanking is the same conflation seen from the other side, and it has
-already cost three separate P1s in the v0.0.7 cycle — the human row, the
-daemon's own reporting row, and the live-resume path — because the credential
+already cost three separate P1s in the v0.0.7 cycle (the human row, the
+daemon's own reporting row, and the live-resume path) because the credential
 is destroyed in one place and the index that maps it survives in another
 (`internal/core/archiverecovery_test.go` names exactly this).
 
@@ -146,7 +147,7 @@ is the only signal available, and that must never be allowed to mean "is gone".
   wakeable **forever**, until a human prunes it or the agent signs off. Signing
   off stays final, because that is a decision the agent made.
 
-Concretely:
+Concretely, and all of the following is now **done**:
 
 - Archival stops blanking the nonce. That behaviour has produced only harm; the
   credential is what makes an identity recoverable, and destroying it on a
@@ -154,20 +155,37 @@ Concretely:
 - The wake path stops asking `Gone()` and asks a narrower question. Closed
   stays final, for the reason already written at `waker.go:200`. Archived
   becomes "idle for a long time", which is not a reason to refuse mail. If a
-  single predicate is wanted, it is `Retired()` — closed only.
+  single predicate is wanted, it is `Retired()`, closed only.
 - `StaleGrace` and `DormancyMax` stop being cliffs. Retention still bounds what
   the board *renders* and what the ledger *retains*, which is a resource
   question and should be stated as one rather than as a lifecycle.
 - "Stale" and "dormant" survive as presence labels. They stop being gates.
+
+What is done: `Retired()` (closed only) now decides the wake path, the boot
+retry, the pull-only note and whether mail can be delivered; `resume` accepts an
+archived agent; and the sweep keeps the nonce, gated on `Op.KeepArchivedNonce`.
+What is not: retention is still expressed as a lifecycle rather than as the
+resource bound it is, and presence still lives on `Agent.Status` rather than
+beside it.
 
 This is what "wake an agent whenever we want, regardless of how long ago it was
 active" requires, and it is also simply more honest: the board's job is to
 reach an agent that is not running, and a thirty-day timer that silently
 removes that ability contradicts the product's one promise.
 
-**Gated, like every other fold change.** A v0.0.6 or v0.0.7 ledger must replay
-to the board it built. The decision is recorded on the op, as `V7Semantics`,
-`PurgeMail` and `RestoreNonce` already are.
+**Gated, like every other fold change, but only the half that needs it.** A
+v0.0.6 or v0.0.7 ledger must replay to the board it built, so the sweep's
+changed behaviour is recorded on the op as `KeepArchivedNonce`, beside
+`PurgeMail` and `RestoreNonce`. A separate flag, not a fifth rider on
+`V7Semantics`: that one is already true on every op written since v0.0.7, so
+reusing it would apply a v0.0.8 decision to months of recorded history, which is
+the retroactive bug the flag exists to prevent.
+
+Relaxing a REFUSAL needs no flag, and this is worth stating once because it
+decides how much of this is expensive. An op that returns an error never
+advanced the serial and was never ledgered, so no history contains a send to an
+archived agent, or a resume of one, for replay to reinterpret. Only a change to
+what an ACCEPTED op did can rewrite the past.
 
 ## 5. Wake routes belong to the machine the agent is on
 
@@ -220,7 +238,7 @@ its shape.
 |---|---|---|
 | Supgang | host identity, signed addresses, NAT traversal | No. Optional, and the preferred source of `HostID` |
 | Remap | friendly names for addresses on enrolled devices | No. Convenience |
-| Dibs | the board, the ledger, the wake decision | — |
+| Dibs | the board, the ledger, the wake decision | n/a |
 
 Dibs works with a bare address and TOFU pinning. It works better with Supgang.
 It must never be broken by Supgang's absence, and given that Supgang's WAN
@@ -229,12 +247,15 @@ because Supgang intends to.
 
 ## 7. Order of work
 
-1. **Host-scoped claims** (§2, §3). Self-contained, fixes a real correctness
+1. ~~**Liveness split** (§4)~~. Done, and done first rather than third as this
+   section originally had it. Ordering by risk was the wrong call: this is the
+   one item that is already costing users on a single machine, and the network
+   only sharpens it. The gate and its replay test went in before anything else
+   moved.
+2. **Host-scoped claims** (§2, §3). Self-contained, fixes a real correctness
    bug, and needs no network to test.
-2. **Wake routes per host** (§5). Mostly documentation and doctor honesty, plus
+3. **Wake routes per host** (§5). Mostly documentation and doctor honesty, plus
    generalising the bridge.
-3. **Liveness split** (§4). The largest fold change; do it with the gate and a
-   replay test before anything else touches it.
 4. **Proved identity** (§6). Needs Supgang to pass its own acceptance first.
 
 ## What would change this document

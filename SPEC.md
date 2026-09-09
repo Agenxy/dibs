@@ -306,8 +306,12 @@ you can measure is never improved by asking.
 - **`resume(nonce, resume_id, pid?)`**: the explicit activation op for standing
   roles. `resume_id` (client-generated per attempt, ≥64-bit) makes it a **complete
   activation boundary**:
-  - Verifies the nonce (constant-time); fails on closed/archived
-    (`E_AGENT_CLOSED`/`E_NO_AGENT`) or unknown nonce (`E_BAD_NONCE`).
+  - Verifies the nonce (constant-time); fails on closed (`E_AGENT_CLOSED`) or
+    unknown nonce (`E_BAD_NONCE`). **An `archived` agent resumes**: retention keeps
+    its row, its mailbox and its nonce index entry for `archive_retention` so that
+    it can, and the alternative the refusal used to advise (register a new agent)
+    forks a sibling with an empty mailbox beside the one holding the mail. Only a
+    row that retention has actually purged is `E_NO_AGENT`.
   - **Rotates the token** and increments the agent's `activation` generation: the
     rotation takes effect atomically at the resume op's serial: ops carrying the old
     token that execute after it fail `E_BAD_TOKEN` (all validation happens inside
@@ -417,13 +421,22 @@ and nothing else: the board wakes an agent and does not steer one. See
   Grace is bounded by evidence, not by boot count.
 - **Lifecycles**:
   - ephemeral: `active → stale` (lease lapse or process death; claims released,
-    gate re-armed) `→ archived` after 30 min grace (token + nonce invalidated).
+    gate re-armed) `→ archived` after 30 min grace (**token invalidated; the nonce
+    is kept**, so the identity stays recoverable for `archive_retention`).
     `stale → active` only via ledgered `wake`.
   - persistent: `active → dormant` (lease lapse or process death: for a standing
     role, process exit is an expected end of activation; claims released, slots and
     mailbox retained, gate re-armed) `→ archived` after `dormancy_max` (30 days from
-    the ledgered `dormant_since` transition). `dormant → active` via ledgered
-    `wake` (any authenticated call) or `resume`.
+    the ledgered `dormant_since` transition; token invalidated, nonce kept).
+    `dormant → active` via ledgered `wake` (any authenticated call) or `resume`.
+  - **`archived` is idle, not retired.** For `archive_retention` the row, its
+    mailbox and its nonce remain, so mail may be SENT to it, a wake may be
+    attempted for it, and it returns to `active` by `resume` or by registering
+    again with the same name and nonce. Only `closed` (a deliberate `sign_off`)
+    and a purged row refuse those. This distinction is what makes the wake
+    promise hold: an ephemeral agent reaches `archived` in `agent_ttl` +
+    `stale_grace`, five minutes plus thirty on the defaults, which is a length of
+    quiet, not a decision.
 - **Deadline diagnosis cascade**: expiry records `expired_unanswered` (recipient
   active), `expired_recipient_dormant` (persistent recipient asleep: visible in its
   inbox on wake, past deadline, within §8 retention bounds), or
@@ -611,7 +624,7 @@ Read-only work needs no claim.
 | claims per agent / global | 32 / 256 | `E_CLAIM_LIMIT` |
 | mailbox depth (non-terminal) | 256 | §8 backpressure |
 | terminal messages retained | 128 per agent, then GC'd (ledger keeps history) | pruned oldest-first |
-| archived agents retained in state | 7 days, then GC'd (with nonces + dedup records) | pruned |
+| archived agents retained in state | 7 days, then GC'd (with nonces + dedup records); addressable and wakeable throughout | pruned |
 | message/slot body | 32 KiB | `E_TOO_LARGE` |
 | name / description / note / path | 128 B / 1 KiB / 512 B / 1 KiB | `E_TOO_LARGE` |
 | dirs per slot | 16 | `E_TOO_LARGE` |
