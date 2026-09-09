@@ -551,7 +551,12 @@ documented, not solved: case-insensitive volumes, Unicode aliases.
 
 **Two claims overlap under either of two rules, and the result says which.**
 
-- `path`: their absolute paths overlap component-wise, as above.
+- `path`: their absolute paths overlap component-wise, as above, **and there is
+  no positive evidence the two agents are on different computers**. One daemon
+  serves agents on other machines (§16), so absolute paths from two filesystems
+  arrive in one namespace and `/Users/kim/src/api` on two laptops is two
+  unrelated trees. Evidence is a `host_id` on both sides that differs; an agent
+  that supplied none collides exactly as it did before the field existed.
 - `repo`: both agents are positively in ONE repository (shared Git common
   directory, equal configured remote, or equal root commits: the ranking of
   §9's `differentProjects`, read for sameness rather than difference) **and**
@@ -770,6 +775,15 @@ on ledger lines, `unreachable` in the status enum.
 Local (v1): MCP streamable HTTP over loopback TCP. QUIC rejected on loopback merits.
 UI (v1): SSE down + POST up; WebSocket/WebTransport rejected for this traffic shape;
 SSE inherits HTTP/3 transparently if the stack beneath changes.
+
+**A remote agent's machine is recorded, and the daemon derives it rather than
+believing it wherever it can.** A caller on loopback is on the daemon's own
+machine, since nothing else can reach loopback, and is stamped with the node id
+as evidence. A remote caller's bridge asserts one (`_meta["com.dibs/host"]`),
+which is exactly as strong as the bearer credential that let it in and no
+stronger: §9's `host` rule is a CORRECTNESS boundary, not an authorisation one,
+and it becomes the latter only when a host can prove itself. See
+`docs/NETWORK.md`.
 
 **Remote agents (v1).** One daemon serves agents on other machines directly: there is
 no sharding, no replication, and therefore no split-brain: a single writer keeps every

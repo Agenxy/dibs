@@ -74,6 +74,25 @@ func sameProject(a, b *Agent) bool {
 	return false
 }
 
+// differentHosts is positive evidence that two agents are on DIFFERENT
+// computers. Like differentProjects, absence of evidence is not difference: an
+// agent that never supplied a host id, and every agent on every board written
+// before the field existed, answers false and keeps colliding exactly as it did.
+//
+// Three-valued for the same reason SameRepo is. This rule REMOVES collisions,
+// so getting it wrong hides a real one, and the conservative answer to "no idea"
+// is to go on reporting. That is also what makes an asserted host id tolerable
+// here: the worst a wrong value can do to a board on one machine is nothing,
+// because on one machine every id is the daemon's own and derived from the
+// connection rather than claimed.
+func differentHosts(a, b *Agent) bool {
+	if a == nil || b == nil || a.Agent == nil || b.Agent == nil {
+		return false
+	}
+	x, y := a.Agent.HostID, b.Agent.HostID
+	return x != "" && y != "" && x != y
+}
+
 // The two rules an overlap can fire under, reported so a person can act on the
 // right one. "Held by api-2 at /Users/kim/src/api" and "held by api-2 in
 // another worktree of this repository" send a reader to different places.
@@ -106,13 +125,27 @@ const (
 // known. Anything short of that is silence, because a claim conflict that fires
 // on an absence of evidence teaches agents to ignore claim conflicts.
 func (s *State) claimOverlap(me *Agent, path, repoPath string, c *Claim) (rule string, ok bool) {
-	if pathsOverlap(c.Path, path) {
+	them := s.Agents[c.Agent]
+	// AN ABSOLUTE PATH IS ONLY ABSOLUTE ON ONE COMPUTER.
+	//
+	// One daemon serves agents on other machines (SPEC §16), and their paths
+	// arrive in the same namespace as everyone else's. /Users/kim/src/api on two
+	// laptops is two unrelated trees, and this rule refused the second agent's
+	// exclusive claim over files the first has never seen. Only positive
+	// evidence of two machines suppresses it: an agent that supplied no host id
+	// collides exactly as it always did, which is every agent on every board
+	// written before the field existed.
+	//
+	// The repository rule below is untouched by this and is what carries a real
+	// collision across the gap: two clones of one project on two computers name
+	// the same file identically once each checkout root is subtracted.
+	if !differentHosts(me, them) && pathsOverlap(c.Path, path) {
 		return OverlapByPath, true
 	}
 	if repoPath == "" || c.RepoPath == "" {
 		return "", false
 	}
-	if !sameProject(me, s.Agents[c.Agent]) {
+	if !sameProject(me, them) {
 		return "", false
 	}
 	if pathsOverlap(c.RepoPath, repoPath) {
@@ -334,9 +367,11 @@ func firstOverlappingPath(me, them *Agent, mine, theirs []string) string {
 	for _, a := range mine {
 		ca := cleanPath(a)
 		ra := repoPathOf(me, ca)
+		crossMachine := differentHosts(me, them)
 		for _, b := range theirs {
 			cb := cleanPath(b)
-			if pathsOverlap(ca, cb) {
+			// Same reasoning as claimOverlap: two computers, two namespaces.
+			if !crossMachine && pathsOverlap(ca, cb) {
 				return b
 			}
 			if ra == "" || !sameProject(me, them) {

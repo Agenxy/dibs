@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/agenxy/dibs/internal/mcp"
 )
 
 // enrichRegister fills in who the agent is, using the environment the harness
@@ -119,6 +121,16 @@ func enrichRegister(line []byte) []byte {
 			}
 			if sid := sessionID(); sid != "" {
 				meta["com.dibs/session"] = sid
+			}
+			// WHICH COMPUTER, for a daemon that serves more than one.
+			//
+			// Sent on every call for the same reason the session id is: the one
+			// call an agent might not make through this bridge is the one that
+			// would otherwise have carried it. A daemon on THIS machine ignores
+			// it and stamps its own node id, because loopback is proof and this
+			// is not; only a hub on another computer reads it.
+			if hid := hostID(); hid != "" {
+				meta[mcp.HostMetaKey] = hid
 			}
 			if tid, _ := meta["threadId"].(string); strings.TrimSpace(tid) != "" {
 				noteThread(strings.TrimSpace(tid))

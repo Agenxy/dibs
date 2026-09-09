@@ -323,6 +323,27 @@ type AgentInfo struct {
 	Branch  string `json:"branch,omitempty"`
 	Host    string `json:"host,omitempty"`
 
+	// HostID is WHICH COMPUTER, as a key rather than as the label above.
+	//
+	// Host is the operating system's hostname: mutable, duplicable across
+	// machines, and asserted by the caller, which is why it carries the same
+	// warning Project does. This is the one the fold is allowed to decide with.
+	// It separates two absolute paths that happen to be spelled the same on two
+	// different computers, which is a real collision now that one daemon serves
+	// agents on other machines (SPEC §16).
+	//
+	// The daemon derives it rather than believing it, wherever it can. A caller
+	// arriving over loopback is on the daemon's own machine (nothing else can
+	// reach loopback), so it is stamped with the daemon's node id and that is
+	// evidence, not a claim. A genuinely remote caller's is asserted by its own
+	// bridge, which is no stronger than the shared bearer secret that let it in,
+	// and docs/NETWORK.md §2 says so out loud: this is a CORRECTNESS boundary
+	// today and becomes a security one only when identity can be proved.
+	//
+	// Empty means unknown, and unknown must behave exactly as this board did
+	// before the field existed. Every claim written before this shipped has none.
+	HostID string `json:"host_id,omitempty"`
+
 	// The repository this agent is in, as identity rather than as a label.
 	// RepoDir is Git's common directory (shared by every linked worktree of one
 	// repository); RepoRemote is the normalized primary remote.

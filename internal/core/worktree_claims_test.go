@@ -201,3 +201,154 @@ func TestASiblingCheckoutIsNotInsideTheOtherOne(t *testing.T) {
 		t.Errorf("a path genuinely inside the checkout resolved to %q", got)
 	}
 }
+
+// onHost is inRepo for an agent working on a NAMED computer.
+func onHost(t *testing.T, s *State, name, token, host, commonDir, root, remote string, now time.Time) *Agent {
+	t.Helper()
+	res, _, err := s.Apply(&Op{
+		Kind: OpRegister, Name: name, NewToken: token,
+		Agent: &AgentInfo{
+			CWD: root, RepoDir: commonDir, RepoRoot: root, RepoRemote: remote, HostID: host,
+		},
+	}, now)
+	if err != nil {
+		t.Fatalf("register %s: %v", name, err)
+	}
+	if _, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: token}, now); err != nil {
+		t.Fatalf("ack %s: %v", name, err)
+	}
+	return s.Agents[res["agent_id"].(string)]
+}
+
+// AN ABSOLUTE PATH IS ONLY ABSOLUTE ON ONE COMPUTER.
+//
+// One daemon serves agents on other machines: SPEC §16 ships that in v1, bind a
+// reachable address and remote agents present the same bearer credential. Their
+// paths then arrive in the same namespace as everyone else's, and
+// /Users/kim/src/api on two laptops is two unrelated trees. The exclusive claim
+// rule refused the second agent over files the first has never seen, and the
+// refusal named a holder whose path the reader could go and look at, finding
+// their own work.
+//
+// I first argued this case was unreachable and deferred it. That was wrong, and
+// checking SPEC §16 before writing the sentence would have caught it: remote
+// agents are a shipped flag, not a plan.
+func TestTwoMachinesDoNotCollideOnAPathTheyBothHappenToHave(t *testing.T) {
+	s := NewState("t", DefaultLimits())
+	now := time.Unix(1700000000, 0)
+
+	onHost(t, s, "here", "tok-1", "host-a", "/Users/kim/api/.git", "/Users/kim/api",
+		"git@example.com:acme/api", now)
+	onHost(t, s, "there", "tok-2", "host-b", "/Users/kim/other/.git", "/Users/kim/other",
+		"git@example.com:acme/other", now)
+
+	mustApply(t, s, &Op{
+		Kind: OpClaim, Token: "tok-1", Path: "/Users/kim/api/pkg", Mode: ClaimExclusive,
+	}, now)
+	// The same STRING on the other machine, and a different directory entirely.
+	res := mustApply(t, s, &Op{
+		Kind: OpClaim, Token: "tok-2", Path: "/Users/kim/api/pkg", Mode: ClaimExclusive,
+	}, now)
+	if res["granted"] != true {
+		t.Fatalf("an agent on another computer was refused a claim because a path on "+
+			"THIS machine is spelled the same. Two filesystems, two meanings, and the "+
+			"refusal points at a directory the reader cannot see: %v", res)
+	}
+}
+
+// And the collision that DOES cross machines still fires: two clones of one
+// project name the same file identically once each checkout root is subtracted.
+// That is what the repository rule is for, and it is the case the whole
+// cross-machine story exists to keep working.
+func TestOneRepositoryStillCollidesAcrossTwoMachines(t *testing.T) {
+	s := NewState("t", DefaultLimits())
+	now := time.Unix(1700000000, 0)
+
+	one := onHost(t, s, "here", "tok-1", "host-a", "/Users/kim/api/.git", "/Users/kim/api",
+		"git@example.com:acme/api", now)
+	onHost(t, s, "there", "tok-2", "host-b", "/srv/build/api/.git", "/srv/build/api",
+		"git@example.com:acme/api", now)
+
+	mustApply(t, s, &Op{
+		Kind: OpClaim, Token: "tok-1", Path: "/Users/kim/api/pkg/x.go", Mode: ClaimExclusive,
+	}, now)
+	res := mustApply(t, s, &Op{
+		Kind: OpClaim, Token: "tok-2", Path: "/srv/build/api/pkg/x.go", Mode: ClaimExclusive,
+	}, now)
+	if res["granted"] != false {
+		t.Fatalf("two agents on different machines were both granted the same file of "+
+			"the same repository. Nothing about a network makes that not a collision, "+
+			"and %s believes it holds it alone: %v", one.ID, res)
+	}
+	ov, _ := res["overlaps"].([]map[string]any)
+	if len(ov) != 1 || ov[0]["rule"] != OverlapByRepo {
+		t.Errorf("the refusal does not say it matched by repository, which is the only "+
+			"thing that makes a path under another machine's root intelligible: %v",
+			res["overlaps"])
+	}
+}
+
+// AN AGENT THAT SAID NOTHING ABOUT ITS MACHINE COLLIDES EXACTLY AS BEFORE.
+//
+// Absence of evidence is not difference, and this rule REMOVES collisions, so
+// the conservative answer to "no idea" is to go on reporting. Every claim on
+// every board written before the field existed is in that state, and a board
+// that quietly stopped reporting conflicts on upgrade would be the worst
+// possible way to ship this.
+func TestAnAgentWithNoHostIDCollidesAsItAlwaysDid(t *testing.T) {
+	s := NewState("t", DefaultLimits())
+	now := time.Unix(1700000000, 0)
+
+	// Neither states a host, which is what an older board looks like.
+	inRepo(t, s, "one", "tok-1", "/a/api/.git", "/a/api", "git@example.com:acme/api", now)
+	inRepo(t, s, "two", "tok-2", "/b/web/.git", "/b/web", "git@example.com:acme/web", now)
+
+	mustApply(t, s, &Op{
+		Kind: OpClaim, Token: "tok-1", Path: "/shared/tree", Mode: ClaimExclusive,
+	}, now)
+	res := mustApply(t, s, &Op{
+		Kind: OpClaim, Token: "tok-2", Path: "/shared/tree/sub", Mode: ClaimExclusive,
+	}, now)
+	if res["granted"] != false {
+		t.Fatalf("two agents that never said which machine they are on stopped "+
+			"colliding on one absolute path. Unknown must behave as this board did "+
+			"before the field existed, or an upgrade silently switches off the "+
+			"conflicts it was reporting yesterday: %v", res)
+	}
+
+	// One of them stating a host is still not evidence of two machines.
+	s2 := NewState("t", DefaultLimits())
+	onHost(t, s2, "one", "tok-1", "host-a", "/a/api/.git", "/a/api", "git@example.com:acme/api", now)
+	inRepo(t, s2, "two", "tok-2", "/b/web/.git", "/b/web", "git@example.com:acme/web", now)
+	mustApply(t, s2, &Op{
+		Kind: OpClaim, Token: "tok-1", Path: "/shared/tree", Mode: ClaimExclusive,
+	}, now)
+	if r := mustApply(t, s2, &Op{
+		Kind: OpClaim, Token: "tok-2", Path: "/shared/tree/sub", Mode: ClaimExclusive,
+	}, now); r["granted"] != false {
+		t.Errorf("one agent naming its machine was read as proof the other is "+
+			"somewhere else: %v", r)
+	}
+}
+
+// The write guard reads the same rule, so it does not stop an edit on another
+// computer's identically-spelled path.
+func TestTheGuardDoesNotReachAcrossMachines(t *testing.T) {
+	s := NewState("t", DefaultLimits())
+	now := time.Unix(1700000000, 0)
+
+	onHost(t, s, "here", "tok-1", "host-a", "/Users/kim/api/.git", "/Users/kim/api",
+		"git@example.com:acme/api", now)
+	there := onHost(t, s, "there", "tok-2", "host-b", "/Users/kim/other/.git",
+		"/Users/kim/other", "git@example.com:acme/other", now)
+
+	mustApply(t, s, &Op{
+		Kind: OpClaim, Token: "tok-1", Path: "/Users/kim/api/pkg", Mode: ClaimExclusive,
+	}, now)
+
+	if v := s.GuardPath(there.ID, "/Users/kim/api/pkg/x.go", now); v.Decision != GuardAllow {
+		t.Errorf("the guard denied a write on another computer because the path is "+
+			"spelled the same here. The board and the guard agree, which is right, "+
+			"and they were agreeing about the wrong thing: %+v", v)
+	}
+}

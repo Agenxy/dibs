@@ -7,6 +7,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Two agents on different computers collided over a path they merely spell
+  the same.** One daemon serves agents on other machines and has since v1
+  (SPEC §16: bind `--addr`), so their absolute paths arrive in one namespace,
+  and `/Users/kim/src/api` on two laptops is two unrelated trees. The second
+  agent's exclusive claim was refused over files the first has never seen, and
+  the refusal named a holder whose path the reader could go and look at, finding
+  their own work. An agent now carries a `host_id`, which the daemon derives
+  from the connection where it can: a caller on loopback is on this machine by
+  construction, so it is stamped with the daemon's node id and nothing it says
+  moves it. Only positive evidence of two machines suppresses a path collision;
+  an agent that supplied none collides exactly as before, which is every agent
+  on every board written before this shipped. The repository rule is untouched
+  and is what still catches the real cross-machine case: two clones of one
+  project name the same file identically once each checkout root is subtracted.
+
 - **`dibs doctor` counted an agent it cannot wake as covered.** A wake command
   runs on the daemon's machine, in the agent's own working directory, and the
   coverage check asked whether a command and a thread existed but never whether
