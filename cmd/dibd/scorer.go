@@ -592,14 +592,34 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 			f.discoverMu.Unlock()
 			return
 		}
-		if len(f.indexed) >= maxIndexedRepos {
-			f.discoverMu.Unlock()
-			slog.Info("work-overlap matching is at its repository ceiling; this tree is not indexed",
-				"repo", root, "ceiling", maxIndexedRepos)
+		atCeiling := len(f.indexed) >= maxIndexedRepos
+		f.discoverMu.Unlock()
+
+		// AT THE CEILING, LOOK FOR AN INDEX NOBODY IS IN ANY MORE.
+		//
+		// The count was a LIFETIME one: every tree an agent ever registered
+		// from held its slot until the daemon restarted, so a machine that had
+		// seen sixteen repositories stopped matching for the seventeenth
+		// forever, including one it was actively working in. Issue #40.
+		//
+		// Only here, and only synchronously. This whole discovery path already
+		// runs in its own goroutine, so evicting in another would be a
+		// goroutine per registration, each querying the engine, on the path
+		// that exists to stay cheap while a fleet is busy. Asking only when the
+		// ceiling is actually reached costs nothing on every ordinary
+		// registration.
+		if atCeiling {
+			if !f.evictIdleIndexes(ctx, eng) {
+				slog.Info("work-overlap matching is at its repository ceiling and every index "+
+					"still has an agent in it; this tree is not indexed",
+					"repo", root, "ceiling", maxIndexedRepos)
+				return
+			}
+		}
+
+		if !f.claimIndexSlot(root) {
 			return
 		}
-		f.indexed[root] = true
-		f.discoverMu.Unlock()
 
 		// RELEASED if the bring-up does not produce a scorer.
 		//
@@ -617,6 +637,80 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 			f.discoverMu.Unlock()
 		}
 	}()
+}
+
+// claimIndexSlot marks root as being indexed by this goroutine, or reports
+// that it must not be. Split out because the discovery path re-reads this
+// state after releasing the lock for an eviction, and the two reads read
+// better as one named decision than as a second inline copy of it.
+func (f *scorerFlags) claimIndexSlot(root string) bool {
+	f.discoverMu.Lock()
+	defer f.discoverMu.Unlock()
+	// RE-READ AFTER THE EVICTION, which released the lock: another
+	// registration may have taken the slot just freed, or indexed this very
+	// tree while this goroutine was asking the board.
+	if f.indexed[root] {
+		return false
+	}
+	if len(f.indexed) >= maxIndexedRepos {
+		slog.Info("work-overlap matching is at its repository ceiling; this tree is not indexed",
+			"repo", root, "ceiling", maxIndexedRepos)
+		return false
+	}
+	f.indexed[root] = true
+	return true
+}
+
+// evictIdleIndexes drops every indexed tree that no agent on the board is
+// working in any more, and reports whether it freed anything.
+//
+// The board is the authority on who is still here, read as one snapshot on the
+// writer loop so this cannot race a registration, a reclaim or a replay. Stale
+// and dormant agents COUNT AS PRESENT: both can resume without registering
+// again, and evicting the index under a dormant agent would take matching away
+// from the case the board exists to serve. Only terminal records release one.
+//
+// It maps an agent's directory to a tree through the rootOf map this file
+// already keeps, and never shells out to git. Resolving an unknown directory
+// here would be a subprocess per unknown agent per pass, with the four-minute
+// deadline gitDeadline documents, and it would buy nothing: a directory this
+// process has never resolved cannot be holding one of the indexes it holds.
+func (f *scorerFlags) evictIdleIndexes(ctx context.Context, eng *engine.Engine) bool {
+	cwds, err := eng.ActiveAgentCWDs(ctx)
+	if err != nil {
+		slog.Debug("work-overlap eviction could not read the board; keeping every index", "err", err)
+		return false
+	}
+
+	f.discoverMu.Lock()
+	live := make(map[string]bool, len(cwds))
+	for _, cwd := range cwds {
+		if root := f.rootOf[cwd]; root != "" {
+			live[root] = true
+		}
+	}
+	var idle []string
+	for root := range f.indexed {
+		if !live[root] {
+			idle = append(idle, root)
+		}
+	}
+	for _, root := range idle {
+		delete(f.indexed, root)
+		for cwd, r := range f.rootOf {
+			if r == root {
+				delete(f.rootOf, cwd)
+			}
+		}
+	}
+	f.discoverMu.Unlock()
+
+	for _, root := range idle {
+		eng.RemoveScorerForRepo(root)
+		slog.Info("work-overlap matching released a repository index whose agents have all gone",
+			"repo", root)
+	}
+	return len(idle) > 0
 }
 
 // maxIndexedRepos bounds the number of trees mined. High enough for any real
