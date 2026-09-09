@@ -66,13 +66,23 @@ func (s *State) GuardPath(agent, path string, now time.Time) GuardVerdict {
 		return guardAllowed
 	}
 	p := cleanPath(path)
+	// The portable name for the same file, so the guard sees a linked worktree's
+	// claim the way the claim path does. Without it an exclusive claim taken in
+	// /a/wt1 does not stop an edit to the same tracked file through /a/wt2: the
+	// board reports the conflict and the enforcement path waves it through, which
+	// is the worse half of the pair to get wrong. See claimOverlap.
+	me := s.Agents[agent]
+	rel := repoPathOf(me, p)
 
 	// The strongest matching claim wins, and a live holder outranks a stale one
 	// being told "no" by someone who is still working is more actionable than
 	// being told "maybe" by someone who vanished.
 	verdict := guardAllowed
 	for _, c := range s.Claims {
-		if c.Agent == agent || c.Mode != ClaimExclusive || !pathsOverlap(c.Path, p) {
+		if c.Agent == agent || c.Mode != ClaimExclusive {
+			continue
+		}
+		if _, hit := s.claimOverlap(me, p, rel, c); !hit {
 			continue
 		}
 		// A subagent is its parent's work, not a third party to it.

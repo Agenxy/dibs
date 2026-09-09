@@ -31,8 +31,18 @@ func (s *State) liveSiblingOf(to *Agent) *Agent {
 }
 
 // sleepingNote explains a delivery to an agent that will not read it soon.
+//
+// ARCHIVED IS ONE OF THOSE AND USED TO GET NO NOTE AT ALL, because the send was
+// refused before it could need one. Now that Answerable asks Retired() rather
+// than Gone(), mail to an archived agent is accepted, and silence here would
+// have made the newly-reachable case the only one the sender is told nothing
+// about: exactly the shape of the sibling bug this function was written for.
+//
+// Not folded into Sleeping(). That predicate is the fold's stale-or-dormant
+// vocabulary and other rules read it; widening it would move several decisions
+// at once, which is how this repository has broken replay before.
 func (s *State) sleepingNote(to *Agent) string {
-	if !to.Sleeping() {
+	if !to.Sleeping() && to.Status != StatusArchived {
 		return ""
 	}
 	var note string
@@ -77,6 +87,18 @@ func (s *State) sleepingNote(to *Agent) string {
 			": it will see this when it next wakes. The message is not lost; only the response " +
 			"deadline is at risk, so re-send with a larger deadline_s if you need an answer, or " +
 			"use notify/handoff when you do not."
+		// Archived costs the recipient a re-registration, and the sender should
+		// know that rather than reading "when it next wakes" and expecting the
+		// same latency a dormant agent gives. Naming the retention window is the
+		// part a person can act on: it is how long the mailbox is still theirs.
+		if to.Status == StatusArchived {
+			note = "delivered to " + to.ID + ", which retention has ARCHIVED: it went " +
+				"quiet and was swept, so its board token no longer works. The mailbox and " +
+				"its nonce are kept for " + s.Limits.ArchiveRetention.String() + " from " +
+				"archival, so it can come back (register again, same name, same nonce) and " +
+				"will find this waiting. Getting a wake to it is best effort and it may be " +
+				"a person who starts it, so give any deadline plenty of room."
+		}
 	}
 	return note
 }

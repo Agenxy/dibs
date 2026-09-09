@@ -48,7 +48,14 @@ func resolveLocation(info *core.AgentInfo, cwd string) {
 	// The identity behind the label, resolved in the same breath because both
 	// come from one memoised Identify, and recorded because the fold compares
 	// them and the fold cannot call Git.
-	info.RepoDir, info.RepoRemote, info.RepoRoots, _ = paths.Identify(info.CWD).Identity()
+	id := paths.Identify(info.CWD)
+	info.RepoDir, info.RepoRemote, info.RepoRoots, _ = id.Identity()
+	// The checkout's own top level, which is what a path is measured FROM. The
+	// three above say WHICH repository; this one is what lets the fold subtract a
+	// worktree prefix and compare two claims on one tracked file. Same source,
+	// same memoised Identify, same bargain: recorded because the fold cannot call
+	// Git and must reach the same verdict on replay.
+	info.RepoRoot = id.WorktreeID
 }
 
 func agentInfo(params json.RawMessage, a *toolArgs, session *clientInfoJSON) *core.AgentInfo {

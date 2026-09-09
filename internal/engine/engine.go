@@ -322,7 +322,13 @@ func (e *Engine) boot(now time.Time) {
 	// flag, so a sweep built without it ran the old rule on every production
 	// sweep and boot, and the test that covered the repair called gc directly
 	// and never noticed. Found by the pre-release review, round two.
-	op := &core.Op{Kind: core.OpSweep, PurgeMail: true, V7Semantics: true}
+	op := &core.Op{
+		Kind: core.OpSweep, PurgeMail: true,
+		V7Semantics: true,
+		// And a build that leaves an archived agent its nonce. Stamped in both
+		// sweep sites for the reason V7Semantics is: neither passes exec.
+		KeepArchivedNonce: true,
+	}
 	for id, l := range e.state.Agents {
 		if l.Status != core.StatusActive {
 			continue
@@ -1008,8 +1014,9 @@ func (e *Engine) sweep(now time.Time) {
 	e.flushFaults()
 	op := &core.Op{
 		Kind: core.OpSweep, PurgeMail: true,
-		GiveUpAnnounce: e.exhaustedAnnouncements(),
-		V7Semantics:    true, // see boot: this op never passes exec
+		GiveUpAnnounce:    e.exhaustedAnnouncements(),
+		V7Semantics:       true, // see boot: this op never passes exec
+		KeepArchivedNonce: true, // likewise
 	}
 	for id, l := range e.state.Agents {
 		if l.Status != core.StatusActive {
