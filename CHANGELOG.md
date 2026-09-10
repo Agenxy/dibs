@@ -5,7 +5,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **`check_in` charges for a roster, not the whole board.** (#55) The one
+  call every agent must make, once per activation, returned every field of
+  every row: 41 KB of a 71 KB checkpoint on this project's own 35-agent board,
+  almost none of it read. It now returns one row per agent (id, status, who,
+  what it is doing on one line, host, project, role) with claims whole in
+  shape, and everything the call owes (mail, announcements, updates, the
+  cursor) untouched. `detail: true` returns the full board as before; the
+  human's panel never lost it. Measured 71 KB to 36 KB on that board.
+
 ### Fixed
+
+- **Three tool descriptions still said "agent" where they meant "space".**
+  Casualties of the vocabulary rename: `evict` told every agent to "remove an
+  agent from an agent it should not be in", `admit` to "add another agent to
+  an agent", and `dibs://skills` said a ref could put you "in an agent".
 
 - **A re-register while live dropped the identity it carried.** (#78) The
   same-nonce register of a still-active agent decided whether anything had

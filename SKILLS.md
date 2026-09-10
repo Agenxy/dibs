@@ -95,7 +95,7 @@ them mentioned.
   work declares no dirs, and that is correct rather than a gap.
 - **`refs`**: ids this work pursues. Two kinds, and the difference decides what
   Dibs may do: `pr:1186`, `issue:1140`, `incident:db-down` **name something** and
-  can put you in an agent automatically; `goal:green-main`, `gate:typos` are context
+  can put you in a space automatically; `goal:green-main`, `gate:typos` are context
   only, because two agents can share a goal while dividing the work between them.
   Give a real id when one exists. **If none exists, leave it out**: an absent
   field and an empty array mean the same thing, and an invented id is worse than

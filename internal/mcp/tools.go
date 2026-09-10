@@ -74,14 +74,14 @@ var toolDefs = func() []map[string]any {
 					"ephemeral: dies with the session"},
 				"nonce": str("random id >=128-bit that YOU generate: a secret, and KEEP IT. The only " +
 					"credential that survives your process; omitted, one is minted"),
-				"session_id": str("your harness session id: lets lifecycle hooks find your " +
-					"mailbox, so mail is pushed to you rather than polled for. Filled in for " +
-					"you when omitted; it names the harness process, so it dies with it"),
+				"session_id": str("your harness session id, so lifecycle hooks find your mailbox " +
+					"and mail is pushed rather than polled. Filled in when omitted; dies with " +
+					"the harness process"),
 				"parent": str("the agent that spawned you, if you are a subagent. Pass `parent_nonce` " +
 					"too: without one, naming a parent grants nothing, because anyone can type any name"),
-				"parent_nonce": str("the one-time secret your parent issued via vouch_child. " +
-					"Proves the lineage `parent` claims: with it you speak under your parent's " +
-					"memberships, skip an exclusive queue, and are exempt from its claims"),
+				"parent_nonce": str("the one-time secret your parent issued via vouch_child, " +
+					"proving `parent`: you then speak under its memberships, skip an exclusive " +
+					"queue, and are exempt from its claims"),
 				"model": str("the model you are, e.g. 'claude-opus-5'. No harness puts this on the " +
 					"wire, so only you can say it"),
 				"provider": str("model provider, e.g. 'anthropic' (optional)"),
@@ -97,8 +97,8 @@ var toolDefs = func() []map[string]any {
 				// instead of ignored, which is the point of refusing them.
 				"surface": str("entrypoint you came through: 'claude-code', 'cli' (bridge fills in)"),
 				"harness": str("the tool you run inside: 'claude-code', 'codex' (bridge fills in)"),
-				"host": str("the machine you are on (bridge fills in): a fleet can span hosts, and " +
-					"two agents on one machine collide in ways two on different ones do not"),
+				"host": str("the machine's name, a label for humans (bridge fills in); which " +
+					"machine you are on is derived by the daemon, not read from this"),
 			}, "name"),
 		},
 		{
@@ -114,12 +114,17 @@ var toolDefs = func() []map[string]any {
 		{
 			"name": "check_in",
 			"description": "Acknowledge the board: required once per activation, before declare " +
-				"or claim. One atomic checkpoint: the board, your inbox, your cursor serial, " +
-				"`announcements` you owe an ack on, and `agent_updates`, whatever happened TO " +
-				"you in a space since you last checked. " +
-				"Neither survives losing context, and this is the authoritative path for both: " +
-				"the wake hook only nudges. Also the recovery after E_CURSOR_TOO_OLD.",
-			"inputSchema": obj(map[string]any{"token": tok}, "token"),
+				"or claim. One atomic checkpoint: the board (one row per agent; detail true " +
+				"for every field), your inbox, your cursor serial, `announcements` you owe an " +
+				"ack on, and `agent_updates`, whatever happened TO you in a space since you " +
+				"last checked. The authoritative path for all of it; the wake hook only " +
+				"nudges. Also the recovery after E_CURSOR_TOO_OLD.",
+			"inputSchema": obj(map[string]any{
+				"token": tok,
+				"detail": map[string]any{
+					"type": "boolean", "description": "every board field (default: one row per agent)",
+				},
+			}, "token"),
 			"_meta": map[string]any{"ui": map[string]any{
 				"resourceUri": uiBoardURI,
 				"visibility":  []string{"model", "app"},
@@ -598,10 +603,10 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "evict",
-			"description": "COORDINATOR ONLY. Remove an agent from an agent it should not be in. " +
-				"whether it is a member or only waiting in the agent's queue, so an agent you " +
+			"description": "COORDINATOR ONLY. Remove an agent from a space it should not be in, " +
+				"whether it is a member or only waiting in the space's queue, so an agent you " +
 				"remove cannot be promoted into it later. This is also how you MOVE an agent: " +
-				"evict, and it joins the right agent. The agent is told, and its work is untouched.",
+				"evict, and it joins the right space. The agent is told, and its work is untouched.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "space": str("space id"), "to": str("the agent to remove"),
 				"note": str("why: the evicted agent sees this"),
@@ -609,7 +614,7 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "admit",
-			"description": "COORDINATOR ONLY. Add another agent to an agent. This is the approval " +
+			"description": "COORDINATOR ONLY. Add another agent to a space. This is the approval " +
 				"step when the board is configured to require one, and is also how you pull " +
 				"somebody into work they belong in but did not match.",
 			"inputSchema": obj(map[string]any{
