@@ -39,6 +39,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   watermark wording, because naming the parties would tell a replacement that
   its name had a predecessor.
 
+- **`dibs doctor` on Linux now says what the missing notifier costs.** (#63,
+  the honest third of it) "This platform has no notification route" was true
+  and said nothing about the consequence: a request that needs the operator
+  waits on the board until they look. It now says so, names `dibs web` as the
+  place the buttons are, and names the issue for the notifier itself. The
+  notifier is not built: CI runs on macOS alone, and a Linux backend nothing
+  can exercise would be the class of change this repository refuses.
+
 - **Three tool descriptions still said "agent" where they meant "space".**
   Casualties of the vocabulary rename: `evict` told every agent to "remove an
   agent from an agent it should not be in", `admit` to "add another agent to
