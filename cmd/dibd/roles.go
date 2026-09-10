@@ -157,6 +157,101 @@ func applyDeclaredRoles(ctx context.Context, eng *engine.Engine, c RolesConfig, 
 		}
 		grantDeclared(ctx, eng, core.RoleCoordinator, agent, id)
 	}
+	withdrawUndeclaredRoles(ctx, eng, c, pins)
+}
+
+// withdrawUndeclaredRoles takes back what this mechanism granted and the
+// config no longer authorises. Issue #73.
+//
+// `[roles]` decided what got GRANTED and never what got withdrawn. A role is
+// replayable state, so an operator who deleted a name from the file watched
+// the ledger restore the agent as admin on the next boot, and the reconciler
+// simply declined to grant it again: the god view over every mailbox, held
+// by an agent the config no longer named, until somebody ran `dibs admin
+// member` by hand.
+//
+// WITHDRAW ONLY WHAT THIS MECHANISM GRANTED AND CAN STILL PROVE IT GRANTED.
+// The pin file is that proof: it records the credential each declared role
+// went to. Every rule wider than this has a bad edge. Demoting on any refusal
+// would strip a board mid-edit of its admin inside fifteen seconds, and a
+// v0.0.6 board upgrading with no [roles.identity] yet on first boot. Demoting
+// whatever holds a declared role would take a role a person granted by hand,
+// or one an agent took through the launch claim, neither of which this
+// mechanism gave and neither of which it should touch.
+//
+// So, for each pinned (role, name, fingerprint): if the config still declares
+// that name for that role AND still authorises that fingerprint, nothing to
+// do. Otherwise the grant is withdrawn from the agent that holds it, but only
+// when that agent's fingerprint IS the pinned one, and the pin is dropped
+// either way. A pin whose fingerprint no longer matches the holder is stale,
+// which means this mechanism did not grant what that agent holds; dropping it
+// is right and demoting would be wrong.
+//
+// A person's decision still stands: the engine records a hand-made role
+// change for the run and declines the reconciler's grant, and it declines its
+// withdrawal the same way.
+func withdrawUndeclaredRoles(ctx context.Context, eng *engine.Engine, c RolesConfig, pins *rolePins) {
+	if pins.Pins == nil {
+		return // unreadable: fail in the refusing direction, as check does
+	}
+	declared := map[string]map[string]bool{
+		core.RoleAdmin:       {},
+		core.RoleCoordinator: {},
+	}
+	for _, n := range c.Admin {
+		declared[core.RoleAdmin][n] = true
+	}
+	for _, n := range c.Coordinator {
+		declared[core.RoleCoordinator][n] = true
+	}
+	changed := false
+	for role, byName := range pins.Pins {
+		for name, pinned := range byName {
+			want := c.Identity[name]
+			if declared[role][name] && (want == "" || want == pinned) {
+				continue // still declared, still this credential
+			}
+			delete(byName, name)
+			changed = true
+			withdrawOne(ctx, eng, role, name, pinned)
+		}
+	}
+	if changed {
+		if err := pins.save(); err != nil {
+			slog.Warn("could not save the role pins after a withdrawal", "err", err)
+		}
+	}
+}
+
+// withdrawOne demotes the holder of a declared name, if it is the agent the
+// pin recorded and it still holds the pinned role.
+func withdrawOne(ctx context.Context, eng *engine.Engine, role, name, pinned string) {
+	id := resolveDeclared(ctx, eng, role, name)
+	if id == "" {
+		return // nobody holds the name; the pin was all there was
+	}
+	fp, err := eng.AgentIdentity(ctx, id)
+	if err != nil || fp != pinned {
+		slog.Info("a declared role's pin is stale: a different agent holds the "+
+			"name, so the pin is dropped and the role left alone",
+			"agent", name, "role", role)
+		return
+	}
+	if held, err := eng.AgentRole(ctx, id); err != nil || held != role {
+		return // already not holding what was pinned
+	}
+	res, err := eng.GrantRole(ctx, id, core.RoleMember)
+	if err != nil {
+		slog.Warn("could not withdraw a role no longer declared in dibs.toml",
+			"agent", name, "role", role, "err", err)
+		return
+	}
+	if res["stands"] != nil {
+		slog.Info("declared role not withdrawn: a person set this agent's role "+
+			"during this run", "agent", name, "role", role, "why", res["stands"])
+		return
+	}
+	slog.Info("withdrew a role no longer declared in dibs.toml", "agent", name, "role", role)
 }
 
 // grantOne resolves a declared name, grants the role if it may, and reports the
