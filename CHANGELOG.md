@@ -18,6 +18,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The determinism gate generates every mutating op.** (#3) The randomized
+  replay walk behind `state == fold(ledger)` never generated nine of them
+  (`update`, `clear_slot`, `release`, `force_release`, `mark_delivered`,
+  `adopt_agent`, `claim_coordinator`, `prune_own`, `sign_off`) nor any of the
+  flags recorded on ops since v0.0.7, so none of those had a replay guarantee
+  whatever the rest of the suite said. All are generated now, each is covered
+  once deterministically so coverage does not depend on the seed, and an
+  injected impure read in `update` is caught. The walk replayed identically
+  with all of them in, on the first run.
+
 - **Removing a role from `dibs.toml` now takes it away.** (#73) `[roles]`
   decided what was granted and never what was withdrawn, so a role deleted
   from the file survived on the ledger and the reconciler declined to grant
