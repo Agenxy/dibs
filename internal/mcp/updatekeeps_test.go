@@ -54,7 +54,7 @@ func TestABranchOnlyUpdateKeepsTheDescription(t *testing.T) {
 	// check_in, because it answers with the board itself. The `board` tool
 	// returns a panel-shaped result and the rows sit under _meta, which would
 	// make this test about the panel's shape rather than about the description.
-	in := callWithIdentityRaw(t, srv, "keeper-nonce", "check_in", `{"token":"`+tok+`"}`)
+	in := callWithIdentityRaw(t, srv, "keeper-nonce", "check_in", `{"token":"`+tok+`","detail":true}`)
 	board, _ := in["board"].(map[string]any)
 	agents, _ := board["agents"].([]any)
 	for _, a := range agents {

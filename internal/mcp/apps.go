@@ -257,6 +257,123 @@ func boardSummary(sc map[string]any, declaredUI bool) string {
 	return msg
 }
 
+// slimBoard is the board an agent is charged for on check_in: one row per
+// agent with what orientation needs and nothing else.
+//
+// check_in is the one call every agent MUST make, once per activation, and
+// the board dominated its cost: 41 KB of a 71 KB checkpoint on a 35-agent
+// board, measured on this project's own, and almost none of it read. Each row
+// carried the whole identity block (harness, version, model, cwd, branch, the
+// repository's root commits) and every slot's full text with its predicted
+// files. An agent that learns the required call costs twelve thousand tokens
+// makes it as rarely as it can, which is precisely the disengagement #53
+// proposes reminders for; the cheaper fix is to stop charging for it. Issue
+// #55.
+//
+// The human's panel is not affected: it reads the board from _meta, which
+// panelResult builds from the FULL result before this runs. detail=true gives
+// the model the same, on request, as `board` already does.
+//
+// A subset of the full shape rather than a different one, so `board.agents[i]
+// .id` and `.status` read the same either way and an agent that indexes by
+// them does not break when it turns detail on. What survives per row: id,
+// status, name when it differs from the id, role, whether it is the human, the
+// host and project labels, the description cut to a line, and the first slot's
+// text cut to one line with its activity.
+//
+// Claims stay whole in shape and lose their notes and timestamps. A claim is
+// coordination's hard edge, and an agent that checked in and could not see
+// that a directory is held exclusively would believe it had looked. Bounded by
+// MaxClaimsGlobal, and each compact row is a few dozen bytes.
+func slimBoard(res core.Result) core.Result {
+	raw, _ := json.Marshal(res["board"])
+	var b struct {
+		Serial uint64           `json:"serial"`
+		Agents []map[string]any `json:"agents"`
+		Spaces []any            `json:"spaces"`
+		Claims []map[string]any `json:"claims"`
+	}
+	if json.Unmarshal(raw, &b) != nil {
+		return res
+	}
+	rows := make([]map[string]any, 0, len(b.Agents))
+	for _, a := range b.Agents {
+		rows = append(rows, rosterRow(a))
+	}
+	claims := make([]map[string]any, 0, len(b.Claims))
+	for _, c := range b.Claims {
+		claims = append(claims, map[string]any{"agent": c["agent"], "path": c["path"], "mode": c["mode"]})
+	}
+	out := core.Result{}
+	for k, v := range res {
+		out[k] = v
+	}
+	out["board"] = map[string]any{
+		"serial": b.Serial, "agents": rows, "claims": claims,
+		"spaces": len(b.Spaces),
+		"detail": "one row per agent; pass detail true for every field",
+	}
+	return out
+}
+
+// rosterRow is one agent as the roster shows it. See slimBoard for what
+// survives and why.
+func rosterRow(a map[string]any) map[string]any {
+	row := map[string]any{"id": a["id"], "status": a["status"]}
+	if n, _ := a["name"].(string); n != "" && n != a["id"] {
+		row["name"] = n
+	}
+	for _, k := range []string{"role", "human"} {
+		if v, ok := a[k]; ok && v != "" && v != false {
+			row[k] = v
+		}
+	}
+	if d, _ := a["description"].(string); d != "" {
+		row["who"] = oneLine(d, 100)
+	}
+	if info, _ := a["agent"].(map[string]any); info != nil {
+		for _, k := range []string{"host", "project"} {
+			if v, _ := info[k].(string); v != "" {
+				row[k] = v
+			}
+		}
+	}
+	rosterSlot(row, a)
+	return row
+}
+
+// rosterSlot adds the first declaration to a roster row: what the agent is
+// doing, cut to a line, and how many more slots it holds.
+func rosterSlot(row, a map[string]any) {
+	slots, _ := a["slots"].([]any)
+	if len(slots) == 0 {
+		return
+	}
+	if first, _ := slots[0].(map[string]any); first != nil {
+		if t, _ := first["text"].(string); t != "" {
+			row["doing"] = oneLine(t, 140)
+		}
+		if act, _ := first["activity"].(string); act != "" {
+			row["activity"] = act
+		}
+	}
+	if len(slots) > 1 {
+		row["slots"] = len(slots)
+	}
+}
+
+// oneLine cuts a declaration to its first line and n runes, marking the cut.
+func oneLine(s string, n int) string {
+	if i := strings.IndexByte(s, '\n'); i >= 0 {
+		s = s[:i]
+	}
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
+}
+
 // inboxCount counts messages in either shape a mailbox arrives in, through a
 // JSON round-trip so named map types and typed slices both resolve. Comparing
 // core.Result against map[string]any directly does not match.
@@ -650,9 +767,14 @@ func redactAnyContainer(v any) any {
 // ~1.5 KB: still less than the 2.1 KB the same call cost before this feature
 // existed. Bounded waste beats a feature that silently does not work.
 func (s *Server) panelResult(
-	ctx context.Context, res core.Result, view, token string, wantsUI, panelFetches bool,
+	ctx context.Context, res core.Result, view, token string, wantsUI, panelFetches, slim bool,
 ) map[string]any {
 	payload := panelPayload(s.panelState(ctx, res, view, token))
+	// The panel above was built from the whole result. What the MODEL is
+	// charged for may be less: see slimBoard.
+	if slim {
+		res = slimBoard(res)
+	}
 	// The bootstrap rides in CONTENT here, never structuredContent, and the
 	// difference is the whole recovery checkpoint.
 	//

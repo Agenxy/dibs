@@ -96,7 +96,7 @@ func TestPanelNeverReplacesTheAgentsResult(t *testing.T) {
 		"acked_serial": 9, "ok": true,
 	}
 	for _, wantsUI := range []bool{false, true} {
-		out := s.panelResult(t.Context(), res, "board", "", wantsUI, false)
+		out := s.panelResult(t.Context(), res, "board", "", wantsUI, false, false)
 		text := out["content"].([]map[string]any)[0]["text"].(string)
 		var got map[string]any
 		if err := json.Unmarshal([]byte(text), &got); err != nil {
@@ -218,13 +218,13 @@ func TestTheCheckpointIsNotDuplicatedOnceThePanelCanFetch(t *testing.T) {
 	s := New(nil)
 	res := core.Result{"ok": true, "board": map[string]any{"agents": []any{"a", "b"}}}
 
-	unproved := s.panelResult(t.Context(), res, "board", "", true, false)
+	unproved := s.panelResult(t.Context(), res, "board", "", true, false, false)
 	if _, ok := unproved["structuredContent"]; !ok {
 		t.Fatal("an unproved session lost structuredContent: on the host this exists " +
 			"for, that is the panel's only carrier and the agent's only checkpoint")
 	}
 
-	proved := s.panelResult(t.Context(), res, "board", "", true, true)
+	proved := s.panelResult(t.Context(), res, "board", "", true, true, false)
 	if _, ok := proved["structuredContent"]; ok {
 		t.Error("the checkpoint is still duplicated after the panel proved it can fetch")
 	}

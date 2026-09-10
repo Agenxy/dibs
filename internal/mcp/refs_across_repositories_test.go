@@ -372,7 +372,7 @@ func TestADirectoryThatBecomesARepositoryIsNoticed(t *testing.T) {
 	if token == "" {
 		t.Fatalf("registration failed: %v", out)
 	}
-	board, err := json.Marshal(toolCall(t, srv, "check_in", map[string]any{"token": token}))
+	board, err := json.Marshal(toolCall(t, srv, "check_in", map[string]any{"token": token, "detail": true}))
 	if err != nil {
 		t.Fatal(err)
 	}
