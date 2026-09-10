@@ -57,7 +57,28 @@ func (l *Agent) resumeWork(op *Op) (held, changed, restoreNonce bool) {
 	// ledger replays to precisely what it did before.
 	restoreNonce = op.RestoreNonce && l.Nonce == "" && op.Nonce != ""
 	changed = changed || restoreNonce
+	// A DIFFERENT IDENTITY IS A CHANGE. Every reason above is about where the
+	// agent is running; none was about WHO it says it is, so a re-register that
+	// corrected its cwd, or arrived carrying a host id the server had derived
+	// for it for the first time, matched nothing here and was answered with the
+	// old row and `resumed: true`. Issue #78, reported from a live board for
+	// cwd; measured again the hour host_id shipped. takeActivation takes the
+	// identity when a SESSION moves, which is right and is not this case.
+	//
+	// GATED, because the ledgered half of this path already dropped the
+	// identity and those ops are on disk. See Op.TakeIdentity.
+	changed = changed || l.identityDiffers(op)
 	return held, changed, restoreNonce
+}
+
+// identityDiffers reports whether a flagged op carries an identity the row
+// does not have. Whole-value, because AgentInfo is all strings and the server
+// rebuilds every field at ingress: a difference anywhere is a new statement.
+func (l *Agent) identityDiffers(op *Op) bool {
+	if !op.TakeIdentity || op.Agent == nil {
+		return false
+	}
+	return l.Agent == nil || *l.Agent != *op.Agent
 }
 
 // resumeLiveAgent answers a register whose nonce matched an agent that is still
@@ -130,6 +151,14 @@ func (s *State) resumeLiveAgent(l *Agent, op *Op, now time.Time) (Result, []Even
 		// changed. Found by the pre-release review, round seventy-nine.
 		if op.NewToken != "" {
 			l.Token = op.NewToken
+		}
+		// THE IDENTITY, whether or not the session moved. takeActivation above
+		// applied it on a move and left it on every other kind of change, so a
+		// register whose pid moved and whose cwd was corrected in the same call
+		// took the pid and dropped the cwd. Same gate as the reason it counts
+		// as a change at all.
+		if l.identityDiffers(op) {
+			l.Agent = op.Agent
 		}
 		s.dropTakenSession(op, l)
 		if op.SessionID != "" {

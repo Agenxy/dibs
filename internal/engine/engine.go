@@ -379,6 +379,10 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// rather than the one this binary would make today. See Op.RestoreNonce.
 	if op.Kind == core.OpRegister {
 		op.RestoreNonce = true
+		// And a register from this version may apply the identity it carries
+		// to a row that is still live. Same shape, same reason: ops on disk
+		// dropped it, and must go on doing so. See Op.TakeIdentity.
+		op.TakeIdentity = true
 	}
 
 	// Ingress-only validation. Deliberately NOT inside Apply: Apply is also the

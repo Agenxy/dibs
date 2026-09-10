@@ -7,6 +7,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A re-register while live dropped the identity it carried.** (#78) The
+  same-nonce register of a still-active agent decided whether anything had
+  changed from sessions, pid and nonce alone, so a corrected `cwd`, or the
+  `host_id` the server had just derived, matched nothing and was answered
+  with the old row and `resumed: true`. Every agent already on a board when
+  `host_id` shipped was in that position, and no row on the development board
+  gained one after the upgrade. A differing identity is now a change, is
+  ledgered as one, and the row takes what the server derived; an identical
+  retry is still the lost-response retry it always was and keeps its token.
+  Gated on the register op, because the half of this path that was already
+  ledgered dropped the identity on its way to disk and must go on doing so on
+  replay. `update` now carries the machine as well, so an agent that never
+  re-registers is not stranded without one.
+
 - **Two agents on different computers collided over a path they merely spell
   the same.** One daemon serves agents on other machines and has since v1
   (SPEC §16: bind `--addr`), so their absolute paths arrive in one namespace,

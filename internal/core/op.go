@@ -314,6 +314,28 @@ type Op struct {
 	// Only the nonce. A sweep still clears the token, which is what makes the
 	// next call return E_BAD_TOKEN and say how to come back.
 	KeepArchivedNonce bool `json:"keep_archived_nonce,omitempty"`
+	// TakeIdentity says a same-nonce register of a LIVE agent may apply the
+	// identity it carries, and count a differing one as a change.
+	//
+	// The live resume path was written as a lost-response retry and decided
+	// "did anything change" from sessions, pid and nonce alone. An identity
+	// that differed in every field was not a reason, so it was dropped and the
+	// caller told `resumed: true`: issue #78, for cwd. When the identity grew a
+	// SERVER-DERIVED field, host_id, that path became the only way an agent
+	// already on the board could get one, and it was the path that threw it
+	// away.
+	//
+	// THE SAME HAZARD AS THE FLAGS ABOVE, on the half that was already
+	// ledgered. A same-nonce register whose session or pid moved was a change,
+	// was written to disk, and dropped its identity while being written.
+	// Applying that identity on replay would rebuild a cwd, and so a checkout
+	// root, and so every claim's portable name, that the daemon never held
+	// live: state != fold(ledger) on the exact field the claim rule reads.
+	// An op without this flag keeps the semantics it was written under.
+	//
+	// The other half, an identical retry that used to short-circuit, needs no
+	// gate: it returned nil events, was never ledgered, and has no past.
+	TakeIdentity bool `json:"take_identity,omitempty"`
 	// RoleByHuman marks a grant_role a person made through the admin API.
 	// Transient, never on the wire: the engine remembers the agent for the
 	// rest of its run and declines the startup reconciler's regrant, on the

@@ -1075,6 +1075,25 @@ func blobContent(res core.Result) []map[string]any {
 	}
 }
 
+// stampHost puts the machine the server derived for this caller on an update.
+//
+// An agent registered before host_id existed has a row with none, and the
+// same-nonce re-register that would otherwise supply one was the path that
+// dropped it (Op.TakeIdentity). Stamped from the connection exactly as
+// register's is, so the caller's own word never reaches the row; the fold takes
+// it only when stated, so every update on disk from before the field is
+// unaffected. Out of line because run() sits on a complexity ceiling.
+func stampHost(ctx context.Context, params json.RawMessage, op *core.Op) {
+	host := resolveHostID(ctx, params)
+	if host == "" {
+		return
+	}
+	if op.Agent == nil {
+		op.Agent = &core.AgentInfo{}
+	}
+	op.Agent.HostID = host
+}
+
 // noteIfNobodyCanWake adds the pull-only warning when core said nothing.
 //
 // Only when core said nothing: a dormant recipient already gets a better
@@ -1182,6 +1201,7 @@ func (s *Server) run(
 			}
 			resolveLocation(op.Agent, a.CWD)
 		}
+		stampHost(ctx, params, op)
 		// Omitting `description` means "leave it alone", not "erase it".
 		//
 		// The tool invites branch-only and title-only updates, and decoding into
