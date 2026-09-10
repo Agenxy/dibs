@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -71,9 +72,23 @@ func TestAReplacementSenderCannotReadThroughAnAdoption(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go e.Run(ctx)
-	if res, err := e.GetMessage(ctx, "tok-s2", 7); err == nil && res["error"] == nil {
+	res, err := e.GetMessage(ctx, "tok-s2", 7)
+	if err == nil && res["error"] == nil {
 		t.Error("a replacement registered under the old sender's name read the old body and " +
 			"answer by serial: the adoption authorised the recipient's recovery, not this")
+	}
+	// AND THE REFUSAL DOES NOT SAY WHOSE IT WAS. The honest "message N is
+	// between s and h" wording exists for somebody else's mail; here the
+	// caller IS "s" by id, and naming the parties would tell a replacement
+	// that its name had a predecessor and what that predecessor wrote to.
+	// The watermark wording is the right one for an inherited serial.
+	cerr, _ := res["error"].(*core.Error)
+	if cerr == nil {
+		_ = errors.As(err, &cerr)
+	}
+	if cerr != nil && cerr.Code != "E_NO_MESSAGE" {
+		t.Errorf("an inherited serial was refused as %s, which names the parties to a "+
+			"replacement under the old name: %s", cerr.Code, cerr.Msg)
 	}
 	if res, err := e.GetMessage(ctx, "tok-h", 7); err != nil || res["error"] != nil {
 		t.Errorf("the heir itself was refused the mail it was given: %v %v", err, res)

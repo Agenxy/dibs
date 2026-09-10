@@ -364,6 +364,33 @@ func (e *Engine) SpaceRead(ctx context.Context, token, agent string, limit int) 
 	})
 }
 
+// unreadableMail is why read_mail refused a serial, and it exists to say what
+// the serial IS rather than that it is not the caller's.
+//
+// An ANNOUNCEMENT serial is the overwhelmingly likely mistake, because the
+// wake nudge hands the agent a serial and says to go read it, and a serial in
+// hand makes read_mail the obvious call. Answering "no message N addressed to
+// you" for a thing that plainly exists is the failure this codebase keeps
+// producing: a confident, specific and false statement, from which the only
+// reasonable conclusion is that the announcement was withdrawn. A reviewing
+// agent reached exactly that conclusion and messaged a human.
+//
+// SOMEBODY ELSE'S message is the same shape one branch over, and got the same
+// false answer until #36: it now names the two ids, which every roster shows,
+// and never the body. `theirs` is false for an inherited serial, one below the
+// caller's own creation, which keeps the watermark wording: there the message
+// may well have been addressed to this id under a previous occupant, and
+// naming the parties would tell a replacement that its name had a predecessor.
+func (e *Engine) unreadableMail(serial uint64, m *core.Message, theirs bool, truncatedBefore uint64) *core.Error {
+	if an, isAnnounce := e.state.Announcements[serial]; isAnnounce {
+		return core.ErrWrongKind(serial, an.Space)
+	}
+	if theirs {
+		return core.ErrNotYourMessage(serial, m.From, m.To)
+	}
+	return core.ErrNoMessage(serial, truncatedBefore)
+}
+
 // GetMessage returns one full message for its sender or recipient (SPEC §8).
 func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (core.Result, error) {
 	return e.query(ctx, func() core.Result {
@@ -420,19 +447,7 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 		adopted := ok && m.To == l.ID && e.state.AdoptedFor(m, l.ID)
 		inherited := ok && l.CreatedSerial > 0 && serial < l.CreatedSerial && !adopted
 		if !ok || inherited || (m.From != l.ID && m.To != l.ID) {
-			// An ANNOUNCEMENT serial is the overwhelmingly likely mistake here,
-			// because the wake nudge hands the agent a serial and says to go
-			// read it, and a serial in hand makes read_mail the obvious call.
-			//
-			// Answering "no message N addressed to you" for a thing that plainly
-			// exists is the failure this codebase keeps producing: a confident,
-			// specific and false statement, from which the only reasonable
-			// conclusion is that the announcement was withdrawn. A reviewing
-			// agent reached exactly that conclusion and messaged a human.
-			if an, isAnnounce := e.state.Announcements[serial]; isAnnounce {
-				return core.Result{"error": core.ErrWrongKind(serial, an.Space)}
-			}
-			return core.Result{"error": core.ErrNoMessage(serial, l.TruncatedBefore)}
+			return core.Result{"error": e.unreadableMail(serial, m, ok && !inherited, l.TruncatedBefore)}
 		}
 		if m.To == l.ID && m.State == core.MsgStatePending {
 			_, _ = e.applyAndLedger(&core.Op{Kind: core.OpMarkDelivered, MsgSerials: []uint64{serial}}, now)
