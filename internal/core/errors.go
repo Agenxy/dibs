@@ -239,6 +239,18 @@ var (
 	ErrBlobTooLarge = errors.New("blob exceeds size limit")
 )
 
+// ErrNotYourMessage is for a message that exists and is between two other
+// agents. Says whose it is, which every roster already shows, and never what
+// it says. Reporting it as absent was the announcement mistake one branch over:
+// a serial the caller got from a notice or a board event is not one it
+// invented, and "no such message" sends it looking for a deletion that never
+// happened. An agent on a live board concluded mail was being lost.
+func ErrNotYourMessage(serial uint64, from, to string) *Error {
+	return errf("E_NOT_YOUR_MESSAGE",
+		"only "+from+" and "+to+" can read it; use inbox() for your own mail",
+		"message %d is between %s and %s, not addressed to you", serial, from, to)
+}
+
 // ErrWrongKind is for a serial that exists but is not the kind of thing the
 // caller asked for. Names what it IS and which tool reads it, rather than
 // reporting the absence of what was asked for: a serial the caller got from a

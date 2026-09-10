@@ -30,6 +30,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and a stale pin under a name a different credential now holds is dropped
   rather than used to demote somebody it never described.
 
+- **`read_mail` on somebody else's message said the message did not exist.**
+  (#36, item four) A serial between two other agents answered `E_NO_MESSAGE`,
+  "no accessible message", hint "check the serial": the same confident and
+  false statement the announcement case had been fixed for, and an agent on a
+  live board concluded mail was being lost. It is now `E_NOT_YOUR_MESSAGE`,
+  naming the two ids and never the body. An inherited serial keeps the
+  watermark wording, because naming the parties would tell a replacement that
+  its name had a predecessor.
+
 - **Three tool descriptions still said "agent" where they meant "space".**
   Casualties of the vocabulary rename: `evict` told every agent to "remove an
   agent from an agent it should not be in", `admit` to "add another agent to
