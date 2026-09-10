@@ -1127,6 +1127,68 @@ try {
     check("an exclusive space shows who is waiting", /waiting:/i.test(text), text.slice(0, 240))
     }
   {
+    // A VIEW TRANSITION THAT HANGS MUST NOT TAKE THE BOARD WITH IT. Issue #84.
+    //
+    // While one is live the browser paints a ::view-transition overlay above
+    // the document and it swallows pointer events. `data-transition` used to
+    // come off only when `finished` settled, so a transition the renderer
+    // stopped driving left the board rendering perfectly and accepting no
+    // clicks, with nothing to bound it. This is not hypothetical: a run of
+    // this suite failed here with a tab click retrying for thirty seconds
+    // against "<html data-transition="tab-back"> intercepts pointer events".
+    //
+    // WHAT THIS CAN AND CANNOT REPRODUCE, because the difference matters.
+    // A transition whose `finished` never settles is the shape of the hang,
+    // and the page's own release path is fully exercised by it: the attribute
+    // comes off and skipTransition is called. The browser's overlay is NOT
+    // reproducible here, because forcing the real compositor to stall needs
+    // renderer conditions a page cannot create. So this asserts the two things
+    // the fix does and does not assert the symptom it prevents. An earlier
+    // version also checked that clicks still landed, and that passed against
+    // the unfixed code: the fixture leaves the real transition finishing, so
+    // the overlay was never there to block anything. A green check that
+    // cannot fail is worse than none.
+    //
+    // Deterministic on purpose. The suite's local flake rate is what stopped
+    // this fix landing the first time, on a four-run comparison that could
+    // not have shown anything either way; this test does not depend on it.
+    const stuck = await browser.newContext()
+    await stuck.addCookies([{ name, value, domain: "127.0.0.1", path: "/" }])
+    await stuck.addInitScript((k: string) => {
+      try { localStorage.setItem("dibs_board_key", k) } catch {}
+      const real = document.startViewTransition?.bind(document)
+      if (!real) return
+      ;(window as unknown as { __skipped?: boolean }).__skipped = false
+      document.startViewTransition = (cb: () => void) => {
+        const t = real(cb)
+        return {
+          ...t,
+          finished: new Promise(() => {}),
+          skipTransition: () => {
+            ;(window as unknown as { __skipped?: boolean }).__skipped = true
+            t.skipTransition()
+          },
+        }
+      }
+    }, pageKey)
+    const hung = await stuck.newPage()
+    await hung.goto(`http://${ADDR}/`, { waitUntil: "load" })
+    await hung.locator(".entry").first().waitFor({ timeout: 10000 })
+    await hung.locator("#tab-mail").click()
+    let cleared = false
+    for (let i = 0; i < 60 && !cleared; i++) {
+      cleared = !(await hung.evaluate(() => "transition" in document.documentElement.dataset))
+      await Bun.sleep(100)
+    }
+    check("a view transition that never finishes stops blocking the page",
+      cleared, "data-transition is still set on <html>")
+    const skipped = await hung.evaluate(
+      () => (window as unknown as { __skipped?: boolean }).__skipped === true)
+    check("the hung transition is skipped, so the overlay is released too",
+      skipped, "skipTransition was never called")
+    await stuck.close()
+  }
+  {
     // Back to the roster for the agent-level marks.
     await page.locator('.views button[data-view="board"]').click()
     const roster = page.locator("#pane-board")

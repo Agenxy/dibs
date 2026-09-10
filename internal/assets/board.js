@@ -835,6 +835,9 @@ const Board = (() => {
     ? matchMedia("(prefers-reduced-motion: reduce)")
     : { matches: false }
   let running = null
+  // How long a view transition may hold the pointer-blocking overlay before it
+  // is treated as hung. See transition().
+  const transitionCeiling = 2000
 
   function transition(kind, update) {
     const root = document.documentElement
@@ -844,17 +847,50 @@ const Board = (() => {
       return false
     }
     root.dataset.transition = kind
+    let started
     try {
-      running = document.startViewTransition(() => update(true))
+      started = document.startViewTransition(() => update(true))
     } catch {
       delete root.dataset.transition
       update(false)
       return false
     }
-    running.finished.finally(() => {
+    running = started
+
+    // A TRANSITION THAT NEVER FINISHES MUST NOT LEAVE THE PAGE UNCLICKABLE.
+    //
+    // While one is live the browser paints a ::view-transition overlay ABOVE
+    // the document, and it swallows pointer events. That is fine for the
+    // quarter-second these animations last and it is not fine forever, and
+    // nothing bounded it: `finished` was the only thing that cleared
+    // `data-transition` and released the overlay, so a transition that never
+    // settles leaves a board which renders perfectly and accepts no clicks at
+    // all. The re-entry guard is not the problem; later updates see `running`
+    // and redraw plainly, correctly. It is the overlay that never comes off.
+    //
+    // Caught by the web e2e, once: a tab click retried for thirty seconds
+    // against `<html data-transition="tab-back"> intercepts pointer events`.
+    // Thirty seconds is not a quarter-second animation, it is a hang. The
+    // renderer can stop driving one for reasons the page does not control (a
+    // backgrounded or throttled tab is the documented case), so this cannot be
+    // fixed by being careful; it has to be bounded. Issue #84.
+    //
+    // Generous against the longest animation here, which is .34s, because the
+    // ceiling exists to catch a hang and not to cut a slow frame short.
+    const release = () => {
+      if (running !== started) return
+      clearTimeout(ceiling)
       running = null
       delete root.dataset.transition
-    })
+    }
+    const ceiling = setTimeout(() => {
+      // Ask the browser to drop the overlay too. Deleting the attribute alone
+      // would leave the transition running and the page still unclickable:
+      // the attribute only selects the ANIMATIONS.
+      try { started.skipTransition() } catch {}
+      release()
+    }, transitionCeiling)
+    started.finished.finally(release)
     return true
   }
 
