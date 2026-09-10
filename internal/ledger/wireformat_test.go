@@ -178,6 +178,14 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		// because that one is already true on every op written since v0.0.7 and
 		// reusing it would apply a v0.0.8 decision to months of recorded history.
 		"keep_archived_nonce": true,
+		// take_identity: whether THIS register may apply the identity it
+		// carries to a row that is still live, and count a differing one as a
+		// change. The live resume path decided "changed" from sessions and pid
+		// alone and dropped the identity on every ledgered change that was not
+		// a session move; those ops are on disk, and applying the identity to
+		// them on replay would rebuild a cwd, a checkout root and every claim's
+		// portable name that the daemon never held. Absent decodes false.
+		"take_identity": true,
 	}
 
 	// Every tag the Op DECLARES, not merely the ones this fixture happens to
@@ -352,7 +360,7 @@ const (
 	// rename. If you are here
 	// because a sweep moved this value, the sweep is the bug, and the tag it
 	// renamed is the data loss.
-	frozenOpFingerprint       = "sha256:cbdc8c1ffa83f2db"
+	frozenOpFingerprint       = "sha256:293fce3ad4dcf406"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

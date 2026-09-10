@@ -1058,6 +1058,17 @@ func (a *Agent) mergeIdentity(in *AgentInfo) []string {
 	// fold discarded it and reported success with the old identity. The
 	// group applies when any of its fields differ. Found by the pre-release
 	// review, round thirty-five.
+	// The machine, when the server stated one. Derived like the location group
+	// and never off the wire: resolveHostID stamps it from the connection, so an
+	// update from a loopback caller carries this daemon's own id and one from a
+	// remote caller carries what its transport vouched for. Only when stated,
+	// because every update on disk before the field existed carries none, and
+	// blanking on absence would strip a row's machine on every self-reported
+	// title change.
+	if in.HostID != "" && in.HostID != a.Agent.HostID {
+		a.Agent.HostID = in.HostID
+		changed = append(changed, "host")
+	}
 	if in.CWD != "" {
 		moved := in.CWD != a.Agent.CWD
 		rederived := in.Project != a.Agent.Project || in.RepoDir != a.Agent.RepoDir ||
