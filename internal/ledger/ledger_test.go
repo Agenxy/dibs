@@ -267,17 +267,63 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 	}, now)
 	accepted[core.OpSpaceLeave]++
 
+	// THE DIRECTOR OPS, ONCE EACH, for the same reason as the space ops above.
+	// force_release, adopt_agent and prune_own need a coordinator AND a peer
+	// that has stopped, and sign_off needs a live token late in the walk; all
+	// four are rare enough by chance that a seed can miss any of them. The
+	// nine ops added to this walk after v0.0.7 are the ones the issue it
+	// closes (#3) named, and a gate whose coverage varies by seed is the
+	// thing that comment above is about.
+	// By id, which is derived from the name and is not the name: the first
+	// seed's name has a Cyrillic letter in it on purpose.
+	apply(t, st, led, &core.Op{Kind: core.OpGrantRole, To: st.AgentByToken("seedtokaa").ID, Mode: core.RoleCoordinator}, now)
+	accepted[core.OpGrantRole]++
+	coordinator = "seedtokaa"
+	apply(t, st, led, &core.Op{Kind: core.OpRegister, Name: "seedd", NewToken: "seedtok3", Nonce: "seed-nonce-d"}, now)
+	apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: "seedtok3"}, now)
+	apply(t, st, led, &core.Op{Kind: core.OpClaim, Token: "seedtok3", Path: "/seed/held", Mode: core.ClaimExclusive}, now)
+	apply(t, st, led, &core.Op{Kind: core.OpSendMessage, Token: "seedtokaa", To: "seedd", MsgType: core.MsgNotify, Body: "for the heir"}, now)
+	// Forced while it is HELD: the stale sweep below releases the agent's
+	// claims itself, so afterwards there would be nothing to force.
+	apply(t, st, led, &core.Op{Kind: core.OpForceRelease, Token: coordinator, Path: "/seed/held"}, now)
+	accepted[core.OpForceRelease]++
+	now = now.Add(time.Minute)
+	apply(t, st, led, &core.Op{Kind: core.OpSweep, StaleAgents: []string{"seedd"}, KeepArchivedNonce: true}, now)
+	accepted[core.OpSweep]++
+	apply(t, st, led, &core.Op{Kind: core.OpAdoptAgent, Token: coordinator, To: "seedd", AdoptAuthorised: true}, now)
+	accepted[core.OpAdoptAgent]++
+	apply(t, st, led, &core.Op{Kind: core.OpPruneOwn, Token: coordinator, To: "seedd"}, now)
+	accepted[core.OpPruneOwn]++
+	apply(t, st, led, &core.Op{Kind: core.OpSignOff, Token: "seedtokca"}, now)
+	accepted[core.OpSignOff]++
+	tokens = tokens[:2] // seedc has signed off; its token is dead
+	// And the three the walk missed on the seed this was written against.
+	apply(t, st, led, &core.Op{Kind: core.OpClaim, Token: "seedtokba", Path: "/seed/mine", Mode: core.ClaimShared}, now)
+	accepted[core.OpClaim]++
+	apply(t, st, led, &core.Op{Kind: core.OpRelease, Token: "seedtokba", Path: "/seed/mine"}, now)
+	accepted[core.OpRelease]++
+	apply(t, st, led, &core.Op{Kind: core.OpSpaceSubscribe, Token: "seedtokba", Space: "seedspace"}, now)
+	accepted[core.OpSpaceSubscribe]++
+	apply(t, st, led, &core.Op{Kind: core.OpPrune, To: "seedd"}, now)
+	accepted[core.OpPrune]++
+
 	for i := 0; i < 1500; i++ {
 		now = now.Add(time.Duration(rng.Intn(30000)) * time.Millisecond)
 		var op *core.Op
 		switch k := rng.Intn(40); {
 		case k == 0 && len(tokens) < 15:
 			tok := "tok" + itoa(len(tokens))
-			op = &core.Op{Kind: core.OpRegister, Name: "agent" + tok, NewToken: tok}
+			op = &core.Op{Kind: core.OpRegister, Name: "agent" + tok, NewToken: tok, TakeIdentity: true}
 			if rng.Intn(3) == 0 {
 				op.AgentKind = core.KindPersistent
 				op.Nonce = "nonce-" + tok
 				nonces[tok] = op.Nonce
+			}
+			// An identity with the fields the claim rule reads: two checkouts
+			// of one repository on two hosts, so the host and repository rules
+			// both fire somewhere in the walk.
+			if rng.Intn(2) == 0 {
+				op.Agent = identityFor(rng, tok)
 			}
 			tokens = append(tokens, tok)
 		case len(tokens) == 0:
@@ -293,12 +339,17 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 				OpID: maybeOpID(rng, i),
 			}
 		case k == 7:
-			op = &core.Op{
-				Kind: core.OpClaim, Token: pick(rng, tokens),
-				Path: "/p" + pick(rng, tokens), Mode: pickMode(rng),
+			tok := pick(rng, tokens)
+			path := "/p" + pick(rng, tokens)
+			if l := st.AgentByToken(tok); l != nil && l.Agent != nil && l.Agent.RepoRoot != "" && rng.Intn(2) == 0 {
+				path = l.Agent.RepoRoot + "/pkg/" + pick(rng, tokens) + ".go"
 			}
+			op = &core.Op{Kind: core.OpClaim, Token: tok, Path: path, Mode: pickMode(rng)}
 		case k == 8:
-			op = &core.Op{Kind: core.OpSweep, StaleAgents: staleSubset(rng, st)}
+			op = &core.Op{
+				Kind: core.OpSweep, StaleAgents: staleSubset(rng, st),
+				KeepArchivedNonce: rng.Intn(2) == 0, PurgeMail: rng.Intn(2) == 0,
+			}
 		case k == 9:
 			op = &core.Op{Kind: core.OpAckMessage, Token: pick(rng, tokens), MsgSerial: uint64(rng.Intn(int(st.Serial + 1)))}
 		case k == 10:
@@ -383,6 +434,9 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 				}
 				tokens = append(tokens, fresh)
 				nonces[fresh] = n
+				if tok == coordinator {
+					coordinator = fresh // the role follows the identity; the token rotated
+				}
 			} else {
 				op = &core.Op{
 					Kind: core.OpBindSession, Token: tok,
@@ -397,6 +451,83 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 			} else {
 				op = &core.Op{Kind: core.OpBindSession, Token: pick(rng, tokens), SessionID: "s" + itoa(i)}
 			}
+		// The nine below were absent from this walk for the whole of v0.0.7.
+		// Same rule as the four above: an op this switch does not generate has
+		// no determinism guarantee, whatever the rest of the suite says.
+		case k == 23:
+			op = &core.Op{
+				Kind: core.OpUpdate, Token: pick(rng, tokens),
+				Description: "d" + itoa(rng.Intn(3)),
+				Agent:       identityFor(rng, pick(rng, tokens)),
+			}
+		case k == 24:
+			// A slot the agent actually holds, or the op is refused every time.
+			tok := pick(rng, tokens)
+			slot := "s1"
+			if l := st.AgentByToken(tok); l != nil {
+				for id := range l.Slots {
+					slot = id
+					break
+				}
+			}
+			op = &core.Op{Kind: core.OpClearSlot, Token: tok, SlotID: slot}
+		case k == 25:
+			// A claim the agent actually holds, for the same reason.
+			tok := pick(rng, tokens)
+			path := "/p" + pick(rng, tokens)
+			if l := st.AgentByToken(tok); l != nil {
+				for _, c := range st.Claims {
+					if c.Agent == l.ID {
+						path = c.Path
+						break
+					}
+				}
+			}
+			op = &core.Op{Kind: core.OpRelease, Token: tok, Path: path}
+		case k == 26 && coordinator != "":
+			op = &core.Op{Kind: core.OpForceRelease, Token: coordinator, Path: "/p" + pick(rng, tokens)}
+		case k == 27:
+			op = &core.Op{Kind: core.OpMarkDelivered, MsgSerials: []uint64{uint64(rng.Intn(int(st.Serial + 1)))}}
+		case k == 28 && coordinator != "":
+			// Adoption is authorised at ingress; the fold takes the verdict. The
+			// source has to be an agent that has stopped, or it is refused.
+			target := "agent" + pick(rng, tokens)
+			for _, l := range st.Agents {
+				if l.Sleeping() {
+					target = l.ID
+					break
+				}
+			}
+			op = &core.Op{
+				Kind: core.OpAdoptAgent, Token: coordinator,
+				To: target, AdoptAuthorised: true,
+			}
+		case k == 29:
+			op = &core.Op{Kind: core.OpClaimCoordinator, Token: pick(rng, tokens), ClaimVerified: rng.Intn(2) == 0}
+		case k == 30 && coordinator != "":
+			// The coordinator clearing a dormant peer's debris, which is the
+			// case #36 was filed for. The target has to have stopped, or it is
+			// refused as active.
+			target := ""
+			for _, l := range st.Agents {
+				if l.Sleeping() {
+					target = l.ID
+					break
+				}
+			}
+			if target == "" {
+				continue
+			}
+			op = &core.Op{Kind: core.OpPruneOwn, Token: coordinator, To: target}
+		case k == 31 && i > 1200 && rng.Intn(2) == 0:
+			// Late and rare, like prune: a board with nobody on it starves the
+			// rest of the walk. A LIVE token, because the slice keeps every
+			// token ever minted and most are dead by now.
+			tok := liveToken(rng, st, tokens)
+			if tok == "" {
+				continue
+			}
+			op = &core.Op{Kind: core.OpSignOff, Token: tok}
 		default:
 			op = &core.Op{Kind: core.OpActivityCheckpoint, Token: pick(rng, tokens)}
 		}
@@ -465,12 +596,21 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 	for _, kind := range []string{
 		core.OpSpaceOpen, core.OpSpaceJoin, core.OpSpaceLeave, core.OpSpaceAnnounce,
 		core.OpSpaceSubscribe, core.OpSpacePost, core.OpBindSession, core.OpPrune,
+		core.OpUpdate, core.OpClearSlot, core.OpRelease, core.OpMarkDelivered,
+		core.OpClaimCoordinator, core.OpPruneOwn, core.OpSignOff,
 	} {
 		if accepted[kind] == 0 {
 			t.Errorf("%s was never accepted in 1500 ops: the gate is not covering it", kind)
 		}
 	}
-	t.Logf("accepted space ops: %v", accepted)
+	if coordinator != "" {
+		for _, kind := range []string{core.OpForceRelease, core.OpAdoptAgent} {
+			if accepted[kind] == 0 {
+				t.Errorf("%s was never accepted although a coordinator existed: the gate is not covering it", kind)
+			}
+		}
+	}
+	t.Logf("accepted ops: %v", accepted)
 
 	// Membership, exclusivity and QUEUE ORDER must all survive byte-identically:
 	// queue order decides who gets admitted next, so a reordering on replay is a
@@ -532,6 +672,34 @@ func itoa(i int) string                       { return string(rune('a'+i%26)) + 
 
 func pickType(rng *rand.Rand) string {
 	return []string{core.MsgNotify, core.MsgQuestion, core.MsgRequest, core.MsgHandoff}[rng.Intn(4)]
+}
+
+// identityFor is an agent's recorded location: one of two hosts, one of two
+// repositories, and a checkout root under it, so the host and repository
+// claim rules both have something to compare across the walk. All of it is
+// what the server would have recorded at ingress; the fold only reads it.
+func identityFor(rng *rand.Rand, tok string) *core.AgentInfo {
+	host := []string{"host-a", "host-b"}[rng.Intn(2)]
+	repo := []string{"api", "web"}[rng.Intn(2)]
+	root := "/" + host + "/src/" + repo + "-" + tok
+	return &core.AgentInfo{
+		Harness: "test", CWD: root, HostID: host,
+		RepoDir: "/" + host + "/src/" + repo + "-main/.git", RepoRoot: root,
+		RepoRemote: "github.com/acme/" + repo,
+	}
+}
+
+// liveToken picks a token that still resolves to an active agent, or "" after
+// a few tries: the slice keeps every token ever minted and rotation, archiving
+// and sign_off kill them as the walk goes on.
+func liveToken(rng *rand.Rand, st *core.State, tokens []string) string {
+	for range 8 {
+		tok := pick(rng, tokens)
+		if l := st.AgentByToken(tok); l != nil && l.Status == core.StatusActive {
+			return tok
+		}
+	}
+	return ""
 }
 
 func pickMode(rng *rand.Rand) string {
