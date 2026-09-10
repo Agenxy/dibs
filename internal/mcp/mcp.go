@@ -1019,8 +1019,11 @@ func (s *Server) callTool(
 			// renderer and give the panel no other way to receive it.
 			return showBoardResult(s.panelState(ctx, res, a.View, a.Token), a.Detail, wantsUI), nil
 		}
+		// check_in's board is one row per agent unless the model asked for
+		// every field. The other panel tools carry no board worth trimming.
+		slim := call.Name == "check_in" && !a.Detail
 		return s.panelResult(ctx, res, view, a.Token,
-			wantsUI && panelWorthShowing(call.Name, res), panelFetches), nil
+			wantsUI && panelWorthShowing(call.Name, res), panelFetches, slim), nil
 	}
 	text, merr := json.Marshal(res)
 	if merr != nil {
