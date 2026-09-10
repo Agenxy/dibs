@@ -18,6 +18,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A view transition that hangs no longer leaves the board unclickable.**
+  (#84) While a transition is live the browser's overlay swallows pointer
+  events, and `data-transition` came off only when `finished` settled, so a
+  transition the renderer stopped driving left the board rendering perfectly
+  and taking no clicks until reload. It is bounded now: two seconds, then the
+  transition is skipped and the attribute released. The test hangs one on
+  purpose and asserts both halves of the release; it does not depend on the
+  suite's flake rate, which is what kept the fix out the first time.
+
 - **The determinism gate generates every mutating op.** (#3) The randomized
   replay walk behind `state == fold(ledger)` never generated nine of them
   (`update`, `clear_slot`, `release`, `force_release`, `mark_delivered`,
