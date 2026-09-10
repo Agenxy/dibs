@@ -269,7 +269,11 @@ func onScreen(mode string, args ...string) (string, bool) {
 // Available reports whether a person can be reached from here at all, so a
 // caller can say "this build cannot notify you" once rather than failing
 // silently on every message.
-func Available() bool { return runtime.GOOS == "darwin" && !underTest() && !silenced() }
+func Available() bool { return goos == "darwin" && !underTest() && !silenced() }
+
+// goos is the platform the notifier believes it is on. A variable so a test
+// can ask what Reach says on a platform the test is not running on.
+var goos = runtime.GOOS
 
 // silenced reports the operator's kill switch for this process and everything
 // it spawns. Split out so it is testable from inside a test binary, where
@@ -368,7 +372,19 @@ func run(script string, args ...string) (string, error) {
 // to expect the ask in Notification Center rather than on screen.
 func Reach() (ok bool, why string) {
 	if !Available() {
-		return false, "this platform has no notification route"
+		if goos == "darwin" {
+			return false, "notifications are switched off for this process"
+		}
+		// SAY WHAT THAT MEANS, not just that it is so. "No notification route"
+		// is true and tells an operator nothing about what happens to a request
+		// that needs them: it waits, on the board, until they go and look.
+		// Being asked and answering is how a person stays the authority over a
+		// fleet, and on this platform the asking half is absent, so the one
+		// place it works has to be named. Issue #63.
+		return false, "this build has no notifier for " + goos + ", so nothing on this " +
+			"machine can ASK you anything: a request that needs your approval waits " +
+			"on the board until you look. Open it with `dibs web`; the buttons are " +
+			"there. A Linux notifier (notify-send with actions) is issue #63"
 	}
 	h := helper()
 	if h == "" {
