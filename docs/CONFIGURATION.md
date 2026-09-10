@@ -470,23 +470,26 @@ agent and take its token, its mailbox and its role. The daemon now detects and
 refuses that value, so following the old advice bought the exposure and not
 even the grant.
 
-If you genuinely mean to hand the role to a different agent, it is **three
-steps and all of them matter**, in this order:
+If you genuinely mean to hand the role to a different agent, put the new
+agent's fingerprint here and restart `dibd`. **The config is sufficient on its
+own.** A role this mechanism granted, and can prove it granted through
+`roles.pinned`, is withdrawn on the next reconciler pass when the config stops
+authorising it: the name gone from `[roles]`, or `[roles.identity]` pointed at
+a different fingerprint. The predecessor is demoted to member and its pin is
+dropped.
 
-1. `dibs admin member <the old agent>`. Editing config decides what is
-   GRANTED, and a role already held is replayable state that nothing in the
-   reconciler takes away: skip this and the predecessor keeps reading every
-   mailbox while you believe the role moved. This paragraph used to name only
-   the two steps below, which is the wrong direction for a security document
-   to be wrong in. See `SECURITY.md`, and issue #73 for making the config
-   sufficient on its own.
-   A demotion made while the daemon runs is honoured by the startup
-   reconciler for the rest of its run: its reapply ticks in the first two
-   minutes no longer put the role back before you get to step 3.
-2. Put the new agent's fingerprint here, and delete the old name from
-   `roles.pinned`.
-3. Restart `dibd`. Both files are read at startup, so editing either one under
-   a running daemon changes nothing.
+Two things are deliberately NOT withdrawn, and both are recorded in the pin
+file's absence or disagreement. A role a person granted by hand was never this
+mechanism's to take: there is no pin, so nothing is touched, and a role a
+person confirmed by hand during this run stands against the reconciler in both
+directions. And an agent that holds a declared name with a credential other
+than the pinned one, which the launch claim can produce on a fresh board, keeps
+what it holds: the stale pin is dropped rather than used to demote somebody it
+never described.
+
+This used to be three manual steps, with `dibs admin member <the old agent>`
+first, because the reconciler only ever granted. That command still works and
+is still the right tool for a role the config never mentioned. Issue #73.
 
 **One agent, one role.** Naming the same agent under both `coordinator` and
 `admin` is refused when you spell it the same way in both lists, and validation
