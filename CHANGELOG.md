@@ -18,6 +18,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Removing a role from `dibs.toml` now takes it away.** (#73) `[roles]`
+  decided what was granted and never what was withdrawn, so a role deleted
+  from the file survived on the ledger and the reconciler declined to grant
+  it again: the god view over every mailbox, held by an agent the config no
+  longer named, until `dibs admin member` was run by hand. The reconciler now
+  withdraws what it granted and can prove it granted through `roles.pinned`,
+  when the name leaves `[roles]` or `[roles.identity]` is repointed at another
+  fingerprint. A role a person granted by hand is not touched, a person's
+  decision during the run stands in this direction as it did for regrants,
+  and a stale pin under a name a different credential now holds is dropped
+  rather than used to demote somebody it never described.
+
 - **Three tool descriptions still said "agent" where they meant "space".**
   Casualties of the vocabulary rename: `evict` told every agent to "remove an
   agent from an agent it should not be in", `admit` to "add another agent to
