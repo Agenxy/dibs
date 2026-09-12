@@ -17,6 +17,7 @@ func (e *Engine) RemoveScorerForRepo(repo string) {
 		return
 	}
 	delete(e.scorers, repo)
+	delete(e.indexes, repo)
 
 	// THE FALLBACK PAIR HAS TO NAME ONE TREE.
 	//

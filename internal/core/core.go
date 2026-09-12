@@ -233,6 +233,14 @@ type Slot struct {
 	// be duplicating. The agent's merged footprint stays for candidate generation,
 	// where breadth is a virtue.
 	Predicted []PredFile `json:"predicted,omitempty"`
+	// Index fingerprints the history Predicted was scored in, and Footprints
+	// is the same declaration scored in every OTHER index of the same project,
+	// so two clones with divergent histories can be compared inside one
+	// coordinate system rather than across two. Empty on every slot declared
+	// before either existed, and on every slot whose project has one index,
+	// which is the common case. See Footprint.
+	Index      string      `json:"index,omitempty"`
+	Footprints []Footprint `json:"footprints,omitempty"`
 	// Activity is WHAT this agent is doing to the work, as opposed to which work
 	// it is: implement, review, test, investigate, document, release.
 	//

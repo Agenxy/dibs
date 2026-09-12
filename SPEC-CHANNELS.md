@@ -444,6 +444,23 @@ This is the same problem as liveness, and takes the same solution (SPEC §2, §7
 > `scorer_version` and the matched evidence. `Apply` MUST NOT invoke a scorer,
 > MUST NOT read the filesystem, and MUST treat the recorded score as fact.
 
+A prediction is only meaningful inside the history it was scored in. One
+index is mined per checkout, and two clones of one project with divergent
+histories are two coordinate systems: the same concern is
+`internal/session/token.go` after a refactor and `pkg/auth/refresh.go` before
+it, so a prediction from each is disjoint from the other and comparing them
+scores zero. Eligibility to be compared (same project) is not comparability
+(same coordinate system).
+
+> A `declare` op MUST record `index`, the fingerprint of the history its
+> `predicted` footprint was scored in, and MUST record in `footprints` the
+> same declaration scored in every other index of the same project whose
+> history differs. Two declarations are compared only inside a coordinate
+> system both carry, and the best such comparison decides. An agent MUST NOT
+> be shown a predicted path from an index that is not its own checkout's; when
+> the deciding system is a peer's, the score is reported with the peer's tree
+> as its provenance and the paths are withheld.
+
 Replay therefore reproduces membership exactly, on any machine, years later,
 without a model present. Three things fall out of this for free:
 

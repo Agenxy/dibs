@@ -3,6 +3,8 @@ package overlap
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"os/exec"
 	"sort"
 	"strconv"
@@ -42,6 +44,8 @@ type CoChange struct {
 	// pairs[a][b] is how many sampled commits touched both.
 	pairs map[string]map[string]int
 	n     int // commits sampled
+	// fingerprint identifies the HISTORY this was mined from: see Fingerprint.
+	fingerprint string
 }
 
 // CoChangeOptions bounds the mining. Both bounds exist for measured reasons.
@@ -96,35 +100,77 @@ func MineCoChange(ctx context.Context, repo string, opt CoChangeOptions) (*CoCha
 	// precisely the pairing `dibs calibrate` already treats as ground truth.
 	// Reading it here is what lets tier 0 answer a declaration that names no
 	// file, without a model.
+	// %H, the commit id, is what the fingerprint is made of: the list of ids
+	// the index was built from is the identity of its coordinate system.
 	cmd := exec.CommandContext(ctx, "git", "-C", repo, "log",
-		"--no-merges", "--name-only", "--pretty=format:"+recSep+"%s"+fldSep,
+		"--no-merges", "--name-only", "--pretty=format:"+recSep+"%H"+fldSep+"%s"+fldSep,
 		"-n", strconv.Itoa(opt.MaxCommits))
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}
 
+	history := sha256.New()
+	// The bounds are part of the identity: the same clone mined 200 commits
+	// deep and 2000 deep is two different models of the same history.
+	_, _ = history.Write([]byte(strconv.Itoa(opt.MaxCommits) + "/" + strconv.Itoa(opt.MaxFilesPerCommit) + "\n"))
+	commits := 0
 	for _, block := range strings.Split(string(out), recSep) {
-		subject, rest, found := strings.Cut(block, fldSep)
-		if !found {
-			rest = block
+		if block == "" {
+			continue
 		}
-		var files []string
-		sc := bufio.NewScanner(strings.NewReader(rest))
-		for sc.Scan() {
-			if f := strings.TrimSpace(sc.Text()); f != "" {
-				files = append(files, f)
-			}
+		id, subject, files := parseLogRecord(block)
+		if id != "" {
+			_, _ = history.Write([]byte(id + "\n"))
+			commits++
 		}
 		if len(files) < 1 || len(files) > opt.MaxFilesPerCommit {
 			continue
 		}
 		cc.add(files)
-		if s := strings.TrimSpace(subject); s != "" {
-			cc.Messages = append(cc.Messages, Commit{Subject: s, Files: files})
+		if subject != "" {
+			cc.Messages = append(cc.Messages, Commit{Subject: subject, Files: files})
 		}
 	}
+	if commits > 0 {
+		cc.fingerprint = hex.EncodeToString(history.Sum(nil))[:16]
+	}
 	return cc, nil
+}
+
+// parseLogRecord splits one record of the log format above into the commit
+// id, the subject, and the files the commit touched.
+func parseLogRecord(block string) (id, subject string, files []string) {
+	id, block, _ = strings.Cut(block, fldSep)
+	subject, rest, found := strings.Cut(block, fldSep)
+	if !found {
+		rest = block
+	}
+	sc := bufio.NewScanner(strings.NewReader(rest))
+	for sc.Scan() {
+		if f := strings.TrimSpace(sc.Text()); f != "" {
+			files = append(files, f)
+		}
+	}
+	return strings.TrimSpace(id), strings.TrimSpace(subject), files
+}
+
+// Fingerprint identifies the history this index was mined from: a digest of
+// the commit ids `git log` returned, in order, and the bounds it was read
+// with. Empty for a repository with nothing to mine.
+//
+// Two checkouts with identical fingerprints would answer every declaration
+// identically, so they are ONE coordinate system and a prediction made in
+// either is valid in both. Two with different fingerprints are two systems,
+// and a declaration has to be scored in each before two agents' predictions
+// can be compared at all: that is what the engine does with this (issue #39).
+// It is the history and not the index contents that is hashed, because the
+// contents are a deterministic function of the history and the bounds, and
+// the commit ids are already in hand from the walk that builds the index.
+func (c *CoChange) Fingerprint() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.fingerprint
 }
 
 func (c *CoChange) add(files []string) {

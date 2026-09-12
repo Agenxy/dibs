@@ -35,6 +35,30 @@ type PredFile struct {
 	Weight float64 `json:"weight"`
 }
 
+// Footprint is one declaration scored in one index: the same sentence, in the
+// coordinate system of a DIFFERENT checkout of the same project.
+//
+// A co-change index is mined from one checkout's history and names files the
+// way that checkout does. Two clones of one project are two indexes, and when
+// their histories differ the same concern lives at different paths in each:
+// "refresh-token expiry" is internal/session/token.go after a refactor and
+// pkg/auth/refresh.go before it. Comparing a prediction made in one against a
+// prediction made in the other is not a comparison, it is two disjoint sets
+// with a zero between them, and that zero used to be read as "no overlap".
+// Issue #39.
+//
+// So a declaration is scored in every index of the same project, and each
+// answer is kept with the fingerprint of the history it was scored in. Two
+// slots are then compared inside a coordinate system they SHARE, and the best
+// shared system decides. `Index` is the fingerprint; `Root` is the tree the
+// index was mined from, recorded so a reader can say where a path is valid;
+// `Files` is the prediction there.
+type Footprint struct {
+	Index string     `json:"index"`
+	Root  string     `json:"root,omitempty"`
+	Files []PredFile `json:"files,omitempty"`
+}
+
 // Space is a topic of work that agents join.
 type Space struct {
 	ID    string

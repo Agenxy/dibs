@@ -1371,6 +1371,8 @@ func (s *State) applySetSlot(l *Agent, op *Op) (Result, []Event, error) {
 		// Recorded, never recomputed: replay must reconstruct the same footprint
 		// rather than re-scoring against a reindexed repository.
 		Predicted:     op.Predicted,
+		Index:         op.Index,
+		Footprints:    op.Footprints,
 		UpdatedSerial: s.Serial + 1,
 	}
 

@@ -59,10 +59,21 @@ func repoPathOf(l *Agent, path string) string {
 // differentProjects ranks them: a shared Git common directory, then an equal
 // configured remote, then equal root commits.
 func sameProject(a, b *Agent) bool {
-	if a == nil || b == nil || a.Agent == nil || b.Agent == nil {
+	if a == nil || b == nil {
 		return false
 	}
-	x, y := a.Agent, b.Agent
+	return SameProject(a.Agent, b.Agent)
+}
+
+// SameProject is sameProject on the recorded identities themselves, exported
+// because the engine asks the same question of an INDEX: whether the tree an
+// index was mined from is the project a declaring agent is in, which decides
+// whether that index is a second coordinate system for its declaration
+// (issue #39). One rule in one place, so the two answers cannot drift.
+func SameProject(x, y *AgentInfo) bool {
+	if x == nil || y == nil {
+		return false
+	}
 	switch {
 	case x.RepoDir != "" && x.RepoDir == y.RepoDir:
 		return true
