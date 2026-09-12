@@ -181,6 +181,53 @@ var catalog = []struct {
 		delivers: true,
 	},
 	{
+		harness: "gemini-cli",
+		dir:     "gemini-cli",
+		aliases: []string{"gemini", "gemini_cli", "geminicli"},
+		buys: "mail at SESSION START, and pull-only after that. Gemini's hooks are " +
+			"subprocesses, and its SessionStart accepts additionalContext, so " +
+			"`dibs hook-poll` puts what is waiting for your agent into the first " +
+			"turn's context. Its end-of-turn hook cannot add context: it can only " +
+			"reject your answer or stop the session, and Dibs will not deliver mail " +
+			"by discarding what you said. So past session start the rhythm is " +
+			"yours: check_in at the start of each activation, await_events before " +
+			"blocking, and the `waiting` line on every result names what arrived.",
+		root: "~/.gemini",
+		setup: []Step{
+			{
+				Do: "Add the Dibs MCP server to ~/.gemini/settings.json under " +
+					"`mcpServers` (`dibs mcp-config` prints the block: command " +
+					"`dibs`, args [\"mcp-stdio\"]).",
+				Check: "`mcpServers.dibs` exists in the settings Gemini actually loads, " +
+					"and a session lists the dibs tools",
+				IfNot: "nothing else here does anything; the hook asks the daemon " +
+					"about an agent this session never registered",
+			},
+			{
+				Do: "Merge hooks.json into the same settings.json under `hooks`: a " +
+					"SessionStart command hook running `dibs hook-poll`. `dibs` must " +
+					"be on PATH, or name its absolute path in `command`.",
+				Check: "starting a session in a directory where your agent is " +
+					"registered makes the daemon log the hook resolving (`dibs log`)",
+				IfNot: "the session starts without its digest; register or resume " +
+					"from inside the session so the next start finds the agent",
+			},
+			{
+				Do: "Keep the pull rhythm: check_in at the start of each activation, " +
+					"await_events when you are about to block.",
+				Check: "await_events returns rather than erroring, and check_in " +
+					"reports a cursor serial",
+				IfNot: "you are registered but not acknowledging: declare and claim " +
+					"refuse until check_in has succeeded this activation",
+			},
+		},
+		verify: "start a second session in the same directory after a peer has sent " +
+			"your agent a notify: the first turn's context carries the digest, and " +
+			"`dibs log` shows the hook resolving to your agent. Mid-session, nothing " +
+			"arrives unbidden on this harness; the `waiting` line on your next call " +
+			"is where it shows.",
+	},
+	{
 		harness: "codex",
 		dir:     "codex",
 		aliases: []string{"chatgpt-desktop", "chatgpt", "gpt"},
