@@ -46,6 +46,7 @@ addr = "100.72.14.3:4777"    # a tailnet address: agents on four machines, one b
 | `extend_turn_for` | `all` | Which news may extend an agent's turn: `all`, `urgent`, `none`. |
 | `notices_wake` | `true` | Whether situational awareness alone may extend a turn. |
 | `sockets` | `true` | Whether the session-socket routes run at all: the daemon's peer-socket wake and the bridge's self-wake. |
+| `remind_stale_after` | `1h` | How long a live session may go without coordinating before its digest says so. `off` disables. |
 | `exec.<harness>.argv` | *(none)* | The command that reaches that harness when an agent is **not running**. |
 | `exec.<harness>.cooldown` | `90s` | The shortest gap between two wakes of the same agent. |
 
@@ -314,6 +315,31 @@ question and nobody is blocked on knowing who joined a space.
 [wake]
 extend_turn_for = "urgent"   # an FYI should never cost a turn on this machine
 notices_wake = false         # ...and do not spend a turn on situational awareness
+```
+
+### `remind_stale_after`: a session that stopped coordinating
+
+An agent registers, declares, and then works for hours without calling Dibs
+again. Its lease lapses, the board reports it dormant while it is busy, and
+peers writing to it are told "recipient is dormant" and conclude the product
+does not deliver. On this project's own board a seven-hour autonomous run with
+no `check_in` expired a peer's question, and the operator reported Dibs as
+broken. It was not; the agent had stopped participating and nothing said so.
+
+So a session that is demonstrably taking turns (its hooks fire) and has not
+touched the board for this long is told, with the corrective call: `check_in`,
+then `update` or `declare` if the work has moved on. It never extends a turn.
+It rides on a digest that is being delivered for another reason, and it
+reaches the person on the ambient line at the end of a turn, which extends
+nothing. It repeats no more often than the interval itself.
+
+What it does not reach is the case that motivated it: a single seven-hour turn
+has no `Stop` and makes no calls, so there is no event for a reminder to ride.
+This closes the common case, an agent taking ordinary turns that forgot.
+
+```toml
+[wake]
+remind_stale_after = "2h"    # or "off"
 ```
 
 ---
