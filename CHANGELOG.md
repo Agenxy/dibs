@@ -7,6 +7,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The scaling numbers are in the architecture document.** (#42) Where
+  Dibs stops scaling was measured rather than guessed: the overlap search is
+  linear in agents and, more to the point, serialised on the writer loop,
+  which is fine at hundreds and the constraint at thousands. The numbers,
+  where a prefix tree would help (paths) and would not (refs, scoring), and
+  the order to do it in are now in `docs/ARCHITECTURE.md`, so the next person
+  reaches for a data structure when the fleet needs one and not before.
+- **The bridge's per-agent cost is stated, and what it buys.** (#60) Nine
+  idle stdio bridges measured 72 MB on one machine, about 8 MB, 13 file
+  descriptors and a connection each, and every generated config prescribes
+  one although the daemon serves MCP over HTTP directly. The README now
+  gives the number and the reason the process is kept anyway: the bridge is
+  the session. It is where `cwd`, `branch` and a real `pid` are observed
+  rather than asked of a model, the key that reattaches the next turn to the
+  same agent, and the exit the board notices when an agent dies. A url client
+  gives up all four; the generated configs do not, and say so.
 - **A coordinator may move a mailbox but not onto itself.** (#77) Adoption
   redirects where mail for a name is delivered. Onto a third party, the
   coordinator gains nothing, and that is the consolidation the role exists
@@ -206,6 +222,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A live session that stopped coordinating is told so.** (#53) An agent
+  that registers, declares and then works for hours without calling Dibs
+  reads as dormant while it is busy, and peers writing to it are told so; on
+  this project's board that expired a peer's question and was reported as
+  the product failing. `[wake] remind_stale_after` (default `1h`, `off` to
+  disable) adds one line to the hook digest naming the silence and the
+  corrective call (`check_in`, then `update` or `declare`). It never extends
+  a turn: it rides on a digest delivered for another reason and on the
+  ambient line to the person, and repeats no more often than the interval.
+  A single long turn has no hook to ride, which the documentation says
+  plainly.
 - **A coordinator can count a mailbox without reading it.** (#77)
   `all_mail(census: true)` returns, per mailbox, how many messages, of which
   types, from whom, how old, how many still awaiting an answer, and how many

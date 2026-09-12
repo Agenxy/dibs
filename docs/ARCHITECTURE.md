@@ -143,6 +143,52 @@ somebody makes a commit, then fails for a reason no contributor can act on. If
 you add an assertion about an absolute score, it will rot. Assert the
 *property*: above the bar joins, below it advises.
 
+## Where it stops scaling, measured
+
+The operator's target is hundreds of agents across machines. These are the
+numbers, so the next person reaches for a data structure when one is needed
+and not before (issue #42).
+
+**Overlap search is linear in agents, and it runs on the writer loop.**
+`State.overlapsFor` is O(agents × slots × dirs). Benchmarked with 40
+repositories, 50 distinct refs and one dir per declaration:
+
+| agents | per declaration |
+|---|---|
+| 100 | 108 µs |
+| 1,000 | 1.72 ms |
+| 5,000 | 6.91 ms |
+
+Hundreds of agents are a rounding error. Thousands are not, and the reason is
+not the complexity: `overlapsFor` is a `core` method, so it runs on the
+single-writer loop, where every declaration blocks every other agent's mail,
+claims and check-ins. At 5,000 agents and 100 declarations a second that is
+roughly 70% of the loop in one function. Serialisation is the constraint
+before the algorithm is.
+
+**Where a prefix tree helps, and where it does not.** Paths, yes: containment
+is compared agent by agent today, so it is the term that grows with the fleet,
+and a radix tree over declared dirs and claims answers "who overlaps this
+path" in the depth of the path rather than the size of the board. Refs, no:
+objectives already go through a `want` map, O(1) per ref. Co-change scoring is
+not a search at all: it is per declaration, independent of fleet size, and
+already off the writer loop.
+
+**The order, when the fleet gets there.** Indexes with no live agents are
+already evicted (#40); that was the limit that actually bit, at seventeen
+repositories rather than a thousand agents. Next is moving the overlap search
+off the loop or making it incremental, which is what matters above ~1,000
+agents. The radix tree over dirs and claims comes after that, when there is a
+fleet large enough to measure the difference; building it now optimises a
+term that is 108 µs.
+
+**Cross-machine is a different problem.** Two clones of one project on two
+laptops is not a search question. It needs a repository identity that
+survives the machine, which `paths.Identify` already records (remote and root
+commits), and a hub the agents share (`docs/NETWORK.md`). Partitioning by
+machine would make it harder: the agents on one project across two laptops
+are exactly the pair worth catching.
+
 ## Adding a tool
 
 1. Declare it in `internal/mcp/tools.go`: name, description, JSON Schema. The
