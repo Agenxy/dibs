@@ -37,13 +37,19 @@ const (
 	OpSendMessage        = "send"
 	OpRespond            = "respond"
 	OpAckMessage         = "ack"
-	OpClaim              = "claim"
-	OpRelease            = "release"
-	OpSweep              = "sweep"
-	OpMarkDelivered      = "mark_delivered"
-	OpPutBlob            = "put_blob"
-	OpGrantRole          = "grant_role"
-	OpPrune              = "prune"
+	// OpOutcomeRead records that the SENDER of a message has read its verdict.
+	// Written by the engine when read_mail hands an asker a terminal message
+	// of its own, for the reason mark_delivered is written when a recipient
+	// pulls a body: the fact decides what an agent is told after a restart,
+	// so it has to be in the fold. Issue #76.
+	OpOutcomeRead   = "outcome_read"
+	OpClaim         = "claim"
+	OpRelease       = "release"
+	OpSweep         = "sweep"
+	OpMarkDelivered = "mark_delivered"
+	OpPutBlob       = "put_blob"
+	OpGrantRole     = "grant_role"
+	OpPrune         = "prune"
 	// OpPruneOwn is an agent tidying up after ITSELF: its own record, or a
 	// child it vouched for. A new kind rather than a token-bearing prune,
 	// because the ownership rule below has to live in Apply (it depends on
@@ -228,6 +234,8 @@ func (s *State) Apply(op *Op, now time.Time) (Result, []Event, error) {
 		res, evs, err = s.applyRespond(l, op, now)
 	case OpAckMessage:
 		res, evs, err = s.applyAckMessage(l, op, now)
+	case OpOutcomeRead:
+		res, evs, err = s.applyOutcomeRead(l, op)
 	case OpClaim:
 		res, evs, err = s.applyClaim(l, op, now)
 	case OpRelease:

@@ -462,18 +462,28 @@ func (e *Engine) GetMessage(ctx context.Context, token string, serial uint64) (c
 		// obeyed teaches an agent that the channel nags, and the notification
 		// channel is the one thing here that has to stay worth reading.
 		//
-		// LIVE ONLY, AND IT DOES NOT SURVIVE A RESTART. Notices are ephemeral
-		// and rebuilt from replayable state, and this clearing writes nothing
-		// replayable: the rebuild asks whether the asker's awareness watermark
-		// has passed the verdict, and read_mail does not move that watermark. So
-		// a daemon restarted after the agent read its mail hands the same notice
-		// back once. It is a duplicate rather than a loss, and closing it needs
-		// a replayable record that the SENDER read an outcome, which is a new
-		// field on a ledgered message: issue #76, not something to add in the
-		// hour before a tag.
+		// AND IT SURVIVES A RESTART. Notices are ephemeral and rebuilt from
+		// replayable state, and this clearing alone wrote nothing replayable:
+		// the rebuild asked whether the asker's awareness watermark had passed
+		// the verdict, and read_mail does not move that watermark, so a daemon
+		// restarted after the agent read its mail handed the same notice back
+		// once. So the SENDER reading a verdict is ledgered, exactly as the
+		// recipient pulling a body is above, and the rebuild reads it. Only a
+		// verdict: reading one's own pending question records nothing, because
+		// there is no outcome to have read. Issue #76.
 		e.clearNoticesFor(l.ID, serial)
+		e.noteOutcomeRead(l, m, token, now)
 		return core.Result{"message": m, "serial": e.state.Serial}
 	})
+}
+
+// noteOutcomeRead ledgers that the SENDER has read a verdict on its own
+// message, once. See the comment at its call site and issue #76.
+func (e *Engine) noteOutcomeRead(l *core.Agent, m *core.Message, token string, now time.Time) {
+	if m.From != l.ID || !m.Terminal() || m.OutcomeReadAt != 0 {
+		return
+	}
+	_, _ = e.applyAndLedger(&core.Op{Kind: core.OpOutcomeRead, Token: token, MsgSerial: m.Serial}, now)
 }
 
 // pendingFor is the mail this agent has just been shown and not yet been

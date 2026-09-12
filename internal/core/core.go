@@ -654,10 +654,17 @@ type Message struct {
 	// long it waited. There is no separate read_at, because a second stamp written
 	// on a pure read path would be an unledgered mutation: the bug class that
 	// once put a hole in a real board's serial sequence.
-	SentAt        time.Time    `json:"sent_at,omitzero"`
-	DeliveredTime time.Time    `json:"delivered_at,omitzero"`
-	RespondedAt   uint64       `json:"responded_serial,omitempty"`
-	AckedAt       uint64       `json:"acked_serial,omitempty"`
+	SentAt        time.Time `json:"sent_at,omitzero"`
+	DeliveredTime time.Time `json:"delivered_at,omitzero"`
+	RespondedAt   uint64    `json:"responded_serial,omitempty"`
+	AckedAt       uint64    `json:"acked_serial,omitempty"`
+	// OutcomeReadAt is the serial at which the SENDER read this message's
+	// verdict. The one fact about a message that is the asker's rather than
+	// the recipient's: Consumed is set when the recipient answers, so it is
+	// true for every verdict that exists and cannot say whether the asker has
+	// seen it. Read by the notice rebuild after a restart, so an outcome the
+	// asker has already read is not handed back. Issue #76.
+	OutcomeReadAt uint64       `json:"outcome_read_serial,omitempty"`
 	TerminalAt    time.Time    `json:"terminal_at,omitzero"` // when it reached a terminal state
 	ExpireDetail  string       `json:"expire_detail,omitempty"`
 	Attachments   []Attachment `json:"attachments,omitempty"` // blob handles + filerefs (A2)

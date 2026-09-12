@@ -510,6 +510,13 @@ func (e *Engine) stillOwed(m *core.Message) bool {
 	if asker == nil || asker.Gone() {
 		return false // nobody left to tell
 	}
+	// The asker READ this outcome, and read_mail ledgered that (#76). Before
+	// that record existed the only watermark was AckedSerial, which moves on
+	// check_in alone, so a restart between the read and the next check_in
+	// handed the same notice back.
+	if m.OutcomeReadAt != 0 {
+		return false
+	}
 	// AckedSerial is the awareness watermark: at or below it, the agent has
 	// caught up and telling it again is a duplicate.
 	return m.RespondedAt == 0 || m.RespondedAt > asker.AckedSerial
