@@ -18,6 +18,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A verdict the asker has read is not handed back after a restart.** (#76)
+  `read_mail` cleared the "read_mail(N)" notice only in memory. The rebuild
+  after a restart asks whether the asker's awareness watermark has passed the
+  verdict, and only `check_in` moves that watermark, so a daemon restarted
+  between an agent reading its outcome and its next activation delivered the
+  same notice once more. The sender reading a verdict is now ledgered
+  (`outcome_read`, once per message, silent), the rebuild reads it, and a
+  restart tells the agent nothing it has already read. `Consumed` was never
+  the answer: it is the recipient's marker and is set the moment a verdict
+  exists.
+
 - **A restart no longer loses the notices that carry instructions.** (#75)
   Verdicts were rebuilt from state after a restart; everything else a notice
   can say (you were evicted, admitted, absorbed, requeued; somebody joined
