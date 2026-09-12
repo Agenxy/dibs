@@ -7,6 +7,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **A coordinator may move a mailbox but not onto itself.** (#77) Adoption
+  redirects where mail for a name is delivered. Onto a third party, the
+  coordinator gains nothing, and that is the consolidation the role exists
+  for. Onto itself, it becomes the reader of everything sent to that name:
+  the coordinator granting itself read access to another agent's mail, which
+  is now the human's call (`human_unlock`) or an admin's. The refusal names
+  the census and `into`. Approving another agent's adoption request is
+  untouched: that agent becomes the reader, not the coordinator.
+
 - **`check_in` charges for a roster, not the whole board.** (#55) The one
   call every agent must make, once per activation, returned every field of
   every row: 41 KB of a 71 KB checkpoint on this project's own 35-agent board,
@@ -196,6 +205,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that nothing on this board can wake it.
 
 ### Added
+
+- **A coordinator can count a mailbox without reading it.** (#77)
+  `all_mail(census: true)` returns, per mailbox, how many messages, of which
+  types, from whom, how old, how many still awaiting an answer, and how many
+  never retrieved: never a body. Custody and contents are different
+  capabilities and only one is sensitive; a coordinator consolidating stranded
+  rows needs the first, and the only door to it was the second, which refused.
+  Of three rows consolidated on this project's board, two held nothing, and
+  before this the only way to learn that was to adopt them and look. `agent`
+  names one mailbox, reported even when empty.
 
 - The frozen-json-tag guard now covers `core.AgentInfo` as well as `core.Op`.
   Those tags travel to disk inside `op.agent` and not one of them was frozen:

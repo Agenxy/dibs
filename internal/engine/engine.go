@@ -706,6 +706,9 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 		if err := e.guardHumanMailbox(actor, op.To); err != nil {
 			return nil, err
 		}
+		if err := e.refuseCoordinatorSelfAdoption(actor, op); err != nil {
+			return nil, err
+		}
 		// An adoption that would move nothing is refused, rather than ledgered.
 		//
 		// The fold records no adoption relationship: moving the messages IS the
