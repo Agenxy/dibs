@@ -90,6 +90,10 @@ type MatchStatus struct {
 	// A tree that cannot be read is that AGENT's problem to fix, so it is named
 	// here and the phase stays whatever the rest of the board earned.
 	Unreadable []string `json:"unreadable,omitempty"`
+	// Supplied maps a tree the daemon could not read to the agent that
+	// shipped its index instead (issue #19), so doctor can say matching works
+	// there and why no grant was needed.
+	Supplied map[string]string `json:"supplied,omitempty"`
 }
 
 type matchStatusState struct {
@@ -183,7 +187,27 @@ func (e *Engine) SetMatchStatus(s MatchStatus) {
 			s.Unreadable = e.matchStatus.st.Unreadable
 		}
 	}
+	// Supplied indexes outlive a status update the same way: a later tree
+	// becoming ready does not un-ship an earlier one. See NoteSuppliedIndex.
+	if s.Supplied == nil {
+		s.Supplied = e.matchStatus.st.Supplied
+	}
 	e.matchStatus.st = s
+}
+
+// NoteSuppliedIndex records that an agent shipped the index for a tree the
+// daemon could not read: the tree stops being listed unreadable, because
+// matching works there now, and the agent is named so doctor can say so.
+func (e *Engine) NoteSuppliedIndex(root, agent string) {
+	e.matchStatus.mu.Lock()
+	defer e.matchStatus.mu.Unlock()
+	st := e.matchStatus.st
+	st.Unreadable = withoutTree(st.Unreadable, root)
+	if st.Supplied == nil {
+		st.Supplied = map[string]string{}
+	}
+	st.Supplied[root] = agent
+	e.matchStatus.st = st
 }
 
 // NoteIndexingTree says a new tree is being indexed, without demoting a board

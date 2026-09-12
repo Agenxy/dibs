@@ -43,9 +43,12 @@ type scorerFlags struct {
 	// no subprocess. Keyed by cwd, one checkout was mined once per subdirectory
 	// an agent happened to register from, and sixteen of those exhausted the
 	// ceiling so no other project could be indexed at all.
-	discoverMu       sync.Mutex
-	indexed          map[string]bool
-	rootOf           map[string]string
+	discoverMu sync.Mutex
+	indexed    map[string]bool
+	rootOf     map[string]string
+	// supplied maps a root to the agent that shipped its index, for trees the
+	// daemon could not read (issue #19). Its entries are evicted with the rest.
+	supplied         map[string]string
 	repo             string
 	join             float64
 	notify           float64
@@ -707,6 +710,7 @@ func (f *scorerFlags) evictIdleIndexes(ctx context.Context, eng *engine.Engine) 
 	}
 	for _, root := range idle {
 		delete(f.indexed, root)
+		delete(f.supplied, root)
 		for cwd, r := range f.rootOf {
 			if r == root {
 				delete(f.rootOf, cwd)
@@ -804,10 +808,11 @@ func tccHint(cwd string, err error) string {
 	}
 	return "this is inside a macOS protected folder (Desktop, Documents, Downloads). " +
 		"A daemon started by launchd is not granted access to those, and /usr/bin/git " +
-		"BLOCKS rather than failing, so the call times out. A checkout outside those " +
-		"folders needs no permission at all and is the better answer; granting dibd " +
-		"Full Disk Access also works, but a coordination daemon should not need it. " +
-		"Matching reads file paths and commit subjects, never file contents"
+		"BLOCKS rather than failing, so the call times out. Nothing needs granting: an " +
+		"agent registering from inside the tree through the stdio bridge ships the " +
+		"index itself (file paths and commit subjects, never contents), and matching " +
+		"works there once it has. Full Disk Access would also work, and a coordination " +
+		"daemon should not hold it; a checkout outside those folders needs nothing at all"
 }
 
 // protectedOnMacOS reports whether a path is inside a TCC-protected folder.
