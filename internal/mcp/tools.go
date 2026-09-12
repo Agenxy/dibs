@@ -642,9 +642,9 @@ var toolDefs = func() []map[string]any {
 		{
 			"name": "adopt_agent",
 			"description": "Take over an ABANDONED mailbox, moving its mail to a live " +
-				"agent; the source record and its history stay, and roles do not move. " +
-				"Needs the human here (human_unlock), a coordinator or an admin: without " +
-				"one, ASK instead, with send(to: \"coordinator\", type: \"request\", " +
+				"agent; the source row stays, roles do not move. Needs the human here " +
+				"(human_unlock), a coordinator (onto a third party) or an admin: without " +
+				"one, ASK, with send(to: \"coordinator\", type: \"request\", " +
 				"adopt: <the abandoned id>).",
 			"inputSchema": obj(map[string]any{
 				"token": tok,
@@ -671,9 +671,8 @@ var toolDefs = func() []map[string]any {
 				"(leaving the board is `sign_off`, which takes no id). Coordinator-only, except " +
 				"that the SOLE member may close its own space. A space opened automatically from " +
 				"a declaration ends by itself once its last member leaves; one a human opened " +
-				"does NOT, because outliving its members is what a standing space is for. " +
-				"Refuses a space with OTHER members or anyone queued, and one holding an " +
-				"unacknowledged announcement, which closing would hide rather than settle.",
+				"does NOT: a standing space outlives its members. Refuses a space with OTHER " +
+				"members or anyone queued, and one holding an unacknowledged announcement.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "space": str("space id to close"),
 				"note": str("why you are closing it"),
@@ -683,10 +682,8 @@ var toolDefs = func() []map[string]any {
 			"name": "merge_spaces",
 			"description": "COORDINATOR ONLY. Fold one SPACE into another when the two drifted " +
 				"into the same job. Not for agents: an abandoned mailbox is adopt_agent. " +
-				"Members, subscribers, announcements and anyone queued move across (queued " +
-				"agents are admitted if the destination is open, else keep their place), " +
-				"everyone moved is told the source is gone, and the source disappears. " +
-				"Human-granted, because merging is destructive to context.",
+				"Members, subscribers, announcements and anyone queued move across, everyone " +
+				"moved is told the source is gone, and the source disappears.",
 			"inputSchema": obj(map[string]any{
 				"token": tok, "space": str("space id to merge FROM (it disappears)"),
 				"to": str("space id to merge INTO"), "note": str("why"),
@@ -703,10 +700,15 @@ var toolDefs = func() []map[string]any {
 		},
 		{
 			"name": "all_mail",
-			"description": "ADMIN ONLY. Read every agent's messages, decrypted: the god view. Granted by a human to an " +
-				"agent trusted as they trust themselves. Coordinators do NOT have this; directing a fleet does not require " +
-				"reading its private mail.",
-			"inputSchema": obj(map[string]any{"token": tok}, "token"),
+			"description": "ADMIN reads every message, decrypted: the god view. A COORDINATOR may " +
+				"pass census:true for COUNTS per mailbox, never a body: how many, of which types, " +
+				"from whom, how old, how many still awaiting an answer; enough to place an " +
+				"abandoned mailbox or prune an empty row.",
+			"inputSchema": obj(map[string]any{
+				"token":  tok,
+				"census": map[string]any{"type": "boolean", "description": "counts only; coordinators may"},
+				"agent":  str("one mailbox, reported even if empty; default: all live"),
+			}, "token"),
 		},
 		{
 			"name": "broadcast",

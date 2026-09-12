@@ -848,6 +848,7 @@ type toolArgs struct {
 	StrictOutput any    `json:"strict_output"`
 	View         string `json:"view"`
 	Detail       bool   `json:"detail"`
+	Census       bool   `json:"census"`
 	Harness      string `json:"harness"`
 	Model        string `json:"model"`
 	Provider     string `json:"provider"`
@@ -1333,7 +1334,7 @@ func (s *Server) run(
 		op.Kind, op.Space, op.To, op.Note = core.OpSpaceAdmit, a.SpaceID, a.To, a.Note
 		op.Score, op.Threshold, op.ScorerID = a.Score, a.Threshold, a.ScorerID
 	case "all_mail":
-		return s.eng.AllMail(ctx, a.Token)
+		return s.eng.AllMail(ctx, a.Token, a.Census, a.AgentRef)
 	case "broadcast":
 		return s.eng.Broadcast(ctx, a.Token, a.Type, a.Body)
 	case "events_since":
