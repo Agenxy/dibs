@@ -89,6 +89,17 @@ type Evidence struct {
 	// Semantic is the scorer's similarity, retained for ranking candidates. It is
 	// NOT a verdict, and nothing in the cascade may act on it alone.
 	Semantic float64 `json:"semantic,omitempty"`
+	// ScoredIn names the checkout whose index produced Semantic when that index
+	// is not the recipient's own: the two declarations were compared inside a
+	// PEER's coordinate system because the two checkouts' histories differ and
+	// that was the system both had been scored in. Empty when the comparison
+	// happened in the recipient's own index, which is the common case.
+	//
+	// It is provenance for a number that would otherwise be unexplainable: the
+	// paths the score rests on are named as the peer's checkout names them, so
+	// they are withheld from SurfaceInferred (see semanticBetween), and a reader
+	// shown a score with no files needs to be told why. Issue #39.
+	ScoredIn string `json:"scored_in,omitempty"`
 	// SameRepo is false only on POSITIVE evidence that the two agents are in
 	// different repositories. Unknown is not false: treating it as foreign would
 	// disable matching for every client that reports no cwd.
@@ -243,6 +254,14 @@ func (e Evidence) strongest() string {
 	case len(e.Labels) > 0:
 		return "both pursuing " + strings.Join(e.Labels, ", ") +
 			": a shared objective is not a shared task"
+	case e.Semantic > 0 && e.ScoredIn != "":
+		// The files exist and are withheld: they are named as the peer's
+		// checkout names them, and this agent's history lays them out
+		// differently. Saying so is what stops a score with no evidence
+		// reading as a bare guess.
+		return "predicted to touch the same files in a peer's checkout (" + e.ScoredIn +
+			"), whose history lays them out differently from yours: the same concern " +
+			"at different paths, which is how one fix gets written twice and collides at merge"
 	case e.Semantic > 0:
 		return "the declarations read similarly"
 	}
@@ -282,8 +301,8 @@ func EvidenceBetween(
 	ev.SurfaceDeclared = overlappingPaths(declaredA, declaredB)
 	ev.SurfaceBroad = allBroad(ev.SurfaceDeclared)
 
-	score, shared := jaccard(a.Predicted, b.Predicted, discount)
-	ev.Semantic = score
+	score, shared, scoredIn := semanticBetween(a, b, discount)
+	ev.Semantic, ev.ScoredIn = score, scoredIn
 	declared := map[string]bool{}
 	for _, d := range append(declaredA, declaredB...) {
 		declared[d] = true
@@ -295,6 +314,112 @@ func EvidenceBetween(
 	}
 	sort.Strings(ev.SurfaceInferred)
 	return ev
+}
+
+// semanticBetween scores two declarations inside every coordinate system they
+// share, and returns the best, with the shared files that are valid for `mine`.
+//
+// A slot's Predicted is its declaration scored in its own checkout's index,
+// and Footprints is the same declaration scored in each other index of the
+// same project. Two clones with different histories are two indexes, and a
+// prediction made in one names files as that checkout lays them out. The old
+// comparison was jaccard(a.Predicted, b.Predicted) regardless, which for two
+// divergent clones compares two coordinate systems as though they were one:
+// the sets are disjoint, the score is zero, and zero was read as safety.
+// Issue #39.
+//
+// The systems compared are: the two home predictions as before, which is the
+// only comparison an old slot can take part in and stays as the floor; and
+// every index fingerprint both sides carry, home or foreign. "Warn if either
+// shared system clears the bar" is the rule, so the best wins.
+//
+// The paths returned are the ones the RECIPIENT can act on. A path is valid
+// for `mine` when it came from mine's own index (or from the home-to-home
+// comparison, whose shared paths are by construction in mine.Predicted). When
+// the best system is a peer's, the score stands and the paths do not: an agent
+// is never shown a path that may not exist in its own checkout, which is the
+// leakage protection the one-index-per-checkout design had and this keeps.
+// In that case the best MINE-VALID system's shared paths are returned instead,
+// possibly none, and scoredIn names the peer's tree so the score is explained.
+// On a tie the valid system wins: a score the recipient can see the files of
+// is worth more than the same score with the files withheld, and a tie
+// decided by the sort order of two hashes would flip with the commit clock.
+func semanticBetween(
+	mine, theirs Slot, discount map[string]float64,
+) (score float64, shared []PredFile, scoredIn string) {
+	score, shared = jaccard(mine.Predicted, theirs.Predicted, discount)
+	bestValid, bestValidShared := score, shared
+	for _, sys := range sharedIndexes(mine, theirs) {
+		s, sh := jaccard(footprintIn(mine, sys), footprintIn(theirs, sys), discount)
+		valid := sys == mine.Index
+		if valid && s > bestValid {
+			bestValid, bestValidShared = s, sh
+		}
+		switch {
+		case valid && s >= score && scoredIn != "", s > score:
+			score, shared, scoredIn = s, sh, ""
+			if !valid {
+				// The root is on MINE's footprint: mine was scored in the
+				// peer's tree, and that is where the tree was recorded.
+				scoredIn = rootOf(mine, sys)
+			}
+		}
+	}
+	if scoredIn != "" {
+		shared = bestValidShared
+	}
+	return score, shared, scoredIn
+}
+
+// sharedIndexes lists the index fingerprints both slots were scored in, home
+// or foreign, in a deterministic order: the fold runs this, so two replays
+// must walk the same systems in the same order and reach the same best.
+func sharedIndexes(a, b Slot) []string {
+	theirs := map[string]bool{}
+	if b.Index != "" {
+		theirs[b.Index] = true
+	}
+	for _, f := range b.Footprints {
+		theirs[f.Index] = true
+	}
+	var out []string
+	seen := map[string]bool{}
+	add := func(idx string) {
+		if idx != "" && theirs[idx] && !seen[idx] {
+			seen[idx] = true
+			out = append(out, idx)
+		}
+	}
+	add(a.Index)
+	for _, f := range a.Footprints {
+		add(f.Index)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// footprintIn is a slot's prediction in one coordinate system.
+func footprintIn(s Slot, index string) []PredFile {
+	if index == s.Index {
+		return s.Predicted
+	}
+	for _, f := range s.Footprints {
+		if f.Index == index {
+			return f.Files
+		}
+	}
+	return nil
+}
+
+// rootOf names the tree one of a slot's foreign footprints was mined from,
+// for the provenance of a score the recipient cannot see the files of.
+func rootOf(s Slot, index string) string {
+	for _, f := range s.Footprints {
+		if f.Index == index && f.Root != "" {
+			return f.Root
+		}
+	}
+	return "a peer's checkout"
 }
 
 // RepoLens answers whether two working directories are one repository, from

@@ -113,7 +113,13 @@ type Engine struct {
 	// scorers is one index per repository root. A co-change model only means
 	// anything inside the history it was mined from, so an agent is scored by
 	// the tree it is actually working in.
-	scorers  map[string]overlap.Scorer
+	scorers map[string]overlap.Scorer
+	// indexes is what distinguishes one index from another beyond its root:
+	// the fingerprint of the history it was mined from, and the project it
+	// belongs to. Two indexes of ONE project with different fingerprints are
+	// two coordinate systems, and a declaration is scored in both. See
+	// peerIndexesFor.
+	indexes  map[string]IndexInfo
 	matchCfg MatchConfig
 	// onRepoSeen lets the daemon index the repositories agents actually work
 	// in, so matching does not depend on somebody setting a flag.

@@ -114,6 +114,13 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		"to": true, "msg_type": true, "body": true, "deadline_sec": true, "op_id": true,
 		"path": true, "mode": true, "note": true,
 		"space": true, "exclusive": true, "predicted": true,
+		// The coordinate systems a declaration was scored in (#39): the
+		// fingerprint of the history behind `predicted`, and the same
+		// declaration scored in every peer clone's index. Two clones with
+		// divergent histories are compared inside a system they share, and a
+		// rename here would silently drop that on replay: every cross-clone
+		// comparison would fall back to two disjoint sets and a zero.
+		"index": true, "footprints": true,
 		"score": true, "threshold": true, "scorer_id": true, "scorer_version": true,
 		"evidence": true, "auto": true,
 		"stale_agents": true, "alive_pids": true,
@@ -360,7 +367,7 @@ const (
 	// rename. If you are here
 	// because a sweep moved this value, the sweep is the bug, and the tag it
 	// renamed is the data loss.
-	frozenOpFingerprint       = "sha256:293fce3ad4dcf406"
+	frozenOpFingerprint       = "sha256:7ce666ec98a0477c"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`
