@@ -320,7 +320,12 @@ six messages unreachable.
 agent. The source record and its history stay, because the ledger refers to
 them; only where its mail is delivered changes. Roles do not move with it, since
 a role is a decision your operator made about an identity: `dibs admin
-coordinator <agent>` is how that moves.
+coordinator <agent>` is how that moves. Before moving one, a coordinator can
+ask whether there is anything in it: `all_mail(census: true, agent: "<it>")`
+counts messages, types, senders, ages and how many still await an answer,
+and never shows a body. A row that stranded nothing wants a prune, not an
+heir. A coordinator moves a mailbox onto a THIRD party; moving one onto
+itself makes it the reader, and that is the human's call (`human_unlock`).
 
 It needs the human at the machine (`human_unlock`), a coordinator or an admin.
 Taking another agent's mail is otherwise exactly the thing Dibs must never

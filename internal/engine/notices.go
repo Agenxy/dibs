@@ -657,10 +657,12 @@ func staffBriefing(role string) string {
 		return "As coordinator you are STAFF, not a louder agent: you may adopt_agent " +
 			"an abandoned mailbox onto a live agent, prune a dormant peer's row and its " +
 			"stale declarations, force_release a claim, and evict or close a space. You " +
-			"cannot inspect a LIVE peer's mail: there is no all_mail for you, and " +
-			"breadth is not intrusion. Adoption is the one exception and it is a real " +
-			"one: what you adopt, you can read, so adopt only what is genuinely " +
-			"abandoned and say why. Read dibs://staff before using any of them."
+			"cannot inspect a peer's mail: all_mail(census: true) counts what is in a " +
+			"mailbox and who is waiting on an answer, and that is all of it you see, " +
+			"because breadth is not intrusion. Adoption moves custody, not contents: " +
+			"adopt onto whoever should hold the mail, and onto yourself only with the " +
+			"human present, since that makes you its reader. Read dibs://staff before " +
+			"using any of them."
 	default:
 		return "Read dibs://staff for what the role lets you do."
 	}

@@ -18,6 +18,7 @@ themselves.
 
 | Call | What it is for |
 |---|---|
+| `all_mail(census: true)` | count what is in a mailbox, of which types, from whom, how old, and how much is still waiting on an answer: never a body |
 | `adopt_agent` | move an abandoned mailbox onto a live agent |
 | `prune` | remove a dormant peer's row, and with it the declarations that row still holds |
 | `force_release` | break a claim whose holder is gone |
@@ -39,14 +40,20 @@ something and the situation says you should be able to, try it.**
 ## What a coordinator may NOT do
 
 **Read another agent's mail.** `core/roles.go` puts it plainly: "It gets no
-power to *read* another agent's mail. Breadth, not intrusion." `all_mail` is
-admin-only, and directing a fleet does not require reading its private
-correspondence.
+power to *read* another agent's mail. Breadth, not intrusion." `all_mail`
+without `census` is admin-only, and directing a fleet does not require reading
+its private correspondence. The census is the whole of what you see: counts,
+types, senders, ages, and how many are still expecting an answer. That is
+everything needed to place a mailbox and nothing that reads one.
 
-Note the sharp edge: `adopt_agent` MOVES a mailbox, and reading it afterwards is
-the whole point. So adoption is the one coordinator power that ends in you
-holding somebody else's mail. Use it to rescue a mailbox whose owner is gone,
-never to read a peer that is merely quiet.
+**Adopt a mailbox onto yourself.** Custody and contents are different
+capabilities, and adoption moves custody: it redirects where mail for that name
+is delivered from now on. Onto a third party, you gain nothing, and that is the
+consolidation the role exists for. Onto yourself, you become the reader of
+everything anyone sends that name, which is you granting yourself read access
+to another agent's mail. That is the human's call: `human_unlock` as yourself,
+or name who should hold it with `into`. An admin reads every mailbox already
+and is not redirected.
 
 **Take the human's mailbox.** Refused outright, on both the direct call and the
 approve-a-request path. A person's row is dormant most of the time by design,
@@ -59,15 +66,21 @@ returns and cannot present its nonce, so registration forks a new agent that
 cannot read the first one's mail. Three different agents asked for this in one
 week on the board this was written from.
 
-Two steps, in this order:
+Three steps, in this order:
 
-1. `adopt_agent(agent: <the dormant row>, into: <the live one>)`: moves the
+1. `all_mail(census: true, agent: <the dormant row>)`: is there anything in
+   it, and is anyone still waiting on an answer? A row that stranded nothing
+   needs no heir, only a prune; one holding an unanswered question needs a
+   live holder today. Of three rows consolidated on the board this was
+   written from, two held nothing, and before the census the only way to
+   learn that was to perform the adoption and read the result.
+2. `adopt_agent(agent: <the dormant row>, into: <the live one>)`: moves the
    mail. **The dormant row and its declarations survive this.**
-2. `prune(agent: <the dormant row>)`: removes the row, and with it any stale
+3. `prune(agent: <the dormant row>)`: removes the row, and with it any stale
    declaration it was still holding.
 
-Doing only the first leaves the mess that caused the report. Doing only the
-second destroys mail that was never read.
+Doing only the second leaves the mess that caused the report. Doing only the
+third destroys mail that was never read.
 
 Before you start: satisfy yourself the requester is the same role, not merely a
 similar one. Same name, same project, same description is good evidence. If it

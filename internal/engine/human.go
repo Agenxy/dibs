@@ -425,6 +425,37 @@ func (e *Engine) mayAdopt(l *core.Agent) bool {
 	return e.human.agent != "" && e.human.agent == l.ID
 }
 
+// refuseCoordinatorSelfAdoption keeps custody and contents apart on the one
+// move where they collapse into each other.
+//
+// A coordinator may say where a mailbox goes; it may only read one that was
+// addressed to it. Redirecting an abandoned name onto a THIRD party gives the
+// coordinator nothing, and is the consolidation the role exists for.
+// Redirecting it onto ITSELF makes the coordinator the reader of everything
+// anyone sends that name from then on: that is the coordinator granting
+// itself read access to another agent's mail, which is the human's call, the
+// way human_unlock is. An admin reads every mailbox already, and the human
+// unlocked as itself IS the human; only the plain coordinator is redirected
+// here. The approval path is untouched: a coordinator approving another
+// agent's request to adopt makes that agent the reader, not itself. Issue #77.
+func (e *Engine) refuseCoordinatorSelfAdoption(actor *core.Agent, op *core.Op) error {
+	if !op.AdoptAuthorised || actor.IsAdmin() || e.isTheHuman(actor.ID) {
+		return nil
+	}
+	if op.Space != "" && op.Space != actor.ID {
+		return nil // onto somebody else: custody only
+	}
+	return &core.Error{
+		Code: "E_NOT_PERMITTED",
+		Msg:  "a coordinator may move a mailbox but may not move one onto itself",
+		Hint: "adopting " + op.To + " onto yourself makes you the reader of everything sent " +
+			"to that name, which is the human's call: unlock as yourself with human_unlock, " +
+			"or adopt it onto the agent that should hold it with `into`. To decide where " +
+			"it belongs without reading it, all_mail(census: true, agent: " + op.To + ") counts " +
+			"what is in it and who is still waiting on an answer",
+	}
+}
+
 // tellTheHuman raises a desktop notification when a message lands for the
 // person, and offers the buttons a `request` is asking for.
 //
