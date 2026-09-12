@@ -7,6 +7,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The bridge's per-agent cost is stated, and what it buys.** (#60) Nine
+  idle stdio bridges measured 72 MB on one machine, about 8 MB, 13 file
+  descriptors and a connection each, and every generated config prescribes
+  one although the daemon serves MCP over HTTP directly. The README now
+  gives the number and the reason the process is kept anyway: the bridge is
+  the session. It is where `cwd`, `branch` and a real `pid` are observed
+  rather than asked of a model, the key that reattaches the next turn to the
+  same agent, and the exit the board notices when an agent dies. A url client
+  gives up all four; the generated configs do not, and say so.
 - **A coordinator may move a mailbox but not onto itself.** (#77) Adoption
   redirects where mail for a name is delivered. Onto a third party, the
   coordinator gains nothing, and that is the consolidation the role exists
