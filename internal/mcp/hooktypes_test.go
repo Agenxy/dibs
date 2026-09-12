@@ -60,6 +60,12 @@ func TestShippedHooksUseOnlySupportedTypes(t *testing.T) {
 		// mcp_tool, so the plugin text says which builds this needs rather than
 		// promising delivery everywhere.
 		"codex": {"command": true, "mcp_tool": true},
+		// Gemini CLI: `command` only, per docs/hooks/reference.md ("Currently
+		// only \"command\" is supported"), measured against 0.54.0-nightly on
+		// 2026-09-12. Its hook is `dibs hook-poll`, a subprocess of the dibs
+		// binary, on SessionStart alone: see plugins/gemini-cli/README.md for
+		// why the end-of-turn hook cannot carry a digest there.
+		"gemini-cli": {"command": true},
 	}
 
 	var files []string
