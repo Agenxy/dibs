@@ -243,6 +243,15 @@ Self-service actions are excluded deliberately: repeating your own tool result
 back to you is noise. The distinguishing mark is in the event. `admitted_by`
 or `from_queue` mean somebody else moved you.
 
+A restart does not lose one. Notices are a derived view and the daemon
+rebuilds them at start: verdicts from state (a terminal message its asker has
+not read), and everything situational from the replayed event ring, gated on
+the agent's awareness watermark so an agent that has checked in since is not
+told again. The failure mode a restart may still have is a repeated notice,
+never a missing instruction: "stop work there" that vanished with the daemon
+left the agent carrying on, which is the one outcome a notice exists to
+prevent.
+
 ## Silence is never an answer
 
 A coordination service that fails quietly is worse than one that fails loudly,

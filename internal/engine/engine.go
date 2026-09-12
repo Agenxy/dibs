@@ -241,6 +241,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 	// and putting that in the one constructor means an embedder or a test cannot
 	// get an engine that has skipped it.
 	e.rebuildBlockingNotices()
+	e.rebuildSituationalNotices()
 	return e
 }
 

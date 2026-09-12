@@ -18,6 +18,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A restart no longer loses the notices that carry instructions.** (#75)
+  Verdicts were rebuilt from state after a restart; everything else a notice
+  can say (you were evicted, admitted, absorbed, requeued; somebody joined
+  your space) lived only in memory. The old comment said the cost of losing
+  one was a repeated notice, which is true of "somebody joined" and false of
+  "stop work there": an agent told to stop carried on, because the
+  instruction was what disappeared. The daemon seeds its event ring from
+  replay, and those notices are now rebuilt from it at start, gated on the
+  same awareness watermark the verdict rebuild uses, so an agent that has
+  checked in since is not told again. The deferred-wake half of this issue
+  was already closed by the boot re-arm.
 - **Two clones of one project are compared inside a coordinate system they
   share.** (#39) A co-change index is mined per checkout and names files the
   way that checkout lays them out. Two clones with divergent histories put the
