@@ -256,6 +256,14 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 	if ser, ok := seeded["serial"].(uint64); ok {
 		announceSerials = append(announceSerials, ser)
 	}
+	// And a post, which the walk draws rarely enough that adding two draws
+	// to the declare case shifted seed 42 past every one of them: the
+	// prologue covers what a seed may miss, which was the point of it.
+	apply(t, st, led, &core.Op{
+		Kind: core.OpSpacePost, Token: "seedtokba",
+		Space: "seedspace", Body: "seeded post",
+	}, now)
+	accepted[core.OpSpacePost]++
 	apply(t, st, led, &core.Op{
 		Kind: core.OpSpaceAck, Token: "seedtokba",
 		MsgSerial: announceSerials[0],
@@ -332,6 +340,15 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 			op = &core.Op{Kind: core.OpAckBoard, Token: pick(rng, tokens)}
 		case k <= 4:
 			op = &core.Op{Kind: core.OpSetSlot, Token: pick(rng, tokens), Text: "work"}
+			if rng.Intn(2) == 0 {
+				// The coordinate systems the declaration was scored in (#39):
+				// recorded, never recomputed, like Predicted.
+				op.Index = "hist" + itoa(rng.Intn(3))
+				op.Footprints = []core.Footprint{{
+					Index: "hist" + itoa(rng.Intn(3)), Root: "/clone" + itoa(rng.Intn(2)),
+					Files: []core.PredFile{{Path: "pkg/" + pick(rng, tokens) + ".go", Weight: 0.5}},
+				}}
+			}
 		case k <= 6:
 			op = &core.Op{
 				Kind: core.OpSendMessage, Token: pick(rng, tokens),

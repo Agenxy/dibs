@@ -381,4 +381,13 @@ type Op struct {
 	// is: it decides agent membership, and recomputing it on replay reconstructs
 	// a different fleet.
 	Predicted []PredFile `json:"predicted,omitempty"`
+	// Index is the fingerprint of the history Predicted was scored in, and
+	// Footprints carries the same declaration scored in every other index of
+	// the same project. Recorded for the reason Predicted is: replay must
+	// reconstruct the same comparisons without a repository present. Both are
+	// new fields BESIDE Predicted rather than a change to it, because that tag
+	// is frozen on the wire and every ledger written before this carries it.
+	// Issue #39.
+	Index      string      `json:"index,omitempty"`
+	Footprints []Footprint `json:"footprints,omitempty"`
 }

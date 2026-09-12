@@ -573,6 +573,7 @@ func (s *State) Board() map[string]any {
 			// Zeroed on the COPY. The slot in state keeps its footprint, because
 			// that is where matching reads it.
 			sl.Predicted = nil
+			sl.Index, sl.Footprints = "", nil // the same intermediate, per peer index
 			slots = append(slots, sl)
 		}
 		slices.SortFunc(slots, func(a, b Slot) int { return strings.Compare(a.ID, b.ID) })

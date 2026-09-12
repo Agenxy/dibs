@@ -157,16 +157,38 @@ func (e *Engine) scorerFor(cwd string) (overlap.Scorer, MatchConfig) {
 	return best, cfg
 }
 
+// IndexInfo is what an index is beyond the tree it was mined from.
+//
+// Fingerprint identifies the mined history (overlap.CoChange.Fingerprint), and
+// Identity is the project the tree belongs to, in the three facts AgentInfo
+// records at registration: Git common directory, primary remote, root commits.
+// Only those three fields of Identity are read. Both empty is a legal index
+// that takes no part in cross-clone scoring, which is how every existing test
+// and every caller that has not been told about clones behaves.
+type IndexInfo struct {
+	Fingerprint string
+	Identity    core.AgentInfo
+}
+
 // SetScorerForRepo publishes the index for one repository. Thresholds are
 // shared: they are a policy about how confident a match must be, not a property
 // of any one tree.
 func (e *Engine) SetScorerForRepo(repo string, s overlap.Scorer, cfg MatchConfig) {
+	e.SetIndex(repo, s, cfg, IndexInfo{})
+}
+
+// SetIndex is SetScorerForRepo with the index's own identity, which is what
+// lets two indexes of one project be told apart from two views of the same
+// one, and a declaration in either be scored in the other. Issue #39.
+func (e *Engine) SetIndex(repo string, s overlap.Scorer, cfg MatchConfig, info IndexInfo) {
 	e.matchMu.Lock()
 	defer e.matchMu.Unlock()
 	if e.scorers == nil {
 		e.scorers = map[string]overlap.Scorer{}
+		e.indexes = map[string]IndexInfo{}
 	}
 	e.scorers[repo] = s
+	e.indexes[repo] = info
 	cfg.Repo = repo
 	e.matchCfg = cfg
 	if e.scorer == nil {
@@ -174,6 +196,91 @@ func (e *Engine) SetScorerForRepo(repo string, s overlap.Scorer, cfg MatchConfig
 		// hand, such as Predict from the human CLI.
 		e.scorer = s
 	}
+}
+
+// peerIndex is one other index of the same project as a declaring agent's.
+type peerIndex struct {
+	root   string
+	scorer overlap.Scorer
+	info   IndexInfo
+}
+
+// peerIndexesFor lists the indexes that are a SECOND coordinate system for a
+// declaration made in the tree at home: same project, different history.
+//
+// Same project by the rule claims use (core.SameProject): a shared Git common
+// directory, an equal remote, or equal root commits. Different history by
+// fingerprint: two clones at the same commit answer every declaration
+// identically, so scoring in the second would record the first twice.
+// Indexes with no fingerprint or no identity were published by a caller that
+// did not say, and are left out rather than guessed about.
+//
+// Sorted by root so the footprints an op records are in the same order on
+// every daemon that would record them.
+func (e *Engine) peerIndexesFor(home string) []peerIndex {
+	e.matchMu.RLock()
+	defer e.matchMu.RUnlock()
+	h, ok := e.indexes[home]
+	if !ok || h.Fingerprint == "" {
+		return nil
+	}
+	var out []peerIndex
+	for root, info := range e.indexes {
+		if root == home || info.Fingerprint == "" || info.Fingerprint == h.Fingerprint {
+			continue
+		}
+		if !core.SameProject(&h.Identity, &info.Identity) {
+			continue
+		}
+		out = append(out, peerIndex{root: root, scorer: e.scorers[root], info: info})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].root < out[j].root })
+	return out
+}
+
+// fingerprintOf is the history fingerprint of the index at repo, or "".
+func (e *Engine) fingerprintOf(repo string) string {
+	e.matchMu.RLock()
+	defer e.matchMu.RUnlock()
+	return e.indexes[repo].Fingerprint
+}
+
+// peerFootprints scores one declaration in every peer index of the tree at
+// home, so the op records the same sentence in each coordinate system the
+// project has and the fold can compare two clones inside one they share.
+//
+// ONE deadline for the whole batch, the same one a single prediction gets:
+// this sits in front of declare, and a second clone must not make declaring
+// work twice as slow. A peer that does not answer in time is simply absent
+// from the record, which costs a comparison and never the declaration.
+//
+// The prediction is kept PURE: no declared dirs are folded in, unlike the
+// home footprint. Declared paths are named in the declarer's own layout, and
+// this footprint exists to be the declaration in the PEER's layout; mixing
+// the two would put paths from one coordinate system into the other, which is
+// the defect this is fixing. Declared paths are compared on their own, as
+// SurfaceDeclared.
+func (e *Engine) peerFootprints(ctx context.Context, home, declaration string, cfg MatchConfig) []core.Footprint {
+	if declaration == "" {
+		return nil
+	}
+	peers := e.peerIndexesFor(home)
+	if len(peers) == 0 {
+		return nil
+	}
+	sctx, cancel := context.WithTimeout(ctx, cfg.Deadline)
+	defer cancel()
+	var out []core.Footprint
+	for _, p := range peers {
+		pred, err := p.scorer.Predict(sctx, declaration, 40)
+		if err != nil || len(pred.Files) == 0 {
+			continue
+		}
+		out = append(out, core.Footprint{
+			Index: p.info.Fingerprint, Root: p.root, Files: toPredFiles(pred.Files),
+		})
+	}
+	return out
 }
 
 // IndexedRepos lists the trees currently indexed, for status and for doctor.
@@ -267,6 +374,9 @@ func declarationOf(op *core.Op) core.Slot {
 	return core.Slot{
 		Text: op.Text, Dirs: op.Dirs, Refs: op.Refs,
 		Activity: op.Activity, Holds: op.Holds,
+		// The coordinate systems this declaration was scored in, so the match
+		// compares it to a peer's slot inside one they share. Issue #39.
+		Index: op.Index, Footprints: op.Footprints,
 	}
 }
 
@@ -843,12 +953,16 @@ func (e *Engine) Predict(ctx context.Context, declaration string) ([]core.PredFi
 // more than one project every other agent's footprint was predicted from a
 // history it has nothing to do with, and op.Predicted is persisted: the wrong
 // answer went into the ledger and became what later comparisons matched on.
+//
+// The third return is the fingerprint of that tree's history: the coordinate
+// system the prediction is in, recorded beside it so a later comparison can
+// tell whether another prediction is in the same one. Issue #39.
 func (e *Engine) predictIn(
 	ctx context.Context, cwd, declaration string,
-) ([]core.PredFile, string) {
+) (pred []core.PredFile, repo, index string) {
 	scorer, cfg := e.scorerFor(cwd)
-	pred, _, _ := e.predictWith(ctx, scorer, cfg, declaration)
-	return pred, cfg.Repo
+	pred, _, _ = e.predictWith(ctx, scorer, cfg, declaration)
+	return pred, cfg.Repo, e.fingerprintOf(cfg.Repo)
 }
 
 func (e *Engine) predictWith(
@@ -932,8 +1046,14 @@ func (e *Engine) DoMatched(ctx context.Context, op *core.Op) (core.Result, error
 	// declaring agent may never have seen.
 	cwd := e.cwdForToken(ctx, op.Token)
 	if len(op.Predicted) == 0 && op.Text != "" {
-		pred, repo := e.predictIn(ctx, cwd, op.Text)
+		pred, repo, index := e.predictIn(ctx, cwd, op.Text)
 		op.Predicted = withDeclaredDirs(pred, op.Dirs, repo)
+		// The same declaration in every OTHER index of this project, so two
+		// clones with divergent histories are compared inside a coordinate
+		// system they share instead of across two. Issue #39.
+		op.Index = index
+		_, cfg := e.scorerFor(cwd)
+		op.Footprints = e.peerFootprints(ctx, repo, op.Text, cfg)
 	}
 	res, err := e.Do(ctx, op)
 	if err != nil {

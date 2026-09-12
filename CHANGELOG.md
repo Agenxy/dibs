@@ -18,6 +18,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Two clones of one project are compared inside a coordinate system they
+  share.** (#39) A co-change index is mined per checkout and names files the
+  way that checkout lays them out. Two clones with divergent histories put the
+  same concern at different paths, so two agents declaring identical work
+  predicted disjoint sets, scored zero, and were told nothing: the duplicate
+  collided when one fix was ported. A declaration is now also scored in every
+  other index of its project whose history differs, each answer recorded on
+  the op with the fingerprint of the history it was scored in, and two slots
+  are judged inside the best system both carry. An agent is never shown a
+  path from a peer's index; when the deciding system is a peer's, the score
+  stands, the paths are withheld, and the explanation names the peer's tree.
+  Old slots carry no footprints and compare exactly as before. Proven end to
+  end: two real clones, one with the concern moved, warn where they were
+  silent. The indexes are the same ones as before; a project with one
+  checkout records nothing new.
+
 - **A view transition that hangs no longer leaves the board unclickable.**
   (#84) While a transition is live the browser's overlay swallows pointer
   events, and `data-transition` came off only when `finished` settled, so a

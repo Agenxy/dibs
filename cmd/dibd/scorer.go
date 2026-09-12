@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/overlap"
 	"github.com/agenxy/dibs/internal/paths"
@@ -385,13 +386,22 @@ func (f *scorerFlags) bringUp(ctx context.Context, eng *engine.Engine, repo stri
 	// a glance, a wrong join costs an agent's membership.
 	notify := f.notifyFor(workCtx, dir, cc, scorer)
 
-	eng.SetScorerForRepo(dir, scorer, engine.MatchConfig{
+	// WHICH project this tree is, and WHICH history it was mined from. Two
+	// clones of one project are two indexes, and a declaration in either is
+	// scored in the other so the two can be compared in one coordinate
+	// system (issue #39). Identify is cached and has already been paid for
+	// by this tree's first registration.
+	repoDir, remote, roots, _ := paths.Identify(dir).Identity()
+	eng.SetIndex(dir, scorer, engine.MatchConfig{
 		JoinThreshold: f.join, NotifyThreshold: notify, Deadline: f.deadline,
 		DirectorRequired: f.director,
 		AutoJoin:         f.autoJoin,
 		// The tree the index was built from, so auto-join can ask whether the
 		// declaring agent is even in it.
 		Repo: dir,
+	}, engine.IndexInfo{
+		Fingerprint: cc.Fingerprint(),
+		Identity:    core.AgentInfo{RepoDir: repoDir, RepoRemote: remote, RepoRoots: roots},
 	})
 	mode := "suggest only"
 	if f.join > 0 {
