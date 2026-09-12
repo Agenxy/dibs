@@ -7,6 +7,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The scaling numbers are in the architecture document.** (#42) Where
+  Dibs stops scaling was measured rather than guessed: the overlap search is
+  linear in agents and, more to the point, serialised on the writer loop,
+  which is fine at hundreds and the constraint at thousands. The numbers,
+  where a prefix tree would help (paths) and would not (refs, scoring), and
+  the order to do it in are now in `docs/ARCHITECTURE.md`, so the next person
+  reaches for a data structure when the fleet needs one and not before.
 - **The bridge's per-agent cost is stated, and what it buys.** (#60) Nine
   idle stdio bridges measured 72 MB on one machine, about 8 MB, 13 file
   descriptors and a connection each, and every generated config prescribes
