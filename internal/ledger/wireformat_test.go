@@ -374,7 +374,7 @@ const (
 	// renames the adjacent `"grant": true` with it and this test goes on
 	// passing: the exact co-edited-guard failure AGENTS.md describes, in the
 	// guard written to stop it. Found by a pre-release review.
-	frozenMessageFingerprint = "sha256:a9f4dd16b7cebc20"
+	frozenMessageFingerprint = "sha256:b06911065d90611f"
 )
 
 func fingerprint(set map[string]bool) string {
@@ -436,6 +436,7 @@ func TestOpKindStringsAreFrozen(t *testing.T) {
 		"OpRelease":        {core.OpRelease, "release"},
 		"OpSweep":          {core.OpSweep, "sweep"},
 		"OpMarkDelivered":  {core.OpMarkDelivered, "mark_delivered"},
+		"OpOutcomeRead":    {core.OpOutcomeRead, "outcome_read"},
 		"OpPutBlob":        {core.OpPutBlob, "put_blob"},
 		"OpGrantRole":      {core.OpGrantRole, "grant_role"},
 		"OpPrune":          {core.OpPrune, "prune"},
@@ -510,6 +511,10 @@ func TestLedgerMessageFieldNamesAreFrozen(t *testing.T) {
 		"delivered_serial": true, "sent_at": true, "delivered_at": true,
 		"responded_serial": true, "acked_serial": true, "terminal_at": true,
 		"expire_detail": true, "attachments": true,
+		// The serial at which the SENDER read the verdict (#76). The notice
+		// rebuild after a restart reads it; renamed, every read outcome on the
+		// board would be handed back once more on the next start.
+		"outcome_read_serial": true,
 		// 0.0.6.
 		"choices": true, "grant": true, "adopt": true,
 	}

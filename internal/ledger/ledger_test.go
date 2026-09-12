@@ -102,6 +102,7 @@ func TestReplayDeterminism(t *testing.T) {
 	apply(t, st, led, &core.Op{Kind: core.OpResume, Nonce: "nonce-r", ResumeID: "r1", NewToken: "tr2", PID: 99}, t0.Add(20*time.Minute))
 	apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: "tr2"}, t0.Add(21*time.Minute))
 	apply(t, st, led, &core.Op{Kind: core.OpRespond, Token: "tr2", MsgSerial: 5, Disposition: "answer", Body: "yes"}, t0.Add(22*time.Minute))
+	apply(t, st, led, &core.Op{Kind: core.OpOutcomeRead, Token: "ta", MsgSerial: 5}, t0.Add(22*time.Minute+time.Second))
 	apply(t, st, led, &core.Op{Kind: core.OpActivityCheckpoint, Token: "ta"}, t0.Add(23*time.Minute))
 	_ = led.Close()
 
@@ -291,6 +292,14 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 	apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: "seedtok3"}, now)
 	apply(t, st, led, &core.Op{Kind: core.OpClaim, Token: "seedtok3", Path: "/seed/held", Mode: core.ClaimExclusive}, now)
 	apply(t, st, led, &core.Op{Kind: core.OpSendMessage, Token: "seedtokaa", To: "seedd", MsgType: core.MsgNotify, Body: "for the heir"}, now)
+	// A question answered and then READ by its asker, so outcome_read (#76)
+	// is covered on every seed: the walk only hits it when a random serial
+	// lands on a terminal message the random token sent.
+	asked := apply(t, st, led, &core.Op{Kind: core.OpSendMessage, Token: "seedtokba", To: st.AgentByToken("seedtok3").ID, MsgType: core.MsgQuestion, Body: "read me"}, now)
+	askedSerial, _ := asked["msg_serial"].(uint64)
+	apply(t, st, led, &core.Op{Kind: core.OpRespond, Token: "seedtok3", MsgSerial: askedSerial, Disposition: "answer", Body: "yes"}, now)
+	apply(t, st, led, &core.Op{Kind: core.OpOutcomeRead, Token: "seedtokba", MsgSerial: askedSerial}, now)
+	accepted[core.OpOutcomeRead]++
 	// Forced while it is HELD: the stale sweep below releases the agent's
 	// claims itself, so afterwards there would be nothing to force.
 	apply(t, st, led, &core.Op{Kind: core.OpForceRelease, Token: coordinator, Path: "/seed/held"}, now)
@@ -304,6 +313,16 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 	accepted[core.OpPruneOwn]++
 	apply(t, st, led, &core.Op{Kind: core.OpSignOff, Token: "seedtokca"}, now)
 	accepted[core.OpSignOff]++
+	// A verified launch-time coordinator claim, for the same reason as the
+	// rest of this prologue: the walk draws it at one in thirty and a change
+	// to any earlier case's draws can walk a seed past every one.
+	// It needs a PERSISTENT agent: an ephemeral one is refused.
+	apply(t, st, led, &core.Op{Kind: core.OpRegister, Name: "seede", NewToken: "seedtok4", Nonce: "seed-nonce-e", AgentKind: core.KindPersistent}, now)
+	apply(t, st, led, &core.Op{Kind: core.OpAckBoard, Token: "seedtok4"}, now)
+	apply(t, st, led, &core.Op{Kind: core.OpClaimCoordinator, Token: "seedtok4", ClaimVerified: true}, now)
+	accepted[core.OpClaimCoordinator]++
+	tokens = append(tokens, "seedtok4")
+	nonces["seedtok4"] = "seed-nonce-e"
 	tokens = tokens[:2] // seedc has signed off; its token is dead
 	// And the three the walk missed on the seed this was written against.
 	apply(t, st, led, &core.Op{Kind: core.OpClaim, Token: "seedtokba", Path: "/seed/mine", Mode: core.ClaimShared}, now)
@@ -369,6 +388,10 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 			}
 		case k == 9:
 			op = &core.Op{Kind: core.OpAckMessage, Token: pick(rng, tokens), MsgSerial: uint64(rng.Intn(int(st.Serial + 1)))}
+			if rng.Intn(2) == 0 {
+				// The sender's side of the same message: it read the verdict.
+				op = &core.Op{Kind: core.OpOutcomeRead, Token: pick(rng, tokens), MsgSerial: uint64(rng.Intn(int(st.Serial + 1)))}
+			}
 		case k == 10:
 			op = &core.Op{
 				Kind: core.OpRespond, Token: pick(rng, tokens),
@@ -614,7 +637,7 @@ func TestRandomizedReplayEquivalence(t *testing.T) {
 		core.OpSpaceOpen, core.OpSpaceJoin, core.OpSpaceLeave, core.OpSpaceAnnounce,
 		core.OpSpaceSubscribe, core.OpSpacePost, core.OpBindSession, core.OpPrune,
 		core.OpUpdate, core.OpClearSlot, core.OpRelease, core.OpMarkDelivered,
-		core.OpClaimCoordinator, core.OpPruneOwn, core.OpSignOff,
+		core.OpClaimCoordinator, core.OpPruneOwn, core.OpSignOff, core.OpOutcomeRead,
 	} {
 		if accepted[kind] == 0 {
 			t.Errorf("%s was never accepted in 1500 ops: the gate is not covering it", kind)
