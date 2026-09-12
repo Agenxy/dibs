@@ -168,7 +168,8 @@ filesystem writes (§9). It is a **coordination generation**, not a fencing toke
 Ledgered op kinds: `register, resume, wake, activity_checkpoint,
 check_in, update, sign_off, heartbeat` (recovery only), `declare,
 undeclare, send, respond, ack, claim` (incl. renewals), `release,
-sweep` (only when it changed state), `mark_delivered`.
+sweep` (only when it changed state), `mark_delivered`, `outcome_read`
+(the sender read a verdict; written by `read_mail`, once per message).
 
 ### 5.0 Agent identity is observed, never self-reported
 
@@ -463,6 +464,7 @@ Messages go agent → agent; identity = send serial; bodies private (§4, §5).
 | `pending` | `delivered` | recipient **retrieves the body** via `inbox` or `read_mail`, metadata polls (`events_since`/`await_events`) do NOT deliver | `message.delivered` (via ledgered `mark_delivered`, idempotent) |
 | `pending/delivered` | `acked` (terminal + consumed for notify/handoff; non-terminal for question/request) | `ack` | `message.acked` |
 | any terminal state | same state, `consumed` set | `ack` on terminal mail = consumption (§below) | `message.consumed` |
+| any terminal state | same state, `outcome_read_serial` set | the **sender** retrieves the verdict via `read_mail` | none (ledgered `outcome_read`, idempotent; it is what stops a restart handing the sender the same verdict notice again) |
 | `pending/delivered/acked` | `answered` / `approved` / `denied` / `declined` | `respond` (per type table) | `message.<state>` |
 | `pending/delivered/acked` | `expired_unanswered` \| `expired_recipient_dormant` \| `expired_recipient_dead` | deadline sweep (§7 cascade) | `message.<state>` |
 | `pending/delivered` (notify only) | `displaced` | evicted by a newer notify at mailbox capacity | `message.displaced` (same serial as the displacing send, atomic) |
