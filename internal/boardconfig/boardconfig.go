@@ -105,6 +105,16 @@ type WakeConfig struct {
 	// so absent reads as true. Found by the pre-release review, round
 	// twenty-seven.
 	Sockets *bool `toml:"sockets"`
+	// RemindStaleAfter is how long a live session may go without coordinating
+	// before its hook digest says so: "1h" by default, "off" to disable.
+	//
+	// An agent that registers, declares and then works for hours without
+	// calling Dibs again reads as dormant while it is busy, and peers writing
+	// to it are told so. The reminder names the corrective call (check_in,
+	// then update or declare). It never extends a turn: it rides on a digest
+	// delivered for another reason and on the ambient line to the person, and
+	// it repeats no more often than this interval. Issue #53.
+	RemindStaleAfter string `toml:"remind_stale_after"`
 
 	// Exec is how to REACH an agent that is not running, per harness. See
 	// WakeExec. Absent means the board cannot start anything, which is the

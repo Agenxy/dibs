@@ -206,6 +206,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A live session that stopped coordinating is told so.** (#53) An agent
+  that registers, declares and then works for hours without calling Dibs
+  reads as dormant while it is busy, and peers writing to it are told so; on
+  this project's board that expired a peer's question and was reported as
+  the product failing. `[wake] remind_stale_after` (default `1h`, `off` to
+  disable) adds one line to the hook digest naming the silence and the
+  corrective call (`check_in`, then `update` or `declare`). It never extends
+  a turn: it rides on a digest delivered for another reason and on the
+  ambient line to the person, and repeats no more often than the interval.
+  A single long turn has no hook to ride, which the documentation says
+  plainly.
 - **A coordinator can count a mailbox without reading it.** (#77)
   `all_mail(census: true)` returns, per mailbox, how many messages, of which
   types, from whom, how old, how many still awaiting an answer, and how many
