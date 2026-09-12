@@ -25,8 +25,13 @@ import (
 //
 // EPHEMERAL, like announceSent and for the same reason: whether a notice has
 // been shown is delivery bookkeeping, not coordination state. Writing it to the
-// ledger from a read path would be an unledgered mutation. Losing it on restart
-// costs at most one repeated notice about something that genuinely happened.
+// ledger from a read path would be an unledgered mutation. It is REBUILT on
+// restart: verdicts from state (rebuildBlockingNotices) and everything
+// situational from the replayed event ring (rebuildSituationalNotices), each
+// gated on the agent's awareness watermark. The cost of a restart is at most
+// one repeated notice about something that genuinely happened, and never a
+// lost one: "you were evicted" is an instruction, and an instruction that
+// vanishes with the daemon leaves the agent carrying on. Issue #75.
 // maxNotices bounds what one agent can accumulate without polling. The newest
 // matter most: being told you were admitted an hour ago and then evicted is
 // worse than being told only the eviction.
@@ -118,12 +123,14 @@ func joinedNotice(ev core.Event) string {
 }
 
 func (e *Engine) noteEvent(ev core.Event) {
-	var who, text string
-	// Whether somebody is WAITING on this notice. See notice.Blocking.
-	var blocking bool
-	switch ev.Type {
-	case "agent.joined":
-		who, text = ev.Agent, joinedNotice(ev)
+	e.noteEventFor(ev, func(string) bool { return true })
+}
+
+// noteEventFor is noteEvent with a gate on WHO is told, so the rebuild after a
+// restart can replay the ring and tell only the agents that have not caught
+// up. Live processing wants everybody: the event is newer than any watermark.
+func (e *Engine) noteEventFor(ev core.Event, wants func(agent string) bool) {
+	if ev.Type == "agent.joined" {
 		// And tell the people already in the space.
 		//
 		// This told the JOINER and nobody else, which answers "what did I just
@@ -134,7 +141,24 @@ func (e *Engine) noteEvent(ev core.Event) {
 		// fleet ran for a day without anyone noticing a new member: "agents
 		// should be notified of things that concern them, including if another
 		// agent joins their space."
-		e.noteNewMember(ev)
+		e.noteNewMember(ev, wants)
+	}
+	who, text, blocking := situationalNotice(ev)
+	if who == "" || text == "" || !wants(who) {
+		return
+	}
+	// The message this notice points at, when it points at one. ev.Serial is
+	// the event; msg_serial is what the agent is told to read.
+	msg, _ := ev.Data["msg_serial"].(uint64)
+	e.pushNoticeAs(who, text, ev.Serial, msg, blocking, ev.TS)
+}
+
+// situationalNotice is what one event tells the agent it happened to: pure,
+// so the rebuild and live processing cannot word the same event differently.
+func situationalNotice(ev core.Event) (who, text string, blocking bool) {
+	switch ev.Type {
+	case "agent.joined":
+		who, text = ev.Agent, joinedNotice(ev)
 	case "message.approved", "message.denied", "message.answered", "message.declined":
 		// The ANSWER goes to whoever asked.
 		//
@@ -187,18 +211,44 @@ func (e *Engine) noteEvent(ev core.Event) {
 	case "agent.exclusive":
 		agent, _ := ev.Data["agent_id"].(string)
 		if owner, ok := ev.Data["owner"].(string); ok && owner == ev.Agent {
-			return // you took it yourself; your own tool result already said so
+			return "", "", false // you took it yourself; your own tool result already said so
 		} else {
 			who, text = ev.Agent, fmt.Sprintf("agent %q is now exclusive to %s", agent, owner)
 		}
 	}
-	if who == "" || text == "" {
+	return who, text, blocking
+}
+
+// rebuildSituationalNotices restores, from the replayed event ring, every
+// notice about something done TO an agent that it has not yet caught up to.
+//
+// Verdicts are rebuilt from state, because a terminal message the asker has
+// not consumed is exactly the set still owed. "You were evicted", "you were
+// admitted", "somebody joined your space" have no such anchor in state: the
+// membership simply is what it is now. What they do have is the event, and
+// the ring the daemon seeds from replay holds it. The gate is the same one
+// the verdict rebuild uses: an agent has caught up to everything at or below
+// its awareness watermark, so an event after it is news it has not had. A
+// wake re-arms that watermark, and the cost of the gate erring that way is a
+// repeated notice; the cost of erring the other way was the instruction
+// itself disappearing. Bounded by maxNotices per agent, newest kept.
+//
+// Called once, in New, after the verdict rebuild and before the loop starts,
+// so the maps are not shared yet.
+func (e *Engine) rebuildSituationalNotices() {
+	if e.state == nil {
 		return
 	}
-	// The message this notice points at, when it points at one. ev.Serial is
-	// the event; msg_serial is what the agent is told to read.
-	msg, _ := ev.Data["msg_serial"].(uint64)
-	e.pushNoticeAs(who, text, ev.Serial, msg, blocking, ev.TS)
+	for _, ev := range e.ring {
+		if strings.HasPrefix(ev.Type, "message.") {
+			continue // verdicts come from state, above; the rest carry no notice
+		}
+		serial := ev.Serial
+		e.noteEventFor(ev, func(agent string) bool {
+			l := e.state.Agents[agent]
+			return l != nil && !l.Gone() && serial > l.AckedSerial && serial > l.CreatedSerial
+		})
+	}
 }
 
 // pushNotice queues one thing an agent must be told, for the wake path.
@@ -548,7 +598,7 @@ func verdictEvent(state string) string {
 // Not the joiner, who already knows and gets joinedNotice, and not a member
 // who is the joiner. One line: who, and where. Whether that matters is the
 // reader's call, which is the whole posture of this product.
-func (e *Engine) noteNewMember(ev core.Event) {
+func (e *Engine) noteNewMember(ev core.Event, wants func(agent string) bool) {
 	// Guarded, because noteEvent runs on the event path and must not be able to
 	// take the daemon down over a notice. A zero-value Engine has no state at
 	// all, which is how the existing notice tests are built, and a nil map
@@ -568,7 +618,7 @@ func (e *Engine) noteNewMember(ev core.Event) {
 		how = "was joined automatically, on a work-overlap match, to"
 	}
 	for member := range sp.Members {
-		if member == joiner {
+		if member == joiner || !wants(member) {
 			continue
 		}
 		e.pushNotice(member,
