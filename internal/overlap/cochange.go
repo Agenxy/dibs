@@ -155,6 +155,53 @@ func parseLogRecord(block string) (id, subject string, files []string) {
 	return strings.TrimSpace(id), strings.TrimSpace(subject), files
 }
 
+// Records is the index as data: the commit subjects and the files each
+// touched, which is everything MineCoChange read out of git that the index
+// is built from. It is what an agent ships to a daemon that cannot read its
+// checkout (issue #19), and FromRecords rebuilds the same index from it.
+//
+// Only the commits that carried a subject are here, because those are the
+// ones kept; a subject-less commit contributed pair counts the rebuild will
+// not have. Bounded by the same options the mining was, so at most 2000
+// commits of at most 25 files: measured, ~210 bytes a commit.
+func (c *CoChange) Records() []Commit {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]Commit, len(c.Messages))
+	copy(out, c.Messages)
+	return out
+}
+
+// FromRecords builds the index from records a caller mined elsewhere, exactly
+// as MineCoChange builds it from git, and stamps it with the fingerprint the
+// caller mined under so two views of one history still read as one.
+//
+// The bounds are applied again here, on the receiving side, because records
+// arrive from an agent and the daemon's memory is what they land in.
+func FromRecords(records []Commit, fingerprint string, opt CoChangeOptions) *CoChange {
+	if opt.MaxCommits <= 0 {
+		opt.MaxCommits = DefaultCoChangeOptions.MaxCommits
+	}
+	if opt.MaxFilesPerCommit <= 0 {
+		opt.MaxFilesPerCommit = DefaultCoChangeOptions.MaxFilesPerCommit
+	}
+	cc := &CoChange{commits: map[string]int{}, pairs: map[string]map[string]int{}, fingerprint: fingerprint}
+	for i, r := range records {
+		if i >= opt.MaxCommits {
+			break
+		}
+		if len(r.Files) < 1 || len(r.Files) > opt.MaxFilesPerCommit {
+			continue
+		}
+		files := append([]string(nil), r.Files...)
+		cc.add(files)
+		if s := strings.TrimSpace(r.Subject); s != "" {
+			cc.Messages = append(cc.Messages, Commit{Subject: s, Files: files})
+		}
+	}
+	return cc
+}
+
 // Fingerprint identifies the history this index was mined from: a digest of
 // the commit ids `git log` returned, in order, and the bounds it was read
 // with. Empty for a repository with nothing to mine.

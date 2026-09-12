@@ -130,6 +130,12 @@ type Engine struct {
 	// startup and read on the loop.
 	claimMu     sync.RWMutex
 	verifyClaim func(secret string) (bool, func())
+	// reminded is when each agent was last told it had stopped coordinating,
+	// per channel ("model:<id>" and "human:<id>"), so the reminder has a floor
+	// like every other repeated line here. Ephemeral: a restart repeats one
+	// reminder at most, and the reminder is itself about a repeat. See
+	// staleReminder.
+	reminded map[string]time.Time
 	// footprints backfills agents opened before the index was ready. Ephemeral:
 	// it is a cache of a prediction, never the record a join is replayed from.
 	footprints map[string][]core.PredFile
@@ -230,6 +236,7 @@ func New(st *core.State, led Ledger, prober Prober, history ...[]core.Event) *En
 		turnEnded:    map[string]time.Time{},
 		announceSent: map[string]time.Time{}, announceTries: map[string]int{},
 		wokeFor: map[string]time.Time{}, hinted: map[string]time.Time{},
+		reminded:   map[string]time.Time{},
 		humanRoles: map[string]bool{},
 	}
 	// HERE, not in the daemon, so nobody has to remember.

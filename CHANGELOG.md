@@ -7,6 +7,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The scaling numbers are in the architecture document.** (#42) Where
+  Dibs stops scaling was measured rather than guessed: the overlap search is
+  linear in agents and, more to the point, serialised on the writer loop,
+  which is fine at hundreds and the constraint at thousands. The numbers,
+  where a prefix tree would help (paths) and would not (refs, scoring), and
+  the order to do it in are now in `docs/ARCHITECTURE.md`, so the next person
+  reaches for a data structure when the fleet needs one and not before.
+- **The bridge's per-agent cost is stated, and what it buys.** (#60) Nine
+  idle stdio bridges measured 72 MB on one machine, about 8 MB, 13 file
+  descriptors and a connection each, and every generated config prescribes
+  one although the daemon serves MCP over HTTP directly. The README now
+  gives the number and the reason the process is kept anyway: the bridge is
+  the session. It is where `cwd`, `branch` and a real `pid` are observed
+  rather than asked of a model, the key that reattaches the next turn to the
+  same agent, and the exit the board notices when an agent dies. A url client
+  gives up all four; the generated configs do not, and say so.
 - **A coordinator may move a mailbox but not onto itself.** (#77) Adoption
   redirects where mail for a name is delivered. Onto a third party, the
   coordinator gains nothing, and that is the consolidation the role exists
@@ -206,6 +222,45 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The daemon no longer needs read access to your checkouts.** (#19)
+  Matching mined the repository itself, so `dibd` needed to read every tree
+  its agents work in, and on macOS a daemon started by launchd is not granted
+  `~/Desktop`, `~/Documents` or `~/Downloads`: `/usr/bin/git` blocks there on
+  a prompt no background process can show, and the only grant that reliably
+  applies is Full Disk Access, which a coordination daemon should not hold.
+  The agent already has the access and is already inside the repository, so
+  its stdio bridge now ships the two bounded things the index is built from
+  (tracked paths, commit subjects with the files each touched; never
+  contents) when, and only when, the daemon reports it could not read the
+  tree. `POST /api/index` accepts it for the tree the agent is registered in
+  and no other, the daemon keeps its own reading of any tree it can read,
+  and `dibs doctor` names the tree and the agent that shipped it. A shipped
+  index predicts what the mined one predicts; the test proves it against this
+  repository's own history.
+- **A Gemini CLI plugin, and `dibs hook-poll` for harnesses whose hooks are
+  subprocesses.** (#24) Gemini's hooks are `command` type only, and its
+  `SessionStart` accepts `additionalContext`, so `plugins/gemini-cli` ships a
+  session-start hook running `dibs hook-poll`: it reads the hook's JSON on
+  stdin, asks the daemon what is waiting for the session's agent, and prints
+  the strict-shape answer Gemini injects as the first turn's context. Past
+  session start Gemini is pull-only, and the README says why in Gemini's own
+  terms: its end-of-turn hook can only reject the model's answer or stop the
+  session, and Dibs will not deliver mail by discarding what an agent said.
+  Measured on 2026-09-12 against 0.54.0-nightly: the hook reached the daemon
+  from a headless session, and Gemini negotiates `2025-06-18` over `httpUrl`
+  (the wake table has the row). `dibs://plugin` knows the harness and its
+  spellings.
+- **A live session that stopped coordinating is told so.** (#53) An agent
+  that registers, declares and then works for hours without calling Dibs
+  reads as dormant while it is busy, and peers writing to it are told so; on
+  this project's board that expired a peer's question and was reported as
+  the product failing. `[wake] remind_stale_after` (default `1h`, `off` to
+  disable) adds one line to the hook digest naming the silence and the
+  corrective call (`check_in`, then `update` or `declare`). It never extends
+  a turn: it rides on a digest delivered for another reason and on the
+  ambient line to the person, and repeats no more often than the interval.
+  A single long turn has no hook to ride, which the documentation says
+  plainly.
 - **A coordinator can count a mailbox without reading it.** (#77)
   `all_mail(census: true)` returns, per mailbox, how many messages, of which
   types, from whom, how old, how many still awaiting an answer, and how many

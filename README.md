@@ -400,6 +400,20 @@ restarts and in-place upgrades, and following a daemon restart by itself; a url
 client that drops its nonce registers again as a sibling that cannot read its
 predecessor's mail, and the remote sessions are the long-lived unattended ones.
 
+The bridge costs a process per agent, and the number is worth knowing rather
+than finding: measured on one developer machine, nine idle bridges were 72 MB
+in total, about 8 MB and 13 file descriptors each, plus one long-lived
+connection the daemon holds a goroutine for. Fifty agents is roughly 400 MB
+of adapter before any of them does work. That is not overhead the daemon
+needs to be reached, since it serves MCP over HTTP directly; it is what the
+process is FOR. The bridge is the session: it is where `cwd`, `branch` and a
+real `pid` are observed instead of asked of a model that cannot know them,
+it is the key that reattaches the next turn to the same agent, and its exit
+is how the board notices an agent died (SPEC §5.0). A url client gives up all
+four to save the 8 MB. Nothing shares one bridge between agents, on purpose:
+each carries one identity and one session, and multiplexing them would put
+back the ambiguity the bridge exists to remove.
+
 Pick the hub deliberately. Whichever machine runs the daemon decides whether
 the fleet has a board at all, and a laptop is the tempting choice and the wrong
 one: it sleeps, it changes networks, and it is the machine most likely to be
@@ -950,7 +964,7 @@ identically on either. The reason to know is that a harness reaching the modern
 path is exercising the stateless contract, and if something differs there it is
 worth a bug report rather than a shrug.
 
-Surveyed by reading source, not announcements. Re-checked 2026-08-03 against
+Surveyed by reading source, not announcements. Re-checked 2026-09-12 against
 each project's latest commit:
 
 | harness | speaks | why |
@@ -958,8 +972,8 @@ each project's latest commit:
 | Codex | 2025-11-25 by default, **2026-07-28 when configured** | The flag `mcp_2026_07_28` is stage `UnderDevelopment` and off by default, so an unconfigured Codex sends 2025-06-18, measured. With the flag AND `CODEX_MCP_PROTOCOL_VERSION` on that server's entry, which is what `dibs mcp-config` prints, it runs entirely on 2026-07-28 against Dibs: this row said legacy-only for a while, and the paragraph under the table is what is current. See [plugins/codex](plugins/codex/) |
 | opencode | 2025-11-25 | bound by the TypeScript SDK (1.29.0) |
 | pi-mono | 2025-11-25 | bound by the TypeScript SDK (^1.25.2) |
-| Gemini CLI | 2025-06-18 | not stated |
-| Hermes | 2025-03-26 | pins `mcp==1.28.1`; no stateless-path code |
+| Gemini CLI | 2025-06-18 | measured 2026-09-12: 0.54.0-nightly sends `initialize` 2025-06-18 over `httpUrl`. Hooks are subprocesses; see [plugins/gemini-cli](plugins/gemini-cli/) |
+| Hermes | 2025-03-26 measured; its `mcp` extra now pins `mcp==2.0.0`, which implements 2026-07-28 | what it negotiates with that SDK is unmeasured (#27) |
 
 The reason is one level below the harnesses, and it is the useful part:
 

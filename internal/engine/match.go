@@ -168,6 +168,9 @@ func (e *Engine) scorerFor(cwd string) (overlap.Scorer, MatchConfig) {
 type IndexInfo struct {
 	Fingerprint string
 	Identity    core.AgentInfo
+	// SuppliedBy names the agent that shipped this index, for a tree the
+	// daemon could not read itself (issue #19); "" for one the daemon mined.
+	SuppliedBy string
 }
 
 // SetScorerForRepo publishes the index for one repository. Thresholds are
@@ -236,6 +239,33 @@ func (e *Engine) peerIndexesFor(home string) []peerIndex {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].root < out[j].root })
 	return out
+}
+
+// IndexSuppliedBy reports which agent shipped the index at repo, or "" when
+// the daemon mined it or holds none.
+func (e *Engine) IndexSuppliedBy(repo string) string {
+	e.matchMu.RLock()
+	defer e.matchMu.RUnlock()
+	return e.indexes[repo].SuppliedBy
+}
+
+// AgentLocation resolves a token to the agent's id and recorded working
+// directory, for the daemon deciding whether an index an agent ships is for
+// the tree that agent is actually in.
+func (e *Engine) AgentLocation(ctx context.Context, token string) (id, cwd string, err error) {
+	res, err := e.query(ctx, func() core.Result {
+		l := e.state.AgentByToken(token)
+		if l == nil || l.Agent == nil {
+			return core.Result{}
+		}
+		return core.Result{"id": l.ID, "cwd": l.Agent.CWD}
+	})
+	if err != nil {
+		return "", "", err
+	}
+	id, _ = res["id"].(string)
+	cwd, _ = res["cwd"].(string)
+	return id, cwd, nil
 }
 
 // fingerprintOf is the history fingerprint of the index at repo, or "".
