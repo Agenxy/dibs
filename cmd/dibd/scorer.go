@@ -275,6 +275,13 @@ func (f *scorerFlags) install(ctx context.Context, eng *engine.Engine) {
 	// nothing otherwise.
 	eng.OnRepoSeen(func(cwd string) { f.indexDiscovered(ctx, eng, cwd) })
 
+	// And the trees the fleet ALREADY works in, because a restart is not a
+	// registration. Indexes live in memory, and this daemon rebuilt none of
+	// them at boot: every `dibs upgrade` switched matching off for the whole
+	// board until some agent happened to register, and on a board of
+	// long-lived agents that could be days. See Engine.WorkingDirectories.
+	go f.indexKnownTrees(ctx, eng)
+
 	if repo := f.repo; repo != "" {
 		eng.SetMatchStatus(engine.MatchStatus{Phase: engine.MatchIndexing, Repo: repo})
 		go func() { _ = f.bringUp(ctx, eng, repo) }() // pre-warm: nothing waits on the verdict
@@ -534,6 +541,43 @@ func (f *scorerFlags) withSidecar(ctx context.Context, base overlap.Scorer) over
 	}
 	slog.Info("embeddings service ready", "url", url, "model", model, "chunks", em.Chunks())
 	return em
+}
+
+// indexKnownTrees indexes, at boot, the repositories this machine's agents
+// were already working in when the previous daemon stopped.
+//
+// Roots are resolved here, one git call at a time, and deduplicated BEFORE
+// anything is indexed: thirty agents in subdirectories of one checkout are one
+// tree, and handing every cwd to indexDiscovered would have started thirty
+// concurrent resolutions of it (the Codex review of this change). What is left
+// is one indexDiscovered per distinct repository, which is the same work a
+// registration from each would have done.
+func (f *scorerFlags) indexKnownTrees(ctx context.Context, eng *engine.Engine) {
+	seen := map[string]bool{}
+	for _, cwd := range eng.WorkingDirectories(ctx) {
+		root, err := repoRootOf(ctx, cwd)
+		if err != nil {
+			// The same verdict a registration would have produced, so doctor
+			// and the bridge's shipment path see this tree the same way.
+			eng.NoteUnreadableTree(cwd,
+				"an agent works in "+cwd+" but the daemon cannot read it ("+
+					err.Error()+"). "+tccHint(cwd, err))
+			continue
+		}
+		// Recorded here, synchronously: a later registration from this cwd
+		// then takes indexDiscovered's cheap path instead of another git call.
+		f.discoverMu.Lock()
+		if f.rootOf == nil {
+			f.rootOf = map[string]string{}
+		}
+		f.rootOf[cwd] = root
+		f.discoverMu.Unlock()
+		if seen[root] {
+			continue
+		}
+		seen[root] = true
+		f.indexDiscovered(ctx, eng, root)
+	}
 }
 
 // indexDiscovered indexes a repository an agent turned up in.

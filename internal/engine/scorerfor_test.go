@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/agenxy/dibs/internal/core"
 	"github.com/agenxy/dibs/internal/overlap"
 )
 
@@ -112,5 +113,39 @@ func TestIndexedReposListsEveryTree(t *testing.T) {
 	if got := e.IndexedRepos(); len(got) != 2 {
 		t.Errorf("IndexedRepos() = %v, want both trees: a status that names one "+
 			"index reads as a daemon that only covers one project", got)
+	}
+}
+
+// The trees a restarted daemon should index: every live agent's cwd on this
+// machine, once each; not a signed-off agent's, not another host's, and not
+// an agent that recorded no cwd.
+func TestWorkingDirectoriesAreTheLiveLocalAgents(t *testing.T) {
+	st := core.NewState("this-host", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+	reg := func(name string, info *core.AgentInfo) string {
+		t.Helper()
+		res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: name, Agent: info})
+		if err != nil {
+			t.Fatalf("setup: register %s: %v", name, err)
+		}
+		tok, _ := res["token"].(string)
+		return tok
+	}
+	reg("a", &core.AgentInfo{CWD: "/work/api"})
+	reg("a2", &core.AgentInfo{CWD: "/work/api"}) // same tree: once
+	reg("local", &core.AgentInfo{CWD: "/work/web", HostID: "this-host"})
+	reg("remote", &core.AgentInfo{CWD: "/work/remote", HostID: "other-host"})
+	reg("nowhere", &core.AgentInfo{})
+	gone := reg("gone", &core.AgentInfo{CWD: "/work/gone"})
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpSignOff, Token: gone}); err != nil {
+		t.Fatalf("setup: sign off: %v", err)
+	}
+	got := e.WorkingDirectories(ctx)
+	want := []string{"/work/api", "/work/web"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("WorkingDirectories = %v, want %v: a restarted daemon would index the wrong trees", got, want)
 	}
 }
