@@ -43,6 +43,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **On Linux, a checkout replaced at the same path was still identified as
+  the old one.** The repository-identity cache keyed on device and inode, and
+  ext4 and tmpfs hand a recreated directory the same inode back, so the cache
+  answered the deleted repository's remote for the new one: two agents in one
+  repository were not warned, and an unrelated project was reported as
+  duplicating work. Found by the first run of the suite on a Linux runner;
+  APFS never showed it. Change and modification time are part of the identity
+  now, and the stat is split by platform so the same file builds on Windows.
+
 - **On Linux, processor time is read from `/proc`, not from a `ps` column
   that rounds to whole seconds.** (#4, the measured half) The supervision
   probe decides "thinking" against "stuck" from the ratio of processor time
