@@ -42,14 +42,21 @@ func Observe(pid int, transcript string) Sample {
 	return s
 }
 
-// processTimes reads cumulative processor time AND how long the process has
-// been alive, in one call.
+// psTimes reads cumulative processor time AND how long the process has been
+// alive, in one call, from ps.
 //
 // Both together, because their RATIO is the only thing that can convict a
 // stalled agent from a single observation, and asking twice would be two forks
-// for one fact. Via ps, which reads the same on macOS and Linux without cgo or
-// a /proc dependency.
-func processTimes(pid int) (cpu, elapsed time.Duration) {
+// for one fact.
+//
+// This is the BSD path, and it is the whole answer on macOS. It used to claim
+// ps "reads the same on macOS and Linux", which is the wrong assumption stated
+// out loud: the TIME column is hundredths of a second on macOS (`0:00.05`) and
+// whole seconds on procps (`00:00:00`), so a process that had burned 50 ms was
+// measurable here and rounded to zero there. At `--min-duty 0.05` and a
+// one-second age that reported a continuously busy process as stuck in two
+// runs of eight (issue #4). Linux reads /proc instead; see processTimes there.
+func psTimes(pid int) (cpu, elapsed time.Duration) {
 	if pid <= 0 {
 		return 0, 0
 	}

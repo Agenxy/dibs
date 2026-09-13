@@ -43,6 +43,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **On Linux, processor time is read from `/proc`, not from a `ps` column
+  that rounds to whole seconds.** (#4, the measured half) The supervision
+  probe decides "thinking" against "stuck" from the ratio of processor time
+  to age, and read both from `ps -o time=,etime=`, whose TIME is hundredths
+  on macOS and whole seconds on procps: a process that had burned 50 ms
+  measured on one and rounded to zero on the other, and at `--min-duty 0.05`
+  with a one-second age a continuously busy process was reported stuck in
+  two runs of eight. Linux now reads `utime + stime` in clock ticks from
+  `/proc/<pid>/stat` and the age from `starttime` against `/proc/uptime`,
+  behind a build tag; the BSD `ps` path is untouched on macOS. The parser is
+  tested here; the Linux build is compiled and vetted here and not run, so
+  the README's "verified on macOS" stands until somebody runs it there.
+
 - **A verdict the asker has read is not handed back after a restart.** (#76)
   `read_mail` cleared the "read_mail(N)" notice only in memory. The rebuild
   after a restart asks whether the asker's awareness watermark has passed the
