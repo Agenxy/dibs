@@ -36,6 +36,7 @@ func TestAnIndexRebuiltFromRecordsPredictsLikeTheMinedOne(t *testing.T) {
 	if got, want := shipped.cc.Fingerprint(), mined.Fingerprint(); got != want {
 		t.Errorf("fingerprint %q, want the mined %q: two views of one history must read as one", got, want)
 	}
+	compared := 0
 	for _, decl := range []string{
 		"the ledger's hash chain on replay",
 		"work-overlap matching and the co-change scorer",
@@ -46,9 +47,27 @@ func TestAnIndexRebuiltFromRecordsPredictsLikeTheMinedOne(t *testing.T) {
 		if len(a.Files) == 0 {
 			continue
 		}
-		if o := Overlap(a, b); o < 0.99 {
-			t.Errorf("%q: shipped and mined predictions overlap %.3f, want them to be the "+
-				"same index; a subject-less commit is the only difference allowed", decl, o)
+		compared++
+		if o := Overlap(a, b); o < 0.999 {
+			t.Errorf("%q: shipped and mined predictions overlap %.3f, want the same index", decl, o)
+		}
+	}
+	if compared == 0 {
+		t.Fatal("no declaration produced a prediction, so nothing was compared: the test proved nothing")
+	}
+	if len(mined.Records()) != mined.Commits() {
+		t.Errorf("Records ships %d commits of the %d counted: the rebuilt index would not "+
+			"have the pair counts the fingerprint names", len(mined.Records()), mined.Commits())
+	}
+}
+
+// A tracked file may contain two dots; only a `..` COMPONENT leaves the tree.
+func TestRepoRelativeRefusesComponentsNotCharacters(t *testing.T) {
+	for f, want := range map[string]bool{
+		"docs/version..txt": true, "a/b.c": true, "..": false, "a/../b": false, "/etc/passwd": false, "": false, "a//b": false,
+	} {
+		if got := repoRelative(f); got != want {
+			t.Errorf("repoRelative(%q) = %v, want %v", f, got, want)
 		}
 	}
 }
