@@ -345,12 +345,29 @@ The board is a fleet board: agents on other machines join the same daemon and
 appear in the same rows. There is no second server to run, and nothing to
 replicate.
 
-On the joining machine, ask for the recipe. It derives the data directory from
-the board's address and prints every step with the real paths filled in:
+**Name the hub the way the fleet names it.** Dibs does not keep its own idea
+of which computer is which: that is [Supgang](https://github.com/Agenxy/supgang),
+the Agenxy address plane, and Dibs asks it. On a machine that is a Supgang
+member, the hub is one of its peers, so the recipe takes the peer's name, tag
+or fingerprint and resolves the address Supgang has signed for it now:
+
+```sh
+dibs mcp-config --board MacMarine
+dibs mcp-config --board MacMarine:4790   # a hub on a port other than 4777
+```
+
+The bridge asks Supgang again each time it starts, so the board follows the
+hub when its address changes, and every agent on this machine carries this
+computer's Supgang identity, the same one the hub and every other member know
+it by. On a machine without Supgang the recipe takes an address instead, and
+that path is what an ssh forward uses:
 
 ```sh
 dibs mcp-config --board 127.0.0.1:4777
 ```
+
+Either way it derives the data directory from the board and prints every step
+with the real paths filled in.
 
 That board gets a data directory of its own, holding its secret. The secret is
 per-board and is read from the data directory, so a machine that also runs its

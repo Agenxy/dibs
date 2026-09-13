@@ -183,7 +183,10 @@ func (e *Engine) remoteHostOf(l *core.Agent) string {
 	if l == nil || l.Agent == nil || l.Agent.HostID == "" || e.state == nil {
 		return ""
 	}
-	if l.Agent.HostID == e.state.NodeID {
+	// THE HOST ID, not the ledger's node id: on a Supgang member the hub's
+	// own agents are stamped with the Supgang node id, and comparing with
+	// the ledger's would make every one of them look remote.
+	if l.Agent.HostID == e.HostID() {
 		return ""
 	}
 	return l.Agent.HostID

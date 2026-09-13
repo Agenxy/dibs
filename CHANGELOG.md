@@ -328,6 +328,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   clones is, the refusal names the rule, and `dibs doctor` on the joining
   machine says whose board it is. Both rules were unit-tested in the fold
   and had never been exercised through the trust store and the bridge.
+- **Dibs identifies computers through Supgang, and joins a hub by its Supgang
+  name.** An Agenxy-wide decision (2026-09-13): the projects use each other
+  as dependencies rather than duplicate. Dibs kept an identity of its own for
+  each computer (`node_id`, a generated `host_id`) beside the one Supgang
+  already gives it; now, on a Supgang member, the host id every agent carries
+  IS the Supgang node id, on the hub (loopback callers are stamped with it)
+  and on a joining machine (the bridge asserts it), so one computer answers
+  to one name across the fleet; a daemon started before the machine joined
+  its hive is told by `dibs doctor` to restart, since it keeps the ledger's
+  id until then. `dibs mcp-config --board MacMarine` names the
+  hub as a Supgang peer: the address Supgang has signed for it now, Dibs's
+  own port, and `DIBS_BOARD_PEER` in the config so the bridge asks again each
+  time it starts and follows the hub when its address changes. `dibs doctor`
+  names the machine a remote agent is on. `internal/supgang` is the whole of
+  the dependency: `supgang --json` over argv, versioned envelopes checked,
+  Supgang's own words for a computer that has not joined a hive. Without
+  Supgang everything works as before, for one machine or an ssh forward.
 - **The registry entry carries an install path.** (#44) `io.github.Agenxy/dibs`
   had a name, a description and a repository and no `packages`, so an agent
   that found Dibs in the MCP registry had nothing that said what to fetch,

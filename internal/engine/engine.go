@@ -127,6 +127,10 @@ type Engine struct {
 	// hostWakes is the hub's side of waking agents on other machines: the
 	// bridges attached per host and the requests awaiting their report.
 	hostWakes hostWakes
+	// hostID is WHICH COMPUTER this daemon runs on, as the fleet's address
+	// plane names it (Supgang's node id) when that is known; "" means the
+	// ledger's own node id stands in. See HostID.
+	hostID string
 	// verifyClaim answers whether a presented coordinator claim is the one this
 	// daemon minted, and returns the function that spends it once the op it
 	// authorised has been ledgered. Guarded separately: it is installed once at

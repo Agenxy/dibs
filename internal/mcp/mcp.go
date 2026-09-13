@@ -190,7 +190,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// id as a matter of evidence. Everything past this point is a tool call that
 	// knows nothing about HTTP and should not learn: the fact travels on the
 	// context, the way clientInfo travels from the handshake.
-	r = r.WithContext(withTransportHost(r.Context(), isLoopback(r.RemoteAddr), s.eng.NodeID()))
+	r = r.WithContext(withTransportHost(r.Context(), isLoopback(r.RemoteAddr), s.eng.HostID()))
 
 	if req.ID == nil { // notification (e.g. legacy notifications/initialized)
 		w.WriteHeader(http.StatusAccepted)

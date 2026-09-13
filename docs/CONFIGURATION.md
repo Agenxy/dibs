@@ -562,7 +562,9 @@ deliberate: an earlier design put the nonces here and it was the wrong trade.
 ## Where else settings come from
 
 - **Flags**: `dibd -h` lists them; a flag beats this file.
-- **Environment**: `DIBS_ADDR`, `DIBS_DIR`, `DIBS_TOKEN`, `DIBS_ADMIN=1`,
+- **Environment**: `DIBS_ADDR`, `DIBS_DIR`, `DIBS_TOKEN`, `DIBS_BOARD_PEER` (the
+  hub as a Supgang peer; the bridge dials the address Supgang has signed for
+  it now, keeping the scheme and port of `DIBS_ADDR`), `DIBS_ADMIN=1`,
   `DIBS_HARNESS`, `DIBS_CODESIGN_IDENTITY`.
 - **Not here**: the coordination secret and the admin password are credentials
   and live as files in the data directory, never in a config file somebody might
