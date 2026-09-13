@@ -47,6 +47,11 @@ const (
 	MatchNoThreshold MatchPhase = "suggest-only"
 )
 
+// Indexed reports a phase that means the tree was read and matching runs on
+// it, at whatever quality: ready, suggest-only, or degraded to the built-in
+// scorer. Off and indexing are not.
+func (p MatchPhase) Indexed() bool { return p.indexed() }
+
 // indexed reports whether this phase means the tree was successfully read.
 // `ready`, `suggest-only` and `degraded` all reached an index; the first is
 // only the one with a join threshold set, and the second is the default.

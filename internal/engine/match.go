@@ -1413,6 +1413,41 @@ func (e *Engine) OnRepoSeen(fn func(repo string)) {
 	e.onRepoSeen = fn
 }
 
+// WorkingDirectories is where this machine's agents are working: one entry
+// per agent that is not retired and recorded a cwd, an agent on another host
+// left out. It is what a restarted daemon indexes without waiting for anyone
+// to register again.
+//
+// Indexing used to be triggered by registration alone, so `dibs upgrade` (or
+// a reboot) left matching off until the next registration: a fleet that had
+// been matching for days lost the feature at every upgrade, and the only
+// thing that said so was doctor's "no repository indexed yet". Found by
+// validating a build against this machine's own board, which had 34 agents
+// and no index hours after an upgrade.
+func (e *Engine) WorkingDirectories(ctx context.Context) []string {
+	res, err := e.query(ctx, func() core.Result {
+		seen := map[string]bool{}
+		var out []string
+		for _, a := range e.state.Agents {
+			if a.Retired() || a.Agent == nil || a.Agent.CWD == "" || seen[a.Agent.CWD] {
+				continue
+			}
+			if a.Agent.HostID != "" && a.Agent.HostID != e.state.NodeID {
+				continue // another machine's tree: the daemon cannot read it
+			}
+			seen[a.Agent.CWD] = true
+			out = append(out, a.Agent.CWD)
+		}
+		sort.Strings(out)
+		return core.Result{"dirs": out}
+	})
+	if err != nil {
+		return nil
+	}
+	dirs, _ := res["dirs"].([]string)
+	return dirs
+}
+
 // noteRepoOf tells the daemon where a registering agent is working.
 //
 // Deliberately NOT deduplicated here. It used to be, and that was a bug with a
