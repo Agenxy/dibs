@@ -39,7 +39,7 @@ func TestConfigureCanRunWithoutATerminal(t *testing.T) {
 // Both paths must agree about what "the defaults" are. They were two separate
 // string builders, which is how one of them ends up a release behind.
 func TestBothConfigurePathsWriteTheSameDefaults(t *testing.T) {
-	body := defaultConfig("127.0.0.1:4777")
+	body := defaultConfig("127.0.0.1:4777", "")
 
 	quiet := filepath.Join(t.TempDir(), "data")
 	if err := configure([]string{"--non-interactive", quiet}); err != nil {

@@ -334,8 +334,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	gate := newAuthGate(secret, filepath.Join(*dir, "admin.hash"), listenAddr)
+	gate.SetNames(cfg.Name)
 	srv := &http.Server{
-		Addr: listenAddr, Handler: newAuthGate(secret, filepath.Join(*dir, "admin.hash"), listenAddr).wrap(mux),
+		Addr: listenAddr, Handler: gate.wrap(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		// No global write timeout: long-polls and SSE hold connections open.
 	}

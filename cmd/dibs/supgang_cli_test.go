@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agenxy/dibs/internal/remap"
 	"github.com/agenxy/dibs/internal/supgang"
 )
 
@@ -16,9 +17,12 @@ func TestMain(m *testing.M) {
 	if os.Getenv("DIBS_TEST_AS_SUPGANG") != "" {
 		os.Exit(fakeSupgang(os.Args[1:]))
 	}
-	// No test here reaches the real supgang on this machine's PATH: a
-	// developer's hive would otherwise answer for the fleet a test set up.
+	// No test here reaches the real supgang or remap on this machine's PATH:
+	// a developer's hive would otherwise answer for the fleet a test set up,
+	// and the wizard would register a name in their own registry every time
+	// the suite ran.
 	supgang.Command = "/nonexistent/supgang-under-test"
+	remap.Command = "/nonexistent/remap-under-test"
 	os.Exit(m.Run())
 }
 

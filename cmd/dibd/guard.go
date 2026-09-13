@@ -90,6 +90,11 @@ func strconvItoa(n int) string { return strconv.Itoa(n) }
 type authGate struct {
 	secret        string
 	adminHashPath string
+	// names are hostnames the operator gave this board (dibs.toml `name`,
+	// routed here by Remap): a browser that reached the board by one of them
+	// sends it as its origin, on Remap's gateway port rather than this
+	// daemon's, and it is as much this board's origin as the address is.
+	names []string
 	// host and port are the daemon's own listening address, so an Origin can be
 	// checked against THIS server rather than against a fixed idea of what a
 	// server's address looks like. See localOrigin.
@@ -815,6 +820,18 @@ func (g *authGate) localOrigin(origin, reqHost string) bool {
 	if err != nil {
 		return false
 	}
+	// A NAME IS THE GATEWAY'S ORIGIN, on the scheme's own port and no other.
+	// Remap serves `http://<name>/` on 80 (and 443 for https); a page at
+	// `http://<name>:8080` is some other service that happens to share the
+	// hostname, and letting it act on the board would be the cross-port
+	// hole this check exists to close.
+	if u.Port() == "" || effectivePort(u.Scheme, u.Port()) == effectivePort(u.Scheme, "") {
+		for _, n := range g.names {
+			if strings.EqualFold(u.Hostname(), n) {
+				return true
+			}
+		}
+	}
 	// The daemon's OWN address, not a fixed idea of what one looks like.
 	//
 	// The first version of this check hardcoded the loopback hostnames, which
@@ -909,3 +926,15 @@ func presenceCodeLine(code string) string {
 // presenceCodeShape is exactly what presenceCode() produces: four letters, no
 // vowels, so nothing here can spell a word or be confused with a digit.
 var presenceCodeShape = regexp.MustCompile(`^[BCDFGHJKLMNPQRSTVWXZ]{4}$`)
+
+// SetNames tells the gate which hostnames route to this board (dibs.toml
+// `name`), so a browser that arrived by one of them is not refused as a
+// stranger. Called once at boot, before the gate serves.
+func (g *authGate) SetNames(names ...string) {
+	g.names = g.names[:0]
+	for _, n := range names {
+		if n = strings.TrimSpace(n); n != "" {
+			g.names = append(g.names, n)
+		}
+	}
+}
