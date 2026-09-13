@@ -188,11 +188,39 @@ func newLexical(ctx context.Context, repo string, cc *CoChange, held map[string]
 	if err != nil {
 		return nil, err
 	}
+	return lexicalOver(strings.Split(string(out), "\n"), cc, held), nil
+}
+
+// NewLexicalFromFiles is NewLexical over a tracked-file list a caller read
+// elsewhere, for a daemon that cannot run `git ls-files` in the tree (issue
+// #19). The index is the same one; only who read the list differs.
+func NewLexicalFromFiles(files []string, cc *CoChange) *Lexical {
+	return lexicalOver(files, cc, nil)
+}
+
+// TrackedFiles lists the tracked files of a checkout the way NewLexical reads
+// them, for the side that can: an agent shipping its index.
+func TrackedFiles(ctx context.Context, repo string) ([]string, error) {
+	// #nosec G204 -- argv, no shell; the path is the caller's own checkout.
+	out, err := exec.CommandContext(ctx, "git", "-C", repo, "ls-files").Output()
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, f := range strings.Split(string(out), "\n") {
+		if f = strings.TrimSpace(f); f != "" {
+			files = append(files, f)
+		}
+	}
+	return files, nil
+}
+
+func lexicalOver(paths []string, cc *CoChange, held map[string]bool) *Lexical {
 	l := &Lexical{
 		cc: cc, terms: map[string][]int{}, idf: map[string]float64{},
 		history: map[string][]int{}, histIDF: map[string]float64{},
 	}
-	for _, f := range strings.Split(string(out), "\n") {
+	for _, f := range paths {
 		f = strings.TrimSpace(f)
 		if f == "" {
 			continue
@@ -224,7 +252,7 @@ func newLexical(ctx context.Context, repo string, cc *CoChange, held map[string]
 		// were uninteresting. Terms that name one package keep their weight.
 		l.idf[t] = math.Log(1 + n/float64(len(posting)))
 	}
-	return l, nil
+	return l
 }
 
 // ID names this scorer in recorded provenance, so a membership can say what

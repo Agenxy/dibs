@@ -400,6 +400,18 @@ from the wrong tree is worse than no index. Nothing here is inferred.
 | `auto_join` | `declared` | `declared` joins only on a shared identifying ref; `always` joins on score alone; `never` only ever suggests. |
 | `director_required` | `false` | Every join must be approved by the coordinator. Serialises the fleet behind one approver; off for that reason. |
 
+**The daemon does not need to read your checkouts.** Matching is built from
+two bounded things, the tracked file list and recent commit subjects with the
+files each touched, and the daemon mines them itself when it can. When it
+cannot (on macOS a daemon started by launchd is not granted `~/Desktop`,
+`~/Documents` or `~/Downloads`, and `/usr/bin/git` blocks there on a prompt no
+background process can show), the agent's own stdio bridge, which runs inside
+the checkout with the access the harness already has, ships them instead:
+`dibs doctor` names the tree and the agent. An agent may supply the index only
+for the tree it is registered in, the daemon keeps its own reading of any tree
+it can read, and nothing shipped is file contents. No grant is needed, and
+Full Disk Access is the wrong answer to a coordination daemon.
+
 **There is no safe default threshold.** Scores are unitless and relative to the
 scorer *and* the repository together: measured across five real repositories the
 calibrated value spanned a factor of fifteen. Run `dibs calibrate`, which scores

@@ -222,6 +222,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The daemon no longer needs read access to your checkouts.** (#19)
+  Matching mined the repository itself, so `dibd` needed to read every tree
+  its agents work in, and on macOS a daemon started by launchd is not granted
+  `~/Desktop`, `~/Documents` or `~/Downloads`: `/usr/bin/git` blocks there on
+  a prompt no background process can show, and the only grant that reliably
+  applies is Full Disk Access, which a coordination daemon should not hold.
+  The agent already has the access and is already inside the repository, so
+  its stdio bridge now ships the two bounded things the index is built from
+  (tracked paths, commit subjects with the files each touched; never
+  contents) when, and only when, the daemon reports it could not read the
+  tree. `POST /api/index` accepts it for the tree the agent is registered in
+  and no other, the daemon keeps its own reading of any tree it can read,
+  and `dibs doctor` names the tree and the agent that shipped it. A shipped
+  index predicts what the mined one predicts; the test proves it against this
+  repository's own history.
 - **A Gemini CLI plugin, and `dibs hook-poll` for harnesses whose hooks are
   subprocesses.** (#24) Gemini's hooks are `command` type only, and its
   `SessionStart` accepts `additionalContext`, so `plugins/gemini-cli` ships a

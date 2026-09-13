@@ -420,6 +420,12 @@ Normative rules:
 - **Indexing happens once, at startup, off the request path.** Embedding a
   repository takes minutes; an agent declaring work must never wait for it.
 
+Who reads the tree is not part of the interface. The daemon mines a
+repository itself when it can read it; when it cannot, the agent's bridge
+mines the same two bounded inputs inside the checkout and ships them
+(`POST /api/index`), scoped to the tree that agent is registered in. Either
+way the index is the same and the score means the same thing.
+
 ### 4.2 Grounding: embeddings alone are not enough
 
 A tier-2 scorer MUST NOT compare two task descriptions directly. Two tasks that

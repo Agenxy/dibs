@@ -568,6 +568,15 @@ func checkMatching(client *http.Client, sec string, ok reportFn, warn fixFn) {
 		}
 		ok(fmt.Sprintf("matching ready (%s, %d files, %d commits%s)",
 			st.Scorer, st.Files, st.Commits, where))
+		supplied := make([]string, 0, len(st.Supplied))
+		for root := range st.Supplied {
+			supplied = append(supplied, root)
+		}
+		sort.Strings(supplied)
+		for _, root := range supplied {
+			ok("index for " + root + " was shipped by agent " + st.Supplied[root] +
+				": the daemon cannot read that tree and did not need to")
+		}
 		if st.Repo != "" {
 			// And say so when that is not where this command was run. Matching is
 			// machine-wide by design, one daemon, one index, so working elsewhere
@@ -905,6 +914,10 @@ type matchStatusJSON struct {
 	// explains a matcher suggesting another project's paths.
 	Repo string `json:"repo"`
 	Hint string `json:"hint"`
+	// Unreadable lists trees the daemon tried and could not read; Supplied
+	// maps those an agent shipped the index for instead (issue #19).
+	Unreadable []string          `json:"unreadable"`
+	Supplied   map[string]string `json:"supplied"`
 }
 
 // fetchMatchStatus asks the daemon why matching is or is not working. Failure
