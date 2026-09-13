@@ -1,11 +1,10 @@
-//go:build !unix
+//go:build !unix && !windows
 
 package main
 
 import "os/exec"
 
-// detach on a platform without process groups leaves the child attached:
-// `dibs upgrade` still restarts the daemon, and the daemon stays a child of
-// the CLI that started it, which is the one Windows behaviour nobody has
-// yet asked for or measured (README, "Windows").
+// detach on a platform with neither sessions nor process groups leaves the
+// child attached. No such platform is built today; this exists so the file
+// set is total rather than so anything runs here.
 func detach(cmd *exec.Cmd) { _ = cmd }
