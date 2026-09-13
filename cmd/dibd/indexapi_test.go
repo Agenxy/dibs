@@ -71,6 +71,13 @@ func TestAnAgentSuppliesTheIndexForItsOwnTreeOnly(t *testing.T) {
 	if code, _ := post("not-a-token", payload); code != http.StatusUnauthorized {
 		t.Fatalf("a token that names no agent was accepted: %d", code)
 	}
+	// The daemon has not found the tree unreadable: it reads what it can
+	// itself, so a shipment for a tree it has not tried is refused.
+	if code, out := post(inside, payload); code != http.StatusConflict {
+		t.Fatalf("a shipment for a tree the daemon never failed to read was taken: %d %v", code, out)
+	}
+	eng.NoteUnreadableTree(filepath.Join(root, "internal", "core"), "permission denied")
+
 	// The agent inside it can, and matching works there afterwards.
 	code, out := post(inside, payload)
 	if code != http.StatusOK || out["accepted"] != true {
@@ -90,19 +97,45 @@ func TestAnAgentSuppliesTheIndexForItsOwnTreeOnly(t *testing.T) {
 		t.Error("the shipped index predicts nothing for a sentence its own history describes")
 	}
 
-	// A second shipment for the same tree replaces the first (a newer
-	// history), because the daemon still cannot read it.
+	// The same history again is acknowledged, not rebuilt; a newer history
+	// replaces the first, because the daemon still cannot read the tree.
+	if code, out := post(inside, payload); code != http.StatusOK || out["accepted"] != true || out["reason"] == nil {
+		t.Errorf("a repeated shipment was not acknowledged as already installed: %d %v", code, out)
+	}
 	payload.Fingerprint = "hist-2"
-	if code, out := post(inside, payload); code != http.StatusOK || out["accepted"] != true {
+	if code, out := post(inside, payload); code != http.StatusOK || out["accepted"] != true || out["reason"] != nil {
 		t.Errorf("a refreshed shipment was refused: %d %v", code, out)
 	}
+	// A shipped index is never a PEER of another project's index: its
+	// identity is the agent's word.
+	if by := eng.IndexSuppliedBy(root); by != "inside" {
+		t.Fatalf("provenance lost: %q", by)
+	}
 
-	// But a tree the daemon indexed ITSELF keeps the daemon's reading.
+	// An agent whose repository the daemon DID resolve may ship only that
+	// repository, not a parent directory that would cover its neighbours.
+	placedRoot := filepath.Join(t.TempDir(), "placed")
+	placed := reg("placed", filepath.Join(placedRoot, "pkg"))
+	_, err := eng.Do(ctx, &core.Op{Kind: core.OpUpdate, Token: placed, Agent: &core.AgentInfo{CWD: filepath.Join(placedRoot, "pkg"), RepoRoot: placedRoot}})
+	if err != nil {
+		t.Fatalf("setup: record the placed agent's root: %v", err)
+	}
+	eng.NoteUnreadableTree(filepath.Dir(placedRoot), "permission denied")
+	parent := payload
+	parent.Root = filepath.Dir(placedRoot)
+	if code, out := post(placed, parent); code != http.StatusForbidden {
+		t.Errorf("an agent claimed its repository's PARENT as the index root and was taken: %d %v; "+
+			"every tree beneath it would be scored by that agent's index", code, out)
+	}
+
+	// But a tree the daemon indexed ITSELF keeps the daemon's reading, even
+	// when one directory inside it could not be read.
 	own := filepath.Join(t.TempDir(), "readable")
 	owner := reg("owner", own)
 	f.discoverMu.Lock()
 	f.indexed[own] = true // as bringUp marks a tree it mined
 	f.discoverMu.Unlock()
+	eng.NoteUnreadableTree(filepath.Join(own, "vendor"), "permission denied")
 	ownPayload := payload
 	ownPayload.Root = own
 	if code, out := post(owner, ownPayload); code != http.StatusOK || out["accepted"] != false {
