@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "name": "dibs",
+            "command": "dibs hook-poll",
+            "timeout": 10000,
+            "description": "Dibs: what is waiting for this session's agent, injected as context at session start."
+          }
+        ]
+      }
+    ]
+  }
+}

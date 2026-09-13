@@ -222,6 +222,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A Gemini CLI plugin, and `dibs hook-poll` for harnesses whose hooks are
+  subprocesses.** (#24) Gemini's hooks are `command` type only, and its
+  `SessionStart` accepts `additionalContext`, so `plugins/gemini-cli` ships a
+  session-start hook running `dibs hook-poll`: it reads the hook's JSON on
+  stdin, asks the daemon what is waiting for the session's agent, and prints
+  the strict-shape answer Gemini injects as the first turn's context. Past
+  session start Gemini is pull-only, and the README says why in Gemini's own
+  terms: its end-of-turn hook can only reject the model's answer or stop the
+  session, and Dibs will not deliver mail by discarding what an agent said.
+  Measured on 2026-09-12 against 0.54.0-nightly: the hook reached the daemon
+  from a headless session, and Gemini negotiates `2025-06-18` over `httpUrl`
+  (the wake table has the row). `dibs://plugin` knows the harness and its
+  spellings.
 - **A live session that stopped coordinating is told so.** (#53) An agent
   that registers, declares and then works for hours without calling Dibs
   reads as dormant while it is busy, and peers writing to it are told so; on

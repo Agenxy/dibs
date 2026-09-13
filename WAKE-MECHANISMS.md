@@ -105,6 +105,7 @@ over plain HTTP (no stdio bridge in the way):
 | opencode | 1.18.4 | `initialize` **2025-11-25** | `roots` | initialize, tools/list |
 | Copilot CLI | 1.0.75 | 2025-11-25 | none | tools only |
 | Pi | latest | **no MCP at all** | none | none |
+| Gemini CLI | 0.54.0-nightly.20260722 | `initialize` **2025-06-18** | `roots` | initialize, tools/list, resources/list (2026-09-12, over `httpUrl`) |
 
 **Nobody sends `subscriptions/listen`, `resources/subscribe`, or `resources/read`.**
 Codex did not call `resources/list` either when this table was measured, which is

@@ -70,6 +70,9 @@ func TestNoPluginAdvertisesAWakeEventItDoesNotBind(t *testing.T) {
 			Hooks map[string][]struct {
 				Hooks []struct {
 					Tool string `json:"tool"`
+					// A `command` hook binds hook_poll through the dibs binary
+					// itself (Gemini CLI, whose hooks are subprocesses only).
+					Command string `json:"command"`
 				} `json:"hooks"`
 			} `json:"hooks"`
 		}
@@ -81,7 +84,7 @@ func TestNoPluginAdvertisesAWakeEventItDoesNotBind(t *testing.T) {
 		for ev, groups := range doc.Hooks {
 			for _, g := range groups {
 				for _, h := range g.Hooks {
-					if h.Tool == "hook_poll" {
+					if h.Tool == "hook_poll" || strings.Contains(h.Command, "dibs hook-poll") {
 						wakes[ev] = true
 					}
 				}

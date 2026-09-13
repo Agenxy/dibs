@@ -964,7 +964,7 @@ identically on either. The reason to know is that a harness reaching the modern
 path is exercising the stateless contract, and if something differs there it is
 worth a bug report rather than a shrug.
 
-Surveyed by reading source, not announcements. Re-checked 2026-08-03 against
+Surveyed by reading source, not announcements. Re-checked 2026-09-12 against
 each project's latest commit:
 
 | harness | speaks | why |
@@ -972,8 +972,8 @@ each project's latest commit:
 | Codex | 2025-11-25 by default, **2026-07-28 when configured** | The flag `mcp_2026_07_28` is stage `UnderDevelopment` and off by default, so an unconfigured Codex sends 2025-06-18, measured. With the flag AND `CODEX_MCP_PROTOCOL_VERSION` on that server's entry, which is what `dibs mcp-config` prints, it runs entirely on 2026-07-28 against Dibs: this row said legacy-only for a while, and the paragraph under the table is what is current. See [plugins/codex](plugins/codex/) |
 | opencode | 2025-11-25 | bound by the TypeScript SDK (1.29.0) |
 | pi-mono | 2025-11-25 | bound by the TypeScript SDK (^1.25.2) |
-| Gemini CLI | 2025-06-18 | not stated |
-| Hermes | 2025-03-26 | pins `mcp==1.28.1`; no stateless-path code |
+| Gemini CLI | 2025-06-18 | measured 2026-09-12: 0.54.0-nightly sends `initialize` 2025-06-18 over `httpUrl`. Hooks are subprocesses; see [plugins/gemini-cli](plugins/gemini-cli/) |
+| Hermes | 2025-03-26 measured; its `mcp` extra now pins `mcp==2.0.0`, which implements 2026-07-28 | what it negotiates with that SDK is unmeasured (#27) |
 
 The reason is one level below the harnesses, and it is the useful part:
 

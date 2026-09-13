@@ -27,7 +27,7 @@ func TestEmbeddedPluginsMatchTheRepository(t *testing.T) {
 	// vanished from a payload documented as the whole plugin while this test
 	// stayed green. A missing file is the defect this exists to catch, so the
 	// source of truth has to be the directory, not the test.
-	for _, dir := range []string{"claude-code", "codex"} {
+	for _, dir := range []string{"claude-code", "codex", "gemini-cli"} {
 		root := filepath.Join("..", "..", "plugins", dir)
 		err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 			if err != nil || d.IsDir() {

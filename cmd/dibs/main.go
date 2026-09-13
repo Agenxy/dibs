@@ -61,6 +61,7 @@ agent-safe (agent-scoped or public, fine to run from any agent):
 called BY harness integrations, not by you (listed so a config that names one
 is not a mystery):
   dibs mcp-stdio          stdio bridge for a host with no HTTP MCP client
+  dibs hook-poll          the wake path for a harness whose hooks are subprocesses (Gemini CLI)
   dibs hook-spawn         PreToolUse hook: stamps a spawned subagent with the
                            agent that spawned it, so a stall can be reported to
                            the agent that caused it. Reads the hook payload on
@@ -196,6 +197,8 @@ func main() {
 		err = monitor(os.Args[2:])
 	case "mcp-stdio":
 		err = mcpStdio(os.Args[2:])
+	case "hook-poll":
+		err = hookPoll(os.Args[2:])
 	case "web":
 		err = adminOnly("web", func() error { return webURL(os.Args[2:]) })
 	case "version", "--version", "-V":
@@ -284,7 +287,7 @@ var commands = []string{
 	"await", "probe", "watch", "monitor", "board", "log", "verify", "doctor",
 	"calibrate", "version", "help", "man", "completion", "configure", "messages",
 	"web", "admin",
-	"mcp-config", "mcp-stdio", "hook-spawn",
+	"mcp-config", "mcp-stdio", "hook-spawn", "hook-poll",
 }
 
 // nearestCommand picks the closest verb to what was typed, or "" when nothing
