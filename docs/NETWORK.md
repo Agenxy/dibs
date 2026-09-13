@@ -87,6 +87,10 @@ Supgang already answers. So:
   restart, because a machine answering to two names is exactly the defect
   this replaces. The human label is Supgang's signed computer name, which
   doctor looks up by host id to say which machine a remote agent is on.
+  `DIBS_HOST_ID` in a bridge's environment states the host outright, for a
+  container that must not share its machine's identity and for the two-host
+  suite, which runs both "machines" on one Supgang member; it is a claim, as
+  every bridge's host id is.
 - **Built.** A hub is named as a Supgang peer: `dibs mcp-config --board
   MacMarine` resolves the address Supgang has signed for that computer now,
   records the peer (`DIBS_BOARD_PEER`), and the bridge asks again each time it
@@ -260,8 +264,17 @@ own machine decides *how*.
   bridge attached for its host on the `dibs://wake` stream, which states the
   harnesses it can start, is handed each wake with what a `[wake.exec]` entry
   substitutes, and reports through `POST /api/wake-result`. Every decision in
-  the waker applies unchanged; only execution moves. The bridge command on
-  the other machine is next.
+  the waker applies unchanged; only execution moves. **The machine's half is
+  built too:** `dibs host-bridge`, run on the joined machine with the
+  `DIBS_ADDR` and `DIBS_DIR` the join recipe printed, reads the `[wake.exec]`
+  table in that data directory, attaches for this machine's host id stating
+  the harnesses it can start, runs the operator's command here through the
+  same runner the daemon uses (`internal/wakeexec`), and reports. It delivers
+  the one fixed sentence whatever the hub sent: the hub decides that, and
+  this machine decides how, and neither side composes text. `dibs doctor` on
+  the hub counts an agent whose host has a bridge attached for its harness as
+  covered; on the joined machine it names whichever half is missing, the
+  entries or the attachment. The two-host suite exercises the whole path.
 - Wake policy is therefore per-host by design rather than by accident, and the
   documentation says so instead of implying one switch covers a fleet.
 

@@ -20,6 +20,17 @@ import (
 	"time"
 )
 
+// Notice is the whole of what a wake says, on every route and on both sides
+// of a machine boundary: the daemon substitutes it for {message} in its own
+// [wake.exec] commands, and `dibs host-bridge` substitutes it in the
+// machine's, whatever a hub sent. "Check" rather than "you have mail" because
+// a wake can be queued durably and land minutes later, by which time another
+// activation may have read the mail: a resumed thread then finds an empty
+// inbox and reasonably reports the wake as a lie. That happened in this
+// feature's own testing. "Check" is true whenever it arrives. And that is
+// the whole sentence: anything past it is steering (PHILOSOPHY rule 5).
+const Notice = "Dibs: check the board."
+
 // Fields are the only substitutions a wake command gets.
 //
 // Each replaces a WHOLE argv element, never part of one, and the value is

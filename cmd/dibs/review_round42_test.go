@@ -21,7 +21,7 @@ func TestDoctorDoesNotReadTheLocalWakeConfigForARemoteBoard(t *testing.T) {
 		t.Fatal(err)
 	}
 	var what, fix string
-	checkWakeRoutes(dir, &boardView{Node: "hub-9"},
+	checkWakeRoutes(dir, &boardView{Node: "hub-9"}, nil,
 		func(msg string) { t.Fatalf("a remote board's wake coverage was reported from the local file: %s", msg) },
 		func(w, f string) { what, fix = w, f })
 	if !strings.Contains(what, "another daemon") || !strings.Contains(what, "hub-9") {
@@ -32,7 +32,7 @@ func TestDoctorDoesNotReadTheLocalWakeConfigForARemoteBoard(t *testing.T) {
 	}
 	// The same directory serving its own board is checked as before.
 	called := false
-	checkWakeRoutes(dir, &boardView{Node: "local-1"}, func(string) { called = true }, func(string, string) { called = true })
+	checkWakeRoutes(dir, &boardView{Node: "local-1"}, nil, func(string) { called = true }, func(string, string) { called = true })
 	if !called {
 		t.Fatal("a board served from this directory was not checked at all")
 	}
@@ -50,7 +50,7 @@ func TestDoctorSaysWhenBothWakeRoutesAreOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	var what, fix string
-	checkWakeRoutes(dir, &boardView{Node: "local-1"},
+	checkWakeRoutes(dir, &boardView{Node: "local-1"}, nil,
 		func(msg string) { t.Fatalf("no route at all reported as fine: %s", msg) },
 		func(w, f string) { what, fix = w, f })
 	if !strings.Contains(what, "no wake route at all") {

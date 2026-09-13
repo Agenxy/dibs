@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/boardconfig"
+	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/humanauth"
 	"github.com/agenxy/dibs/internal/liveness"
 	"github.com/agenxy/dibs/internal/notify"
@@ -228,7 +229,7 @@ func (d *diagnosis) run(verbose bool) error {
 	checkHarnessConfigs(sec, addr(), ok, warn, bad)
 	checkPanelBuild(client, sec, ok, warn, d.prose)
 	checkMatching(client, sec, ok, warn)
-	checkWakeRoutes(dir, boardOrNil(), ok, warn)
+	checkWakeRoutes(dir, boardOrNil(), attachedHosts(), ok, warn)
 	checkHubAdvertisement(dir, boardOrNil(), ok, warn)
 	checkBoardName(dir, ok, warn)
 	checkHooks(client, sec, ok, bad, warn)
@@ -468,7 +469,7 @@ func checkHarnessConfigs(sec, addr string, ok reportFn, warn, bad fixFn) {
 // reported healthy throughout. An operator running an unattended fleet is
 // running exactly that mode, and should be told that the only route they have
 // is the one that cannot be confirmed.
-func checkWakeRoutes(dir string, b *boardView, ok reportFn, warn fixFn) {
+func checkWakeRoutes(dir string, b *boardView, hosts []engine.HostBridgeInfo, ok reportFn, warn fixFn) {
 	// THE HUB'S CONFIGURATION IS ON THE HUB. A joining machine runs this
 	// against a remote board with its own data directory, and this read that
 	// directory's dibs.toml as the board's wake configuration: "no wake
@@ -482,10 +483,7 @@ func checkWakeRoutes(dir string, b *boardView, ok reportFn, warn fixFn) {
 		}
 	}
 	if b != nil && b.Node != "" && !servedFromHere(dir, b.Node) {
-		warn(fmt.Sprintf("this board is served by another daemon (node %s), whose wake "+
-			"configuration lives in that machine's dibs.toml", b.Node),
-			"run `dibs doctor` on the machine that runs the daemon for wake coverage; "+
-				"nothing in "+filepath.Join(dir, "dibs.toml")+" configures it")
+		checkJoinedWakeRoutes(dir, b, hosts, ok, warn)
 		return
 	}
 	cfg, err := boardconfig.Load(dir)
@@ -493,6 +491,14 @@ func checkWakeRoutes(dir string, b *boardView, ok reportFn, warn fixFn) {
 		warn("cannot read the board configuration, so wake coverage is unknown",
 			"fix "+filepath.Join(dir, "dibs.toml")+" and run this again: "+err.Error())
 		return
+	}
+	// Bridges attached for other machines are routes to their agents whatever
+	// this hub's own table says, and are reported before the branches below
+	// return on the state of that table: a hub serving only remote agents has
+	// no local commands and full coverage, and used to be told the opposite.
+	reportAttachedBridges(hosts, ok)
+	if len(cfg.Wake.Exec) == 0 {
+		reportRemoteCoverage(b, bridgedHarnesses(hosts), ok, warn)
 	}
 	if cfg.Wake.Sockets != nil && !*cfg.Wake.Sockets && len(cfg.Wake.Exec) == 0 {
 		// NEITHER ROUTE. The operator switched the sockets off and configured
@@ -518,7 +524,7 @@ func checkWakeRoutes(dir string, b *boardView, ok reportFn, warn fixFn) {
 		// nothing anywhere said so. A health check that confirms you wrote some
 		// configuration, without asking what it covers, is the same failure as
 		// a wake that reports success and reaches nobody.
-		reportWakeCoverage(cfg.Wake.Exec, b, dir, ok, warn)
+		reportWakeCoverage(cfg.Wake.Exec, b, hosts, dir, ok, warn)
 		return
 	}
 	warn("no wake command is configured, so the only route is best effort",
@@ -528,6 +534,106 @@ func checkWakeRoutes(dir string, b *boardView, ok reportFn, warn fixFn) {
 			"for its human, which is what an unattended fleet runs in. Nothing "+
 			"will report a wake that was held. Add a [wake.exec.<harness>] block "+
 			"to "+filepath.Join(dir, "dibs.toml")+" for a route this daemon can confirm")
+}
+
+// checkJoinedWakeRoutes is the wake check on a machine whose board is served
+// elsewhere. The HUB's wake configuration is on the hub, and this used to
+// say only that; but this machine's own agents are woken by this machine's
+// [wake.exec], run by `dibs host-bridge` (docs/NETWORK.md §5), and that is
+// configured here and can be checked here: the entries exist, and a bridge
+// is attached for this host.
+func checkJoinedWakeRoutes(dir string, b *boardView, hosts []engine.HostBridgeInfo, ok reportFn, warn fixFn) {
+	routes := 0
+	if cfg, err := boardconfig.Load(dir); err == nil {
+		routes = len(cfg.Wake.Exec)
+	}
+	attached := false
+	for _, h := range hosts {
+		if h.Host == hostID() {
+			attached = true
+		}
+	}
+	okMsg, warnMsg, fix := joinedWakeAdvice(routes, attached, b.Node, dir)
+	if okMsg != "" {
+		ok(okMsg)
+	}
+	if warnMsg != "" {
+		warn(warnMsg, fix)
+	}
+}
+
+// joinedWakeAdvice is the decision checkJoinedWakeRoutes reports: what is
+// true of this machine's routes, and what would make the hub able to wake
+// its agents. The hub's own coverage is still the hub's to report, and the
+// advice says where. Split from the fetches so it can be tested without a
+// daemon: the fetches are the caller's, because a check that called the
+// network from inside was once measured against the developer's live board.
+func joinedWakeAdvice(routes int, attached bool, node, dir string) (okMsg, warnMsg, fix string) {
+	toml := filepath.Join(dir, "dibs.toml")
+	switch {
+	case routes > 0 && attached:
+		return fmt.Sprintf("this board is served by another daemon (node %s); %d wake command(s) in %s "+
+			"reach this machine's agents through the host bridge attached for it", node, routes, toml), "", ""
+	case routes > 0:
+		return "", fmt.Sprintf("this board is served by another daemon (node %s), and no host bridge is "+
+				"attached for this machine, so the %d wake command(s) in %s never run: the hub cannot "+
+				"wake an agent here", node, routes, toml),
+			"run `dibs host-bridge` with the same DIBS_ADDR and DIBS_DIR, and keep it running; the " +
+				"hub's own coverage is reported by `dibs doctor` on the machine that runs the daemon"
+	default:
+		return "", fmt.Sprintf("this board is served by another daemon (node %s), and %s has no [wake.exec] "+
+				"entry, so agents on this machine cannot be woken: the hub's own commands run on the hub", node, toml),
+			"add a [wake.exec.<harness>] block to " + toml + " (docs/CONFIGURATION.md) and run `dibs host-bridge`; " +
+				"the hub's own coverage is reported by `dibs doctor` on the machine that runs the daemon"
+	}
+}
+
+// attachedHosts is what the hub reports through GET /api/hosts: the bridges
+// attached now and the harnesses each can start. Empty when it cannot say.
+// Fetched by doctor itself and passed down, never from inside a check.
+func attachedHosts() []engine.HostBridgeInfo {
+	var out struct {
+		Hosts []engine.HostBridgeInfo `json:"hosts"`
+	}
+	if err := get("/api/hosts", &out); err != nil {
+		return nil
+	}
+	return out.Hosts
+}
+
+// bridgedHarnesses is host id -> the harnesses that host's bridge can start.
+func bridgedHarnesses(hosts []engine.HostBridgeInfo) map[string]map[string]bool {
+	out := map[string]map[string]bool{}
+	for _, h := range hosts {
+		set := map[string]bool{}
+		for _, harness := range h.Harnesses {
+			set[strings.ToLower(harness)] = true
+		}
+		out[h.Host] = set
+	}
+	return out
+}
+
+// reportAttachedBridges says which machines have a bridge attached, by the
+// name the fleet knows them by.
+func reportAttachedBridges(hosts []engine.HostBridgeInfo, ok reportFn) {
+	if len(hosts) == 0 {
+		return
+	}
+	loadSupgangPeers()
+	names := make([]string, 0, len(hosts))
+	for _, h := range hosts {
+		name := supgangNames[h.Host]
+		if name == "" {
+			name = h.Host
+			if len(name) > 8 {
+				name = name[:8]
+			}
+		}
+		names = append(names, name+" ("+strings.Join(h.Harnesses, ", ")+")")
+	}
+	ok(fmt.Sprintf("%d host bridge(s) attached, running their own [wake.exec] for their agents: %s",
+		len(hosts), strings.Join(names, ", ")))
 }
 
 // servedFromHere reports whether the board with node id node is the one the
@@ -1353,14 +1459,24 @@ func isJoinedBoard(dir string) bool {
 	for _, own := range []string{
 		"node_id", "ledger.jsonl", "key", "blobs", "coordinator.claim", "out",
 		"tls-key.pem", "admin.hash",
-		// dibs.toml is what `dibs configure` writes for a board of ITS OWN, and
-		// a joining directory has no daemon to configure. Without it, the
-		// ordinary output of the wizard, local.secret beside dibs.toml, read as
-		// a join the moment the ledger went missing: exactly the configured
-		// board whose loss most deserves reporting.
-		"dibs.toml",
 	} {
 		if _, err := os.Stat(filepath.Join(dir, own)); err == nil {
+			return false
+		}
+	}
+	// dibs.toml is what `dibs configure` writes for a board of ITS OWN, and
+	// the ordinary output of the wizard, local.secret beside dibs.toml, once
+	// read as a join the moment the ledger went missing: exactly the
+	// configured board whose loss most deserves reporting. But a joined
+	// directory has a dibs.toml of its own now, holding the tables a bridge
+	// reads for itself, `[wake] sockets` and the `[wake.exec]` that `dibs
+	// host-bridge` runs (docs/NETWORK.md §5). What tells them apart is the
+	// one setting every daemon needs and no bridge uses: `addr`, the address
+	// the wizard always writes. A file that does not parse is read as a
+	// board's, because a loss is the thing this exists to report.
+	if _, err := os.Stat(filepath.Join(dir, "dibs.toml")); err == nil {
+		cfg, err := boardconfig.Load(dir)
+		if err != nil || cfg.Addr != "" {
 			return false
 		}
 	}
@@ -1395,7 +1511,9 @@ var suggestedWake = map[string]string{
 // something anybody expects to wake; counting it as uncovered would report a
 // fault on every correctly configured board, and a check that cries wolf is
 // one people stop reading.
-func reportWakeCoverage(exec map[string]boardconfig.WakeExec, b *boardView, dir string, ok reportFn, warn fixFn) {
+func reportWakeCoverage(
+	exec map[string]boardconfig.WakeExec, b *boardView, hosts []engine.HostBridgeInfo, dir string, ok reportFn, warn fixFn,
+) {
 	have := map[string]bool{}
 	for h := range exec {
 		have[strings.ToLower(h)] = true
@@ -1410,7 +1528,7 @@ func reportWakeCoverage(exec map[string]boardconfig.WakeExec, b *boardView, dir 
 			"coverage is unknown)", len(exec)))
 		return
 	}
-	covered, missing := wakeCoverage(b, have)
+	covered, missing := wakeCoverage(b, have, bridgedHarnesses(hosts))
 	total := covered
 	for _, n := range missing {
 		total += n
@@ -1471,8 +1589,8 @@ func reportWakeCoverage(exec map[string]boardconfig.WakeExec, b *boardView, dir 
 				strings.Join(dirs, ", ") + ". If a worktree was removed, the agent " +
 				"has nothing to be resumed into and the row is history. If the agent " +
 				"is on another computer, nothing in this file can reach it: a wake " +
-				"command would have to run over there, so run a bridge on that " +
-				"machine and configure [wake.exec] in ITS dibs.toml"
+				"command would have to run over there, so configure [wake.exec] in " +
+				"THAT machine's dibs.toml and run `dibs host-bridge` there"
 		}
 	}
 	warn(fmt.Sprintf("%d of %d persistent agent(s) have no wake route: %s",
@@ -1564,7 +1682,9 @@ func boardOrNil() *boardView {
 // Split from the reporting because the counting is the part with the rules in
 // it, and a function that both decides and renders is one nobody can test
 // either half of.
-func wakeCoverage(b *boardView, have map[string]bool) (covered int, missing map[string]int) {
+func wakeCoverage(
+	b *boardView, have map[string]bool, bridged map[string]map[string]bool,
+) (covered int, missing map[string]int) {
 	missing = map[string]int{}
 	for _, a := range b.Agents {
 		if a.Kind != "persistent" || !wakeable(a) {
@@ -1588,7 +1708,7 @@ func wakeCoverage(b *boardView, have map[string]bool) (covered int, missing map[
 		// A worktree that has been removed is the local way to reach that, and
 		// it is ordinary here. An agent on ANOTHER COMPUTER is the other, and
 		// there the hub can do nothing about it at all: see docs/NETWORK.md §5.
-		if have[h] && a.Resumable && wakeDirHere(a) {
+		if wakeCovered(a, h, have, bridged) {
 			covered++
 			continue
 		}
@@ -1611,6 +1731,62 @@ func wakeCoverage(b *boardView, have map[string]bool) (covered int, missing map[
 		missing[h]++
 	}
 	return covered, missing
+}
+
+// reportRemoteCoverage says, for the agents on OTHER machines, whether their
+// machine's bridge can reach them, on a hub whose own table has no commands
+// (with commands, reportWakeCoverage counts them alongside the local ones).
+// Silent when no agent is elsewhere.
+func reportRemoteCoverage(b *boardView, bridged map[string]map[string]bool, ok reportFn, warn fixFn) {
+	if b == nil {
+		return
+	}
+	covered := 0
+	missing := map[string]int{}
+	for _, a := range b.Agents {
+		if a.Kind != "persistent" || !wakeable(a) || a.Agent == nil || a.Agent.HostID == "" || a.Agent.HostID == b.HostID {
+			continue
+		}
+		h := strings.ToLower(a.Agent.Harness)
+		if wakeCovered(a, h, nil, bridged) {
+			covered++
+			continue
+		}
+		if h == "" {
+			h = "(no harness recorded)"
+		}
+		missing[h+" (on "+hostLabel(a)+")"]++
+	}
+	if covered > 0 {
+		ok(fmt.Sprintf("%d agent(s) on other machines have a wake route through their machines' bridges", covered))
+	}
+	if len(missing) > 0 {
+		names := make([]string, 0, len(missing))
+		for h, n := range missing {
+			names = append(names, fmt.Sprintf("%s (%d)", h, n))
+		}
+		sort.Strings(names)
+		warn(fmt.Sprintf("%d agent(s) on other machines have no wake route: %s", len(names), strings.Join(names, ", ")),
+			"on each of those machines, put a [wake.exec.<harness>] block in the board's data directory and run "+
+				"`dibs host-bridge` there; a bridge that is attached but cannot start the harness, or an agent "+
+				"with no resumable thread, is not a route either")
+	}
+}
+
+// wakeCovered is the covered half of wakeCoverage: a command here for the
+// harness, a thread to name, and the directory on this machine; OR ITS OWN
+// MACHINE'S BRIDGE CAN. An agent on another computer is covered when a bridge
+// is attached for that host and states its harness: the command is that
+// machine's, and so is the check that it exists. The thread is required
+// either way.
+func wakeCovered(a boardAgent, h string, have map[string]bool, bridged map[string]map[string]bool) bool {
+	if !a.Resumable {
+		return false
+	}
+	if have[h] && wakeDirHere(a) {
+		return true
+	}
+	return a.Agent != nil && bridged[a.Agent.HostID][h]
 }
 
 // supgangNames is host id -> the computer's signed Supgang name, filled once

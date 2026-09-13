@@ -365,6 +365,19 @@ func TestADamagedLocalBoardIsNotMistakenForAJoin(t *testing.T) {
 			"not recognised as a join")
 	}
 
+	// A joined directory holds a dibs.toml of its own now: the [wake.exec]
+	// that `dibs host-bridge` runs there. That is not the wizard's output
+	// (no addr) and not a board that lost its ledger.
+	bridged := t.TempDir()
+	for name, body := range map[string]string{"local.secret": strings.Repeat("a", 64), "dibs.toml": "[wake.exec.codex]\nargv = [\"codex\", \"{thread}\"]\n"} {
+		if err := os.WriteFile(filepath.Join(bridged, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !isJoinedBoard(bridged) {
+		t.Error("a joined directory holding only its own wake table was read as a board that lost its ledger")
+	}
+
 	// The real join case still is one.
 	clean := t.TempDir()
 	if err := os.WriteFile(filepath.Join(clean, "local.secret"),

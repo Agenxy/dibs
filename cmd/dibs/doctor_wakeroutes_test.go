@@ -29,7 +29,7 @@ func TestDoctorSaysWhichWakeRoutesExist(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		checkWakeRoutes(dir, board,
+		checkWakeRoutes(dir, board, nil,
 			func(s string) { oks = append(oks, s) },
 			func(s, fix string) { warns = append(warns, s+" || "+fix) })
 		return
