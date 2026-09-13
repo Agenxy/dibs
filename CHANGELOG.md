@@ -244,6 +244,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Windows builds, vets, and runs the pure packages' tests in CI.** (#11)
+  "Not supported and not being worked on" became "nobody has tried" became a
+  runner: `ubuntu-latest` runs the whole suite under the race detector and
+  `windows-latest` builds, vets and runs the state machine, ledger, scorer and
+  liveness parsers. To get there the daemon's file lock is `LockFileEx` on
+  Windows behind the same three calls `flock` answers on unix, the liveness
+  poller asks the kernel whether a pid still runs, and the tests that send
+  signals carry the unix build tag. The README says what that is and is not:
+  a build, not a support statement; no Windows harness has registered an
+  agent.
+
 - **The daemon no longer needs read access to your checkouts.** (#19)
   Matching mined the repository itself, so `dibd` needed to read every tree
   its agents work in, and on macOS a daemon started by launchd is not granted

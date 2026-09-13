@@ -1040,20 +1040,27 @@ released Mac archive and the Homebrew cask are arm64: an Intel Mac has to build
 from source, which works, and `go install` covers the two Go binaries. Linux
 ships both amd64 and arm64.
 
-It compiles for Linux and arm64 on every push: the cross-compile matrix is part
-of CI, and most of Dibs is ordinary portable Go with no reason to care. The
-part that does is `internal/liveness`, which works out whether a spawned agent is
-still working by inspecting other processes. It shells out to `ps` using BSD
-spellings (`ps eww -p` for a process's environment, `ps -axo` for the table)
-whose GNU equivalents differ. Nobody has run it on a GNU userland, so supervision
-is the piece most likely to need work there; coordination: agents, claims, mail,
-the board: depends on none of it.
+It compiles for Linux and arm64 on every push, and since September 2026 the
+whole suite also RUNS on an ubuntu runner in CI, under the race detector: that
+is the answer to "does it work on Linux", and the first run found two things
+(a repository-identity cache that trusted inode numbers ext4 reuses, and a
+`ps` column that rounds processor time to whole seconds), both fixed. Most of
+Dibs is ordinary portable Go with no reason to care. The part that does is
+`internal/liveness`, which works out whether a spawned agent is still working
+by inspecting other processes: on Linux it reads `/proc`, on macOS it shells
+out to `ps` with BSD spellings. What the Linux job does not cover is the
+desktop half: `notify-send` is the Linux notifier and it is exercised against
+a stub in CI, not a notification daemon. Coordination (agents, claims, mail,
+the board) depends on none of that.
 
-Windows is not supported and is not being worked on.
+Windows builds and vets, and the pure packages (the state machine, the ledger,
+the scorer, the liveness parsers) run on a windows runner in CI. Nothing else
+has been tried there: the daemon's lock is `LockFileEx`, liveness asks the
+kernel whether a pid still runs, and no Windows harness has registered an
+agent. It is a build, not a support statement.
 
-Patches for Linux are wanted, and [CONTRIBUTING.md](CONTRIBUTING.md) says what
-evidence they need. Filing an issue with what `ps eww -p <pid>` prints on your
-distribution is already useful.
+Patches for either are wanted, and [CONTRIBUTING.md](CONTRIBUTING.md) says what
+evidence they need.
 
 ## Design
 
