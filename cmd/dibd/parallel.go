@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/agenxy/dibs/internal/paths"
 )
@@ -83,7 +82,7 @@ func claimHostSlot(addr, scheme, dir string, allowed bool) (func(), error) {
 	if err != nil {
 		return func() {}, err
 	}
-	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := paths.LockExclusive(lockFile, false); err != nil {
 		_ = lockFile.Close()
 		return func() {}, fmt.Errorf("another dibd already runs on %s (flock %s): %w",
 			dir, lockPath, err)
