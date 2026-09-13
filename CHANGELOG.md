@@ -254,6 +254,35 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The registry entry carries an install path.** (#44) `io.github.Agenxy/dibs`
+  had a name, a description and a repository and no `packages`, so an agent
+  that found Dibs in the MCP registry had nothing that said what to fetch,
+  and took its instructions from whichever aggregator outranked the
+  repository. The release now packs the binaries GoReleaser built into an
+  MCP Bundle (`tools/mcpbundle`: manifest 0.2, `server.type: binary`, the
+  stdio bridge launched from inside the bundle), attaches `dibs.mcpb` and
+  its digest to the release, and the registry job stamps a `packages` entry
+  of type `mcpb` with the asset URL and `fileSha256` into `server.json`. The
+  digest is computed from the bundle as attached, not read from the digest
+  file beside it, and a digest file that disagrees refuses the publish. A
+  release without the bundle publishes without the block and says so; a
+  release that could not be examined fails the stamp rather than publishing
+  the block's absence. The bundle is macOS on Apple silicon only, which is
+  the only Mac build Dibs ships: a manifest selects a binary by operating
+  system and not by architecture, so a Linux entry would hand every Linux
+  host one build, and the compatibility list names darwin and nothing else.
+  It cannot name an architecture, so an Intel Mac is told by the description
+  and nowhere a manifest can enforce. Linux and Windows use the release
+  archives. Validated against the official `mcpb` CLI on a local snapshot.
+  stdio bridge launched from inside the bundle, macOS on Apple silicon and
+  Linux amd64 selected by `platform_overrides`), attaches `dibs.mcpb` and its
+  digest to the release, and the registry job stamps a `packages` entry of
+  type `mcpb` with the asset URL and `fileSha256` into `server.json`. A
+  release without the asset publishes without the block and says so; a
+  stale hash is worse than no package. Linux arm64 is not in the bundle,
+  because a manifest selects by operating system and not by architecture,
+  and the description says so rather than handing an arm64 host an amd64
+  binary. Validated against the official `mcpb` CLI on a local snapshot.
 - **A Linux notifier: the operator can be asked, not only shown.** (#63)
   `notify.Available()` was `runtime.GOOS == "darwin"`, so on Linux a request
   that needed a person (a role grant, a mailbox adoption) waited on the board
