@@ -229,6 +229,7 @@ func (d *diagnosis) run(verbose bool) error {
 	checkPanelBuild(client, sec, ok, warn, d.prose)
 	checkMatching(client, sec, ok, warn)
 	checkWakeRoutes(dir, boardOrNil(), ok, warn)
+	checkHubAdvertisement(dir, boardOrNil(), ok, warn)
 	checkBoardName(dir, ok, warn)
 	checkHooks(client, sec, ok, bad, warn)
 	checkLedgerAndBoard(dir, ok, bad, warn)
@@ -1620,6 +1621,7 @@ var (
 	supgangNames     map[string]string
 	supgangNamesOnce sync.Once
 	supgangSelf      string
+	supgangSelfPeer  supgang.Peer
 )
 
 func loadSupgangPeers() {
@@ -1635,6 +1637,7 @@ func loadSupgangPeers() {
 			return
 		}
 		supgangSelf = self.NodeID
+		supgangSelfPeer = self
 		supgangNames[self.NodeID] = self.Name
 		for _, p := range peers {
 			supgangNames[p.NodeID] = p.Name
@@ -1647,6 +1650,72 @@ func loadSupgangPeers() {
 func localSupgangNodeID() string {
 	loadSupgangPeers()
 	return supgangSelf
+}
+
+// checkHubAdvertisement says whether the fleet can verify this hub's
+// certificate without a person comparing fingerprints.
+//
+// A hub off loopback serves a certificate it made, and a joining machine
+// trusts what it recorded. Supgang carries, signed by this computer, the key
+// that certificate is issued under (ADR 0002): a hub that advertises it is
+// joined with `dibs mcp-config --board <this computer>` and nothing else; a
+// hub that does not, or advertises a stale key, sends every joiner to the
+// ceremony, or to a refusal. Only the machine that serves the board can
+// answer, so a joined data directory is passed over, as the wake check is.
+func checkHubAdvertisement(dir string, b *boardView, ok reportFn, warn fixFn) {
+	if b == nil || !servedFromHere(dir, b.Node) {
+		return
+	}
+	scheme, _, err := resolveTransport(dir)
+	if err != nil || scheme != "https" {
+		return // loopback, or plaintext by choice: nothing is pinned
+	}
+	pin, err := servedKeyPin(dir)
+	if err != nil {
+		return // fingerprint reports that on its own
+	}
+	loadSupgangPeers()
+	if msg, fix := hubAdvertisementDrift(supgangSelfPeer, port(addr()), pin); msg != "" {
+		warn(msg, fix)
+	} else if supgangSelfPeer.ServicesKnown {
+		ok("Supgang advertises this board's key, so joining machines verify its certificate without a ceremony")
+	}
+}
+
+// hubAdvertisementDrift compares what Supgang says this computer's Dibs
+// serves with what it serves. Empty when they agree, or when the Supgang
+// here carries no advertisements at all: an older Supgang is not a hub that
+// forgot to advertise, and telling it to run a verb it lacks helps nobody.
+func hubAdvertisementDrift(self supgang.Peer, servedPort, servedPin string) (msg, fix string) {
+	if !self.ServicesKnown {
+		return "", ""
+	}
+	fix = "on this machine: " + advertiseCommand(servedPort, servedPin)
+	svc, ok := self.Service(supgang.ServiceName)
+	if !ok {
+		return "this board's key is not advertised through Supgang, so a machine joining it " +
+			"must compare certificate fingerprints by hand", fix
+	}
+	if err := svc.Valid(); err != nil {
+		return "this board's Supgang advertisement is not one a joining machine can use: " + err.Error(), fix
+	}
+	if strconv.Itoa(svc.Port) != servedPort {
+		return fmt.Sprintf("Supgang advertises this board's Dibs on port %d, and the daemon listens on %s: "+
+			"a joining machine would dial the wrong port", svc.Port, servedPort), fix
+	}
+	if svc.KeyPin != servedPin {
+		return fmt.Sprintf("Supgang advertises this board's key as %s..., and the daemon serves %s...: "+
+			"a joining machine would refuse the certificate as an impostor's", short(svc.KeyPin), short(servedPin)), fix
+	}
+	return "", ""
+}
+
+// short is the first sixteen characters of a pin, or all of it.
+func short(s string) string {
+	if len(s) > 16 {
+		return s[:16]
+	}
+	return s
 }
 
 // hostLabel names the machine an agent is on: its Supgang name when its host

@@ -46,9 +46,12 @@ agent-safe (agent-scoped or public, fine to run from any agent):
   dibs verify [path]      verify ledger hash chain (--json)
   dibs trust <host:port>  accept a remote daemon's certificate, so this machine
                            can reach a board on another one (compare against
-                           dibs fingerprint run over there before relying on it)
-  dibs fingerprint        this daemon's certificate fingerprint, to read out to
-                           a machine that is trusting it
+                           dibs fingerprint run over there before relying on it,
+                           or pass --pin <hex>, the key the hub advertised
+                           through Supgang, and the comparison is made here)
+  dibs fingerprint        this daemon's certificate fingerprint and key pin, to
+                           read out to a machine that is trusting it, with the
+                           supgang advertise command that lets joiners verify it
   dibs doctor             find what is quietly broken: stale harness secrets,
                            matching that is off or still indexing, a ledger that
                            will not replay. Names the fix, not just the fault

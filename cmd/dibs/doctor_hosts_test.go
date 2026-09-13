@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/agenxy/dibs/internal/supgang"
 )
 
 // A remote agent is named by the machine it is on, the way the fleet names
@@ -31,6 +33,33 @@ func TestDoctorNamesTheMachineARemoteAgentIsOnThroughSupgang(t *testing.T) {
 	_, missing := wakeCoverage(boardOf(known, unknown), map[string]bool{"codex": true})
 	if missing["codex (on MacSolis)"] != 1 || missing["codex (on laptop.local)"] != 1 {
 		t.Errorf("missing = %v, want each remote agent bucketed by its machine's name", missing)
+	}
+}
+
+// A hub's doctor compares what Supgang says this computer's Dibs serves
+// with what it serves: nothing advertised, the wrong port, a stale key, each
+// with the verb that mends it; agreement is a tick; an older Supgang that
+// carries no advertisements at all is left alone, because a hub that did not
+// advertise and a Supgang that cannot are different things.
+func TestDoctorSaysWhetherSupgangAdvertisesThisHub(t *testing.T) {
+	pin := strings.Repeat("ab", 32)
+	self := supgang.Peer{ServicesKnown: true, Services: []supgang.Service{{Name: "dibs", Port: 4777, KeyPin: pin}}}
+	if msg, _ := hubAdvertisementDrift(self, "4777", pin); msg != "" {
+		t.Errorf("an advertised hub was reported: %q", msg)
+	}
+	if msg, _ := hubAdvertisementDrift(supgang.Peer{}, "4777", pin); msg != "" {
+		t.Errorf("a Supgang without advertisements was told to advertise: %q", msg)
+	}
+	cases := map[string]supgang.Peer{
+		"by hand":        {ServicesKnown: true},
+		"wrong port":     {ServicesKnown: true, Services: []supgang.Service{{Name: "dibs", Port: 4790, KeyPin: pin}}},
+		"as an impostor": {ServicesKnown: true, Services: []supgang.Service{{Name: "dibs", Port: 4777, KeyPin: strings.Repeat("cd", 32)}}},
+	}
+	for want, peer := range cases {
+		msg, fix := hubAdvertisementDrift(peer, "4777", pin)
+		if !strings.Contains(msg, want) || !strings.Contains(fix, "supgang advertise dibs 4777 --key-pin "+pin) {
+			t.Errorf("%s: msg=%q fix=%q", want, msg, fix)
+		}
 	}
 }
 

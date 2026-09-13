@@ -16,8 +16,8 @@
  *
  * Run: DIBS_ALLOW_PARALLEL=1 DIBD=bin/dibd DIBS=bin/dibs bun internal/mcp/e2e/remote_e2e.ts
  */
-import { mkdtempSync, rmSync, mkdirSync, copyFileSync, chmodSync, readFileSync, writeFileSync } from "node:fs"
-import { networkInterfaces, tmpdir } from "node:os"
+import { mkdtempSync, rmSync, mkdirSync, copyFileSync, chmodSync, readFileSync, writeFileSync, existsSync } from "node:fs"
+import { homedir, networkInterfaces, tmpdir } from "node:os"
 import { join } from "node:path"
 import { daemonReady } from "./ready.ts"
 
@@ -113,6 +113,18 @@ const sha = (s: string) => (s.match(/[0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){31}/) ?? 
 check("the fingerprint trust printed is the one the hub prints", sha(trust.out) !== "" && sha(trust.out) === sha(fp.out),
   `trust: ${sha(trust.out) || "none"}  hub: ${sha(fp.out) || "none"}`)
 
+// The pin path: what the hub would advertise through Supgang (`dibs
+// fingerprint` prints it) is what a joiner checks the served certificate
+// against. The right pin records; a wrong one is refused and records nothing.
+const pin = (fp.out.match(/key pin ([0-9a-f]{64})/) ?? ["", ""])[1]
+check("`dibs fingerprint` on the hub prints the key pin to advertise", pin.length === 64 && fp.out.includes("supgang advertise dibs"), fp.out.trim())
+const pinDir = join(clientDir, "pinned")
+const pinned = run([dibsBin, "trust", ADDR, "--pin", pin], { DIBS_DIR: pinDir })
+check("`dibs trust --pin` with the hub's own key pin records the certificate", pinned.code === 0 && existsSync(join(pinDir, "trusted-certs.pem")), pinned.out.trim())
+const wrongDir = join(clientDir, "wrong-pin")
+const wrong = run([dibsBin, "trust", ADDR, "--pin", "00".repeat(32)], { DIBS_DIR: wrongDir })
+check("`dibs trust --pin` with another key refuses and records nothing", wrong.code !== 0 && !existsSync(join(wrongDir, "trusted-certs.pem")) && wrong.out.includes("not that board"), wrong.out.trim())
+
 // ── one repository, cloned on both machines ──────────────────────────────
 const git = (cwd: string, ...args: string[]) => {
   const r = run(["git", ...args], {
@@ -207,19 +219,46 @@ for (const [b, tok] of [[remote, remoteReg.token], [hub, hubReg.token]] as const
 const full = await hub.call("check_in", { token: hubReg.token, detail: true })
 const rows: Record<string, any> = {}
 for (const a of full.board?.agents ?? []) rows[a.id] = a
-const clientHost = readFileSync(join(clientDir, "host_id"), "utf8").trim()
+// On a computer that is a Supgang member, every bridge and the daemon carry
+// that computer's Supgang node id (#118) and the generated host_id file is
+// never written; elsewhere the file is the identity. Both machines of this
+// suite are this one computer, so both then assert the same id.
+function supgangNodeId(): string {
+  for (const bin of ["supgang", join(homedir(), ".local/bin/supgang"), "/usr/local/bin/supgang", "/opt/homebrew/bin/supgang"]) {
+    try {
+      const r = Bun.spawnSync({ cmd: [bin, "--json", "status"], stdout: "pipe", stderr: "pipe" })
+      if (r.exitCode !== 0) continue
+      const id = JSON.parse(r.stdout.toString()).node_id
+      if (typeof id === "string" && id.length === 64) return id
+    } catch { /* not this one */ }
+  }
+  return ""
+}
+const supgangId = supgangNodeId()
+const clientHost = existsSync(join(clientDir, "host_id")) ? readFileSync(join(clientDir, "host_id"), "utf8").trim() : supgangId
+check("the joining bridge asserted a host id (its own file, or this computer's Supgang identity)", clientHost.length > 0,
+  `file: ${existsSync(join(clientDir, "host_id"))}  supgang: ${supgangId || "none"}`)
 check("the joining bridge generated a host id beside the secret it was given", clientHost.length > 0)
 check("the remote agent's row carries the host id its bridge asserted", rows[remoteReg.agent_id]?.agent?.host_id === clientHost,
   `row: ${rows[remoteReg.agent_id]?.agent?.host_id}  file: ${clientHost}  (${Object.keys(rows).length} rows${full.raw ? ", raw: " + String(full.raw).slice(0, 120) : ""})`)
-check("the hub agent's row carries the hub's node id", rows[hubReg.agent_id]?.agent?.host_id === hubNode,
+const hubHost = supgangId || hubNode
+check("the hub agent's row carries the hub's identity (its Supgang node id, else its ledger node id)", rows[hubReg.agent_id]?.agent?.host_id === hubHost,
   `row: ${rows[hubReg.agent_id]?.agent?.host_id}  node: ${hubNode}`)
-check("the two agents are on two different machines, as far as the board knows", clientHost !== hubNode)
+// Two data directories on one computer: without Supgang each bridge invents
+// a host id and the board sees two machines; on a Supgang member both carry
+// the computer's one identity and the board, correctly, sees one.
+check(supgangId ? "on a Supgang member both agents carry the one identity this computer has" : "the two agents are on two different machines, as far as the board knows",
+  supgangId ? clientHost === hubHost : clientHost !== hubNode, `client: ${clientHost}  hub: ${hubHost}`)
 
 // ── claims across hosts: NETWORK.md §3, through the real path ────────────
 const shared = "/tmp/dibs-remote-e2e/shared.go"
 const c1 = await remote.call("claim", { token: remoteReg.token, path: shared, mode: "exclusive" })
 const c2 = await hub.call("claim", { token: hubReg.token, path: shared, mode: "exclusive" })
-check("the same absolute path on two machines is not a collision", c1.granted === true && c2.granted === true,
+// On a Supgang member both bridges are, truthfully, one machine: the same
+// absolute path then IS the same file, and the board says so.
+check(supgangId ? "the same absolute path on one machine is a collision, whichever data directory claims it"
+  : "the same absolute path on two machines is not a collision",
+  c1.granted === true && c2.granted === !supgangId,
   `remote: ${JSON.stringify(c1).slice(0, 160)}  hub: ${JSON.stringify(c2).slice(0, 160)}`)
 
 const r1 = await remote.call("claim", { token: remoteReg.token, path: join(remoteRepo, "probe.go"), mode: "exclusive" })
