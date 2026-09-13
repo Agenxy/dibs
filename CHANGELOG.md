@@ -244,11 +244,13 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- **Windows builds, vets, and runs the pure packages' tests in CI.** (#11)
-  "Not supported and not being worked on" became "nobody has tried" became a
-  runner: `ubuntu-latest` runs the whole suite under the race detector and
-  `windows-latest` builds, vets and runs the state machine, ledger, scorer and
-  liveness parsers. To get there the daemon's file lock is `LockFileEx` on
+- **Windows builds and vets in CI, and the first run says what does not
+  hold.** (#11) "Not supported and not being worked on" became "nobody has
+  tried" became a runner: `ubuntu-latest` runs the whole suite under the race
+  detector and `windows-latest` builds, vets and runs the scorer and the
+  liveness parsers. The state machine, the ledger and the board config fail
+  there on path separators and file semantics, which is now written down as
+  the Windows work rather than guessed at. To get there the daemon's file lock is `LockFileEx` on
   Windows behind the same three calls `flock` answers on unix, the liveness
   poller asks the kernel whether a pid still runs, and the tests that send
   signals carry the unix build tag. The README says what that is and is not:
