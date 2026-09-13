@@ -36,7 +36,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ends. `dibs doctor` on the hub lists attached bridges and counts a remote
   agent whose bridge can start its harness as covered; on the joined machine
   it names whichever half is missing, the entries or the attachment.
-  Exercised end to end by the two-host suite.
+  Exercised end to end by the two-host suite. `dibs host-bridge --service`
+  writes the launchd or systemd unit that keeps the bridge running across
+  logins and reboots, carrying the join recipe's variables and nothing else.
 
 ### Changed
 

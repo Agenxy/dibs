@@ -45,13 +45,33 @@ import (
 // holds the secret could send another one, and an argv that delivers text
 // into a harness should never deliver text a hub composed.
 func hostBridge(args []string) error {
-	if len(args) > 0 {
-		fmt.Println("usage: dibs host-bridge")
+	// Every argument is read before anything is decided: `--service --help`
+	// must print help and write nothing, the rule for every command that
+	// writes outside the data directory.
+	service, help := false, false
+	for _, a := range args {
+		switch a {
+		case "--service":
+			service = true
+		case "-h", "--help", "help":
+			help = true
+		default:
+			return fmt.Errorf("`dibs host-bridge` takes --service or nothing, and %q is not either", a)
+		}
+	}
+	if help {
+		fmt.Println("usage: dibs host-bridge [--service]")
 		fmt.Println()
 		fmt.Println("  Runs this machine's own [wake.exec] commands for its agents on a board")
 		fmt.Println("  served elsewhere. Set DIBS_ADDR and DIBS_DIR as `dibs mcp-config --board`")
 		fmt.Println("  printed; the [wake.exec] table is read from that DIBS_DIR's dibs.toml.")
+		fmt.Println()
+		fmt.Println("  --service writes a launchd/systemd unit that keeps the bridge running")
+		fmt.Println("  across logins and reboots, and prints the command to load it.")
 		return nil
+	}
+	if service {
+		return hostBridgeUnit()
 	}
 	if err := checkConfigReadable(); err != nil {
 		return err
