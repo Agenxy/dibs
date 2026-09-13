@@ -58,7 +58,7 @@ mise trust && mise install
 Then:
 
 ```bash
-task ci                   # THE gate: vet, lint, -race, build, 6 e2e suites + the
+task ci                   # THE gate: vet, lint, -race, build, 7 e2e suites + the
                           # sidecar contract, and the SPEC §17 coverage floor.
                           # Includes cross-compilation to all three release
                           # targets and govulncheck.

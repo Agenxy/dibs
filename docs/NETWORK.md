@@ -9,7 +9,11 @@ supersedes it with decisions.
 Status: built so far are §4's liveness split, §3 in full (both the portable
 repository rule and the host key), and §5's locality rule and its doctor check.
 The bridge generalisation and §6's proved identity are not built. Where a thing
-is already true it says so.
+is already true it says so. The two-host path is exercised end to end by
+`task test:remote` (`internal/mcp/e2e/remote_e2e.ts`): a hub bound to the
+machine's own LAN address, a second data directory joining it by the recipe
+`dibs mcp-config --board` prints, both bridges real, and both §3 rules checked
+through the transport rather than in the fold alone.
 
 One correction, kept rather than quietly edited out, because the reasoning was
 the error and not the sentence. An earlier version of this document deferred the

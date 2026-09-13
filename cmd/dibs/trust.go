@@ -51,22 +51,40 @@ func fingerprint(der []byte) string {
 	return b.String()
 }
 
+// ownCAFile is the signing certificate the daemon in this data directory made
+// for itself (cmd/dibd ensureSelfSignedCert), when this machine runs one.
+func ownCAFile() string { return filepath.Join(paths.DataDir(), "tls-ca.pem") }
+
 // trustedPool is the system roots plus every certificate this machine has been
-// told to trust, or nil when there are none to add.
+// told to trust, plus the CA its own daemon signs with, or nil when there is
+// nothing to add.
 //
 // Added to the SYSTEM pool rather than replacing it: a daemon fronted by a real
 // certificate must keep working, and a client that dropped the system roots
 // would refuse it.
+//
+// The daemon's own CA is trusted without a `dibs trust` step because the
+// machine that generated it is the one authority there is on it. A hub bound
+// to a LAN address serves TLS to everybody, its own agents included, and the
+// bridge on that machine refused the certificate it lives beside: every local
+// call failed with "the daemon was reached and the answer was not" until the
+// operator pinned their own daemon by hand, which the join recipe never
+// mentions because it is not a join. Found by the two-host e2e suite.
 func trustedPool() *x509.CertPool {
-	pemBytes, err := os.ReadFile(trustFile()) // #nosec G304 -- the daemon's own data directory
-	if err != nil {
+	pinned, pinErr := os.ReadFile(trustFile()) // #nosec G304 -- the daemon's own data directory
+	own, ownErr := os.ReadFile(ownCAFile())    // #nosec G304 -- the daemon's own data directory
+	if pinErr != nil && ownErr != nil {
 		return nil
 	}
 	pool, err := x509.SystemCertPool()
 	if err != nil || pool == nil {
 		pool = x509.NewCertPool()
 	}
-	if !pool.AppendCertsFromPEM(pemBytes) {
+	added := pinErr == nil && pool.AppendCertsFromPEM(pinned)
+	if ownErr == nil && pool.AppendCertsFromPEM(own) {
+		added = true
+	}
+	if !added {
 		return nil
 	}
 	return pool
