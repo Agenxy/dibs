@@ -204,6 +204,36 @@ without advancing the serial, a renamed json tag, anything that reports success
 while doing nothing) and its newest authorisation paths. Fix what it finds, run
 `task ci`, and go round again until a pass turns up nothing worth fixing.
 
+**Before the tag, re-run the harness survey**, because the harnesses move and the
+trackers that used to hold this ("recheck on release", issues #23, #25, #26, #27,
+#28, #31) were closed into this step. The checkouts live at `~/Desktop/harnesses`
+on the machine this was written on; `git fetch origin` each and read
+`origin/HEAD`, never the local branch. For each, the predicate that decides the
+row, and the rule that a capability in source is not a behaviour:
+
+- **Codex** (`openai/codex`): the executor is in main (`CoreHookMcpExecutor` in
+  `core/src/session/session.rs`), so the question is the SHIPPED build: install
+  `plugins/codex/hooks.json` in a project's `.codex/` and watch `dibs log` for a
+  `hook_poll` from a real session (0.153.4 fired nothing on 2026-09-05). Over
+  `url`, `features.mcp_2026_07_28 = true` alone negotiates `server/discover`
+  2026-07-28; `tools/list` only, no `resources/list` (2026-09-12).
+- **Claude Desktop**: the app's own client carries the 2026-07-28 codec; point it
+  at a scratch daemon (`DIBS_ALLOW_PARALLEL=1 DIBS_LOG_RPC=1 dibd -dir <tmp> -addr
+  127.0.0.1:47xx`) with the url form in `claude_desktop_config.json` and read the
+  handshake. Unmeasured as of 2026-09-12; the Code tab's engine speaks 2025-11-25.
+- **opencode**: `git grep 2026-07-28 origin/HEAD -- packages` outside tests;
+  empty as of 2026-09-12. The wake path (`plugins/opencode`) works.
+- **Hermes**: its `mcp` extra pins `mcp==2.0.0`, which implements 2026-07-28; what
+  a session negotiates is unmeasured. Run one against the scratch daemon.
+- **Pi**: `git grep -il modelcontextprotocol origin/HEAD -- packages/*/src`; a
+  lockfile hit is not an MCP client. None as of 2026-09-12.
+- **Gemini CLI**: `initialize` 2025-06-18 over `httpUrl`, hooks are `command`
+  only; `plugins/gemini-cli` covers it (2026-09-12).
+
+Update the survey table in `README.md` (re-date its introduction) and the rows
+in `WAKE-MECHANISMS.md` with what was MEASURED, and put the date on each. A row
+that was not re-measured keeps its old date, which is the honest state.
+
 **`task release VERSION=<the next version>` is the one step before the tag.**
 This used to name a literal `0.0.6`, which is the version already tagged: the
 command as written refuses, because a release that goes backwards would leave
