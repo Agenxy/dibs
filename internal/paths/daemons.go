@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 )
 
 // The host-wide register of running daemons.
@@ -114,12 +113,12 @@ func hostLock() (release func(), err error) {
 	// Blocking, not LOCK_NB: the critical section is a directory read and one
 	// small write, so waiting is measured in microseconds, and failing here
 	// because somebody else is mid-claim would reintroduce the race.
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	if err := LockExclusive(f, true); err != nil {
 		_ = f.Close()
 		return nil, err
 	}
 	return func() {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		Unlock(f)
 		_ = f.Close()
 	}, nil
 }
@@ -220,11 +219,11 @@ func held(path string) (bool, error) {
 		return false, err
 	}
 	defer func() { _ = f.Close() }()
-	switch err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); {
+	switch err := LockExclusive(f, false); {
 	case err == nil:
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		Unlock(f)
 		return false, nil
-	case errors.Is(err, syscall.EWOULDBLOCK): // EAGAIN: somebody holds it
+	case LockHeldElsewhere(err): // somebody holds it
 		return true, nil
 	default:
 		return false, err
@@ -289,7 +288,7 @@ func Claim(d Daemon, allowParallel bool) (release func(), err error) {
 		return nil, err
 	}
 	// Held for the process lifetime: this is what makes us observably alive.
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := LockExclusive(f, false); err != nil {
 		_ = f.Close()
 		return nil, fmt.Errorf("another process already holds %s: %w", path, err)
 	}
@@ -311,7 +310,7 @@ func Claim(d Daemon, allowParallel bool) (release func(), err error) {
 		return nil, err
 	}
 	return func() {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		Unlock(f)
 		_ = f.Close()
 		_ = os.Remove(path)
 	}, nil
