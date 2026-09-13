@@ -28,6 +28,7 @@ file → the default.**
 
 | Key | Default | What it decides |
 |---|---|---|
+| `name` | *(none)* | A hostname for this board, such as `dibs` or `board.lab`. [Remap](https://github.com/Agenxy/remap), the Agenxy name plane, routes it to the daemon (`remap set <name> http://127.0.0.1:4777/`; `dibs configure` offers to do this when Remap is installed), and the daemon accepts it as its own origin so the board works at `http://<name>/`. `dibs web` prints that link beside the address, and `dibs doctor` says when the name is set and Remap does not route it. |
 | `addr` | `127.0.0.1:4777` | What the daemon listens on. Set a LAN or tailnet address to serve agents on other machines; TLS is then arranged automatically and each machine must `dibs trust` the certificate once. Also `-addr`, `DIBS_ADDR`. |
 | `tls_cert` | *(auto)* | An explicit certificate, when you would rather supply one than have Dibs manage its own. |
 | `tls_key` | *(auto)* | Its key. Both or neither. |

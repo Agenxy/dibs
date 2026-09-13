@@ -36,6 +36,7 @@ import (
 // Written as <dir>/dibs.toml for people who want to get their hands dirty.
 type Config struct {
 	Addr              string            `toml:"addr"`               // listen address
+	Name              string            `toml:"name"`               // a hostname Remap routes to this board
 	TLSCert           string            `toml:"tls_cert"`           // explicit cert (else auto)
 	TLSKey            string            `toml:"tls_key"`            //
 	InsecurePlaintext bool              `toml:"insecure_plaintext"` // force plaintext off-loopback
@@ -457,7 +458,7 @@ func CheckCount(table, key string, raw int) error {
 // where those values live, and this does not claim otherwise.
 func (c Config) Validate() error {
 	for _, check := range []func() error{
-		c.validateAddr, c.validateTLS, c.validateLimits, c.validateMatch,
+		c.validateAddr, c.ValidateName, c.validateTLS, c.validateLimits, c.validateMatch,
 		c.validateSupervise, c.validateWake, c.validateRoles,
 	} {
 		if err := check(); err != nil {
@@ -1038,4 +1039,43 @@ func (e *UnknownSettingsError) Error() string {
 	return fmt.Sprintf("unknown setting(s) in dibs.toml: %s: check the spelling and the "+
 		"table they are under ([match], [limits]); nothing here took effect",
 		strings.Join(e.Keys, ", "))
+}
+
+// ValidateName refuses a `name` that is not a hostname. Exported because the
+// wizard checks an answer before handing it to Remap. The name is what
+// Remap (the Agenxy name plane) routes to this board and what the daemon
+// accepts as a browser origin, so it must be exactly a hostname: labels of
+// letters, digits and hyphens, no scheme, no port, no path. Remap is the
+// authority on what it will map; this only refuses what could never be one.
+func (c Config) ValidateName() error {
+	n := strings.TrimSpace(c.Name)
+	if n == "" {
+		return nil
+	}
+	malformed := n != c.Name || len(n) > 253 || strings.ContainsAny(n, "/:? ") ||
+		strings.HasPrefix(n, ".") || strings.HasSuffix(n, ".")
+	if malformed {
+		return fmt.Errorf("name = %q: a board's name is a bare hostname such as \"dibs\" or \"board.lab\", "+
+			"with no scheme, port or path; Remap routes it to this board", c.Name)
+	}
+	for _, label := range strings.Split(n, ".") {
+		if !hostnameLabel(label) {
+			return fmt.Errorf("name = %q: %q is not a hostname label", c.Name, label)
+		}
+	}
+	return nil
+}
+
+// hostnameLabel is one dotted component of a hostname: 1 to 63 letters,
+// digits and hyphens, not starting or ending with a hyphen.
+func hostnameLabel(label string) bool {
+	if label == "" || len(label) > 63 || strings.HasPrefix(label, "-") || strings.HasSuffix(label, "-") {
+		return false
+	}
+	for _, r := range label {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '-' {
+			return false
+		}
+	}
+	return true
 }
