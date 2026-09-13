@@ -10,7 +10,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -381,6 +380,15 @@ func watchPath(dir string, id RepoID) string {
 
 // fileIdentity is what a stat says about which file this is, as opposed to what
 // it is named. Zero when the path could not be stat-ed at all.
+//
+// Device and inode alone were the identity, and on Linux that was not one: a
+// checkout deleted and recreated at the same path is given the same inode
+// number back by ext4 and tmpfs, so the cache answered the OLD repository's
+// remote for the new one, and two agents in one repository were not warned
+// (found by the first run of the suite on a Linux runner; macOS's APFS hands
+// out fresh inodes and never showed it). The change and modification times
+// are part of the identity now: a recreated directory has a new ctime, at
+// nanosecond precision on every filesystem a checkout plausibly lives on.
 type fileIdentity struct {
 	// Widths follow the platform rather than the field: st_dev is int32 on
 	// darwin and uint64 on linux, and a conversion that narrows on either would
@@ -388,18 +396,8 @@ type fileIdentity struct {
 	// unsigned types Go already gives us avoids the question entirely.
 	device int64
 	inode  uint64
-}
-
-func identifyFile(path string) fileIdentity {
-	info, err := os.Stat(path)
-	if err != nil {
-		return fileIdentity{}
-	}
-	st, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		return fileIdentity{}
-	}
-	return fileIdentity{device: int64(st.Dev), inode: st.Ino}
+	ctime  int64
+	mtime  int64
 }
 
 func (c *repoIDCache) add(dir string, id RepoID) {
