@@ -301,6 +301,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A board can have a name, routed by Remap.** The Agenxy name plane
+  ([Remap](https://github.com/Agenxy/remap)) maps any hostname a person
+  chooses to a service on their own machines, so Dibs does not grow a way
+  of its own: `dibs configure` offers a name when Remap is installed and
+  answering, registers it (`remap set <name> http://<addr>/`), and writes it
+  to `dibs.toml` as `name`; the daemon accepts that name as its own origin
+  so the board works at `http://<name>/`; `dibs web` prints the named link
+  beside the address; `dibs doctor` says when the name is set and Remap does
+  not route it. `internal/remap` is the whole of the dependency: `remap
+  --json` over argv, its versioned envelope checked, its own codes and hints
+  surfaced. Without Remap nothing changes.
+
 - **The hub wakes agents on other machines through their own machine's
   bridge (hub half).** docs/NETWORK.md §5: the hub decides THAT an agent is
   woken, the agent's machine decides HOW. Every wake decision in the daemon

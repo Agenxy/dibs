@@ -2,13 +2,17 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/paths"
+	"github.com/agenxy/dibs/internal/remap"
 )
 
 // configure is the first-run wizard. It exists because the alternative: making
@@ -164,7 +168,9 @@ Where will agents connect from?
   keep this behind a firewall, a private network, or a reverse proxy you trust.`)
 	}
 
-	if err := os.WriteFile(cfgPath, []byte(defaultConfig(addr)), 0o600); err != nil { //nolint:gosec // G703: see above
+	name := askBoardName(addr)
+	body := []byte(defaultConfig(addr, name))
+	if err := os.WriteFile(cfgPath, body, 0o600); err != nil { //nolint:gosec // G703: see above
 		return err
 	}
 
@@ -172,6 +178,9 @@ Where will agents connect from?
 	fmt.Println("\nNext:")
 	fmt.Println("  dibd                 start the daemon")
 	fmt.Println("  dibs mcp-config       print the config to paste into each agent")
+	if name != "" {
+		fmt.Printf("  http://%s/            the board, by the name Remap routes to it\n", name)
+	}
 	if addr != "127.0.0.1:4777" {
 		fmt.Println("\nThe daemon generates its certificate on first start; run it once before")
 		fmt.Println("`dibs mcp-config` so the printed config can include the certificate path.")
@@ -271,11 +280,16 @@ func netInterfaceAddrs() ([]net.IP, error) {
 // defaultConfig is what the wizard writes when every question is answered with
 // Enter. One source, so the interactive and non-interactive paths cannot come
 // to different conclusions about what "the defaults" are.
-func defaultConfig(addr string) string {
+func defaultConfig(addr, name string) string {
 	var b strings.Builder
 	b.WriteString("# Dibs configuration. Every field is optional;\n")
 	b.WriteString("# deleting this file returns Dibs to its defaults.\n\n")
 	fmt.Fprintf(&b, "addr = %q\n", addr)
+	if name != "" {
+		fmt.Fprintf(&b, "name = %q   # Remap routes http://%s/ to this board\n", name, name)
+	} else {
+		b.WriteString("# name = \"dibs\"   # a hostname for this board, routed by Remap (github.com/Agenxy/remap)\n")
+	}
 	b.WriteString("\n# tls_cert = \"/path/cert.pem\"   # bring your own certificate\n")
 	b.WriteString("# tls_key  = \"/path/key.pem\"\n")
 	b.WriteString("# insecure_plaintext = false     # never set this on an untrusted network\n")
@@ -301,7 +315,7 @@ func configureWithDefaults(dir string) error {
 		return fmt.Errorf("%s already exists and --non-interactive will not overwrite it: "+
 			"edit it, or delete it and run this again", cfgPath)
 	}
-	body := defaultConfig("127.0.0.1:4777")
+	body := defaultConfig("127.0.0.1:4777", "")
 	if err := os.WriteFile(cfgPath, []byte(body), 0o600); err != nil { //nolint:gosec // G703: see above
 		return err
 	}
@@ -376,4 +390,67 @@ func parseConfigureArgs(args []string) (rest []string, quiet, help bool, err err
 		}
 	}
 	return rest, quiet, help, nil
+}
+
+// askBoardName offers the board a name when Remap, the Agenxy name plane, is
+// on this machine: `http://<name>/` then reaches the board, and the daemon
+// accepts that name as its own origin. Nothing is registered silently: the
+// question is asked, a blank answer registers nothing, and a Remap that
+// refuses the mapping is quoted rather than worked around. Without Remap the
+// question is not asked and the config carries the commented-out key.
+func askBoardName(addr string) string {
+	if !remap.Available() {
+		return ""
+	}
+	if err := remapAnswers(); err != nil {
+		fmt.Printf("\nRemap is installed but not answering (%v); the board keeps its address.\n", err)
+		return ""
+	}
+	fmt.Println(`
+Remap is on this machine. Give the board a name and http://<name>/ reaches it,
+or press Enter to leave it unnamed:`)
+	// NO DEFAULT. Enter means none, as the prompt says; a default here would
+	// register a name, and retarget an existing one, on a keystroke that
+	// meant "skip".
+	name := strings.TrimSpace(ask("Name (blank for none)", ""))
+	if name == "" {
+		return ""
+	}
+	if err := (boardconfig.Config{Name: name}).ValidateName(); err != nil {
+		fmt.Printf("\n  %v; the board keeps its address.\n", err)
+		return ""
+	}
+	target := "http://" + addr + "/"
+	if !isLoopbackAddr(addr) {
+		target = "https://" + addr + "/"
+	}
+	// A bound around the call, not around the person: the deadline starts
+	// when Remap is asked, after the answer is typed.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := remap.Set(ctx, name, target); err != nil {
+		fmt.Printf("\n  %v; the board keeps its address.\n", err)
+		return ""
+	}
+	fmt.Printf("\n  ✓ remap set %s %s\n", name, target)
+	return name
+}
+
+// isLoopbackAddr reports a host:port on loopback, which the daemon serves in
+// plaintext; anything else it serves over TLS (internal/transport).
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return host == "localhost" || (ip != nil && ip.IsLoopback())
+}
+
+// remapAnswers asks Remap's daemon for its status, within a bound of its own.
+func remapAnswers() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err := remap.Status(ctx)
+	return err
 }

@@ -24,6 +24,7 @@ import (
 	"github.com/agenxy/dibs/internal/liveness"
 	"github.com/agenxy/dibs/internal/notify"
 	"github.com/agenxy/dibs/internal/paths"
+	"github.com/agenxy/dibs/internal/remap"
 	"github.com/agenxy/dibs/internal/supgang"
 	"github.com/agenxy/dibs/internal/ui"
 )
@@ -228,6 +229,7 @@ func (d *diagnosis) run(verbose bool) error {
 	checkPanelBuild(client, sec, ok, warn, d.prose)
 	checkMatching(client, sec, ok, warn)
 	checkWakeRoutes(dir, boardOrNil(), ok, warn)
+	checkBoardName(dir, ok, warn)
 	checkHooks(client, sec, ok, bad, warn)
 	checkLedgerAndBoard(dir, ok, bad, warn)
 	checkGit(verbose, ok, bad)
@@ -1673,4 +1675,62 @@ func hostIdentityDrift(daemonHost, supgangNode string) string {
 	}
 	return fmt.Sprintf("this computer is Supgang member %s, and the running daemon still identifies its "+
 		"agents as %s: it was started before this machine joined the hive", short, daemonHost)
+}
+
+// checkBoardName says whether the name dibs.toml gives this board reaches it.
+//
+// The name is a promise made in two places: this file says the board answers
+// to it, and Remap, the Agenxy name plane, routes it. Either half alone is a
+// link that does not work: a name with no mapping, a mapping to some other
+// service, a Remap that is not installed. Each is named with the command that
+// mends it, because the operator wrote the name expecting `http://<name>/`
+// to open the board.
+func checkBoardName(dir string, ok reportFn, warn fixFn) {
+	cfg, err := boardconfig.Load(dir)
+	if err != nil || cfg.Name == "" {
+		return
+	}
+	target := origin() + "/"
+	fix := "remap set " + cfg.Name + " " + target
+	if !remap.Available() {
+		warn(fmt.Sprintf("dibs.toml names this board %q, and Remap is not installed here to route it", cfg.Name),
+			"install Remap (github.com/Agenxy/remap) and run `"+fix+"`, or remove `name`")
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	m, err := remap.Get(ctx, cfg.Name)
+	switch {
+	case err != nil:
+		warn(fmt.Sprintf("dibs.toml names this board %q, and Remap did not say whether it routes it: %v", cfg.Name, err),
+			"run `remap doctor`; then `"+fix+"`")
+	case m == nil:
+		warn(fmt.Sprintf("dibs.toml names this board %q, and Remap has no mapping for it", cfg.Name), "run `"+fix+"`")
+	case !m.Enabled:
+		warn(fmt.Sprintf("dibs.toml names this board %q, and Remap's mapping for it is disabled", cfg.Name),
+			"run `remap enable "+cfg.Name+"`")
+	case m.TargetKind != "http":
+		warn(fmt.Sprintf("dibs.toml names this board %q, and Remap's mapping for it is a %q mapping, not an HTTP upstream",
+			cfg.Name, m.TargetKind), "run `"+fix+"`")
+	case !sameBoardTarget(m.Target, target):
+		warn(fmt.Sprintf("dibs.toml names this board %q, and Remap routes that name to %s, not to this board",
+			cfg.Name, m.Target), "run `"+fix+"`")
+	default:
+		ok("http://" + cfg.Name + "/ reaches this board through Remap")
+	}
+}
+
+// sameBoardTarget reports whether a Remap target reaches this daemon: the
+// same scheme, host and port, a trailing slash aside. The scheme is not
+// optional: a gateway speaking TLS to a plaintext listener, or plaintext to
+// a TLS one, reaches nothing, and doctor once called that a working route.
+func sameBoardTarget(mapped, ours string) bool {
+	norm := func(u string) string {
+		u = strings.ToLower(strings.TrimSuffix(u, "/"))
+		if !strings.Contains(u, "://") {
+			u = "http://" + u
+		}
+		return u
+	}
+	return norm(mapped) == norm(ours)
 }

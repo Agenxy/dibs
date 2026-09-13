@@ -295,6 +295,13 @@ dibs board               # the same board, in the terminal
 dibs doctor              # what is quietly broken, and how to fix it
 ```
 
+A board can have a name. Dibs does not resolve names itself: that is
+[Remap](https://github.com/Agenxy/remap), the Agenxy name plane, and when it is
+installed `dibs configure` offers to register one (`remap set dibs
+http://127.0.0.1:4777/`), writes it to `dibs.toml` as `name`, and the board is
+then at `http://dibs/`: `dibs web` prints that link beside the address, and the
+daemon accepts the name as its own origin.
+
 ### Shell completions
 
 The binary generates its own completion scripts, from the same verb table the

@@ -8,6 +8,7 @@ package main
 // confirmation code that lets them tell their own request from an agent's.
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -16,6 +17,11 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
+
+	"github.com/agenxy/dibs/internal/boardconfig"
+	"github.com/agenxy/dibs/internal/paths"
+	"github.com/agenxy/dibs/internal/remap"
 )
 
 // errNoPresenceHere is the daemon saying this machine cannot check presence at
@@ -103,6 +109,9 @@ func printBoardLink(out boardGrant) error {
 		return err
 	}
 	fmt.Printf("%s%s/?bt=%s\n", schemeFor(origin()), host, out.BT)
+	if name := boardNameRouted(); name != "" {
+		fmt.Printf("http://%s/?bt=%s\n", name, out.BT)
+	}
 	if out.Mocked != "" {
 		fmt.Fprintln(os.Stderr, "\n# "+out.Mocked)
 	}
@@ -146,4 +155,28 @@ func schemeFor(origin string) string {
 		return strings.ToLower(scheme) + "://"
 	}
 	return schemePlain
+}
+
+// boardNameRouted is the name dibs.toml gives this board, when Remap on this
+// machine routes it: the link a person can type. Empty otherwise, and empty
+// on any doubt, since a link that does not work is worse than one line less.
+func boardNameRouted() string {
+	cfg, err := boardconfig.Load(paths.DataDir())
+	if err != nil || cfg.Name == "" || !remap.Available() {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	m, err := remap.Get(ctx, cfg.Name)
+	if err != nil || !m.Routes() {
+		return ""
+	}
+	// TO THIS DAEMON. The link carries a token; a name that Remap has since
+	// been pointed somewhere else would hand that token to whatever answers
+	// there. The mapping's target must be the origin that minted the grant,
+	// scheme and all.
+	if !sameBoardTarget(m.Target, origin()+"/") {
+		return ""
+	}
+	return cfg.Name
 }
