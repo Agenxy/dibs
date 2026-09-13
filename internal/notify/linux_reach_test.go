@@ -5,25 +5,23 @@ import (
 	"testing"
 )
 
-// ON A PLATFORM WITH NO NOTIFIER, SAY WHERE APPROVALS GO.
-//
-// Reach said "this platform has no notification route", which is true and
-// tells an operator nothing about the consequence: a request that needs them
-// waits, on the board, until they go and look. Being asked and answering is
-// how a person stays the authority over a fleet (#63), so on the platform
-// where the asking half is absent the one place it still works has to be
-// named, and so does the fact that nothing will interrupt them.
+// A Linux host with no notify-send is told what is missing, in the words an
+// operator acts on: the package, the fact that nothing can ASK, and the board
+// where the buttons are regardless. Issue #90 first made this sentence
+// honest; #63 gave the platform a notifier, so the sentence now names what
+// to install rather than what does not exist.
 func TestReachOnLinuxSaysApprovalsWaitOnTheBoard(t *testing.T) {
 	t.Setenv(silenceEnv, "")
-	old := goos
+	old, oldFind := goos, notifySend
 	goos = "linux"
-	t.Cleanup(func() { goos = old })
+	notifySend = func() string { return "" } // a host without libnotify
+	t.Cleanup(func() { goos, notifySend = old, oldFind })
 
 	ok, why := Reach()
 	if ok {
-		t.Fatal("Reach claims notifications reach a person on linux, where no notifier exists")
+		t.Fatal("Reach claims notifications reach a person on linux with no notify-send")
 	}
-	for _, want := range []string{"linux", "ASK", "dibs web", "#63"} {
+	for _, want := range []string{"libnotify", "ASK", "dibs web"} {
 		if !strings.Contains(why, want) {
 			t.Errorf("the explanation does not mention %q, which is the part an "+
 				"operator acts on:\n  %s", want, why)

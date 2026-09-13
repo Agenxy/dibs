@@ -244,6 +244,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A Linux notifier: the operator can be asked, not only shown.** (#63)
+  `notify.Available()` was `runtime.GOOS == "darwin"`, so on Linux a request
+  that needed a person (a role grant, a mailbox adoption) waited on the board
+  until somebody looked, and the mechanism by which a human stays the
+  authority over a fleet was absent there. libnotify's `notify-send` has had
+  buttons (`--action`) and `--wait` since 0.7.10, which is exactly the shape
+  `Ask` needs: one subprocess, argv only, the pressed key on stdout. Each way
+  the machine cannot ask is its own `dibs doctor` sentence: no `notify-send`
+  (install libnotify), no session bus (headless: approvals wait on the board,
+  `dibs web`), or a libnotify older than 0.7.10, which can show and cannot
+  ask and is refused rather than degraded to a banner nobody can answer; and
+  a notification daemon that advertises no `actions` capability
+  (`GetCapabilities` over `dbus-send` or `gdbus`), which is the same refusal
+  one layer down. Text entry has no notify-send form and says so. Exercised
+  against a stub that speaks notify-send's and dbus-send's argv; not yet
+  against a Linux desktop.
 - **Windows builds and vets in CI, and the first run says what does not
   hold.** (#11) "Not supported and not being worked on" became "nobody has
   tried" became a runner: `ubuntu-latest` runs the whole suite under the race

@@ -123,6 +123,9 @@ func helper() string {
 // icon, which is what every message from an agent was branded with until Dibs
 // had an application of its own.
 func Banner(title, subtitle, body string) error {
+	if goos == "linux" {
+		return linuxBanner(title, subtitle, body)
+	}
 	if h := helper(); h != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -139,6 +142,9 @@ func Banner(title, subtitle, body string) error {
 func Ask(title, body string, buttons ...string) (string, error) {
 	if len(buttons) == 0 || len(buttons) > 3 {
 		return "", errors.New("an alert takes one to three buttons; use Pick for more")
+	}
+	if goos == "linux" {
+		return linuxAsk(title, body, buttons)
 	}
 	// The bundle puts the buttons ON the banner, which is the whole reason it
 	// exists: the fallback has to interrupt with a modal alert to ask the same
@@ -209,6 +215,9 @@ func Pick(title, body string, choices ...string) (string, error) {
 	if len(choices) == 0 {
 		return "", errors.New("nothing to choose from")
 	}
+	if goos == "linux" {
+		return linuxAsk(title, body, choices)
+	}
 	if out, ok := onScreen("--pick", append([]string{title, body}, choices...)...); ok {
 		return out, nil
 	}
@@ -217,6 +226,11 @@ func Pick(title, body string, choices ...string) (string, error) {
 
 // Prompt asks for free text and returns it, or "" if dismissed.
 func Prompt(title, body string) (string, error) {
+	if goos == "linux" {
+		// notify-send has no text entry, and pretending a button is one
+		// would hand back an answer nobody typed.
+		return "", fmt.Errorf("%w: a notification on Linux can carry buttons, not a text field", ErrUnsupported)
+	}
 	if out, ok := onScreen("--prompt", title, body); ok {
 		return out, nil
 	}
@@ -269,7 +283,22 @@ func onScreen(mode string, args ...string) (string, bool) {
 // Available reports whether a person can be reached from here at all, so a
 // caller can say "this build cannot notify you" once rather than failing
 // silently on every message.
-func Available() bool { return goos == "darwin" && !underTest() && !silenced() }
+func Available() bool {
+	if silenced() {
+		return false
+	}
+	switch goos {
+	case "darwin":
+		// Not from a test process: a test must never post to the person's
+		// screen. The Linux route is exercised against a stub, which is
+		// why the same guard does not apply there.
+		return !underTest()
+	case "linux":
+		ok, _ := linuxUsable()
+		return ok
+	}
+	return false
+}
 
 // goos is the platform the notifier believes it is on. A variable so a test
 // can ask what Reach says on a platform the test is not running on.
@@ -372,19 +401,28 @@ func run(script string, args ...string) (string, error) {
 // to expect the ask in Notification Center rather than on screen.
 func Reach() (ok bool, why string) {
 	if !Available() {
-		if goos == "darwin" {
+		switch goos {
+		case "darwin":
 			return false, "notifications are switched off for this process"
+		case "linux":
+			// The Linux notifier is notify-send (linux.go); each way it
+			// cannot ask is its own sentence, and every one names the
+			// board, where the buttons are regardless. Issue #63.
+			if silenced() {
+				return false, "notifications are switched off for this process"
+			}
+			_, why := linuxUsable()
+			return false, why
 		}
 		// SAY WHAT THAT MEANS, not just that it is so. "No notification route"
 		// is true and tells an operator nothing about what happens to a request
 		// that needs them: it waits, on the board, until they go and look.
-		// Being asked and answering is how a person stays the authority over a
-		// fleet, and on this platform the asking half is absent, so the one
-		// place it works has to be named. Issue #63.
 		return false, "this build has no notifier for " + goos + ", so nothing on this " +
 			"machine can ASK you anything: a request that needs your approval waits " +
-			"on the board until you look. Open it with `dibs web`; the buttons are " +
-			"there. A Linux notifier (notify-send with actions) is issue #63"
+			"on the board until you look. Open it with `dibs web`; the buttons are there"
+	}
+	if goos == "linux" {
+		return true, ""
 	}
 	h := helper()
 	if h == "" {
