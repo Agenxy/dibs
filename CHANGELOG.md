@@ -53,6 +53,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The hub's own agents trust the certificate their daemon made.** A hub
+  bound to a LAN address serves TLS to everybody, its own machine included,
+  and the bridge beside it refused the certificate it lives next to: every
+  local call failed with "the daemon was reached and the answer was not"
+  until the operator pinned their own daemon with `dibs trust`, a step the
+  join recipe never mentions because it is not a join. The bridge now trusts
+  `tls-ca.pem` in its own data directory, the CA that daemon signs with.
+  Found by the two-host suite below.
 - **A restarted daemon indexes the trees its agents already work in.**
   Indexing was triggered by registration alone, so every `dibs upgrade` (or
   reboot) switched work-overlap matching off for the whole board until some
@@ -293,6 +301,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A two-host end-to-end suite.** `task test:remote` binds a hub to this
+  machine's LAN address so that no caller arrives over loopback, joins it
+  from a second data directory by the recipe `dibs mcp-config --board`
+  prints (secret copied, fingerprint pinned with `dibs trust`), registers
+  an agent through the real bridge on each side, and checks what SPEC §16
+  and `docs/NETWORK.md` §3 promise through the real transport: each row
+  carries the host its bridge asserted, the same absolute path on two
+  machines is not a collision, the same file of one repository in two
+  clones is, the refusal names the rule, and `dibs doctor` on the joining
+  machine says whose board it is. Both rules were unit-tested in the fold
+  and had never been exercised through the trust store and the bridge.
 - **The registry entry carries an install path.** (#44) `io.github.Agenxy/dibs`
   had a name, a description and a repository and no `packages`, so an agent
   that found Dibs in the MCP registry had nothing that said what to fetch,

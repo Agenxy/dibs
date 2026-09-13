@@ -78,6 +78,31 @@ func TestATrustedCertificateIsInThePool(t *testing.T) {
 	}
 }
 
+// The machine that runs the hub trusts the CA its own daemon made, with no
+// `dibs trust` step: it is the one authority on that certificate. A hub bound
+// to a LAN address serves TLS to its own agents too, and the bridge beside it
+// refused every answer until the two-host e2e suite caught it.
+func TestTheHubMachineTrustsTheCAItsOwnDaemonMade(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("DIBS_DIR", dir)
+	der := selfSigned(t, time.Now().Add(24*time.Hour))
+	blob := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	if err := os.WriteFile(filepath.Join(dir, "tls-ca.pem"), blob, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pool := trustedPool()
+	if pool == nil {
+		t.Fatal("a data directory holding the daemon's own CA produced no pool: the hub's own agents cannot reach it over TLS")
+	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cert.Verify(x509.VerifyOptions{Roots: pool}); err != nil {
+		t.Errorf("the daemon's own CA does not verify against the pool: %v", err)
+	}
+}
+
 // selfSigned returns the DER of a throwaway certificate.
 func selfSigned(t *testing.T, notAfter time.Time) []byte {
 	t.Helper()
