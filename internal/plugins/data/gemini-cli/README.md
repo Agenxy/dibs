@@ -38,8 +38,11 @@ waiting for this session's agent, and prints the answer in the shape Gemini's
 hook schema accepts: `hookSpecificOutput.additionalContext`, which Gemini
 injects as the first turn's context (non-interactive: prepended to the
 prompt), and `systemMessage` for the person. It prints `{}` and exits 0 when
-there is nothing, when the daemon is down, or when the input is not a session
-start, because a hook that fails costs the person a warning on every launch.
+there is nothing, and when the input is not a session start, because a
+boundary the harness cannot deliver at is not a failure. A daemon that did not
+answer, or input that is not the hook's JSON, is one: nothing on stdout, the
+reason on stderr, exit 1, which Gemini shows as a warning and carries on. The
+person learns the wake path is dead on the launch where it died.
 
 Gemini's `hooks` are `command` type only, so the hook is a subprocess: the
 `dibs` binary itself, which is why it must be on `PATH` (or name the absolute
