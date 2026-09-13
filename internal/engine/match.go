@@ -129,6 +129,27 @@ func (e *Engine) scorerAndCfg() (overlap.Scorer, MatchConfig) {
 // semantic suggestions. It still gets the shared-refs and shared-dirs signals,
 // which are computed in the pure core and need no index at all.
 func (e *Engine) scorerFor(cwd string) (overlap.Scorer, MatchConfig) {
+	return e.scorerForLocation(location{cwd: cwd})
+}
+
+// location is where an agent is, as the daemon recorded it: its working
+// directory, and the repository root the daemon resolved for it (empty
+// when it could not read the tree).
+type location struct {
+	cwd, repoRoot string
+}
+
+// scorerForLocation is scorerFor with one more rule, for indexes an AGENT
+// shipped (issue #19): such an index scores the agents of the tree it was
+// shipped for, and no agent whose repository is another one. An agent with a
+// recorded repository root is scored by a shipped index only if that root IS
+// the index's root: the shipper itself, whose root it is, and its neighbours
+// in the same tree, which is a tree the shipper already reads. A checkout of
+// some other repository beneath the shipped root keeps its own index, or
+// none. The Codex review of #111 read the rule as "never a placed agent" and
+// asked for that; it would refuse the shipper the index it shipped, which is
+// the one agent the index exists for.
+func (e *Engine) scorerForLocation(loc location) (overlap.Scorer, MatchConfig) {
 	e.matchMu.RLock()
 	defer e.matchMu.RUnlock()
 	if len(e.scorers) == 0 {
@@ -145,9 +166,13 @@ func (e *Engine) scorerFor(cwd string) (overlap.Scorer, MatchConfig) {
 		bestRepo string
 	)
 	for repo, s := range e.scorers {
-		if inMatchedRepo(cwd, repo) && len(repo) > len(bestRepo) {
-			best, bestRepo = s, repo
+		if !inMatchedRepo(loc.cwd, repo) || len(repo) <= len(bestRepo) {
+			continue
 		}
+		if e.indexes[repo].SuppliedBy != "" && loc.repoRoot != "" && loc.repoRoot != repo {
+			continue // shipped for a tree that is not this agent's repository
+		}
+		best, bestRepo = s, repo
 	}
 	if best == nil {
 		return nil, e.matchCfg
@@ -232,6 +257,12 @@ func (e *Engine) peerIndexesFor(home string) []peerIndex {
 		if root == home || info.Fingerprint == "" || info.Fingerprint == h.Fingerprint {
 			continue
 		}
+		// An index an agent shipped is never a PEER: its identity fields are
+		// that agent's word, and a fake index naming a real project's remote
+		// would otherwise score that project's declarations (issue #19).
+		if info.SuppliedBy != "" || h.SuppliedBy != "" {
+			continue
+		}
 		if !core.SameProject(&h.Identity, &info.Identity) {
 			continue
 		}
@@ -252,20 +283,42 @@ func (e *Engine) IndexSuppliedBy(repo string) string {
 // AgentLocation resolves a token to the agent's id and recorded working
 // directory, for the daemon deciding whether an index an agent ships is for
 // the tree that agent is actually in.
-func (e *Engine) AgentLocation(ctx context.Context, token string) (id, cwd string, err error) {
+//
+// repoRoot is the repository root the daemon resolved for the agent at
+// registration, or "" when it could not read the tree: exactly the case a
+// shipped index is for.
+func (e *Engine) AgentLocation(ctx context.Context, token string) (id, cwd, repoRoot string, err error) {
 	res, err := e.query(ctx, func() core.Result {
 		l := e.state.AgentByToken(token)
 		if l == nil || l.Agent == nil {
 			return core.Result{}
 		}
-		return core.Result{"id": l.ID, "cwd": l.Agent.CWD}
+		return core.Result{"id": l.ID, "cwd": l.Agent.CWD, "root": l.Agent.RepoRoot}
 	})
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	id, _ = res["id"].(string)
 	cwd, _ = res["cwd"].(string)
-	return id, cwd, nil
+	repoRoot, _ = res["root"].(string)
+	return id, cwd, repoRoot, nil
+}
+
+// TreeIsUnreadable reports the daemon's own verdict that it could not read
+// the tree at root, or a directory inside it: the precondition for taking an
+// index from an agent instead. A tree an agent has already supplied stays
+// one the daemon cannot read, so a newer history for it is still taken; the
+// status stops LISTING it unreadable only because matching works there.
+func (e *Engine) TreeIsUnreadable(root string) bool {
+	if e.IndexSuppliedBy(root) != "" {
+		return true
+	}
+	for _, tree := range e.MatchStatus().Unreadable {
+		if tree == root || strings.HasPrefix(tree, root+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // fingerprintOf is the history fingerprint of the index at repo, or "".
@@ -410,15 +463,15 @@ func declarationOf(op *core.Op) core.Slot {
 	}
 }
 
-// cwd is passed in rather than resolved here because the scorer has to be
-// chosen before the loop trip below, and DoMatched has already paid for that
-// lookup: prediction, path relativisation and matching then all speak about the
-// same tree instead of three possibly different ones.
+// The location is passed in rather than resolved here because the scorer has
+// to be chosen before the loop trip below, and DoMatched has already paid for
+// that lookup: prediction, path relativisation and matching then all speak
+// about the same tree instead of three possibly different ones.
 func (e *Engine) matchDeclaration(
-	ctx context.Context, token, cwd string, decl core.Slot,
+	ctx context.Context, token string, loc location, decl core.Slot,
 ) ([]Suggestion, matchOutcome) {
 	declaration, declRefs, declDirs := decl.Text, decl.Refs, decl.Dirs
-	scorer, cfg := e.scorerFor(cwd)
+	scorer, cfg := e.scorerForLocation(loc)
 	if scorer == nil || (declaration == "" && len(declRefs) == 0) {
 		// No scorer at all: the phase already says "off", and that hint is more
 		// useful than either of the two outcomes here.
@@ -988,9 +1041,9 @@ func (e *Engine) Predict(ctx context.Context, declaration string) ([]core.PredFi
 // system the prediction is in, recorded beside it so a later comparison can
 // tell whether another prediction is in the same one. Issue #39.
 func (e *Engine) predictIn(
-	ctx context.Context, cwd, declaration string,
+	ctx context.Context, loc location, declaration string,
 ) (pred []core.PredFile, repo, index string) {
-	scorer, cfg := e.scorerFor(cwd)
+	scorer, cfg := e.scorerForLocation(loc)
 	pred, _, _ = e.predictWith(ctx, scorer, cfg, declaration)
 	return pred, cfg.Repo, e.fingerprintOf(cfg.Repo)
 }
@@ -1074,22 +1127,22 @@ func (e *Engine) DoMatched(ctx context.Context, op *core.Op) (core.Result, error
 	// matchRepo() cannot serve here: it returns whichever repository was
 	// indexed LAST, so declared dirs were being made relative to a root the
 	// declaring agent may never have seen.
-	cwd := e.cwdForToken(ctx, op.Token)
+	loc := e.locationForToken(ctx, op.Token)
 	if len(op.Predicted) == 0 && op.Text != "" {
-		pred, repo, index := e.predictIn(ctx, cwd, op.Text)
+		pred, repo, index := e.predictIn(ctx, loc, op.Text)
 		op.Predicted = withDeclaredDirs(pred, op.Dirs, repo)
 		// The same declaration in every OTHER index of this project, so two
 		// clones with divergent histories are compared inside a coordinate
 		// system they share instead of across two. Issue #39.
 		op.Index = index
-		_, cfg := e.scorerFor(cwd)
+		_, cfg := e.scorerForLocation(loc)
 		op.Footprints = e.peerFootprints(ctx, repo, op.Text, cfg)
 	}
 	res, err := e.Do(ctx, op)
 	if err != nil {
 		return nil, err
 	}
-	sug, outcome := e.matchDeclaration(ctx, op.Token, cwd, declarationOf(op))
+	sug, outcome := e.matchDeclaration(ctx, op.Token, loc, declarationOf(op))
 	annotateMatching(res, sug, outcome, e.MatchStatus())
 	return res, nil
 }
@@ -1395,21 +1448,27 @@ func (e *Engine) noteRepoOf(cwd string) {
 // It does not use authRead even now. That function also spends a rate-limit
 // token, and asking where an agent works is not an action the agent took.
 func (e *Engine) cwdForToken(ctx context.Context, token string) string {
+	return e.locationForToken(ctx, token).cwd
+}
+
+// locationForToken is where the agent behind a token is, as recorded.
+func (e *Engine) locationForToken(ctx context.Context, token string) location {
 	if token == "" {
-		return ""
+		return location{}
 	}
 	res, err := e.query(ctx, func() core.Result {
 		l := e.state.AgentByToken(token)
 		if l == nil || l.Agent == nil {
 			return core.Result{}
 		}
-		return core.Result{"cwd": l.Agent.CWD}
+		return core.Result{"cwd": l.Agent.CWD, "root": l.Agent.RepoRoot}
 	})
 	if err != nil {
-		return ""
+		return location{}
 	}
 	cwd, _ := res["cwd"].(string)
-	return cwd
+	root, _ := res["root"].(string)
+	return location{cwd: cwd, repoRoot: root}
 }
 
 // SetCoordinatorClaim installs the check for a launch-time coordinator claim.

@@ -122,9 +122,15 @@ func shipIndex(ctx context.Context, client *http.Client, url, secret, token, roo
 		Error    string `json:"error"`
 		Reason   string `json:"reason"`
 	}
-	_ = json.NewDecoder(resp.Body).Decode(&out)
-	if resp.StatusCode != http.StatusOK || (!out.Accepted && out.Error != "") {
-		return fmt.Errorf("daemon refused (%d): %s", resp.StatusCode, out.Error)
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return fmt.Errorf("daemon answered %d with no readable verdict: %w", resp.StatusCode, err)
+	}
+	if resp.StatusCode != http.StatusOK || !out.Accepted {
+		why := out.Error
+		if why == "" {
+			why = out.Reason
+		}
+		return fmt.Errorf("daemon did not take it (%d): %s", resp.StatusCode, why)
 	}
 	return nil
 }

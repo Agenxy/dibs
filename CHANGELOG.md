@@ -53,6 +53,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A shipped index scores only the agents the daemon cannot place.** (#19,
+  from the Codex review of #102) An agent could ship an index rooted at a
+  PARENT of its checkout and have every neighbouring checkout scored by it,
+  and a payload naming a real project's remote joined that project's peer
+  set. The daemon now refuses a root that is not the agent's own repository,
+  takes a shipment only for a tree it has itself found unreadable, and uses
+  a shipped index for the agents in that tree, never for an agent whose
+  repository is another one, and never as a peer. The
+  bridge reports a refused shipment instead of logging success, a file named
+  `version..txt` is no longer mistaken for a path escape, and the shipped
+  history carries every commit the fingerprint counted.
 - **On Linux, a checkout replaced at the same path was still identified as
   the old one.** The repository-identity cache keyed on device and inode, and
   ext4 and tmpfs hand a recreated directory the same inode back, so the cache

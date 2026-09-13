@@ -221,8 +221,8 @@ func TestTwoClonesWithDivergentHistoriesAreWarned(t *testing.T) {
 
 	// The two predictions really are disjoint: that is the precondition the
 	// fix exists for, and a fixture where they overlap tests nothing.
-	predA, _, _ := e.predictIn(ctx, after, work)
-	predB, _, _ := e.predictIn(ctx, before, work)
+	predA, _, _ := e.predictIn(ctx, location{cwd: after}, work)
+	predB, _, _ := e.predictIn(ctx, location{cwd: before}, work)
 	if shared := predPaths(sharedFiles(predA, predB)); len(shared) != 0 {
 		t.Fatalf("the two clones' own predictions share %v: the fixture does not "+
 			"reproduce divergent histories", shared)
@@ -279,4 +279,79 @@ func sharedFiles(a, b []core.PredFile) []core.PredFile {
 		}
 	}
 	return out
+}
+
+// An index an agent SHIPPED (issue #19) is that agent's word about a tree the
+// daemon could not read. It scores the agents the daemon has no better
+// knowledge about, and nothing else: not an agent the daemon placed in a
+// repository of its own, even one beneath the claimed root, and never as a
+// peer index of a project whose remote the payload happens to name. The
+// Codex review of #102 found both holes: a payload rooted at a parent
+// directory scored every checkout under it, and a payload naming a real
+// project's remote joined that project's peer set.
+func TestAShippedIndexScoresOnlyAgentsTheDaemonCannotPlace(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	cfg := MatchConfig{Deadline: time.Second}
+	project := core.AgentInfo{RepoRemote: "github.com/acme/api", RepoRoots: "r1"}
+	parent := t.TempDir()
+	placed := filepath.Join(parent, "api") // a checkout the daemon resolved itself
+	unplaced := filepath.Join(parent, "dark", "pkg")
+	e.SetIndex(placed, cloneScorer{"mine", "internal/session/token.go"}, cfg,
+		IndexInfo{Fingerprint: "hist-mine", Identity: project})
+	// The shipment claims the PARENT, with the project's own identity.
+	e.SetIndex(parent, cloneScorer{"shipped", "pkg/auth/refresh.go"}, cfg,
+		IndexInfo{Fingerprint: "hist-shipped", Identity: project, SuppliedBy: "stranger"})
+
+	s, _ := e.scorerForLocation(location{cwd: unplaced})
+	if s == nil || s.ID() != "shipped" {
+		t.Errorf("an agent the daemon could not place is scored by %v, want the shipped index: "+
+			"that is the whole point of shipping one", s)
+	}
+	s, _ = e.scorerForLocation(location{cwd: filepath.Join(placed, "cmd"), repoRoot: placed})
+	if s == nil || s.ID() != "mine" {
+		t.Errorf("the placed agent is scored by %v, want the daemon's own index", s)
+	}
+	// The SHIPPER: its recorded root is the shipped root, and it is scored
+	// by the index it shipped. Refusing every agent with a recorded root
+	// would refuse the one agent the index exists for; the rule is "never
+	// another repository", not "never a placed agent".
+	s, _ = e.scorerForLocation(location{cwd: filepath.Join(parent, "pkg"), repoRoot: parent})
+	if s == nil || s.ID() != "shipped" {
+		t.Errorf("the shipper is scored by %v, want the index it shipped", s)
+	}
+	nested := filepath.Join(parent, "other")
+	e.SetIndex(nested, cloneScorer{"theirs", "src/main.rs"}, cfg,
+		IndexInfo{Fingerprint: "hist-theirs", Identity: core.AgentInfo{RepoRemote: "github.com/acme/web"}})
+	s, _ = e.scorerForLocation(location{cwd: filepath.Join(parent, "other", "cmd"), repoRoot: nested})
+	if s == nil || s.ID() != "theirs" {
+		t.Errorf("a neighbour under the claimed root is scored by %v, want its own index", s)
+	}
+	// Longest root ordinarily wins; a shipped root LONGER than the placed one
+	// still loses to the daemon's placement.
+	e.SetIndex(filepath.Join(placed, "cmd"), cloneScorer{"deep", "x"}, cfg,
+		IndexInfo{Fingerprint: "hist-deep", SuppliedBy: "stranger"})
+	s, _ = e.scorerForLocation(location{cwd: filepath.Join(placed, "cmd", "dibd"), repoRoot: placed})
+	if s == nil || s.ID() != "mine" {
+		t.Errorf("a shipped index nested inside the placed checkout scores it: %v", s)
+	}
+
+	for _, home := range []string{placed, parent} {
+		for _, p := range e.peerIndexesFor(home) {
+			if p.info.SuppliedBy != "" || e.indexes[home].SuppliedBy != "" {
+				t.Errorf("peers of %s include %s (shipped by %q): a shipped index is never a peer, "+
+					"its identity is the shipper's word", home, p.root, p.info.SuppliedBy)
+			}
+		}
+	}
+	if by := e.IndexSuppliedBy(parent); by != "stranger" {
+		t.Errorf("IndexSuppliedBy = %q", by)
+	}
+	if !e.TreeIsUnreadable(parent) {
+		t.Error("a tree with a shipped index is still one the daemon cannot read: a newer shipment must be taken")
+	}
 }

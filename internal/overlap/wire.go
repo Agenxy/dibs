@@ -67,11 +67,26 @@ func (p *Payload) Validate() error {
 		return fmt.Errorf("%d commits exceeds the %d window", len(p.Commits), MaxPayloadCommits)
 	}
 	for _, f := range p.Files {
-		if f == "" || strings.HasPrefix(f, "/") || strings.Contains(f, "..") {
+		if !repoRelative(f) {
 			return fmt.Errorf("file %q is not a repository-relative path", f)
 		}
 	}
 	return nil
+}
+
+// repoRelative accepts what `git ls-files` prints and nothing that could
+// leave the tree: no absolute path, no `.` or `..` COMPONENT. A name that
+// merely contains two dots, `docs/version..txt`, is a file.
+func repoRelative(f string) bool {
+	if f == "" || strings.HasPrefix(f, "/") {
+		return false
+	}
+	for _, part := range strings.Split(f, "/") {
+		if part == "" || part == "." || part == ".." {
+			return false
+		}
+	}
+	return true
 }
 
 // Ship reads what Payload carries out of the checkout at root, on the side

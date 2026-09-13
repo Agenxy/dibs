@@ -46,6 +46,10 @@ type CoChange struct {
 	n     int // commits sampled
 	// fingerprint identifies the HISTORY this was mined from: see Fingerprint.
 	fingerprint string
+	// records is every commit the index counted, subject or no subject, so
+	// Records ships what the fingerprint names and FromRecords rebuilds the
+	// same pair counts. Messages is the subset with a subject.
+	records []Commit
 }
 
 // CoChangeOptions bounds the mining. Both bounds exist for measured reasons.
@@ -128,6 +132,7 @@ func MineCoChange(ctx context.Context, repo string, opt CoChangeOptions) (*CoCha
 			continue
 		}
 		cc.add(files)
+		cc.records = append(cc.records, Commit{Subject: subject, Files: files})
 		if subject != "" {
 			cc.Messages = append(cc.Messages, Commit{Subject: subject, Files: files})
 		}
@@ -160,15 +165,15 @@ func parseLogRecord(block string) (id, subject string, files []string) {
 // is built from. It is what an agent ships to a daemon that cannot read its
 // checkout (issue #19), and FromRecords rebuilds the same index from it.
 //
-// Only the commits that carried a subject are here, because those are the
-// ones kept; a subject-less commit contributed pair counts the rebuild will
-// not have. Bounded by the same options the mining was, so at most 2000
-// commits of at most 25 files: measured, ~210 bytes a commit.
+// Every counted commit is here, subject or no subject, so the rebuilt
+// index has the same pair counts as the mined one and the fingerprint it
+// carries names what it holds. Bounded by the same options the mining was,
+// so at most 2000 commits of at most 25 files: measured, ~210 bytes a commit.
 func (c *CoChange) Records() []Commit {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	out := make([]Commit, len(c.Messages))
-	copy(out, c.Messages)
+	out := make([]Commit, len(c.records))
+	copy(out, c.records)
 	return out
 }
 
@@ -195,7 +200,9 @@ func FromRecords(records []Commit, fingerprint string, opt CoChangeOptions) *CoC
 		}
 		files := append([]string(nil), r.Files...)
 		cc.add(files)
-		if s := strings.TrimSpace(r.Subject); s != "" {
+		s := strings.TrimSpace(r.Subject)
+		cc.records = append(cc.records, Commit{Subject: s, Files: files})
+		if s != "" {
 			cc.Messages = append(cc.Messages, Commit{Subject: s, Files: files})
 		}
 	}

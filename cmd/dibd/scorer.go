@@ -48,7 +48,12 @@ type scorerFlags struct {
 	rootOf     map[string]string
 	// supplied maps a root to the agent that shipped its index, for trees the
 	// daemon could not read (issue #19). Its entries are evicted with the rest.
-	supplied         map[string]string
+	supplied map[string]string
+	// suppliedAt is the fingerprint each supplied root was built from, so a
+	// repeated shipment of the same history is acknowledged, not rebuilt.
+	suppliedAt map[string]string
+	// buildMu serialises index construction from shipped payloads.
+	buildMu          sync.Mutex
 	repo             string
 	join             float64
 	notify           float64
@@ -711,6 +716,7 @@ func (f *scorerFlags) evictIdleIndexes(ctx context.Context, eng *engine.Engine) 
 	for _, root := range idle {
 		delete(f.indexed, root)
 		delete(f.supplied, root)
+		delete(f.suppliedAt, root)
 		for cwd, r := range f.rootOf {
 			if r == root {
 				delete(f.rootOf, cwd)
