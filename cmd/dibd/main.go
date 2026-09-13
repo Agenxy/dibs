@@ -325,6 +325,7 @@ func run() error {
 	registerLogsAPI(mux, logRing)
 	registerMatchStatusAPI(mux, eng)
 	registerIndexAPI(mux, eng, scorer)
+	registerWakeAPI(mux, eng, secret)
 	registerAdminAPI(mux, eng)
 
 	tr, err := resolveTransport(*dir, listenAddr, askedScheme, cfg)

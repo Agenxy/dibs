@@ -82,6 +82,10 @@ func (s sseStream) comment() bool {
 func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *rpcRequest) {
 	var p subscriptionParams
 	_ = json.Unmarshal(req.Params, &p)
+	if containsStr(p.Notifications.ResourceSubscriptions, WakeURI) {
+		s.serveWakeSubscription(w, r, req, p)
+		return
+	}
 
 	wantBoard := containsStr(p.Notifications.ResourceSubscriptions, "dibs://board")
 	wantInbox := containsStr(p.Notifications.ResourceSubscriptions, "dibs://inbox")
@@ -184,6 +188,98 @@ func (s *Server) serveSubscription(w http.ResponseWriter, r *http.Request, req *
 	s.pump(r, stream, sub, since, req.ID, func() (string, bool, bool) {
 		return agentID, wantInbox, wantBoard
 	}, standing)
+}
+
+// WakeURI is the resource a host bridge subscribes to: the wakes the hub has
+// decided on for agents on the bridge's machine. Not an agent's resource and
+// never listed for one: it carries no mail, only the sentence every wake
+// carries and what a [wake.exec] entry substitutes. See engine/hostwake.go.
+const WakeURI = "dibs://wake"
+
+// WakeHarnessesMetaKey is, on a dibs://wake listen, the harnesses the bridge's
+// own [wake.exec] table can start, lowercased. A remote agent whose harness is
+// not in its host's list has no route, and doctor says so there.
+const WakeHarnessesMetaKey = "com.dibs/wake_harnesses"
+
+// serveWakeSubscription holds one stream open for one host's bridge and
+// pushes each wake request the hub decides on for that host as a
+// resources/updated notification whose _meta is the request. The bridge runs
+// its operator's command and reports through POST /api/wake-result; the hub
+// treats that report as the exit status it would otherwise have observed.
+//
+// A wake stream serves nothing else: it is a different kind of client from an
+// agent's bridge, and one stream doing two jobs is how the inbox and board
+// streams once got each other's cursors.
+func (s *Server) serveWakeSubscription(w http.ResponseWriter, r *http.Request, req *rpcRequest, p subscriptionParams) {
+	host, _ := p.Meta[HostMetaKey].(string)
+	harnesses := wakeHarnessesIn(p.Meta)
+	reqs, release, err := s.eng.AttachHostBridge(host, harnesses)
+	if err != nil {
+		writeRPC(w, http.StatusBadRequest, req.ID, nil, &rpcError{
+			Code: -32602, Message: WakeURI + " subscription requires the bridge's host in _meta['" + HostMetaKey + "']",
+		})
+		return
+	}
+	defer release()
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeRPC(w, http.StatusInternalServerError, req.ID, nil,
+			&rpcError{Code: -32603, Message: "streaming not supported by this server"})
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+	stream := sseStream{w: w, fl: flusher}
+	if !stream.send(notification("notifications/subscriptions/acknowledged", map[string]any{
+		"notifications": map[string]any{"resourceSubscriptions": []string{WakeURI}},
+		"_meta":         map[string]any{HostMetaKey: host, WakeHarnessesMetaKey: harnesses},
+	}, req.ID)) {
+		return
+	}
+	pumpWake(r.Context(), stream, reqs, req.ID)
+}
+
+// wakeHarnessesIn reads the harness list a bridge stated on its listen.
+func wakeHarnessesIn(meta map[string]any) []string {
+	var out []string
+	raw, _ := meta[WakeHarnessesMetaKey].([]any)
+	for _, h := range raw {
+		if str, ok := h.(string); ok {
+			out = append(out, str)
+		}
+	}
+	return out
+}
+
+// pumpWake pushes each request as a resources/updated notification until the
+// client goes, the stream fails, or a newer bridge for the host replaces this
+// one (which closes reqs).
+func pumpWake(ctx context.Context, stream sseStream, reqs <-chan engine.WakeRequest, subID json.RawMessage) {
+	keepalive := time.NewTicker(25 * time.Second)
+	defer keepalive.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-keepalive.C:
+			if !stream.comment() {
+				return
+			}
+		case wr, open := <-reqs:
+			if !open {
+				return
+			}
+			params := map[string]any{"uri": WakeURI, "_meta": map[string]any{
+				"id": wr.ID, "host": wr.Host, "agent": wr.Agent, "harness": wr.Harness,
+				"thread": wr.Thread, "cwd": wr.CWD, "from": wr.From, "msg_type": wr.MsgType, "notice": wr.Notice,
+			}}
+			if !stream.send(notification("notifications/resources/updated", params, subID)) {
+				return
+			}
+		}
+	}
 }
 
 // standingFunc reports, as a notification is about to go out, whether the

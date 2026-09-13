@@ -124,6 +124,9 @@ type Engine struct {
 	// onRepoSeen lets the daemon index the repositories agents actually work
 	// in, so matching does not depend on somebody setting a flag.
 	onRepoSeen func(repo string)
+	// hostWakes is the hub's side of waking agents on other machines: the
+	// bridges attached per host and the requests awaiting their report.
+	hostWakes hostWakes
 	// verifyClaim answers whether a presented coordinator claim is the one this
 	// daemon minted, and returns the function that spends it once the op it
 	// authorised has been ledgered. Guarded separately: it is installed once at

@@ -239,6 +239,13 @@ own machine decides *how*.
 - Every other machine runs the component that already exists for this: the
   bridge subscribes to the hub for its own agents and owns that host's routes.
   Generalising it from "this session" to "this host's agents" is the work.
+  **The hub half is built:** a remote agent (host id not the hub's) is never
+  reached by the hub's own `[wake.exec]` or sockets; it is reached through a
+  bridge attached for its host on the `dibs://wake` stream, which states the
+  harnesses it can start, is handed each wake with what a `[wake.exec]` entry
+  substitutes, and reports through `POST /api/wake-result`. Every decision in
+  the waker applies unchanged; only execution moves. The bridge command on
+  the other machine is next.
 - Wake policy is therefore per-host by design rather than by accident, and the
   documentation says so instead of implying one switch covers a fleet.
 
