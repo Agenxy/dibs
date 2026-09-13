@@ -301,6 +301,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The hub wakes agents on other machines through their own machine's
+  bridge (hub half).** docs/NETWORK.md §5: the hub decides THAT an agent is
+  woken, the agent's machine decides HOW. Every wake decision in the daemon
+  (the cooldown, the deferral, the recency window, the attempt count, the
+  exit re-check) now applies to a remote agent unchanged; only execution
+  moves. A bridge on the other machine opens a `dibs://wake` stream naming
+  its host and the harnesses its own `[wake.exec]` can start, the hub hands
+  it each wake as a `resources/updated` notification carrying exactly what a
+  `[wake.exec]` entry substitutes (thread, agent, sender, type, the one fixed
+  sentence), and the bridge's `POST /api/wake-result` stands in for the exit
+  status. The hub never learns a remote argv and never runs one, and its own
+  `[wake.exec]` is no longer tried for an agent on another machine, which
+  used to start a process here in a directory that is not here and spend
+  the mail's one attempt on it. `GET /api/hosts` lists the attached bridges.
+  The bridge command itself (`dibs host-bridge`) and doctor's account of it
+  follow in the next change.
 - **A two-host end-to-end suite.** `task test:remote` binds a hub to this
   machine's LAN address so that no caller arrives over loopback, joins it
   from a second data directory by the recipe `dibs mcp-config --board`
