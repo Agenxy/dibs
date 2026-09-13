@@ -27,9 +27,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/agenxy/dibs/internal/sibling"
 )
 
 // Command is the executable consulted; a test points it at a stand-in.
@@ -91,9 +94,19 @@ func (e *Error) Error() string { return "supgang: " + e.Message }
 
 // Available reports whether the binary is on this machine at all. Not
 // whether it is initialised: Status answers that, with Supgang's own words.
-func Available() bool {
-	_, err := exec.LookPath(Command)
-	return err == nil
+func Available() bool { return executable() != "" }
+
+// executable is where the binary is: Command when it names a path or is on
+// PATH, else where the Agenxy installers put it (internal/sibling), which a
+// service's PATH does not list.
+func executable() string {
+	if strings.ContainsRune(Command, os.PathSeparator) {
+		if _, err := os.Stat(Command); err == nil {
+			return Command
+		}
+		return ""
+	}
+	return sibling.Find(Command)
 }
 
 // Status is this computer's identity.
@@ -233,7 +246,8 @@ func (e envelope) check(prefix string, major int) error {
 }
 
 func call(ctx context.Context, into any, args ...string) error {
-	if !Available() {
+	exe := executable()
+	if exe == "" {
 		return ErrNotInstalled
 	}
 	ctx, cancel := context.WithTimeout(ctx, callTimeout)
@@ -241,7 +255,7 @@ func call(ctx context.Context, into any, args ...string) error {
 	// #nosec G204 -- argv, no shell: a fixed executable and Supgang's own
 	// subcommands; the one caller-supplied word (a peer) is refused above
 	// when it could read as a flag.
-	cmd := exec.CommandContext(ctx, Command, append([]string{"--json"}, args...)...)
+	cmd := exec.CommandContext(ctx, exe, append([]string{"--json"}, args...)...)
 	out, errOut := &limitedWriter{left: maxOutput}, &limitedWriter{left: 4096}
 	cmd.Stdout, cmd.Stderr = out, errOut
 	// WaitDelay bounds the wait for the PIPES, not only the process. A child
