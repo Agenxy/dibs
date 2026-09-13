@@ -36,6 +36,7 @@ func TestAReadOnlyReplayLeavesATornTailAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = led.Close() }() // Windows refuses to remove a file still open
 	st := core.NewState("node", core.DefaultLimits())
 	if _, _, err := st.Apply(&core.Op{Kind: core.OpRegister, Name: "a", NewToken: "t"}, tornTestTime()); err != nil {
 		t.Fatal(err)
@@ -61,6 +62,7 @@ func TestAReadOnlyReplayLeavesATornTailAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = ro.Close() }()
 	var reported bool
 	ro.OnTornTail = func(int, int64) { reported = true }
 	fresh := core.NewState("node", core.DefaultLimits())
