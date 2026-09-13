@@ -53,6 +53,15 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **A restarted daemon indexes the trees its agents already work in.**
+  Indexing was triggered by registration alone, so every `dibs upgrade` (or
+  reboot) switched work-overlap matching off for the whole board until some
+  agent happened to register afresh, and on a board of long-lived agents
+  that was hours or days: this machine's own board had 34 agents and no
+  index hours after an upgrade, with nothing but doctor's "no repository
+  indexed yet" to say so. The daemon now resolves, at boot, the working
+  directory of every live agent on this machine to its repository and
+  indexes each repository once.
 - **Claim paths fold with one separator, so the state machine holds on
   Windows.** (#113) `cleanPath` used `filepath.Clean`, which on Windows
   spelled every claim with `\` while every comparison in the package writes
