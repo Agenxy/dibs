@@ -53,6 +53,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`dibs hook-poll` reports a dead daemon as a failure.** (#24, from the
+  Codex review of #101) It printed `{}` and exited 0 whatever went wrong, so a
+  daemon that had been down for a week was indistinguishable from a board
+  with nothing to say. A daemon that did not answer, or input that is not the
+  hook's JSON, now exits 1 with the reason on stderr, which Gemini shows as a
+  warning and carries on; an event the harness cannot deliver at is still
+  `{}` and exit 0. The hook's input is bounded at a megabyte before it is
+  decoded, and the Stop-only `stop_hook_active` field is no longer read.
 - **A shipped index scores only the agents the daemon cannot place.** (#19,
   from the Codex review of #102) An agent could ship an index rooted at a
   PARENT of its checkout and have every neighbouring checkout scored by it,
