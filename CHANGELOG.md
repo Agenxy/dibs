@@ -7,6 +7,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **SECURITY.md states what a forged lifecycle hook can and cannot do.**
+  (#74) `hook_poll` takes a session id with no token, and a peer can claim a
+  `Stop` or `SessionStart` for somebody else's session. The consequence was
+  never written down: a forged `Stop` costs at most one spurious wake, and a
+  forged `SessionStart` defers a wake by at most the harness's cooldown,
+  because the deferral re-arms, which a test pins. Nothing on that path
+  reads mail or grants a role. The fix that closes it is a credential per
+  agent (`docs/NETWORK.md` §6); the document now says so instead of
+  promising an isolation the design cannot give.
+
 - **The scaling numbers are in the architecture document.** (#42) Where
   Dibs stops scaling was measured rather than guessed: the overlap search is
   linear in agents and, more to the point, serialised on the writer loop,
