@@ -548,18 +548,7 @@ func methodOf(line []byte) string {
 // them on stdin has to decide what a non-JSON line means, which is a question
 // no MCP client should be asked.
 func pumpSSE(body io.Reader, out *syncWriter) {
-	sc := bufio.NewScanner(body)
-	sc.Buffer(make([]byte, 0, 1<<20), 1<<24)
-	for sc.Scan() {
-		line := bytes.TrimRight(sc.Bytes(), "\r")
-		data, found := bytes.CutPrefix(line, []byte("data: "))
-		if !found {
-			continue
-		}
-		if data = bytes.TrimSpace(data); len(data) > 0 {
-			out.line(data)
-		}
-	}
+	eachSSEData(body, out.line)
 }
 
 // upgradeGrace is how long a call waits for a daemon that is restarting.
