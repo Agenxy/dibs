@@ -1,12 +1,15 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/pem"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,8 +17,8 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/boardconfig"
-
 	"github.com/agenxy/dibs/internal/paths"
+	"github.com/agenxy/dibs/internal/supgang"
 )
 
 // Trusting a daemon on another machine, without a certificate authority.
@@ -49,6 +52,25 @@ func fingerprint(der []byte) string {
 		b.WriteString(strings.ToUpper(h[i : i+2]))
 	}
 	return b.String()
+}
+
+// keyPin is the SHA-256 of a certificate's SubjectPublicKeyInfo as 64 lowercase
+// hex digits: the RFC 7469 form, and what Dibs advertises through Supgang
+// (`supgang advertise dibs <port> --key-pin <this>`). A pin of the KEY rather
+// than the certificate, because the board CA is what `dibs trust` records and
+// its key is what survives a re-issue.
+func keyPin(cert *x509.Certificate) string {
+	sum := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
+	return hex.EncodeToString(sum[:])
+}
+
+// advertiseCommand is the Supgang verb that publishes this board's key, for
+// the hub's operator to run. Supgang signs the profile into its record when
+// the service starts, so the verb is wrapped in a stop and a start, the way
+// `supgang name set` is.
+func advertiseCommand(port, pin string) string {
+	return "supgang service stop && supgang advertise " + supgang.ServiceName + " " + port +
+		" --key-pin " + pin + " && supgang service start"
 }
 
 // ownCAFile is the signing certificate the daemon in this data directory made
@@ -141,7 +163,7 @@ func (g *guardedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return g.next.RoundTrip(r)
 }
 
-// trustCmd implements `dibs trust <host:port>`.
+// trustCmd implements `dibs trust <host:port> [--pin <hex>]`.
 //
 // It PRINTS the fingerprint and writes it in one step rather than prompting,
 // because a prompt an operator cannot verify against anything is theatre: the
@@ -149,67 +171,191 @@ func (g *guardedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 // for itself, which is a separate command on a separate machine. So this says
 // what it recorded and how to check it, instead of asking a question whose
 // answer nobody has yet.
+//
+// With --pin the comparison is made here: the pin is the key the hub signed
+// through Supgang (`dibs mcp-config --board <peer>` carries it into this
+// command when the hub could not be reached at the time), and a certificate
+// whose key is not that one is refused rather than recorded.
 func trustCmd(args []string) error {
-	if len(args) != 1 || strings.HasPrefix(args[0], "-") {
-		fmt.Println("usage: dibs trust <host:port>")
+	var target, pin string
+	pinGiven := false
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--pin":
+			// `--pin` with nothing after it is the same empty pin as
+			// `--pin ""`: a check with nothing to check against, refused
+			// below, and never a usage message that exits clean.
+			pinGiven = true
+			if i+1 < len(args) {
+				i++
+				pin = strings.ToLower(args[i])
+			}
+		case strings.HasPrefix(args[i], "-") || target != "":
+			target = ""
+			i = len(args)
+		default:
+			target = args[i]
+		}
+	}
+	if target == "" {
+		fmt.Println("usage: dibs trust <host:port> [--pin <64 hex digits>]")
 		fmt.Println()
 		fmt.Println("  Records the certificate a remote dibd is serving, so this machine will")
 		fmt.Println("  accept it. Print the daemon's own fingerprint with `dibs fingerprint`")
-		fmt.Println("  ON THAT MACHINE and compare the two before relying on it.")
+		fmt.Println("  ON THAT MACHINE and compare the two before relying on it; with --pin,")
+		fmt.Println("  the key pin that machine advertised through Supgang, the comparison is")
+		fmt.Println("  made here and a certificate with another key is refused.")
 		return nil
 	}
-	target := args[0]
-
-	// Deliberately unverified: this connection exists to LOOK at the
-	// certificate, which is the thing that cannot be verified yet. Nothing is
-	// sent over it, and nothing is trusted as a result of it except the bytes
-	// the operator is about to be shown.
-	conn, err := tls.Dial("tcp", target, &tls.Config{
-		InsecureSkipVerify: true, //nolint:gosec // the certificate is the subject, not the channel
-		MinVersion:         tls.VersionTLS12,
-	})
-	if err != nil {
-		return fmt.Errorf("could not reach %s: %w", target, err)
+	// `--pin "$PIN"` with the variable unset is not a request to skip the
+	// check; it is the check with nothing to check against, and it fails.
+	if pinGiven {
+		if err := checkPinShape(pin); err != nil {
+			return err
+		}
 	}
-	defer func() { _ = conn.Close() }()
-	certs := conn.ConnectionState().PeerCertificates
-	if len(certs) == 0 {
-		return fmt.Errorf("%s presented no certificate", target)
-	}
-	// THE TOP OF THE CHAIN, not the leaf.
-	//
-	// The daemon presents a short-lived leaf under a long-lived board CA, and
-	// the CA is the identity worth pinning: it carries no addresses, so nothing
-	// about that machine invalidates it, and every later leaf verifies through
-	// it. Pinning the leaf instead would make this ceremony due again on every
-	// renewal and every time the board changed networks, on every joined
-	// machine at once, which is exactly what the split was made to end.
-	//
-	// A single self-signed certificate is still a chain of one, so a daemon
-	// that predates the split, or one fronted by a real certificate, records
-	// what it presents.
-	pinned := certs[len(certs)-1]
-
-	if err := os.MkdirAll(paths.DataDir(), 0o700); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(trustFile(), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	pinned, err := trustPinned(paths.DataDir(), target, pin)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
-	if err := pem.Encode(f, &pem.Block{Type: "CERTIFICATE", Bytes: pinned.Raw}); err != nil {
-		return err
-	}
-
 	fmt.Printf("trusted %s\n", target)
 	fmt.Printf("  fingerprint  SHA256:%s\n", fingerprint(pinned.Raw))
+	fmt.Printf("  key pin      %s\n", keyPin(pinned))
 	fmt.Printf("  expires      %s\n", pinned.NotAfter.Format("2006-01-02"))
 	fmt.Printf("  recorded in  %s\n\n", trustFile())
+	if pin != "" {
+		fmt.Println("  Its key is the one that machine signed through Supgang: nothing to compare.")
+		return nil
+	}
 	fmt.Println("  Verify it: run `dibs fingerprint` on that machine and compare.")
 	fmt.Println("  They must match exactly. If they do not, something is answering")
 	fmt.Println("  on that address that is not your daemon.")
 	return nil
+}
+
+// chainsToPinned verifies the leaf of certs against its own last certificate
+// as the only root, for the host in target.
+func chainsToPinned(certs []*x509.Certificate, target string) error {
+	roots := x509.NewCertPool()
+	roots.AddCert(certs[len(certs)-1])
+	inter := x509.NewCertPool()
+	if len(certs) > 2 {
+		for _, c := range certs[1 : len(certs)-1] {
+			inter.AddCert(c)
+		}
+	}
+	host, _, err := net.SplitHostPort(target)
+	if err != nil {
+		host = target
+	}
+	_, err = certs[0].Verify(x509.VerifyOptions{Roots: roots, Intermediates: inter, DNSName: host})
+	return err
+}
+
+// checkPinShape refuses a --pin that could never match anything.
+func checkPinShape(pin string) error {
+	if len(pin) != 64 || strings.Trim(pin, "0123456789abcdef") != "" {
+		return fmt.Errorf("--pin %q is not a key pin: 64 hex digits, the SHA-256 of a public key", pin)
+	}
+	return nil
+}
+
+// servedChain is the chain target presents, leaf first, within a deadline.
+//
+// Deliberately unverified: this connection exists to LOOK at the certificate,
+// which is the thing that cannot be verified yet. Nothing is sent over it, and
+// nothing is trusted as a result of it except the bytes the caller then
+// compares or shows. Bounded, because `dibs mcp-config --board` dials on the
+// operator's behalf and a peer that accepts the connection and never finishes
+// the handshake would otherwise hold the recipe forever.
+func servedChain(target string) ([]*x509.Certificate, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	dialer := &tls.Dialer{
+		NetDialer: &net.Dialer{Timeout: 10 * time.Second},
+		Config: &tls.Config{
+			InsecureSkipVerify: true, //nolint:gosec // the certificate is the subject, not the channel
+			MinVersion:         tls.VersionTLS12,
+		},
+	}
+	conn, err := dialer.DialContext(ctx, "tcp", target)
+	if err != nil {
+		return nil, fmt.Errorf("could not reach %s: %w", target, err)
+	}
+	defer func() { _ = conn.Close() }()
+	certs := conn.(*tls.Conn).ConnectionState().PeerCertificates
+	if len(certs) == 0 {
+		return nil, fmt.Errorf("%s presented no certificate", target)
+	}
+	return certs, nil
+}
+
+// servedCA is the certificate at the top of the chain target presents.
+//
+// THE TOP OF THE CHAIN, not the leaf. The daemon presents a short-lived leaf
+// under a long-lived board CA, and the CA is the identity worth pinning: it
+// carries no addresses, so nothing about that machine invalidates it, and
+// every later leaf verifies through it. Pinning the leaf instead would make
+// this ceremony due again on every renewal and every time the board changed
+// networks, on every joined machine at once, which is exactly what the split
+// was made to end. A single self-signed certificate is still a chain of one,
+// so a daemon that predates the split, or one fronted by a real certificate,
+// records what it presents.
+func servedCA(target string) (*x509.Certificate, error) {
+	certs, err := servedChain(target)
+	if err != nil {
+		return nil, err
+	}
+	return certs[len(certs)-1], nil
+}
+
+// trustPinned records, in dir, the certificate target serves, after checking
+// its key against pin when one is given. A mismatch records nothing: the
+// certificate offered is not the one the hub signed through Supgang, and
+// whatever is answering on that address is not that board.
+func trustPinned(dir, target, pin string) (*x509.Certificate, error) {
+	certs, err := servedChain(target)
+	if err != nil {
+		return nil, err
+	}
+	cert := certs[len(certs)-1]
+	if pin != "" {
+		if keyPin(cert) != pin {
+			return nil, fmt.Errorf("refusing to trust %s: it presents a certificate whose key pin is %s, "+
+				"and the board's computer signed %s through Supgang. Something is answering on "+
+				"that address that is not that board, or its Dibs was re-keyed and its "+
+				"advertisement not updated (`dibs fingerprint` there prints the current one)",
+				target, keyPin(cert), pin)
+		}
+		// THE LEAF MUST CHAIN TO THE PINNED KEY, and name this address.
+		//
+		// An impostor can append the hub's PUBLIC CA certificate to its own
+		// chain: the top then carries the signed key and the pin matches,
+		// while the certificate actually protecting the connection is the
+		// impostor's. The bridge would refuse it on the first call, but this
+		// command would have reported the join verified. Verified means the
+		// leaf is issued under the pinned key, for the host being dialled.
+		if err := chainsToPinned(certs, target); err != nil {
+			return nil, fmt.Errorf("refusing to trust %s: its certificate carries the key the board's "+
+				"computer signed through Supgang, and the certificate it actually serves is not "+
+				"issued under that key: %w. Something is answering on that address that is not "+
+				"that board", target, err)
+		}
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	// The board's own data directory.
+	store := filepath.Join(dir, "trusted-certs.pem")
+	f, err := os.OpenFile(store, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) // #nosec G304
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	if err := pem.Encode(f, &pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}); err != nil {
+		return nil, err
+	}
+	return cert, nil
 }
 
 // fingerprintCmd implements `dibs fingerprint`: what THIS daemon serves, so the
@@ -266,13 +412,31 @@ func fingerprintCmd(_ []string) error {
 		return fmt.Errorf("no certificate at %s: this daemon serves plaintext on "+
 			"loopback and only generates one for an address other machines can reach", certFile)
 	}
-	// THE LAST BLOCK, because that is what the other machine pinned.
-	//
-	// This file is a chain now: the short-lived leaf, then the board CA that
-	// signed it. `dibs trust` records the top, so printing the first block here
-	// would give the operator two different values to compare and tell them
-	// something was answering that was not their daemon. The two commands read
-	// the same certificate or the ceremony is worse than none.
+	cert, err := lastCertificate(pemBytes)
+	if err != nil {
+		return fmt.Errorf("%s: %w", certFile, err)
+	}
+	fmt.Printf("SHA256:%s\n", fingerprint(cert.Raw))
+	fmt.Printf("key pin %s\n", keyPin(cert))
+	fmt.Printf("expires %s\n", cert.NotAfter.Format("2006-01-02"))
+	// The advertisement, so a hub's operator has the exact verb: joining
+	// machines then read the pin from Supgang and compare it themselves.
+	if p := port(addr()); p != "" {
+		fmt.Printf("\nTo let joining machines verify this key instead of comparing it by hand,\n"+
+			"advertise it through Supgang on this machine:\n  %s\n", advertiseCommand(p, keyPin(cert)))
+	}
+	return nil
+}
+
+// lastCertificate is the LAST certificate block in a PEM chain, because that
+// is what the other machine pinned.
+//
+// The served file is a chain: the short-lived leaf, then the board CA that
+// signed it. `dibs trust` records the top, so reading the first block here
+// would give the operator two different values to compare and tell them
+// something was answering that was not their daemon. The two commands read
+// the same certificate or the ceremony is worse than none.
+func lastCertificate(pemBytes []byte) (*x509.Certificate, error) {
 	var cert *x509.Certificate
 	for rest := pemBytes; ; {
 		block, more := pem.Decode(rest)
@@ -285,14 +449,30 @@ func fingerprintCmd(_ []string) error {
 		}
 		c, err := x509.ParseCertificate(block.Bytes)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		cert = c
 	}
 	if cert == nil {
-		return fmt.Errorf("%s is not a PEM certificate", certFile)
+		return nil, errors.New("not a PEM certificate")
 	}
-	fmt.Printf("SHA256:%s\n", fingerprint(cert.Raw))
-	fmt.Printf("expires %s\n", cert.NotAfter.Format("2006-01-02"))
-	return nil
+	return cert, nil
+}
+
+// servedKeyPin is the pin of the CA the board in dir serves, or an error when
+// it serves none (a loopback board) or its configuration cannot be read.
+func servedKeyPin(dir string) (string, error) {
+	certFile, err := servedCertPath(dir)
+	if err != nil {
+		return "", err
+	}
+	pemBytes, err := os.ReadFile(certFile) // #nosec G304 -- the daemon's own data directory
+	if err != nil {
+		return "", err
+	}
+	cert, err := lastCertificate(pemBytes)
+	if err != nil {
+		return "", err
+	}
+	return keyPin(cert), nil
 }

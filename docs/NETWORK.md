@@ -277,6 +277,21 @@ the daemon refuses to start if the certificate does not name the address it
 binds, and `dibs fingerprint` / `dibs trust` pin it on each client. That is
 trust-on-first-use with an explicit human step, which is a defensible floor.
 
+**The human step is Supgang's to remove, and it does.** The one fact a
+joining machine cannot check for itself is which key the hub's certificate is
+issued under, and that is a fact about the hub's computer: the kind of thing
+the address plane already signs. Supgang carries service advertisements
+(its ADR 0002): a member says, in its own device-signed record, that it runs
+`dibs` on a port behind a key, as the SHA-256 of that key's
+SubjectPublicKeyInfo. A hub's operator runs the `supgang advertise` line that
+`dibs fingerprint` prints (and `dibs doctor` on the hub warns until they do);
+`dibs mcp-config --board <peer>` then reads the pin from `supgang resolve`,
+joins on the advertised port, compares the certificate the hub serves with
+the signed key, records it on a match, and refuses to print a recipe on a
+mismatch, since whatever answered is not that board. `dibs trust --pin` is
+the same comparison for a hub that was not answering at the time. Supgang
+never dials the port: it carries the claim, and the check is Dibs's.
+
 **What is not enough for the public internet.** One shared bearer secret
 authenticates every agent as every other agent. On loopback the filesystem is
 the boundary and that is fine. Across a network it is one leak from total
@@ -298,9 +313,12 @@ its shape.
 | Remap | friendly names for addresses on enrolled devices | No. Convenience |
 | Dibs | the board, the ledger, the wake decision | n/a |
 
-Dibs works with a bare address and TOFU pinning. It works better with Supgang.
-It must never be broken by Supgang's absence, and given that Supgang's WAN
-acceptance has failed, it must not be sold as working over the wide area
+Dibs works with a bare address and TOFU pinning. It works better with Supgang,
+and since 2026-09-13 the direction is that Agenxy tools depend on each other
+rather than duplicate: identity, addresses and now the key pin come from
+Supgang, and Dibs keeps only what is Dibs's, the comparison and the trust
+store. It must never be broken by Supgang's absence, and given that Supgang's
+WAN acceptance has failed, it must not be sold as working over the wide area
 because Supgang intends to.
 
 ## 7. Order of work
