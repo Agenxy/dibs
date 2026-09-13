@@ -1,12 +1,18 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/agenxy/dibs/internal/supgang"
 )
 
 // printJoinConfig is `dibs mcp-config --board <addr>`: the config for joining
@@ -19,21 +25,145 @@ import (
 //
 // It deliberately does not read local.secret: the secret needed here belongs to
 // the REMOTE board and this machine may have no daemon of its own at all.
-func printJoinConfig(remote string) error {
-	home, herr := homeDir()
-	if herr != nil {
+func printJoinConfig(remote string) error { return printJoinConfigFor(remote, nil) }
+
+// joinBoard is `dibs mcp-config --board <peer|address>`. A Supgang peer
+// first: the hub named the way the fleet names it, resolved to the address
+// it has signed now. Then a raw address, for a board reached some other way
+// (an ssh forward, a machine with no Supgang), which stays exactly as it was.
+func joinBoard(board string) error {
+	remote, peer, err := resolveBoardPeer(board)
+	if err == nil {
+		return printJoinConfigFor(remote, peer)
+	}
+	if !errors.Is(err, errNotAPeer) {
+		return err
+	}
+	if err := checkBoardAddr(board); err != nil {
+		return err
+	}
+	return printJoinConfig(board)
+}
+
+// errNotAPeer is resolveBoardPeer's answer to a --board that is an address
+// (or nothing Supgang knows), so the raw-address path takes over.
+var errNotAPeer = errors.New("not a supgang peer")
+
+// resolveBoardPeer reads `--board <peer>[:port]` as a Supgang member and
+// returns the https address to join it at now, and the peer. A string that
+// parses as an address, or that Supgang does not know, is errNotAPeer; a
+// Supgang that is absent or not initialised is the same answer, because the
+// raw-address path is then the only one there is.
+func resolveBoardPeer(board string) (remote string, peer *supgang.Peer, err error) {
+	if strings.Contains(board, "://") || net.ParseIP(strings.Trim(board, "[]")) != nil {
+		return "", nil, errNotAPeer
+	}
+	name, port := board, defaultPort
+	if h, p, serr := net.SplitHostPort(board); serr == nil {
+		n, perr := strconv.Atoi(p)
+		if perr != nil || n < 1 || n > 65535 {
+			return "", nil, fmt.Errorf("dibs mcp-config --board: %q is not a port", p)
+		}
+		name, port = h, p
+	}
+	if net.ParseIP(name) != nil {
+		return "", nil, errNotAPeer
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	p, rerr := supgang.Resolve(ctx, name)
+	if rerr != nil {
+		return "", nil, peerLookupFailure(board, rerr)
+	}
+	addr := p.Address()
+	if addr == "" {
+		return "", nil, fmt.Errorf("supgang knows %s (%s) but has no route-compatible address for it right now",
+			p.Name, p.Fingerprint)
+	}
+	host, _, serr := net.SplitHostPort(addr)
+	if serr != nil {
+		return "", nil, serr
+	}
+	remote = "https://" + net.JoinHostPort(host, port)
+	if err := checkBoardAddr(remote); err != nil {
+		return "", nil, err
+	}
+	return remote, &p, nil
+}
+
+// peerLookupFailure decides what a failed Supgang lookup means for --board.
+// Exactly two answers hand the word back to the address path: no Supgang here
+// at all, and a Supgang that knows no such peer (a Supgang that is installed
+// and not initialised is the first of those, said out loud). Anything else
+// (an ambiguous name, a Supgang that could not answer) is reported, because
+// turning "ambiguous" into a DNS name would pick a destination the operator
+// did not name; Supgang's own rule is that ambiguity fails closed.
+func peerLookupFailure(board string, err error) error {
+	if errors.Is(err, supgang.ErrNotInstalled) {
+		return errNotAPeer
+	}
+	var se *supgang.Error
+	if !errors.As(err, &se) {
+		return fmt.Errorf("dibs mcp-config --board %s: %w", board, err)
+	}
+	switch {
+	case strings.Contains(se.Message, "no known peer"):
+		return errNotAPeer
+	case strings.Contains(se.Message, "state directory"):
+		fmt.Fprintf(os.Stderr, "# Supgang is installed here but not initialised (%s), so %q is read as an address.\n",
+			se.Message, board)
+		return errNotAPeer
+	}
+	return fmt.Errorf("dibs mcp-config --board %s: %w", board, err)
+}
+
+// defaultPort is the port a hub listens on unless its dibs.toml says otherwise;
+// `--board <peer>:<port>` names another.
+const defaultPort = "4777"
+
+// joinDirFor is the credential directory for a board: named after the address
+// for a raw address, and after the peer's fingerprint AND the port for a
+// peer, because two daemons on one computer are two boards with two secrets,
+// and a directory per peer alone would have the second's secret overwrite
+// the first's. Empty when the home directory cannot be resolved.
+func joinDirFor(remote string, peer *supgang.Peer) string {
+	home, err := homeDir()
+	if err != nil {
+		return ""
+	}
+	if peer == nil {
+		return filepath.Join(home, ".dibs-"+boardSlug(remote))
+	}
+	_, port, _ := net.SplitHostPort(strings.TrimPrefix(remote, "https://"))
+	return filepath.Join(home, ".dibs-"+boardSlug(peer.Fingerprint+":"+port))
+}
+
+// printJoinConfigFor is printJoinConfig, naming the hub as a Supgang peer when
+// it was given as one: the bridge then re-resolves the hub's address on every
+// start, and the printed recipe says where the address came from.
+func printJoinConfigFor(remote string, peer *supgang.Peer) error {
+	dir := joinDirFor(remote, peer)
+	if dir == "" {
+		_, herr := homeDir()
 		return herr
 	}
-	dir := filepath.Join(home, ".dibs-"+boardSlug(remote))
+	env := map[string]string{
+		"DIBS_ADDR": remote,
+		"DIBS_DIR":  dir,
+	}
+	if peer != nil {
+		env[boardPeerEnv] = peer.NodeID
+		fmt.Printf("# %s is the Supgang member %s (%s): the address below is the one it has\n"+
+			"# signed now, and the bridge asks Supgang again each time it starts, so the\n"+
+			"# board follows that computer when its address changes.\n#\n",
+			peer.Name, peer.Fingerprint, peer.NodeID)
+	}
 	cfg := map[string]any{
 		"mcpServers": map[string]any{
 			"dibs": map[string]any{
 				"command": self(),
 				"args":    []string{"mcp-stdio"},
-				"env": map[string]string{
-					"DIBS_ADDR": remote,
-					"DIBS_DIR":  dir,
-				},
+				"env":     env,
 			},
 		},
 	}

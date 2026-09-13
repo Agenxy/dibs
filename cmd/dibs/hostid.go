@@ -1,14 +1,17 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/agenxy/dibs/internal/paths"
+	"github.com/agenxy/dibs/internal/supgang"
 )
 
 // hostID is this COMPUTER's identity, as a key rather than as its hostname.
@@ -30,7 +33,20 @@ import (
 // only runs a bridge has no node_id and gets its own file beside the secret it
 // was given.
 func hostID() string {
-	hostIDOnce.Do(func() { hostIDValue = loadOrCreateHostID(paths.DataDir()) })
+	hostIDOnce.Do(func() {
+		// SUPGANG FIRST. A machine in the fleet's address plane already has
+		// one identity, and it is the one every other member knows this
+		// computer by; a second id minted here would make the same computer
+		// answer to two names (docs/NETWORK.md §2). Only when Supgang is
+		// absent or not initialised does the data directory's own id stand in.
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if id, err := supgang.Status(ctx); err == nil && id.NodeID != "" {
+			hostIDValue = id.NodeID
+			return
+		}
+		hostIDValue = loadOrCreateHostID(paths.DataDir())
+	})
 	return hostIDValue
 }
 

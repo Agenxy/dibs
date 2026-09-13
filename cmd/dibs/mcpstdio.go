@@ -61,7 +61,7 @@ func runBridge(_ []string) error {
 	if err != nil {
 		return fmt.Errorf("no local secret yet: start dibd once first: %w", err)
 	}
-	url := origin() + "/mcp"
+	url := boardOrigin() + "/mcp"
 	client := daemonClient(75 * time.Second)
 	// No timeout: this one is meant to stay open. A deadline here is a stream
 	// that dies on the hour with nothing to say about why.

@@ -99,7 +99,7 @@ human/admin (interactive terminal; the god-view needs the admin password):
   dibs admin set-password  set/replace the admin password that gates the board
   dibs mcp-config         print MCP host config (contains the local secret)
 
-env: DIBS_ADDR (default 127.0.0.1:4777), DIBS_DIR, DIBS_TOKEN,
+env: DIBS_ADDR (default 127.0.0.1:4777), DIBS_DIR, DIBS_TOKEN, DIBS_BOARD_PEER (a Supgang peer the bridge resolves),
      DIBS_ADMIN=1 (bypass the terminal check: for humans scripting)`
 
 var version = build.Version
@@ -457,10 +457,7 @@ func mcpConfig(args []string) error {
 			"machine's own configuration")
 	}
 	if *board != "" {
-		if err := checkBoardAddr(*board); err != nil {
-			return err
-		}
-		return printJoinConfig(*board)
+		return joinBoard(*board)
 	}
 	s, err := localSecret()
 	if err != nil {
@@ -962,6 +959,9 @@ type (
 		Agent     *struct {
 			Harness string `json:"harness,omitempty"`
 			CWD     string `json:"cwd,omitempty"`
+			// HostID is WHICH COMPUTER, as the fleet's address plane names
+			// it; doctor turns it into that computer's signed name.
+			HostID string `json:"host_id,omitempty"`
 			// Surface separates a HARNESS from one of Dibs's own front doors.
 			// The daemon and the web board register agents too, and neither is
 			// a thread anything can resume, so counting them as unreachable
@@ -1000,6 +1000,7 @@ type (
 	boardView struct {
 		Serial uint64         `json:"serial"`
 		Node   string         `json:"node"`
+		HostID string         `json:"host_id"`
 		Agents []boardAgent   `json:"agents"`
 		Claims []boardClaim   `json:"claims"`
 		Spaces []boardChannel `json:"spaces"`

@@ -201,7 +201,10 @@ var envVar = regexp.MustCompile(`DIBS_[A-Z_]+(=1)?`)
 // parenthetical the help gave it: only the wording is written down, never the
 // list.
 var envDocs = map[string]string{
-	"DIBS_ADDR":  "The daemon's address.",
+	"DIBS_ADDR": "The daemon's address.",
+	"DIBS_BOARD_PEER": "The hub as a Supgang peer (name, tag, fingerprint or node id). " +
+		"When set, the bridge dials the address Supgang has signed for that computer now, " +
+		"keeping the scheme and port from DIBS_ADDR; when Supgang cannot resolve it, DIBS_ADDR is dialled as given.",
 	"DIBS_DIR":   "The data directory, for the verbs that read the ledger file directly.",
 	"DIBS_TOKEN": "The agent token the agent-scoped verbs authenticate with.",
 }

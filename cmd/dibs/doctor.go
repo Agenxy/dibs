@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/agenxy/dibs/internal/boardconfig"
@@ -22,6 +24,7 @@ import (
 	"github.com/agenxy/dibs/internal/liveness"
 	"github.com/agenxy/dibs/internal/notify"
 	"github.com/agenxy/dibs/internal/paths"
+	"github.com/agenxy/dibs/internal/supgang"
 	"github.com/agenxy/dibs/internal/ui"
 )
 
@@ -469,6 +472,12 @@ func checkWakeRoutes(dir string, b *boardView, ok reportFn, warn fixFn) {
 	// command is configured" against a hub that had three, with a repair
 	// that edits a file the hub never reads. The node id says whose board
 	// this is. Found by the pre-release review, round forty-two.
+	if b != nil && servedFromHere(dir, b.Node) {
+		if drift := hostIdentityDrift(b.HostID, localSupgangNodeID()); drift != "" {
+			warn(drift, "restart the daemon (`dibs upgrade` does) so its agents carry the identity "+
+				"every other member of the fleet knows this computer by")
+		}
+	}
 	if b != nil && b.Node != "" && !servedFromHere(dir, b.Node) {
 		warn(fmt.Sprintf("this board is served by another daemon (node %s), whose wake "+
 			"configuration lives in that machine's dibs.toml", b.Node),
@@ -1591,10 +1600,77 @@ func wakeCoverage(b *boardView, have map[string]bool) (covered int, missing map[
 			h = "(no harness recorded)"
 		case have[h] && !a.Resumable:
 			h += " (no resumable thread)"
+		case have[h] && hostLabel(a) != "":
+			h += " (on " + hostLabel(a) + ")"
 		case have[h]:
 			h += " (working directory not on this machine)"
 		}
 		missing[h]++
 	}
 	return covered, missing
+}
+
+// supgangNames is host id -> the computer's signed Supgang name, filled once
+// per doctor run from `supgang peers`; a test fills it directly. Empty when
+// Supgang is absent or cannot answer, in which case the bridge-reported
+// hostname label stands in.
+var (
+	supgangNames     map[string]string
+	supgangNamesOnce sync.Once
+	supgangSelf      string
+)
+
+func loadSupgangPeers() {
+	supgangNamesOnce.Do(func() {
+		if supgangNames != nil {
+			return // a test filled it
+		}
+		supgangNames = map[string]string{}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		self, peers, err := supgang.Peers(ctx)
+		if err != nil {
+			return
+		}
+		supgangSelf = self.NodeID
+		supgangNames[self.NodeID] = self.Name
+		for _, p := range peers {
+			supgangNames[p.NodeID] = p.Name
+		}
+	})
+}
+
+// localSupgangNodeID is this computer's Supgang node id, or "" when Supgang
+// is absent or has not identified this machine.
+func localSupgangNodeID() string {
+	loadSupgangPeers()
+	return supgangSelf
+}
+
+// hostLabel names the machine an agent is on: its Supgang name when its host
+// id is a member Supgang knows, else the hostname its bridge reported.
+func hostLabel(a boardAgent) string {
+	loadSupgangPeers()
+	if a.Agent != nil && a.Agent.HostID != "" {
+		if name := supgangNames[a.Agent.HostID]; name != "" {
+			return name
+		}
+	}
+	return a.Host
+}
+
+// hostIdentityDrift says when the running daemon stamps its agents with an
+// identity that is not the one Supgang gives this computer now: a daemon
+// started before the machine joined its hive, which nothing corrects but a
+// restart. Empty when they agree or when Supgang has nothing to say.
+func hostIdentityDrift(daemonHost, supgangNode string) string {
+	if supgangNode == "" || daemonHost == "" || daemonHost == supgangNode {
+		return ""
+	}
+	short := supgangNode
+	if len(short) > 8 {
+		short = short[:8]
+	}
+	return fmt.Sprintf("this computer is Supgang member %s, and the running daemon still identifies its "+
+		"agents as %s: it was started before this machine joined the hive", short, daemonHost)
 }

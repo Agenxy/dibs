@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"sort"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -540,6 +541,27 @@ func (e *Engine) NodeID() string {
 	return e.state.NodeID
 }
 
+// SetHostID names the computer this daemon runs on the way the fleet's
+// address plane names it: Supgang's node id, when this machine is a Supgang
+// member. Called once at boot, before the server is up.
+//
+// Two identities for one computer was the defect docs/NETWORK.md §2 named:
+// a hub stamped its own agents with the ledger's node id while a bridge on
+// another machine asserted the Supgang id, so the same computer answered to
+// two names and its own agents looked remote to a bridge that knew it by the
+// other one. One identity, the address plane's, wherever it is known.
+func (e *Engine) SetHostID(id string) { e.hostID = strings.TrimSpace(id) }
+
+// HostID is which computer this daemon is on, for stamping a loopback caller
+// and for telling a remote agent from a local one: Supgang's node id when
+// set, else the ledger's node id, as it always was.
+func (e *Engine) HostID() string {
+	if e.hostID != "" {
+		return e.hostID
+	}
+	return e.NodeID()
+}
+
 // Board returns the public snapshot with presentation annotations (SPEC §2):
 // last_seen (ephemeral freshness) and proc_alive, computed at read time.
 func (e *Engine) Board(ctx context.Context) (core.Result, error) {
@@ -548,6 +570,11 @@ func (e *Engine) Board(ctx context.Context) (core.Result, error) {
 
 func (e *Engine) decoratedBoard() core.Result {
 	b := e.state.Board()
+	// The identity this daemon stamps its own machine's agents with, beside
+	// the ledger's node: doctor compares it with what Supgang says the
+	// machine is now, and a daemon started before the machine joined a hive
+	// is told to restart rather than left answering to two names.
+	b["host_id"] = e.HostID()
 	human := e.humanIdentityLocked()
 	agents, _ := b["agents"].([]map[string]any)
 	for _, lm := range agents {

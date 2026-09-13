@@ -68,22 +68,38 @@ Dibs therefore needs a `HostID` that is:
 That is exactly the shape Dibs needs: fingerprint decides, name displays,
 ambiguity fails closed.
 
-**But Dibs must not require Supgang.** Supgang's wide-area acceptance has
-failed and the fix is unreleased; a board that only works when an unproven
-address plane is present would be a worse product than one that works over any
-reachable address. So:
+**Dibs uses Supgang for this rather than keeping an identity of its own.** An
+earlier version of this section said Dibs must not require Supgang, because
+Supgang's wide-area acceptance had failed. That was reversed on 2026-09-13 as
+an Agenxy-wide decision: the projects use each other as dependencies and
+specialise, rather than each growing a copy of the others' work. Supgang is
+the address plane; Dibs asks it (`internal/supgang`, over `supgang --json`,
+whose envelopes are versioned and checked) and keeps nothing of its own that
+Supgang already answers. So:
 
-- Dibs defines `HostID` as its own value. **Built.** The daemon DERIVES it
-  wherever it can: a caller arriving over loopback is on the daemon's machine
-  (nothing else can reach loopback), so it is stamped with the daemon's node id
-  and nothing the caller says moves it. A genuinely remote caller's bridge
-  asserts one, which its own `node_id` supplies when that machine runs a daemon
-  and a generated `host_id` otherwise. Absent means unknown, and unknown behaves
-  exactly as this board did before the field existed.
-- When Supgang is present, `HostID` **is** the Supgang node fingerprint, and
-  the human label is Supgang's signed computer name. One identity, not two.
-- When it is not, Dibs generates a per-data-directory key on first run, which
-  is the same thing it already does for its TLS leaf.
+- **Built.** On a machine that is a Supgang member, `HostID` **is** the
+  Supgang node id, on both sides: the daemon stamps every loopback caller with
+  it (`Engine.HostID`, read once at boot), and the bridge on a joining machine
+  asserts it on every call (read once per bridge). One identity per computer,
+  the one every other member knows it by, from the next start of whichever
+  process predates the hive: a daemon started before `supgang init` keeps the
+  ledger's id until it restarts, and `dibs doctor` says so and names the
+  restart, because a machine answering to two names is exactly the defect
+  this replaces. The human label is Supgang's signed computer name, which
+  doctor looks up by host id to say which machine a remote agent is on.
+- **Built.** A hub is named as a Supgang peer: `dibs mcp-config --board
+  MacMarine` resolves the address Supgang has signed for that computer now,
+  records the peer (`DIBS_BOARD_PEER`), and the bridge asks again each time it
+  starts, so the board follows the hub when its address changes.
+- A caller arriving over loopback is on the daemon's machine (nothing else can
+  reach loopback), so it is stamped and nothing it says moves that. A remote
+  caller's bridge asserts, which is as strong as the bearer secret and no
+  stronger, until §6.
+- Without Supgang, which is one machine or an ssh forward, the ledger's node id
+  stands in for the daemon and a per-directory `host_id` for a bridge. Absent
+  means unknown, and unknown behaves exactly as this board did before the
+  field existed. That path exists for the machine that cannot run Supgang; it
+  is not a second identity system, and nothing will be added to it.
 
 **Honest limit, stated once.** Until an agent can *prove* its host, a host id
 is asserted, exactly as the shared bearer secret is asserted today. Host
