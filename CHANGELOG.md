@@ -274,15 +274,6 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   It cannot name an architecture, so an Intel Mac is told by the description
   and nowhere a manifest can enforce. Linux and Windows use the release
   archives. Validated against the official `mcpb` CLI on a local snapshot.
-  stdio bridge launched from inside the bundle, macOS on Apple silicon and
-  Linux amd64 selected by `platform_overrides`), attaches `dibs.mcpb` and its
-  digest to the release, and the registry job stamps a `packages` entry of
-  type `mcpb` with the asset URL and `fileSha256` into `server.json`. A
-  release without the asset publishes without the block and says so; a
-  stale hash is worse than no package. Linux arm64 is not in the bundle,
-  because a manifest selects by operating system and not by architecture,
-  and the description says so rather than handing an arm64 host an amd64
-  binary. Validated against the official `mcpb` CLI on a local snapshot.
 - **A Linux notifier: the operator can be asked, not only shown.** (#63)
   `notify.Available()` was `runtime.GOOS == "darwin"`, so on Linux a request
   that needed a person (a role grant, a mailbox adoption) waited on the board
