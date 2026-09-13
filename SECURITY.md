@@ -191,6 +191,20 @@ can therefore name any session. So these endpoints say *what* is waiting (how
 many, from whom, of what kind) and never *what it says*. Reading content
 requires a token.
 
+A caller can also LIE about a session's lifecycle on this path: a `Stop` for a
+peer that is still working, or a `SessionStart` for one that has stopped, and
+session ids are readable through `spawned_agents`. What that buys is bounded,
+and the bound is tested rather than assumed. A forged `Stop` can cost one
+spurious wake, which is milder than a lost message and is why the wake path
+decides from recency and from whether a wake is already running rather than
+from the flag alone. A forged `SessionStart` marks the agent recently in
+touch, which DEFERS a wake and does not cancel it: the deferral re-arms
+(`TestTheRecheckReArmsWhileTheAgentStaysBusy`), so the mail is delivered when
+the cooldown lapses, at most `[wake.exec.<harness>].cooldown` late. Nothing on
+this path reads a mailbox or grants a role. Closing it properly means a
+credential per agent the hub can distinguish, which is `docs/NETWORK.md` §6;
+until then this paragraph is the honest statement of the exposure (#74).
+
 **Reattach by session id is guessable.** Losing your context must not lose your
 mailbox, so a registration presenting the same name and session id reclaims the
 agent. Neither is secret: the bridge derives the session id from the host
