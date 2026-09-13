@@ -1053,15 +1053,16 @@ desktop half: `notify-send` is the Linux notifier and it is exercised against
 a stub in CI, not a notification daemon. Coordination (agents, claims, mail,
 the board) depends on none of that.
 
-Windows builds and vets, and the scorer and the liveness parsers run on a
-windows runner in CI. The first run there also said what does NOT hold:
-`internal/core` compares claim paths with the platform's separator and its
-tests (and every real claim so far) are POSIX paths; `internal/ledger`'s
-torn-tail recovery and `internal/boardconfig`'s certificate-pair check both
-fail on Windows file semantics. Those three are the Windows work, listed in
-issue #11 with the failing test names; the daemon's lock is `LockFileEx`,
-liveness asks the kernel whether a pid still runs, and no Windows harness has
-registered an agent. It is a build, not a support statement.
+Windows builds and vets, and the pure packages (the state machine, the
+ledger, the board config, the scorer and the liveness parsers) run on a
+windows runner in CI. The first run there said the state machine did not
+hold: claim paths were cleaned with the platform's separator, so two agents
+were granted the same file. Claims are now folded with `/` whatever the host,
+which is what replaying a ledger on another machine needs anyway. The
+daemon's lock is `LockFileEx`, liveness asks the kernel whether a pid still
+runs, and the rest of the tree (the daemon, the CLI, the e2e suites) has not
+been run there; no Windows harness has registered an agent. It is a build,
+not a support statement.
 
 Patches for either are wanted, and [CONTRIBUTING.md](CONTRIBUTING.md) says what
 evidence they need.

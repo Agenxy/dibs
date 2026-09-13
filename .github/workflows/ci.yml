@@ -107,12 +107,13 @@ jobs:
         run: mise exec -- go build ./...
       - name: vet
         run: mise exec -- go vet ./...
-      # Only what holds there. The first run said internal/core (claim paths
-      # compared with the platform separator), internal/ledger (torn-tail
-      # recovery) and internal/boardconfig (certificate pair) fail on Windows
-      # file semantics; that list is the Windows work, on issue #11, and a
-      # job that fails on every push for known reasons teaches people to
-      # ignore it.
+      # The pure packages. The first run said internal/core (claim paths
+      # cleaned with the platform separator), internal/ledger (a test that
+      # left the file open) and internal/boardconfig (a TOML fixture with
+      # unescaped backslashes) failed here; each was the test or the fold
+      # assuming unix, fixed on issue #113. A job that fails on every push
+      # for known reasons teaches people to ignore it, so a package joins
+      # this line when it holds.
       - name: the packages that hold on Windows
-        run: mise exec -- go test -count=1 ./internal/overlap/ ./internal/liveness/
+        run: mise exec -- go test -count=1 ./internal/core/ ./internal/ledger/ ./internal/boardconfig/ ./internal/overlap/ ./internal/liveness/
 

@@ -1,14 +1,24 @@
 package core
 
 import (
-	"path/filepath"
+	"path"
 	"sort"
 	"strings"
 )
 
-// cleanPath normalizes a claim path: absolute, cleaned, no trailing slash.
+// cleanPath normalizes a claim path: absolute, cleaned, no trailing slash,
+// and spelled with `/` whatever the host's separator is.
+//
+// A claim is a path an AGENT supplied, recorded in the ledger and replayed
+// on whichever machine holds it. filepath.Clean here made the fold depend on
+// the host: on Windows it rewrote every `/` to `\`, and every comparison in
+// this package, which writes `/`, stopped matching. The first Windows run
+// granted an exclusive claim over a file another agent held exclusively
+// (issue #113). path.Clean is the host-independent one; a Windows agent's
+// `C:\src\x` is folded to `C:/src/x` first, so that the same file claimed
+// from two spellings collides as it does on unix.
 func cleanPath(p string) string {
-	p = filepath.Clean(p)
+	p = path.Clean(strings.ReplaceAll(p, "\\", "/"))
 	if len(p) > 1 {
 		p = strings.TrimSuffix(p, "/")
 	}
