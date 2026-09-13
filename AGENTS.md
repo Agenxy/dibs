@@ -175,9 +175,11 @@ Things that have cost real time here, none of which are visible in the diff:
 ## Distribution
 
 Releases are cut by tagging: the workflow re-runs the whole gate against the tagged
-commit, then publishes signed artifacts, and publishes `server.json` to the official MCP
-Registry as `io.github.Agenxy/dibs`. No source is updated by hand: if those disagree,
-that is a bug in the pipeline, not a chore.
+commit, then publishes signed artifacts, attaches an MCP Bundle (`dibs.mcpb`, built by
+`tools/mcpbundle` from the same binaries) with its digest, and publishes `server.json`
+to the official MCP Registry as `io.github.Agenxy/dibs` with a `packages` entry naming
+that bundle. No source is updated by hand: if those disagree, that is a bug in the
+pipeline, not a chore.
 
 **The Homebrew cask is the one step that still needs a person, and it is worth knowing
 why.** The tap requires changes through a pull request, so GoReleaser pushes the updated

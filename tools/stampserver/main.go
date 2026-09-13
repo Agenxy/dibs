@@ -12,12 +12,15 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -55,6 +58,25 @@ func run(path, explicit string) error {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	doc["version"] = version
+	// THE INSTALL PATH (#44). The release attaches dibs.mcpb; the registry
+	// entry names that asset, with the digest of the bytes actually attached,
+	// so an agent that finds Dibs knows what to fetch and can check it. A
+	// release without the asset (every release before the bundle existed)
+	// publishes without a packages block rather than with a stale one, and
+	// says so. A release that could not be LOOKED AT is neither: the stamp
+	// fails, because publishing without the block on a network error would
+	// silently drop the install path from a release that has one. The first
+	// version treated every error as "no asset". Found by the Codex review.
+	pkg, err := packageFor(repoOf(), version)
+	switch {
+	case err != nil:
+		return err
+	case pkg == nil:
+		fmt.Printf("no packages block: release v%s carries no dibs.mcpb\n", version)
+		delete(doc, "packages")
+	default:
+		doc["packages"] = []any{pkg}
+	}
 	out, err := json.MarshalIndent(doc, "", "  ")
 	if err != nil {
 		return err
@@ -175,3 +197,104 @@ var semver = regexp.MustCompile(`^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za
 
 // repoName is the owner/name shape GITHUB_REPOSITORY always has.
 var repoName = regexp.MustCompile(`^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$`)
+
+// The bundle and its digest, as the release job names them.
+const (
+	bundleAsset = "dibs.mcpb"
+	digestAsset = bundleAsset + ".sha256"
+)
+
+// releaseAssets lists the names of the assets on the release of tag. A
+// variable so the stamping can be tested without a release to look at.
+var releaseAssets = func(repo, tag string) ([]string, error) {
+	args := []string{"release", "view", tag, "--repo", repo, "--json", "assets", "--jq", ".assets[].name"}
+	// #nosec G204 -- argv, no shell; repo is checked against repoName and
+	// tag is "v" + a version that passed semver, both in this file.
+	out, err := exec.Command("gh", args...).Output()
+	if err != nil {
+		return nil, fmt.Errorf("gh release view %s of %s: %w", tag, repo, err)
+	}
+	return strings.Fields(string(out)), nil
+}
+
+// fetchAsset downloads one asset of the release of tag to dest.
+var fetchAsset = func(repo, tag, name, dest string) error {
+	args := []string{"release", "download", tag, "--repo", repo, "--pattern", name, "--output", dest, "--clobber"}
+	// #nosec G204 -- argv, no shell; repo and tag as above, name is one of
+	// the two constants above, dest is a path this program made.
+	if out, err := exec.Command("gh", args...).CombinedOutput(); err != nil {
+		return fmt.Errorf("gh release download %s from %s: %w\n%s", name, tag, err, out)
+	}
+	return nil
+}
+
+// packageFor is the registry's `packages` entry for the bundle attached to
+// the release of version: registryType mcpb, the direct download URL as the
+// identifier, its digest, and stdio transport, which is what the 2025-12-11
+// schema requires of an mcpb package. Nil and no error when the release
+// carries no bundle; an error when the release could not be examined.
+//
+// The digest is computed from the bundle as downloaded, not read from the
+// .sha256 the release carries beside it: the registry's fileSha256 is what a
+// client checks the download against, so it must be the digest of those
+// bytes, and a digest file is a claim about them. The first version read the
+// claim. When the release does carry the digest file, the two must agree, and
+// a disagreement is a release that must not be published.
+func packageFor(repo, version string) (map[string]any, error) {
+	tag := "v" + version
+	assets, err := releaseAssets(repo, tag)
+	if err != nil {
+		return nil, err
+	}
+	has := map[string]bool{}
+	for _, a := range assets {
+		has[a] = true
+	}
+	if !has[bundleAsset] {
+		return nil, nil
+	}
+	dir, err := os.MkdirTemp("", "stampserver-")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	bundle := filepath.Join(dir, bundleAsset)
+	if err := fetchAsset(repo, tag, bundleAsset, bundle); err != nil {
+		return nil, err
+	}
+	// #nosec G304 -- a path this function made, in a directory it made.
+	body, err := os.ReadFile(bundle)
+	if err != nil {
+		return nil, err
+	}
+	sum := sha256.Sum256(body)
+	digest := hex.EncodeToString(sum[:])
+	if has[digestAsset] {
+		side := filepath.Join(dir, digestAsset)
+		if err := fetchAsset(repo, tag, digestAsset, side); err != nil {
+			return nil, err
+		}
+		raw, err := os.ReadFile(side) // #nosec G304 -- as above
+		if err != nil {
+			return nil, err
+		}
+		if f := strings.Fields(string(raw)); len(f) == 0 || f[0] != digest {
+			return nil, fmt.Errorf("release %s: %s claims %q and the bundle attached hashes to %s; "+
+				"a release whose digest disagrees with its bytes is not published", tag, digestAsset, raw, digest)
+		}
+	}
+	return map[string]any{
+		"registryType": "mcpb",
+		"identifier":   "https://github.com/" + repo + "/releases/download/" + tag + "/" + bundleAsset,
+		"version":      version,
+		"fileSha256":   digest,
+		"transport":    map[string]any{"type": "stdio"},
+	}, nil
+}
+
+func repoOf() string {
+	if r := os.Getenv("GITHUB_REPOSITORY"); repoName.MatchString(r) {
+		return r
+	}
+	return "Agenxy/dibs"
+}

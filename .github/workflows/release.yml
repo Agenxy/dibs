@@ -94,6 +94,17 @@ jobs:
       # than leaving a green job to imply otherwise. GoReleaser pushed the
       # updated cask to a branch; until it is merged, `brew upgrade` serves the
       # previous build.
+      # THE BUNDLE, so the registry entry has an install path (#44). Built
+      # from the binaries GoReleaser just produced, attached to the release
+      # beside them, and the registry job below stamps its URL and digest
+      # into server.json. The tag arrives through the environment; the tool
+      # reads it there, which is why this is one command and not a script.
+      - name: MCP Bundle
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: go run ./tools/mcpbundle -upload
+
       - name: say what the cask still needs
         if: success()
         run: go run ./tools/casknote
