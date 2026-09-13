@@ -152,6 +152,7 @@ func agentRow(id, kind, harness string) boardAgent {
 	a.Agent = &struct {
 		Harness string `json:"harness,omitempty"`
 		CWD     string `json:"cwd,omitempty"`
+		HostID  string `json:"host_id,omitempty"`
 		Surface string `json:"surface,omitempty"`
 	}{Harness: harness}
 	return a

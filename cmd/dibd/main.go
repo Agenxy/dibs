@@ -38,6 +38,7 @@ import (
 	"github.com/agenxy/dibs/internal/mcp"
 	"github.com/agenxy/dibs/internal/notify"
 	"github.com/agenxy/dibs/internal/paths"
+	"github.com/agenxy/dibs/internal/supgang"
 	xport "github.com/agenxy/dibs/internal/transport"
 	"github.com/agenxy/dibs/internal/web"
 )
@@ -234,6 +235,7 @@ func run() error {
 	}
 	led.OnEvents = nil // replay is done; live events flow through the engine
 	eng := engine.New(st, led, liveness.New(), history)
+	identifyHost(eng)
 	eng.SetBlobs(bs)
 	wake, err := wakePolicy(cfg.Wake)
 	if err != nil {
@@ -977,4 +979,31 @@ func absent(path string) (bool, error) {
 	default:
 		return false, err
 	}
+}
+
+// identifyHost names this computer the way the fleet's address plane does.
+//
+// When this machine is a Supgang member, its Supgang node id is the host id
+// every agent on it is stamped with, the same id a bridge on another machine
+// asserts for ITS agents, and the same id doctor and the board show a person.
+// Without Supgang the ledger's node id stands in, as it did before, and a
+// Supgang that is installed but not initialised is reported in its own words
+// rather than silently ignored: one computer answering to two names is the
+// defect this replaces, and a daemon that fell back without saying so would
+// bring it back the first time somebody reinstalled.
+func identifyHost(eng *engine.Engine) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	id, err := supgang.Status(ctx)
+	switch {
+	case errors.Is(err, supgang.ErrNotInstalled):
+		return
+	case err != nil:
+		slog.Info("Supgang is installed and did not identify this computer; agents here are "+
+			"stamped with the board's own node id", "supgang", err.Error())
+		return
+	}
+	eng.SetHostID(id.NodeID)
+	slog.Info("this computer is a Supgang member; its agents carry that identity",
+		"name", id.Name, "node", id.NodeID)
 }

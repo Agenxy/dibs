@@ -10,13 +10,18 @@ package main
 // rather than deciding anything on their own.
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/agenxy/dibs/internal/boardconfig"
 	"github.com/agenxy/dibs/internal/paths"
+	"github.com/agenxy/dibs/internal/supgang"
 )
 
 // defaultAddr is where a daemon nobody configured is listening.
@@ -213,4 +218,60 @@ func configReadable(dir string) error {
 			err)
 	}
 	return nil
+}
+
+// boardPeerEnv names the hub as a Supgang peer (its node id, fingerprint,
+// name or tag). `dibs mcp-config --board <peer>` writes it beside DIBS_ADDR,
+// and the bridge then dials the address Supgang has signed for that computer
+// NOW rather than the one it had when the config was printed: a hub that
+// moved networks is still the same member.
+const boardPeerEnv = "DIBS_BOARD_PEER"
+
+// boardOrigin is origin(), with the host replaced by the hub's current
+// Supgang address when the config named the hub as a peer. The port and the
+// scheme are Dibs's own and stay: Supgang's candidates carry Supgang's port.
+// A resolution that fails keeps the configured address, and says so, because
+// a stale address that might still work beats no address.
+func boardOrigin() string {
+	peer := strings.TrimSpace(os.Getenv(boardPeerEnv))
+	base := origin()
+	if peer == "" {
+		return base
+	}
+	// ONLY OVER TLS. A configured plaintext address is loopback or an ssh
+	// forward, where the boundary is the machine; re-pointing it at whatever
+	// host Supgang names would carry the board's credential over the
+	// network in the clear. The peer recipe never writes plaintext, so a
+	// peer beside a plaintext address is a hand-edited config, and the safe
+	// reading is to ignore the peer and say so.
+	if !strings.HasPrefix(strings.ToLower(base), "https://") {
+		slog.Warn("ignoring "+boardPeerEnv+": the configured address is not https, and a peer's address "+
+			"would move a plaintext credential exchange onto the network", "peer", peer, "addr", base)
+		return base
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	p, err := supgang.Resolve(ctx, peer)
+	if err != nil || p.Address() == "" {
+		slog.Warn("the hub could not be resolved through Supgang; dialling the configured address",
+			"peer", peer, "err", err, "addr", base)
+		return base
+	}
+	host, _, err := net.SplitHostPort(p.Address())
+	if err != nil {
+		return base
+	}
+	scheme, rest, found := strings.Cut(base, "://")
+	if !found {
+		scheme, rest = "", base
+	}
+	_, port, err := net.SplitHostPort(rest)
+	if err != nil {
+		return base
+	}
+	out := net.JoinHostPort(host, port)
+	if scheme != "" {
+		out = scheme + "://" + out
+	}
+	return out
 }
