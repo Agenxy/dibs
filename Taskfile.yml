@@ -385,6 +385,15 @@ tasks:
       - task: e2e:install
       - DIBD=$PWD/bin/dibd bun internal/mcp/e2e/wake_e2e.ts
 
+  test:remote:
+    env:
+      DIBS_NOTIFY: "off"
+      DIBS_ALLOW_PARALLEL: "1"
+    desc: "Two machines on one: a hub bound to the LAN address, a second data directory joining it by the documented recipe, claims across hosts"
+    deps: [build]
+    cmds:
+      - task: e2e:install
+      - DIBD=$PWD/bin/dibd DIBS=$PWD/bin/dibs bun internal/mcp/e2e/remote_e2e.ts
   test:sidecar:
     env:
       # No dialogs from a test run: these suites spawn real daemons,
@@ -523,6 +532,7 @@ tasks:
       - task: test:guard
       - task: test:space
       - task: test:wake
+      - task: test:remote
       - task: release:check
       - task: test:archive
       - task: test:sidecar
