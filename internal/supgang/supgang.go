@@ -5,13 +5,16 @@
 // self-certifying identity per computer, root-signed membership, and fresh
 // device-signed addresses exchanged between members even when the addresses
 // change. Dibs does none of that itself. Across machines a Dibs board needs
-// exactly three things from it: which computer a caller is (`HostID`), which
-// computer a human means by a name, and where that computer can be reached
-// right now. This package is the whole of Dibs's dependency on it: the
-// `supgang` binary, spoken to over argv with `--json`, whose envelopes are
-// versioned (`supgang.status/v4`, `supgang.peers/v5`, `supgang.resolve/v4`)
-// and checked here, so a Supgang that changes its answer is a named error
-// rather than a wrong host id.
+// exactly four things from it: which computer a caller is (`HostID`), which
+// computer a human means by a name, where that computer can be reached right
+// now, and which TLS key the Dibs on it serves (a service advertisement, a
+// claim that computer signed: Supgang ADR 0002). This package is the whole
+// of Dibs's dependency on it: the `supgang` binary, spoken to over argv with
+// `--json`, whose envelopes are versioned (`supgang.status/v4`,
+// `supgang.peers/v5` and `v6`, `supgang.resolve/v4` and `v5`; the later
+// majors add `services` and change nothing else) and checked here, so a
+// Supgang that changes its answer is a named error rather than a wrong host
+// id.
 //
 // One machine needs none of this: a board on loopback identifies its callers
 // by the loopback itself. Supgang is consulted when a bridge joins a hub on
@@ -70,7 +73,7 @@ type Candidate struct {
 }
 
 // Peer is one computer in the hive, with the addresses Supgang has signed
-// for it.
+// for it and the services it says it runs there.
 type Peer struct {
 	Name        string      `json:"name"`
 	Tags        []string    `json:"tags"`
@@ -80,6 +83,67 @@ type Peer struct {
 	Status      string      `json:"status"`
 	ExpiresAt   int64       `json:"expires_at"`
 	Candidates  []Candidate `json:"addresses"`
+	Services    []Service   `json:"services"`
+	// ServicesKnown is whether the Supgang that answered carries service
+	// advertisements at all (peers/v6, resolve/v5). An empty Services with
+	// it false means an older Supgang, not a computer that advertises
+	// nothing, and the two call for different advice.
+	ServicesKnown bool `json:"-"`
+}
+
+// Service is one thing a computer says it runs, signed by that computer's
+// device: its name, the port at the computer's addresses, and the SHA-256
+// of the TLS public key it presents, as 64 hex digits. A claim, never an
+// observation: Supgang has not dialled it. Dibs advertises itself as `dibs`
+// with the pin of its board CA's SubjectPublicKeyInfo.
+type Service struct {
+	Name   string `json:"name"`
+	Port   int    `json:"port"`
+	KeyPin string `json:"key_pin"`
+}
+
+// ServiceName is what Dibs advertises itself as.
+const ServiceName = "dibs"
+
+// Service finds the advertisement with a name, if the computer made one.
+func (p Peer) Service(name string) (Service, bool) {
+	for _, s := range p.Services {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return Service{}, false
+}
+
+// Valid says whether the advertisement is the shape one has: a name, a
+// port, and a pin that is a key. Rows are kept as Supgang gave them and
+// judged where they are used, because a malformed advertisement for the
+// service a caller is looking for is a fault to report, not an absence to
+// fall back from: dropping it would turn a broken hub into an unpinned join.
+func (s Service) Valid() error {
+	if s.Name == "" {
+		return errors.New("supgang carries a service advertisement with no name")
+	}
+	if s.Port < 1 || s.Port > 65535 {
+		return fmt.Errorf("supgang advertises %s on port %d, which is not a port", s.Name, s.Port)
+	}
+	if err := checkKeyPin(s.KeyPin); err != nil {
+		return fmt.Errorf("supgang's advertisement of %s carries a %w", s.Name, err)
+	}
+	return nil
+}
+
+// checkKeyPin refuses anything but 64 lowercase hex digits.
+func checkKeyPin(pin string) error {
+	if len(pin) != 64 {
+		return fmt.Errorf("key pin %q is not 64 hex digits", pin)
+	}
+	for _, c := range pin {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return fmt.Errorf("key pin %q is not lowercase hex", pin)
+		}
+	}
+	return nil
 }
 
 // ErrNotInstalled is the answer when no `supgang` is on this machine.
@@ -118,7 +182,7 @@ func Status(ctx context.Context) (Identity, error) {
 	if err := call(ctx, &out, "status"); err != nil {
 		return Identity{}, err
 	}
-	if err := out.check("supgang.status/", 4); err != nil {
+	if _, err := out.check("supgang.status/", 4); err != nil {
 		return Identity{}, err
 	}
 	if err := checkNodeID(out.NodeID); err != nil {
@@ -152,18 +216,21 @@ func Peers(ctx context.Context) (self Peer, peers []Peer, err error) {
 	if err := call(ctx, &out, "peers"); err != nil {
 		return Peer{}, nil, err
 	}
-	if err := out.check("supgang.peers/", 5); err != nil {
+	major, err := out.check("supgang.peers/", 5, 6)
+	if err != nil {
 		return Peer{}, nil, err
 	}
 	if err := checkNodeID(out.This.NodeID); err != nil {
 		return Peer{}, nil, err
 	}
+	out.This.ServicesKnown = major >= 6
 	// A peer with a malformed id is dropped rather than failing the listing:
 	// the rest of the hive is still worth knowing about, and doctor names
 	// what it can.
 	kept := out.Peers[:0]
 	for _, p := range out.Peers {
 		if checkNodeID(p.NodeID) == nil {
+			p.ServicesKnown = major >= 6
 			kept = append(kept, p)
 		}
 	}
@@ -187,11 +254,13 @@ func Resolve(ctx context.Context, peer string) (Peer, error) {
 		NodeID      string      `json:"node_id"`
 		ExpiresAt   int64       `json:"expires_at"`
 		Candidates  []Candidate `json:"candidates"`
+		Services    []Service   `json:"services"`
 	}
 	if err := call(ctx, &out, "resolve", peer); err != nil {
 		return Peer{}, err
 	}
-	if err := out.check("supgang.resolve/", 4); err != nil {
+	major, err := out.check("supgang.resolve/", 4, 5)
+	if err != nil {
 		return Peer{}, err
 	}
 	if err := checkNodeID(out.NodeID); err != nil {
@@ -200,6 +269,7 @@ func Resolve(ctx context.Context, peer string) (Peer, error) {
 	return Peer{
 		Name: out.Name, Tags: out.Tags, Fingerprint: out.Fingerprint, NodeID: out.NodeID,
 		ExpiresAt: out.ExpiresAt, Candidates: out.Candidates,
+		Services: out.Services, ServicesKnown: major >= 5,
 	}, nil
 }
 
@@ -226,23 +296,25 @@ type envelope struct {
 	Err    string `json:"error"`
 }
 
-// check refuses an answer whose schema is not the one this code reads, so a
+// check refuses an answer whose schema is not one this code reads, so a
 // Supgang that renamed a field is a named error here and not a wrong host id
-// on a board. The major is what a schema's `/vN` promises; a later minor
-// would keep the field names.
-func (e envelope) check(prefix string, major int) error {
+// on a board. The major is what a schema's `/vN` promises; more than one is
+// accepted when the later ones only added fields, and the one that answered
+// is returned so the caller knows which fields to believe.
+func (e envelope) check(prefix string, majors ...int) (int, error) {
 	if e.Status == "error" {
-		return &Error{Message: e.Err}
+		return 0, &Error{Message: e.Err}
 	}
-	want := fmt.Sprintf("%sv%d", prefix, major)
-	if e.Schema != want {
-		return fmt.Errorf("supgang answered with schema %q, and this build of dibs reads %q: "+
-			"update whichever is older", e.Schema, want)
+	for _, major := range majors {
+		if e.Schema == fmt.Sprintf("%sv%d", prefix, major) {
+			if e.Status != "ok" {
+				return 0, fmt.Errorf("supgang answered with status %q, which is neither ok nor error", e.Status)
+			}
+			return major, nil
+		}
 	}
-	if e.Status != "ok" {
-		return fmt.Errorf("supgang answered with status %q, which is neither ok nor error", e.Status)
-	}
-	return nil
+	return 0, fmt.Errorf("supgang answered with schema %q, and this build of dibs reads %sv%d: "+
+		"update whichever is older", e.Schema, prefix, majors[len(majors)-1])
 }
 
 func call(ctx context.Context, into any, args ...string) error {

@@ -5,6 +5,25 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **A hub's certificate is verified against the key its computer signed
+  through Supgang, so joining it is one command and no fingerprint ceremony.**
+  Supgang now carries service advertisements (its ADR 0002): a member signs,
+  into its own record, that it runs `dibs` on a port behind a key. `dibs
+  fingerprint` prints the board CA's key pin and the exact `supgang advertise
+  dibs <port> --key-pin <pin>` for the hub's operator, and `dibs doctor` on the
+  hub warns until it matches what the daemon serves (or is silent under a
+  Supgang that predates advertisements). `dibs mcp-config --board <peer>` then
+  joins on the advertised port, reads the pin from `supgang resolve`, checks
+  the certificate the hub presents against it, records it in the board's data
+  directory, and prints a recipe with nothing to compare; a certificate with
+  another key is refused and no recipe is printed, because whatever answered is
+  not that board. A hub that is not answering gets the pin carried into `dibs
+  trust <host:port> --pin <hex>`, new, which makes the same comparison later.
+  `internal/supgang` reads `supgang.peers/v6` and `supgang.resolve/v5` beside
+  the previous majors, which they extend by one field.
+
 ### Changed
 
 - **SECURITY.md states what a forged lifecycle hook can and cannot do.**

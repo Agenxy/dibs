@@ -398,12 +398,19 @@ is a supported transport, not a workaround: plenty of hosts will never have a
 routable address, and requiring one would exclude them for no reason.
 
 A hub that is directly reachable serves HTTPS with a certificate it generated,
-and the bridge trusts only what the joining machine has recorded, so that
-machine runs `DIBS_DIR=<that board's directory> dibs trust <host:port>` once and
-compares the fingerprint against `dibs fingerprint` on the hub. `DIBS_DIR` is not
-optional there: `trust` records the certificate in the directory it is given, and
-the bridge reads it from the one in its own config. `mcp-config --board` prints whichever of these
-two steps the address calls for.
+and the bridge trusts only what the joining machine has recorded. A hub whose
+operator has advertised that certificate's key through Supgang (`dibs
+fingerprint` on the hub prints the exact `supgang advertise dibs …` command,
+and `dibs doctor` there says when it has not been run) needs nothing more: the
+computer that runs the hub signed the key, `dibs mcp-config --board <peer>`
+reads it from `supgang resolve`, checks the certificate the hub serves against
+it, records it, and refuses to print a recipe at all when they differ. Without
+the advertisement the joining machine runs `DIBS_DIR=<that board's directory>
+dibs trust <host:port>` once and compares the fingerprint against `dibs
+fingerprint` on the hub. `DIBS_DIR` is not optional there: `trust` records the
+certificate in the directory it is given, and the bridge reads it from the one
+in its own config. `mcp-config --board` prints whichever of these steps the
+address calls for.
 
 **Once, not once a year.** What gets recorded is the board's own signing
 identity, not the certificate it happens to be serving today. The daemon issues

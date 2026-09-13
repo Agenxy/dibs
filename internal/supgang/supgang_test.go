@@ -45,11 +45,19 @@ func fakeSupgang(args []string) int {
 		_, _ = os.Stdout.WriteString(`{"schema":"supgang.error/v1","status":"error","error":"local control state directory failed validation"}`)
 		return 3 // as the real one: a refusal is an envelope AND a non-zero exit
 	}
+	// DIBS_TEST_SUPGANG_SERVICES makes the fake a Supgang that carries
+	// service advertisements (peers/v6, resolve/v5): MacSolis says it runs
+	// dibs on 4790 behind a key, plus one row that is not an advertisement.
+	services, peersSchema, resolveSchema := "", "supgang.peers/v5", "supgang.resolve/v4"
+	if os.Getenv("DIBS_TEST_SUPGANG_SERVICES") != "" {
+		services = `,"services":[{"name":"dibs","port":4790,"key_pin":"` + strings.Repeat("ab", 32) + `"},{"name":"","port":1,"key_pin":"zz"}]`
+		peersSchema, resolveSchema = "supgang.peers/v6", "supgang.resolve/v5"
+	}
 	switch args[1] {
 	case "status":
 		_, _ = os.Stdout.WriteString(`{"schema":"supgang.status/v4","status":"ok","version":"0.2.0-alpha.10","name":"MacMarine","hive_id":"5cb4e356","node_id":"fed08b444ee029ef43b8c04106199408f449d6857f60c16423d32f8dbbe77621","service":"running","listen":"[::]:44330","active_peers":1,"known_peers":1,"router_mapping":"disabled","internet_reachability":"direct-address-unverified","connection_recovery":"automatic-multi-path","mode":"device"}`)
 	case "peers":
-		_, _ = os.Stdout.WriteString(`{"schema":"supgang.peers/v5","status":"ok","this_computer":{"name":"MacMarine","name_source":"device-signed","tags":[],"fingerprint":"fed08b44","node_id":"fed08b444ee029ef43b8c04106199408f449d6857f60c16423d32f8dbbe77621","connected":true,"status":"running","generation":0,"sequence":352,"expires_at":1789322147,"candidate_count":2,"addresses":[{"scope":"local","kind":"local","transport":"quic-v1","address":"192.168.1.205:44330","provenance":"device-signed","route_compatible":true,"preferred":true},{"scope":"public","kind":"direct","transport":"quic-v1","address":"[2600:1700:2f70:ce40::41]:44330","provenance":"device-signed","route_compatible":true,"preferred":false}]},"peers":[{"name":"MacSolis","name_source":"device-signed","tags":["solis"],"fingerprint":"a8a37e32","node_id":"a8a37e32c37cdf4fb7634de622bc3f84ccb4636580d1ea26af3fe8ac31d1f152","connected":true,"status":"fresh","generation":0,"sequence":217,"expires_at":1789321427,"candidate_count":2,"addresses":[{"scope":"local","kind":"local","transport":"quic-v1","address":"192.168.1.191:44330","provenance":"device-signed","route_compatible":true,"preferred":true},{"scope":"public","kind":"direct","transport":"quic-v1","address":"[2600:1700:2f70:ce40::c]:44330","provenance":"device-signed","route_compatible":true,"preferred":false}]}]}`)
+		_, _ = os.Stdout.WriteString(`{"schema":"` + peersSchema + `","status":"ok","this_computer":{"name":"MacMarine","name_source":"device-signed","tags":[],"fingerprint":"fed08b44","node_id":"fed08b444ee029ef43b8c04106199408f449d6857f60c16423d32f8dbbe77621","connected":true,"status":"running","generation":0,"sequence":352,"expires_at":1789322147,"candidate_count":2,"addresses":[{"scope":"local","kind":"local","transport":"quic-v1","address":"192.168.1.205:44330","provenance":"device-signed","route_compatible":true,"preferred":true},{"scope":"public","kind":"direct","transport":"quic-v1","address":"[2600:1700:2f70:ce40::41]:44330","provenance":"device-signed","route_compatible":true,"preferred":false}]},"peers":[{"name":"MacSolis","name_source":"device-signed","tags":["solis"],"fingerprint":"a8a37e32","node_id":"a8a37e32c37cdf4fb7634de622bc3f84ccb4636580d1ea26af3fe8ac31d1f152","connected":true,"status":"fresh","generation":0,"sequence":217,"expires_at":1789321427,"candidate_count":2,"addresses":[{"scope":"local","kind":"local","transport":"quic-v1","address":"192.168.1.191:44330","provenance":"device-signed","route_compatible":true,"preferred":true},{"scope":"public","kind":"direct","transport":"quic-v1","address":"[2600:1700:2f70:ce40::c]:44330","provenance":"device-signed","route_compatible":true,"preferred":false}]` + services + `}]}`)
 	case "resolve":
 		// "--state-dir" is ANSWERED here on purpose: the production guard is
 		// what must stop a flag-shaped peer reaching argv, and a fake that
@@ -58,7 +66,7 @@ func fakeSupgang(args []string) int {
 			_, _ = os.Stdout.WriteString(`{"schema":"supgang.error/v1","status":"error","error":"no known peer significantly matches that name, tag, or fingerprint"}`)
 			return 3
 		}
-		_, _ = os.Stdout.WriteString(`{"schema":"supgang.resolve/v4","status":"ok","node_id":"a8a37e32c37cdf4fb7634de622bc3f84ccb4636580d1ea26af3fe8ac31d1f152","name":"MacSolis","tags":["solis"],"fingerprint":"a8a37e32","generation":0,"sequence":217,"issued_at":1789299827,"expires_at":1789321427,"candidates":[{"scope":"local","kind":"local","transport":"quic-v1","address":"192.168.1.191:44330","provenance":"device-signed","route_compatible":true,"preferred":true},{"scope":"public","kind":"direct","transport":"quic-v1","address":"[2600:1700:2f70:ce40::c]:44330","provenance":"device-signed","route_compatible":true,"preferred":false}]}`)
+		_, _ = os.Stdout.WriteString(`{"schema":"` + resolveSchema + `","status":"ok","node_id":"a8a37e32c37cdf4fb7634de622bc3f84ccb4636580d1ea26af3fe8ac31d1f152","name":"MacSolis","tags":["solis"],"fingerprint":"a8a37e32","generation":0,"sequence":217,"issued_at":1789299827,"expires_at":1789321427,"candidates":[{"scope":"local","kind":"local","transport":"quic-v1","address":"192.168.1.191:44330","provenance":"device-signed","route_compatible":true,"preferred":true},{"scope":"public","kind":"direct","transport":"quic-v1","address":"[2600:1700:2f70:ce40::c]:44330","provenance":"device-signed","route_compatible":true,"preferred":false}]` + services + `}`)
 	default:
 		fmt.Fprintln(os.Stderr, "fake supgang: unknown command", args[1])
 		return 2
@@ -98,6 +106,54 @@ func TestTheIdentityAndPeersAreReadFromSupgangsOwnEnvelopes(t *testing.T) {
 	if p.NodeID != peers[0].NodeID || p.Address() != "192.168.1.191:44330" {
 		t.Errorf("Resolve = %+v, Address = %q: want the preferred route-compatible candidate", p, p.Address())
 	}
+	if p.ServicesKnown || peers[0].ServicesKnown || len(p.Services) != 0 {
+		t.Errorf("a Supgang without advertisements reported some: %+v", p)
+	}
+}
+
+// A Supgang that carries service advertisements (ADR 0002) answers with the
+// next schema majors, which add `services` and nothing else: both are read,
+// the advertisement is found by name, a row that is not an advertisement is
+// dropped, and the answer says advertisements were carried at all, which is
+// the difference between "runs nothing" and "an older Supgang".
+func TestServiceAdvertisementsAreReadWhenSupgangCarriesThem(t *testing.T) {
+	useFake(t)
+	t.Setenv("DIBS_TEST_SUPGANG_SERVICES", "1")
+	ctx := context.Background()
+	p, err := Resolve(ctx, "solis")
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc, ok := p.Service(ServiceName)
+	if !p.ServicesKnown || !ok || svc.Port != 4790 || svc.KeyPin != strings.Repeat("ab", 32) || svc.Valid() != nil {
+		t.Errorf("Resolve = %+v: want a valid dibs advertisement", p)
+	}
+	// The malformed row is KEPT and judged where it is used: dropped, a
+	// broken advertisement for the service a caller wants would read as no
+	// advertisement, and the join would fall back to an unpinned ceremony.
+	if len(p.Services) != 2 || p.Services[1].Valid() == nil {
+		t.Errorf("Resolve = %+v: want the malformed row kept and invalid", p)
+	}
+	if _, ok := p.Service("remap"); ok {
+		t.Error("an advertisement nobody made was found")
+	}
+	_, peers, err := Peers(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(peers) != 1 || !peers[0].ServicesKnown || len(peers[0].Services) != 2 {
+		t.Errorf("Peers = %+v: want the same advertisements", peers)
+	}
+	for _, bad := range []Service{{Name: "", Port: 1, KeyPin: svc.KeyPin}, {Name: "dibs", Port: 0, KeyPin: svc.KeyPin}, {Name: "dibs", Port: 70000, KeyPin: svc.KeyPin}, {Name: "dibs", Port: 1, KeyPin: "ab"}} {
+		if bad.Valid() == nil {
+			t.Errorf("%+v was accepted", bad)
+		}
+	}
+	for _, pin := range []string{"", "ab", strings.Repeat("AB", 32), strings.Repeat("zz", 32)} {
+		if checkKeyPin(pin) == nil {
+			t.Errorf("key pin %q was accepted", pin)
+		}
+	}
 }
 
 // Supgang's own words for a computer that has not joined a hive, and for a
@@ -134,7 +190,7 @@ func TestAnAnswerWithoutANodeIDIsRefused(t *testing.T) {
 	}
 	var out struct{ envelope }
 	out.Schema, out.Status = "supgang.status/v4", "warning"
-	if err := out.check("supgang.status/", 4); err == nil {
+	if _, err := out.check("supgang.status/", 4); err == nil {
 		t.Error("a status that is neither ok nor error was accepted")
 	}
 }
@@ -160,8 +216,20 @@ func TestAnUnknownSchemaIsRefusedByName(t *testing.T) {
 	var out struct{ envelope }
 	out.Schema = "supgang.status/v9"
 	out.Status = "ok"
-	if err := out.check("supgang.status/", 4); err == nil || !strings.Contains(err.Error(), "v9") || !strings.Contains(err.Error(), "v4") {
+	if _, err := out.check("supgang.status/", 4); err == nil || !strings.Contains(err.Error(), "v9") || !strings.Contains(err.Error(), "v4") {
 		t.Errorf("check = %v, want both schemas named", err)
+	}
+	// Two accepted majors: the one that answered is returned, and neither
+	// an older nor a newer one passes.
+	out.Schema = "supgang.peers/v6"
+	if major, err := out.check("supgang.peers/", 5, 6); err != nil || major != 6 {
+		t.Errorf("check(v6 of 5,6) = %d %v", major, err)
+	}
+	for _, s := range []string{"supgang.peers/v4", "supgang.peers/v7"} {
+		out.Schema = s
+		if _, err := out.check("supgang.peers/", 5, 6); err == nil {
+			t.Errorf("%s was accepted", s)
+		}
 	}
 }
 

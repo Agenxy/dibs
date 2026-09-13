@@ -58,13 +58,15 @@ func resolveBoardPeer(board string) (remote string, peer *supgang.Peer, err erro
 	if strings.Contains(board, "://") || net.ParseIP(strings.Trim(board, "[]")) != nil {
 		return "", nil, errNotAPeer
 	}
-	name, port := board, defaultPort
+	name, port, explicit := board, defaultPort, false
 	if h, p, serr := net.SplitHostPort(board); serr == nil {
 		n, perr := strconv.Atoi(p)
 		if perr != nil || n < 1 || n > 65535 {
 			return "", nil, fmt.Errorf("dibs mcp-config --board: %q is not a port", p)
 		}
-		name, port = h, p
+		// The number, not the spelling: `:04777` is port 4777, and the
+		// advertisement it is compared against says "4777".
+		name, port, explicit = h, strconv.Itoa(n), true
 	}
 	if net.ParseIP(name) != nil {
 		return "", nil, errNotAPeer
@@ -79,6 +81,12 @@ func resolveBoardPeer(board string) (remote string, peer *supgang.Peer, err erro
 	if addr == "" {
 		return "", nil, fmt.Errorf("supgang knows %s (%s) but has no route-compatible address for it right now",
 			p.Name, p.Fingerprint)
+	}
+	// The port the hub ADVERTISES, when it does: that computer signed which
+	// port its Dibs listens on, so the default is only a guess it has
+	// superseded. `--board <peer>:<port>` still names another daemon there.
+	if svc, ok := p.Service(supgang.ServiceName); ok && !explicit && svc.Valid() == nil {
+		port = strconv.Itoa(svc.Port)
 	}
 	host, _, serr := net.SplitHostPort(addr)
 	if serr != nil {
@@ -118,8 +126,55 @@ func peerLookupFailure(board string, err error) error {
 }
 
 // defaultPort is the port a hub listens on unless its dibs.toml says otherwise;
+// a hub that advertises its port through Supgang supersedes it, and
 // `--board <peer>:<port>` names another.
 const defaultPort = "4777"
+
+// pinOutcome is what the join recipe knows about the hub's certificate after
+// asking Supgang: the key its computer signed (pin, empty when it advertised
+// none for the port being joined), whether the certificate it serves was
+// checked against that key and recorded (recorded), and why not when the pin
+// is known and it was not (reason).
+type pinOutcome struct {
+	pin      string
+	recorded bool
+	reason   string
+}
+
+// pinFromPeer turns a hub's Supgang advertisement into a recorded certificate.
+//
+// When the peer advertises `dibs` on the port being joined, the hub is
+// dialled, the certificate it serves is compared with the signed key, and on
+// a match it is recorded in dir, the directory the printed config names, so
+// the recipe's trust step is already done. A hub that does not answer is not
+// an error: the recipe then carries the pin into the `dibs trust` line. A hub
+// that answers with another key IS: the recipe is refused rather than printed
+// with a step that would record an impostor.
+func pinFromPeer(dir, remote string, peer *supgang.Peer) (pinOutcome, error) {
+	svc, ok := peer.Service(supgang.ServiceName)
+	if !ok {
+		return pinOutcome{}, nil
+	}
+	// A broken advertisement is a fault on the hub, named: falling back to
+	// the unpinned ceremony would turn it into a join that looks ordinary.
+	if err := svc.Valid(); err != nil {
+		return pinOutcome{}, fmt.Errorf("dibs mcp-config --board %s: %w; run `dibs fingerprint` on that "+
+			"machine and advertise the pin it prints", peer.Name, err)
+	}
+	if strconv.Itoa(svc.Port) != port(remote) {
+		return pinOutcome{}, nil
+	}
+	if _, err := trustPinned(dir, hostPort(remote), svc.KeyPin); err != nil {
+		var netErr net.Error
+		if errors.As(err, &netErr) || strings.Contains(err.Error(), "could not reach") {
+			// The dial error alone: the address is already in the sentence.
+			_, reason, _ := strings.Cut(err.Error(), ": ")
+			return pinOutcome{pin: svc.KeyPin, reason: reason}, nil
+		}
+		return pinOutcome{}, fmt.Errorf("dibs mcp-config --board %s: %w", peer.Name, err)
+	}
+	return pinOutcome{pin: svc.KeyPin, recorded: true}, nil
+}
 
 // joinDirFor is the credential directory for a board: named after the address
 // for a raw address, and after the peer's fingerprint AND the port for a
@@ -151,12 +206,17 @@ func printJoinConfigFor(remote string, peer *supgang.Peer) error {
 		"DIBS_ADDR": remote,
 		"DIBS_DIR":  dir,
 	}
+	var pinned pinOutcome
 	if peer != nil {
 		env[boardPeerEnv] = peer.NodeID
 		fmt.Printf("# %s is the Supgang member %s (%s): the address below is the one it has\n"+
 			"# signed now, and the bridge asks Supgang again each time it starts, so the\n"+
 			"# board follows that computer when its address changes.\n#\n",
 			peer.Name, peer.Fingerprint, peer.NodeID)
+		var err error
+		if pinned, err = pinFromPeer(dir, remote, peer); err != nil {
+			return err
+		}
 	}
 	cfg := map[string]any{
 		"mcpServers": map[string]any{
@@ -225,7 +285,33 @@ func printJoinConfigFor(remote string, peer *supgang.Peer) error {
 #
 `, tunnelStepSuffix(trust), port(remote), port(remote))
 	}
-	if trust {
+	switch {
+	case trust && pinned.recorded:
+		// Nothing for a person to compare: the hub's computer signed its
+		// Dibs's key through Supgang, and the certificate it serves now
+		// carries that key, so it was recorded here on the way.
+		fmt.Printf(`# 2%s. The board serves HTTPS with a certificate it generated itself, and
+#    %s signed, through Supgang, the key its Dibs serves. The certificate
+#    %s presents carries that key (pin %s...), so it is recorded in
+#    %s already. Nothing to compare by hand.
+#
+`, trustStepSuffix(tunnel), peer.Name, hostPort(remote), pinned.pin[:16], q)
+	case trust && pinned.pin != "":
+		// The key is known and signed; only the hub did not answer just now.
+		// The command below makes the same comparison when it does.
+		fmt.Printf(`# 2%s. The board serves HTTPS with a certificate it generated itself, and
+#    %s signed, through Supgang, the key its Dibs serves. %s did not
+#    answer just now (%s), so record the certificate when it does; the
+#    check against the signed key is made for you:
+#
+#      DIBS_DIR=%s dibs trust %s --pin %s
+#
+#    DIBS_DIR is not optional there: trust records the certificate in the data
+#    directory it is given, and the bridge reads it from the one in the config
+#    below.
+#
+`, trustStepSuffix(tunnel), peer.Name, hostPort(remote), pinned.reason, q, shellArg(hostPort(remote)), pinned.pin)
+	case trust:
 		// The trust step, which the bridge cannot do without.
 		//
 		// A non-loopback daemon serves HTTPS with a certificate it generated
@@ -249,6 +335,13 @@ func printJoinConfigFor(remote string, peer *supgang.Peer) error {
 #    else on this machine has its TLS behaviour altered.
 #
 `, trustStepSuffix(tunnel), q, shellArg(hostPort(remote)))
+		if peer != nil && peer.ServicesKnown {
+			fmt.Printf(`#    That comparison is a ceremony Supgang can end: once the hub's operator
+#    advertises the board's key there (` + "`dibs fingerprint`" + ` on the hub prints the
+#    exact command), this recipe checks the certificate against it for you.
+#
+`)
+		}
 	}
 	if !tunnel && !trust {
 		// Reachable directly and serving plaintext, because the operator said
