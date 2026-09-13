@@ -77,7 +77,8 @@ board and run `dibs host-bridge` with the same `DIBS_ADDR` and `DIBS_DIR`: it
 attaches to the hub for that machine, and when the hub decides one of the
 agents there should be woken, the bridge runs that machine's own command with
 the same substitutions, and the hub takes its report as the exit status. The hub
-never learns or runs the remote command. `dibs doctor` on the hub counts such an
+never learns or runs the remote command. `dibs host-bridge --service` writes the
+unit that keeps that bridge running. `dibs doctor` on the hub counts such an
 agent as covered while its bridge is attached, and on the joined machine says
 which half is missing. See [NETWORK.md](NETWORK.md) for why the hub decides THAT
 an agent is woken and only its own machine can decide how.

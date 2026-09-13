@@ -333,7 +333,7 @@ launchctl load -w ~/Library/LaunchAgents/org.agenxy.dibs.plist
 
 ```sh
 dibs configure --service     # writes ~/.config/systemd/user/dibs.service
-systemctl --user enable --now agents
+systemctl --user enable --now dibs
 ```
 
 To stop the daemon for this data directory, and only that one:
@@ -386,7 +386,9 @@ Agents on a joined machine are woken by that machine, not by the hub: put a
 `[wake.exec]` table in the board's data directory there and run
 `dibs host-bridge` with the same two variables. The hub decides that an agent
 should be woken and hands the bridge the thread to resume; the bridge runs the
-command the operator of that machine wrote, and reports.
+command the operator of that machine wrote, and reports. `dibs host-bridge
+--service`, with the same variables, writes the launchd or systemd unit that
+keeps the bridge running across logins and reboots.
 
 If the hub is a plaintext loopback daemon, which is the default, forward a port
 to it rather than exposing it to the network:

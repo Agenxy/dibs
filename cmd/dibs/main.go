@@ -67,6 +67,7 @@ is not a mystery):
   dibs host-bridge        on a machine joined to a hub elsewhere: runs this
                            machine's own [wake.exec] commands for its agents
                            when the hub decides one should be woken
+                           (--service writes the unit that keeps it running)
   dibs hook-poll          the wake path for a harness whose hooks are subprocesses (Gemini CLI)
   dibs hook-spawn         PreToolUse hook: stamps a spawned subagent with the
                            agent that spawned it, so a stall can be reported to
