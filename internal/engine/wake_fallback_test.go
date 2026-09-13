@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
 // The fallback runs when the primary fails, and only then.
@@ -32,7 +33,7 @@ func TestTheFallbackRunsOnlyWhenThePrimaryFails(t *testing.T) {
 	t.Run("primary finds the thread open, fallback delivers", func(t *testing.T) {
 		dir := t.TempDir()
 		t.Setenv("DIBS_TEST_OPEN_THREAD", "1")
-		ok := runWakeCommands([]string{self, "-test.run=TestHelperPrimaryFindsTheThreadOpen"},
+		ok := wakeexec.RunCommands([]string{self, "-test.run=TestHelperPrimaryFindsTheThreadOpen"},
 			[]string{"/usr/bin/touch", "fallback-ran"}, "somebody", dir, 10*time.Second, time.Second)
 		if !ok {
 			t.Fatal("the wake was reported as failed although the fallback exited 0: " +
@@ -45,7 +46,7 @@ func TestTheFallbackRunsOnlyWhenThePrimaryFails(t *testing.T) {
 	})
 	t.Run("primary delivers, fallback is not touched", func(t *testing.T) {
 		dir := t.TempDir()
-		ok := runWakeCommands([]string{"/usr/bin/true"}, []string{"/usr/bin/touch", "fallback-ran"},
+		ok := wakeexec.RunCommands([]string{"/usr/bin/true"}, []string{"/usr/bin/touch", "fallback-ran"},
 			"somebody", dir, 10*time.Second, time.Second)
 		if !ok {
 			t.Fatal("a primary that exited 0 was reported as a failed wake")
@@ -57,7 +58,7 @@ func TestTheFallbackRunsOnlyWhenThePrimaryFails(t *testing.T) {
 	})
 	t.Run("primary fails for another reason, fallback is not run", func(t *testing.T) {
 		dir := t.TempDir()
-		ok := runWakeCommands([]string{"/usr/bin/false"}, []string{"/usr/bin/touch", "fallback-ran"},
+		ok := wakeexec.RunCommands([]string{"/usr/bin/false"}, []string{"/usr/bin/touch", "fallback-ran"},
 			"somebody", dir, 10*time.Second, time.Second)
 		if ok {
 			t.Fatal("a primary that failed for a reason that is not an open thread was reported " +
@@ -68,7 +69,7 @@ func TestTheFallbackRunsOnlyWhenThePrimaryFails(t *testing.T) {
 		}
 	})
 	t.Run("no fallback configured is the old behaviour", func(t *testing.T) {
-		if runWakeCommands([]string{"/usr/bin/false"}, nil, "somebody", t.TempDir(),
+		if wakeexec.RunCommands([]string{"/usr/bin/false"}, nil, "somebody", t.TempDir(),
 			10*time.Second, time.Second) {
 			t.Error("a failed primary with no fallback was reported as a wake")
 		}

@@ -2,15 +2,13 @@ package engine
 
 import (
 	"context"
-	"errors"
 	"log/slog"
-	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/agenxy/dibs/internal/core"
+	"github.com/agenxy/dibs/internal/wakeexec"
 )
 
 // Reaching an agent that is not running.
@@ -125,45 +123,6 @@ type WakeCommand struct {
 	// silently on the other's case.
 	Fallback []string
 	Cooldown time.Duration
-}
-
-// wakeFields are the only substitutions a wake command gets.
-//
-// Each replaces a WHOLE argv element, never part of one, and the value is
-// passed to exec as a single argument. There is no shell anywhere in this path,
-// so a message body containing a semicolon is a message body containing a
-// semicolon.
-type wakeFields struct {
-	// thread is the identifier the harness's own resume command accepts,
-	// which is NOT the agent's session_id: that one names the harness
-	// PROCESS ("host-92368") and no resume command has ever heard of it.
-	// threadIDOf finds this; when it finds nothing, nothing is woken.
-	thread  string
-	agent   string
-	from    string
-	msgType string
-	message string
-}
-
-func (f wakeFields) apply(argv []string) []string {
-	out := make([]string, 0, len(argv))
-	for _, a := range argv {
-		switch a {
-		case "{thread}":
-			out = append(out, f.thread)
-		case "{agent}":
-			out = append(out, f.agent)
-		case "{from}":
-			out = append(out, f.from)
-		case "{type}":
-			out = append(out, f.msgType)
-		case "{message}":
-			out = append(out, f.message)
-		default:
-			out = append(out, a)
-		}
-	}
-	return out
 }
 
 // maybeWake starts the operator's wake command for an agent that cannot be
@@ -804,6 +763,25 @@ func (e *Engine) commandFor(l *core.Agent) wakeCommand {
 // Returns the cooldown that route carries and whether a command is what will
 // run; ok is false when neither route can reach this agent at all.
 func (e *Engine) wakeRoute(l *core.Agent) (cool time.Duration, byCommand, ok bool) {
+	// ANOTHER MACHINE'S AGENT IS REACHED BY THAT MACHINE'S BRIDGE, OR NOT AT
+	// ALL. The hub's [wake.exec] starts a process here, in a directory that is
+	// not here, and the hub's sockets are this filesystem's: neither is a route
+	// to a remote agent, however the harness is named in dibs.toml. Before
+	// this branch the hub ran its own command for a remote agent and it
+	// failed, which counted as an attempt and cost the mail its retry.
+	if host := e.remoteHostOf(l); host != "" {
+		if _, has := e.hostRouteFor(l); !has {
+			slog.Debug("no wake: the agent is on another machine and no bridge there can start its harness",
+				"agent", l.ID, "host", host)
+			return 0, false, false
+		}
+		if threadIDOf(l) == "" {
+			slog.Debug("no wake by the host's bridge: no harness thread id for this agent",
+				"agent", l.ID, "host", host)
+			return 0, false, false
+		}
+		return wakeCooldown, true, true
+	}
 	harness := ""
 	if l.Agent != nil {
 		harness = l.Agent.Harness
@@ -931,11 +909,11 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 	if kind == "" {
 		kind = strings.TrimPrefix(ev.Type, "message.")
 	}
-	f := wakeFields{
-		thread:  thread,
-		agent:   l.ID,
-		from:    from,
-		msgType: kind,
+	f := wakeexec.Fields{
+		Thread:  thread,
+		Agent:   l.ID,
+		From:    from,
+		MsgType: kind,
 		// Deliberately NOT the body. A wake says that mail exists; the agent
 		// reads it over the authenticated channel with its own token. Putting
 		// the text in an argv would hand a message's contents to whatever the
@@ -966,14 +944,25 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 		// dibs://skills rather than something to fix one wake at a time. Found
 		// by the pre-release review, which also noted the test for this only
 		// required the word "board" and so passed the steering sentence.
-		message: wakeNotice,
+		Message: wakeNotice,
+	}
+	if host, remote := e.hostRouteFor(l); remote {
+		// The bridge there substitutes these into ITS operator's command,
+		// exactly as f.apply would here: whole argv elements, never parts.
+		return wakePlan{
+			host: host, cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread,
+			request: WakeRequest{
+				Host: host, Agent: l.ID, Harness: wakeHarness(l), Thread: f.Thread,
+				CWD: cwdOf(l), From: f.From, MsgType: f.MsgType, Notice: f.Message,
+			},
+		}, true
 	}
 	if !configured {
 		// The socket carries the same sentence the command would have carried.
 		// One notice, one wording, whichever way it travels.
 		return wakePlan{
-			agent: l.ID, sessions: sessionsOf(l), notice: f.message,
-			cwd: cwdOf(l), cooldown: cooldown, thread: f.thread,
+			agent: l.ID, sessions: sessionsOf(l), notice: f.Message,
+			cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread,
 		}, true
 	}
 	// cwd ON THIS BRANCH TOO, and this is the branch that needs it.
@@ -990,8 +979,8 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 	// against a plan that never carried a directory at all.
 	cmd := e.commandFor(l)
 	return wakePlan{
-		argv: f.apply(cmd.argv), fallback: f.apply(cmd.fallback),
-		cwd: cwdOf(l), cooldown: cooldown, thread: f.thread,
+		argv: f.Apply(cmd.argv), fallback: f.Apply(cmd.fallback),
+		cwd: cwdOf(l), cooldown: cooldown, thread: f.Thread,
 	}, true
 }
 
@@ -1005,6 +994,11 @@ func (e *Engine) wakeFor(l *core.Agent, msgType string, ev core.Event) (wakePlan
 // them would re-buy every one.
 type wakePlan struct {
 	argv []string // the operator's command
+	// host is the OTHER machine this wake runs on, or "": a plan for a remote
+	// agent carries no argv, because the hub never learns one; request is
+	// what its bridge is handed instead. See hostwake.go.
+	host    string
+	request WakeRequest
 	// thread is the harness thread this wake targets, or "" for a socket
 	// route or an agent with none. Carried out so the exit can tell whether
 	// the turn it ends is still the agent's current one.
@@ -1154,263 +1148,30 @@ func threadIDOf(l *core.Agent) string {
 // looksLikeThreadID is core.LooksLikeThreadID: one definition of the shape.
 func looksLikeThreadID(s string) bool { return core.LooksLikeThreadID(s) }
 
-// wakeTimeout is the longest a wake command may run before it is killed.
-//
-// This was 30 seconds, which is a sensible bound for a notification and a
-// catastrophic one for the command actually documented: `codex exec resume`
-// continues the thread IN THIS PROCESS, so the timeout is a cap on the agent's
-// whole turn. An ordinary turn passes 30s easily, and the kill landed mid-work
-// with the cooldown already spent and no retry, so the wake destroyed the
-// activation it had just created and the blocking message stayed unread. The
-// bound exists only to stop a wedged process living forever; it must be far
-// past any turn a person would wait for, and this is.
-const wakeTimeout = 2 * time.Hour
-
-// wakeGrace bounds the wait AFTER the deadline kills the command.
-//
-// cmd.WaitDelay, and it has to be set because stdout and stderr are not files.
-// For a non-file writer os/exec copies through a pipe, and killing the process
-// at the deadline does not close descriptors a GRANDCHILD inherited: Wait then
-// blocks on EOF that never comes, forever, well past the two-hour bound this
-// package advertises. `codex exec resume` starting a helper that outlives it is
-// an ordinary thing for a wake command to do.
-//
-// The consequence was worse than a stuck goroutine. wakeFinished runs on defer,
-// so it never ran, wakers.running kept that agent marked as still going, and
-// every later message to it was refused as a duplicate: one leaked descriptor
-// made an agent permanently unreachable until the daemon restarted. Two fixes
-// of mine met, the tail buffer and the running map, and neither was wrong
-// alone.
-const wakeGrace = 10 * time.Second
-
 // runWake executes one wake, bounded and out of the way, and reports whether
 // anything was actually woken.
-//
-// The boolean is load-bearing: the caller releases the cooldown when this is
-// false, so a command that could not run does not consume the single attempt
-// the message was going to get.
-// runWake delivers one wake, by whichever route the plan names.
-//
-// Returns whether the agent was actually reached, which is what the caller's
-// retry machinery turns on: a wake that failed spent no attempt and is still
-// owed. That contract is why the socket path reports honestly rather than
-// optimistically. Nothing here decides WHETHER to wake; that was settled under
-// one lock in wakeFor.
 func (e *Engine) runWake(plan wakePlan, agent string) bool {
+	if plan.host != "" {
+		return e.requestRemoteWake(plan, agent)
+	}
 	if len(plan.argv) > 0 {
-		return runWakeCommands(plan.argv, plan.fallback, agent, plan.cwd, wakeTimeout, wakeGrace)
+		return wakeexec.RunCommands(plan.argv, plan.fallback, agent, plan.cwd, wakeexec.Timeout, wakeexec.Grace)
 	}
 	return e.wakeOverSocket(plan, agent)
 }
 
-// runWakeCommands runs the operator's command, and the fallback only if the
-// first one fails.
-//
-// The primary's failure is still logged in full by runWakeFor, argv and
-// directory included, because an operator whose primary is failing on every
-// wake wants to know that even while the fallback is carrying the load. What
-// follows says whether anything was tried next, so the two lines read as one
-// story rather than a failure and an unexplained success.
-//
-// Measured, both halves, on the board this was written for: `codex exec
-// resume` exit 1 with "already has an active writer" on a thread open in the
-// desktop app, then `codex queue` exit 0, then the thread's own transcript
-// carrying "Dibs: check the board." and the agent answering two questions it
-// had been sent. The reverse case, a closed thread, is the one the primary
-// already handled.
-func runWakeCommands(argv, fallback []string, agent, dir string, timeout, grace time.Duration) bool {
-	ok, out := runWakeForOut(argv, agent, dir, timeout, grace)
-	if ok {
-		return true
-	}
-	if len(fallback) == 0 {
-		return false
-	}
-	// ONLY WHEN THE THREAD IS OPEN. The fallback exists for one failure: the
-	// harness refusing to resume a thread its desktop app holds open. Run
-	// after ANY failure, `codex queue` exited 0 on a closed thread whose
-	// resume had failed for some other reason, parking the message where
-	// nothing reads it, and that counted as a wake and suppressed the retry.
-	// The primary's own words decide. Found by the pre-release review, round
-	// twenty-three.
-	if !openThreadFailure(out) {
-		slog.Info("the wake command failed for a reason that is not an open thread; "+
-			"the fallback would park the message, so it does not run",
-			"agent", agent, "cmd", argv[0], "run_it_yourself", strings.Join(argv, " "))
-		return false
-	}
-	slog.Info("the wake command found the thread open; trying the fallback",
-		"agent", agent, "cmd", argv[0], "fallback", fallback[0])
-	return runWakeFor(fallback, agent, dir, timeout, grace)
-}
+// wakeTimeout and wakeGrace are the engine's names for the bounds every wake
+// runs under, local or delegated; the values live with the runner.
+const (
+	wakeTimeout = wakeexec.Timeout
+	wakeGrace   = wakeexec.Grace
+)
 
-// openThreadMarkers are what the measured harness prints when it refuses to
-// resume a thread something else holds open (codex 0.153: "thread-store
-// conflict: thread <id> already has an active writer").
-var openThreadMarkers = []string{"active writer", "thread-store conflict"}
-
-func openThreadFailure(out []byte) bool {
-	text := strings.ToLower(string(out))
-	for _, m := range openThreadMarkers {
-		if strings.Contains(text, m) {
-			return true
-		}
-	}
-	return false
-}
-
-// runWakeFor is runWake with its bounds as arguments, so a test can assert that
-// this RETURNS rather than assert that a constant is large. The old test
-// checked only that wakeTimeout was at least two hours, which stays true while
-// Wait blocks past it.
-func runWakeForOut(argv []string, agent, dir string, timeout, grace time.Duration) (bool, []byte) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	// #nosec G204 -- argv comes from the operator's own config file and nowhere
-	// else: SetWakeCommands is the only writer, no tool or op reaches it, and
-	// substitution replaces whole elements rather than building a string. There
-	// is no shell in this path.
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	// IN THE AGENT'S DIRECTORY, WHICH IS THE WHOLE REASON THIS EVER WORKED.
-	//
-	// Without this the command inherits the DAEMON'S working directory, and a
-	// daemon started by launchd has "/". Both documented wake commands care:
-	// `codex exec resume` refuses outright there ("Not inside a trusted
-	// directory"), exit 1, which is precisely the failure in this repository's
-	// own daemon log, three times; and an agent resumed anywhere else would run
-	// its next turn in the wrong tree even where the harness tolerates it.
-	//
-	// The plan has carried this value since the path shipped, set from the
-	// agent's own record and commented as what it was for, and nothing read it.
-	// That is worse than never having had it: the mechanism looked finished.
-	//
-	// Empty, or gone since the agent registered, means run where the daemon is
-	// rather than refuse. A wake that might work beats one that certainly does
-	// not, and the log says which happened so a failure is not a mystery.
-	if dir != "" {
-		if st, err := os.Stat(dir); err == nil && st.IsDir() {
-			cmd.Dir = dir
-		} else {
-			slog.Warn("the agent's directory is gone, so its wake runs where the "+
-				"daemon does; a harness that resolves sessions per directory will "+
-				"not find this one",
-				"agent", agent, "cwd", dir, "err", err)
-		}
-	}
-	// BOUNDED. CombinedOutput holds every byte until the process exits, and the
-	// documented command is `codex exec resume`, which runs a whole agent turn
-	// and may print a transcript for two hours. All of it sat in the daemon's
-	// memory and was then thrown away on success. Only the tail is ever used:
-	// it goes in the warning when the command fails, and a wake that failed says
-	// why in its last few lines rather than its first thousand.
-	tail := &tailBuffer{limit: 8 << 10}
-	cmd.Stdout, cmd.Stderr = tail, tail
-	cmd.WaitDelay = grace
-	err := cmd.Run()
-	out := tail.Bytes()
-	if err != nil {
-		// WHAT THE OS SAID, not what the agent printed.
-		//
-		// The documented wake command runs an entire agent turn, so its stdout
-		// is transcript: decrypted mail, tool output, a model's summary of a
-		// private message. Logging it put all of that on stderr and in
-		// /api/logs, which undoes the reason mail is encrypted at rest.
-		//
-		// A command that never STARTED is different. There is no agent then,
-		// and the bytes are the operating system's own complaint, which is the
-		// half an operator actually needs to fix a wrong argv.
-		fields := []any{"agent", agent, "cmd", argv[0], "err", err}
-		var ee *exec.Error
-		if errors.As(err, &ee) {
-			fields = append(fields, "output", strings.TrimSpace(string(out)))
-		}
-		// THE COMMAND, SO SOMEBODY CAN RUN IT THEMSELVES.
-		//
-		// The output stays withheld for the reason above, and that left
-		// "exit status 1" and nothing else: an operator cannot act on that.
-		// The argv is the operator's own config, so printing it discloses
-		// nothing they did not write, and running it by hand is the one way to
-		// see the output this deliberately will not log.
-		fields = append(fields, "run_it_yourself", strings.Join(argv, " "))
-		// AND WHERE IT RAN, because that is the difference that bites.
-		//
-		// This line used to blame the login keychain, and that was wrong. It
-		// said a service cannot reach the operator's keychain or GUI session,
-		// which sounded right and sent two investigations down a dead end. A
-		// LaunchAgent probe in the identical domain and ProcessType as this
-		// daemon read the login keychain and ran a complete `claude --resume`
-		// turn, exit 0. The security session was never the problem.
-		//
-		// What actually differed was the working directory, now fixed above, so
-		// the honest note names the directory the command really ran in and
-		// leaves the diagnosis to whoever reads it.
-		fields = append(fields, "ran_in", runDir(dir))
-		// NO THEORY ABOUT WHY. Three have been wrong here.
-		//
-		// This line has carried a guess at the cause since it was written, and
-		// the guess has misled every operator who read it, including the ones
-		// who wrote it. First it blamed launchd's security session and the login
-		// keychain, which a probe in the identical domain disproved. Then it
-		// blamed the login shell's environment, and the real cause was a
-		// thread-store conflict: the thread was open in the harness's desktop
-		// app, which refuses a second writer, and no environment anywhere would
-		// have changed that.
-		//
-		// The facts are useful and the theory is not. An operator has the argv
-		// and the directory, which is enough to run it and see the real error in
-		// under a minute; that is how the third wrong guess was caught. What
-		// stays withheld is the command's OUTPUT, because a wake runs a whole
-		// agent turn and that output is somebody's decrypted mail.
-		if os.Getppid() == 1 {
-			fields = append(fields,
-				"note", "run the command above yourself to see what it said: its output "+
-					"is withheld here because a wake runs a whole agent turn, and that "+
-					"is somebody's decrypted mail")
-		}
-		slog.Warn("wake command failed; the next message somebody is blocked on "+
-			"will try again", fields...)
-		return false, out
-	}
-	slog.Info("woke an agent that was not running", "agent", agent, "cmd", argv[0])
-	return true, out
-}
-
-// runWakeFor is runWakeForOut for callers that need the verdict alone.
+// runWakeFor is the engine's name for the runner the wake path shares with
+// `dibs host-bridge` (internal/wakeexec), kept so the tests that exercise it
+// here read as they did when the code lived here.
 func runWakeFor(argv []string, agent, dir string, timeout, grace time.Duration) bool {
-	ok, _ := runWakeForOut(argv, agent, dir, timeout, grace)
-	return ok
-}
-
-// tailBuffer keeps the last `limit` bytes written to it and discards the rest.
-//
-// A wake command is somebody else's program running for as long as an agent
-// turn takes. Buffering all of it is an unbounded allocation controlled by
-// whatever that program decides to print; keeping the tail is what a failure
-// message actually needs.
-type tailBuffer struct {
-	mu    sync.Mutex
-	limit int
-	buf   []byte
-}
-
-func (t *tailBuffer) Write(p []byte) (int, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	n := len(p)
-	if len(p) > t.limit {
-		p = p[len(p)-t.limit:]
-	}
-	t.buf = append(t.buf, p...)
-	if over := len(t.buf) - t.limit; over > 0 {
-		t.buf = append(t.buf[:0], t.buf[over:]...)
-	}
-	return n, nil
-}
-
-func (t *tailBuffer) Bytes() []byte {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return append([]byte(nil), t.buf...)
+	return wakeexec.Run(argv, agent, dir, timeout, grace)
 }
 
 // isTheHuman reports whether an id is the human's own mailbox. Wake routes
@@ -1584,18 +1345,6 @@ func wakeHarness(l *core.Agent) string {
 		return ""
 	}
 	return strings.ToLower(l.Agent.Harness)
-}
-
-// runDir names the directory a wake really ran in, for the failure log.
-//
-// Says "the daemon's own" rather than printing it, because the useful fact is
-// that it was NOT the agent's: an operator reading "/" has to know what it was
-// supposed to be before that means anything.
-func runDir(dir string) string {
-	if dir == "" {
-		return "the daemon's own working directory (the agent recorded none)"
-	}
-	return dir
 }
 
 // recencyWindow is how long to wait before asking again whether this agent has
