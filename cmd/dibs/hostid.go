@@ -34,6 +34,16 @@ import (
 // was given.
 func hostID() string {
 	hostIDOnce.Do(func() {
+		// STATED FIRST. DIBS_HOST_ID is the operator saying which computer
+		// this process speaks for, for the cases where the answer below is
+		// wrong: two data directories on one Supgang member standing in for
+		// two machines (the two-host suite), or a container that must not
+		// share the identity of the machine it runs on. A claim, as every
+		// bridge's host id is (docs/NETWORK.md §2), and no stronger.
+		if id := strings.TrimSpace(os.Getenv("DIBS_HOST_ID")); id != "" {
+			hostIDValue = id
+			return
+		}
 		// SUPGANG FIRST. A machine in the fleet's address plane already has
 		// one identity, and it is the one every other member knows this
 		// computer by; a second id minted here would make the same computer

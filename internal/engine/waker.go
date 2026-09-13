@@ -1047,9 +1047,10 @@ type wakePlan struct {
 // a lie. That happened in this feature's own testing. "Check" is true whenever
 // it arrives.
 //
-// One constant, so both routes carry the same words and a test can read them
-// without running a wake.
-const wakeNotice = "Dibs: check the board."
+// One constant, so both routes and both machines carry the same words and a
+// test can read them without running a wake; it lives with the runner
+// (internal/wakeexec) because the host bridge enforces it too.
+const wakeNotice = wakeexec.Notice
 
 // defaultPeerCooldown bounds socket wakes the way [wake.exec] entries bound
 // process wakes. Shorter, because nothing is spawned: the cost of one is a

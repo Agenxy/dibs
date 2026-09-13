@@ -71,11 +71,16 @@ where the daemon does and usually fails, with a warning saying so.
 
 Two ways for it to be missing. A removed worktree is the local one. An agent on
 ANOTHER COMPUTER is the other, and there nothing you write in this file can
-help: the command would have to run over there. Run a bridge on that machine and
-give it its own `[wake.exec]`. `dibs doctor` counts an agent whose directory is
-not on this machine as having no route, rather than as covered. See
-[NETWORK.md](NETWORK.md) for why the hub decides THAT an agent is woken and only
-its own machine can decide how.
+help: the command would have to run over there. On that machine, put the
+`[wake.exec]` table in the data directory `dibs mcp-config --board` made for the
+board and run `dibs host-bridge` with the same `DIBS_ADDR` and `DIBS_DIR`: it
+attaches to the hub for that machine, and when the hub decides one of the
+agents there should be woken, the bridge runs that machine's own command with
+the same substitutions, and the hub takes its report as the exit status. The hub
+never learns or runs the remote command. `dibs doctor` on the hub counts such an
+agent as covered while its bridge is attached, and on the joined machine says
+which half is missing. See [NETWORK.md](NETWORK.md) for why the hub decides THAT
+an agent is woken and only its own machine can decide how.
 
 ```toml
 [wake.exec.codex]

@@ -382,6 +382,12 @@ own board needs that second directory; its `~/.dibs` stays its own. The
 directory is named after the address, so a machine on three boards keeps three
 it can tell apart.
 
+Agents on a joined machine are woken by that machine, not by the hub: put a
+`[wake.exec]` table in the board's data directory there and run
+`dibs host-bridge` with the same two variables. The hub decides that an agent
+should be woken and hands the bridge the thread to resume; the bridge runs the
+command the operator of that machine wrote, and reports.
+
 If the hub is a plaintext loopback daemon, which is the default, forward a port
 to it rather than exposing it to the network:
 

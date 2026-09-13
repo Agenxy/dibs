@@ -23,6 +23,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   trust <host:port> --pin <hex>`, new, which makes the same comparison later.
   `internal/supgang` reads `supgang.peers/v6` and `supgang.resolve/v5` beside
   the previous majors, which they extend by one field.
+- **`dibs host-bridge`: the machine's half of waking an agent on another
+  machine.** The hub half shipped in #117; this is the command that runs on
+  the joined machine. With the `DIBS_ADDR` and `DIBS_DIR` the join recipe
+  printed, it reads the `[wake.exec]` table in that data directory, attaches
+  to the hub's `dibs://wake` stream for this machine's host id stating the
+  harnesses it can start, runs the operator's own command here through the
+  same runner the daemon uses, and reports the exit status the hub then
+  treats as its own observation. It delivers the one fixed wake sentence
+  whatever the hub sent, refuses a request for another host or a harness it
+  has no entry for, and reattaches with a growing pause when the stream
+  ends. `dibs doctor` on the hub lists attached bridges and counts a remote
+  agent whose bridge can start its harness as covered; on the joined machine
+  it names whichever half is missing, the entries or the attachment.
+  Exercised end to end by the two-host suite.
 
 ### Changed
 

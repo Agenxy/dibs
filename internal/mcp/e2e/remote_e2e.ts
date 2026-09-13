@@ -16,8 +16,8 @@
  *
  * Run: DIBS_ALLOW_PARALLEL=1 DIBD=bin/dibd DIBS=bin/dibs bun internal/mcp/e2e/remote_e2e.ts
  */
-import { mkdtempSync, rmSync, mkdirSync, copyFileSync, chmodSync, readFileSync, writeFileSync, existsSync } from "node:fs"
-import { homedir, networkInterfaces, tmpdir } from "node:os"
+import { mkdtempSync, rmSync, mkdirSync, copyFileSync, chmodSync, readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs"
+import { networkInterfaces, tmpdir } from "node:os"
 import { join } from "node:path"
 import { daemonReady } from "./ready.ts"
 
@@ -65,7 +65,19 @@ mkdirSync(hubDir); mkdirSync(clientDir)
 // line: the CLI on the hub reads the file to tell that machine's own agents
 // where the daemon is, and a flag leaves it nothing to read.
 writeFileSync(join(hubDir, "dibs.toml"), `addr = "${ADDR}"\n`)
-const daemon = Bun.spawn({ cmd: [dibd, "-dir", hubDir], stdout: "ignore", stderr: "ignore" })
+// The daemon's log is its stderr when it is run by hand; kept, because the
+// wake path below is proved by what the hub says it observed.
+const daemon = Bun.spawn({ cmd: [dibd, "-dir", hubDir], stdout: "ignore", stderr: "pipe" })
+let hubLog = ""
+void (async () => {
+  const reader = daemon.stderr.getReader()
+  const dec = new TextDecoder()
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) return
+    hubLog += dec.decode(value, { stream: true })
+  }
+})()
 const bridges: ReturnType<typeof Bun.spawn>[] = []
 
 // Stop every child and WAIT for it before the directories go: a signal sent is
@@ -152,10 +164,10 @@ class Bridge {
   proc: ReturnType<typeof Bun.spawn>
   pending = new Map<number, (m: any) => void>()
   next = 0
-  constructor(dir: string, cwd: string, addr?: string) {
+  constructor(dir: string, cwd: string, addr?: string, hostId?: string) {
     this.proc = Bun.spawn({
       cmd: [dibsBin, "mcp-stdio"], cwd,
-      env: { ...process.env, DIBS_DIR: dir, ...(addr ? { DIBS_ADDR: addr } : {}) },
+      env: { ...process.env, DIBS_DIR: dir, ...(addr ? { DIBS_ADDR: addr } : {}), ...(hostId ? { DIBS_HOST_ID: hostId } : {}) },
       stdin: "pipe", stdout: "pipe", stderr: "ignore",
     })
     bridges.push(this.proc)
@@ -200,7 +212,13 @@ class Bridge {
   }
 }
 
-const remote = new Bridge(clientDir, remoteRepo, URL)
+// The joining "machine" states its host id: both machines of this suite run
+// on one computer, and on a Supgang member every bridge would otherwise carry
+// the same identity (#118), which makes one machine of two and the whole
+// cross-host path unreachable. DIBS_HOST_ID is the operator's word for this
+// (NETWORK.md §2), and the host bridge below states the same one.
+const CLIENT_HOST = "c".repeat(64)
+const remote = new Bridge(clientDir, remoteRepo, URL, CLIENT_HOST)
 await remote.init("remote-harness")
 const remoteReg = await remote.call("register", { name: "remote-worker", description: "on the joining machine", pid: 0, nonce: "e2e-remote" })
 check("the joining machine's bridge registers over TLS with the pinned certificate", !!remoteReg.token, JSON.stringify(remoteReg).slice(0, 200))
@@ -219,46 +237,22 @@ for (const [b, tok] of [[remote, remoteReg.token], [hub, hubReg.token]] as const
 const full = await hub.call("check_in", { token: hubReg.token, detail: true })
 const rows: Record<string, any> = {}
 for (const a of full.board?.agents ?? []) rows[a.id] = a
-// On a computer that is a Supgang member, every bridge and the daemon carry
-// that computer's Supgang node id (#118) and the generated host_id file is
-// never written; elsewhere the file is the identity. Both machines of this
-// suite are this one computer, so both then assert the same id.
-function supgangNodeId(): string {
-  for (const bin of ["supgang", join(homedir(), ".local/bin/supgang"), "/usr/local/bin/supgang", "/opt/homebrew/bin/supgang"]) {
-    try {
-      const r = Bun.spawnSync({ cmd: [bin, "--json", "status"], stdout: "pipe", stderr: "pipe" })
-      if (r.exitCode !== 0) continue
-      const id = JSON.parse(r.stdout.toString()).node_id
-      if (typeof id === "string" && id.length === 64) return id
-    } catch { /* not this one */ }
-  }
-  return ""
-}
-const supgangId = supgangNodeId()
-const clientHost = existsSync(join(clientDir, "host_id")) ? readFileSync(join(clientDir, "host_id"), "utf8").trim() : supgangId
-check("the joining bridge asserted a host id (its own file, or this computer's Supgang identity)", clientHost.length > 0,
-  `file: ${existsSync(join(clientDir, "host_id"))}  supgang: ${supgangId || "none"}`)
-check("the joining bridge generated a host id beside the secret it was given", clientHost.length > 0)
+const clientHost = CLIENT_HOST
 check("the remote agent's row carries the host id its bridge asserted", rows[remoteReg.agent_id]?.agent?.host_id === clientHost,
-  `row: ${rows[remoteReg.agent_id]?.agent?.host_id}  file: ${clientHost}  (${Object.keys(rows).length} rows${full.raw ? ", raw: " + String(full.raw).slice(0, 120) : ""})`)
-const hubHost = supgangId || hubNode
-check("the hub agent's row carries the hub's identity (its Supgang node id, else its ledger node id)", rows[hubReg.agent_id]?.agent?.host_id === hubHost,
-  `row: ${rows[hubReg.agent_id]?.agent?.host_id}  node: ${hubNode}`)
-// Two data directories on one computer: without Supgang each bridge invents
-// a host id and the board sees two machines; on a Supgang member both carry
-// the computer's one identity and the board, correctly, sees one.
-check(supgangId ? "on a Supgang member both agents carry the one identity this computer has" : "the two agents are on two different machines, as far as the board knows",
-  supgangId ? clientHost === hubHost : clientHost !== hubNode, `client: ${clientHost}  hub: ${hubHost}`)
+  `row: ${rows[remoteReg.agent_id]?.agent?.host_id}  asserted: ${clientHost}  (${Object.keys(rows).length} rows${full.raw ? ", raw: " + String(full.raw).slice(0, 120) : ""})`)
+// The hub's own agent carries the hub's identity: its Supgang node id on a
+// member (#118), else the ledger's node id.
+// Its Supgang node id (64 hex) on a member; the ledger's node id elsewhere.
+const hubHost = rows[hubReg.agent_id]?.agent?.host_id ?? ""
+check("the hub agent's row carries the hub's identity, which is not the joiner's",
+  (hubHost === hubNode || hubHost.length === 64) && hubHost !== clientHost, `row: ${hubHost}  node: ${hubNode}`)
+check("the two agents are on two different machines, as far as the board knows", clientHost !== hubHost)
 
 // ── claims across hosts: NETWORK.md §3, through the real path ────────────
 const shared = "/tmp/dibs-remote-e2e/shared.go"
 const c1 = await remote.call("claim", { token: remoteReg.token, path: shared, mode: "exclusive" })
 const c2 = await hub.call("claim", { token: hubReg.token, path: shared, mode: "exclusive" })
-// On a Supgang member both bridges are, truthfully, one machine: the same
-// absolute path then IS the same file, and the board says so.
-check(supgangId ? "the same absolute path on one machine is a collision, whichever data directory claims it"
-  : "the same absolute path on two machines is not a collision",
-  c1.granted === true && c2.granted === !supgangId,
+check("the same absolute path on two machines is not a collision", c1.granted === true && c2.granted === true,
   `remote: ${JSON.stringify(c1).slice(0, 160)}  hub: ${JSON.stringify(c2).slice(0, 160)}`)
 
 const r1 = await remote.call("claim", { token: remoteReg.token, path: join(remoteRepo, "probe.go"), mode: "exclusive" })
@@ -269,11 +263,85 @@ const overlap = (r2.overlaps ?? [])[0] ?? {}
 check("and the refusal says which rule fired: the repository, not the path", overlap.rule === "repo" && overlap.repo_path === "probe.go",
   JSON.stringify(overlap).slice(0, 240))
 
-// ── doctor on the joining machine knows whose board this is ──────────────
-const doc = run([dibsBin, "doctor"], { DIBS_ADDR: URL, DIBS_DIR: clientDir }, clientDir)
+// ── waking an agent on the joining machine: NETWORK.md §5, both halves ───
+// The hub decides THAT; the joining machine decides HOW. Its [wake.exec] is
+// in ITS data directory, run by `dibs host-bridge` there, and the hub never
+// sees the argv. The recorder is the same one wake_e2e uses: it appends what
+// it was handed, so the assertion reads the substituted values.
+const recorder = join(clientDir, "recorder.ts")
+const wakeLog = join(clientDir, "wakes.jsonl")
+await Bun.write(recorder, `
+const line = JSON.stringify(Bun.argv.slice(3)) + "\\n"
+await Bun.write(Bun.argv[2] + "." + process.pid + "." + Bun.nanoseconds(), line)
+`)
+writeFileSync(join(clientDir, "dibs.toml"), `
+[wake.exec.codex]
+argv = ["${process.execPath}", "${recorder}", "${wakeLog}", "{thread}", "{message}", "{agent}", "{from}", "{type}"]
+`)
+// The agent registers under the thread its harness would quote (the shape
+// wake_e2e's Claude Code block uses), so a resume command has something to
+// name; the hub finds it the way it finds any thread.
+const THREAD = "019ffe52-0eaf-7f60-81cc-6ab1298d76ec"
+// Its own bridge, named as the harness it stands in for: the daemon records
+// the harness from the MCP client that registered, not from a word in the
+// call, and a directory of its own, where the wake will run.
+const sleeperRepo = join(clientDir, "sleeper")
+mkdirSync(sleeperRepo)
+const sleeperBridge = new Bridge(clientDir, sleeperRepo, URL, CLIENT_HOST)
+await sleeperBridge.init("Codex")
+const sleeper = await sleeperBridge.call("register", {
+  name: "remote-sleeper", description: "asleep on the joining machine", pid: 0, session_id: THREAD,
+  cwd: sleeperRepo, nonce: "e2e-remote-sleeper",
+})
+check("a wakeable agent registers on the joining machine", !!sleeper.token, JSON.stringify(sleeper).slice(0, 200))
+
+const hostBridge = Bun.spawn({
+  cmd: [dibsBin, "host-bridge"], cwd: clientDir,
+  env: { ...process.env, DIBS_ADDR: URL, DIBS_DIR: clientDir, DIBS_HOST_ID: CLIENT_HOST },
+  stdout: "ignore", stderr: "pipe",
+})
+bridges.push(hostBridge)
+// The hub lists what is attached; the bridge is attached when it appears.
+async function attachedHosts(): Promise<any[]> {
+  try {
+    const r = await fetch(`${URL}/api/hosts`, { headers: { "X-Dibs-Local": secret }, tls: { rejectUnauthorized: false } } as any)
+    return ((await r.json()) as any).hosts ?? []
+  } catch { return [] }
+}
+let attached: any[] = []
+for (let i = 0; i < 50 && !attached.some((h) => h.host === CLIENT_HOST); i++) { await Bun.sleep(200); attached = await attachedHosts() }
+check("`dibs host-bridge` attaches for the joining machine, stating the harness its own [wake.exec] can start",
+  attached.some((h) => h.host === CLIENT_HOST && (h.harnesses ?? []).includes("codex")), JSON.stringify(attached).slice(0, 300))
+
+// A question the sleeper is blocked on: the hub decides to wake it, and the
+// only route is the bridge on its machine.
+await hub.call("send", { token: hubReg.token, to: "remote-sleeper", type: "question", body: "still there?", deadline_s: 600 })
+function wakes(): string[][] {
+  return readdirSync(clientDir).filter((f) => f.startsWith("wakes.jsonl.")).sort()
+    .map((f) => JSON.parse(readFileSync(join(clientDir, f), "utf8").trim()))
+}
+for (let i = 0; i < 100 && wakes().length === 0; i++) await Bun.sleep(100)
+const woke = wakes()
+const after = await hub.call("check_in", { token: hubReg.token, detail: true })
+const sleeperRow = (after.board?.agents ?? []).find((a: any) => a.id === sleeper.agent_id)
+check("the joining machine ran ITS OWN wake command for its agent, handed the thread the hub found", woke.length === 1 && woke[0]?.[0] === THREAD,
+  `wakes: ${JSON.stringify(woke).slice(0, 300)}  sleeper: ${JSON.stringify({ session: sleeperRow?.session_id, aliases: sleeperRow?.session_aliases, host: sleeperRow?.agent?.host_id, harness: sleeperRow?.agent?.harness, status: sleeperRow?.status })}  hub-log: ${hubLog.split("\n").filter((l) => l.includes("wake")).slice(-3).join(" | ").slice(0, 400)}`)
+check("with the one fixed sentence, the agent, the sender and the mail type substituted",
+  woke[0]?.[1] === "Dibs: check the board." && woke[0]?.[2] === "remote-sleeper" && woke[0]?.[3] === "hub-worker" && woke[0]?.[4] === "question",
+  JSON.stringify(woke[0] ?? null))
+for (let i = 0; i < 50 && !hubLog.includes("reports the wake ran"); i++) await Bun.sleep(100)
+check("and the hub took the bridge's report as the wake's outcome", hubLog.includes("the agent's host reports the wake ran"),
+  hubLog.split("\n").filter((l) => l.includes("wake")).slice(-4).join(" | ").slice(0, 600))
+
+// ── doctor on both machines knows which half is where ────────────────────
+const hubDoc = run([dibsBin, "doctor"], { DIBS_DIR: hubDir }, hubDir)
+check("doctor on the hub lists the attached bridge and what it can start", hubDoc.out.includes("host bridge(s) attached") && hubDoc.out.includes("(codex)"),
+  hubDoc.out.split("\n").find((l) => l.includes("host bridge")) ?? "no such line")
+const doc = run([dibsBin, "doctor"], { DIBS_ADDR: URL, DIBS_DIR: clientDir, DIBS_HOST_ID: CLIENT_HOST }, clientDir)
 check("doctor on the joining machine reports no problems", doc.code === 0, doc.out.split("\n").filter((l) => l.includes("✗")).join(" | ").slice(0, 300))
-check("and says the board is served by the hub's daemon, whose wake configuration lives there",
-  doc.out.includes(`served by another daemon (node ${hubNode})`), doc.out.split("\n").find((l) => l.includes("another daemon")) ?? "no such line")
+check("and says the board is served by the hub's daemon, and this machine's wake command reaches its agents through the bridge",
+  doc.out.includes(`served by another daemon (node ${hubNode})`) && doc.out.includes("through the host bridge attached for it"),
+  doc.out.split("\n").find((l) => l.includes("another daemon")) ?? "no such line")
 check("and that the ledger is not here", doc.out.includes("joined board: the ledger lives on the daemon serving it"))
 
 console.log(`\n${checks - failures}/${checks} checks passed`)

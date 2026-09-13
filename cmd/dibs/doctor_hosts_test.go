@@ -1,9 +1,12 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/agenxy/dibs/internal/engine"
 	"github.com/agenxy/dibs/internal/supgang"
 )
 
@@ -30,9 +33,42 @@ func TestDoctorNamesTheMachineARemoteAgentIsOnThroughSupgang(t *testing.T) {
 	for _, r := range []*boardAgent{&known, &unknown} {
 		r.Agent.CWD = t.TempDir() + "/gone"
 	}
-	_, missing := wakeCoverage(boardOf(known, unknown), map[string]bool{"codex": true})
+	_, missing := wakeCoverage(boardOf(known, unknown), map[string]bool{"codex": true}, nil)
 	if missing["codex (on MacSolis)"] != 1 || missing["codex (on laptop.local)"] != 1 {
 		t.Errorf("missing = %v, want each remote agent bucketed by its machine's name", missing)
+	}
+	// A bridge attached for MacSolis that can start codex covers the agent
+	// there; one that can start only claude does not; the thread is still
+	// required.
+	bridged := map[string]map[string]bool{known.Agent.HostID: {"codex": true}}
+	covered, missing := wakeCoverage(boardOf(known, unknown), map[string]bool{"codex": true}, bridged)
+	if covered != 1 || missing["codex (on MacSolis)"] != 0 || missing["codex (on laptop.local)"] != 1 {
+		t.Errorf("with MacSolis bridged: covered=%d missing=%v", covered, missing)
+	}
+	if c, _ := wakeCoverage(boardOf(known), nil, map[string]map[string]bool{known.Agent.HostID: {"claude code": true}}); c != 0 {
+		t.Error("a bridge that cannot start the agent's harness counted as coverage")
+	}
+	known.Resumable = false
+	if c, _ := wakeCoverage(boardOf(known), nil, bridged); c != 0 {
+		t.Error("a bridged agent with no thread counted as coverage")
+	}
+}
+
+// On a machine joined to a hub elsewhere, doctor says what would let the hub
+// wake the agents here: the entries in this machine's dibs.toml, and a host
+// bridge attached for this machine, each named when it is missing.
+func TestDoctorOnAJoinedMachineNamesItsOwnWakeRoute(t *testing.T) {
+	okMsg, warnMsg, _ := joinedWakeAdvice(2, true, "abc", "/d")
+	if okMsg == "" || warnMsg != "" || !strings.Contains(okMsg, "2 wake command(s)") {
+		t.Errorf("attached with routes: ok=%q warn=%q", okMsg, warnMsg)
+	}
+	okMsg, warnMsg, fix := joinedWakeAdvice(2, false, "abc", "/d")
+	if okMsg != "" || !strings.Contains(warnMsg, "no host bridge is attached") || !strings.Contains(fix, "dibs host-bridge") {
+		t.Errorf("routes, not attached: ok=%q warn=%q fix=%q", okMsg, warnMsg, fix)
+	}
+	okMsg, warnMsg, fix = joinedWakeAdvice(0, true, "abc", "/d")
+	if okMsg != "" || !strings.Contains(warnMsg, "no [wake.exec]") || !strings.Contains(fix, "/d/dibs.toml") {
+		t.Errorf("no routes: ok=%q warn=%q fix=%q", okMsg, warnMsg, fix)
 	}
 }
 
@@ -61,6 +97,49 @@ func TestDoctorSaysWhetherSupgangAdvertisesThisHub(t *testing.T) {
 			t.Errorf("%s: msg=%q fix=%q", want, msg, fix)
 		}
 	}
+}
+
+// A hub whose own table has no wake commands still serves agents on other
+// machines, and their route is their machines' bridges: doctor says so
+// whichever way [wake] sockets is set, rather than reporting the hub's
+// empty table as the only route there is.
+func TestDoctorReportsBridgeCoverageWithoutALocalWakeTable(t *testing.T) {
+	supgangNamesOnce.Do(func() {})
+	far := agentRow("far", "persistent", "codex")
+	far.Agent.HostID = strings.Repeat("c", 64)
+	for _, sockets := range []string{"[wake]\nsockets = false\n", ""} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "node_id"), []byte("hub-1\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "dibs.toml"), []byte(sockets), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		board := &boardView{Node: "hub-1", HostID: strings.Repeat("f", 64), Agents: []boardAgent{far}}
+		var oks, warns []string
+		hosts := []engine.HostBridgeInfo{{Host: far.Agent.HostID, Harnesses: []string{"codex"}}}
+		checkWakeRoutes(dir, board, hosts, func(m string) { oks = append(oks, m) }, func(w, _ string) { warns = append(warns, w) })
+		if !containsLine(oks, "on other machines have a wake route") || !containsLine(oks, "host bridge(s) attached") {
+			t.Errorf("sockets=%q: an attached bridge covering the remote agent was not reported: oks=%q", sockets, oks)
+		}
+		if containsLine(warns, "on other machines have no wake route") {
+			t.Errorf("sockets=%q: a covered remote agent was reported as unreachable: %q", sockets, warns)
+		}
+		oks, warns = nil, nil
+		checkWakeRoutes(dir, board, nil, func(m string) { oks = append(oks, m) }, func(w, _ string) { warns = append(warns, w) })
+		if !containsLine(warns, "1 agent(s) on other machines have no wake route") {
+			t.Errorf("sockets=%q: with no bridge attached the remote agent was not reported: warns=%q", sockets, warns)
+		}
+	}
+}
+
+func containsLine(lines []string, sub string) bool {
+	for _, l := range lines {
+		if strings.Contains(l, sub) {
+			return true
+		}
+	}
+	return false
 }
 
 // A daemon started before this machine joined its hive still stamps its

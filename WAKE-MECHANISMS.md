@@ -299,10 +299,12 @@ publishes, and a socket on another machine is not on this filesystem.
 
 So the division is the only one available, and it is also the right one. **The
 hub decides THAT an agent should be woken; the agent's own machine decides
-how.** The hub's half of that is built: an agent on another machine is routed
-only through a bridge attached for its host (`dibs://wake`), which runs its own
-`[wake.exec]` there and reports the outcome (`docs/NETWORK.md` §5). A machine joining a fleet runs its own bridge, reads `[wake] sockets`
-from its own data directory, and owns its own `[wake.exec]`. `dibs doctor`
+how.** Both halves are built: an agent on another machine is routed only
+through a bridge attached for its host (`dibs://wake`), and that bridge is
+`dibs host-bridge` on the machine itself, which runs its own `[wake.exec]`
+there and reports the outcome (`docs/NETWORK.md` §5). A machine joining a
+fleet runs that bridge, reads `[wake] sockets` from its own data directory,
+and owns its own `[wake.exec]`. `dibs doctor`
 counts an agent whose directory is not on this machine as having no route here,
 rather than as covered, because a wake that starts in the wrong place and fails
 is not coverage. See `docs/NETWORK.md` §5.
