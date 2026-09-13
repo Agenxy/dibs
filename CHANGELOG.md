@@ -53,6 +53,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Claim paths fold with one separator, so the state machine holds on
+  Windows.** (#113) `cleanPath` used `filepath.Clean`, which on Windows
+  spelled every claim with `\` while every comparison in the package writes
+  `/`: the first Windows run granted an exclusive claim over a file another
+  agent held exclusively. A claim is a path an agent supplied and the ledger
+  replays on whichever host holds it, so the fold now uses `path.Clean`
+  after folding `\` to `/`; on unix, where no recorded path carries a
+  backslash, nothing changes. Two tests assumed unix as well (a ledger left
+  open at cleanup, a Windows path in a TOML basic string). The `windows`
+  job now runs the state machine, the ledger and the board config alongside
+  the scorer and liveness.
 - **`dibs hook-poll` reports a dead daemon as a failure.** (#24, from the
   Codex review of #101) It printed `{}` and exited 0 whatever went wrong, so a
   daemon that had been down for a week was indistinguishable from a board

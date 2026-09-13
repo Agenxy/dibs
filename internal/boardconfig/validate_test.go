@@ -241,7 +241,9 @@ func TestLoadRefusesSettingsThatWouldNotTakeEffect(t *testing.T) {
 	// And the shapes that are legitimate must still load.
 	good := []struct{ name, body string }{
 		{"a bare host:port", "addr = \"0.0.0.0:4777\"\n"},
-		{"a complete certificate pair", "tls_cert = \"" + certPath + "\"\ntls_key = \"" + keyPath + "\"\n"},
+		// Literal strings, because a Windows path holds backslashes and a
+		// basic string reads them as escapes: `\U` is a unicode escape.
+		{"a complete certificate pair", "tls_cert = '" + certPath + "'\ntls_key = '" + keyPath + "'\n"},
 		{"a real match deadline", "[match]\ndeadline = \"5m\"\n"},
 		{"auto_join always", "[match]\nauto_join = \"always\"\n"},
 		{"auto_join never", "[match]\nauto_join = \"never\"\n"},
