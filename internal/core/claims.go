@@ -440,6 +440,32 @@ func (s *State) releaseClaims(agent string) []string {
 	return released
 }
 
+// ActiveAgentsIn is AgentsIn narrowed to agents that are answering right now.
+//
+// It is the discriminator the hook-health counters need. A lifecycle hook that
+// resolves to nobody has two very different explanations: the session was never
+// registered (the ordinary case for a harness the plugin is installed in but
+// the agent never called register from), or an agent IS live in that directory
+// and the hook is carrying a session id it did not register with, which is the
+// join fault that left a whole board unwakeable. Dormant and stale agents do
+// not count: a seat that is asleep in a directory says nothing about which
+// session is asking now.
+func (s *State) ActiveAgentsIn(cwd string) bool {
+	if cwd == "" {
+		return false
+	}
+	want := cleanPath(cwd)
+	for _, l := range s.Agents {
+		if l.Status != StatusActive || l.Agent == nil {
+			continue
+		}
+		if cleanPath(l.Agent.CWD) == want {
+			return true
+		}
+	}
+	return false
+}
+
 // AgentsIn reports whether any agent that still exists works in this directory,
 // whatever its status.
 //
