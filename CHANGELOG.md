@@ -88,6 +88,21 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`dibs doctor` no longer calls the guard inert because unregistered
+  sessions asked it.** The plugin is installed machine-wide, so every session
+  of that harness calls `guard_path` and `hook_poll`, including the ones whose
+  agent never registered, and the daemon summed those into the failure
+  counters: a board where every registered agent resolved read "10 of 12
+  guard calls did not resolve to an agent" for a month, all of them from one
+  directory nobody had registered from. `/api/hook-health` now counts a miss
+  as a **stranger** when no agent is active in the directory the hook named
+  (an unregistered session: usage, reported beside the verdict) and as
+  unresolved only when an active agent works there and the hook still named
+  nobody, which is the misbound session id that leaves an agent unwakeable
+  and is still reported as a fault. A daemon that has only ever heard from
+  strangers says so (`only-strangers`, a warning) instead of claiming a broken
+  join.
+
 - **The hub's own agents trust the certificate their daemon made.** A hub
   bound to a LAN address serves TLS to everybody, its own machine included,
   and the bridge beside it refused the certificate it lives next to: every

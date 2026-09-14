@@ -96,10 +96,10 @@ func TestWakeCallsThatResolveNobodyAreNotReportedAsHealthy(t *testing.T) {
 	e := New(st, &memLedger{}, deadProber{})
 
 	// The shape that used to read "ok": plenty resolving, some not.
-	e.noteHook("guard", true)
-	e.noteHook("poll", true)
-	e.noteHook("poll", true)
-	e.noteHook("poll", false)
+	e.noteHook("guard", true, false)
+	e.noteHook("poll", true, false)
+	e.noteHook("poll", true, false)
+	e.noteHook("poll", false, false)
 
 	h := e.HookHealth()
 	if h.Verdict == "ok" {
@@ -114,10 +114,50 @@ func TestWakeCallsThatResolveNobodyAreNotReportedAsHealthy(t *testing.T) {
 	// And a board where everything resolves is still healthy, or the check is
 	// noise and gets ignored on the day it matters.
 	clean := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
-	clean.noteHook("poll", true)
-	clean.noteHook("guard", true)
+	clean.noteHook("poll", true, false)
+	clean.noteHook("guard", true, false)
 	if v := clean.HookHealth().Verdict; v != "ok" {
 		t.Errorf("verdict = %q on a board where every call resolved", v)
+	}
+}
+
+// A session that never registered resolving to nobody is not a fault.
+//
+// The plugin is installed machine-wide, so every session of that harness asks
+// the daemon, including the ones whose agent never took a seat. Those were
+// summed into the failure counters, and `dibs doctor` reported "10 of 12
+// guard calls did not resolve to an agent" on a board where every registered
+// agent resolved and every miss was a vault directory nobody had registered
+// from. The discriminator is whether an agent is ACTIVE in the directory the
+// hook named: if one is, the hook and the registration disagree about the
+// session id and that agent is unwakeable; if none is, the session is a
+// stranger, counted separately, and the verdict stays honest about the
+// registered fleet.
+func TestUnregisteredSessionsAreStrangersNotAnInertGuard(t *testing.T) {
+	e := New(core.NewState("test", core.DefaultLimits()), &memLedger{}, deadProber{})
+	e.noteHook("guard", false, true)
+	e.noteHook("poll", false, true)
+	h := e.HookHealth()
+	if h.Verdict != "only-strangers" {
+		t.Fatalf("verdict = %q: strangers alone must not read as a broken join (%+v)", h.Verdict, h)
+	}
+	if h.GuardStrangers != 1 || h.PollStrangers != 1 || h.GuardUnresolved != 0 || h.PollUnresolved != 0 {
+		t.Errorf("strangers were counted as unresolved: %+v", h)
+	}
+
+	// Once the fleet resolves, strangers ride along in the report and leave
+	// the verdict alone.
+	e.noteHook("guard", true, false)
+	e.noteHook("poll", true, false)
+	if v := e.HookHealth().Verdict; v != "ok" {
+		t.Errorf("verdict = %q with a resolving fleet and two strangers", v)
+	}
+
+	// The fault shape is unchanged: an active agent in the directory, missed.
+	e.noteHook("guard", false, false)
+	e.noteHook("guard", false, false)
+	if v := e.HookHealth().Verdict; v != "guard-mostly-unresolved" {
+		t.Errorf("verdict = %q: misses beside an active agent are the inert guard", v)
 	}
 }
 

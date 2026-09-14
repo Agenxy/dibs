@@ -317,11 +317,38 @@ check("the holder may still edit what it claimed", own.decision === "allow", own
     check("a daemon nothing has asked reports never-called",
       before.verdict === "never-called", JSON.stringify(before).slice(0, 160))
 
+    // Two unresolved shapes, and only one is a fault.
+    //
+    // First: nobody is registered in /tmp at all. A session there asking the
+    // guard is an agent that never took a seat, which is usage, not a broken
+    // join. For a month the daemon summed these into the failure counters and
+    // `dibs doctor` called a healthy board's guard inert because a vault
+    // directory's sessions had never registered.
     for (let i = 0; i < 3; i++) await ask("a-session-nobody-registered")
+    const strangers = await (await fetch(`http://${ADDR2}/api/hook-health`,
+      { headers: { "X-Dibs-Local": s2 } })).json() as any
+    check("unresolved calls from a directory with no active agent are strangers, not a fault",
+      strangers.verdict === "only-strangers" && strangers.guard_strangers === 3
+        && strangers.guard_unresolved === 0,
+      JSON.stringify(strangers).slice(0, 200))
+
+    // Second, the day-costing bug's exact shape: an agent IS active in /tmp,
+    // registered under one session id, and its harness's hook sends another.
+    // That is the inert guard, and it must read as one.
+    const reg = await fetch(`http://${ADDR2}/mcp`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "X-Dibs-Local": s2 },
+      body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call",
+        params: { name: "register", arguments: { name: "misbound", description: "guard e2e",
+          session_id: "the-id-the-bridge-bound", cwd: "/tmp" } } }),
+    })
+    check("an agent registers in /tmp under one session id", reg.status === 200, String(reg.status))
+    for (let i = 0; i < 3; i++) await ask("the-id-the-hook-sends")
     const after = await (await fetch(`http://${ADDR2}/api/hook-health`,
       { headers: { "X-Dibs-Local": s2 } })).json() as any
-    check("hooks that never resolve are reported as an INERT guard",
-      after.verdict === "never-resolved", JSON.stringify(after).slice(0, 160))
+    check("hooks that miss an ACTIVE agent in their directory are reported as an INERT guard",
+      after.verdict === "never-resolved" && after.guard_unresolved === 3,
+      JSON.stringify(after).slice(0, 200))
     check("and the hint says it looks like a board where nothing is claimed",
       /looks exactly like a board where nothing is claimed/.test(String(after.hint)),
       String(after.hint).slice(0, 160))

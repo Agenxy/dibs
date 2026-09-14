@@ -724,8 +724,10 @@ func checkHooks(client *http.Client, sec string, ok reportFn, bad, warn fixFn) {
 	var h struct {
 		GuardResolved   int64  `json:"guard_resolved"`
 		GuardUnresolved int64  `json:"guard_unresolved"`
+		GuardStrangers  int64  `json:"guard_strangers"`
 		PollResolved    int64  `json:"poll_resolved"`
 		PollUnresolved  int64  `json:"poll_unresolved"`
+		PollStrangers   int64  `json:"poll_strangers"`
 		Verdict         string `json:"verdict"`
 		Hint            string `json:"hint"`
 	}
@@ -746,9 +748,22 @@ func checkHooks(client *http.Client, sec string, ok reportFn, bad, warn fixFn) {
 	if json.NewDecoder(resp.Body).Decode(&h) != nil {
 		return
 	}
+	// Strangers are sessions that never registered: reported beside the
+	// verdict, never as the verdict. A daemon that counted them as failures
+	// called this board's guard inert for a month while every registered
+	// agent resolved fine and the misses were all a vault directory whose
+	// sessions had never taken a seat.
+	strangers := h.GuardStrangers + h.PollStrangers
 	switch h.Verdict {
 	case "ok":
-		ok(fmt.Sprintf("harness hooks resolving (%d guard, %d wake)", h.GuardResolved, h.PollResolved))
+		line := fmt.Sprintf("harness hooks resolving (%d guard, %d wake)", h.GuardResolved, h.PollResolved)
+		if strangers > 0 {
+			line += fmt.Sprintf("; %d call(s) from sessions that never registered", strangers)
+		}
+		ok(line)
+	case "only-strangers":
+		warn(fmt.Sprintf("hooks reach this daemon, but all %d call(s) so far came from "+
+			"sessions whose agent never registered", strangers), h.Hint)
 	case "never-called":
 		warn("no harness has ever called this daemon's hooks", h.Hint)
 	case "never-resolved", "guard-unresolved":

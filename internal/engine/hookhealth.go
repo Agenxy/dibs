@@ -26,36 +26,60 @@ import (
 //
 // Ephemeral and lock-free: this is operational telemetry, not coordination
 // state, and it must never cost a mutex on the request path.
+//
+// "Unresolved" is two facts, and only one of them is a fault. A session that
+// was never registered resolves to nobody, correctly: the plugin is installed
+// machine-wide, so every session of that harness asks, including the ones
+// whose agent never called register. That is usage, and it is counted as a
+// STRANGER: no agent is active in the directory the hook names. The fault is
+// the other case: an agent IS active there and the hook still names nobody,
+// which means the hook and the registration carry different session ids and
+// that agent is unwakeable. `dibs doctor` read the sum for a month and called
+// a board of unregistered sessions a broken guard.
 type hookHealth struct {
 	guardResolved   atomic.Int64
-	guardUnresolved atomic.Int64
+	guardUnresolved atomic.Int64 // a live agent works there and was not matched
+	guardStrangers  atomic.Int64 // nobody is active there: an unregistered session
 	pollResolved    atomic.Int64
 	pollUnresolved  atomic.Int64
+	pollStrangers   atomic.Int64
 	lastAt          atomic.Int64 // unix nanos of the most recent call of any kind
 }
 
 // HookHealth is what `dibs doctor` reads.
 type HookHealth struct {
-	GuardResolved   int64     `json:"guard_resolved"`
-	GuardUnresolved int64     `json:"guard_unresolved"`
-	PollResolved    int64     `json:"poll_resolved"`
-	PollUnresolved  int64     `json:"poll_unresolved"`
-	Last            time.Time `json:"last,omitempty"`
+	GuardResolved   int64 `json:"guard_resolved"`
+	GuardUnresolved int64 `json:"guard_unresolved"`
+	// Strangers are unresolved calls from directories where no agent is
+	// active: sessions that never registered, not a misbinding. They are
+	// reported separately and never make the verdict a fault.
+	GuardStrangers int64     `json:"guard_strangers"`
+	PollResolved   int64     `json:"poll_resolved"`
+	PollUnresolved int64     `json:"poll_unresolved"`
+	PollStrangers  int64     `json:"poll_strangers"`
+	Last           time.Time `json:"last,omitempty"`
 	// Verdict and Hint name the situation and the fix, so a diagnostic does not
 	// leave the reader to infer either.
 	Verdict string `json:"verdict"`
 	Hint    string `json:"hint,omitempty"`
 }
 
-func (e *Engine) noteHook(kind string, resolved bool) {
+// noteHook records one lifecycle call. `stranger` is consulted only when the
+// call did not resolve: true means no agent is active in the directory the
+// hook named, so the session is unregistered rather than misbound.
+func (e *Engine) noteHook(kind string, resolved, stranger bool) {
 	e.hooks.lastAt.Store(time.Now().UnixNano())
 	switch {
 	case kind == "guard" && resolved:
 		e.hooks.guardResolved.Add(1)
+	case kind == "guard" && stranger:
+		e.hooks.guardStrangers.Add(1)
 	case kind == "guard":
 		e.hooks.guardUnresolved.Add(1)
 	case resolved:
 		e.hooks.pollResolved.Add(1)
+	case stranger:
+		e.hooks.pollStrangers.Add(1)
 	default:
 		e.hooks.pollUnresolved.Add(1)
 	}
@@ -66,16 +90,29 @@ func (e *Engine) HookHealth() HookHealth {
 	h := HookHealth{
 		GuardResolved:   e.hooks.guardResolved.Load(),
 		GuardUnresolved: e.hooks.guardUnresolved.Load(),
+		GuardStrangers:  e.hooks.guardStrangers.Load(),
 		PollResolved:    e.hooks.pollResolved.Load(),
 		PollUnresolved:  e.hooks.pollUnresolved.Load(),
+		PollStrangers:   e.hooks.pollStrangers.Load(),
 	}
 	if ns := e.hooks.lastAt.Load(); ns > 0 {
 		h.Last = time.Unix(0, ns)
 	}
 	total := h.GuardResolved + h.GuardUnresolved + h.PollResolved + h.PollUnresolved
 	resolved := h.GuardResolved + h.PollResolved
+	strangers := h.GuardStrangers + h.PollStrangers
 
 	switch {
+	case total == 0 && strangers > 0:
+		// Every call so far came from a session nobody registered. The plugin
+		// is installed and reaching the daemon; the agents in those sessions
+		// have not taken a seat, so there is nothing to resolve TO. Not a
+		// fault of the hooks, and not silence either.
+		h.Verdict = "only-strangers"
+		h.Hint = "harness hooks reach this daemon, but every call so far came from a " +
+			"session whose agent never registered, so there was nobody to resolve " +
+			"to. Those sessions edit unguarded and get no mail until their agent " +
+			"calls register (a returning seat: same name and nonce)"
 	case total == 0:
 		h.Verdict = "never-called"
 		h.Hint = "no harness has ever asked this daemon a lifecycle question, so the " +
