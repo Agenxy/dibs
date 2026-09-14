@@ -1,6 +1,6 @@
 module github.com/agenxy/dibs
 
-go 1.26
+go 1.26.0
 
 toolchain go1.26.6
 
@@ -21,8 +21,8 @@ retract v0.0.0
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/charmbracelet/lipgloss v1.1.0
-	golang.org/x/sys v0.47.0
-	golang.org/x/tools v0.49.0
+	golang.org/x/sys v0.48.0
+	golang.org/x/tools v0.50.0
 )
 
 require (
