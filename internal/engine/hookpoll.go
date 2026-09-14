@@ -188,7 +188,7 @@ func (e *Engine) HookPoll(
 	return e.query(ctx, func() core.Result {
 		e.announceHookSession(sessionID, cwd, event)
 		l := e.state.AgentForHook(sessionID, cwd)
-		e.noteHook("poll", l != nil)
+		e.noteHook("poll", l != nil, !e.state.ActiveAgentsIn(cwd))
 		e.noteTurnState(l, sessionID, event)
 		e.logHookResolution(sessionID, cwd, event, l)
 		if l == nil {
