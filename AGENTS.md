@@ -217,10 +217,12 @@ row, and the rule that a capability in source is not a behaviour:
   `hook_poll` from a real session (0.153.4 fired nothing on 2026-09-05). Over
   `url`, `features.mcp_2026_07_28 = true` alone negotiates `server/discover`
   2026-07-28; `tools/list` only, no `resources/list` (2026-09-12).
-- **Claude Desktop**: the app's own client carries the 2026-07-28 codec; point it
-  at a scratch daemon (`DIBS_ALLOW_PARALLEL=1 DIBS_LOG_RPC=1 dibd -dir <tmp> -addr
-  127.0.0.1:47xx`) with the url form in `claude_desktop_config.json` and read the
-  handshake. Unmeasured as of 2026-09-12; the Code tab's engine speaks 2025-11-25.
+- **Claude Desktop**: the app's own clients (`claude-ai/0.1.0` for chat,
+  `local-agent-mode-<server>/1.0.0` per configured server) both `initialize`
+  2025-11-25 and never send `server/discover`, measured 2026-09-15 on 1.52386.6
+  through a `dibs mcp-stdio` entry in `claude_desktop_config.json` with
+  `DIBS_LOG_RPC=1` on the daemon. Re-measure the same way, then REMOVE the entry:
+  it shadows the plugin's server in Code-tab sessions (WAKE-MECHANISMS.md §3).
 - **opencode**: `git grep 2026-07-28 origin/HEAD -- packages` outside tests;
   empty as of 2026-09-12. The wake path (`plugins/opencode`) works.
 - **Hermes**: its `mcp` extra pins `mcp==2.0.0`, which implements 2026-07-28; what

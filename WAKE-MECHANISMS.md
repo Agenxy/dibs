@@ -101,6 +101,8 @@ over plain HTTP (no stdio bridge in the way):
 |---|---|---|---|---|
 | Claude Code (desktop engine = the app's own build) | 2.1.219 | `initialize` **2025-11-25** | `roots`, `elicitation` | initialize, tools/list, resources/list |
 | Claude Code CLI | 2.1.218 | `initialize` 2025-11-25 | none | initialize, tools/list, resources/list |
+| Claude Desktop, chat (`claude-ai/0.1.0`) | 1.52386.6 | `initialize` **2025-11-25** | `extensions.io.modelcontextprotocol/ui` only | initialize, tools/list, resources/list (2026-09-15, over the stdio bridge) |
+| Claude Desktop, local agent mode (`local-agent-mode-<server>/1.0.0`) | 1.52386.6 | `initialize` 2025-11-25 | `roots`, `extensions.io.modelcontextprotocol/ui` | initialize, tools/list (2026-09-15) |
 | Codex | 0.144.1 / **0.146.0-alpha.7** | `initialize` **2025-06-18** | `elicitation {form,url}` | initialize, tools/list |
 | opencode | 1.18.4 | `initialize` **2025-11-25** | `roots` | initialize, tools/list |
 | Copilot CLI | 1.0.75 | 2025-11-25 | none | tools only |
@@ -134,10 +136,21 @@ called `board` and got the real board back.
 
 **Claude Desktop carries the 2026 machinery too** (1.30096.5): an `era: "2026-07-28"`
 wire codec, a `>= "2026-07-28"` version predicate, and a switch mapping `server/discover`
-to that revision. Whether it negotiates 2026 with Dibs in practice is NOT yet measured,
-and the distinction matters here more than anywhere: this file has twice recorded a
-capability read out of a binary as though it were a behaviour. **Claude Code 2.1.219 does
-not**: its only protocol constants are 2025-03-26, 2025-06-18 and 2025-11-25.
+to that revision. **Measured 2026-09-15 (1.52386.6): it does not use it.** Both of the
+app's own clients, the chat client (`claude-ai/0.1.0`) and the one it spawns per
+configured server for local agent mode, open with `initialize` 2025-11-25 and never send
+`server/discover`; the only capability the chat client declares is the MCP Apps UI
+extension. So the codec in the binary was a capability and not a behaviour, which is the
+distinction this file has twice got wrong before. **Claude Code 2.1.219 does not** carry
+it at all: its only protocol constants are 2025-03-26, 2025-06-18 and 2025-11-25.
+
+One more thing that measurement found, and it bites harder than the version: a `dibs`
+entry in `claude_desktop_config.json` **replaces the plugin's server inside Code-tab
+sessions**. The app spawns its own `dibs mcp-stdio` (from `/`, without `CLAUDE_PID`) and
+exposes it to the Code tab under the same name, so an agent that registers there binds
+the app bridge's `host-<pid>` instead of its session UUID, and every hook for that
+session resolves to nobody. With the Claude Code plugin installed, do not also configure
+Dibs at the app level. The same-name shadowing is the app's; the consequence is ours.
 
 The lesson this table keeps teaching is that every row is true on its date and not after.
 Per-harness re-checks are tracked as issues rather than as prose here.
