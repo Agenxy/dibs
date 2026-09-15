@@ -67,12 +67,31 @@ Then install the resulting `.mcpb` via Desktop's Settings → Extensions.
   string fails validation. Pack with `bunx --bun @anthropic-ai/mcpb pack .`)
 - End-to-end over the stdio path a Desktop client will use: `register`
   created an agent and advanced the ledger serial; `hook_poll` answered `{}`
-  (correct, no mail). The config entry below is installed on this machine.
+  (correct, no mail).
 
 **Operational note:** `dibs mcp-stdio` is only a bridge, `tools/list` is
 answered by the **daemon**. If `dibd` is older than the binary you just built,
 you will silently get the daemon's older tool set. Restart `dibd` after
 building, or tools like `hook_poll` appear missing for no visible reason.
+
+## Measured 2026-09-15 (Claude Desktop 1.52386.6)
+
+- The chat client identifies as `claude-ai/0.1.0`, opens with `initialize`
+  **2025-11-25**, declares only the MCP Apps UI extension
+  (`extensions.io.modelcontextprotocol/ui`), and sends `tools/list` and
+  `resources/list`. It does not send `server/discover`; the 2026-07-28 codec in
+  the binary is not used.
+- Local agent mode spawns a second bridge per configured server, identifying
+  as `local-agent-mode-<server>/1.0.0`, also 2025-11-25, with `roots` and the
+  UI extension; it sends `tools/list` only.
+- **Do not configure Route A while the Claude Code plugin is installed.** The
+  app exposes its own `dibs` server to Code-tab sessions under the plugin's
+  name, and the plugin's server disappears from those sessions. The app's
+  bridge runs from `/` without `CLAUDE_PID`, so an agent that registers through
+  it binds `host-<pid>` instead of its session UUID and its lifecycle hooks
+  resolve to nobody. Measured on this machine: the seat registered from the
+  Code tab landed on `local-agent-mode-dibs` with `cwd: /`. Route A is for a
+  Desktop that runs no Claude Code plugin.
 
 ## Still unverified
 
