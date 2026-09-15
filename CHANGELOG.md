@@ -88,6 +88,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`dibs doctor` catches a Claude Desktop config that shadows the Claude Code
+  plugin.** A `dibs` server in `claude_desktop_config.json` is handed to
+  Code-tab sessions under the plugin's name and the plugin's server disappears
+  from them; an agent registering there binds the app bridge's `host-<pid>`
+  (spawned from `/`, no `CLAUDE_PID`) instead of its session UUID, and its
+  hooks resolve to nobody. Measured on this project's own board on 2026-09-15.
+  Doctor now reads both files and names the fix when both are present; the
+  Claude Desktop plugin README says not to combine them, and the harness
+  survey carries the app's measured handshake (2025-11-25 on both of its
+  clients, never `server/discover`).
+
 - **`dibs doctor` no longer calls the guard inert because unregistered
   sessions asked it.** The plugin is installed machine-wide, so every session
   of that harness calls `guard_path` and `hook_poll`, including the ones whose

@@ -1004,10 +1004,11 @@ path is exercising the stateless contract, and if something differs there it is
 worth a bug report rather than a shrug.
 
 Surveyed by reading source, not announcements. Re-checked 2026-09-12 against
-each project's latest commit:
+each project's latest commit; the Claude Desktop row was measured on 2026-09-15:
 
 | harness | speaks | why |
 |---|---|---|
+| Claude Desktop | 2025-11-25 | measured 2026-09-15: 1.52386.6's own clients (`claude-ai/0.1.0` for chat, one `local-agent-mode-<server>` per configured server) send `initialize` 2025-11-25 and never `server/discover`, so the 2026-07-28 codec its binary carries is unused. No hooks, so tools only; see [plugins/claude-desktop](plugins/claude-desktop/), including why not to configure it beside the Claude Code plugin |
 | Codex | 2025-11-25 by default, **2026-07-28 when configured** | The flag `mcp_2026_07_28` is stage `UnderDevelopment` and off by default, so an unconfigured Codex sends 2025-06-18, measured. With the flag AND `CODEX_MCP_PROTOCOL_VERSION` on that server's entry, which is what `dibs mcp-config` prints, it runs entirely on 2026-07-28 against Dibs: this row said legacy-only for a while, and the paragraph under the table is what is current. See [plugins/codex](plugins/codex/) |
 | opencode | 2025-11-25 | bound by the TypeScript SDK (1.29.0) |
 | pi-mono | 2025-11-25 | bound by the TypeScript SDK (^1.25.2) |
