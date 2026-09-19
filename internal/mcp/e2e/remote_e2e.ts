@@ -337,7 +337,13 @@ check("and the hub took the bridge's report as the wake's outcome", hubLog.inclu
 const hubDoc = run([dibsBin, "doctor"], { DIBS_DIR: hubDir }, hubDir)
 check("doctor on the hub lists the attached bridge and what it can start", hubDoc.out.includes("host bridge(s) attached") && hubDoc.out.includes("(codex)"),
   hubDoc.out.split("\n").find((l) => l.includes("host bridge")) ?? "no such line")
-const doc = run([dibsBin, "doctor"], { DIBS_ADDR: URL, DIBS_DIR: clientDir, DIBS_HOST_ID: CLIENT_HOST }, clientDir)
+// A scratch HOME: this check is about the joined directory, and doctor also
+// reads the operator's own harness configs under HOME (Codex, Claude Desktop,
+// the Claude Code plugin record). On the machine this is developed on those
+// can legitimately be in a state doctor reports, which is doctor working and
+// not the join failing.
+const scratchHome = mkdtempSync(join(tmpdir(), "dibs-remote-e2e-home-"))
+const doc = run([dibsBin, "doctor"], { DIBS_ADDR: URL, DIBS_DIR: clientDir, DIBS_HOST_ID: CLIENT_HOST, HOME: scratchHome }, clientDir)
 check("doctor on the joining machine reports no problems", doc.code === 0, doc.out.split("\n").filter((l) => l.includes("✗")).join(" | ").slice(0, 300))
 check("and says the board is served by the hub's daemon, and this machine's wake command reaches its agents through the bridge",
   doc.out.includes(`served by another daemon (node ${hubNode})`) && doc.out.includes("through the host bridge attached for it"),

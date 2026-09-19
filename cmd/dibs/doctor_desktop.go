@@ -34,9 +34,11 @@ func checkDesktopShadowsPlugin(bad fixFn) {
 	bad("Claude Desktop's own config names a `dibs` server while the Claude Code plugin is installed",
 		"the app hands that server to Code-tab sessions under the plugin's name and the plugin's "+
 			"server disappears from them; agents registering there bind the app bridge's host-<pid> "+
-			"and their hooks resolve to nobody. Remove `mcpServers.dibs` from "+desktop+
-			" and relaunch Claude Desktop; the plugin already covers the Code tab, and the chat "+
-			"side gains nothing a hook could deliver")
+			"and their hooks resolve to nobody. Remove the server in Claude Desktop's own "+
+			"Settings > Developer, or QUIT the app first and then delete `mcpServers.dibs` from "+
+			desktop+": the app keeps that table in memory and writes the whole file back on any "+
+			"preference change, so an edit while it runs is undone. The plugin already covers "+
+			"the Code tab, and the chat side gains nothing a hook could deliver")
 }
 
 // desktopConfiguresDibs reads the one field that matters from
