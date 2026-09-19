@@ -92,6 +92,13 @@ building, or tools like `hook_poll` appear missing for no visible reason.
   resolve to nobody. Measured on this machine: the seat registered from the
   Code tab landed on `local-agent-mode-dibs` with `cwd: /`. Route A is for a
   Desktop that runs no Claude Code plugin.
+- **Removing Route A means removing it while the app is not running.** The app
+  loads `mcpServers` at launch, keeps it in memory, and writes the whole file
+  back whenever any preference changes; an entry deleted from the file while
+  the app runs came back on the next such write (measured: removed 2026-09-15
+  09:13, present again at the next launch). Use Settings → Developer, or quit
+  the app and then edit. `dibs doctor` reports the combination until it is
+  gone.
 
 ## Still unverified
 
