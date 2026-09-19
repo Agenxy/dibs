@@ -554,6 +554,8 @@ func mcpConfig(args []string) error {
 	fmt.Println("# Better still: the plugin, which brings the wake hooks and the skill")
 	fmt.Println("#   /plugin marketplace add agenxy/dibs")
 	fmt.Println("#   /plugin install dibs@dibs")
+	fmt.Println("#")
+	printDesktopConfigWarning()
 	fmt.Println()
 
 	cfg := map[string]any{
@@ -1937,4 +1939,26 @@ func self() string {
 		return resolved
 	}
 	return exe
+}
+
+// printDesktopConfigWarning follows the stdio block, because that block is the
+// right shape for claude_desktop_config.json too, and that is the trap: Claude
+// Desktop hands its own servers to Code-tab sessions under their configured
+// names, so a `dibs` there REPLACES the plugin's server in every Code-tab
+// session. The bridge it spawns has no CLAUDE_PID, agents registering through
+// it bind host-<pid> instead of their session, and their hooks resolve to
+// nobody. Measured 2026-09-15; the operator who pasted it there was following
+// this output. So it says so where the block is.
+func printDesktopConfigWarning() {
+	if home, err := os.UserHomeDir(); err == nil && claudeCodePluginInstalled(home) {
+		fmt.Println("# NOT into claude_desktop_config.json on this machine: the Claude Code plugin is")
+		fmt.Println("# installed here, and a `dibs` server in the app's own config replaces the")
+		fmt.Println("# plugin's in every Code-tab session (agents there bind the wrong session and")
+		fmt.Println("# their hooks reach nobody). The plugin already covers the Code tab; the chat")
+		fmt.Println("# side has no hooks and gains nothing. `dibs doctor` reports the combination.")
+		return
+	}
+	fmt.Println("# Claude Desktop (chat) takes the same block in claude_desktop_config.json, but")
+	fmt.Println("# not on a machine that also runs the Claude Code plugin: there it replaces the")
+	fmt.Println("# plugin's server in Code-tab sessions. See plugins/claude-desktop/README.md.")
 }
