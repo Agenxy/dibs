@@ -88,6 +88,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **`dibs mcp-config` says not to paste its stdio block into
+  `claude_desktop_config.json` on a machine with the Claude Code plugin**, at
+  the block, because that is exactly where it was pasted from. Removing an
+  entry that is already there means Settings → Developer or the app quit: the
+  app keeps the table in memory and writes the whole file back on any
+  preference change.
 - **`dibs doctor` catches a Claude Desktop config that shadows the Claude Code
   plugin.** A `dibs` server in `claude_desktop_config.json` is handed to
   Code-tab sessions under the plugin's name and the plugin's server disappears
