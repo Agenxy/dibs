@@ -2,6 +2,7 @@ package engine
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -229,6 +230,31 @@ func (e *Engine) NoteSuppliedIndex(root, agent string) {
 	}
 	supplied[root] = agent
 	st.Supplied = supplied
+	e.matchStatus.st = st
+}
+
+// forgetSuppliedIndex retracts NoteSuppliedIndex once the index it recorded
+// has been released: the tree is back to one the daemon cannot read and
+// nobody serves, which is what its bridge ships on: back onto the unreadable
+// list for a tree on this machine, and nothing more for a remote one, which
+// the remote list goes on naming. Copy-on-write, like the note itself.
+func (e *Engine) forgetSuppliedIndex(root string, remote bool) {
+	e.matchStatus.mu.Lock()
+	defer e.matchStatus.mu.Unlock()
+	st := e.matchStatus.st
+	if _, held := st.Supplied[root]; !held {
+		return
+	}
+	supplied := make(map[string]string, len(st.Supplied))
+	for k, v := range st.Supplied {
+		if k != root {
+			supplied[k] = v
+		}
+	}
+	st.Supplied = supplied
+	if !remote && !slices.Contains(st.Unreadable, root) {
+		st.Unreadable = append(slices.Clone(st.Unreadable), root)
+	}
 	e.matchStatus.st = st
 }
 

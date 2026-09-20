@@ -319,11 +319,26 @@ func (e *Engine) AgentByIdentity(ctx context.Context, fingerprint string) (strin
 		return "", nil
 	}
 	res, err := e.query(ctx, func() core.Result {
+		seen := map[string]bool{}
 		ids := make([]string, 0, 1)
 		for id, l := range e.state.Agents {
 			if l != nil && l.Nonce != "" && RolePinFingerprint(l.Nonce) == fingerprint {
+				seen[id] = true
 				ids = append(ids, id)
 			}
+		}
+		// AND THE NONCE INDEX. A sweep written before v0.0.8 blanked the
+		// row's nonce on archival and kept the index entry that lets the
+		// agent resume, so on a replayed board the credential lives in
+		// state.Nonces alone: a search of the rows found nobody, the pin was
+		// dropped, and the archived holder could resume into the role the
+		// config had withdrawn. Round six of the pre-release review.
+		for nonce, id := range e.state.Nonces {
+			if seen[id] || e.state.Agents[id] == nil || RolePinFingerprint(nonce) != fingerprint {
+				continue
+			}
+			seen[id] = true
+			ids = append(ids, id)
 		}
 		sort.Strings(ids)
 		if len(ids) == 0 {

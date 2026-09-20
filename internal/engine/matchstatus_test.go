@@ -198,3 +198,30 @@ func (stubScorer) Version() string { return "0" }
 func (stubScorer) Predict(context.Context, string, int) (overlap.Prediction, error) {
 	return overlap.Prediction{}, nil
 }
+
+// Releasing a supplied index retracts the status that credited it.
+//
+// Eviction released the index and its bookkeeping and left
+// MatchStatus.Supplied naming the agent that shipped it, so the bridge,
+// which ships only for a tree nobody serves, read "supplied" and never
+// shipped again: no matching for that tree until a daemon restart, while
+// status went on crediting an index the daemon had discarded. Round six of
+// the pre-release review.
+func TestReleasingASuppliedIndexRetractsTheSuppliedStatus(t *testing.T) {
+	e := &Engine{}
+	e.NoteUnreadableTree("/repo", "cannot read")
+	e.SetIndex("/repo", overlap.NewLexicalFromFiles(nil, nil), MatchConfig{}, IndexInfo{SuppliedBy: "shipper"})
+	e.NoteSuppliedIndex("/repo", "shipper")
+	if st := e.MatchStatus(); st.Supplied["/repo"] != "shipper" || len(st.Unreadable) != 0 {
+		t.Fatalf("setup: after the shipment status is %+v", st)
+	}
+
+	e.RemoveScorerForRepo("/repo")
+	st := e.MatchStatus()
+	if _, credited := st.Supplied["/repo"]; credited {
+		t.Error("the released index is still credited as supplied, so its bridge will never ship again")
+	}
+	if len(st.Unreadable) != 1 || st.Unreadable[0] != "/repo" {
+		t.Errorf("the tree is not back on the unreadable list, which is what the bridge ships on: %v", st.Unreadable)
+	}
+}
