@@ -116,9 +116,14 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   registers by design, turned `dibs doctor` red ("somebody's mail is not
   being delivered") beside an agent whose every hook resolved, and the
   daemon logged it at INFO as a wake path reaching no one. A miss now counts
-  as a misbinding only while some active agent in that directory has never
-  been reached by a hook of its own; the fault shape is unchanged for an
-  agent no hook has ever resolved to.
+  as a misbinding only while some active agent in that directory could still
+  be the caller: one no hook has reached since the daemon started AND that
+  holds no thread-shaped session id (a hook from its own session would quote
+  the thread it holds). The second clause is what keeps a fresh daemon
+  honest: hooks fire at turn boundaries, so with the reached set alone
+  `dibs upgrade` followed by the reviewer's first hook read "the guard is
+  inert" for the length of the seat's turn. The fault shape is unchanged for
+  an agent bound to `host-<ppid>` or to nothing.
 - **The stdio bridge finds its Claude Code session by its parent, not by
   `CLAUDE_PID`.** Claude Code 2.1.275 exports `CLAUDE_PID` to shell children
   and not to MCP servers, so every plugin bridge read no sidecar: `_meta

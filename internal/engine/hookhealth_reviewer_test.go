@@ -91,3 +91,45 @@ func TestAMissBesideAnUnreachedAgentIsStillAFault(t *testing.T) {
 		t.Errorf("verdict = %q, wanted the fault", h.Verdict)
 	}
 }
+
+// And still a stranger when the daemon has just started: an agent holding a
+// thread-shaped session id is reachable by shape, before any hook of its own
+// has arrived since the restart.
+//
+// `reachedByHook` is per daemon lifetime, and hooks fire at turn boundaries.
+// So `dibs upgrade` followed by the reviewer's first hook, while the seat was
+// mid-turn, read "hooks are reaching Dibs but resolving to NO agent: the
+// guard is inert" for the length of that turn. Measured on this project's
+// own board on 2026-09-19, one minute after the fix for the previous shape of
+// the same false alarm was installed. A hook from the seat's own session
+// would quote the thread id it holds, so a hook quoting another id is another
+// session; only an agent with no thread-shaped id, which is the bridge's
+// `host-<ppid>` fallback or nothing at all, can still be the misbound caller.
+func TestAStrangerBesideAThreadBoundAgentIsAStrangerBeforeAnyHook(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	const dir = "/work/project"
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "seat", Nonce: "n-seat",
+		SessionID: "0123abcd-4567-89ef-0123-456789abcdef",
+		Agent:     &core.AgentInfo{CWD: dir},
+	}); err != nil {
+		t.Fatalf("setup: register: %v", err)
+	}
+	if _, err := e.HookPoll(ctx, "01a0bc56-e387-7310-bbf2-db64c2944687", "SessionStart", dir, false, false); err != nil {
+		t.Fatalf("hook_poll: %v", err)
+	}
+	h := e.HookHealth()
+	if h.PollStrangers != 1 || h.PollUnresolved != 0 {
+		t.Errorf("a reviewer's first hook after a restart counted as a misbinding: "+
+			"unresolved=%d strangers=%d", h.PollUnresolved, h.PollStrangers)
+	}
+	if h.Verdict != "only-strangers" {
+		t.Errorf("verdict = %q: one unregistered session beside a thread-bound seat "+
+			"read as an inert guard", h.Verdict)
+	}
+}

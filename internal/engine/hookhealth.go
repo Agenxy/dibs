@@ -77,16 +77,31 @@ type HookHealth struct {
 // tree: on this project's own board, the pre-release reviewer, a Codex
 // session run in the checkout that never registers by design, turned `dibs
 // doctor` red beside an agent whose every hook resolved. So an unresolved
-// call is a misbinding only while some active agent in that directory has
-// never been reached. `reachedByHook` is per daemon lifetime, like the
-// counters it serves: after a restart the first miss beside a not-yet-reached
-// agent counts against the board until that agent's next hook, which is one
-// call.
+// call is a misbinding only while some active agent in that directory could
+// still be the caller.
+//
+// Two facts rule an agent out. A hook has already resolved to it
+// (`reachedByHook`), so its session id is known to match. Or it holds a
+// thread-shaped session id at all: a hook from its own session would quote
+// that id and resolve, so a hook quoting another id is another session. The
+// second matters because `reachedByHook` is per daemon lifetime and hooks
+// fire at turn boundaries: with the first fact alone, `dibs upgrade` followed
+// by the reviewer's first hook, while the seat was mid-turn, read "the guard
+// is inert" for the length of that turn. What is left as a possible caller is
+// an agent with no thread-shaped id, which is the bridge's `host-<ppid>`
+// fallback or nothing at all, and that is the misbinding shape this counter
+// exists to catch. An agent holding a thread id that is not its own (a nested
+// bridge adopting its parent's) reads as reachable here; that case is the
+// bridge's to prevent, and it does (mcpstdio_session.go).
 func (e *Engine) hookStranger(cwd string) bool {
 	for _, id := range e.state.ActiveAgentIDsIn(cwd) {
-		if !e.reachedByHook[id] {
-			return false
+		if e.reachedByHook[id] {
+			continue
 		}
+		if l := e.state.Agents[id]; l != nil && threadIDOf(l) != "" {
+			continue
+		}
+		return false
 	}
 	return true
 }
