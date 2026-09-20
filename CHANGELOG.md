@@ -108,6 +108,23 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round sixteen of the pre-release review: three findings.**
+  - A resume retried after the agent was archived is a resume, not a
+    replay. The idempotent retry matched on the activation, which archival
+    leaves alone, and handed back the token archival had cleared with
+    `resumed: true` and the row still archived; the next call failed
+    `E_BAD_TOKEN` and named the recovery that had just reported success.
+    The cached answer is returned only while the row still holds that
+    token.
+  - `hook_session` and `hook_blocked` announce a session with the machine
+    it came from, as `hook_poll` already did; an announcement without one
+    was matched on the directory alone, so the cross-machine inheritance
+    closed in round fifteen was still open through those two calls.
+  - The bridge's `_meta com.dibs/repo` on a register describes the checkout
+    the register names AFTER the sidecar has filled it in, not the bridge's
+    own process directory; a remote hub recorded the session's directory
+    beside another checkout's identity, or none, and claims made there
+    carried the wrong repository-relative key.
 - **Round fifteen of the pre-release review: three findings.**
   - A shipped footprint decides no membership after its declaration is
     gone either. `undeclare` removed the slot that carried the provenance
