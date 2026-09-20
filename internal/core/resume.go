@@ -233,3 +233,116 @@ func (a *Agent) takeActivation(op *Op) bool {
 	}
 	return true
 }
+
+// applyResume is the explicit activation op for standing roles (SPEC §5):
+// a complete activation boundary: atomic wake + rotation at one serial.
+func (s *State) applyResume(op *Op, now time.Time) (Result, []Event, error) {
+	if op.Nonce == "" || op.ResumeID == "" {
+		return nil, nil, errf("E_BAD_NONCE", "resume requires nonce and resume_id", "missing nonce or resume_id")
+	}
+	id, ok := s.Nonces[op.Nonce]
+	if !ok {
+		return nil, nil, errf("E_BAD_NONCE", "check the nonce; if lost, register a new agent", "unknown nonce")
+	}
+	l := s.Agents[id]
+	// ARCHIVED RESUMES, and this used to refuse it with "register a new one".
+	//
+	// The advice was worse than the refusal. Registering a new agent forks a
+	// SIBLING: a second row under a name the board still holds, whose mailbox is
+	// empty while the original's sits full and unread, which SKILLS.md names as
+	// the way a standing role loses its mail. The correct recovery was already
+	// available, one call away, and this sent people past it.
+	//
+	// Nothing was missing. s.Nonces resolved the nonce to this row, so the row
+	// is here; retention keeps it and its mailbox for ArchiveRetention for the
+	// express purpose of letting it come back; and archiving is a TIMER, five
+	// minutes plus thirty for an ephemeral agent, not a decision anyone made.
+	// The only thing standing between the credential and the mailbox it opens
+	// was this branch.
+	//
+	// UNGATED, deliberately. Relaxing a refusal cannot rewrite history: an op
+	// that returns an error never advanced the serial and was never ledgered, so
+	// no ledger contains a resume of an archived agent for replay to reinterpret.
+	// That reasoning holds only for refusals, and anything changing what an
+	// ACCEPTED op did still needs a flag on the op.
+	if l == nil {
+		return nil, nil, errf("E_NO_AGENT", "the agent was purged after its retention "+
+			"window; register a new one", "agent for nonce is gone")
+	}
+	if l.Status == StatusClosed {
+		return nil, nil, errf("E_AGENT_CLOSED", "register a new agent", "agent %s is closed", id)
+	}
+	// Generation-aware idempotent retry (SPEC §5): same resume_id returns the
+	// original token iff the generation is unchanged; else superseded.
+	if rec, exists := s.Dedup[dedupKey(id, op.ResumeID)]; exists {
+		if rec.Activation == l.Activation {
+			return Result{
+				"agent_id": id, "token": rec.Token, "activation": l.Activation,
+				"serial": s.Serial, "board": s.Board(), "resumed": true,
+			}, nil, nil
+		}
+		return Result{"agent_id": id, "superseded": true, "activation": rec.Activation}, nil, nil
+	}
+	// A RESUME IS AN ACTIVATION IN A NEW SESSION, and this bound none of it.
+	//
+	// The op named `resume` was the one path that rotated the token, bumped the
+	// activation and left every session binding pointing at the session the
+	// agent had just LEFT. Register in A, resume from B, and the bridge in B
+	// opens its subscription successfully while the daemon withholds the inbox
+	// from it, correctly, because the row still belongs to A; the daemon's own
+	// wake routes still name A too. So the agent is awake, subscribed, and
+	// unreachable until some later call happens to rebind it. Every other
+	// recovery path takes the activation, and this one is the one an agent is
+	// told to use.
+	//
+	// held is read BEFORE anything moves, which is what currentFrom needs
+	// (round forty-four). GATED, like the rest of this cycle's fold changes:
+	// v0.0.6 resume ops bound nothing, and rebinding them on replay would move
+	// sessions that history never moved.
+	if op.V7Semantics {
+		held := op.SessionID != "" && l.holdsSession(op.SessionID)
+		s.dropTakenSession(op, l)
+		if op.SessionID != "" {
+			l.SessionID = op.SessionID
+			l.GuessedSessions = withoutString(l.GuessedSessions, op.SessionID)
+		}
+		l.bindHarnessSessionAs(op.SessionAlias, op.SessionGuessed, op.V7Semantics)
+		l.currentFrom(op, held)
+	}
+	// COMING BACK FROM ARCHIVED, which nothing used to do from here.
+	//
+	// The row keeps ArchivedAt, and retention counts from it, so leaving it set
+	// on a row that is about to be active is a timestamp saying the agent was
+	// retired at a moment it demonstrably was not. gc only looks at rows whose
+	// status is archived, so this is not live today; it is the shape of thing
+	// that becomes live the first time somebody writes a rule from the field.
+	//
+	// The nonce goes back on the row with it. s.Nonces resolved op.Nonce to this
+	// id a few lines up, so the credential is proven and the row is the only
+	// place it was missing: archiving before KeepArchivedNonce cleared the field
+	// and kept the index, and an active row with no nonce is what the engine's
+	// guard against recovering a privileged row without one refuses. Narrowed to
+	// the archived case on purpose, because that is the state no ledgered resume
+	// has ever been applied against, so nothing in any history changes meaning.
+	if l.Status == StatusArchived {
+		l.ArchivedAt = time.Time{}
+		l.Nonce = op.Nonce
+	}
+	l.Token = op.NewToken
+	l.Activation++
+	l.PID, l.ProcStart = op.PID, op.ProcStart
+	l.Status, l.StaleReason = StatusActive, ""
+	l.StaleSince, l.DormantSince = time.Time{}, time.Time{}
+	l.AckedSerial = 0 // gate re-arms per activation
+	s.Dedup[dedupKey(id, op.ResumeID)] = &DedupRec{
+		Agent: id, ID: op.ResumeID, Activation: l.Activation, Token: op.NewToken, At: now,
+	}
+	l.LastCoordination = now
+	evs := []Event{{Type: "agent.resumed", Agent: id, Data: map[string]any{"activation": l.Activation}}}
+	serial := s.finish(&evs, now)
+	return Result{
+		"agent_id": id, "token": op.NewToken, "activation": l.Activation,
+		"serial": serial, "board": s.Board(),
+		"gate": "call check_in before declare or claim",
+	}, evs, nil
+}

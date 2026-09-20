@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"runtime"
 	"testing"
 	"time"
@@ -307,5 +308,69 @@ func TestAReplacedBridgeReleasesItsPendingWakes(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("the waiter was left holding after its bridge was replaced; nothing will ever report")
+	}
+}
+
+// A BRIDGE ATTACHING RECONSIDERS THE MAIL ITS MACHINE'S AGENTS ARE OWED.
+//
+// A question for a remote agent that arrived while its machine's bridge was
+// down was refused a wake ("no bridge there can start its harness"), and a
+// refusal schedules no retry: the bridge reconnecting changed nothing, and
+// the mail sat unwoken until some other event happened to reach that agent.
+// The same order happens at every hub start, where the bridges attach after
+// the boot retries have run. Attaching now arms the same retry boot does for
+// every agent on that host holding blocking mail. Found by the pre-release
+// review, round five.
+func TestAnAttachingBridgeWakesTheMailItsAgentsWereOwed(t *testing.T) {
+	st := core.NewState("hub-node", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+	e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{"codex", "resume", "{thread}"}}})
+
+	reg := func(name string, info *core.AgentInfo, session string) string {
+		t.Helper()
+		res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: name, Agent: info, SessionID: session})
+		if err != nil {
+			t.Fatal("setup:", err)
+		}
+		tok, _ := res["token"].(string)
+		if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
+			t.Fatal("setup:", err)
+		}
+		return tok
+	}
+	reg("far", &core.AgentInfo{Harness: "Codex", HostID: "laptop", CWD: "/srv/work"}, remoteThread)
+	asker := reg("asker", &core.AgentInfo{Harness: "Codex"}, "")
+
+	// The question lands while no bridge for "laptop" is attached.
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: asker, To: "far", MsgType: core.MsgQuestion, Body: "ready?", DeadlineSec: 600,
+	}); err != nil {
+		t.Fatal("setup:", err)
+	}
+	// The recipient has been away a while, as it would be after its bridge
+	// went down: no recent contact, ephemeral or durable.
+	_, _ = e.query(ctx, func() core.Result {
+		delete(e.seen, "far")
+		e.state.Agents["far"].LastCoordination = time.Now().Add(-time.Hour)
+		return core.Result{}
+	})
+
+	reqs, release, err := e.AttachHostBridge("laptop", []string{"Codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	select {
+	case got := <-reqs:
+		if got.Agent != "far" {
+			t.Errorf("the bridge was asked to wake %q, want far", got.Agent)
+		}
+		e.ReportWakeResult(WakeResult{ID: got.ID, Host: "laptop", OK: true})
+	case <-time.After(5 * time.Second):
+		t.Fatal("the bridge attached and was never asked to wake the agent whose question " +
+			"had been waiting: the refusal before the attach scheduled no retry")
 	}
 }

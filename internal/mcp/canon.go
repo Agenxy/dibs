@@ -1,6 +1,8 @@
 package mcp
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -27,6 +29,29 @@ import (
 //
 // Case-insensitive volumes and Unicode aliases remain documented caveats.
 func canonPath(p string) string { return paths.Canonical(p) }
+
+// callerPath is canonPath for a path on the CALLER's machine: resolved
+// here when the caller is on this one, cleaned lexically and otherwise left
+// alone when it is not.
+//
+// Resolving symlinks answers about this filesystem, and a remote caller's
+// path names nothing on it: a Linux member's /tmp/repo/file, claimed through
+// a macOS hub, became /private/tmp/repo/file, its recorded checkout root
+// /tmp/repo no longer prefixed it, and the portable repository rule that
+// exists for that agent had no relative path to fire on. guard_path and the
+// lifecycle hooks compared the member's cwd the same wrong way. Registration
+// had already learned this (resolveRemoteLocation); every other path the
+// tools take now goes through the same decision. Found by the pre-release
+// review, round five.
+func callerPath(ctx context.Context, params json.RawMessage, p string) string {
+	if p == "" {
+		return ""
+	}
+	if remoteCaller(ctx, resolveHostID(ctx, params)) {
+		return filepath.Clean(p)
+	}
+	return canonPath(p)
+}
 
 // mustBeAbsolute rejects a coordination path the caller never anchored.
 //

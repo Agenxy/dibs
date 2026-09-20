@@ -1503,8 +1503,13 @@ func (e *Engine) WorkingDirectories(ctx context.Context) []string {
 			// machine's, so nothing was indexed after a restart until an agent
 			// registered. remoteHostOf draws the same line for wakes. Found by
 			// the pre-release review.
-			if a.Agent.HostID != "" && a.Agent.HostID != e.HostID() && a.Agent.HostID != e.state.NodeID {
-				continue // another machine's tree: the daemon cannot read it
+			if e.remoteHostOf(a) != "" {
+				// Another machine's tree: the daemon cannot read it, and
+				// says so, so that machine's bridge ships for it after a
+				// restart as it did at registration (round five of the
+				// pre-release review found the list empty after boot).
+				e.NoteRemoteTree(a.Agent.CWD)
+				continue
 			}
 			seen[a.Agent.CWD] = true
 			out = append(out, a.Agent.CWD)
