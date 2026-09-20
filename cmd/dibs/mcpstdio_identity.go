@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -143,6 +144,7 @@ func enrichRegister(line []byte) []byte {
 			if tid, _ := meta["threadId"].(string); strings.TrimSpace(tid) != "" {
 				noteThread(strings.TrimSpace(tid))
 			}
+			canonicalisePathArgs(params)
 			if out, err := json.Marshal(msg); err == nil {
 				line = out
 			}
@@ -385,4 +387,45 @@ func repoMeta(params map[string]any) map[string]string {
 		return nil
 	}
 	return map[string]string{"dir": dir, "remote": remote, "roots": roots, "root": id.WorktreeID}
+}
+
+// pathArgs names, per tool, the arguments that are paths on THIS machine.
+var pathArgs = map[string][]string{
+	"claim":         {"path"},
+	"release":       {"path"},
+	"force_release": {"path"},
+	"guard_path":    {"path", "cwd"},
+	"hook_poll":     {"cwd"},
+	"hook_session":  {"cwd"},
+	"hook_blocked":  {"cwd"},
+}
+
+// canonicalisePathArgs resolves a call's path arguments on the machine they
+// name, which is this one.
+//
+// The daemon canonicalises paths at ingress (symlinks, /private) so two
+// spellings of one directory meet, and it can only do that for its own
+// filesystem: a path from a bridge on another machine names nothing there,
+// and resolving it against the hub's disk gave a Linux member's /tmp/repo
+// the macOS hub's /private/tmp/repo. So the hub now leaves a remote caller's
+// paths alone, and the spelling the agent typed has to meet the spelling its
+// bridge registered (os.Getwd, which is resolved) somewhere: here, where the
+// filesystem is. Absolute paths only; a relative one is refused by the
+// daemon with the hint that explains why, and rewriting it here would hide
+// that. Round five of the pre-release review, through the two-host suite.
+func canonicalisePathArgs(params map[string]any) {
+	name, _ := params["name"].(string)
+	keys, ok := pathArgs[name]
+	if !ok {
+		return
+	}
+	args, _ := params["arguments"].(map[string]any)
+	if args == nil {
+		return
+	}
+	for _, k := range keys {
+		if p, _ := args[k].(string); p != "" && filepath.IsAbs(p) {
+			args[k] = paths.Canonical(p)
+		}
+	}
 }

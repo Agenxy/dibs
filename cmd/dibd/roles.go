@@ -229,17 +229,26 @@ func withdrawUndeclaredRoles(ctx context.Context, eng *engine.Engine, c RolesCon
 	}
 }
 
-// withdrawOne demotes the holder of a declared name, if it is the agent the
-// pin recorded and it still holds the pinned role.
+// withdrawOne demotes the agent the pin recorded, if it still holds the
+// pinned role.
+//
+// BY CREDENTIAL, NOT BY NAME. This used to resolve the declared name again,
+// so a holder that had renamed itself, or been archived, was "nobody holds
+// the name": the pin was dropped and the role stayed, with the one record
+// that this mechanism granted it gone, so no later pass could withdraw it
+// either. The fingerprint is what the pin recorded and the holder is whoever
+// carries it, whatever it calls itself now. Found by the pre-release review,
+// round five.
 func withdrawOne(ctx context.Context, eng *engine.Engine, role, name, pinned string) {
-	id := resolveDeclared(ctx, eng, role, name)
-	if id == "" {
-		return // nobody holds the name; the pin was all there was
+	id, err := eng.AgentByIdentity(ctx, pinned)
+	if err != nil {
+		slog.Warn("could not look up the holder of a declared role's credential",
+			"agent", name, "role", role, "err", err)
+		return
 	}
-	fp, err := eng.AgentIdentity(ctx, id)
-	if err != nil || fp != pinned {
-		slog.Info("a declared role's pin is stale: a different agent holds the "+
-			"name, so the pin is dropped and the role left alone",
+	if id == "" {
+		slog.Info("a declared role's pin names a credential no agent carries any "+
+			"more, so the pin is dropped and there is nothing to withdraw",
 			"agent", name, "role", role)
 		return
 	}

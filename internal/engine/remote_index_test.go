@@ -206,3 +206,28 @@ func TestALocalAgentIsNotScoredByAnotherMachinesShippedIndex(t *testing.T) {
 		t.Error("the shipper was refused the index it shipped")
 	}
 }
+
+// And after a restart, when the daemon walks the board for trees to index,
+// a remote agent's tree is relisted for its bridge: the daemon's memory of
+// what was supplied is gone with the restart, and the bridge ships on the
+// list. Round five of the pre-release review.
+func TestARestartedDaemonRelistsRemoteTreesForTheirBridges(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	if _, _, err := st.Apply(&core.Op{
+		Kind: core.OpRegister, Name: "member", NewToken: "t",
+		Agent: &core.AgentInfo{CWD: "/srv/checkout", HostID: "member-host"},
+	}, time.Unix(1700000000, 0)); err != nil {
+		t.Fatal(err)
+	}
+	// A cold engine over the replayed state: the restart.
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+	if dirs := e.WorkingDirectories(ctx); len(dirs) != 0 {
+		t.Errorf("a remote tree was offered for local indexing: %v", dirs)
+	}
+	if ms := e.MatchStatus(); len(ms.Remote) != 1 || ms.Remote[0] != "/srv/checkout" {
+		t.Errorf("after the boot walk the remote list is %v, want the member's checkout", ms.Remote)
+	}
+}
