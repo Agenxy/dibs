@@ -1281,10 +1281,16 @@ func (s *Server) run(
 		return s.eng.HookPollFrom(ctx, a.SessionID, a.Event, callerPath(ctx, params, a.CWD),
 			resolveHostID(ctx, params), truthy(a.StopActive), truthy(a.StrictOutput))
 	case "hook_session":
+		// Host travels with every announcement, not only hook_poll's: the
+		// directory inference compares it, and an announcement that arrived
+		// without one is matched on the directory alone, which handed a
+		// thread from machine-b to an agent on machine-a through this call after
+		// hook_poll had been fixed. Round sixteen of the pre-release review.
 		return s.eng.NoteChildSession(ctx, engine.Child{
 			SessionID: a.SessionID, CWD: callerPath(ctx, params, a.CWD), Model: a.Model,
 			Transcript: a.Transcript, AgentID: a.AgentID, AgentType: a.AgentType,
 			Progress: a.Progress, State: engine.StateForEvent(a.Event),
+			Host: resolveHostID(ctx, params),
 		})
 	case "spawned_agents":
 		return s.eng.Children(ctx)
@@ -1292,6 +1298,7 @@ func (s *Server) run(
 		return s.eng.NoteChildSession(ctx, engine.Child{
 			SessionID: a.SessionID, CWD: callerPath(ctx, params, a.CWD),
 			State: "blocked", Blocked: a.ToolName, Turn: a.TurnID,
+			Host: resolveHostID(ctx, params),
 		})
 	case "guard_path":
 		return s.eng.GuardPathFrom(ctx, a.SessionID, callerPath(ctx, params, a.Path),

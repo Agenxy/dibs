@@ -138,23 +138,35 @@ func TestAHookFromAnotherMachineDoesNotResolveToThisOnesAgent(t *testing.T) {
 // reach the inference, or the two compare "" and "" and agree. Round
 // fifteen of the pre-release review reproduced alpha on machine-a
 // acquiring a thread that exists only on machine-b.
+//
+// EVERY announcing call, not only hook_poll: hook_session and hook_blocked
+// built their announcement without the host after hook_poll had been fixed,
+// and an announcement with no host is matched on the directory alone. Round
+// sixteen.
 func TestAnAnnouncementOnAnotherMachineIsNotInheritedThroughTheWire(t *testing.T) {
-	srv, _, _ := newServerWithEngine(t)
 	const thread = "b7804476-3292-4ad9-bddb-16f823328751"
-	toolCallWithMeta(t, srv, "hook_poll", map[string]any{
-		"session_id": thread, "event": "SessionStart", "cwd": "/w/repo",
-	}, map[string]any{HostMetaKey: "machine-b"})
-	alpha := toolCallWithMeta(t, srv, "register", map[string]any{
-		"name": "alpha", "cwd": "/w/repo", "session_id": "host-12345",
-	}, map[string]any{HostMetaKey: "machine-a"})
-	if alpha["token"] == nil {
-		t.Fatalf("setup: %v", alpha)
+	announcements := map[string]map[string]any{
+		"hook_poll":    {"session_id": thread, "event": "SessionStart", "cwd": "/w/repo"},
+		"hook_session": {"session_id": thread, "event": "SessionStart", "cwd": "/w/repo"},
+		"hook_blocked": {"session_id": thread, "event": "PermissionRequest", "cwd": "/w/repo", "tool_name": "Edit"},
 	}
-	res := toolCallWithMeta(t, srv, "guard_path", map[string]any{
-		"session_id": thread, "cwd": "/w/repo", "path": "/w/repo/file.go",
-	}, map[string]any{HostMetaKey: "machine-a"})
-	if got := res["agent"]; got == "alpha" {
-		t.Fatalf("the thread announced only on machine-b resolves to alpha on machine-a: alpha "+
-			"inherited a session that is not on its machine: %v", res)
+	for call, args := range announcements {
+		t.Run(call, func(t *testing.T) {
+			srv, _, _ := newServerWithEngine(t)
+			toolCallWithMeta(t, srv, call, args, map[string]any{HostMetaKey: "machine-b"})
+			alpha := toolCallWithMeta(t, srv, "register", map[string]any{
+				"name": "alpha", "cwd": "/w/repo", "session_id": "host-12345",
+			}, map[string]any{HostMetaKey: "machine-a"})
+			if alpha["token"] == nil {
+				t.Fatalf("setup: %v", alpha)
+			}
+			res := toolCallWithMeta(t, srv, "guard_path", map[string]any{
+				"session_id": thread, "cwd": "/w/repo", "path": "/w/repo/file.go",
+			}, map[string]any{HostMetaKey: "machine-a"})
+			if got := res["agent"]; got == "alpha" {
+				t.Fatalf("the thread announced by %s only on machine-b resolves to alpha on "+
+					"machine-a: alpha inherited a session that is not on its machine: %v", call, res)
+			}
+		})
 	}
 }
