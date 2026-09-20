@@ -56,6 +56,17 @@ type scorerFlags struct {
 	// machine: a path holds one tree, and a second machine's tree at the
 	// same path is refused rather than swapped in underneath the first.
 	suppliedHost map[string]string
+	// touched is the eviction epoch each root was last claimed or found
+	// already indexed in, and epoch counts eviction passes: a pass evicts
+	// only roots untouched since it took its snapshot of the board. The
+	// snapshot and the deletion are two steps, and an agent that resumed
+	// into a tree between them found it indexed, returned, and lost it to
+	// the deletion that followed. Round ten of the pre-release review.
+	touched map[string]uint64
+	epoch   uint64
+	// afterSnapshot runs between eviction's snapshot and its deletion; a
+	// test seam for the window above, nil in the daemon.
+	afterSnapshot func()
 	// buildMu serialises index construction from shipped payloads.
 	buildMu          sync.Mutex
 	repo             string
@@ -655,6 +666,7 @@ func (f *scorerFlags) indexDiscovered(ctx context.Context, eng *engine.Engine, c
 			f.indexed = map[string]bool{}
 		}
 		if f.indexed[root] {
+			f.touchLocked(root)
 			f.discoverMu.Unlock()
 			return
 		}
@@ -724,7 +736,17 @@ func (f *scorerFlags) claimIndexSlot(root string) bool {
 		return false
 	}
 	f.indexed[root] = true
+	f.touchLocked(root)
 	return true
+}
+
+// touchLocked records that root was claimed or found in the current
+// eviction epoch. Caller holds discoverMu.
+func (f *scorerFlags) touchLocked(root string) {
+	if f.touched == nil {
+		f.touched = map[string]uint64{}
+	}
+	f.touched[root] = f.epoch
 }
 
 // evictIdleIndexes drops every indexed tree that no agent on the board is
@@ -742,35 +764,27 @@ func (f *scorerFlags) claimIndexSlot(root string) bool {
 // deadline gitDeadline documents, and it would buy nothing: a directory this
 // process has never resolved cannot be holding one of the indexes it holds.
 func (f *scorerFlags) evictIdleIndexes(ctx context.Context, eng *engine.Engine) bool {
+	// A new epoch BEFORE the snapshot: anything that claims or finds a root
+	// from here on stamps this epoch, and is kept below whatever the
+	// snapshot said about it.
+	f.discoverMu.Lock()
+	f.epoch++
+	started := f.epoch
+	f.discoverMu.Unlock()
 	cwds, err := eng.ActiveAgentCWDs(ctx)
 	if err != nil {
 		slog.Debug("work-overlap eviction could not read the board; keeping every index", "err", err)
 		return false
 	}
+	if f.afterSnapshot != nil {
+		f.afterSnapshot()
+	}
 
 	f.discoverMu.Lock()
-	live := make(map[string]bool, len(cwds))
-	for _, cwd := range cwds {
-		if root := f.rootOf[cwd]; root != "" {
-			live[root] = true
-			continue
-		}
-		// No resolved root for this directory: discovery failed there, which
-		// is exactly the tree an agent ships an index for, and the shipment
-		// records the root under itself. A directory under an indexed root
-		// is that root's, and saying so needs no git. Without this the pass
-		// at the repository ceiling evicted a supplied index under an agent
-		// registered from a subdirectory of it. Pre-release review, round
-		// three.
-		for root := range f.indexed {
-			if underDir(cwd, root) {
-				live[root] = true
-			}
-		}
-	}
+	live := f.liveRootsLocked(cwds)
 	var idle []string
 	for root := range f.indexed {
-		if !live[root] {
+		if !live[root] && f.touched[root] < started {
 			idle = append(idle, root)
 		}
 	}
@@ -793,6 +807,31 @@ func (f *scorerFlags) evictIdleIndexes(ctx context.Context, eng *engine.Engine) 
 			"repo", root)
 	}
 	return len(idle) > 0
+}
+
+// liveRootsLocked maps the board's working directories to the indexed roots
+// they are in. Caller holds discoverMu.
+func (f *scorerFlags) liveRootsLocked(cwds []string) map[string]bool {
+	live := make(map[string]bool, len(cwds))
+	for _, cwd := range cwds {
+		if root := f.rootOf[cwd]; root != "" {
+			live[root] = true
+			continue
+		}
+		// No resolved root for this directory: discovery failed there, which
+		// is exactly the tree an agent ships an index for, and the shipment
+		// records the root under itself. A directory under an indexed root
+		// is that root's, and saying so needs no git. Without this the pass
+		// at the repository ceiling evicted a supplied index under an agent
+		// registered from a subdirectory of it. Pre-release review, round
+		// three.
+		for root := range f.indexed {
+			if underDir(cwd, root) {
+				live[root] = true
+			}
+		}
+	}
+	return live
 }
 
 // maxIndexedRepos bounds the number of trees mined. High enough for any real

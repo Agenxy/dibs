@@ -331,6 +331,13 @@ func (s *State) applyResume(op *Op, now time.Time) (Result, []Event, error) {
 	l.Token = op.NewToken
 	l.Activation++
 	l.PID, l.ProcStart = op.PID, op.ProcStart
+	// The machine this activation is on, when the ingress stated it. Only
+	// then: no resume on disk before this carried an identity, so replay
+	// applies exactly what it did, and an op that carries one is one the
+	// ingress derived from the connection (mergeIdentity's rule).
+	if op.Agent != nil {
+		l.mergeIdentity(op.Agent)
+	}
 	l.Status, l.StaleReason = StatusActive, ""
 	l.StaleSince, l.DormantSince = time.Time{}, time.Time{}
 	l.AckedSerial = 0 // gate re-arms per activation

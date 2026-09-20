@@ -281,11 +281,15 @@ func (e *Engine) SetIndex(repo string, s overlap.Scorer, cfg MatchConfig, info I
 	e.indexes[repo] = info
 	cfg.Repo = repo
 	e.matchCfg = cfg
-	if e.scorer == nil {
-		// Keep the single-scorer accessors working for callers with no agent in
-		// hand, such as Predict from the human CLI.
-		e.scorer = s
-	}
+	// BOTH HALVES OF THE FALLBACK PAIR, together. The single-scorer accessors
+	// (Predict from the human CLI, callers with no agent in hand) read
+	// e.scorer and e.matchCfg.Repo as one index and the name of its tree.
+	// The scorer used to be set only when nil, so installing A then B left
+	// the scorer on A while the config named B, and releasing A then took
+	// RemoveScorerForRepo's "the pair still names a tree we hold" exit with
+	// the evicted scorer still answering. Round ten of the pre-release
+	// review. Whichever was published last, for both.
+	e.scorer = s
 }
 
 // peerIndex is one other index of the same project as a declaring agent's.

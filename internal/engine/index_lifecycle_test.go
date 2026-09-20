@@ -100,3 +100,28 @@ func TestReleasingAnUnheldRepoChangesNothing(t *testing.T) {
 		t.Errorf("releasing an unheld tree replaced the fallback index")
 	}
 }
+
+// Releasing the FIRST index installed must not leave its scorer behind as
+// the fallback. SetIndex set the fallback scorer only when none was set and
+// the fallback name on every install, so after A then B the pair was (A's
+// scorer, B's name); releasing A took the "the pair still names a tree we
+// hold" exit and Predict went on answering out of A's history with only B
+// indexed. Round ten of the pre-release review.
+func TestReleasingTheFirstIndexDoesNotLeaveItsScorerAsTheFallback(t *testing.T) {
+	e := &Engine{}
+	a, b := t.TempDir(), t.TempDir()
+	e.SetScorerForRepo(a, fakeScorer{"a"}, MatchConfig{})
+	e.SetScorerForRepo(b, fakeScorer{"b"}, MatchConfig{})
+
+	e.RemoveScorerForRepo(a)
+
+	scorer, cfg := e.scorerAndCfg()
+	if scorer == nil || scorer.ID() != "b" || cfg.Repo != b {
+		id := "<nil>"
+		if scorer != nil {
+			id = scorer.ID()
+		}
+		t.Fatalf("with only b indexed the fallback is (%s, %q), want (b, %q): a released "+
+			"index is still answering", id, cfg.Repo, b)
+	}
+}
