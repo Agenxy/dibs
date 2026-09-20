@@ -387,3 +387,66 @@ func TestASuppliedIndexNeverJoinsAnyone(t *testing.T) {
 		t.Errorf("the daemon's own index lost the operator's policy: %+v", own)
 	}
 }
+
+// AND NOT FROM THE OTHER SIDE EITHER. The rule above downgrades the
+// DECLARING agent's supplied index to suggestions; the peer's footprint can
+// come from a shipped index too, and a local agent scored by this daemon's
+// own index was joined to a remote peer's space under `auto_join = "always"`
+// on the strength of the peer's shipped data, because only the declaring
+// side's index was checked. Round thirteen of the pre-release review
+// reproduced it with a local root and a shipped root nested inside it.
+func TestAPeerScoredByASuppliedIndexIsNeverJoinedAutomatically(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	cfg := MatchConfig{JoinThreshold: 0.3, AutoJoin: AutoJoinAlways, Deadline: time.Second}
+	local := t.TempDir()
+	shipped := filepath.Join(local, "remote")
+	// Both indexes predict the same file for this work, so the footprints
+	// overlap and the score clears the bar.
+	e.SetIndex(local, cloneScorer{"local", "shared.go"}, cfg, IndexInfo{Fingerprint: "h-local"})
+	e.SetIndex(shipped, cloneScorer{"shipped", "shared.go"}, cfg,
+		IndexInfo{Fingerprint: "h-shipped", SuppliedBy: "far", SuppliedHost: "member"})
+
+	reg := func(name string, info core.AgentInfo) string {
+		t.Helper()
+		res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: name, Agent: &info})
+		if err != nil {
+			t.Fatalf("setup: register %s: %v", name, err)
+		}
+		tok, _ := res["token"].(string)
+		if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
+			t.Fatalf("setup: ack %s: %v", name, err)
+		}
+		return tok
+	}
+	far := reg("far", core.AgentInfo{CWD: shipped, RepoRoot: shipped, HostID: "member"})
+	near := reg("near", core.AgentInfo{CWD: local, RepoRoot: local})
+
+	const work = "fix refresh token expiry"
+	resFar, err := e.DoMatched(ctx, &core.Op{Kind: core.OpSetSlot, Token: far, Text: work})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened := suggestions(t, resFar)
+	if len(opened) != 1 || opened[0].Action != "opened" {
+		t.Fatalf("far's declaration: %+v, want it to open a space", opened)
+	}
+	resNear, err := e.DoMatched(ctx, &core.Op{Kind: core.OpSetSlot, Token: near, Text: work})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range suggestions(t, resNear) {
+		if s.Space != opened[0].Space {
+			continue
+		}
+		if s.Action == "joined" || s.Action == "queued" {
+			t.Fatalf("near was %s to far's space on the strength of far's SHIPPED index: %+v", s.Action, s)
+		}
+		return
+	}
+	t.Fatal("near's declaration did not even surface far's space: the fixture does not overlap")
+}

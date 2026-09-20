@@ -231,3 +231,129 @@ func TestARestartedDaemonRelistsRemoteTreesForTheirBridges(t *testing.T) {
 		t.Errorf("after the boot walk the remote list is %v, want the member's checkout", ms.Remote)
 	}
 }
+
+// Two clones of one project on two machines, declaring the same identifying
+// reference, are matched as one repository.
+//
+// The repository lens asked Git here about both agents' directories, which
+// for a directory on another machine answers nothing, and the fall-through
+// then read two different checkout roots as two repositories: the two got
+// "different repositories" and the exact-reference join that pr:42 on both
+// sides earns was withheld. The board records each agent's repository
+// identity at registration; the lens now answers from that, host-aware, and
+// asks Git only for a local directory that recorded nothing. Round thirteen
+// of the pre-release review.
+func TestTwoClonesOnTwoMachinesMatchOnTheRecordedRepository(t *testing.T) {
+	st := core.NewState("hub", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	reg := func(name string, info core.AgentInfo) string {
+		t.Helper()
+		res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: name, Agent: &info})
+		if err != nil {
+			t.Fatalf("setup: register %s: %v", name, err)
+		}
+		tok, _ := res["token"].(string)
+		if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
+			t.Fatalf("setup: ack %s: %v", name, err)
+		}
+		return tok
+	}
+	// The hub has a tree of its own, indexed, and one of the clones sits at
+	// the SAME PATH on its machine: the path repeats across machines, and
+	// the fall-through read "one is inside the indexed tree and the other is
+	// not" as two repositories. Git here can say nothing about either.
+	hubTree := t.TempDir()
+	e.SetIndex(hubTree, cloneScorer{"hub", "x.go"}, MatchConfig{Deadline: time.Second}, IndexInfo{Fingerprint: "h-hub"})
+	one := reg("one", core.AgentInfo{
+		CWD: hubTree, RepoRoot: hubTree, RepoDir: hubTree + "/.git",
+		RepoRemote: "github.com/acme/api", RepoRoots: "r1", HostID: "machine-a",
+	})
+	two := reg("two", core.AgentInfo{
+		CWD: "/machine-b/checkout", RepoRoot: "/machine-b/checkout", RepoDir: "/machine-b/checkout/.git",
+		RepoRemote: "github.com/acme/api", RepoRoots: "r1", HostID: "machine-b",
+	})
+
+	resOne, err := e.DoMatched(ctx, &core.Op{Kind: core.OpSetSlot, Token: one, Text: "pr 42", Refs: []string{"pr:42"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened := suggestions(t, resOne)
+	if len(opened) != 1 || opened[0].Action != "opened" {
+		t.Fatalf("one's declaration: %+v, want it to open a space", opened)
+	}
+	resTwo, err := e.DoMatched(ctx, &core.Op{Kind: core.OpSetSlot, Token: two, Text: "pr 42", Refs: []string{"pr:42"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range suggestions(t, resTwo) {
+		if s.Space != opened[0].Space {
+			continue
+		}
+		if !s.Evidence.SameRepo {
+			t.Fatalf("two clones of one project on two machines were read as different repositories: %+v", s)
+		}
+		if len(s.SharedRefs) == 0 {
+			t.Fatalf("the shared pr:42 was not counted: %+v", s)
+		}
+		return
+	}
+	t.Fatalf("two's declaration did not surface one's space at all: %+v", suggestions(t, resTwo))
+}
+
+// And the other way round: two different projects on two machines, one at a
+// path nested under the other's, are NOT one repository, whatever the shape
+// of the paths says. The shape fall-through read a nested path as a
+// worktree of the outer one; the recorded identities say otherwise, and a
+// shared pr:42 across two projects is two different PRs. Round thirteen.
+func TestNestedPathsAcrossMachinesAreNotOneRepository(t *testing.T) {
+	st := core.NewState("hub", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+	reg := func(name string, info core.AgentInfo) string {
+		t.Helper()
+		res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: name, Agent: &info})
+		if err != nil {
+			t.Fatalf("setup: register %s: %v", name, err)
+		}
+		tok, _ := res["token"].(string)
+		if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
+			t.Fatalf("setup: ack %s: %v", name, err)
+		}
+		return tok
+	}
+	outer := reg("outer", core.AgentInfo{
+		CWD: "/srv/work", RepoRoot: "/srv/work", RepoDir: "/srv/work/.git",
+		RepoRemote: "github.com/acme/api", RepoRoots: "r-api", HostID: "machine-a",
+	})
+	inner := reg("inner", core.AgentInfo{
+		CWD: "/srv/work/vendor/web", RepoRoot: "/srv/work/vendor/web", RepoDir: "/srv/work/vendor/web/.git",
+		RepoRemote: "github.com/other/web", RepoRoots: "r-web", HostID: "machine-b",
+	})
+	resOuter, err := e.DoMatched(ctx, &core.Op{Kind: core.OpSetSlot, Token: outer, Text: "pr 42", Refs: []string{"pr:42"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened := suggestions(t, resOuter)
+	if len(opened) != 1 || opened[0].Action != "opened" {
+		t.Fatalf("outer's declaration: %+v, want it to open a space", opened)
+	}
+	resInner, err := e.DoMatched(ctx, &core.Op{Kind: core.OpSetSlot, Token: inner, Text: "pr 42", Refs: []string{"pr:42"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range suggestions(t, resInner) {
+		if s.Space != opened[0].Space {
+			continue
+		}
+		if s.Action == "joined" || s.Action == "queued" || (s.Evidence.RepoKnown && s.Evidence.SameRepo) {
+			t.Fatalf("two different projects on two machines were read as one repository from the shape "+
+				"of their paths: %+v", s)
+		}
+	}
+}
