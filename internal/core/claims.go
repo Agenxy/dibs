@@ -91,8 +91,27 @@ func SameProject(x, y *AgentInfo) bool {
 	if x == nil || y == nil {
 		return false
 	}
+	return sameRepoIdentity(
+		&RepoIdentity{HostID: x.HostID, RepoDir: x.RepoDir, RepoRemote: x.RepoRemote, RepoRoots: x.RepoRoots},
+		&RepoIdentity{HostID: y.HostID, RepoDir: y.RepoDir, RepoRemote: y.RepoRemote, RepoRoots: y.RepoRoots},
+	)
+}
+
+// sameRepoIdentity is the one comparison behind SameProject and the claim rule.
+//
+// A Git common directory is a PATH, and a path is only evidence on one
+// computer: /workspace/repo/.git on two machines is two unrelated
+// repositories, and comparing the strings made exclusive claims and the
+// write guard block work in a project the other machine has never seen.
+// With positive evidence of two hosts, only the machine-independent facts
+// count, the remote and the root commits. Found by the pre-release review.
+func sameRepoIdentity(x, y *RepoIdentity) bool {
+	if x == nil || y == nil {
+		return false
+	}
+	twoHosts := x.HostID != "" && y.HostID != "" && x.HostID != y.HostID
 	switch {
-	case x.RepoDir != "" && x.RepoDir == y.RepoDir:
+	case !twoHosts && x.RepoDir != "" && x.RepoDir == y.RepoDir:
 		return true
 	case x.RepoRemote != "" && x.RepoRemote == y.RepoRemote:
 		return true
@@ -173,7 +192,16 @@ func (s *State) claimOverlap(me *Agent, path, repoPath string, c *Claim) (rule s
 	if repoPath == "" || c.RepoPath == "" {
 		return "", false
 	}
-	if !sameProject(me, them) {
+	// The claim's repository as RECORDED when it was taken, not the holder's
+	// repository now: a holder that moved projects keeps the claim it holds.
+	// A claim written before the field was recorded falls back to the
+	// holder's current identity, which is what every such claim was compared
+	// with when it was granted.
+	if held := c.Repo; held != nil {
+		if !sameRepoIdentity(repoIdentityOf(me), held) {
+			return "", false
+		}
+	} else if !sameProject(me, them) {
 		return "", false
 	}
 	if repoPathsOverlap(c.RepoPath, repoPath) {

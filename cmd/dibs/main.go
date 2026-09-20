@@ -1950,10 +1950,11 @@ func self() string {
 // right shape for claude_desktop_config.json too, and that is the trap: Claude
 // Desktop hands its own servers to Code-tab sessions under their configured
 // names, so a `dibs` there REPLACES the plugin's server in every Code-tab
-// session. The bridge it spawns has no CLAUDE_PID, agents registering through
-// it bind host-<pid> instead of their session, and their hooks resolve to
-// nobody. Measured 2026-09-15; the operator who pasted it there was following
-// this output. So it says so where the block is.
+// session. The bridge it spawns is the app's child, not the session's, so no
+// sidecar names its parent: agents registering through it bind host-<pid>
+// instead of their session, and their hooks resolve to nobody. Measured
+// 2026-09-15; the operator who pasted it there was following this output. So
+// it says so where the block is.
 func printDesktopConfigWarning() {
 	if home, err := os.UserHomeDir(); err == nil && claudeCodePluginInstalled(home) {
 		fmt.Println("# NOT into claude_desktop_config.json on this machine: the Claude Code plugin is")

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"runtime"
 	"testing"
 	"time"
 
@@ -260,5 +261,51 @@ func TestWakeIDsDoNotRestartFromZero(t *testing.T) {
 			t.Fatal("no request reached the bridge")
 		}
 		release()
+	}
+}
+
+// A bridge that reconnects releases what its old connection was waiting on.
+//
+// Replacing a host's bridge closed the old stream and left its pending wakes
+// in place: a request still unread in the old channel had nobody to run it,
+// and its waiter held for the full wake timeout, suppressing further wakes
+// for that agent. Failing them, as a detach does, costs at most one extra
+// wake for a command that did run. Found by the pre-release review.
+func TestAReplacedBridgeReleasesItsPendingWakes(t *testing.T) {
+	e := hubEngine()
+	e.SetWakeCommands(map[string]WakeCommand{"codex": {Argv: []string{"codex", "resume", "{thread}"}}})
+	_, releaseOld, err := e.AttachHostBridge("laptop", []string{"codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	far := remoteAgent("far", "laptop")
+	plan, _ := e.wakeFor(far, core.MsgQuestion, questionFor("far"))
+	done := make(chan bool, 1)
+	// Nobody reads the old stream: the request sits in its buffer, and the
+	// waiter is registered as pending before it is sent, so waiting for the
+	// pending entry is waiting for the request to be in flight.
+	go func() { done <- e.requestRemoteWakeWithin(plan, "far", 10*time.Second) }()
+	for {
+		e.hostWakes.mu.Lock()
+		n := len(e.hostWakes.pending)
+		e.hostWakes.mu.Unlock()
+		if n > 0 {
+			break
+		}
+		runtime.Gosched()
+	}
+	_, releaseNew, err := e.AttachHostBridge("laptop", []string{"codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer releaseNew()
+	releaseOld()
+	select {
+	case r := <-done:
+		if r {
+			t.Error("a wake nobody ran was reported as having run")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the waiter was left holding after its bridge was replaced; nothing will ever report")
 	}
 }

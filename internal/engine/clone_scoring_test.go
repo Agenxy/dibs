@@ -355,3 +355,35 @@ func TestAShippedIndexScoresOnlyAgentsTheDaemonCannotPlace(t *testing.T) {
 		t.Error("a tree with a shipped index is still one the daemon cannot read: a newer shipment must be taken")
 	}
 }
+
+// A supplied index never joins anyone, whatever the operator configured.
+//
+// SECURITY.md promises a shipped index "decides no claim, no role, no
+// membership", and the operator's join threshold and auto-join policy used
+// to apply to its scores exactly as to the daemon's own: with
+// `auto_join = "always"` an agent's own index data could put other agents
+// into a space. Its scores are suggestions. Found by the pre-release review.
+func TestASuppliedIndexNeverJoinsAnyone(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	cfg := MatchConfig{JoinThreshold: 0.3, AutoJoin: AutoJoinAlways, Deadline: time.Second}
+	parent := t.TempDir()
+	mine := filepath.Join(parent, "api")
+	dark := filepath.Join(parent, "dark")
+	e.SetIndex(mine, cloneScorer{"mine", "a.go"}, cfg, IndexInfo{Fingerprint: "h1"})
+	e.SetIndex(dark, cloneScorer{"shipped", "b.go"}, cfg, IndexInfo{Fingerprint: "h2", SuppliedBy: "stranger"})
+
+	_, got := e.scorerForLocation(location{cwd: filepath.Join(dark, "pkg")})
+	if got.JoinThreshold != 0 || got.AutoJoin != AutoJoinNever {
+		t.Fatalf("a supplied index carries join threshold %v and auto-join %q: the operator's "+
+			"membership policy applied to an agent's own index data", got.JoinThreshold, got.AutoJoin)
+	}
+	_, own := e.scorerForLocation(location{cwd: filepath.Join(mine, "pkg"), repoRoot: mine})
+	if own.JoinThreshold != 0.3 || own.AutoJoin != AutoJoinAlways {
+		t.Errorf("the daemon's own index lost the operator's policy: %+v", own)
+	}
+}

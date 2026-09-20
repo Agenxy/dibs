@@ -13,9 +13,9 @@ import (
 // Claude Desktop hands the servers in its own claude_desktop_config.json to
 // the Code tab as well, under their configured names, and a server named
 // `dibs` there replaces the Claude Code plugin's `plugin:dibs:dibs` in every
-// Code-tab session. The app's bridge is spawned from `/` without CLAUDE_PID,
-// so an agent that registers through it binds `host-<pid>` rather than its
-// session UUID, and its lifecycle hooks (which still run on the plugin's
+// Code-tab session. The app's bridge is spawned from `/` by the app itself, so
+// no session sidecar names its parent and an agent that registers through it
+// binds `host-<pid>` rather than its session UUID, and its lifecycle hooks (which still run on the plugin's
 // server) resolve to nobody: no guard, no mail, and nothing anywhere says why.
 // Measured on 2026-09-15: the seat registered from a Code tab landed on
 // harness `local-agent-mode-dibs` with cwd `/`.

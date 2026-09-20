@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -150,8 +149,14 @@ func TestAStallReportOffersTheWayBack(t *testing.T) {
 // Armed the moment a fleet spans machines, because the stdio bridge registers
 // with its OWN pid, which is a number on the client's machine.
 func TestARemotePidIsNotProbedLocally(t *testing.T) {
-	local, err := os.Hostname()
-	if err != nil {
+	// The name the CODE compares against, not a fresh os.Hostname(): thisHost
+	// is resolved once per process, and on a Mac whose DHCP domain comes and
+	// goes the kernel's answer flips between MacMarine.local and
+	// MacMarine.attlocal.net between two calls in one test binary. The test
+	// then reported ownsHost false for the machine it was running on, which
+	// is the fixture disagreeing with itself, not the code.
+	local := thisHost()
+	if local == "" {
 		t.Skip("no hostname on this machine")
 	}
 
