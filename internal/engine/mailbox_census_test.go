@@ -14,8 +14,11 @@ import (
 // one notify), and returns the first two tokens.
 func censusBoard(t *testing.T, ctx context.Context, e *Engine) (coordinator, member string) {
 	t.Helper()
+	// Each with a session of its own, as a bridge would have stamped: an
+	// agent with no session the board can record is not distinguishable
+	// from one the coordinator minted, and adoption onto it is refused.
 	reg := func(name string) string {
-		res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: name})
+		res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: name, SessionID: "session-" + name})
 		if err != nil {
 			t.Fatalf("setup: register %s: %v", name, err)
 		}

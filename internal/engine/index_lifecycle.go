@@ -11,22 +11,34 @@ import "sort"
 // stopped matching for the next one forever, including a tree it was actively
 // working in. Issue #40.
 func (e *Engine) RemoveScorerForRepo(repo string) {
+	info, released := e.releaseScorer(repo)
+	if released && info.SuppliedBy != "" {
+		// The status stops crediting an index that is gone, or the bridge
+		// that would ship it again reads "supplied" and never does: eviction
+		// then meant no matching for that tree until a daemon restart.
+		//
+		// AFTER matchMu is released, never under it. The status lock is taken
+		// under matchMu here and matchMu is taken under the status lock in
+		// NoteUnreadableTree (anyScorerServes), and round six of the
+		// pre-release review put this call inside the critical section: an
+		// indexing failure and an eviction at the same moment deadlocked the
+		// pair, with the writer loop next in line. Round seven caught it.
+		e.forgetSuppliedIndex(repo, info.SuppliedHost != "")
+	}
+}
+
+// releaseScorer drops the index for repo under matchMu and reports what it
+// was. Split from RemoveScorerForRepo so the status update that follows
+// runs outside this lock.
+func (e *Engine) releaseScorer(repo string) (IndexInfo, bool) {
 	e.matchMu.Lock()
 	defer e.matchMu.Unlock()
 	if _, held := e.scorers[repo]; !held {
-		return
+		return IndexInfo{}, false
 	}
 	info := e.indexes[repo]
 	delete(e.scorers, repo)
 	delete(e.indexes, repo)
-	if info.SuppliedBy != "" {
-		// The status stops crediting an index that is gone, or the bridge
-		// that would ship it again reads "supplied" and never does: eviction
-		// then meant no matching for that tree until a daemon restart. Off
-		// the match lock's critical path in spirit but not in fact: the
-		// status has its own lock. Round six of the pre-release review.
-		e.forgetSuppliedIndex(repo, info.SuppliedHost != "")
-	}
 
 	// THE FALLBACK PAIR HAS TO NAME ONE TREE.
 	//
@@ -38,11 +50,11 @@ func (e *Engine) RemoveScorerForRepo(repo string) {
 	// Only .Repo is per-tree here; the thresholds are shared policy, as
 	// SetScorerForRepo says.
 	if e.matchCfg.Repo != repo {
-		return // the pair still names a tree we hold
+		return info, true // the pair still names a tree we hold
 	}
 	if len(e.scorers) == 0 {
 		e.scorer, e.matchCfg.Repo = nil, ""
-		return
+		return info, true
 	}
 	// Sorted rather than whatever the map yields first: two daemons replaying
 	// the same history should not disagree about which tree the fallback names,
@@ -54,4 +66,5 @@ func (e *Engine) RemoveScorerForRepo(repo string) {
 	sort.Strings(rest)
 	e.matchCfg.Repo = rest[0]
 	e.scorer = e.scorers[rest[0]]
+	return info, true
 }

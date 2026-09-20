@@ -573,12 +573,15 @@ func (a *Agent) SameHands(other *Agent) bool {
 	if a == nil || other == nil || a.ID == other.ID {
 		return a != nil && other != nil
 	}
-	if other.ParentProven && other.Parent == a.ID {
+	if (other.ParentProven && other.Parent == a.ID) || (a.ParentProven && a.Parent == other.ID) {
 		return true
 	}
-	if a.ParentProven && a.Parent == other.ID {
-		return true
-	}
+	return registeredFromOneAnother(a, other) || a.sharesASessionWith(other)
+}
+
+// registeredFromOneAnother reports whether either row was minted from a
+// session the other holds or was itself minted from.
+func registeredFromOneAnother(a, b *Agent) bool {
 	from := func(x, y *Agent) bool {
 		if x.RegisteredFrom == "" {
 			return false
@@ -586,7 +589,44 @@ func (a *Agent) SameHands(other *Agent) bool {
 		return x.RegisteredFrom == y.RegisteredFrom || x.RegisteredFrom == y.CurrentSession ||
 			y.holdsSession(x.RegisteredFrom)
 	}
-	return from(other, a) || from(a, other)
+	return from(b, a) || from(a, b)
+}
+
+// sharesASessionWith reports a session both rows answer to, whichever way
+// it was bound: two rows registered through one bridge state the same
+// `host-<ppid>`.
+func (a *Agent) sharesASessionWith(other *Agent) bool {
+	for _, sid := range other.sessions() {
+		if sid != "" && (a.holdsSession(sid) || a.CurrentSession == sid) {
+			return true
+		}
+	}
+	return false
+}
+
+// sessions lists every id this agent answers to.
+func (a *Agent) sessions() []string {
+	out := make([]string, 0, 2+len(a.SessionAliases))
+	if a.SessionID != "" {
+		out = append(out, a.SessionID)
+	}
+	if a.CurrentSession != "" {
+		out = append(out, a.CurrentSession)
+	}
+	return append(out, a.SessionAliases...)
+}
+
+// OtherHands reports whether `other` is POSITIVELY somebody else: not the
+// same hands, and with a session or a registration provenance of its own to
+// show for it. An agent registered with no session information at all (a
+// stateless caller that sent none) cannot be told from one the coordinator
+// minted for itself, so it is not other hands either way. Round seven of
+// the pre-release review found the stateless route around SameHands.
+func (a *Agent) OtherHands(other *Agent) bool {
+	if a == nil || other == nil || a.SameHands(other) {
+		return false
+	}
+	return other.RegisteredFrom != "" || len(other.sessions()) > 0
 }
 
 // GuessedSession reports whether THIS id was inferred for this agent rather

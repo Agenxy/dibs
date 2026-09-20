@@ -108,6 +108,33 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round seven of the pre-release review: seven findings.**
+  - Round six's status retraction ran under the match lock, which
+    `SetMatchStatus` takes under the status lock: an indexing failure and an
+    eviction at the same moment deadlocked, with the writer loop next in
+    line. The retraction now runs after the match lock is released
+    (reproduced with a bounded test on the round-six code).
+  - The coordinator adoption rules read an EMPTY registration provenance as
+    "unrelated", and provenance is whatever the caller's transport stamped:
+    a stateless caller registering with no session at all was a third party.
+    Other hands now need positive evidence, a session or a provenance of the
+    target's own that the coordinator does not hold, and the refusal says
+    what the target lacks.
+  - The bridge's index shipper watched the bridge's own directory; it now
+    watches the directory the agent registered (or moved to with `update`),
+    one shipper per tree.
+  - The MCP bundle carries `dibs-presence` and `Dibs.app` beside the
+    binaries, which look for them there: started from the bundle, the daemon
+    had no Touch ID and no branded notifications.
+  - On Linux, `Available()` on the writer loop no longer waits for the
+    notifier probe's subprocesses: it reads what is known and assumes
+    reachable while the measurement runs (the send settles off the loop);
+    `Reach` still measures.
+  - The frozen `AgentInfo` tag list has a fingerprint, like the Op's and
+    the Message's, so a sweep that renames `repo_remote` and its entry
+    together is caught (shown by making that rename).
+  - The bundle's description said Windows users use the release archives;
+    there is no Windows build, and it says so.
 - **Round six of the pre-release review: five findings.**
   - Role withdrawal now also finds a holder whose credential only the nonce
     index still carries (a sweep written before v0.0.8 blanked the archived
@@ -687,8 +714,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   system and not by architecture, so a Linux entry would hand every Linux
   host one build, and the compatibility list names darwin and nothing else.
   It cannot name an architecture, so an Intel Mac is told by the description
-  and nowhere a manifest can enforce. Linux and Windows use the release
-  archives. Validated against the official `mcpb` CLI on a local snapshot.
+  and nowhere a manifest can enforce. Linux uses the release archives; there
+  is no Windows build to point at, and the bundle no longer says there is
+  (round seven of the pre-release review). Validated against the official
+  `mcpb` CLI on a local snapshot.
 - **A Linux notifier: the operator can be asked, not only shown.** (#63)
   `notify.Available()` was `runtime.GOOS == "darwin"`, so on Linux a request
   that needed a person (a role grant, a mailbox adoption) waited on the board

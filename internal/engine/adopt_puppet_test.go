@@ -80,3 +80,49 @@ func TestACoordinatorCannotAdoptOntoAnAgentItMintedInItsOwnSession(t *testing.T)
 		t.Fatalf("adopting onto a genuine third party: %v, want it to succeed", err)
 	}
 }
+
+// And a puppet registered with NO session at all is not a third party either.
+//
+// SameHands read an empty provenance as "unrelated", and the provenance is
+// whatever the caller's transport stamped: a coordinator on stateless HTTP
+// registers a fresh name with no session and no _meta, keeps the token,
+// adopts into it, reads. Other hands need positive evidence: a session or a
+// provenance of the target's own that the coordinator does not hold. Round
+// seven of the pre-release review.
+func TestACoordinatorCannotAdoptOntoAnAgentWithNoSessionOfItsOwn(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+	coordinator, _ := censusBoard(t, ctx, e)
+
+	res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "blank"}) // no session, no provenance
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	blank, _ := res["token"].(string)
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: blank}); err != nil {
+		t.Fatal("setup:", err)
+	}
+
+	var ce *core.Error
+	_, err = e.Do(ctx, &core.Op{Kind: core.OpAdoptAgent, Token: coordinator, To: "stranded", Space: "blank"})
+	if !errors.As(err, &ce) || ce.Code != "E_NOT_PERMITTED" {
+		t.Fatalf("adopting onto an agent with no session the board could record: %v, want "+
+			"E_NOT_PERMITTED: nothing distinguishes it from the coordinator under another name", err)
+	}
+	sent, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: blank, To: "coord",
+		MsgType: core.MsgRequest, Body: "I will take stranded's mail", Adopt: "stranded",
+	})
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	_, err = e.Do(ctx, &core.Op{
+		Kind: core.OpRespond, Token: coordinator, MsgSerial: sent["msg_serial"].(uint64), Disposition: "approve",
+	})
+	if !errors.As(err, &ce) || ce.Code != "E_NOT_PERMITTED" {
+		t.Fatalf("approving the blank agent's adoption request: %v, want E_NOT_PERMITTED", err)
+	}
+}

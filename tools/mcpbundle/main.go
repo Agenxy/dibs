@@ -64,6 +64,8 @@ func main() {
 	version := flag.String("version", "", "the version to stamp (defaults to GITHUB_REF_NAME without its v)")
 	out := flag.String("out", "", "the bundle to write (default <dist>/dibs.mcpb)")
 	upload := flag.Bool("upload", false, "attach the bundle and its .sha256 to the GitHub release for the tag")
+	helpers := flag.String("helpers", ".",
+		"the directory holding dibs-presence and Dibs.app (the repository root after GoReleaser's hooks)")
 	flag.Parse()
 	if *version == "" {
 		*version = strings.TrimPrefix(os.Getenv("GITHUB_REF_NAME"), "v")
@@ -71,7 +73,7 @@ func main() {
 	if *out == "" {
 		*out = filepath.Join(*dist, "dibs.mcpb")
 	}
-	sum, err := Build(*dist, *version, *out)
+	sum, err := BuildWithHelpers(*dist, *helpers, *version, *out)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "mcpbundle:", err)
 		os.Exit(1)
@@ -113,6 +115,13 @@ func attach(bundle string) error {
 // rebuild together with its digest. The first version created the output
 // first and returned from every failure with the file open and truncated.
 func Build(dist, version, out string) (string, error) {
+	return BuildWithHelpers(dist, filepath.Dir(dist), version, out)
+}
+
+// BuildWithHelpers is Build with the directory holding the macOS helpers
+// (dibs-presence and Dibs.app, built by GoReleaser's hooks in the repository
+// root, which is dist's parent in the release job).
+func BuildWithHelpers(dist, helpers, version, out string) (string, error) {
 	if version == "" {
 		return "", errors.New("no version: pass -version or run on a tag")
 	}
@@ -121,7 +130,7 @@ func Build(dist, version, out string) (string, error) {
 		return "", err
 	}
 	defer func() { _ = tmp.Close(); _ = os.Remove(tmp.Name()) }()
-	if err := assemble(tmp, dist, version); err != nil {
+	if err := assemble(tmp, dist, helpers, version); err != nil {
 		return "", err
 	}
 	if err := tmp.Close(); err != nil {
@@ -144,9 +153,23 @@ func Build(dist, version, out string) (string, error) {
 	return sum, nil
 }
 
-// assemble writes the zip: the manifest, the README, and every platform's
-// two binaries, refusing a dist with any of them missing.
-func assemble(f *os.File, dist, version string) error {
+// helperFiles are the macOS helpers that have to sit BESIDE the binaries:
+// internal/humanauth finds dibs-presence next to the executable and
+// internal/notify finds Dibs.app there. Round seven of the pre-release
+// review: the bundle shipped the two binaries alone, so a daemon started
+// from it had no Touch ID and fell back to Script Editor's name for
+// notifications, which is the failure the release archives already carry
+// these to prevent.
+var helperFiles = []string{
+	"dibs-presence",
+	"Dibs.app/Contents/Info.plist",
+	"Dibs.app/Contents/MacOS/dibs-notify",
+}
+
+// assemble writes the zip: the manifest, the README, every platform's two
+// binaries, and the macOS helpers beside them, refusing a dist with any of
+// them missing.
+func assemble(f *os.File, dist, helpers, version string) error {
 	zw := zip.NewWriter(f)
 	if err := addFile(zw, "manifest.json", 0o644, Manifest(version)); err != nil {
 		return err
@@ -170,8 +193,51 @@ func assemble(f *os.File, dist, version string) error {
 				return err
 			}
 		}
+		if p.os != "darwin" {
+			continue
+		}
+		if err := addHelpers(zw, helpers, "server/"+p.os+"-"+p.arch+"/"); err != nil {
+			return err
+		}
 	}
 	return zw.Close()
+}
+
+// addHelpers copies the macOS helpers, and everything else under Dibs.app
+// (its signature, its icon), beside the binaries.
+func addHelpers(zw *zip.Writer, helpers, prefix string) error {
+	for _, rel := range helperFiles {
+		if _, err := os.Stat(filepath.Join(helpers, rel)); err != nil {
+			return fmt.Errorf("%s is not under %s: the bundle must carry the helpers the "+
+				"binaries look for beside themselves, so build them first (GoReleaser's hooks do)", rel, helpers)
+		}
+	}
+	if err := addOne(zw, filepath.Join(helpers, "dibs-presence"), prefix+"dibs-presence", 0o755); err != nil {
+		return err
+	}
+	root := filepath.Join(helpers, "Dibs.app")
+	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(helpers, path)
+		if err != nil {
+			return err
+		}
+		mode := os.FileMode(0o644)
+		if strings.Contains(rel, "/MacOS/") {
+			mode = 0o755
+		}
+		return addOne(zw, path, prefix+filepath.ToSlash(rel), mode)
+	})
+}
+
+func addOne(zw *zip.Writer, src, name string, mode os.FileMode) error {
+	body, err := os.ReadFile(src) // #nosec G304 -- a helper under the directory the caller named
+	if err != nil {
+		return err
+	}
+	return addFile(zw, name, mode, body)
 }
 
 func find(dist, dirGlob, bin string) (string, error) {
@@ -217,7 +283,8 @@ func Manifest(version string) []byte {
 		"version":          version,
 		"description": "Tells an AI agent when another is already doing its work. " +
 			"Board, typed mail, directory claims. This bundle is macOS on Apple silicon " +
-			"ONLY: Dibs ships no Intel Mac build. Linux and Windows use the release archives.",
+			"ONLY: Dibs ships no Intel Mac build. Linux uses the release archives; there is no " +
+			"Windows build.",
 		"long_description": longDescription,
 		"author":           map[string]any{"name": "Agenxy", "url": "https://agenxy.org"},
 		"homepage":         "https://agenxy.org/projects/dibs/",
@@ -255,8 +322,9 @@ talks to). The daemon is not started by the host: run ` + "`dibd`" + ` once, and
 
 This bundle is macOS on Apple silicon only, and a manifest cannot say so: it
 names operating systems, not architectures. Dibs ships no Intel Mac build
-(an Intel Mac builds from source), and Linux and Windows use the release
-archives.
+(an Intel Mac builds from source), Linux uses the release archives, and there
+is no Windows build: Windows builds and vets in CI and nothing is published
+for it.
 
 Source, documentation and the release archives: https://github.com/Agenxy/dibs
 `
