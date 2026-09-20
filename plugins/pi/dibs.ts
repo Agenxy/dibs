@@ -143,24 +143,38 @@ async function trust(): Promise<string[] | null> {
  * bridge may publish the host a moment later.
  */
 type Identity = { host_id: string; cwd: string; repo: Record<string, string> | null }
-let identityCache: Identity | undefined
+const identityCache = new Map<string, Identity>()
 
 async function machineIdentity(): Promise<Identity> {
-  if (identityCache) return identityCache
+  return identityFor(process.cwd())
+}
+
+/**
+ * The identity of one directory: this process's for most calls, and the
+ * directory an `update` names when the agent moves. The repository was
+ * cached once, for the process's own directory, and stamped on every
+ * update: an agent moving from /work/a to /work/b recorded b's directory
+ * beside a's repository, so its claims under b had no repository-relative
+ * path and collided with nothing. Round twenty-three of the pre-release
+ * review. Cached per directory, and only when a host was established.
+ */
+async function identityFor(cwd: string): Promise<Identity> {
+  const cached = identityCache.get(cwd)
+  if (cached) return cached
   const bin = process.env["DIBS_BIN"] ?? "dibs"
   try {
-    const { stdout } = await run(bin, ["identity", "--cwd", process.cwd()], { timeout: 10_000 })
+    const { stdout } = await run(bin, ["identity", "--cwd", cwd], { timeout: 10_000 })
     const id = JSON.parse(stdout) as Identity
     if (id && typeof id.host_id === "string" && typeof id.cwd === "string") {
       const stated = process.env["DIBS_HOST_ID"]?.trim()
       if (stated) id.host_id = stated
-      if (id.host_id) identityCache = id
+      if (id.host_id) identityCache.set(cwd, id)
       return id
     }
   } catch {
     // no dibs here, or one too old to answer: the files below
   }
-  const fallback: Identity = { host_id: process.env["DIBS_HOST_ID"]?.trim() ?? "", cwd: process.cwd(), repo: null }
+  const fallback: Identity = { host_id: process.env["DIBS_HOST_ID"]?.trim() ?? "", cwd, repo: null }
   if (!fallback.host_id) {
     for (const name of ["resolved_host_id", "node_id", "host_id"]) {
       try {
@@ -174,7 +188,7 @@ async function machineIdentity(): Promise<Identity> {
       }
     }
   }
-  if (fallback.host_id) identityCache = fallback
+  if (fallback.host_id) identityCache.set(cwd, fallback)
   return fallback
 }
 
@@ -207,8 +221,17 @@ async function rpc(
     // WHICH CHECKOUT, as this machine sees it: a hub on another computer
     // cannot ask Git about a path that exists only here, and the repository
     // rule for two clones on two machines needs the answer. The bridge
-    // sends it on every call; this reads it on the calls that record it.
-    if (id.repo && (p["name"] === "register" || p["name"] === "update")) meta["com.dibs/repo"] = id.repo
+    // sends it on every call; this reads it on the calls that record it,
+    // for the directory THAT call names when it names one (an update that
+    // moves the agent), spelled as the bridge would spell it.
+    if (p["name"] === "register" || p["name"] === "update") {
+      const args = (p["arguments"] ?? {}) as Record<string, unknown>
+      const named = typeof args["cwd"] === "string" && args["cwd"] !== "" ? (args["cwd"] as string) : ""
+      const at = named ? await identityFor(named) : id
+      if (named) args["cwd"] = at.cwd
+      if (at.repo) meta["com.dibs/repo"] = at.repo
+      p["arguments"] = args
+    }
     if (Object.keys(meta).length > 0) p["_meta"] = meta
   }
   const text = await post(
