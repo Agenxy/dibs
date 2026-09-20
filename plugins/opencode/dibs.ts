@@ -18,7 +18,7 @@
  */
 import { existsSync, realpathSync } from "node:fs"
 import { readFile } from "node:fs/promises"
-import { dirname, isAbsolute, join, resolve } from "node:path"
+import { basename, dirname, isAbsolute, join, resolve } from "node:path"
 
 import type { Plugin } from "@opencode-ai/plugin"
 
@@ -46,17 +46,26 @@ const SAVED_ORIGIN = /^https?:\/\//i.test(ADDR) ? ADDR.replace(/\/+$/, "") : `ht
  * failing the guard open. Round twenty-six of the pre-release review. The
  * saved address stands in until the bridge has published.
  */
-let originCache: string | undefined
+let originCache: { at: number; value: string } | undefined
 
 async function origin(): Promise<string> {
-  if (originCache !== undefined) return originCache
+  // Re-read, briefly cached. The bridge REPUBLISHES when the hub moves and
+  // when it restarts, and the first version kept whatever it read first for
+  // the life of the process: the plugin went on dialling an address the
+  // bridge had already left, which is the defect it was written to close,
+  // one step later. A second is short next to a hub moving and long next to
+  // a turn's worth of hooks. Round twenty-seven of the pre-release review.
+  const now = Date.now()
+  if (originCache && now - originCache.at < 1000) return originCache.value
+  let value = SAVED_ORIGIN
   try {
     const published = (await Bun.file(`${DIR}/resolved_origin`).text()).trim()
-    if (/^https?:\/\//i.test(published)) return (originCache = published.replace(/\/+$/, ""))
+    if (/^https?:\/\//i.test(published)) value = published.replace(/\/+$/, "")
   } catch {
-    // not published yet: the saved address, uncached, until it is
+    // not published yet: the saved address, until it is
   }
-  return SAVED_ORIGIN
+  originCache = { at: now, value }
+  return value
 }
 /**
  * Where the daemon keeps its local secret, resolved the way the daemon
@@ -134,7 +143,8 @@ let trustCache: string[] | null | undefined
 
 async function trust(): Promise<string[] | null> {
   if (trustCache !== undefined) return trustCache
-  if (!(await origin()).startsWith("https://")) return (trustCache = null)
+  // Not cached: the origin can become https when the bridge republishes.
+  if (!(await origin()).startsWith("https://")) return null
   const extra: string[] = []
   for (const name of ["trusted-certs.pem", "tls-ca.pem"]) {
     try {
@@ -263,7 +273,14 @@ function canonical(p: string): string {
     } catch {
       const parent = dirname(cur)
       if (parent === cur) return resolve(p)
-      rest = rest ? join(cur.slice(parent.length + 1), rest) : cur.slice(parent.length + 1)
+      // basename, not a slice by the parent's length: under "/" the parent
+      // is one character and the slice dropped the first letter of the
+      // name, so a path beneath a top-level directory that does not exist
+      // yet came out as a DIFFERENT path ("/srv/new.go" → "/rv/new.go").
+      // The guard then asked about a file nobody was writing. Round
+      // twenty-seven of the pre-release review.
+      const name = basename(cur)
+      rest = rest ? join(name, rest) : name
       cur = parent
     }
   }
