@@ -784,14 +784,15 @@ Local (v1): MCP streamable HTTP over loopback TCP. QUIC rejected on loopback mer
 UI (v1): SSE down + POST up; WebSocket/WebTransport rejected for this traffic shape;
 SSE inherits HTTP/3 transparently if the stack beneath changes.
 
-**A remote agent's machine is recorded, and the daemon derives it rather than
-believing it wherever it can.** A caller on loopback is on the daemon's own
-machine, since nothing else can reach loopback, and is stamped with the node id
-as evidence. A remote caller's bridge asserts one (`_meta["com.dibs/host"]`),
-which is exactly as strong as the bearer credential that let it in and no
-stronger: §9's `host` rule is a CORRECTNESS boundary, not an authorisation one,
-and it becomes the latter only when a host can prove itself. See
-`docs/NETWORK.md`.
+**An agent's machine is recorded.** A bridge asserts it
+(`_meta["com.dibs/host"]`) on every call, and the assertion is taken on any
+transport, because the documented transport for a machine without Supgang is
+an ssh forward, which reaches the daemon over loopback like a local caller.
+A loopback caller that asserts nothing is stamped with the daemon's own node
+id, since nothing else can reach loopback. An assertion is exactly as strong as
+the bearer credential that let it in and no stronger: §9's `host` rule is a
+CORRECTNESS boundary, not an authorisation one, and it becomes the latter only
+when a host can prove itself. See `docs/NETWORK.md`.
 
 **Remote agents (v1).** One daemon serves agents on other machines directly: there is
 no sharding, no replication, and therefore no split-brain: a single writer keeps every

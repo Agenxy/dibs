@@ -550,12 +550,12 @@ const (
 	// HostMetaKey is WHICH COMPUTER the caller is on, attached by a bridge that
 	// joined a daemon on another machine.
 	//
-	// Only read for a caller the daemon can see is remote. A loopback caller is
-	// stamped with the daemon's own node id whatever it sends, because loopback
-	// is proof and this is not: a bridge states it, exactly as it states the
-	// bearer secret that got it in. See core.AgentInfo.HostID and
-	// docs/NETWORK.md §2 for why that is a correctness boundary and not yet a
-	// security one.
+	// Read on every transport: a bridge states it, exactly as it states the
+	// bearer secret that got it in, and the documented ssh forward delivers a
+	// remote bridge's calls over loopback. A loopback caller that states
+	// nothing is stamped with the daemon's own id. See core.AgentInfo.HostID
+	// and docs/NETWORK.md §2 for why that is a correctness boundary and not
+	// yet a security one.
 	HostMetaKey = "com.dibs/host"
 	// RepoMetaKey is the caller's checkout as ITS machine sees it: the same
 	// four fields resolveLocation derives here (common dir, primary remote,

@@ -713,12 +713,41 @@ type Claim struct {
 	// Recorded at claim time, not derived at comparison time. Deriving it would
 	// re-answer the question with whatever repository the agent is in NOW, so an
 	// agent that moved would silently re-point every claim it still holds.
-	RepoPath       string    `json:"repo_path,omitempty"`
-	Mode           string    `json:"mode"`
-	Note           string    `json:"note,omitempty"`
-	AcquiredSerial uint64    `json:"acquired_serial"`
-	Acquired       time.Time `json:"acquired"`
-	Renewed        time.Time `json:"renewed"`
+	RepoPath string `json:"repo_path,omitempty"`
+	// Repo is WHICH repository RepoPath is relative to, recorded at claim time
+	// for the same reason RepoPath is. The comparison used to read the
+	// holder's CURRENT identity, so an agent that claimed a file in one
+	// project and then moved to another left the claim standing with its
+	// repository protection gone: a second clone could take the file
+	// exclusively. Found by the pre-release review. Nil when RepoPath is empty.
+	Repo           *RepoIdentity `json:"repo,omitempty"`
+	Mode           string        `json:"mode"`
+	Note           string        `json:"note,omitempty"`
+	AcquiredSerial uint64        `json:"acquired_serial"`
+	Acquired       time.Time     `json:"acquired"`
+	Renewed        time.Time     `json:"renewed"`
+}
+
+// RepoIdentity is the part of an AgentInfo that says which repository, and
+// which machine, a checkout is: what SameProject compares.
+type RepoIdentity struct {
+	HostID     string `json:"host_id,omitempty"`
+	RepoDir    string `json:"repo_dir,omitempty"`
+	RepoRemote string `json:"repo_remote,omitempty"`
+	RepoRoots  string `json:"repo_roots,omitempty"`
+}
+
+// repoIdentityOf snapshots an agent's repository identity, or nil when the
+// agent is not known to be in one.
+func repoIdentityOf(l *Agent) *RepoIdentity {
+	if l == nil || l.Agent == nil {
+		return nil
+	}
+	a := l.Agent
+	if a.RepoDir == "" && a.RepoRemote == "" && a.RepoRoots == "" {
+		return nil
+	}
+	return &RepoIdentity{HostID: a.HostID, RepoDir: a.RepoDir, RepoRemote: a.RepoRemote, RepoRoots: a.RepoRoots}
 }
 
 // DedupRec is one identified-op record (SPEC §4): bounded by the lesser of

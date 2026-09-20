@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Trust is a table in config.toml, and only its presence with a hash counts.
 //
@@ -30,5 +33,38 @@ func TestCodexTrustIsReadFromTheConfigTablesOnly(t *testing.T) {
 	foreign := "[hooks.state.\"/Users/x/.codex/plugins/cache/other/x/1/hooks/hooks.json:stop:0:0\"]\ntrusted_hash = \"sha256:abc\"\n"
 	if codexHooksTrusted(foreign) {
 		t.Error("trust on another plugin's hooks is not ours (path has no dibs)")
+	}
+}
+
+// Doctor reports what Codex says about each hook, not what a config table
+// says about some hook: a stale trust record (hash no longer matching, which
+// Codex reports as "modified") and a missing one both mean the hook is
+// dropped, and both must read as not delivered. Found by the pre-release
+// review.
+func TestDoctorReportsCodexHooksAsCodexSeesThem(t *testing.T) {
+	var oks, warns []string
+	ok := func(m string) { oks = append(oks, m) }
+	warn := func(w, _ string) { warns = append(warns, w) }
+
+	reportCodexHooks(nil, "the Dibs plugin", ok, warn)
+	if len(warns) != 1 || !strings.Contains(warns[0], "reports no Dibs hooks") {
+		t.Errorf("no hooks discovered must warn: %q %q", oks, warns)
+	}
+	oks, warns = nil, nil
+	reportCodexHooks([]codexHook{
+		{EventName: "sessionStart", TrustStatus: "trusted"},
+		{EventName: "stop", TrustStatus: "modified"},
+		{EventName: "subagentStop", TrustStatus: "untrusted"},
+	}, "the Dibs plugin", ok, warn)
+	if len(warns) != 1 || !strings.Contains(warns[0], "2 of 3") || !strings.Contains(warns[0], "stop (modified)") {
+		t.Errorf("a modified hook is a dropped hook and must be named: %q %q", oks, warns)
+	}
+	oks, warns = nil, nil
+	reportCodexHooks([]codexHook{
+		{EventName: "sessionStart", TrustStatus: "trusted"},
+		{EventName: "stop", TrustStatus: "trusted"},
+	}, "the Dibs plugin", ok, warn)
+	if len(oks) != 1 || len(warns) != 0 || !strings.Contains(oks[0], "all 2") {
+		t.Errorf("all trusted must be one ok line: %q %q", oks, warns)
 	}
 }

@@ -108,6 +108,45 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The stdio bridge finds its Claude Code session by its parent, not by
+  `CLAUDE_PID`.** Claude Code 2.1.275 exports `CLAUDE_PID` to shell children
+  and not to MCP servers, so every plugin bridge read no sidecar: `_meta
+  com.dibs/session` carried `host-<ppid>` on every call, `check_in` bound that
+  as an alias, and the sidecar's cwd, surface and title never reached the
+  board (measured on this project's own board on 2026-09-19; `register` still
+  bound the right primary through `CLAUDE_CODE_SESSION_ID`, which is why only
+  a `check_in` result reading `"session_id": "host-62908"` gave it away). A
+  sidecar named for the bridge's own parent pid is proof that the parent is a
+  Claude Code session and that this bridge is its child, which is what
+  `CLAUDE_PID` matching the parent was standing in for; the variable is still
+  honoured when set, under the same handshake gate for a pid that is not the
+  parent's.
+- **Nine more findings from the pre-release review's second round, each
+  with a test that fails on the code before it.** Removing the LAST declared
+  role from `[roles]` withdrew nothing: the reconciler returned before
+  loading its pins when both lists were empty, so deleting the sole admin
+  line and restarting handed the role straight back; the withdrawal pass now
+  runs before that return. A claim compared its holder's CURRENT repository,
+  so a holder that moved projects left the claim standing unprotected; the
+  claim now records which repository its relative path is in. A Git directory
+  path was taken as evidence of one repository across machines, so two
+  unrelated checkouts at `/workspace/repo/.git` on two hosts collided; with
+  two hosts only the remote and the root commits count. A host bridge that
+  reconnected left its old connection's pending wakes holding for the whole
+  wake timeout; they fail as they do on detach. `dibs doctor` counted the
+  hub's own `[wake.exec]` as coverage for an agent on another machine whose
+  directory happened to exist here too; it asks where the agent is first. Its
+  Codex hook line read a trust table and could not tell a stale hash from a
+  current one; it asks Codex's app-server now, which reports "modified" and
+  "untrusted" per hook. Two bridges starting together on a fresh directory
+  could each mint a host id and cache their own, leaving one machine with two
+  identities; the file is created exclusively and the loser reads the
+  winner's. A supplied index applied the operator's join threshold and
+  auto-join policy to scores built from an agent's own data, which
+  `SECURITY.md` promised it never would; its scores are suggestions only.
+  And the changelog, SPEC §16 and two comments still described the loopback
+  host rule round one replaced.
+
 - **Nine findings from the pre-release review, each with a test that fails
   on the code before it.** A coordinator could adopt a mailbox onto itself
   by sending itself the request and approving it; refused now like the direct
@@ -153,7 +192,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   plugin.** A `dibs` server in `claude_desktop_config.json` is handed to
   Code-tab sessions under the plugin's name and the plugin's server disappears
   from them; an agent registering there binds the app bridge's `host-<pid>`
-  (spawned from `/`, no `CLAUDE_PID`) instead of its session UUID, and its
+  (spawned from `/` by the app, so no sidecar names its parent) instead of its
+  session UUID, and its
   hooks resolve to nobody. Measured on this project's own board on 2026-09-15.
   Doctor now reads both files and names the fix when both are present; the
   Claude Desktop plugin README says not to combine them, and the harness
@@ -357,10 +397,12 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and `/Users/kim/src/api` on two laptops is two unrelated trees. The second
   agent's exclusive claim was refused over files the first has never seen, and
   the refusal named a holder whose path the reader could go and look at, finding
-  their own work. An agent now carries a `host_id`, which the daemon derives
-  from the connection where it can: a caller on loopback is on this machine by
-  construction, so it is stamped with the daemon's node id and nothing it says
-  moves it. Only positive evidence of two machines suppresses a path collision;
+  their own work. An agent now carries a `host_id`: what its bridge asserts,
+  or, for a loopback caller that asserts nothing, the daemon's own node id
+  (this entry used to say a loopback caller was stamped "and nothing it says
+  moves it"; the documented ssh forward arrives over loopback too, so an
+  assertion is honoured on any transport, see the round-one fix above). Only
+  positive evidence of two machines suppresses a path collision;
   an agent that supplied none collides exactly as before, which is every agent
   on every board written before this shipped. The repository rule is untouched
   and is what still catches the real cross-machine case: two clones of one
@@ -469,7 +511,8 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   as dependencies rather than duplicate. Dibs kept an identity of its own for
   each computer (`node_id`, a generated `host_id`) beside the one Supgang
   already gives it; now, on a Supgang member, the host id every agent carries
-  IS the Supgang node id, on the hub (loopback callers are stamped with it)
+  IS the Supgang node id, on the hub (its own bridges assert it, and a
+  loopback caller that asserts nothing is stamped with it)
   and on a joining machine (the bridge asserts it), so one computer answers
   to one name across the fleet; a daemon started before the machine joined
   its hive is told by `dibs doctor` to restart, since it keeps the ledger's

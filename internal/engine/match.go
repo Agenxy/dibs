@@ -179,6 +179,17 @@ func (e *Engine) scorerForLocation(loc location) (overlap.Scorer, MatchConfig) {
 	}
 	cfg := e.matchCfg
 	cfg.Repo = bestRepo
+	// A SUPPLIED index never joins anyone. SECURITY.md promises it "decides
+	// no claim, no role, no membership", and the operator's join threshold
+	// and auto-join policy used to apply to its scores as to any other's, so
+	// with `auto_join = "always"` an agent's own index data could put other
+	// agents into a space. Its scores are suggestions, whatever the
+	// operator configured for trees the daemon indexed itself. Found by the
+	// pre-release review.
+	if e.indexes[bestRepo].SuppliedBy != "" {
+		cfg.JoinThreshold = 0
+		cfg.AutoJoin = AutoJoinNever
+	}
 	return best, cfg
 }
 

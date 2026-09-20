@@ -1003,17 +1003,18 @@ identically on either. The reason to know is that a harness reaching the modern
 path is exercising the stateless contract, and if something differs there it is
 worth a bug report rather than a shrug.
 
-Surveyed by reading source, not announcements. Re-checked 2026-09-12 against
-each project's latest commit; the Claude Desktop row was measured on 2026-09-15:
+Surveyed by reading source, not announcements. Re-checked 2026-09-19/20 against
+each project's latest commit (dates on each row); the Claude Desktop row was
+measured on 2026-09-15 and Codex on 2026-09-19:
 
 | harness | speaks | why |
 |---|---|---|
 | Claude Desktop | 2025-11-25 | measured 2026-09-15: 1.52386.6's own clients (`claude-ai/0.1.0` for chat, one `local-agent-mode-<server>` per configured server) send `initialize` 2025-11-25 and never `server/discover`, so the 2026-07-28 codec its binary carries is unused. No hooks, so tools only; see [plugins/claude-desktop](plugins/claude-desktop/), including why not to configure it beside the Claude Code plugin |
 | Codex | 2025-11-25 by default, **2026-07-28 when configured** | The flag `mcp_2026_07_28` is stage `UnderDevelopment` and off by default, so an unconfigured Codex sends 2025-06-18, measured. With the flag AND `CODEX_MCP_PROTOCOL_VERSION` on that server's entry, which is what `dibs mcp-config` prints, it runs entirely on 2026-07-28 against Dibs: this row said legacy-only for a while, and the paragraph under the table is what is current. See [plugins/codex](plugins/codex/) |
-| opencode | 2025-11-25 | bound by the TypeScript SDK (1.29.0) |
-| pi-mono | 2025-11-25 | bound by the TypeScript SDK (^1.25.2) |
+| opencode | 2025-11-25 | bound by the TypeScript SDK (1.29.0); no `2026-07-28` outside tests in `packages` as of 2026-09-19 (ebb7b76e) |
+| pi-mono | 2025-11-25 | bound by the TypeScript SDK (^1.25.2); no MCP client in `packages/*/src` as of 2026-09-20 (d1230ea2) |
 | Gemini CLI | 2025-06-18 | measured 2026-09-12: 0.54.0-nightly sends `initialize` 2025-06-18 over `httpUrl`. Hooks are subprocesses; see [plugins/gemini-cli](plugins/gemini-cli/) |
-| Hermes | 2025-03-26 measured; its `mcp` extra now pins `mcp==2.0.0`, which implements 2026-07-28 | what it negotiates with that SDK is unmeasured (#27) |
+| Hermes | 2025-03-26 measured; its `mcp` extra still pins `mcp==2.0.0` (2026-09-19, 8a92051f), which implements 2026-07-28 | what it negotiates with that SDK is unmeasured: a session connects its MCP servers only after a model provider is configured, and none is on the survey machine (#27) |
 
 The reason is one level below the harnesses, and it is the useful part:
 

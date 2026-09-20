@@ -146,9 +146,10 @@ it at all: its only protocol constants are 2025-03-26, 2025-06-18 and 2025-11-25
 
 One more thing that measurement found, and it bites harder than the version: a `dibs`
 entry in `claude_desktop_config.json` **replaces the plugin's server inside Code-tab
-sessions**. The app spawns its own `dibs mcp-stdio` (from `/`, without `CLAUDE_PID`) and
-exposes it to the Code tab under the same name, so an agent that registers there binds
-the app bridge's `host-<pid>` instead of its session UUID, and every hook for that
+sessions**. The app spawns its own `dibs mcp-stdio` (from `/`, as the app's child rather than the
+session's, so no sidecar names its parent) and exposes it to the Code tab under the same
+name, so an agent that registers there binds the app bridge's `host-<pid>` instead of
+its session UUID, and every hook for that
 session resolves to nobody. With the Claude Code plugin installed, do not also configure
 Dibs at the app level. The same-name shadowing is the app's; the consequence is ours.
 

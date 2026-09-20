@@ -387,3 +387,73 @@ func TestAClaimOverTheCheckoutRootCoversTheOtherWorktree(t *testing.T) {
 		t.Errorf("guard = %+v, want deny: the write lands in a repository somebody else holds whole", v)
 	}
 }
+
+// A claim keeps the repository it was taken in when its holder moves on.
+//
+// The comparison read the holder's CURRENT identity, so an agent that
+// claimed a file in project P and then updated its cwd to unrelated Q left
+// the claim standing with its repository protection gone: another clone of
+// P could take the same file exclusively. The claim now records which
+// repository its relative path is in. Found by the pre-release review.
+func TestAClaimKeepsItsRepositoryWhenTheHolderMoves(t *testing.T) {
+	s := NewState("t", DefaultLimits())
+	now := time.Unix(1700000000, 0)
+	one := inRepo(t, s, "one", "tok-1", "/a/main/.git", "/a/wt1", "git@example.com:acme/api", now)
+	inRepo(t, s, "two", "tok-2", "/b/main/.git", "/b/wt2", "git@example.com:acme/api", now)
+
+	got := mustApply(t, s, &Op{Kind: OpClaim, Token: "tok-1", Path: "/a/wt1/pkg/x.go", Mode: ClaimExclusive}, now)
+	if got["granted"] != true {
+		t.Fatalf("setup: the first claim was refused: %v", got)
+	}
+	// The holder moves to an unrelated project. Its claim in acme/api stands.
+	mustApply(t, s, &Op{Kind: OpUpdate, Token: "tok-1", KeepDescription: true, Agent: &AgentInfo{
+		CWD: "/elsewhere/q", RepoDir: "/elsewhere/q/.git", RepoRoot: "/elsewhere/q", RepoRemote: "git@example.com:acme/q",
+	}}, now)
+	if len(s.Claims) != 1 || s.Claims[0].Agent != one.ID {
+		t.Fatalf("setup: the claim should still stand: %+v", s.Claims)
+	}
+	res := mustApply(t, s, &Op{Kind: OpClaim, Token: "tok-2", Path: "/b/wt2/pkg/x.go", Mode: ClaimExclusive}, now)
+	if res["granted"] != false {
+		t.Fatalf("the same tracked file was granted exclusively to two while one still holds "+
+			"it: one moving to another project must not strip the claim it left behind: %v", res)
+	}
+}
+
+// A Git directory PATH is evidence of one repository on one machine only.
+//
+// SameProject compared RepoDir strings without asking which machines they
+// were on, so two unrelated repositories at /workspace/repo/.git on two hosts
+// collided over matching relative paths, with different remotes and
+// different root commits, and the write guard blocked work the other machine
+// has never seen. Found by the pre-release review.
+func TestTheSameGitDirectoryPathOnTwoMachinesIsNotOneRepository(t *testing.T) {
+	s := NewState("t", DefaultLimits())
+	now := time.Unix(1700000000, 0)
+	reg := func(name, token, host, remote, roots string) {
+		t.Helper()
+		if _, _, err := s.Apply(&Op{Kind: OpRegister, Name: name, NewToken: token, Agent: &AgentInfo{
+			HostID: host, CWD: "/workspace/repo", RepoDir: "/workspace/repo/.git", RepoRoot: "/workspace/repo",
+			RepoRemote: remote, RepoRoots: roots,
+		}}, now); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := s.Apply(&Op{Kind: OpAckBoard, Token: token}, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reg("a", "ta", "host-a", "git@example.com:acme/api", "aaaa")
+	reg("b", "tb", "host-b", "git@example.com:other/thing", "bbbb")
+	mustApply(t, s, &Op{Kind: OpClaim, Token: "ta", Path: "/workspace/repo/pkg/x.go", Mode: ClaimExclusive}, now)
+	res := mustApply(t, s, &Op{Kind: OpClaim, Token: "tb", Path: "/workspace/repo/pkg/x.go", Mode: ClaimExclusive}, now)
+	if res["granted"] != true {
+		t.Fatalf("an exclusive claim in an unrelated repository on another machine was "+
+			"refused because its .git happens to live at the same path: %v", res)
+	}
+	// And the same path with the SAME remote on two machines still collides:
+	// that is the rule working, through the machine-independent facts.
+	reg("c", "tc", "host-c", "git@example.com:acme/api", "cccc")
+	res = mustApply(t, s, &Op{Kind: OpClaim, Token: "tc", Path: "/workspace/repo/pkg/x.go", Mode: ClaimExclusive}, now)
+	if res["granted"] != false {
+		t.Fatalf("a clone of the same remote on a third machine should collide: %v", res)
+	}
+}

@@ -1725,7 +1725,7 @@ func wakeCoverage(
 		// A worktree that has been removed is the local way to reach that, and
 		// it is ordinary here. An agent on ANOTHER COMPUTER is the other, and
 		// there the hub can do nothing about it at all: see docs/NETWORK.md §5.
-		if wakeCovered(a, h, have, bridged) {
+		if wakeCovered(a, h, b.HostID, have, bridged) {
 			covered++
 			continue
 		}
@@ -1765,7 +1765,7 @@ func reportRemoteCoverage(b *boardView, bridged map[string]map[string]bool, ok r
 			continue
 		}
 		h := strings.ToLower(a.Agent.Harness)
-		if wakeCovered(a, h, nil, bridged) {
+		if wakeCovered(a, h, b.HostID, nil, bridged) {
 			covered++
 			continue
 		}
@@ -1788,22 +1788,6 @@ func reportRemoteCoverage(b *boardView, bridged map[string]map[string]bool, ok r
 				"`dibs host-bridge` there; a bridge that is attached but cannot start the harness, or an agent "+
 				"with no resumable thread, is not a route either")
 	}
-}
-
-// wakeCovered is the covered half of wakeCoverage: a command here for the
-// harness, a thread to name, and the directory on this machine; OR ITS OWN
-// MACHINE'S BRIDGE CAN. An agent on another computer is covered when a bridge
-// is attached for that host and states its harness: the command is that
-// machine's, and so is the check that it exists. The thread is required
-// either way.
-func wakeCovered(a boardAgent, h string, have map[string]bool, bridged map[string]map[string]bool) bool {
-	if !a.Resumable {
-		return false
-	}
-	if have[h] && wakeDirHere(a) {
-		return true
-	}
-	return a.Agent != nil && bridged[a.Agent.HostID][h]
 }
 
 // supgangNames is host id -> the computer's signed Supgang name, filled once

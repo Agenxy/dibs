@@ -127,6 +127,14 @@ func (e *Engine) AttachHostBridge(host string, harnesses []string) (<-chan WakeR
 	}
 	if old := hw.bridges[host]; old != nil {
 		close(old.ch)
+		// Whatever the old connection was waiting on is failed now, the way a
+		// detach fails it. A request the old bridge read and is still running
+		// reports through the new connection under the same id and host, and
+		// finds nothing waiting, which costs one extra wake later; a request
+		// still sitting unread in the old channel would otherwise hold its
+		// waiter for the whole wake timeout and suppress further wakes for
+		// that agent meanwhile. Found by the pre-release review.
+		hw.failPendingLocked(host, "the host's bridge reconnected before reporting")
 	}
 	b := &hostBridge{harnesses: map[string]bool{}, since: time.Now(), ch: make(chan WakeRequest, wakeRequestBuffer)}
 	for _, h := range harnesses {
@@ -143,17 +151,23 @@ func (e *Engine) AttachHostBridge(host string, harnesses []string) (<-chan WakeR
 		}
 		delete(hw.bridges, host)
 		close(b.ch)
-		for id, p := range hw.pending {
-			if p.host != host {
-				continue // another host's wake, still running there
-			}
-			select {
-			case p.ch <- WakeResult{ID: id, Host: host, OK: false, Detail: "the host's bridge detached before reporting"}:
-			default:
-			}
-		}
+		hw.failPendingLocked(host, "the host's bridge detached before reporting")
 	}
 	return b.ch, release, nil
+}
+
+// failPendingLocked releases every wake waiting on this host as a failure.
+// Callers hold hw.mu.
+func (hw *hostWakes) failPendingLocked(host, detail string) {
+	for id, p := range hw.pending {
+		if p.host != host {
+			continue // another host's wake, still running there
+		}
+		select {
+		case p.ch <- WakeResult{ID: id, Host: host, OK: false, Detail: detail}:
+		default:
+		}
+	}
 }
 
 // HostBridges lists the attached bridges, oldest first.
@@ -257,21 +271,23 @@ func (e *Engine) requestRemoteWakeWithin(plan wakePlan, agent string, within tim
 		hw.pending = map[uint64]pendingWake{}
 	}
 	hw.pending[req.ID] = pendingWake{host: plan.host, ch: result}
+	// SENT UNDER THE LOCK. The send is non-blocking, so holding hw.mu costs
+	// nothing, and it is what keeps this send and AttachHostBridge's
+	// close(old.ch) from racing: they used to be separated by an Unlock,
+	// with a recover() catching the panic when the bridge reattached in
+	// between, which the race detector reports as what it is. Found by the
+	// test for the reconnecting-bridge fix.
+	sent := false
+	select {
+	case b.ch <- req:
+		sent = true
+	default:
+	}
 	hw.mu.Unlock()
 	defer func() {
 		hw.mu.Lock()
 		delete(hw.pending, req.ID)
 		hw.mu.Unlock()
-	}()
-
-	sent := false
-	func() {
-		defer func() { _ = recover() }() // the channel closes when the bridge detaches
-		select {
-		case b.ch <- req:
-			sent = true
-		default:
-		}
 	}()
 	if !sent {
 		slog.Info("no wake: the host's bridge is not reading its requests",

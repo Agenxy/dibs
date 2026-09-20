@@ -60,11 +60,17 @@ import (
 // and ledgers nothing, so the steady-state cost is one map lookup per agent per
 // tick.
 func keepDeclaredRolesApplied(ctx context.Context, dir string, eng *engine.Engine, c RolesConfig) {
-	if len(c.Coordinator) == 0 && len(c.Admin) == 0 {
-		return
-	}
 	pins := loadRolePins(dir)
+	// ONE pass even with nothing declared: an empty table is the config
+	// shape that removes the last role, and this returned before looking,
+	// so deleting the sole admin line and restarting handed the role straight
+	// back from the ledger with nothing to withdraw it. The withdrawal test
+	// called applyDeclaredRoles and stepped over this. Found by the
+	// pre-release review.
 	applyDeclaredRoles(ctx, eng, c, pins)
+	if len(c.Coordinator) == 0 && len(c.Admin) == 0 {
+		return // nothing to keep granting; the withdrawal above was the whole job
+	}
 	go func() {
 		tick := time.NewTicker(rolesReapplyEvery)
 		defer tick.Stop()

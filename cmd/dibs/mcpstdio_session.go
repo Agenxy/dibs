@@ -47,9 +47,23 @@ func sessionContext(isClaude bool) map[string]string {
 	// Hostname and cwd are universal; everything below is Claude Code's own
 	// bookkeeping, and is authoritative where it exists: the sidecar knows the
 	// session's real cwd even if the bridge were spawned somewhere else.
+	// Keyed on OUR OWN PARENT first. The harness spawns its stdio bridge as
+	// a direct child, so a sidecar named for our parent pid is proof of two
+	// things at once: that the parent is a Claude Code session, and that this
+	// bridge is the one it started. CLAUDE_PID was the key here until Claude
+	// Code 2.1.275, which exports it to shell children and not to MCP servers:
+	// every plugin bridge on this machine then read no sidecar, sent
+	// `host-<ppid>` in `_meta com.dibs/session` on every call, and check_in
+	// bound that as an alias while the sidecar's cwd, surface and title never
+	// reached the board. Measured on this project's own board on 2026-09-19.
+	// The variable is still honoured when it is set, under the gate below.
 	pid := os.Getenv("CLAUDE_PID")
+	ppid := strconv.Itoa(os.Getppid())
+	if pid == "" {
+		pid = ppid
+	}
 	home, _ := os.UserHomeDir()
-	if pid == "" || home == "" {
+	if home == "" {
 		return out
 	}
 	// OUR OWN PARENT, or the handshake said so. Either is proof; neither alone
@@ -74,7 +88,7 @@ func sessionContext(isClaude bool) map[string]string {
 	// positive evidence that this session is ours rather than one we inherited.
 	// Nested processes fail that test, which is exactly what the guard e2e
 	// checks when it starts daemons of its own.
-	if !isClaude && pid != strconv.Itoa(os.Getppid()) {
+	if !isClaude && pid != ppid {
 		return out
 	}
 	// A pid is digits. Checking that is not ceremony: the value becomes a path

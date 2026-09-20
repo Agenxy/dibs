@@ -87,8 +87,9 @@ building, or tools like `hook_poll` appear missing for no visible reason.
 - **Do not configure Route A while the Claude Code plugin is installed.** The
   app exposes its own `dibs` server to Code-tab sessions under the plugin's
   name, and the plugin's server disappears from those sessions. The app's
-  bridge runs from `/` without `CLAUDE_PID`, so an agent that registers through
-  it binds `host-<pid>` instead of its session UUID and its lifecycle hooks
+  bridge runs from `/` as the app's child, not the session's, so no sidecar
+  names its parent and an agent that registers through it binds `host-<pid>`
+  instead of its session UUID and its lifecycle hooks
   resolve to nobody. Measured on this machine: the seat registered from the
   Code tab landed on `local-agent-mode-dibs` with `cwd: /`. Route A is for a
   Desktop that runs no Claude Code plugin.
