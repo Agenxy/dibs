@@ -13,7 +13,8 @@
  * .opencode/plugin/dibs.ts (project-local). opencode scans
  * {plugin,plugins}/*.{ts,js}.
  *
- * Env: DIBS_ADDR (default 127.0.0.1:4777), DIBS_DIR (default ~/.dibs)
+ * Env: DIBS_ADDR (default 127.0.0.1:4777), DIBS_DIR (default ~/.dibs),
+ *      DIBS_HOST_ID (which machine this is; see host() below)
  */
 import { existsSync } from "node:fs"
 
@@ -81,6 +82,69 @@ async function secret(): Promise<string | null> {
 }
 
 /**
+ * Which machine this session is on, said the way the stdio bridge says it.
+ * The bridge resolves it (DIBS_HOST_ID, Supgang, the daemon's node id, the
+ * id it minted itself) and publishes the answer as `resolved_host_id`
+ * beside the secret, because this plugin runs no subprocess and cannot ask
+ * Supgang: reading node_id here answered differently from the bridge on a
+ * Supgang member, and the daemon's host-scoped guard then resolved the
+ * plugin's call and the bridge's registration to two machines. The
+ * operator's DIBS_HOST_ID still wins, and node_id then host_id stand in for
+ * a bridge that has not published yet. Read, never minted: an unknown host
+ * makes the daemon compare paths as it did before hosts existed, which is
+ * safe, and a second id minted here would make one machine look like two.
+ *
+ * Sent on every call, because the daemon scopes hook and guard lookups by
+ * it. A call without one that arrives on loopback is stamped as the
+ * daemon's own machine, so through the documented `ssh -L` forward this
+ * plugin's guard resolved to nobody and the edit went ahead past an
+ * exclusive claim held on the hub. Round seventeen of the pre-release
+ * review.
+ */
+let hostCache: string | undefined
+
+async function host(): Promise<string> {
+  if (hostCache !== undefined) return hostCache
+  const stated = process.env["DIBS_HOST_ID"]?.trim()
+  if (stated) return (hostCache = stated)
+  for (const name of ["resolved_host_id", "node_id", "host_id"]) {
+    try {
+      const id = (await Bun.file(`${DIR}/${name}`).text()).trim()
+      if (id) return (hostCache = id)
+    } catch {
+      // not this file; the next one, or none
+    }
+  }
+  return (hostCache = "")
+}
+
+/**
+ * One tool call over the local MCP endpoint, the envelope every hook here
+ * shares. Returns the tool's text payload, or null on anything short of it:
+ * the daemon down, slow, unauthorised, or answering in a shape this plugin
+ * does not know. Every caller treats null as "stay quiet".
+ */
+async function call(name: string, args: Record<string, unknown>, timeoutMs: number): Promise<string | null> {
+  const key = await secret()
+  if (!key) return null
+  const hid = await host()
+  const res = await fetch(`http://${ADDR}/mcp`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-Dibs-Local": key },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "tools/call",
+      params: { name, arguments: args, ...(hid ? { _meta: { "com.dibs/host": hid } } : {}) },
+    }),
+    signal: AbortSignal.timeout(timeoutMs),
+  })
+  if (!res.ok) return null
+  const body = (await res.json()) as { result?: { content?: Array<{ text?: string }> } }
+  return body.result?.content?.[0]?.text ?? null
+}
+
+/**
  * Ask Dibs whether this session may write a path.
  *
  * This is what makes a claim hold rather than merely inform. Dibs fails open
@@ -88,21 +152,9 @@ async function secret(): Promise<string | null> {
  * deny here means a peer explicitly took an exclusive claim and is still alive.
  */
 async function guard(sessionID: string, path: string): Promise<string | null> {
-  const key = await secret()
-  if (!key || !path) return null
-  const res = await fetch(`http://${ADDR}/mcp`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "X-Dibs-Local": key },
-    body: JSON.stringify({
-      jsonrpc: "2.0", id: 1, method: "tools/call",
-      params: { name: "guard_path", arguments: { session_id: sessionID, path, cwd: process.cwd() } },
-    }),
-    // This sits in front of every edit. If Dibs is slow the edit proceeds.
-    signal: AbortSignal.timeout(1500),
-  })
-  if (!res.ok) return null
-  const body = (await res.json()) as { result?: { content?: Array<{ text?: string }> } }
-  const text = body.result?.content?.[0]?.text
+  if (!path) return null
+  // This sits in front of every edit. If Dibs is slow the edit proceeds.
+  const text = await call("guard_path", { session_id: sessionID, path, cwd: process.cwd() }, 1500)
   if (!text) return null
   const v = JSON.parse(text) as { decision?: string; reason?: string }
   // Only a hard deny stops the edit. "ask" has nowhere to go in opencode,
@@ -116,33 +168,8 @@ async function guard(sessionID: string, path: string): Promise<string | null> {
  * mail, so a dropped response loses nothing.
  */
 async function poll(sessionID: string): Promise<string | null> {
-  const key = await secret()
-  if (!key) return null
-
-  const res = await fetch(`http://${ADDR}/mcp`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "X-Dibs-Local": key,
-    },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "tools/call",
-      params: {
-        name: "hook_poll",
-        arguments: { session_id: sessionID, event: "chat.message", cwd: process.cwd() },
-      },
-    }),
-    // The user is waiting on their turn: never hang it on Dibs being slow.
-    signal: AbortSignal.timeout(1500),
-  })
-  if (!res.ok) return null
-
-  const body = (await res.json()) as {
-    result?: { content?: Array<{ text?: string }> }
-  }
-  const text = body.result?.content?.[0]?.text
+  // The user is waiting on their turn: never hang it on Dibs being slow.
+  const text = await call("hook_poll", { session_id: sessionID, event: "chat.message", cwd: process.cwd() }, 1500)
   if (!text) return null
 
   const payload = JSON.parse(text) as {
@@ -193,28 +220,8 @@ let turns = 0
 function reportProgress(): void {
   turns++
   void (async () => {
-    const key = await secret()
-    if (!key) return
     try {
-      await fetch(`http://${ADDR}/mcp`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "X-Dibs-Local": key },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "tools/call",
-          params: {
-            name: "hook_session",
-            arguments: {
-              session_id: SESSION,
-              event: "chat.message",
-              cwd: process.cwd(),
-              progress: turns,
-            },
-          },
-        }),
-        signal: AbortSignal.timeout(1500),
-      })
+      await call("hook_session", { session_id: SESSION, event: "chat.message", cwd: process.cwd(), progress: turns }, 1500)
     } catch {
       // The daemon is down or slow. The turn is not ours to hold up.
     }
@@ -222,27 +229,9 @@ function reportProgress(): void {
 }
 
 async function agent(): Promise<string | null> {
-  const key = await secret()
-  if (!key) return null
   try {
-    const res = await fetch(`http://${ADDR}/mcp`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "X-Dibs-Local": key },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "tools/call",
-        params: {
-          name: "hook_poll",
-          arguments: { session_id: SESSION, event: "shell.env", cwd: process.cwd() },
-        },
-      }),
-      // In front of every shell command the agent runs: never hang one on Dibs.
-      signal: AbortSignal.timeout(1500),
-    })
-    if (!res.ok) return null
-    const body = (await res.json()) as { result?: { content?: Array<{ text?: string }> } }
-    const text = body.result?.content?.[0]?.text
+    // In front of every shell command the agent runs: never hang one on Dibs.
+    const text = await call("hook_poll", { session_id: SESSION, event: "shell.env", cwd: process.cwd() }, 1500)
     if (!text) return null
     const id = (JSON.parse(text) as { agent?: string }).agent
     return id && id.length > 0 ? id : null

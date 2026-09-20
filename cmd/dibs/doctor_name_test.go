@@ -20,3 +20,26 @@ func TestABoardNameIsRoutedWhenTheTargetIsThisDaemon(t *testing.T) {
 		}
 	}
 }
+
+// A name is offered as a link only when a session can travel through it.
+//
+// Remap serves `http://<name>/` and proxies to the target; the daemon's
+// session cookie is Secure when its own leg is TLS, and a browser at an
+// http:// origin never keeps a Secure cookie. Printing the name for an
+// HTTPS board handed the operator a link that consumed the single-use
+// token and unlocked nothing. Round seventeen of the pre-release review.
+func TestANamedLinkIsPrintedOnlyForABoardRemapCanCarryASessionTo(t *testing.T) {
+	if link, note := namedLink("board", "http://127.0.0.1:4777", "tok"); link != "http://board/?bt=tok" || note != "" {
+		t.Fatalf("plain HTTP: link %q note %q, want the named link and no note", link, note)
+	}
+	link, note := namedLink("board", "https://192.168.1.5:4777", "tok")
+	if link != "" {
+		t.Fatalf("an HTTPS board got the named link %q: redeeming it sets a Secure cookie an "+
+			"http:// origin discards, so the one link that could unlock the board is spent on "+
+			"nothing", link)
+	}
+	if note == "" {
+		t.Fatal("the name was withheld silently: the operator has a name in dibs.toml and " +
+			"deserves to hear why the link does not carry it")
+	}
+}

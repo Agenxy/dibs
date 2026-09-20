@@ -487,3 +487,33 @@ func TestASubscriptionDoesNotCountAsTheAgentBeingInTouch(t *testing.T) {
 		return core.Result{}
 	})
 }
+
+// AND A BRIDGE IS NOT A ROUTE WITHOUT A THREAD TO NAME. wakeRoute refuses a
+// remote wake when the agent has no harness thread id for the bridge's
+// command to resume, and the note went quiet the moment a bridge was
+// attached: an agent registered only under `host-<ppid>` was reported
+// reachable while no wake could run. The local note already asks this
+// question; the remote one now does too. Round seventeen of the
+// pre-release review.
+func TestThePullOnlyNoteForARemoteAgentNeedsAThreadAsWell(t *testing.T) {
+	e := hubEngine()
+	_, release, err := e.AttachHostBridge("laptop", []string{"Codex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer release()
+	far := bridgeAgent("far", "Codex", "") // host-<ppid> only, no thread
+	far.Agent.HostID = "laptop"
+	if _, ok := e.wakeFor(far, core.MsgQuestion, questionFor("far")); ok {
+		t.Fatal("setup: a wake was planned for an agent with no thread id, so the note below would be true")
+	}
+	note := e.PullOnlyNote(far)
+	if note == "" || !strings.Contains(note, "thread") {
+		t.Fatalf("the note reads %q for a remote agent with a bridge and no thread id: the sender is "+
+			"told a wake is coming and nothing can run one", note)
+	}
+	// With a thread, the bridge really is the route, and the note stays quiet.
+	if note := e.PullOnlyNote(remoteAgent("near", "laptop")); note != "" {
+		t.Errorf("with a thread the note reads %q, want none", note)
+	}
+}
