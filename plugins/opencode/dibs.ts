@@ -32,7 +32,32 @@ import type { Plugin } from "@opencode-ai/plugin"
  * of the pre-release review.
  */
 const ADDR = process.env["DIBS_ADDR"] ?? "127.0.0.1:4777"
-const ORIGIN = /^https?:\/\//i.test(ADDR) ? ADDR.replace(/\/+$/, "") : `http://${ADDR}`
+const SAVED_ORIGIN = /^https?:\/\//i.test(ADDR) ? ADDR.replace(/\/+$/, "") : `http://${ADDR}`
+
+/**
+ * Where the daemon is NOW. A joined board's config may name the hub as a
+ * Supgang peer (DIBS_BOARD_PEER), and the bridge then dials the address
+ * Supgang signs for that computer today rather than the one the config was
+ * printed with. This plugin has no subprocess to ask Supgang with, so the
+ * bridge publishes the origin it dialled beside the secret
+ * (`resolved_origin`) when it starts, and this reads it first: deriving the
+ * endpoint from the saved DIBS_ADDR alone kept dialling a hub that had
+ * moved while the bridge beside it reconnected fine, losing delivery and
+ * failing the guard open. Round twenty-six of the pre-release review. The
+ * saved address stands in until the bridge has published.
+ */
+let originCache: string | undefined
+
+async function origin(): Promise<string> {
+  if (originCache !== undefined) return originCache
+  try {
+    const published = (await Bun.file(`${DIR}/resolved_origin`).text()).trim()
+    if (/^https?:\/\//i.test(published)) return (originCache = published.replace(/\/+$/, ""))
+  } catch {
+    // not published yet: the saved address, uncached, until it is
+  }
+  return SAVED_ORIGIN
+}
 /**
  * Where the daemon keeps its local secret, resolved the way the daemon
  * resolves it: `~/.dibs`, falling back to a legacy `~/.agents` only when that
@@ -109,7 +134,7 @@ let trustCache: string[] | null | undefined
 
 async function trust(): Promise<string[] | null> {
   if (trustCache !== undefined) return trustCache
-  if (!ORIGIN.startsWith("https://")) return (trustCache = null)
+  if (!(await origin()).startsWith("https://")) return (trustCache = null)
   const extra: string[] = []
   for (const name of ["trusted-certs.pem", "tls-ca.pem"]) {
     try {
@@ -196,7 +221,7 @@ async function call(name: string, args: Record<string, unknown>, timeoutMs: numb
   const key = await secret()
   if (!key) return null
   const hid = await host()
-  const res = await fetch(`${ORIGIN}/mcp`, {
+  const res = await fetch(`${await origin()}/mcp`, {
     method: "POST",
     headers: { "content-type": "application/json", "X-Dibs-Local": key },
     body: JSON.stringify({

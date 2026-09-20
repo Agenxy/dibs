@@ -16,6 +16,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/agenxy/dibs/internal/paths"
 )
 
 // mcpStdio is a stdio↔HTTP bridge for the Dibs MCP server. A harness that
@@ -61,7 +63,11 @@ func runBridge(_ []string) error {
 	if err != nil {
 		return fmt.Errorf("no local secret yet: start dibd once first: %w", err)
 	}
-	url := boardOrigin() + "/mcp"
+	origin := boardOrigin()
+	// Published for the opencode plugin, which has no subprocess to resolve
+	// a peer with and read the saved address instead: see resolvedOriginFile.
+	publishResolvedOrigin(paths.DataDir(), origin)
+	url := origin + "/mcp"
 	client := daemonClient(75 * time.Second)
 	// No timeout: this one is meant to stay open. A deadline here is a stream
 	// that dies on the hour with nothing to say about why.
@@ -139,13 +145,14 @@ func runBridge(_ []string) error {
 		onRegistered = watchOnRegister(ctx, &watcher, streamClient, url, secret)
 	}
 	// And, for a tree the daemon cannot read, the index it would have mined.
-	onRegistered = shipIndexOnRegister(ctx, streamClient, url, secret, defaultShipTiming(), onRegistered)
+	timing := defaultShipTiming()
+	onRegistered = shipIndexOnRegister(ctx, streamClient, url, secret, timing, onRegistered)
 	in := bufio.NewReaderSize(os.Stdin, 1<<20)
 	self, haveSelf := currentSelf()
 	// Anything a previous image was holding, re-established before the first
 	// line is read, so the handshake identity and any subscription are in place
 	// by the time they matter.
-	restoreCarried(ctx, streamClient, url, secret, out, &streams, &watcher, sockets)
+	restoreCarried(ctx, streamClient, url, secret, out, &streams, &watcher, sockets, timing)
 
 	for {
 		if ctx.Err() != nil {
@@ -484,6 +491,7 @@ func handoffState() bridgeState {
 		WakeStreams: streams,
 		WakePending: currentWakePending(),
 		Thread:      threadServed(),
+		Shipments:   currentShipments(),
 	}
 	// The single fields too, for an image older than WakeStreams: it
 	// restores one stream, which is what it could hold.

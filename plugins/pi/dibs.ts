@@ -40,7 +40,19 @@ const run = promisify(execFile)
  * of the pre-release review.
  */
 const ADDR = process.env["DIBS_ADDR"] ?? "127.0.0.1:4777"
-const ORIGIN = /^https?:\/\//i.test(ADDR) ? ADDR.replace(/\/+$/, "") : `http://${ADDR}`
+const SAVED_ORIGIN = /^https?:\/\//i.test(ADDR) ? ADDR.replace(/\/+$/, "") : `http://${ADDR}`
+
+/**
+ * Where the daemon is NOW: what `dibs identity` reports (the saved address,
+ * re-pointed at the hub's current Supgang address when the config names it
+ * as a peer, as the bridge dials), or the saved address without the binary.
+ * Deriving the endpoint from DIBS_ADDR alone kept dialling a hub that had
+ * moved. Round twenty-six of the pre-release review.
+ */
+async function origin(): Promise<string> {
+  const id = await machineIdentity()
+  return id.origin && /^https?:\/\//i.test(id.origin) ? id.origin.replace(/\/+$/, "") : SAVED_ORIGIN
+}
 /**
  * Where the daemon keeps its local secret, resolved the way the daemon
  * resolves it: `~/.dibs`, falling back to a legacy `~/.agents` only when that
@@ -103,7 +115,7 @@ let trustCache: string[] | null | undefined
 
 async function trust(): Promise<string[] | null> {
   if (trustCache !== undefined) return trustCache
-  if (!ORIGIN.startsWith("https://")) return (trustCache = null)
+  if (!(await origin()).startsWith("https://")) return (trustCache = null)
   const extra: string[] = []
   for (const name of ["trusted-certs.pem", "tls-ca.pem"]) {
     try {
@@ -143,7 +155,7 @@ async function trust(): Promise<string[] | null> {
  * is what this extension sent before. An empty answer is not cached: a
  * bridge may publish the host a moment later.
  */
-type Identity = { host_id: string; cwd: string; repo: Record<string, string> | null }
+type Identity = { host_id: string; cwd: string; repo: Record<string, string> | null; origin?: string }
 const identityCache = new Map<string, Identity>()
 
 async function machineIdentity(): Promise<Identity> {
@@ -175,7 +187,7 @@ async function identityFor(cwd: string): Promise<Identity> {
   } catch {
     // no dibs here, or one too old to answer: the files below
   }
-  const fallback: Identity = { host_id: process.env["DIBS_HOST_ID"]?.trim() ?? "", cwd, repo: null }
+  const fallback: Identity = { host_id: process.env["DIBS_HOST_ID"]?.trim() ?? "", cwd, repo: null, origin: SAVED_ORIGIN }
   if (!fallback.host_id) {
     for (const name of ["resolved_host_id", "node_id", "host_id"]) {
       try {
@@ -282,7 +294,7 @@ async function rpc(
     if (Object.keys(meta).length > 0) p["_meta"] = meta
   }
   const text = await post(
-    `${ORIGIN}/mcp`,
+    `${await origin()}/mcp`,
     JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params }),
     { "content-type": "application/json", "X-Dibs-Local": key },
     timeoutMs,

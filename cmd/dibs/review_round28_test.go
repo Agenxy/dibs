@@ -35,7 +35,7 @@ func TestSocketsOffHoldsAcrossAnInPlaceUpgrade(t *testing.T) {
 	ctx0, cancel0 := context.WithCancel(context.Background())
 	var on inboxWatcher
 	var streams0 sync.WaitGroup
-	restoreCarried(ctx0, &http.Client{}, "http://127.0.0.1:1/mcp", "secret", out, &streams0, &on, true)
+	restoreCarried(ctx0, &http.Client{}, "http://127.0.0.1:1/mcp", "secret", out, &streams0, &on, true, shipTiming{})
 	if got := collect(lines, 2, 2*time.Second); len(got) != 2 {
 		t.Fatalf("setup: %d line(s) with sockets on, want 2", len(got))
 	}
@@ -53,7 +53,7 @@ func TestSocketsOffHoldsAcrossAnInPlaceUpgrade(t *testing.T) {
 	defer cancel()
 	var off inboxWatcher
 	var streams sync.WaitGroup
-	restoreCarried(ctx, &http.Client{}, "http://127.0.0.1:1/mcp", "secret", out, &streams, &off, false)
+	restoreCarried(ctx, &http.Client{}, "http://127.0.0.1:1/mcp", "secret", out, &streams, &off, false, shipTiming{})
 	if got := collect(lines, 1, 500*time.Millisecond); len(got) != 0 {
 		t.Fatalf("with [wake] sockets = false the upgraded bridge put %d line(s) into its session: "+
 			"the owed notice was delivered past the switch", len(got))
