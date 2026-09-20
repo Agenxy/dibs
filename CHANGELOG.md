@@ -108,6 +108,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round twenty-four of the pre-release review: two findings, both in the
+  pi extension.**
+  - Every path argument goes out as the bridge spells it (its `pathArgs`
+    table: claim, release, force_release, guard_path, the hooks' cwd), not
+    only a registration's directory; a hub does not resolve a remote
+    caller's paths, so a claim on `/tmp/repo/pkg/x.go` from an agent
+    registered at `/private/tmp/repo` had no repository-relative key.
+  - Its transport bounds elapsed time, not socket idleness: a daemon that
+    kept trickling bytes was never cut off, and the poll in front of the
+    user's turn waited on it indefinitely.
 - **Round twenty-three of the pre-release review: three findings.**
   - The opencode plugin keeps only the host the bridge published; a hook
     that ran before the bridge had published cached "" (or the daemon's
