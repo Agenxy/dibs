@@ -134,13 +134,18 @@ func (f *scorerFlags) installSupplied(
 	// for a root already installed must not buy a rebuild per request.
 	f.buildMu.Lock()
 	defer f.buildMu.Unlock()
-	if f.suppliedFingerprint(root) == p.Fingerprint && p.Fingerprint != "" {
-		return map[string]any{"accepted": true, "root": root, "reason": "already installed at this fingerprint"}
-	}
+	// Ownership before the fingerprint shortcut. Two machines with the same
+	// checkout at the same path ship the same fingerprint, and the second
+	// was told "already installed" about an index held for the first, which
+	// the scorer then refused it. Round four of the pre-release review.
 	f.discoverMu.Lock()
 	if why := f.rootIsTakenLocked(root, host); why != "" {
 		f.discoverMu.Unlock()
 		return map[string]any{"accepted": false, "reason": why}
+	}
+	if f.suppliedAt[root] == p.Fingerprint && p.Fingerprint != "" {
+		f.discoverMu.Unlock()
+		return map[string]any{"accepted": true, "root": root, "reason": "already installed at this fingerprint"}
 	}
 	if f.indexed == nil {
 		f.indexed = map[string]bool{}
@@ -194,10 +199,4 @@ func (f *scorerFlags) installSupplied(
 		"repo", root, "agent", agent, "files", lex.Files(), "commits", cc.Commits(),
 		"why", "the daemon cannot read this tree; the agent inside it shipped what the index is built from")
 	return map[string]any{"accepted": true, "files": lex.Files(), "commits": cc.Commits(), "root": root}
-}
-
-func (f *scorerFlags) suppliedFingerprint(root string) string {
-	f.discoverMu.Lock()
-	defer f.discoverMu.Unlock()
-	return f.suppliedAt[root]
 }

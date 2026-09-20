@@ -429,14 +429,14 @@ func (e *Engine) mayAdopt(l *core.Agent) bool {
 // move where they collapse into each other.
 //
 // A coordinator may say where a mailbox goes; it may only read one that was
-// addressed to it. Redirecting an abandoned name onto a THIRD party gives the
-// coordinator nothing, and is the consolidation the role exists for.
-// Redirecting it onto ITSELF makes the coordinator the reader of everything
-// anyone sends that name from then on: that is the coordinator granting
-// itself read access to another agent's mail, which is the human's call, the
-// way human_unlock is. An admin reads every mailbox already, and the human
-// unlocked as itself IS the human; only the plain coordinator is redirected
-// here. The approval path is untouched: a coordinator approving another
+// addressed to it. Moving an abandoned mailbox onto a THIRD party gives the
+// coordinator nothing, and is the consolidation the role exists for. Moving
+// it onto ITSELF makes the coordinator the reader of everything that was
+// sent to that name (the move is once, not a standing redirect: adoptNote):
+// that is the coordinator granting itself read access to another agent's
+// mail, which is the human's call, the way human_unlock is. An admin reads
+// every mailbox already, and the human unlocked as itself IS the human; only
+// the plain coordinator is refused here. The approval path is untouched: a coordinator approving another
 // agent's request to adopt makes that agent the reader, not itself. Issue #77.
 func (e *Engine) refuseCoordinatorSelfAdoption(actor *core.Agent, op *core.Op) error {
 	if !op.AdoptAuthorised || actor.IsAdmin() || e.isTheHuman(actor.ID) {

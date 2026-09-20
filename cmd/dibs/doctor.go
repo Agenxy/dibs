@@ -697,6 +697,17 @@ func checkMatching(client *http.Client, sec string, ok reportFn, warn fixFn) {
 			ok("index for " + root + " was shipped by agent " + st.Supplied[root] +
 				": the daemon cannot read that tree and did not need to")
 		}
+		// Trees on other machines that nothing has shipped for yet: not a
+		// fault of this daemon, which cannot read them, and worth a line so
+		// "no suggestions for that agent" has a stated reason.
+		for _, root := range st.Remote {
+			if _, shipped := st.Supplied[root]; shipped {
+				continue
+			}
+			warn(root+" is on another machine and its index has not arrived",
+				"the bridge on that machine ships it after registering; if it never does, "+
+					"run `dibs doctor` there")
+		}
 		if st.Repo != "" {
 			// And say so when that is not where this command was run. Matching is
 			// machine-wide by design, one daemon, one index, so working elsewhere
@@ -1036,51 +1047,6 @@ func checkGit(verbose bool, ok reportFn, bad fixFn) {
 	} else if verbose {
 		ok("git present")
 	}
-}
-
-type matchStatusJSON struct {
-	Phase   string `json:"phase"`
-	Scorer  string `json:"scorer"`
-	Files   int    `json:"files"`
-	Commits int    `json:"commits"`
-	// Repo is which tree those files came from. The daemon has always sent it and
-	// this struct dropped it on the floor, so `doctor` reported four thousand
-	// indexed files without ever saying whose, which is the one fact that
-	// explains a matcher suggesting another project's paths.
-	Repo string `json:"repo"`
-	Hint string `json:"hint"`
-	// Unreadable lists trees the daemon tried and could not read; Supplied
-	// maps those an agent shipped the index for instead (issue #19).
-	Unreadable []string          `json:"unreadable"`
-	Supplied   map[string]string `json:"supplied"`
-}
-
-// fetchMatchStatus asks the daemon why matching is or is not working. Failure
-// to answer is itself an answer: an older daemon has no such endpoint.
-func fetchMatchStatus(c *http.Client, secret string) matchStatusJSON {
-	return fetchMatchStatusAt(c, origin(), secret)
-}
-
-// fetchMatchStatusAt asks the daemon at base, which is the address the caller
-// actually reached the daemon through: the bridge's shipment path resolves the
-// hub's current address and must poll the same one (indexship.go).
-func fetchMatchStatusAt(c *http.Client, base, secret string) matchStatusJSON {
-	req, err := http.NewRequest(http.MethodGet, base+"/api/match-status", nil)
-	if err != nil {
-		return matchStatusJSON{}
-	}
-	req.Header.Set("X-Dibs-Local", secret)
-	resp, err := c.Do(req)
-	if err != nil || resp.StatusCode != http.StatusOK {
-		if resp != nil {
-			_ = resp.Body.Close()
-		}
-		return matchStatusJSON{}
-	}
-	defer func() { _ = resp.Body.Close() }()
-	var out matchStatusJSON
-	_ = json.NewDecoder(resp.Body).Decode(&out)
-	return out
 }
 
 // checkPanelBuild reports which board panel this daemon serves, and how to tell

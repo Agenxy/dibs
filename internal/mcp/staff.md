@@ -47,11 +47,14 @@ types, senders, ages, and how many are still expecting an answer. That is
 everything needed to place a mailbox and nothing that reads one.
 
 **Adopt a mailbox onto yourself.** Custody and contents are different
-capabilities, and adoption moves custody: it redirects where mail for that name
-is delivered from now on. Onto a third party, you gain nothing, and that is the
-consolidation the role exists for. Onto yourself, you become the reader of
-everything anyone sends that name, which is you granting yourself read access
-to another agent's mail. That is the human's call: `human_unlock` as yourself,
+capabilities, and adoption moves custody of what is THERE: the messages the
+abandoned row holds at that moment move, once. It is not a standing redirect:
+anything sent to that name afterwards still reaches the row it was addressed
+to, which is why step 3 below prunes the row rather than leaving it to
+collect mail nobody reads. Onto a third party, you gain nothing, and that is
+the consolidation the role exists for. Onto yourself, you become the reader of
+everything that was sent to that name, which is you granting yourself read
+access to another agent's mail. That is the human's call: `human_unlock` as yourself,
 or name who should hold it with `into`. "Yourself" includes an agent you
 registered from your own session, or a child you vouched for: the board
 records where a registration came from, and an agent you hold the token for
@@ -78,12 +81,16 @@ Three steps, in this order:
    written from, two held nothing, and before the census the only way to
    learn that was to perform the adoption and read the result.
 2. `adopt_agent(agent: <the dormant row>, into: <the live one>)`: moves the
-   mail. **The dormant row and its declarations survive this.**
+   mail that is there now, once. **The dormant row and its declarations
+   survive this, and so does its address:** a message sent to it after the
+   adoption lands in the dormant row, not the live one.
 3. `prune(agent: <the dormant row>)`: removes the row, and with it any stale
-   declaration it was still holding.
+   declaration it was still holding, and the address that would otherwise go
+   on collecting mail nobody reads.
 
-Doing only the second leaves the mess that caused the report. Doing only the
-third destroys mail that was never read.
+Doing only the second leaves the mess that caused the report, and leaves a
+name that still receives. Doing only the third destroys mail that was never
+read.
 
 Before you start: satisfy yourself the requester is the same role, not merely a
 similar one. Same name, same project, same description is good evidence. If it

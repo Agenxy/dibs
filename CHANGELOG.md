@@ -108,6 +108,38 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round four of the pre-release review: eight findings.**
+  - `dibs codex-hooks --trust` vouched for any loose hook whose JSON
+    mentioned `hook_poll` anywhere, so a command hook with that status
+    message, or an MCP hook on another server, was trusted, which is Codex's
+    authorisation to run it. It now vouches for exactly one shape: an MCP
+    tool hook calling `hook_poll` on the `dibs` server, plugin or loose.
+  - A bridge on another machine never shipped its index: the daemon
+    (correctly) never looks for a remote path, so no unreadable verdict was
+    ever recorded and the bridge polled its schedule out. Match status now
+    lists remote trees apart from unreadable ones, the bridge ships on that
+    list, and doctor names a remote tree whose index has not arrived.
+  - An index shipped from another machine scored a local agent at the same
+    path; a shipped index now scores the shipper's machine only, in both
+    directions.
+  - A second machine shipping the same fingerprint for a path already held
+    for the first was told "already installed" about an index the scorer
+    would then refuse it; ownership is checked before the shortcut.
+  - The daemon's and the host bridge's service units carry the installing
+    shell's `PATH`, so a wake command written the way the documentation
+    writes it (`claude`, `codex`) resolves under launchd or systemd as it
+    does in the terminal; both used to fail every wake with "executable file
+    not found" while doctor counted the route as covering.
+  - On Windows the daemon-registry lock covered byte 0 of the registration
+    JSON, and `LockFileEx` is mandatory, so every live daemon read as
+    Unknown and `stop`/`upgrade` could not find the one running. The lock
+    now sits far past the body; the Windows CI job runs the test.
+  - The review runner accepted a `FINDINGS: <n>` line anywhere in the
+    output, and a negative one; it must now be the reviewer's last word,
+    with only the harness's own trailer after it.
+  - The coordinator instructions (`dibs://staff`) said adoption redirects
+    future mail for the name; it moves what is there once, and the row keeps
+    receiving until pruned, which the three-step procedure now says.
 - **Round three of the pre-release review: nine code findings, each
   reproduced with a test that fails on the commit before its fix.**
   - A coordinator could become the reader of an abandoned mailbox by
