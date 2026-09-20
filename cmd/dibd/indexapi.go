@@ -43,7 +43,7 @@ func registerIndexAPI(mux *http.ServeMux, eng *engine.Engine, f *scorerFlags) {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		agent, cwd, repoRoot, err := eng.AgentLocation(ctx, body.Token)
+		agent, cwd, repoRoot, host, err := eng.AgentLocation(ctx, body.Token)
 		if err != nil || agent == "" {
 			refuse(w, http.StatusUnauthorized, "the token names no agent; register first, "+
 				"and ship the index with the token register returned")
@@ -68,14 +68,43 @@ func registerIndexAPI(mux *http.ServeMux, eng *engine.Engine, f *scorerFlags) {
 		// And only for a tree the daemon has itself found unreadable. Anything
 		// it can read, it reads; a shipment for a tree it has not tried is not
 		// a gap but a race, and the bridge only ships on the verdict.
-		if !eng.TreeIsUnreadable(root) {
+		// A tree on another machine is unreadable here by definition, and the
+		// verdict is never recorded for it because the daemon does not go
+		// looking (engine: no discovery for a remote agent's path).
+		if host == "" && !eng.TreeIsUnreadable(root) {
 			refuse(w, http.StatusConflict, "the daemon has not found "+root+" unreadable; "+
 				"it indexes what it can read itself, and the bridge ships only on that verdict")
 			return
 		}
-		outcome := f.installSupplied(ctx, eng, root, agent, &body.Payload)
+		outcome := f.installSupplied(ctx, eng, root, agent, host, &body.Payload)
 		_ = json.NewEncoder(w).Encode(outcome)
 	})
+}
+
+// rootIsTakenLocked says why a shipment for root cannot be held, or "" when
+// it can. Caller holds discoverMu.
+//
+// Indexes are keyed by path, and one path holds one tree. A tree the daemon
+// read itself outranks any copy. A member's tree at a path this daemon has a
+// tree of its own at has nowhere to go: it is not scored by the daemon's
+// index either (engine: indexSpeaksForHost), so the honest outcome is no
+// matching for that agent, said plainly rather than the wrong index.
+func (f *scorerFlags) rootIsTakenLocked(root, host string) string {
+	if !f.indexed[root] {
+		return ""
+	}
+	switch {
+	case f.supplied[root] == "" && host != "":
+		return "the daemon indexed a tree of its own at " + root + "; an index for another " +
+			"machine's tree at the same path cannot be held beside it, so matching is " +
+			"unavailable for that agent"
+	case f.supplied[root] == "":
+		return "the daemon indexed this tree itself; its own reading is used"
+	case f.suppliedHost[root] != host:
+		return "an index for " + root + " was already shipped from another machine; one path " +
+			"holds one tree"
+	}
+	return ""
 }
 
 func refuse(w http.ResponseWriter, status int, why string) {
@@ -98,7 +127,7 @@ func underDir(p, dir string) bool {
 // index fills the one gap, a tree the daemon cannot read, and is released
 // like any other when the tree's agents are gone (evictIdleIndexes).
 func (f *scorerFlags) installSupplied(
-	ctx context.Context, eng *engine.Engine, root, agent string, p *overlap.Payload,
+	ctx context.Context, eng *engine.Engine, root, agent, host string, p *overlap.Payload,
 ) map[string]any {
 	// ONE build at a time, and none for an index already held. Building a
 	// co-change index is real work, and a caller repeating a 16 MB payload
@@ -109,10 +138,9 @@ func (f *scorerFlags) installSupplied(
 		return map[string]any{"accepted": true, "root": root, "reason": "already installed at this fingerprint"}
 	}
 	f.discoverMu.Lock()
-	if f.indexed[root] && f.supplied[root] == "" {
+	if why := f.rootIsTakenLocked(root, host); why != "" {
 		f.discoverMu.Unlock()
-		return map[string]any{"accepted": false, "reason": "the daemon indexed this tree itself; " +
-			"its own reading is used"}
+		return map[string]any{"accepted": false, "reason": why}
 	}
 	if f.indexed == nil {
 		f.indexed = map[string]bool{}
@@ -126,12 +154,16 @@ func (f *scorerFlags) installSupplied(
 	if f.suppliedAt == nil {
 		f.suppliedAt = map[string]string{}
 	}
+	if f.suppliedHost == nil {
+		f.suppliedHost = map[string]string{}
+	}
 	if !f.indexed[root] && len(f.indexed) >= maxIndexedRepos {
 		f.discoverMu.Unlock()
 		return map[string]any{"accepted": false, "reason": "the daemon is at its repository ceiling"}
 	}
 	f.indexed[root] = true
 	f.supplied[root] = agent
+	f.suppliedHost[root] = host
 	f.rootOf[root] = root
 	f.discoverMu.Unlock()
 
@@ -148,7 +180,7 @@ func (f *scorerFlags) installSupplied(
 	eng.SetIndex(root, scorer, engine.MatchConfig{
 		JoinThreshold: f.join, NotifyThreshold: notify, Deadline: f.deadline,
 		DirectorRequired: f.director, AutoJoin: f.autoJoin, Repo: root,
-	}, engine.IndexInfo{Fingerprint: p.Fingerprint, SuppliedBy: agent})
+	}, engine.IndexInfo{Fingerprint: p.Fingerprint, SuppliedBy: agent, SuppliedHost: host})
 	f.discoverMu.Lock()
 	f.suppliedAt[root] = p.Fingerprint
 	f.discoverMu.Unlock()

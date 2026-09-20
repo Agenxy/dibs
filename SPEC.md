@@ -557,8 +557,11 @@ documented, not solved: case-insensitive volumes, Unicode aliases.
   no positive evidence the two agents are on different computers**. One daemon
   serves agents on other machines (§16), so absolute paths from two filesystems
   arrive in one namespace and `/Users/kim/src/api` on two laptops is two
-  unrelated trees. Evidence is a `host_id` on both sides that differs; an agent
-  that supplied none collides exactly as it did before the field existed.
+  unrelated trees. Evidence is a `host_id` on both sides that differs: the
+  claimant's, against the host the claim was TAKEN on, which is recorded on
+  the claim like its repository is (a holder that later reports another
+  machine does not take its claims with it). An agent that supplied none
+  collides exactly as it did before the field existed.
 - `repo`: both agents are positively in ONE repository (shared Git common
   directory, equal configured remote, or equal root commits: the ranking of
   §9's `differentProjects`, read for sameness rather than difference) **and**
@@ -568,8 +571,9 @@ The second rule exists because one absolute path is not one file. Two linked
 worktrees of a repository hold `/a/wt1/x.go` and `/a/wt2/x.go` for the same
 tracked file, and the first rule alone reports nothing. The portable name is
 recorded on the claim when it is taken, from the checkout root the server
-resolved at registration; a path outside the agent's own checkout has none, and
-the repository rule does not apply to it. Both halves demand positive evidence:
+resolved at registration, together with WHICH repository it is relative to;
+a renewal restates all of it from where the holder is now. A path outside the
+agent's own checkout has none, and the repository rule does not apply to it. Both halves demand positive evidence:
 an overlap fired on an absence of evidence is a conflict between strangers, and
 that is worse than the collision it would catch. The same rule is what will
 carry claims between machines, where absolute paths stop meaning anything at

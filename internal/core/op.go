@@ -116,9 +116,18 @@ type Op struct {
 	// id already held by a DIFFERENT agent is refused and cleared, unless that
 	// agent only inherited it by inference. Nothing here is trusted; it is
 	// vetted.
-	SessionAlias string     `json:"session_alias,omitempty"`
-	Agent        *AgentInfo `json:"agent,omitempty"`  // who is behind the agent (descriptive only)
-	Parent       string     `json:"parent,omitempty"` // the agent that spawned this one (§8.2)
+	SessionAlias string `json:"session_alias,omitempty"`
+	// RegisteredFrom is the session a REGISTER arrived from, as the transport
+	// stated it (`_meta` from the stdio bridge, or the thread id a harness
+	// puts there) before the daemon vetted it as an alias. Recorded whether
+	// or not the alias is granted: the vetting clears an alias another agent
+	// holds, which is exactly the fact the adoption rules need to keep, since
+	// an agent minted from a coordinator's own session is that coordinator
+	// under another name (Agent.RegisteredFrom). Set at ingress, on register
+	// only, and empty for callers that state no session at all.
+	RegisteredFrom string     `json:"registered_from,omitempty"`
+	Agent          *AgentInfo `json:"agent,omitempty"`  // who is behind the agent (descriptive only)
+	Parent         string     `json:"parent,omitempty"` // the agent that spawned this one (§8.2)
 	// ParentNonce is the one-time secret the parent issued for this child.
 	//
 	// Parent alone is a claim anyone can make; this is the proof. A parent that

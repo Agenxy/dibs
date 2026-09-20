@@ -416,6 +416,13 @@ type Agent struct {
 	// that was not the one holding the mail, and the daemon logged a
 	// successful wake. Found by the pre-release review, round eight.
 	CurrentSession string `json:"current_session,omitempty"`
+	// RegisteredFrom is the session the register that minted this row arrived
+	// from, kept even when that session is somebody else's and so was never
+	// bound here as an alias. It answers one question and it is the adoption
+	// rules that ask it: is this agent a coordinator under another name? A
+	// row minted from a session the coordinator holds is one the coordinator
+	// holds the token for. Frozen tag; see Op.RegisteredFrom.
+	RegisteredFrom string `json:"registered_from,omitempty"`
 	// GuessedSessions are the session ids on this agent that the daemon
 	// INFERRED by directory rather than the caller stating them. A guess yields
 	// to a first-hand claim; a stated binding does not. See Op.SessionGuessed.
@@ -720,12 +727,20 @@ type Claim struct {
 	// project and then moved to another left the claim standing with its
 	// repository protection gone: a second clone could take the file
 	// exclusively. Found by the pre-release review. Nil when RepoPath is empty.
-	Repo           *RepoIdentity `json:"repo,omitempty"`
-	Mode           string        `json:"mode"`
-	Note           string        `json:"note,omitempty"`
-	AcquiredSerial uint64        `json:"acquired_serial"`
-	Acquired       time.Time     `json:"acquired"`
-	Renewed        time.Time     `json:"renewed"`
+	Repo *RepoIdentity `json:"repo,omitempty"`
+	// Host is the machine the claim was taken on, recorded like Repo and for
+	// the same reason: the absolute-path rule used to read the holder's
+	// CURRENT host, so a holder that reported a new machine left its claim
+	// protecting nothing on the old one, and a claim outside any checkout
+	// has no repository rule to fall back on. Empty for a holder that stated
+	// no host, which collides as it always did. Found by the pre-release
+	// review, round three.
+	Host           string    `json:"host,omitempty"`
+	Mode           string    `json:"mode"`
+	Note           string    `json:"note,omitempty"`
+	AcquiredSerial uint64    `json:"acquired_serial"`
+	Acquired       time.Time `json:"acquired"`
+	Renewed        time.Time `json:"renewed"`
 }
 
 // RepoIdentity is the part of an AgentInfo that says which repository, and

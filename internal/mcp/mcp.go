@@ -1178,6 +1178,13 @@ func (s *Server) run(
 		op.Kind, op.Name, op.Description, op.PID = core.OpRegister, a.Name, a.Description, a.PID
 		op.Nonce, op.AgentKind, op.SessionID = a.Nonce, core.AgentKind(a.Kind), a.SessionID
 		op.Parent, op.ParentNonce = a.Parent, a.ParentNonce
+		// Where this register CAME FROM, kept apart from the alias the engine
+		// vets: the vetting clears a session another agent holds, and that is
+		// the one fact the adoption rules need (core.Agent.SameHands).
+		op.RegisteredFrom = op.SessionAlias
+		if op.RegisteredFrom == "" {
+			op.RegisteredFrom = a.SessionID
+		}
 	case "resume":
 		op.Kind, op.Nonce, op.ResumeID, op.PID = core.OpResume, a.Nonce, a.ResumeID, a.PID
 	case "check_in":

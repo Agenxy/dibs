@@ -85,7 +85,12 @@ func shipWhenUnreadable(ctx context.Context, client *http.Client, url, secret, t
 			return
 		case <-time.After(wait):
 		}
-		st := fetchMatchStatus(client, secret)
+		// The daemon this bridge REGISTERED with, at the address it reached
+		// it through. fetchMatchStatus builds its own from origin(), which is
+		// the configured address before Supgang resolved a moved hub, so the
+		// shipment went one way and every verdict poll the other. Round three
+		// of the pre-release review.
+		st := fetchMatchStatusAt(client, apiBase(url), secret)
 		if !wantsIndex(st, root) {
 			continue
 		}
@@ -156,8 +161,13 @@ func shipIndex(ctx context.Context, client *http.Client, url, secret, token, roo
 
 // indexURL is the /api/index beside the /mcp the bridge already talks to.
 func indexURL(mcpURL string) string {
+	return apiBase(mcpURL) + "/api/index"
+}
+
+// apiBase is the daemon's origin as reached through its MCP URL.
+func apiBase(mcpURL string) string {
 	if len(mcpURL) >= 4 && mcpURL[len(mcpURL)-4:] == "/mcp" {
-		return mcpURL[:len(mcpURL)-4] + "/api/index"
+		return mcpURL[:len(mcpURL)-4]
 	}
-	return mcpURL + "/api/index"
+	return mcpURL
 }

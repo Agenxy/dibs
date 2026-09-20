@@ -52,6 +52,10 @@ type scorerFlags struct {
 	// suppliedAt is the fingerprint each supplied root was built from, so a
 	// repeated shipment of the same history is acknowledged, not rebuilt.
 	suppliedAt map[string]string
+	// suppliedHost is the shipper's host id per supplied root, "" for this
+	// machine: a path holds one tree, and a second machine's tree at the
+	// same path is refused rather than swapped in underneath the first.
+	suppliedHost map[string]string
 	// buildMu serialises index construction from shipped payloads.
 	buildMu          sync.Mutex
 	repo             string
@@ -749,6 +753,19 @@ func (f *scorerFlags) evictIdleIndexes(ctx context.Context, eng *engine.Engine) 
 	for _, cwd := range cwds {
 		if root := f.rootOf[cwd]; root != "" {
 			live[root] = true
+			continue
+		}
+		// No resolved root for this directory: discovery failed there, which
+		// is exactly the tree an agent ships an index for, and the shipment
+		// records the root under itself. A directory under an indexed root
+		// is that root's, and saying so needs no git. Without this the pass
+		// at the repository ceiling evicted a supplied index under an agent
+		// registered from a subdirectory of it. Pre-release review, round
+		// three.
+		for root := range f.indexed {
+			if underDir(cwd, root) {
+				live[root] = true
+			}
 		}
 	}
 	var idle []string
@@ -761,6 +778,7 @@ func (f *scorerFlags) evictIdleIndexes(ctx context.Context, eng *engine.Engine) 
 		delete(f.indexed, root)
 		delete(f.supplied, root)
 		delete(f.suppliedAt, root)
+		delete(f.suppliedHost, root)
 		for cwd, r := range f.rootOf {
 			if r == root {
 				delete(f.rootOf, cwd)

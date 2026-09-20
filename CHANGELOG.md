@@ -108,6 +108,51 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round three of the pre-release review: nine code findings, each
+  reproduced with a test that fails on the commit before its fix.**
+  - A coordinator could become the reader of an abandoned mailbox by
+    registering a second agent from its own session, adopting the mailbox
+    `into` it, and reading with the token `register` had handed it, or by
+    approving that agent's request to adopt. The daemon now records where a
+    registration came from (`registered_from`, a frozen tag: the session the
+    stdio bridge or the harness stamped on the call, kept whether or not it
+    was granted as an alias) and both adoption doors treat an agent minted
+    from a session the coordinator holds, or a child it vouched for, as the
+    coordinator under another name (`core.Agent.SameHands`).
+  - `/api/match-status` JSON-encoded a map that a concurrent index shipment
+    wrote into: a data race and, on a bad day, a fatal concurrent map access.
+    Shipments now copy the map.
+  - An agent on another machine at a path this daemon has a tree of its own
+    at was scored by this daemon's index of the other project, and its
+    registration scheduled a local discovery of the remote path. An index
+    mined here now applies to a remote agent only when both are positively
+    the same project (a clone); a shipped index applies only on the
+    shipper's machine; a remote agent's path is never discovered locally, and
+    its shipment is accepted without a local unreadable verdict. A member's
+    tree at a path the hub has a different tree of its own at gets no index
+    at all, said plainly, rather than the wrong one.
+  - A claim's absolute-path rule read its holder's CURRENT host, so a holder
+    that later reported another machine left its claims protecting nothing
+    on the first. The host is recorded on the claim when it is taken.
+  - A renewal restated the claim's relative path and kept the repository it
+    was relative to, so a holder that moved projects at one absolute path
+    renewed a claim on the project it had left. Both are restated together.
+  - A declaration covering a whole checkout reported no overlap with work in
+    a subdirectory of another worktree of the same repository: the declared
+    paths signal still compared "." as a string where the claim rule already
+    knew it is the checkout.
+  - Eviction at the repository ceiling dropped a supplied index under an
+    agent registered from a subdirectory of its root, because discovery had
+    failed on that tree (which is why it was supplied) and left no mapping.
+    A directory under an indexed root is that root's.
+  - A resumed agent's tree is offered for discovery as a registered one's is:
+    an archived agent's index is evicted, and the resume path rebuilt nothing.
+  - The bridge's shipment fallback polled the daemon's verdict at the
+    configured address while the shipment itself went to the address Supgang
+    resolved, so after a hub moved the index never shipped.
+  The tenth finding was prose: `docs/NETWORK.md` and the 0.0.7 changelog
+  entry described the per-host wake bridge as unbuilt a release after it
+  shipped; both now say what is built and what is not.
 - **A session that never registered is a stranger even beside a registered
   agent, once that agent's own hooks resolve.** The hook-health counters
   read any unresolved lifecycle call from a directory with an active agent
@@ -649,7 +694,9 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   computer. Host identity as a key rather than a hostname, claims keyed by host
   with a portable repository form beside them, liveness split into presence and
   identity, and why wake routes must belong to the machine the agent is on
-  rather than to the hub. Nothing in it is built beyond the liveness work above.
+  rather than to the hub. In this version only the liveness work was built;
+  the host key, the portable repository rule and the per-host bridge followed
+  in 0.0.8 (this line used to read as if nothing beyond liveness ever had).
 
 ## [0.0.7] - 2026-09-08
 

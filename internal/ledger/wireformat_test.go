@@ -110,7 +110,12 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		// would silently unbind every agent on replay and wake nobody, reporting
 		// success throughout.
 		"session_alias": true,
-		"slot_id":       true, "text": true, "dirs": true, "refs": true,
+		// The session a register ARRIVED from, kept whether or not the alias
+		// above was granted. It is what tells a coordinator's puppet from a
+		// third party when a mailbox is adopted (core.Agent.SameHands): a
+		// rename would silently reopen that route on every replayed board.
+		"registered_from": true,
+		"slot_id":         true, "text": true, "dirs": true, "refs": true,
 		"to": true, "msg_type": true, "body": true, "deadline_sec": true, "op_id": true,
 		"path": true, "mode": true, "note": true,
 		"space": true, "exclusive": true, "predicted": true,
@@ -363,11 +368,11 @@ const (
 	// Updated deliberately when `session_alias` was added, again for
 	// `purge_mail`, again for `restore_nonce`, again for `session_guessed`
 	// `release_session` and `v7_semantics`, again for `session_taken_from`,
-	// and again for `session_alias_taken_from`: one new tag each time, no
-	// rename. If you are here
-	// because a sweep moved this value, the sweep is the bug, and the tag it
-	// renamed is the data loss.
-	frozenOpFingerprint       = "sha256:7ce666ec98a0477c"
+	// again for `session_alias_taken_from`, and again for `registered_from`:
+	// one new tag each time, no rename. If you are here because a sweep moved
+	// this value, the sweep is the bug, and the tag it renamed is the data
+	// loss.
+	frozenOpFingerprint       = "sha256:41950468736f21b0"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

@@ -6,10 +6,13 @@ the FOLD, and this repository has paid for unplanned ones about six times in
 one release cycle. Issue #12 is where the position was first stated; this
 supersedes it with decisions.
 
-Status: built so far are §4's liveness split, §3 in full (both the portable
-repository rule and the host key), and §5's locality rule and its doctor check.
-The bridge generalisation and §6's proved identity are not built. Where a thing
-is already true it says so. The two-host path is exercised end to end by
+Status: built are §4's liveness split, §3 in full (both the portable
+repository rule and the host key), and §5 in full (the locality rule, its
+doctor check, and both halves of the per-host bridge: the hub's `dibs://wake`
+stream and `dibs host-bridge` on the joined machine). Of §6, the pinned
+transport and the Supgang-carried key pin are built; per-agent credentials
+and a PROVED host identity are not, and `HostID` is still asserted. Where a
+thing is already true it says so. The two-host path is exercised end to end by
 `task test:remote` (`internal/mcp/e2e/remote_e2e.ts`): a hub bound to the
 machine's own LAN address, a second data directory joining it by the recipe
 `dibs mcp-config --board` prints, both bridges real, and both §3 rules checked
@@ -352,11 +355,15 @@ because Supgang intends to.
    repository rule pays off on one machine (linked worktrees); the host key
    pays off the moment anybody binds `--addr`, which SPEC §16 has shipped all
    along.
-3. **Wake routes per host** (§5). Doctor honesty and the locality rule are
-   **built** and written down (`WAKE-MECHANISMS.md` §5a, `docs/CONFIGURATION.md`).
-   Generalising the bridge from "this session" to "this host's agents" waits for
-   the transport work, like the host key.
-4. **Proved identity** (§6). Needs Supgang to pass its own acceptance first.
+3. ~~**Wake routes per host** (§5)~~. Done, both halves: the locality rule
+   and doctor honesty (`WAKE-MECHANISMS.md` §5a, `docs/CONFIGURATION.md`),
+   and the per-host bridge (`dibs host-bridge` on the joined machine, the
+   `dibs://wake` stream and `POST /api/wake-result` on the hub), exercised by
+   the two-host suite. This item read "waits for the transport work" for a
+   release after it had shipped; the pre-release review caught the drift.
+4. **Proved identity** (§6). The key pin rides Supgang already; per-agent
+   credentials and a verified `HostID` need Supgang to pass its own
+   acceptance first.
 
 ## What would change this document
 

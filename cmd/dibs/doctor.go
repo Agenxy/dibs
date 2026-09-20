@@ -1058,7 +1058,14 @@ type matchStatusJSON struct {
 // fetchMatchStatus asks the daemon why matching is or is not working. Failure
 // to answer is itself an answer: an older daemon has no such endpoint.
 func fetchMatchStatus(c *http.Client, secret string) matchStatusJSON {
-	req, err := http.NewRequest(http.MethodGet, origin()+"/api/match-status", nil)
+	return fetchMatchStatusAt(c, origin(), secret)
+}
+
+// fetchMatchStatusAt asks the daemon at base, which is the address the caller
+// actually reached the daemon through: the bridge's shipment path resolves the
+// hub's current address and must poll the same one (indexship.go).
+func fetchMatchStatusAt(c *http.Client, base, secret string) matchStatusJSON {
+	req, err := http.NewRequest(http.MethodGet, base+"/api/match-status", nil)
 	if err != nil {
 		return matchStatusJSON{}
 	}
