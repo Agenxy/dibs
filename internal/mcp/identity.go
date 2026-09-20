@@ -70,6 +70,23 @@ func resolveLocationFor(ctx context.Context, params json.RawMessage, info *core.
 	resolveLocation(info, cwd)
 }
 
+// resumeIdentity is what a resume records about where it happens: WHICH
+// MACHINE, and nothing else. A resume is a new activation and it may be on
+// another computer than the last: the same nonce presented from a laptop
+// after registering on a desktop. It carried no identity at all, so the row
+// kept the old host, its wakes went to the machine it had left and its new
+// claims were keyed there. The host is what the connection established, as
+// it is for register and update; nothing is read off the wire here. Nil
+// when the connection established none. Round ten of the pre-release
+// review.
+func resumeIdentity(ctx context.Context, params json.RawMessage) *core.AgentInfo {
+	host := resolveHostID(ctx, params)
+	if host == "" {
+		return nil
+	}
+	return &core.AgentInfo{HostID: host}
+}
+
 // resolveRemoteLocation is resolveLocation for a caller on ANOTHER machine.
 //
 // The path it sends names nothing on this filesystem, so canonicalising it

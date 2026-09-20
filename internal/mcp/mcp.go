@@ -1187,6 +1187,7 @@ func (s *Server) run(
 		}
 	case "resume":
 		op.Kind, op.Nonce, op.ResumeID, op.PID = core.OpResume, a.Nonce, a.ResumeID, a.PID
+		op.Agent = resumeIdentity(ctx, params)
 	case "check_in":
 		op.Kind = core.OpAckBoard
 	case "update":

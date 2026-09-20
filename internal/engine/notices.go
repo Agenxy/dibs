@@ -245,8 +245,13 @@ func (e *Engine) rebuildSituationalNotices() {
 		}
 		serial := ev.Serial
 		e.noteEventFor(ev, func(agent string) bool {
+			// Retired, not Gone: an archived row resumes, and what it was
+			// told before the restart (an eviction, an instruction to stop
+			// exclusive work) is what it resumes to. Round ten of the
+			// pre-release review found this still asking Gone(), five
+			// rounds after the verdict rebuild stopped.
 			l := e.state.Agents[agent]
-			return l != nil && !l.Gone() && serial > l.AckedSerial && serial > l.CreatedSerial
+			return !l.Retired() && serial > l.AckedSerial && serial > l.CreatedSerial
 		})
 	}
 }

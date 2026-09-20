@@ -57,3 +57,30 @@ func TestARemoteCallersClaimPathIsNotResolvedOnTheHub(t *testing.T) {
 			"names nothing on its own disk, and the member's checkout root no longer prefixes it", got)
 	}
 }
+
+// A resume records the machine it happens on. The same nonce presented from
+// another computer is a new activation there: the row used to keep the host
+// it registered on, so its wakes went to the machine it had left and its new
+// claims were keyed there. Round ten of the pre-release review.
+func TestAResumeMovesTheAgentToTheMachineItResumedOn(t *testing.T) {
+	srv, eng, _ := newServerWithEngine(t)
+	reg := toolCallWithMeta(t, srv, "register", map[string]any{
+		"name": "rover", "cwd": "/w", "nonce": "n-rover-0123456789abcdef0123456789abcdef",
+	}, map[string]any{HostMetaKey: "desktop"})
+	if reg["token"] == nil {
+		t.Fatalf("setup: %v", reg)
+	}
+	res := toolCallWithMeta(t, srv, "resume", map[string]any{
+		"nonce": "n-rover-0123456789abcdef0123456789abcdef", "resume_id": "r1",
+	}, map[string]any{HostMetaKey: "laptop"})
+	if res["token"] == nil {
+		t.Fatalf("resume: %v", res)
+	}
+	b, err := eng.Board(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := hostIDOnBoard(t, b, "rover"); got != "laptop" {
+		t.Errorf("after resuming from laptop the row's host is %q: its wakes go to the desktop it left", got)
+	}
+}

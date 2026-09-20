@@ -108,6 +108,22 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round ten of the pre-release review: five findings.**
+  - A `resume` records the machine it happens on: the same nonce presented
+    from another computer is a new activation there, and the row used to
+    keep the host it registered on, so its wakes went to the machine it had
+    left and its new claims were keyed there.
+  - Situational notices (an eviction, an instruction to stop exclusive work)
+    are rebuilt after a restart for an ARCHIVED agent too, which resumes to
+    them; only closed has nobody to tell.
+  - A shipment at the repository ceiling evicts an index nobody is in
+    before refusing, as local discovery does; a fleet on supplied indexes
+    could not match its seventeenth repository until a restart.
+  - Eviction keeps a tree an agent returned to between the pass's snapshot
+    of the board and its deletion (an eviction epoch, stamped by discovery).
+  - Installing a second index left the fallback scorer on the first while
+    the fallback name moved to the second, so releasing the first kept its
+    scorer answering `Predict`; both halves now move together.
 - **Round nine of the pre-release review: six findings, all on the remote
   wake path.**
   - A remote agent that had just checked in could be woken against its

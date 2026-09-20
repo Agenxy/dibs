@@ -163,10 +163,23 @@ func (f *scorerFlags) installSupplied(
 		f.suppliedHost = map[string]string{}
 	}
 	if !f.indexed[root] && len(f.indexed) >= maxIndexedRepos {
+		// AT THE CEILING, LOOK FOR AN INDEX NOBODY IS IN ANY MORE, as
+		// discovery does. This refused outright, and eviction ran only on
+		// the local discovery path, which a remote tree never takes and an
+		// unreadable local one fails before reaching: a fleet on supplied
+		// indexes could not match its seventeenth repository until a
+		// restart. Round ten of the pre-release review.
 		f.discoverMu.Unlock()
-		return map[string]any{"accepted": false, "reason": "the daemon is at its repository ceiling"}
+		f.evictIdleIndexes(ctx, eng)
+		f.discoverMu.Lock()
+		if !f.indexed[root] && len(f.indexed) >= maxIndexedRepos {
+			f.discoverMu.Unlock()
+			return map[string]any{"accepted": false, "reason": "the daemon is at its repository " +
+				"ceiling and every index still has an agent in it"}
+		}
 	}
 	f.indexed[root] = true
+	f.touchLocked(root)
 	f.supplied[root] = agent
 	f.suppliedHost[root] = host
 	f.rootOf[root] = root
