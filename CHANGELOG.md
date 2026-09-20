@@ -108,6 +108,24 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round eight of the pre-release review: four findings.**
+  - The adoption rules' "other hands" is evidence, not proof, and SECURITY.md
+    now says so beside the coordinator role: a coordinator on the raw API
+    can register a puppet with an invented session and move a mailbox onto
+    it, nothing about a session is proven to the daemon, and what bounds
+    that is the ledger. The adoption event now carries who did it and where
+    the receiver was registered from, so the audit reads in one place.
+  - The bridge's index shipper kept the token it captured at registration;
+    a resume rotates it, so every later shipment was a 401. The shipper's
+    credential is replaced on each register or resume.
+  - `differentProjects` read equal Git-directory strings as one repository
+    across machines, so two strangers at `/workspace/repo` on two hosts
+    declaring `issue:42` were told they shared an objective; the shortcut
+    now asks which machine, as the claim rule does.
+  - SECURITY.md promised a forged `SessionStart` delays a wake by at most
+    one cooldown; one repeated faster than the cooldown defers it for as
+    long as the forger keeps calling, which cannot be capped without waking
+    agents that are genuinely mid-turn, and the document now says that.
 - **Round seven of the pre-release review: seven findings.**
   - Round six's status retraction ran under the match lock, which
     `SetMatchStatus` takes under the status lock: an indexing failure and an
