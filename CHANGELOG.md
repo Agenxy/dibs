@@ -108,6 +108,18 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round eleven of the pre-release review: three findings.**
+  - Process ownership (which pid this daemon may probe) is decided from the
+    host id before the hostname label: a resume on another machine updates
+    the id and carries no label, so an agent resumed on a laptop was probed
+    against the hub's kernel and swept dormant with its claims released.
+  - Round ten's eviction epoch was stamped on discovery's slow path only,
+    and its test stamped the epoch by hand; the fast path a returning agent
+    takes now stamps it, and the test goes through the real entry point.
+  - On Windows, guard and hook queries are folded to `/` like the ops the
+    fold stored, so an exclusive claim on `C:/repo` answers a query for
+    `C:\repo\file.go`; the fold is exercised on every platform by a test
+    that turns it on.
 - **Round ten of the pre-release review: five findings.**
   - A `resume` records the machine it happens on: the same nonce presented
     from another computer is a new activation there, and the row used to
