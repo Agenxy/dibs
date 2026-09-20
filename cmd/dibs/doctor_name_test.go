@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Remap's target and the daemon's own origin describe one daemon when host
 // and port agree; the scheme is the gateway's business and a trailing slash
@@ -41,5 +44,28 @@ func TestANamedLinkIsPrintedOnlyForABoardRemapCanCarryASessionTo(t *testing.T) {
 	if note == "" {
 		t.Fatal("the name was withheld silently: the operator has a name in dibs.toml and " +
 			"deserves to hear why the link does not carry it")
+	}
+}
+
+// And the wizard does not offer a name for a board a name cannot unlock.
+//
+// `dibs configure` registered `http://<name>/` → `https://<addr>/` for a
+// daemon off loopback, ticked it and sent the operator there; the daemon's
+// Secure cookie never survives the name's plain-HTTP front. Round nineteen
+// of the pre-release review.
+func TestTheWizardWithholdsANameForATLSBoard(t *testing.T) {
+	if why := nameWithheldFor("127.0.0.1:4777"); why != "" {
+		t.Fatalf("a loopback board was refused a name: %s", why)
+	}
+	if why := nameWithheldFor("localhost:4777"); why != "" {
+		t.Fatalf("a localhost board was refused a name: %s", why)
+	}
+	why := nameWithheldFor("192.168.1.5:4777")
+	if why == "" {
+		t.Fatal("a board off loopback was offered a name: the mapping would reach a board the " +
+			"name cannot unlock")
+	}
+	if !strings.Contains(why, "https://192.168.1.5:4777/") {
+		t.Errorf("the refusal does not say where to reach the board instead: %s", why)
 	}
 }

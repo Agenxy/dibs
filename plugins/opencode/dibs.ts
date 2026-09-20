@@ -13,14 +13,26 @@
  * .opencode/plugin/dibs.ts (project-local). opencode scans
  * {plugin,plugins}/*.{ts,js}.
  *
- * Env: DIBS_ADDR (default 127.0.0.1:4777), DIBS_DIR (default ~/.dibs),
+ * Env: DIBS_ADDR (default 127.0.0.1:4777; a full https:// origin for a joined board), DIBS_DIR (default ~/.dibs),
  *      DIBS_HOST_ID (which machine this is; see host() below)
  */
-import { existsSync } from "node:fs"
+import { existsSync, realpathSync } from "node:fs"
+import { readFile } from "node:fs/promises"
+import { dirname, isAbsolute, join, resolve } from "node:path"
 
 import type { Plugin } from "@opencode-ai/plugin"
 
+/**
+ * The daemon's origin. DIBS_ADDR is what `dibs mcp-config` writes for the
+ * bridge, and for a hub on another machine that is a full HTTPS origin
+ * (`https://hub:4777`); this prefixed `http://` to whatever it found, so a
+ * joined board became `http://https://hub:4777/mcp` and every hook failed
+ * silently while the bridge beside it connected fine. A scheme given is
+ * kept; a bare host:port is the loopback daemon's plaintext. Round nineteen
+ * of the pre-release review.
+ */
 const ADDR = process.env["DIBS_ADDR"] ?? "127.0.0.1:4777"
+const ORIGIN = /^https?:\/\//i.test(ADDR) ? ADDR.replace(/\/+$/, "") : `http://${ADDR}`
 /**
  * Where the daemon keeps its local secret, resolved the way the daemon
  * resolves it: `~/.dibs`, falling back to a legacy `~/.agents` only when that
@@ -82,6 +94,33 @@ async function secret(): Promise<string | null> {
 }
 
 /**
+ * What a joined board's certificate is checked against: the certificates
+ * `dibs trust` recorded beside the secret, the same store the bridge dials
+ * with. A hub off loopback serves TLS under a certificate it issued itself,
+ * so without this every https:// call failed the way the http:// prefix
+ * did, silently. Empty for a plaintext daemon or an unjoined directory,
+ * and then the system roots decide as they always did.
+ */
+let trustCache: string | null | undefined
+
+async function trust(): Promise<string | null> {
+  if (trustCache !== undefined) return trustCache
+  if (!ORIGIN.startsWith("https://")) return (trustCache = null)
+  try {
+    trustCache = (await readFile(`${DIR}/trusted-certs.pem`, "utf8")).trim() || null
+  } catch {
+    trustCache = null
+  }
+  return trustCache
+}
+
+/** fetch options that carry the trust store when there is one. */
+async function tlsOptions(): Promise<Record<string, unknown>> {
+  const ca = await trust()
+  return ca ? { tls: { ca } } : {}
+}
+
+/**
  * Which machine this session is on, said the way the stdio bridge says it.
  * The bridge resolves it (DIBS_HOST_ID, Supgang, the daemon's node id, the
  * id it minted itself) and publishes the answer as `resolved_host_id`
@@ -128,7 +167,7 @@ async function call(name: string, args: Record<string, unknown>, timeoutMs: numb
   const key = await secret()
   if (!key) return null
   const hid = await host()
-  const res = await fetch(`http://${ADDR}/mcp`, {
+  const res = await fetch(`${ORIGIN}/mcp`, {
     method: "POST",
     headers: { "content-type": "application/json", "X-Dibs-Local": key },
     body: JSON.stringify({
@@ -138,10 +177,47 @@ async function call(name: string, args: Record<string, unknown>, timeoutMs: numb
       params: { name, arguments: args, ...(hid ? { _meta: { "com.dibs/host": hid } } : {}) },
     }),
     signal: AbortSignal.timeout(timeoutMs),
+    ...(await tlsOptions()),
   })
   if (!res.ok) return null
   const body = (await res.json()) as { result?: { content?: Array<{ text?: string }> } }
   return body.result?.content?.[0]?.text ?? null
+}
+
+/**
+ * A path as the daemon compares it: absolute, with every symlink resolved,
+ * the way the stdio bridge spells the paths it claims and registers. The
+ * daemon resolves symlinks only for a caller on its own machine, because a
+ * remote caller's path names nothing on the hub's disk; so a plugin on
+ * another machine that sent the spelling opencode gave it (`/tmp/review`)
+ * was compared against a claim the bridge stored as `/private/tmp/review`,
+ * and an exclusive claim did not cover the edit. Round nineteen of the
+ * pre-release review.
+ *
+ * A file that does not exist yet has no real path, and `write` creating one
+ * is the common case: the deepest ancestor that does exist is resolved and
+ * the rest re-attached, which is sound because the missing components
+ * cannot themselves be symlinks. Mirrors internal/paths.Canonical.
+ */
+function canonical(p: string): string {
+  if (!p) return p
+  let cur = isAbsolute(p) ? resolve(p) : resolve(process.cwd(), p)
+  let rest = ""
+  for (;;) {
+    try {
+      return rest ? join(realpathSync(cur), rest) : realpathSync(cur)
+    } catch {
+      const parent = dirname(cur)
+      if (parent === cur) return resolve(p)
+      rest = rest ? join(cur.slice(parent.length + 1), rest) : cur.slice(parent.length + 1)
+      cur = parent
+    }
+  }
+}
+
+/** Where this process is, spelled as the bridge spelled it at registration. */
+function cwd(): string {
+  return canonical(process.cwd())
 }
 
 /**
@@ -154,7 +230,7 @@ async function call(name: string, args: Record<string, unknown>, timeoutMs: numb
 async function guard(sessionID: string, path: string): Promise<string | null> {
   if (!path) return null
   // This sits in front of every edit. If Dibs is slow the edit proceeds.
-  const text = await call("guard_path", { session_id: sessionID, path, cwd: process.cwd() }, 1500)
+  const text = await call("guard_path", { session_id: sessionID, path: canonical(path), cwd: cwd() }, 1500)
   if (!text) return null
   const v = JSON.parse(text) as { decision?: string; reason?: string }
   // Only a hard deny stops the edit. "ask" has nowhere to go in opencode,
@@ -169,7 +245,7 @@ async function guard(sessionID: string, path: string): Promise<string | null> {
  */
 async function poll(sessionID: string): Promise<string | null> {
   // The user is waiting on their turn: never hang it on Dibs being slow.
-  const text = await call("hook_poll", { session_id: sessionID, event: "chat.message", cwd: process.cwd() }, 1500)
+  const text = await call("hook_poll", { session_id: sessionID, event: "chat.message", cwd: cwd() }, 1500)
   if (!text) return null
 
   const payload = JSON.parse(text) as {
@@ -221,7 +297,7 @@ function reportProgress(): void {
   turns++
   void (async () => {
     try {
-      await call("hook_session", { session_id: SESSION, event: "chat.message", cwd: process.cwd(), progress: turns }, 1500)
+      await call("hook_session", { session_id: SESSION, event: "chat.message", cwd: cwd(), progress: turns }, 1500)
     } catch {
       // The daemon is down or slow. The turn is not ours to hold up.
     }
@@ -231,7 +307,7 @@ function reportProgress(): void {
 async function agent(): Promise<string | null> {
   try {
     // In front of every shell command the agent runs: never hang one on Dibs.
-    const text = await call("hook_poll", { session_id: SESSION, event: "shell.env", cwd: process.cwd() }, 1500)
+    const text = await call("hook_poll", { session_id: SESSION, event: "shell.env", cwd: cwd() }, 1500)
     if (!text) return null
     const id = (JSON.parse(text) as { agent?: string }).agent
     return id && id.length > 0 ? id : null

@@ -82,7 +82,7 @@ func TestReturningToAnEarlierThreadWakesThatThread(t *testing.T) {
 		}
 	}
 	l := st.Agents["returning"]
-	if !l.HoldsSessionForTest(a) || !l.HoldsSessionForTest(b) {
+	if !l.HoldsSession(a) || !l.HoldsSession(b) {
 		t.Fatal("setup: the agent does not hold both threads, so the choice below proves nothing")
 	}
 	if got := threadIDOf(l); got != a {

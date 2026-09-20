@@ -20,7 +20,7 @@ func TestATakenSessionIsDroppedFromEveryHolderNotJustTheNamedOne(t *testing.T) {
 			t.Fatal("setup:", err)
 		}
 	}
-	if !s.Agents["b"].HoldsSessionForTest(alias) {
+	if !s.Agents["b"].HoldsSession(alias) {
 		t.Fatal("setup: b does not hold the alias, so nothing below proves anything")
 	}
 	s.Agents["a"].Status, s.Agents["b"].Status = StatusDormant, StatusDormant
@@ -32,13 +32,13 @@ func TestATakenSessionIsDroppedFromEveryHolderNotJustTheNamedOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := s.Agents["c"]
-	if !c.HoldsSessionForTest(primary) || !c.HoldsSessionForTest(alias) {
+	if !c.HoldsSession(primary) || !c.HoldsSession(alias) {
 		t.Fatal("setup: c did not take both ids, so nothing below proves anything")
 	}
-	if s.Agents["a"].HoldsSessionForTest(primary) {
+	if s.Agents["a"].HoldsSession(primary) {
 		t.Error("a, the row the record named, still holds the primary id")
 	}
-	if s.Agents["b"].HoldsSessionForTest(alias) {
+	if s.Agents["b"].HoldsSession(alias) {
 		t.Error("b, the row the record did not name, still holds the alias c took: two " +
 			"stated holders the moment b checks in, and a coin flip on every hook")
 	}

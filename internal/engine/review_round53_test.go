@@ -26,7 +26,7 @@ func TestANewcomerSharingABridgeSessionDoesNotTakeItsHooks(t *testing.T) {
 	if _, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "aaa", Nonce: "n-aaa-0123456789abcd", AgentKind: core.KindPersistent, SessionID: host, Agent: &core.AgentInfo{Harness: "Claude Code"}}); err != nil {
 		t.Fatalf("setup: sharing a bridge session is how every harness works, and it was refused: %v", err)
 	}
-	if !st.Agents["victim"].HoldsSessionForTest(host) || !st.Agents["aaa"].HoldsSessionForTest(host) {
+	if !st.Agents["victim"].HoldsSession(host) || !st.Agents["aaa"].HoldsSession(host) {
 		t.Fatal("setup: both rows do not hold the shared id")
 	}
 	if got := st.AgentForHook(host, ""); got == nil || got.ID != "victim" {

@@ -5,14 +5,21 @@ without Dibs driving anything**, and its hook is richer than Claude Code's.
 
 ## Two pieces
 
-**1. The MCP server**, tools. In `~/.config/opencode/opencode.json`:
+**1. The MCP server**, tools: the stdio bridge, in `~/.config/opencode/opencode.json`:
 
 ```json
-{ "mcp": { "dibs": { "type": "remote", "url": "http://127.0.0.1:4777/mcp",
-  "headers": { "X-Dibs-Local": "<contents of <data-dir>/local.secret>" } } } }
+{ "mcp": { "dibs": { "type": "local", "command": ["dibs", "mcp-stdio"],
+  "environment": { "DIBS_ADDR": "127.0.0.1:4777", "DIBS_DIR": "/Users/you/.dibs" } } } }
 ```
 
-**2. The plugin** ([agents.ts](agents.ts)): delivery. Copy to
+The bridge, not a `remote` URL: the plugin below names the session
+`host-<its own pid>`, which is what the bridge opencode spawns registers the
+agent under (`os.Getppid()` there). A `remote` entry spawns no bridge, the
+agent registers under whatever session id the model typed, and the plugin's
+guard and delivery match nothing. For a board on another machine, the two
+values are what `dibs mcp-config` prints, including an `https://` origin.
+
+**2. The plugin** ([dibs.ts](dibs.ts)): delivery. Copy to
 `~/.config/opencode/plugin/dibs.ts` (global) or `.opencode/plugin/dibs.ts`
 (project-local); opencode scans `{plugin,plugins}/*.{ts,js}`.
 

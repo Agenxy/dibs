@@ -49,10 +49,10 @@ func TestATakenAliasLeavesTheDormantHolder(t *testing.T) {
 	if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok, SessionAlias: thread}); err != nil {
 		t.Fatal(err)
 	}
-	if !st.Agents["live"].HoldsSessionForTest(thread) {
+	if !st.Agents["live"].HoldsSession(thread) {
 		t.Fatal("the live agent did not take the thread at all, so this proves nothing")
 	}
-	if st.Agents["old"].HoldsSessionForTest(thread) {
+	if st.Agents["old"].HoldsSession(thread) {
 		t.Error("the dormant holder still holds the thread after it was taken: two stated " +
 			"holders, and a hook for this thread resolves by map order")
 	}

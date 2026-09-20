@@ -270,9 +270,12 @@ func (a *Agent) dropSession(sid string) {
 	a.GuessedSessions = withoutString(a.GuessedSessions, sid)
 }
 
-// holdsSession reports whether this agent answers to that session id, as its
-// primary or as one of the OTHER names the same session goes by. See
-// Agent.SessionAliases.
+// HoldsSession reports whether this agent answers to that session id, as
+// its primary or as one of the OTHER names the same session goes by. See
+// Agent.SessionAliases. Exported for the engine's ingress, which asks it
+// of the caller's own row.
+func (a *Agent) HoldsSession(sid string) bool { return a.holdsSession(sid) }
+
 func (a *Agent) holdsSession(sid string) bool {
 	if a.SessionID == sid {
 		return true
@@ -603,10 +606,6 @@ func (a *Agent) bindHarnessSessionAs(sid string, guessed, v7 bool) string {
 	}
 	return bound
 }
-
-// HoldsSessionForTest reports whether this agent answers to that id. Exported
-// for engine tests that assert on a binding the ingress made.
-func (a *Agent) HoldsSessionForTest(sid string) bool { return a.holdsSession(sid) }
 
 // SameHands reports whether `other` is, as far as the board can tell, this
 // agent under another name: a row minted from a session this agent holds or

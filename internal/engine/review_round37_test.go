@@ -29,7 +29,7 @@ func TestTheBridgesOwnIDDoesNotDisplaceAStatedThread(t *testing.T) {
 	}
 	tok, _ := res["token"].(string)
 	l := st.Agents["r"]
-	if !l.HoldsSessionForTest(bridge) {
+	if !l.HoldsSession(bridge) {
 		t.Fatal("setup: the bridge id was not bound as an alias, so nothing below is contested")
 	}
 	if got := threadIDOf(l); got != thread {
