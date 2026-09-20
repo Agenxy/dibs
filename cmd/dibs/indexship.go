@@ -110,6 +110,14 @@ func wantsIndex(st matchStatusJSON, root string) bool {
 			return true
 		}
 	}
+	// A tree on another machine: unreadable here by definition, and never
+	// tried, so it is listed apart. This bridge is on that machine when the
+	// root matches. Round four of the pre-release review.
+	for _, tree := range st.Remote {
+		if tree == root || underDir(tree, root) {
+			return true
+		}
+	}
 	return false
 }
 

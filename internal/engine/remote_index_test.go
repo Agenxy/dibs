@@ -137,3 +137,72 @@ func TestAResumedAgentsTreeIsOfferedForDiscovery(t *testing.T) {
 			"unavailable for it until somebody else registers there")
 	}
 }
+
+// A remote agent's tree is reported as one this daemon cannot read, so the
+// bridge on that machine ships its index.
+//
+// The bridge ships on the daemon's verdict, and the verdict for a remote
+// path was never recorded: the daemon does not go looking for another
+// machine's tree (correctly), so it never found it unreadable, and the
+// bridge exhausted its schedule without shipping. `/api/index` accepting
+// remote shipments did nothing for a client that never sent one. Found by
+// the pre-release review, round four.
+func TestARemoteAgentsTreeIsReportedForItsBridgeToShip(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpRegister, Name: "member",
+		Agent: &core.AgentInfo{CWD: "/srv/checkout", HostID: "member-host"},
+	}); err != nil {
+		t.Fatal("setup:", err)
+	}
+	ms := e.MatchStatus()
+	if len(ms.Remote) != 1 || ms.Remote[0] != "/srv/checkout" {
+		t.Errorf("match status lists remote trees %v, want the member's checkout: without it "+
+			"the member's bridge never ships an index for a tree only it can read", ms.Remote)
+	}
+	if len(ms.Unreadable) != 0 {
+		t.Errorf("a remote tree was listed as UNREADABLE %v: that list carries a permissions "+
+			"hint about this machine's disk, which is not where the tree is", ms.Unreadable)
+	}
+}
+
+// And the other direction: an index shipped from another machine scores
+// nothing on this one. A member's index for `/workspace/repo` arrived first;
+// a local agent then registered from an unrelated checkout at that path and
+// was scored by the member's history. Round four of the pre-release review.
+func TestALocalAgentIsNotScoredByAnotherMachinesShippedIndex(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	const path = "/workspace/repo"
+	e.SetIndex(path, cloneScorer{"member", "src/member.go"}, MatchConfig{Deadline: time.Second},
+		IndexInfo{Fingerprint: "hist-member", SuppliedBy: "member", SuppliedHost: "member-host"})
+
+	res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "local", Agent: &core.AgentInfo{
+		CWD: path, RepoDir: path + "/.git", RepoRoot: path, RepoRemote: "github.com/acme/unrelated",
+	}})
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	if s, _ := e.scorerForLocation(e.locationForToken(ctx, res["token"].(string))); s != nil {
+		t.Error("a local agent was scored by an index shipped from another machine for a tree at the same path")
+	}
+	// The member itself still is.
+	res, err = e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "member", Agent: &core.AgentInfo{
+		CWD: path, HostID: "member-host", RepoRoot: path,
+	}})
+	if err != nil {
+		t.Fatal("setup:", err)
+	}
+	if s, _ := e.scorerForLocation(e.locationForToken(ctx, res["token"].(string))); s == nil {
+		t.Error("the shipper was refused the index it shipped")
+	}
+}

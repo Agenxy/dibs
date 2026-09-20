@@ -116,4 +116,8 @@ jobs:
       # this line when it holds.
       - name: the packages that hold on Windows
         run: mise exec -- go test -count=1 ./internal/core/ ./internal/ledger/ ./internal/boardconfig/ ./internal/overlap/ ./internal/liveness/
+      # The registry lock is mandatory on Windows and must not cover the
+      # bytes everybody else reads; the only place that can be checked is here.
+      - name: the daemon registry lock leaves the registration readable
+        run: mise exec -- go test -count=1 -run TestALockedRegistrationIsStillReadable ./internal/paths/
 
