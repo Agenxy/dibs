@@ -61,3 +61,12 @@ Weight your attention here, hardest first:
 
 Report concrete findings with file:line and why it is wrong. Say plainly if a
 section looks fine. Do not fix anything; I want the list.
+
+End with one line of exactly this shape, and nothing after it:
+
+    FINDINGS: <count>
+
+where <count> is the number of findings above (0 if the surface is clean). If
+you could not read the diff, do not write that line at all: the runner treats
+its absence as "not reviewed", which is the truthful outcome, and a review
+that reports success without reading anything has already happened here once.

@@ -56,6 +56,9 @@ agent-safe (agent-scoped or public, fine to run from any agent):
                            matching that is off or still indexing, a ledger that
                            will not replay. Names the fix, not just the fault
                            (--json: the same checks as one document)
+  dibs codex-hooks        what Codex makes of the Dibs hooks; --trust records
+                           the trust Codex needs before it will run them, the
+                           way its own /hooks does, so its agents get mail
   dibs calibrate          measure work-overlap scoring against THIS repo's git
                            history and propose thresholds (nothing is written)
   dibs version           print the version (also --version)
@@ -170,6 +173,8 @@ func main() {
 		err = fingerprintCmd(os.Args[2:])
 	case "doctor":
 		err = doctor(os.Args[2:])
+	case "codex-hooks":
+		err = codexHooksCmd(os.Args[2:])
 	case "calibrate":
 		err = calibrate(os.Args[2:])
 	case "mcp-config":
@@ -294,7 +299,7 @@ func parseFlags(fs *flag.FlagSet, args []string) error {
 // out of this file, so a verb added there and forgotten here is visible.
 var commands = []string{
 	"await", "probe", "watch", "monitor", "board", "log", "verify", "doctor",
-	"calibrate", "version", "help", "man", "completion", "configure", "messages",
+	"codex-hooks", "calibrate", "version", "help", "man", "completion", "configure", "messages",
 	"web", "admin",
 	"mcp-config", "mcp-stdio", "host-bridge", "hook-spawn", "hook-poll",
 }

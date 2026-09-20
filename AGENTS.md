@@ -212,10 +212,15 @@ on the machine this was written on; `git fetch origin` each and read
 row, and the rule that a capability in source is not a behaviour:
 
 - **Codex** (`openai/codex`): the executor is in main (`CoreHookMcpExecutor` in
-  `core/src/session/session.rs`), so the question is the SHIPPED build: install
-  `plugins/codex/hooks.json` in a project's `.codex/` and watch `dibs log` for a
-  `hook_poll` from a real session (0.153.4 fired nothing on 2026-09-05). Over
-  `url`, `features.mcp_2026_07_28 = true` alone negotiates `server/discover`
+  `core/src/session/session.rs`), and since 0.153 a user or local-plugin hook
+  is UNTRUSTED until reviewed and dropped silently until then, which is why
+  0.153.4 "fired nothing" on 2026-09-05. Install the plugin from this checkout
+  (`codex plugin marketplace add <checkout>`, `codex plugin add dibs@dibs`),
+  run `dibs codex-hooks --trust`, then `codex exec` once and watch
+  `/api/hook-health`'s poll count rise by two (SessionStart, Stop): measured
+  2026-09-19 on 0.155.0-alpha.9.2. `--dangerously-bypass-hook-trust` on
+  `codex exec` is the control that proves the gate is trust. Over `url`,
+  `features.mcp_2026_07_28 = true` alone negotiates `server/discover`
   2026-07-28; `tools/list` only, no `resources/list` (2026-09-12).
 - **Claude Desktop**: the app's own clients (`claude-ai/0.1.0` for chat,
   `local-agent-mode-<server>/1.0.0` per configured server) both `initialize`

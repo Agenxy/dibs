@@ -269,3 +269,22 @@ func TestAPluginReadmeDoesNotDenyItsOwnHookFile(t *testing.T) {
 			"so this check verified nothing")
 	}
 }
+
+// The Codex plugin carries the same skill as the Claude Code plugin, because
+// it IS the same skill: how to use Dibs well does not depend on the harness.
+// Two copies exist only because each plugin root must be self-contained, and
+// two copies of one document drift, which is the recurring failure this file
+// exists for. Edit plugins/claude-code/skills/dibs/SKILL.md and copy.
+func TestCodexAndClaudeCodeShipOneSkill(t *testing.T) {
+	a, err := os.ReadFile(filepath.Join("..", "..", "plugins", "claude-code", "skills", "dibs", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join("..", "..", "plugins", "codex", "skills", "dibs", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(a) != string(b) {
+		t.Error("plugins/codex/skills/dibs/SKILL.md has drifted from the Claude Code copy; the root one is canonical")
+	}
+}

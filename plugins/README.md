@@ -40,7 +40,7 @@ the question.
 | [pi](pi/) | **extension** (no MCP client) | ✅ `before_agent_start` injected message | **yes**, agent quoted the mail unprompted |
 | [hermes](hermes/) | MCP via `hermes mcp add` | ❌ no hook system found | **yes**, every tool enumerated, real model |
 | [claude-desktop](claude-desktop/) | MCP (stdio) or `.mcpb` | ❌ no hook system exists | tools yes; panel renders in the ext-apps reference host |
-| [codex](codex/) | MCP over **stdio** | ✅ `mcp_tool` hooks run on builds from 2026-08-18 | **yes**: the only harness on MCP 2026-07-28 end to end |
+| [codex](codex/) | **plugin** (marketplace in this checkout) or MCP over **stdio** | ✅ `mcp_tool` hooks, once trusted: `dibs codex-hooks --trust` (Codex ≥0.153 drops untrusted hooks silently; measured 2026-09-19) | **yes**: the only harness on MCP 2026-07-28 end to end |
 | [chatgpt-desktop](chatgpt-desktop/) | shares Codex config | ❌ inherits Codex | no |
 | openclaw | not yet assessed | not yet assessed | deferred |
 

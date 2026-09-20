@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "dibs": {
+      "command": "dibs",
+      "args": ["mcp-stdio"],
+      "env": { "CODEX_MCP_PROTOCOL_VERSION": "2026-07-28" }
+    }
+  }
+}

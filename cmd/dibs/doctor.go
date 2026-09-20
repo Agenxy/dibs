@@ -228,6 +228,7 @@ func (d *diagnosis) run(verbose bool) error {
 
 	checkHarnessConfigs(sec, addr(), ok, warn, bad)
 	checkDesktopShadowsPlugin(bad)
+	checkCodexHookTrust(ok, warn)
 	checkPanelBuild(client, sec, ok, warn, d.prose)
 	checkMatching(client, sec, ok, warn)
 	checkWakeRoutes(dir, boardOrNil(), attachedHosts(), ok, warn)

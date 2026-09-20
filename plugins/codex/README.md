@@ -8,6 +8,36 @@ a process at all, and it costs an identity per session.
 
 ## Install
 
+**The plugin, which is the whole integration in three commands** (Codex
+0.155 or later; the checkout is a marketplace, the way it is for Claude Code):
+
+```
+codex plugin marketplace add /path/to/the/dibs/checkout
+codex plugin add dibs@dibs
+dibs codex-hooks --trust
+```
+
+That gives a Codex session the MCP server (over stdio, on MCP 2026-07-28), the
+skill, and the three lifecycle hooks that deliver mail. The third command is
+not optional, and it is the one this file did not know about for a month:
+**since Codex 0.153 a hook from anything but an OpenAI-hosted plugin is
+untrusted until a person reviews it, and an untrusted hook is dropped at
+discovery without a word.** The review lives in the TUI (`/hooks`, or the
+prompt at startup) and never appears in `codex exec` or the ChatGPT app, so a
+plugin installed from the command line delivers nothing. Measured 2026-09-19 on
+0.155.0-alpha.9.2: zero `hook_poll` calls per session with the plugin
+installed, two (SessionStart, Stop) after trust, and `dibs codex-hooks`
+records that trust through Codex's own app-server protocol, exactly as the
+TUI's trust button does: it asks Codex for each Dibs hook's key and hash and
+writes `hooks.state` with them, touching nothing that is not a Dibs hook.
+`dibs doctor` reports the untrusted state until then.
+
+**By hand instead**, when a plugin is not wanted: the MCP server below in
+`~/.codex/config.toml`, this directory's `hooks.json` copied to
+`~/.codex/hooks.json` (the ROOT of the config directory: `hooks/hooks.json` is
+Claude Code's layout and a path Codex does not read), and the same
+`dibs codex-hooks --trust`.
+
 In `~/.codex/config.toml`:
 
 ```toml
@@ -124,11 +154,15 @@ On a build older than 2026-08-18 you will still see `skipping MCP tool hook in
 ~/.codex/hooks.json`, once per entry, and the hook does not fire. Upgrade or
 accept pull-only delivery; nothing here can work around it.
 
-**So Dibs ships `hooks.json` for Codex**, and it is at the ROOT of the config
-directory: `~/.codex/hooks.json`, not `~/.codex/hooks/hooks.json`, which is
-Claude Code's layout and a path Codex does not read. It binds `hook_poll` on
-SessionStart, Stop and SubagentStop. Measured against a live daemon on
-2026-08-22: three hooks, three deliveries.
+**So Dibs ships `hooks.json` for Codex**, through the plugin above or at the
+ROOT of the config directory (`~/.codex/hooks.json`, not
+`~/.codex/hooks/hooks.json`, which is Claude Code's layout and a path Codex
+does not read). It binds `hook_poll` on SessionStart, Stop and SubagentStop.
+Measured against a live daemon on 2026-08-22: three hooks, three deliveries.
+Then, from 0.153, none at all until the hooks are trusted (see Install): the
+executor was there and the trust gate in front of it was new. Re-measured
+2026-09-19 on 0.155.0-alpha.9.2 with trust recorded: two deliveries per
+`codex exec` session, SessionStart and Stop.
 
 Two limits worth knowing before you rely on it. A hook fires only if the Dibs
 server is ALREADY connected, and connections are established asynchronously, so
