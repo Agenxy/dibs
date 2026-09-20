@@ -110,7 +110,13 @@ func printBoardLink(out boardGrant) error {
 	}
 	fmt.Printf("%s%s/?bt=%s\n", schemeFor(origin()), host, out.BT)
 	if name := boardNameRouted(); name != "" {
-		fmt.Printf("http://%s/?bt=%s\n", name, out.BT)
+		link, note := namedLink(name, origin(), out.BT)
+		if link != "" {
+			fmt.Println(link)
+		}
+		if note != "" {
+			fmt.Fprintln(os.Stderr, "\n# "+note)
+		}
 	}
 	if out.Mocked != "" {
 		fmt.Fprintln(os.Stderr, "\n# "+out.Mocked)
@@ -143,6 +149,29 @@ func presenceCode() (string, error) {
 		out[i] = alphabet[int(v)%len(alphabet)]
 	}
 	return string(out), nil
+}
+
+// namedLink is the typeable link for a board Remap routes by name, or the
+// reason there is none.
+//
+// Remap serves a name over plain HTTP (`http://<name>/`, internal/remap) and
+// proxies to the target. The daemon sets its session cookie Secure when
+// ITS leg of the connection is TLS, which for a board serving HTTPS it is;
+// a browser at an http:// origin never stores a Secure cookie. So the named
+// link redeemed the single-use token, set a cookie the browser discarded,
+// and landed on a board still asking to be unlocked, having spent the one
+// link that could unlock it. A link that does not work is worse than one
+// line less, and worse still when it consumes the credential. The name is
+// printed only for a board Remap can carry a session to; otherwise the
+// operator is told why the address above is the one to open. Round
+// seventeen of the pre-release review.
+func namedLink(name, origin, bt string) (link, note string) {
+	if schemeFor(origin) != schemePlain {
+		return "", name + " routes here, but Remap serves names over plain HTTP and this " +
+			"board's session cookie is TLS-only, so a session opened through the name " +
+			"would not be kept: open the address above."
+	}
+	return "http://" + name + "/?bt=" + bt, ""
 }
 
 // schemeFor extracts the scheme, with its separator, from a resolved origin.
