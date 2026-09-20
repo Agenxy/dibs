@@ -25,7 +25,7 @@ import { execFile } from "node:child_process"
 import { existsSync, realpathSync } from "node:fs"
 import { readFile } from "node:fs/promises"
 import { homedir, hostname } from "node:os"
-import { dirname, isAbsolute, join, resolve } from "node:path"
+import { basename, dirname, isAbsolute, join, resolve } from "node:path"
 import { promisify } from "node:util"
 
 const run = promisify(execFile)
@@ -43,15 +43,48 @@ const ADDR = process.env["DIBS_ADDR"] ?? "127.0.0.1:4777"
 const SAVED_ORIGIN = /^https?:\/\//i.test(ADDR) ? ADDR.replace(/\/+$/, "") : `http://${ADDR}`
 
 /**
- * Where the daemon is NOW: what `dibs identity` reports (the saved address,
+ * Where the daemon is NOW: the origin a bridge on this machine published
+ * beside the secret, else what `dibs identity` reports (the saved address,
  * re-pointed at the hub's current Supgang address when the config names it
- * as a peer, as the bridge dials), or the saved address without the binary.
- * Deriving the endpoint from DIBS_ADDR alone kept dialling a hub that had
- * moved. Round twenty-six of the pre-release review.
+ * as a peer, as the bridge dials), else the saved address. Deriving the
+ * endpoint from DIBS_ADDR alone kept dialling a hub that had moved (round
+ * twenty-six), and keeping the FIRST answer for the life of the process is
+ * the same defect one step later, because the bridge republishes when the
+ * hub moves or restarts: the published file is re-read, briefly cached, and
+ * the binary is asked again at most once a minute. Round twenty-seven of
+ * the pre-release review.
  */
+let originCache: { at: number; value: string } | undefined
+
 async function origin(): Promise<string> {
-  const id = await machineIdentity()
-  return id.origin && /^https?:\/\//i.test(id.origin) ? id.origin.replace(/\/+$/, "") : SAVED_ORIGIN
+  const now = Date.now()
+  if (originCache && now - originCache.at < 1000) return originCache.value
+  let value = ""
+  try {
+    const published = (await readFile(`${DIR}/resolved_origin`, "utf8")).trim()
+    if (/^https?:\/\//i.test(published)) value = published.replace(/\/+$/, "")
+  } catch {
+    // no bridge on this machine, or it has not published yet
+  }
+  if (value === "") {
+    const id = await refreshedIdentity(now)
+    value = id.origin && /^https?:\/\//i.test(id.origin) ? id.origin.replace(/\/+$/, "") : SAVED_ORIGIN
+  }
+  originCache = { at: now, value }
+  return value
+}
+
+// refreshedIdentity re-asks the binary for this directory at most once a
+// minute: the host and the checkout do not move, and the origin can.
+let identityAskedAt = 0
+
+async function refreshedIdentity(now: number): Promise<Identity> {
+  const cwd = process.cwd()
+  if (now - identityAskedAt >= 60_000) {
+    identityAskedAt = now
+    identityCache.delete(cwd)
+  }
+  return identityFor(cwd)
 }
 /**
  * Where the daemon keeps its local secret, resolved the way the daemon
@@ -115,7 +148,8 @@ let trustCache: string[] | null | undefined
 
 async function trust(): Promise<string[] | null> {
   if (trustCache !== undefined) return trustCache
-  if (!(await origin()).startsWith("https://")) return (trustCache = null)
+  // Not cached: the origin can become https when the bridge republishes.
+  if (!(await origin()).startsWith("https://")) return null
   const extra: string[] = []
   for (const name of ["trusted-certs.pem", "tls-ca.pem"]) {
     try {
@@ -236,7 +270,14 @@ function canonical(p: string): string {
     } catch {
       const parent = dirname(cur)
       if (parent === cur) return resolve(p)
-      rest = rest ? join(cur.slice(parent.length + 1), rest) : cur.slice(parent.length + 1)
+      // basename, not a slice by the parent's length: under "/" the parent
+      // is one character and the slice dropped the first letter of the
+      // name, so a path beneath a top-level directory that does not exist
+      // yet came out as a DIFFERENT path ("/srv/new.go" → "/rv/new.go").
+      // The guard then asked about a file nobody was writing. Round
+      // twenty-seven of the pre-release review.
+      const name = basename(cur)
+      rest = rest ? join(name, rest) : name
       cur = parent
     }
   }

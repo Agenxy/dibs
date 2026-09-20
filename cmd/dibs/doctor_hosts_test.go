@@ -91,6 +91,16 @@ func TestDoctorOnAJoinedMachineNamesItsOwnWakeRoute(t *testing.T) {
 		t.Errorf("a route the bridge did not advertise was reported as reaching agents: ok=%q warn=%q fix=%q",
 			okMsg, warnMsg, fix)
 	}
+	// An agent here with no thread: no route can wake it, whatever the
+	// table says, and round twenty-five skipped it and then reported full
+	// coverage. Round twenty-seven of the pre-release review.
+	threadless := both
+	threadless.threadless = 1
+	okMsg, warnMsg, fix = joinedWakeAdvice(threadless, "abc", "/d")
+	if okMsg != "" || !strings.Contains(warnMsg, "never supplied a harness thread") || !strings.Contains(fix, "resume") {
+		t.Errorf("an agent here that nothing can wake was reported as covered: ok=%q warn=%q fix=%q",
+			okMsg, warnMsg, fix)
+	}
 	// An agent here on a harness nothing can start.
 	gap := both
 	gap.agents = map[string]int{"codex": 1, "gemini": 2}

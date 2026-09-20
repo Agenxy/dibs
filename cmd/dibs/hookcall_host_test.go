@@ -798,3 +798,120 @@ await handlers["before_agent_start"]!({}, { sessionManager: { getSessionId: () =
 		}
 	})
 }
+
+// Both plugins spell a path beneath a top-level directory that does not
+// exist yet the way it was written.
+//
+// canonical() resolves the deepest existing ancestor and re-attaches the
+// rest, and it took the rest by slicing off the parent's length plus a
+// separator. Under "/" the parent is one character, so the slice ate the
+// first letter of the name: `/srv/new.go` became `/rv/new.go`, and the
+// guard then asked about a path nobody was writing while the bridge had
+// recorded the claim correctly. Round twenty-seven of the pre-release
+// review. The real function is lifted from each plugin and run.
+func TestThePluginsSpellPathsUnderAMissingTopLevelDirectory(t *testing.T) {
+	bun, err := exec.LookPath("bun")
+	if err != nil {
+		t.Skip("bun is not installed")
+	}
+	dir := t.TempDir()
+	// A top-level name that does not exist: resolution walks to "/".
+	const missing = "/dibs-review-missing-root-27/pkg/new.go"
+	for _, plugin := range []string{"opencode", "pi"} {
+		t.Run(plugin, func(t *testing.T) {
+			src, err := os.ReadFile(filepath.Join("..", "..", "plugins", plugin, "dibs.ts"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			const marker = "function canonical(p: string): string {"
+			start := strings.Index(string(src), marker)
+			if start < 0 {
+				t.Fatalf("plugins/%s/dibs.ts no longer defines canonical()", plugin)
+			}
+			end := strings.Index(string(src)[start:], "\n}\n")
+			if end < 0 {
+				t.Fatal("could not find the end of canonical()")
+			}
+			fn := string(src)[start : start+end+3]
+			script := "import { basename, dirname, isAbsolute, join, resolve } from \"node:path\"\n" +
+				"import { realpathSync } from \"node:fs\"\n" + fn +
+				"\nconsole.log(canonical(process.env.P!))\n"
+			path := filepath.Join(dir, plugin+".ts")
+			if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command(bun, "run", path) // #nosec G204 -- paths this test created
+			cmd.Env = append(os.Environ(), "P="+missing)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("%v\n%s", err, out)
+			}
+			if got := strings.TrimSpace(string(out)); got != missing {
+				t.Fatalf("canonical(%q) = %q: the guard asks about a path nobody is writing, and a claim "+
+					"the bridge recorded correctly is missed", missing, got)
+			}
+		})
+	}
+}
+
+// And the opencode plugin follows the hub when the bridge republishes
+// MID-SESSION, which is when a hub moves or the bridge restarts.
+//
+// The origin was read once and kept for the life of the process, so the
+// plugin went on dialling an address the bridge had already left: the same
+// defect round twenty-six closed, one step later. Round twenty-seven of
+// the pre-release review.
+func TestTheOpencodePluginFollowsTheHubWhenTheBridgeRepublishes(t *testing.T) {
+	bun, err := exec.LookPath("bun")
+	if err != nil {
+		t.Skip("bun is not installed")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("s3cret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	hits := map[string]int{}
+	mk := func(name string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			hits[name]++
+			mu.Unlock()
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"decision\":\"allow\"}"}]}}`))
+		}))
+	}
+	first, second := mk("first"), mk("second")
+	defer first.Close()
+	defer second.Close()
+	if err := os.WriteFile(filepath.Join(dir, resolvedOriginFile), []byte(first.URL+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	plugin, err := filepath.Abs(filepath.Join("..", "..", "plugins", "opencode", "dibs.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// One guard, then the bridge republishes (the hub moved), then another.
+	script := "const { DibsPlugin } = await import(" + strconv.Quote(plugin) + ")\n" +
+		"const hooks = await DibsPlugin({} as any)\n" +
+		"const edit = () => hooks[\"tool.execute.before\"]!({ tool: \"edit\", sessionID: \"s\", callID: \"c\" } as any, " +
+		"{ args: { filePath: \"/w/repo/file.go\" } } as any)\n" +
+		"await edit()\n" +
+		"await Bun.write(" + strconv.Quote(filepath.Join(dir, resolvedOriginFile)) + ", process.env.SECOND + \"\\n\")\n" +
+		"await Bun.sleep(1100)\n" + // past the re-read window; a hub moving is not a hot path
+		"await edit()\n"
+	path := filepath.Join(dir, "drive.ts")
+	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bun, "run", path) // #nosec G204 -- paths this test created
+	cmd.Env = append(os.Environ(), "DIBS_DIR="+dir, "DIBS_ADDR=127.0.0.1:9", "DIBS_HOST_ID=", "SECOND="+second.URL)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("running the plugin: %v\n%s", err, out)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if hits["first"] == 0 || hits["second"] == 0 {
+		t.Fatalf("guards reached %v: after the bridge republished, the plugin went on dialling the "+
+			"address it read first", hits)
+	}
+}

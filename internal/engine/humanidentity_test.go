@@ -8,6 +8,26 @@ import (
 	"github.com/agenxy/dibs/internal/core"
 )
 
+// onLoop runs one function on the engine's single writer goroutine.
+//
+// The tests below arrange states the tools cannot reach (a coordinator role,
+// a dormant human, a mailbox already inherited) by touching core.State
+// directly, and read it the same way. The loop is writing that state
+// meanwhile: HumanAgent registers the person's row from a goroutine of its
+// own, so an unsynchronised read of s.Agents next to it is a data race, and
+// the Linux runner's race detector caught exactly that. Everything that
+// touches state goes through here, which is the same queue every op uses.
+// Round twenty-seven of the pre-release review.
+func onLoop(t *testing.T, ctx context.Context, e *Engine, f func(st *core.State)) {
+	t.Helper()
+	if _, err := e.query(ctx, func() core.Result {
+		f(e.state)
+		return core.Result{}
+	}); err != nil {
+		t.Fatalf("reaching the engine loop: %v", err)
+	}
+}
+
 // The human stays the human across a restart.
 //
 // The identity used to be held only as this daemon run's token, so every
@@ -105,14 +125,17 @@ func TestAPidRecordedAgainstTheHumanIsCleared(t *testing.T) {
 	if id == "" {
 		t.Fatal("setup: registering the human returned no id")
 	}
-	if st.Agents[id].PID != 4242 {
+	var pid int
+	onLoop(t, ctx, e, func(st *core.State) { pid = st.Agents[id].PID })
+	if pid != 4242 {
 		t.Fatalf("setup: the pid did not land, so this test cannot show it being "+
-			"cleared: PID = %d", st.Agents[id].PID)
+			"cleared: PID = %d", pid)
 	}
 
 	e.RepairHumanProcess(ctx)
 
-	if got := st.Agents[id].PID; got != 0 {
+	onLoop(t, ctx, e, func(st *core.State) { pid = st.Agents[id].PID })
+	if got := pid; got != 0 {
 		t.Errorf("the human's row still records pid %d after the repair. The liveness "+
 			"sweep probes it, finds nothing, and reports the person at the keyboard as "+
 			"a dead process on their own board", got)
@@ -248,14 +271,14 @@ func TestARoleCannotBeGrantedByInheritingTheHumansMailbox(t *testing.T) {
 		t.Fatal("setup:", err)
 	}
 	bossTok, _ := res["token"].(string)
-	st.Agents["boss"].Role = core.RoleCoordinator
+	onLoop(t, ctx, e, func(st *core.State) { st.Agents["boss"].Role = core.RoleCoordinator })
 
 	// DORMANT, which is the whole point and is not an unusual state to arrange:
 	// a person's row goes quiet whenever they are not at the keyboard, because
 	// silence is their entire liveness model. Without this the test passes on a
 	// board with the bug in it, since adoption already refuses an ACTIVE source
 	// and the human had just registered.
-	st.Agents[humanID].Status = core.StatusDormant
+	onLoop(t, ctx, e, func(st *core.State) { st.Agents[humanID].Status = core.StatusDormant })
 
 	// The coordinator tries to take the human's mailbox, which is the move that
 	// made the escalation reachable.
@@ -294,7 +317,7 @@ func TestOnlyTheHumanCanApproveARoleGrant(t *testing.T) {
 	}
 	askerTok := mk("asker", "n-a")
 	bossTok := mk("boss", "n-b")
-	st.Agents["boss"].Role = core.RoleCoordinator
+	onLoop(t, ctx, e, func(st *core.State) { st.Agents["boss"].Role = core.RoleCoordinator })
 
 	sent, err := e.Do(ctx, &core.Op{
 		Kind: core.OpSendMessage, Token: askerTok, To: humanID,
@@ -306,7 +329,7 @@ func TestOnlyTheHumanCanApproveARoleGrant(t *testing.T) {
 	serial, _ := sent["msg_serial"].(uint64)
 
 	// Simulate the mailbox having been inherited, which is what adoption does.
-	st.Messages[serial].To = "boss"
+	onLoop(t, ctx, e, func(st *core.State) { st.Messages[serial].To = "boss" })
 
 	if _, err := e.Do(ctx, &core.Op{
 		Kind: core.OpRespond, Token: bossTok, MsgSerial: serial, Disposition: "approve",
@@ -315,7 +338,9 @@ func TestOnlyTheHumanCanApproveARoleGrant(t *testing.T) {
 			"'Addressed to the human' has to be true when somebody says yes, not " +
 			"only when somebody asked")
 	}
-	if st.Agents["asker"].IsCoordinator() {
+	promoted := false
+	onLoop(t, ctx, e, func(st *core.State) { promoted = st.Agents["asker"].IsCoordinator() })
+	if promoted {
 		t.Error("the asker was promoted with no human anywhere in the story")
 	}
 }
@@ -355,7 +380,8 @@ func TestARequestToTheHumanOutlivesTheDefaultDeadline(t *testing.T) {
 		t.Fatal(err)
 	}
 	serial, _ := sent["msg_serial"].(uint64)
-	m := st.Messages[serial]
+	var m *core.Message
+	onLoop(t, ctx, e, func(st *core.State) { m = st.Messages[serial] })
 	if m == nil {
 		t.Fatal("setup: the message was not stored")
 	}
@@ -374,7 +400,9 @@ func TestARequestToTheHumanOutlivesTheDefaultDeadline(t *testing.T) {
 		MsgType: core.MsgRequest, Body: "self",
 	})
 	if err == nil {
-		if m2 := st.Messages[sent2["msg_serial"].(uint64)]; m2 != nil {
+		var m2 *core.Message
+		onLoop(t, ctx, e, func(st *core.State) { m2 = st.Messages[sent2["msg_serial"].(uint64)] })
+		if m2 != nil {
 			if m2.Deadline.Sub(m2.SentAt) > core.DefaultLimits().DefaultDeadline {
 				t.Error("an agent-to-agent request also got the human's deadline")
 			}
@@ -389,7 +417,9 @@ func TestARequestToTheHumanOutlivesTheDefaultDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m3 := st.Messages[sent3["msg_serial"].(uint64)]; m3 != nil {
+	var m3 *core.Message
+	onLoop(t, ctx, e, func(st *core.State) { m3 = st.Messages[sent3["msg_serial"].(uint64)] })
+	if m3 != nil {
 		if d := m3.Deadline.Sub(m3.SentAt); d > 5*time.Minute {
 			t.Errorf("an explicit 60s deadline became %s: the sender's word is still "+
 				"the sender's", d)
@@ -428,8 +458,10 @@ func TestApprovingCannotAdoptTheHumansMailbox(t *testing.T) {
 		return tok
 	}
 	attacker, boss := mk("attacker", "n-a"), mk("boss", "n-b")
-	st.Agents["boss"].Role = core.RoleCoordinator
-	st.Agents[humanID].Status = core.StatusDormant
+	onLoop(t, ctx, e, func(st *core.State) {
+		st.Agents["boss"].Role = core.RoleCoordinator
+		st.Agents[humanID].Status = core.StatusDormant
+	})
 
 	sent, err := e.Do(ctx, &core.Op{
 		Kind: core.OpSendMessage, Token: attacker, To: "boss",
@@ -486,7 +518,7 @@ func TestAnArchivedHumansMailboxIsStillTheirs(t *testing.T) {
 				return tok
 			}
 			attacker, boss := mk("attacker", "n-a"), mk("boss", "n-b")
-			st.Agents["boss"].Role = core.RoleCoordinator
+			onLoop(t, ctx, e, func(st *core.State) { st.Agents["boss"].Role = core.RoleCoordinator })
 
 			// SOMETHING TO TAKE. Adoption refuses an empty mailbox, so without
 			// this both doors answer "nothing to adopt" and the test passes on a
@@ -500,7 +532,7 @@ func TestAnArchivedHumansMailboxIsStillTheirs(t *testing.T) {
 
 			// The state the sweep produces after thirty dormant days. The row
 			// and its mail are still here for the retention week.
-			st.Agents[humanID].Status = core.StatusArchived
+			onLoop(t, ctx, e, func(st *core.State) { st.Agents[humanID].Status = core.StatusArchived })
 			if got := e.HumanIdentity(); got != "" {
 				t.Fatalf("setup: an archived human still resolves as the acting "+
 					"identity (%q), so this test is not in the state it names", got)

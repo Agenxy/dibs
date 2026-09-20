@@ -28,9 +28,11 @@ func TestAHumanRoleChangeStandsAgainstARegrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["stands"] == nil || st.Agents["lead"].Role == core.RoleAdmin {
+	var leadRole string
+	onLoop(t, ctx, e, func(st *core.State) { leadRole = st.Agents["lead"].Role })
+	if res["stands"] == nil || leadRole == core.RoleAdmin {
 		t.Fatalf("a regrant after a person's demotion went through (%v, role %q): the predecessor "+
-			"keeps admin through the handover", res, st.Agents["lead"].Role)
+			"keeps admin through the handover", res, leadRole)
 	}
 }
 
@@ -61,15 +63,19 @@ func TestAnApprovedGrantStandsAgainstARegrant(t *testing.T) {
 	if _, err := e.Do(ctx, &core.Op{Kind: core.OpRespond, Token: humanTok, MsgSerial: serial, Disposition: "approve", Body: "ok"}); err != nil {
 		t.Fatal("setup: the human's approval failed:", err)
 	}
-	if st.Agents["lead"].Role != core.RoleMember {
-		t.Fatalf("setup: the approval did not change the role (%q)", st.Agents["lead"].Role)
+	var afterApproval string
+	onLoop(t, ctx, e, func(st *core.State) { afterApproval = st.Agents["lead"].Role })
+	if afterApproval != core.RoleMember {
+		t.Fatalf("setup: the approval did not change the role (%q)", afterApproval)
 	}
 	res, err := e.GrantRole(ctx, "lead", core.RoleAdmin) // the reconciler's tick
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["stands"] == nil || st.Agents["lead"].Role == core.RoleAdmin {
-		t.Fatalf("a regrant after a person approved the demotion went through (%v, role %q)", res, st.Agents["lead"].Role)
+	var regranted string
+	onLoop(t, ctx, e, func(st *core.State) { regranted = st.Agents["lead"].Role })
+	if res["stands"] == nil || regranted == core.RoleAdmin {
+		t.Fatalf("a regrant after a person approved the demotion went through (%v, role %q)", res, regranted)
 	}
 }
 
@@ -91,7 +97,9 @@ func TestAFailedHumanGrantDoesNotSuppressTheConfiguredOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res["stands"] != nil || st.Agents["fleet-lead"].Role != core.RoleCoordinator {
-		t.Fatalf("the configured grant was skipped after a human grant that never applied (%v, role %q)", res, st.Agents["fleet-lead"].Role)
+	var fleetRole string
+	onLoop(t, ctx, e, func(st *core.State) { fleetRole = st.Agents["fleet-lead"].Role })
+	if res["stands"] != nil || fleetRole != core.RoleCoordinator {
+		t.Fatalf("the configured grant was skipped after a human grant that never applied (%v, role %q)", res, fleetRole)
 	}
 }
