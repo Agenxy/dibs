@@ -201,6 +201,12 @@ const WakeURI = "dibs://wake"
 // not in its host's list has no route, and doctor says so there.
 const WakeHarnessesMetaKey = "com.dibs/wake_harnesses"
 
+// WakeCooldownsMetaKey is, on the same listen, the cooldown each of those
+// harnesses carries in the bridge's own [wake.exec] table, as Go duration
+// strings keyed by harness: the hub spends the joined machine's cooldown for
+// its agents. Absent or zero means the default.
+const WakeCooldownsMetaKey = "com.dibs/wake_cooldowns"
+
 // serveWakeSubscription holds one stream open for one host's bridge and
 // pushes each wake request the hub decides on for that host as a
 // resources/updated notification whose _meta is the request. The bridge runs
@@ -213,7 +219,7 @@ const WakeHarnessesMetaKey = "com.dibs/wake_harnesses"
 func (s *Server) serveWakeSubscription(w http.ResponseWriter, r *http.Request, req *rpcRequest, p subscriptionParams) {
 	host, _ := p.Meta[HostMetaKey].(string)
 	harnesses := wakeHarnessesIn(p.Meta)
-	reqs, release, err := s.eng.AttachHostBridge(host, harnesses)
+	reqs, release, err := s.eng.AttachHostBridgeWith(host, harnesses, wakeCooldownsIn(p.Meta))
 	if err != nil {
 		writeRPC(w, http.StatusBadRequest, req.ID, nil, &rpcError{
 			Code: -32602, Message: WakeURI + " subscription requires the bridge's host in _meta['" + HostMetaKey + "']",
@@ -248,6 +254,24 @@ func wakeHarnessesIn(meta map[string]any) []string {
 	for _, h := range raw {
 		if str, ok := h.(string); ok {
 			out = append(out, str)
+		}
+	}
+	return out
+}
+
+// wakeCooldownsIn reads the per-harness cooldowns a bridge states on attach;
+// a value that does not parse is left to the default rather than refused.
+func wakeCooldownsIn(meta map[string]any) map[string]time.Duration {
+	raw, _ := meta[WakeCooldownsMetaKey].(map[string]any)
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make(map[string]time.Duration, len(raw))
+	for h, v := range raw {
+		if str, ok := v.(string); ok {
+			if d, err := time.ParseDuration(str); err == nil && d > 0 {
+				out[h] = d
+			}
 		}
 	}
 	return out

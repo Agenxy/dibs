@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -86,8 +87,13 @@ func TestABridgeBoundsWhatAHubCanMakeItRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go b.reporter(ctx)
+	// One agent per request: a bridge runs one command per agent at a time
+	// besides the bound on commands overall, and this test is about the bound.
 	req := func(id uint64) engine.WakeRequest {
-		return engine.WakeRequest{ID: id, Host: b.host, Agent: "w", Harness: "codex", Thread: "t", Notice: wakeexec.Notice}
+		return engine.WakeRequest{
+			ID: id, Host: b.host, Agent: "w" + strconv.FormatUint(id, 10), Harness: "codex",
+			Thread: "t", Notice: wakeexec.Notice,
+		}
 	}
 	for id := uint64(1); id <= 20; id++ {
 		b.dispatch(ctx, req(id))
@@ -350,5 +356,70 @@ func TestTheBridgeReadsItsOwnRoutesAndRefusesAnEmptyTable(t *testing.T) {
 	}
 	if _, ok := routes["claude code"]; !ok || len(routes) != 1 {
 		t.Errorf("routes = %v, want the harness lowercased", routes)
+	}
+}
+
+// ONE COMMAND PER AGENT AT A TIME, whatever the request id.
+//
+// The hub fails every pending request when a host's stream reconnects and
+// retries under a new id, while this machine's first command for that agent
+// is still running its turn. The duplicate check knew ids only, so the retry
+// started a second resume against a thread that was mid-turn: the overlap
+// the whole wake path promises not to produce. The second is refused with a
+// report the hub reads as a failed start, and retried after the cooldown,
+// by which time the first has finished. Round nine of the pre-release review.
+func TestABridgeRunsOneCommandPerAgentAtATime(t *testing.T) {
+	blocker := &blockingRun{started: make(chan struct{}, 10), release: make(chan struct{})}
+	b := bridgeUnderTest(t, &recordingRun{})
+	b.run = blocker.run
+	reports := make(chan engine.WakeResult, 10)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var res engine.WakeResult
+		_ = json.NewDecoder(r.Body).Decode(&res)
+		reports <- res
+		_, _ = w.Write([]byte(`{"accepted":true}`))
+	}))
+	t.Cleanup(srv.Close)
+	b.origin, b.client = srv.URL, srv.Client()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go b.reporter(ctx)
+
+	first := engine.WakeRequest{ID: 1, Host: b.host, Agent: "w", Harness: "codex", Thread: "t", Notice: wakeexec.Notice}
+	b.dispatch(ctx, first)
+	<-blocker.started
+	retry := first
+	retry.ID = 2 // the hub's retry after its stream reconnected
+	b.dispatch(ctx, retry)
+	select {
+	case <-blocker.started:
+		t.Fatal("a second command started for an agent whose first is still running: two resumes against one thread")
+	case <-time.After(200 * time.Millisecond):
+	}
+	select {
+	case res := <-reports:
+		if res.ID != 2 || res.OK || !strings.Contains(res.Detail, "still running a wake command for w") {
+			t.Fatalf("the retry's report = %+v, want a refusal naming the running agent", res)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the hub was never told the retry did not run")
+	}
+	close(blocker.release)
+	// Once the first finishes, the agent is free again.
+	select {
+	case res := <-reports:
+		if res.ID != 1 {
+			t.Fatalf("expected the first command's report, got %+v", res)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the first command never reported")
+	}
+	third := first
+	third.ID = 3
+	b.dispatch(ctx, third)
+	select {
+	case <-blocker.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("after the first finished, a new wake for the agent was not started")
 	}
 }

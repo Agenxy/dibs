@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -37,5 +38,33 @@ func TestTheBridgeResolvesPathArgumentsOnItsOwnMachine(t *testing.T) {
 	canonicalisePathArgs(params)
 	if got := params["arguments"].(map[string]any)["path"]; got != "/tmp/not-a-path-arg" {
 		t.Errorf("an argument of a tool with no path arguments was rewritten to %v", got)
+	}
+}
+
+// The cwd a registration states is resolved as well, including one the
+// bridge itself filled in from the harness's sidecar, so it meets the
+// repository root the bridge resolves beside it. Round nine of the
+// pre-release review: a checkout registered as /tmp/repo beside a root of
+// /private/tmp/repo had its index shipment refused.
+func TestARegistrationsDirectoryIsResolvedOnTheBridgesMachine(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("needs a filesystem where /tmp is a symlink, which macOS provides")
+	}
+	resolved, err := filepath.EvalSymlinks("/tmp")
+	if err != nil || resolved == "/tmp" {
+		t.Skip("/tmp is not a symlink here")
+	}
+	line := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"register","arguments":{"name":"probe","cwd":"/tmp/repo"}}}`)
+	out := enrichRegister(line)
+	var msg struct {
+		Params struct {
+			Arguments map[string]any `json:"arguments"`
+		} `json:"params"`
+	}
+	if err := json.Unmarshal(out, &msg); err != nil {
+		t.Fatal(err)
+	}
+	if got := msg.Params.Arguments["cwd"]; got != resolved+"/repo" {
+		t.Errorf("register cwd = %v, want it resolved to %s/repo", got, resolved)
 	}
 }

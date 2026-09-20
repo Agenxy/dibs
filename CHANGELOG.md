@@ -108,6 +108,39 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round nine of the pre-release review: six findings, all on the remote
+  wake path.**
+  - A remote agent that had just checked in could be woken against its
+    running thread: "recently in touch" read the hub's own `[wake.exec]`
+    cooldown, and a remote agent's route needs none. The recency window is
+    now the route's cooldown, the host bridge's for an agent on another
+    machine.
+  - A host bridge states its `[wake.exec]` cooldowns when it attaches
+    (`_meta com.dibs/wake_cooldowns`) and the hub spends those for that
+    machine's agents; every remote wake used to get the fixed default, so a
+    machine configured `cooldown = "30m"` was woken again after ninety
+    seconds.
+  - A stream reconnect fails the hub's pending requests and it retries under
+    a new id while the bridge's first command is still running its turn; the
+    bridge now runs one command per agent at a time and refuses the retry
+    with a report the hub reads as a failed start.
+  - The bridge's index shipper reads the agent's directory from the board a
+    register or resume reply carries, so a `resume` (which takes no cwd)
+    refreshes the right tree's credential.
+  - The bridge resolves `register.cwd` and `update.cwd` on its own machine
+    like its other path arguments, so a checkout registered as `/tmp/repo`
+    beside a root of `/private/tmp/repo` no longer has its index shipment
+    refused.
+  - The delivery note on `send` describes the recipient's route: for an
+    agent on another machine that is its host's bridge, never the hub's
+    command, and the note says when no bridge is attached there.
+  - Giving remote agents the recency check exposed that a bridge's inbox
+    subscription counted as the agent being in touch: opened or reopened
+    after the agent's own Stop hook, it read as a running turn and the next
+    question was deferred for the whole cooldown. A subscription now
+    authenticates without stamping liveness; the two-host suite is what
+    caught it. `DIBS_LOG_DEBUG=1` on the daemon shows the wake path's
+    refusals, which are otherwise invisible.
 - **Round eight of the pre-release review: four findings.**
   - The adoption rules' "other hands" is evidence, not proof, and SECURITY.md
     now says so beside the coordinator role: a coordinator on the raw API

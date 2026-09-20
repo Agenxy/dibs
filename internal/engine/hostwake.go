@@ -70,6 +70,11 @@ type HostBridgeInfo struct {
 
 type hostBridge struct {
 	harnesses map[string]bool
+	// cooldowns is what the bridge's own [wake.exec] table says per harness,
+	// zero for the default: the hub spends the joined machine's cooldown for
+	// its agents, not its own. Round nine of the pre-release review found
+	// every remote route on the fixed default.
+	cooldowns map[string]time.Duration
 	since     time.Time
 	ch        chan WakeRequest
 }
@@ -116,6 +121,14 @@ var ErrNoHost = errors.New("a host bridge must state the host it is on")
 // every request in flight for the host, so a wake waiting on a report is
 // released as a failure rather than held for the wake timeout.
 func (e *Engine) AttachHostBridge(host string, harnesses []string) (<-chan WakeRequest, func(), error) {
+	return e.AttachHostBridgeWith(host, harnesses, nil)
+}
+
+// AttachHostBridgeWith is AttachHostBridge with the cooldown each harness
+// carries in the bridge's own [wake.exec] table (zero or absent: the default).
+func (e *Engine) AttachHostBridgeWith(
+	host string, harnesses []string, cooldowns map[string]time.Duration,
+) (<-chan WakeRequest, func(), error) {
 	host = strings.TrimSpace(host)
 	if host == "" {
 		return nil, nil, ErrNoHost
@@ -137,10 +150,18 @@ func (e *Engine) AttachHostBridge(host string, harnesses []string) (<-chan WakeR
 		// that agent meanwhile. Found by the pre-release review.
 		hw.failPendingLocked(host, "the host's bridge reconnected before reporting")
 	}
-	b := &hostBridge{harnesses: map[string]bool{}, since: time.Now(), ch: make(chan WakeRequest, wakeRequestBuffer)}
+	b := &hostBridge{
+		harnesses: map[string]bool{}, cooldowns: map[string]time.Duration{},
+		since: time.Now(), ch: make(chan WakeRequest, wakeRequestBuffer),
+	}
 	for _, h := range harnesses {
 		if h = strings.ToLower(strings.TrimSpace(h)); h != "" {
 			b.harnesses[h] = true
+		}
+	}
+	for h, d := range cooldowns {
+		if h = strings.ToLower(strings.TrimSpace(h)); h != "" && d > 0 {
+			b.cooldowns[h] = d
 		}
 	}
 	hw.bridges[host] = b
@@ -270,6 +291,22 @@ func (e *Engine) hostRouteFor(l *core.Agent) (host string, ok bool) {
 		return host, false
 	}
 	return host, true
+}
+
+// hostCooldownFor is the cooldown the agent's host bridge stated for its
+// harness, or the default when it stated none. Only meaningful when
+// hostRouteFor says there is a route.
+func (e *Engine) hostCooldownFor(l *core.Agent) time.Duration {
+	host := e.remoteHostOf(l)
+	hw := &e.hostWakes
+	hw.mu.Lock()
+	defer hw.mu.Unlock()
+	if b := hw.bridges[host]; b != nil {
+		if d := b.cooldowns[wakeHarness(l)]; d > 0 {
+			return d
+		}
+	}
+	return wakeCooldown
 }
 
 // requestRemoteWake hands the plan to the host's bridge and waits for its
