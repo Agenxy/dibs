@@ -239,8 +239,11 @@ type Slot struct {
 	// coordinate system rather than across two. Empty on every slot declared
 	// before either existed, and on every slot whose project has one index,
 	// which is the common case. See Footprint.
-	Index      string      `json:"index,omitempty"`
-	Footprints []Footprint `json:"footprints,omitempty"`
+	Index string `json:"index,omitempty"`
+	// IndexSupplied: the index Predicted came from was shipped by an agent.
+	// See Op.IndexSupplied.
+	IndexSupplied bool        `json:"index_supplied,omitempty"`
+	Footprints    []Footprint `json:"footprints,omitempty"`
 	// Activity is WHAT this agent is doing to the work, as opposed to which work
 	// it is: implement, review, test, investigate, document, release.
 	//

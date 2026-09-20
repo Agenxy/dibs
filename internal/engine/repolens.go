@@ -32,6 +32,12 @@ type repoLens struct {
 	// pre-release review. Consulted first; Git is the fallback for a local
 	// directory whose agent recorded nothing.
 	recorded map[string]*core.AgentInfo
+	// ambiguous names a directory that agents on MORE THAN ONE machine work
+	// in: a path repeats across machines, and keying the recorded identity
+	// by path alone let one machine's project answer for the other's. Such
+	// a directory is "unknown" here and Git (which sees only this machine)
+	// is not asked either. Round fourteen of the pre-release review.
+	ambiguous map[string]bool
 }
 
 // newRepoLens resolves every directory it is given, concurrently.
@@ -54,13 +60,19 @@ func newRepoLens(dirs []string) core.RepoLens {
 // from it and never asked of Git, which for a remote directory would answer
 // about the wrong machine.
 func newRepoLensWith(dirs []string, recorded map[string]*core.AgentInfo) core.RepoLens {
+	return newRepoLensAmbiguous(dirs, recorded, nil)
+}
+
+// newRepoLensAmbiguous is newRepoLensWith with the directories that agents on
+// more than one machine share, which no single recorded identity answers.
+func newRepoLensAmbiguous(dirs []string, recorded map[string]*core.AgentInfo, ambiguous map[string]bool) core.RepoLens {
 	unique := make(map[string]bool, len(dirs))
 	for _, d := range dirs {
-		if d != "" && !hasRecordedIdentity(recorded[d]) {
+		if d != "" && !hasRecordedIdentity(recorded[d]) && !ambiguous[d] {
 			unique[d] = true
 		}
 	}
-	if len(unique) == 0 && len(recorded) == 0 {
+	if len(unique) == 0 && len(recorded) == 0 && len(ambiguous) == 0 {
 		return nil // nobody told us where they are; let core reason about paths
 	}
 	var (
@@ -79,7 +91,7 @@ func newRepoLensWith(dirs []string, recorded map[string]*core.AgentInfo) core.Re
 		}(d)
 	}
 	wg.Wait()
-	return &repoLens{ids: ids, recorded: recorded}
+	return &repoLens{ids: ids, recorded: recorded, ambiguous: ambiguous}
 }
 
 func hasRecordedIdentity(info *core.AgentInfo) bool {
@@ -87,6 +99,9 @@ func hasRecordedIdentity(info *core.AgentInfo) bool {
 }
 
 func (l *repoLens) SameRepo(aCWD, bCWD string) (same, known bool) {
+	if l.ambiguous[aCWD] || l.ambiguous[bCWD] {
+		return false, false // agents on two machines share this path: no one answer
+	}
 	ra, rb := l.recorded[aCWD], l.recorded[bCWD]
 	if hasRecordedIdentity(ra) && hasRecordedIdentity(rb) {
 		// The board's own record, host-aware: a Git directory is a path and

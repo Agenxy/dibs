@@ -450,3 +450,69 @@ func TestAPeerScoredByASuppliedIndexIsNeverJoinedAutomatically(t *testing.T) {
 	}
 	t.Fatal("near's declaration did not even surface far's space: the fixture does not overlap")
 }
+
+// AND THE PROVENANCE OUTLIVES THE CACHE. The check above read "was the
+// peer's fingerprint shipped" from the index cache, which forgets a shipped
+// index when it is replaced by a newer shipment or evicted, while the
+// declarations scored in it stay on the board. After the replacement, the
+// old footprint was no longer recognised and the join went through. The
+// fold now records the provenance on the declaration itself. Round
+// fourteen of the pre-release review.
+func TestASuppliedFootprintStaysSuppliedAfterItsIndexIsReplaced(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+
+	cfg := MatchConfig{JoinThreshold: 0.3, AutoJoin: AutoJoinAlways, Deadline: time.Second}
+	local := t.TempDir()
+	shipped := filepath.Join(local, "remote")
+	e.SetIndex(local, cloneScorer{"local", "shared.go"}, cfg, IndexInfo{Fingerprint: "h-local"})
+	e.SetIndex(shipped, cloneScorer{"shipped", "shared.go"}, cfg,
+		IndexInfo{Fingerprint: "h-shipped-1", SuppliedBy: "far", SuppliedHost: "member"})
+
+	reg := func(name string, info core.AgentInfo) string {
+		t.Helper()
+		res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: name, Agent: &info})
+		if err != nil {
+			t.Fatalf("setup: register %s: %v", name, err)
+		}
+		tok, _ := res["token"].(string)
+		if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
+			t.Fatalf("setup: ack %s: %v", name, err)
+		}
+		return tok
+	}
+	far := reg("far", core.AgentInfo{CWD: shipped, RepoRoot: shipped, HostID: "member"})
+	near := reg("near", core.AgentInfo{CWD: local, RepoRoot: local})
+
+	const work = "fix refresh token expiry"
+	resFar, err := e.DoMatched(ctx, &core.Op{Kind: core.OpSetSlot, Token: far, Text: work})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened := suggestions(t, resFar)
+	if len(opened) != 1 || opened[0].Action != "opened" {
+		t.Fatalf("far's declaration: %+v, want it to open a space", opened)
+	}
+	// A newer shipment replaces the index; the cache forgets h-shipped-1.
+	e.SetIndex(shipped, cloneScorer{"shipped", "shared.go"}, cfg,
+		IndexInfo{Fingerprint: "h-shipped-2", SuppliedBy: "far", SuppliedHost: "member"})
+
+	resNear, err := e.DoMatched(ctx, &core.Op{Kind: core.OpSetSlot, Token: near, Text: work})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range suggestions(t, resNear) {
+		if s.Space != opened[0].Space {
+			continue
+		}
+		if s.Action == "joined" || s.Action == "queued" {
+			t.Fatalf("near was %s to far's space on a footprint from a shipped index the cache had "+
+				"forgotten: %+v", s.Action, s)
+		}
+		return
+	}
+	t.Fatal("near's declaration did not even surface far's space: the fixture does not overlap")
+}

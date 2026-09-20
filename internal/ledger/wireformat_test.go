@@ -126,7 +126,12 @@ func TestLedgerFieldNamesAreFrozen(t *testing.T) {
 		// rename here would silently drop that on replay: every cross-clone
 		// comparison would fall back to two disjoint sets and a zero.
 		"index": true, "footprints": true,
-		"score": true, "threshold": true, "scorer_id": true, "scorer_version": true,
+		// Whether that index was shipped by an agent: the provenance that
+		// keeps a shipped index from deciding a membership after the cache
+		// has forgotten its fingerprint. A rename would silently let every
+		// recorded footprint decide one on replay.
+		"index_supplied": true,
+		"score":          true, "threshold": true, "scorer_id": true, "scorer_version": true,
 		"evidence": true, "auto": true,
 		"stale_agents": true, "alive_pids": true,
 		"no_process": true, "adopt_authorised": true, "choices": true, "grant": true, "adopt": true,
@@ -382,11 +387,11 @@ const (
 	// Updated deliberately when `session_alias` was added, again for
 	// `purge_mail`, again for `restore_nonce`, again for `session_guessed`
 	// `release_session` and `v7_semantics`, again for `session_taken_from`,
-	// again for `session_alias_taken_from`, and again for `registered_from`:
-	// one new tag each time, no rename. If you are here because a sweep moved
+	// again for `session_alias_taken_from`, again for `registered_from`, and
+	// again for `index_supplied`: one new tag each time, no rename. If you are here because a sweep moved
 	// this value, the sweep is the bug, and the tag it renamed is the data
 	// loss.
-	frozenOpFingerprint       = "sha256:41950468736f21b0"
+	frozenOpFingerprint       = "sha256:020b66796e5be75a"
 	frozenEnvelopeFingerprint = "sha256:fa4924db73ff6cd9"
 	// The Message list had no fingerprint, and the list it guards sits in the
 	// same file as the tags it is guarding. A sweep that renames `json:"grant"`

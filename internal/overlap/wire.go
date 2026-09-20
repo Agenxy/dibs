@@ -59,6 +59,12 @@ func (p *Payload) Validate() error {
 		return errors.New("no payload")
 	case strings.TrimSpace(p.Root) == "" || !strings.HasPrefix(p.Root, "/"):
 		return errors.New("root must be an absolute path")
+	case strings.TrimSpace(p.Fingerprint) == "":
+		// The fingerprint is the index's identity: what a declaration scored
+		// in it is recorded as, and what marks it as shipped. Ship always
+		// sets one; a payload without one is not from Ship. Round fourteen
+		// of the pre-release review.
+		return errors.New("fingerprint is required: it identifies the history this index was mined from")
 	case len(p.Files) == 0:
 		return errors.New("no tracked files: nothing to index")
 	case len(p.Files) > MaxPayloadFiles:
