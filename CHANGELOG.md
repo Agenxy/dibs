@@ -108,6 +108,20 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round twenty-two of the pre-release review: three findings.**
+  - The pi extension asks `dibs identity` (new, plumbing) what this machine
+    and checkout are, once per session, instead of carrying a TypeScript
+    copy of the bridge's answers that lacked the next one every round: it
+    sent no repository identity, so a remote pi agent registered with no
+    checkout and two clones of one repository on two machines were both
+    granted an exclusive claim on the same tracked file; and from a fresh
+    joined directory it found no host at all, since it read only files a
+    bridge writes. The binary mints the host as the bridge would and reads
+    the checkout from Git; `DIBS_BIN` names it off `PATH`.
+  - `dibs hook-poll` and the other command hooks spell their path
+    arguments as the bridge does (symlinks resolved), so a hook announcing
+    `/tmp/repo` matches a registration recorded as `/private/tmp/repo` on
+    a hub that does not resolve a remote caller's paths.
 - **Round twenty-one of the pre-release review: three findings.**
   - A session alias is claimed from the holder on the CALLER's machine.
     The claim looked the holder up across the whole board and a dormant

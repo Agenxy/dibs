@@ -16,7 +16,8 @@
  * .pi/extensions/dibs.ts (project-local). Both are auto-discovered and can be
  * hot-reloaded with /reload.
  *
- * Env: DIBS_ADDR (default 127.0.0.1:4777; a full https:// origin for a joined board), DIBS_DIR (default ~/.dibs)
+ * Env: DIBS_ADDR (default 127.0.0.1:4777; a full https:// origin for a joined board),
+ *      DIBS_DIR (default ~/.dibs), DIBS_BIN (the dibs binary, default: on PATH; see machineIdentity)
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox"
@@ -122,31 +123,63 @@ async function trust(): Promise<string[] | null> {
 }
 
 /**
- * Which machine this session is on, said the way the stdio bridge says it:
- * the operator's DIBS_HOST_ID, else the id the bridge resolved and
- * published beside the secret (`resolved_host_id`), else the daemon's own
- * node id, else the id the bridge minted. Read, never minted. Sent on every
- * tool call, because the daemon scopes its lookups and its wake routing by
- * it: a call without one from another machine registered an agent with no
- * machine (or, through an ssh forward, the hub's), so its host bridge was
- * never chosen for a wake however correctly it was attached. Round
- * twenty-one of the pre-release review.
+ * What this machine and checkout are, as the stdio bridge would stamp them.
+ *
+ * Asked of `dibs identity` (the same binary the bridge is), once per
+ * process, rather than re-derived here. This extension is pi's whole MCP
+ * client, so it has to say what the bridge says, and it had been growing a
+ * TypeScript copy of the bridge's answers one review round at a time: the
+ * host, then canonical paths, then the trust store, and still not the
+ * repository identity, without which a remote pi agent registered with no
+ * checkout and two clones of one repository on two machines were both
+ * granted an exclusive claim on the same tracked file. The Go answers
+ * change together; a copy drifts. Round twenty-two of the pre-release
+ * review.
+ *
+ * `dibs` is found on PATH or named by DIBS_BIN. Without it (a machine with
+ * only this extension), the host is read from the data directory the way
+ * the opencode plugin reads it, and no repository identity is sent, which
+ * is what this extension sent before. An empty answer is not cached: a
+ * bridge may publish the host a moment later.
  */
-let hostCache: string | undefined
+type Identity = { host_id: string; cwd: string; repo: Record<string, string> | null }
+let identityCache: Identity | undefined
 
-async function host(): Promise<string> {
-  if (hostCache !== undefined) return hostCache
-  const stated = process.env["DIBS_HOST_ID"]?.trim()
-  if (stated) return (hostCache = stated)
-  for (const name of ["resolved_host_id", "node_id", "host_id"]) {
-    try {
-      const id = (await readFile(`${DIR}/${name}`, "utf8")).trim()
-      if (id) return (hostCache = id)
-    } catch {
-      // not this file; the next one, or none
+async function machineIdentity(): Promise<Identity> {
+  if (identityCache) return identityCache
+  const bin = process.env["DIBS_BIN"] ?? "dibs"
+  try {
+    const { stdout } = await run(bin, ["identity", "--cwd", process.cwd()], { timeout: 10_000 })
+    const id = JSON.parse(stdout) as Identity
+    if (id && typeof id.host_id === "string" && typeof id.cwd === "string") {
+      const stated = process.env["DIBS_HOST_ID"]?.trim()
+      if (stated) id.host_id = stated
+      if (id.host_id) identityCache = id
+      return id
+    }
+  } catch {
+    // no dibs here, or one too old to answer: the files below
+  }
+  const fallback: Identity = { host_id: process.env["DIBS_HOST_ID"]?.trim() ?? "", cwd: process.cwd(), repo: null }
+  if (!fallback.host_id) {
+    for (const name of ["resolved_host_id", "node_id", "host_id"]) {
+      try {
+        const v = (await readFile(`${DIR}/${name}`, "utf8")).trim()
+        if (v) {
+          fallback.host_id = v
+          break
+        }
+      } catch {
+        // not this file; the next one, or none
+      }
     }
   }
-  return (hostCache = "")
+  if (fallback.host_id) identityCache = fallback
+  return fallback
+}
+
+async function host(): Promise<string> {
+  return (await machineIdentity()).host_id
 }
 
 let rpcId = 0
@@ -167,11 +200,16 @@ async function rpc(
   const key = await secret()
   if (!key) return null
   if (method === "tools/call" && params && typeof params === "object") {
-    const hid = await host()
-    if (hid) {
-      const p = params as Record<string, unknown>
-      p["_meta"] = { ...((p["_meta"] as Record<string, unknown> | undefined) ?? {}), "com.dibs/host": hid }
-    }
+    const p = params as Record<string, unknown>
+    const id = await machineIdentity()
+    const meta: Record<string, unknown> = { ...((p["_meta"] as Record<string, unknown> | undefined) ?? {}) }
+    if (id.host_id) meta["com.dibs/host"] = id.host_id
+    // WHICH CHECKOUT, as this machine sees it: a hub on another computer
+    // cannot ask Git about a path that exists only here, and the repository
+    // rule for two clones on two machines needs the answer. The bridge
+    // sends it on every call; this reads it on the calls that record it.
+    if (id.repo && (p["name"] === "register" || p["name"] === "update")) meta["com.dibs/repo"] = id.repo
+    if (Object.keys(meta).length > 0) p["_meta"] = meta
   }
   const text = await post(
     `${ORIGIN}/mcp`,
@@ -246,7 +284,7 @@ async function listTools(): Promise<McpTool[]> {
 async function pollMail(sessionID: string): Promise<string | null> {
   const r = await rpc(
     "tools/call",
-    { name: "hook_poll", arguments: { session_id: sessionID, event: "before_agent_start", cwd: process.cwd() } },
+    { name: "hook_poll", arguments: { session_id: sessionID, event: "before_agent_start", cwd: (await machineIdentity()).cwd } },
     1500,
   )
   const text = r?.content?.[0]?.text
@@ -308,7 +346,7 @@ async function gitBranch(cwd: string): Promise<string> {
 async function spaceOf(sessionID: string): Promise<string | null> {
   const r = await rpc(
     "tools/call",
-    { name: "hook_poll", arguments: { session_id: sessionID, event: "tool_call", cwd: process.cwd() } },
+    { name: "hook_poll", arguments: { session_id: sessionID, event: "tool_call", cwd: (await machineIdentity()).cwd } },
     1500,
   )
   const text = r?.content?.[0]?.text
@@ -387,7 +425,7 @@ function argvFlag(flag: string): string {
   return ""
 }
 
-let identityCache: Record<string, string> | undefined
+let registerCache: Record<string, string> | undefined
 
 /**
  * The identity fields that travel as tool ARGUMENTS.
@@ -399,8 +437,8 @@ let identityCache: Record<string, string> | undefined
  * that reason.
  */
 async function identity(): Promise<Record<string, string>> {
-  if (identityCache) return identityCache
-  const cwd = process.cwd()
+  if (registerCache) return registerCache
+  const cwd = (await machineIdentity()).cwd
   const out: Record<string, string> = {
     host: hostname().replace(/\.local$/, ""),
     surface: "cli",
@@ -414,7 +452,7 @@ async function identity(): Promise<Record<string, string>> {
   if (model) out["model"] = model
   const provider = argvFlag("--provider")
   if (provider) out["provider"] = provider
-  identityCache = out
+  registerCache = out
   return out
 }
 
