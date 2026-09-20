@@ -697,17 +697,7 @@ func checkMatching(client *http.Client, sec string, ok reportFn, warn fixFn) {
 			ok("index for " + root + " was shipped by agent " + st.Supplied[root] +
 				": the daemon cannot read that tree and did not need to")
 		}
-		// Trees on other machines that nothing has shipped for yet: not a
-		// fault of this daemon, which cannot read them, and worth a line so
-		// "no suggestions for that agent" has a stated reason.
-		for _, root := range st.Remote {
-			if _, shipped := st.Supplied[root]; shipped {
-				continue
-			}
-			warn(root+" is on another machine and its index has not arrived",
-				"the bridge on that machine ships it after registering; if it never does, "+
-					"run `dibs doctor` there")
-		}
+		reportRemoteTrees(st, warn)
 		if st.Repo != "" {
 			// And say so when that is not where this command was run. Matching is
 			// machine-wide by design, one daemon, one index, so working elsewhere

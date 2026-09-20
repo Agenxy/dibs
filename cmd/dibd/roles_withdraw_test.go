@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 
 	"github.com/agenxy/dibs/internal/core"
@@ -238,6 +239,49 @@ func TestWithdrawalFindsARenamedHolderByItsCredential(t *testing.T) {
 			"that was the only proof this mechanism granted it")
 	}
 	if _, pinned := pins.Pins[core.RoleAdmin]["Fleet Lead"]; pinned {
+		t.Error("the pin outlived the withdrawal")
+	}
+}
+
+// A WITHDRAWAL THAT FAILS KEEPS ITS PIN. The pin was deleted before the
+// demotion was attempted and saved whatever happened next, so a lookup that
+// failed (the engine busy, a cancelled context at shutdown) left the role
+// held with the one record that this mechanism granted it gone: a transient
+// failure made a revoked privilege permanent, and the next healthy tick had
+// nothing to act on. Round twelve of the pre-release review, reproduced by
+// cancelling the withdrawal.
+func TestAFailedWithdrawalKeepsThePinForTheNextTick(t *testing.T) {
+	eng, ctx := testEngine(t)
+	pins := loadRolePins(t.TempDir())
+	registerAgentAs(t, eng, "lead", "nonce-lead")
+	declared := RolesConfig{
+		Admin:    []string{"lead"},
+		Identity: map[string]string{"lead": engine.RolePinFingerprint("nonce-lead")},
+	}
+	applyDeclaredRoles(ctx, eng, declared, pins)
+	if !holdsRole(t, eng, "lead", core.RoleAdmin) {
+		t.Fatal("setup: the declared admin was not granted")
+	}
+
+	// The operator deletes the line, and this tick's engine calls fail: a
+	// cancelled context is what a shutdown mid-tick looks like.
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	applyDeclaredRoles(cancelled, eng, RolesConfig{}, pins)
+	if !holdsRole(t, eng, "lead", core.RoleAdmin) {
+		t.Fatal("setup: the withdrawal succeeded under a cancelled context, so this test measures nothing")
+	}
+	if _, pinned := pins.Pins[core.RoleAdmin]["lead"]; !pinned {
+		t.Fatal("the pin was dropped although the withdrawal failed: the role is held and nothing " +
+			"records that the config granted it, so no later tick can take it back")
+	}
+
+	// The next healthy tick finishes the job.
+	applyDeclaredRoles(ctx, eng, RolesConfig{}, pins)
+	if holdsRole(t, eng, "lead", core.RoleAdmin) {
+		t.Fatal("a healthy tick after the failed one did not withdraw the role")
+	}
+	if _, pinned := pins.Pins[core.RoleAdmin]["lead"]; pinned {
 		t.Error("the pin outlived the withdrawal")
 	}
 }

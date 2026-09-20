@@ -202,7 +202,7 @@ func (f *scorerFlags) installSupplied(
 	f.discoverMu.Lock()
 	f.suppliedAt[root] = p.Fingerprint
 	f.discoverMu.Unlock()
-	eng.NoteSuppliedIndex(root, agent)
+	eng.NoteSuppliedIndexFrom(root, agent, host)
 	// Suggest-only: a supplied index never joins anyone, see above.
 	phase := engine.MatchNoThreshold
 	eng.SetMatchStatus(engine.MatchStatus{
