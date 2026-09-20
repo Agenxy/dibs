@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -436,7 +437,20 @@ func canonicalisePathArgs(params map[string]any) {
 	}
 	for _, k := range keys {
 		if p, _ := args[k].(string); p != "" && filepath.IsAbs(p) {
-			args[k] = paths.Canonical(p)
+			args[k] = portableSpelling(paths.Canonical(p))
 		}
 	}
+}
+
+// portableSpelling is how this machine's paths travel: with `/` as the
+// separator when this is a Windows machine, and untouched otherwise, since
+// a backslash is an ordinary character in a unix filename. The bridge is
+// the one place that knows which; a daemon on another machine cannot tell
+// a Windows spelling from a unix name with a backslash in it. Round
+// thirteen of the pre-release review.
+func portableSpelling(p string) string {
+	if runtime.GOOS != "windows" {
+		return p
+	}
+	return strings.ReplaceAll(p, "\\", "/")
 }

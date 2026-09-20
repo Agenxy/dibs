@@ -62,19 +62,23 @@ func Canonical(p string) string {
 	}
 }
 
-// Portable cleans a path that belongs to ANOTHER machine: lexically, with
-// `/` as the separator, and without touching this filesystem.
+// Portable cleans a path that belongs to ANOTHER machine: lexically, and
+// without touching this filesystem.
 //
 // Canonical resolves symlinks here, which is right for a path on this
 // machine and wrong for one a remote bridge sent: /tmp on the hub is not
 // /tmp on the caller, and what exists here says nothing about there. The
-// remote bridge has already canonicalised on its own machine, so the only
-// work left is spelling.
+// remote bridge has already canonicalised on its own machine, and spelled
+// its separators as `/` if it is a Windows machine (cmd/dibs, the one place
+// that knows), so the only work left is cleaning. NO FOLD of `\` here: a
+// backslash is an ordinary character in a unix filename, and folding it on
+// the hub turned a remote /work/a\b into /work/a/b while the root beside it
+// kept the backslash, so the checkout failed its own containment check.
+// Round thirteen of the pre-release review.
 func Portable(p string) string {
 	if p == "" {
 		return ""
 	}
-	p = strings.ReplaceAll(p, "\\", "/")
 	p = path.Clean(p)
 	if len(p) > 1 {
 		p = strings.TrimSuffix(p, "/")

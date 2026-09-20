@@ -100,6 +100,14 @@ type Evidence struct {
 	// they are withheld from SurfaceInferred (see semanticBetween), and a reader
 	// shown a score with no files needs to be told why. Issue #39.
 	ScoredIn string `json:"scored_in,omitempty"`
+	// PeerIndex is the fingerprint of the index that produced the PEER's
+	// footprint: the coordinate system the other side of this comparison was
+	// scored in. Provenance the engine needs for one decision: an index an
+	// agent SHIPPED decides no membership (SECURITY.md), and a local agent
+	// matching a remote peer's supplied footprint was joined to the peer's
+	// space under auto_join = "always" because only the declaring side's
+	// index was checked. Round thirteen of the pre-release review.
+	PeerIndex string `json:"peer_index,omitempty"`
 	// SameRepo is false only on POSITIVE evidence that the two agents are in
 	// different repositories. Unknown is not false: treating it as foreign would
 	// disable matching for every client that reports no cwd.
@@ -274,7 +282,7 @@ func EvidenceBetween(
 	a, b Slot, aCWD, bCWD, repo string, discount map[string]float64, lens RepoLens,
 ) Evidence {
 	same, known := sameRepo(aCWD, bCWD, repo, lens)
-	ev := Evidence{SameRepo: same, RepoKnown: known}
+	ev := Evidence{SameRepo: same, RepoKnown: known, PeerIndex: b.Index}
 	for _, r := range sharedStrings(a.Refs, b.Refs) {
 		if identifyingRef(r) {
 			ev.Identity = append(ev.Identity, r)

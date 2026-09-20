@@ -22,6 +22,16 @@ import (
 // be treated as positively somewhere else.
 type repoLens struct {
 	ids map[string]paths.RepoID
+	// recorded is what the board holds about each directory's repository,
+	// as its agent's bridge reported it at registration: the only evidence
+	// there is for a directory on ANOTHER machine, which Git here cannot
+	// see. Asking Git about a remote path answered "unknown", and the
+	// fall-through then read two different checkout roots as two
+	// repositories: two clones of one project on two machines declaring
+	// pr:42 got "different repositories" and no join. Round thirteen of the
+	// pre-release review. Consulted first; Git is the fallback for a local
+	// directory whose agent recorded nothing.
+	recorded map[string]*core.AgentInfo
 }
 
 // newRepoLens resolves every directory it is given, concurrently.
@@ -36,13 +46,21 @@ type repoLens struct {
 // An empty string is skipped: "did not say where it is" is not a directory to
 // ask Git about.
 func newRepoLens(dirs []string) core.RepoLens {
+	return newRepoLensWith(dirs, nil)
+}
+
+// newRepoLensWith is newRepoLens with what the board recorded about each
+// directory's repository; a directory with a recorded identity is answered
+// from it and never asked of Git, which for a remote directory would answer
+// about the wrong machine.
+func newRepoLensWith(dirs []string, recorded map[string]*core.AgentInfo) core.RepoLens {
 	unique := make(map[string]bool, len(dirs))
 	for _, d := range dirs {
-		if d != "" {
+		if d != "" && !hasRecordedIdentity(recorded[d]) {
 			unique[d] = true
 		}
 	}
-	if len(unique) == 0 {
+	if len(unique) == 0 && len(recorded) == 0 {
 		return nil // nobody told us where they are; let core reason about paths
 	}
 	var (
@@ -61,10 +79,20 @@ func newRepoLens(dirs []string) core.RepoLens {
 		}(d)
 	}
 	wg.Wait()
-	return &repoLens{ids: ids}
+	return &repoLens{ids: ids, recorded: recorded}
+}
+
+func hasRecordedIdentity(info *core.AgentInfo) bool {
+	return info != nil && (info.RepoDir != "" || info.RepoRemote != "" || info.RepoRoots != "")
 }
 
 func (l *repoLens) SameRepo(aCWD, bCWD string) (same, known bool) {
+	ra, rb := l.recorded[aCWD], l.recorded[bCWD]
+	if hasRecordedIdentity(ra) && hasRecordedIdentity(rb) {
+		// The board's own record, host-aware: a Git directory is a path and
+		// a path is evidence on one machine only (core.SameProject).
+		return core.SameProject(ra, rb), true
+	}
 	a, haveA := l.ids[aCWD]
 	b, haveB := l.ids[bCWD]
 	if !haveA || !haveB {
