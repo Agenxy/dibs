@@ -217,7 +217,10 @@ func (e *Engine) remoteHostOf(l *core.Agent) string {
 	// THE HOST ID, not the ledger's node id: on a Supgang member the hub's
 	// own agents are stamped with the Supgang node id, and comparing with
 	// the ledger's would make every one of them look remote.
-	if l.Agent.HostID == e.HostID() {
+	// AND the ledger's node id, which is what this daemon's own agents were
+	// stamped with before a Supgang identity was configured: a row that old
+	// is still local, and WorkingDirectories draws the line the same way.
+	if l.Agent.HostID == e.HostID() || l.Agent.HostID == e.state.NodeID {
 		return ""
 	}
 	return l.Agent.HostID

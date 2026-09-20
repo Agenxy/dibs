@@ -208,10 +208,17 @@ func (e *Engine) NoteSuppliedIndex(root, agent string) {
 	defer e.matchStatus.mu.Unlock()
 	st := e.matchStatus.st
 	st.Unreadable = withoutTree(st.Unreadable, root)
-	if st.Supplied == nil {
-		st.Supplied = map[string]string{}
+	// A NEW map, never a write into the one already handed out. MatchStatus
+	// returns the struct by value and drops the lock, and the caller encodes
+	// it at leisure; the map inside was shared, so a shipment landing while
+	// doctor read the status was a data race (round three of the pre-release
+	// review). Copy-on-write costs one small allocation per shipment.
+	supplied := make(map[string]string, len(st.Supplied)+1)
+	for k, v := range st.Supplied {
+		supplied[k] = v
 	}
-	st.Supplied[root] = agent
+	supplied[root] = agent
+	st.Supplied = supplied
 	e.matchStatus.st = st
 }
 
