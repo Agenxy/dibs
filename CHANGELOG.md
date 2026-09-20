@@ -108,6 +108,16 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round fourteen of the pre-release review: two findings, both edges of
+  round thirteen.**
+  - The repository question is answered from the two ROWS' recorded
+    identities in the fold (host-aware), not from a lens keyed by path: two
+    machines sharing `/workspace/repo` with different projects were read as
+    one repository, and `pr:42` in both as a shared objective.
+  - A declaration records whether its footprint came from an index an agent
+    shipped (`index_supplied`, a frozen tag), so the no-membership rule
+    holds after the cache has forgotten the fingerprint (a replaced or
+    evicted shipment); and a shipped payload must carry a fingerprint.
 - **Round thirteen of the pre-release review: four findings.**
   - A supplied index decides no membership on EITHER side of a comparison:
     a local agent matching a remote peer's shipped footprint was joined to

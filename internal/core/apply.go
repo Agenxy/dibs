@@ -1268,6 +1268,7 @@ func (s *State) applySetSlot(l *Agent, op *Op) (Result, []Event, error) {
 		// rather than re-scoring against a reindexed repository.
 		Predicted:     op.Predicted,
 		Index:         op.Index,
+		IndexSupplied: op.IndexSupplied,
 		Footprints:    op.Footprints,
 		UpdatedSerial: s.Serial + 1,
 	}

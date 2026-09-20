@@ -108,6 +108,10 @@ type Evidence struct {
 	// space under auto_join = "always" because only the declaring side's
 	// index was checked. Round thirteen of the pre-release review.
 	PeerIndex string `json:"peer_index,omitempty"`
+	// PeerSupplied is the same provenance as the fold recorded it on the
+	// peer's declaration (Slot.IndexSupplied): true survives the cache
+	// forgetting the fingerprint. Round fourteen of the pre-release review.
+	PeerSupplied bool `json:"peer_supplied,omitempty"`
 	// SameRepo is false only on POSITIVE evidence that the two agents are in
 	// different repositories. Unknown is not false: treating it as foreign would
 	// disable matching for every client that reports no cwd.
@@ -282,7 +286,7 @@ func EvidenceBetween(
 	a, b Slot, aCWD, bCWD, repo string, discount map[string]float64, lens RepoLens,
 ) Evidence {
 	same, known := sameRepo(aCWD, bCWD, repo, lens)
-	ev := Evidence{SameRepo: same, RepoKnown: known, PeerIndex: b.Index}
+	ev := Evidence{SameRepo: same, RepoKnown: known, PeerIndex: b.Index, PeerSupplied: b.IndexSupplied}
 	for _, r := range sharedStrings(a.Refs, b.Refs) {
 		if identifyingRef(r) {
 			ev.Identity = append(ev.Identity, r)
@@ -445,6 +449,41 @@ type RepoLens interface {
 	// SameRepo returns known=false when there is no evidence either way, which
 	// is different from evidence that the two are separate.
 	SameRepo(aCWD, bCWD string) (same, known bool)
+}
+
+// identityFirst is a RepoLens that answers from the two agents' RECORDED
+// repository identities (host-aware, core.SameProject) before anything
+// derived from their paths, and falls back to the engine's lens only when
+// a row recorded no identity.
+//
+// A path is one key and two machines can share it: a lens keyed by path
+// let one machine's project answer for another's at /workspace/repo, and
+// two unrelated projects declaring pr:42 were read as one repository. The
+// rows are in hand here, with their host ids; the fold asks them directly.
+// Round fourteen of the pre-release review.
+type identityFirst struct {
+	me, them *Agent
+	fallback RepoLens
+}
+
+func (l identityFirst) SameRepo(aCWD, bCWD string) (same, known bool) {
+	if l.me != nil && l.them != nil && identityRecorded(l.me) && identityRecorded(l.them) {
+		switch {
+		case sameProject(l.me, l.them):
+			return true, true
+		case differentProjects(l.me, l.them):
+			return false, true
+		}
+		return false, false // two forks with no root commits recorded: no evidence either way
+	}
+	if l.fallback == nil {
+		return false, false
+	}
+	return l.fallback.SameRepo(aCWD, bCWD)
+}
+
+func identityRecorded(l *Agent) bool {
+	return l.Agent != nil && (l.Agent.RepoDir != "" || l.Agent.RepoRemote != "" || l.Agent.RepoRoots != "")
 }
 
 // sameRepo reports whether two agents are plausibly in one repository.

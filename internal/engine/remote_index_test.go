@@ -357,3 +357,57 @@ func TestNestedPathsAcrossMachinesAreNotOneRepository(t *testing.T) {
 		}
 	}
 }
+
+// And two different projects at THE SAME PATH on two machines are not one
+// repository either. The lens keyed recorded identities by path, so the
+// second machine's project overwrote the first's and the two answered as
+// one; pr:42 in two unrelated projects then read as a shared objective.
+// Round fourteen of the pre-release review.
+func TestTheSamePathOnTwoMachinesIsNotOneRepository(t *testing.T) {
+	st := core.NewState("hub", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+	reg := func(name string, info core.AgentInfo) string {
+		t.Helper()
+		res, err := e.Do(ctx, &core.Op{Kind: core.OpRegister, Name: name, Agent: &info})
+		if err != nil {
+			t.Fatalf("setup: register %s: %v", name, err)
+		}
+		tok, _ := res["token"].(string)
+		if _, err := e.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
+			t.Fatalf("setup: ack %s: %v", name, err)
+		}
+		return tok
+	}
+	const path = "/workspace/repo"
+	a := reg("a", core.AgentInfo{
+		CWD: path, RepoRoot: path, RepoDir: path + "/.git",
+		RepoRemote: "github.com/acme/api", RepoRoots: "r-api", HostID: "machine-a",
+	})
+	b := reg("b", core.AgentInfo{
+		CWD: path, RepoRoot: path, RepoDir: path + "/.git",
+		RepoRemote: "github.com/other/web", RepoRoots: "r-web", HostID: "machine-b",
+	})
+	resA, err := e.DoMatched(ctx, &core.Op{Kind: core.OpSetSlot, Token: a, Text: "pr 42", Refs: []string{"pr:42"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opened := suggestions(t, resA)
+	if len(opened) != 1 || opened[0].Action != "opened" {
+		t.Fatalf("a's declaration: %+v, want it to open a space", opened)
+	}
+	resB, err := e.DoMatched(ctx, &core.Op{Kind: core.OpSetSlot, Token: b, Text: "pr 42", Refs: []string{"pr:42"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range suggestions(t, resB) {
+		if s.Space != opened[0].Space {
+			continue
+		}
+		if s.Action == "joined" || s.Action == "queued" || (s.Evidence.RepoKnown && s.Evidence.SameRepo) {
+			t.Fatalf("two different projects at one path on two machines were read as one repository: %+v", s)
+		}
+	}
+}
