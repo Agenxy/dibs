@@ -32,7 +32,7 @@ func TestASiblingTakingTwoBindingsLeavesNeitherHolderBehind(t *testing.T) {
 		t.Fatal("setup:", err)
 	}
 	st.Agents["b"].Status = core.StatusDormant
-	if !st.Agents["a"].HoldsSessionForTest(aliasT) || !st.Agents["b"].HoldsSessionForTest(primaryS) {
+	if !st.Agents["a"].HoldsSession(aliasT) || !st.Agents["b"].HoldsSession(primaryS) {
 		t.Fatal("setup: the two bindings are not where the scenario needs them")
 	}
 	// The sibling, minted with a's token, stating b's primary and a's alias.
@@ -40,14 +40,14 @@ func TestASiblingTakingTwoBindingsLeavesNeitherHolderBehind(t *testing.T) {
 		t.Fatal("setup:", err)
 	}
 	sib := st.Agents["sibling"]
-	if sib == nil || !sib.HoldsSessionForTest(aliasT) || !sib.HoldsSessionForTest(primaryS) {
+	if sib == nil || !sib.HoldsSession(aliasT) || !sib.HoldsSession(primaryS) {
 		t.Fatal("setup: the sibling did not take both bindings, so nothing below is contested")
 	}
-	if st.Agents["a"].HoldsSessionForTest(aliasT) {
+	if st.Agents["a"].HoldsSession(aliasT) {
 		t.Fatal("the active row whose token minted the sibling still holds the thread the sibling took: " +
 			"two active holders, and every hook a coin flip")
 	}
-	if st.Agents["b"].HoldsSessionForTest(primaryS) {
+	if st.Agents["b"].HoldsSession(primaryS) {
 		t.Fatal("the dormant row still holds the primary the sibling took")
 	}
 }

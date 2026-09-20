@@ -108,6 +108,29 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round nineteen of the pre-release review: four findings.**
+  - A harness whose bridge names the session `host-<ppid>` and whose hooks
+    name it by UUID (Gemini CLI) is one session. The bridge's synthetic id
+    arrived as a session alias on every call and switched the directory
+    inference off, so the UUID the hooks announced was never bound and
+    every `dibs hook-poll` resolved to nobody while reporting success. An
+    alias that is not a thread and that the row already holds leaves the
+    inference on.
+  - The opencode plugin spells paths as the daemon compares them (symlinks
+    resolved, a not-yet-existing file's deepest real ancestor), as the
+    bridge does; a hub does not resolve a remote caller's paths, so an
+    exclusive claim stored as `/private/tmp/x` did not cover an edit sent
+    as `/tmp/x/new.go`.
+  - The opencode and pi plugins keep the scheme `DIBS_ADDR` carries and
+    check an `https://` board's certificate against the store `dibs trust`
+    recorded; they prefixed `http://` to a joined board's origin and every
+    hook failed silently while the bridge beside it connected. The
+    opencode README's MCP entry is the stdio bridge, which the plugin's
+    session pairing depends on, not a `remote` URL.
+  - `dibs configure` no longer offers a Remap name for a board off
+    loopback: the name serves plain HTTP and the board's session cookie is
+    TLS-only, so it reached a board the operator could not unlock through
+    it. The wizard says so and where to reach the board instead.
 - **Round eighteen of the pre-release review: four findings.**
   - Reattach by session id is scoped to the caller's machine. `host-<ppid>`
     repeats across computers and people name agents by role, so a second

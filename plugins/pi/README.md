@@ -19,7 +19,9 @@ auto-discovered and hot-reload with `/reload`.
 
 Nothing else to configure. The extension finds the daemon at `127.0.0.1:4777`
 and authenticates with `~/.dibs/local.secret`. Override with `DIBS_ADDR` and
-`DIBS_DIR`.
+`DIBS_DIR`: the two values `dibs mcp-config` writes for a joined board work
+here unchanged, including an `https://` origin, whose certificate is checked
+against the store `dibs trust` recorded in that directory.
 
 ## The tool surface is fetched, not copied
 

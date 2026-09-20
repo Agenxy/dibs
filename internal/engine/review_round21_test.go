@@ -33,7 +33,7 @@ func TestASiblingMintedWithTheHoldersTokenTakesTheThread(t *testing.T) {
 			if _, err := e.Do(ctx, sibling); err != nil {
 				t.Fatal(err)
 			}
-			a, b := st.Agents["first"].HoldsSessionForTest(thread), st.Agents["sibling"].HoldsSessionForTest(thread)
+			a, b := st.Agents["first"].HoldsSession(thread), st.Agents["sibling"].HoldsSession(thread)
 			if a && b {
 				t.Fatal("two live rows hold the same thread after a register carrying the holder's token: " +
 					"hook resolution is a coin flip and two mailboxes wake one session")
@@ -71,8 +71,8 @@ func TestAnAmbientRepairDoesNotOverwriteABindingMadeMeanwhile(t *testing.T) {
 		t.Fatal(err)
 	}
 	l := st.Agents["w"]
-	if adopted || l.HoldsSessionForTest(ambient) || !l.HoldsSessionForTest(real) {
+	if adopted || l.HoldsSession(ambient) || !l.HoldsSession(real) {
 		t.Fatalf("the ambient repair reported %v and the row holds ambient=%v real=%v: a binding "+
-			"the agent made was overwritten and ledgered", adopted, l.HoldsSessionForTest(ambient), l.HoldsSessionForTest(real))
+			"the agent made was overwritten and ledgered", adopted, l.HoldsSession(ambient), l.HoldsSession(real))
 	}
 }

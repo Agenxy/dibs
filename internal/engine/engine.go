@@ -529,7 +529,17 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 	// check_in; the guess became current, the wake resumed the wrong thread
 	// and the other session's hooks resolved to A's mailbox. Found by the
 	// pre-release review, round fifty-six.
-	if op.SessionAlias == "" && !looksLikeThreadID(op.SessionID) && !e.callerHoldsAStatedThread(op) {
+	// AND NOT SWITCHED OFF BY AN ALIAS THAT SAYS NOTHING NEW. The bridge
+	// sends its own `host-<ppid>` as `_meta com.dibs/session` on every call,
+	// and a harness whose hooks name the session by UUID (Gemini CLI) had
+	// that UUID announced and never bound: the synthetic alias arrived, the
+	// inference stood down, and every hook for the session resolved to
+	// nobody while reporting success. A stated alias that is a THREAD is
+	// the identity and still wins; one that is not, and that the row
+	// already holds, is restored if the inference finds nothing. Round
+	// nineteen of the pre-release review.
+	stated := op.SessionAlias
+	if e.aliasSaysNothingNew(op) && !looksLikeThreadID(op.SessionID) && !e.callerHoldsAStatedThread(op) {
 		// ANYTHING SET BELOW IS A GUESS, AND THIS LINE IS THE WHOLE REPAIR.
 		//
 		// It was missing. The reclaim rule, its test and a changelog entry all
@@ -555,6 +565,9 @@ func (e *Engine) exec(op *core.Op, now time.Time) (core.Result, error) {
 			}
 		default:
 			op.SessionAlias = "" // no other op binds an identity
+		}
+		if op.SessionAlias == "" && stated != "" {
+			op.SessionAlias, op.SessionGuessed = stated, false
 		}
 	}
 
@@ -1506,16 +1519,40 @@ func (e *Engine) refuseActingOnInheritedMail(op *core.Op, actor *core.Agent) err
 // callerHoldsAStatedThread reports whether the row this op acts on already
 // holds a thread-shaped session it stated itself, in which case the
 // directory guess has nothing to add and would only displace it.
-func (e *Engine) callerHoldsAStatedThread(op *core.Op) bool {
-	var l *core.Agent
+// aliasSaysNothingNew reports whether the directory inference may run
+// despite op.SessionAlias: no alias, or a synthetic one (not a thread) that
+// the caller's row already holds, which is the bridge restating the id it
+// registered under. A takeover recorded for the alias keeps it: replacing
+// the alias would apply that record to a different id.
+func (e *Engine) aliasSaysNothingNew(op *core.Op) bool {
+	if op.SessionAlias == "" {
+		return true
+	}
+	if looksLikeThreadID(op.SessionAlias) || op.SessionAliasTakenFrom != "" {
+		return false
+	}
+	if op.Kind == core.OpRegister {
+		return op.SessionID == op.SessionAlias
+	}
+	l := e.callerRow(op)
+	return l != nil && l.HoldsSession(op.SessionAlias)
+}
+
+// callerRow is the row an op speaks for, by token or by nonce, or nil.
+func (e *Engine) callerRow(op *core.Op) *core.Agent {
 	switch op.Kind {
 	case core.OpAckBoard, core.OpUpdate:
-		l = e.state.AgentByToken(op.Token)
+		return e.state.AgentByToken(op.Token)
 	case core.OpRegister:
 		if op.Nonce != "" {
-			l = e.state.Agents[e.state.Nonces[op.Nonce]]
+			return e.state.Agents[e.state.Nonces[op.Nonce]]
 		}
 	}
+	return nil
+}
+
+func (e *Engine) callerHoldsAStatedThread(op *core.Op) bool {
+	l := e.callerRow(op)
 	if l == nil {
 		return false
 	}
