@@ -108,6 +108,27 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round thirteen of the pre-release review: four findings.**
+  - A supplied index decides no membership on EITHER side of a comparison:
+    a local agent matching a remote peer's shipped footprint was joined to
+    the peer's space under `auto_join = "always"`, because only the
+    declaring side's index was checked. Evidence now records which index
+    produced the peer's footprint and a shipped one only ever suggests.
+  - Cross-machine matching reads the repository identity the board
+    recorded at registration (host-aware) instead of asking Git here about
+    directories on another machine; two clones of one project on two
+    machines declaring `pr:42` are matched as one repository, two different
+    projects at nested paths are not. A remote agent with no index here is
+    matched on its refs, dirs and holds instead of not at all (a local agent
+    with no index keeps the "matching is off" answer), and the hub's own
+    tree is no longer read as evidence that it works "somewhere else".
+  - Eviction removes an index's scorer under the same lock as its
+    bookkeeping; a discovery or shipment in the gap between the two could
+    install a replacement the removal then deleted.
+  - Remote unix paths keep their backslashes: the hub folded `\` to `/` in
+    every path a remote bridge sent, turning a unix name with a backslash
+    into a different path; a bridge on a Windows machine now spells its own
+    paths with `/` before sending, and the hub cleans without folding.
 - **Round twelve of the pre-release review: four findings, all reproduced
   by the reviewer.**
   - A bridge's session id (`host-<ppid>`) repeats across machines, and hook

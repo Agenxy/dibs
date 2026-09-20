@@ -803,14 +803,21 @@ func (f *scorerFlags) evictIdleIndexes(ctx context.Context, eng *engine.Engine) 
 				delete(f.rootOf, cwd)
 			}
 		}
-	}
-	f.discoverMu.Unlock()
-
-	for _, root := range idle {
+		// THE SCORER GOES WITH THE BOOKKEEPING, under the same lock. This
+		// released discoverMu first and removed the scorer after, and a
+		// discovery or a shipment in that gap claimed the slot and installed
+		// a replacement which the removal then deleted, leaving bookkeeping
+		// that said indexed over a scorer that was gone: later discovery
+		// skipped the rebuild and a repeated shipment said "already
+		// installed". RemoveScorerForRepo takes the engine's match lock and
+		// the status lock, neither of which is ever held while discoverMu
+		// is taken, so the order is safe. Round thirteen of the pre-release
+		// review.
 		eng.RemoveScorerForRepo(root)
 		slog.Info("work-overlap matching released a repository index whose agents have all gone",
 			"repo", root)
 	}
+	f.discoverMu.Unlock()
 	return len(idle) > 0
 }
 

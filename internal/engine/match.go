@@ -185,7 +185,16 @@ func (e *Engine) scorerForLocation(loc location) (overlap.Scorer, MatchConfig) {
 		best, bestRepo = s, repo
 	}
 	if best == nil {
-		return nil, e.matchCfg
+		cfg := e.matchCfg
+		if loc.host != "" {
+			// The fallback pair names a tree on THIS disk, which says
+			// nothing about an agent on another machine: left in place it
+			// made every such agent "foreign" to the hub's tree, and its
+			// matches were withheld as work somewhere else entirely. Round
+			// thirteen of the pre-release review.
+			cfg.Repo = ""
+		}
+		return nil, cfg
 	}
 	cfg := e.matchCfg
 	cfg.Repo = bestRepo
@@ -336,6 +345,22 @@ func (e *Engine) peerIndexesFor(home string) []peerIndex {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].root < out[j].root })
 	return out
+}
+
+// isSuppliedFingerprint reports whether fp is the fingerprint of an index an
+// agent shipped rather than one this daemon mined.
+func (e *Engine) isSuppliedFingerprint(fp string) bool {
+	if fp == "" {
+		return false
+	}
+	e.matchMu.RLock()
+	defer e.matchMu.RUnlock()
+	for _, info := range e.indexes {
+		if info.SuppliedBy != "" && info.Fingerprint == fp {
+			return true
+		}
+	}
+	return false
 }
 
 // IndexSuppliedBy reports which agent shipped the index at repo, or "" when
@@ -532,6 +557,48 @@ func declarationOf(op *core.Op) core.Slot {
 	}
 }
 
+// nothingToMatch reports a declaration with nothing to match on: no text
+// and no refs; or no scorer, which for an agent on THIS machine means
+// matching is off (the phase says so, and that hint is more useful than
+// either outcome), and for an agent on another machine means only that no
+// index reaches it here, so its facts are matched on their own when it
+// declared any.
+func nothingToMatch(scorer overlap.Scorer, declaration string, refs []string, declared, remote bool) bool {
+	if declaration == "" && len(refs) == 0 {
+		return true
+	}
+	if scorer != nil {
+		return false
+	}
+	return !remote || !declared
+}
+
+// predictionDeadline is the scorer's deadline, or a second when no scorer
+// chose one.
+func predictionDeadline(cfg MatchConfig) time.Duration {
+	if cfg.Deadline > 0 {
+		return cfg.Deadline
+	}
+	return time.Second
+}
+
+// predictIfAble is scorer.Predict, or no prediction at all when there is no
+// scorer.
+//
+// NO SCORER IS NOT NO MATCHING. An agent on another machine commonly has no
+// index here (this daemon cannot read its tree, and nothing may have shipped
+// one), and matchDeclaration returned before refs were looked at, so two
+// clones on two machines declaring pr:42 were never compared at all: the
+// strongest signal there is, withheld for want of the weakest. The facts are
+// matched on their own, as they are when a scorer has no opinion. Round
+// thirteen of the pre-release review.
+func predictIfAble(ctx context.Context, scorer overlap.Scorer, declaration string) (overlap.Prediction, error) {
+	if scorer == nil {
+		return overlap.Prediction{}, nil
+	}
+	return scorer.Predict(ctx, declaration, 40)
+}
+
 // The location is passed in rather than resolved here because the scorer has
 // to be chosen before the loop trip below, and DoMatched has already paid for
 // that lookup: prediction, path relativisation and matching then all speak
@@ -541,15 +608,14 @@ func (e *Engine) matchDeclaration(
 ) ([]Suggestion, matchOutcome) {
 	declaration, declRefs, declDirs := decl.Text, decl.Refs, decl.Dirs
 	scorer, cfg := e.scorerForLocation(loc)
-	if scorer == nil || (declaration == "" && len(declRefs) == 0) {
-		// No scorer at all: the phase already says "off", and that hint is more
-		// useful than either of the two outcomes here.
+	declared := len(declRefs) > 0 || len(declDirs) > 0 || len(decl.Holds) > 0
+	if nothingToMatch(scorer, declaration, declRefs, declared, loc.host != "") {
 		return nil, matchedNothing
 	}
-	sctx, cancel := context.WithTimeout(ctx, cfg.Deadline)
+	sctx, cancel := context.WithTimeout(ctx, predictionDeadline(cfg))
 	defer cancel()
 
-	pred, err := scorer.Predict(sctx, declaration, 40)
+	pred, err := predictIfAble(sctx, scorer, declaration)
 	// A silent scorer must not silence the agent's own declarations.
 	//
 	// This used to return here whenever the scorer predicted nothing, BEFORE refs,
@@ -563,7 +629,6 @@ func (e *Engine) matchDeclaration(
 	// path" predicts nothing in a repository whose file is queue.go. That is a
 	// statement about the scorer's vocabulary, not about the fleet, and it says
 	// nothing whatsoever about a ref both agents typed by hand.
-	declared := len(declRefs) > 0 || len(declDirs) > 0 || len(decl.Holds) > 0
 	if err != nil || len(pred.Files) == 0 {
 		// NO OPINION, which is not the same as "nobody else is doing this".
 		// Reporting it as "you have the field to yourself" would be a confident
@@ -660,6 +725,11 @@ func (e *Engine) suggestionsFor(ctx context.Context, token string, matches []cor
 			continue
 		}
 		s.SharedRefs, s.Relation, s.Evidence = m.SharedRefs, m.Relation, m.Evidence
+		if h := e.suppliedPeerReason(m); h != "" {
+			s.Hint = h
+			out = append(out, s)
+			continue
+		}
 		s.Hint = explain(m)
 		aboveBar := cfg.JoinThreshold > 0 && m.Score >= cfg.JoinThreshold
 		// The director gate outranks the auto-join policy, and has to.
@@ -677,12 +747,7 @@ func (e *Engine) suggestionsFor(ctx context.Context, token string, matches []cor
 		}
 		// Certainty joins; a guess is offered. See MatchConfig.AutoJoin.
 		if !shouldAutoJoin(cfg, m) {
-			if len(m.SharedIDs) == 0 && aboveBar {
-				s.Hint = "close enough to be worth your attention, but this is a SCORE, not a fact: " +
-					"the evidence is the shared files above. Read the space with read_space and " +
-					"join_space if it is really your work. Declaring the same refs (pr:…, gate:…, " +
-					"incident:…) as another agent joins you automatically, because that is not a guess."
-			}
+			s.Hint = guessOfferedHint(m, aboveBar, s.Hint)
 			out = append(out, s)
 			continue
 		}
@@ -693,6 +758,36 @@ func (e *Engine) suggestionsFor(ctx context.Context, token string, matches []cor
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Score > out[j].Score })
 	return out
+}
+
+// guessOfferedHint is the hint for a match above the bar that policy leaves
+// to the agent: a score, not a fact.
+func guessOfferedHint(m core.AgentMatch, aboveBar bool, current string) string {
+	if len(m.SharedIDs) != 0 || !aboveBar {
+		return current
+	}
+	return "close enough to be worth your attention, but this is a SCORE, not a fact: " +
+		"the evidence is the shared files above. Read the space with read_space and " +
+		"join_space if it is really your work. Declaring the same refs (pr:…, gate:…, " +
+		"incident:…) as another agent joins you automatically, because that is not a guess."
+}
+
+// suppliedPeerReason withholds the automatic join when the PEER's footprint
+// came from an index an agent shipped, and says so; "" otherwise.
+//
+// A supplied index decides no membership on either side of a comparison.
+// scorerForLocation already downgrades the declaring agent's own supplied
+// index to suggestions; the peer's footprint can come from one too, and a
+// local agent scored by this daemon's index was joined to a remote peer's
+// space on the strength of the peer's shipped data. Round thirteen of the
+// pre-release review.
+func (e *Engine) suppliedPeerReason(m core.AgentMatch) string {
+	if !e.isSuppliedFingerprint(m.Evidence.PeerIndex) {
+		return ""
+	}
+	return "the other side of this match was scored by an index an agent shipped, " +
+		"which suggests and never joins: read the space with read_space and " +
+		"join_space if it is really your work"
 }
 
 // withheldReason explains a match that will not be joined automatically no
@@ -1149,15 +1244,22 @@ func toPredFiles(in []overlap.File) []core.PredFile {
 // here: leaving core a lookup that cannot block and cannot fail.
 func (e *Engine) repoLensForBoard(ctx context.Context) core.RepoLens {
 	var cwds []string
+	recorded := map[string]*core.AgentInfo{}
 	_, _ = e.query(ctx, func() core.Result {
 		for _, l := range e.state.Agents {
-			if l.Agent != nil {
-				cwds = append(cwds, l.Agent.CWD)
+			if l.Agent == nil || l.Agent.CWD == "" {
+				continue
 			}
+			cwds = append(cwds, l.Agent.CWD)
+			info := *l.Agent // a copy, read off the loop by the lens
+			if info.HostID == "" {
+				info.HostID = e.HostID() // recorded before hosts were: this machine's
+			}
+			recorded[l.Agent.CWD] = &info
 		}
 		return core.Result{}
 	})
-	return newRepoLens(cwds)
+	return newRepoLensWith(cwds, recorded)
 }
 
 func predPaths(in []core.PredFile) []string {
@@ -1437,6 +1539,9 @@ func (e *Engine) forgetDeadFootprints(live map[string]bool) {
 func (e *Engine) backfillFootprints(ctx context.Context, scorer overlap.Scorer) map[string][]core.PredFile {
 	need, live := e.agentsNeedingFootprints(ctx)
 	for id, topic := range need {
+		if scorer == nil {
+			break // nothing to predict with; the facts are matched on their own
+		}
 		p, err := scorer.Predict(ctx, topic, 40)
 		if err != nil || len(p.Files) == 0 {
 			continue
