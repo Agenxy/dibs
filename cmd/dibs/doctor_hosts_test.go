@@ -164,3 +164,37 @@ func TestDoctorSaysWhenTheDaemonPredatesSupgang(t *testing.T) {
 		t.Errorf("drift = %q, want both identities and the cause", d)
 	}
 }
+
+// The hub's own [wake.exec] is not a route to an agent on another machine,
+// however familiar that agent's directory looks from here.
+//
+// wakeCovered answered yes whenever the harness had a local command and the
+// agent's cwd existed on the hub, without asking where the agent was, so two
+// machines with the same layout and no bridge attached read as fully
+// covered while the engine refuses to run the hub's command for them.
+// Found by the pre-release review.
+func TestDoctorDoesNotCountALocalCommandAsCoverageForARemoteAgent(t *testing.T) {
+	supgangNamesOnce.Do(func() {})
+	dir := t.TempDir() // exists here, as the remote agent's cwd "does" too
+	far := agentRow("far", "persistent", "codex")
+	far.Agent.HostID = strings.Repeat("c", 64)
+	far.Agent.CWD = dir
+	hub := strings.Repeat("f", 64)
+	have := map[string]bool{"codex": true}
+	if wakeCovered(far, "codex", hub, have, nil) {
+		t.Fatal("a remote agent was reported covered by the hub's own command, which the " +
+			"daemon will never run for it")
+	}
+	// The same agent, with its host's bridge attached, is covered through it.
+	bridged := map[string]map[string]bool{far.Agent.HostID: {"codex": true}}
+	if !wakeCovered(far, "codex", hub, have, bridged) {
+		t.Fatal("a remote agent whose host bridge claims its harness was not counted")
+	}
+	// And a local agent is covered by the local command, as before.
+	near := agentRow("near", "persistent", "codex")
+	near.Agent.HostID = hub
+	near.Agent.CWD = dir
+	if !wakeCovered(near, "codex", hub, have, nil) {
+		t.Fatal("a local agent with a local command was not counted")
+	}
+}

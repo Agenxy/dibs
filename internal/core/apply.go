@@ -1929,7 +1929,7 @@ func (s *State) applyClaim(l *Agent, op *Op, now time.Time) (Result, []Event, er
 			"global)", s.Limits.MaxClaimsPerAgent, s.Limits.MaxClaimsGlobal)
 	}
 	cl := &Claim{
-		Agent: l.ID, Path: path, RepoPath: repoPath,
+		Agent: l.ID, Path: path, RepoPath: repoPath, Repo: repoIdentityOf(l),
 		Mode: op.Mode, Note: op.Note, Acquired: now, Renewed: now,
 	}
 	s.Claims = append(s.Claims, cl)

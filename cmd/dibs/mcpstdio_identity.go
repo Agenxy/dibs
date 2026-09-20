@@ -127,9 +127,9 @@ func enrichRegister(line []byte) []byte {
 			//
 			// Sent on every call for the same reason the session id is: the one
 			// call an agent might not make through this bridge is the one that
-			// would otherwise have carried it. A daemon on THIS machine ignores
-			// it and stamps its own node id, because loopback is proof and this
-			// is not; only a hub on another computer reads it.
+			// would otherwise have carried it. A bridge on the daemon's own
+			// machine asserts the daemon's own id (its data directory holds
+			// the node id), so the daemon reads the same value either way.
 			if hid := hostID(); hid != "" {
 				meta[mcp.HostMetaKey] = hid
 			}

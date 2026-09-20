@@ -161,3 +161,35 @@ func TestAWithdrawalDoesNotOverruleAPersonsDecision(t *testing.T) {
 		t.Fatal("the config withdrew a role a person had set by hand during this run")
 	}
 }
+
+// Removing the LAST declared role withdraws it too, through the entry point
+// the daemon actually calls.
+//
+// keepDeclaredRolesApplied returned before loading pins when both lists were
+// empty, so the withdrawal that TestARoleRemovedFromTheConfigIsWithdrawn
+// proves for applyDeclaredRoles never ran for the one config shape that
+// removes everything: delete the sole admin line, restart, and the ledger
+// hands the role straight back. The test above called applyDeclaredRoles and
+// stepped over the production path. Found by the pre-release review.
+func TestRemovingTheLastDeclaredRoleWithdrawsIt(t *testing.T) {
+	eng, ctx := testEngine(t)
+	dir := t.TempDir()
+
+	registerAgentAs(t, eng, "release-manager", "nonce-rm")
+	keepDeclaredRolesApplied(ctx, dir, eng, RolesConfig{
+		Admin:    []string{"release-manager"},
+		Identity: map[string]string{"release-manager": engine.RolePinFingerprint("nonce-rm")},
+	})
+	if !holdsRole(t, eng, "release-manager", core.RoleAdmin) {
+		t.Fatal("setup: the declared admin was not granted")
+	}
+
+	// The operator deletes the only line and restarts: the same entry point,
+	// an empty table, and pins on disk that say this mechanism granted it.
+	keepDeclaredRolesApplied(ctx, dir, eng, RolesConfig{})
+	if holdsRole(t, eng, "release-manager", core.RoleAdmin) {
+		t.Fatal("release-manager still holds admin after the LAST [roles] line was " +
+			"removed: the daemon returned before it looked, so the one config shape " +
+			"that withdraws everything withdrew nothing")
+	}
+}

@@ -142,7 +142,9 @@ func (f *scorerFlags) installSupplied(
 	// No Identity: the payload's project fields are the agent's word, and an
 	// index with an identity becomes a PEER of every other index of that
 	// project (issue #39). A shipped index scores its own tree and nothing
-	// else; the engine refuses supplied indexes as peers regardless.
+	// else; the engine refuses supplied indexes as peers regardless, and it
+	// never joins anyone on a supplied index's score (scorerForLocation),
+	// whatever join threshold and auto-join policy are passed here.
 	eng.SetIndex(root, scorer, engine.MatchConfig{
 		JoinThreshold: f.join, NotifyThreshold: notify, Deadline: f.deadline,
 		DirectorRequired: f.director, AutoJoin: f.autoJoin, Repo: root,
@@ -151,10 +153,8 @@ func (f *scorerFlags) installSupplied(
 	f.suppliedAt[root] = p.Fingerprint
 	f.discoverMu.Unlock()
 	eng.NoteSuppliedIndex(root, agent)
-	phase := engine.MatchReady
-	if f.join == 0 {
-		phase = engine.MatchNoThreshold
-	}
+	// Suggest-only: a supplied index never joins anyone, see above.
+	phase := engine.MatchNoThreshold
 	eng.SetMatchStatus(engine.MatchStatus{
 		Phase: phase, Scorer: scorer.ID(), Repo: root, Files: lex.Files(), Commits: cc.Commits(),
 	})

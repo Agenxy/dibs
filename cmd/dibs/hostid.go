@@ -90,10 +90,34 @@ func loadOrCreateHostID(dir string) string {
 		return ""
 	}
 	id := hex.EncodeToString(raw)
-	if err := os.WriteFile(path, []byte(id), 0o600); err != nil {
+	// PUBLISHED WHOLE AND EXCLUSIVELY, so two bridges starting together on
+	// a fresh directory end up with one id. Read-then-write let each
+	// generate its own, cache it for its lifetime, and overwrite the other's
+	// on disk: the machine then had two identities, its agents did not
+	// collide with each other, and the host bridge could not be reached for
+	// the agents carrying the id that lost. The id is written to a private
+	// file and linked into place: a link either succeeds, making this the
+	// winner, or fails because the name exists, in which case the file there
+	// is complete (a link publishes finished bytes, where an exclusive create
+	// followed by a write let the loser read an empty file and keep its own
+	// id, which the Linux runner did). Found by the pre-release review.
+	// Named by the id it holds, which is random, rather than by pid: the
+	// link shares an inode with the published file, so a second writer
+	// reusing the same temporary name would truncate what everybody reads.
+	tmp := path + ".new-" + id
+	if err := os.WriteFile(tmp, []byte(id), 0o600); err != nil {
 		// Usable for this process even if it could not be kept. A machine whose
 		// id changes on restart still separates itself from other machines while
 		// it runs, which is strictly better than answering "unknown" forever.
+		return id
+	}
+	defer func() { _ = os.Remove(tmp) }()
+	if err := os.Link(tmp, path); err != nil {
+		if b, rerr := os.ReadFile(path); rerr == nil { // #nosec G304 -- the user's own data directory
+			if won := strings.TrimSpace(string(b)); won != "" {
+				return won
+			}
+		}
 		return id
 	}
 	return id
