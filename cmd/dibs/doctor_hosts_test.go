@@ -57,18 +57,46 @@ func TestDoctorNamesTheMachineARemoteAgentIsOnThroughSupgang(t *testing.T) {
 // On a machine joined to a hub elsewhere, doctor says what would let the hub
 // wake the agents here: the entries in this machine's dibs.toml, and a host
 // bridge attached for this machine, each named when it is missing.
+//
+// AND COMPARES WHAT THE BRIDGE ADVERTISED with what the file has and what
+// the agents here need. It counted commands and asked whether a bridge was
+// attached, so a bridge started before [wake.exec.claude] was added was
+// reported as reaching claude, and an agent here on a harness with no entry
+// at all went unmentioned. Round twenty-five of the pre-release review.
 func TestDoctorOnAJoinedMachineNamesItsOwnWakeRoute(t *testing.T) {
-	okMsg, warnMsg, _ := joinedWakeAdvice(2, true, "abc", "/d")
-	if okMsg == "" || warnMsg != "" || !strings.Contains(okMsg, "2 wake command(s)") {
-		t.Errorf("attached with routes: ok=%q warn=%q", okMsg, warnMsg)
+	both := joinedWake{
+		configured: []string{"codex", "claude"}, advertised: []string{"codex", "claude"},
+		attached: true, agents: map[string]int{"codex": 1},
 	}
-	okMsg, warnMsg, fix := joinedWakeAdvice(2, false, "abc", "/d")
+	okMsg, warnMsg, _ := joinedWakeAdvice(both, "abc", "/d")
+	if okMsg == "" || warnMsg != "" || !strings.Contains(okMsg, "codex, claude") {
+		t.Errorf("attached, advertising every route: ok=%q warn=%q", okMsg, warnMsg)
+	}
+	detached := both
+	detached.attached = false
+	okMsg, warnMsg, fix := joinedWakeAdvice(detached, "abc", "/d")
 	if okMsg != "" || !strings.Contains(warnMsg, "no host bridge is attached") || !strings.Contains(fix, "dibs host-bridge") {
 		t.Errorf("routes, not attached: ok=%q warn=%q fix=%q", okMsg, warnMsg, fix)
 	}
-	okMsg, warnMsg, fix = joinedWakeAdvice(0, true, "abc", "/d")
+	okMsg, warnMsg, fix = joinedWakeAdvice(joinedWake{attached: true}, "abc", "/d")
 	if okMsg != "" || !strings.Contains(warnMsg, "no [wake.exec]") || !strings.Contains(fix, "/d/dibs.toml") {
 		t.Errorf("no routes: ok=%q warn=%q fix=%q", okMsg, warnMsg, fix)
+	}
+	// The bridge started before claude was added: the file has two routes
+	// and the hub can use one.
+	stale := both
+	stale.advertised = []string{"codex"}
+	okMsg, warnMsg, fix = joinedWakeAdvice(stale, "abc", "/d")
+	if okMsg != "" || !strings.Contains(warnMsg, "[wake.exec.claude]") || !strings.Contains(fix, "restart") {
+		t.Errorf("a route the bridge did not advertise was reported as reaching agents: ok=%q warn=%q fix=%q",
+			okMsg, warnMsg, fix)
+	}
+	// An agent here on a harness nothing can start.
+	gap := both
+	gap.agents = map[string]int{"codex": 1, "gemini": 2}
+	okMsg, warnMsg, fix = joinedWakeAdvice(gap, "abc", "/d")
+	if okMsg != "" || !strings.Contains(warnMsg, "gemini (2)") || !strings.Contains(fix, "[wake.exec.<harness>]") {
+		t.Errorf("agents on an unconfigured harness went unmentioned: ok=%q warn=%q fix=%q", okMsg, warnMsg, fix)
 	}
 }
 

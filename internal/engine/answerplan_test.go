@@ -88,3 +88,28 @@ func TestAnOpenQuestionOffersATextBox(t *testing.T) {
 			"only be answered in words", plan.Then, thenPrompt)
 	}
 }
+
+// Where no text field can open, a question with no choices does not offer one.
+//
+// notify-send on Linux carries buttons and no field, and the notification
+// offered "Write answer…" regardless: the press dismissed it, opened nothing,
+// recorded nothing and said nothing, because the error the prompt returned
+// was swallowed one layer up. The button there now names what it can do.
+// Round twenty-five of the pre-release review.
+func TestNoTextFieldIsOfferedWhereNoneCanOpen(t *testing.T) {
+	plan := planAnswerFor(nil, false)
+	if slices.Contains(plan.Buttons, "Write answer…") || plan.Then == thenPrompt {
+		t.Fatalf("planAnswerFor(no choices, cannot prompt) = %+v: it offers a text field the platform "+
+			"cannot open, and pressing it did nothing", plan)
+	}
+	if plan.Then != thenBoard || !slices.Contains(plan.Buttons, deferButton) || len(plan.Buttons) != 2 {
+		t.Fatalf("planAnswerFor(no choices, cannot prompt) = %+v: want Later and a pointer to the board", plan)
+	}
+	// Choices are buttons wherever they are: no field is involved.
+	if got := planAnswerFor([]string{"a", "b"}, false); got.Then != "" {
+		t.Fatalf("stated choices are no longer the buttons where nothing can prompt: %+v", got)
+	}
+	if got := planAnswerFor(nil, true); got.Then != thenPrompt {
+		t.Fatalf("where a field can open, a question with no choices no longer opens one: %+v", got)
+	}
+}

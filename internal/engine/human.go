@@ -626,7 +626,7 @@ func (e *Engine) approveForHuman(from, who, body string, serial uint64, grant, a
 func (e *Engine) answerForHuman(from, who, body string, serial uint64, choices []string) {
 	title := "Dibs · " + from + " asks"
 	line := said(who, body)
-	plan := planAnswer(choices)
+	plan := planAnswerFor(choices, notify.CanPrompt())
 
 	pressed, err := notify.Ask(title, line, plan.Buttons...)
 	if errors.Is(err, notify.ErrCannotNotify) {
@@ -645,9 +645,16 @@ func (e *Engine) answerForHuman(from, who, body string, serial uint64, choices [
 
 	// Only now, after a press that asked for it, does anything take the screen.
 	var answer string
-	if plan.Then == thenPick {
+	switch plan.Then {
+	case thenPick:
 		answer, err = notify.Pick(title, line, choices...)
-	} else {
+	case thenBoard:
+		// No text field on this platform: the press asked where to answer,
+		// and that is the one thing a notification here can still say.
+		_ = notify.Banner(title, "", "Answer this one on the board: `dibs web` opens it. "+
+			"The question stays open until you do.")
+		return
+	default:
 		answer, err = notify.Prompt(title, line)
 	}
 	if err != nil || strings.TrimSpace(answer) == "" {
@@ -661,6 +668,7 @@ func (e *Engine) answerForHuman(from, who, body string, serial uint64, choices [
 const (
 	thenPick   = "pick"   // a list, because the choices did not fit as buttons
 	thenPrompt = "prompt" // a text box, because there were no choices
+	thenBoard  = "board"  // a pointer to the board, because there is no text box here
 )
 
 // deferButton is the way out that is offered on every question and means
@@ -689,12 +697,22 @@ type answerPlan struct {
 // buttons and answering is one press with nothing to type and no window to
 // find. A fourth cannot be, and rather than silently dropping it the
 // notification offers the list.
-func planAnswer(choices []string) answerPlan {
+func planAnswer(choices []string) answerPlan { return planAnswerFor(choices, true) }
+
+// planAnswerFor is planAnswer for a platform that can, or cannot, open a
+// text field (notify.CanPrompt). Where it cannot, a question with no choices
+// is not offered "Write answer…": the press opened nothing and said nothing
+// on Linux, so the button now names the one thing it can do, point at the
+// board. Round twenty-five of the pre-release review.
+func planAnswerFor(choices []string, canPrompt bool) answerPlan {
 	if n := len(choices); n > 0 && n <= 3 {
 		return answerPlan{Buttons: choices}
 	}
 	if len(choices) > 0 {
 		return answerPlan{Buttons: []string{deferButton, "Pick one…"}, Then: thenPick}
+	}
+	if !canPrompt {
+		return answerPlan{Buttons: []string{deferButton, "Where to answer…"}, Then: thenBoard}
 	}
 	// "Write answer…", not "Answer".
 	//

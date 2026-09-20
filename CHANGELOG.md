@@ -108,6 +108,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round twenty-five of the pre-release review: two findings.**
+  - On Linux a question with no choices no longer offers "Write answer…":
+    notify-send carries buttons and no text field, and the press dismissed
+    the notification, opened nothing, recorded nothing and said nothing
+    (the prompt's error was swallowed). The button there is "Where to
+    answer…", and pressing it says: the board, `dibs web` opens it, the
+    question stays open.
+  - `dibs doctor` on a machine joined to a hub elsewhere compares the
+    harnesses its `dibs.toml` has commands for with the ones the attached
+    host bridge ADVERTISED when it started, and with the agents recorded
+    here: a bridge started before an entry was added is told to restart,
+    and an agent on a harness nothing here can start is named. It counted
+    commands and asked whether a bridge was attached.
 - **Round twenty-four of the pre-release review: two findings, both in the
   pi extension.**
   - Every path argument goes out as the bridge spells it (its `pathArgs`
