@@ -108,6 +108,19 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round twenty-three of the pre-release review: three findings.**
+  - The opencode plugin keeps only the host the bridge published; a hook
+    that ran before the bridge had published cached "" (or the daemon's
+    file) for the life of the process, and through an ssh forward an empty
+    assertion is the hub's identity, so every later guard resolved nobody.
+  - The pi extension describes the checkout an `update` names when it
+    moves the agent, spelled as the bridge would; it stamped the original
+    checkout's identity beside the new directory.
+  - The Gemini recipe and README say what a NEW session gets: its id is
+    unbound until the agent's first `check_in` in it, whose `waiting` line
+    carries the digest; a resumed session opens with it. They promised the
+    digest at the start of a second session, which the daemon refuses by
+    design (a supplied id that matches nothing is not guessed at).
 - **Round twenty-two of the pre-release review: three findings.**
   - The pi extension asks `dibs identity` (new, plumbing) what this machine
     and checkout are, once per session, instead of carrying a TypeScript

@@ -161,15 +161,29 @@ async function host(): Promise<string> {
   if (hostCache !== undefined) return hostCache
   const stated = process.env["DIBS_HOST_ID"]?.trim()
   if (stated) return (hostCache = stated)
-  for (const name of ["resolved_host_id", "node_id", "host_id"]) {
+  // Only the bridge's published answer is kept. A hook can run before the
+  // bridge has published it, and the first version cached whatever it
+  // found then, "" or the daemon's file, for the life of the process: it
+  // never read the bridge's eventual answer, and through an ssh forward an
+  // empty assertion is the hub's identity, so every later guard resolved
+  // nobody and allowed the edit. The stand-ins are re-read on every call,
+  // which is two small files, until the bridge has spoken. Round
+  // twenty-three of the pre-release review.
+  try {
+    const id = (await Bun.file(`${DIR}/resolved_host_id`).text()).trim()
+    if (id) return (hostCache = id)
+  } catch {
+    // not published yet
+  }
+  for (const name of ["node_id", "host_id"]) {
     try {
       const id = (await Bun.file(`${DIR}/${name}`).text()).trim()
-      if (id) return (hostCache = id)
+      if (id) return id
     } catch {
       // not this file; the next one, or none
     }
   }
-  return (hostCache = "")
+  return ""
 }
 
 /**

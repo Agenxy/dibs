@@ -207,10 +207,13 @@ var catalog = []struct {
 				Do: "Merge hooks.json into the same settings.json under `hooks`: a " +
 					"SessionStart command hook running `dibs hook-poll`. `dibs` must " +
 					"be on PATH, or name its absolute path in `command`.",
-				Check: "starting a session in a directory where your agent is " +
-					"registered makes the daemon log the hook resolving (`dibs log`)",
-				IfNot: "the session starts without its digest; register or resume " +
-					"from inside the session so the next start finds the agent",
+				Check: "resuming a session in which your agent has checked in " +
+					"(`gemini --resume`, the same session id) makes the daemon log the " +
+					"hook resolving (`dibs log`)",
+				IfNot: "the session id the hook quotes is not bound to your agent: a " +
+					"NEW session has a new id, which your first check_in in it binds, " +
+					"so that session's digest comes on the `waiting` line of that call " +
+					"rather than at its start; resume the session and it opens bound",
 			},
 			{
 				Do: "Keep the pull rhythm: check_in at the start of each activation, " +
@@ -221,11 +224,14 @@ var catalog = []struct {
 					"refuse until check_in has succeeded this activation",
 			},
 		},
-		verify: "start a second session in the same directory after a peer has sent " +
-			"your agent a notify: the first turn's context carries the digest, and " +
-			"`dibs log` shows the hook resolving to your agent. Mid-session, nothing " +
-			"arrives unbidden on this harness; the `waiting` line on your next call " +
-			"is where it shows.",
+		verify: "resume a session in which your agent has checked in, after a peer " +
+			"has sent your agent a notify: the first turn's context carries the " +
+			"digest, and `dibs log` shows the hook resolving to your agent. A NEW " +
+			"session carries a new id the daemon has not bound yet, so its start " +
+			"resolves to nobody by design (a supplied id that matches nothing is not " +
+			"guessed at); your first check_in binds it and carries the digest on " +
+			"its `waiting` line. Mid-session, nothing arrives unbidden on this " +
+			"harness; the `waiting` line on your next call is where it shows.",
 	},
 	{
 		harness: "codex",

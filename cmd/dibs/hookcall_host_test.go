@@ -420,16 +420,20 @@ func TestThePiExtensionCarriesItsHost(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("s3cret\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	checkout := filepath.Join(dir, "checkout")
-	if err := os.Mkdir(checkout, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", "https://example.invalid/t/checkout.git"}} {
-		cmd := exec.Command("git", args...)
-		cmd.Dir = checkout
-		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("setup: git %v: %v: %s", args, err, out)
+	// Two checkouts of two projects: the one the extension runs in, and
+	// the one an `update` moves the agent to.
+	checkout, other := filepath.Join(dir, "checkout"), filepath.Join(dir, "other")
+	for _, c := range []string{checkout, other} {
+		if err := os.Mkdir(c, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		for _, args := range [][]string{{"init", "-q"}, {"remote", "add", "origin", "https://example.invalid/t/" + filepath.Base(c) + ".git"}} {
+			cmd := exec.Command("git", args...)
+			cmd.Dir = c
+			cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("setup: git %v: %v: %s", args, err, out)
+			}
 		}
 	}
 	src, err := os.ReadFile(filepath.Join("..", "..", "plugins", "pi", "dibs.ts"))
@@ -457,7 +461,7 @@ func TestThePiExtensionCarriesItsHost(t *testing.T) {
 		calls = append(calls, got)
 		mu.Unlock()
 		if got["method"] == "tools/list" {
-			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"register","inputSchema":{"type":"object"}}]}}`))
+			_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"tools":[{"name":"register","inputSchema":{"type":"object"}},{"name":"update","inputSchema":{"type":"object"}}]}}`))
 			return
 		}
 		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"token\":\"t\"}"}]}}`))
@@ -472,6 +476,7 @@ mod.default({ on: (name: string, fn: Function) => { handlers[name] = fn }, regis
 const ctx = { sessionManager: { getSessionId: () => "pi-session-1" } }
 await handlers["before_agent_start"]!({}, ctx)
 await tools["register"].execute("c1", { name: "probe" }, undefined, undefined, ctx)
+await tools["update"].execute("c2", { token: "t", cwd: process.env["OTHER"] }, undefined, undefined, ctx)
 `
 	if err := os.WriteFile(filepath.Join(dir, "drive.ts"), []byte(script), 0o600); err != nil {
 		t.Fatal(err)
@@ -479,7 +484,7 @@ await tools["register"].execute("c1", { name: "probe" }, undefined, undefined, c
 	cmd := exec.Command(bun, "run", filepath.Join(dir, "drive.ts")) // #nosec G204 -- paths this test created
 	cmd.Dir = checkout
 	cmd.Env = append(os.Environ(), "DIBS_DIR="+dir, "DIBS_ADDR="+strings.TrimPrefix(srv.URL, "http://"),
-		"DIBS_BIN="+os.Args[0], "DIBS_TEST_AS_DIBS=1", "DIBS_HOST_ID=")
+		"DIBS_BIN="+os.Args[0], "DIBS_TEST_AS_DIBS=1", "DIBS_HOST_ID=", "OTHER="+other)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("running the extension: %v\n%s", err, out)
 	}
@@ -491,7 +496,7 @@ await tools["register"].execute("c1", { name: "probe" }, undefined, undefined, c
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	stamped, registered := 0, false
+	stamped, registered, updated := 0, false, false
 	for _, c := range calls {
 		if c["method"] != "tools/call" {
 			continue
@@ -503,23 +508,94 @@ await tools["register"].execute("c1", { name: "probe" }, undefined, undefined, c
 				"this directory: from a fresh joined directory the extension registered with no machine", host, params)
 		}
 		stamped++
-		if params["name"] != "register" {
+		// The checkout each call describes is the one it names: the
+		// process's own on register, the target's on an update that moves
+		// the agent. Round twenty-three: the update carried the original
+		// checkout's identity beside the new directory.
+		var in string
+		switch params["name"] {
+		case "register":
+			registered, in = true, checkout
+		case "update":
+			updated, in = true, other
+		default:
 			continue
 		}
-		registered = true
 		repo, _ := meta[mcp.RepoMetaKey].(map[string]any)
-		if remote, _ := repo["remote"].(string); remote == "" {
-			t.Fatalf("the register carried no checkout identity in %v: a hub records no repository "+
-				"for it, and two clones of one repository on two machines both get an exclusive "+
-				"claim on the same file", params)
+		wantRemote := "example.invalid/t/" + filepath.Base(in)
+		if remote, _ := repo["remote"].(string); remote != wantRemote {
+			t.Fatalf("the %s carried checkout identity %q in %v, want %q: a hub records the wrong "+
+				"repository (or none) for it, and two clones of one repository on two machines both "+
+				"get an exclusive claim on the same file", params["name"], remote, params, wantRemote)
 		}
 		args, _ := params["arguments"].(map[string]any)
-		want, _ := filepath.EvalSymlinks(checkout)
+		want, _ := filepath.EvalSymlinks(in)
 		if cwd, _ := args["cwd"].(string); cwd != want {
-			t.Fatalf("the register's cwd is %q, want %q as the bridge would spell it", cwd, want)
+			t.Fatalf("the %s's cwd is %q, want %q as the bridge would spell it", params["name"], cwd, want)
 		}
 	}
-	if stamped == 0 || !registered {
-		t.Fatalf("the drive made %d tools/call(s), registered=%v: %v", stamped, registered, calls)
+	if stamped == 0 || !registered || !updated {
+		t.Fatalf("the drive made %d tools/call(s), registered=%v updated=%v: %v", stamped, registered, updated, calls)
+	}
+}
+
+// And it picks up the host the bridge publishes after its first call.
+//
+// A hook can run before the bridge has published `resolved_host_id`, and
+// the plugin cached what it found then for the life of the process: "" (or
+// the daemon's own file), never the bridge's eventual answer. Through an
+// ssh forward an empty assertion is the hub's identity, so every later
+// guard resolved nobody and allowed the edit. Round twenty-three of the
+// pre-release review.
+func TestTheOpencodePluginPicksUpTheHostTheBridgePublishesLater(t *testing.T) {
+	bun, err := exec.LookPath("bun")
+	if err != nil {
+		t.Skip("bun is not installed; the plugin cannot be run")
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "local.secret"), []byte("s3cret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var hosts []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var got map[string]any
+		_ = json.Unmarshal(body, &got)
+		params, _ := got["params"].(map[string]any)
+		meta, _ := params["_meta"].(map[string]any)
+		host, _ := meta[mcp.HostMetaKey].(string)
+		mu.Lock()
+		hosts = append(hosts, host)
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"{\"decision\":\"allow\"}"}]}}`))
+	}))
+	defer srv.Close()
+	plugin, err := filepath.Abs(filepath.Join("..", "..", "plugins", "opencode", "dibs.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	published := filepath.Join(dir, resolvedHostFile)
+	script := "const { DibsPlugin } = await import(" + strconv.Quote(plugin) + ")\n" +
+		"const hooks = await DibsPlugin({} as any)\n" +
+		"const edit = () => hooks[\"tool.execute.before\"]!({ tool: \"edit\", sessionID: \"s\", callID: \"c\" } as any, " +
+		"{ args: { filePath: \"/w/repo/file.go\" } } as any)\n" +
+		"await edit()\n" + // before the bridge has published anything
+		"await Bun.write(" + strconv.Quote(published) + ", \"machine-b\\n\")\n" +
+		"await edit()\n"
+	path := filepath.Join(dir, "drive.ts")
+	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bun, "run", path) // #nosec G204 -- paths this test created
+	cmd.Env = append(os.Environ(), "DIBS_DIR="+dir, "DIBS_ADDR="+strings.TrimPrefix(srv.URL, "http://"), "DIBS_HOST_ID=")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("running the plugin: %v\n%s", err, out)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(hosts) != 2 || hosts[0] != "" || hosts[1] != "machine-b" {
+		t.Fatalf("the guard's hosts across the bridge publishing its answer were %q, want [\"\" \"machine-b\"]: "+
+			"the first answer was kept for the life of the process", hosts)
 	}
 }
