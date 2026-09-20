@@ -107,8 +107,15 @@ func (e *Engine) AllMail(ctx context.Context, token string, census bool, agent s
 		if !l.IsAdmin() {
 			return core.Result{"error": core.ErrNotAdmin}
 		}
+		// `agent` selects one mailbox here as it does for the census. The
+		// schema said so and this path never read it, so an admin asking for
+		// one worker's mail was handed every mailbox on the board. Round
+		// five of the pre-release review.
 		out := make([]*core.Message, 0, len(e.state.Messages))
 		for _, m := range e.state.Messages {
+			if agent != "" && m.To != agent {
+				continue
+			}
 			out = append(out, m)
 		}
 		return core.Result{"messages": out, "serial": e.state.Serial}
@@ -299,6 +306,36 @@ func (e *Engine) resolveConfiguredAgentDecision(nameOrID string) core.Result {
 		return core.Result{"id": byName[0]}
 	}
 	return core.Result{"ambiguous": byName}
+}
+
+// AgentByIdentity finds the agent whose credential has this fingerprint, on
+// any row the board still holds: archived rows included, since a role on an
+// archived row is a role, and a name is not consulted, since a name is a
+// label the agent can change. It answers the withdrawal question, "who did
+// this mechanism grant to", from the one fact the pin recorded. "" when no
+// row carries that credential any more.
+func (e *Engine) AgentByIdentity(ctx context.Context, fingerprint string) (string, error) {
+	if fingerprint == "" {
+		return "", nil
+	}
+	res, err := e.query(ctx, func() core.Result {
+		ids := make([]string, 0, 1)
+		for id, l := range e.state.Agents {
+			if l != nil && l.Nonce != "" && RolePinFingerprint(l.Nonce) == fingerprint {
+				ids = append(ids, id)
+			}
+		}
+		sort.Strings(ids)
+		if len(ids) == 0 {
+			return core.Result{}
+		}
+		return core.Result{"id": ids[0]}
+	})
+	if err != nil {
+		return "", err
+	}
+	id, _ := res["id"].(string)
+	return id, nil
 }
 
 // AgentIdentity is an opaque, stable fingerprint of the agent's own credential,

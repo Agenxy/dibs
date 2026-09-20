@@ -1264,24 +1264,24 @@ func (s *Server) run(
 		if err := mustBeAbsolute("claim path", a.Path); err != nil {
 			return nil, err
 		}
-		op.Kind, op.Path, op.Mode, op.Note = core.OpClaim, canonPath(a.Path), a.Mode, a.Note
+		op.Kind, op.Path, op.Mode, op.Note = core.OpClaim, callerPath(ctx, params, a.Path), a.Mode, a.Note
 	case "release":
 		if err := mustBeAbsolute("release path", a.Path); err != nil {
 			return nil, err
 		}
-		op.Kind, op.Path = core.OpRelease, canonPath(a.Path)
+		op.Kind, op.Path = core.OpRelease, callerPath(ctx, params, a.Path)
 	case "force_release":
-		op.Kind, op.Path, op.Note = core.OpForceRelease, canonPath(a.Path), a.Note
+		op.Kind, op.Path, op.Note = core.OpForceRelease, callerPath(ctx, params, a.Path), a.Note
 	case "hook_poll":
 		// cwd is canonicalised for the same reason the claim path is: it is
 		// compared as a string against the cwd the bridge recorded, and a
 		// harness that passes the alias the user typed (/tmp/x) would never
 		// match an agent registered from the resolved name (/private/tmp/x).
-		return s.eng.HookPoll(ctx, a.SessionID, a.Event, canonPath(a.CWD),
+		return s.eng.HookPoll(ctx, a.SessionID, a.Event, callerPath(ctx, params, a.CWD),
 			truthy(a.StopActive), truthy(a.StrictOutput))
 	case "hook_session":
 		return s.eng.NoteChildSession(ctx, engine.Child{
-			SessionID: a.SessionID, CWD: canonPath(a.CWD), Model: a.Model,
+			SessionID: a.SessionID, CWD: callerPath(ctx, params, a.CWD), Model: a.Model,
 			Transcript: a.Transcript, AgentID: a.AgentID, AgentType: a.AgentType,
 			Progress: a.Progress, State: engine.StateForEvent(a.Event),
 		})
@@ -1289,11 +1289,11 @@ func (s *Server) run(
 		return s.eng.Children(ctx)
 	case "hook_blocked":
 		return s.eng.NoteChildSession(ctx, engine.Child{
-			SessionID: a.SessionID, CWD: canonPath(a.CWD),
+			SessionID: a.SessionID, CWD: callerPath(ctx, params, a.CWD),
 			State: "blocked", Blocked: a.ToolName, Turn: a.TurnID,
 		})
 	case "guard_path":
-		return s.eng.GuardPath(ctx, a.SessionID, canonPath(a.Path), canonPath(a.CWD))
+		return s.eng.GuardPath(ctx, a.SessionID, callerPath(ctx, params, a.Path), callerPath(ctx, params, a.CWD))
 	case "board":
 		return s.showBoard(ctx, a.Token, a.View)
 	case "bind_session":

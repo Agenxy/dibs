@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"sort"
@@ -143,6 +144,18 @@ func (e *Engine) AttachHostBridge(host string, harnesses []string) (<-chan WakeR
 		}
 	}
 	hw.bridges[host] = b
+	// The mail this machine's agents were owed while no bridge was here: a
+	// wake refused for want of a bridge schedules no retry, so without this
+	// the bridge reconnecting changed nothing for a question that arrived
+	// while it was down, and every hub start has the same order, bridges
+	// attaching after the boot retries ran. The same retry boot arms, for
+	// every agent on this host holding blocking mail. Off the caller's
+	// goroutine, since it needs the loop, and skipped on an engine with no
+	// loop (the zero-value engine tests build). Pre-release review, round
+	// five.
+	if e.ops != nil {
+		go e.rearmHostWakes(host)
+	}
 	release := func() {
 		hw.mu.Lock()
 		defer hw.mu.Unlock()
@@ -154,6 +167,20 @@ func (e *Engine) AttachHostBridge(host string, harnesses []string) (<-chan WakeR
 		hw.failPendingLocked(host, "the host's bridge detached before reporting")
 	}
 	return b.ch, release, nil
+}
+
+// rearmHostWakes arms one retry for every agent on host that holds blocking
+// mail, the way rearmDeferredWakes does for the whole board at boot.
+func (e *Engine) rearmHostWakes(host string) {
+	_, _ = e.query(context.Background(), func() core.Result {
+		for id, l := range e.state.Agents {
+			if l.Retired() || e.remoteHostOf(l) != host || !e.hasBlockingMail(id) {
+				continue
+			}
+			e.deferWakeLocked(id, bootRetryDelay)
+		}
+		return core.Result{}
+	})
 }
 
 // failPendingLocked releases every wake waiting on this host as a failure.

@@ -193,3 +193,51 @@ func TestRemovingTheLastDeclaredRoleWithdrawsIt(t *testing.T) {
 			"that withdraws everything withdrew nothing")
 	}
 }
+
+// WITHDRAWAL FINDS THE HOLDER BY ITS CREDENTIAL, NOT BY THE NAME.
+//
+// The pin records which credential a declared role went to, and withdrawal
+// resolved the declared NAME again to find the holder. An admin that had
+// renamed itself, or been archived, resolved to nobody: the pin was dropped
+// (line by line, that was "nobody holds the name; the pin was all there
+// was") and the role stayed, now with no record that this mechanism granted
+// it, so no later pass could take it back either. The fingerprint IS the
+// record of who was granted; the holder is whoever carries it. Found by the
+// pre-release review, round five.
+func TestWithdrawalFindsARenamedHolderByItsCredential(t *testing.T) {
+	eng, ctx := testEngine(t)
+	pins := loadRolePins(t.TempDir())
+
+	res, err := eng.Do(ctx, &core.Op{Kind: core.OpRegister, Name: "Fleet Lead", Nonce: "nonce-lead"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, _ := res["token"].(string)
+	id, _ := res["agent_id"].(string)
+	applyDeclaredRoles(ctx, eng, RolesConfig{
+		Admin:    []string{"Fleet Lead"},
+		Identity: map[string]string{"Fleet Lead": engine.RolePinFingerprint("nonce-lead")},
+	}, pins)
+	if !holdsRole(t, eng, id, core.RoleAdmin) {
+		t.Fatal("setup: the declared admin was not granted")
+	}
+
+	// The holder renames itself; its id and credential are unchanged.
+	if _, err := eng.Do(ctx, &core.Op{Kind: core.OpAckBoard, Token: tok}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := eng.Do(ctx, &core.Op{Kind: core.OpUpdate, Token: tok, Name: "Captain", Description: "same seat"}); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+
+	// The operator deletes the line.
+	applyDeclaredRoles(ctx, eng, RolesConfig{}, pins)
+	if holdsRole(t, eng, id, core.RoleAdmin) {
+		t.Fatal("the renamed holder keeps admin after its declaration was removed: the " +
+			"withdrawal looked for the old name and found nobody, and dropped the pin " +
+			"that was the only proof this mechanism granted it")
+	}
+	if _, pinned := pins.Pins[core.RoleAdmin]["Fleet Lead"]; pinned {
+		t.Error("the pin outlived the withdrawal")
+	}
+}

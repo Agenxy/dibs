@@ -205,11 +205,16 @@ is the only signal available, and that must never be allowed to mean "is gone".
   last turn boundary, whether a route is currently reachable. It belongs in the
   transient maps the engine already keeps, not in the ledger, and it is a
   label for a human plus an input to *how* to wake.
-- **Identity** is durable and ledgered. An identity with a credential is
-  wakeable **forever**, until a human prunes it or the agent signs off. Signing
-  off stays final, because that is a decision the agent made.
+- **Identity** is durable and ledgered. The design: an identity with a
+  credential is wakeable **for as long as the board holds it**, until a human
+  prunes it or the agent signs off. Signing off stays final, because that is
+  a decision the agent made. What holds it today is the retention purge:
+  an archived row, its nonce and its mailbox are removed after
+  `ArchiveRetention` (seven days by default), which is the one timer left
+  that still ends recoverability, and it is named in the "not done" list
+  below rather than rounded up to "forever".
 
-Concretely, and all of the following is now **done**:
+Concretely, the following is now **done**:
 
 - Archival stops blanking the nonce. That behaviour has produced only harm; the
   credential is what makes an identity recoverable, and destroying it on a
@@ -227,8 +232,10 @@ What is done: `Retired()` (closed only) now decides the wake path, the boot
 retry, the pull-only note and whether mail can be delivered; `resume` accepts an
 archived agent; and the sweep keeps the nonce, gated on `Op.KeepArchivedNonce`.
 What is not: retention is still expressed as a lifecycle rather than as the
-resource bound it is, and presence still lives on `Agent.Status` rather than
-beside it.
+resource bound it is, so the purge after `ArchiveRetention` still deletes an
+archived identity with its nonce, and a wake after that finds nobody; and
+presence still lives on `Agent.Status` rather than beside it. Both are fold
+changes and wait for their own flag.
 
 This is what "wake an agent whenever we want, regardless of how long ago it was
 active" requires, and it is also simply more honest: the board's job is to

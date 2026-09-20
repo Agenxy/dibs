@@ -200,3 +200,42 @@ func TestACoordinatorCannotApproveItsOwnAdoptionRequest(t *testing.T) {
 		t.Fatalf("coordinator approving a member's adoption request: %v, want it to succeed", err)
 	}
 }
+
+// `all_mail(agent: x)` reads ONE mailbox for an admin, as the schema says.
+//
+// The argument selected a mailbox for the census and was never read on the
+// admin path, so an admin asking for one worker's mail was handed every
+// message on the board: a filter advertised and silently ignored, which is
+// the failure AGENTS.md names under "a parameter you declare but never
+// read". Round five of the pre-release review.
+func TestAnAdminReadingOneMailboxGetsThatMailboxOnly(t *testing.T) {
+	st := core.NewState("test", core.DefaultLimits())
+	e := New(st, &memLedger{}, deadProber{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.Run(ctx)
+	coordinator, member := censusBoard(t, ctx, e)
+	if _, err := e.Do(ctx, &core.Op{Kind: core.OpGrantRole, To: "coord", Mode: core.RoleAdmin}); err != nil {
+		t.Fatal("setup:", err)
+	}
+	// Two mailboxes hold mail: stranded's (from the fixture) and coord's.
+	if _, err := e.Do(ctx, &core.Op{
+		Kind: core.OpSendMessage, Token: member, To: "coord", MsgType: core.MsgNotify, Body: "for you",
+	}); err != nil {
+		t.Fatal("setup:", err)
+	}
+
+	res, err := e.AllMail(ctx, coordinator, false, "stranded")
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs, _ := res["messages"].([]*core.Message)
+	if len(msgs) != 2 {
+		t.Fatalf("all_mail(agent: stranded) returned %d messages, want the 2 in that mailbox", len(msgs))
+	}
+	for _, m := range msgs {
+		if m.To != "stranded" {
+			t.Errorf("a message to %q came back from a read of stranded's mailbox", m.To)
+		}
+	}
+}

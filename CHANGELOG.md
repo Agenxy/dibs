@@ -108,6 +108,39 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Round five of the pre-release review: eight findings.**
+  - Withdrawing a declared role resolved the declared NAME again, so a
+    holder that had renamed itself or been archived was "nobody", the pin
+    was dropped and the role stayed with no record that the config had
+    granted it. Withdrawal now finds the holder by the credential the pin
+    recorded, whatever it calls itself now.
+  - A remote caller's claim, release and guard paths were canonicalised on
+    the hub's filesystem (a Linux member's `/tmp/repo/file` became
+    `/private/tmp/repo/file` on a macOS hub), so its checkout root no longer
+    prefixed them and cross-machine collisions disappeared. Every path a
+    tool takes now goes through the decision registration already made, and
+    the stdio bridge resolves path arguments on its own machine before
+    sending them, so the spelling an agent types meets the spelling its
+    bridge registered where the filesystem is.
+  - A host bridge attaching (or reattaching, or attaching after the hub's
+    boot retries ran) re-arms wakes for every agent on that machine holding
+    blocking mail; a wake refused for want of a bridge scheduled no retry.
+  - A verdict owed to an ARCHIVED asker is rebuilt after a restart (archived
+    is idle and resumable; only closed has nobody left to tell), and the
+    responder is told the asker is archived rather than that it "closed its
+    agent".
+  - A supplied index lost to a daemon restart is shipped again: the bridge
+    keeps looking at the verdict for its lifetime (every five minutes after
+    the registration schedule), ships whenever the daemon wants an index
+    nobody has supplied, and the boot walk relists remote trees.
+  - `all_mail(agent: x)` returned every mailbox to an admin; the filter the
+    schema advertised is now applied.
+  - `docs/NETWORK.md` said a credentialed identity is wakeable "forever";
+    the retention purge still removes an archived row and its nonce after
+    `ArchiveRetention`, and the document now says so in both places.
+  - Two Unreleased entries described superseded states (Windows tests
+    "fail there"; networking "not built beyond liveness"); both now say what
+    this version ships.
 - **Round four of the pre-release review: eight findings.**
   - `dibs codex-hooks --trust` vouched for any loose hook whose JSON
     mentioned `hook_poll` anywhere, so a command hook with that status
@@ -656,15 +689,17 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Windows builds and vets in CI, and the first run says what does not
   hold.** (#11) "Not supported and not being worked on" became "nobody has
   tried" became a runner: `ubuntu-latest` runs the whole suite under the race
-  detector and `windows-latest` builds, vets and runs the scorer and the
-  liveness parsers. The state machine, the ledger and the board config fail
-  there on path separators and file semantics, which is now written down as
-  the Windows work rather than guessed at. To get there the daemon's file lock is `LockFileEx` on
-  Windows behind the same three calls `flock` answers on unix, the liveness
-  poller asks the kernel whether a pid still runs, and the tests that send
-  signals carry the unix build tag. The README says what that is and is not:
-  a build, not a support statement; no Windows harness has registered an
-  agent.
+  detector and `windows-latest` builds, vets and runs the packages that hold
+  there. The first run said the state machine, the ledger and the board
+  config failed on path separators and file semantics; each was the test or
+  the fold assuming unix and is fixed in this version (#113, above), so the
+  Windows job now runs core, ledger, board config, the scorer, the liveness
+  parsers and the daemon-registry lock. To get there the daemon's file lock
+  is `LockFileEx` on Windows behind the same three calls `flock` answers on
+  unix, the liveness poller asks the kernel whether a pid still runs, and the
+  tests that send signals carry the unix build tag. The README says what
+  that is and is not: a build, not a support statement; no Windows harness
+  has registered an agent.
 
 - **The daemon no longer needs read access to your checkouts.** (#19)
   Matching mined the repository itself, so `dibd` needed to read every tree
@@ -726,9 +761,10 @@ versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   computer. Host identity as a key rather than a hostname, claims keyed by host
   with a portable repository form beside them, liveness split into presence and
   identity, and why wake routes must belong to the machine the agent is on
-  rather than to the hub. In this version only the liveness work was built;
-  the host key, the portable repository rule and the per-host bridge followed
-  in 0.0.8 (this line used to read as if nothing beyond liveness ever had).
+  rather than to the hub. Written before most of it existed; by this
+  release the liveness split, the host key, the portable repository rule and
+  the per-host bridge are built (each has its own entry here), and the
+  document's status line says what remains.
 
 ## [0.0.7] - 2026-09-08
 

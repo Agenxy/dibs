@@ -76,10 +76,28 @@ var shipSchedule = []time.Duration{
 // import; the test beside this holds the schedule to it.
 const daemonGitDeadline = 4 * time.Minute
 
-// shipWhenUnreadable watches the daemon's verdict on the schedule above,
-// ships once, and says nothing on success: the daemon logs what it installed.
+// shipRecheckEvery is how often, after the schedule above has run out, the
+// bridge keeps looking at the daemon's verdict for as long as it lives.
+//
+// A supplied index is held in the daemon's memory, and a daemon restart
+// (`dibs upgrade`, a reboot) loses it, while the bridge and its token go on
+// working: the schedule had run out on registration, nothing asked again,
+// and matching stayed unavailable for that tree until another registration
+// happened to ship. One GET every few minutes per bridge is the cost of a
+// verdict that can change. A var, so a test can shorten it. Round five of
+// the pre-release review.
+var shipRecheckEvery = 5 * time.Minute
+
+// shipWhenUnreadable watches the daemon's verdict on the schedule above and
+// then at shipRecheckEvery for the life of the bridge, ships whenever the
+// daemon wants an index this bridge has not supplied, and says nothing on
+// success: the daemon logs what it installed.
 func shipWhenUnreadable(ctx context.Context, client *http.Client, url, secret, token, root string) {
-	for _, wait := range shipSchedule {
+	for i := 0; ; i++ {
+		wait := shipRecheckEvery
+		if i < len(shipSchedule) {
+			wait = shipSchedule[i]
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -91,14 +109,21 @@ func shipWhenUnreadable(ctx context.Context, client *http.Client, url, secret, t
 		// shipment went one way and every verdict poll the other. Round three
 		// of the pre-release review.
 		st := fetchMatchStatusAt(client, apiBase(url), secret)
-		if !wantsIndex(st, root) {
+		if !wantsIndex(st, root) || suppliedFor(st, root) {
 			continue
 		}
 		if err := shipIndex(ctx, client, url, secret, token, root); err != nil {
 			fmt.Fprintln(os.Stderr, "dibs: could not ship the index for", root+":", err)
 		}
-		return
 	}
+}
+
+// suppliedFor reports whether the daemon already holds a shipped index for
+// this root: after one shipment the verdict still lists the tree (it is
+// still one the daemon cannot read), and Supplied is what says it is served.
+func suppliedFor(st matchStatusJSON, root string) bool {
+	_, ok := st.Supplied[root]
+	return ok
 }
 
 // wantsIndex reads the daemon's verdict: it tried this tree and could not

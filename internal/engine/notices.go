@@ -556,8 +556,11 @@ func (e *Engine) stillOwed(m *core.Message) bool {
 	if m == nil || m.From == "" || verdictEvent(m.State) == "" {
 		return false
 	}
+	// Retired, not Gone: archived is idle and resumable, and an answer that
+	// arrived while the asker was away is exactly what it resumes to. Round
+	// five of the pre-release review found this still asking Gone().
 	asker := e.state.Agents[m.From]
-	if asker == nil || asker.Gone() {
+	if asker.Retired() {
 		return false // nobody left to tell
 	}
 	// The asker READ this outcome, and read_mail ledgered that (#76). Before
